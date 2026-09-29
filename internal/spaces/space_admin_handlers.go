@@ -100,7 +100,9 @@ func (h *Handlers) UpdateJoinRequest(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": requestID.String(), "status": input.Status}})
 }
 
-// UpdateSpaceStatus handles PATCH /admin/spaces/:id/status.
+// UpdateSpaceStatus handles PATCH /admin/spaces/:id/status. The optional
+// reason is recorded in audit_logs so a suspension decision is traceable;
+// spaces.status is a constrained column, so arbitrary values are rejected.
 func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 	spaceID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -110,10 +112,18 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		Status string `json:"status"`
+		Reason string `json:"reason"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	switch input.Status {
+	case StatusActive, StatusArchived, StatusDraft, "suspended":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be 'active', 'suspended', 'archived', or 'draft'")
 		return
 	}
 
@@ -125,6 +135,25 @@ func (h *Handlers) UpdateSpaceStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update space status")
 		return
+	}
+
+	// Record the moderation decision — the reason is otherwise dropped.
+	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
+		targetType := "space"
+		metadata, _ := json.Marshal(map[string]any{
+			"status": input.Status,
+			"reason": strings.TrimSpace(input.Reason),
+		})
+		if _, aerr := h.Service.write.CreateAuditLog(r.Context(), gen.CreateAuditLogParams{
+			ActorUserID: user.UserID,
+			ActionType:  "space.status_update",
+			TargetType:  &targetType,
+			TargetID:    spaceID,
+			Metadata:    metadata,
+		}); aerr != nil {
+			slog.Error("spaces: failed to write status-update audit log",
+				"space_id", spaceID.String(), "error", aerr)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": spaceID.String(), "status": input.Status}})

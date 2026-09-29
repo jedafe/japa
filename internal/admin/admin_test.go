@@ -332,6 +332,36 @@ func TestUpdateSettings_EmptyBody(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// UpdateUserStatus — invalid status value is rejected before any DB access
+// ---------------------------------------------------------------------------
+
+func TestUpdateUserStatus_InvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	h := newHandlers()
+	req := httptest.NewRequest(http.MethodPatch, "/admin/users/550e8400-e29b-41d4-a716-446655440001/status",
+		strings.NewReader(`{"status":"bogus_state"}`))
+	req = withAuthAndPlatform(t, req)
+	req = withChiURLParam(req, "id", "550e8400-e29b-41d4-a716-446655440001")
+	rr := httptest.NewRecorder()
+
+	h.UpdateUserStatus(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+
+	var body map[string]any
+
+	json.Unmarshal(rr.Body.Bytes(), &body)
+
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "invalid_status" {
+		t.Errorf("error.code = %v, want invalid_status", errObj["code"])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // UpdateSettings — unknown key
 // ---------------------------------------------------------------------------
 

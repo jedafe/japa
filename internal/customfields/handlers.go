@@ -1684,7 +1684,10 @@ func (h *Handlers) CreateSpaceForm(w http.ResponseWriter, r *http.Request) {
 			Position:  f.SortOrder,
 		}
 
-		if f.Type == "radio" && len(f.Options) > 0 {
+		// Options are honoured for any resolved select-typed field —
+		// "radio" maps to select and "select" is sent natively; previously
+		// only radio persisted options so admin select fields lost theirs.
+		if ft == FieldTypeSelect && len(f.Options) > 0 {
 			type option struct {
 				Value string `json:"value"`
 				Label string `json:"label"`

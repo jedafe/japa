@@ -202,6 +202,9 @@
 	// These are merged with the base content field groups for rendering in the settings panel.
 	let categoryFieldGroups = $state<CustomFieldGroup[]>([]);
 
+	// Content-type selector options for the header Autocomplete.
+	const typeItems = $derived(types.map((ty): AutocompleteItem => ({ id: ty.value, label: ty.label })));
+
 	// ---- Guide panel: track which field is focused for contextual help ----
 	let focusedField = $state<'space' | 'tags' | 'series' | 'body' | null>(null);
 
@@ -485,22 +488,23 @@
 	<div class="composer-main">
 		<div class="composer-header">
 			<h1 class="composer-title">{t('create.title')}</h1>
-			<select
-				class="composer-type-select"
-				value={selectedType.value}
-				onchange={(e) => {
-					const found = types.find((ty) => ty.value === e.currentTarget.value);
-					selectedType = found ?? resolveType(e.currentTarget.value);
-					const url = new URL(page.url);
-					url.searchParams.set('type', selectedType.value);
-					replaceState(url, {});
-					markDirty();
-				}}
-			>
-				{#each types as ty (ty.value)}
-					<option value={ty.value}>{ty.label}</option>
-				{/each}
-			</select>
+			<div class="composer-type-select">
+				<Autocomplete
+					placeholder={t('create.type_placeholder', 'Content type')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={staticAutocompleteFetcher(typeItems)}
+					initialFetcher={staticAutocompleteFetcher(typeItems)}
+					selectedId={selectedType.value}
+					selectedLabel={selectedType.label}
+					onSelect={(item) => {
+						selectedType = types.find((ty) => ty.value === item.id) ?? resolveType(item.id);
+						const url = new URL(page.url);
+						url.searchParams.set('type', selectedType.value);
+						replaceState(url, {});
+						markDirty();
+					}}
+				/>
+			</div>
 		</div>
 
 		{#if selectedType.hasCategory && selectedType.categories?.length}
@@ -760,21 +764,11 @@
 		font-weight: 600;
 		color: var(--color-text);
 	}
+	/* The type selector is an Autocomplete — this wrapper only constrains
+	 * its width; the field chrome lives in Autocomplete's own styles. */
 	.composer-type-select {
-		height: 2.375rem;
-		padding: 0 12px;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-size: 0.875rem;
-		outline: none;
-		cursor: pointer;
-		transition: border-color 0.15s, box-shadow 0.15s;
-	}
-	.composer-type-select:focus {
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+		width: 15rem;
+		flex-shrink: 0;
 	}
 	.guide-category-selector {
 		display: flex;

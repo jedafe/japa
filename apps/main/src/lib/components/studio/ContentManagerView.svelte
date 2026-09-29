@@ -15,7 +15,8 @@
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
-import { FileText, Search, Loader2, X } from 'lucide-svelte';
+	import { contentHref } from '$lib/utils/contentLink';
+	import { FileText, Search, Loader2, X } from 'lucide-svelte';
 
 	interface ContentItem {
 		id: string;
@@ -25,6 +26,7 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 		status?: string;
 		view_count?: number;
 		comment_count?: number;
+		publish_at?: string | null;
 		created_at?: string;
 	}
 
@@ -58,12 +60,21 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 	let nextOffset = $state(untrack(() => viewData?.pageSize ?? 20));
 	let loadingMore = $state(false);
 	let actionError = $state<string | null>(null);
+	// actingId guards the row actions against double-submit and concurrent
+	// mutations — a second click while a publish/archive/delete is in flight
+	// would fire a duplicate API call.
+	let actingId = $state<string | null>(null);
+	// listEpoch is bumped on every server refresh so an in-flight loadMore
+	// response can't append stale rows to a freshly filtered/reset list.
+	let listEpoch = 0;
 	$effect(() => {
 		const vd = viewData;
 		items = vd?.items ?? [];
 		hasMore = vd?.hasMore ?? false;
 		nextOffset = vd?.pageSize ?? 20;
 		loadingMore = false;
+		actingId = null;
+		listEpoch++;
 	});
 	const contentTypes = $derived(viewData?.contentTypes ?? []);
 
@@ -76,7 +87,8 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 		{ key: 'published', labelKey: 'dashboard.content.tab_published' },
 		{ key: 'draft', labelKey: 'dashboard.content.tab_drafts' },
 		{ key: 'in_review', labelKey: 'dashboard.content.tab_in_review' },
-		{ key: 'scheduled', labelKey: 'dashboard.content.tab_scheduled' }
+		{ key: 'scheduled', labelKey: 'dashboard.content.tab_scheduled' },
+		{ key: 'archived', labelKey: 'dashboard.content.tab_archived' }
 	];
 
 	// Autocomplete option lists — clearing the chip resets the filter (sort
@@ -151,6 +163,7 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 		if (loadingMore || !hasMore) return;
 		loadingMore = true;
 		actionError = null;
+		const epoch = listEpoch;
 		const pageSize = viewData?.pageSize ?? 20;
 		const path = buildContentQuery({
 			status: status === 'published' ? undefined : status,
@@ -161,6 +174,9 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 			pageSize: pageSize + 1
 		});
 		const res = await api.get<ContentItem[]>(path);
+		// A server refresh (filter/tab/mutation invalidateAll) may have reset
+		// the list while this request was in flight — drop the stale batch.
+		if (epoch !== listEpoch) return;
 		if (res.error) {
 			actionError = t('dashboard.content.action_error');
 			loadingMore = false;
@@ -168,8 +184,8 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 		}
 		const batch = res.data ?? [];
 		hasMore = batch.length > pageSize;
-		const page = hasMore ? batch.slice(0, pageSize) : batch;
-		items = [...items, ...page];
+		const slice = hasMore ? batch.slice(0, pageSize) : batch;
+		items = [...items, ...slice];
 		nextOffset += pageSize;
 		loadingMore = false;
 	}
@@ -183,40 +199,56 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 	}
 
 	// Format an ISO date string as a locale-aware date.
-	function formatDate(iso: string | undefined): string {
+	function formatDate(iso: string | undefined | null): string {
 		if (!iso) return '—';
 		const d = new Date(iso);
 		return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(i18n.locale);
 	}
 
-	// Route the Edit action to the correct surface by content type.
-	// Composer-editable types go to /create; discussions open their public item page.
-	function editHref(item: ContentItem): string {
-		// Discussions are authored in the forum composer and cannot be edited in
-		// /create; open their public item page instead. (FeedCard uses the same
-		// /content/{slug} route for discussion-type content.)
-		if (item.content_type === 'discussion' && item.slug) {
-			return `/content/${item.slug}`;
-		}
-		if (item.content_type && (CREATE_ALLOWED_TYPES as readonly string[]).includes(item.content_type)) {
+	// Date + time — used for publish_at on the Scheduled tab.
+	function formatDateTime(iso: string | undefined | null): string {
+		if (!iso) return '—';
+		const d = new Date(iso);
+		return isNaN(d.getTime()) ? '—' : d.toLocaleString(i18n.locale, { dateStyle: 'medium', timeStyle: 'short' });
+	}
+
+	// Route the row's primary link to the correct surface by content type.
+	// Only composer-supported types may open /studio/create — the composer
+	// clamps an unknown content_type to its first allowed type, so handing it
+	// a job listing / event / page / etc. would silently rewrite the type on
+	// the next save. Non-composer types link to their canonical public page
+	// (same mapping the feed uses) — or render no link when there is no slug.
+	function isComposerEditable(item: ContentItem): boolean {
+		return !!item.content_type && (CREATE_ALLOWED_TYPES as readonly string[]).includes(item.content_type);
+	}
+
+	function itemHref(item: ContentItem): string | null {
+		if (isComposerEditable(item)) {
 			return `/studio/create?type=${item.content_type}&draft=${item.id}`;
 		}
-		// Fallback for unknown/legacy types — keep the previous behaviour.
-		return `/studio/create?draft=${item.id}`;
+		if (item.slug) {
+			return contentHref({ slug: item.slug, content_type: item.content_type });
+		}
+		return null;
 	}
 
 	let deleteTarget = $state<string | null>(null);
 
 	async function doPublish(id: string) {
+		if (actingId) return;
+		actingId = id;
 		const original = items;
 		actionError = null;
-		const { ok } = await optimisticAction({
+		const { ok, error } = await optimisticAction({
 			apply: () => (items = items.map((i) => (i.id === id ? { ...i, status: 'published' } : i))),
 			rollback: () => (items = original),
 			call: () => publishContent(id)
 		});
 		if (!ok) {
-			actionError = t('dashboard.content.action_error');
+			// Surface the API message (e.g. missing_primary_space) — a bare
+			// "action failed" leaves the user guessing why publish refused.
+			actionError = error?.message || t('dashboard.content.action_error');
+			actingId = null;
 		}
 		// invalidateAll() re-runs the server loader regardless of which tab is
 		// active. Drafts/scheduled fetch /me/drafts and /me/scheduled (not
@@ -227,32 +259,37 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 	}
 
 	async function doArchive(id: string) {
+		if (actingId) return;
+		actingId = id;
 		const original = items;
 		actionError = null;
-		const { ok } = await optimisticAction({
+		const { ok, error } = await optimisticAction({
 			apply: () => (items = items.filter((i) => i.id !== id)),
 			rollback: () => (items = original),
 			call: () => archiveContent(id)
 		});
 		if (!ok) {
-			actionError = t('dashboard.content.action_error');
+			actionError = error?.message || t('dashboard.content.action_error');
+			actingId = null;
 		}
 		await invalidateAll();
 	}
 
 	async function doDelete() {
-		if (!deleteTarget) return;
+		if (!deleteTarget || actingId) return;
 		const id = deleteTarget;
+		actingId = id;
 		const original = items;
 		actionError = null;
 		deleteTarget = null;
-		const { ok } = await optimisticAction({
+		const { ok, error } = await optimisticAction({
 			apply: () => (items = items.filter((i) => i.id !== id)),
 			rollback: () => (items = original),
 			call: () => deleteContent(id)
 		});
 		if (!ok) {
-			actionError = t('dashboard.content.action_error');
+			actionError = error?.message || t('dashboard.content.action_error');
+			actingId = null;
 		}
 		await invalidateAll();
 	}
@@ -336,30 +373,57 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 	{:else}
 		<ul class="space-y-2">
 			{#each items as item (item.id)}
+				{@const href = itemHref(item)}
 				<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
 					<div class="min-w-0">
 						<p class="truncate text-sm font-medium text-[var(--color-text)]">{item.title ?? t('dashboard.content.untitled')}</p>
 						<p class="text-xs text-[var(--color-muted)]">
 							{typeLabel(item.content_type)} · {formatDate(item.created_at)}
+							{#if item.status === 'scheduled' && item.publish_at}
+								· {t('dashboard.content.scheduled_for', 'Scheduled for')} {formatDateTime(item.publish_at)}
+							{/if}
 							{#if item.view_count !== undefined} · {item.view_count} {t('dashboard.content.views')}{/if}
 							{#if item.comment_count !== undefined} · {item.comment_count} {t('dashboard.content.comments')}{/if}
 						</p>
 					</div>
-					<div class="ml-3 flex shrink-0 gap-2">
-						<a href={editHref(item)} class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]">
-							{item.content_type === 'discussion' ? t('common.view', 'View') : t('dashboard.content.edit')}
-						</a>
-						{#if item.status === 'draft' || item.status === 'scheduled'}
-							<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={() => doPublish(item.id)}>
-								{t('dashboard.content.publish')}
+					<div class="ml-3 flex shrink-0 items-center gap-2">
+						{#if actingId === item.id}
+							<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
+						{:else}
+							{#if href}
+								<a href={href} class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]">
+									{isComposerEditable(item) ? t('dashboard.content.edit') : t('common.view', 'View')}
+								</a>
+							{/if}
+							{#if item.status === 'draft' || item.status === 'scheduled' || item.status === 'archived'}
+								<button
+									type="button"
+									class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
+									disabled={!!actingId}
+									onclick={() => doPublish(item.id)}
+								>
+									{item.status === 'archived' ? t('dashboard.content.restore', 'Restore') : t('dashboard.content.publish')}
+								</button>
+							{/if}
+							{#if item.status !== 'archived'}
+								<button
+									type="button"
+									class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
+									disabled={!!actingId}
+									onclick={() => doArchive(item.id)}
+								>
+									{t('dashboard.content.archive')}
+								</button>
+							{/if}
+							<button
+								type="button"
+								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)] disabled:opacity-50"
+								disabled={!!actingId}
+								onclick={() => (deleteTarget = item.id)}
+							>
+								{t('dashboard.content.delete')}
 							</button>
 						{/if}
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={() => doArchive(item.id)}>
-							{t('dashboard.content.archive')}
-						</button>
-						<button type="button" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]" onclick={() => (deleteTarget = item.id)}>
-							{t('dashboard.content.delete')}
-						</button>
 					</div>
 				</li>
 			{/each}
@@ -383,7 +447,8 @@ import { FileText, Search, Loader2, X } from 'lucide-svelte';
 
 	<Dialog.Root open={deleteTarget !== null} onOpenChange={(v) => { if (!v) deleteTarget = null; }}>
 		<Dialog.Portal>
-			<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
+			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
+			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
 				<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">{t('dashboard.content.delete_confirm')}</Dialog.Title>
 				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">{t('dashboard.content.delete_confirm_body')}</Dialog.Description>
 				<div class="flex justify-end gap-2">

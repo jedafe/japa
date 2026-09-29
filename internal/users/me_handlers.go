@@ -380,15 +380,16 @@ func (h *Handlers) DisconnectAccount(w http.ResponseWriter, r *http.Request) {
 
 // ContentListItem represents a content item in list responses.
 type ContentListItem struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Slug         string `json:"slug"`
-	ContentType  string `json:"content_type"`
-	Status       string `json:"status"`
-	ViewCount    int32  `json:"view_count"`
-	CommentCount int32  `json:"comment_count"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID           string  `json:"id"`
+	Title        string  `json:"title"`
+	Slug         string  `json:"slug"`
+	ContentType  string  `json:"content_type"`
+	Status       string  `json:"status"`
+	ViewCount    int32   `json:"view_count"`
+	CommentCount int32   `json:"comment_count"`
+	PublishAt    *string `json:"publish_at"`
+	CreatedAt    string  `json:"created_at"`
+	UpdatedAt    string  `json:"updated_at"`
 }
 
 // ListMyContent handles GET /api/v1/me/content.
@@ -588,6 +589,35 @@ func (h *Handlers) ListMyInReview(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 
 	content, err := h.Service.ListUserContentByStatus(r.Context(), user.UserID, "in_review", contentType, q, sort, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.resolveLiterals(r, &content)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": content})
+}
+
+// ListMyArchived handles GET /api/v1/me/archived. Archiving is currently a
+// one-way door without this listing — archived content belongs to no other
+// /me/* status feed, so the author could never see or restore it. The
+// /studio/contents "Archived" tab uses it; POST /content/{id}/publish
+// restores an item back to published.
+func (h *Handlers) ListMyArchived(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit := parsePageSize(r)
+	offset := parsePageOffset(r)
+
+	contentType := r.URL.Query().Get("type")
+	q := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+
+	content, err := h.Service.ListUserContentByStatus(r.Context(), user.UserID, "archived", contentType, q, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

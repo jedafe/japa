@@ -27,10 +27,11 @@ export function contentQueryString(opts: {
  */
 export function contentBase(
 	status?: string
-): '/me/drafts' | '/me/scheduled' | '/me/in-review' | '/me/content' {
+): '/me/drafts' | '/me/scheduled' | '/me/in-review' | '/me/archived' | '/me/content' {
 	if (status === 'draft') return '/me/drafts';
 	if (status === 'scheduled') return '/me/scheduled';
 	if (status === 'in_review') return '/me/in-review';
+	if (status === 'archived') return '/me/archived';
 	return '/me/content';
 }
 

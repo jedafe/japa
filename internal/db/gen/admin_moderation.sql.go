@@ -221,6 +221,7 @@ const checkUserBanExists = `-- name: CheckUserBanExists :one
 SELECT EXISTS(
  SELECT 1 FROM user_moderation_actions
  WHERE user_id = $1 AND action IN ('ban', 'suspension')
+ AND deleted_at IS NULL
  AND (expires_at IS NULL OR expires_at > now())
 )
 `
@@ -366,6 +367,7 @@ func (q *Queries) GetModerationAppeal(ctx context.Context, id pgtype.UUID) (GetM
 const getUserBanExpiration = `-- name: GetUserBanExpiration :one
 SELECT expires_at FROM user_moderation_actions
 WHERE user_id = $1 AND action IN ('ban', 'suspension')
+AND deleted_at IS NULL
 AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC LIMIT 1
 `
@@ -830,6 +832,18 @@ WHERE user_id = $1 AND action = 'ban' AND deleted_at IS NULL
 
 func (q *Queries) SoftDeleteUserBan(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteUserBan, userID)
+	return err
+}
+
+const softDeleteUserSuspension = `-- name: SoftDeleteUserSuspension :exec
+UPDATE user_moderation_actions SET deleted_at = now()
+WHERE user_id = $1 AND action = 'suspension' AND deleted_at IS NULL
+`
+
+// Unsuspend path: removes the 'suspension' moderation-action row created by
+// POST /admin/users/{id}/suspend so ban-enforcement stops blocking the user.
+func (q *Queries) SoftDeleteUserSuspension(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteUserSuspension, userID)
 	return err
 }
 

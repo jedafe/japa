@@ -4,16 +4,16 @@
 	// (reason input) and Delete confirmation, plus a page-local Edit SlideOver
 	// (name + visibility). View opens via ctx.openView; Manage navigates to the
 	// dedicated detail route.
-	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
+	import { EntityPage, type EntityPageConfig, type EntityPageController } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
 	import { SlideOver } from "$lib/components/ui/slide-over";
-	import { Select } from "$lib/components/ui/select";
-	import { spacesAdminApi, contentAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
+	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
+	import { spacesAdminApi, adminCatalogApi, spaceTypesApi, type CatalogOption } from "$lib/api";
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
-	import { Eye, Pencil, Trash2, SlidersHorizontal } from "lucide-svelte";
+	import { Eye, Pencil, Plus, Trash2, SlidersHorizontal } from "lucide-svelte";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
 
 	type Space = {
@@ -41,18 +41,12 @@
 
 	$effect(() => {
 		void (async () => {
-			const res = await contentAdminApi.getVisibilityOptions();
-			if (res.ok && res.data) {
+			const res = await adminCatalogApi.get("spaces.visibility");
+			if (res.ok && res.data?.length) {
 				visibilityOptions = res.data;
 			}
 		})();
 	});
-
-	let levelOptions = $state<CatalogOption[]>([
-		{ value: "1", label: "1" },
-		{ value: "2", label: "2" },
-		{ value: "3", label: "3" }
-	]);
 
 	let spaceStatusOptions = $state<CatalogOption[]>([
 		{ value: "active", label: t("spaces.active", "Active") },
@@ -62,12 +56,24 @@
 
 	$effect(() => {
 		void (async () => {
-			const [levelRes, statusRes] = await Promise.all([
-				adminCatalogApi.get("spaces.level"),
-				adminCatalogApi.get("spaces.status")
-			]);
-			if (levelRes.ok && levelRes.data?.length) levelOptions = levelRes.data;
+			const statusRes = await adminCatalogApi.get("spaces.status");
 			if (statusRes.ok && statusRes.data?.length) spaceStatusOptions = statusRes.data;
+		})();
+	});
+
+	// Space-type filter options come from GET /admin/space-types — the backend
+	// is the source of truth for the set of types (Rule 16).
+	let spaceTypeOptions = $state<{ value: string; label: string }[]>([]);
+
+	$effect(() => {
+		void (async () => {
+			const res = await spaceTypesApi.list();
+			if (res.ok && Array.isArray(res.data)) {
+				spaceTypeOptions = (res.data as { id: string; name: string }[]).map((st) => ({
+					value: st.id,
+					label: st.name
+				}));
+			}
 		})();
 	});
 
@@ -92,6 +98,8 @@
 	let suspendReason = $state("");
 
 	// ── Filters ─────────────────────────────────────────────────────────────
+	// Option filters render through FilterPanel's Autocomplete path — every
+	// dropdown on this surface uses the shared Autocomplete.svelte.
 	const filterDefs = $derived<FilterDef[]>([
 		{
 			key: "status",
@@ -103,6 +111,11 @@
 			label: t("spaces.visibility", "Visibility"),
 			options: visibilityOptions
 		},
+		{
+			key: "space_type",
+			label: t("spaces.space_type", "Type"),
+			options: spaceTypeOptions
+		},
 		// Soft-deleted spaces are hidden by default — this filter surfaces
 		// them so the Force Delete action has targets.
 		{
@@ -113,16 +126,6 @@
 				{ value: "all", label: t("common.filter_deleted_all", "Include deleted") }
 			]
 		}
-	]);
-
-	// ── Create form fields ──────────────────────────────────────────────────
-	const fields = $derived<FieldDef[]>([
-		{ key: "name", label: t("spaces.name", "Name"), type: "text", required: true },
-		{ key: "slug", label: t("spaces.slug", "Slug"), type: "text", placeholder: "my-space" },
-		{ key: "space_type_id", label: t("spaces.space_type", "Space Type ID"), type: "text", placeholder: "e.g. standard" },
-		{ key: "level", label: t("spaces.level", "Level"), type: "select", options: levelOptions },
-		{ key: "visibility", label: t("spaces.visibility", "Visibility"), type: "select", options: visibilityOptions },
-		{ key: "description", label: t("spaces.description", "Description"), type: "textarea" }
 	]);
 
 	// ── Row actions ─────────────────────────────────────────────────────────
@@ -175,17 +178,23 @@
 	const config = $derived<EntityPageConfig>({
 		title: t("spaces.title", "Spaces"),
 		description: t("spaces.description", "Manage platform spaces"),
-		createLabel: t("spaces.create", "Create Space"),
 		createPermission: "spaces.admin",
+		// No built-in EntityForm — spaces use the dedicated /spaces/new page
+		// and a page-local edit SlideOver (type/level/parent can't be edited
+		// through the generic form anyway). hideCreate suppresses the generic
+		// Create button; the "Create Space" header action navigates instead.
+		fields: [],
+		hideCreate: true,
 		pageSize: 25,
 		columns: [
 			{ key: "name", label: t("spaces.name", "Name"), sortable: true },
-			{ key: "owner", label: t("spaces.owner", "Owner") },
-			{ key: "member_count", label: t("spaces.members", "Members"), render: (v: number) => (v ?? 0).toLocaleString() },
-			{ key: "visibility", label: t("spaces.visibility", "Visibility"), render: (v: string) => (v ? t(`spaces.perm.${v}`, v) : "—") },
+			{ key: "owner", label: t("spaces.owner", "Owner"), sortable: true, render: (v: string) => v || "—" },
+			{ key: "member_count", label: t("spaces.members", "Members"), sortable: true, render: (v: number) => (v ?? 0).toLocaleString() },
+			{ key: "visibility", label: t("spaces.visibility", "Visibility"), sortable: true, render: (v: string) => (v ? t(`spaces.perm.${v}`, v) : "—") },
 			{
 				key: "status",
 				label: t("spaces.status", "Status"),
+				sortable: true,
 				render: (v: string, row: Space) => {
 					if (row.deleted_at) {
 						return `<span class="inline-block rounded-full px-2 py-0.5 text-xs bg-danger/15 text-danger dark:text-danger">${t("common.filter_deleted", "Deleted")}</span>`;
@@ -195,20 +204,12 @@
 					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs ${cls}">${label}</span>`;
 				}
 			},
-			{ key: "space_type", label: t("spaces.space_type", "Type") },
-			{ key: "created_at", label: t("spaces.created", "Created"), render: (v: string) => new Date(v).toLocaleDateString() }
+			{ key: "space_type", label: t("spaces.space_type", "Type"), sortable: true },
+			{ key: "created_at", label: t("spaces.created", "Created"), sortable: true, render: (v: string) => new Date(v).toLocaleDateString() }
 		],
 		filters: filterDefs,
 		actions: rowActions,
 		bulkActions: canManageSpaces ? [
-			{
-				label: t("common.delete_selected", "Delete Selected"),
-				icon: Trash2,
-				variant: "destructive",
-				onclick: bulkDelete,
-				// Rows already soft-deleted can't be deleted again.
-				disabled: (_ids, rows) => (rows ?? []).some((r) => !!r.deleted_at)
-			},
 			{
 				label: t("common.force_delete", "Force Delete Selected"),
 				icon: Trash2,
@@ -217,11 +218,11 @@
 				disabled: (ids) => acting || !spaceRowsFor(ids).some((r) => !!r.deleted_at)
 			}
 		] : [],
-		fields,
 		headerActions: canManageSpaces ? [
+			{ label: t("spaces.create", "Create Space"), icon: Plus, onclick: () => goto("/spaces/new") },
 			{ label: t("spaces.presets_title", "Permission Presets"), icon: SlidersHorizontal, onclick: () => goto("/spaces/presets"), variant: "ghost" }
 		] : [],
-		load: async ({ page, pageSize, q, filter }) => {
+		load: async ({ page, pageSize, q, sort, filter }) => {
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
 				page_offset: String(page * pageSize)
@@ -229,7 +230,15 @@
 			if (q) params.set("q", q);
 			if (filter?.status) params.set("status", filter.status);
 			if (filter?.visibility) params.set("visibility", filter.visibility);
+			if (filter?.space_type) params.set("space_type_id", filter.space_type);
 			if (filter?.deleted) params.set("deleted", filter.deleted);
+			// EntityPage passes sort as "key:dir"; the backend whitelist
+			// (spaces.sql AdminListSpaces) ignores unknown keys.
+			if (sort) {
+				const [key, dir] = sort.split(":");
+				if (key) params.set("sort", key);
+				if (dir === "asc" || dir === "desc") params.set("dir", dir);
+			}
 			const result = await spacesAdminApi.list(params.toString());
 			if (result.ok) {
 				const d = result.data as Space[] | { items: Space[]; total: number; total_pages: number };
@@ -247,24 +256,6 @@
 				};
 			}
 			throw new Error(result.error ?? t("common.error", "Failed to load spaces"));
-		},
-		create: async (body) => {
-			const res = await spacesAdminApi.create({
-				name: String(body.name ?? "").trim(),
-				slug: String(body.slug ?? "").trim(),
-				space_type_id: String(body.space_type_id ?? "").trim(),
-				level: String(body.level ?? "1"),
-				visibility: String(body.visibility ?? "public"),
-				description: String(body.description ?? "").trim() || undefined
-			} as any);
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
-		},
-		update: async (id, body) => {
-			const res = await spacesAdminApi.update(id, {
-				name: String(body.name ?? "").trim() || undefined,
-				visibility: String(body.visibility ?? "").trim() || undefined
-			});
-			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		remove: async (id) => {
 			const res = await spacesAdminApi.delete(id);
@@ -350,20 +341,8 @@
 		}
 	}
 
-	let bulkDeleting = $state(false);
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0 || bulkDeleting) return;
-		bulkDeleting = true;
-		pageError = "";
-		try {
-			await Promise.all(idArr.map((id) => spacesAdminApi.delete(id)));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t("common.error", "Failed to delete spaces");
-		} finally {
-			bulkDeleting = false;
-		}
-	}
+	// Soft "Delete Selected" is EntityPage's built-in (confirm-gated, per-row
+	// failure reporting); only the Force Delete bulk action is page-local.
 
 	// ── Force delete (spaces.admin) — single + bulk share one confirm modal ──
 	// BulkAction.onclick receives only ids — resolve them against a map of
@@ -441,7 +420,17 @@
 			</div>
 			<div>
 				<label for="edit-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('spaces.visibility')}</label>
-				<Select options={visibilityOptions} bind:value={editVisibility} />
+				<Autocomplete
+					id="edit-type"
+					placeholder={t("spaces.visibility", "Visibility")}
+					emptyMessage={t("common.no_data", "No options")}
+					fetcher={async (q: string) => visibilityOptions.filter((o) => o.label.toLowerCase().includes(q.toLowerCase()) || o.value.toLowerCase().includes(q.toLowerCase())).map((o) => ({ id: o.value, label: o.label }))}
+					initialFetcher={async () => visibilityOptions.map((o) => ({ id: o.value, label: o.label }))}
+					selectedId={editVisibility || null}
+					selectedLabel={visibilityOptions.find((o) => o.value === editVisibility)?.label ?? editVisibility}
+					onSelect={(item: AutocompleteItem) => (editVisibility = item.id)}
+					onClear={() => (editVisibility = "")}
+				/>
 			</div>
 		</div>
 	{/if}
@@ -521,7 +510,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.owner')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.owner}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.owner || "—"}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('spaces.members')}</p>

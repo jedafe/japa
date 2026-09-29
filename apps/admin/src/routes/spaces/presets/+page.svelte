@@ -2,8 +2,9 @@
 	import PageHeader from "$lib/components/layout/page-header.svelte";
 	import { Card, CardContent, CardHeader } from "$lib/components/ui/card";
 	import { Button } from "$lib/components/ui/button";
+	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
 	import { ArrowLeft, Save, RefreshCw, Lock } from "lucide-svelte";
-	import { permissionPresetsApi, type PermissionPreset } from "$lib/api";
+	import { permissionPresetsApi, adminCatalogApi, type CatalogOption, type PermissionPreset } from "$lib/api";
 	import { goto } from "$app/navigation";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
@@ -20,13 +21,31 @@
 
 	const canManage = $derived(hasPermission("spaces.admin"));
 
-	const visibilityOptions = ["public", "members", "private"];
-	const postingOptions = ["open", "members", "verified", "moderators", "admins"];
-	const joiningOptions = ["open", "request", "invite"];
+	// Axis option sets come from the admin catalogs — same values the
+	// backend validates against (spaces.go ValidPermissionAxes).
+	let visibilityOptions = $state<CatalogOption[]>([]);
+	let postingOptions = $state<CatalogOption[]>([]);
+	let joiningOptions = $state<CatalogOption[]>([]);
 
 	// permLabel resolves a permission axis value to a human-readable i18n label.
 	function permLabel(opt: string): string {
 		return t(`spaces.perm.${opt}`, opt.charAt(0).toUpperCase() + opt.slice(1));
+	}
+
+	const axisItems = (opts: CatalogOption[], q: string): AutocompleteItem[] =>
+		opts
+			.filter((o) => permLabel(o.value).toLowerCase().includes(q.toLowerCase()) || o.value.includes(q.toLowerCase()))
+			.map((o) => ({ id: o.value, label: permLabel(o.value) }));
+
+	async function loadAxisOptions() {
+		const [vis, post, join] = await Promise.all([
+			adminCatalogApi.get("spaces.visibility"),
+			adminCatalogApi.get("spaces.posting_perm"),
+			adminCatalogApi.get("spaces.joining_perm")
+		]);
+		if (vis.ok && vis.data?.length) visibilityOptions = vis.data;
+		if (post.ok && post.data?.length) postingOptions = post.data;
+		if (join.ok && join.data?.length) joiningOptions = join.data;
 	}
 
 	async function loadPresets() {
@@ -79,8 +98,31 @@
 
 	$effect(() => {
 		loadPresets();
+		loadAxisOptions();
 	});
 </script>
+
+<!-- One axis picker — renders Autocomplete when editable, read-only text
+     for viewers without spaces.admin. -->
+{#snippet AxisField({ draft, key, label, options }: { draft: PermissionPreset; key: "visibility" | "posting_perm" | "replying_perm" | "commenting_perm" | "joining_perm"; label: string; options: CatalogOption[] })}
+	<div>
+		<span class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">{label}</span>
+		{#if canManage}
+			<Autocomplete
+				id={`axis-${draft.name}-${key}`}
+				placeholder={label}
+				emptyMessage={t("common.no_data", "No options")}
+				fetcher={async (q: string) => axisItems(options, q)}
+				initialFetcher={async () => axisItems(options, "")}
+				selectedId={draft[key] || null}
+				selectedLabel={permLabel(draft[key])}
+				onSelect={(item: AutocompleteItem) => { draft[key] = item.id; }}
+			/>
+		{:else}
+			<p class="rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); color: var(--color-foreground)">{permLabel(draft[key])}</p>
+		{/if}
+	</div>
+{/snippet}
 
 <svelte:head>
 	<title>{t("spaces.presets_title", "Permission Presets")} — JapaConnect Admin</title>
@@ -147,81 +189,11 @@
 				<CardContent>
 					{#if draft}
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-5">
-							<div>
-								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
-									{t("spaces.visibility", "Visibility")}
-									<select
-										class="w-full rounded-lg border px-2 py-1.5 text-sm"
-										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-										bind:value={draft.visibility}
-										disabled={!canManage}
-									>
-										{#each visibilityOptions as opt (opt)}
-											<option value={opt}>{permLabel(opt)}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
-							<div>
-								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
-									{t("spaces.posting", "Posting")}
-									<select
-										class="w-full rounded-lg border px-2 py-1.5 text-sm"
-										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-										bind:value={draft.posting_perm}
-										disabled={!canManage}
-									>
-										{#each postingOptions as opt (opt)}
-											<option value={opt}>{permLabel(opt)}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
-							<div>
-								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
-									{t("spaces.replying", "Replying")}
-									<select
-										class="w-full rounded-lg border px-2 py-1.5 text-sm"
-										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-										bind:value={draft.replying_perm}
-										disabled={!canManage}
-									>
-										{#each postingOptions as opt (opt)}
-											<option value={opt}>{permLabel(opt)}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
-							<div>
-								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
-									{t("spaces.commenting", "Commenting")}
-									<select
-										class="w-full rounded-lg border px-2 py-1.5 text-sm"
-										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-										bind:value={draft.commenting_perm}
-										disabled={!canManage}
-									>
-										{#each postingOptions as opt (opt)}
-											<option value={opt}>{permLabel(opt)}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
-							<div>
-								<label class="mb-1 block text-xs font-medium" style="color: var(--color-muted-foreground)">
-									{t("spaces.joining", "Joining")}
-									<select
-										class="w-full rounded-lg border px-2 py-1.5 text-sm"
-										style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-										bind:value={draft.joining_perm}
-										disabled={!canManage}
-									>
-										{#each joiningOptions as opt (opt)}
-											<option value={opt}>{permLabel(opt)}</option>
-										{/each}
-									</select>
-								</label>
-							</div>
+							{@render AxisField({ draft, key: "visibility", label: t("spaces.visibility", "Visibility"), options: visibilityOptions })}
+							{@render AxisField({ draft, key: "posting_perm", label: t("spaces.posting", "Posting"), options: postingOptions })}
+							{@render AxisField({ draft, key: "replying_perm", label: t("spaces.replying", "Replying"), options: postingOptions })}
+							{@render AxisField({ draft, key: "commenting_perm", label: t("spaces.commenting", "Commenting"), options: postingOptions })}
+							{@render AxisField({ draft, key: "joining_perm", label: t("spaces.joining", "Joining"), options: joiningOptions })}
 						</div>
 					{/if}
 				</CardContent>

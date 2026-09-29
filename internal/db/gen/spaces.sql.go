@@ -101,24 +101,46 @@ LEFT JOIN space_types st ON st.id = s.space_type_id
 WHERE ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR s.status = $2)
  AND ($3::text = '' OR s.visibility = $3)
+ AND ($4::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $4)
  -- Soft-deleted spaces are hidden by default; ?deleted=only|all surfaces
  -- them so admins can force-delete (same contract as AdminListWikiPages).
- AND CASE $4::text
+ AND CASE $5::text
        WHEN 'only' THEN s.deleted_at IS NOT NULL
        WHEN 'all'  THEN true
        ELSE s.deleted_at IS NULL
      END
-ORDER BY s.created_at DESC, s.id DESC
-LIMIT $6 OFFSET $5
+ -- ORDER BY uses whitelisted CASE keys — only the active (sort_key, sort_dir)
+ -- pair produces non-NULL values, so each inactive key is a no-op and the
+ -- final created_at DESC fallback keeps the default newest-first ordering.
+ORDER BY
+ CASE WHEN $6::text = 'name'         AND $7::text = 'asc'  THEN s.name         END ASC,
+ CASE WHEN $6::text = 'name'         AND $7::text = 'desc' THEN s.name         END DESC,
+ CASE WHEN $6::text = 'owner'        AND $7::text = 'asc'  THEN u.username     END ASC,
+ CASE WHEN $6::text = 'owner'        AND $7::text = 'desc' THEN u.username     END DESC,
+ CASE WHEN $6::text = 'member_count' AND $7::text = 'asc'  THEN s.member_count END ASC,
+ CASE WHEN $6::text = 'member_count' AND $7::text = 'desc' THEN s.member_count END DESC,
+ CASE WHEN $6::text = 'visibility'   AND $7::text = 'asc'  THEN s.visibility   END ASC,
+ CASE WHEN $6::text = 'visibility'   AND $7::text = 'desc' THEN s.visibility   END DESC,
+ CASE WHEN $6::text = 'status'       AND $7::text = 'asc'  THEN s.status       END ASC,
+ CASE WHEN $6::text = 'status'       AND $7::text = 'desc' THEN s.status       END DESC,
+ CASE WHEN $6::text = 'space_type'   AND $7::text = 'asc'  THEN st.name        END ASC,
+ CASE WHEN $6::text = 'space_type'   AND $7::text = 'desc' THEN st.name        END DESC,
+ CASE WHEN $6::text = 'created_at'   AND $7::text = 'asc'  THEN s.created_at   END ASC,
+ CASE WHEN $6::text = 'created_at'   AND $7::text = 'desc' THEN s.created_at   END DESC,
+ s.created_at DESC, s.id DESC
+LIMIT $9 OFFSET $8
 `
 
 type AdminListSpacesParams struct {
-	Search     string `json:"search"`
-	Status     string `json:"status"`
-	Visibility string `json:"visibility"`
-	Deleted    string `json:"deleted"`
-	OffsetVal  int32  `json:"offset_val"`
-	LimitVal   int32  `json:"limit_val"`
+	Search      string      `json:"search"`
+	Status      string      `json:"status"`
+	Visibility  string      `json:"visibility"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	Deleted     string      `json:"deleted"`
+	SortKey     string      `json:"sort_key"`
+	SortDir     string      `json:"sort_dir"`
+	OffsetVal   int32       `json:"offset_val"`
+	LimitVal    int32       `json:"limit_val"`
 }
 
 type AdminListSpacesRow struct {
@@ -156,7 +178,10 @@ func (q *Queries) AdminListSpaces(ctx context.Context, arg AdminListSpacesParams
 		arg.Search,
 		arg.Status,
 		arg.Visibility,
+		arg.SpaceTypeID,
 		arg.Deleted,
+		arg.SortKey,
+		arg.SortDir,
 		arg.OffsetVal,
 		arg.LimitVal,
 	)
@@ -212,7 +237,8 @@ FROM spaces s
 WHERE ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR s.status = $2)
  AND ($3::text = '' OR s.visibility = $3)
- AND CASE $4::text
+ AND ($4::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = $4)
+ AND CASE $5::text
        WHEN 'only' THEN s.deleted_at IS NOT NULL
        WHEN 'all'  THEN true
        ELSE s.deleted_at IS NULL
@@ -220,10 +246,11 @@ WHERE ($1::text = '' OR s.name ILIKE '%' || $1 || '%' OR s.slug ILIKE '%' || $1 
 `
 
 type AdminListSpacesCountParams struct {
-	Search     string `json:"search"`
-	Status     string `json:"status"`
-	Visibility string `json:"visibility"`
-	Deleted    string `json:"deleted"`
+	Search      string      `json:"search"`
+	Status      string      `json:"status"`
+	Visibility  string      `json:"visibility"`
+	SpaceTypeID pgtype.UUID `json:"space_type_id"`
+	Deleted     string      `json:"deleted"`
 }
 
 func (q *Queries) AdminListSpacesCount(ctx context.Context, arg AdminListSpacesCountParams) (int64, error) {
@@ -231,6 +258,7 @@ func (q *Queries) AdminListSpacesCount(ctx context.Context, arg AdminListSpacesC
 		arg.Search,
 		arg.Status,
 		arg.Visibility,
+		arg.SpaceTypeID,
 		arg.Deleted,
 	)
 	var total int64

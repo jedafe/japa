@@ -83,6 +83,10 @@
 		/** Set false to suppress the built-in "Delete Selected" bulk action that
 		 *  appears when `remove` is configured. Default: enabled when removable. */
 		bulkDelete?: boolean;
+		/** Set true to hide the built-in "Create" header button — for pages that
+		 *  create rows through a dedicated route or `headerActions` instead of
+		 *  the generic EntityForm slide-over. Default: shown when permitted. */
+		hideCreate?: boolean;
 		/** Show an Export button that downloads all filtered rows as CSV. */
 		exportable?: boolean;
 		/** Custom filename for the CSV export (without extension). Default: `${title}-export`. */
@@ -191,7 +195,7 @@
 	// the derived value never re-evaluates when permissions load after mount.
 	const canCreate = $derived.by(() => {
 		void getPermissionState();
-		return !config.readonly && (!config.createPermission || hasPermission(config.createPermission));
+		return !config.readonly && !config.hideCreate && (!config.createPermission || hasPermission(config.createPermission));
 	});
 	const canEdit = $derived.by(() => {
 		void getPermissionState();

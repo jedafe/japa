@@ -2,6 +2,8 @@
 	import { ActionCell } from '$lib/components/ui/data-table';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { Pencil, Trash2 } from 'lucide-svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -113,17 +115,33 @@
 		<div>
 			<p class="mb-2 text-xs font-medium" style="color: var(--color-muted)">{t('users.groups.permissions', 'Permissions')}</p>
 			<div class="mb-2 flex gap-2">
-				<select
-					class="flex-1 rounded-md border px-2 py-1.5 text-xs"
-					style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-					bind:value={permCategory}
-				>
-					<option value="">All categories</option>
-					{#each permissionCategories() as cat (cat)}
-						<option value={cat}>{cat}</option>
-					{/each}
-					<option value="other">Other</option>
-				</select>
+				<div class="flex-1">
+					<!-- 'all' sentinel maps to '' (all categories) -->
+					<Autocomplete
+						id="edit-group-perm-category"
+						placeholder={t('users.groups.all_categories', 'All categories')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={async (q: string) => {
+							const needle = q.trim().toLowerCase();
+							return [
+								{ id: 'all', label: t('users.groups.all_categories', 'All categories') },
+								...permissionCategories().map((c) => ({ id: c, label: c })),
+								{ id: 'other', label: t('users.groups.other', 'Other') }
+							].filter((o) => !needle || o.label.toLowerCase().includes(needle));
+						}}
+						initialFetcher={async () => [
+							{ id: 'all', label: t('users.groups.all_categories', 'All categories') },
+							...permissionCategories().map((c) => ({ id: c, label: c })),
+							{ id: 'other', label: t('users.groups.other', 'Other') }
+						]}
+						selectedId={permCategory || 'all'}
+						selectedLabel={permCategory
+							? (permCategory === 'other' ? t('users.groups.other', 'Other') : permCategory)
+							: t('users.groups.all_categories', 'All categories')}
+						onSelect={(item: AutocompleteItem) => { permCategory = item.id === 'all' ? '' : item.id; }}
+						onClear={() => { permCategory = ''; }}
+					/>
+				</div>
 				<input
 					type="text"
 					class="flex-1 rounded-md border px-2 py-1.5 text-xs"

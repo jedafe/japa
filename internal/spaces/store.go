@@ -13,6 +13,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/rbac"
 	"github.com/jedafe/japa/internal/wallet"
 )
 
@@ -261,16 +262,26 @@ func (s *Service) CountSpaces(ctx context.Context, viewerUserID pgtype.UUID, sea
 
 // AdminListSpaces returns paginated spaces for the admin view with owner and
 // space_type name resolved via JOINs. Search, status, and visibility filters
-// are applied at the SQL level — pass "" for no filter.
-func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibility, deleted string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
+// are applied at the SQL level — pass "" for no filter. sortKey/sortDir are
+// whitelisted at the SQL level — unknown values fall back to created_at DESC.
+func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibility, deleted string, spaceTypeID pgtype.UUID, sortKey, sortDir string, limit, offset int32) ([]gen.AdminListSpacesRow, error) {
+	// An unset filter must reach SQL as a valid zero UUID — an invalid
+	// pgtype.UUID serializes as NULL, and "NULL = '00000000-…'" evaluates to
+	// NULL, silently filtering out every row.
+	if !spaceTypeID.Valid {
+		spaceTypeID = pgtype.UUID{Valid: true}
+	}
 	rows, err := s.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
 
-		Search:     search,
-		Status:     status,
-		Visibility: visibility,
-		Deleted:    deleted,
-		LimitVal:   limit,
-		OffsetVal:  offset,
+		Search:      search,
+		Status:      status,
+		Visibility:  visibility,
+		SpaceTypeID: spaceTypeID,
+		Deleted:     deleted,
+		SortKey:     sortKey,
+		SortDir:     sortDir,
+		LimitVal:    limit,
+		OffsetVal:   offset,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("admin listing spaces: %w", err)
@@ -280,15 +291,19 @@ func (s *Service) AdminListSpaces(ctx context.Context, search, status, visibilit
 }
 
 // AdminListSpacesCount returns the total number of spaces for the platform,
-// respecting the same search/status/visibility/deleted filters as
+// respecting the same search/status/visibility/space-type/deleted filters as
 // AdminListSpaces.
-func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visibility, deleted string) (int64, error) {
+func (s *Service) AdminListSpacesCount(ctx context.Context, search, status, visibility, deleted string, spaceTypeID pgtype.UUID) (int64, error) {
+	if !spaceTypeID.Valid {
+		spaceTypeID = pgtype.UUID{Valid: true}
+	}
 	count, err := s.read.AdminListSpacesCount(ctx, gen.AdminListSpacesCountParams{
 
-		Search:     search,
-		Status:     status,
-		Visibility: visibility,
-		Deleted:    deleted,
+		Search:      search,
+		Status:      status,
+		Visibility:  visibility,
+		SpaceTypeID: spaceTypeID,
+		Deleted:     deleted,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("admin counting spaces: %w", err)
@@ -1384,6 +1399,13 @@ func (s *Service) AssignModerator(ctx context.Context, params gen.AssignSpaceMod
 		return fmt.Errorf("assigning space moderator: %w", err)
 	}
 
+	// space_moderators insert → invalidate the target user's permission cache
+	// (Rule 6). Failure to invalidate is non-fatal: the cache entry expires.
+	if err := rbac.InvalidatePermCache(ctx, s.vk, params.UserID); err != nil {
+		slog.WarnContext(ctx, "perm cache invalidation failed after moderator assign",
+			"user_id", params.UserID.String(), "error", err)
+	}
+
 	return nil
 }
 
@@ -1395,6 +1417,13 @@ func (s *Service) RemoveModerator(ctx context.Context, spaceID, userID pgtype.UU
 		UserID:  userID,
 	}); err != nil {
 		return fmt.Errorf("removing space moderator: %w", err)
+	}
+
+	// space_moderators delete → invalidate the target user's permission cache
+	// (Rule 6). Failure to invalidate is non-fatal: the cache entry expires.
+	if err := rbac.InvalidatePermCache(ctx, s.vk, userID); err != nil {
+		slog.WarnContext(ctx, "perm cache invalidation failed after moderator removal",
+			"user_id", userID.String(), "error", err)
 	}
 
 	return nil

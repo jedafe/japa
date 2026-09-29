@@ -11,6 +11,7 @@
 	import { validateFrontmatter, validateBody, isHighStakesCategory } from '$lib/studio/validation';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
 	import { FileUp, CheckCircle2, AlertCircle, Copy, Check, Save } from 'lucide-svelte';
 
 	const STUDIO_PROMPTS_TAG = 'app:studio-prompts';
@@ -35,7 +36,7 @@
 	let bodyError = $state('');
 	let submitting = $state(false);
 	let copiedMd = $state(false);
-	let result = $state<{ ok?: boolean; error?: string; message?: string; id?: string } | null>(null);
+	let result = $state<{ ok?: boolean; error?: string; message?: string; id?: string; contentType?: string } | null>(null);
 
 	const categories = $derived(
 		contentTypes.find((ct) => ct.value === str('content_type'))?.categories ?? []
@@ -94,7 +95,15 @@
 			status = 'in_review';
 			fm = { ...fm, status };
 		}
-		errors = validateFrontmatter(fm, status, 'member');
+		// Validate against the API catalogs (Rule 16) — the hardcoded fallback
+		// lists in validateFrontmatter only apply when the catalogs are empty.
+		errors = validateFrontmatter(
+			fm,
+			status,
+			'member',
+			statusOptions.map((s) => s.value),
+			visibilityOptions.map((v) => v.value)
+		);
 		bodyError = validateBody(body, status) ?? '';
 	}
 
@@ -172,8 +181,8 @@
 		<div class="mb-3 flex items-center gap-2 text-sm text-[var(--color-success)]">
 			<CheckCircle2 size={16} />
 			{t('studio.prompts.saved', 'Draft saved.')}
-			{#if result.id}
-				<a href="/studio/create?draft={result.id}" class="underline">{t('studio.prompts.open_editor', 'Open in editor')}</a>
+			{#if result.id && result.contentType && (CREATE_ALLOWED_TYPES as readonly string[]).includes(result.contentType)}
+				<a href="/studio/create?type={result.contentType}&draft={result.id}" class="underline">{t('studio.prompts.open_editor', 'Open in editor')}</a>
 			{/if}
 		</div>
 	{:else if result?.error}
@@ -215,8 +224,8 @@
 				return async ({ result: r }) => {
 					submitting = false;
 					if (r.type === 'success') {
-						const data = r.data as { ok?: boolean; error?: string; message?: string; content?: { id?: string } };
-						result = { ...data, id: data.content?.id };
+						const data = r.data as { ok?: boolean; error?: string; message?: string; content?: { id?: string; content_type?: string } };
+						result = { ...data, id: data.content?.id, contentType: data.content?.content_type };
 						if (data.ok) await invalidate(STUDIO_PROMPTS_TAG);
 					}
 				};

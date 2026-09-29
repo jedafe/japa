@@ -38,12 +38,27 @@
 	const assignedParam = $derived(page.url.searchParams.get('assigned') ?? '');
 	const qParam = $derived(page.url.searchParams.get('q') ?? '');
 	const currentPage = $derived(data.queue.page);
+	// page_size is part of the queue contract (spec §4) — the backend clamps
+	// to [1,100] with default 20. The control only offers sane preset sizes.
+	const pageSizeParam = $derived(page.url.searchParams.get('page_size') ?? '20');
+	const pageSizeItems: AutocompleteItem[] = $derived(
+		['10', '20', '50'].map((v) => ({
+			id: v,
+			label: t('studio.moderation.per_page', '{n} / page').replace('{n}', v)
+		}))
+	);
+	const selectedPageSizeLabel = $derived(
+		pageSizeItems.find((i) => i.id === pageSizeParam)?.label ??
+			t('studio.moderation.per_page', '{n} / page').replace('{n}', pageSizeParam)
+	);
 
 	// Rule 16 — status/entity-type options come from the backend catalogs
 	// loaded in +page.server.ts; the labels fall back to the raw value.
+	// 'all' is a UI-only sentinel — +page.server.ts strips it so the backend
+	// sees no status filter (which is its "all" semantics).
 	const statusTabs = $derived([
 		...data.statusOptions.map((o) => ({ key: o.value, label: o.label })),
-		{ key: '', label: t('studio.moderation.status_all', 'All') }
+		{ key: 'all', label: t('studio.moderation.status_all', 'All') }
 	]);
 
 	const typeItems = $derived(
@@ -128,8 +143,13 @@
 			actionError =
 				res.error.code === 'action_not_allowed'
 					? t('studio.moderation.action_not_allowed', 'This action exceeds your moderation scope')
-					: t('studio.moderation.action_error', 'Action failed — please try again');
+					: res.error.code === 'already_resolved'
+						? t('studio.moderation.already_resolved', 'This report was already resolved by another moderator')
+						: res.error.message || t('studio.moderation.action_error', 'Action failed — please try again');
 			actingId = null;
+			// already_resolved means another moderator got there first — the
+			// stale row must disappear, so re-sync even though the call failed.
+			if (res.error.code === 'already_resolved') await invalidateAll();
 			return;
 		}
 		await invalidateAll();
@@ -209,10 +229,10 @@
 		{#each statusTabs as tab (tab.key)}
 			<button
 				type="button"
-				class="rounded-[var(--radius)] px-3 py-1.5 text-sm {statusParam === tab.key || (tab.key === 'pending' && !page.url.searchParams.get('status'))
+				class="rounded-[var(--radius)] px-3 py-1.5 text-sm {statusParam === tab.key
 					? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]'
 					: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
-				onclick={() => applyFilter({ status: tab.key || undefined })}
+				onclick={() => applyFilter({ status: tab.key === 'pending' ? undefined : tab.key })}
 			>
 				{tab.label}
 			</button>
@@ -283,6 +303,20 @@
 					/>
 				</div>
 			{/if}
+			<div class="w-32">
+				<Autocomplete
+					ariaLabel={t('studio.moderation.page_size', 'Page size')}
+					placeholder={t('studio.moderation.page_size', 'Page size')}
+					emptyMessage={t('studio.moderation.no_matches', 'No matches')}
+					fetcher={localFetcher(pageSizeItems)}
+					initialFetcher={async () => pageSizeItems}
+					selectedId={pageSizeParam}
+					selectedLabel={selectedPageSizeLabel}
+					onSelect={(i) => applyFilter({ page_size: i.id === '20' ? undefined : i.id })}
+					onClear={() => applyFilter({ page_size: undefined })}
+					class="w-full"
+				/>
+			</div>
 		</div>
 	</div>
 
@@ -409,7 +443,8 @@
 
 	<Dialog.Root open={pendingAction !== null} onOpenChange={(v) => { if (!v) pendingAction = null; }}>
 		<Dialog.Portal>
-			<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
+			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
+			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
 				<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
 					{#if pendingAction?.action === 'ban'}
 						{t('studio.moderation.confirm_ban', 'Ban user')}

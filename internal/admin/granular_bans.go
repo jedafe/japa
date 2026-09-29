@@ -117,15 +117,27 @@ func (h *Handlers) RestrictUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Set user status to 'restricted'.
-	if err := h.Queries.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
-		Status: "restricted",
-		ID:     uid,
-	}); err != nil {
-		slog.Error("restrict: failed to update user status", "error", err, "user_id", uid.String())
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
-
+	// Set user status to 'restricted' — only when the user is currently
+	// 'active' or already 'restricted'. A 'banned', 'suspended', or
+	// 'deleted' user keeps their status; the operation bans still apply
+	// on top, and lifting them must not resurrect the account.
+	status, serr := h.Queries.GetUserStatus(ctx, uid)
+	if serr != nil {
+		// pgx.ErrNoRows (user doesn't exist) maps to 404 via
+		// HandleServiceError.
+		errpkg.HandleServiceError(w, serr)
 		return
+	}
+	if status == "active" || status == "restricted" {
+		if err := h.Queries.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
+			Status: "restricted",
+			ID:     uid,
+		}); err != nil {
+			slog.Error("restrict: failed to update user status", "error", err, "user_id", uid.String())
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to restrict user")
+
+			return
+		}
 	}
 
 	// Invalidate caches so the new restrictions take effect immediately.
@@ -162,19 +174,35 @@ func (h *Handlers) LiftRestriction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no active restrictions remain, restore user status to 'active'. On a
-	// count failure the status is left as-is rather than optimistically
-	// restoring access the user may not be entitled to.
+	// If no active restrictions remain, restore user status to 'active' —
+	// but only when the current status was set by a restriction/suspension.
+	// A 'banned' or 'deleted' user must not be reactivated by lifting an
+	// operation ban. On a count/status failure the status is left as-is
+	// rather than optimistically restoring access the user may not be
+	// entitled to.
 	remaining, err := h.Queries.CountActiveOperationBans(r.Context(), uid)
 	if err != nil {
 		slog.Error("lift restriction: failed to count active operation bans",
 			"error", err, "user_id", uid.String())
 	} else if remaining == 0 {
-		if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
-			Status: "active",
-			ID:     uid,
-		}); err != nil {
-			slog.Error("lift restriction: failed to restore user status", "error", err, "user_id", uid.String())
+		status, serr := h.Queries.GetUserStatus(r.Context(), uid)
+		if serr != nil {
+			slog.Error("lift restriction: failed to read user status", "error", serr, "user_id", uid.String())
+		} else if status == "restricted" || status == "suspended" {
+			// Lifting the last op ban of a suspended user is effectively an
+			// unsuspend — clear the 'suspension' moderation-action row too or
+			// ban enforcement keeps blocking the reactivated account.
+			if status == "suspended" {
+				if err := h.Queries.SoftDeleteUserSuspension(r.Context(), uid); err != nil {
+					slog.Error("lift restriction: failed to clear suspension record", "error", err, "user_id", uid.String())
+				}
+			}
+			if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
+				Status: "active",
+				ID:     uid,
+			}); err != nil {
+				slog.Error("lift restriction: failed to restore user status", "error", err, "user_id", uid.String())
+			}
 		}
 	}
 
@@ -197,12 +225,27 @@ func (h *Handlers) LiftAllRestrictions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Restore user status to 'active' when all restrictions are lifted.
-	if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
-		Status: "active",
-		ID:     uid,
-	}); err != nil {
-		slog.Error("lift all restrictions: failed to restore user status", "error", err, "user_id", uid.String())
+	// Restore user status to 'active' when all restrictions are lifted —
+	// only for 'restricted'/'suspended' users. Lifting restrictions must
+	// not reactivate a 'banned' or 'deleted' account. A suspended user
+	// also carries a 'suspension' user_moderation_actions row that the
+	// ban-enforcement middleware reads — it must be removed or the
+	// "unsuspended" user stays blocked.
+	status, serr := h.Queries.GetUserStatus(r.Context(), uid)
+	if serr != nil {
+		slog.Error("lift all restrictions: failed to read user status", "error", serr, "user_id", uid.String())
+	} else if status == "restricted" || status == "suspended" {
+		if status == "suspended" {
+			if err := h.Queries.SoftDeleteUserSuspension(r.Context(), uid); err != nil {
+				slog.Error("lift all restrictions: failed to clear suspension record", "error", err, "user_id", uid.String())
+			}
+		}
+		if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
+			Status: "active",
+			ID:     uid,
+		}); err != nil {
+			slog.Error("lift all restrictions: failed to restore user status", "error", err, "user_id", uid.String())
+		}
 	}
 
 	h.invalidateUserAccessCaches(r.Context(), uid, restrictionsCacheKey(uid))
@@ -276,6 +319,20 @@ func (h *Handlers) SuspendUser(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// Refuse to suspend a banned or deleted account — a later unsuspend
+	// would restore status 'active' and silently bypass the ban/deletion.
+	// GetUserStatus doubles as a 404 check for a non-existent user.
+	curStatus, serr := h.Queries.GetUserStatus(ctx, uid)
+	if serr != nil {
+		errpkg.HandleServiceError(w, serr)
+		return
+	}
+	if curStatus == "banned" || curStatus == "deleted" {
+		errpkg.WriteError(w, http.StatusConflict, "invalid_status_transition",
+			"Cannot suspend a "+curStatus+" user")
+		return
+	}
+
 	// 1. Create suspension record.
 	if err := h.Queries.CreateUserSuspension(ctx, gen.CreateUserSuspensionParams{
 		UserID: uid,
@@ -335,6 +392,17 @@ var violationToOperations = map[string][]string{
 	"hate_speech":    {"post", "comment", "discussion"},
 }
 
+// validViolationTypes mirrors the violation types served by
+// GET /admin/users/config (including 'other', which maps to no
+// auto-restriction operations).
+var validViolationTypes = map[string]bool{
+	"spam":           true,
+	"harassment":     true,
+	"misinformation": true,
+	"hate_speech":    true,
+	"other":          true,
+}
+
 // WarnUserTyped handles POST /admin/users/{id}/warn with violation_type.
 // After 3 warnings of the same type, auto-restricts the related operations for 7 days.
 func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +428,21 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Whitelist the canonical violation types served by GET
+	// /admin/users/config so arbitrary strings can't be written into the
+	// moderation record.
+	if _, ok := validViolationTypes[input.ViolationType]; !ok {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_violation_type", "Invalid violation_type")
+		return
+	}
+
 	ctx := r.Context()
+
+	// 404 (not a FK-violation 500) when the target user does not exist.
+	if _, err := h.Queries.GetUserStatus(ctx, uid); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
 
 	// Create typed warning.
 	if err := h.Queries.CreateUserTypedWarning(ctx, gen.CreateUserTypedWarningParams{
@@ -405,6 +487,21 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 
 		autoRestricted = len(ops) > 0
 
+		// Mirror RestrictUser: flip status to 'restricted' so the account
+		// state reflects the new operation bans — but never downgrade a
+		// 'banned', 'suspended', or 'deleted' user.
+		status, serr := h.Queries.GetUserStatus(ctx, uid)
+		if serr != nil {
+			slog.Error("warn: failed to read user status", "error", serr, "user_id", uid.String())
+		} else if status == "active" || status == "restricted" {
+			if err := h.Queries.UpdateUserStatus(ctx, gen.UpdateUserStatusParams{
+				Status: "restricted",
+				ID:     uid,
+			}); err != nil {
+				slog.Error("warn: failed to mark user restricted", "error", err, "user_id", uid.String())
+			}
+		}
+
 		h.invalidateUserAccessCaches(ctx, uid, restrictionsCacheKey(uid))
 		slog.Warn("warn: auto-escalation triggered",
 			"user_id", uid.String(),
@@ -414,10 +511,12 @@ func (h *Handlers) WarnUserTyped(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
-		"user_id":         uid.String(),
-		"violation_type":  input.ViolationType,
-		"warning_count":   count,
-		"auto_restricted": autoRestricted,
+		"data": map[string]any{
+			"user_id":         uid.String(),
+			"violation_type":  input.ViolationType,
+			"warning_count":   count,
+			"auto_restricted": autoRestricted,
+		},
 	})
 }
 

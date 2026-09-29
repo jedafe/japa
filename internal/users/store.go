@@ -409,12 +409,16 @@ func (s *Store) upsertPreferencesTx(ctx context.Context, q *gen.Queries, userID 
 }
 
 // listUsers returns a paginated list of users for a platform, optionally filtered by search, status, and group.
-func (s *Store) listUsers(ctx context.Context, search, status, groupSlug string, limit, offset int32) ([]gen.ListUsersRow, error) {
+// sortKey/sortDir drive a whitelisted CASE ordering in the SQL — unknown
+// keys fall through to the created_at DESC default.
+func (s *Store) listUsers(ctx context.Context, search, status, groupSlug, sortKey, sortDir string, limit, offset int32) ([]gen.ListUsersRow, error) {
 	rows, err := s.read.ListUsers(ctx, gen.ListUsersParams{
 
 		Search:     search,
 		Status:     status,
 		GroupSlug:  groupSlug,
+		SortKey:    sortKey,
+		SortDir:    sortDir,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

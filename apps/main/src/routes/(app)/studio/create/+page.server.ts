@@ -2,6 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { createAvailableTypes, CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
+import { contentHref } from '$lib/utils/contentLink';
 import type { MatrixItem } from '$lib/types/jce';
 import type {
 	ContentTypeMeta,
@@ -270,6 +271,19 @@ export const load: PageServerLoad = async (event) => {
 		} catch {
 			draft = null;
 		}
+	}
+
+	// The composer only supports CREATE_ALLOWED_TYPES — CreateShell clamps an
+	// unknown draft.content_type to the first allowed type, which would
+	// silently rewrite a job listing / event / page into a blog post on the
+	// next save. Redirect such content to its canonical public page (or back
+	// to the contents manager when it has no slug yet) instead of serving an
+	// editor that would corrupt it.
+	if (draft?.content_type && !(CREATE_ALLOWED_TYPES as readonly string[]).includes(draft.content_type)) {
+		const dest = draft.slug
+			? contentHref({ slug: draft.slug, content_type: draft.content_type })
+			: '/studio/contents';
+		throw redirect(303, dest);
 	}
 
 	// §14 list amendment — permission-gated types (list.create) are filtered

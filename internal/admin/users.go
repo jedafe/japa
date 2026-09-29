@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -62,7 +63,16 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: &passwordHash,
 	})
 	if err != nil {
-		if errors.Is(err, errpkg.ErrDuplicate) {
+		var pgErr *pgconn.PgError
+		isDuplicate := errors.Is(err, errpkg.ErrDuplicate) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
+		if isDuplicate {
+			// users has unique indexes on both email and username —
+			// distinguish them via the violated constraint name (same
+			// convention as the public register handler).
+			if pgErr != nil && strings.Contains(pgErr.ConstraintName, "username") {
+				errpkg.WriteError(w, http.StatusConflict, "username_exists", "A user with this username already exists")
+				return
+			}
 			errpkg.WriteError(w, http.StatusConflict, "email_exists", "A user with this email already exists")
 			return
 		}
@@ -70,6 +80,17 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "create_error", "Failed to create user")
 
 		return
+	}
+
+	// Persist the optional display_name — the field lives on user_profiles,
+	// not users. Non-fatal: the account is usable without it.
+	if input.DisplayName != "" {
+		if err := h.Queries.SetUserDisplayName(r.Context(), gen.SetUserDisplayNameParams{
+			UserID:      userID,
+			DisplayName: &input.DisplayName,
+		}); err != nil {
+			slog.Warn("admin create user: failed to set display_name", "error", err, "user_id", userID.String())
+		}
 	}
 
 	// §unified-tiers: admin-created users start on the regular tier.

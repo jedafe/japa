@@ -96,6 +96,11 @@ interface EntityPageConfig {
   bulkDelete?: boolean;           // default true — set false to opt out of the
                                   // confirm-gated built-in "Delete Selected"
                                   // (added automatically when `remove` is set)
+  hideCreate?: boolean;           // default false — set true to hide the built-in
+                                  // Create button when the page provides its own
+                                  // create flow (e.g. /spaces navigates to a
+                                  // dedicated page). Unlike `readonly`, edit,
+                                  // delete and bulk actions stay enabled.
   createLabel?: string;
   createPermission?: string;      // edit/delete fall back to this when omitted
   editPermission?: string;

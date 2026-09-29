@@ -138,6 +138,19 @@ func (q *Queries) CountRoles(ctx context.Context, search string) (int32, error) 
 	return count, err
 }
 
+const countUserGroups = `-- name: CountUserGroups :one
+SELECT COUNT(*)::int AS count
+FROM user_groups g
+WHERE ($1::text = '' OR g.name ILIKE '%' || $1 || '%' OR COALESCE(g.description, '') ILIKE '%' || $1 || '%')
+`
+
+func (q *Queries) CountUserGroups(ctx context.Context, search string) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserGroups, search)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUserGroup = `-- name: CreateUserGroup :one
 INSERT INTO user_groups (name, slug, description) VALUES ($1, $2, $3)
 
@@ -576,27 +589,50 @@ func (q *Queries) ListRolePermissionsByKey(ctx context.Context, roleID pgtype.UU
 }
 
 const listRolesPaginated = `-- name: ListRolesPaginated :many
-SELECT id, name, slug
-FROM user_roles
-WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%')
-ORDER BY name
-LIMIT $3 OFFSET $2
+SELECT sub.id, sub.name, sub.slug, sub.user_count
+FROM (
+ SELECT ur.id, ur.name, ur.slug,
+  (SELECT COUNT(DISTINCT ugm.user_id)::int
+   FROM group_roles gr
+   JOIN user_group_memberships ugm ON ugm.group_id = gr.group_id
+   WHERE gr.role_id = ur.id) AS user_count
+ FROM user_roles ur
+ WHERE ($1::text = '' OR ur.name ILIKE '%' || $1 || '%')
+) sub
+ORDER BY
+ CASE WHEN $2::text = 'name' AND $3::text = 'desc' THEN sub.name END DESC,
+ CASE WHEN $2::text = 'user_count' AND $3::text = 'asc' THEN sub.user_count END ASC,
+ CASE WHEN $2::text = 'user_count' AND $3::text = 'desc' THEN sub.user_count END DESC,
+ sub.name
+LIMIT $5 OFFSET $4
 `
 
 type ListRolesPaginatedParams struct {
 	Search     string `json:"search"`
+	SortKey    string `json:"sort_key"`
+	SortDir    string `json:"sort_dir"`
 	PageOffset int32  `json:"page_offset"`
 	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListRolesPaginatedRow struct {
-	ID   pgtype.UUID `json:"id"`
-	Name string      `json:"name"`
-	Slug string      `json:"slug"`
+	ID        pgtype.UUID `json:"id"`
+	Name      string      `json:"name"`
+	Slug      string      `json:"slug"`
+	UserCount int32       `json:"user_count"`
 }
 
+// user_count = distinct users holding the role through their group
+// memberships (role → group_roles → user_group_memberships), not the
+// number of groups assigned the role.
 func (q *Queries) ListRolesPaginated(ctx context.Context, arg ListRolesPaginatedParams) ([]ListRolesPaginatedRow, error) {
-	rows, err := q.db.Query(ctx, listRolesPaginated, arg.Search, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listRolesPaginated,
+		arg.Search,
+		arg.SortKey,
+		arg.SortDir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +640,12 @@ func (q *Queries) ListRolesPaginated(ctx context.Context, arg ListRolesPaginated
 	var items []ListRolesPaginatedRow
 	for rows.Next() {
 		var i ListRolesPaginatedRow
-		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.UserCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -645,6 +686,75 @@ func (q *Queries) ListUserGroups(ctx context.Context) ([]ListUserGroupsRow, erro
 			&i.Slug,
 			&i.IsSystem,
 			&i.Description,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserGroupsPaged = `-- name: ListUserGroupsPaged :many
+SELECT sub.id, sub.name, sub.slug, sub.is_system, sub.description, sub.member_count
+FROM (
+ SELECT g.id, g.name, g.slug, g.is_system, g.description,
+  (SELECT COUNT(*)::int FROM user_group_memberships ugm WHERE ugm.group_id = g.id) AS member_count
+ FROM user_groups g
+ WHERE ($1::text = '' OR g.name ILIKE '%' || $1 || '%' OR COALESCE(g.description, '') ILIKE '%' || $1 || '%')
+) sub
+ORDER BY
+ CASE WHEN $2::text = 'name' AND $3::text = 'desc' THEN sub.name END DESC,
+ CASE WHEN $2::text = 'member_count' AND $3::text = 'asc' THEN sub.member_count END ASC,
+ CASE WHEN $2::text = 'member_count' AND $3::text = 'desc' THEN sub.member_count END DESC,
+ sub.name
+LIMIT $5 OFFSET $4
+`
+
+type ListUserGroupsPagedParams struct {
+	Search     string `json:"search"`
+	SortKey    string `json:"sort_key"`
+	SortDir    string `json:"sort_dir"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
+}
+
+type ListUserGroupsPagedRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	IsSystem    bool        `json:"is_system"`
+	Description *string     `json:"description"`
+	MemberCount int32       `json:"member_count"`
+}
+
+// Paginated variant for the admin groups table — supports search over
+// name/description and whitelisted sort on name/member_count. member_count
+// is computed inline so ordering by it works in the same query.
+func (q *Queries) ListUserGroupsPaged(ctx context.Context, arg ListUserGroupsPagedParams) ([]ListUserGroupsPagedRow, error) {
+	rows, err := q.db.Query(ctx, listUserGroupsPaged,
+		arg.Search,
+		arg.SortKey,
+		arg.SortDir,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserGroupsPagedRow
+	for rows.Next() {
+		var i ListUserGroupsPagedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.IsSystem,
+			&i.Description,
+			&i.MemberCount,
 		); err != nil {
 			return nil, err
 		}

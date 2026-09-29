@@ -4840,6 +4840,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/drafts/{id}", usersHandlers.GetMyDraft)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/scheduled", usersHandlers.ListMyScheduled)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/in-review", usersHandlers.ListMyInReview)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/archived", usersHandlers.ListMyArchived)
 			// Batch viewer-interaction state for content cards: one call returns
 			// the caller's reaction keys + bookmark state across many content
 			// ids, replacing per-card /reactions/me + /bookmark round-trips.

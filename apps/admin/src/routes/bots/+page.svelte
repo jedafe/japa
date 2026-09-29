@@ -151,7 +151,7 @@
 		load: async ({ page, pageSize, q, filter }) => {
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
-				page_offset: String((page - 1) * pageSize)
+				page_offset: String(page * pageSize)
 			});
 			if (filter.bot_type) params.set('bot_type', filter.bot_type);
 			// Use apiRaw to access top-level total/total_pages alongside data.

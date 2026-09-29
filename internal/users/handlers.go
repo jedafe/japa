@@ -398,7 +398,8 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 }
 
 // ListUsers handles GET /api/v1/users for admin user listing.
-// Query params: search, status, group, page_size (default 20, max 100), page_offset (default 0).
+// Query params: search, status, group, page_size (default 20, max 100),
+// page_offset (default 0), sort (whitelisted column key), sort_dir (asc|desc).
 func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	// Admin-only: only super_admin group members may list users.
 	user := auth.FromContext(r.Context())
@@ -412,8 +413,10 @@ func (h *Handlers) ListUsers(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
 	status := r.URL.Query().Get("status")
 	groupSlug := r.URL.Query().Get("group")
+	sortKey := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("sort_dir")
 
-	result, err := h.Service.ListUsers(r.Context(), search, status, groupSlug, limit, offset)
+	result, err := h.Service.ListUsers(r.Context(), search, status, groupSlug, sortKey, sortDir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

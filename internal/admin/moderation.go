@@ -908,7 +908,20 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
+	// 404 (not a FK-violation 500) when the target user does not exist; a
+	// deleted account must not be flipped back to 'banned'.
+	curStatus, err := h.Queries.GetUserStatus(ctx, uid)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+	if curStatus == "deleted" {
+		errpkg.WriteError(w, http.StatusConflict, "invalid_status_transition",
+			"Cannot ban a deleted user")
+		return
+	}
+
+	err = h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
 		UserID:  uid,
 		Reason:  &input.Reason,
 		Column3: int32(input.Days),
@@ -941,14 +954,29 @@ func (h *Handlers) UnbanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Soft-delete the active ban row(s) first — enforcement checks
+	// user_moderation_actions for a live 'ban' row, so inserting an 'unban'
+	// audit record alone would leave the user blocked.
+	if err := h.Queries.SoftDeleteUserBan(r.Context(), uid); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
+		return
+	}
+
 	err := h.Queries.CreateUserUnban(r.Context(), uid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unban user")
 		return
 	}
-	// Restore users.status to active (the ban handler set it to "banned").
+	// Restore users.status — 'restricted' when operation bans from a prior
+	// restriction are still active, otherwise 'active'.
+	newStatus := "active"
+	if remaining, cerr := h.Queries.CountActiveOperationBans(r.Context(), uid); cerr != nil {
+		slog.Error("unban: failed to count active operation bans", "error", cerr, "user_id", uid.String())
+	} else if remaining > 0 {
+		newStatus = "restricted"
+	}
 	if err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
-		Status: "active",
+		Status: newStatus,
 		ID:     uid,
 	}); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
@@ -1030,6 +1058,12 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 404 (not a FK-violation 500) when the target user does not exist.
+	if _, err := h.Queries.GetUserStatus(r.Context(), uid); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
 	err := h.Queries.CreateUserWarning(r.Context(), gen.CreateUserWarningParams{
 		UserID: uid,
 		Reason: &input.Reason,
@@ -1043,6 +1077,8 @@ func (h *Handlers) WarnUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListUserWarnings handles GET /admin/users/:id/warnings.
+// Uses the typed query so the admin warnings tab can display the
+// violation_type recorded by warn-typed alongside the reason.
 func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 
@@ -1053,16 +1089,17 @@ func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.Queries.ListUserWarnings(r.Context(), uid)
+	rows, err := h.Queries.ListUserWarningsTyped(r.Context(), uid)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list warnings")
 		return
 	}
 
 	type warnRow struct {
-		ID        string `json:"id"`
-		Reason    string `json:"reason"`
-		CreatedAt string `json:"created_at"`
+		ID            string `json:"id"`
+		Reason        string `json:"reason"`
+		ViolationType string `json:"violation_type"`
+		CreatedAt     string `json:"created_at"`
 	}
 
 	warnings := make([]warnRow, 0, len(rows))
@@ -1073,10 +1110,16 @@ func (h *Handlers) ListUserWarnings(w http.ResponseWriter, r *http.Request) {
 			reason = *w.Reason
 		}
 
+		violationType := ""
+		if w.ViolationType != nil {
+			violationType = *w.ViolationType
+		}
+
 		warnings = append(warnings, warnRow{
-			ID:        w.ID.String(),
-			Reason:    reason,
-			CreatedAt: w.CreatedAt.Time.Format(time.RFC3339),
+			ID:            w.ID.String(),
+			Reason:        reason,
+			ViolationType: violationType,
+			CreatedAt:     w.CreatedAt.Time.Format(time.RFC3339),
 		})
 	}
 
@@ -1122,6 +1165,24 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// users.status is a free-text column — whitelist the canonical values
+	// (mirrors the statuses served by GET /admin/users/config) so a typo'd
+	// or arbitrary string cannot corrupt the account state. Validated
+	// before the DB read so malformed input cannot mask a 404.
+	switch input.Status {
+	case "active", "pending", "restricted", "suspended", "banned", "deleted":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid status value")
+		return
+	}
+
+	// The UPDATE is a no-op for a missing user — return a real 404 instead
+	// of a misleading 200.
+	if _, err := h.Queries.GetUserStatus(r.Context(), uid); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
 	err := h.Queries.UpdateUserStatus(r.Context(), gen.UpdateUserStatusParams{
 		Status: input.Status,
 		ID:     uid,
@@ -1130,6 +1191,10 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update user status")
 		return
 	}
+
+	// Status gates session validity — drop cached access state so the new
+	// status takes effect immediately.
+	h.invalidateUserAccessCaches(r.Context(), uid, banCacheKey(uid), restrictionsCacheKey(uid))
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"user_id": userID, "status": input.Status})
 }
@@ -1156,6 +1221,13 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 	var gid pgtype.UUID
 	if err := gid.Scan(input.GroupID); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid group ID")
+		return
+	}
+
+	// The membership insert relies on the FK for a missing group — surface
+	// a proper 404 instead of a raw constraint-violation 500.
+	if _, err := h.Queries.GetUserGroupByID(r.Context(), gid); err != nil {
+		errpkg.HandleServiceError(w, err)
 		return
 	}
 

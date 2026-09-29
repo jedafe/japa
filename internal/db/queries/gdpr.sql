@@ -989,9 +989,9 @@ UPDATE comparison_values cv
 SET value = '[anonymized]',
  value_rating = NULL,
  value_boolean = NULL
-FROM contents c
-JOIN comparison_items ci ON ci.id = cv.item_id
-WHERE ci.content_id = c.id
+FROM comparison_items ci
+JOIN contents c ON c.id = ci.content_id
+WHERE cv.item_id = ci.id
  AND c.author_id = @user_id;
 
 -- name: DeleteComparisonProfilesByUser :exec

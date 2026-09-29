@@ -545,6 +545,7 @@ LEFT JOIN space_types st ON st.id = s.space_type_id
 WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@status::text = '' OR s.status = @status)
  AND (@visibility::text = '' OR s.visibility = @visibility)
+ AND (@space_type_id::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = @space_type_id)
  -- Soft-deleted spaces are hidden by default; ?deleted=only|all surfaces
  -- them so admins can force-delete (same contract as AdminListWikiPages).
  AND CASE @deleted::text
@@ -552,7 +553,25 @@ WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE 
        WHEN 'all'  THEN true
        ELSE s.deleted_at IS NULL
      END
-ORDER BY s.created_at DESC, s.id DESC
+ -- ORDER BY uses whitelisted CASE keys — only the active (sort_key, sort_dir)
+ -- pair produces non-NULL values, so each inactive key is a no-op and the
+ -- final created_at DESC fallback keeps the default newest-first ordering.
+ORDER BY
+ CASE WHEN @sort_key::text = 'name'         AND @sort_dir::text = 'asc'  THEN s.name         END ASC,
+ CASE WHEN @sort_key::text = 'name'         AND @sort_dir::text = 'desc' THEN s.name         END DESC,
+ CASE WHEN @sort_key::text = 'owner'        AND @sort_dir::text = 'asc'  THEN u.username     END ASC,
+ CASE WHEN @sort_key::text = 'owner'        AND @sort_dir::text = 'desc' THEN u.username     END DESC,
+ CASE WHEN @sort_key::text = 'member_count' AND @sort_dir::text = 'asc'  THEN s.member_count END ASC,
+ CASE WHEN @sort_key::text = 'member_count' AND @sort_dir::text = 'desc' THEN s.member_count END DESC,
+ CASE WHEN @sort_key::text = 'visibility'   AND @sort_dir::text = 'asc'  THEN s.visibility   END ASC,
+ CASE WHEN @sort_key::text = 'visibility'   AND @sort_dir::text = 'desc' THEN s.visibility   END DESC,
+ CASE WHEN @sort_key::text = 'status'       AND @sort_dir::text = 'asc'  THEN s.status       END ASC,
+ CASE WHEN @sort_key::text = 'status'       AND @sort_dir::text = 'desc' THEN s.status       END DESC,
+ CASE WHEN @sort_key::text = 'space_type'   AND @sort_dir::text = 'asc'  THEN st.name        END ASC,
+ CASE WHEN @sort_key::text = 'space_type'   AND @sort_dir::text = 'desc' THEN st.name        END DESC,
+ CASE WHEN @sort_key::text = 'created_at'   AND @sort_dir::text = 'asc'  THEN s.created_at   END ASC,
+ CASE WHEN @sort_key::text = 'created_at'   AND @sort_dir::text = 'desc' THEN s.created_at   END DESC,
+ s.created_at DESC, s.id DESC
 LIMIT @limit_val OFFSET @offset_val;
 
 -- name: AdminListSpacesCount :one
@@ -561,6 +580,7 @@ FROM spaces s
 WHERE (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@status::text = '' OR s.status = @status)
  AND (@visibility::text = '' OR s.visibility = @visibility)
+ AND (@space_type_id::uuid = '00000000-0000-0000-0000-000000000000' OR s.space_type_id = @space_type_id)
  AND CASE @deleted::text
        WHEN 'only' THEN s.deleted_at IS NOT NULL
        WHEN 'all'  THEN true

@@ -36,6 +36,12 @@ ON CONFLICT DO NOTHING;
 UPDATE user_moderation_actions SET deleted_at = now()
 WHERE user_id = $1 AND action = 'ban' AND deleted_at IS NULL;
 
+-- name: SoftDeleteUserSuspension :exec
+-- Unsuspend path: removes the 'suspension' moderation-action row created by
+-- POST /admin/users/{id}/suspend so ban-enforcement stops blocking the user.
+UPDATE user_moderation_actions SET deleted_at = now()
+WHERE user_id = $1 AND action = 'suspension' AND deleted_at IS NULL;
+
 -- name: CreateUserUnban :exec
 INSERT INTO user_moderation_actions (user_id, action, reason, created_at) VALUES ($1, 'unban', 'Admin unbanned', now())
 ;
@@ -53,6 +59,7 @@ ORDER BY created_at DESC;
 SELECT EXISTS(
  SELECT 1 FROM user_moderation_actions
  WHERE user_id = $1 AND action IN ('ban', 'suspension')
+ AND deleted_at IS NULL
  AND (expires_at IS NULL OR expires_at > now())
 );
 
@@ -61,6 +68,7 @@ SELECT EXISTS(
 -- Returns the expires_at of the most recent active ban/suspension (may be NULL = permanent).
 SELECT expires_at FROM user_moderation_actions
 WHERE user_id = $1 AND action IN ('ban', 'suspension')
+AND deleted_at IS NULL
 AND (expires_at IS NULL OR expires_at > now())
 ORDER BY created_at DESC LIMIT 1;
 

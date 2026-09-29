@@ -61,6 +61,12 @@ LEFT JOIN user_groups ug ON ug.id = ugm.group_id
 WHERE u.username = @username
 ORDER BY u.id, CASE WHEN ug.slug = 'super_admin' THEN 0 ELSE 1 END;
 
+-- name: SetUserDisplayName :exec
+-- Minimal profile upsert used by admin user creation — writes only
+-- display_name without touching the other profile columns.
+INSERT INTO user_profiles (user_id, display_name) VALUES (@user_id, @display_name)
+ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name;
+
 -- name: UpsertUserProfile :exec
 INSERT INTO user_profiles (user_id, display_name, avatar_url, avatar_media_id, header_media_id, bio, timezone, cover_url, location, banner_media_id) VALUES (@user_id, @display_name, @avatar_url, @avatar_media_id, @header_media_id, @bio, @timezone, @cover_url, sqlc.narg(location), sqlc.narg(banner_media_id))
 ON CONFLICT (user_id) DO UPDATE SET
@@ -146,7 +152,19 @@ WHERE (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR u.email I
  JOIN user_groups ug ON ug.id = ugm.group_id
  WHERE ugm.user_id = u.id AND ug.slug = @group_slug
  ))
-ORDER BY u.created_at DESC
+ORDER BY
+ CASE WHEN @sort_key::text = 'username' AND @sort_dir::text = 'asc' THEN u.username END ASC,
+ CASE WHEN @sort_key::text = 'username' AND @sort_dir::text = 'desc' THEN u.username END DESC,
+ CASE WHEN @sort_key::text = 'email' AND @sort_dir::text = 'asc' THEN u.email END ASC,
+ CASE WHEN @sort_key::text = 'email' AND @sort_dir::text = 'desc' THEN u.email END DESC,
+ CASE WHEN @sort_key::text = 'profile_type' AND @sort_dir::text = 'asc' THEN u.profile_type END ASC,
+ CASE WHEN @sort_key::text = 'profile_type' AND @sort_dir::text = 'desc' THEN u.profile_type END DESC,
+ CASE WHEN @sort_key::text = 'status' AND @sort_dir::text = 'asc' THEN u.status END ASC,
+ CASE WHEN @sort_key::text = 'status' AND @sort_dir::text = 'desc' THEN u.status END DESC,
+ CASE WHEN @sort_key::text = 'follower_count' AND @sort_dir::text = 'asc' THEN u.follower_count END ASC,
+ CASE WHEN @sort_key::text = 'follower_count' AND @sort_dir::text = 'desc' THEN u.follower_count END DESC,
+ CASE WHEN @sort_key::text = 'created_at' AND @sort_dir::text = 'asc' THEN u.created_at END ASC,
+ u.created_at DESC, u.id
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountUsers :one
@@ -249,8 +267,10 @@ SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND password_hash IS NOT NULL AN
 -- content_type, and a free-text search over title/slug. An empty status,
 -- content_type, q, or sort string means "no filter" / "default newest".
 -- Supports ?sort=newest|oldest|most_viewed for GET /me/content (JEOS §50).
--- Used by GET /me/content (published), /me/drafts (draft), and /me/scheduled (scheduled).
-SELECT c.id, c.title, c.slug, c.content_type, c.status, c.view_count, c.comment_count, c.created_at, c.updated_at
+-- Used by GET /me/content (published), /me/drafts (draft), /me/scheduled
+-- (scheduled), /me/in-review (in_review), and /me/archived (archived).
+-- publish_at is returned so the Scheduled tab can show the go-live time.
+SELECT c.id, c.title, c.slug, c.content_type, c.status, c.view_count, c.comment_count, c.publish_at, c.created_at, c.updated_at
 FROM contents c
 WHERE c.author_id = @author_id AND c.deleted_at IS NULL
  AND (@status::text = '' OR c.status = @status)

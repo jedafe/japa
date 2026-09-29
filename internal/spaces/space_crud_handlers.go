@@ -301,7 +301,8 @@ func rowToMap[T any](row T) map[string]any {
 
 // AdminListSpaces handles GET /api/v1/admin/spaces — paginated spaces for the
 // admin panel with owner and space_type name resolved via JOINs. Supports
-// q (name/slug search), status, and visibility filter params.
+// q (name/slug search), status, visibility, space_type_id, deleted, sort/dir
+// filter params.
 func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
@@ -310,14 +311,25 @@ func (h *Handlers) AdminListSpaces(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	visibility := r.URL.Query().Get("visibility")
 	deleted := r.URL.Query().Get("deleted")
+	sortKey := r.URL.Query().Get("sort")
+	sortDir := r.URL.Query().Get("dir")
 
-	spaces, err := h.Service.AdminListSpaces(r.Context(), search, status, visibility, deleted, limit, offset)
+	// Optional space-type filter — a zero UUID skips the filter at the SQL level.
+	var spaceTypeID pgtype.UUID
+	if raw := strings.TrimSpace(r.URL.Query().Get("space_type_id")); raw != "" {
+		if err := spaceTypeID.Scan(raw); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_type_id filter format")
+			return
+		}
+	}
+
+	spaces, err := h.Service.AdminListSpaces(r.Context(), search, status, visibility, deleted, spaceTypeID, sortKey, sortDir, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	total, err := h.Service.AdminListSpacesCount(r.Context(), search, status, visibility, deleted)
+	total, err := h.Service.AdminListSpacesCount(r.Context(), search, status, visibility, deleted, spaceTypeID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
