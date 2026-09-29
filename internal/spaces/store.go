@@ -962,7 +962,26 @@ func (s *Service) CreateCity(ctx context.Context, stateID pgtype.UUID, name stri
 // primary (country/state/city) spaces and returns the most specific matched
 // space ID (city > state > country) plus all matched IDs. The matches are
 // intended to populate the space_parent_spaces junction.
-func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID pgtype.UUID, name string) (pgtype.UUID, []pgtype.UUID, error) {
+//
+// When geoCode is set, parent selection is anchored to that country: the
+// geo_code country space is linked unconditionally and keyword matches are
+// filtered to that country's subtree. This keeps geo-coded spaces
+// (universities, seeded entities) from acquiring foreign-country parents —
+// name tokens like "Asia", "Africa", or "Island" otherwise match dozens of
+// countries whose keyword lists include continent names (§05 fallback
+// matcher is only meant for parentless custom spaces).
+func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID pgtype.UUID, name, geoCode string) (pgtype.UUID, []pgtype.UUID, error) {
+	geoCode = strings.TrimSpace(geoCode)
+	if geoCode == "" {
+		return s.linkByKeywords(ctx, name)
+	}
+	return s.linkGeoScoped(ctx, name, geoCode)
+}
+
+// linkByKeywords is the legacy unscoped path — every keyword match becomes a
+// junction parent, most-specific first. Used when no geo_code anchors the
+// space to a country.
+func (s *Service) linkByKeywords(ctx context.Context, name string) (pgtype.UUID, []pgtype.UUID, error) {
 	keywords := extractSpaceKeywords(name)
 	if len(keywords) == 0 {
 		return pgtype.UUID{}, nil, nil
@@ -983,6 +1002,72 @@ func (s *Service) LinkSpaceToPrimarySpaces(ctx context.Context, spaceID pgtype.U
 	}
 
 	return matches[0].ID, parentIDs, nil
+}
+
+// linkGeoScoped anchors parent selection to the geo_code country: the
+// country space is always a parent, and keyword matches contribute only
+// state/city ancestors inside that country's subtree. Falls back to the
+// unscoped matcher when the geo_code resolves to no country space or no
+// keywords extract.
+func (s *Service) linkGeoScoped(ctx context.Context, name, geoCode string) (pgtype.UUID, []pgtype.UUID, error) {
+	country, err := s.read.GetSpaceByGeoCode(ctx, &geoCode)
+	if err != nil || !country.ID.Valid {
+		return s.linkByKeywords(ctx, name)
+	}
+
+	keywords := extractSpaceKeywords(name)
+	if len(keywords) == 0 {
+		return country.ID, []pgtype.UUID{country.ID}, nil
+	}
+
+	matches, err := s.FindSpacesByKeywords(ctx, keywords)
+	if err != nil {
+		return pgtype.UUID{}, nil, fmt.Errorf("finding primary spaces by keywords: %w", err)
+	}
+
+	// Resolve each candidate's country ancestor; a candidate survives only
+	// when it is the geo_code country itself or a state/city under it.
+	candidateIDs := make([]pgtype.UUID, 0, len(matches))
+	for _, m := range matches {
+		candidateIDs = append(candidateIDs, m.ID)
+	}
+
+	inCountry := map[pgtype.UUID]bool{country.ID: true}
+	if len(candidateIDs) > 0 {
+		ancRows, err := s.read.GetSpaceCountryAncestorIDs(ctx, candidateIDs)
+		if err != nil {
+			return pgtype.UUID{}, nil, fmt.Errorf("resolving candidate country ancestors: %w", err)
+		}
+		for _, r := range ancRows {
+			if r.CountryID == country.ID {
+				inCountry[r.SpaceID] = true
+			}
+		}
+	}
+
+	parentIDs := []pgtype.UUID{country.ID}
+	primary := country.ID
+	for _, m := range matches {
+		// Skip non-geo candidates outright (education/custom spaces are not
+		// geo ancestors) and anything outside the geo_code country subtree.
+		if m.ID == country.ID {
+			continue
+		}
+		if m.Level != "state" && m.Level != "city" {
+			continue
+		}
+		if !inCountry[m.ID] {
+			continue
+		}
+		parentIDs = append(parentIDs, m.ID)
+		// The first in-country state/city keyword hit is the most specific
+		// match — a better primary parent than the country.
+		if primary == country.ID {
+			primary = m.ID
+		}
+	}
+
+	return primary, parentIDs, nil
 }
 
 // SetSpaceParent updates a space's parent_id and links it to the given primary

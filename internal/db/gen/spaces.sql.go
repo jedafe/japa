@@ -1696,6 +1696,59 @@ func (q *Queries) GetSpaceBySlug(ctx context.Context, slug string) (GetSpaceBySl
 	return i, err
 }
 
+const getSpaceCountryAncestorIDs = `-- name: GetSpaceCountryAncestorIDs :many
+WITH RECURSIVE walk AS (
+    SELECT s.id AS origin, s.id AS node, 0 AS depth
+    FROM spaces s
+    WHERE s.id = ANY($1::uuid[])
+    UNION ALL
+    SELECT w.origin, par.id, w.depth + 1
+    FROM walk w
+    JOIN (
+        SELECT j.space_id AS child, j.parent_space_id AS parent
+        FROM space_parent_spaces j
+        UNION
+        SELECT s2.id, s2.parent_id
+        FROM spaces s2
+        WHERE s2.parent_id IS NOT NULL
+    ) e ON e.child = w.node
+    JOIN spaces par ON par.id = e.parent
+    WHERE w.depth < 3
+)
+SELECT DISTINCT w.origin AS space_id, c.id AS country_id
+FROM walk w
+JOIN spaces c ON c.id = w.node AND c.level = 'country'
+`
+
+type GetSpaceCountryAncestorIDsRow struct {
+	SpaceID   pgtype.UUID `json:"space_id"`
+	CountryID pgtype.UUID `json:"country_id"`
+}
+
+// Resolves each input space's country-level ancestor by walking the
+// parent_id ∪ space_parent_spaces edge set upward (≤3 hops — the geo chain
+// never exceeds city → state → country). A country is its own ancestor;
+// spaces outside the geo chain (education/custom) return no row.
+func (q *Queries) GetSpaceCountryAncestorIDs(ctx context.Context, spaceIds []pgtype.UUID) ([]GetSpaceCountryAncestorIDsRow, error) {
+	rows, err := q.db.Query(ctx, getSpaceCountryAncestorIDs, spaceIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSpaceCountryAncestorIDsRow
+	for rows.Next() {
+		var i GetSpaceCountryAncestorIDsRow
+		if err := rows.Scan(&i.SpaceID, &i.CountryID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSpaceKeywords = `-- name: GetSpaceKeywords :one
 SELECT keywords FROM spaces
 WHERE id = $1 AND deleted_at IS NULL
