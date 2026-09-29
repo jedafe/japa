@@ -6,7 +6,7 @@
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
-	import { BookOpen, Send } from 'lucide-svelte';
+	import { BookOpen, Plus, Send } from 'lucide-svelte';
 	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import type { PageData } from './$types';
 	import type { WikiCategory } from '$lib/types';
@@ -15,8 +15,12 @@
 
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const canCreate = $derived(data.authed && data.userPermissions?.includes('wiki.edit'));
+	// wiki.manage holders (super_admin + assigned groups) may author new
+	// page templates inline — same permission as the admin panel route.
+	const canManageTemplates = $derived(data.userPermissions?.includes('wiki.manage'));
 
 	interface CatItem {
+		id?: string;
 		slug: WikiCategory;
 		label: string;
 		/** §80 page templates — the category's admin-defined lazy pages
@@ -54,8 +58,74 @@
 	]);
 	const templateLocked = $derived(catTemplates.length > 0 && pageChoice !== CUSTOM_PAGE);
 
+	// Inline template authoring (wiki.manage only) — the Page row renders
+	// for templateless categories too so the "New template" affordance is
+	// always reachable. Ref: §80 Inline template authoring.
+	const showPageRow = $derived(catTemplates.length > 0 || !!canManageTemplates);
+	let tplOpen = $state(false);
+	let tplLabel = $state('');
+	let tplSlug = $state('');
+	let tplSlugEdited = $state(false);
+	let tplSaving = $state(false);
+	let tplError = $state<string | null>(null);
+
+	// Slug auto-derives from the label with the {name} token and any
+	// dangling preposition dropped — "Prices in {name}" → "prices". Still
+	// editable before saving.
+	function onTplLabelInput() {
+		if (!tplSlugEdited) {
+			tplSlug = slugify(tplLabel.replace(/\{name\}/gi, '')).replace(/-(in|of|for|at|the|a)$/, '');
+		}
+	}
+
+	async function createTemplate() {
+		const catId = categories.find((c) => c.slug === category)?.id;
+		const label = tplLabel.trim();
+		const tplSlugVal = tplSlug.trim();
+		if (!catId || !label || !/^[a-z0-9-]+$/.test(tplSlugVal)) {
+			tplError = t('wiki.new_template_invalid', 'A label and a lowercase-hyphen slug are required.');
+			return;
+		}
+		tplSaving = true;
+		tplError = null;
+		try {
+			const res = await api.post<{ slug: string }>(
+				`/admin/wiki/categories/${catId}/page-templates`,
+				{ slug: tplSlugVal, label, position: catTemplates.length }
+			);
+			if (res.error) {
+				tplError = res.error.message;
+				return;
+			}
+			// Re-fetch so the new template arrives with {name} substituted
+			// server-side — the raw label would render the token literally.
+			// On failure, push the raw shape so the picker still selects it.
+			const catRes = await api.get<CatItem[]>(`/wiki/categories?space=${encodeURIComponent(data.spaceSlug)}`);
+			if (catRes.data) {
+				categories = catRes.data;
+			} else {
+				categories = categories.map((c) =>
+					c.slug === category
+						? { ...c, page_templates: [...(c.page_templates ?? []), { slug: tplSlugVal, label, position: catTemplates.length }] }
+						: c
+				);
+			}
+			tplOpen = false;
+			tplLabel = '';
+			tplSlug = '';
+			tplSlugEdited = false;
+			onPageChoice(res.data?.slug ?? tplSlugVal);
+		} catch {
+			tplError = t('wiki.new_template_failed', 'Could not create the template.');
+		} finally {
+			tplSaving = false;
+		}
+	}
+
 	function onCategoryChange(v: WikiCategory) {
 		category = v;
+		tplOpen = false;
+		tplError = null;
 		const tpls = categories
 			.find((c) => c.slug === v)
 			?.page_templates?.slice()
@@ -217,11 +287,23 @@
 				{/if}
 			</div>
 
-			{#if catTemplates.length > 0}
+			{#if showPageRow}
 				<div>
-					<label for="wiki-create-page" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						{t('wiki.create_page_label', 'Page')}
-					</label>
+					<div class="mb-1 flex items-center justify-between gap-2">
+						<label for="wiki-create-page" class="block text-sm font-medium text-[var(--color-text)]">
+							{t('wiki.create_page_label', 'Page')}
+						</label>
+						{#if canManageTemplates}
+							<button
+								type="button"
+								onclick={() => (tplOpen = !tplOpen)}
+								class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] transition hover:opacity-80"
+							>
+								<Plus size={12} />
+								{t('wiki.new_template', 'New template')}
+							</button>
+						{/if}
+					</div>
 					<SelectField
 						id="wiki-create-page"
 						value={pageChoice}
@@ -233,6 +315,51 @@
 							? t('wiki.create_template_hint', 'This is a predefined wiki page — its title and URL are fixed; you fill in the content for this space.')
 							: t('wiki.create_custom_hint', 'A one-off page with your own title and URL slug.')}
 					</p>
+					{#if tplOpen && canManageTemplates}
+						<div class="mt-2 space-y-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+							<p class="text-xs text-[var(--color-muted)]">
+								{t('wiki.new_template_hint', 'Adds a predefined page under this category for every wiki of this type. Use {name} for the space name — e.g. "Prices in {name}".')}
+							</p>
+							<div class="grid gap-2 sm:grid-cols-2">
+								<input
+									type="text"
+									bind:value={tplLabel}
+									oninput={onTplLabelInput}
+									placeholder={t('wiki.new_template_label', 'Template label')}
+									aria-label={t('wiki.new_template_label', 'Template label')}
+									class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+								/>
+								<input
+									type="text"
+									bind:value={tplSlug}
+									oninput={() => (tplSlugEdited = true)}
+									placeholder={t('wiki.new_template_slug', 'template-slug')}
+									aria-label={t('wiki.new_template_slug', 'template-slug')}
+									class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+								/>
+							</div>
+							{#if tplError}
+								<p class="text-xs text-red-500" role="alert">{tplError}</p>
+							{/if}
+							<div class="flex justify-end gap-2">
+								<button
+									type="button"
+									onclick={() => (tplOpen = false)}
+									class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface)]"
+								>
+									{t('wiki.cancel', 'Cancel')}
+								</button>
+								<button
+									type="button"
+									onclick={createTemplate}
+									disabled={tplSaving}
+									class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90 disabled:opacity-50"
+								>
+									{tplSaving ? '...' : t('wiki.new_template_add', 'Add template')}
+								</button>
+							</div>
+						</div>
+					{/if}
 				</div>
 			{/if}
 
