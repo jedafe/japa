@@ -335,6 +335,11 @@ type wikiPageTemplateItem struct {
 // `category` field — the value the tab strip and create form key on);
 // page_slug is the stub page slug used in /wiki/{entity}/{slug} URLs.
 type wikiCategoryItem struct {
+	// ID is the category row's UUID — emitted so wiki.manage holders can
+	// address admin routes (e.g. inline page-template authoring on the
+	// member create form, §80). It carries no data beyond what an admin
+	// could already list.
+	ID           string `json:"id,omitempty"`
 	Slug         string `json:"slug"`
 	PageSlug     string `json:"page_slug"`
 	Category     string `json:"category"`
@@ -365,6 +370,9 @@ func categoryItem(c WikiCategory) wikiCategoryItem {
 		Label:    c.Label,
 		Position: c.Position,
 		IsSystem: c.IsSystem,
+	}
+	if c.ID.Valid {
+		item.ID = c.ID.String()
 	}
 	if c.Icon != nil {
 		item.Icon = *c.Icon
