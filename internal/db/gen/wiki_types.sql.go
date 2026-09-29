@@ -815,6 +815,92 @@ func (q *Queries) ListWikiDescendantSpaces(ctx context.Context, arg ListWikiDesc
 	return items, nil
 }
 
+const listWikiDirectoryChildren = `-- name: ListWikiDirectoryChildren :many
+WITH RECURSIVE descendants AS (
+    SELECT kid.id, 1 AS depth
+    FROM (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = $2
+        UNION
+        SELECT s.id FROM spaces s WHERE s.parent_id = $2
+    ) kid
+    UNION
+    SELECT kid.id, d.depth + 1
+    FROM descendants d
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = d.id
+        UNION
+        SELECT s2.id FROM spaces s2 WHERE s2.parent_id = d.id
+    ) kid ON true
+    WHERE d.depth < 3
+)
+SELECT s.id, s.slug, s.name, s.level, s.space_type_id,
+       COALESCE(st.slug, '') AS space_type_slug,
+       MIN(d.depth)::int AS depth, s.geo_code,
+       COUNT(wp.id) FILTER (WHERE wp.is_active = true)::bigint AS page_count
+FROM descendants d
+JOIN spaces s ON s.id = d.id
+JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id AND wtc.enabled = true
+LEFT JOIN space_types st ON st.id = s.space_type_id
+LEFT JOIN wiki_pages wp ON wp.space_id = s.id
+WHERE s.deleted_at IS NULL AND s.status = 'active'
+  AND (cardinality($1::uuid[]) = 0 OR s.space_type_id = ANY($1::uuid[]))
+GROUP BY s.id, s.slug, s.name, s.level, s.space_type_id, st.slug, s.geo_code
+ORDER BY MIN(d.depth), s.name, s.slug
+`
+
+type ListWikiDirectoryChildrenParams struct {
+	TypeIds []pgtype.UUID `json:"type_ids"`
+	SpaceID pgtype.UUID   `json:"space_id"`
+}
+
+type ListWikiDirectoryChildrenRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Slug          string      `json:"slug"`
+	Name          string      `json:"name"`
+	Level         string      `json:"level"`
+	SpaceTypeID   pgtype.UUID `json:"space_type_id"`
+	SpaceTypeSlug string      `json:"space_type_slug"`
+	Depth         int32       `json:"depth"`
+	GeoCode       *string     `json:"geo_code"`
+	PageCount     int64       `json:"page_count"`
+}
+
+// Directory-mode category listing (§80): the descendant-space walk of
+// ListWikiDescendantSpaces, but the page needs a directory card per child —
+// geo_code + active wiki page_count — and every child must have an enabled
+// wiki type (a configured level that isn't a wiki type produces dead
+// links). LEFT JOIN wiki_pages so children with zero pages still list —
+// unlike rollup rows, directories don't require field values.
+func (q *Queries) ListWikiDirectoryChildren(ctx context.Context, arg ListWikiDirectoryChildrenParams) ([]ListWikiDirectoryChildrenRow, error) {
+	rows, err := q.db.Query(ctx, listWikiDirectoryChildren, arg.TypeIds, arg.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWikiDirectoryChildrenRow
+	for rows.Next() {
+		var i ListWikiDirectoryChildrenRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Name,
+			&i.Level,
+			&i.SpaceTypeID,
+			&i.SpaceTypeSlug,
+			&i.Depth,
+			&i.GeoCode,
+			&i.PageCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWikiPageTemplates = `-- name: ListWikiPageTemplates :many
 
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,

@@ -1286,6 +1286,50 @@ func (s *Store) ListDescendantSpaces(ctx context.Context, spaceID pgtype.UUID, t
 	return out, nil
 }
 
+// WikiDirectoryChild is one descendant space row for a directory-mode
+// category page — the rollup descendant set plus geo_code and the space's
+// active wiki page count. Children with zero pages still list (unlike
+// rollup rows, no field-value requirement).
+type WikiDirectoryChild struct {
+	ID            pgtype.UUID
+	Slug          string
+	Name          string
+	Level         string
+	SpaceTypeID   pgtype.UUID
+	SpaceTypeSlug string
+	Depth         int32
+	GeoCode       *string
+	PageCount     int64
+}
+
+// ListDirectoryChildren returns the space's transitive descendants (depth
+// ≤3) restricted to the given wiki-enabled space types — the directory-mode
+// listing set. Rows are ordered by depth, then name.
+func (s *Store) ListDirectoryChildren(ctx context.Context, spaceID pgtype.UUID, typeIDs []pgtype.UUID) ([]WikiDirectoryChild, error) {
+	if typeIDs == nil {
+		typeIDs = []pgtype.UUID{}
+	}
+
+	rows, err := s.read.ListWikiDirectoryChildren(ctx, gen.ListWikiDirectoryChildrenParams{
+		SpaceID: spaceID,
+		TypeIds: typeIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list directory children: %w", err)
+	}
+
+	out := make([]WikiDirectoryChild, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, WikiDirectoryChild{
+			ID: r.ID, Slug: r.Slug, Name: r.Name, Level: r.Level,
+			SpaceTypeID: r.SpaceTypeID, SpaceTypeSlug: r.SpaceTypeSlug,
+			Depth: r.Depth, GeoCode: r.GeoCode, PageCount: r.PageCount,
+		})
+	}
+
+	return out, nil
+}
+
 // ListTypeChildIDs returns the space types that declare the given type as
 // a parent (wiki_type_parents reverse edges) — the declared child types
 // driving rollup scope and the landing drill-down.
