@@ -794,7 +794,11 @@ func (h *Handlers) CreateSpace(w http.ResponseWriter, r *http.Request) {
 	// If the creator did not provide an explicit parent, keyword-match the name
 	// against primary geo spaces before creating. Reject creation if no match.
 	if req.Level == LevelCustom && !parentID.Valid && len(parentSpaceUUIDs) == 0 {
-		matchedParentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), pgtype.UUID{}, req.Name)
+		geoCode := ""
+		if req.GeoCode != nil {
+			geoCode = *req.GeoCode
+		}
+		matchedParentID, matchedParentIDs, err := h.Service.LinkSpaceToPrimarySpaces(r.Context(), pgtype.UUID{}, req.Name, geoCode)
 		if err != nil {
 			handleServiceError(w, err)
 			return

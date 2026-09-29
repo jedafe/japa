@@ -722,6 +722,33 @@ FROM spaces
 WHERE geo_code = $1 AND level = 'country' AND deleted_at IS NULL
 LIMIT 1;
 
+-- name: GetSpaceCountryAncestorIDs :many
+-- Resolves each input space's country-level ancestor by walking the
+-- parent_id ∪ space_parent_spaces edge set upward (≤3 hops — the geo chain
+-- never exceeds city → state → country). A country is its own ancestor;
+-- spaces outside the geo chain (education/custom) return no row.
+WITH RECURSIVE walk AS (
+    SELECT s.id AS origin, s.id AS node, 0 AS depth
+    FROM spaces s
+    WHERE s.id = ANY(@space_ids::uuid[])
+    UNION ALL
+    SELECT w.origin, par.id, w.depth + 1
+    FROM walk w
+    JOIN (
+        SELECT j.space_id AS child, j.parent_space_id AS parent
+        FROM space_parent_spaces j
+        UNION
+        SELECT s2.id, s2.parent_id
+        FROM spaces s2
+        WHERE s2.parent_id IS NOT NULL
+    ) e ON e.child = w.node
+    JOIN spaces par ON par.id = e.parent
+    WHERE w.depth < 3
+)
+SELECT DISTINCT w.origin AS space_id, c.id AS country_id
+FROM walk w
+JOIN spaces c ON c.id = w.node AND c.level = 'country';
+
 -- name: FindCitySpaceByName :one
 -- ADR-064a: Finds a city-level space by name within a country-level space.
 -- Used by the reverse-geocoding flow (POST /me/location) to match a
