@@ -14,6 +14,7 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
 	import { Plus, Trash2, Link2, Users, Percent, DollarSign, BarChart3 } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type AffiliateProvider = {
 		id: string;
@@ -771,12 +772,12 @@
 	<div class="space-y-4">
 		<div>
 			<label for="comm-provider" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider', 'Provider')}</label>
-			<select id="comm-provider" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={newCommission.provider_id}>
-				<option value="">{t('affiliate.select_provider', 'Select provider…')}</option>
-				{#each providers as p}
-					<option value={p.id}>{p.name}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect
+				id="comm-provider"
+				bind:value={newCommission.provider_id}
+				options={[{ value: '', label: t('affiliate.select_provider', 'Select provider…') }, ...providers.map((p) => ({ value: p.id, label: p.name }))]}
+				class="w-full"
+			/>
 		</div>
 		<div>
 			<label for="comm-content" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.content_id', 'Content ID')}</label>

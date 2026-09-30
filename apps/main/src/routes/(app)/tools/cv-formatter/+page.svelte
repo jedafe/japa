@@ -8,6 +8,7 @@
 	import type { GeoCountry, CvStandard, CvFormatSession, CatalogOption } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	/**
@@ -200,7 +201,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<FileText size={20} /> {title}
 		</h1>
@@ -345,18 +346,16 @@
 						<label for="output-format" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 							{t('cv_formatter.output_format', 'Format:')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="output-format"
 							bind:value={outputFormat}
-							class="px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-						>
-							{#each formatOptions as opt (opt.value)}
-								<option value={opt.value}>{opt.label}</option>
-							{:else}
-								<option value="docx">{t('cv_formatter.format_docx', 'DOCX')}</option>
-								<option value="pdf">{t('cv_formatter.format_pdf', 'PDF')}</option>
-							{/each}
-						</select>
+							options={formatOptions.length > 0
+								? formatOptions
+								: [
+										{ value: 'docx', label: t('cv_formatter.format_docx', 'DOCX') },
+										{ value: 'pdf', label: t('cv_formatter.format_pdf', 'PDF') }
+									]}
+						/>
 					</div>
 
 					<!-- Input mode toggle: paste text or upload file -->

@@ -315,7 +315,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- University header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-4">
 		<a
 			href="/universities"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
@@ -396,7 +396,7 @@
 	</div>
 
 	<!-- Tabs — Section 39 / ADR-039: Overview / Posts / Forums / Courses / Members / Reviews / Compare -->
-	<UrlTabs {tabs} bind:value={activeTab} class="px-4" />
+	<UrlTabs {tabs} bind:value={activeTab} class="mx-3 px-4" />
 
 	<div class="p-3">
 		<!-- Stats row -->

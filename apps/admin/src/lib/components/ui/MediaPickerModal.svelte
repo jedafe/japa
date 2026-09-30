@@ -12,6 +12,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { Upload, Search, Image as ImageIcon, X, Loader2, Download, Check, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type MediaItem = {
 		id: string;
@@ -529,17 +530,15 @@
 				<!-- Provider filter + search -->
 				<div class="flex gap-2">
 					{#if stockProviders.length > 0}
-						<select
-							class="rounded-md border px-2 py-2 text-sm"
-							style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+						<AutocompleteSelect
 							bind:value={stockProviderFilter}
-							onchange={() => { if (stockQuery.trim()) runStockSearch(); }}
-						>
-							<option value="">{t('ads.media_all_providers', 'All providers')}</option>
-							{#each stockProviders as p (p)}
-								<option value={p.name}>{p.display_name}</option>
-							{/each}
-						</select>
+							onValueChange={() => { if (stockQuery.trim()) runStockSearch(); }}
+							options={[
+								{ value: '', label: t('ads.media_all_providers', 'All providers') },
+								...stockProviders.map((p) => ({ value: p.name, label: p.display_name }))
+							]}
+							class="w-44"
+						/>
 					{/if}
 					<div class="relative flex-1">
 						<Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style="color: var(--color-muted)" />

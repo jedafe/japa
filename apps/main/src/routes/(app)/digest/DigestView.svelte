@@ -142,7 +142,7 @@
 	<meta property="og:type" content="article" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-3xl">
+<div class="mx-auto w-full max-w-3xl" style="--page-gutter: 1rem">
 	<ListPageBar title={title}>
 		{#snippet actions()}
 			{#if digest}

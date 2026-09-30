@@ -20,7 +20,7 @@
 		BookOpen
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import type { Scholarship, SavedScholarship } from '$lib/types';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -571,17 +571,13 @@
 					<label class="mb-1 block text-xs font-medium text-[var(--color-muted)]" for="status">
 						{t('scholarships.application_status', 'Application status')}
 					</label>
-					<select
+					<AutocompleteSelect
 						id="status"
 						value={savedItem.status}
-						onchange={(e) => updateStatus((e.currentTarget as HTMLSelectElement).value)}
+						options={statusOptions}
+						onValueChange={(v) => updateStatus(v)}
 						disabled={updating}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-					>
-						{#each statusOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+					/>
 				</div>
 
 				<!-- Notes editor -->

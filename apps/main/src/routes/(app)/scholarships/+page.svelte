@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { GraduationCap, Lock, Bookmark, BookmarkCheck, ClipboardList, GitCompare, Loader2, ExternalLink, Clock, ShieldCheck, ShieldAlert } from 'lucide-svelte';
-	import { EmptyState, PaginationControls, SearchInput, FilterToggle, type SearchSuggestion } from '$lib/components/ui';
+	import { EmptyState, PaginationControls, SearchInput, FilterToggle, AutocompleteSelect, type SearchSuggestion } from '$lib/components/ui';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -304,7 +304,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 <div class="mx-auto w-full max-w-4xl">
 	<!-- Header — same structure as the radar pages, with the filter
 	     toggle pinned to the top-right. -->
-	<div class="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4">
+	<div class="mx-4 flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4">
 		<div class="min-w-0">
 			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 				<GraduationCap size={20} /> {t('tools.scholarships', 'Scholarship Finder')}
@@ -402,16 +402,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					onchange={applyFilters}
 					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
-				<select
-					aria-label={t('scholarships.renewable', 'Renewable')}
-					bind:value={renewable}
-					onchange={applyFilters}
-					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					<option value="">{t('scholarships.renewable_any', 'Any renewable')}</option>
-					<option value="true">{t('scholarships.renewable_yes', 'Yes')}</option>
-					<option value="false">{t('scholarships.renewable_no', 'No')}</option>
-				</select>
+				<AutocompleteSelect
+					ariaLabel={t('scholarships.renewable', 'Renewable')}
+					value={renewable}
+					options={[
+						{ value: '', label: t('scholarships.renewable_any', 'Any renewable') },
+						{ value: 'true', label: t('scholarships.renewable_yes', 'Yes') },
+						{ value: 'false', label: t('scholarships.renewable_no', 'No') }
+					]}
+					onValueChange={(v) => {
+						renewable = v;
+						applyFilters();
+					}}
+				/>
 				<input
 					type="date"
 					aria-label={t('scholarships.deadline_from', 'Deadline from')}
@@ -426,16 +429,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					onchange={applyFilters}
 					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
-				<select
-					aria-label={t('scholarships.sort', 'Sort by')}
-					bind:value={sort}
-					onchange={applyFilters}
-					class="min-h-[44px] w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-[11px] text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					<option value="">{t('scholarships.sort_default', 'Default')}</option>
-					<option value="deadline_asc">{t('scholarships.sort_deadline_asc', 'Deadline (earliest)')}</option>
-					<option value="amount_desc">{t('scholarships.sort_amount_desc', 'Award amount (highest)')}</option>
-				</select>
+				<AutocompleteSelect
+					ariaLabel={t('scholarships.sort', 'Sort by')}
+					value={sort}
+					options={[
+						{ value: '', label: t('scholarships.sort_default', 'Default') },
+						{ value: 'deadline_asc', label: t('scholarships.sort_deadline_asc', 'Deadline (earliest)') },
+						{ value: 'amount_desc', label: t('scholarships.sort_amount_desc', 'Award amount (highest)') }
+					]}
+					onValueChange={(v) => {
+						sort = v;
+						applyFilters();
+					}}
+				/>
 				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 					<input
 						type="checkbox"
@@ -493,16 +499,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 										{/if}
 									</div>
 								</div>
-								<select
+								<AutocompleteSelect
+									class="w-40 shrink-0"
 									value={saved.status}
-									onchange={(e) => updateStatus(saved, (e.target as HTMLSelectElement).value)}
-									class="shrink-0 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-									aria-label={t('scholarships.status_label', 'Application status')}
-								>
-									{#each statusOptions as opt (opt.value)}
-										<option value={opt.value}>{opt.label}</option>
-									{/each}
-								</select>
+									options={statusOptions}
+									onValueChange={(v) => updateStatus(saved, v)}
+									ariaLabel={t('scholarships.status_label', 'Application status')}
+									inputClass="text-xs"
+								/>
 							</div>
 						</div>
 					{/each}

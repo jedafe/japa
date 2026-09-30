@@ -73,7 +73,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<ListPageBar title={t('coupons.heading', 'Coupons')} />
 
 	<div class="p-4">

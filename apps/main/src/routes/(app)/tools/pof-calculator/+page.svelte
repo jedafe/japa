@@ -4,7 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Wallet } from 'lucide-svelte';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import type {
 		GeoSpaceOption,
@@ -138,16 +138,14 @@
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="visaType">
 					{t('pof_calculator.visa_type', 'Visa / program type')}
 				</label>
-				<select
+				<AutocompleteSelect
 					id="visaType"
 					bind:value={selectedVisaType}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				>
-					<option value="" disabled>{t('pof_calculator.select_visa', 'Select visa type')}</option>
-					{#each visaTypes as vt (vt)}
-						<option value={vt}>{vt}</option>
-					{/each}
-				</select>
+					options={[
+						{ value: '', label: t('pof_calculator.select_visa', 'Select visa type') },
+						...visaTypes.map((vt) => ({ value: vt, label: vt }))
+					]}
+				/>
 			</div>
 		{/if}
 

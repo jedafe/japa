@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { Check, ChevronRight, Sparkles, MapPin, Trophy, Heart } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { PageData } from './$types';
 	import type { GeoCity, GeoState, OnboardingRecommendation, TagSuggestion, AchievementMilestoneType } from '$lib/types';
@@ -298,14 +299,17 @@
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-status">{t('onboarding.field_japa_status', 'Where are you in your japa journey?')}</label>
-						<select id="ob-status" bind:value={japaStatus} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
-							<option value="">{t('onboarding.select_option', 'Select...')}</option>
-							{#if data.onboardingOptions}
-								{#each data.onboardingOptions.japa_statuses as opt (opt.value)}
-									<option value={opt.value}>{t(opt.label_key, opt.value)}</option>
-								{/each}
-							{/if}
-						</select>
+						<AutocompleteSelect
+							id="ob-status"
+							bind:value={japaStatus}
+							options={[
+								{ value: '', label: t('onboarding.select_option', 'Select...') },
+								...(data.onboardingOptions?.japa_statuses ?? []).map((opt) => ({
+									value: opt.value,
+									label: t(opt.label_key, opt.value)
+								}))
+							]}
+						/>
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -333,12 +337,14 @@
 							{#if loadingStates}
 								<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading...')}</p>
 							{:else if states.length > 0}
-								<select id="ob-state" bind:value={selectedState} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
-									<option value="">{t('onboarding.select_option', 'Select...')}</option>
-									{#each states as s (s.id)}
-										<option value={s.id}>{s.name}</option>
-									{/each}
-								</select>
+								<AutocompleteSelect
+									id="ob-state"
+									bind:value={selectedState}
+									options={[
+										{ value: '', label: t('onboarding.select_option', 'Select...') },
+										...states.map((s) => ({ value: s.id, label: s.name }))
+									]}
+								/>
 							{:else}
 								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_states', 'No states available for this country')}</p>
 							{/if}
@@ -350,12 +356,14 @@
 							{#if loadingCities}
 								<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading...')}</p>
 							{:else if cities.length > 0}
-								<select id="ob-city" bind:value={selectedCity} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
-									<option value="">{t('onboarding.select_option', 'Select...')}</option>
-									{#each cities as c (c.id)}
-										<option value={c.id}>{c.name}</option>
-									{/each}
-								</select>
+								<AutocompleteSelect
+									id="ob-city"
+									bind:value={selectedCity}
+									options={[
+										{ value: '', label: t('onboarding.select_option', 'Select...') },
+										...cities.map((c) => ({ value: c.id, label: c.name }))
+									]}
+								/>
 							{:else}
 								<p class="text-xs text-[var(--color-muted)]">{t('onboarding.no_cities', 'No cities available for this state')}</p>
 							{/if}
@@ -387,14 +395,17 @@
 					</div>
 					<div>
 						<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="ob-goal">{t('onboarding.field_goal', 'Primary goal')}</label>
-						<select id="ob-goal" bind:value={primaryGoal} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none">
-							<option value="">{t('onboarding.select_option', 'Select...')}</option>
-							{#if data.onboardingOptions}
-								{#each data.onboardingOptions.primary_goals as opt (opt.value)}
-									<option value={opt.value}>{t(opt.label_key, opt.value)}</option>
-								{/each}
-							{/if}
-						</select>
+						<AutocompleteSelect
+							id="ob-goal"
+							bind:value={primaryGoal}
+							options={[
+								{ value: '', label: t('onboarding.select_option', 'Select...') },
+								...(data.onboardingOptions?.primary_goals ?? []).map((opt) => ({
+									value: opt.value,
+									label: t(opt.label_key, opt.value)
+								}))
+							]}
+						/>
 					</div>
 				</div>
 			{/if}

@@ -5,6 +5,7 @@
 	import { enhance } from '$app/forms';
 	import { Building2, Plus, Loader2 } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -92,7 +93,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Building2 size={20} /> {t('organizations.new.heading', 'New organization')}
 		</h1>
@@ -223,11 +224,13 @@
 					<label for="org_type" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('organizations.new.field_type', 'Organization type')}
 					</label>
-					<select id="org_type" name="org_type" bind:value={orgType} disabled={metaUnavailable} class={inputClass}>
-						{#each data.orgMeta?.org_types ?? [] as ot (ot.value)}
-							<option value={ot.value}>{ot.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="org_type"
+						name="org_type"
+						bind:value={orgType}
+						disabled={metaUnavailable}
+						options={data.orgMeta?.org_types ?? []}
+					/>
 					{#if metaUnavailable}
 						<p class="mt-1 text-xs text-[var(--color-danger)]" role="alert">
 							{t('organizations.new.meta_unavailable', 'Organization types could not be loaded. Please try again later.')}

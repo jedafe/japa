@@ -57,6 +57,7 @@
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// Cast for DI — the editors expect Component<any>, MediaPickerModal has bindable props
 	const MediaPicker = MediaPickerModal as unknown as Component;
@@ -1107,10 +1108,16 @@
 					<button onclick={() => (deviceMode = 'tablet')} class="rounded px-2 py-1 text-xs {deviceMode === 'tablet' ? 'text-white' : 'border'}" style={deviceMode === 'tablet' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_tablet', 'Tablet')}</button>
 					<button onclick={() => (deviceMode = 'mobile')} class="rounded px-2 py-1 text-xs {deviceMode === 'mobile' ? 'text-white' : 'border'}" style={deviceMode === 'mobile' ? 'background: var(--color-primary)' : 'border-color: var(--color-border)'}>{t('landing.device_mobile', 'Mobile')}</button>
 				</div>
-				<select value={selectedThemeId} onchange={(e) => changeTheme(e.currentTarget.value)} class="shrink-0 rounded-md border px-2 py-1.5 text-xs" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" aria-label={t('page_builder.theme', 'Theme')}>
-					<option value="">{t('page_builder.default_theme', 'Default Theme')}</option>
-					{#each themes as th (th)}<option value={th.id} selected={selectedThemeId === th.id}>{th.name}{th.is_default ? ' (default)' : ''}</option>{/each}
-				</select>
+				<AutocompleteSelect
+					value={selectedThemeId}
+					onValueChange={(v) => changeTheme(v)}
+					ariaLabel={t('page_builder.theme', 'Theme')}
+					options={[
+						{ value: '', label: t('page_builder.default_theme', 'Default Theme') },
+						...themes.map((th) => ({ value: th.id, label: th.name + (th.is_default ? ' (default)' : '') }))
+					]}
+					class="w-44"
+				/>
 			{:else if activeHeaderPanel === 'actions'}
 				<!-- Actions: save template + save draft + publish/archive -->
 				{#if canManagePages}
@@ -1444,38 +1451,34 @@
 									<h4 class="text-xs font-semibold uppercase" style="color: var(--color-muted)">{t('landing.animation', 'Animation')}</h4>
 									<div>
 										<label for="motion-preset" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_preset', 'Preset')}</label>
-										<select id="motion-preset" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.preset ?? 'none'} onchange={(e) => updateBlockMotion(selectedBlock.id, { preset: e.currentTarget.value as MotionConfig['preset'] })}>
-											<optgroup label={t('landing.motion_none', 'None')}><option value="none">{t('landing.motion_none', 'None')}</option></optgroup>
-											<optgroup label={t('landing.motion_fade', 'Fade')}>
-												<option value="fade-in">{t('landing.motion_fade_in', 'Fade In')}</option>
-												<option value="fade-up">{t('landing.motion_fade_up', 'Fade Up')}</option>
-												<option value="fade-down">{t('landing.motion_fade_down', 'Fade Down')}</option>
-											</optgroup>
-											<optgroup label={t('landing.motion_fly_in', 'Fly In')}>
-												<option value="fly-in-left">{t('landing.motion_fly_left', 'Fly In from Left')}</option>
-												<option value="fly-in-right">{t('landing.motion_fly_right', 'Fly In from Right')}</option>
-												<option value="fly-in-up">{t('landing.motion_fly_bottom', 'Fly In from Bottom')}</option>
-												<option value="fly-in-down">{t('landing.motion_fly_top', 'Fly In from Top')}</option>
-											</optgroup>
-											<optgroup label={t('landing.motion_slide', 'Slide')}>
-												<option value="slide-in">{t('landing.motion_slide_in', 'Slide In')}</option>
-												<option value="slide-in-left">{t('landing.motion_slide_left', 'Slide In from Left')}</option>
-												<option value="slide-in-right">{t('landing.motion_slide_right', 'Slide In from Right')}</option>
-											</optgroup>
-											<optgroup label={t('landing.motion_scale_zoom', 'Scale & Zoom')}>
-												<option value="scale-in">{t('landing.motion_scale_in', 'Scale In')}</option>
-												<option value="scale-out">{t('landing.motion_scale_out', 'Scale Out')}</option>
-												<option value="zoom-in">{t('landing.motion_zoom_in', 'Zoom In')}</option>
-												<option value="zoom-out">{t('landing.motion_zoom_out', 'Zoom Out')}</option>
-											</optgroup>
-											<optgroup label={t('landing.motion_blur_flip', 'Blur & Flip')}>
-												<option value="blur-in">{t('landing.motion_blur_in', 'Blur In')}</option>
-												<option value="blur-out">{t('landing.motion_blur_out', 'Blur Out')}</option>
-												<option value="flip-up">{t('landing.motion_flip_up', 'Flip Up')}</option>
-												<option value="flip-down">{t('landing.motion_flip_down', 'Flip Down')}</option>
-											</optgroup>
-											<optgroup label={t('landing.motion_special', 'Special')}><option value="bounce-in">{t('landing.motion_bounce_in', 'Bounce In')}</option></optgroup>
-										</select>
+										<AutocompleteSelect
+											id="motion-preset"
+											value={selectedBlock.motion?.preset ?? 'none'}
+											onValueChange={(v) => updateBlockMotion(selectedBlock.id, { preset: v as MotionConfig['preset'] })}
+											options={[
+												{ value: 'none', label: t('landing.motion_none', 'None') },
+												{ value: 'fade-in', label: t('landing.motion_fade_in', 'Fade In'), sublabel: t('landing.motion_fade', 'Fade') },
+												{ value: 'fade-up', label: t('landing.motion_fade_up', 'Fade Up'), sublabel: t('landing.motion_fade', 'Fade') },
+												{ value: 'fade-down', label: t('landing.motion_fade_down', 'Fade Down'), sublabel: t('landing.motion_fade', 'Fade') },
+												{ value: 'fly-in-left', label: t('landing.motion_fly_left', 'Fly In from Left'), sublabel: t('landing.motion_fly_in', 'Fly In') },
+												{ value: 'fly-in-right', label: t('landing.motion_fly_right', 'Fly In from Right'), sublabel: t('landing.motion_fly_in', 'Fly In') },
+												{ value: 'fly-in-up', label: t('landing.motion_fly_bottom', 'Fly In from Bottom'), sublabel: t('landing.motion_fly_in', 'Fly In') },
+												{ value: 'fly-in-down', label: t('landing.motion_fly_top', 'Fly In from Top'), sublabel: t('landing.motion_fly_in', 'Fly In') },
+												{ value: 'slide-in', label: t('landing.motion_slide_in', 'Slide In'), sublabel: t('landing.motion_slide', 'Slide') },
+												{ value: 'slide-in-left', label: t('landing.motion_slide_left', 'Slide In from Left'), sublabel: t('landing.motion_slide', 'Slide') },
+												{ value: 'slide-in-right', label: t('landing.motion_slide_right', 'Slide In from Right'), sublabel: t('landing.motion_slide', 'Slide') },
+												{ value: 'scale-in', label: t('landing.motion_scale_in', 'Scale In'), sublabel: t('landing.motion_scale_zoom', 'Scale & Zoom') },
+												{ value: 'scale-out', label: t('landing.motion_scale_out', 'Scale Out'), sublabel: t('landing.motion_scale_zoom', 'Scale & Zoom') },
+												{ value: 'zoom-in', label: t('landing.motion_zoom_in', 'Zoom In'), sublabel: t('landing.motion_scale_zoom', 'Scale & Zoom') },
+												{ value: 'zoom-out', label: t('landing.motion_zoom_out', 'Zoom Out'), sublabel: t('landing.motion_scale_zoom', 'Scale & Zoom') },
+												{ value: 'blur-in', label: t('landing.motion_blur_in', 'Blur In'), sublabel: t('landing.motion_blur_flip', 'Blur & Flip') },
+												{ value: 'blur-out', label: t('landing.motion_blur_out', 'Blur Out'), sublabel: t('landing.motion_blur_flip', 'Blur & Flip') },
+												{ value: 'flip-up', label: t('landing.motion_flip_up', 'Flip Up'), sublabel: t('landing.motion_blur_flip', 'Blur & Flip') },
+												{ value: 'flip-down', label: t('landing.motion_flip_down', 'Flip Down'), sublabel: t('landing.motion_blur_flip', 'Blur & Flip') },
+												{ value: 'bounce-in', label: t('landing.motion_bounce_in', 'Bounce In'), sublabel: t('landing.motion_special', 'Special') }
+											]}
+											class="w-full"
+										/>
 									</div>
 									{#if (selectedBlock.motion?.preset ?? 'none') !== 'none'}
 										<div class="grid grid-cols-2 gap-2">
@@ -1490,15 +1493,13 @@
 										</div>
 										<div>
 											<label for="motion-easing" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_easing', 'Easing')}</label>
-											<select id="motion-easing" class="w-full rounded border px-2 py-1 text-sm" style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)" value={selectedBlock.motion?.easing ?? 'cubic-bezier(0.16, 1, 0.3, 1)'} onchange={(e) => updateBlockMotion(selectedBlock.id, { easing: e.currentTarget.value })}>
-												<option value="cubic-bezier(0.16, 1, 0.3, 1)">{t('landing.easing_smooth', 'Smooth (default)')}</option>
-												<option value="ease-out">{t('landing.easing_out', 'Ease Out')}</option>
-												<option value="ease-in-out">{t('landing.easing_in_out', 'Ease In Out')}</option>
-												<option value="ease-in">{t('landing.easing_in', 'Ease In')}</option>
-												<option value="linear">{t('landing.easing_linear', 'Linear')}</option>
-												<option value="cubic-bezier(0.34, 1.56, 0.64, 1)">{t('landing.easing_bounce', 'Bounce')}</option>
-												<option value="cubic-bezier(0.68, -0.55, 0.27, 1.55)">{t('landing.easing_elastic', 'Elastic')}</option>
-											</select>
+											<AutocompleteSelect
+												id="motion-easing"
+												value={selectedBlock.motion?.easing ?? 'cubic-bezier(0.16, 1, 0.3, 1)'}
+												onValueChange={(v) => updateBlockMotion(selectedBlock.id, { easing: v })}
+												options={[{ value: 'cubic-bezier(0.16, 1, 0.3, 1)', label: t('landing.easing_smooth', 'Smooth (default)') }, { value: 'ease-out', label: t('landing.easing_out', 'Ease Out') }, { value: 'ease-in-out', label: t('landing.easing_in_out', 'Ease In Out') }, { value: 'ease-in', label: t('landing.easing_in', 'Ease In') }, { value: 'linear', label: t('landing.easing_linear', 'Linear') }, { value: 'cubic-bezier(0.34, 1.56, 0.64, 1)', label: t('landing.easing_bounce', 'Bounce') }, { value: 'cubic-bezier(0.68, -0.55, 0.27, 1.55)', label: t('landing.easing_elastic', 'Elastic') }]}
+												class="w-full"
+											/>
 										</div>
 										<div>
 											<label for="motion-threshold" class="mb-1 block text-xs" style="color: var(--color-muted)">{t('landing.motion_threshold', 'Viewport threshold')}: {selectedBlock.motion?.threshold ?? 0.1}</label>
@@ -1569,14 +1570,13 @@
 				</div>
 				<div>
 					<label for="page-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.page_type', 'Page type')}</label>
-					<select id="page-type" bind:value={pageType} onchange={() => (unsavedChanges = true)} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)">
-						{#if pageTypeOptions.length === 0 && pageType}
-							<option value={pageType}>{pageType}</option>
-						{/if}
-						{#each pageTypeOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="page-type"
+						bind:value={pageType}
+						onValueChange={() => (unsavedChanges = true)}
+						options={pageTypeOptions}
+						class="w-full"
+					/>
 				</div>
 				<div>
 					<label for="page-description" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.description', 'Description')}</label>

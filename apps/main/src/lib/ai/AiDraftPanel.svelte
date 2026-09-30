@@ -19,6 +19,7 @@
 		type OgMetadata
 	} from './assistApi';
 	import type { DraftRequest, DraftResponse, FieldSchema, DraftOptions } from './types';
+	import { AutocompleteSelect } from '$lib/components/ui';
 
 	interface Props {
 		open: boolean;
@@ -74,6 +75,18 @@
 	let panelTab = $state<'draft' | 'assist'>('draft');
 	type AssistAction = 'improve' | 'summarize' | 'translate' | 'tags' | 'og';
 	let assistAction = $state<AssistAction>('improve');
+
+	function setAssistAction(v: string) {
+		assistAction = v as AssistAction;
+		clearAssistResult();
+	}
+	function setMode(v: string) {
+		mode = v as typeof mode;
+	}
+	function setFramework(v: string) {
+		framework = v as typeof framework;
+		frameworkManuallySet = true;
+	}
 	let assistLoading = $state(false);
 	let assistError = $state('');
 	let assistText = $state('');
@@ -575,30 +588,18 @@
 				<!-- §20 assist actions: improve / summarize / translate / tags / OG -->
 				<div class="flex flex-col gap-1">
 					<label class="text-xs text-[var(--color-muted)]" for="ai-assist-action">{t('ai.assist.action_label', 'Action')}</label>
-					<select
+					<AutocompleteSelect
 						id="ai-assist-action"
-						bind:value={assistAction}
-						onchange={clearAssistResult}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-					>
-						{#each ASSIST_ACTIONS as option (option.value)}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
+						value={assistAction}
+						options={ASSIST_ACTIONS}
+						onValueChange={setAssistAction}
+					/>
 				</div>
 
 				{#if assistAction === 'improve'}
 					<div class="flex flex-col gap-1">
 						<label class="text-xs text-[var(--color-muted)]" for="ai-assist-tone">{t('ai.body.tone_label')}</label>
-						<select
-							id="ai-assist-tone"
-							bind:value={tone}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-						>
-							{#each TONES as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
+						<AutocompleteSelect id="ai-assist-tone" bind:value={tone} options={TONES} />
 					</div>
 				{:else if assistAction === 'summarize'}
 					<div class="flex flex-col gap-1">
@@ -678,82 +679,50 @@
 				<div class="grid grid-cols-2 gap-2">
 					<div class="flex flex-col gap-1">
 						<label class="text-xs text-[var(--color-muted)]" for="ai-model">{t('ai.body.model_label', 'Model')}</label>
-						<select
+						<AutocompleteSelect
 							id="ai-model"
 							bind:value={selectedModel}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-						>
-							{#each models as option (option.id)}
-								<option value={option.id}>{option.label}</option>
-							{/each}
-						</select>
+							options={models.map((m) => ({ value: m.id, label: m.label }))}
+						/>
 					</div>
 					<div class="flex flex-col gap-1">
 						<label class="text-xs text-[var(--color-muted)]" for="ai-humanize">{t('ai.body.humanize_label')}</label>
-						<select
+						<AutocompleteSelect
 							id="ai-humanize"
 							bind:value={humanizeLevel}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-						>
-							{#each HUMANIZE_LEVELS as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
+							options={HUMANIZE_LEVELS}
+						/>
 					</div>
 				</div>
 
 				<div class="grid grid-cols-2 gap-2">
 					<div class="flex flex-col gap-1">
 						<label class="text-xs text-[var(--color-muted)]" for="ai-tone">{t('ai.body.tone_label')}</label>
-						<select
-							id="ai-tone"
-							bind:value={tone}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-						>
-							{#each TONES as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
+						<AutocompleteSelect id="ai-tone" bind:value={tone} options={TONES} />
 					</div>
 					<div class="flex flex-col gap-1">
 						<label class="text-xs text-[var(--color-muted)]" for="ai-voice">{t('ai.body.voice_label', 'Voice / Tone')}</label>
-						<select
+						<AutocompleteSelect
 							id="ai-voice"
 							bind:value={selectedVoice}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-						>
-							{#each filteredVoices as option (option.id)}
-								<option value={option.id}>{option.label}</option>
-							{/each}
-						</select>
+							options={filteredVoices.map((v) => ({ value: v.id, label: v.label }))}
+						/>
 					</div>
 				</div>
 
 				<div class="flex flex-col gap-1">
 					<label class="text-xs text-[var(--color-muted)]" for="ai-mode">{t('ai.body.mode_label', 'Mode')}</label>
-					<select
-						id="ai-mode"
-						bind:value={mode}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-					>
-						{#each MODES as option (option.value)}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect id="ai-mode" value={mode} options={MODES} onValueChange={setMode} />
 				</div>
 
 				<div class="flex flex-col gap-1">
 					<label class="text-xs text-[var(--color-muted)]" for="ai-framework">{t('ai.body.framework_label', 'Marketing framework')}</label>
-					<select
+					<AutocompleteSelect
 						id="ai-framework"
-						bind:value={framework}
-						onchange={() => (frameworkManuallySet = true)}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-					>
-						{#each FRAMEWORKS as option (option.value)}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
+						value={framework}
+						options={FRAMEWORKS}
+						onValueChange={setFramework}
+					/>
 					{#if frameworkHint()}
 						<p class="text-[10px] text-[var(--color-muted)]">{frameworkHint()}</p>
 					{/if}

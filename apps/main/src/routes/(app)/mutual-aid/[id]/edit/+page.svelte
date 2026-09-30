@@ -6,6 +6,7 @@
 	import { api } from '$lib/api/client';
 	import { untrack } from 'svelte';
 	import { mutualAidCategoryOptions } from '$lib/enumOptions';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
@@ -56,7 +57,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<a
 			href="/mutual-aid/{post.id}"
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
@@ -96,15 +97,12 @@
 				{t('mutual_aid.field_category', 'Category')}
 				<span class="text-red-500" aria-hidden="true">*</span>
 			</label>
-			<select
+			<AutocompleteSelect
 				id="category"
-				bind:value={category}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-			>
-				{#each categoryOptions as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				value={category}
+				options={categoryOptions}
+				onValueChange={(v) => (category = v as MutualAidCategory)}
+			/>
 		</div>
 
 		<!-- Title -->
@@ -146,17 +144,15 @@
 			<label for="destination_country" class="text-sm font-medium text-[var(--color-text)]">
 				{t('mutual_aid.field_destination', 'Destination country')}
 			</label>
-			<select
+			<AutocompleteSelect
 				id="destination_country"
 				value={destinationSpaceId}
 				disabled
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-text-muted)]"
-			>
-				<option value="">{t('mutual_aid.field_destination_placeholder', 'Select a country')}</option>
-				{#each data.countries as country (country.id)}
-					<option value={country.id}>{country.name}</option>
-				{/each}
-			</select>
+				options={[
+					{ value: '', label: t('mutual_aid.field_destination_placeholder', 'Select a country') },
+					...data.countries.map((c) => ({ value: c.id, label: c.name }))
+				]}
+			/>
 		</div>
 
 		<!-- City (read-only — same reason as destination. BUG-005.) -->

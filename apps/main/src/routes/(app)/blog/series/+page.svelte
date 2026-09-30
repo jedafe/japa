@@ -64,7 +64,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<BookOpen size={20} /> {t('blog_series.heading', 'Blog Series')}
 		</h1>
@@ -74,7 +74,7 @@
 	</div>
 
 	<!-- Search -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 		<div class="flex items-start gap-2">
 			<div class="relative min-w-0 flex-1">
 				<input

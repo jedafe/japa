@@ -66,7 +66,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-2xl">
+<div class="mx-auto w-full max-w-2xl" style="--page-gutter: 1rem">
 	<h1 class="sr-only">{t('leaderboard.heading', 'Leaderboard')}</h1>
 	<ListPageBar>
 		{#if !disabled}

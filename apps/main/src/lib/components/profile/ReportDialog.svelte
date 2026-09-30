@@ -11,6 +11,7 @@
 	import { reportContent, reportComment, reportSpace, reportUser, reportSource } from '$lib/api/hub';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Flag, X, Loader2, AlertCircle } from 'lucide-svelte';
+	import { AutocompleteSelect } from '$lib/components/ui';
 
 	interface Props {
 		open?: boolean;
@@ -140,17 +141,13 @@
 							{t('report.reason_label', 'Reason')}
 							<span class="text-[var(--color-error)]">*</span>
 						</span>
-						<select
+						<AutocompleteSelect
 							bind:value={reason}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-						>
-							<option value="">{t('report.select_reason', 'Select a reason')}</option>
-							{#each reportReasons as r (r)}
-								<option value={r}>
-									{t(`report.reason.${r}`, humanize(r))}
-								</option>
-							{/each}
-						</select>
+							options={[
+								{ value: '', label: t('report.select_reason', 'Select a reason') },
+								...reportReasons.map((r) => ({ value: r, label: t(`report.reason.${r}`, humanize(r)) }))
+							]}
+						/>
 					</label>
 				{/if}
 

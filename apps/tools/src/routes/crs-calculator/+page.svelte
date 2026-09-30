@@ -9,6 +9,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type {
 		CrsFactorsResponse,
 		CrsDraw,
@@ -275,10 +276,15 @@
 					<label class="block text-sm font-medium mb-1" for="marital">
 						{t('crs_calculator.marital', 'Marital status')}
 					</label>
-					<select id="marital" bind:value={maritalStatus} class="input w-full">
-						<option value="single">{t('crs_calculator.single', 'Single / not accompanying spouse')}</option>
-						<option value="married">{t('crs_calculator.married', 'Married (spouse accompanying)')}</option>
-					</select>
+					<AutocompleteSelect
+						id="marital"
+						bind:value={maritalStatus}
+						options={[
+							{ value: 'single', label: t('crs_calculator.single', 'Single / not accompanying spouse') },
+							{ value: 'married', label: t('crs_calculator.married', 'Married (spouse accompanying)') }
+						]}
+						class="w-full"
+					/>
 				</div>
 
 				<!-- Age -->
@@ -294,11 +300,12 @@
 					<label class="block text-sm font-medium mb-1" for="education">
 						{t('crs_calculator.education', 'Highest education')}
 					</label>
-					<select id="education" bind:value={education} class="input w-full">
-						{#each educationOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="education"
+						bind:value={education}
+						options={educationOptions}
+						class="w-full"
+					/>
 				</div>
 
 				<!-- Canadian experience -->
@@ -322,11 +329,12 @@
 					<label class="block text-sm font-medium mb-1" for="canadianEdu">
 						{t('crs_calculator.canadian_edu', 'Canadian education')}
 					</label>
-					<select id="canadianEdu" bind:value={canadianEducation} class="input w-full">
-						{#each canadianEducationOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="canadianEdu"
+						bind:value={canadianEducation}
+						options={canadianEducationOptions}
+						class="w-full"
+					/>
 				</div>
 			</div>
 
@@ -402,11 +410,12 @@
 					<div class="grid gap-4 sm:grid-cols-3">
 						<div>
 							<label class="block text-xs text-muted mb-1" for="spouseEdu">Education</label>
-							<select id="spouseEdu" bind:value={spouseEducation} class="input w-full">
-								{#each educationOptions as opt (opt.value)}
-									<option value={opt.value}>{opt.label}</option>
-								{/each}
-							</select>
+							<AutocompleteSelect
+								id="spouseEdu"
+								bind:value={spouseEducation}
+								options={educationOptions}
+								class="w-full"
+							/>
 						</div>
 						<div>
 							<label class="block text-xs text-muted mb-1" for="spouseExp">Canadian experience (yrs)</label>

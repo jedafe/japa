@@ -9,6 +9,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
@@ -496,14 +497,14 @@
 					<!-- Create alert -->
 					<div class="p-4 bg-surface border border-border rounded-lg flex flex-wrap items-center gap-3">
 						<span class="text-sm text-text">{t('remittance.notify_when', 'Notify me when')}</span>
-						<select
+						<AutocompleteSelect
 							bind:value={alertDirection}
-							class="px-3 py-1.5 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
-						>
-							{#each directionOptions as opt (opt.value)}
-								<option value={opt.value}>{t(`remittance.direction_${opt.value}`, opt.label)}</option>
-							{/each}
-						</select>
+							options={directionOptions.map((opt) => ({
+								value: opt.value,
+								label: t(`remittance.direction_${opt.value}`, opt.label)
+							}))}
+							class="w-40"
+						/>
 						<input
 							type="number"
 							bind:value={alertTargetRate}
@@ -531,14 +532,14 @@
 									{#if editingAlertId === alert.id}
 										<!-- Edit mode (PATCH /remittance/alerts/:id — §74) -->
 										<div class="flex flex-wrap items-center gap-2">
-											<select
+											<AutocompleteSelect
 												bind:value={editDirection}
-												class="px-2 py-1 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
-											>
-												{#each directionOptions as opt (opt.value)}
-												<option value={opt.value}>{t(`remittance.direction_${opt.value}`, opt.label)}</option>
-											{/each}
-											</select>
+												options={directionOptions.map((opt) => ({
+													value: opt.value,
+													label: t(`remittance.direction_${opt.value}`, opt.label)
+												}))}
+												class="w-40"
+											/>
 											<input
 												type="number"
 												bind:value={editTargetRate}

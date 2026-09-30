@@ -12,6 +12,7 @@
 	import { onMount } from "svelte";
 	import { api } from "$lib/api";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// ── Types ──────────────────────────────────────────────────────────────
 
@@ -762,28 +763,21 @@
 			</div>
 			<div>
 				<label for="track-difficulty" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.difficulty', 'Difficulty')}</label>
-				<select
+				<AutocompleteSelect
 					id="track-difficulty"
-					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newTrack.difficulty}
-				>
-					{#each difficultyOptions as opt (opt)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+					options={difficultyOptions}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="track-category" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.col_category', 'Category')}</label>
-				<select
+				<AutocompleteSelect
 					id="track-category"
-					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newTrack.category}
-				>
-					<option value="">—</option>
-					{#each categories as cat (cat.id)}
-						<option value={cat.slug}>{cat.name}</option>
-					{/each}
-				</select>
+					options={[{ value: '', label: '—' }, ...categories.map((cat) => ({ value: cat.slug, label: cat.name }))]}
+					class="w-full"
+				/>
 			</div>
 			<div class="flex items-center gap-2 pt-2">
 				<input id="track-subscription-eligible" type="checkbox" bind:checked={newTrack.subscription_eligible} class="h-4 w-4 rounded" />
@@ -795,16 +789,12 @@
 		<div class="space-y-4">
 			<div>
 				<label for="module-track-id" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.track', 'Track')}</label>
-				<select
+				<AutocompleteSelect
 					id="module-track-id"
-					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newModule.track_id}
-				>
-					<option value="">{t('app.learning.select_track', 'Select a track...')}</option>
-					{#each tracks as track (track)}
-						<option value={track.id}>{track.title}</option>
-					{/each}
-				</select>
+					options={[{ value: '', label: t('app.learning.select_track', 'Select a track...') }, ...tracks.map((track) => ({ value: track.id, label: track.title }))]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="module-title" class="mb-1 block text-sm font-medium text-foreground">{t('learning.title')}</label>
@@ -842,30 +832,22 @@
 		<div class="space-y-4">
 			<div>
 				<label for="lesson-track-select" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.track', 'Track')}</label>
-				<select
+				<AutocompleteSelect
 					id="lesson-track-select"
-					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newLesson.selectedTrackId}
-				>
-					<option value="">{t('app.learning.select_track', 'Select a track...')}</option>
-					{#each tracks as track (track)}
-						<option value={track.id}>{track.title}</option>
-					{/each}
-				</select>
+					options={[{ value: '', label: t('app.learning.select_track', 'Select a track...') }, ...tracks.map((track) => ({ value: track.id, label: track.title }))]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="lesson-module-select" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.module', 'Module')}</label>
-				<select
+				<AutocompleteSelect
 					id="lesson-module-select"
-					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newLesson.module_id}
 					disabled={!newLesson.selectedTrackId}
-				>
-					<option value="">{t('app.learning.select_module', 'Select a module...')}</option>
-					{#each modulesForLesson as mod (mod)}
-						<option value={mod.id}>{mod.title}</option>
-					{/each}
-				</select>
+					options={[{ value: '', label: t('app.learning.select_module', 'Select a module...') }, ...modulesForLesson.map((mod) => ({ value: mod.id, label: mod.title }))]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="lesson-title" class="mb-1 block text-sm font-medium text-foreground">{t('learning.title')}</label>
@@ -890,15 +872,12 @@
 			</div>
 			<div>
 				<label for="lesson-type" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.lesson_type', 'Lesson Type')}</label>
-				<select
+				<AutocompleteSelect
 					id="lesson-type"
-					class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 					bind:value={newLesson.lesson_type}
-				>
-					{#each lessonTypeOptions as opt (opt)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+					options={lessonTypeOptions}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="lesson-content" class="mb-1 block text-sm font-medium text-foreground">{t('learning.content_markdown')}</label>
@@ -989,28 +968,21 @@
 				</div>
 				<div>
 					<label for="edit-track-difficulty" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.difficulty', 'Difficulty')}</label>
-					<select
+					<AutocompleteSelect
 						id="edit-track-difficulty"
-						class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 						bind:value={editForm.difficulty}
-					>
-						{#each difficultyOptions as opt (opt)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+						options={difficultyOptions}
+						class="w-full"
+					/>
 				</div>
 				<div>
 					<label for="edit-track-category" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.col_category', 'Category')}</label>
-					<select
+					<AutocompleteSelect
 						id="edit-track-category"
-						class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 						bind:value={editForm.category}
-					>
-						<option value="">—</option>
-						{#each categories as cat (cat.id)}
-							<option value={cat.slug}>{cat.name}</option>
-						{/each}
-					</select>
+						options={[{ value: '', label: '—' }, ...categories.map((cat) => ({ value: cat.slug, label: cat.name }))]}
+						class="w-full"
+					/>
 				</div>
 				<div class="flex items-center gap-2">
 					<input id="edit-track-subscription-eligible" type="checkbox" bind:checked={editForm.subscription_eligible} class="h-4 w-4 rounded" />
@@ -1080,15 +1052,12 @@
 				</div>
 				<div>
 					<label for="edit-lesson-type" class="mb-1 block text-sm font-medium text-foreground">{t('app.learning.lesson_type', 'Lesson Type')}</label>
-					<select
+					<AutocompleteSelect
 						id="edit-lesson-type"
-						class="h-10 w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
 						bind:value={editForm.lesson_type}
-					>
-						{#each lessonTypeOptions as opt (opt)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+						options={lessonTypeOptions}
+						class="w-full"
+					/>
 				</div>
 				<div>
 					<label for="edit-lesson-content" class="mb-1 block text-sm font-medium text-foreground">{t('learning.content_markdown')}</label>

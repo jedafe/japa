@@ -11,6 +11,7 @@
 	import { ShieldQuestion, Loader2, Send, CreditCard, Wallet, FileCheck, Trash2 } from 'lucide-svelte';
 	import type { FormField, FormSubmissionResponse } from '$lib/types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	let { data } = $props();
 
@@ -158,7 +159,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<ShieldQuestion size={20} />
 			{org ? t('claim_ownership.heading', 'Claim ownership') : t('claim_ownership.my_claims_title', 'My ownership claims')}
@@ -305,17 +306,15 @@
 								class={inputClass}
 							></textarea>
 						{:else if field.type === 'select' && field.options && field.options.length > 0}
-							<select
+							<AutocompleteSelect
 								id="field-{field.id}"
 								value={values[field.label] ?? ''}
-								onchange={(e) => (values = { ...values, [field.label]: e.currentTarget.value })}
-								class={inputClass}
-							>
-								<option value="">{t('claim_ownership.select_placeholder', 'Select an option')}</option>
-								{#each field.options as opt (opt)}
-									<option value={opt}>{opt}</option>
-								{/each}
-							</select>
+								options={[
+									{ value: '', label: t('claim_ownership.select_placeholder', 'Select an option') },
+									...field.options.map((opt) => ({ value: opt, label: opt }))
+								]}
+								onValueChange={(v) => (values = { ...values, [field.label]: v })}
+							/>
 						{:else if field.type === 'checkbox'}
 							<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 								<input

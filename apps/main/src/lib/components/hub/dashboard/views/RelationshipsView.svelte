@@ -16,6 +16,7 @@
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import MetricCard from '$lib/components/hub/MetricCard.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Users, ChevronLeft, ChevronRight, Search } from 'lucide-svelte';
 
 	// The backend returns a uniform FollowingInfo shape for /me/following and
@@ -483,28 +484,24 @@
 
 			<div class="flex items-center gap-2">
 				{#if activeTab === 'following'}
-					<select
-						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
+					<AutocompleteSelect
+						class="w-48"
 						value={typeFilter}
-						onchange={(e) => setSearchParams({ type: (e.currentTarget as HTMLSelectElement).value })}
-					>
-						{#each followTypeOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+						options={followTypeOptions}
+						onValueChange={(v) => setSearchParams({ type: v })}
+					/>
 				{/if}
 
 				{#if activeTab === 'spaces'}
-					<select
-						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm text-[var(--color-text)]"
+					<AutocompleteSelect
+						class="w-48"
 						value={spaceTypeFilter}
-						onchange={(e) => setSearchParams({ space_type: (e.currentTarget as HTMLSelectElement).value })}
-					>
-						<option value="">{t('dashboard.relationships.all_space_types', 'All types')}</option>
-						{#each spaceTypes as st (st.id)}
-							<option value={st.id}>{st.name}</option>
-						{/each}
-					</select>
+						options={[
+							{ value: '', label: t('dashboard.relationships.all_space_types', 'All types') },
+							...spaceTypes.map((st) => ({ value: st.id, label: st.name }))
+						]}
+						onValueChange={(v) => setSearchParams({ space_type: v })}
+					/>
 				{/if}
 			</div>
 		</div>

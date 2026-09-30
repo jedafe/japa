@@ -12,6 +12,7 @@
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { housingGuideAdminApi } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// GuideDTO fields from internal/housingguide/service.go (GuideDTO).
 	type HousingGuideItem = {
@@ -298,17 +299,12 @@
 		</div>
 		<div>
 			<label for="gen-accommodation-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_accommodation_type', 'Accommodation Type')}</label>
-			<select
+			<AutocompleteSelect
 				id="gen-accommodation-type"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateAccommodationType}
-			>
-				<option value="">{t('app.tools.all_types', 'All types')}</option>
-				{#each accommodationTypes as at (at.value)}
-					<option value={at.value}>{at.label}</option>
-				{/each}
-			</select>
+				options={[{ value: '', label: t('app.tools.all_types', 'All types') }, ...accommodationTypes]}
+				class="w-full"
+			/>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

@@ -19,6 +19,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Pencil, Trash2, FolderTree, Layers, X, CheckCircle, XCircle } from 'lucide-svelte';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	const canManage = $derived(hasPermission('wiki.manage'));
 
@@ -887,16 +888,13 @@
 						<label for="wc-rollup-mode" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.wiki.rollup_mode', 'Mode')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="wc-rollup-mode"
-							class="w-full rounded-lg border p-2 text-sm"
-							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 							value={String(value.rollup_mode ?? 'aggregate')}
-							onchange={(e) => (value.rollup_mode = e.currentTarget.value)}
-						>
-							<option value="aggregate">{t('app.wiki.rollup_mode_aggregate', 'Aggregate field values')}</option>
-							<option value="directory">{t('app.wiki.rollup_mode_directory', 'Directory — list child wiki spaces')}</option>
-						</select>
+							onValueChange={(v) => (value.rollup_mode = v)}
+							options={[{ value: 'aggregate', label: t('app.wiki.rollup_mode_aggregate', 'Aggregate field values') }, { value: 'directory', label: t('app.wiki.rollup_mode_directory', 'Directory — list child wiki spaces') }]}
+							class="w-full"
+						/>
 						<p class="mt-1 text-xs" style="color: var(--color-muted)">
 							{value.rollup_mode === 'directory'
 								? t('app.wiki.rollup_mode_directory_help', 'The category page lists child wiki spaces (e.g. a country’s states) with scoped search.')

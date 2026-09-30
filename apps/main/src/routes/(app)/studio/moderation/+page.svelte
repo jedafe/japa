@@ -24,10 +24,22 @@
 	let totalPages = $state(untrack(() => data.queue.total_pages));
 	let actionError = $state<string | null>(null);
 	let actingId = $state<string | null>(null);
+	// Bulk selection — only actionable rows (pending/reviewing) can be
+	// selected. Ids that leave the list after a refresh are pruned in the
+	// sync effect below.
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkBusy = $state(false);
 	$effect(() => {
-		items = data.queue.items ?? [];
+		// Compute from the local `next`, not the `items` signal — reading a
+		// signal this effect also writes re-schedules it forever (the stored
+		// proxy never equals the incoming array).
+		const next = data.queue.items ?? [];
+		items = next;
 		totalPages = data.queue.total_pages;
 		actingId = null;
+		const visible = new Set(next.map((i) => i.id));
+		const pruned = [...selectedIds].filter((id) => visible.has(id));
+		if (pruned.length !== selectedIds.size) selectedIds = new Set(pruned);
 	});
 
 	const scope = $derived(data.scope);
@@ -114,43 +126,130 @@
 		goto(`/studio/moderation?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
-	// Action confirmation dialog — warn/ban/remove ask for a reason.
-	let pendingAction = $state<{ id: string; action: string } | null>(null);
+	// Selection helpers. Actionable = pending/reviewing (the four PATCH
+	// actions). Resolved rows are inert for actions, but platform moderators
+	// can clear them — DELETE /admin/reports/{id} hard-deletes the report
+	// row and is gated by reports.review, which platform_moderator proxies.
+	function isActionable(item: ModerationQueueItem): boolean {
+		return item.status === 'pending' || item.status === 'reviewing';
+	}
+	function isClearable(item: ModerationQueueItem): boolean {
+		return !isActionable(item) && !!scope?.platform_moderator;
+	}
+	const actionableIds = $derived(items.filter(isActionable).map((i) => i.id));
+	const clearableIds = $derived(items.filter(isClearable).map((i) => i.id));
+	const selectableIds = $derived([...actionableIds, ...clearableIds]);
+	const selectedItems = $derived(items.filter((i) => selectedIds.has(i.id)));
+	const selectedActionable = $derived(selectedItems.filter(isActionable));
+	const selectedClearable = $derived(selectedItems.filter(isClearable));
+	const allSelected = $derived(
+		selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id))
+	);
+	// warn/ban are scope-gated per row — only offer them in bulk when every
+	// selected actionable row qualifies, otherwise the batch is guaranteed
+	// to partially 403 (ErrActionNotAllowed per row).
+	const canBulkWarnBan = $derived(
+		selectedActionable.length > 0 && selectedActionable.every(canWarnBan)
+	);
+
+	function toggleSelect(id: string) {
+		const next = new Set(selectedIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selectedIds = next;
+	}
+
+	function toggleSelectAll() {
+		selectedIds = allSelected ? new Set() : new Set(selectableIds);
+	}
+
+	// Action confirmation dialog — warn/ban/remove ask for a reason. The
+	// same dialog serves single rows and the bulk selection (ids array).
+	let pendingAction = $state<{ ids: string[]; action: string } | null>(null);
 	let actionReason = $state('');
 
 	function requestAction(id: string, action: string) {
 		if (action === 'dismiss') {
-			doAction(id, action, '');
+			void doActions([id], action, '');
 			return;
 		}
 		actionReason = '';
-		pendingAction = { id, action };
+		pendingAction = { ids: [id], action };
+	}
+
+	function requestBulk(action: string) {
+		if (bulkBusy || selectedIds.size === 0) return;
+		// Mixed selections are allowed: the action buttons operate on the
+		// actionable subset, Clear on the resolved subset (spec §4 bulk).
+		const ids =
+			action === 'clear'
+				? selectedClearable.map((i) => i.id)
+				: selectedActionable.map((i) => i.id);
+		if (ids.length === 0) return;
+		if (action === 'dismiss') {
+			void doActions(ids, action, '');
+			return;
+		}
+		actionReason = '';
+		pendingAction = { ids, action };
 	}
 
 	async function confirmAction() {
 		if (!pendingAction) return;
-		const { id, action } = pendingAction;
+		const { ids, action } = pendingAction;
 		pendingAction = null;
-		await doAction(id, action, actionReason);
+		await doActions(ids, action, actionReason);
 	}
 
-	async function doAction(id: string, action: string, reason: string) {
-		if (actingId) return;
-		actingId = id;
+	function actionErrorMessage(err: { code?: string; message?: string }): string {
+		return err.code === 'action_not_allowed'
+			? t('studio.moderation.action_not_allowed', 'This action exceeds your moderation scope')
+			: err.code === 'already_resolved'
+				? t('studio.moderation.already_resolved', 'This report was already resolved by another moderator')
+				: err.message || t('studio.moderation.action_error', 'Action failed — please try again');
+	}
+
+	// Runs the action over one or many rows. There is no /me bulk endpoint —
+	// per-row PATCHes keep the backend's per-report scope checks intact, so
+	// a mixed-scope selection degrades to partial failure instead of an
+	// all-or-nothing 403. After the batch, invalidateAll() re-syncs the list.
+	async function doActions(ids: string[], action: string, reason: string) {
+		if (actingId || bulkBusy || ids.length === 0) return;
+		const single = ids.length === 1;
+		if (single) actingId = ids[0];
+		else bulkBusy = true;
 		actionError = null;
-		const res = await api.patch<unknown>(`/me/moderation/queue/${id}`, { action, reason });
-		if (res.error) {
+
+		// 'clear' hard-deletes the report row via the admin endpoint
+		// (reports.review-gated); the other actions PATCH the /me queue.
+		let failed = 0;
+		let firstError: { code?: string; message?: string } | null = null;
+		for (const id of ids) {
+			const res =
+				action === 'clear'
+					? await api.delete<unknown>(`/admin/reports/${id}`)
+					: await api.patch<unknown>(`/me/moderation/queue/${id}`, { action, reason });
+			if (res.error) {
+				failed++;
+				firstError ??= res.error;
+			}
+		}
+
+		if (failed === ids.length) {
+			actionError = actionErrorMessage(firstError ?? {});
+		} else if (failed > 0) {
 			actionError =
-				res.error.code === 'action_not_allowed'
-					? t('studio.moderation.action_not_allowed', 'This action exceeds your moderation scope')
-					: res.error.code === 'already_resolved'
-						? t('studio.moderation.already_resolved', 'This report was already resolved by another moderator')
-						: res.error.message || t('studio.moderation.action_error', 'Action failed — please try again');
-			actingId = null;
-			// already_resolved means another moderator got there first — the
-			// stale row must disappear, so re-sync even though the call failed.
-			if (res.error.code === 'already_resolved') await invalidateAll();
-			return;
+				action === 'clear'
+					? t(
+							'studio.moderation.bulk_clear_partial',
+							'{done} of {total} cleared — {failed} failed',
+							{ done: ids.length - failed, total: ids.length, failed }
+						)
+					: t(
+							'studio.moderation.bulk_partial',
+							'{done} of {total} actioned — {failed} failed',
+							{ done: ids.length - failed, total: ids.length, failed }
+						);
 		}
 		await invalidateAll();
 	}
@@ -327,11 +426,92 @@
 			body={t('studio.moderation.empty_body', 'Reports in your moderated spaces and tags will appear here.')}
 		/>
 	{:else}
+		{#if selectableIds.length > 0}
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+				<label class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+					<input
+						type="checkbox"
+						checked={allSelected}
+						onchange={toggleSelectAll}
+						aria-label={t('studio.moderation.select_all', 'Select all')}
+					/>
+					{t('studio.moderation.select_all', 'Select all')}
+				</label>
+				{#if selectedIds.size > 0}
+					<span class="text-xs text-[var(--color-muted)]">
+						{t('studio.moderation.selected_count', '{count} selected', { count: selectedIds.size })}
+					</span>
+					<div class="ml-auto flex flex-wrap items-center gap-2">
+						{#if bulkBusy}
+							<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
+						{:else}
+							{#if selectedActionable.length > 0}
+								<button
+									type="button"
+									class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+									onclick={() => requestBulk('dismiss')}
+								>
+									{t('studio.moderation.dismiss', 'Dismiss')} ({selectedActionable.length})
+								</button>
+								<button
+									type="button"
+									class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+									onclick={() => requestBulk('remove')}
+								>
+									{t('studio.moderation.remove', 'Remove')} ({selectedActionable.length})
+								</button>
+								{#if canBulkWarnBan}
+									<button
+										type="button"
+										class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+										onclick={() => requestBulk('warn')}
+									>
+										{t('studio.moderation.warn', 'Warn')} ({selectedActionable.length})
+									</button>
+									<button
+										type="button"
+										class="rounded-[var(--radius)] border border-[var(--color-danger)]/40 px-3 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10"
+										onclick={() => requestBulk('ban')}
+									>
+										{t('studio.moderation.ban', 'Ban')} ({selectedActionable.length})
+									</button>
+								{/if}
+							{/if}
+							{#if selectedClearable.length > 0}
+								<button
+									type="button"
+									class="rounded-[var(--radius)] border border-[var(--color-danger)]/40 px-3 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10"
+									onclick={() => requestBulk('clear')}
+								>
+									{t('studio.moderation.clear', 'Clear')} ({selectedClearable.length})
+								</button>
+							{/if}
+							<button
+								type="button"
+								class="px-2 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+								onclick={() => (selectedIds = new Set())}
+							>
+								{t('studio.moderation.clear_selection', 'Clear selection')}
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{/if}
 		<ul class="space-y-2">
 			{#each items as item (item.id)}
 				{@const href = entityHref(item)}
-				<li class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-					<div class="flex items-start justify-between gap-3">
+				<li class="flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+					{#if isActionable(item) || isClearable(item)}
+						<input
+							type="checkbox"
+							class="mt-1 shrink-0"
+							checked={selectedIds.has(item.id)}
+							onchange={() => toggleSelect(item.id)}
+							aria-label={t('studio.moderation.select_row', 'Select report')}
+						/>
+					{/if}
+					<div class="flex min-w-0 flex-1 items-start justify-between gap-3">
 						<div class="min-w-0">
 							<div class="flex flex-wrap items-center gap-2">
 								{#if href}
@@ -375,7 +555,7 @@
 						</div>
 						{#if item.status === 'pending' || item.status === 'reviewing'}
 							<div class="flex shrink-0 flex-wrap justify-end gap-2">
-								{#if actingId === item.id}
+								{#if actingId === item.id || bulkBusy}
 									<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
 								{:else}
 									<button
@@ -408,6 +588,20 @@
 											{t('studio.moderation.ban', 'Ban')}
 										</button>
 									{/if}
+								{/if}
+							</div>
+						{:else if isClearable(item)}
+							<div class="flex shrink-0 flex-wrap justify-end gap-2">
+								{#if actingId === item.id || bulkBusy}
+									<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
+								{:else}
+									<button
+										type="button"
+										class="text-xs text-[var(--color-danger)] hover:opacity-80"
+										onclick={() => requestAction(item.id, 'clear')}
+									>
+										{t('studio.moderation.clear', 'Clear')}
+									</button>
 								{/if}
 							</div>
 						{/if}
@@ -450,8 +644,15 @@
 						{t('studio.moderation.confirm_ban', 'Ban user')}
 					{:else if pendingAction?.action === 'warn'}
 						{t('studio.moderation.confirm_warn', 'Warn user')}
+					{:else if pendingAction?.action === 'clear'}
+						{t('studio.moderation.confirm_clear', 'Clear report')}
 					{:else}
 						{t('studio.moderation.confirm_remove', 'Remove report')}
+					{/if}
+					{#if pendingAction && pendingAction.ids.length > 1}
+						<span class="ml-1 text-sm font-normal text-[var(--color-muted)]">
+							({pendingAction.ids.length})
+						</span>
 					{/if}
 				</Dialog.Title>
 				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
@@ -459,26 +660,35 @@
 						{t('studio.moderation.confirm_ban_body', 'This bans the reported user and marks the report actioned.')}
 					{:else if pendingAction?.action === 'warn'}
 						{t('studio.moderation.confirm_warn_body', 'This records a warning against the reported user and marks the report actioned.')}
+					{:else if pendingAction?.action === 'clear'}
+						{t('studio.moderation.confirm_clear_body', 'This permanently deletes the resolved report from the queue. This cannot be undone.')}
 					{:else}
 						{t('studio.moderation.confirm_remove_body', 'This marks the report as actioned.')}
 					{/if}
+					{#if pendingAction && pendingAction.ids.length > 1}
+						<span class="mt-1 block text-xs">
+							{t('studio.moderation.bulk_applies_to', 'Applies to {count} selected reports.', { count: pendingAction.ids.length })}
+						</span>
+					{/if}
 				</Dialog.Description>
-				<label class="mb-4 block text-sm text-[var(--color-muted)]" for="moderation-action-reason">
-					{t('studio.moderation.reason_label', 'Reason (optional)')}
-				</label>
-				<textarea
-					id="moderation-action-reason"
-					bind:value={actionReason}
-					rows="3"
-					class="mb-4 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)]"
-				></textarea>
+				{#if pendingAction?.action !== 'clear'}
+					<label class="mb-4 block text-sm text-[var(--color-muted)]" for="moderation-action-reason">
+						{t('studio.moderation.reason_label', 'Reason (optional)')}
+					</label>
+					<textarea
+						id="moderation-action-reason"
+						bind:value={actionReason}
+						rows="3"
+						class="mb-4 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-[var(--color-border)]"
+					></textarea>
+				{/if}
 				<div class="flex justify-end gap-2">
 					<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
 						{t('common.cancel', 'Cancel')}
 					</Dialog.Close>
 					<button
 						type="button"
-						class="rounded-[var(--radius)] px-4 py-1.5 text-sm font-medium text-white {pendingAction?.action === 'ban' ? 'bg-[var(--color-danger)]' : 'bg-[var(--color-primary)]'}"
+						class="rounded-[var(--radius)] px-4 py-1.5 text-sm font-medium text-white {pendingAction?.action === 'ban' || pendingAction?.action === 'clear' ? 'bg-[var(--color-danger)]' : 'bg-[var(--color-primary)]'}"
 						onclick={confirmAction}
 					>
 						{t('common.confirm', 'Confirm')}

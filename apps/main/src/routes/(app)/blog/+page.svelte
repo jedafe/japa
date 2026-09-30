@@ -260,7 +260,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<h1 class="sr-only">{t('blog.heading', 'Blog')}</h1>
 	<ListPageBar>
 		<UrlTabs

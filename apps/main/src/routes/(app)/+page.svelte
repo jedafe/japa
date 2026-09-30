@@ -101,7 +101,7 @@
 	<!-- Authenticated home timeline in the app shell -->
 	<div class="mx-auto w-full max-w-full">
 		<div
-			class="sticky top-0 z-10 flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
+			class="sticky top-0 z-10 mx-3 flex items-center border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
 			style="min-height: var(--nav-height)"
 		>
 			<UrlTabs

@@ -10,6 +10,7 @@
 	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
 	import { travelAdminApi, adminCatalogApi, type TravelProvider, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// Normalize an API row for the scaffold. affiliate_config arrives as a
 	// JSON object (or null); stringify it so the textarea shows valid JSON.
@@ -248,16 +249,12 @@
 			<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.type', 'Provider Type')}
 			</label>
-			<select
+			<AutocompleteSelect
 				id="travel-type"
-				class="w-full rounded-md border px-3 py-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.provider_type}
-			>
-				{#each travelProviderTypeOptions as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				options={travelProviderTypeOptions}
+				class="w-full"
+			/>
 		</div>
 		<div>
 			<label for="travel-api-config" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">

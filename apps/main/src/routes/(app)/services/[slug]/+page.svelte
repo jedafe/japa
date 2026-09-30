@@ -20,6 +20,7 @@
 		Star
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import { serviceCategoryLabel } from '$lib/enumOptions';
 	import type { ServiceListing, ServiceCategory, ServiceReview } from '$lib/types';
@@ -325,17 +326,14 @@
 							</div>
 						{:else if canClaim}
 							<div class="flex flex-wrap items-center gap-2">
-								<select
-									value={claimOrgId}
-									onchange={(e) => (claimOrgId = e.currentTarget.value)}
-									class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-									aria-label={t('services.claim_select_org', 'Select organization')}
-								>
-									<option value="">{t('services.claim_select_org', 'Select an organization')}</option>
-									{#each data.myOrgs as org (org.id)}
-										<option value={org.id}>{org.name}</option>
-									{/each}
-								</select>
+								<AutocompleteSelect
+									bind:value={claimOrgId}
+									options={[
+										{ value: '', label: t('services.claim_select_org', 'Select an organization') },
+										...(data.myOrgs ?? []).map((org) => ({ value: org.id, label: org.name }))
+									]}
+									ariaLabel={t('services.claim_select_org', 'Select organization')}
+								/>
 								<button
 									type="button"
 									onclick={claimListing}

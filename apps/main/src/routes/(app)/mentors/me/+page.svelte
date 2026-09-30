@@ -198,7 +198,7 @@ import { Tabs } from 'bits-ui';
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header -->
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<GraduationCap size={20} class="text-[var(--color-primary)]" />
 			{t('mentors.me_heading', 'My Mentorship')}

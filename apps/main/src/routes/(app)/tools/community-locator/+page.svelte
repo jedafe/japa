@@ -20,7 +20,7 @@
 		MapPinOff,
 		Map as MapIcon
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { CommunityOrgWithAi, GeoCountry, GeoSpaceOption, OrgTypeOption } from '$lib/types';
 	import OrgMap from '$lib/components/tools/OrgMap.svelte';
@@ -267,7 +267,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Users size={20} /> {title}
 		</h1>
@@ -406,16 +406,14 @@
 								<label for="form-org-type" class="block text-sm font-medium text-[var(--color-text)] mb-1">
 									{t('community_locator.field_org_type', 'Organisation type')} *
 								</label>
-								<select
+								<AutocompleteSelect
 									id="form-org-type"
 									bind:value={form.org_type}
-									class="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-								>
-									<option value="">{t('common.select', 'Select…')}</option>
-									{#each orgTypes as ot (ot.value)}
-										<option value={ot.value}>{t(`community_locator.type_${ot.value}`, ot.label)}</option>
-									{/each}
-								</select>
+									options={[
+										{ value: '', label: t('common.select', 'Select…') },
+										...orgTypes.map((ot) => ({ value: ot.value, label: t(`community_locator.type_${ot.value}`, ot.label) }))
+									]}
+								/>
 							</div>
 							<div>
 								<label for="form-origin" class="block text-sm font-medium text-[var(--color-text)] mb-1">
@@ -433,17 +431,15 @@
 								<label for="form-city" class="block text-sm font-medium text-[var(--color-text)] mb-1">
 									{t('community_locator.field_city', 'City')}
 								</label>
-								<select
+								<AutocompleteSelect
 									id="form-city"
 									bind:value={form.city_space_id}
 									disabled={cities.length === 0}
-									class="w-full px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"
-								>
-									<option value="">{t('community_locator.select_city', 'Select a city…')}</option>
-									{#each cities as city (city.id)}
-										<option value={city.id}>{city.name}</option>
-									{/each}
-								</select>
+									options={[
+										{ value: '', label: t('community_locator.select_city', 'Select a city…') },
+										...cities.map((c) => ({ value: c.id, label: c.name }))
+									]}
+								/>
 								{#if cities.length === 0 && selectedDestId}
 									<p class="text-xs text-[var(--color-muted)] mt-1">{t('community_locator.no_cities', 'No cities configured for this destination.')}</p>
 								{/if}

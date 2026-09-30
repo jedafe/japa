@@ -14,6 +14,7 @@
 	import { api, apiRaw, aiApi, personaVoicesAdminApi, type PersonaVoice } from '$lib/api';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type StudioJob = {
 		id: string;
@@ -584,34 +585,30 @@
 		<div class="mb-4 flex flex-wrap items-end gap-3">
 			<div>
 				<label for="filter-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('studio.status', 'Status')}</label>
-				<select id="filter-status" class="rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={jobsFilterStatus} onchange={applyJobFilters}>
-					<option value="">{t('studio.all_statuses', 'All statuses')}</option>
-					<option value="queued">queued</option>
-					<option value="generating">generating</option>
-					<option value="draft_ready">draft_ready</option>
-					<option value="in_review">in_review</option>
-					<option value="published">published</option>
-					<option value="rejected">rejected</option>
-					<option value="failed">failed</option>
-				</select>
+				<AutocompleteSelect
+					id="filter-status"
+					bind:value={jobsFilterStatus}
+					onValueChange={() => applyJobFilters()}
+					options={[{ value: '', label: t('studio.all_statuses', 'All statuses') }, { value: 'queued', label: 'queued' }, { value: 'generating', label: 'generating' }, { value: 'draft_ready', label: 'draft_ready' }, { value: 'in_review', label: 'in_review' }, { value: 'published', label: 'published' }, { value: 'rejected', label: 'rejected' }, { value: 'failed', label: 'failed' }]}
+				/>
 			</div>
 			<div>
 				<label for="filter-content-type" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</label>
-				<select id="filter-content-type" class="rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={jobsFilterContentType} onchange={applyJobFilters}>
-					<option value="">{t('studio.all_types', 'All types')}</option>
-					{#each contentTypes as ct (ct)}
-						<option value={ct.type}>{ct.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="filter-content-type"
+					bind:value={jobsFilterContentType}
+					onValueChange={() => applyJobFilters()}
+					options={[{ value: '', label: t('studio.all_types', 'All types') }, ...contentTypes.map((ct) => ({ value: ct.type, label: ct.label }))]}
+				/>
 			</div>
 			<div>
 				<label for="filter-persona" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
-				<select id="filter-persona" class="rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={jobsFilterPersonaID} onchange={applyJobFilters}>
-					<option value="">{t('studio.all_personas', 'All personas')}</option>
-					{#each personas as p (p)}
-						<option value={p.id}>{p.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="filter-persona"
+					bind:value={jobsFilterPersonaID}
+					onValueChange={() => applyJobFilters()}
+					options={[{ value: '', label: t('studio.all_personas', 'All personas') }, ...personas.map((p) => ({ value: p.id, label: p.label }))]}
+				/>
 			</div>
 		</div>
 		<DataTable
@@ -714,51 +711,50 @@
 			{/if}
 			<div>
 				<label for="studio-persona" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.persona', 'Persona')}</label>
-				<select id="studio-persona" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.persona_id}>
-					<option value="">{t('studio.select_persona', 'Select a persona...')}</option>
-					{#each personas as p (p)}
-						<option value={p.id}>{p.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="studio-persona"
+					bind:value={newJob.persona_id}
+					options={[{ value: '', label: t('studio.select_persona', 'Select a persona...') }, ...personas.map((p) => ({ value: p.id, label: p.label }))]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="studio-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.content_type', 'Content Type')}</label>
-				<select id="studio-content-type" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.content_type}>
-					{#each contentTypes as ct (ct)}
-						<option value={ct.type}>{ct.label}</option>
-					{/each}
-					{#if contentTypes.length === 0}
-						<option value="" disabled>{t('studio.loading_types', 'Loading content types...')}</option>
-					{/if}
-				</select>
+				<AutocompleteSelect
+					id="studio-content-type"
+					bind:value={newJob.content_type}
+					placeholder={t('studio.loading_types', 'Loading content types...')}
+					options={contentTypes.map((ct) => ({ value: ct.type, label: ct.label }))}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="studio-ai-model" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.model_optional', 'Model (optional)')}</label>
-				<select id="studio-ai-model" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.ai_model}>
-					<option value="">{t('ai.model.default', 'Default')}</option>
-					{#each models as m (m)}
-						<option value={m.id}>{m.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="studio-ai-model"
+					bind:value={newJob.ai_model}
+					options={[{ value: '', label: t('ai.model.default', 'Default') }, ...models.map((m) => ({ value: m.id, label: m.label }))]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="studio-voice" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('ai.voice_optional', 'Voice / Tone')}</label>
-				<select id="studio-voice" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.voice_id}>
-					<option value="">{t('ai.voice_default', 'Default (no voice override)')}</option>
-					{#each voices as v (v)}
-						<option value={v.id}>{v.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="studio-voice"
+					bind:value={newJob.voice_id}
+					options={[{ value: '', label: t('ai.voice_default', 'Default (no voice override)') }, ...voices.map((v) => ({ value: v.id, label: v.label }))]}
+					class="w-full"
+				/>
 			</div>
 			{#if guideCategories.length > 0}
 				<div>
 					<label for="studio-guide-category" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('studio.guide_category', 'Guide Category')}</label>
-					<select id="studio-guide-category" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newJob.guide_category}>
-						<option value="">{t('studio.select_category', 'Select category...')}</option>
-						{#each guideCategories as cat (cat)}
-							<option value={cat}>{cat}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="studio-guide-category"
+						bind:value={newJob.guide_category}
+						options={[{ value: '', label: t('studio.select_category', 'Select category...') }, ...guideCategories.map((cat) => ({ value: cat, label: cat }))]}
+						class="w-full"
+					/>
 				</div>
 			{/if}
 			<div>
@@ -857,30 +853,26 @@
 								<X class="h-3 w-3" />
 							</button>
 						</div>
-						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.persona_id}>
-							<option value="">{t('studio.select_persona', 'Select a persona...')}</option>
-							{#each personas as p (p)}
-								<option value={p.id}>{p.label}</option>
-							{/each}
-						</select>
-						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.content_type}>
-							<option value="">{t('studio.select_type', 'Select type...')}</option>
-							{#each contentTypes as ct (ct)}
-								<option value={ct.type}>{ct.label}</option>
-							{/each}
-						</select>
-						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.ai_model}>
-							<option value="">{t('ai.model.default', 'Default model')}</option>
-							{#each models as m (m)}
-								<option value={m.id}>{m.label}</option>
-							{/each}
-						</select>
-						<select class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.voice_id}>
-							<option value="">{t('ai.voice_default', 'Default (no voice override)')}</option>
-							{#each voices as v (v)}
-								<option value={v.id}>{v.label}</option>
-							{/each}
-						</select>
+						<AutocompleteSelect
+							bind:value={job.persona_id}
+							options={[{ value: '', label: t('studio.select_persona', 'Select a persona...') }, ...personas.map((p) => ({ value: p.id, label: p.label }))]}
+							class="w-full"
+						/>
+						<AutocompleteSelect
+							bind:value={job.content_type}
+							options={[{ value: '', label: t('studio.select_type', 'Select type...') }, ...contentTypes.map((ct) => ({ value: ct.type, label: ct.label }))]}
+							class="w-full"
+						/>
+						<AutocompleteSelect
+							bind:value={job.ai_model}
+							options={[{ value: '', label: t('ai.model.default', 'Default model') }, ...models.map((m) => ({ value: m.id, label: m.label }))]}
+							class="w-full"
+						/>
+						<AutocompleteSelect
+							bind:value={job.voice_id}
+							options={[{ value: '', label: t('ai.voice_default', 'Default (no voice override)') }, ...voices.map((v) => ({ value: v.id, label: v.label }))]}
+							class="w-full"
+						/>
 						<input type="text" class="w-full rounded-md border px-2 py-1 text-xs" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={job.topic_prompt} placeholder={t('studio.topic_placeholder', 'Describe what the AI should write about...')} />
 					</div>
 				{/each}

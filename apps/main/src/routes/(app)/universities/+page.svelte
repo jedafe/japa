@@ -283,7 +283,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-4">
 		<div class="min-w-0">
 			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 				<GraduationCap size={20} /> {t('universities.heading', 'Universities')}
@@ -348,7 +348,7 @@
 
 	{#if showFilters}
 		<!-- Country + sort filters (moved into the toggle panel) -->
-		<div id="universities-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+		<div id="universities-filter-panel" class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 			<div class="flex flex-wrap gap-2">
 				<div class="w-56">
 					<Autocomplete

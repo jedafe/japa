@@ -296,7 +296,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{/if}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<h1 class="sr-only">{t('calendar.heading', 'Community Calendar')}</h1>
 	<ListPageBar>
 		<UrlTabs

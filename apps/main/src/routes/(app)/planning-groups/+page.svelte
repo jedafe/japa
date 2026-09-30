@@ -109,7 +109,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<h1 class="sr-only">{t('planning_groups.heading', 'Planning Groups')}</h1>
 	<ListPageBar>
 		<UrlTabs {tabs} bind:value={view} class="!border-b-0 !bg-transparent" />

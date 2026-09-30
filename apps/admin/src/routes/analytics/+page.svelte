@@ -18,6 +18,7 @@
 	import { curveMonotoneX } from "d3-shape";
 	import StatCard from "$lib/components/ui/StatCard.svelte";
 	import { CardSkeleton } from "$lib/components/ui/skeleton";
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	
 	let activeTab = $state("overview");
 	let flushModalOpen = $state(false);
@@ -673,17 +674,12 @@
 		<!-- Section 66 — Advanced Analytics Dashboard (ADR-084) -->
 		<div class="flex flex-wrap items-center gap-2">
 			<label for="advanced-period" class="text-xs font-medium" style="color: var(--color-muted)">{t('analytics.period', 'Period')}</label>
-			<select
+			<AutocompleteSelect
 				id="advanced-period"
-				class="rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				value={advancedPeriod}
-				onchange={(e) => { advancedPeriod = e.currentTarget.value; loadAdvancedAnalytics(e.currentTarget.value); }}
-			>
-				<option value="7d">7d</option>
-				<option value="30d">30d</option>
-				<option value="90d">90d</option>
-			</select>
+				onValueChange={(v) => { advancedPeriod = v; loadAdvancedAnalytics(v); }}
+				options={[{ value: '7d', label: '7d' }, { value: '30d', label: '30d' }, { value: '90d', label: '90d' }]}
+			/>
 			<div class="ml-auto flex gap-2">
 				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('top_content')}>{t('analytics.export_top_content', 'Export Top Content')}</Button>
 				<Button variant="outline" size="sm" onclick={() => handleAdvancedExport('revenue_streams')}>{t('analytics.export_revenue', 'Export Revenue')}</Button>

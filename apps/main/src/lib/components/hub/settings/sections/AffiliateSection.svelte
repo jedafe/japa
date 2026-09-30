@@ -6,6 +6,7 @@
 	import { createAffiliate, deleteAffiliate, enrollAffiliate } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Share2, MousePointerClick, TrendingUp, Wallet, MessageCircle, AtSign, Link as LinkIcon, Copy, Check } from 'lucide-svelte';
 	import type { AffiliateEarnings } from '$lib/types';
 
@@ -323,15 +324,7 @@
 	<form class="mb-6 space-y-3" onsubmit={(e) => { e.preventDefault(); doCreate(); }}>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.product_type', 'Product type')}</span>
-			<select
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				value={newProductType}
-				onchange={(e) => (newProductType = e.currentTarget.value)}
-			>
-				{#each productTypes as pt (pt.value)}
-					<option value={pt.value}>{pt.label}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect bind:value={newProductType} options={productTypes} />
 		</label>
 		<label class="block">
 			<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.affiliate.url')}</span>

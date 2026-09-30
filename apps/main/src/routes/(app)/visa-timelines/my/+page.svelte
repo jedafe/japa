@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { ArrowLeft, CalendarClock, Check, ChevronDown, ChevronRight, Pencil, Plus, X } from 'lucide-svelte';
@@ -269,7 +270,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<CalendarClock size={20} /> {t('visa_timelines.my_heading', 'My Timelines')}
 		</h1>
@@ -349,19 +350,21 @@
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-method" class={labelClass}>{t('visa_timelines.application_method', 'Application method')}</label>
-						<select id="c-method" bind:value={cMethod} class={inputClass}>
-							{#each applicationMethods as m (m)}
-								<option value={m}>{m.replace('_', ' ')}</option>
-							{/each}
-						</select>
+						<AutocompleteSelect
+							id="c-method"
+							value={cMethod}
+							options={applicationMethods.map((m) => ({ value: m, label: m.replace('_', ' ') }))}
+							onValueChange={(v) => (cMethod = v as VisaApplicationMethod)}
+						/>
 					</div>
 					<div class="flex flex-col gap-1">
 						<label for="c-outcome" class={labelClass}>{t('visa_timelines.outcome', 'Outcome')}</label>
-						<select id="c-outcome" bind:value={cOutcome} class={inputClass}>
-							{#each outcomes as o (o)}
-								<option value={o}>{o}</option>
-							{/each}
-						</select>
+						<AutocompleteSelect
+							id="c-outcome"
+							value={cOutcome}
+							options={outcomes.map((o) => ({ value: o, label: o }))}
+							onValueChange={(v) => (cOutcome = v as VisaTimelineOutcome)}
+						/>
 					</div>
 				</div>
 				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
@@ -532,15 +535,12 @@
 													<label for="m-type-{tl.id}" class={labelClass}>
 														{t('visa_timelines.milestone_type', 'Milestone type')}
 													</label>
-													<select
+													<AutocompleteSelect
 														id="m-type-{tl.id}"
-														bind:value={milestoneForms[tl.id].type}
-														class={inputClass}
-													>
-														{#each milestoneTypes as mt (mt)}
-															<option value={mt}>{mt.replace('_', ' ')}</option>
-														{/each}
-													</select>
+														value={milestoneForms[tl.id].type}
+														options={milestoneTypes.map((mt) => ({ value: mt, label: mt.replace('_', ' ') }))}
+														onValueChange={(v) => (milestoneForms[tl.id].type = v as VisaMilestoneType)}
+													/>
 												</div>
 												<div class="flex flex-col gap-1">
 													<label for="m-date-{tl.id}" class={labelClass}>

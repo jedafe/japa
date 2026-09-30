@@ -10,6 +10,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
 	import { ArrowLeft, Save, Trash2, CheckCircle, XCircle, RefreshCw } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -292,39 +293,27 @@
 						<label for="post-status" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.blog.field_status', 'Status')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="post-status"
 							bind:value={status}
-							class="w-full rounded-lg border p-3 text-sm"
-							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-						>
-							{#if statusOptions.length === 0}
-								<option value="draft">{t('app.blog.status_draft', 'Draft')}</option>
-							{:else}
-								{#each statusOptions as opt (opt.value)}
-									<option value={opt.value}>{opt.label}</option>
-								{/each}
-							{/if}
-						</select>
+							options={statusOptions.length === 0
+								? [{ value: 'draft', label: t('app.blog.status_draft', 'Draft') }]
+								: statusOptions}
+							class="w-full"
+						/>
 					</div>
 					<div>
 						<label for="post-visibility" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 							{t('app.blog.field_visibility', 'Visibility')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="post-visibility"
 							bind:value={visibility}
-							class="w-full rounded-lg border p-3 text-sm"
-							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-						>
-							{#if visibilityOptions.length === 0}
-								<option value="public">{t('app.blog.visibility_public', 'Public')}</option>
-							{:else}
-								{#each visibilityOptions as opt (opt.value)}
-									<option value={opt.value}>{opt.label}</option>
-								{/each}
-							{/if}
-						</select>
+							options={visibilityOptions.length === 0
+								? [{ value: 'public', label: t('app.blog.visibility_public', 'Public') }]
+								: visibilityOptions}
+							class="w-full"
+						/>
 					</div>
 				</div>
 			</CardContent>

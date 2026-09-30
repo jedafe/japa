@@ -16,7 +16,7 @@
 		MessageSquarePlus,
 		Lock
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '$lib/components/ui';
 	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoCountry } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -242,7 +242,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Stamp size={20} /> {title}
 		</h1>
@@ -298,17 +298,15 @@
 					<label for="issuing-selector" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 						{t('attestation_guide.issuing_country', 'Issuing country:')}
 					</label>
-					<select
+					<AutocompleteSelect
 						id="issuing-selector"
 						value={selectedIssuingId}
-						onchange={(e) => onIssuingChange((e.currentTarget as HTMLSelectElement).value)}
-						class="px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-					>
-						<option value="">{t('attestation_guide.any_issuing', 'Any')}</option>
-						{#each destinations as dest (dest.id)}
-							<option value={dest.id}>{dest.name}</option>
-						{/each}
-					</select>
+						options={[
+							{ value: '', label: t('attestation_guide.any_issuing', 'Any') },
+							...destinations.map((d) => ({ value: d.id, label: d.name }))
+						]}
+						onValueChange={onIssuingChange}
+					/>
 				</div>
 				<div class="flex items-center gap-3">
 					<label for="doc-type" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">

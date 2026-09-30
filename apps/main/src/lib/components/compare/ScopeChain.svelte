@@ -2,6 +2,7 @@
 	import { api } from '$lib/api/client';
 	import { searchEntities } from '$lib/api/jce';
 	import { t } from '$lib/i18n';
+	import { AutocompleteSelect } from '$lib/components/ui';
 	import type { ResolvedItem } from '$lib/types/jce';
 
 	type ScopeOption = {
@@ -113,17 +114,15 @@
 	{#each chain as step, index (step)}
 		{@const parentKey = chain[index - 1]}
 		{@const disabled = index > 0 && !selections[parentKey]}
-		<select
-			class="rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm"
-			style="border-color: var(--color-border); color: var(--color-text)"
-			{disabled}
+		<AutocompleteSelect
+			class="w-56"
 			value={selections[step] ?? ''}
-			onchange={(e) => onChange(step, e.currentTarget.value)}
-		>
-			<option value="">{labelFor(step)}</option>
-			{#each options[step] ?? [] as opt (opt.id)}
-				<option value={opt.id}>{opt.title}</option>
-			{/each}
-		</select>
+			options={[
+				{ value: '', label: labelFor(step) },
+				...(options[step] ?? []).map((o) => ({ value: o.id, label: o.title }))
+			]}
+			onValueChange={(v) => onChange(step, v)}
+			{disabled}
+		/>
 	{/each}
 </div>

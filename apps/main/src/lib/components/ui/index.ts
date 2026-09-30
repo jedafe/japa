@@ -11,6 +11,7 @@ export { default as EntityCard } from './EntityCard.svelte';
 export { default as DirectoryCard } from './DirectoryCard.svelte';
 export type { CardMetaItem } from './DirectoryCard.svelte';
 export { default as SelectField } from './SelectField.svelte';
+export { default as AutocompleteSelect } from './AutocompleteSelect.svelte';
 export { default as SearchInput } from './SearchInput.svelte';
 export type { SearchSuggestion } from './SearchInput.svelte';
 export { default as ListPageBar } from './ListPageBar.svelte';

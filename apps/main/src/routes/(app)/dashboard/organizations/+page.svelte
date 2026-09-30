@@ -14,6 +14,7 @@
 	import { invalidateAll, goto } from '$app/navigation';
 	import { suggestSlug } from '$lib/components/create/slug';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { MyOrganizationRow } from './+page.server';
 	import type { PublicOrganization } from '$lib/types';
@@ -232,11 +233,11 @@
 				</label>
 				<label class="flex flex-col gap-1.5">
 					<span class="text-sm font-medium text-[var(--color-text)]">{t('organizations.new.field_type', 'Organization type')}</span>
-					<select class={inputClass} bind:value={orgType} disabled={!data.orgMeta?.org_types?.length}>
-						{#each data.orgMeta?.org_types ?? [] as ot (ot.value)}
-							<option value={ot.value}>{ot.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						bind:value={orgType}
+						options={data.orgMeta?.org_types ?? []}
+						disabled={!data.orgMeta?.org_types?.length}
+					/>
 				</label>
 			</div>
 

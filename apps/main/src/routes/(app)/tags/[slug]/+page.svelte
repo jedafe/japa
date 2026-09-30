@@ -390,7 +390,7 @@
 		</div>
 	{/if}
 
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
 		<a
 			href="/discover?tab=tags"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
@@ -465,7 +465,7 @@
 		{/if}
 	</div>
 
-	<UrlTabs {tabs} value={tab} onValueChange={(v) => goto(`?tab=${v}`)} />
+	<UrlTabs {tabs} value={tab} onValueChange={(v) => goto(`?tab=${v}`)} class="mx-4" />
 
 	<div class="p-4">
 		{#if tab === 'search'}

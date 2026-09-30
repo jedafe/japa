@@ -80,7 +80,7 @@
 	<link rel="canonical" href={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl">
+<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1.5rem">
 	<ListPageBar title={t('wiki.heading', 'Wiki')} />
 
 	<div class="p-6">

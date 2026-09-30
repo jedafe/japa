@@ -14,6 +14,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, List, Pencil, Plus, GripVertical, ArrowUp, ArrowDown } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type FieldGroup = {
 		id: string;
@@ -631,17 +632,13 @@
 		</div>
 		<div>
 			<label for="fld-type" class="mb-1 block text-sm font-medium">{t('fieldGroups.field_type', 'Field Type')}</label>
-			<select
+			<AutocompleteSelect
 				id="fld-type"
 				bind:value={fieldType}
 				disabled={!!editingField}
-				class="w-full rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
-				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-			>
-				{#each fieldTypes as ft (ft.value)}
-					<option value={ft.value}>{ft.label}</option>
-				{/each}
-			</select>
+				options={fieldTypes}
+				class="w-full"
+			/>
 			{#if editingField}
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('fieldGroups.type_immutable', 'Field type cannot be changed after creation.')}</p>
 			{/if}

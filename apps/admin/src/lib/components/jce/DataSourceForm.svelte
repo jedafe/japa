@@ -2,6 +2,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { untrack } from 'svelte';
 	import type { DataSource } from '$lib/types/jce';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	let {
 		value = $bindable<Record<string, any>>({}),
@@ -97,16 +98,12 @@
 				{t('data_sources.source_kind', 'Kind')}
 				<span style="color: var(--color-danger)">*</span>
 			</label>
-			<select
+			<AutocompleteSelect
 				id="ds-source-kind"
-				class="mt-1 w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.source_kind}
-			>
-				{#each sourceKindOptions as option (option.value)}
-					<option value={option.value}>{option.label}</option>
-				{/each}
-			</select>
+				options={sourceKindOptions}
+				class="w-full"
+			/>
 		</div>
 
 		<div>

@@ -9,6 +9,7 @@
 	import { Pencil, X, Send, Loader2, Plus, Trash2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import CustomFieldGroup from '$lib/components/create/panel/CustomFieldGroup.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import {
 		getEntityFields,
 		getFieldTypes,
@@ -517,15 +518,11 @@
 												<label for="pf-type" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_type', 'Field type')}
 												</label>
-												<select
+												<AutocompleteSelect
 													id="pf-type"
 													bind:value={pfType}
-													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-												>
-													{#each fieldTypes as ft (ft.value)}
-														<option value={ft.value}>{t(`wiki.field_type_${ft.value}`, ft.label)}</option>
-													{/each}
-												</select>
+													options={fieldTypes.map((ft) => ({ value: ft.value, label: t(`wiki.field_type_${ft.value}`, ft.label) }))}
+												/>
 											</div>
 											{#if CHOICE_TYPES.has(pfType)}
 												<div class="flex flex-col gap-1">
@@ -566,16 +563,14 @@
 													<label for="pf-group" class="text-xs font-medium text-[var(--color-text)]">
 														{t('wiki.field_group', 'Group')}
 													</label>
-													<select
+													<AutocompleteSelect
 														id="pf-group"
 														bind:value={pfGroupSlug}
-														class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-													>
-														<option value="" disabled>—</option>
-														{#each schema.groups as g (g.id)}
-															<option value={g.slug}>{g.name}</option>
-														{/each}
-													</select>
+														options={[
+															{ value: '', label: '—' },
+															...schema.groups.map((g) => ({ value: g.slug, label: g.name }))
+														]}
+													/>
 												</div>
 											{/if}
 											{#if pfError}

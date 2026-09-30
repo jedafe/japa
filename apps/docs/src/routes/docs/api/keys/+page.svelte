@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
@@ -275,12 +276,14 @@ import type { ApiKeySummary } from '$lib/types';
 					</label>
 					<label>
 						<span>{t('api.rate_limit_tier', 'Rate limit tier')}</span>
-						<select name="rate_limit_tier" bind:value={rateLimitTier}>
-							<option value="basic">{t('api.tier.basic', 'basic')}</option>
-							<option value="standard">{t('api.tier.standard', 'standard')}</option>
-							<option value="premium">{t('api.tier.premium', 'premium')}</option>
-							<option value="unlimited">{t('api.tier.unlimited', 'unlimited')}</option>
-						</select>
+						<AutocompleteSelect
+							name="rate_limit_tier"
+							bind:value={rateLimitTier}
+							options={(['basic', 'standard', 'premium', 'unlimited'] as const).map((tier) => ({
+								value: tier,
+								label: t(`api.tier.${tier}`, tier)
+							}))}
+						/>
 					</label>
 					<label>
 						<span>{t('api.scopes', 'Scopes')} <span class="muted">(comma-separated)</span></span>
@@ -571,7 +574,7 @@ import type { ApiKeySummary } from '$lib/types';
 		font-size: 0.8125rem;
 		color: var(--color-text);
 	}
-	.dialog input, .dialog select {
+	.dialog input {
 		width: 100%;
 		padding: 0.5rem 0.625rem;
 		border: 1px solid var(--color-border);
@@ -581,7 +584,7 @@ import type { ApiKeySummary } from '$lib/types';
 		font-size: 0.875rem;
 		outline: none;
 	}
-	.dialog input:focus, .dialog select:focus { border-color: var(--color-primary); }
+	.dialog input:focus { border-color: var(--color-primary); }
 	.dialog-actions {
 		display: flex;
 		justify-content: flex-end;

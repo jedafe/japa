@@ -6,6 +6,7 @@
 	import { page } from '$app/state';
 	import { Calendar as CalendarIcon, Save, Loader2 } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import type { CalendarCategory, CalendarEntry } from '$lib/types';
@@ -162,7 +163,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<CalendarIcon size={20} /> {t('calendar.edit_heading', 'Edit Calendar Entry')}
 		</h1>
@@ -203,11 +204,12 @@
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_category', 'Category')}
 				</label>
-				<select id="category" bind:value={category} class={inputClass}>
-					{#each categoryOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="category"
+					value={category}
+					options={categoryOptions}
+					onValueChange={(v) => (category = v as CalendarCategory)}
+				/>
 			</div>
 
 			<!-- Destination + Origin -->

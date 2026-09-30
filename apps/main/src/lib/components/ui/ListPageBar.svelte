@@ -22,6 +22,7 @@
 
 <div
 	class="flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
+	style="margin-inline: var(--page-gutter, 0.75rem)"
 >
 	<div class="min-w-0 flex-1">
 		{#if children}

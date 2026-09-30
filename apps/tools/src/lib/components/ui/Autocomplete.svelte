@@ -37,6 +37,14 @@
 		debounceMs?: number;
 		/** Input id (for label association). */
 		id?: string;
+		/** Accessible label for the input when no visible label element exists. */
+		ariaLabel?: string;
+		/** Disable interaction — renders dimmed and cannot be focused/opened. */
+		disabled?: boolean;
+		/** Extra classes on the outer wrapper. */
+		class?: string;
+		/** Extra classes on the inner input element. */
+		inputClass?: string;
 	}
 
 	let {
@@ -51,7 +59,11 @@
 		onClear,
 		onfocus,
 		debounceMs = 300,
-		id
+		id,
+		ariaLabel = undefined,
+		disabled = false,
+		class: wrapperClass = '',
+		inputClass = ''
 	}: Props = $props();
 
 	let open = $state(false);
@@ -86,8 +98,11 @@
 	}
 
 	const selectedDisplay = $derived(selectedLabel ?? '');
+	// Unique per-instance id so multiple Autocompletes never share listbox ids.
+	const listId = $props.id();
 
 	async function open_() {
+		if (disabled) return;
 		open = true;
 		onfocus?.();
 		query = '';
@@ -116,6 +131,7 @@
 	}
 
 	function clearSelection() {
+		if (disabled) return;
 		onClear?.();
 		query = '';
 		results = [];
@@ -194,6 +210,7 @@
 	});
 
 	function pick(item: AutocompleteItem) {
+		if (disabled) return;
 		query = '';
 		onSelect(item);
 		focused = false;
@@ -224,11 +241,12 @@
 
 <svelte:window onclick={onWindowClick} onkeydown={onKeydown} />
 
-<div class="autocomplete-field" bind:this={fieldEl}>
+<div class="autocomplete-field {wrapperClass}" bind:this={fieldEl}>
 	<div
 		class="autocomplete-input-wrapper"
 		class:focused
 		class:has-value={!!selectedId}
+		class:disabled
 	>
 		{#if selectedId && !focused}
 			<div class="autocomplete-chip">
@@ -248,8 +266,10 @@
 		<input
 			{id}
 			type="text"
-			class="autocomplete-input"
+			class="autocomplete-input {inputClass}"
 			placeholder={selectedId && !focused ? '' : placeholder}
+			aria-label={ariaLabel ?? placeholder}
+			{disabled}
 			bind:this={inputEl}
 			bind:value={query}
 			onfocus={onFocus}
@@ -258,7 +278,7 @@
 			role="combobox"
 			aria-expanded={showDropdown}
 			aria-autocomplete="list"
-			aria-controls={id ? `${id}-list` : 'autocomplete-list'}
+			aria-controls={listId}
 			aria-haspopup="listbox"
 		/>
 
@@ -269,7 +289,7 @@
 
 	{#if showDropdown}
 		<div class="autocomplete-dropdown" role="listbox">
-			<div class="autocomplete-options" id={id ? `${id}-list` : 'autocomplete-list'}>
+			<div class="autocomplete-options" id={listId}>
 				{#if loadingInitial}
 					<div class="autocomplete-empty">{t('common.loading', 'Loading...')}</div>
 				{:else if query.trim().length > 0}
@@ -352,6 +372,13 @@
 	}
 	.autocomplete-input-wrapper:hover {
 		border-color: var(--color-text-subtle);
+	}
+	.autocomplete-input-wrapper.disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.autocomplete-input-wrapper.disabled .autocomplete-input {
+		cursor: not-allowed;
 	}
 	.autocomplete-input-wrapper.focused {
 		border-color: var(--color-primary);

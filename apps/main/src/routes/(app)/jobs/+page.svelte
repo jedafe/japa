@@ -196,7 +196,7 @@
 	{/if}
 {/snippet}
 
-<div class="mx-auto w-full max-w-4xl">
+<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
 	<ListPageBar title={t('jobs.heading', 'Jobs')}>
 		{#snippet actions()}
 			{#if !disabled}
@@ -228,7 +228,7 @@
 	{:else}
 		<!-- Filter panel -->
 		{#if showFilters}
-		<div id="jobs-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+		<div id="jobs-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
 			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<SearchInput
 					bind:value={q}

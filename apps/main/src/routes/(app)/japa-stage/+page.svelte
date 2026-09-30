@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -144,17 +145,18 @@
 		<div id="japa-stage-filter-panel" class="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 			<div class="w-44">
 				<label for="intent-filter" class="sr-only">{t('japa_intent.filter', 'Journey type')}</label>
-				<select
+				<AutocompleteSelect
 					id="intent-filter"
-					bind:value={intentFilter}
-					onchange={applyFilters}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)]"
-				>
-					<option value="">{t('japa_intent.all', 'All journey types')}</option>
-					{#each intentOpts as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+					value={intentFilter}
+					options={[
+						{ value: '', label: t('japa_intent.all', 'All journey types') },
+						...intentOpts
+					]}
+					onValueChange={(v) => {
+						intentFilter = v;
+						applyFilters();
+					}}
+				/>
 			</div>
 			<div class="w-52">
 				<Autocomplete

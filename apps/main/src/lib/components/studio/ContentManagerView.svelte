@@ -64,17 +64,27 @@
 	// mutations — a second click while a publish/archive/delete is in flight
 	// would fire a duplicate API call.
 	let actingId = $state<string | null>(null);
+	// Bulk selection — every row is selectable (every status has at least
+	// one applicable action); ids leaving the list are pruned on refresh.
+	let selectedIds = $state<Set<string>>(new Set());
+	let bulkBusy = $state(false);
 	// listEpoch is bumped on every server refresh so an in-flight loadMore
 	// response can't append stale rows to a freshly filtered/reset list.
 	let listEpoch = 0;
 	$effect(() => {
 		const vd = viewData;
-		items = vd?.items ?? [];
+		const next = vd?.items ?? [];
+		items = next;
 		hasMore = vd?.hasMore ?? false;
 		nextOffset = vd?.pageSize ?? 20;
 		loadingMore = false;
 		actingId = null;
 		listEpoch++;
+		// Read `next`, not the `items` signal — reading a signal this effect
+		// also writes would re-schedule it forever.
+		const visible = new Set(next.map((i) => i.id));
+		const pruned = [...selectedIds].filter((id) => visible.has(id));
+		if (pruned.length !== selectedIds.size) selectedIds = new Set(pruned);
 	});
 	const contentTypes = $derived(viewData?.contentTypes ?? []);
 
@@ -217,7 +227,10 @@
 	// clamps an unknown content_type to its first allowed type, so handing it
 	// a job listing / event / page / etc. would silently rewrite the type on
 	// the next save. Non-composer types link to their canonical public page
-	// (same mapping the feed uses) — or render no link when there is no slug.
+	// (same mapping the feed uses) — but only when the item is published:
+	// the public detail routes filter on status='published', so a draft,
+	// scheduled, in-review, or archived row would link to a 404. Those rows
+	// get no link at all (non-composable types have no other member surface).
 	function isComposerEditable(item: ContentItem): boolean {
 		return !!item.content_type && (CREATE_ALLOWED_TYPES as readonly string[]).includes(item.content_type);
 	}
@@ -226,16 +239,82 @@
 		if (isComposerEditable(item)) {
 			return `/studio/create?type=${item.content_type}&draft=${item.id}`;
 		}
-		if (item.slug) {
+		if (item.slug && item.status === 'published') {
 			return contentHref({ slug: item.slug, content_type: item.content_type });
 		}
 		return null;
 	}
 
-	let deleteTarget = $state<string | null>(null);
+	// Bulk selection — the eligible subset is computed per action so a mixed
+	// selection (e.g. drafts + archived) can still run Archive on everything
+	// or Publish only on the publishable rows.
+	const selectedItems = $derived(items.filter((i) => selectedIds.has(i.id)));
+	const allSelected = $derived(items.length > 0 && items.every((i) => selectedIds.has(i.id)));
+	const publishableIds = $derived(
+		selectedItems
+			.filter((i) => i.status === 'draft' || i.status === 'scheduled' || i.status === 'archived')
+			.map((i) => i.id)
+	);
+	const archivableIds = $derived(
+		selectedItems.filter((i) => i.status !== 'archived').map((i) => i.id)
+	);
+	const publishLabel = $derived(
+		publishableIds.length > 0 &&
+			publishableIds.every((id) => selectedItems.find((i) => i.id === id)?.status === 'archived')
+			? t('dashboard.content.restore', 'Restore')
+			: t('dashboard.content.publish')
+	);
+
+	function toggleSelect(id: string) {
+		const next = new Set(selectedIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		selectedIds = next;
+	}
+
+	function toggleSelectAll() {
+		selectedIds = allSelected ? new Set() : new Set(items.map((i) => i.id));
+	}
+
+	let deleteIds = $state<string[] | null>(null);
+
+	// Runs one lifecycle call per selected row — there is no /me bulk
+	// endpoint, and per-row calls keep the backend's ownership + status
+	// checks intact. Partial failures are reported as a summary; the list
+	// re-syncs via invalidateAll() either way (Rule 16).
+	async function doBulk(kind: 'publish' | 'archive' | 'delete', ids: string[]) {
+		if (bulkBusy || actingId || ids.length === 0) return;
+		bulkBusy = true;
+		actionError = null;
+		let failed = 0;
+		let firstMsg = '';
+		for (const id of ids) {
+			const res =
+				kind === 'publish'
+					? await publishContent(id)
+					: kind === 'archive'
+						? await archiveContent(id)
+						: await deleteContent(id);
+			if (res.error) {
+				failed++;
+				if (!firstMsg) firstMsg = res.error.message || res.error.code;
+			}
+		}
+		bulkBusy = false;
+		if (failed === ids.length) {
+			actionError = firstMsg || t('dashboard.content.action_error');
+		} else if (failed > 0) {
+			actionError = t(
+				'dashboard.content.bulk_partial',
+				'{done} of {total} done — {failed} failed',
+				{ done: ids.length - failed, total: ids.length, failed }
+			);
+		}
+		await invalidateAll();
+	}
 
 	async function doPublish(id: string) {
-		if (actingId) return;
+		if (actingId || bulkBusy) return;
 		actingId = id;
 		const original = items;
 		actionError = null;
@@ -259,7 +338,7 @@
 	}
 
 	async function doArchive(id: string) {
-		if (actingId) return;
+		if (actingId || bulkBusy) return;
 		actingId = id;
 		const original = items;
 		actionError = null;
@@ -276,12 +355,17 @@
 	}
 
 	async function doDelete() {
-		if (!deleteTarget || actingId) return;
-		const id = deleteTarget;
+		if (!deleteIds || deleteIds.length === 0 || actingId || bulkBusy) return;
+		const ids = deleteIds;
+		deleteIds = null;
+		if (ids.length > 1) {
+			await doBulk('delete', ids);
+			return;
+		}
+		const id = ids[0];
 		actingId = id;
 		const original = items;
 		actionError = null;
-		deleteTarget = null;
 		const { ok, error } = await optimisticAction({
 			apply: () => (items = items.filter((i) => i.id !== id)),
 			rollback: () => (items = original),
@@ -371,11 +455,72 @@
 	{#if items.length === 0}
 		<EmptyState icon={FileText} title={t('dashboard.content.empty_title')} body={t('dashboard.content.empty_body')} />
 	{:else}
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+			<label class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
+				<input
+					type="checkbox"
+					checked={allSelected}
+					onchange={toggleSelectAll}
+					aria-label={t('dashboard.content.select_all', 'Select all')}
+				/>
+				{t('dashboard.content.select_all', 'Select all')}
+			</label>
+			{#if selectedIds.size > 0}
+				<span class="text-xs text-[var(--color-muted)]">
+					{t('dashboard.content.selected_count', '{count} selected', { count: selectedIds.size })}
+				</span>
+				<div class="ml-auto flex flex-wrap items-center gap-2">
+					{#if bulkBusy}
+						<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
+					{:else}
+						{#if publishableIds.length > 0}
+							<button
+								type="button"
+								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								onclick={() => doBulk('publish', publishableIds)}
+							>
+								{publishLabel} ({publishableIds.length})
+							</button>
+						{/if}
+						{#if archivableIds.length > 0}
+							<button
+								type="button"
+								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+								onclick={() => doBulk('archive', archivableIds)}
+							>
+								{t('dashboard.content.archive')} ({archivableIds.length})
+							</button>
+						{/if}
+						<button
+							type="button"
+							class="rounded-[var(--radius)] border border-[var(--color-danger)]/40 px-3 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10"
+							onclick={() => (deleteIds = [...selectedIds])}
+						>
+							{t('dashboard.content.delete')} ({selectedIds.size})
+						</button>
+						<button
+							type="button"
+							class="px-2 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+							onclick={() => (selectedIds = new Set())}
+						>
+							{t('common.clear', 'Clear')}
+						</button>
+					{/if}
+				</div>
+			{/if}
+		</div>
 		<ul class="space-y-2">
 			{#each items as item (item.id)}
 				{@const href = itemHref(item)}
-				<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-					<div class="min-w-0">
+				<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+					<input
+						type="checkbox"
+						class="shrink-0"
+						checked={selectedIds.has(item.id)}
+						onchange={() => toggleSelect(item.id)}
+						aria-label={t('dashboard.content.select_row', 'Select item')}
+					/>
+					<div class="min-w-0 flex-1">
 						<p class="truncate text-sm font-medium text-[var(--color-text)]">{item.title ?? t('dashboard.content.untitled')}</p>
 						<p class="text-xs text-[var(--color-muted)]">
 							{typeLabel(item.content_type)} · {formatDate(item.created_at)}
@@ -387,7 +532,7 @@
 						</p>
 					</div>
 					<div class="ml-3 flex shrink-0 items-center gap-2">
-						{#if actingId === item.id}
+						{#if actingId === item.id || bulkBusy}
 							<Loader2 class="size-4 animate-spin text-[var(--color-muted)]" />
 						{:else}
 							{#if href}
@@ -399,7 +544,7 @@
 								<button
 									type="button"
 									class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
-									disabled={!!actingId}
+									disabled={!!actingId || bulkBusy}
 									onclick={() => doPublish(item.id)}
 								>
 									{item.status === 'archived' ? t('dashboard.content.restore', 'Restore') : t('dashboard.content.publish')}
@@ -409,7 +554,7 @@
 								<button
 									type="button"
 									class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
-									disabled={!!actingId}
+									disabled={!!actingId || bulkBusy}
 									onclick={() => doArchive(item.id)}
 								>
 									{t('dashboard.content.archive')}
@@ -418,8 +563,8 @@
 							<button
 								type="button"
 								class="text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)] disabled:opacity-50"
-								disabled={!!actingId}
-								onclick={() => (deleteTarget = item.id)}
+								disabled={!!actingId || bulkBusy}
+								onclick={() => (deleteIds = [item.id])}
 							>
 								{t('dashboard.content.delete')}
 							</button>
@@ -445,12 +590,23 @@
 		{/if}
 	{/if}
 
-	<Dialog.Root open={deleteTarget !== null} onOpenChange={(v) => { if (!v) deleteTarget = null; }}>
+	<Dialog.Root open={deleteIds !== null} onOpenChange={(v) => { if (!v) deleteIds = null; }}>
 		<Dialog.Portal>
 			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
 			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-				<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">{t('dashboard.content.delete_confirm')}</Dialog.Title>
-				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">{t('dashboard.content.delete_confirm_body')}</Dialog.Description>
+				<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
+					{t('dashboard.content.delete_confirm')}
+					{#if deleteIds && deleteIds.length > 1}
+						<span class="ml-1 text-sm font-normal text-[var(--color-muted)]">({deleteIds.length})</span>
+					{/if}
+				</Dialog.Title>
+				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
+					{#if deleteIds && deleteIds.length > 1}
+						{t('dashboard.content.delete_confirm_bulk_body', 'This will delete {count} items. This cannot be undone.', { count: deleteIds.length })}
+					{:else}
+						{t('dashboard.content.delete_confirm_body')}
+					{/if}
+				</Dialog.Description>
 				<div class="flex justify-end gap-2">
 					<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">{t('common.cancel')}</Dialog.Close>
 					<button type="button" class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white" onclick={doDelete}>{t('dashboard.content.delete')}</button>

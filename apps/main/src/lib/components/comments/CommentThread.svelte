@@ -3,7 +3,7 @@
 	import { MessageCircle, TriangleAlert } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import type { Comment } from '$lib/types';
 	import CommentItem from './CommentItem.svelte';
 	import CommentEditor from './CommentEditor.svelte';
@@ -114,16 +114,17 @@
 		{#if comments.length > 0}
 			<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
 				<span>{t('comments.sort_by', 'Sort by:')}</span>
-				<select
-					bind:value={sort}
-					onchange={(e) => changeSort(e.currentTarget.value as 'top' | 'new' | 'oldest')}
+				<AutocompleteSelect
+					value={sort}
+					options={[
+						{ value: 'top', label: t('comments.sort.top', 'Top') },
+						{ value: 'new', label: t('comments.sort.new', 'New') },
+						{ value: 'oldest', label: t('comments.sort.oldest', 'Oldest') }
+					]}
+					onValueChange={(v) => changeSort(v as 'top' | 'new' | 'oldest')}
 					disabled={sortLoading}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[var(--color-text)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-				>
-					<option value="top">{t('comments.sort.top', 'Top')}</option>
-					<option value="new">{t('comments.sort.new', 'New')}</option>
-					<option value="oldest">{t('comments.sort.oldest', 'Oldest')}</option>
-				</select>
+					inputClass="px-2 py-1 text-sm"
+				/>
 			</div>
 		{/if}
 	</div>

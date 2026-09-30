@@ -9,6 +9,7 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type { ScholarshipDetail, SavedScholarship, ScholarshipStatus, CatalogOption } from '$lib/types';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	/**
 	 * Scholarship detail page — §73, ADR-073.
@@ -275,17 +276,17 @@
 					<!-- Status dropdown -->
 					<div>
 						<label class="block text-xs font-medium text-muted mb-1" for="status">{t('scholarships.application_status', 'Application status')}</label>
-						<select
+						<AutocompleteSelect
 							id="status"
 							value={savedItem.status}
-							onchange={(e) => updateStatus(e.currentTarget.value as ScholarshipStatus)}
+							onValueChange={(v) => updateStatus(v as ScholarshipStatus)}
 							disabled={updating}
-							class="w-full px-3 py-2 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
-						>
-							{#each statusOptions as opt (opt.value)}
-								<option value={opt.value}>{t(`scholarships.status_${opt.value}`, opt.label)}</option>
-							{/each}
-						</select>
+							options={statusOptions.map((opt) => ({
+								value: opt.value,
+								label: t(`scholarships.status_${opt.value}`, opt.label)
+							}))}
+							class="w-full"
+						/>
 					</div>
 
 					<!-- Notes editor -->

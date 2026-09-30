@@ -11,6 +11,7 @@
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type {
 		Space, SpaceModerator, SpaceRule, SpacePermissionPreset, MediaAsset
@@ -627,11 +628,7 @@
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				{t('spaces.settings_posting_hint', 'Minimum role required to create content in this space.')}
 			</p>
-			<select bind:value={postingPerm} class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]">
-				{#each permOptions as opt}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect bind:value={postingPerm} options={permOptions} />
 		</fieldset>
 
 		<!-- Who can reply / comment -->
@@ -641,19 +638,11 @@
 			</legend>
 			<div class="mb-3">
 				<label for="replying-perm" class="mb-1 block text-xs text-[var(--color-muted)]">Replying</label>
-				<select id="replying-perm" bind:value={replyingPerm} class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]">
-					{#each permOptions as opt}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect id="replying-perm" bind:value={replyingPerm} options={permOptions} />
 			</div>
 			<div>
 				<label for="commenting-perm" class="mb-1 block text-xs text-[var(--color-muted)]">Commenting</label>
-				<select id="commenting-perm" bind:value={commentingPerm} class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]">
-					{#each permOptions as opt}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect id="commenting-perm" bind:value={commentingPerm} options={permOptions} />
 			</div>
 		</fieldset>
 
@@ -665,11 +654,7 @@
 			<p class="mb-3 text-xs text-[var(--color-muted)]">
 				Controls how users become members of this space.
 			</p>
-			<select bind:value={joiningPerm} class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]">
-				{#each joiningOptions as opt}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect bind:value={joiningPerm} options={joiningOptions} />
 		</fieldset>
 
 		<!-- Keywords for auto-assign -->

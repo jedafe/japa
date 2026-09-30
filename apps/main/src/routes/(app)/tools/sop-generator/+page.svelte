@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { PenLine, Trash2 } from 'lucide-svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { GeoSpaceOption, SopTemplate, SopSample, SopDraft, SopQuota } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -198,11 +199,7 @@
 			</div>
 			<div>
 				<label class={labelCls} for="genPurpose">{t('sop_generator.purpose', 'Purpose')}</label>
-				<select id="genPurpose" bind:value={genPurpose} class={inputCls}>
-					{#each purposeOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect id="genPurpose" bind:value={genPurpose} options={purposeOptions} />
 			</div>
 			<div>
 				<label class={labelCls} for="genProgram">{t('sop_generator.program', 'Program')}</label>

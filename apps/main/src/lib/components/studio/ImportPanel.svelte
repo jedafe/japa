@@ -12,6 +12,7 @@
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import { CREATE_ALLOWED_TYPES } from '$lib/components/create/contentTypeRegistry';
+	import { contentHref } from '$lib/utils/contentLink';
 	import { FileUp, CheckCircle2, AlertCircle, Copy, Check, Save } from 'lucide-svelte';
 
 	const STUDIO_PROMPTS_TAG = 'app:studio-prompts';
@@ -36,7 +37,15 @@
 	let bodyError = $state('');
 	let submitting = $state(false);
 	let copiedMd = $state(false);
-	let result = $state<{ ok?: boolean; error?: string; message?: string; id?: string; contentType?: string } | null>(null);
+	let result = $state<{
+		ok?: boolean;
+		error?: string;
+		message?: string;
+		id?: string;
+		contentType?: string;
+		slug?: string;
+		status?: string;
+	} | null>(null);
 
 	const categories = $derived(
 		contentTypes.find((ct) => ct.value === str('content_type'))?.categories ?? []
@@ -183,6 +192,19 @@
 			{t('studio.prompts.saved', 'Draft saved.')}
 			{#if result.id && result.contentType && (CREATE_ALLOWED_TYPES as readonly string[]).includes(result.contentType)}
 				<a href="/studio/create?type={result.contentType}&draft={result.id}" class="underline">{t('studio.prompts.open_editor', 'Open in editor')}</a>
+			{:else if result.slug && result.status === 'published'}
+				<!-- Non-composable published content has a live public page. -->
+				<a href={contentHref({ slug: result.slug, content_type: result.contentType })} class="underline">{t('common.view', 'View')}</a>
+			{:else if result.id}
+				<!-- Non-composable drafts/archived items have no public page and
+				     no composer surface — send the user to the contents manager
+				     tab where the item now lives. -->
+				<a
+					href="/studio/contents{result.status && result.status !== 'published' ? `?status=${result.status}` : ''}"
+					class="underline"
+				>
+					{t('studio.prompts.open_contents', 'Open in Contents')}
+				</a>
 			{/if}
 		</div>
 	{:else if result?.error}
@@ -224,8 +246,19 @@
 				return async ({ result: r }) => {
 					submitting = false;
 					if (r.type === 'success') {
-						const data = r.data as { ok?: boolean; error?: string; message?: string; content?: { id?: string; content_type?: string } };
-						result = { ...data, id: data.content?.id, contentType: data.content?.content_type };
+						const data = r.data as {
+							ok?: boolean;
+							error?: string;
+							message?: string;
+							content?: { id?: string; content_type?: string; slug?: string; status?: string };
+						};
+						result = {
+							...data,
+							id: data.content?.id,
+							contentType: data.content?.content_type,
+							slug: data.content?.slug,
+							status: data.content?.status
+						};
 						if (data.ok) await invalidate(STUDIO_PROMPTS_TAG);
 					}
 				};

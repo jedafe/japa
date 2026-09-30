@@ -5,6 +5,7 @@
 	import { Play, X, RefreshCw } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type PersonaOption = { id: string; label: string };
 
@@ -239,17 +240,12 @@
 			<label class="block text-sm font-medium" for="campaign-persona-pool" style="color: var(--color-foreground)">
 				{t('campaigns.persona_pool', 'Persona Pool (optional)')}
 			</label>
-			<select
+			<AutocompleteSelect
 				id="campaign-persona-pool"
-				multiple
-				class="mt-1 w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.persona_ids}
-			>
-				{#each personas as persona}
-					<option value={persona.id}>{persona.label}</option>
-				{/each}
-			</select>
+				options={personas.map((persona) => ({ value: persona.id, label: persona.label }))}
+				class="w-full"
+			/>
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('campaigns.persona_pool_hint', 'Hold Ctrl/Cmd to select multiple. Leave empty to use all active personas.')}</p>
 		</div>
 		<div class="grid grid-cols-2 gap-4">

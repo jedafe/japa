@@ -8,6 +8,7 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem, Column } from '$lib/components/ui/data-table';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type FieldOption = { value: string; label: string };
 
@@ -428,17 +429,13 @@
 		<!-- Field Type -->
 		<div>
 			<label for="fld-type" class="mb-1 block text-sm font-medium">{t('fieldGroups.field_type')}</label>
-			<select
+			<AutocompleteSelect
 				id="fld-type"
 				bind:value={fieldType}
 				disabled={!!editingField}
-				class="w-full rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
-				style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-			>
-				{#each fieldTypes as ft (ft.value)}
-					<option value={ft.value}>{ft.label}</option>
-				{/each}
-			</select>
+				options={fieldTypes}
+				class="w-full"
+			/>
 			{#if editingField}
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('fieldGroups.type_immutable')}</p>
 			{/if}

@@ -171,7 +171,6 @@
 
 	.shell-center {
 		min-width: 0;
-		border-right: 1px solid var(--color-border);
 	}
 
 	.shell-sidebar {
@@ -239,9 +238,6 @@
 		}
 		.shell-nav {
 			display: none;
-		}
-		.shell-center {
-			border-right: none;
 		}
 		.mobile-topbar {
 			display: flex;

@@ -263,9 +263,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<!-- Header + search (H1/description; Filter + Create controls sit on the heading row) -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
 		<div class="flex items-start justify-between gap-3">
 			<div class="min-w-0">
 				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
@@ -353,7 +353,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		<!-- Filter panel — one uniform field grid (SelectField/Autocomplete),
 		     same pattern as /sources and /blog. Type+level are merged into a
 		     single picker; ?subregion= stays URL-only (no dedicated control). -->
-		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+		<div id="spaces-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
 			<div class="grid gap-3 sm:grid-cols-3">
 				{#if kindOptions.length > 1}
 					<div>

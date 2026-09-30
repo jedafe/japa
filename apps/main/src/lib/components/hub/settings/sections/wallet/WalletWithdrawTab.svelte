@@ -3,6 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { calculateWithdrawal, createWithdrawal, createWithdrawalMethod } from '$lib/api/hub';
 	import type { WalletData } from './types';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	interface Props {
 		data: WalletData;
@@ -221,15 +222,11 @@
 					<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="withdraw-currency">
 						{t('wallet.withdraw.currency', 'Currency')}
 					</label>
-					<select
+					<AutocompleteSelect
 						id="withdraw-currency"
 						bind:value={selectedCurrency}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-					>
-						{#each currencies as c (c.code)}
-							<option value={c.code}>{c.name ?? c.code} ({c.symbol})</option>
-						{/each}
-					</select>
+						options={currencies.map((c) => ({ value: c.code, label: `${c.name ?? c.code} (${c.symbol})` }))}
+					/>
 				</div>
 			</div>
 
@@ -238,19 +235,17 @@
 					<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="withdraw-method">
 						{t('wallet.withdraw.method', 'Payout Method')}
 					</label>
-					<select
+					<AutocompleteSelect
 						id="withdraw-method"
 						bind:value={selectedMethodId}
-						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-					>
-						<option value="">{t('wallet.withdraw.select_method_placeholder', 'Select a payout method')}</option>
-						{#each methods as m (m.id)}
-							<option value={m.id}>
-								{m.label || m.provider} - {m.account} ({m.currency_code})
-								{m.is_default ? t('wallet.withdraw.default', ' (default)') : ''}
-							</option>
-						{/each}
-					</select>
+						options={[
+							{ value: '', label: t('wallet.withdraw.select_method_placeholder', 'Select a payout method') },
+							...methods.map((m) => ({
+								value: m.id,
+								label: `${m.label || m.provider} - ${m.account} (${m.currency_code})${m.is_default ? t('wallet.withdraw.default', ' (default)') : ''}`
+							}))
+						]}
+					/>
 				</div>
 			{:else}
 				<p class="mt-4 rounded-[var(--radius)] bg-[var(--color-warning)]/10 px-3 py-2 text-sm text-[var(--color-warning)]">
@@ -339,15 +334,11 @@
 		<div class="grid gap-3 sm:grid-cols-2">
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-provider">{t('wallet.withdraw.method_provider', 'Provider')}</label>
-				<select
+				<AutocompleteSelect
 					id="method-provider"
 					bind:value={newProvider}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-				>
-					{#each withdrawalProviders as provider (provider)}
-						<option value={provider}>{provider}</option>
-					{/each}
-				</select>
+					options={withdrawalProviders.map((p) => ({ value: p, label: p }))}
+				/>
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="method-currency">{t('wallet.withdraw.method_currency', 'Currency / Coin')}</label>

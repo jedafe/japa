@@ -16,6 +16,7 @@
 	import { ChevronDown, Plus, Trash2, X } from 'lucide-svelte';
 	import { Switch } from 'bits-ui';
 	import { comparisonHintPresets, type ComparisonHintPreset } from './comparisonPresets';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	interface HintGroup {
 		name?: string;
@@ -570,21 +571,18 @@
 			{t('settings.comparison_presets', 'JapaConnect presets')}
 		</h4>
 		<div class="flex flex-wrap items-center gap-2">
-			<select
+			<AutocompleteSelect
 				id="comparison-presets"
-				disabled={disabled}
+				{disabled}
 				value={selectedPreset}
-				onchange={(e) => {
-					selectedPreset = (e.currentTarget as HTMLSelectElement).value;
-				}}
-				class="border-border-input bg-background text-foreground w-64 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus disabled:opacity-50"
-				aria-label={t('settings.comparison_select_preset', 'Select a preset…')}
-			>
-				<option value="">{t('settings.comparison_select_preset', 'Select a preset…')}</option>
-				{#each comparisonHintPresets as preset (preset.name)}
-					<option value={preset.name}>{preset.name}</option>
-				{/each}
-			</select>
+				onValueChange={(v) => (selectedPreset = v)}
+				options={[
+					{ value: '', label: t('settings.comparison_select_preset', 'Select a preset…') },
+					...comparisonHintPresets.map((p) => ({ value: p.name, label: p.name }))
+				]}
+				ariaLabel={t('settings.comparison_select_preset', 'Select a preset…')}
+				class="w-64"
+			/>
 			<button
 				type="button"
 				class="border-border-input bg-background-alt hover:bg-muted text-muted-foreground flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs transition-colors disabled:opacity-50"

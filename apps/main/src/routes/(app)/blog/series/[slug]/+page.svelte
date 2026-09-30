@@ -32,7 +32,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Series header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-4">
 		<a
 			href="/blog/series"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"

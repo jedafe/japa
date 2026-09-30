@@ -121,6 +121,14 @@
 			.filter((s) => !highStakes || (s.value !== 'published' && s.value !== 'scheduled'))
 			.map((s) => ({ id: s.value, label: s.label }))
 	);
+	$effect(() => {
+		// High-stakes categories can never publish/schedule — the option is
+		// filtered out above, but a stale value picked before the category
+		// was set would otherwise linger with an empty label.
+		if (highStakes && (values.status === 'published' || values.status === 'scheduled')) {
+			values.status = 'in_review';
+		}
+	});
 	const visibilityItems = $derived(
 		visibilityOptions.map((s) => ({ id: s.value, label: s.label }))
 	);
@@ -318,7 +326,10 @@
 					value={Object.entries(values.field_values)
 						.map(([k, v]) => `${k}: ${v}`)
 						.join('\n')}
-					oninput={(e) => {
+					onchange={(e) => {
+						// Commit on blur, not on input — writing field_values
+						// mid-keystroke re-renders value= and would erase a
+						// line the user is still typing (no colon yet).
 						const fv: Record<string, string> = {};
 						for (const line of e.currentTarget.value.split('\n')) {
 							const idx = line.indexOf(':');

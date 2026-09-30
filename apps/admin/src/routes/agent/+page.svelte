@@ -21,6 +21,7 @@
 		Search, Clock, Cpu, Database, CheckCircle2, XCircle, Shield, Lock,
 		ChevronLeft, ChevronRight, Calendar
 	} from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// ─── Types ────────────────────────────────────────────────────────
 	interface AgentSession {
@@ -348,18 +349,11 @@
 		{#if activeTab === 'sessions'}
 			<!-- Filters -->
 			<div class="flex items-center gap-3">
-				<select
+				<AutocompleteSelect
 					bind:value={sessionsStatusFilter}
-					onchange={applyStatusFilter}
-					class="rounded-md border px-2 py-1.5 text-sm"
-					style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
-				>
-					<option value="">{t('admin.agent.filter.all_statuses', 'All statuses')}</option>
-					<option value="running">{t('admin.agent.status.running', 'Running')}</option>
-					<option value="completed">{t('admin.agent.status.completed', 'Completed')}</option>
-					<option value="failed">{t('admin.agent.status.failed', 'Failed')}</option>
-					<option value="cancelled">{t('admin.agent.status.cancelled', 'Cancelled')}</option>
-				</select>
+					onValueChange={() => applyStatusFilter()}
+					options={[{ value: '', label: t('admin.agent.filter.all_statuses', 'All statuses') }, { value: 'running', label: t('admin.agent.status.running', 'Running') }, { value: 'completed', label: t('admin.agent.status.completed', 'Completed') }, { value: 'failed', label: t('admin.agent.status.failed', 'Failed') }, { value: 'cancelled', label: t('admin.agent.status.cancelled', 'Cancelled') }]}
+				/>
 				<span class="text-xs" style="color: var(--color-muted)">
 					{sessionsTotal} {t('admin.agent.sessions_total', 'sessions')}
 				</span>
@@ -420,18 +414,12 @@
 					<div class="flex items-center justify-between text-xs" style="color: var(--color-muted)">
 						<div class="flex items-center gap-3">
 							<span>{t('common.page', 'Page')} {sessionsPage} {t('common.of', 'of')} {totalPages}</span>
-							<select
-								value={sessionsPageSize}
-								onchange={(e) => { sessionsPageSize = Number((e.currentTarget as HTMLSelectElement).value); sessionsPage = 1; void loadSessions(); }}
-								class="rounded border px-2 py-1 text-xs"
-								style="border-color: var(--color-border); color: var(--color-foreground); background: var(--color-surface)"
-								aria-label={t('common.pageSize', 'Page size')}
-							>
-								<option value={10}>10</option>
-								<option value={25}>25</option>
-								<option value={50}>50</option>
-								<option value={100}>100</option>
-							</select>
+							<AutocompleteSelect
+								value={String(sessionsPageSize)}
+								onValueChange={(v) => { sessionsPageSize = Number(v); sessionsPage = 1; void loadSessions(); }}
+								options={[{ value: '10', label: '10' }, { value: '25', label: '25' }, { value: '50', label: '50' }, { value: '100', label: '100' }]}
+								class="w-20"
+							/>
 						</div>
 						<div class="flex gap-2">
 							<Button variant="outline" size="sm" disabled={sessionsPage <= 1} onclick={prevPage}>

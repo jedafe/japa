@@ -13,6 +13,7 @@
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { Trophy, Target, Pencil, Award, Trash2, Eye } from 'lucide-svelte';
 	import { api, adminCatalogApi, type CatalogOption } from '$lib/api';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type Badge = {
 		id: string;
@@ -653,11 +654,12 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="badge-trigger" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger', 'Trigger Type')}</label>
-				<select id="badge-trigger" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={value.trigger_type}>
-					{#each triggerTypeOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="badge-trigger"
+					bind:value={value.trigger_type}
+					options={triggerTypeOptions}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="badge-trigger-value" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('gamification.trigger_value', 'Trigger Value')}</label>

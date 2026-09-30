@@ -9,6 +9,7 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { TaxGuideWithAi, TaxTreaty, GeoSpaceOption, CatalogOption } from '$lib/types';
 
@@ -215,20 +216,18 @@
 				<label for="employment" class="text-sm font-medium text-text whitespace-nowrap">
 					{t('tax_calculator.employment_status', 'Employment status:')}
 				</label>
-				<select
+				<AutocompleteSelect
 					id="employment"
 					value={employmentStatus}
-					onchange={(e) => (employmentStatus = (e.currentTarget as HTMLSelectElement).value)}
-					class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-				>
-					{#each employmentOptions as opt (opt.value)}
-						<option value={opt.value}>
-							{opt.value
-								? t(`tax_calculator.${opt.value}`, opt.label)
-								: t('tax_calculator.employment_any', opt.label)}
-						</option>
-					{/each}
-				</select>
+					onValueChange={(v) => (employmentStatus = v)}
+					options={employmentOptions.map((opt) => ({
+						value: opt.value,
+						label: opt.value
+							? t(`tax_calculator.${opt.value}`, opt.label)
+							: t('tax_calculator.employment_any', opt.label)
+					}))}
+					class="flex-1"
+				/>
 				<button
 					onclick={search}
 					disabled={!canSearch || loading}

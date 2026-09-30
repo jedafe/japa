@@ -86,7 +86,7 @@
 </SetSidebar>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<a
 			href="/wiki/{data.spaceSlug}/{data.pageSlug}"
 			class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"

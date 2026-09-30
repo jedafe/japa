@@ -11,6 +11,7 @@
 	import { Bot, Plus, Trash2, Activity, Pencil, Pause, Play, Eye } from 'lucide-svelte';
 	import { api, apiRaw } from '$lib/api';
 	import type { BulkAction } from '$lib/components/ui/data-table';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// Persona type matches the backend PersonaDetail / PersonaListItem DTOs
 	// (internal/personas/service.go). Ref: §68, ADR-068.
@@ -574,18 +575,12 @@
 {:else}
 	<div class="mb-4 flex items-center gap-3">
 		<label for="status-filter" class="text-xs font-medium" style="color: var(--color-muted)">{t('personas.status', 'Status')}</label>
-		<select
+		<AutocompleteSelect
 			id="status-filter"
-			class="rounded-md border px-3 py-1.5 text-sm"
-			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 			value={statusFilter}
-			onchange={(e) => { statusFilter = (e.target as HTMLSelectElement).value; listPage = 0; syncStatusToUrl(); load(); }}
-		>
-			<option value="">{t('personas.all_statuses', 'All statuses')}</option>
-			<option value="active">{t('personas.status_active', 'Active')}</option>
-			<option value="paused">{t('personas.status_paused', 'Paused')}</option>
-			<option value="retired">{t('personas.status_retired', 'Retired')}</option>
-		</select>
+			onValueChange={(v) => { statusFilter = v; listPage = 0; syncStatusToUrl(); load(); }}
+			options={[{ value: '', label: t('personas.all_statuses', 'All statuses') }, { value: 'active', label: t('personas.status_active', 'Active') }, { value: 'paused', label: t('personas.status_paused', 'Paused') }, { value: 'retired', label: t('personas.status_retired', 'Retired') }]}
+		/>
 	</div>
 	<DataTable
 		data={personas}
@@ -666,27 +661,21 @@
 					<div class="mt-2 grid gap-3 sm:grid-cols-2">
 						<div>
 							<label for={`persona-disclosure-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.disclosure', 'Disclosure Mode')}</label>
-							<select
+							<AutocompleteSelect
 								id={`persona-disclosure-${idx}`}
-								class="w-full rounded-md border px-3 py-1.5 text-sm"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={persona.disclosure_mode}
-							>
-								<option value="disclosed">{t('personas.disclosure_disclosed', 'Disclosed')}</option>
-								<option value="undisclosed">{t('personas.disclosure_undisclosed', 'Undisclosed')}</option>
-							</select>
+								options={[{ value: 'disclosed', label: t('personas.disclosure_disclosed', 'Disclosed') }, { value: 'undisclosed', label: t('personas.disclosure_undisclosed', 'Undisclosed') }]}
+								class="w-full"
+							/>
 						</div>
 						<div>
 							<label for={`persona-autonomy-${idx}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.autonomy', 'Autonomy Mode')}</label>
-							<select
+							<AutocompleteSelect
 								id={`persona-autonomy-${idx}`}
-								class="w-full rounded-md border px-3 py-1.5 text-sm"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={persona.autonomy_mode}
-							>
-								<option value="queued">{t('personas.autonomy_queued', 'Queued (admin review)')}</option>
-								<option value="autonomous">{t('personas.autonomy_autonomous', 'Autonomous')}</option>
-							</select>
+								options={[{ value: 'queued', label: t('personas.autonomy_queued', 'Queued (admin review)') }, { value: 'autonomous', label: t('personas.autonomy_autonomous', 'Autonomous') }]}
+								class="w-full"
+							/>
 						</div>
 					</div>
 					<div class="mt-2">
@@ -696,17 +685,12 @@
 						{:else if voicesError}
 							<p class="text-xs" style="color: var(--color-danger)">{voicesError}</p>
 						{:else}
-							<select
+							<AutocompleteSelect
 								id={`persona-voice-${idx}`}
-								class="w-full rounded-md border px-3 py-1.5 text-sm"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={persona.voice_id}
-							>
-								<option value="">{t('personas.voice_none', 'Create new voice from prompt below')}</option>
-								{#each voiceOptions as voice (voice.id)}
-									<option value={voice.id}>{voice.name}</option>
-								{/each}
-							</select>
+								options={[{ value: '', label: t('personas.voice_none', 'Create new voice from prompt below') }, ...voiceOptions.map((voice) => ({ value: voice.id, label: voice.name }))]}
+								class="w-full"
+							/>
 						{/if}
 					</div>
 					<div class="mt-2">
@@ -929,41 +913,31 @@
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
 					<label for="edit-persona-disclosure" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.disclosure', 'Disclosure Mode')}</label>
-					<select
+					<AutocompleteSelect
 						id="edit-persona-disclosure"
-						class="w-full rounded-md border px-3 py-1.5 text-sm"
-						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={editForm.disclosure_mode}
-					>
-						<option value="disclosed">{t('personas.disclosure_disclosed', 'Disclosed')}</option>
-						<option value="undisclosed">{t('personas.disclosure_undisclosed', 'Undisclosed')}</option>
-					</select>
+						options={[{ value: 'disclosed', label: t('personas.disclosure_disclosed', 'Disclosed') }, { value: 'undisclosed', label: t('personas.disclosure_undisclosed', 'Undisclosed') }]}
+						class="w-full"
+					/>
 				</div>
 				<div>
 					<label for="edit-persona-autonomy" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.autonomy', 'Autonomy Mode')}</label>
-					<select
+					<AutocompleteSelect
 						id="edit-persona-autonomy"
-						class="w-full rounded-md border px-3 py-1.5 text-sm"
-						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={editForm.autonomy_mode}
-					>
-						<option value="queued">{t('personas.autonomy_queued', 'Queued (admin review)')}</option>
-						<option value="autonomous">{t('personas.autonomy_autonomous', 'Autonomous')}</option>
-					</select>
+						options={[{ value: 'queued', label: t('personas.autonomy_queued', 'Queued (admin review)') }, { value: 'autonomous', label: t('personas.autonomy_autonomous', 'Autonomous') }]}
+						class="w-full"
+					/>
 				</div>
 			</div>
 			<div>
 				<label for="edit-persona-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.status', 'Status')}</label>
-				<select
+				<AutocompleteSelect
 					id="edit-persona-status"
-					class="w-full rounded-md border px-3 py-1.5 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					bind:value={editForm.status}
-				>
-					<option value="active">{t('personas.status_active', 'Active')}</option>
-					<option value="paused">{t('personas.status_paused', 'Paused')}</option>
-					<option value="retired">{t('personas.status_retired', 'Retired')}</option>
-				</select>
+					options={[{ value: 'active', label: t('personas.status_active', 'Active') }, { value: 'paused', label: t('personas.status_paused', 'Paused') }, { value: 'retired', label: t('personas.status_retired', 'Retired') }]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="edit-persona-voice" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t('personas.voice', 'Voice / Tone')}</label>
@@ -972,17 +946,12 @@
 				{:else if voicesError}
 					<p class="text-xs" style="color: var(--color-danger)">{voicesError}</p>
 				{:else}
-					<select
+					<AutocompleteSelect
 						id="edit-persona-voice"
-						class="w-full rounded-md border px-3 py-1.5 text-sm"
-						style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						bind:value={editForm.voice_id}
-					>
-						<option value="">{t('personas.voice_none', 'No shared voice')}</option>
-						{#each voiceOptions as voice (voice.id)}
-							<option value={voice.id}>{voice.name}</option>
-						{/each}
-					</select>
+						options={[{ value: '', label: t('personas.voice_none', 'No shared voice') }, ...voiceOptions.map((voice) => ({ value: voice.id, label: voice.name }))]}
+						class="w-full"
+					/>
 				{/if}
 			</div>
 			<div>

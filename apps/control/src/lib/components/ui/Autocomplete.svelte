@@ -58,6 +58,13 @@
 		id?: string;
 		/** Extra class on the input wrapper for font tweaks (e.g. 'font-mono'). */
 		inputClass?: string;
+
+		/** Accessible label for the input when no visible label element exists. */
+		ariaLabel?: string;
+		/** Disable interaction — renders dimmed and cannot be focused/opened. */
+		disabled?: boolean;
+		/** Extra classes on the outer wrapper. */
+		class?: string;
 	}
 
 	let {
@@ -76,7 +83,10 @@
 		freeText = false,
 		debounceMs = 300,
 		id,
-		inputClass = ''
+		inputClass = '',
+		ariaLabel = undefined,
+		disabled = false,
+		class: wrapperClass = ''
 	}: Props = $props();
 
 	let open = $state(false);
@@ -140,6 +150,8 @@
 	}
 
 	const selectedDisplay = $derived(selectedLabel ?? '');
+	// Unique per-instance id so multiple Autocompletes never share listbox ids.
+	const listId = $props.id();
 
 	// In free-text mode, seed the input with the current value whenever the
 	// field is not focused so the typed text survives modal re-opens and
@@ -186,6 +198,7 @@
 	});
 
 	async function open_() {
+		if (disabled) return;
 		open = true;
 		onfocus?.();
 		// In free-text mode, keep the current query so the user can continue
@@ -220,6 +233,7 @@
 	}
 
 	function clearSelection() {
+		if (disabled) return;
 		onClear?.();
 		query = '';
 		results = [];
@@ -322,6 +336,7 @@
 	let picking = false;
 
 	function pick(item: AutocompleteItem) {
+		if (disabled) return;
 		// Close the dropdown FIRST, before calling onSelect. onSelect
 		// updates parent state which triggers a re-render and new prop
 		// identities — closing first ensures the {#if showDropdown} block
@@ -359,11 +374,12 @@
 
 <svelte:window onclick={onWindowClick} onkeydown={onKeydown} />
 
-<div class="autocomplete-field" bind:this={fieldEl}>
+<div class="autocomplete-field {wrapperClass}" bind:this={fieldEl}>
 	<div
 		class="autocomplete-input-wrapper {inputClass}"
 		class:focused
 		class:has-value={!!selectedId}
+		class:disabled
 	>
 		{#if selectedId && !focused && !freeText}
 			<div class="autocomplete-chip">
@@ -385,6 +401,8 @@
 			type="text"
 			class="autocomplete-input"
 			placeholder={selectedId && !focused ? '' : placeholder}
+			aria-label={ariaLabel ?? placeholder}
+			{disabled}
 			bind:this={inputEl}
 			bind:value={query}
 			onfocus={onFocus}
@@ -393,7 +411,7 @@
 			role="combobox"
 			aria-expanded={showDropdown}
 			aria-autocomplete="list"
-			aria-controls={id ? `${id}-list` : 'autocomplete-list'}
+			aria-controls={listId}
 			aria-haspopup="listbox"
 		/>
 
@@ -415,7 +433,7 @@
 		style="position: absolute; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999;"
 		role="listbox"
 	>
-		<div class="autocomplete-options" id={id ? `${id}-list` : 'autocomplete-list'}>
+		<div class="autocomplete-options" id={listId}>
 			{#if loadingInitial}
 				<div class="autocomplete-empty">{t('common.loading', 'Loading...')}</div>
 			{:else if query.trim().length > 0 && !(freeText && query === selectedLabel)}
@@ -502,6 +520,14 @@
 		border-color: var(--color-border-input-hover);
 		box-shadow: var(--shadow-date-field-focus);
 	}
+	.autocomplete-input-wrapper.disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.autocomplete-input-wrapper.disabled .autocomplete-input {
+		cursor: not-allowed;
+	}
+
 
 	.autocomplete-input {
 		flex: 1;

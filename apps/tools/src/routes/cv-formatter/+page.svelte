@@ -11,6 +11,7 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import type { GeoSpaceOption, CvStandard, CvFormatSession, CatalogOption } from '$lib/types';
 
@@ -280,15 +281,15 @@
 							<label for="output-format" class="text-sm font-medium text-text whitespace-nowrap">
 								{t('cv_formatter.output_format', 'Format:')}
 							</label>
-							<select
+							<AutocompleteSelect
 								id="output-format"
 								bind:value={outputFormat}
-								class="px-3 py-1.5 bg-surface border border-border rounded-lg text-sm text-text focus:border-primary focus:outline-none"
-							>
-								{#each formatOptions as opt (opt.value)}
-									<option value={opt.value}>{t(`cv_formatter.format_${opt.value}`, opt.label)}</option>
-								{/each}
-							</select>
+								options={formatOptions.map((opt) => ({
+									value: opt.value,
+									label: t(`cv_formatter.format_${opt.value}`, opt.label)
+								}))}
+								class="w-44"
+							/>
 						</div>
 
 						<textarea

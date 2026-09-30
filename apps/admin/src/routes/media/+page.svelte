@@ -12,6 +12,7 @@
 	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image as ImageIcon, FileText, Film, Music, Search, Download, Loader2, Check, RefreshCw, ZoomIn, ZoomOut, Maximize, Pencil, Save, X } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type MediaItem = {
 		id: string;
@@ -1178,17 +1179,12 @@
 			{/if}
 			<div>
 				<label for="media-upload-group" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_user_group', 'User Group (optional)')}</label>
-				<select
+				<AutocompleteSelect
 					id="media-upload-group"
 					bind:value={uploadUserGroupId}
-					class="w-full rounded-lg border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-				>
-					<option value={SUPER_ADMIN_GROUP_ID}>{t('app.media.upload_admin_only', 'Visible to admin')}</option>
-					<option value="">{t('app.media.upload_universal', 'Universal (all users)')}</option>
-					{#each userGroups.filter((g) => g.id !== SUPER_ADMIN_GROUP_ID) as group (group)}
-						<option value={group.id}>{group.name}</option>
-					{/each}
-				</select>
+					options={[{ value: SUPER_ADMIN_GROUP_ID, label: t('app.media.upload_admin_only', 'Visible to admin') }, { value: '', label: t('app.media.upload_universal', 'Universal (all users)') }, ...userGroups.filter((g) => g.id !== SUPER_ADMIN_GROUP_ID).map((group) => ({ value: group.id, label: group.name }))]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="media-upload-alt" class="mb-1 block text-sm font-medium text-foreground">{t('app.media.upload_alt_text', 'Alt Text (optional)')}</label>
@@ -1510,11 +1506,12 @@
 				</label>
 				<div class="flex items-center gap-2 text-sm text-foreground">
 					<label for="resize-format">{t('app.media.format', 'Format')}</label>
-					<select id="resize-format" bind:value={resizerFormat} onchange={renderResizerFromSource} class="rounded-lg border bg-surface px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-						<option value="jpeg">JPEG</option>
-						<option value="png">PNG</option>
-						<option value="webp">WebP</option>
-					</select>
+					<AutocompleteSelect
+						id="resize-format"
+						bind:value={resizerFormat}
+						onValueChange={() => renderResizerFromSource()}
+						options={[{ value: 'jpeg', label: 'JPEG' }, { value: 'png', label: 'PNG' }, { value: 'webp', label: 'WebP' }]}
+					/>
 				</div>
 				<div class="flex items-center gap-2 text-sm text-foreground">
 					<label for="resize-quality">{t('app.media.quality', 'Quality')}</label>
