@@ -117,6 +117,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	schedule("0 * * * *", TypeRSSRegenerate, 1*time.Hour)
 	schedule("0 * * * *", TypeGdprRetentionSweep, 1*time.Hour)
 
+	// §09: incomplete-onboarding reminders — daily at 09:00. Sends are capped
+	// by onboarding.reminder_max_count and the account-age window inside the
+	// handler; the cron spec is overridable via JC_SCHEDULER_CRON_*.
+	schedule("0 9 * * *", TypeOnboardingReminderSweep, 24*time.Hour)
+
 	// 6-hourly: user/space suggestions.
 	schedule("0 */6 * * *", TypeComputeSuggestions, 6*time.Hour)
 

@@ -4325,6 +4325,111 @@ func HandleScheduledPublishSweep(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
+// HandleOnboardingReminderSweep nudges newly registered users who have not
+// finished the onboarding wizard (§09). Runs daily via the Asynq scheduler.
+// Sends are bounded by onboarding.reminder_max_count (default 5) and only
+// apply within onboarding.reminder_window_days of registration (default 14);
+// onboarding.reminder_min_interval_hours (default 20) prevents double-sends
+// if the cron fires twice in a day.
+// Ref: japaconnect-engineering/sections/09-onboarding-flow.md
+func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:onboarding:reminder_sweep: starting sweep")
+
+	if dbPool == nil {
+		slog.Warn("task:onboarding:reminder_sweep: no database, skipping")
+		return nil
+	}
+
+	if !onboardingReminderEnabled(ctx) {
+		slog.Info("task:onboarding:reminder_sweep: disabled via onboarding.reminder_enabled")
+		return nil
+	}
+
+	q := gen.New(dbPool.Reader)
+	candidates, err := q.ListOnboardingReminderCandidates(ctx, gen.ListOnboardingReminderCandidatesParams{
+		WindowDays:       onboardingReminderIntSetting(ctx, "onboarding.reminder_window_days", 14),
+		MaxCount:         onboardingReminderIntSetting(ctx, "onboarding.reminder_max_count", 5),
+		MinIntervalHours: onboardingReminderIntSetting(ctx, "onboarding.reminder_min_interval_hours", 20),
+		BatchLimit:       2000,
+	})
+	if err != nil {
+		slog.Error("task:onboarding:reminder_sweep: candidate query failed", "error", err)
+		return err
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	wq := gen.New(dbPool.Writer)
+	actorType := "system"
+	subjectType := "onboarding"
+	actionURL := "/onboarding"
+	title := "Finish setting up your account"
+	body := "You're almost there — finish the setup steps to get the most out of JapaConnect."
+	sent := 0
+
+	for _, userID := range candidates {
+		// Mark first: a failed insert must not allow the next sweep to
+		// re-send unboundedly — reminder_count is the global cap.
+		if err := wq.MarkOnboardingReminded(ctx, userID); err != nil {
+			slog.Error("task:onboarding:reminder_sweep: mark failed", "user_id", userID.String(), "error", err)
+			continue
+		}
+
+		if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{
+			RecipientID:      userID,
+			NotificationType: "onboarding_reminder",
+			ActorType:        &actorType,
+			ActorID:          pgtype.UUID{},
+			SubjectType:      &subjectType,
+			SubjectID:        userID,
+			Title:            title,
+			Body:             &body,
+			ActionUrl:        &actionURL,
+		}); err != nil {
+			slog.Error("task:onboarding:reminder_sweep: insert failed", "user_id", userID.String(), "error", err)
+			continue
+		}
+		sent++
+	}
+
+	slog.Info("task:onboarding:reminder_sweep: complete", "sent", sent, "candidates", len(candidates))
+	return nil
+}
+
+// onboardingReminderEnabled reads the onboarding.reminder_enabled setting
+// (§09, default true). Missing/malformed values fall back to true.
+func onboardingReminderEnabled(ctx context.Context) bool {
+	if dbPool == nil {
+		return true
+	}
+	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, "onboarding.reminder_enabled")
+	if err != nil || len(row) == 0 {
+		return true
+	}
+	return strings.Trim(string(row), `"`) != "false"
+}
+
+// onboardingReminderIntSetting reads an integer onboarding.reminder_*
+// setting (§09) with clamping — invalid or non-positive values fall back.
+func onboardingReminderIntSetting(ctx context.Context, key string, fallback int32) int32 {
+	if dbPool == nil {
+		return fallback
+	}
+	row, err := gen.New(dbPool.Reader).GetSettingValue(ctx, key)
+	if err != nil || len(row) == 0 {
+		return fallback
+	}
+	n, err := strconv.Atoi(strings.Trim(string(row), `"`))
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	if n > 10000 {
+		n = 10000
+	}
+	return int32(n) //nolint:gosec // bounded above
+}
+
 // ---------------------------------------------------------------------------
 // Email helper
 // ---------------------------------------------------------------------------
