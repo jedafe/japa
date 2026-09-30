@@ -160,10 +160,13 @@ export const load: LayoutServerLoad = async (event) => {
 							currentStep: v?.current_step ?? 1
 						}
 					}))
+					// Fail-closed on fetch error: an unreadable status means
+					// dismissal can't persist either — auto-running would
+					// replay the tour on every load. ?tour=replay still works.
 					.catch(() => ({
 						ok: false as const,
 						value: {
-							dismissed: false,
+							dismissed: true,
 							steps: null as string[] | null,
 							completed: true,
 							currentStep: 1
