@@ -2,6 +2,7 @@ import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { normalizeConfig, type CardStyleConfig } from '$lib/feed/cardStyle';
 import type { Menu, OnboardingStatus, SpaceSuggestion, TrendingTag, UserSpaceRef } from '$lib/types';
+import type { CurrencyInfo } from '$lib/utils/currency';
 
 /**
  * Module-level caches for global, non-user-specific data that rarely changes.
@@ -28,6 +29,10 @@ interface Cached<T> {
 }
 let settingsCache: Cached<Record<string, unknown>> | null = null;
 let featureFlagsFallback: Record<string, boolean> | null = null;
+// Active currency table (Section 58) — name/symbol lookup for money displays
+// across every page. Same 60s TTL as settings: control-panel currency edits
+// propagate within a minute.
+let currenciesCache: Cached<CurrencyInfo[]> | null = null;
 
 /**
  * Shared shell data for every route: the resolved session (from hooks), the
@@ -61,8 +66,12 @@ export const load: LayoutServerLoad = async (event) => {
 	// ── Parallel fetch group: all independent calls fire at once.
 	// Each resolves to a discriminated union so we can check success/failure
 	// without try/catch around Promise.all (which would reject on any failure).
+	const currenciesFromCache =
+		currenciesCache && currenciesCache.expiresAt > now ? currenciesCache.value : null;
+
 	const [
 		settingsResult,
+		currenciesResult,
 		menuResult,
 		footerMenuResult,
 		mobileMenuResult,
@@ -80,6 +89,12 @@ export const load: LayoutServerLoad = async (event) => {
 			: apiGet<Record<string, unknown>>(ctx, '/site/settings/public')
 					.then((v) => ({ ok: true as const, value: v ?? ({} as Record<string, unknown>), cached: false }))
 					.catch(() => ({ ok: false as const, value: {} as Record<string, unknown>, cached: false })),
+		// Active currencies — public reference, cached like settings.
+		currenciesFromCache !== null
+			? Promise.resolve({ ok: true as const, value: currenciesFromCache, cached: true })
+			: apiGet<CurrencyInfo[]>(ctx, '/currencies')
+					.then((v) => ({ ok: true as const, value: v ?? [], cached: false }))
+					.catch(() => ({ ok: false as const, value: [] as CurrencyInfo[], cached: false })),
 		// Main sidebar menu — user-specific (RBAC filtered).
 		apiGet<Menu>(ctx, '/menus/main_sidebar')
 			.then((v) => ({ ok: true as const, value: v }))
@@ -131,13 +146,38 @@ export const load: LayoutServerLoad = async (event) => {
 		apiGet<unknown>(ctx, '/feed/card-style')
 			.then((v) => ({ ok: true as const, value: normalizeConfig(v) }))
 			.catch(() => ({ ok: false as const, value: { default: 'daily', byType: {} } as CardStyleConfig })),
-		// Onboarding tour dismissal status — authed only. Guards the ?tour=1
-		// auto-trigger in (app)/+layout.svelte (Section 09).
+		// Onboarding tour state — authed only. `tour_dismissed` guards the
+		// ?tour=1 auto-trigger; `tour_steps.main` carries the admin-managed
+		// step list (onboarding.tour_steps setting) for ProductTour (§09).
 		user
 			? apiGet<OnboardingStatus>(ctx, '/onboarding/status')
-					.then((v) => ({ ok: true as const, value: !!v?.tour_dismissed }))
-					.catch(() => ({ ok: false as const, value: false }))
-			: Promise.resolve({ ok: true as const, value: false })
+					.then((v) => ({
+						ok: true as const,
+						value: {
+							dismissed: !!v?.tour_dismissed,
+							steps: v?.tour_steps?.['main'] ?? null,
+							completed: !!v?.completed,
+							currentStep: v?.current_step ?? 1
+						}
+					}))
+					.catch(() => ({
+						ok: false as const,
+						value: {
+							dismissed: false,
+							steps: null as string[] | null,
+							completed: true,
+							currentStep: 1
+						}
+					}))
+			: Promise.resolve({
+					ok: true as const,
+					value: {
+						dismissed: false,
+						steps: null as string[] | null,
+						completed: true,
+						currentStep: 1
+					}
+				})
 	]);
 
 	// ── Apply results and populate caches for fresh (non-cached) fetches.
@@ -147,6 +187,13 @@ export const load: LayoutServerLoad = async (event) => {
 	} else if (!settingsResult.ok && settingsCache) {
 		// Serve stale on fetch failure (transient backend blip).
 		siteSettings = settingsCache.value;
+	}
+
+	let currencies = currenciesResult.value;
+	if (currenciesResult.ok && !currenciesResult.cached) {
+		currenciesCache = { value: currencies, expiresAt: now + SETTINGS_TTL_MS };
+	} else if (!currenciesResult.ok && currenciesCache) {
+		currencies = currenciesCache.value;
 	}
 
 	let features = featuresResult.value;
@@ -168,7 +215,10 @@ export const load: LayoutServerLoad = async (event) => {
 	const cardStyleConfig = cardStyleResult.ok
 		? (cardStyleResult.value as CardStyleConfig)
 		: { default: 'daily', byType: {} };
-	const tourDismissed = tourResult.value;
+	const tourDismissed = tourResult.value.dismissed;
+	const tourSteps = tourResult.value.steps;
+	const onboardingCompleted = tourResult.value.completed;
+	const onboardingStep = tourResult.value.currentStep;
 
 	return {
 		user,
@@ -183,6 +233,7 @@ export const load: LayoutServerLoad = async (event) => {
 		isUniversityHost: event.locals.isUniversityHost,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
+		currencies,
 		menu,
 		footerMenu,
 		mobileMenu,
@@ -193,6 +244,9 @@ export const load: LayoutServerLoad = async (event) => {
 		unreadNotifications,
 		features,
 		cardStyleConfig,
-		tourDismissed
+		tourDismissed,
+		tourSteps,
+		onboardingCompleted,
+		onboardingStep
 	};
 };

@@ -7,6 +7,7 @@
 	import FeedSortBar from '$lib/components/feed/FeedSortBar.svelte';
 	import FeedList from '$lib/components/feed/FeedList.svelte';
 	import FeedUpdatePill from '$lib/components/feed/FeedUpdatePill.svelte';
+	import OnboardingSetupCard from '$lib/components/onboarding/OnboardingSetupCard.svelte';
 	import { LandingRenderer, type Block } from '@japaconnect/landing-blocks';
 	import { t } from '$lib/i18n';
 	import type { CardStyleConfig } from '$lib/feed/cardStyle';
@@ -126,6 +127,8 @@
 		<!-- Phase 23 — live feed update pill (driven by WS feed_update events) -->
 		<FeedUpdatePill />
 		<div class="p-3">
+			<!-- §09: finish-setup reminder — self-gating on page.data.onboardingCompleted -->
+			<OnboardingSetupCard />
 			<FeedList
 				items={data.items}
 				tab={data.tab}
