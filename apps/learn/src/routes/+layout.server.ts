@@ -111,6 +111,9 @@ export const load: LayoutServerLoad = async (event) => {
 
 	// Section 09 Product Tour (learn surface): dismissal state for the
 	// contextual walkthrough. Authed only — guests never see the tour.
+	// Fail-closed on fetch error: an unreadable status means dismissal
+	// can't persist either, so auto-running the tour would replay on
+	// every page load. Explicit ?tour=replay still bypasses this.
 	let tourDismissed = false;
 	let tourSteps: string[] | null = null;
 	if (user) {
@@ -119,7 +122,7 @@ export const load: LayoutServerLoad = async (event) => {
 			tourDismissed = status?.tour_dismissals?.['learn'] === true;
 			tourSteps = status?.tour_steps?.['learn'] ?? null;
 		} catch {
-			tourDismissed = false;
+			tourDismissed = true;
 		}
 	}
 
