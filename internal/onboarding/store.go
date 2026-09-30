@@ -20,27 +20,28 @@ func NewStore(read, write *gen.Queries) *Store {
 }
 
 // getState returns the onboarding state for a user, or false if not found.
-func (s *Store) getState(ctx context.Context, userID pgtype.UUID) (gen.OnboardingState, error) {
+func (s *Store) getState(ctx context.Context, userID pgtype.UUID) (gen.GetOnboardingStateRow, error) {
 	row, err := s.read.GetOnboardingState(ctx,
 
 		userID,
 	)
 	if err != nil {
-		return gen.OnboardingState{}, fmt.Errorf("getting onboarding state: %w", err)
+		return gen.GetOnboardingStateRow{}, fmt.Errorf("getting onboarding state: %w", err)
 	}
 
 	return row, nil
 }
 
 // upsertState inserts or updates the onboarding state.
-func (s *Store) upsertState(ctx context.Context, userID pgtype.UUID, currentStep int32, completed bool, stepData []byte, tourDismissed bool) error {
+func (s *Store) upsertState(ctx context.Context, userID pgtype.UUID, currentStep int32, completed bool, stepData []byte, tourDismissed bool, tourDismissals []byte) error {
 	if err := s.write.UpsertOnboardingState(ctx, gen.UpsertOnboardingStateParams{
 
-		UserID:        userID,
-		CurrentStep:   currentStep,
-		Completed:     completed,
-		StepData:      stepData,
-		TourDismissed: tourDismissed,
+		UserID:         userID,
+		CurrentStep:    currentStep,
+		Completed:      completed,
+		StepData:       stepData,
+		TourDismissed:  tourDismissed,
+		TourDismissals: tourDismissals,
 	}); err != nil {
 		return fmt.Errorf("upserting onboarding state: %w", err)
 	}
@@ -60,12 +61,15 @@ func (s *Store) completeOnboarding(ctx context.Context, userID pgtype.UUID) erro
 	return nil
 }
 
-// dismissTour marks the product tour as dismissed.
-func (s *Store) dismissTour(ctx context.Context, userID pgtype.UUID) error {
-	if err := s.write.DismissTour(ctx,
+// dismissTour marks the product tour as dismissed for the given surface.
+// Upserts so it also works when no onboarding_state row exists yet.
+func (s *Store) dismissTour(ctx context.Context, userID pgtype.UUID, tourDismissed bool, tourDismissals []byte) error {
+	if err := s.write.DismissTour(ctx, gen.DismissTourParams{
 
-		userID,
-	); err != nil {
+		UserID:         userID,
+		TourDismissed:  tourDismissed,
+		TourDismissals: tourDismissals,
+	}); err != nil {
 		return fmt.Errorf("dismissing tour: %w", err)
 	}
 

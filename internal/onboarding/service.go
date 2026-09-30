@@ -54,24 +54,102 @@ func (s *Service) GetState(ctx context.Context, userID pgtype.UUID) (*Onboarding
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &OnboardingStatusResponse{
-				CurrentStep:   1,
-				Completed:     false,
-				StepData:      json.RawMessage(`{}`),
-				TourDismissed: false,
+				CurrentStep:    1,
+				Completed:      false,
+				StepData:       json.RawMessage(`{}`),
+				TourDismissed:  false,
+				TourDismissals: map[string]bool{},
+				TourSteps:      s.tourSteps(ctx),
 			}, nil
 		}
 
 		return nil, fmt.Errorf("getting onboarding state: %w", err)
 	}
 
+	dismissals := parseTourDismissals(row.TourDismissals)
+
 	return &OnboardingStatusResponse{
-		CurrentStep:   int(row.CurrentStep),
-		Completed:     row.Completed,
-		StepData:      row.StepData,
-		TourDismissed: row.TourDismissed,
-		CreatedAt:     row.CreatedAt.Time.Format(time.RFC3339),
-		UpdatedAt:     row.UpdatedAt.Time.Format(time.RFC3339),
+		CurrentStep:    int(row.CurrentStep),
+		Completed:      row.Completed,
+		StepData:       row.StepData,
+		TourDismissed:  row.TourDismissed || dismissals["main"],
+		TourDismissals: dismissals,
+		TourSteps:      s.tourSteps(ctx),
+		CreatedAt:      row.CreatedAt.Time.Format(time.RFC3339),
+		UpdatedAt:      row.UpdatedAt.Time.Format(time.RFC3339),
 	}, nil
+}
+
+// tourSteps loads the per-surface product tour step lists from the
+// onboarding.tour_steps system setting (jsonb map surface → ordered list
+// of data-tour target keys). Keys are validated to lowercase
+// alphanumeric/hyphen slugs; invalid entries are dropped. Returns nil when
+// the setting is unset or malformed — frontends fall back to their
+// built-in default step lists.
+func (s *Service) tourSteps(ctx context.Context) map[string][]string {
+	raw, _ := s.settings.GetSetting(ctx, keyTourSteps)
+	if raw == "" {
+		return nil
+	}
+
+	var configured map[string][]string
+	if err := json.Unmarshal([]byte(raw), &configured); err != nil {
+		slog.Warn("onboarding: malformed tour_steps setting", "error", err)
+		return nil
+	}
+
+	steps := make(map[string][]string, len(configured))
+	for surface, keys := range configured {
+		surface = normalizeTourSurface(surface)
+		cleaned := make([]string, 0, len(keys))
+		for _, k := range keys {
+			k = strings.ToLower(strings.TrimSpace(k))
+			if isTourStepKey(k) {
+				cleaned = append(cleaned, k)
+			}
+			if len(cleaned) >= 48 {
+				break
+			}
+		}
+		// First entry wins when several setting keys normalize to the same
+		// surface (e.g. "Docs" + "docs") — avoids nondeterministic map-order
+		// overwrites.
+		if _, exists := steps[surface]; !exists {
+			steps[surface] = cleaned
+		}
+	}
+
+	return steps
+}
+
+// isTourStepKey reports whether s is a safe data-tour attribute value:
+// lowercase alphanumeric + hyphen, 1–64 chars.
+func isTourStepKey(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// parseTourDismissals decodes the tour_dismissals jsonb column into a
+// surface→dismissed map. Unknown/absent values degrade to an empty map.
+func parseTourDismissals(raw []byte) map[string]bool {
+	dismissals := make(map[string]bool)
+	if len(raw) == 0 {
+		return dismissals
+	}
+
+	if err := json.Unmarshal(raw, &dismissals); err != nil {
+		slog.Warn("onboarding: corrupted tour_dismissals data", "error", err)
+		return map[string]bool{}
+	}
+
+	return dismissals
 }
 
 // totalSteps is the number of steps in the onboarding wizard per Section 09.
@@ -93,11 +171,14 @@ func (s *Service) UpdateStep(ctx context.Context, userID pgtype.UUID, req *Updat
 
 	var tourDismissed bool
 
+	tourDismissals := json.RawMessage(`{}`)
+
 	if err == nil {
 		currentStep = current.CurrentStep
 		completed = current.Completed
 		existingData = current.StepData
 		tourDismissed = current.TourDismissed
+		tourDismissals = current.TourDismissals
 	}
 
 	// The step being submitted (defaults to the current step).
@@ -121,18 +202,18 @@ func (s *Service) UpdateStep(ctx context.Context, userID pgtype.UUID, req *Updat
 			// Merge the auto-fulfilled data with any explicit data the
 			// user also provided (explicit data wins).
 			merged := mergeJSON(fulfilled, req.StepData)
-			return s.persistStep(ctx, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
+			return s.persistStep(ctx, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed, tourDismissals)
 		}
 	}
 
 	// Merge step_data: existing + new data (new keys overwrite old).
 	merged := mergeJSON(existingData, req.StepData)
 
-	return s.persistStep(ctx, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed)
+	return s.persistStep(ctx, userID, submitStep, currentStep, completed, existingData, merged, tourDismissed, tourDismissals)
 }
 
 // persistStep merges, auto-joins geo spaces, and upserts the onboarding state.
-func (s *Service) persistStep(ctx context.Context, userID pgtype.UUID, submitStep int, currentStep int32, completed bool, existingData, merged json.RawMessage, tourDismissed bool) error {
+func (s *Service) persistStep(ctx context.Context, userID pgtype.UUID, submitStep int, currentStep int32, completed bool, existingData, merged json.RawMessage, tourDismissed bool, tourDismissals json.RawMessage) error {
 	// Auto-join primary geo spaces when location fields are present (Section 05, ADR-005).
 	fields := parseStepData(merged)
 	if fields.CountryCode != "" {
@@ -177,7 +258,7 @@ func (s *Service) persistStep(ctx context.Context, userID pgtype.UUID, submitSte
 		newStep = totalSteps
 	}
 
-	if err := s.store.upsertState(ctx, userID, int32(newStep), completed, merged, tourDismissed); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (5)
+	if err := s.store.upsertState(ctx, userID, int32(newStep), completed, merged, tourDismissed, tourDismissals); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (5)
 		return fmt.Errorf("updating onboarding step: %w", err)
 	}
 
@@ -408,13 +489,50 @@ func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
 	return nil
 }
 
-// DismissTour marks the product tour as dismissed.
-func (s *Service) DismissTour(ctx context.Context, userID pgtype.UUID) error {
-	if err := s.store.dismissTour(ctx, userID); err != nil {
+// DismissTour marks the product tour as dismissed for the given surface.
+// The surface is a short slug ("main", "docs", "learn"); an empty surface
+// defaults to "main" for backward compatibility with the original
+// tour_dismissed boolean. Dismissals are stored per-surface in the
+// tour_dismissals jsonb map so each app manages its own tour state.
+func (s *Service) DismissTour(ctx context.Context, userID pgtype.UUID, surface string) error {
+	surface = normalizeTourSurface(surface)
+
+	dismissals, err := json.Marshal(map[string]bool{surface: true})
+	if err != nil {
+		return fmt.Errorf("marshaling tour dismissal: %w", err)
+	}
+
+	// The legacy tour_dismissed boolean is kept in sync for the main surface.
+	if err := s.store.dismissTour(ctx, userID, surface == "main", dismissals); err != nil {
 		return fmt.Errorf("dismissing tour: %w", err)
 	}
 
 	return nil
+}
+
+// normalizeTourSurface clamps the surface slug to a safe value: lowercase
+// alphanumeric/hyphen, max 32 chars, defaulting to "main".
+func normalizeTourSurface(surface string) string {
+	surface = strings.ToLower(strings.TrimSpace(surface))
+	if surface == "" {
+		return "main"
+	}
+
+	var b strings.Builder
+	for _, r := range surface {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+		if b.Len() >= 32 {
+			break
+		}
+	}
+
+	if b.Len() == 0 {
+		return "main"
+	}
+
+	return b.String()
 }
 
 // GetRecommendations returns recommended spaces and users using the tiered
@@ -965,6 +1083,7 @@ const (
 	keyPromotedSpaces = "onboarding.promoted_spaces"
 	keyPromotedUsers  = "onboarding.promoted_users"
 	keyPromotedTags   = "onboarding.promoted_tags"
+	keyTourSteps      = "onboarding.tour_steps"
 )
 
 // ListTemplates returns all onboarding templates for the platform.
