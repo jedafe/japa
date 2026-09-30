@@ -5,13 +5,12 @@
 	 * Reason options are read from the public system setting
 	 * `moderation.report_reasons` so they are never hardcoded (Rule 16).
 	 */
-	import { Dialog } from 'bits-ui';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { reportContent, reportComment, reportSpace, reportUser, reportSource } from '$lib/api/hub';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
-	import { Flag, X, Loader2, AlertCircle } from 'lucide-svelte';
-	import { AutocompleteSelect } from '$lib/components/ui';
+	import { Flag, Loader2, AlertCircle } from 'lucide-svelte';
+	import { AutocompleteSelect, Modal } from '$lib/components/ui';
 
 	interface Props {
 		open?: boolean;
@@ -108,25 +107,9 @@
 	});
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
-		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-lg"
-		>
-			<div class="mb-4 flex items-center gap-2">
-				<Flag size={18} class="text-[var(--color-primary)]" />
-				<Dialog.Title class="text-base font-medium text-[var(--color-text)]">
-					{t('report.title', `Report ${entityName ?? ''}`.trim())}
-				</Dialog.Title>
-				<Dialog.Close
-					class="ml-auto grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-				>
-					<X size={16} />
-				</Dialog.Close>
-			</div>
-
-			{#if status === 'success'}
+<Modal bind:open title={t('report.title', `Report ${entityName ?? ''}`.trim())} icon={Flag} size="md">
+	{#snippet children(close)}
+		{#if status === 'success'}
 				<div class="rounded-[var(--radius)] border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-300">
 					{t('report.success', 'Report submitted. Our moderation team will review it.')}
 				</div>
@@ -171,11 +154,13 @@
 				{/if}
 
 				<div class="flex items-center justify-end gap-2">
-					<Dialog.Close
+					<button
+						type="button"
+						onclick={close}
 						class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 					>
 						{t('common.cancel', 'Cancel')}
-					</Dialog.Close>
+					</button>
 					<button
 						type="button"
 						onclick={submit}
@@ -188,7 +173,6 @@
 						{t('report.submit', 'Submit report')}
 					</button>
 				</div>
-			{/if}
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+		{/if}
+	{/snippet}
+</Modal>

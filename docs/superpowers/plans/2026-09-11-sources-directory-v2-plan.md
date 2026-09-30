@@ -272,6 +272,12 @@ git commit -m "feat: link video and comparison sources to sources directory"
 
 ## Task 4: Curated directory sections
 
+> **Superseded (2026-09-30):** the frontend collection rails on `/sources`
+> were removed — the directory is only the sort-tab grid, and "Rising" is a
+> first-class `?sort=` value, not a collection. The `GET
+> /api/v1/sources/collections` endpoint and seed data remain for other
+> consumers; do not re-add collection sections to the directory page.
+
 **Files:**
 - Create: `migrations/0007XX_add_source_collections.up.sql`, `.down.sql`
 - Create: `internal/intelligence/handlers/source_collections.go`

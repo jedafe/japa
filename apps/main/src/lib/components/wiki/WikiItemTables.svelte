@@ -4,8 +4,10 @@
 	// custom_fields.section token (transportation, accommodation…), with
 	// price_range fields shown as Item | Average | Range.
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import type { WikiEntityField, WikiEntityFieldGroup } from '$lib/api/wiki';
-	import { formatPriceRange, formatWikiFieldValue, priceRangeParts } from '$lib/utils/wikiFieldValue';
+	import { fieldCurrencyCode, formatPriceRange, formatWikiFieldValue, priceRangeParts } from '$lib/utils/wikiFieldValue';
+	import type { CurrencyInfo } from '$lib/utils/currency';
 
 	let {
 		group,
@@ -15,13 +17,21 @@
 		/** ?section={key} filtered view — only this section's table renders,
 		 *  with a link back to the full page. */
 		activeSection = undefined,
-		allHref = undefined
+		allHref = undefined,
+		/** §58 — host space's resolved country currency; fallback display code
+		 *  for currency/price_range fields without an options.currency_code. */
+		contextCurrency = ''
 	}: {
 		group: WikiEntityFieldGroup;
 		moreHref?: (sectionKey: string) => string | undefined;
 		activeSection?: string;
 		allHref?: string;
+		contextCurrency?: string;
 	} = $props();
+
+	// §58 — active currency list from the root layout, for price_range
+	// symbols.
+	const currencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
 
 	// Named sections first-seen order; section-less fields form the '' bucket
 	// and render unlabeled — same contract as the backend fieldSections DTO.
@@ -45,16 +55,18 @@
 	}
 
 	function avgOf(f: WikiEntityField): string {
+		const code = fieldCurrencyCode(f.options) || contextCurrency;
 		const p = priceRangeParts(f.value);
 		return p?.avg !== undefined
-			? p.avg.toLocaleString()
-			: formatPriceRange(f.value);
+			? formatPriceRange({ avg: p.avg }, code, currencies)
+			: formatPriceRange(f.value, code, currencies);
 	}
 
 	function rangeOf(f: WikiEntityField): string {
+		const code = fieldCurrencyCode(f.options) || contextCurrency;
 		const p = priceRangeParts(f.value);
 		if (!p || p.min === undefined || p.max === undefined) return '—';
-		return `${p.min.toLocaleString()} – ${p.max.toLocaleString()}`;
+		return formatPriceRange({ min: p.min, max: p.max }, code, currencies);
 	}
 </script>
 
@@ -71,7 +83,11 @@
 {#if sections.length > 0}
 	<div class="space-y-5">
 		{#each sections as section (section.key)}
-			<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)]">
+			<!-- §80 Reader UX — `id` gives the "On this page" rail an anchor. -->
+			<section
+				id={section.key ? `section-${section.key}` : undefined}
+				class="scroll-mt-24 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)]"
+			>
 				{#if section.key}
 					<div class="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2.5">
 						<h3 class="text-sm font-semibold text-[var(--color-text)]">
@@ -112,7 +128,7 @@
 							<div class="flex items-baseline justify-between gap-3 px-4 py-2 text-sm">
 								<dt class="shrink-0 text-[var(--color-muted)]">{f.label}</dt>
 								<dd class="min-w-0 truncate text-right text-[var(--color-text)]">
-									{formatWikiFieldValue(f)}
+									{formatWikiFieldValue(f, currencies, contextCurrency)}
 								</dd>
 							</div>
 						{/each}

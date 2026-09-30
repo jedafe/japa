@@ -33,7 +33,7 @@ export const load: PageServerLoad = async (event) => {
 	try {
 		const [plans, currencies] = await Promise.all([
 			apiGet<PricingPlan[]>(ctx, '/pricing/plans'),
-			apiGet<Currency[]>(ctx, '/wallet/currencies').catch(() => [] as Currency[])
+			apiGet<Currency[]>(ctx, '/currencies').catch(() => [] as Currency[])
 		]);
 		return { plans, currencies };
 	} catch {

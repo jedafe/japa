@@ -6,6 +6,7 @@
 	import { GraduationCap, ArrowLeft, GitCompare, CalendarDays, Clock, Globe, Award, ListChecks, Wallet, Building2 } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { formatMoney } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
 
@@ -21,7 +22,7 @@
 				{ icon: Building2, label: t('course_offering.university', 'University'), value: offering.university.name, href: `/universities/${offering.university.slug}` },
 				{ icon: Award, label: t('course_offering.degree_type', 'Degree'), value: offering.course.degree_type?.toUpperCase() ?? null },
 				{ icon: GraduationCap, label: t('course_offering.department', 'Department'), value: offering.course.department },
-				{ icon: Wallet, label: t('course_offering.tuition', 'Tuition'), value: offering.tuition != null ? `${offering.currency ?? ''} ${offering.tuition}`.trim() : null },
+				{ icon: Wallet, label: t('course_offering.tuition', 'Tuition'), value: offering.tuition != null ? formatMoney(offering.tuition, offering.currency, data.currencies) : null },
 				{ icon: Clock, label: t('course_offering.duration', 'Duration'), value: offering.duration_years ? t('course_offering.years', '{n} years', { n: offering.duration_years }) : null },
 				{ icon: CalendarDays, label: t('course_offering.study_mode', 'Study mode'), value: offering.study_mode },
 				{ icon: CalendarDays, label: t('course_offering.intakes', 'Intakes'), value: offering.intake_months?.length ? offering.intake_months.join(', ') : null },

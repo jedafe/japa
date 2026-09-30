@@ -479,6 +479,12 @@ func (h *Handlers) HandleGetFieldTypes(w http.ResponseWriter, r *http.Request) {
 //	?q=            case-insensitive name search
 //	?has_wiki=     true (default) or false — when true, only spaces with at
 //	               least one active wiki page are returned.
+//	?sort=         name (default, A–Z) | page_count (most guides first)
+//	?page=         1-based page number (default 1)
+//	?limit=        page size, 1..100 (0/omitted = the full list)
+//
+// §80 Reader UX — paginated responses carry the standard sidecar:
+// {data, pagination:{page, limit, total}}.
 func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
@@ -487,18 +493,99 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 	within := strings.ToLower(strings.TrimSpace(q.Get("within")))
 	region := q.Get("region")
 	search := strings.TrimSpace(q.Get("q"))
+	sort := strings.ToLower(strings.TrimSpace(q.Get("sort")))
 
 	hasWiki := q.Get("has_wiki") != "false"
 
-	dests, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, search, within, hasWiki)
+	// Pagination engages only when the caller asks for it (?page or ?limit) —
+	// legacy callers pass neither and get the full list. A page request
+	// without an explicit limit uses wiki.destinations_page_limit.
+	paginate := q.Has("page") || q.Has("limit")
+	var page, limit int32 = 1, 0
+	if v := q.Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
+		}
+	}
+	if v := q.Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = int32(n) // #nosec
+		}
+	}
+
+	dests, total, effLimit, err := h.service.GetWikiDestinations(r.Context(), level, parentSlug, region, search, within, hasWiki, sort, page, limit, paginate)
 	if err != nil {
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
+
 		slog.Error("wiki: destinations failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "destinations_failed", "Failed to get wiki destinations")
 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dests})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": dests,
+		"pagination": map[string]any{
+			"page":  page,
+			"limit": effLimit,
+			"total": total,
+		},
+	})
+}
+
+// HandlePageFeedback handles POST /wiki/:space_slug/:page_slug/feedback —
+// the member's "Was this page helpful?" vote (§80 Reader UX). Body:
+// {vote: "up"|"down"|""} — an empty vote retracts a prior vote. Requires
+// auth; the service returns the post-write aggregate counts.
+func (h *Handlers) HandlePageFeedback(w http.ResponseWriter, r *http.Request) {
+	spaceSlug := chi.URLParam(r, "space_slug")
+	pageSlug := chi.URLParam(r, "page_slug")
+
+	if spaceSlug == "" || pageSlug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Space and page slugs are required")
+		return
+	}
+
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Sign in to rate this page")
+		return
+	}
+
+	var body struct {
+		Vote string `json:"vote"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "Invalid request body")
+		return
+	}
+
+	dto, err := h.service.SubmitPageFeedback(r.Context(), u.UserID, spaceSlug, pageSlug, strings.TrimSpace(strings.ToLower(body.Vote)))
+	if err != nil {
+		if errors.Is(err, ErrSpaceNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			return
+		}
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
+
+		slog.Error("wiki: feedback failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "feedback_failed", "Failed to record feedback")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": dto})
 }
 
 // HandleGetPage handles GET /wiki/:space_slug/:page_slug — single wiki page

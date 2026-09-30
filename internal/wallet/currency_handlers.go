@@ -20,6 +20,20 @@ import (
 // Public: Currencies + Credit Packs
 // ---------------------------------------------------------------------------
 
+// ListPublicCurrencies handles GET /api/v1/currencies.
+// Public (unauthenticated) variant of ListCurrencies — returns the active
+// currency table ({code,name,symbol,credits_per_unit,position}) so public
+// surfaces can render currency names/symbols alongside amounts (Section 58).
+func (h *Handlers) ListPublicCurrencies(w http.ResponseWriter, r *http.Request) {
+	currencies, err := h.Service.listActiveCurrencies(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": currencies})
+}
+
 // ListCurrencies handles GET /api/v1/wallet/currencies.
 // Returns all active currencies for display in currency selectors and pricing.
 func (h *Handlers) ListCurrencies(w http.ResponseWriter, r *http.Request) {

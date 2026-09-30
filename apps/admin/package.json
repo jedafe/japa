@@ -34,6 +34,7 @@
 		"@internationalized/date": "^3.12.2",
 		"@japaconnect/api-url": "workspace:*",
 		"@japaconnect/landing-blocks": "workspace:*",
+		"@japaconnect/ui": "workspace:*",
 		"@sentry/sveltekit": "^10.66.0",
 		"@types/d3-shape": "^3.1.8",
 		"bits-ui": "^2.18.1",

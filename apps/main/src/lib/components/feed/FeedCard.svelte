@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark, Play, ExternalLink } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, MessageSquare, Eye, Bookmark, Play, ExternalLink, Maximize2 } from 'lucide-svelte';
+	import { openLightbox } from '$lib/lightbox.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { relativeTime } from '$lib/feed/time';
@@ -51,7 +52,29 @@
 			goto(itemHref);
 		}
 	}
+
+	function zoomCover(e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (item.cover_image_url) {
+			openLightbox([{ id: `cover-${item.id}`, url: item.cover_image_url, alt_text: item.title }]);
+		}
+	}
 </script>
+
+{#snippet coverZoom(sm = false)}
+	{#if item.cover_image_url}
+		<button
+			type="button"
+			class="absolute right-1.5 top-1.5 z-10 grid place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100 {sm ? 'h-6 w-6' : 'h-8 w-8'}"
+			onclick={zoomCover}
+			onkeydown={(e) => e.stopPropagation()}
+			aria-label={t('feed.view_image', 'View image')}
+		>
+			<Maximize2 size={sm ? 12 : 15} />
+		</button>
+	{/if}
+{/snippet}
 
 {#snippet avatar(size: number)}
 	{#if authorAvatar}
@@ -204,8 +227,9 @@
 		class="flex flex-col overflow-hidden cursor-pointer {layout === 'grid-cell' ? 'rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]' : ''} hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_45%,transparent)]"
 	>
 		{#if item.cover_image_url}
-			<span class="relative block">
+			<span class="group relative block">
 				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full object-cover" />
+				{@render coverZoom()}
 				{@render videoOverlay()}
 			</span>
 		{:else}
@@ -299,8 +323,9 @@
 			</UserHoverCard>
 		{/if}
 		{#if item.cover_image_url}
-			<span class="relative mb-3.5 block">
+			<span class="group relative mb-3.5 block">
 				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="aspect-video w-full rounded-[var(--radius-card)] border border-[var(--color-border)] object-cover" />
+				{@render coverZoom()}
 				{@render videoOverlay()}
 			</span>
 		{:else}
@@ -344,8 +369,9 @@
 			<div class="flex items-center justify-between gap-3">{@render tags()}{@render metrics()}</div>
 		</span>
 		{#if item.cover_image_url}
-			<span class="relative block h-[84px] w-[84px] shrink-0">
+			<span class="group relative block h-[84px] w-[84px] shrink-0">
 				<img src={item.cover_image_url} alt={item.title} loading="lazy" class="h-full w-full rounded-[var(--radius)] object-cover" />
+				{@render coverZoom(true)}
 				{#if isVideo}
 					<span class="pointer-events-none absolute inset-0 grid place-items-center rounded-[var(--radius)] bg-black/25">
 						<Play size={18} class="text-white" />

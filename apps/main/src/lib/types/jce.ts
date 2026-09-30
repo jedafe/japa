@@ -140,6 +140,9 @@ export interface MatrixDimension {
 	value?: string | null;
 	value_rating?: number | null;
 	value_boolean?: boolean | null;
+	/** ISO code for currency dimensions — from the source field's
+	 *  {currency_code} option (§58). Resolve via the active currency list. */
+	currency_code?: string;
 }
 
 export interface SelectionToken {

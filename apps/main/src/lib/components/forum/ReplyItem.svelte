@@ -11,10 +11,11 @@
 		Check
 	} from 'lucide-svelte';
 	import { untrack } from 'svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { imgLightbox } from '$lib/lightbox.svelte';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
@@ -276,8 +277,6 @@
 
 	const iconBtn =
 		'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors disabled:opacity-50';
-	const menuItem =
-		'flex w-full cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]';
 </script>
 
 <!-- Replies render through the universal comment layout (Section 49 parity):
@@ -421,7 +420,7 @@
 					</div>
 				</div>
 			{:else}
-				<div class="prose-comment text-[0.9375rem] leading-[1.55] text-[var(--color-text)]" use:hydrateMentions>
+				<div class="prose-comment text-[0.9375rem] leading-[1.55] text-[var(--color-text)]" use:hydrateMentions use:imgLightbox>
 					{@html bodyHtml}
 				</div>
 			{/if}
@@ -473,59 +472,33 @@
 					</button>
 
 					{#if (canEditReply || canDeleteReply || canMarkSolved || (isPending && isHost)) && !removed}
-						<DropdownMenu.Root>
-							<DropdownMenu.Trigger
-								class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
-								aria-label={t('comments.options', 'More options')}
-								title={t('comments.options', 'More options')}
-							>
-								<MoreHorizontal size={18} />
-							</DropdownMenu.Trigger>
-							<DropdownMenu.Portal>
-								<DropdownMenu.Content
-									align="end"
-									sideOffset={8}
-									class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+						<Menu contentClass="min-w-44">
+							{#snippet trigger(props)}
+								<button
+									type="button"
+									{...props}
+									class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+									aria-label={t('comments.options', 'More options')}
+									title={t('comments.options', 'More options')}
 								>
-									{#if canEditReply}
-										<DropdownMenu.Item class={menuItem}>
-											{#snippet child({ props })}
-												<button type="button" onclick={startEdit} {...props}>
-													<Pencil size={16} /> {t('forum.edit', 'Edit')}
-												</button>
-											{/snippet}
-										</DropdownMenu.Item>
-									{/if}
-									{#if canDeleteReply}
-										<DropdownMenu.Item class={menuItem}>
-											{#snippet child({ props })}
-												<button type="button" onclick={deleteReply} disabled={deleting} {...props}>
-													<Trash2 size={16} /> {t('forum.delete', 'Delete')}
-												</button>
-											{/snippet}
-										</DropdownMenu.Item>
-									{/if}
-									{#if canMarkSolved}
-										<DropdownMenu.Item class={menuItem}>
-											{#snippet child({ props })}
-												<button type="button" onclick={() => onMarkSolved?.(reply.id)} {...props}>
-													<CheckCircle2 size={16} /> {t('forum.mark_answer', 'Mark as answer')}
-												</button>
-											{/snippet}
-										</DropdownMenu.Item>
-									{/if}
-									{#if isPending && isHost}
-										<DropdownMenu.Item class={menuItem}>
-											{#snippet child({ props })}
-												<button type="button" onclick={approveQuestion} disabled={approving} {...props}>
-													<CheckCircle2 size={16} /> {approving ? t('common.loading', 'Loading') : t('ama.approve', 'Approve')}
-												</button>
-											{/snippet}
-										</DropdownMenu.Item>
-									{/if}
-								</DropdownMenu.Content>
-							</DropdownMenu.Portal>
-						</DropdownMenu.Root>
+									<MoreHorizontal size={18} />
+								</button>
+							{/snippet}
+							{#if canEditReply}
+								<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
+							{/if}
+							{#if canDeleteReply}
+								<MenuItem icon={Trash2} onSelect={deleteReply} disabled={deleting}>{t('forum.delete', 'Delete')}</MenuItem>
+							{/if}
+							{#if canMarkSolved}
+								<MenuItem icon={CheckCircle2} onSelect={() => onMarkSolved?.(reply.id)}>{t('forum.mark_answer', 'Mark as answer')}</MenuItem>
+							{/if}
+							{#if isPending && isHost}
+								<MenuItem icon={CheckCircle2} onSelect={approveQuestion} disabled={approving}>
+									{approving ? t('common.loading', 'Loading') : t('ama.approve', 'Approve')}
+								</MenuItem>
+							{/if}
+						</Menu>
 					{/if}
 				</div>
 

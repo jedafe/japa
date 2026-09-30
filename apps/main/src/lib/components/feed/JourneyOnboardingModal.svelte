@@ -13,7 +13,9 @@
 	import type { JourneyOptions, JourneyOption } from '$lib/api/journey';
 	import Autocomplete from '../create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '../create/Autocomplete.svelte';
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import { Compass, Flag, Heart, CircleCheck, ShieldCheck, Plane, GraduationCap, Briefcase, MapPin, Globe, ChevronRight, X } from 'lucide-svelte';
 
 	let loaded = $state(false);
 	let countryList = $state<GeoCountry[]>([]);
@@ -29,6 +31,30 @@
 	let visaRoute = $state('');
 	let purpose = $state('');
 	let travelDate = $state('');
+
+	// Multi-step wizard state (4 steps matching the header stepper).
+	let step = $state(1);
+	const steps = $derived([
+		{ icon: Compass, label: t('journey.step_journey', 'Your Journey') },
+		{ icon: Flag, label: t('journey.step_goals', 'Your Goals') },
+		{ icon: Heart, label: t('journey.step_preferences', 'Preferences') },
+		{ icon: CircleCheck, label: t('journey.step_done', "You're All Set") }
+	]);
+	const canContinue = $derived(step !== 1 || (origin.trim() !== '' && destination.trim() !== ''));
+
+	function next() {
+		if (!canContinue) {
+			error = t('journey.banner.error_required', 'Please select an origin and destination country.');
+			return;
+		}
+		error = null;
+		if (step < 4) step++;
+		else submit();
+	}
+	function back() {
+		error = null;
+		if (step > 1) step--;
+	}
 
 	$effect(() => {
 		if (loaded) return;
@@ -156,6 +182,7 @@
 				return;
 			}
 			journeyModal.open = false;
+			step = 1;
 			if (browser) {
 				// Re-run server loaders so the feed uses the new journey context.
 				goto(`${window.location.pathname}${window.location.search}`, { invalidateAll: true });
@@ -168,168 +195,291 @@
 	}
 </script>
 
-<Dialog.Root bind:open={journeyModal.open}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
-		<Dialog.Content
-			class="fixed z-50 max-h-[90dvh] overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl sm:left-1/2 sm:top-1/2 sm:w-[calc(100%-2rem)] sm:max-w-xl sm:-translate-x-1/2 sm:-translate-y-1/2 max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:top-auto max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-t-2xl max-sm:rounded-b-none max-sm:p-4"
-		>
-			<div class="flex items-start justify-between gap-3">
-				<div>
-					<Dialog.Title class="text-lg font-semibold text-[var(--color-text)]">
-						{t('journey.banner.title', 'Tell us about your journey')}
-					</Dialog.Title>
-					<Dialog.Description class="mt-0.5 text-sm text-[var(--color-text-subtle)]">
-						{t('journey.banner.subtitle', "We'll show content that matches where you're coming from and where you're going.")}
-					</Dialog.Description>
-				</div>
-				<Dialog.Close
-					class="shrink-0 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-					aria-label={t('common.close', 'Close')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-				</Dialog.Close>
-			</div>
-
-			{#if error}
-				<p class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>
-			{/if}
-
-			<div class="mt-4 grid gap-4 sm:grid-cols-2">
-				<div class="field-row">
-					<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}</label>
-					<Autocomplete
-						placeholder={t('journey.banner.origin_placeholder', 'e.g. Nigeria')}
-						emptyMessage={t('create.journey.country_empty', 'No country found')}
-						fetcher={countryFetcher}
-						initialFetcher={countryInitialFetcher(origin)}
-						selectedId={origin}
-						selectedLabel={countryLabel(origin)}
-						onSelect={(item) => { origin = item.id; }}
-						onClear={() => { origin = ''; }}
-					/>
-				</div>
-
-				<div class="field-row">
-					<label class="field-label" for="journey-destination">{t('journey.banner.destination_country', 'Where do you want to go?')}</label>
-					<Autocomplete
-						placeholder={t('journey.banner.destination_placeholder', 'e.g. Canada')}
-						emptyMessage={t('create.journey.country_empty', 'No country found')}
-						fetcher={countryFetcher}
-						initialFetcher={countryInitialFetcher(destination)}
-						selectedId={destination}
-						selectedLabel={countryLabel(destination)}
-						onSelect={(item) => { destination = item.id; }}
-						onClear={() => { destination = ''; }}
-					/>
-				</div>
-
-				<div class="field-row">
-					<label class="field-label" for="journey-purpose">{t('journey.banner.purpose', 'Why are you traveling?')}</label>
-					{#if hasOptions(options?.purposes)}
-						<Autocomplete
-							placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')}
-							emptyMessage={t('journey.banner.no_options', 'No matching option')}
-							fetcher={optionFetcher(options.purposes)}
-							initialFetcher={optionInitialFetcher(options.purposes, purpose)}
-							selectedId={purpose}
-							selectedLabel={optionLabel(options.purposes, purpose)}
-							onSelect={(item) => { purpose = item.id; }}
-							onClear={() => { purpose = ''; }}
-							allowFreeText
-						/>
-					{:else}
-						<input
-							id="journey-purpose"
-							type="text"
-							class="field-input"
-							placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')}
-							bind:value={purpose}
-						/>
+<Modal
+	bind:open={journeyModal.open}
+	onOpenChange={(v) => { if (!v) step = 1; }}
+	hideHeader
+	padded={false}
+	ariaTitle={t('journey.banner.title', 'Tell us about your journey')}
+	closeLabel={t('common.close', 'Close')}
+	size="max-w-4xl"
+	class="max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:top-auto max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-t-2xl max-sm:rounded-b-none"
+>
+	{#snippet children(close)}
+		<!-- Header: brand + stepper + close -->
+		<div class="flex items-center gap-4 border-b border-[var(--color-border)] px-5 py-4 sm:px-7">
+			<ThemeLogo alt={t('app.name', 'JapaConnect')} class="h-6 w-auto shrink-0" />
+			<nav aria-label={t('journey.steps_label', 'Journey setup steps')} class="mx-auto flex items-center">
+				{#each steps as s, i (i)}
+					{@const n = i + 1}
+					<button
+						type="button"
+						class="group flex flex-col items-center gap-1.5 disabled:cursor-default"
+						disabled={n >= step}
+						onclick={() => { error = null; step = n; }}
+						aria-current={n === step ? 'step' : undefined}
+					>
+						<span
+							class="grid h-9 w-9 place-items-center rounded-full transition-colors {n === step
+								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+								: n < step
+									? 'bg-[var(--color-surface-subtle)] text-[var(--color-primary)]'
+									: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'}"
+						>
+							<s.icon size={16} />
+						</span>
+						<span class="hidden text-[11px] font-medium sm:block {n === step ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{s.label}</span>
+					</button>
+					{#if i < steps.length - 1}
+						<span class="mx-2 mb-0 h-px w-8 sm:mb-5 sm:w-12 {n < step ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>
 					{/if}
+				{/each}
+			</nav>
+			<button
+				type="button"
+				onclick={close}
+				aria-label={t('common.close', 'Close')}
+				class="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+			>
+				<X size={16} />
+			</button>
+		</div>
+
+		<div class="grid sm:grid-cols-[230px_1fr]">
+			<!-- Decorative panel — CSS illustration: flight route + floating chips. -->
+			<aside aria-hidden="true" class="journey-scene relative hidden overflow-hidden sm:block">
+				<svg class="journey-arc" viewBox="0 0 200 220" fill="none">
+					<path d="M30 200 C 30 120, 90 90, 160 40" stroke="var(--color-primary)" stroke-width="1.5" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.45" />
+					<circle cx="30" cy="200" r="4" fill="var(--color-primary)" opacity="0.5" />
+					<circle cx="160" cy="40" r="4" fill="var(--color-primary)" opacity="0.5" />
+				</svg>
+				<div class="journey-globe">
+					<Globe size={56} strokeWidth={1.2} class="text-[var(--color-primary)]" />
+				</div>
+				<div class="journey-chip" style="top: 14%; left: 10%;">
+					<GraduationCap size={18} class="text-[var(--color-primary)]" />
+				</div>
+				<div class="journey-chip" style="top: 44%; left: 6%;">
+					<Briefcase size={18} class="text-[var(--color-primary)]" />
+				</div>
+				<div class="journey-chip" style="bottom: 16%; right: 12%;">
+					<MapPin size={18} class="text-[var(--color-primary)]" />
+				</div>
+				<div class="journey-plane">
+					<Plane size={20} class="text-[var(--color-primary)]" />
+				</div>
+			</aside>
+
+			<!-- Step content -->
+			<div class="p-6 sm:p-8">
+				{#if step === 1}
+					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.banner.title', 'Tell us about your journey')}</h2>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.banner.subtitle', "We'll show content that matches where you're coming from and where you're going.")}</p>
+
+					<div class="mt-6 grid gap-4 sm:grid-cols-2">
+						<div class="field-row">
+							<label class="field-label" for="journey-origin">{t('journey.banner.origin_country', 'Where are you now?')}</label>
+							<Autocomplete
+								placeholder={t('journey.banner.origin_placeholder', 'e.g. Nigeria')}
+								emptyMessage={t('create.journey.country_empty', 'No country found')}
+								fetcher={countryFetcher}
+								initialFetcher={countryInitialFetcher(origin)}
+								selectedId={origin}
+								selectedLabel={countryLabel(origin)}
+								onSelect={(item) => { origin = item.id; }}
+								onClear={() => { origin = ''; }}
+							/>
+						</div>
+						<div class="field-row">
+							<label class="field-label" for="journey-destination">{t('journey.banner.destination_country', 'Where do you want to go?')}</label>
+							<Autocomplete
+								placeholder={t('journey.banner.destination_placeholder', 'e.g. Canada')}
+								emptyMessage={t('create.journey.country_empty', 'No country found')}
+								fetcher={countryFetcher}
+								initialFetcher={countryInitialFetcher(destination)}
+								selectedId={destination}
+								selectedLabel={countryLabel(destination)}
+								onSelect={(item) => { destination = item.id; }}
+								onClear={() => { destination = ''; }}
+							/>
+						</div>
+					</div>
+				{:else if step === 2}
+					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step2_title', 'What are your goals?')}</h2>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step2_subtitle', 'Tell us why you are moving so we can surface the right opportunities.')}</p>
+
+					<div class="mt-6 grid gap-4 sm:grid-cols-2">
+						<div class="field-row">
+							<label class="field-label" for="journey-purpose">{t('journey.banner.purpose', 'Why are you traveling?')}</label>
+							{#if hasOptions(options?.purposes)}
+								<Autocomplete
+									placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')}
+									emptyMessage={t('journey.banner.no_options', 'No matching option')}
+									fetcher={optionFetcher(options.purposes)}
+									initialFetcher={optionInitialFetcher(options.purposes, purpose)}
+									selectedId={purpose}
+									selectedLabel={optionLabel(options.purposes, purpose)}
+									onSelect={(item) => { purpose = item.id; }}
+									onClear={() => { purpose = ''; }}
+									allowFreeText
+								/>
+							{:else}
+								<input id="journey-purpose" type="text" class="field-input" placeholder={t('journey.banner.purpose_placeholder', 'e.g. study')} bind:value={purpose} />
+							{/if}
+						</div>
+						<div class="field-row">
+							<label class="field-label" for="journey-visa">{t('journey.banner.visa_route', 'Which visa route?')}</label>
+							{#if hasOptions(options?.visa_routes)}
+								<Autocomplete
+									placeholder={t('journey.banner.visa_placeholder', 'e.g. student')}
+									emptyMessage={t('journey.banner.no_options', 'No matching option')}
+									fetcher={optionFetcher(options.visa_routes)}
+									initialFetcher={optionInitialFetcher(options.visa_routes, visaRoute)}
+									selectedId={visaRoute}
+									selectedLabel={optionLabel(options.visa_routes, visaRoute)}
+									onSelect={(item) => { visaRoute = item.id; }}
+									onClear={() => { visaRoute = ''; }}
+									allowFreeText
+								/>
+							{:else}
+								<input id="journey-visa" type="text" class="field-input" placeholder={t('journey.banner.visa_placeholder', 'e.g. student')} bind:value={visaRoute} />
+							{/if}
+						</div>
+					</div>
+				{:else if step === 3}
+					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step3_title', 'A few more details')}</h2>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step3_subtitle', 'Optional — helps us time the content we show you.')}</p>
+
+					<div class="mt-6 grid gap-4 sm:grid-cols-2">
+						<div class="field-row">
+							<label class="field-label" for="journey-stage">{t('journey.banner.stage', 'Where are you in the journey?')}</label>
+							{#if hasOptions(options?.stages)}
+								<Autocomplete
+									placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')}
+									emptyMessage={t('journey.banner.no_options', 'No matching option')}
+									fetcher={optionFetcher(options.stages)}
+									initialFetcher={optionInitialFetcher(options.stages, japaStage)}
+									selectedId={japaStage}
+									selectedLabel={optionLabel(options.stages, japaStage)}
+									onSelect={(item) => { japaStage = item.id; }}
+									onClear={() => { japaStage = ''; }}
+								/>
+							{:else}
+								<input id="journey-stage" type="text" class="field-input" placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')} bind:value={japaStage} />
+							{/if}
+						</div>
+						<div class="field-row">
+							<label class="field-label" for="journey-travel-date">{t('journey.banner.travel_date', 'Planned travel date (optional)')}</label>
+							<input id="journey-travel-date" type="date" class="field-input" bind:value={travelDate} />
+						</div>
+					</div>
+				{:else}
+					<h2 class="text-xl font-bold text-[var(--color-text)]">{t('journey.step4_title', "You're all set!")}</h2>
+					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('journey.step4_subtitle', 'Review your journey details — you can change them anytime in your profile.')}</p>
+
+					<dl class="mt-6 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+						<div class="summary-row"><dt>{t('journey.banner.origin_country', 'Where are you now?')}</dt><dd>{countryLabel(origin)}</dd></div>
+						<div class="summary-row"><dt>{t('journey.banner.destination_country', 'Where do you want to go?')}</dt><dd>{countryLabel(destination)}</dd></div>
+						{#if purpose}<div class="summary-row"><dt>{t('journey.banner.purpose', 'Why are you traveling?')}</dt><dd>{optionLabel(options?.purposes ?? [], purpose)}</dd></div>{/if}
+						{#if visaRoute}<div class="summary-row"><dt>{t('journey.banner.visa_route', 'Which visa route?')}</dt><dd>{optionLabel(options?.visa_routes ?? [], visaRoute)}</dd></div>{/if}
+						{#if japaStage}<div class="summary-row"><dt>{t('journey.banner.stage', 'Where are you in the journey?')}</dt><dd>{optionLabel(options?.stages ?? [], japaStage)}</dd></div>{/if}
+						{#if travelDate}<div class="summary-row"><dt>{t('journey.banner.travel_date', 'Planned travel date (optional)')}</dt><dd>{travelDate}</dd></div>{/if}
+					</dl>
+				{/if}
+
+				{#if error}
+					<p class="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{error}</p>
+				{/if}
+
+				<div class="mt-6 flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-4 py-3">
+					<ShieldCheck size={20} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+					<p class="text-xs leading-relaxed text-[var(--color-text-subtle)]">
+						<span class="font-semibold text-[var(--color-text)]">{t('journey.privacy_title', 'Your information helps us personalize your experience.')}</span>
+						{t('journey.privacy_body', 'You can update these details anytime in your profile.')}
+					</p>
 				</div>
 
-				<div class="field-row">
-					<label class="field-label" for="journey-visa">{t('journey.banner.visa_route', 'Which visa route?')}</label>
-					{#if hasOptions(options?.visa_routes)}
-						<Autocomplete
-							placeholder={t('journey.banner.visa_placeholder', 'e.g. student')}
-							emptyMessage={t('journey.banner.no_options', 'No matching option')}
-							fetcher={optionFetcher(options.visa_routes)}
-							initialFetcher={optionInitialFetcher(options.visa_routes, visaRoute)}
-							selectedId={visaRoute}
-							selectedLabel={optionLabel(options.visa_routes, visaRoute)}
-							onSelect={(item) => { visaRoute = item.id; }}
-							onClear={() => { visaRoute = ''; }}
-							allowFreeText
-						/>
-					{:else}
-						<input
-							id="journey-visa"
-							type="text"
-							class="field-input"
-							placeholder={t('journey.banner.visa_placeholder', 'e.g. student')}
-							bind:value={visaRoute}
-						/>
-					{/if}
-				</div>
-
-				<div class="field-row">
-					<label class="field-label" for="journey-stage">{t('journey.banner.stage', 'Where are you in the journey?')}</label>
-					{#if hasOptions(options?.stages)}
-						<Autocomplete
-							placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')}
-							emptyMessage={t('journey.banner.no_options', 'No matching option')}
-							fetcher={optionFetcher(options.stages)}
-							initialFetcher={optionInitialFetcher(options.stages, japaStage)}
-							selectedId={japaStage}
-							selectedLabel={optionLabel(options.stages, japaStage)}
-							onSelect={(item) => { japaStage = item.id; }}
-							onClear={() => { japaStage = ''; }}
-						/>
-					{:else}
-						<input
-							id="journey-stage"
-							type="text"
-							class="field-input"
-							placeholder={t('journey.banner.stage_placeholder', 'e.g. preparing')}
-							bind:value={japaStage}
-						/>
-					{/if}
-				</div>
-
-				<div class="field-row">
-					<label class="field-label" for="journey-travel-date">{t('journey.banner.travel_date', 'Planned travel date (optional)')}</label>
-					<input
-						id="journey-travel-date"
-						type="date"
-						class="field-input"
-						bind:value={travelDate}
-					/>
+				<div class="mt-6 flex items-center justify-between gap-3">
+					<button
+						type="button"
+						onclick={step === 1 ? close : back}
+						class="rounded-full border border-[var(--color-border)] px-5 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						{step === 1 ? t('common.close', 'Close') : t('common.back', 'Back')}
+					</button>
+					<button
+						type="button"
+						class="flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover,var(--color-primary))] disabled:opacity-50"
+						onclick={next}
+						disabled={saving}
+					>
+						{step === 4
+							? (saving ? t('journey.banner.saving', 'Saving...') : t('journey.banner.submit', 'Show me relevant content'))
+							: t('common.continue', 'Continue')}
+						<ChevronRight size={15} />
+					</button>
 				</div>
 			</div>
-
-			<div class="mt-6 flex items-center justify-end gap-3">
-				<Dialog.Close
-					type="button"
-					class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
-				>
-					{t('common.close', 'Close')}
-				</Dialog.Close>
-				<button
-					type="button"
-					class="rounded bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-contrast)] hover:opacity-90 disabled:opacity-50"
-					onclick={submit}
-					disabled={saving}
-				>
-					{saving ? t('journey.banner.saving', 'Saving...') : t('journey.banner.submit', 'Show me relevant content')}
-				</button>
-			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+		</div>
+	{/snippet}
+</Modal>
 
 <style>
+	.journey-scene {
+		background:
+			radial-gradient(ellipse 75% 55% at 30% 45%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent),
+			color-mix(in srgb, var(--color-primary) 5%, var(--color-surface));
+	}
+	.journey-arc {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+	.journey-globe {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		translate: -50% -50%;
+		display: grid;
+		place-items: center;
+		width: 7rem;
+		height: 7rem;
+		border-radius: 9999px;
+		background: var(--color-surface);
+		box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	.journey-chip {
+		position: absolute;
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 0.75rem;
+		background: var(--color-surface);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+	}
+	.journey-plane {
+		position: absolute;
+		top: 10%;
+		right: 16%;
+		color: var(--color-primary);
+		opacity: 0.8;
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.journey-chip {
+			animation: journey-float 4s ease-in-out infinite;
+		}
+		.journey-chip:nth-of-type(2) { animation-delay: 0.7s; }
+		.journey-chip:nth-of-type(3) { animation-delay: 1.4s; }
+		.journey-plane {
+			animation: journey-float 3.5s ease-in-out infinite;
+		}
+	}
+	@keyframes journey-float {
+		0%, 100% { translate: 0 0; }
+		50% { translate: 0 -6px; }
+	}
 	.field-row {
 		display: flex;
 		flex-direction: column;
@@ -357,5 +507,22 @@
 	.field-input:focus {
 		outline: 2px solid var(--color-primary);
 		outline-offset: -2px;
+	}
+	.summary-row {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+	.summary-row dt {
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.025em;
+		color: var(--color-muted);
+	}
+	.summary-row dd {
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text);
 	}
 </style>

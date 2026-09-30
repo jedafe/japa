@@ -636,18 +636,24 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("spaces: failed to resolve space literals", "error", err)
 	}
 
+	// §58 — resolved country currency for display surfaces (custom-field
+	// currency adornments, price displays) — the space's own code when it's
+	// a country, else its country ancestor's. Best-effort; "" when none.
+	countryCurrency := h.Service.ResolveCountryCurrencyCode(r.Context(), space.ID, space.GeoCode)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"space":        space,
-			"rules":        rules,
-			"keywords":     keywords,
-			"logo_url":     logoURL,
-			"header_url":   headerURL,
-			"is_owner":     isOwner,
-			"is_moderator": isModerator,
-			"is_member":    isMember,
-			"is_pending":   isPending,
-			"is_following": isFollowing,
+			"space":                 space,
+			"rules":                 rules,
+			"keywords":              keywords,
+			"logo_url":              logoURL,
+			"header_url":            headerURL,
+			"is_owner":              isOwner,
+			"is_moderator":          isModerator,
+			"is_member":             isMember,
+			"is_pending":            isPending,
+			"is_following":          isFollowing,
+			"country_currency_code": countryCurrency,
 		},
 	})
 }

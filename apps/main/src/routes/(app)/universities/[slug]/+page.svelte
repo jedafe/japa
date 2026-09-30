@@ -12,6 +12,8 @@
 	import type { PageData } from './$types';
 	import type { Review, CourseOffering, WikiPageIndex } from '$lib/types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { formatMoney } from '$lib/utils/currency';
+	import { imgLightbox } from '$lib/lightbox.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -426,6 +428,7 @@
 					<Info size={16} /> {t('university.about', 'About')}
 				</h2>
 				{#if wikiData}
+					<div use:imgLightbox>
 					{#if wikiData.thumbnail}
 						<img
 							src={wikiData.thumbnail}
@@ -506,6 +509,7 @@
 						{/each}
 					</dl>
 				{/if}
+				</div>
 			{:else if university.description}
 					<p class="mt-3 text-sm leading-relaxed text-[var(--color-text-subtle)]">
 						{university.description}
@@ -618,7 +622,7 @@
 							</div>
 							<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-muted)]">
 								{#if offering.tuition != null}
-									<span class="font-medium text-[var(--color-text)]">{offering.currency ?? ''} {offering.tuition}</span>
+									<span class="font-medium text-[var(--color-text)]">{formatMoney(offering.tuition, offering.currency, data.currencies)}</span>
 								{/if}
 								{#if offering.duration_years}
 									<span>{offering.duration_years} {t('university.years', 'yrs')}</span>

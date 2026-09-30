@@ -37,7 +37,7 @@
 		if (isFreeForUser(track.price_kobo, user?.is_pro)) {
 			return user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
-		return formatPriceKobo(track.price_kobo, track.currency, page.data.locale);
+		return formatPriceKobo(track.price_kobo, track.currency, page.data.locale, page.data.currencies);
 	});
 </script>
 

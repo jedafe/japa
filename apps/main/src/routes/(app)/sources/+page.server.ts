@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList, apiGet } from '$lib/server/api';
-import type { Source, SourceCollection, SourceMeta } from '$lib/types/sources';
+import type { Source, SourceMeta } from '$lib/types/sources';
 
 const PAGE_SIZE = 24;
 
@@ -41,19 +41,12 @@ export const load: PageServerLoad = async (event) => {
 	params.set('page_size', String(pageSize));
 	params.set('page_offset', String(pageOffset));
 
-	// Curated collections only render on the default directory view — the
-	// first page with no search or filters active (sources-directory v2
-	// plan, step 4). A non-default sort is excluded too: the seed collections
-	// ("Recently added", "Trending") would just duplicate the sorted list.
-	const isDirectoryHome = !q && !category && !sourceKind && page === 1 && sort === defaultSort;
-
-	const [listResult, collections] = await Promise.all([
-		apiList<Source>(ctx, `/sources?${params.toString()}`),
-		isDirectoryHome
-			? apiGet<SourceCollection[]>(ctx, '/sources/collections').catch(() => [] as SourceCollection[])
-			: Promise.resolve([] as SourceCollection[])
-	]);
-	const { items: sources, meta } = listResult;
+	// NOTE: curated collections (GET /sources/collections) are intentionally
+	// not fetched here — the collection rails were removed from the directory
+	// page and must not be re-introduced. The endpoint remains for other
+	// consumers. "Rising" is now a first-class ?sort= value instead of a
+	// seeded collection.
+	const { items: sources, meta } = await apiList<Source>(ctx, `/sources?${params.toString()}`);
 
 	// Canonicalize out-of-range pages (e.g. ?page=99 with one page of
 	// results) — otherwise the UI renders "Page 99 of 1" over an empty
@@ -71,7 +64,6 @@ export const load: PageServerLoad = async (event) => {
 		sources,
 		meta,
 		sourceMeta,
-		collections,
 		q,
 		category,
 		sourceKind,

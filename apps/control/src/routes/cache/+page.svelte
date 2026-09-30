@@ -3,7 +3,8 @@
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
-	import { Tabs } from 'bits-ui';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
@@ -131,17 +132,14 @@
 	</button>
 </div>
 
-<Tabs.Root bind:value={activeTab}>
-	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
-		<Tabs.Trigger value="stats" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('cache.stats_tab')}
-		</Tabs.Trigger>
-		<Tabs.Trigger value="flush" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('cache.flush_tab')}
-		</Tabs.Trigger>
-	</Tabs.List>
-
-	<Tabs.Content value="stats" class="mt-4">
+<Tabs
+	bind:value={activeTab}
+	tabs={[
+		{ value: 'stats', label: t('cache.stats_tab') },
+		{ value: 'flush', label: t('cache.flush_tab') }
+	]}
+>
+	<TabsContent value="stats">
 		{#if loadingStats}
 			<p class="text-muted-foreground py-8 text-center text-sm">{t('common.loading')}</p>
 		{:else if stats?.total_keys !== undefined}
@@ -182,9 +180,9 @@
 				<p class="text-muted-foreground mt-3 text-sm">{t('cache.no_stats')}</p>
 			</div>
 		{/if}
-	</Tabs.Content>
+	</TabsContent>
 
-	<Tabs.Content value="flush" class="mt-4">
+	<TabsContent value="flush">
 		<div class="border-border-card bg-background-alt shadow-card rounded-xl p-6">
 			<h3 class="text-foreground text-sm font-semibold">{t('cache.flush_all')}</h3>
 			<p class="text-muted-foreground mt-1 text-xs">{t('cache.flush_description')}</p>
@@ -203,8 +201,8 @@
 				</div>
 			{/if}
 		</div>
-	</Tabs.Content>
-</Tabs.Root>
+	</TabsContent>
+</Tabs>
 
 <ConfirmModal
 	bind:open={showFlushConfirm}

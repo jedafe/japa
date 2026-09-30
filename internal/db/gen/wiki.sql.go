@@ -477,6 +477,89 @@ func (q *Queries) CountPendingRevisionsByTarget(ctx context.Context, arg CountPe
 	return count, err
 }
 
+const countWikiDestinations = `-- name: CountWikiDestinations :one
+SELECT COUNT(*) FROM (
+    SELECT sp.id
+    FROM spaces sp
+    JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
+    LEFT JOIN space_types st ON st.id = sp.space_type_id
+    LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
+    WHERE sp.status = 'active'
+      AND ($1::text = '' OR sp.level = $1 OR st.slug = $1)
+      AND ($2::text = '' OR sp.region = $2)
+      AND ($3::text = '' OR sp.name ILIKE '%' || $3 || '%')
+      AND ($4::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = $4))
+      AND ($5::text = '' OR sp.slug <> $5)
+      AND ($5::text = '' OR EXISTS (
+            SELECT 1
+            FROM (
+                SELECT sps.parent_space_id AS pid
+                FROM space_parent_spaces sps
+                WHERE sps.space_id = sp.id
+                UNION
+                SELECT sp.parent_id
+                WHERE sp.parent_id IS NOT NULL
+            ) l1
+            JOIN spaces g ON g.id = l1.pid AND g.deleted_at IS NULL
+            WHERE g.slug = $5
+               OR EXISTS (
+                   SELECT 1
+                   FROM (
+                       SELECT sps2.parent_space_id AS pid
+                       FROM space_parent_spaces sps2
+                       WHERE sps2.space_id = g.id
+                       UNION
+                       SELECT g.parent_id
+                       WHERE g.parent_id IS NOT NULL
+                   ) l2
+                   JOIN spaces gp ON gp.id = l2.pid AND gp.deleted_at IS NULL
+                   WHERE gp.slug = $5
+                      OR EXISTS (
+                          SELECT 1
+                          FROM (
+                              SELECT sps3.parent_space_id AS pid
+                              FROM space_parent_spaces sps3
+                              WHERE sps3.space_id = gp.id
+                              UNION
+                              SELECT gp.parent_id
+                              WHERE gp.parent_id IS NOT NULL
+                          ) l3
+                          JOIN spaces ggp ON ggp.id = l3.pid AND ggp.deleted_at IS NULL
+                          WHERE ggp.slug = $5
+                      )
+               )
+          ))
+    GROUP BY sp.id
+    HAVING (NOT $6::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
+) counted
+`
+
+type CountWikiDestinationsParams struct {
+	Level   string `json:"level"`
+	Region  string `json:"region"`
+	Search  string `json:"search"`
+	Parent  string `json:"parent"`
+	Within  string `json:"within"`
+	HasWiki bool   `json:"has_wiki"`
+}
+
+// §80 Reader UX: total matching the ListWikiDestinations filters (pre-
+// pagination) so the response can carry `total` for "Showing N" counts
+// and numbered pagination. Same predicates, same within-CTE.
+func (q *Queries) CountWikiDestinations(ctx context.Context, arg CountWikiDestinationsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countWikiDestinations,
+		arg.Level,
+		arg.Region,
+		arg.Search,
+		arg.Parent,
+		arg.Within,
+		arg.HasWiki,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countWikiRevisionsByPage = `-- name: CountWikiRevisionsByPage :one
 SELECT COUNT(*) FROM wiki_revisions
 WHERE wiki_page_id = $1 AND deleted_at IS NULL
@@ -548,6 +631,21 @@ func (q *Queries) CreateWikiPage(ctx context.Context, arg CreateWikiPageParams) 
 	return id, err
 }
 
+const deleteWikiPageFeedback = `-- name: DeleteWikiPageFeedback :exec
+DELETE FROM wiki_page_feedback
+WHERE wiki_page_id = $1 AND user_id = $2
+`
+
+type DeleteWikiPageFeedbackParams struct {
+	WikiPageID pgtype.UUID `json:"wiki_page_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteWikiPageFeedback(ctx context.Context, arg DeleteWikiPageFeedbackParams) error {
+	_, err := q.db.Exec(ctx, deleteWikiPageFeedback, arg.WikiPageID, arg.UserID)
+	return err
+}
+
 const findWikiHostPage = `-- name: FindWikiHostPage :one
 
 SELECT id FROM wiki_pages
@@ -582,9 +680,11 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
-       COALESCE(u.username, '') AS submitted_by_name
+       COALESCE(u.username, '') AS submitted_by_name,
+       up.avatar_url AS submitted_by_avatar_url
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN user_profiles up ON up.user_id = wr.submitted_by
 WHERE wr.wiki_page_id = $1 AND wr.status = 'approved'
   AND wr.kind IN ('content', 'mixed') AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
@@ -592,27 +692,28 @@ LIMIT 1
 `
 
 type GetApprovedWikiRevisionRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	WikiPageID       pgtype.UUID        `json:"wiki_page_id"`
-	Content          []byte             `json:"content"`
-	Summary          *string            `json:"summary"`
-	Kind             string             `json:"kind"`
-	Ops              []byte             `json:"ops"`
-	TargetEntityType *string            `json:"target_entity_type"`
-	TargetEntityID   pgtype.UUID        `json:"target_entity_id"`
-	Status           string             `json:"status"`
-	SubmittedBy      pgtype.UUID        `json:"submitted_by"`
-	ReviewedBy       pgtype.UUID        `json:"reviewed_by"`
-	ReviewedAt       pgtype.Timestamptz `json:"reviewed_at"`
-	ApplyError       *string            `json:"apply_error"`
-	AiGenerated      bool               `json:"ai_generated"`
-	AiModel          *string            `json:"ai_model"`
-	AiPromptHash     *string            `json:"ai_prompt_hash"`
-	HitlReviewedBy   pgtype.UUID        `json:"hitl_reviewed_by"`
-	HitlReviewedAt   pgtype.Timestamptz `json:"hitl_reviewed_at"`
-	HitlReviewNotes  *string            `json:"hitl_review_notes"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	SubmittedByName  string             `json:"submitted_by_name"`
+	ID                   pgtype.UUID        `json:"id"`
+	WikiPageID           pgtype.UUID        `json:"wiki_page_id"`
+	Content              []byte             `json:"content"`
+	Summary              *string            `json:"summary"`
+	Kind                 string             `json:"kind"`
+	Ops                  []byte             `json:"ops"`
+	TargetEntityType     *string            `json:"target_entity_type"`
+	TargetEntityID       pgtype.UUID        `json:"target_entity_id"`
+	Status               string             `json:"status"`
+	SubmittedBy          pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy           pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
+	ApplyError           *string            `json:"apply_error"`
+	AiGenerated          bool               `json:"ai_generated"`
+	AiModel              *string            `json:"ai_model"`
+	AiPromptHash         *string            `json:"ai_prompt_hash"`
+	HitlReviewedBy       pgtype.UUID        `json:"hitl_reviewed_by"`
+	HitlReviewedAt       pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes      *string            `json:"hitl_review_notes"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	SubmittedByName      string             `json:"submitted_by_name"`
+	SubmittedByAvatarUrl *string            `json:"submitted_by_avatar_url"`
 }
 
 // =====================
@@ -645,6 +746,7 @@ func (q *Queries) GetApprovedWikiRevision(ctx context.Context, pageID pgtype.UUI
 		&i.HitlReviewNotes,
 		&i.CreatedAt,
 		&i.SubmittedByName,
+		&i.SubmittedByAvatarUrl,
 	)
 	return i, err
 }
@@ -731,6 +833,46 @@ func (q *Queries) GetWikiPageBySlug(ctx context.Context, arg GetWikiPageBySlugPa
 		&i.SpaceName,
 	)
 	return i, err
+}
+
+const getWikiPageFeedbackCounts = `-- name: GetWikiPageFeedbackCounts :one
+SELECT
+    COUNT(*) FILTER (WHERE f.vote = 'up') AS up_count,
+    COUNT(*) FILTER (WHERE f.vote = 'down') AS down_count
+FROM wiki_page_feedback f
+WHERE f.wiki_page_id = $1
+`
+
+type GetWikiPageFeedbackCountsRow struct {
+	UpCount   int64 `json:"up_count"`
+	DownCount int64 `json:"down_count"`
+}
+
+// Aggregate votes for one page. Reads are per-page; the page_id index
+// covers it. The viewer's own vote is a separate GetWikiPageViewerVote
+// lookup — sqlc can't type a correlated subquery inside this aggregate.
+func (q *Queries) GetWikiPageFeedbackCounts(ctx context.Context, wikiPageID pgtype.UUID) (GetWikiPageFeedbackCountsRow, error) {
+	row := q.db.QueryRow(ctx, getWikiPageFeedbackCounts, wikiPageID)
+	var i GetWikiPageFeedbackCountsRow
+	err := row.Scan(&i.UpCount, &i.DownCount)
+	return i, err
+}
+
+const getWikiPageViewerVote = `-- name: GetWikiPageViewerVote :one
+SELECT vote FROM wiki_page_feedback
+WHERE wiki_page_id = $1 AND user_id = $2
+`
+
+type GetWikiPageViewerVoteParams struct {
+	WikiPageID pgtype.UUID `json:"wiki_page_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetWikiPageViewerVote(ctx context.Context, arg GetWikiPageViewerVoteParams) (string, error) {
+	row := q.db.QueryRow(ctx, getWikiPageViewerVote, arg.WikiPageID, arg.UserID)
+	var vote string
+	err := row.Scan(&vote)
+	return vote, err
 }
 
 const getWikiRevision = `-- name: GetWikiRevision :one
@@ -971,6 +1113,7 @@ func (q *Queries) IsUniversitySpaceBySlug(ctx context.Context, slug string) (*bo
 
 const listWikiDestinations = `-- name: ListWikiDestinations :many
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
+       sp.logo_media_id, sp.description,
        COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
@@ -1032,28 +1175,38 @@ WHERE sp.status = 'active'
                   )
            )
       ))
-GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
+GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
+         sp.logo_media_id, sp.description
 HAVING (NOT $6::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
-ORDER BY sp.name
+ORDER BY
+    CASE WHEN $7::text = 'name' THEN sp.name END ASC,
+    CASE WHEN $7::text = 'page_count' THEN COUNT(wp.id) FILTER (WHERE wp.is_active = true) END DESC,
+    sp.name ASC
+LIMIT NULLIF($9::int, 0) OFFSET $8
 `
 
 type ListWikiDestinationsParams struct {
-	Level   string `json:"level"`
-	Region  string `json:"region"`
-	Search  string `json:"search"`
-	Parent  string `json:"parent"`
-	Within  string `json:"within"`
-	HasWiki bool   `json:"has_wiki"`
+	Level      string `json:"level"`
+	Region     string `json:"region"`
+	Search     string `json:"search"`
+	Parent     string `json:"parent"`
+	Within     string `json:"within"`
+	HasWiki    bool   `json:"has_wiki"`
+	Sort       string `json:"sort"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
 }
 
 type ListWikiDestinationsRow struct {
-	ID        pgtype.UUID `json:"id"`
-	Slug      string      `json:"slug"`
-	Name      string      `json:"name"`
-	GeoCode   *string     `json:"geo_code"`
-	Region    *string     `json:"region"`
-	Level     string      `json:"level"`
-	PageCount int64       `json:"page_count"`
+	ID          pgtype.UUID `json:"id"`
+	Slug        string      `json:"slug"`
+	Name        string      `json:"name"`
+	GeoCode     *string     `json:"geo_code"`
+	Region      *string     `json:"region"`
+	Level       string      `json:"level"`
+	LogoMediaID pgtype.UUID `json:"logo_media_id"`
+	Description *string     `json:"description"`
+	PageCount   int64       `json:"page_count"`
 }
 
 // Wiki-type-driven destination list (§80 Wiki Types amendment): the base set
@@ -1061,6 +1214,9 @@ type ListWikiDestinationsRow struct {
 // hardcoded (level IN geo+university) predicate is gone so new wiki types
 // appear automatically. ?level matches sp.level OR st.slug so legacy
 // level='university' spaces and future type slugs both resolve.
+// §80 Reader UX: ?sort=name (default, A–Z) or page_count (most guides
+// first). Each non-selected CASE collapses to all-NULL, so only the
+// picked key orders; sp.name is the stable tiebreak.
 func (q *Queries) ListWikiDestinations(ctx context.Context, arg ListWikiDestinationsParams) ([]ListWikiDestinationsRow, error) {
 	rows, err := q.db.Query(ctx, listWikiDestinations,
 		arg.Level,
@@ -1069,6 +1225,9 @@ func (q *Queries) ListWikiDestinations(ctx context.Context, arg ListWikiDestinat
 		arg.Parent,
 		arg.Within,
 		arg.HasWiki,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -1084,6 +1243,8 @@ func (q *Queries) ListWikiDestinations(ctx context.Context, arg ListWikiDestinat
 			&i.GeoCode,
 			&i.Region,
 			&i.Level,
+			&i.LogoMediaID,
+			&i.Description,
 			&i.PageCount,
 		); err != nil {
 			return nil, err
@@ -1638,6 +1799,33 @@ UPDATE wiki_pages SET updated_at = now() WHERE id = $1
 func (q *Queries) UpdateWikiPageTouched(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, updateWikiPageTouched, id)
 	return err
+}
+
+const upsertWikiPageFeedback = `-- name: UpsertWikiPageFeedback :one
+
+INSERT INTO wiki_page_feedback (wiki_page_id, user_id, vote)
+VALUES ($1, $2, $3)
+ON CONFLICT (wiki_page_id, user_id)
+DO UPDATE SET vote = EXCLUDED.vote, updated_at = now()
+RETURNING id
+`
+
+type UpsertWikiPageFeedbackParams struct {
+	WikiPageID pgtype.UUID `json:"wiki_page_id"`
+	UserID     pgtype.UUID `json:"user_id"`
+	Vote       string      `json:"vote"`
+}
+
+// =====================
+// Page Feedback (§80 Reader UX)
+// =====================
+// Upsert the member's vote; the service pre-reads the current vote so a
+// repeated vote can retract instead (toggle semantics live in the service).
+func (q *Queries) UpsertWikiPageFeedback(ctx context.Context, arg UpsertWikiPageFeedbackParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertWikiPageFeedback, arg.WikiPageID, arg.UserID, arg.Vote)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const wikiPageExists = `-- name: WikiPageExists :one

@@ -3,6 +3,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { universityAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Check, Eye, X } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -41,10 +42,13 @@
 
 	const canApprove = $derived(hasPermission('university.course.approve'));
 
+	// §58 — managed currency symbols for price display.
+	let currencies = $state<CurrencyInfo[]>([]);
+	loadCurrencies().then((list) => (currencies = list));
+
 	function formatPrice(kobo: number | null | undefined, currency: string): string {
 		if (kobo == null) return t('university.free', 'Free');
-		const major = kobo / 100;
-		return `${currency} ${major.toLocaleString()}`;
+		return formatMoney(kobo, currency, currencies, { minor: true, fractionDigits: 0, withCode: true });
 	}
 
 	function openApprove(row: Track) { actionTarget = row; showApproveConfirm = true; }

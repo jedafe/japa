@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { Dialog } from 'bits-ui';
-	import { X, Search, Loader2, ImagePlus, Upload, Download, Check } from 'lucide-svelte';
+	import { X, Search, Loader2, ImagePlus, Upload, Download, Check, Maximize2 } from 'lucide-svelte';
+	import { openLightbox } from '$lib/lightbox.svelte';
+	import type { LightboxItem } from '$lib/components/ui/MediaLightbox.svelte';
 	import {
 		listMyMedia,
 		initiateUpload,
@@ -430,6 +432,26 @@
 									{@const pkey = photo.provider + ':' + photo.id}
 									<div class="stock-card">
 										<img src={photo.thumbnail_url} alt={photo.description ?? ''} loading="lazy" />
+										<button
+											type="button"
+											class="stock-preview-btn"
+											aria-label={t('media.picker.stock_preview', 'Preview')}
+											onclick={() =>
+												openLightbox(
+													stockResults.map(
+														(p): LightboxItem => ({
+															id: `${p.provider}:${p.id}`,
+															url: p.full_url,
+															alt_text: p.description ?? null,
+															caption: p.photographer ? `Photo by ${p.photographer}` : null,
+															mime_type: 'image/'
+														})
+													),
+													stockResults.indexOf(photo)
+												)}
+										>
+											<Maximize2 size={14} />
+										</button>
 										<div class="stock-card-overlay">
 											<span class="stock-photographer">{photo.photographer}</span>
 											{#if photo.license && (photo.license === 'cc-by' || photo.license === 'cc-by-sa' || photo.license === 'cc0')}
@@ -728,6 +750,29 @@
 		height: 100%;
 		object-fit: cover;
 		display: block;
+	}
+	.stock-preview-btn {
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		display: grid;
+		place-items: center;
+		width: 26px;
+		height: 26px;
+		border: none;
+		border-radius: 50%;
+		background: rgb(0 0 0 / 0.55);
+		color: #fff;
+		cursor: pointer;
+		opacity: 0;
+		transition: opacity 0.15s, background 0.15s;
+	}
+	.stock-card:hover .stock-preview-btn,
+	.stock-preview-btn:focus-visible {
+		opacity: 1;
+	}
+	.stock-preview-btn:hover {
+		background: rgb(0 0 0 / 0.75);
 	}
 	.stock-card-overlay {
 		position: absolute;

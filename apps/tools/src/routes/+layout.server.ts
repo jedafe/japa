@@ -1,4 +1,26 @@
 import type { LayoutServerLoad } from './$types';
+import { apiContext, apiGet } from '$lib/server/api';
+import type { CurrencyInfo } from '$lib/utils/currency';
+
+// §58 — active currency list for symbol/name display on money-bearing
+// tools (POF, ECA fees, remittance). Served by the public
+// GET /api/v1/currencies reference endpoint; cached briefly so every page
+// load doesn't re-hit the backend.
+const CURRENCIES_TTL_MS = 60_000;
+let currenciesCache: { at: number; items: CurrencyInfo[] } | null = null;
+
+async function loadCurrenciesCached(event: Parameters<LayoutServerLoad>[0]): Promise<CurrencyInfo[]> {
+	if (currenciesCache && Date.now() - currenciesCache.at < CURRENCIES_TTL_MS) {
+		return currenciesCache.items;
+	}
+	try {
+		const items = await apiGet<CurrencyInfo[]>(apiContext(event), '/currencies');
+		currenciesCache = { at: Date.now(), items };
+		return items;
+	} catch {
+		return currenciesCache?.items ?? [];
+	}
+}
 
 /**
  * Shared shell data for every Tools route: the resolved session (from hooks),
@@ -10,6 +32,7 @@ import type { LayoutServerLoad } from './$types';
  */
 export const load: LayoutServerLoad = async (event) => {
 	const user = event.locals.user;
+	const currencies = await loadCurrenciesCached(event);
 
 	// Public site settings (appearance/branding) — already fetched once in
 	// hooks.server.ts and stored in event.locals.siteSettings. Reusing it here
@@ -24,6 +47,7 @@ export const load: LayoutServerLoad = async (event) => {
 		toolSurface: event.locals.toolSurface,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
+		currencies,
 		features: event.locals.features,
 		// Platform logo from appearance.logo_url / appearance.logo_url_dark (control panel).
 		logoUrl: (siteSettings['appearance.logo_url'] as string | undefined) ?? '',

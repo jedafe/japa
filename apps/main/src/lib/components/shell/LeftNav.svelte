@@ -1,7 +1,7 @@
 <script lang="ts">
 	import clsx from 'clsx';
 	import { page } from '$app/state';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu as UiMenu, MenuItem as UiMenuItem, MenuSeparator as UiMenuSeparator } from '$lib/components/ui';
 	import {
 		PanelLeftClose,
 		PanelLeftOpen,
@@ -56,6 +56,17 @@
 		return page.url.pathname === url || page.url.pathname.startsWith(url + '/');
 	}
 
+	// Deterministic hue per item (same hash convention as DirectoryCard /
+	// SourceCard avatars) — tints each icon's chip so the nav reads as a
+	// coloured icon list rather than a row of bare glyphs. Seeded by icon
+	// name so the same icon always maps to the same colour.
+	function itemHue(item: MenuItem): number {
+		const seed = item.icon || item.url;
+		let h = 0;
+		for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360;
+		return h;
+	}
+
 	function itemClass(active: boolean): string {
 		return clsx(
 			'my-0.5 flex items-center gap-3 rounded-[var(--radius)] px-3 py-2 text-sm transition-colors',
@@ -65,7 +76,44 @@
 				: 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'
 		);
 	}
+
+	// Section 09 Product Tour: map seeded nav-item URLs to per-feature tour
+	// targets so the walkthrough can highlight individual features. Unknown or
+	// admin-renamed items return undefined — the attribute is omitted and the
+	// corresponding tour step is skipped gracefully.
+	function navTourKey(url: string): string | undefined {
+		const map: Record<string, string> = {
+			'/': 'home',
+			'/notifications': 'notifications',
+			'/messages': 'messages',
+			'/stories': 'stories',
+			'/forum': 'forum',
+			'/discover': 'discover',
+			'/explore': 'explore',
+			'/learn': 'learn',
+			'/jobs': 'jobs',
+			'/achievements': 'achievements',
+			'/bookmarks': 'bookmarks'
+		};
+		return map[url];
+	}
 </script>
+
+{#snippet navIcon(item: MenuItem, active: boolean, badge: number)}
+	{@const Icon = resolveIcon(item.icon)}
+	<span
+		class={clsx('nav-icon-chip', active && 'nav-icon-chip--active')}
+		style="--chip-hue: {itemHue(item)}"
+	>
+		<Icon size={16} strokeWidth={active ? 2.2 : 1.9} />
+		{#if badge > 0}
+			<span
+				class="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
+				aria-label="{badge} unread"
+			>{badge > 99 ? '99+' : badge}</span>
+		{/if}
+	</span>
+{/snippet}
 
 <nav
 	class="flex h-full w-full flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]"
@@ -102,11 +150,10 @@
 	<!-- Nav items (from GET /menus/main_sidebar) -->
 	<ul class="flex-1 overflow-y-auto px-2 py-2" data-tour="primary-nav">
 		{#each items as item (item.id)}
-			{@const Icon = resolveIcon(item.icon)}
 			{@const active = isActive(item.url)}
 			{@const badge = item.url === '/notifications' ? realtime.unreadNotifications : 0}
 			{@const isNotifications = item.url === '/notifications' && !!user}
-			<li>
+			<li data-tour={navTourKey(item.url)}>
 				{#if isNotifications}
 					<!-- Phase 13.01 — Notifications nav item opens the dropdown -->
 					<NotificationCentre side="right" align="start" {collapsed} class={itemClass(active)}>
@@ -116,15 +163,7 @@
 								title={collapsed ? item.label : undefined}
 								aria-current={active ? 'page' : undefined}
 							>
-								<span class="relative">
-									<Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-									{#if badge > 0}
-										<span
-											class="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
-											aria-label="{badge} unread"
-										>{badge > 99 ? '99+' : badge}</span>
-									{/if}
-								</span>
+								{@render navIcon(item, active, badge)}
 								{#if !collapsed}
 									<span class="min-w-0 flex-1">{item.label}</span>
 									{#if badge > 0}
@@ -145,15 +184,7 @@
 						aria-current={active ? 'page' : undefined}
 						class={itemClass(active)}
 					>
-						<span class="relative">
-							<Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-							{#if badge > 0}
-								<span
-									class="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-1 text-[10px] font-semibold text-[var(--color-primary-contrast)]"
-									aria-label="{badge} unread"
-								>{badge > 99 ? '99+' : badge}</span>
-							{/if}
-						</span>
+						{@render navIcon(item, active, badge)}
 						{#if !collapsed}
 							<span class="min-w-0 flex-1">{item.label}</span>
 							{#if badge > 0}
@@ -217,60 +248,42 @@
 	<div class="border-t border-[var(--color-border)] p-2" data-tour="space-switcher">
 		{#if user && userSpaces.length > 0}
 			<!-- Space switcher — ADR-058: stays in the left nav, not the account menu -->
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class={clsx(
-						'mb-1 flex w-full items-center gap-2 rounded-[var(--radius)] p-2 text-sm text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]',
-						collapsed && 'justify-center'
-					)}
-					aria-label={t('nav.space_switcher')}
-				>
-					<Hash size={18} class="shrink-0 text-[var(--color-primary)]" />
-					{#if !collapsed}
-						<span class="min-w-0 flex-1 truncate">{t('nav.space_switcher')}</span>
-						<ChevronsUpDown size={14} class="shrink-0 text-[var(--color-muted)]" />
-					{/if}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Portal>
-					<DropdownMenu.Content
-						side="right"
-						align="start"
-						sideOffset={8}
-						class="z-50 flex max-h-[min(28rem,var(--bits-floating-available-height,70vh))] min-w-52 flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+			<UiMenu side="right" align="start" contentClass="flex max-h-[min(28rem,var(--bits-floating-available-height,70vh))] min-w-52 flex-col overflow-hidden">
+				{#snippet trigger(props)}
+					<button
+						type="button"
+						{...props}
+						class={clsx(
+							'mb-1 flex w-full items-center gap-2 rounded-[var(--radius)] p-2 text-sm text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]',
+							collapsed && 'justify-center'
+						)}
+						aria-label={t('nav.space_switcher')}
 					>
-						<div class="min-h-0 flex-1 overflow-y-auto">
-							{#each userSpaces as sp (sp.id)}
-								<DropdownMenu.Item
-									class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-								>
-									{#snippet child({ props })}
-										<a href={`/spaces/${sp.slug}`} {...props}>
-											<Hash size={14} class="shrink-0 text-[var(--color-muted)]" />
-											<span class="min-w-0 flex-1 truncate">{sp.name}</span>
-										</a>
-									{/snippet}
-								</DropdownMenu.Item>
-							{/each}
-						</div>
-						<DropdownMenu.Separator class="my-1 h-px shrink-0 bg-[var(--color-border)]" />
-						<DropdownMenu.Item
-							class="flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm font-medium text-[var(--color-primary)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-						>
-							{#snippet child({ props })}
-								<a href="/discover?tab=spaces" {...props}>
-									<ExternalLink size={14} />
-									{t('nav.space_switcher_browse')}
-								</a>
-							{/snippet}
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Portal>
-			</DropdownMenu.Root>
+						<Hash size={18} class="shrink-0 text-[var(--color-primary)]" />
+						{#if !collapsed}
+							<span class="min-w-0 flex-1 truncate">{t('nav.space_switcher')}</span>
+							<ChevronsUpDown size={14} class="shrink-0 text-[var(--color-muted)]" />
+						{/if}
+					</button>
+				{/snippet}
+				<div class="min-h-0 flex-1 overflow-y-auto">
+					{#each userSpaces as sp (sp.id)}
+						<UiMenuItem href={`/spaces/${sp.slug}`} icon={Hash}>
+							<span class="min-w-0 flex-1 truncate">{sp.name}</span>
+						</UiMenuItem>
+					{/each}
+				</div>
+				<UiMenuSeparator />
+				<UiMenuItem href="/discover?tab=spaces" icon={ExternalLink} class="font-medium text-[var(--color-primary)]">
+					{t('nav.space_switcher_browse')}
+				</UiMenuItem>
+			</UiMenu>
 		{/if}
 
 		{#if user}
 			<a
 				href="/u/{user.username}"
+				data-tour="account"
 				title={collapsed ? user.display_name : undefined}
 				class={clsx('flex items-center gap-3 rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]', collapsed && 'justify-center')}
 			>
@@ -300,3 +313,38 @@
 		{/if}
 	</div>
 </nav>
+
+<style>
+	/* Tinted circular icon chip — hue comes from --chip-hue (deterministic
+	 * per-item hash). Muted tinted disc + saturated glyph, matching the
+	 * directory-avatar convention used by DirectoryCard/SourceCard. */
+	.nav-icon-chip {
+		position: relative;
+		display: grid;
+		height: 2rem;
+		width: 2rem;
+		flex-shrink: 0;
+		place-items: center;
+		border-radius: 9999px;
+		background: hsl(var(--chip-hue) 60% 50% / 0.14);
+		color: hsl(var(--chip-hue) 65% 42%);
+		transition:
+			background-color 0.15s ease,
+			color 0.15s ease;
+	}
+
+	.nav-icon-chip--active {
+		background: hsl(var(--chip-hue) 65% 50% / 0.22);
+		color: hsl(var(--chip-hue) 75% 40%);
+	}
+
+	:global([data-theme='dark']) .nav-icon-chip {
+		background: hsl(var(--chip-hue) 45% 45% / 0.22);
+		color: hsl(var(--chip-hue) 85% 68%);
+	}
+
+	:global([data-theme='dark']) .nav-icon-chip--active {
+		background: hsl(var(--chip-hue) 55% 55% / 0.32);
+		color: hsl(var(--chip-hue) 90% 74%);
+	}
+</style>

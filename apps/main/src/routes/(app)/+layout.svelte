@@ -9,6 +9,8 @@
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
+	import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
+	import { lightbox } from '$lib/lightbox.svelte';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import type { LayoutData } from './$types';
@@ -28,6 +30,15 @@
 	const tourRequested = $derived(
 		tourParam === 'replay' || (tourParam === '1' && !data.tourDismissed)
 	);
+
+	// Latch: ProductTour strips the ?tour param once the tour starts, which
+	// flips tourRequested back to false for replay+dismissed users — keep the
+	// component mounted so its navigation guard can tear the driver down
+	// cleanly instead of leaving an orphaned overlay.
+	let tourMounted = $state(false);
+	$effect(() => {
+		if (tourRequested && data.user) tourMounted = true;
+	});
 
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
 	// The new default guest homepage (guestHome) also uses GuestHeader and a custom footer.
@@ -197,10 +208,13 @@
 			<Sparkles size={22} />
 		</a>
 	{/if}
-	{#if tourRequested && data.user}
-		<!-- Section 09 Product Tour: triggered after onboarding completion -->
-		<ProductTour replay={true} />
+	{#if tourMounted}
+		<!-- §09 Product Tour: steps come from onboarding.tour_steps (admin-managed) -->
+		<ProductTour replay={true} steps={data.tourSteps} />
 	{/if}
 {/if}
+
+<!-- Shared fullscreen media viewer — any surface opens it via openLightbox() -->
+<MediaLightbox bind:open={lightbox.open} bind:index={lightbox.index} items={lightbox.items} />
 
 <style></style>

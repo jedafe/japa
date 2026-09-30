@@ -14,7 +14,7 @@
 	// Ref: japaconnect-engineering/sections/30-generic-comparison-system.md
 	import { t } from '$lib/stores/i18n.svelte';
 	import { ChevronDown, Plus, Trash2, X } from 'lucide-svelte';
-	import { Switch } from 'bits-ui';
+	import Switch from '$lib/components/ui/Switch.svelte';
 	import { comparisonHintPresets, type ComparisonHintPreset } from './comparisonPresets';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
@@ -529,19 +529,14 @@
 
 							<!-- Prepend toggle -->
 							<div class="flex items-center gap-2">
-								<Switch.Root
+								<Switch
 									id="comparison-prepend-{group.id}"
 									checked={group.prepend}
 									onCheckedChange={(checked) => {
 										updateGroup(group.id, { prepend: checked });
 									}}
-									disabled={disabled}
-									class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-								>
-									<Switch.Thumb
-										class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
-									/>
-								</Switch.Root>
+									{disabled}
+								/>
 								<label
 									for="comparison-prepend-{group.id}"
 									class="text-muted-foreground cursor-pointer text-xs"

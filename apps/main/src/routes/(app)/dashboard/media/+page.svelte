@@ -10,7 +10,7 @@
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import {
 		Image as ImageIcon,
 		File,
@@ -25,8 +25,10 @@
 		LayoutGrid,
 		List,
 		Eye,
+		Maximize2,
 		AlertTriangle
 	} from 'lucide-svelte';
+	import { openLightbox } from '$lib/lightbox.svelte';
 	import type { MediaAsset } from '$lib/types';
 	import { listMyMedia, getMedia, updateMedia, deleteMedia, bulkDeleteMedia } from '$lib/api/create';
 
@@ -678,49 +680,34 @@
 {/if}
 
 <!-- Bulk delete confirmation -->
-<Dialog.Root open={showBulkDelete} onOpenChange={(v) => { if (!v) showBulkDelete = false; }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-[101] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl">
-			<Dialog.Title class="mb-2 text-base font-medium text-[var(--color-text)]">{t('media.library.bulk_delete_title', 'Delete selected media')}</Dialog.Title>
-			<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-				{t('media.library.bulk_delete_confirm', 'Delete {count} selected media files? This cannot be undone.', { count: selectedCount })}
-			</Dialog.Description>
-			{#if bulkDeleteError}
-				<p class="mb-3 text-xs text-[var(--destructive, #dc2626)]">{bulkDeleteError}</p>
-			{/if}
-			<div class="flex justify-end gap-2">
-				<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
-					{t('media.picker.cancel')}
-				</Dialog.Close>
-				<button
-					type="button"
-					class="rounded-[var(--radius)] bg-[var(--destructive,#dc2626)] px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
-					onclick={confirmBulkDelete}
-					disabled={bulkDeleteSaving}
-				>
-					{#if bulkDeleteSaving}
-						<Loader2 size={14} class="animate-spin" />
-					{:else}
-						{t('media.library.bulk_delete')}
-					{/if}
-				</button>
-			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+<Modal open={showBulkDelete} onOpenChange={(v) => { if (!v) showBulkDelete = false; }} title={t('media.library.bulk_delete_title', 'Delete selected media')} description={t('media.library.bulk_delete_confirm', 'Delete {count} selected media files? This cannot be undone.', { count: selectedCount })} overlayClass="backdrop-blur-sm" zIndex={100} size="md">
+	{#snippet children(close)}
+		{#if bulkDeleteError}
+			<p class="mb-3 text-xs text-[var(--destructive, #dc2626)]">{bulkDeleteError}</p>
+		{/if}
+		<div class="flex justify-end gap-2">
+			<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+				{t('media.picker.cancel')}
+			</button>
+			<button
+				type="button"
+				class="rounded-[var(--radius)] bg-[var(--destructive,#dc2626)] px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+				onclick={confirmBulkDelete}
+				disabled={bulkDeleteSaving}
+			>
+				{#if bulkDeleteSaving}
+					<Loader2 size={14} class="animate-spin" />
+				{:else}
+					{t('media.library.bulk_delete')}
+				{/if}
+			</button>
+		</div>
+	{/snippet}
+</Modal>
 
 <!-- Edit dialog -->
-<Dialog.Root open={showEdit} onOpenChange={(v) => { if (!v) closeEdit(); }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-[101] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl">
-			<div class="mb-4 flex items-center justify-between">
-				<Dialog.Title class="text-base font-medium text-[var(--color-text)]">{t('media.library.edit_title')}</Dialog.Title>
-				<Dialog.Close class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
-					<X size={18} />
-				</Dialog.Close>
-			</div>
+<Modal open={showEdit} onOpenChange={(v) => { if (!v) closeEdit(); }} title={t('media.library.edit_title')} overlayClass="backdrop-blur-sm" zIndex={100} size="md">
+	{#snippet children(close)}
 			<div class="space-y-3">
 				<div>
 					<label for="edit-alt" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('media.library.edit_alt')}</label>
@@ -745,9 +732,9 @@
 				{/if}
 			</div>
 			<div class="mt-5 flex justify-end gap-2">
-				<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+				<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 					{t('media.picker.cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					type="button"
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
@@ -761,51 +748,43 @@
 					{/if}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>
 
 <!-- Delete confirmation dialog -->
-<Dialog.Root open={showDelete} onOpenChange={(v) => { if (!v) closeDelete(); }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-[101] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl">
-			<Dialog.Title class="mb-2 text-base font-medium text-[var(--color-text)]">{t('media.library.delete_title')}</Dialog.Title>
-			<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">{t('media.library.delete_confirm')}</Dialog.Description>
-			{#if deleteError}
-				<p class="mb-3 text-xs text-[var(--destructive, #dc2626)]">{deleteError}</p>
-			{/if}
-			<div class="flex justify-end gap-2">
-				<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
-					{t('media.picker.cancel')}
-				</Dialog.Close>
-				<button
-					type="button"
-					class="rounded-[var(--radius)] bg-[var(--destructive,#dc2626)] px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
-					onclick={confirmDelete}
-					disabled={deleteSaving}
-				>
-					{#if deleteSaving}
-						<Loader2 size={14} class="animate-spin" />
-					{:else}
-						{t('media.library.delete')}
-					{/if}
-				</button>
-			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+<Modal open={showDelete} onOpenChange={(v) => { if (!v) closeDelete(); }} title={t('media.library.delete_title')} description={t('media.library.delete_confirm')} overlayClass="backdrop-blur-sm" zIndex={100} size="md">
+	{#snippet children(close)}
+		{#if deleteError}
+			<p class="mb-3 text-xs text-[var(--destructive, #dc2626)]">{deleteError}</p>
+		{/if}
+		<div class="flex justify-end gap-2">
+			<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+				{t('media.picker.cancel')}
+			</button>
+			<button
+				type="button"
+				class="rounded-[var(--radius)] bg-[var(--destructive,#dc2626)] px-3 py-2 text-sm text-white hover:opacity-90 disabled:opacity-50"
+				onclick={confirmDelete}
+				disabled={deleteSaving}
+			>
+				{#if deleteSaving}
+					<Loader2 size={14} class="animate-spin" />
+				{:else}
+					{t('media.library.delete')}
+				{/if}
+			</button>
+		</div>
+	{/snippet}
+</Modal>
 
 <!-- Details dialog -->
-<Dialog.Root open={showDetails} onOpenChange={(v) => { if (!v) closeDetails(); }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-[101] flex max-h-[90vh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
+<Modal open={showDetails} onOpenChange={(v) => { if (!v) closeDetails(); }} hideHeader ariaTitle={t('media.library.details_title', 'Media details')} padded={false} overlayClass="backdrop-blur-sm" zIndex={100} size="max-w-2xl">
+	{#snippet children(close)}
 			<div class="flex items-center justify-between border-b border-[var(--color-border)] p-4">
-				<Dialog.Title class="text-base font-medium text-[var(--color-text)]">{t('media.library.details_title', 'Media details')}</Dialog.Title>
-				<Dialog.Close class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
+				<h2 class="text-base font-medium text-[var(--color-text)]">{t('media.library.details_title', 'Media details')}</h2>
+				<button type="button" onclick={close} aria-label={t('common.close', 'Close')} class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
 					<X size={18} />
-				</Dialog.Close>
+				</button>
 			</div>
 			<div class="flex-1 overflow-y-auto p-4">
 				{#if detailsLoading && !detailsTarget}
@@ -817,7 +796,7 @@
 				{:else if detailsTarget}
 					{@const m = detailsTarget}
 					<div class="flex flex-col gap-4 md:flex-row">
-						<div class="shrink-0 overflow-hidden rounded-[var(--radius)] bg-[var(--color-surface-subtle)] md:w-64">
+						<div class="group relative shrink-0 overflow-hidden rounded-[var(--radius)] bg-[var(--color-surface-subtle)] md:w-64">
 							{#if isImage(m)}
 								<img src={m.url} alt={m.alt_text ?? m.filename ?? ''} class="h-64 w-full object-contain md:h-48" loading="lazy" />
 							{:else if isVideo(m)}
@@ -826,6 +805,16 @@
 								<div class="flex h-64 items-center justify-center text-[var(--color-muted)] md:h-48">
 									<File size={48} />
 								</div>
+							{/if}
+							{#if isImage(m) || isVideo(m)}
+								<button
+									type="button"
+									class="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity hover:bg-black/75 focus-visible:opacity-100 group-hover:opacity-100"
+									onclick={() => openLightbox(items, items.findIndex((i) => i.id === m.id))}
+									aria-label={t('media.view_full', 'View full size')}
+								>
+									<Maximize2 size={15} />
+								</button>
 							{/if}
 						</div>
 						<div class="flex-1 space-y-3 text-sm">
@@ -904,10 +893,9 @@
 				{/if}
 			</div>
 			<div class="border-t border-[var(--color-border)] p-4 text-right">
-				<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+				<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 					{t('media.picker.cancel')}
-				</Dialog.Close>
+				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>

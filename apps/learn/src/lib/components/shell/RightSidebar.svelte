@@ -52,6 +52,16 @@
 	}
 	let topbarWidgets = $derived(widgets.filter((w) => isTopbar(w)));
 	let contentWidgets = $derived(widgets.filter((w) => !isTopbar(w)));
+
+	// §09 Product Tour: exactly one element may carry the learn-search target.
+	// Tag only the first search-typed widget in DOM order (topbar slot first,
+	// then content) — a second configured search widget must not double-tag
+	// the attribute.
+	const searchTourWidgetId = $derived(
+		[...topbarWidgets, ...contentWidgets].find(
+			(w) => w.widget_type === 'search' || w.widget_type === 'search_launcher'
+		)?.id
+	);
 </script>
 
 <aside class="flex h-full flex-col gap-4 overflow-y-auto px-4 py-3">
@@ -63,7 +73,7 @@
 			class="sticky top-0 z-10 -mx-4 flex items-center gap-2 bg-[var(--color-bg)]/90 px-4 py-2 backdrop-blur"
 		>
 			{#each topbarWidgets as widget (widget.id)}
-				<SidebarWidgetRenderer {widget} {user} />
+				<SidebarWidgetRenderer {widget} {user} searchTourTarget={widget.id === searchTourWidgetId} />
 			{/each}
 		</div>
 	{/if}
@@ -81,6 +91,6 @@
 	<!-- Admin-managed content-slot sidebar widgets (Section 59, ADR-066).
 	     Rendered below the route-specific snippet and ContinueLearningCard. -->
 	{#each contentWidgets as widget (widget.id)}
-		<SidebarWidgetRenderer {widget} {user} />
+		<SidebarWidgetRenderer {widget} {user} searchTourTarget={widget.id === searchTourWidgetId} />
 	{/each}
 </aside>

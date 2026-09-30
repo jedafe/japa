@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { formatPriceRange, priceRangeParts } from './wikiFieldValue';
+import { fieldCurrencyCode, formatPriceRange, formatWikiFieldValue, priceRangeParts } from './wikiFieldValue';
+import type { CurrencyInfo } from './currency';
 
 // §80 Itemized Pricing — the composite {avg?,min?,max?} value must survive
 // every partial shape the backend accepts (at least one bound, malformed
@@ -47,5 +48,93 @@ describe('formatPriceRange', () => {
 	it('returns the empty marker for malformed values', () => {
 		expect(formatPriceRange('[object Object]')).toBe('—');
 		expect(formatPriceRange({})).toBe('—');
+	});
+
+	// §58 — when a currency_code + the managed currency list are given,
+	// bounds render with the managed symbol.
+	const ngn: CurrencyInfo[] = [{ code: 'NGN', name: 'Nigerian Naira', symbol: '₦' }];
+
+	it('prefixes the managed symbol when currency context is known', () => {
+		expect(formatPriceRange({ min: 800, max: 1600 }, 'NGN', ngn)).toBe('₦800 – ₦1,600');
+		expect(formatPriceRange({ avg: 1200 }, 'NGN', ngn)).toBe('₦1,200');
+	});
+
+	it('falls back to "CODE n" when the currency list is empty', () => {
+		expect(formatPriceRange({ avg: 1200 }, 'ZZZ', [])).toBe('ZZZ 1,200');
+	});
+
+	it('keeps bare numbers when no currency_code is bound', () => {
+		expect(formatPriceRange({ avg: 1200 })).toBe('1,200');
+	});
+});
+
+describe('fieldCurrencyCode', () => {
+	it('extracts {currency_code} from object options', () => {
+		expect(fieldCurrencyCode({ currency_code: 'USD' })).toBe('USD');
+	});
+
+	it('returns empty for arrays, null, and missing keys', () => {
+		expect(fieldCurrencyCode([{ value: 'USD' }])).toBe('');
+		expect(fieldCurrencyCode(null)).toBe('');
+		expect(fieldCurrencyCode({})).toBe('');
+	});
+});
+
+describe('formatWikiFieldValue', () => {
+	const ngn = [{ code: 'NGN', name: 'Nigerian Naira', symbol: '₦' }];
+
+	it('formats a currency field with its bound code + managed symbol', () => {
+		expect(
+			formatWikiFieldValue(
+				{ id: 'f1', key: 'rent', label: 'Rent', field_type: 'currency', value: 1200, options: { currency_code: 'NGN' }, can_edit: true, visible: true },
+				ngn
+			)
+		).toBe('₦1,200');
+	});
+
+	// §58 — country-inherited denomination: a currency field with no
+	// options.currency_code adopts the entity's resolved country currency.
+	it('falls back to the context currency when the field has no currency_code', () => {
+		expect(
+			formatWikiFieldValue(
+				{ id: 'f1', key: 'rent', label: 'Rent', field_type: 'currency', value: 1200, can_edit: true, visible: true },
+				ngn,
+				'NGN'
+			)
+		).toBe('₦1,200');
+	});
+
+	it('lets an explicit field currency_code override the context currency', () => {
+		const list = [
+			{ code: 'NGN', name: 'Nigerian Naira', symbol: '₦' },
+			{ code: 'USD', name: 'US Dollar', symbol: '$' }
+		];
+		expect(
+			formatWikiFieldValue(
+				{ id: 'f1', key: 'rent', label: 'Rent', field_type: 'currency', value: 1200, options: { currency_code: 'USD' }, can_edit: true, visible: true },
+				list,
+				'NGN'
+			)
+		).toBe('$1,200');
+	});
+
+	it('renders a bare number when neither field option nor context resolves', () => {
+		expect(
+			formatWikiFieldValue(
+				{ id: 'f1', key: 'rent', label: 'Rent', field_type: 'currency', value: 1200, can_edit: true, visible: true },
+				ngn,
+				''
+			)
+		).toBe('1,200');
+	});
+
+	it('inherits the context currency for price_range fields', () => {
+		expect(
+			formatWikiFieldValue(
+				{ id: 'f1', key: 'rent', label: 'Rent', field_type: 'price_range', value: { min: 800, max: 1600 }, can_edit: true, visible: true },
+				ngn,
+				'NGN'
+			)
+		).toBe('₦800 – ₦1,600');
 	});
 });

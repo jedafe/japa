@@ -73,15 +73,23 @@ export interface WithdrawalResult {
 export interface WalletData {
 	wallet: { points_balance?: number; credits_balance?: number; lifetime_points?: number } | null;
 	ledger: LedgerEntry[];
+	/** Entries fetched per ledger stream (page_size=50 each). The History
+	 *  tab uses these to page further client-side — a count equal to the
+	 *  page size means more may exist (the endpoints return no total). */
+	pointsLoaded?: number;
+	creditsLoaded?: number;
 	settings?: {
 		settings?: { points_to_credits_rate?: number };
 		min_convert_points?: number;
 		min_purchase_credits?: number;
 		min_withdrawal_credits?: number;
 	} | null;
-	minConvertPoints: number;
-	minPurchaseCredits: number;
-	minWithdrawCredits: number;
+	/** Server-configured minimums; null when /me/wallet/settings is
+	 *  unavailable — tabs must treat null as "unknown" (no client-side
+	 *  minimum check), not substitute an invented default (Rule 3). */
+	minConvertPoints: number | null;
+	minPurchaseCredits: number | null;
+	minWithdrawCredits: number | null;
 	currencies: Currency[];
 	creditPacks: CreditPack[];
 	preferredCurrency?: { preferred_currency?: string } | null;

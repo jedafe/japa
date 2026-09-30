@@ -47,6 +47,21 @@
 		);
 	}
 
+	// Section 09 Product Tour: map seeded nav-item URLs to per-feature tour
+	// targets so the walkthrough can highlight individual features. Unknown or
+	// admin-renamed items return undefined — the attribute is omitted and the
+	// corresponding tour step is skipped gracefully.
+	function navTourKey(url: string): string | undefined {
+		const map: Record<string, string> = {
+			'/': 'learn-browse',
+			'/my-learning': 'my-learning',
+			'/certificates': 'certificates',
+			'/bookmarks': 'learn-bookmarks',
+			'/dashboard/instructor': 'instructor'
+		};
+		return map[url];
+	}
+
 	const brandLabel = $derived(t('university.name'));
 </script>
 
@@ -92,11 +107,11 @@
 	{/if}
 
 	<!-- Nav items (from GET /menus/learn_sidebar — ADR-054, migration 000213) -->
-	<ul class="flex-1 overflow-y-auto px-2 py-2">
+	<ul class="flex-1 overflow-y-auto px-2 py-2" data-tour="primary-nav">
 		{#each items as item (item.id)}
 			{@const Icon = resolveIcon(item.icon)}
 			{@const active = isActive(item.url)}
-			<li>
+			<li data-tour={navTourKey(item.url)}>
 				<a
 					href={resolveMenuUrl(item.url)}
 					target={item.target === '_blank' ? '_blank' : undefined}
@@ -115,7 +130,7 @@
 	</ul>
 
 	<!-- Account (bottom) — no space switcher or compose button on Learn -->
-	<div class="border-t border-[var(--color-border)] p-2">
+	<div class="border-t border-[var(--color-border)] p-2" data-tour="learn-account">
 		{#if user}
 			<a
 				href={profileUrl(user.username)}

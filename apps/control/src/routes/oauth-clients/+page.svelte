@@ -5,7 +5,7 @@
 	import { api } from '$lib/api';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
-	import { Dialog } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
 	import { KeyRound, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Copy, Check } from 'lucide-svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
@@ -321,9 +321,7 @@
 />
 
 {#if showCreateModal}
-	<Dialog.Root bind:open={showCreateModal}>
-		<Dialog.Content class="bg-background border-border-card shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6">
-			<Dialog.Title class="text-foreground mb-4 text-lg font-semibold">{t('oauth_clients.create_title', 'Create OAuth Client')}</Dialog.Title>
+	<Modal bind:open={showCreateModal} title={t('oauth_clients.create_title', 'Create OAuth Client')}>
 			<form onsubmit={(e) => { e.preventDefault(); createClient(); }} class="space-y-4">
 				<div>
 					<label for="oauth-name" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.name_label', 'Name')}</label>
@@ -365,8 +363,7 @@
 					</button>
 				</div>
 			</form>
-		</Dialog.Content>
-	</Dialog.Root>
+	</Modal>
 {/if}
 
 {#if pendingDeleteId}
@@ -392,16 +389,7 @@
 {/if}
 
 {#if showSecretReveal}
-	<Dialog.Root bind:open={showSecretReveal} onOpenChange={closeSecretReveal}>
-		<Dialog.Portal>
-			<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out" />
-			<Dialog.Content
-				class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
-				role="dialog"
-				aria-modal="true"
-			>
-				<Dialog.Title class="text-foreground mb-2 text-lg font-semibold">{t('oauth_clients.secret_reveal_title', 'Client Secret')}</Dialog.Title>
-				<p class="text-muted-foreground text-sm">{t('oauth_clients.secret_reveal_desc', 'Copy this secret now. It will not be shown again.')}</p>
+	<Modal bind:open={showSecretReveal} onOpenChange={closeSecretReveal} title={t('oauth_clients.secret_reveal_title', 'Client Secret')} description={t('oauth_clients.secret_reveal_desc', 'Copy this secret now. It will not be shown again.')}>
 				<div class="mt-4 flex items-center gap-2">
 					<input
 						type="text"
@@ -431,7 +419,5 @@
 						{t('common.close', 'Close')}
 					</button>
 				</div>
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	</Modal>
 {/if}

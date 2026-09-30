@@ -17,9 +17,11 @@ export const load: PageServerLoad = async (event) => {
 	}
 	const ctx = apiContext(event);
 	const folderId = event.url.searchParams.get('folder');
+	// page_size=100 (endpoint max) — the default is 20 and the response has no
+	// meta total, so the client pages further via page_offset.
 	const bookmarksPath = folderId
-		? `/me/bookmarks?folder_id=${encodeURIComponent(folderId)}`
-		: '/me/bookmarks';
+		? `/me/bookmarks?folder_id=${encodeURIComponent(folderId)}&page_size=100`
+		: '/me/bookmarks?page_size=100';
 	const [bookmarksRes, foldersRes] = await Promise.all([
 		apiList<Bookmark>(ctx, bookmarksPath),
 		apiList<BookmarkFolder>(ctx, '/me/bookmark-folders')

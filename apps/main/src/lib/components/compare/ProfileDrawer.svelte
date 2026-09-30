@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
+	import { currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
 	import type { ComparisonProfile, ComparisonProfileInput, ProfileStat } from '$lib/types/jce';
 	import { createProfile, updateProfile, deleteProfile, searchSpaces, getProfileStats } from '$lib/api/jce';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
@@ -28,6 +30,16 @@
 
 	type View = 'select' | 'edit';
 	let view = $state<View>('select');
+
+	// §58 — managed currency options for the budget_currency picker's
+	// "NGN — Nigerian Naira" labels; falls back to a free-text input when
+	// the currency list is unavailable.
+	const currencyOptions = $derived(
+		(page.data.currencies as CurrencyInfo[] | undefined)?.map((c) => ({
+			value: c.code,
+			label: currencyLabel(c.code, page.data.currencies as CurrencyInfo[])
+		})) ?? []
+	);
 
 	type WeightedDraft = { key: string; weight: number };
 	type Draft = {
@@ -730,12 +742,23 @@
 									<span class="text-xs" style="color: var(--color-muted)">
 										{t('jce.profile.demographics.budget_currency')}
 									</span>
-									<input
-										type="text"
-										bind:value={draft.budget_currency}
-										class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
-										style="border-color: var(--color-border); color: var(--color-text)"
-									/>
+									{#if currencyOptions.length > 0}
+										<JceSelect
+											options={[
+												{ value: '', label: t('jce.profile.currency_select', 'Select a currency') },
+												...currencyOptions
+											]}
+											value={draft.budget_currency}
+											onchange={(value) => (draft.budget_currency = value)}
+										/>
+									{:else}
+										<input
+											type="text"
+											bind:value={draft.budget_currency}
+											class="w-full rounded-[var(--radius-button)] border bg-[var(--color-surface)] px-3 py-2 text-sm outline-none"
+											style="border-color: var(--color-border); color: var(--color-text)"
+										/>
+									{/if}
 								</label>
 							</div>
 						</div>

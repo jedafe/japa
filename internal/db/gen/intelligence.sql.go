@@ -1908,6 +1908,97 @@ func (q *Queries) ListPublicSourcesRecent(ctx context.Context, arg ListPublicSou
 	return items, nil
 }
 
+const listPublicSourcesRising = `-- name: ListPublicSourcesRising :many
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
+WHERE enabled = true
+ AND status = 'active'
+ AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND created_at > now() - interval '7 days'
+ORDER BY follower_count DESC, post_count DESC
+LIMIT $4 OFFSET $5
+`
+
+type ListPublicSourcesRisingParams struct {
+	Column1 string `json:"column_1"`
+	Column2 string `json:"column_2"`
+	Column3 string `json:"column_3"`
+	Limit   int32  `json:"limit"`
+	Offset  int32  `json:"offset"`
+}
+
+// "Rising" = trending restricted to a 7-day creation window — the sources-
+// directory v2 plan seeded this as a collection (sort=trending&
+// created_after=7d); it is now a first-class ?sort= value instead.
+func (q *Queries) ListPublicSourcesRising(ctx context.Context, arg ListPublicSourcesRisingParams) ([]IntelSource, error) {
+	rows, err := q.db.Query(ctx, listPublicSourcesRising,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IntelSource
+	for rows.Next() {
+		var i IntelSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Domain,
+			&i.SourceUrl,
+			&i.Category,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.CrawlMethod,
+			&i.CrawlFrequency,
+			&i.CrawlFrequencyMins,
+			&i.RobotsPolicy,
+			&i.SourceLicense,
+			&i.AttributionRequired,
+			&i.UsageRestriction,
+			&i.ProviderConfig,
+			&i.Enabled,
+			&i.LastCrawledAt,
+			&i.LastSuccessAt,
+			&i.LastErrorAt,
+			&i.LastErrorMessage,
+			&i.LastChangedAt,
+			&i.ConsecutiveFailures,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.Slug,
+			&i.Description,
+			&i.LogoUrl,
+			&i.FollowerCount,
+			&i.PostCount,
+			&i.SourceKind,
+			&i.Keywords,
+			&i.Categories,
+			&i.ProbeReport,
+			&i.DetectedMethods,
+			&i.LastProbedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPublicSourcesTrending = `-- name: ListPublicSourcesTrending :many
 SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
 WHERE enabled = true

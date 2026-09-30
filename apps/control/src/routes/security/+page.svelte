@@ -4,7 +4,10 @@
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Tabs, Select, Dialog } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { api } from '$lib/api';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
@@ -638,47 +641,21 @@
 	<MetricCard label={t('security.ip_blocks', 'IP Blocks')} value={ipBlocks.length} />
 </div>
 
-<Tabs.Root bind:value={activeTab}>
-	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
-		<Tabs.Trigger value="scan-findings" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('security.scan_findings')}
-		</Tabs.Trigger>
-		<Tabs.Trigger value="ip-blocks" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('security.ip_blocks')}
-			<span class="bg-accent text-accent-foreground ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium">
-				{ipBlocks.length}
-			</span>
-		</Tabs.Trigger>
-	</Tabs.List>
-
-	<Tabs.Content value="scan-findings" class="mt-4">
+<Tabs
+	bind:value={activeTab}
+	tabs={[
+		{ value: 'scan-findings', label: t('security.scan_findings') },
+		{ value: 'ip-blocks', label: t('security.ip_blocks'), badge: ipBlocks.length }
+	]}
+>
+	<TabsContent value="scan-findings">
 		<div class="mb-4 flex items-center gap-3">
-			<Select.Root type="single" bind:value={filterSeverity} items={severityItems}>
-				<Select.Trigger
-					class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-9 items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
-					aria-label={t('security.filter_severity')}
-				>
-					<Select.Value placeholder={t('security.severity_all')} />
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
-						<Select.Viewport class="p-1">
-							{#each severityItems as item}
-								<Select.Item
-									class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-									value={item.value}
-									label={item.label}
-								>
-									{#snippet children({ selected })}
-										{item.label}
-										{#if selected}<span class="ml-auto">✓</span>{/if}
-									{/snippet}
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+			<Select
+				bind:value={filterSeverity}
+				items={severityItems}
+				placeholder={t('security.severity_all')}
+				ariaLabel={t('security.filter_severity')}
+			/>
 			<button
 				type="button"
 				class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-sm font-medium transition-colors"
@@ -721,9 +698,9 @@
 			rowActions={scanRowActions}
 			bulkActions={scanBulkActions}
 		/>
-	</Tabs.Content>
+	</TabsContent>
 
-	<Tabs.Content value="ip-blocks" class="mt-4">
+	<TabsContent value="ip-blocks">
 		<div class="mb-4 flex items-center justify-between gap-3">
 			<SearchInput bind:value={ipSearchQuery} placeholder={t('security.search_ip_blocks', 'Search IP blocks...')} class="w-64" />
 			<button
@@ -752,24 +729,15 @@
 			selectable={true}
 			bind:selectedIds={selectedIpIds}
 		/>
-	</Tabs.Content>
-</Tabs.Root>
+	</TabsContent>
+</Tabs>
 
-<Dialog.Root bind:open={showCreateModal} onOpenChange={(isOpen) => { if (!isOpen) { cidr = ''; blockType = 'full'; reason = ''; createError = ''; } }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-0"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<div class="border-border-card flex items-center justify-between border-b px-6 py-4">
-				<Dialog.Title class="text-foreground text-lg font-semibold">{t('security.add_title')}</Dialog.Title>
-				<Dialog.Close class="hover:bg-dark-04 rounded-9px p-1.5 transition-colors">
-					<span class="sr-only">{t('common.close')}</span>
-					✕
-				</Dialog.Close>
-			</div>
-			<div class="px-6 py-4">
+<Modal
+	bind:open={showCreateModal}
+	onOpenChange={(isOpen) => { if (!isOpen) { cidr = ''; blockType = 'full'; reason = ''; createError = ''; } }}
+	title={t('security.add_title')}
+>
+	{#snippet children(close)}
 				{#if createError}
 					<div class="border-destructive bg-destructive/10 text-destructive mb-4 rounded-lg border px-3 py-2 text-xs">
 						{createError}
@@ -789,32 +757,13 @@
 
 				<div class="mb-4">
 					<label for="block-type-select" class="text-foreground mb-1 block text-sm font-medium">{t('security.block_type_label')}</label>
-					<Select.Root type="single" bind:value={blockType} items={blockTypeItems}>
-						<Select.Trigger
-							class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 w-full items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
-							aria-label={t('security.block_type_label')}
-						>
-							<Select.Value placeholder={t('security.block_type')} />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
-								<Select.Viewport class="p-1">
-									{#each blockTypeItems as item}
-										<Select.Item
-											class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-											value={item.value}
-											label={item.label}
-										>
-											{#snippet children({ selected })}
-												{item.label}
-												{#if selected}<span class="ml-auto">✓</span>{/if}
-											{/snippet}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Select
+						bind:value={blockType}
+						items={blockTypeItems}
+						placeholder={t('security.block_type')}
+						ariaLabel={t('security.block_type_label')}
+						triggerClass="h-10 w-full"
+					/>
 				</div>
 
 				<div class="mb-6">
@@ -829,11 +778,14 @@
 						bind:value={reason}
 					/>
 				</div>
-			</div>
-			<div class="border-border-card flex justify-end gap-3 border-t px-6 py-4">
-				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
+			<div class="mt-6 flex justify-end gap-3">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={close}
+				>
 					{t('common.cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					type="button"
 					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
@@ -843,9 +795,8 @@
 					{createLoading ? t('security.creating') : t('security.create_block')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>
 
 <ConfirmModal
 	bind:open={showDeleteConfirm}

@@ -171,13 +171,15 @@ const getCurrencyByCountryCode = `-- name: GetCurrencyByCountryCode :one
 SELECT c.code, c.name, c.symbol, c.credits_per_unit, c.is_active, c.position, c.created_at, c.updated_at
 FROM currencies c
 JOIN spaces s ON s.currency_code = c.code
-WHERE s.geo_code = $1 AND s.level = 'country'
+WHERE s.geo_code = $1 AND s.level = 'country' AND c.is_active
 LIMIT 1
 `
 
 // =====================
 // Country → Currency resolution
 // =====================
+// Wallet resolver only — must skip inactive reference currencies so
+// unsupported countries fall through to the default currency.
 func (q *Queries) GetCurrencyByCountryCode(ctx context.Context, geoCode *string) (Currency, error) {
 	row := q.db.QueryRow(ctx, getCurrencyByCountryCode, geoCode)
 	var i Currency

@@ -12,11 +12,21 @@ import { wikiDrillChain } from '$lib/utils/wikiTypeChain';
  * (country today) — children live on each parent's directory category
  * pages (/wiki/{country}/states), so the landing needs only the root
  * level and a search that spans every enabled type.
+ *
+ * §80 Reader UX: ?page= + ?sort= (name|page_count) drive server-side
+ * pagination — the page size comes from wiki.destinations_page_limit
+ * when no explicit limit is requested.
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 
+	const rawPage = parseInt(event.url.searchParams.get('page') ?? '1', 10);
+	const pageNo = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+	const sort = event.url.searchParams.get('sort') === 'page_count' ? 'page_count' : 'name';
+
 	let destinations: WikiDestination[] = [];
+	let total = 0;
+	let limit = 0;
 	let types: WikiTypeItem[] = [];
 	let chain: WikiTypeItem[] = [];
 	try {
@@ -28,15 +38,20 @@ export const load: PageServerLoad = async (event) => {
 
 		const rootSlug = chain[0]?.space_type_slug ?? '';
 		if (rootSlug) {
-			const rootDest = await apiList<WikiDestination>(
-				ctx,
-				`/wiki/destinations?level=${encodeURIComponent(rootSlug)}&has_wiki=false`
-			);
+			const usp = new URLSearchParams({
+				level: rootSlug,
+				has_wiki: 'false',
+				sort,
+				page: String(pageNo)
+			});
+			const rootDest = await apiList<WikiDestination>(ctx, `/wiki/destinations?${usp.toString()}`);
 			destinations = rootDest?.items ?? [];
+			total = rootDest?.meta?.total ?? destinations.length;
+			limit = rootDest?.meta?.limit ?? 0;
 		}
 	} catch {
 		/* degrade to empty list */
 	}
 
-	return { destinations, types, chain };
+	return { destinations, total, page: pageNo, limit, sort, types, chain };
 };

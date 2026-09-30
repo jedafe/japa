@@ -334,6 +334,20 @@ WHERE enabled = true
 ORDER BY follower_count DESC, post_count DESC
 LIMIT $4 OFFSET $5;
 
+-- name: ListPublicSourcesRising :many
+-- "Rising" = trending restricted to a 7-day creation window — the sources-
+-- directory v2 plan seeded this as a collection (sort=trending&
+-- created_after=7d); it is now a first-class ?sort= value instead.
+SELECT * FROM intel_sources
+WHERE enabled = true
+ AND status = 'active'
+ AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND created_at > now() - interval '7 days'
+ORDER BY follower_count DESC, post_count DESC
+LIMIT $4 OFFSET $5;
+
 -- name: CountPublicSources :one
 SELECT COUNT(*) FROM intel_sources
 WHERE enabled = true

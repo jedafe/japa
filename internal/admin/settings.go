@@ -652,6 +652,11 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	// Currency-valued fields take their options from the managed currencies
+	// table — the static option lists predate operator-managed currencies
+	// (§58, Rule 16).
+	currencyCodes := h.currencySettingCodes(ctx)
+
 	// Build a map of stored values keyed by the short key (after the dot).
 	stored := make(map[string]any)
 
@@ -684,6 +689,11 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 		for i, s := range def.Settings {
 			settings[i] = s
 
+			if len(currencyCodes) > 0 && isCurrencySetting(catKey, s.Key) {
+				settings[i].Type = "select"
+				settings[i].Options = currencyCodes
+			}
+
 			if val, exists := stored[s.Key]; exists {
 				if s.Masked {
 					settings[i].Value = "***"
@@ -701,6 +711,34 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
+}
+
+// isCurrencySetting reports whether a category/key pair holds an ISO 4217
+// currency code drawn from the managed currencies table (§58). Keys here are
+// the short form (after the first dot) within their category.
+func isCurrencySetting(category, key string) bool {
+	switch category {
+	case "payment":
+		return key == "currency" // payment.currency
+	case "wallet":
+		return key == "default_currency" // wallet.default_currency
+	}
+	return false
+}
+
+// currencySettingCodes returns the active currency codes for select-type
+// currency settings. Empty slice when the table can't be read — callers keep
+// the static options/type declared in defaultSettings.
+func (h *Handlers) currencySettingCodes(ctx context.Context) []string {
+	currencies, err := gen.New(h.DB.Reader).ListActiveCurrencies(ctx)
+	if err != nil || len(currencies) == 0 {
+		return nil
+	}
+	codes := make([]string, 0, len(currencies))
+	for _, c := range currencies {
+		codes = append(codes, c.Code)
+	}
+	return codes
 }
 
 // ---------------------------------------------------------------------------

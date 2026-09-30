@@ -25,5 +25,7 @@ export const getFeedContext = () => api.get<VisitorContextSummary>('/feed/contex
 
 export const getJourneyOptions = () => api.get<JourneyOptions>('/feed/journey-options');
 
+// The guest journey token is delivered via the jc_journey_token Set-Cookie
+// header and a top-level envelope sidecar — it is not part of `data`.
 export const setFeedContext = (input: Partial<JourneyContextInput>) =>
-	api.post<VisitorContextSummary & { token: string }>('/feed/context', input);
+	api.post<VisitorContextSummary>('/feed/context', input);

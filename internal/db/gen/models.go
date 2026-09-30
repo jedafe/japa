@@ -2663,14 +2663,17 @@ type OauthAccount struct {
 }
 
 type OnboardingState struct {
-	ID            pgtype.UUID        `json:"id"`
-	UserID        pgtype.UUID        `json:"user_id"`
-	CurrentStep   int32              `json:"current_step"`
-	Completed     bool               `json:"completed"`
-	StepData      []byte             `json:"step_data"`
-	TourDismissed bool               `json:"tour_dismissed"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	CurrentStep    int32              `json:"current_step"`
+	Completed      bool               `json:"completed"`
+	StepData       []byte             `json:"step_data"`
+	TourDismissed  bool               `json:"tour_dismissed"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	TourDismissals []byte             `json:"tour_dismissals"`
+	ReminderCount  int32              `json:"reminder_count"`
+	LastReminderAt pgtype.Timestamptz `json:"last_reminder_at"`
 }
 
 type OnboardingTemplate struct {
@@ -4432,6 +4435,15 @@ type WikiPage struct {
 	PageTemplateID     pgtype.UUID        `json:"page_template_id"`
 	FieldGroupID       pgtype.UUID        `json:"field_group_id"`
 	Position           int32              `json:"position"`
+}
+
+type WikiPageFeedback struct {
+	ID         pgtype.UUID        `json:"id"`
+	WikiPageID pgtype.UUID        `json:"wiki_page_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Vote       string             `json:"vote"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 }
 
 type WikiRevision struct {

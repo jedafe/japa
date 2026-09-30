@@ -2,8 +2,8 @@
 	// Modal dialog for creating a new blog series (POST /blog/series).
 	// Mirrors SpaceCreationModal — uses bits-ui Dialog, auto-generates slug
 	// from title, and calls onCreated on success instead of navigating.
-	import { Dialog } from 'bits-ui';
-	import { X, Plus, Loader2 } from 'lucide-svelte';
+	import { Modal } from '$lib/components/ui';
+	import { Plus, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { createSeries } from '$lib/api/create';
 	import { suggestSlug } from '../slug';
@@ -68,19 +68,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open onOpenChange={(isOpen) => { if (!isOpen) reset(); }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-			<Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]">
-				<X size={20} />
-			</Dialog.Close>
-
-			<div class="mb-4 flex items-center gap-2">
-				<Plus size={20} class="text-[var(--color-primary)]" />
-				<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('create.series.create_title')}</h2>
-			</div>
-
+<Modal bind:open onOpenChange={(isOpen) => { if (!isOpen) reset(); }} icon={Plus} title={t('create.series.create_title')} overlayClass="backdrop-blur-sm" size="max-w-[480px]">
 			<form onsubmit={submit} class="space-y-3">
 				<div>
 					<label for="series-title" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('create.series.title_label')}</label>
@@ -137,6 +125,4 @@
 					</button>
 				</div>
 			</form>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>

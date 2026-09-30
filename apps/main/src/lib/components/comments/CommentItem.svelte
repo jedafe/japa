@@ -12,7 +12,7 @@
 		MoreHorizontal,
 		Check
 	} from 'lucide-svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { api } from '$lib/api/client';
 	import { t, i18n } from '$lib/i18n';
@@ -332,8 +332,7 @@
 
 	const iconBtn =
 		'grid h-8 w-8 place-items-center rounded-[var(--radius)] transition-colors disabled:opacity-50';
-	const menuItem =
-		'flex w-full cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]';
+
 </script>
 
 <article
@@ -529,48 +528,26 @@
 						{#if copied}<Check size={18} class="text-[var(--color-success)]" />{:else}<Share2 size={18} />{/if}
 					</button>
 
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger
-							class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
-							aria-label={t('comments.options', 'More options')}
-							title={t('comments.options', 'More options')}
-						>
-							<MoreHorizontal size={18} />
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Portal>
-							<DropdownMenu.Content
-								align="end"
-								sideOffset={8}
-								class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+					<Menu contentClass="min-w-44">
+						{#snippet trigger(props)}
+							<button
+								type="button"
+								{...props}
+								class="{iconBtn} text-[var(--color-muted)] hover:text-[var(--color-text)]"
+								aria-label={t('comments.options', 'More options')}
+								title={t('comments.options', 'More options')}
 							>
-								{#if isAuthor && !deleted}
-									<DropdownMenu.Item class={menuItem}>
-										{#snippet child({ props })}
-											<button type="button" onclick={startEdit} {...props}>
-												<Pencil size={16} /> {t('comments.edit')}
-											</button>
-										{/snippet}
-									</DropdownMenu.Item>
-									<DropdownMenu.Item class={menuItem}>
-										{#snippet child({ props })}
-											<button type="button" onclick={deleteComment} disabled={deletePending} {...props}>
-												<Trash2 size={16} /> {t('comments.delete')}
-											</button>
-										{/snippet}
-									</DropdownMenu.Item>
-								{/if}
-								{#if canModerate && !deleted}
-									<DropdownMenu.Item class={menuItem}>
-										{#snippet child({ props })}
-											<button type="button" onclick={togglePin} disabled={pinPending} {...props}>
-												<Pin size={16} /> {pinned ? t('comments.unpin') : t('comments.pin')}
-											</button>
-										{/snippet}
-									</DropdownMenu.Item>
-								{/if}
-							</DropdownMenu.Content>
-						</DropdownMenu.Portal>
-					</DropdownMenu.Root>
+								<MoreHorizontal size={18} />
+							</button>
+						{/snippet}
+						{#if isAuthor && !deleted}
+							<MenuItem icon={Pencil} onSelect={startEdit}>{t('comments.edit')}</MenuItem>
+							<MenuItem icon={Trash2} onSelect={deleteComment} disabled={deletePending}>{t('comments.delete')}</MenuItem>
+						{/if}
+						{#if canModerate && !deleted}
+							<MenuItem icon={Pin} onSelect={togglePin} disabled={pinPending}>{pinned ? t('comments.unpin') : t('comments.pin')}</MenuItem>
+						{/if}
+					</Menu>
 
 					<span class="ml-auto text-xs text-[var(--color-muted)]" title={t('comments.see_upvoters', 'See who upvoted')}>
 						{upvotes === 1 ? '1 upvote' : t('comments.upvote_count', '{count} upvotes').replace('{count}', String(upvotes))}

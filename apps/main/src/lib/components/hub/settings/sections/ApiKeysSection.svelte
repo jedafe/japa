@@ -2,21 +2,23 @@
 	/**
 	 * API Keys settings — Section 50 (Developer).
 	 *
-	 * Create, rotate, and revoke API keys. Scopes are selectable via a
-	 * multi-select dropdown populated from GET /developer/scopes (Rule 16 —
-	 * no hardcoded scope list).
+	 * Create, rotate, and revoke API keys. Scopes are selectable via an
+	 * Autocomplete-powered picker populated from GET /developer/scopes
+	 * (Rule 16 — no hardcoded scope list); each pick appends a scope chip.
 	 *
 	 * Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
 	 */
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { untrack, onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { createApiKey, createExtensionToken, rotateApiKey, revokeApiKey } from '$lib/api/hub';
 	import { optimisticAction } from '$lib/components/hub/optimisticAction';
-	import { invalidate } from '$app/navigation';
+	import { invalidateAll } from '$app/navigation';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Key, ChevronDown, Check, X } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import { Key, X } from 'lucide-svelte';
 	import ApiKeyRevealDialog from '../flows/ApiKeyRevealDialog.svelte';
 
 	interface ApiKey {
@@ -66,19 +68,23 @@
 	let detailLoading = $state(false);
 	let detailAllowlist = $state<ApiKeyIPAllowlist[]>([]);
 
+	// Re-seed the list when the server payload changes (invalidateAll re-runs
+	// the loader after create/rotate/revoke; the untracked init would
+	// otherwise keep the stale array — same fix class as BUG-P014).
+	$effect(() => {
+		keys = (data as ApiKey[] | null) ?? [];
+	});
+
 	// Scope catalog from GET /developer/scopes (Rule 16 — no hardcoded list).
 	let scopes = $state<ScopeOption[]>([]);
-	let scopeDropdownOpen = $state(false);
 
 	onMount(async () => {
 		const res = await api.get<ScopeOption[]>('/developer/scopes');
 		if (res.data) scopes = res.data;
 	});
 
-	function toggleScope(value: string) {
-		if (selectedScopes.includes(value)) {
-			selectedScopes = selectedScopes.filter((s) => s !== value);
-		} else {
+	function addScope(value: string) {
+		if (!selectedScopes.includes(value)) {
 			selectedScopes = [...selectedScopes, value];
 		}
 	}
@@ -86,6 +92,16 @@
 	function removeScope(value: string) {
 		selectedScopes = selectedScopes.filter((s) => s !== value);
 	}
+
+	// Autocomplete over the scope catalog, minus scopes already picked —
+	// the picker is an "add scope" combobox; chips handle removal.
+	const scopeFetcher = $derived(
+		staticAutocompleteFetcher(
+			scopes
+				.filter((s) => !selectedScopes.includes(s.value))
+				.map((s) => ({ id: s.value, label: s.label, sublabel: s.description }))
+		)
+	);
 
 	function scopeLabel(value: string): string {
 		return scopes.find((s) => s.value === value)?.label ?? value;
@@ -106,7 +122,10 @@
 		revealOpen = true;
 		newName = '';
 		selectedScopes = [];
-		await invalidate('/api/v1/me/api-keys');
+		// invalidateAll — the list is SSR-fetched via the backend base URL,
+		// so invalidating the browser-relative '/api/v1/...' path matches
+		// nothing and the new key never appeared (dead invalidation).
+		await invalidateAll();
 	}
 
 	// Browser-extension mint (Section 47 v1.3) — scopes are fixed
@@ -123,7 +142,7 @@
 		}
 		revealedKey = res.data?.key ?? '';
 		revealOpen = true;
-		await invalidate('/api/v1/me/api-keys');
+		await invalidateAll();
 	}
 
 	async function doRotate(id: string) {
@@ -135,7 +154,7 @@
 		}
 		revealedKey = res.data?.key ?? '';
 		revealOpen = true;
-		await invalidate('/api/v1/me/api-keys');
+		await invalidateAll();
 	}
 
 	async function doRevoke() {
@@ -220,61 +239,20 @@
 				</div>
 			{/if}
 
-			<!-- Dropdown trigger -->
-			<div class="relative">
-				<button
-					type="button"
-					onclick={() => (scopeDropdownOpen = !scopeDropdownOpen)}
-					class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-					aria-expanded={scopeDropdownOpen}
-					aria-label={t('settings.apikeys.select_scopes', 'Select scopes')}
-				>
-					<span class={selectedScopes.length === 0 ? 'text-[var(--color-muted)]' : ''}>
-						{selectedScopes.length === 0
-							? t('settings.apikeys.select_scopes', 'Select scopes...')
-							: t('settings.apikeys.scopes_selected', '{count} selected').replace('{count}', String(selectedScopes.length))}
-					</span>
-					<ChevronDown size={16} class="transition-transform {scopeDropdownOpen ? 'rotate-180' : ''}" />
-				</button>
-
-				{#if scopeDropdownOpen}
-					<!-- Click-outside backdrop -->
-					<button
-						type="button"
-						class="fixed inset-0 z-40 cursor-default"
-						aria-hidden="true"
-						tabindex="-1"
-						onclick={() => (scopeDropdownOpen = false)}
-					></button>
-
-					<!-- Scope dropdown panel -->
-					<div class="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg">
-						{#if scopes.length === 0}
-							<div class="px-3 py-2 text-sm text-[var(--color-muted)]">
-								{t('settings.apikeys.scopes_loading', 'Loading scopes...')}
-							</div>
-						{:else}
-							{#each scopes as scope (scope.value)}
-								<button
-									type="button"
-									class="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--color-surface-subtle)]"
-									onclick={() => toggleScope(scope.value)}
-								>
-									<span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-[var(--color-border)] {selectedScopes.includes(scope.value) ? 'bg-[var(--color-primary)] text-white' : ''}">
-										{#if selectedScopes.includes(scope.value)}
-											<Check size={12} />
-										{/if}
-									</span>
-									<span class="min-w-0 flex-1">
-										<span class="block text-sm font-medium text-[var(--color-text)]">{scope.label}</span>
-										<span class="block text-xs text-[var(--color-muted)]">{scope.description}</span>
-									</span>
-								</button>
-							{/each}
-						{/if}
-					</div>
-				{/if}
-			</div>
+			<!-- Scope picker — Autocomplete combobox; each pick appends a chip
+			     above. Options exclude already-selected scopes. -->
+			<Autocomplete
+				placeholder={scopes.length === 0
+					? t('settings.apikeys.scopes_loading', 'Loading scopes...')
+					: t('settings.apikeys.select_scopes', 'Select scopes...')}
+				ariaLabel={t('settings.apikeys.select_scopes', 'Select scopes')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={scopeFetcher}
+				initialFetcher={scopeFetcher}
+				selectedId={null}
+				onSelect={(item) => addScope(item.id)}
+				disabled={creating}
+			/>
 		</div>
 
 		{#if error}<p class="text-xs text-[var(--color-danger)]">{error}</p>{/if}
@@ -354,42 +332,25 @@
 
 	<ApiKeyRevealDialog bind:open={revealOpen} apiKey={revealedKey} onClose={onRevealClose} />
 
-	<Dialog.Root open={revokeTarget !== null} onOpenChange={(v) => { if (!v) revokeTarget = null; }}>
-		<Dialog.Portal>
-			<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-				<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-					{t('settings.apikeys.revoke_confirm')}
-				</Dialog.Title>
-				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-					{t('settings.apikeys.revoke_confirm_body')}
-				</Dialog.Description>
-				<div class="flex justify-end gap-2">
-					<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
-						{t('common.cancel')}
-					</Dialog.Close>
-					<button
-						type="button"
-						class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white"
-						onclick={doRevoke}
-					>
-						{t('settings.apikeys.revoke')}
-					</button>
-				</div>
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	<Modal open={revokeTarget !== null} onOpenChange={(v) => { if (!v) revokeTarget = null; }} title={t('settings.apikeys.revoke_confirm')} description={t('settings.apikeys.revoke_confirm_body')} size="md">
+		{#snippet children(close)}
+			<div class="flex justify-end gap-2">
+				<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
+					{t('common.cancel')}
+				</button>
+				<button
+					type="button"
+					class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white"
+					onclick={doRevoke}
+				>
+					{t('settings.apikeys.revoke')}
+				</button>
+			</div>
+		{/snippet}
+	</Modal>
 
-	<Dialog.Root open={detailOpen} onOpenChange={(v) => { if (!v) closeDetail(); }}>
-		<Dialog.Portal>
-			<Dialog.Content class="z-50 max-h-[80vh] w-full max-w-md overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-				{#if detailKey}
-					<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-						{t('settings.apikeys.detail_title')}
-					</Dialog.Title>
-					<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-						{detailKey.name}
-					</Dialog.Description>
-
+	<Modal open={detailOpen} onOpenChange={(v) => { if (!v) closeDetail(); }} title={t('settings.apikeys.detail_title')} description={detailKey?.name} size="md">
+			{#if detailKey}
 					{#if detailLoading}
 						<p class="text-sm text-[var(--color-muted)]">{t('settings.apikeys.loading')}</p>
 					{:else}
@@ -437,7 +398,5 @@
 				{:else}
 					<p class="text-sm text-[var(--color-muted)]">{t('settings.apikeys.loading')}</p>
 				{/if}
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	</Modal>
 </section>

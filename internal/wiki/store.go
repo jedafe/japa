@@ -93,16 +93,19 @@ type AdminWikiPageWithSpace struct {
 
 // WikiDestination is a wiki-bearing space with its active wiki page count.
 // Region is set on country-level spaces and mirrors the spaces.region value
-// (Africa, Americas, Asia, Europe, Oceania).
+// (Africa, Americas, Asia, Europe, Oceania). LogoMediaID + Description feed
+// the §80 Reader UX card fields (logo_url resolved via the media service).
 // //nolint:revive // exported: stutter naming is intentional
 type WikiDestination struct {
-	SpaceID   pgtype.UUID
-	Slug      string
-	Name      string
-	GeoCode   *string
-	Region    *string
-	Level     string
-	PageCount int64
+	SpaceID     pgtype.UUID
+	Slug        string
+	Name        string
+	GeoCode     *string
+	Region      *string
+	Level       string
+	LogoMediaID pgtype.UUID
+	Description *string
+	PageCount   int64
 }
 
 // WikiRevision represents a single revision row.
@@ -142,6 +145,9 @@ type WikiRevision struct {
 	DeletedAt       pgtype.Timestamptz
 	SubmittedByName *string
 	ReviewedByName  *string
+	// SubmittedByAvatarURL is the submitter's user_profiles.avatar_url —
+	// populated only by GetApprovedRevision (§80 Reader UX byline).
+	SubmittedByAvatarURL *string
 }
 
 // strPtrOrNil maps a COALESCE'd username column (” when the LEFT JOIN missed)
@@ -250,11 +256,13 @@ func mapRevision(
 }
 
 func revisionFromApprovedRow(r gen.GetApprovedWikiRevisionRow) WikiRevision {
-	return mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
+	rev := mapRevision(r.ID, r.WikiPageID, r.Content, r.Summary, r.Kind, r.Ops,
 		r.TargetEntityType, r.TargetEntityID, r.Status, r.SubmittedBy,
 		r.ReviewedBy, r.ReviewedAt, r.ApplyError, r.AiGenerated, r.AiModel,
 		r.AiPromptHash, r.HitlReviewedBy, r.HitlReviewedAt, r.HitlReviewNotes,
 		r.CreatedAt, r.SubmittedByName, "")
+	rev.SubmittedByAvatarURL = r.SubmittedByAvatarUrl
+	return rev
 }
 
 func revisionFromListRow(r gen.ListWikiRevisionsRow) WikiRevision {
@@ -373,14 +381,20 @@ func (s *Store) ListWikiPagesBySpaceID(ctx context.Context, spaceID pgtype.UUID)
 // space_parent_spaces junction and parent_id, including descendants of the
 // target (e.g. a state matches its cities' universities). When hasWiki is
 // true, only spaces with at least one active wiki page are returned.
-func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool) ([]WikiDestination, error) {
+// §80 Reader UX: sort is the validated sort key ('name'|'page_count');
+// pageLimit 0 renders the full (unpaginated) list — the LIMIT NULLIF treats
+// 0 as ALL — while pageOffset only applies when pageLimit > 0.
+func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool, sort string, pageLimit, pageOffset int32) ([]WikiDestination, error) {
 	rows, err := s.read.ListWikiDestinations(ctx, gen.ListWikiDestinationsParams{
-		Level:   level,
-		Region:  region,
-		Search:  search,
-		Parent:  parentSlug,
-		Within:  within,
-		HasWiki: hasWiki,
+		Level:      level,
+		Region:     region,
+		Search:     search,
+		Parent:     parentSlug,
+		Within:     within,
+		HasWiki:    hasWiki,
+		Sort:       sort,
+		PageOffset: pageOffset,
+		PageLimit:  pageLimit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("wiki: list destinations: %w", err)
@@ -389,14 +403,102 @@ func (s *Store) ListWikiDestinations(ctx context.Context, level, parentSlug, reg
 	out := make([]WikiDestination, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, WikiDestination{
-			SpaceID:   r.ID,
-			Slug:      r.Slug,
-			Name:      r.Name,
-			GeoCode:   r.GeoCode,
-			Region:    r.Region,
-			Level:     r.Level,
-			PageCount: r.PageCount,
+			SpaceID:     r.ID,
+			Slug:        r.Slug,
+			Name:        r.Name,
+			GeoCode:     r.GeoCode,
+			Region:      r.Region,
+			Level:       r.Level,
+			LogoMediaID: r.LogoMediaID,
+			Description: r.Description,
+			PageCount:   r.PageCount,
 		})
+	}
+
+	return out, nil
+}
+
+// CountWikiDestinations returns the total matching the destinations filters
+// (pre-pagination) for the §80 Reader UX `total` envelope field.
+func (s *Store) CountWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool) (int64, error) {
+	total, err := s.read.CountWikiDestinations(ctx, gen.CountWikiDestinationsParams{
+		Level:   level,
+		Region:  region,
+		Search:  search,
+		Parent:  parentSlug,
+		Within:  within,
+		HasWiki: hasWiki,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("wiki: count destinations: %w", err)
+	}
+
+	return total, nil
+}
+
+// WikiPageFeedbackCounts is the aggregated helpful-vote read for one page.
+// MyVote is the viewer's current vote ("up"|"down"|"" — empty for guests
+// and members who haven't voted).
+type WikiPageFeedbackCounts struct {
+	Up     int64
+	Down   int64
+	MyVote string
+}
+
+// UpsertPageFeedback records or switches the member's vote on a page.
+func (s *Store) UpsertPageFeedback(ctx context.Context, pageID, userID pgtype.UUID, vote string) error {
+	if _, err := s.write.UpsertWikiPageFeedback(ctx, gen.UpsertWikiPageFeedbackParams{
+		WikiPageID: pageID,
+		UserID:     userID,
+		Vote:       vote,
+	}); err != nil {
+		return fmt.Errorf("wiki: upsert page feedback: %w", err)
+	}
+
+	return nil
+}
+
+// DeletePageFeedback retracts the member's vote (no-op when none exists).
+func (s *Store) DeletePageFeedback(ctx context.Context, pageID, userID pgtype.UUID) error {
+	if err := s.write.DeleteWikiPageFeedback(ctx, gen.DeleteWikiPageFeedbackParams{
+		WikiPageID: pageID,
+		UserID:     userID,
+	}); err != nil {
+		return fmt.Errorf("wiki: delete page feedback: %w", err)
+	}
+
+	return nil
+}
+
+// GetPageViewerVote returns the member's current vote; pgx.ErrNoRows when
+// they haven't voted.
+func (s *Store) GetPageViewerVote(ctx context.Context, pageID, userID pgtype.UUID) (string, error) {
+	vote, err := s.read.GetWikiPageViewerVote(ctx, gen.GetWikiPageViewerVoteParams{
+		WikiPageID: pageID,
+		UserID:     userID,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return vote, nil
+}
+
+// GetPageFeedbackCounts aggregates up/down votes plus the viewer's own
+// (viewerID invalid → MyVote empty).
+func (s *Store) GetPageFeedbackCounts(ctx context.Context, pageID, viewerID pgtype.UUID) (WikiPageFeedbackCounts, error) {
+	row, err := s.read.GetWikiPageFeedbackCounts(ctx, pageID)
+	if err != nil {
+		return WikiPageFeedbackCounts{}, fmt.Errorf("wiki: page feedback counts: %w", err)
+	}
+
+	out := WikiPageFeedbackCounts{Up: row.UpCount, Down: row.DownCount}
+	if viewerID.Valid {
+		if vote, verr := s.GetPageViewerVote(ctx, pageID, viewerID); verr == nil {
+			out.MyVote = vote
+		} else if !errors.Is(verr, pgx.ErrNoRows) {
+			return WikiPageFeedbackCounts{}, fmt.Errorf("wiki: page viewer vote: %w", verr)
+		}
 	}
 
 	return out, nil
@@ -1012,6 +1114,47 @@ func (s *Store) GetSpaceBySlug(ctx context.Context, spaceSlug string) (pgtype.UU
 	}
 
 	return r.ID, r.Name, nil
+}
+
+// ResolveSpaceCurrencyCode returns the ISO 4217 currency code of the
+// space's country context (§58 "Country → currency linkage"): the
+// country-level ancestor's currency_code for geo-chained spaces, or — for
+// spaces outside the geo chain whose geo_code is a country ISO (e.g.
+// university spaces carry 'CA') — that country's currency_code. Display
+// context only: inactive currencies resolve fine since name/symbol are
+// read-side data. Empty string when no country resolves.
+func (s *Store) ResolveSpaceCurrencyCode(ctx context.Context, spaceID pgtype.UUID) (string, error) {
+	code, err := s.read.GetSpaceCountryCurrencyCode(ctx, spaceID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("wiki: space currency: ancestor walk: %w", err)
+	}
+	if code != nil && *code != "" {
+		return *code, nil
+	}
+
+	// Fallback: non-geo spaces (e.g. universities) carry the country ISO in
+	// geo_code — resolve it to the country space's currency_code.
+	space, err := s.read.GetSpaceByID(ctx, spaceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("wiki: space currency: get space: %w", err)
+	}
+	if space.GeoCode == nil || *space.GeoCode == "" {
+		return "", nil
+	}
+	country, err := s.read.GetSpaceByGeoCode(ctx, space.GeoCode)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("wiki: space currency: geo lookup: %w", err)
+	}
+	if country.CurrencyCode == nil {
+		return "", nil
+	}
+	return *country.CurrencyCode, nil
 }
 
 // ListSeedSpaceIDs returns the IDs of all active spaces whose wiki type

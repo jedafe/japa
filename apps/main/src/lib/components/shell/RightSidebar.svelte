@@ -64,6 +64,14 @@
 	}
 	let topbarWidgets = $derived(widgets.filter((w) => isTopbar(w)));
 	let contentWidgets = $derived(widgets.filter((w) => !isTopbar(w)));
+
+	// §09 Product Tour: exactly one element may carry the search target.
+	// Tag only the first search-typed widget in DOM order (topbar slot first,
+	// then content) — a second configured search widget must not double-tag
+	// the attribute.
+	const searchTourWidgetId = $derived(
+		[...topbarWidgets, ...contentWidgets].find((w) => w.widget_type === 'search')?.id
+	);
 </script>
 
 <aside class="flex h-full flex-col gap-4 overflow-y-auto px-4 py-3">
@@ -82,6 +90,7 @@
 					{suggestedSpaces}
 					{enabledLanguages}
 					{isDashboard}
+					searchTourTarget={widget.id === searchTourWidgetId}
 				/>
 			{/each}
 		</div>
@@ -102,6 +111,7 @@
 			{suggestedSpaces}
 			{enabledLanguages}
 			{isDashboard}
+			searchTourTarget={widget.id === searchTourWidgetId}
 		/>
 	{/each}
 </aside>

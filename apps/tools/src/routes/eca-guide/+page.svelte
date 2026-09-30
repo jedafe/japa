@@ -10,6 +10,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { currencySymbol } from '$lib/utils/currency';
 	import type {
 		GeoSpaceOption,
 		EcaProvider,
@@ -25,6 +26,16 @@
 	 * submit fee/timeline reports. Cross-links to /credential-checker.
 	 */
 	let { data } = $props();
+
+	// Fee display — managed symbol prefix; skips the prefix when the fee
+	// string already embeds the code (e.g. "200 USD").
+	function feeText(currency: string | null | undefined, fee: string | null | undefined): string {
+		if (!fee) return '';
+		const c = currency?.trim().toUpperCase();
+		if (c && fee.toUpperCase().includes(c)) return fee;
+		const sym = currencySymbol(c, data.currencies) || c || '';
+		return sym ? `${sym} ${fee}` : fee;
+	}
 
 	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
 	let providers = $state<EcaProvider[]>(untrack(() => data.providers));
@@ -275,7 +286,7 @@
 								</div>
 								<div class="mt-1 flex items-center gap-3 text-xs text-muted">
 									{#if guide.fee_estimate}
-										<span>{guide.fee_estimate}{guide.currency ? ` ${guide.currency}` : ''}</span>
+										<span>{feeText(guide.currency, guide.fee_estimate)}</span>
 									{/if}
 									{#if guide.timeline_estimate}
 										<span>{guide.timeline_estimate}</span>

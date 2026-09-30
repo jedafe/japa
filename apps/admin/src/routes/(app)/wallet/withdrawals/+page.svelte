@@ -27,7 +27,7 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
 	let processing = $state(false);
-	let currencies = $state<Array<{ code: string; symbol: string }>>([]);
+	let currencies = $state<Array<{ code: string; symbol: string; name?: string }>>([]);
 	let withdrawEnabled = $state<boolean | null>(null);
 
 	$effect(() => {
@@ -65,6 +65,11 @@
 	function formatFiat(minor: number, code: string): string {
 		const c = currencies.find((x) => x.code === code);
 		return `${c?.symbol ?? ''}${(minor / 100).toFixed(2)} ${code}`;
+	}
+
+	function currencyName(code: string): string {
+		const c = currencies.find((x) => x.code === code);
+		return c?.name ? `${code} — ${c.name}` : code;
 	}
 
 	async function processAction(row: Withdrawal, action: string) {
@@ -114,7 +119,7 @@
 		columns: [
 			{ key: 'id', label: t('common.id', 'ID'), render: (v: string) => `<span class="font-mono text-xs">${(v ?? '').slice(0, 8)}...</span>` },
 			{ key: 'credit_amount', label: t('app.wallet.credits', 'Credits'), render: (v: number) => (v ?? 0).toLocaleString() },
-			{ key: 'currency_code', label: t('app.wallet.currency', 'Currency') },
+			{ key: 'currency_code', label: t('app.wallet.currency', 'Currency'), render: (v: string) => currencyName(v) },
 			{ key: 'fiat_amount', label: t('app.wallet.fiat_amount', 'Fiat Amount'), render: (_: unknown, row: Withdrawal) => formatFiat(row.fiat_amount, row.currency_code) },
 			{ key: 'fee_amount', label: t('app.wallet.fee', 'Fee'), render: (_: unknown, row: Withdrawal) => formatFiat(row.fee_amount, row.currency_code) },
 			{ key: 'net_amount', label: t('app.wallet.net_amount', 'Net Amount'), render: (_: unknown, row: Withdrawal) => formatFiat(row.net_amount, row.currency_code) },

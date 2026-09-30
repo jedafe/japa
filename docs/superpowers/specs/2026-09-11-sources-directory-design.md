@@ -92,7 +92,7 @@ Query params:
 - `?category=` — scholarship, job, visa, remittance, news, cost_of_living, university, etc.
 - `?source_kind=` — publisher, institution, individual, aggregator.
 - `?q=` — text search on name, description, domain.
-- `?sort=` — trending (follower growth), popular (follower_count), recent (created_at).
+- `?sort=` — popular (follower_count), recent (created_at), trending (follower growth, created ≤ 30d), rising (trending restricted to created ≤ 7d).
 - `?limit=` / `?offset=` or cursor pagination.
 
 Response:
@@ -173,6 +173,14 @@ Toggle source follow. Requires auth and `follows.toggle` permission.
 
 - Route: `apps/main/src/routes/(app)/sources/+page.server.ts` and `+page.svelte`.
 - Renders inside `AppShell`.
+- **Curated collection rails are removed.** The v2 plan (Task 4) rendered
+  `GET /api/v1/sources/collections` as horizontal sections above the grid;
+  this was intentionally removed — the page is only the sort-tab grid
+  (Popular · Recently added · Trending · Rising). Do not re-add collection
+  sections to this page; the endpoint remains for other consumers. "Rising"
+  is served as a `?sort=` value, not a collection.
+- No result-count line ("N sources") above the grid — removed with the
+  collections cleanup; do not re-add.
 - Filter tabs: All · Universities · Scholarships · Jobs · Remittance · News · Videos · Organizations · People.
 - Uses `DirectoryCard` with source logo, name, category badge, trust pill, follower/post counts, and a `FollowButton`.
 - A source linked to a university or organization shows its entity badge (e.g. “University” or “Organization”).

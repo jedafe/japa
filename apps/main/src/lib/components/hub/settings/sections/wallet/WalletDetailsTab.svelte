@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { Select } from 'bits-ui';
+	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { invalidateAll } from '$app/navigation';
 	import { setCurrencyPreference } from '$lib/api/hub';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { WalletData } from './types';
 
 	interface Props {
@@ -21,6 +22,14 @@
 	let saving = $state(false);
 	let error = $state<string | null>(null);
 
+	// Bound picker value — kept in sync with the server preference via the
+	// effect below, so a failed save can revert the chip (an unbound value
+	// would stay stuck on the attempted currency while showing an error).
+	let choice = $state(untrack(() => preferredCode));
+	$effect(() => {
+		choice = preferredCode;
+	});
+
 	async function changeCurrency(code: string) {
 		if (saving || code === preferredCode) return;
 		saving = true;
@@ -29,6 +38,7 @@
 		saving = false;
 		if (res.error) {
 			error = res.error.message;
+			choice = preferredCode;
 			return;
 		}
 		await invalidateAll();
@@ -62,31 +72,18 @@
 			<label for="wallet-currency-select" class="mb-1.5 block text-sm text-[var(--color-muted)]">
 				{t('settings.wallet.currency', 'Preferred currency')}
 			</label>
-			<Select.Root type="single" value={preferredCode} onValueChange={(v) => v && changeCurrency(v)}>
-				<Select.Trigger
-					id="wallet-currency-select"
-					class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				>
-					{currency ? `${currency.symbol} ${currency.code}` : preferredCode || t('settings.wallet.currency_default', 'Default')}
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow">
-						<Select.Viewport>
-							{#each data.currencies as c (c.code)}
-								<Select.Item
-									value={c.code}
-									label={c.code}
-									class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-								>
-									{#snippet children({ selected })}
-										{selected ? '✓ ' : ''}{c.symbol ? `${c.code} (${c.symbol})` : c.code}
-									{/snippet}
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+			<AutocompleteSelect
+				id="wallet-currency-select"
+				bind:value={choice}
+				disabled={saving}
+				options={data.currencies.map((c) => ({
+					value: c.code,
+					label: c.symbol ? `${c.code} (${c.symbol})` : c.code,
+					sublabel: c.name
+				}))}
+				placeholder={currency ? `${currency.symbol} ${currency.code}` : preferredCode || t('settings.wallet.currency_default', 'Default')}
+				onValueChange={(v) => v && changeCurrency(v)}
+			/>
 			{#if error}<p class="mt-1 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
 		</div>
 	{/if}

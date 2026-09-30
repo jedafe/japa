@@ -19,6 +19,14 @@
 	const payload = $derived(data as DevicesData | null);
 	let devices = $state<DeviceInfo[]>(untrack(() => payload?.devices ?? []));
 	let pushTokens = $state<PushToken[]>(untrack(() => payload?.pushTokens ?? []));
+
+	// Resync when the loader data is replaced (e.g. invalidateAll) — the
+	// untracked init alone leaves both lists permanently stale (BUG-P014).
+	// Reads only `payload` so optimistic removals don't retrigger it.
+	$effect(() => {
+		devices = payload?.devices ?? [];
+		pushTokens = payload?.pushTokens ?? [];
+	});
 	let pushLoading = $state(false);
 	let pushError = $state<string | null>(null);
 

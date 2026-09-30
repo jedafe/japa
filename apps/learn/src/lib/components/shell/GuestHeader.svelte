@@ -7,7 +7,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { loginUrl, MAIN_ORIGIN } from '$lib/appOrigins';
 	import { page } from '$app/state';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu as UiMenu, MenuItem as UiMenuItem } from '@japaconnect/ui';
 	import { Sun, Moon, LogIn, UserPlus, Languages, GraduationCap, Check } from 'lucide-svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
@@ -76,28 +76,28 @@
 				<SearchAutocomplete />
 			</div>
 			{#if showLanguageToggle}
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger
-						class="guest-icon-btn"
-						aria-label={t('locale.switch_language', 'Switch language')}
-						title={localeLabel(i18n.locale)}
-					>
-						<Languages size={18} />
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Portal>
-						<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-							{#each enabledLanguages as lang (lang)}
-								<DropdownMenu.Item
-									onclick={() => { window.location.href = localeHref(lang); }}
-									class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-									>
-									<span>{localeLabel(lang)}</span>
-									{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
-								</DropdownMenu.Item>
-							{/each}
-						</DropdownMenu.Content>
-					</DropdownMenu.Portal>
-				</DropdownMenu.Root>
+				<UiMenu contentClass="max-h-60 overflow-y-auto">
+					{#snippet trigger(props)}
+						<button
+							type="button"
+							{...props}
+							class="guest-icon-btn"
+							aria-label={t('locale.switch_language', 'Switch language')}
+							title={localeLabel(i18n.locale)}
+						>
+							<Languages size={18} />
+						</button>
+					{/snippet}
+					{#each enabledLanguages as lang (lang)}
+						<UiMenuItem
+							onSelect={() => { window.location.href = localeHref(lang); }}
+							class="justify-between"
+						>
+							<span>{localeLabel(lang)}</span>
+							{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+						</UiMenuItem>
+					{/each}
+				</UiMenu>
 			{/if}
 			<button
 				type="button"

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
+import 'package:japaconnect_mobile/app/currencies_provider.dart';
 import 'package:japaconnect_mobile/features/tools/remittance/providers/remittance_provider.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
@@ -14,6 +15,8 @@ class RemittanceRateScreen extends ConsumerStatefulWidget {
 class _RemittanceRateScreenState extends ConsumerState<RemittanceRateScreen> {
   final _sendController = TextEditingController(text: 'GBP');
   final _receiveController = TextEditingController(text: 'NGN');
+  String _send = 'GBP';
+  String _receive = 'NGN';
   ({String send, String receive})? _search;
 
   @override
@@ -25,17 +28,74 @@ class _RemittanceRateScreenState extends ConsumerState<RemittanceRateScreen> {
 
   void _doSearch() {
     setState(() {
-      _search = (send: _sendController.text.trim().toUpperCase(),
-          receive: _receiveController.text.trim().toUpperCase());
+      _search = (send: _send.trim().toUpperCase(),
+          receive: _receive.trim().toUpperCase());
     });
+  }
+
+  /// Currency picker backed by the managed currency table (§58). Falls back
+  /// to a free-text field when the currency list cannot be loaded so legacy
+  /// or deactivated codes remain enterable.
+  Widget _currencyPicker({
+    required String label,
+    required String value,
+    required TextEditingController fallbackController,
+    required ValueChanged<String> onChanged,
+    required List<Currency>? currencies,
+  }) {
+    if (currencies == null) {
+      return TextField(
+        controller: fallbackController,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
+        textCapitalization: TextCapitalization.characters,
+        onChanged: (v) => onChanged(v),
+        onSubmitted: (_) => _doSearch(),
+      );
+    }
+    // Keep a stored/typed code selectable even when it isn't in the managed
+    // list (e.g. a currency deactivated later) — the item is added below.
+    final items = currencies.map((c) => c.code).toSet();
+    final selected = items.contains(value) ? value : null;
+    return DropdownButtonFormField<String>(
+      key: ValueKey('${label}_$value'),
+      initialValue: value.isNotEmpty ? value : null,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+      items: [
+        for (final c in currencies)
+          DropdownMenuItem(value: c.code, child: Text(c.label)),
+        if (selected == null && value.isNotEmpty)
+          DropdownMenuItem(value: value, child: Text(value)),
+      ],
+      onChanged: (v) {
+        if (v != null) {
+          onChanged(v);
+          _doSearch();
+        }
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final t = ref.watch(tProvider);
+    final currencies = ref.watch(currenciesProvider).value;
     final rates = _search != null
         ? ref.watch(remittanceRatesProvider(_search!))
         : const AsyncData<List<RemittanceRate>>([]);
+    final symbolByCode = {
+      for (final c in currencies ?? const <Currency>[]) c.code.toUpperCase(): c.symbol,
+    };
+    // "£ GBP" — symbol (when managed) before the code.
+    String currencyChip(String code) {
+      final sym = symbolByCode[code.toUpperCase()];
+      return sym != null && sym.isNotEmpty ? '$sym $code' : code;
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(t('tools.remittance_rates'))),
@@ -46,26 +106,22 @@ class _RemittanceRateScreenState extends ConsumerState<RemittanceRateScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _sendController,
-                    decoration: InputDecoration(
-                      labelText: t('tools.send_currency'),
-                      border: const OutlineInputBorder(),
-                    ),
-                    textCapitalization: TextCapitalization.characters,
-                    onSubmitted: (_) => _doSearch(),
+                  child: _currencyPicker(
+                    label: t('tools.send_currency'),
+                    value: _send,
+                    fallbackController: _sendController,
+                    currencies: currencies,
+                    onChanged: (v) => _send = v.trim().toUpperCase(),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: TextField(
-                    controller: _receiveController,
-                    decoration: InputDecoration(
-                      labelText: t('tools.receive_currency'),
-                      border: const OutlineInputBorder(),
-                    ),
-                    textCapitalization: TextCapitalization.characters,
-                    onSubmitted: (_) => _doSearch(),
+                  child: _currencyPicker(
+                    label: t('tools.receive_currency'),
+                    value: _receive,
+                    fallbackController: _receiveController,
+                    currencies: currencies,
+                    onChanged: (v) => _receive = v.trim().toUpperCase(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -85,7 +141,7 @@ class _RemittanceRateScreenState extends ConsumerState<RemittanceRateScreen> {
                       itemBuilder: (_, i) => ListTile(
                         title: Text(items[i].providerName ?? t('tools.unknown_provider')),
                         subtitle: Text(
-                            '${items[i].sendCurrency} → ${items[i].receiveCurrency}'),
+                            '${currencyChip(items[i].sendCurrency)} → ${currencyChip(items[i].receiveCurrency)}'),
                         trailing: Text('${items[i].rate}'),
                       ),
                     ),

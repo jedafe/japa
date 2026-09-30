@@ -169,6 +169,7 @@
 			<div class="mobile-topbar">
 				<button
 					type="button"
+					data-tour="docs-nav"
 					onclick={() => (mobileNavOpen = true)}
 					class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 					aria-label={t('a11y.open_menu')}
@@ -195,8 +196,8 @@
 			{@render children()}
 		</main>
 
-		<div class="shell-sidebar">
-			<div class="sidebar-topbar">
+		<div class="shell-sidebar" data-tour="docs-sidebar">
+			<div class="sidebar-topbar" data-tour="docs-topbar">
 				{#each topbarWidgets as widget (widget.id)}
 					<SidebarWidgetRenderer {widget} {user} />
 				{/each}
@@ -271,6 +272,7 @@
 			<div class="mobile-topbar">
 				<button
 					type="button"
+					data-tour="docs-nav"
 					onclick={() => (mobileNavOpen = true)}
 					class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 					aria-label={t('a11y.open_menu')}
@@ -296,8 +298,8 @@
 			{@render children()}
 		</main>
 
-		<div class="shell-sidebar">
-			<div class="sidebar-topbar">
+		<div class="shell-sidebar" data-tour="docs-sidebar">
+			<div class="sidebar-topbar" data-tour="docs-topbar">
 				{#each topbarWidgets as widget (widget.id)}
 					<SidebarWidgetRenderer {widget} {user} />
 				{/each}

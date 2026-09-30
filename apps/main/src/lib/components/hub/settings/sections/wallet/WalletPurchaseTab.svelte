@@ -13,7 +13,9 @@
 
 	const preferredCode = $derived(data.preferredCurrency?.preferred_currency ?? '');
 	const currentCurrency = $derived(data.currencies.find((c) => c.code === preferredCode) ?? null);
-	const minPurchase = $derived(data.minPurchaseCredits ?? 100);
+	// 0 = settings endpoint unavailable → no client-side minimum; the
+	// backend validates the real configured minimum on purchase.
+	const minPurchase = $derived(data.minPurchaseCredits ?? 0);
 
 	const sortedCurrencies = $derived([...data.currencies].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
 	const sortedPacks = $derived([...data.creditPacks].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
@@ -36,8 +38,10 @@
 
 	async function purchase() {
 		const amount = parseInt(customAmount, 10) || 0;
-		if (!selectedPackId && amount < minPurchase) {
-			error = t('wallet.purchase.minimum', 'Minimum {n} credits').replace('{n}', String(minPurchase));
+		if (!selectedPackId && (amount <= 0 || (minPurchase > 0 && amount < minPurchase))) {
+			error = minPurchase > 0
+				? t('wallet.purchase.minimum', 'Minimum {n} credits').replace('{n}', String(minPurchase))
+				: t('wallet.withdraw.invalid_amount', 'Please enter a valid credit amount.');
 			return;
 		}
 
@@ -45,11 +49,12 @@
 		error = null;
 		success = false;
 
+		// provider omitted — the backend selects the configured default
+		// (POST /wallet/purchase-credits treats provider as optional).
 		const res = await purchaseCredits({
 			pack_id: selectedPackId || undefined,
 			credit_amount: selectedPackId ? 0 : amount,
-			currency: preferredCode,
-			provider: 'paystack'
+			currency: preferredCode
 		});
 
 		purchasing = false;
@@ -150,8 +155,7 @@
 					<input
 						id="custom-credits"
 						type="number"
-						min={minPurchase}
-						step={minPurchase}
+						min={minPurchase || 1}
 						bind:value={customAmount}
 						oninput={() => (selectedPackId = '')}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
@@ -169,9 +173,11 @@
 					</p>
 				</div>
 			</div>
-			<p class="mt-2 text-xs text-[var(--color-muted)]">
-				{t('wallet.purchase.minimum', 'Minimum {n} credits').replace('{n}', minPurchase.toLocaleString())}
-			</p>
+			{#if minPurchase > 0}
+				<p class="mt-2 text-xs text-[var(--color-muted)]">
+					{t('wallet.purchase.minimum', 'Minimum {n} credits').replace('{n}', minPurchase.toLocaleString())}
+				</p>
+			{/if}
 		</div>
 
 		{#if error}
@@ -188,7 +194,7 @@
 				type="button"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-6 py-3 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
 				onclick={purchase}
-				disabled={purchasing || (selectedPackId === '' && (parseInt(customAmount, 10) || 0) < minPurchase)}
+				disabled={purchasing || (selectedPackId === '' && ((parseInt(customAmount, 10) || 0) <= 0 || (minPurchase > 0 && (parseInt(customAmount, 10) || 0) < minPurchase)))}
 			>
 				<Wallet size={16} />
 				{#if purchasing}

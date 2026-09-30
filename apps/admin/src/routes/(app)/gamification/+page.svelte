@@ -8,7 +8,7 @@
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import ActivityKeyAutocomplete from '$lib/components/ui/ActivityKeyAutocomplete.svelte';
+	import ActivityKeyAutocomplete from '$lib/components/gamification/ActivityKeyAutocomplete.svelte';
 	import UserAutocomplete from '$lib/components/ui/UserAutocomplete.svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { Trophy, Target, Pencil, Award, Trash2, Eye } from 'lucide-svelte';

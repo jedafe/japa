@@ -4,6 +4,8 @@
 @import '@fontsource/inter/700.css';
 
 @import "tailwindcss";
+
+@source "../../../packages/ui/src";
 @plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));

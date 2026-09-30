@@ -4,7 +4,7 @@
 	import { getTheme, toggleTheme } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem, MenuSeparator } from '@japaconnect/ui';
 
 	let showDropdown = $state(false);
 </script>
@@ -34,31 +34,27 @@
 		</button>
 
 		{#if getUser()}
-			<DropdownMenu.Root bind:open={showDropdown}>
-				<DropdownMenu.Trigger
-					class="hover:bg-dark-04 flex items-center gap-2 rounded-9px p-1.5 transition-colors outline-none"
-				>
-					<Avatar src={getUser()!.avatar_url} alt={getUser()!.display_name} size="sm" />
-					<span class="text-foreground text-sm">{getUser()!.display_name}</span>
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Portal>
-					<DropdownMenu.Content
-						class="border-border-input bg-background shadow-popover z-50 min-w-[160px] rounded-xl border px-1 py-1.5"
-						sideOffset={8}
-						align="end"
+			<Menu bind:open={showDropdown} sideOffset={8} contentClass="min-w-[160px] rounded-xl">
+				{#snippet trigger(props)}
+					<button
+						type="button"
+						{...props}
+						class="hover:bg-dark-04 flex items-center gap-2 rounded-9px p-1.5 transition-colors outline-none"
 					>
-						<DropdownMenu.Item class="text-foreground data-highlighted:bg-accent flex cursor-pointer items-center rounded-9px px-3 py-2 text-sm outline-none">
-							{getUser()!.email}
-						</DropdownMenu.Item>
-						<DropdownMenu.Separator class="bg-border-card my-1 h-px" />
-						<DropdownMenu.Item class="data-highlighted:bg-accent flex cursor-pointer items-center rounded-9px px-3 py-2 text-sm outline-none">
-							<form method="POST" action="/logout" class="w-full">
-								<button type="submit" class="w-full text-left">{t('nav.sign_out')}</button>
-							</form>
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Portal>
-			</DropdownMenu.Root>
+						<Avatar src={getUser()!.avatar_url} alt={getUser()!.display_name} size="sm" />
+						<span class="text-foreground text-sm">{getUser()!.display_name}</span>
+					</button>
+				{/snippet}
+				<MenuItem class="text-foreground">
+					{getUser()!.email}
+				</MenuItem>
+				<MenuSeparator />
+				<MenuItem>
+					<form method="POST" action="/logout" class="w-full">
+						<button type="submit" class="w-full text-left">{t('nav.sign_out')}</button>
+					</form>
+				</MenuItem>
+			</Menu>
 		{/if}
 	</div>
 </header>

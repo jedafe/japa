@@ -8,7 +8,7 @@
 		UserPlus, UserCheck, Loader2, BellOff, Bell, Flag, Pin, PinOff,
 		Check, X, Inbox, ChevronUp, ChevronDown, BookOpen, Star
 	} from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
@@ -16,6 +16,7 @@
 	import { EmptyState, UrlTabs, AutocompleteSelect } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import { imgLightbox } from '$lib/lightbox.svelte';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type { FeedItem } from '$lib/types';
@@ -501,7 +502,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </SetSidebar>
 
 <!-- Space header — cover banner + overlapping logo, follows ProfileHeader pattern -->
-<header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+<header class="border-b border-[var(--color-border)] bg-[var(--color-surface)]" use:imgLightbox>
 	<!-- Cover banner — image with dark fade at bottom, or gradient fallback.
 	     The dark fade at the bottom improves logo/title legibility. -->
 	<div class="relative h-32 overflow-hidden sm:h-40">
@@ -839,7 +840,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{/if}
 
 				{#if wikiData}
-					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
+					<div class="mt-4 border-t border-[var(--color-border)] pt-4" use:imgLightbox>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki_summary', 'From Wikipedia')}</h2>
 						{#if wikiData.thumbnail}
 							<img src={wikiData.thumbnail} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
@@ -1036,17 +1037,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 <!-- Report space dialog — bind:open keeps the parent state in sync when the
      dialog is dismissed via Escape/backdrop click, so it can reopen. -->
-<Dialog.Root bind:open={reportOpen}>
-		<Dialog.Portal>
-			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-				<Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={closeReport}>
-					<X size={20} />
-				</Dialog.Close>
-				<div class="mb-4 flex items-center gap-2">
-					<Flag size={20} class="text-red-500" />
-					<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('space.report_title', 'Report this space')}</h2>
-				</div>
+<Modal bind:open={reportOpen} onOpenChange={(v) => { if (!v) closeReport(); }} icon={Flag} title={t('space.report_title', 'Report this space')} overlayClass="backdrop-blur-sm" size="md">
 				{#if reportSubmitted}
 					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
 						{t('space.report_submitted', 'Your report has been submitted. Our team will review it.')}
@@ -1106,6 +1097,4 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						</div>
 					</form>
 				{/if}
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	</Modal>

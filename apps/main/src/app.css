@@ -9,6 +9,7 @@
 @import 'tailwindcss';
 
 @source '../../../packages/landing-blocks/src';
+@source '../../../packages/ui/src';
 
 /*
  * JapaConnect Main App — design tokens (ADR-058 / ADR-059).
@@ -195,6 +196,22 @@ body {
 	margin-top: 1.5rem;
 	margin-bottom: 1.5rem;
 }
+/* §80 Reader UX — a blockquote whose first line starts with
+   Tip:/Note:/Warning:/Important: renders as a callout panel
+   (serialize.ts calloutKind). */
+.prose blockquote.callout {
+	font-style: normal;
+	padding: 0.75rem 1rem;
+	border-radius: var(--radius);
+	background: var(--color-surface-subtle);
+	color: var(--color-text);
+}
+.prose blockquote.callout p:first-child { margin-top: 0; }
+.prose blockquote.callout p:last-child { margin-bottom: 0; }
+.prose blockquote.callout-tip { border-left-color: var(--chart-3, var(--color-primary)); }
+.prose blockquote.callout-note { border-left-color: var(--color-primary); }
+.prose blockquote.callout-warning,
+.prose blockquote.callout-important { border-left-color: var(--color-danger, #dc2626); }
 .prose code {
 	font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 	font-size: 0.875em;
@@ -479,3 +496,13 @@ a {
 }
 
 
+
+/* Delegated image lightbox scope — see $lib/lightbox.svelte.ts */
+.lightbox-scope img {
+	cursor: zoom-in;
+}
+/* Images inside links/buttons keep their native cursor — the action skips them. */
+.lightbox-scope a img,
+.lightbox-scope button img {
+	cursor: pointer;
+}

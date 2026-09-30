@@ -7,7 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Bookmark, Flag, MessageSquare, MoreVertical, Play } from 'lucide-svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem } from '$lib/components/ui';
 	import { t, i18n } from '$lib/i18n';
 	import { relativeTime } from '$lib/feed/time';
 	import { contentTypeMeta, readPostLabel } from '$lib/feed/contentTypeMeta';
@@ -203,31 +203,23 @@
 				<Icon size={15} />
 				{actionLabel}
 			</a>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class="flex shrink-0 items-center text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
-					aria-label={t('feed.card.menu', 'More actions')}
-				>
-					<MoreVertical size={16} />
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Portal>
-					<DropdownMenu.Content
-						align="end"
-						sideOffset={8}
-						class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+			<Menu contentClass="min-w-44">
+				{#snippet trigger(props)}
+					<button
+						type="button"
+						{...props}
+						class="flex shrink-0 items-center text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)]"
+						aria-label={t('feed.card.menu', 'More actions')}
 					>
-						<!-- Share lives in the bottom action row (ShareButton) —
-						     the ⋮ menu holds moderation actions only. -->
-						<DropdownMenu.Item
-							class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)] data-[disabled]:opacity-50"
-							onclick={reportPost}
-							disabled={reported}
-						>
-							<Flag size={14} /> {reported ? t('feed.reported', 'Reported') : t('feed.card.report', 'Report')}
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Portal>
-			</DropdownMenu.Root>
+						<MoreVertical size={16} />
+					</button>
+				{/snippet}
+				<!-- Share lives in the bottom action row (ShareButton) —
+				     the ⋮ menu holds moderation actions only. -->
+				<MenuItem icon={Flag} onSelect={reportPost} disabled={reported}>
+					{reported ? t('feed.reported', 'Reported') : t('feed.card.report', 'Report')}
+				</MenuItem>
+			</Menu>
 		</div>
 	</div>
 

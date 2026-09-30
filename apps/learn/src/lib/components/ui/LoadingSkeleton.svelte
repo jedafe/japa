@@ -1,8 +1,8 @@
 <script lang="ts">
-	interface Props {
-		class?: string;
-	}
-	let { class: className = 'h-4 w-full' }: Props = $props();
+	import { LoadingSkeleton } from '@japaconnect/ui';
+	import type { ComponentProps } from 'svelte';
+
+	let { class: klass = 'h-4 w-full', ...rest }: ComponentProps<typeof LoadingSkeleton> = $props();
 </script>
 
-<div class="jc-skeleton rounded-[var(--radius)] {className}" aria-hidden="true"></div>
+<LoadingSkeleton class={klass} {...rest} />

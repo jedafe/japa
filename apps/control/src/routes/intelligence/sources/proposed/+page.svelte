@@ -9,7 +9,7 @@
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import { RefreshCw, Database, Eye, CheckCircle, Search } from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
 
 	// ProbeReport mirrors probe.Report (intel-channels Phase 1, spec §2) —
 	// emitted by sourceToFullEntry so reviewers can see what the probe
@@ -298,16 +298,13 @@
 		emptyIcon={Database}
 	/>
 
-	<Dialog.Root bind:open={detailOpen}>
-		<Dialog.Portal>
-			<Dialog.Overlay class="bg-black/50 fixed inset-0 z-40" />
-			<Dialog.Content class="bg-background border-border-card fixed top-1/2 left-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 shadow-lg max-h-[90vh] overflow-y-auto">
-				<Dialog.Title class="text-foreground text-lg font-semibold">
-					{detailSource?.name ?? t('intel.source_detail', 'Source detail')}
-				</Dialog.Title>
-				<Dialog.Description class="text-muted-foreground mt-1 text-sm">
-					{detailSource?.domain ?? ''}
-				</Dialog.Description>
+	<Modal
+		bind:open={detailOpen}
+		title={detailSource?.name ?? t('intel.source_detail', 'Source detail')}
+		description={detailSource?.domain ?? ''}
+		size="max-w-2xl"
+	>
+		<div>
 
 				{#if detailSource}
 					<div class="mt-4 grid grid-cols-2 gap-4 text-sm">
@@ -471,7 +468,6 @@
 						</button>
 					{/if}
 				</div>
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+		</div>
+	</Modal>
 {/if}

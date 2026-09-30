@@ -6,6 +6,7 @@
 	import { Wallet } from 'lucide-svelte';
 	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import { formatMoney, currencySymbol, currencyName } from '$lib/utils/currency';
 	import type {
 		GeoSpaceOption,
 		PofRequirement,
@@ -201,7 +202,7 @@
 				{t('pof_calculator.required', 'Required proof of funds')}
 			</div>
 			<div class="mt-2 text-3xl font-bold tabular-nums text-[var(--color-primary)]">
-				{result.amount.toLocaleString()} {result.currency}
+				{formatMoney(result.amount, result.currency, data.currencies)}
 			</div>
 			<div class="mt-1 text-sm text-[var(--color-muted)]">
 				{result.program_label} · {t('pof_calculator.household', 'household of')} {result.household}
@@ -213,7 +214,7 @@
 						<div class="rounded-[var(--radius)] border border-[var(--color-border)] p-3">
 							<div class="text-xs text-[var(--color-muted)]">NGN</div>
 							<div class="text-lg font-semibold tabular-nums text-[var(--color-text)]">
-								₦{result.ngn_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+								{currencySymbol('NGN', data.currencies)}{result.ngn_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 							</div>
 						</div>
 					{/if}
@@ -221,7 +222,7 @@
 						<div class="rounded-[var(--radius)] border border-[var(--color-border)] p-3">
 							<div class="text-xs text-[var(--color-muted)]">USD</div>
 							<div class="text-lg font-semibold tabular-nums text-[var(--color-text)]">
-								${result.usd_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+								{currencySymbol('USD', data.currencies)}{result.usd_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 							</div>
 						</div>
 					{/if}
@@ -271,7 +272,7 @@
 							<div>
 								<div class="font-medium text-[var(--color-text)]">{req.program_label}</div>
 								<div class="mt-0.5 text-xs text-[var(--color-muted)]">
-									{req.visa_type} · {req.currency} · {t('pof_calculator.effective', 'effective')} {req.effective_date}
+									{req.visa_type} · {currencyName(req.currency, data.currencies) || req.currency} · {t('pof_calculator.effective', 'effective')} {req.effective_date}
 								</div>
 							</div>
 							{#if req.source_url}

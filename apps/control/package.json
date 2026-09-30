@@ -28,8 +28,9 @@
 	},
 	"dependencies": {
 		"@fontsource/inter": "^5.3.0",
-		"@japaconnect/api-url": "workspace:*",
 		"@formkit/auto-animate": "^0.8.4",
+		"@japaconnect/api-url": "workspace:*",
+		"@japaconnect/ui": "workspace:*",
 		"@sentry/sveltekit": "^10.66.0",
 		"bits-ui": "^2.18.1",
 		"clsx": "^2.1.1",

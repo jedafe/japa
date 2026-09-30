@@ -77,7 +77,7 @@
 	}
 </script>
 
-<aside class="nav" class:collapsed>
+<aside class="nav" class:collapsed data-tour="docs-nav">
 	<div class="nav-header">
 		<a href="/docs" class="nav-brand" class:hidden={collapsed}>
 			{#if logoUrl}
@@ -103,7 +103,7 @@
 	</div>
 
 	{#if !collapsed}
-		<div class="nav-audience">
+		<div class="nav-audience" data-tour="docs-audience">
 			<AudienceSwitcher {accessibleAudiences} {activeAudience} />
 		</div>
 	{/if}

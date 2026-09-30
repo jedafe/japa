@@ -1,9 +1,9 @@
 <script lang="ts">
-	// Bookmarks — CSR-only. Bookmarked learning tracks and lessons for the
-	// learner, organized into folders.
-	// The backend bookmark endpoint is polymorphic; this page fetches
-	// /me/bookmarks?entity_type=learning_track,content and filters to
-	// learning-related entities. Folders are managed client-side via
+	// Bookmarks — CSR-only. The user's saved items organized into folders.
+	// The backend bookmark endpoint is polymorphic and bookmark folders are
+	// global across the platform apps, so the list is NOT filtered by
+	// entity_type — non-learning items render too and link back to the Main
+	// app (entityUrl). Folders are managed client-side via
 	// POST/PATCH/DELETE /me/bookmark-folders.
 	// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md
 	import { t } from '$lib/i18n';
@@ -18,10 +18,20 @@
 	let { data }: { data: PageData } = $props();
 
 	let bookmarks = $state<Bookmark[]>([]);
-	let totalCount = $state(0);
+	// Total across ALL folders — only known after an unfiltered load; null
+	// hides the "All" badge (e.g. when landing on a ?folder= deep link).
+	let totalCount = $state<number | null>(null);
 	let folders = $state<BookmarkFolder[]>([]);
 	let loading = $state(true);
+	let loadingMore = $state(false);
 	let activeFolder = $state<string | null>(null);
+
+	// The list endpoint paginates (default 20, max 100) and returns no meta
+	// total — page at PAGE_SIZE and show Load-more while a full page comes back.
+	// nextOffset tracks rows fetched server-side so deletions don't skew it.
+	const PAGE_SIZE = 100;
+	let nextOffset = $state(0);
+	let hasMore = $state(false);
 
 	let newFolderName = $state('');
 	let creatingFolder = $state(false);
@@ -34,21 +44,44 @@
 	let editFolderName = $state('');
 	let renamingFolder = $state(false);
 
-	async function loadBookmarks(folderId: string | null) {
-		loading = true;
-		const params = new URLSearchParams({ entity_type: 'learning_track' });
+	async function loadBookmarks(folderId: string | null, append = false) {
+		if (append) loadingMore = true;
+		else loading = true;
+		const params = new URLSearchParams({
+			page_size: String(PAGE_SIZE),
+			page_offset: String(append ? nextOffset : 0)
+		});
 		if (folderId) params.set('folder_id', folderId);
 		const r = await api.get<Bookmark[]>(`/me/bookmarks?${params.toString()}`);
-		loading = false;
+		if (append) loadingMore = false;
+		else loading = false;
 		if (r.data) {
-			bookmarks = r.data;
-			if (!folderId) totalCount = r.data.length;
+			bookmarks = append ? [...bookmarks, ...r.data] : r.data;
+			nextOffset = (append ? nextOffset : 0) + r.data.length;
+			hasMore = r.data.length === PAGE_SIZE;
+			if (!folderId) totalCount = nextOffset;
 		}
 	}
 
 	async function loadFolders() {
 		const r = await api.get<BookmarkFolder[]>('/me/bookmark-folders');
 		if (r.data) folders = r.data;
+	}
+
+	// Fetch the total bookmark count across all folders (capped at 10 pages =
+	// 1000 rows) so the "All" badge is correct on a ?folder= deep link, where
+	// the initial load only fetched the folder's rows.
+	async function loadTotalCount() {
+		let offset = 0;
+		let total = 0;
+		for (let i = 0; i < 10; i++) {
+			const r = await api.get<Bookmark[]>(`/me/bookmarks?page_size=${PAGE_SIZE}&page_offset=${offset}`);
+			if (!r.data) return;
+			total += r.data.length;
+			if (r.data.length < PAGE_SIZE) break;
+			offset += PAGE_SIZE;
+		}
+		totalCount = total;
 	}
 
 	let urlInitDone = false;
@@ -59,6 +92,7 @@
 		const initial = new URL(window.location.href).searchParams.get('folder');
 		activeFolder = initial;
 		void Promise.all([loadBookmarks(initial), loadFolders()]);
+		if (initial) void loadTotalCount();
 	});
 
 	function selectFolder(id: string | null) {
@@ -79,9 +113,16 @@
 			case 'learning_track':
 				return `/tracks/${idOrSlug}`;
 			case 'blog_post':
-				return `${MAIN_ORIGIN}/blog/${idOrSlug}`;
 			case 'content':
-				return `${MAIN_ORIGIN}/content/${idOrSlug}`;
+				return `${MAIN_ORIGIN}/blog/${idOrSlug}`;
+			case 'forum_thread':
+				return `${MAIN_ORIGIN}/forum/${idOrSlug}`;
+			case 'forum_reply':
+				return `${MAIN_ORIGIN}/forum/${idOrSlug}#reply-${b.entity_id}`;
+			case 'space':
+				return `${MAIN_ORIGIN}/spaces/${idOrSlug}`;
+			case 'comment':
+				return `${MAIN_ORIGIN}/content/${b.entity_id}`;
 			default:
 				return `${MAIN_ORIGIN}/content/${b.entity_id}`;
 		}
@@ -170,7 +211,9 @@
 		const res = await api.delete(`/me/bookmarks/${id}`);
 		if (!res.error) {
 			bookmarks = bookmarks.filter((b) => b.id !== id);
-			if (!activeFolder) totalCount = Math.max(0, totalCount - 1);
+			// Every bookmark counts toward "All" — decrement regardless of the
+			// folder currently being viewed.
+			if (totalCount != null) totalCount = Math.max(0, totalCount - 1);
 		} else {
 			folderError = res.error?.message ?? t('learn.bookmarks_remove_error', 'Failed to remove bookmark');
 		}
@@ -204,7 +247,9 @@
 			>
 				<BookmarkIcon size={14} />
 				{t('learn.bookmarks_all', 'All')}
-				<span class="ml-auto text-xs text-[var(--color-muted)]">{totalCount}</span>
+				{#if totalCount != null}
+					<span class="ml-auto text-xs text-[var(--color-muted)]">{totalCount}</span>
+				{/if}
 			</button>
 
 			{#each folders as folder (folder.id)}
@@ -339,6 +384,19 @@
 						</li>
 					{/each}
 				</ul>
+				{#if hasMore}
+					<button
+						type="button"
+						onclick={() => loadBookmarks(activeFolder, true)}
+						disabled={loadingMore}
+						class="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{#if loadingMore}
+							<Loader2 size={14} class="animate-spin" />
+						{/if}
+						{t('learn.load_more')}
+					</button>
+				{/if}
 			{/if}
 		</div>
 	</div>

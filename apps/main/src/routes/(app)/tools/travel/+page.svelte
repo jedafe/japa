@@ -5,6 +5,7 @@
 	import { Plane, Lock, Hotel, ExternalLink, Loader2, GitCompare, Building2 } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, UrlTabs } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import { formatMoney } from '$lib/utils/currency';
 	import type {
 		TravelFlightResult,
 		TravelHotelResult,
@@ -193,7 +194,7 @@
 									</span>
 								</div>
 								<div class="flex items-center gap-3">
-									<span class="text-sm font-medium text-[var(--color-text)]">{f.price.toFixed(0)} {f.currency}</span>
+									<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(f.price, f.currency, data.currencies)}</span>
 									<a href={f.booking_url} target="_blank" rel="noopener sponsored" class="flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90">
 										{t('travel.book_now', 'Book now')} <ExternalLink size={12} />
 									</a>
@@ -227,7 +228,7 @@
 									</span>
 								</div>
 								<div class="flex items-center gap-3">
-									<span class="text-sm font-medium text-[var(--color-text)]">{h.price.toFixed(0)} {h.currency}</span>
+									<span class="text-sm font-medium text-[var(--color-text)]">{formatMoney(h.price, h.currency, data.currencies)}</span>
 									<a href={h.booking_url} target="_blank" rel="noopener sponsored" class="flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90">
 										{t('travel.book_now', 'Book now')} <ExternalLink size={12} />
 									</a>

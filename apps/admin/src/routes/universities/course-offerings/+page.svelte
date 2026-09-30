@@ -8,6 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { courseCatalogAdminApi, courseOfferingsAdminApi, universitiesAdminApi, type CourseOffering } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { loadCurrencies, currencyOptions, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import { CheckCircle, EyeOff, Trash2 } from 'lucide-svelte';
 
 	type SelectOption = { value: string; label: string };
@@ -17,8 +18,11 @@
 	let bulkBusy = $state(false);
 	let courseOptions = $state<SelectOption[]>([]);
 	let universityOptions = $state<SelectOption[]>([]);
+	// §58 — managed currency list for the currency select + tuition display.
+	let currencies = $state<CurrencyInfo[]>([]);
 
 	$effect(() => {
+		loadCurrencies().then((list) => (currencies = list));
 		void (async () => {
 			const [courses, universities] = await Promise.all([
 				courseCatalogAdminApi.list('limit=200&is_published=true'),
@@ -110,7 +114,9 @@
 		{ key: 'university_id', label: t('courses.university', 'University'), type: 'select', required: true, options: universityOptions },
 		{ key: 'slug', label: t('courses.slug', 'Slug'), type: 'text', placeholder: t('courses.offering_slug_hint', 'Auto: {university}-{course} if empty') },
 		{ key: 'tuition', label: t('courses.tuition', 'Tuition'), type: 'number' },
-		{ key: 'currency', label: t('courses.currency', 'Currency'), type: 'text', placeholder: 'USD' },
+		currencies.length > 0
+			? { key: 'currency', label: t('courses.currency', 'Currency'), type: 'select', options: currencyOptions(currencies) }
+			: { key: 'currency', label: t('courses.currency', 'Currency'), type: 'text', placeholder: 'USD' },
 		{ key: 'duration_years', label: t('courses.duration', 'Duration (years)'), type: 'number' },
 		{
 			key: 'study_mode', label: t('courses.study_mode', 'Study Mode'), type: 'select',
@@ -223,7 +229,7 @@
 					course_title: o.course?.title ?? '',
 					university_name: o.university?.name ?? '',
 					degree_type: o.course?.degree_type ?? null,
-					tuition_display: o.tuition != null ? `${o.currency ?? ''} ${o.tuition}`.trim() : '—',
+					tuition_display: o.tuition != null ? formatMoney(o.tuition, o.currency, currencies) : '—',
 					intake_months: (o.intake_months ?? []).join(', ')
 				}));
 				const total = result.data.meta?.total ?? data.length;
@@ -325,7 +331,7 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('courses.tuition', 'Tuition')}</p>
-				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.tuition != null ? `${row.currency ?? ''} ${row.tuition}`.trim() : '—'}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.tuition != null ? formatMoney(row.tuition, row.currency, currencies) : '—'}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('courses.duration', 'Duration')}</p>

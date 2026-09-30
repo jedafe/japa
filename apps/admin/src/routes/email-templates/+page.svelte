@@ -9,8 +9,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
-	import { Tabs } from '$lib/components/ui/tabs';
-	import { Tabs as BitsTabs } from 'bits-ui';
+	import { Tabs, TabsContent } from '$lib/components/ui/tabs';
 	import { emailTemplatesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -418,7 +417,7 @@
 				class="mt-1"
 			>
 				{#snippet children()}
-					<BitsTabs.Content value="edit">
+					<TabsContent value="edit">
 						<textarea
 							id="et-body"
 							bind:value={value.html_body}
@@ -426,15 +425,15 @@
 							class="w-full rounded-lg border p-2 text-sm font-mono"
 							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 						></textarea>
-					</BitsTabs.Content>
-					<BitsTabs.Content value="preview">
+					</TabsContent>
+					<TabsContent value="preview">
 						<iframe
 							srcdoc={renderPreview(value.html_body ?? '')}
 							title="Email body preview"
 							class="w-full rounded-lg border"
 							style="border-color: var(--color-border); min-height: 300px;"
 						></iframe>
-					</BitsTabs.Content>
+					</TabsContent>
 				{/snippet}
 			</Tabs>
 		</div>

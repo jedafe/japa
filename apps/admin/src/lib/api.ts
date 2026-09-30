@@ -234,8 +234,9 @@ export const walletApi = {
 	processWithdrawal: (id: string, body?: { action?: string; admin_note?: string }) =>
 		api(`/admin/wallet/withdrawals/${id}/process`, { method: 'POST', body }),
 
-	// Currencies — for currency symbol lookup (Rule 16, BUG-022)
-	getCurrencies: () => api<{ code: string; symbol: string; name?: string }[]>('/wallet/currencies'),
+	// Currencies — for currency symbol lookup (Rule 16, BUG-022).
+	// Uses the public /currencies reference list (Section 58).
+	getCurrencies: () => api<{ code: string; symbol: string; name?: string }[]>('/currencies'),
 };
 
 export const spaceTypesApi = {

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
-	import { X, Pencil, Loader2 } from 'lucide-svelte';
+	import { Modal } from '$lib/components/ui';
+	import { Pencil, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import type { Source } from '$lib/types/sources';
@@ -73,25 +73,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
-		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-50 flex max-h-[90vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-lg"
-		>
-			<div class="mb-4 flex items-center gap-2">
-				<Pencil size={18} class="text-[var(--color-primary)]" />
-				<Dialog.Title class="text-base font-medium text-[var(--color-text)]">
-					{t('sources.edit.title', 'Edit source')}
-				</Dialog.Title>
-				<Dialog.Close
-					class="ml-auto grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					onclick={close}
-				>
-					<X size={16} />
-				</Dialog.Close>
-			</div>
-
+<Modal bind:open onOpenChange={(v) => { if (!v) close(); }} icon={Pencil} title={t('sources.edit.title', 'Edit source')} size="md">
 			<div class="flex flex-col gap-3">
 				<div class="flex flex-col gap-1">
 					<label for="source-name" class="text-sm font-medium text-[var(--color-text)]">{t('sources.edit.name', 'Name')}</label>
@@ -158,6 +140,4 @@
 					</button>
 				</div>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>

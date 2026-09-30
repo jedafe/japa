@@ -2,12 +2,13 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import { Tabs } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { api } from '$lib/api';
 	import type { QueueInfo, QueueStats, QueueTask, QueueTasksResponse } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { ListTodo, Clock, RefreshCw, X, AlertTriangle, CheckCircle, Timer, RotateCw, RotateCcw, Archive, Trash2 } from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import { ListTodo, Clock, RefreshCw, AlertTriangle, CheckCircle, Timer, RotateCw, RotateCcw, Archive, Trash2 } from 'lucide-svelte';
 
 	let {} = $props();
 
@@ -273,23 +274,14 @@
 	</div>
 </div>
 
-<Tabs.Root bind:value={activeTab}>
-	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
-		<Tabs.Trigger
-			value="overview"
-			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
-		>
-			{t('queue.tab_overview')}
-		</Tabs.Trigger>
-		<Tabs.Trigger
-			value="queues"
-			class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all"
-		>
-			{t('queue.tab_queues').replace('{count}', String(queueStats?.queues?.length ?? 0))}
-		</Tabs.Trigger>
-	</Tabs.List>
-
-	<Tabs.Content value="overview" class="mt-4">
+<Tabs
+	bind:value={activeTab}
+	tabs={[
+		{ value: 'overview', label: t('queue.tab_overview') },
+		{ value: 'queues', label: t('queue.tab_queues').replace('{count}', String(queueStats?.queues?.length ?? 0)) }
+	]}
+>
+	<TabsContent value="overview">
 		{#if loading}
 			<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
 				{#each Array(5) as _}
@@ -327,9 +319,9 @@
 				/>
 			</div>
 		{/if}
-	</Tabs.Content>
+	</TabsContent>
 
-	<Tabs.Content value="queues" class="mt-4">
+	<TabsContent value="queues">
 		<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
 			<div class="overflow-x-auto">
 				<table class="w-full text-sm">
@@ -395,27 +387,17 @@
 				</table>
 			</div>
 		</div>
-	</Tabs.Content>
-</Tabs.Root>
+	</TabsContent>
+</Tabs>
 
-<Dialog.Root bind:open={() => selectedQueue !== null, (v) => { if (!v) selectedQueue = null; }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-xl border p-0"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<div class="border-border-card flex items-center justify-between border-b px-6 py-4">
-				<div>
-					<Dialog.Title class="text-foreground text-lg font-semibold">{selectedQueue?.name}</Dialog.Title>
-					<p class="text-muted-foreground text-xs">{t('queue.recent_jobs')}</p>
-				</div>
-				<Dialog.Close class="hover:bg-dark-04 rounded-9px p-1.5 transition-colors" aria-label={t('common.close')}>
-					<span class="sr-only">{t('common.close')}</span>
-					<X class="size-4" />
-				</Dialog.Close>
-			</div>
-			<div class="px-6 py-4">
+<Modal
+	bind:open={() => selectedQueue !== null, (v) => { if (!v) selectedQueue = null; }}
+	title={selectedQueue?.name ?? t('queue.queue_details', 'Queue details')}
+	description={t('queue.recent_jobs')}
+	size="max-w-2xl"
+>
+	{#snippet children(close)}
+			<div>
 				<div class="mb-4 grid grid-cols-4 gap-3">
 					<div class="border-border-card rounded-9px border p-3">
 						<p class="text-muted-foreground text-[10px] font-medium uppercase">{t('queue.pending')}</p>
@@ -552,10 +534,13 @@
 						</button>
 					</div>
 				{/if}
-				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-1.5 text-sm font-medium transition-colors">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-1.5 text-sm font-medium transition-colors"
+					onclick={close}
+				>
 					{t('common.close')}
-				</Dialog.Close>
+				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>

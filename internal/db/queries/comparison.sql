@@ -105,7 +105,7 @@ RETURNING id, content_id, type_id, label, dimension_type, position, source_field
 -- LEFT JOINs custom_fields so the matrix assembler gets the source field key
 -- without a second lookup (§30 Sub-spec 5 entity-field hydration).
 SELECT d.id, d.content_id, d.type_id, d.label, d.dimension_type, d.position,
- d.source_field_id, cf.key AS source_field_key, d.created_at, d.deleted_at
+ d.source_field_id, cf.key AS source_field_key, cf.options AS source_field_options, d.created_at, d.deleted_at
 FROM comparison_dimensions d
 LEFT JOIN custom_fields cf ON cf.id = d.source_field_id
 WHERE d.content_id = @content_id AND d.deleted_at IS NULL

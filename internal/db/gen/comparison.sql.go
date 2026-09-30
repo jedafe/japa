@@ -800,7 +800,7 @@ func (q *Queries) ListComparisonContentIDsByItemRef(ctx context.Context, arg Lis
 
 const listComparisonDimensionsByContent = `-- name: ListComparisonDimensionsByContent :many
 SELECT d.id, d.content_id, d.type_id, d.label, d.dimension_type, d.position,
- d.source_field_id, cf.key AS source_field_key, d.created_at, d.deleted_at
+ d.source_field_id, cf.key AS source_field_key, cf.options AS source_field_options, d.created_at, d.deleted_at
 FROM comparison_dimensions d
 LEFT JOIN custom_fields cf ON cf.id = d.source_field_id
 WHERE d.content_id = $1 AND d.deleted_at IS NULL
@@ -808,16 +808,17 @@ ORDER BY d.position ASC, d.created_at ASC
 `
 
 type ListComparisonDimensionsByContentRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	ContentID      pgtype.UUID        `json:"content_id"`
-	TypeID         pgtype.UUID        `json:"type_id"`
-	Label          string             `json:"label"`
-	DimensionType  string             `json:"dimension_type"`
-	Position       int32              `json:"position"`
-	SourceFieldID  pgtype.UUID        `json:"source_field_id"`
-	SourceFieldKey *string            `json:"source_field_key"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ID                 pgtype.UUID        `json:"id"`
+	ContentID          pgtype.UUID        `json:"content_id"`
+	TypeID             pgtype.UUID        `json:"type_id"`
+	Label              string             `json:"label"`
+	DimensionType      string             `json:"dimension_type"`
+	Position           int32              `json:"position"`
+	SourceFieldID      pgtype.UUID        `json:"source_field_id"`
+	SourceFieldKey     *string            `json:"source_field_key"`
+	SourceFieldOptions []byte             `json:"source_field_options"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 }
 
 // LEFT JOINs custom_fields so the matrix assembler gets the source field key
@@ -840,6 +841,7 @@ func (q *Queries) ListComparisonDimensionsByContent(ctx context.Context, content
 			&i.Position,
 			&i.SourceFieldID,
 			&i.SourceFieldKey,
+			&i.SourceFieldOptions,
 			&i.CreatedAt,
 			&i.DeletedAt,
 		); err != nil {

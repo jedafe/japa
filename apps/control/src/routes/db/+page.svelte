@@ -8,7 +8,9 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Tabs, Tooltip } from 'bits-ui';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
+	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import {
 		Database,
 		RefreshCw,
@@ -336,29 +338,16 @@
 			<RefreshCw class="size-3 {refreshing ? 'animate-spin' : ''}" />
 			{t('common.refresh')}
 		</button>
-		<Tooltip.Provider>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-						disabled={vacuuming}
-						onclick={() => { showVacuumConfirm = true; }}
-					>
-						<Scissors class="size-3 {vacuuming ? 'animate-pulse' : ''}" />
-						{t('db.vacuum_button')}
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Portal>
-					<Tooltip.Content
-						sideOffset={8}
-						class="z-50 rounded-card bg-background-alt px-3 py-1.5 text-xs text-foreground shadow-card border border-border-card"
-					>
-						{t('db.vacuum_tooltip')}
-						<Tooltip.Arrow class="fill-background-alt" />
-					</Tooltip.Content>
-				</Tooltip.Portal>
-			</Tooltip.Root>
-		</Tooltip.Provider>
+		<Tooltip content={t('db.vacuum_tooltip')} arrow arrowClass="fill-background-alt">
+			<button
+				class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
+				disabled={vacuuming}
+				onclick={() => { showVacuumConfirm = true; }}
+			>
+				<Scissors class="size-3 {vacuuming ? 'animate-pulse' : ''}" />
+				{t('db.vacuum_button')}
+			</button>
+		</Tooltip>
 	</div>
 </div>
 
@@ -371,28 +360,19 @@
 	</div>
 	<div class="h-64 animate-pulse rounded-card border border-border-card bg-background-alt"></div>
 {:else if dbHealth}
-	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="mb-6 flex gap-1 rounded-card bg-muted p-1">
-			<Tabs.Trigger value="overview" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
-				<Activity class="h-3.5 w-3.5" />
-				{t('db.tab_overview')}
-			</Tabs.Trigger>
-			<Tabs.Trigger value="tables" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
-				<Table2 class="h-3.5 w-3.5" />
-				{t('db.tab_tables')}
-			</Tabs.Trigger>
-			<Tabs.Trigger value="slow-queries" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
-				<Zap class="h-3.5 w-3.5" />
-				{t('db.tab_slow_queries')}
-			</Tabs.Trigger>
-			<Tabs.Trigger value="replication" class="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card">
-				<Database class="h-3.5 w-3.5" />
-				{t('db.tab_replication')}
-			</Tabs.Trigger>
-		</Tabs.List>
-
+	<Tabs
+		bind:value={activeTab}
+		listClass="mb-6 flex gap-1 rounded-card bg-muted p-1"
+		triggerClass="flex items-center gap-1.5 rounded-9px px-4 py-2 text-xs font-medium text-muted-foreground transition-colors data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-card"
+		tabs={[
+			{ value: 'overview', label: t('db.tab_overview'), icon: Activity },
+			{ value: 'tables', label: t('db.tab_tables'), icon: Table2 },
+			{ value: 'slow-queries', label: t('db.tab_slow_queries'), icon: Zap },
+			{ value: 'replication', label: t('db.tab_replication'), icon: Database }
+		]}
+	>
 		<!-- Overview Tab -->
-		<Tabs.Content value="overview">
+		<TabsContent value="overview" class="mt-0">
 			<!-- Top metrics -->
 			<div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 				<MetricCard
@@ -471,10 +451,10 @@
 					</div>
 				</div>
 			</div>
-		</Tabs.Content>
+		</TabsContent>
 
 		<!-- Tables Tab -->
-		<Tabs.Content value="tables">
+		<TabsContent value="tables" class="mt-0">
 			<div class="overflow-hidden rounded-card border border-border-card bg-background shadow-card">
 				<div class="border-b border-border-card px-6 py-4">
 					<div class="flex items-center gap-2">
@@ -497,10 +477,10 @@
 					getRowId={getTableRowId}
 				/>
 			</div>
-		</Tabs.Content>
+		</TabsContent>
 
 		<!-- Slow Queries Tab -->
-		<Tabs.Content value="slow-queries">
+		<TabsContent value="slow-queries" class="mt-0">
 			<div class="overflow-hidden rounded-card border border-border-card bg-background shadow-card">
 				<div class="border-b border-border-card px-6 py-4">
 					<div class="flex items-center gap-2">
@@ -528,10 +508,10 @@
 					getRowId={getSlowQueryRowId}
 				/>
 			</div>
-		</Tabs.Content>
+		</TabsContent>
 
 		<!-- Replication Tab -->
-		<Tabs.Content value="replication">
+		<TabsContent value="replication" class="mt-0">
 			{#if dbHealth.replication}
 				<!-- Overall health banner -->
 				<div class="overflow-hidden rounded-card border shadow-card {dbHealth.replication.healthy ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-destructive/30 bg-destructive/5'}">
@@ -635,8 +615,8 @@
 					<p class="mt-1 text-xs text-muted-foreground">{t('db.replication_not_configured')}</p>
 				</div>
 			{/if}
-		</Tabs.Content>
-	</Tabs.Root>
+		</TabsContent>
+	</Tabs>
 {:else}
 	<!-- No data state -->
 	<div class="rounded-card border border-border-card bg-background p-12 text-center shadow-card">

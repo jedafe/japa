@@ -5,8 +5,8 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Plus, X, RefreshCw } from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import { Plus, RefreshCw } from 'lucide-svelte';
+	import Modal from '$lib/components/ui/Modal.svelte';
 	import type { DataTableColumn } from '$lib/api/types';
 
 	type Currency = {
@@ -262,23 +262,12 @@
 </div>
 
 <!-- Create/Edit Modal -->
-<Dialog.Root bind:open={showFormModal} onOpenChange={(isOpen) => { if (!isOpen) closeFormModal(); }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<div class="mb-4 flex items-center justify-between">
-				<Dialog.Title class="text-foreground text-lg font-semibold">
-					{editingCurrency ? t('currencies.edit', 'Edit Currency') : t('currencies.add', 'Add Currency')}
-				</Dialog.Title>
-				<Dialog.Close class="text-muted-foreground hover:text-foreground rounded-9px p-1.5 transition-colors">
-					<X class="size-4" />
-				</Dialog.Close>
-			</div>
+<Modal
+	bind:open={showFormModal}
+	onOpenChange={(isOpen) => { if (!isOpen) closeFormModal(); }}
+	title={editingCurrency ? t('currencies.edit', 'Edit Currency') : t('currencies.add', 'Add Currency')}
+>
+	{#snippet children(close)}
 			<div class="space-y-4">
 				<div>
 					<label class="text-foreground mb-1 block text-sm font-medium" for="curr-code">{t('currencies.col_code', 'Code')}</label>
@@ -361,9 +350,13 @@
 					<p class="text-destructive text-sm">{errorMessage}</p>
 				{/if}
 				<div class="flex justify-end gap-2 pt-2">
-					<Dialog.Close class="border-border-input bg-background-alt text-foreground hover:bg-muted rounded-md border px-4 py-2 text-sm transition-colors">
+					<button
+						type="button"
+						class="border-border-input bg-background-alt text-foreground hover:bg-muted rounded-md border px-4 py-2 text-sm transition-colors"
+						onclick={close}
+					>
 						{t('common.cancel', 'Cancel')}
-					</Dialog.Close>
+					</button>
 					<button
 						class="bg-foreground text-background hover:bg-foreground/90 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 						onclick={save}
@@ -373,21 +366,12 @@
 					</button>
 				</div>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>
 
 <!-- Delete Confirmation -->
-<Dialog.Root bind:open={confirmOpen} onOpenChange={(isOpen) => { if (!isOpen) { deleteReason = ''; } }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">{t('currencies.deactivate', 'Deactivate Currency')}</Dialog.Title>
+<Modal bind:open={confirmOpen} onOpenChange={(isOpen) => { if (!isOpen) { deleteReason = ''; } }} title={t('currencies.deactivate', 'Deactivate Currency')}>
+	{#snippet children(close)}
 			<div class="bg-destructive/10 mt-3 rounded-md p-3">
 				<p class="text-destructive text-sm">{t('currencies.deactivate_confirm', 'This will hide the currency from new purchases. Historical payment records are preserved.')}</p>
 			</div>
@@ -402,9 +386,13 @@
 				></textarea>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close class="border-border-input bg-background-alt text-foreground hover:bg-muted rounded-md border px-4 py-2 text-sm transition-colors">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt text-foreground hover:bg-muted rounded-md border px-4 py-2 text-sm transition-colors"
+					onclick={close}
+				>
 					{t('common.cancel', 'Cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					class="bg-destructive text-white hover:bg-destructive/90 rounded-md px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 					disabled={!deleteReason.trim()}
@@ -413,6 +401,5 @@
 					{t('common.deactivate', 'Deactivate')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>

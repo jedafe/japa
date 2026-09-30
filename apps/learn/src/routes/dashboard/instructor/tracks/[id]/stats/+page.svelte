@@ -135,7 +135,7 @@
 					{t('university.total_revenue')}
 				</div>
 				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">
-					{formatPriceKobo(stats.total_revenue_kobo, stats.currency, page.data.locale)}
+					{formatPriceKobo(stats.total_revenue_kobo, stats.currency, page.data.locale, page.data.currencies)}
 				</p>
 			</div>
 		</div>

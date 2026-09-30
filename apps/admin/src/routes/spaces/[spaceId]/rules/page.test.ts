@@ -19,11 +19,6 @@ vi.mock('$lib/stores/permissions.svelte', () => ({
 	getPermissionState: () => ({})
 }));
 
-vi.mock('$lib/components/Modal.svelte', async () => {
-	const { default: Stub } = await import('$lib/components/Modal.stub.svelte');
-	return { default: Stub };
-});
-
 describe('Space Rules +page.svelte', () => {
 	it('renders the heading', () => {
 		render(Page);

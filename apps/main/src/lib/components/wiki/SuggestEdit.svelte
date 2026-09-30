@@ -5,7 +5,7 @@
 	// fields as set_value ops to POST /wiki/suggest. Renders nothing unless
 	// the wiki.structured_edits feature flag is on.
 	import { page } from '$app/state';
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { Pencil, X, Send, Loader2, Plus, Trash2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import CustomFieldGroup from '$lib/components/create/panel/CustomFieldGroup.svelte';
@@ -21,6 +21,8 @@
 		type WikiFieldDefInput,
 		type WikiFieldOp
 	} from '$lib/api/wiki';
+	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
+	import type { CurrencyInfo } from '$lib/utils/currency';
 	import type { CustomFieldDef } from '$lib/types';
 
 	let {
@@ -273,8 +275,15 @@
 		(schema?.groups ?? []).some((g) => g.fields.some((f) => f.visible))
 	);
 
-	function formatValue(v: unknown): string {
+	// §58 — layout-level currency reference for currency/price_range display.
+	const currencies = $derived((page.data?.currencies ?? null) as CurrencyInfo[] | null);
+
+	function formatValue(f: WikiEntityField): string {
+		const v = f.value;
 		if (v === null || v === undefined || v === '') return '—';
+		if (f.field_type === 'currency' || f.field_type === 'price_range') {
+			return formatWikiFieldValue(f, currencies, schema?.entity_currency_code ?? '');
+		}
 		if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
 		if (typeof v === 'number') return String(v);
 		if (typeof v === 'string') return v;
@@ -379,21 +388,15 @@
 		</button>
 	{/if}
 
-	<Dialog.Root bind:open>
-		<Dialog.Portal>
-			<Dialog.Overlay
-				class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out"
-			/>
-			<Dialog.Content
-				class="fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-full max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[12px] border border-[var(--color-border)] bg-[var(--color-bg)] shadow-xl"
-			>
+	<Modal bind:open hideHeader ariaTitle={label ?? t('wiki.suggest_edit', 'Suggest an edit')} padded={false} overlayClass="backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out" class="bg-[var(--color-bg)]" size="max-w-[560px]">
+		{#snippet children(close)}
 				<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
-					<Dialog.Title class="text-base font-semibold text-[var(--color-text)]">
+					<h2 class="text-base font-semibold text-[var(--color-text)]">
 						{label ?? t('wiki.suggest_edit', 'Suggest an edit')}
-					</Dialog.Title>
-					<Dialog.Close class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
+					</h2>
+					<button type="button" onclick={close} aria-label={t('common.close', 'Close')} class="text-[var(--color-muted)] hover:text-[var(--color-text)]">
 						<X size={18} />
-					</Dialog.Close>
+					</button>
 				</div>
 
 				<div class="flex-1 overflow-y-auto px-5 py-4">
@@ -457,6 +460,7 @@
 												{values}
 												onvalues={(v) => (values = v)}
 												onedit={() => {}}
+												contextCurrencyCode={schema?.entity_currency_code ?? ''}
 											/>
 										{/if}
 										{#if readonly.length > 0}
@@ -465,7 +469,7 @@
 													<div class="flex items-baseline justify-between gap-3 text-sm">
 														<dt class="text-[var(--color-muted)]">{f.label}</dt>
 														<dd class="text-right text-[var(--color-text)]">
-															{formatValue(f.value)}
+															{formatValue(f)}
 														</dd>
 													</div>
 												{/each}
@@ -636,11 +640,13 @@
 							{/if}
 
 							<div class="flex justify-end gap-2 pt-1">
-								<Dialog.Close
+								<button
+									type="button"
+									onclick={close}
 									class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 								>
 									{t('wiki.cancel', 'Cancel')}
-								</Dialog.Close>
+								</button>
 								<button
 									type="submit"
 									disabled={submitting}
@@ -657,7 +663,6 @@
 						</form>
 					{/if}
 				</div>
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+		{/snippet}
+	</Modal>
 {/if}

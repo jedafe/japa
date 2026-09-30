@@ -13,6 +13,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { formatMoney, currencyLabel, currencySymbol } from '$lib/utils/currency';
 	import { LineChart } from 'layerchart';
 	import type {
 		RemittanceCorridor,
@@ -185,12 +186,10 @@
 		return rate.toFixed(2);
 	}
 
-	function formatMoney(amount: number, currency: string): string {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency: currency.toUpperCase(),
-			maximumFractionDigits: 2
-		}).format(amount);
+	// §58 — managed currency symbols via the shared util (page.data.currencies
+	// comes from the root layout's GET /currencies fetch).
+	function fmtMoney(amount: number, currency: string): string {
+		return formatMoney(amount, currency, data.currencies, { fractionDigits: 2 });
 	}
 
 	/**
@@ -230,7 +229,13 @@
 		const filtered = query === ''
 			? corridors
 			: corridors.filter((c) => c.label.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((c) => ({ id: corridorId(c), label: c.label })));
+		return Promise.resolve(
+			filtered.map((c) => ({
+				id: corridorId(c),
+				label:
+					`${currencyLabel(c.send_currency, data.currencies)} → ${currencyLabel(c.receive_currency, data.currencies)}`
+			}))
+		);
 	}
 
 	function fetchCorridorsInitial(): Promise<AutocompleteItem[]> {
@@ -238,7 +243,10 @@
 	}
 
 	function getCorridorLabel(id: string): string {
-		return corridors.find((c) => corridorId(c) === id)?.label ?? id;
+		const c = corridors.find((x) => corridorId(x) === id);
+		return c
+			? `${currencyLabel(c.send_currency, data.currencies)} → ${currencyLabel(c.receive_currency, data.currencies)}`
+			: id;
 	}
 
 	// Prepare history data for LayerChart — daily aggregate (avg rate per day).
@@ -380,7 +388,7 @@
 										</div>
 										<div class="flex items-center gap-2 text-xs text-muted mt-0.5">
 											{#if rate.fee_flat}
-												<span>{t('remittance.fee', 'Fee:')} {formatMoney(rate.fee_flat, rate.send_currency)}</span>
+												<span>{t('remittance.fee', 'Fee:')} {fmtMoney(rate.fee_flat, rate.send_currency)}</span>
 											{/if}
 											{#if rate.transfer_time}
 												<span>· {rate.transfer_time}</span>
@@ -422,9 +430,9 @@
 							min="1"
 							class="w-32 px-3 py-2 bg-surface border border-border rounded text-text focus:border-primary focus:outline-none"
 						/>
-						<span class="text-sm text-muted">{selectedCorridor.send_currency}</span>
+						<span class="text-sm text-muted">{currencySymbol(selectedCorridor.send_currency, data.currencies) || selectedCorridor.send_currency}</span>
 						<Icon name="arrow-right" size={16} class="text-muted" />
-						<span class="text-sm text-muted">{selectedCorridor.receive_currency}</span>
+						<span class="text-sm text-muted">{currencySymbol(selectedCorridor.receive_currency, data.currencies) || selectedCorridor.receive_currency}</span>
 					</div>
 
 					{#if calcLoading}
@@ -435,7 +443,7 @@
 								<div class="flex items-center justify-between text-sm">
 									<span class="text-text">{row.provider_name}</span>
 									<span class="font-semibold text-text">
-										{formatMoney(row.receive_amount, calcResult.receive_currency)}
+										{fmtMoney(row.receive_amount, calcResult.receive_currency)}
 									</span>
 								</div>
 							{/each}

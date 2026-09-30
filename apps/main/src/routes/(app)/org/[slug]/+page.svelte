@@ -11,10 +11,13 @@
 	import type { UrlTab } from '$lib/components/ui';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { openLightbox } from '$lib/lightbox.svelte';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import type { ProfilePost, FeedItem } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
+
+	const mediaImages = $derived(data.media.filter((m) => m.mime_type.startsWith('image/')));
 
 	const org = $derived(data.org);
 	const canManage = $derived(data.canManage);
@@ -174,15 +177,14 @@
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 					{#each data.media as item (item.id)}
 						{#if item.mime_type.startsWith('image/')}
-							<a
-								href={item.url}
-								target="_blank"
-								rel="noopener"
-								class="group block overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]"
+							<button
+								type="button"
+								class="group block cursor-zoom-in overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]"
 								title={item.alt_text ?? item.filename}
+								onclick={() => openLightbox(mediaImages, mediaImages.indexOf(item))}
 							>
 								<img src={item.url} alt={item.alt_text ?? item.filename} loading="lazy" class="aspect-square w-full object-cover transition-transform group-hover:scale-[1.03]" />
-							</a>
+							</button>
 						{:else}
 							<a
 								href={item.url}

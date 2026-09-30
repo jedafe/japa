@@ -3,7 +3,7 @@
 	// family) and /guide/[slug]. Ref: §14, §49, ADR-058 Exception #1.
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil, GraduationCap } from 'lucide-svelte';
+	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil, GraduationCap, Maximize2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
@@ -15,6 +15,7 @@
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import VideoEmbed from '$lib/components/content/VideoEmbed.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
+	import { imgLightbox, openLightbox } from '$lib/lightbox.svelte';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { hydrateContentEmbeds } from '$lib/tiptap/hydrateContentEmbeds';
@@ -230,7 +231,17 @@
 				<VideoEmbed source={data.videoSource} />
 			</div>
 		{:else if article.featured_image_url}
-			<img src={article.featured_image_url} alt={article.title} class="mb-8 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
+			<button
+				type="button"
+				class="group relative mb-8 block w-full cursor-zoom-in overflow-hidden rounded-[var(--radius-card)]"
+				onclick={() => openLightbox([{ id: `hero-${article.id}`, url: article.featured_image_url!, alt_text: article.title }])}
+				aria-label={t('lightbox.view_image', 'View image')}
+			>
+				<img src={article.featured_image_url} alt={article.title} class="aspect-[16/9] w-full object-cover" />
+				<span class="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
+					<Maximize2 size={15} />
+				</span>
+			</button>
 		{/if}
 
 		<h1 class="text-balance text-4xl font-bold leading-tight tracking-tight text-[var(--color-text)] md:text-5xl" style="font-family: var(--font-serif);">{article.title}</h1>
@@ -356,7 +367,7 @@
 		{/if}
 
 		<!-- Article body: prose TipTap HTML with serif reading font -->
-		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds>
+		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
 			{@html sanitizedBody}
 		</div>
 

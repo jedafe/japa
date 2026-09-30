@@ -94,11 +94,14 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		// GET /me/affiliate-links — the caller's affiliate links (CRUD list).
 		// A 403 means the user has not enrolled yet (affiliate.links.manage is
 		// granted on enrollment) — we flag `enrolled: false` so the section can
-		// show an enrollment CTA instead of the create form.
+		// show an enrollment CTA instead of the create form. Page 1 of
+		// page_size=20; the section loads further pages client-side (the
+		// endpoint is page/page_size-paginated but returns no total, so the
+		// client infers "more" from a full page).
 		let enrolled = true;
 		let links: unknown[] = [];
 		try {
-			links = (await apiList<unknown>(ctx, '/me/affiliate-links')).items;
+			links = (await apiList<unknown>(ctx, '/me/affiliate-links?page=1&page_size=20')).items;
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 403) enrolled = false;
 		}
@@ -109,7 +112,7 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			? await apiGet<AffiliateEarnings>(ctx, '/me/affiliate-earnings').catch(() => null)
 			: null;
 
-		return { program, links, earnings, enrolled };
+		return { program, links, earnings, enrolled, linksPageSize: 20 };
 	},
 	wallet: async (ctx) => {
 		const walletSettings = await apiGet<{
@@ -138,6 +141,10 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 			}));
 		}
 
+		// Each ledger stream is page_size/page_offset-paginated server-side.
+		// The merged `ledger` is capped at 50 entries per stream — the counts
+		// tell the History tab how many arrived so it can page further
+		// client-side ("more" inferred from a full page; no total returned).
 		const ledger = [
 			...mapEntries(pointsRes?.entries, 'points'),
 			...mapEntries(creditsRes?.entries, 'credits')
@@ -148,15 +155,21 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		return {
 			wallet: await apiGet<unknown>(ctx, '/me/wallet').catch(() => null),
 			// Rule 16: currency list, credit packs, and user preference come from the API.
-			currencies: (await apiList<unknown>(ctx, '/wallet/currencies').catch(() => ({ items: [] }))).items,
+			currencies: (await apiGet<unknown[]>(ctx, '/currencies').catch(() => [] as unknown[])),
 			creditPacks: (await apiList<unknown>(ctx, '/wallet/credit-packs').catch(() => ({ items: [] }))).items,
 			preferredCurrency: await apiGet<{ preferred_currency: string }>(ctx, '/me/preferences/currency')
 				.catch(() => ({ preferred_currency: '' })),
 			settings: walletSettings,
-			minConvertPoints: walletSettings?.min_convert_points ?? 100,
-			minPurchaseCredits: walletSettings?.min_purchase_credits ?? 100,
-			minWithdrawCredits: walletSettings?.min_withdrawal_credits ?? 1000,
+			// Rule 3/16: min thresholds are operator-configured values from
+			// GET /me/wallet/settings — when the endpoint is unavailable the
+			// tabs get null and skip client-side minimum checks (the backend
+			// still validates), rather than enforcing invented numbers.
+			minConvertPoints: walletSettings?.min_convert_points ?? null,
+			minPurchaseCredits: walletSettings?.min_purchase_credits ?? null,
+			minWithdrawCredits: walletSettings?.min_withdrawal_credits ?? null,
 			ledger,
+			pointsLoaded: pointsRes?.entries?.length ?? 0,
+			creditsLoaded: creditsRes?.entries?.length ?? 0,
 			withdrawals: (await apiList<unknown>(ctx, '/me/wallet/withdrawals?page_size=20').catch(() => ({ items: [] }))).items,
 			withdrawalMethods: (await apiList<unknown>(ctx, '/me/wallet/withdrawal-methods').catch(() => ({ items: [] }))).items,
 			withdrawalProviders: await apiGet<string[]>(ctx, '/wallet/withdraw/providers').catch(() => []),
@@ -170,14 +183,18 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		plans: await apiGet<unknown[]>(ctx, '/pricing/plans').catch(() => []),
 		// GET /payment-providers — enabled payment providers for the checkout.
 		providers: await apiGet<unknown[]>(ctx, '/payment-providers').catch(() => []),
-		// GET /wallet/currencies — currency symbols for price formatting (Rule 16).
-		currencies: await apiGet<unknown[]>(ctx, '/wallet/currencies').catch(() => [])
+		// GET /currencies — public currency reference for price formatting (Rule 16).
+		currencies: await apiGet<unknown[]>(ctx, '/currencies').catch(() => [])
 	}),
 	payments: async (ctx) => ({
 		// GET /me/payments — paginated payment history for the billing Payments
 		// section (Section 23). Best-effort: a missing wallet/payment feature
 		// degrades to an empty list rather than blanking the whole settings hub.
-		payments: (await apiList<Payment>(ctx, '/me/payments?page_size=20').catch(() => ({ items: [] }))).items
+		// First page of a page_size/page_offset-paginated endpoint; the section
+		// loads further pages client-side (the response carries no total, so
+		// "more" is inferred from a full page).
+		payments: (await apiList<Payment>(ctx, '/me/payments?page_size=20').catch(() => ({ items: [] }))).items,
+		pageSize: 20
 	}),
 	danger: async (ctx) => {
 		// Section 50: the danger section needs the caller's username for the

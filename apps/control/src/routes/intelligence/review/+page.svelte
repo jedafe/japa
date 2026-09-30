@@ -11,7 +11,7 @@
 	import { goto } from '$app/navigation';
 	import { page as pageStore } from '$app/state';
 	import { RefreshCw, Eye, CheckCircle2, XCircle, ClipboardList } from 'lucide-svelte';
-	import { Select } from 'bits-ui';
+	import Select from '$lib/components/ui/Select.svelte';
 
 	// The review record shape mirrors the IntelRecord row returned by
 	// /api/v1/intel/review/queue. JSON blob fields are kept as-is.
@@ -279,57 +279,28 @@
 	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 		<div class="flex flex-1 flex-wrap items-center gap-2">
 			<SearchInput bind:value={filter} placeholder={t('intel.search_records', 'Search records...')} class="w-64" />
-			<Select.Root
-				type="single"
+			<Select
 				value={filterEntity}
-				onValueChange={(v) => { if (v !== undefined) { filterEntity = v; page = 0; } }}
-			>
-				<Select.Trigger class="border-border-input bg-background text-foreground h-input rounded-9px border px-3 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus">
-					<Select.Value placeholder={t('intel.filter_all_entities', 'All entity types')} />
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-						<Select.Viewport class="p-1">
-							{#each entityItems as e}
-								<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={e.value} label={e.label}>
-									{e.label}
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+				onValueChange={(v) => { filterEntity = v; page = 0; }}
+				items={entityItems}
+				placeholder={t('intel.filter_all_entities', 'All entity types')}
+				triggerClass="h-input"
+			/>
 			<!-- Status filter: updates the URL query param so the page reloads with the new status. -->
-			<Select.Root
-				type="single"
+			<Select
 				value={statusFilter}
 				onValueChange={(v) => {
-					if (v !== undefined) {
-						const url = new URL(window.location.href);
-						if (v === 'review_required') {
-							url.searchParams.delete('status');
-						} else {
-							url.searchParams.set('status', v);
-						}
-						goto(url.pathname + url.search, { replaceState: false });
+					const url = new URL(window.location.href);
+					if (v === 'review_required') {
+						url.searchParams.delete('status');
+					} else {
+						url.searchParams.set('status', v);
 					}
+					goto(url.pathname + url.search, { replaceState: false });
 				}}
-			>
-				<Select.Trigger class="border-border-input bg-background text-foreground h-input rounded-9px border px-3 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus">
-					<span class="truncate">{statusLabels[statusFilter] ?? statusFilter}</span>
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-						<Select.Viewport class="p-1">
-							{#each Object.entries(statusLabels) as [value, label]}
-								<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" {value} {label}>
-									{label}
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+				items={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
+				triggerClass="h-input"
+			/>
 		</div>
 		<button
 			class="border-border-input bg-background-alt hover:bg-muted text-foreground flex items-center gap-1.5 rounded-9px border px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"

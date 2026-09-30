@@ -2,7 +2,7 @@
 	// Ref: .jeos/specs/2026-09-18-studio-web-prompts-tab.md §11 — Contents tab:
 	// the member content manager lives here (moved from /dashboard/content,
 	// which now redirects to /studio/contents).
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
@@ -590,28 +590,25 @@
 		{/if}
 	{/if}
 
-	<Dialog.Root open={deleteIds !== null} onOpenChange={(v) => { if (!v) deleteIds = null; }}>
-		<Dialog.Portal>
-			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-				<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-					{t('dashboard.content.delete_confirm')}
-					{#if deleteIds && deleteIds.length > 1}
-						<span class="ml-1 text-sm font-normal text-[var(--color-muted)]">({deleteIds.length})</span>
-					{/if}
-				</Dialog.Title>
-				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-					{#if deleteIds && deleteIds.length > 1}
-						{t('dashboard.content.delete_confirm_bulk_body', 'This will delete {count} items. This cannot be undone.', { count: deleteIds.length })}
-					{:else}
-						{t('dashboard.content.delete_confirm_body')}
-					{/if}
-				</Dialog.Description>
-				<div class="flex justify-end gap-2">
-					<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">{t('common.cancel')}</Dialog.Close>
-					<button type="button" class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white" onclick={doDelete}>{t('dashboard.content.delete')}</button>
-				</div>
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	<Modal open={deleteIds !== null} onOpenChange={(v) => { if (!v) deleteIds = null; }} overlayClass="backdrop-blur-sm" size="md">
+		{#snippet title()}
+			{t('dashboard.content.delete_confirm')}
+			{#if deleteIds && deleteIds.length > 1}
+				<span class="ml-1 text-sm font-normal text-[var(--color-muted)]">({deleteIds.length})</span>
+			{/if}
+		{/snippet}
+		{#snippet children(close)}
+			<p class="mb-4 text-sm text-[var(--color-muted)]">
+				{#if deleteIds && deleteIds.length > 1}
+					{t('dashboard.content.delete_confirm_bulk_body', 'This will delete {count} items. This cannot be undone.', { count: deleteIds.length })}
+				{:else}
+					{t('dashboard.content.delete_confirm_body')}
+				{/if}
+			</p>
+			<div class="flex justify-end gap-2">
+				<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">{t('common.cancel')}</button>
+				<button type="button" class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white" onclick={doDelete}>{t('dashboard.content.delete')}</button>
+			</div>
+		{/snippet}
+	</Modal>
 </section>

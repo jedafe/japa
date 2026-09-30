@@ -6,6 +6,8 @@
 	import { listCountries } from '$lib/api/geo';
 	import { listCurrencies } from '$lib/api/hub';
 	import { isoToLocalDateTime } from '$lib/utils/datetime';
+	import { page } from '$app/state';
+	import { currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
 	import { t } from '$lib/i18n';
 
 	interface Props {
@@ -13,9 +15,13 @@
 		values: Record<string, unknown>;
 		onvalues: (v: Record<string, unknown>) => void;
 		onedit: () => void;
+		/** §58 — the host entity's resolved country currency (e.g. the wiki
+		 *  page's space currency); denomination fallback for
+		 *  currency/price_range fields with no options.currency_code. */
+		contextCurrencyCode?: string;
 	}
 
-	let { fields, values, onvalues, onedit }: Props = $props();
+	let { fields, values, onvalues, onedit, contextCurrencyCode = '' }: Props = $props();
 
 	function setField(key: string, val: unknown) {
 		onvalues({ ...values, [key]: val });
@@ -134,13 +140,28 @@
 	// §06 'suggest'/'select' fields can declare a named option source instead
 	// of a static list — {"source":"geo_countries"} pulls the platform's
 	// countries from GET /geo/countries, {"source":"wallet_currencies"} pulls
-	// the managed currency list from GET /wallet/currencies (Rule 16).
+	// the managed currency list from GET /currencies (Rule 16, §58).
 	function optionSource(field: CustomFieldDef): string | null {
 		const o = field.options;
 		if (o && !Array.isArray(o) && typeof (o as { source?: unknown }).source === 'string') {
 			return (o as { source: string }).source;
 		}
 		return null;
+	}
+
+	// §06/§58 'currency'/'price_range' fields are denominated by the field's
+	// {currency_code} option, else the host entity's resolved country
+	// currency — show the managed symbol/code as an adornment so the
+	// amount's denomination is visible in the input.
+	const layoutCurrencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
+	function fieldCurrencySymbol(field: CustomFieldDef): string {
+		if (field.field_type !== 'currency' && field.field_type !== 'price_range') return '';
+		const o = field.options;
+		const code =
+			o && !Array.isArray(o) && typeof (o as { currency_code?: unknown }).currency_code === 'string'
+				? ((o as { currency_code: string }).currency_code)
+				: contextCurrencyCode;
+		return code ? currencySymbol(code, layoutCurrencies) || code : '';
 	}
 
 	let geoCountries = $state<GeoCountry[] | null>(null);
@@ -309,7 +330,8 @@
 		{:else if field.field_type === 'price_range'}
 			<!-- §80 Itemized Pricing — one field, three bounds; emits the
 			     {min?,avg?,max?} object normalizePriceRange expects. -->
-			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
+			{@const curSym = fieldCurrencySymbol(field)}
+			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}{#if curSym} <span class="cf-price-currency">({curSym})</span>{/if}</span>
 			<div class="cf-price-range">
 				{#each PRICE_PARTS as part}
 					<label class="cf-price-bound">
@@ -325,18 +347,22 @@
 				{/each}
 			</div>
 		{:else if field.field_type === 'number' || field.field_type === 'currency' || field.field_type === 'percentage' || field.field_type === 'rating'}
+			{@const curSym = fieldCurrencySymbol(field)}
 			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
-			<input
-				id={field.key}
-				type="number"
-				class="cf-input"
-				placeholder={field.placeholder ?? ''}
-				value={values[field.key] ?? ''}
-				step={field.field_type === 'rating' ? '1' : 'any'}
-				min={field.field_type === 'rating' ? '1' : undefined}
-				max={field.field_type === 'rating' ? '5' : undefined}
-				oninput={(e) => setField(field.key, e.currentTarget.valueAsNumber)}
-			/>
+			<div class="cf-money-wrap" class:cf-money-active={curSym}>
+				<input
+					id={field.key}
+					type="number"
+					class="cf-input"
+					placeholder={field.placeholder ?? ''}
+					value={values[field.key] ?? ''}
+					step={field.field_type === 'rating' ? '1' : 'any'}
+					min={field.field_type === 'rating' ? '1' : undefined}
+					max={field.field_type === 'rating' ? '5' : undefined}
+					oninput={(e) => setField(field.key, e.currentTarget.valueAsNumber)}
+				/>
+				{#if curSym}<span class="cf-money-symbol">{curSym}</span>{/if}
+			</div>
 		{:else if field.field_type === 'date'}
 			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
@@ -514,6 +540,25 @@
 	.cf-input:focus {
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	.cf-money-wrap {
+		position: relative;
+	}
+	.cf-money-active .cf-input {
+		padding-right: 2.25rem;
+	}
+	.cf-price-currency {
+		font-weight: 400;
+		color: var(--color-muted);
+	}
+	.cf-money-symbol {
+		position: absolute;
+		right: 12px;
+		top: 50%;
+		transform: translateY(-50%);
+		font-size: 0.875rem;
+		color: var(--color-muted);
+		pointer-events: none;
 	}
 	.cf-textarea {
 		resize: vertical;

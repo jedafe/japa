@@ -4,7 +4,7 @@
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import WebhookEventMultiSelect from '$lib/components/webhooks/WebhookEventMultiSelect.svelte';
-	import { Dialog } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
@@ -374,22 +374,11 @@
 	bind:selectedIds
 />
 
-<Dialog.Root bind:open={createModalOpen}>
-	<Dialog.Portal>
-		<Dialog.Overlay
-			class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50"
-		/>
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{editingWebhook
-					? t('webhooks.edit_webhook', 'Edit Webhook')
-					: t('webhooks.create_webhook', 'Create Webhook')}
-			</Dialog.Title>
+<Modal
+	bind:open={createModalOpen}
+	title={editingWebhook ? t('webhooks.edit_webhook', 'Edit Webhook') : t('webhooks.create_webhook', 'Create Webhook')}
+	size="lg"
+>
 			<div class="mt-4 space-y-4">
 				<div>
 					<label for="webhook-name" class="text-foreground mb-1 block text-sm font-medium">
@@ -445,12 +434,13 @@
 				{/if}
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close
+				<button
+					type="button"
 					class="border-border-input bg-background hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
 					onclick={closeCreateModal}
 				>
 					{t('common.cancel', 'Cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 					onclick={submitWebhook}
@@ -463,9 +453,7 @@
 							: t('webhooks.create', 'Create')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 
 <ConfirmModal
 	bind:open={deleteModalOpen}

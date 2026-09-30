@@ -5,6 +5,7 @@
 // EntityFieldsPanel (body) and WikiQuickFacts (sidebar) so both stay in sync.
 import { i18n, t } from '$lib/i18n';
 import type { WikiEntityField } from '$lib/api/wiki';
+import { currencySymbol, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 
 type ChoiceOption = string | { value: string; label: string };
 
@@ -50,22 +51,49 @@ function fmtNum(n: number): string {
 	return n.toLocaleString(i18n.locale, { maximumFractionDigits: 2 });
 }
 
-/** Display string for a price_range value — "1,200" for a lone avg,
- *  "800 – 1,600" when bounds are set. */
-export function formatPriceRange(v: unknown): string {
-	const p = priceRangeParts(v);
-	if (!p) return '—';
-	if (p.min !== undefined && p.max !== undefined && p.min !== p.max) {
-		return `${fmtNum(p.min)} – ${fmtNum(p.max)}`;
+/** §58 — the ISO code a price_range/currency field was bound to via its
+ *  options config ({currency_code: "USD"}). Empty when unset. */
+export function fieldCurrencyCode(options: unknown): string {
+	if (options !== null && typeof options === 'object' && !Array.isArray(options)) {
+		const c = (options as Record<string, unknown>).currency_code;
+		if (typeof c === 'string') return c;
 	}
-	const single = p.avg ?? p.min ?? p.max;
-	return single !== undefined ? fmtNum(single) : '—';
+	return '';
 }
 
-export function formatWikiFieldValue(f: WikiEntityField): string {
+/** Display string for a price_range value — "₦1,200" for a lone avg,
+ *  "₦800 – ₦1,600" when bounds are set. Bare numbers when the field
+ *  carries no currency_code. */
+export function formatPriceRange(
+	v: unknown,
+	code?: string,
+	currencies?: CurrencyInfo[] | null
+): string {
+	const p = priceRangeParts(v);
+	if (!p) return '—';
+	const sym = code ? currencySymbol(code, currencies) : '';
+	const money = (n: number) => (sym && sym !== code ? `${sym}${fmtNum(n)}` : code ? `${code} ${fmtNum(n)}` : fmtNum(n));
+	if (p.min !== undefined && p.max !== undefined && p.min !== p.max) {
+		return `${money(p.min)} – ${money(p.max)}`;
+	}
+	const single = p.avg ?? p.min ?? p.max;
+	return single !== undefined ? money(single) : '—';
+}
+
+/** §58 — currency display precedence for money-typed fields: the field's
+ *  explicit {currency_code} option wins; otherwise the host space/entity's
+ *  resolved country currency (space_currency_code / entity_currency_code);
+ *  otherwise bare numbers. */
+export function formatWikiFieldValue(
+	f: WikiEntityField,
+	currencies?: CurrencyInfo[] | null,
+	contextCurrencyCode?: string
+): string {
 	const v = f.value;
 	if (v === null || v === undefined || v === '') return '—';
-	if (f.field_type === 'price_range') return formatPriceRange(v);
+	const code = fieldCurrencyCode(f.options) || contextCurrencyCode || '';
+	if (f.field_type === 'price_range') return formatPriceRange(v, code, currencies);
+	if (f.field_type === 'currency' && typeof v === 'number') return formatMoney(v, code || undefined, currencies);
 	if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
 	if (typeof v === 'number') return v.toLocaleString(i18n.locale);
 	const options = choiceOptions(f.options);

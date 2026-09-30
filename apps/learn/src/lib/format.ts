@@ -1,4 +1,5 @@
 import { t } from '$lib/i18n';
+import { currencyOf, type CurrencyInfo } from '$lib/utils/currency';
 
 /**
  * Learn-specific formatting helpers.
@@ -9,11 +10,14 @@ import { t } from '$lib/i18n';
  * Format a kobo (minor-unit) amount as a localized price string.
  * Currency and locale are driven by the track/caller, not hardcoded NGN/en-NG.
  * 0 or null → "Free". Ref: ADR-063, Rule 16.
+ * `currencies` is the managed currency table (§58) — when provided, its
+ * symbol replaces the ISO symbol in Intl's localized output.
  */
 export function formatPriceKobo(
 	kobo: number | null | undefined,
 	currency?: string | null,
-	locale?: string | null
+	locale?: string | null,
+	currencies?: CurrencyInfo[] | null
 ): string {
 	if (!kobo || kobo <= 0) return t('learn.free', 'Free');
 	const units = kobo / 100;
@@ -23,14 +27,22 @@ export function formatPriceKobo(
 		// No currency code known — show the raw major-unit amount without guessing.
 		return units.toLocaleString(loc);
 	}
+	// Only substitute the MANAGED symbol — falling back to Intl's narrowSymbol
+	// here would degrade disambiguating defaults (e.g. "CA$" → "$").
+	const managedSymbol = currencyOf(code, currencies)?.symbol;
 	try {
-		return new Intl.NumberFormat(loc, {
+		const parts = new Intl.NumberFormat(loc, {
 			style: 'currency',
 			currency: code,
 			maximumFractionDigits: 0
-		}).format(units);
+		}).formatToParts(units);
+		if (managedSymbol) {
+			return parts.map((p) => (p.type === 'currency' ? managedSymbol : p.value)).join('');
+		}
+		return parts.map((p) => p.value).join('');
 	} catch {
-		// Fall back to a plain number when the currency code is not recognized.
+		// Code isn't a valid ISO 4217 code (e.g. a platform-specific currency).
+		if (managedSymbol) return `${managedSymbol}${units.toLocaleString(loc)}`;
 		return `${units.toLocaleString(loc)} ${code}`;
 	}
 }

@@ -5,7 +5,9 @@
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Key, Plus, Copy, Check } from 'lucide-svelte';
-	import { Dialog, Tabs, Select } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
@@ -110,6 +112,7 @@
 		{ value: 'premium', label: t('api_keys.tier_premium') },
 		{ value: 'unlimited', label: t('api_keys.tier_unlimited') }
 	]);
+	const tierOptions = $derived(tierItems.filter((i) => i.value !== 'all'));
 
 	let filtered = $derived(
 		keys
@@ -493,25 +496,12 @@
 		class="w-72"
 	/>
 
-	<Select.Root type="single" bind:value={filterTier} items={tierItems}>
-		<Select.Trigger class="border-border-input bg-background rounded-9px border px-3 py-2 text-sm" aria-label={t('api_keys.tier')}>
-			<Select.Value placeholder={t('api_keys.tier_all')} />
-		</Select.Trigger>
-		<Select.Portal>
-			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1">
-				<Select.Viewport class="p-1">
-					{#each tierItems as item}
-						<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={item.value} label={item.label}>
-							{#snippet children({ selected })}
-								{item.label}
-								{#if selected}<span class="ml-auto">✓</span>{/if}
-							{/snippet}
-						</Select.Item>
-					{/each}
-				</Select.Viewport>
-			</Select.Content>
-		</Select.Portal>
-	</Select.Root>
+	<Select
+		bind:value={filterTier}
+		items={tierItems}
+		placeholder={t('api_keys.tier_all')}
+		ariaLabel={t('api_keys.tier')}
+	/>
 
 	<span class="text-muted-foreground text-xs">
 		{filtered.length !== 1 ? t('api_keys.key_count_plural').replace('{count}', String(filtered.length)) : t('api_keys.key_count').replace('{count}', String(filtered.length))}
@@ -526,19 +516,15 @@
 	</button>
 </div>
 
-<Tabs.Root bind:value={activeTab} onValueChange={handleTabChange}>
-	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
-		<Tabs.Trigger value="active" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('api_keys.tab_active')} ({activeCount})
-		</Tabs.Trigger>
-		<Tabs.Trigger value="all" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('api_keys.tab_all')} ({keys.length})
-		</Tabs.Trigger>
-		<Tabs.Trigger value="analytics" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('api_keys.analytics_tab')}
-		</Tabs.Trigger>
-	</Tabs.List>
-</Tabs.Root>
+<Tabs
+	bind:value={activeTab}
+	onValueChange={handleTabChange}
+	tabs={[
+		{ value: 'active', label: `${t('api_keys.tab_active')} (${activeCount})` },
+		{ value: 'all', label: `${t('api_keys.tab_all')} (${keys.length})` },
+		{ value: 'analytics', label: t('api_keys.analytics_tab') }
+	]}
+/>
 
 {#if activeTab === 'analytics'}
 	<div class="mt-4">
@@ -693,22 +679,13 @@
 	{/if}
 {/if}
 
-<Dialog.Root bind:open={createModalOpen} onOpenChange={(isOpen) => { if (!isOpen) createForm = { name: '', scopes: [], rate_limit_tier: 'standard', expires_at: '' }; }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{t('api_keys.create')}
-			</Dialog.Title>
-			<p class="text-muted-foreground mt-1 text-sm">
-				{t('api_keys.create_description')}
-			</p>
-
+<Modal
+	bind:open={createModalOpen}
+	onOpenChange={(isOpen) => { if (!isOpen) createForm = { name: '', scopes: [], rate_limit_tier: 'standard', expires_at: '' }; }}
+	title={t('api_keys.create')}
+	description={t('api_keys.create_description')}
+>
+	{#snippet children(close)}
 			{#if errorMessage}
 				<div class="bg-destructive/10 text-destructive mt-3 rounded-md p-3 text-sm">
 					{errorMessage}
@@ -759,53 +736,12 @@
 					<label for="create-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
 					</label>
-					<Select.Root
-						type="single"
-						value={createForm.rate_limit_tier}
-						onValueChange={(v) => {
-							if (v !== undefined) createForm.rate_limit_tier = v;
-						}}
-					>
-						<Select.Trigger
-							class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-						>
-							<Select.Value placeholder={t('api_keys.tier')} />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-								<Select.Viewport class="p-1">
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="basic"
-										label={t('api_keys.tier_basic')}
-									>
-										{t('api_keys.tier_basic')}
-									</Select.Item>
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="standard"
-										label={t('api_keys.tier_standard')}
-									>
-										{t('api_keys.tier_standard')}
-									</Select.Item>
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="premium"
-										label={t('api_keys.tier_premium')}
-									>
-										{t('api_keys.tier_premium')}
-									</Select.Item>
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="unlimited"
-										label={t('api_keys.tier_unlimited')}
-									>
-										{t('api_keys.tier_unlimited')}
-									</Select.Item>
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Select
+						bind:value={createForm.rate_limit_tier}
+						items={tierOptions}
+						placeholder={t('api_keys.tier')}
+						triggerClass="mt-1 w-full"
+					/>
 				</div>
 
 				<div>
@@ -823,9 +759,13 @@
 			</div>
 
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={close}
+				>
 					{t('api_keys.cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					type="button"
 					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
@@ -835,23 +775,16 @@
 					{createLoading ? t('api_keys.creating') : t('api_keys.create')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>
 
-<Dialog.Root bind:open={oneTimeKeyModalOpen} onOpenChange={(isOpen) => { if (!isOpen) { oneTimeKeyValue = ''; } }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{t('api_keys.key_created')}
-			</Dialog.Title>
-
+<Modal
+	bind:open={oneTimeKeyModalOpen}
+	onOpenChange={(isOpen) => { if (!isOpen) { oneTimeKeyValue = ''; } }}
+	title={t('api_keys.key_created')}
+	size="lg"
+>
+	{#snippet children(close)}
 			<div class="bg-amber-500/10 mt-3 rounded-md p-3">
 				<p class="text-amber-500 text-sm font-medium">
 					{t('api_keys.save_warning')}
@@ -887,27 +820,23 @@
 			</div>
 
 			<div class="mt-6 flex justify-end">
-				<Dialog.Close class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90">
+				<button
+					type="button"
+					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90"
+					onclick={close}
+				>
 					{t('api_keys.done')}
-				</Dialog.Close>
+				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>
 
-<Dialog.Root bind:open={editModalOpen} onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: [], rate_limit_tier: 'basic' }; }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{t('api_keys.edit')}
-			</Dialog.Title>
-
+<Modal
+	bind:open={editModalOpen}
+	onOpenChange={(isOpen) => { if (!isOpen) editForm = { id: '', name: '', scopes: [], rate_limit_tier: 'basic' }; }}
+	title={t('api_keys.edit')}
+>
+	{#snippet children(close)}
 			{#if errorMessage}
 				<div class="bg-destructive/10 text-destructive mt-3 rounded-md p-3 text-sm">
 					{errorMessage}
@@ -958,60 +887,23 @@
 					<label for="edit-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
 					</label>
-					<Select.Root
-						type="single"
-						value={editForm.rate_limit_tier}
-						onValueChange={(v) => {
-							if (v !== undefined) editForm.rate_limit_tier = v;
-						}}
-					>
-						<Select.Trigger
-							class="border-border-input bg-background text-foreground mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-						>
-							<Select.Value placeholder={t('api_keys.tier')} />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-								<Select.Viewport class="p-1">
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="basic"
-										label={t('api_keys.tier_basic')}
-									>
-										{t('api_keys.tier_basic')}
-									</Select.Item>
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="standard"
-										label={t('api_keys.tier_standard')}
-									>
-										{t('api_keys.tier_standard')}
-									</Select.Item>
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="premium"
-										label={t('api_keys.tier_premium')}
-									>
-										{t('api_keys.tier_premium')}
-									</Select.Item>
-									<Select.Item
-										class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-										value="unlimited"
-										label={t('api_keys.tier_unlimited')}
-									>
-										{t('api_keys.tier_unlimited')}
-									</Select.Item>
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Select
+						bind:value={editForm.rate_limit_tier}
+						items={tierOptions}
+						placeholder={t('api_keys.tier')}
+						triggerClass="mt-1 w-full"
+					/>
 				</div>
 			</div>
 
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={close}
+				>
 					{t('api_keys.cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					type="button"
 					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
@@ -1021,6 +913,5 @@
 					{editLoading ? t('api_keys.saving') : t('api_keys.save_key')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>

@@ -22,6 +22,7 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/jedafe/japa/internal/honcho"
@@ -205,6 +206,11 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 
 	var settings []enrichedSetting
 
+	// Currency-valued settings (pricing.currency, payment.currency) take their
+	// options from the managed currencies table — the catalog's static option
+	// list predates operator-managed currencies (§58, Rule 16).
+	currencyOpts := h.currencySettingOptions(r.Context())
+
 	for rows.Next() {
 		var s enrichedSetting
 		if err := rows.Scan(&s.ID, &s.Key, &s.Value, &s.IsPublic, &s.CreatedAt, &s.UpdatedAt); err != nil {
@@ -230,6 +236,9 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal([]byte(meta.Options), &opts); err == nil {
 				s.Options = opts
 			}
+		}
+		if opts, ok := currencyOpts[s.Key]; ok {
+			s.Options = opts
 		}
 
 		settings = append(settings, s)
@@ -257,6 +266,9 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 				// opts parsed successfully; it will be assigned to Options below.
 			}
 		}
+		if cOpts, ok := currencyOpts[key]; ok {
+			opts = cOpts
+		}
 
 		settings = append(settings, enrichedSetting{
 			Key:          key,
@@ -274,6 +286,37 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": settings})
+}
+
+// currencySettingKeys are the system_settings keys whose value is an ISO 4217
+// currency code drawn from the managed currencies table (§58).
+var currencySettingKeys = map[string]bool{
+	"pricing.currency":        true,
+	"payment.currency":        true,
+	"wallet.default_currency": true,
+}
+
+// currencySettingOptions builds {value:"CODE", label:"Name (CODE)"} options
+// from the active currencies table for currency-valued settings. Returns nil
+// when the table can't be read — callers keep the catalog's static options.
+func (h *Handlers) currencySettingOptions(ctx context.Context) map[string][]any {
+	currencies, err := gen.New(h.DB.Reader).ListActiveCurrencies(ctx)
+	if err != nil || len(currencies) == 0 {
+		return nil
+	}
+	opts := make([]any, 0, len(currencies))
+	for _, c := range currencies {
+		label := c.Name
+		if label == "" {
+			label = c.Code
+		}
+		opts = append(opts, map[string]any{"value": c.Code, "label": label + " (" + c.Code + ")"})
+	}
+	out := make(map[string][]any, len(currencySettingKeys))
+	for k := range currencySettingKeys {
+		out[k] = opts
+	}
+	return out
 }
 
 func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) {

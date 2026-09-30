@@ -1749,6 +1749,46 @@ func (q *Queries) GetSpaceCountryAncestorIDs(ctx context.Context, spaceIds []pgt
 	return items, nil
 }
 
+const getSpaceCountryCurrencyCode = `-- name: GetSpaceCountryCurrencyCode :one
+WITH RECURSIVE walk AS (
+    SELECT s.id AS node, 0 AS depth
+    FROM spaces s
+    WHERE s.id = $1
+    UNION ALL
+    SELECT par.id, w.depth + 1
+    FROM walk w
+    JOIN (
+        SELECT j.space_id AS child, j.parent_space_id AS parent
+        FROM space_parent_spaces j
+        UNION
+        SELECT s2.id, s2.parent_id
+        FROM spaces s2
+        WHERE s2.parent_id IS NOT NULL
+    ) e ON e.child = w.node
+    JOIN spaces par ON par.id = e.parent
+    WHERE w.depth < 3
+)
+SELECT c.currency_code
+FROM walk w
+JOIN spaces c ON c.id = w.node AND c.level = 'country'
+WHERE c.currency_code IS NOT NULL AND c.currency_code <> ''
+ORDER BY w.depth ASC
+LIMIT 1
+`
+
+// Resolves a space's country-level ancestor's currency_code by walking the
+// parent_id ∪ space_parent_spaces edge set upward (≤3 hops — mirrors
+// GetSpaceCountryAncestorIDs). A country space resolves to its own
+// currency_code. Display context only — no currencies.is_active filter:
+// inactive reference rows still carry correct name/symbol for read
+// surfaces (Section 58, "Country → currency linkage").
+func (q *Queries) GetSpaceCountryCurrencyCode(ctx context.Context, spaceID pgtype.UUID) (*string, error) {
+	row := q.db.QueryRow(ctx, getSpaceCountryCurrencyCode, spaceID)
+	var currency_code *string
+	err := row.Scan(&currency_code)
+	return currency_code, err
+}
+
 const getSpaceKeywords = `-- name: GetSpaceKeywords :one
 SELECT keywords FROM spaces
 WHERE id = $1 AND deleted_at IS NULL

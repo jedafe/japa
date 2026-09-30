@@ -11,6 +11,7 @@
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { Save, ArrowLeft } from 'lucide-svelte';
 	import { formatPriceKobo } from '$lib/format';
+	import { loadCurrencies, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
 	import type { InstructorTrack, GeoCountry, CatalogOption } from '$lib/types';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -34,6 +35,8 @@
 	let difficultyLevels = $state<CatalogOption[]>([]);
 	let priceMain = $state(0);
 	let currency = $state('');
+	// §58 — managed currency list for the currency picker (name + code labels).
+	let currencies = $state<CurrencyInfo[]>([]);
 	let category = $state('');
 	let language = $state(page.data.locale ?? '');
 	let languages = $state<string[]>([]);
@@ -45,11 +48,13 @@
 
 	// Fetch active categories, country spaces, and difficulty options from public APIs (Rule 16).
 	onMount(async () => {
-		const [catRes, geoRes, optRes] = await Promise.all([
+		const [catRes, geoRes, optRes, currencyList] = await Promise.all([
 			api.get<Category[]>('/learn/university/categories'),
 			api.get<GeoCountry[]>('/geo/countries'),
-			api.get<{ difficulty_levels: CatalogOption[]; languages: string[] }>('/learn/university/catalog/options')
+			api.get<{ difficulty_levels: CatalogOption[]; languages: string[] }>('/learn/university/catalog/options'),
+			loadCurrencies()
 		]);
+		currencies = currencyList;
 		if (!catRes.error && catRes.data) {
 			categories = catRes.data;
 		}
@@ -68,6 +73,16 @@
 		const opts = languages.map((l) => ({ value: l, label: l.toUpperCase() }));
 		if (language && !opts.some((o) => o.value === language)) {
 			opts.unshift({ value: language, label: language.toUpperCase() });
+		}
+		return opts;
+	});
+
+	// §58 — "CODE — Name" currency options; keep a stored code that isn't in
+	// the managed list selectable (e.g. a currency deactivated later).
+	const currencyOptions = $derived.by(() => {
+		const opts = currencies.map((c) => ({ value: c.code, label: currencyLabel(c.code, currencies) }));
+		if (currency && !opts.some((o) => o.value === currency)) {
+			opts.unshift({ value: currency, label: currencyLabel(currency, currencies) });
 		}
 		return opts;
 	});
@@ -255,7 +270,7 @@
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
 				/>
 				<p class="mt-1 text-xs text-[var(--color-text-subtle)]">
-					{priceMain <= 0 ? t('university.track_price_free_hint') : t('university.track_price_preview', 'Preview: {price}').replace('{price}', formatPriceKobo(Math.round(priceMain * 100), currency, page.data.locale))}
+					{priceMain <= 0 ? t('university.track_price_free_hint') : t('university.track_price_preview', 'Preview: {price}').replace('{price}', formatPriceKobo(Math.round(priceMain * 100), currency, page.data.locale, page.data.currencies))}
 				</p>
 			</div>
 
@@ -285,13 +300,24 @@
 				<label for="currency" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('university.currency_label', 'Currency')}
 				</label>
-				<input
-					id="currency"
-					type="text"
-					bind:value={currency}
-					placeholder={t('university.track_currency_placeholder', 'e.g. USD')}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
+				{#if currencyOptions.length > 0}
+					<AutocompleteSelect
+						id="currency"
+						bind:value={currency}
+						options={currencyOptions}
+						placeholder={t('university.track_currency_placeholder', 'e.g. USD')}
+						clearable
+						class="w-full"
+					/>
+				{:else}
+					<input
+						id="currency"
+						type="text"
+						bind:value={currency}
+						placeholder={t('university.track_currency_placeholder', 'e.g. USD')}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+					/>
+				{/if}
 			</div>
 
 			<!-- Category (from API) -->

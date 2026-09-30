@@ -12,7 +12,7 @@
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu } from '$lib/components/ui';
 	import { Bell, CheckCheck, BellOff, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -206,20 +206,17 @@
 	}
 </script>
 
-<DropdownMenu.Root bind:open onOpenChange={(isOpen) => { if (isOpen) loadOnOpen(); }}>
-	<DropdownMenu.Trigger
-		class="w-full text-left {klass}"
-		aria-label={t('nav.notifications')}
-	>
-		{@render children?.()}
-	</DropdownMenu.Trigger>
-	<DropdownMenu.Portal>
-		<DropdownMenu.Content
-			{side}
-			{align}
-			sideOffset={8}
-			class="z-50 max-h-[70vh] w-80 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-0 shadow-lg"
+<Menu bind:open onOpenChange={(isOpen) => { if (isOpen) loadOnOpen(); }} {side} {align} padded={false} contentClass="max-h-[70vh] w-80 overflow-y-auto">
+	{#snippet trigger(props)}
+		<button
+			type="button"
+			{...props}
+			class="w-full text-left {klass}"
+			aria-label={t('nav.notifications')}
 		>
+			{@render children?.()}
+		</button>
+	{/snippet}
 			<!-- Header -->
 			<div class="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
 				<span class="text-sm font-medium text-[var(--color-text)]">
@@ -321,6 +318,4 @@
 					{t('notifications.view_all', 'View all notifications')}
 				</a>
 			</div>
-		</DropdownMenu.Content>
-	</DropdownMenu.Portal>
-</DropdownMenu.Root>
+</Menu>

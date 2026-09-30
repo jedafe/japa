@@ -14,7 +14,7 @@
 	 *
 	 * Ref: japaconnect-engineering/sections/02-authentication-sessions.md (2FA TOTP)
 	 */
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { totpEnable, totpConfirm, totpDisable } from '$lib/api/hub';
@@ -221,15 +221,8 @@
 		</button>
 
 		<!-- Disable confirmation dialog — requires TOTP code -->
-		<Dialog.Root bind:open={disableOpen}>
-			<Dialog.Portal>
-				<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-					<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-						{t('settings.security.totp_disable_confirm')}
-					</Dialog.Title>
-					<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-						{t('settings.security.totp_disable_desc')}
-					</Dialog.Description>
+		<Modal bind:open={disableOpen} title={t('settings.security.totp_disable_confirm')} description={t('settings.security.totp_disable_desc')} size="md">
+			{#snippet children(close)}
 					<label class="mb-4 block">
 						<span class="mb-1 block text-sm text-[var(--color-muted)]">{t('settings.security.totp_code')}</span>
 						<input
@@ -244,9 +237,9 @@
 					</label>
 					{#if error}<p class="mb-3 text-xs text-[var(--color-danger)]">{error}</p>{/if}
 					<div class="flex justify-end gap-2">
-						<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
+						<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
 							{t('common.cancel')}
-						</Dialog.Close>
+						</button>
 						<button
 							type="button"
 							disabled={loading || disableCode.length < 6}
@@ -256,34 +249,25 @@
 							{loading ? t('settings.security.totp_loading') : t('settings.security.totp_disable')}
 						</button>
 					</div>
-				</Dialog.Content>
-			</Dialog.Portal>
-		</Dialog.Root>
+			{/snippet}
+		</Modal>
 
 		<!-- Backup codes dialog (shown once after enrollment) -->
 		{#if backupCodes.length > 0}
-			<Dialog.Root bind:open={backupOpen}>
-				<Dialog.Portal>
-					<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-						<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-							{t('settings.security.totp_backup_codes')}
-						</Dialog.Title>
-						<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-							{t('settings.security.totp_backup_desc')}
-						</Dialog.Description>
+			<Modal bind:open={backupOpen} title={t('settings.security.totp_backup_codes')} description={t('settings.security.totp_backup_desc')} size="md">
+				{#snippet children(close)}
 						<div class="mb-4 grid grid-cols-2 gap-2 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
 							{#each backupCodes as code_item (code_item)}
 								<code class="font-mono text-sm text-[var(--color-text)]">{code_item}</code>
 							{/each}
 						</div>
 						<div class="flex justify-end">
-							<Dialog.Close class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white">
+							<button type="button" onclick={close} class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white">
 								{t('settings.security.totp_backup_ack')}
-							</Dialog.Close>
+							</button>
 						</div>
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+				{/snippet}
+			</Modal>
 		{/if}
 	{/if}
 </div>

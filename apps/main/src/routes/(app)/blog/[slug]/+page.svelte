@@ -12,6 +12,7 @@
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
+	import { imgLightbox } from '$lib/lightbox.svelte';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
@@ -269,7 +270,7 @@
 		{/if}
 
 		<!-- Article body: prose TipTap HTML with serif reading font -->
-		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds>
+		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:imgLightbox>
 			{@html sanitizedBody}
 		</div>
 

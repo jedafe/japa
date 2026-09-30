@@ -9,6 +9,7 @@
 	import { DollarSign, RefreshCw, AlertTriangle, Eye } from "lucide-svelte";
 	import { universityAdminApi, adminCatalogApi, type CatalogOption } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from "$lib/utils/currency";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	type Payout = {
@@ -62,9 +63,12 @@
 		{ key: "status", label: t("university.status", "Status"), options: payoutStatusOptions }
 	]);
 
+	// §58 — managed currency symbols for payout amounts.
+	let currencies = $state<CurrencyInfo[]>([]);
+	loadCurrencies().then((list) => (currencies = list));
+
 	function formatKobo(kobo: number, currency: string): string {
-		const major = kobo / 100;
-		return `${currency} ${major.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+		return formatMoney(kobo, currency, currencies, { minor: true, fractionDigits: 2, withCode: true });
 	}
 
 	const columns = [

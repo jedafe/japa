@@ -23,6 +23,13 @@
 	const payload = $derived(data as SessionsData | null);
 	let sessions = $state<Session[]>(untrack(() => payload?.sessions ?? []));
 
+	// Resync when the loader data is replaced (e.g. invalidateAll) — the
+	// untracked init alone leaves the list permanently stale (BUG-P014).
+	// Reads only the payload so optimistic removals don't retrigger it.
+	$effect(() => {
+		sessions = payload?.sessions ?? [];
+	});
+
 	async function doRevoke(id: string) {
 		const idx = sessions.findIndex((s) => s.id === id);
 		if (idx < 0) return;
@@ -35,10 +42,12 @@
 	}
 
 	async function doRevokeOthers() {
-		const others = sessions.filter((s) => !s.current);
+		// Snapshot the pre-revoke list so rollback restores the exact prior
+		// state (a currents-then-others rebuild would scramble the order).
+		const prev = sessions;
 		await optimisticAction({
 			apply: () => (sessions = sessions.filter((s) => s.current)),
-			rollback: () => (sessions = [...sessions.filter((s) => s.current), ...others]),
+			rollback: () => (sessions = prev),
 			call: () => revokeOtherSessions()
 		});
 	}

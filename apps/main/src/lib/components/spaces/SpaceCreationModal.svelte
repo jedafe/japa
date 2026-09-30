@@ -3,7 +3,7 @@
 	// Simplified member space creation modal. Members choose a flat list of
 	// selectable space types (default: community), enter a name, and the
 	// backend keyword-matches the name against primary geo spaces to auto-link.
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { X, Rocket, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -210,19 +210,7 @@
 	}
 </script>
 
-<Dialog.Root bind:open onOpenChange={(isOpen) => { if (!isOpen) reset(); }}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-[560px] -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-			<Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]">
-				<X size={20} />
-			</Dialog.Close>
-
-			<div class="mb-4 flex items-center gap-2">
-				<Rocket size={20} class="text-[var(--color-primary)]" />
-				<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('spaces.create_title')}</h2>
-			</div>
-
+<Modal bind:open onOpenChange={(isOpen) => { if (!isOpen) reset(); }} icon={Rocket} title={t('spaces.create_title')} overlayClass="backdrop-blur-sm" size="max-w-[560px]">
 			{#if spaceTypes.length === 0}
 				<p class="rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm text-[var(--color-muted)]">
 					{t('spaces.no_types')}
@@ -380,6 +368,4 @@
 					</div>
 				</form>
 			{/if}
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>

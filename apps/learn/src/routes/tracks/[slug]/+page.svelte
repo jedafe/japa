@@ -13,10 +13,10 @@
 	import { LoadingSkeleton } from '$lib/components/ui';
 	import { formatDuration, formatCount, formatPriceKobo, isFreeForUser } from '$lib/format';
 	import { loginUrl } from '$lib/appOrigins';
-	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown, Lock } from 'lucide-svelte';
+	import { Star, Users, Clock, PlayCircle, CheckCircle, ChevronDown, Lock, Bookmark as BookmarkIcon, Loader2 } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
-	import type { Enrollment, TrackReview, ReviewAggregate } from '$lib/types';
+	import type { Bookmark, Enrollment, TrackReview, ReviewAggregate } from '$lib/types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
@@ -28,6 +28,13 @@
 	let enrolling = $state(false);
 	let enrollError = $state<string | null>(null);
 	let checkoutOpen = $state(false);
+
+	// Bookmark (save-for-later) toggle. There is no per-entity "is bookmarked"
+	// lookup route, so authed users load their learning_track bookmarks once
+	// (max page size) and match entity_id client-side.
+	let bookmarkId = $state<string | null>(null);
+	let bookmarkLoading = $state(false);
+	let bookmarkSaving = $state(false);
 
 	// Review submission state. Reviews are user-specific mutations (POST) on top
 	// of the SSR reviews list; we keep local copies so the tab updates after submit
@@ -73,6 +80,26 @@
 		enrollmentsStore.fetch();
 	});
 
+	// Resolve whether this track is already bookmarked (authed users only).
+	// Re-runs when navigating between tracks (track.id is derived from data).
+	$effect(() => {
+		const trackId = track.id;
+		bookmarkId = null;
+		if (!data.user) return;
+		let stale = false;
+		bookmarkLoading = true;
+		api
+			.get<Bookmark[]>('/me/bookmarks?entity_type=learning_track&page_size=100')
+			.then((r) => {
+				if (stale) return;
+				bookmarkId = r.data?.find((b) => b.entity_id === trackId)?.id ?? null;
+				bookmarkLoading = false;
+			});
+		return () => {
+			stale = true;
+		};
+	});
+
 	// Derive the enrollment for this track from the shared store.
 	const enrollment = $derived(
 		enrollmentsStore.enrollments?.find((e) => e.track_id === track.id) ?? null
@@ -104,9 +131,9 @@
 			return data.user?.is_pro ? t('learn.included_pro') : t('learn.free');
 		}
 		if (isSubscriptionEligible) {
-			return t('learn.subscription_or_purchase', 'Subscription / {price}').replace('{price}', formatPriceKobo(track.price_kobo, track.currency, data.locale));
+			return t('learn.subscription_or_purchase', 'Subscription / {price}').replace('{price}', formatPriceKobo(track.price_kobo, track.currency, data.locale, data.currencies));
 		}
-		return formatPriceKobo(track.price_kobo, track.currency, data.locale);
+		return formatPriceKobo(track.price_kobo, track.currency, data.locale, data.currencies);
 	});
 
 	async function enroll() {
@@ -147,6 +174,26 @@
 				enrollError = r.error.message;
 			}
 		}
+	}
+
+	async function toggleBookmark() {
+		if (!data.user) {
+			window.location.href = loginUrl(`/tracks/${track.slug}`);
+			return;
+		}
+		if (bookmarkSaving) return;
+		bookmarkSaving = true;
+		if (bookmarkId) {
+			const r = await api.delete(`/me/bookmarks/${bookmarkId}`);
+			if (!r.error) bookmarkId = null;
+		} else {
+			const r = await api.post<Bookmark>('/me/bookmarks', {
+				entity_type: 'learning_track',
+				entity_id: track.id
+			});
+			if (r.data) bookmarkId = r.data.id;
+		}
+		bookmarkSaving = false;
 	}
 
 	async function submitReview() {
@@ -285,7 +332,7 @@
 			</div>
 
 			<!-- Enroll CTA -->
-			<div class="mt-4">
+			<div class="mt-4 flex flex-wrap items-center gap-3">
 				{#if loadingEnrollment && data.user}
 					<LoadingSkeleton class="h-10 w-40" />
 				{:else if isEnrolled}
@@ -321,15 +368,31 @@
 						{#if enrolling}
 							{t('common.loading')}
 						{:else if isPaid && !isFreeOrPro && !isSubscriptionEligible}
-							<Lock size={18} /> {t('university.buy_for', 'Buy for {price}').replace('{price}', formatPriceKobo(track.price_kobo, track.currency, data.locale))}
+							<Lock size={18} /> {t('university.buy_for', 'Buy for {price}').replace('{price}', formatPriceKobo(track.price_kobo, track.currency, data.locale, data.currencies))}
 						{:else}
 							{t('learn.enroll')}
 						{/if}
 					</button>
 					{#if enrollError}
-						<p class="mt-2 text-sm text-[var(--color-destructive)]">{enrollError}</p>
+						<p class="w-full text-sm text-[var(--color-destructive)]">{enrollError}</p>
 					{/if}
 				{/if}
+				<!-- Bookmark toggle (POST/DELETE /me/bookmarks, entity_type=learning_track) -->
+				<button
+					type="button"
+					onclick={toggleBookmark}
+					disabled={bookmarkSaving || (bookmarkLoading && !!data.user)}
+					title={bookmarkId ? t('learn.bookmark_saved') : t('learn.bookmark_save')}
+					aria-label={bookmarkId ? t('learn.bookmark_saved') : t('learn.bookmark_save')}
+					aria-pressed={!!bookmarkId}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-60"
+				>
+					{#if bookmarkSaving || bookmarkLoading}
+						<Loader2 size={16} class="animate-spin" />
+					{:else}
+						<BookmarkIcon size={16} class={bookmarkId ? 'fill-[var(--color-primary)] text-[var(--color-primary)]' : ''} />
+					{/if}
+				</button>
 			</div>
 		</div>
 	</header>

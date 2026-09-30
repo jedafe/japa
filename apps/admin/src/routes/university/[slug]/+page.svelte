@@ -10,6 +10,7 @@
 	} from "lucide-svelte";
 	import { universitiesAdminApi, universityAdminApi } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from "$lib/utils/currency";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	// Ref: japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md
@@ -110,9 +111,12 @@
 		try { return new Date(v).toLocaleDateString(); } catch { return v; }
 	}
 
+	// §58 — managed currency list for kobo-denominated amount display.
+	let currencies = $state<CurrencyInfo[]>([]);
+	$effect(() => { loadCurrencies().then((list) => (currencies = list)); });
+
 	function fmtKobo(kobo: number, currency: string): string {
-		if (!kobo) return `${currency} 0`;
-		return `${currency} ${(kobo / 100).toLocaleString()}`;
+		return formatMoney(kobo ?? 0, currency, currencies, { minor: true, withCode: true });
 	}
 
 	const instructorColumns = [
