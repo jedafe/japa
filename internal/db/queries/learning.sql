@@ -34,7 +34,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
  lt.cover_media_id, lt.is_published, lt.sort_order, lt.created_at, lt.updated_at,
  lt.instructor_id, lt.price_kobo, lt.currency, lt.is_published_to_university,
  lt.category, lt.language, lt.total_enrolled, lt.subscription_eligible,
- m.storage_path AS thumbnail_url,
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path,
  ip.id AS instructor_profile_id, ip.display_name AS instructor_name,
  ip.bio AS instructor_bio,
  u.username AS instructor_username,
@@ -147,17 +147,20 @@ SELECT ll.id, ll.module_id, ll.title, ll.slug, ll.lesson_type,
  ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
  ll.is_published, ll.is_preview, ll.created_at, ll.updated_at,
  lm.title AS module_title, lm.slug AS module_slug,
- lt.id AS track_id, lt.slug AS track_slug, lt.title AS track_title
+ lt.id AS track_id, lt.slug AS track_slug, lt.title AS track_title,
+ vm.storage_bucket AS video_storage_bucket, vm.storage_path AS video_storage_path,
+ vm.duration_secs AS video_duration_secs
 FROM learning_lessons ll
 JOIN learning_modules lm ON lm.id = ll.module_id
 JOIN learning_tracks lt ON lt.id = lm.track_id
+LEFT JOIN media vm ON vm.id = ll.media_id
 WHERE ll.module_id = @module_id AND ll.slug = @slug;
 
 -- name: GetLessonCompletionStatus :one
 -- Checks whether a user has completed a specific lesson. Used by GetLessonDetail
 -- to populate is_completed for authenticated users so the lesson player can
 -- show the "Completed" state on SSR render without waiting for CSR.
-SELECT (lp.status = 'completed') AS is_completed
+SELECT (lp.status = 'completed') AS is_completed, lp.position_secs
 FROM lesson_progress lp
 WHERE lp.user_id = @user_id AND lp.lesson_id = @lesson_id;
 
@@ -199,17 +202,18 @@ DELETE FROM learning_lessons WHERE id = @id;
 -- =====================
 
 -- name: GetLessonProgress :one
-SELECT id, user_id, lesson_id, status, completed_at, created_at
+SELECT id, user_id, lesson_id, status, position_secs, completed_at, created_at
 FROM lesson_progress
 WHERE user_id = @user_id AND lesson_id = @lesson_id;
 
 -- name: UpsertLessonProgress :one
-INSERT INTO lesson_progress (user_id, lesson_id, status, completed_at) VALUES (@user_id, @lesson_id, @status, sqlc.narg(completed_at))
+INSERT INTO lesson_progress (user_id, lesson_id, status, position_secs, completed_at) VALUES (@user_id, @lesson_id, @status, sqlc.narg(position_secs), sqlc.narg(completed_at))
 
 ON CONFLICT (user_id, lesson_id) DO UPDATE
 SET status = EXCLUDED.status,
+ position_secs = COALESCE(EXCLUDED.position_secs, lesson_progress.position_secs),
  completed_at = COALESCE(EXCLUDED.completed_at, lesson_progress.completed_at)
-RETURNING id, user_id, lesson_id, status, completed_at, created_at;
+RETURNING id, user_id, lesson_id, status, position_secs, completed_at, created_at;
 
 -- name: GetUserTrackProgress :one
 SELECT
@@ -317,7 +321,7 @@ SELECT e.id, e.user_id, e.track_id, e.access_type,
  THEN COALESCE(e.completed_at, lp_stats.last_activity_at)
  END::timestamptz AS completed_at,
  lt.slug AS track_slug, lt.title AS track_title, lt.difficulty AS level,
- m.storage_path AS thumbnail_url,
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path,
  COALESCE(lp_stats.lessons_completed, 0) AS lessons_completed,
  COALESCE(lp_stats.lessons_total, 0) AS lessons_total,
  lp_stats.last_activity_at,
@@ -377,10 +381,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================
 
 -- name: GetQuizQuestionsByLesson :many
-SELECT id, lesson_id, question, options, answer, explanation, position, created_at
-FROM lesson_quizzes
-WHERE lesson_id = @lesson_id
-ORDER BY position ASC;
+SELECT lq.id, lq.lesson_id, lq.question, lq.options, lq.answer, lq.explanation,
+ lq.position, lq.created_at, ll.title AS lesson_title
+FROM lesson_quizzes lq
+JOIN learning_lessons ll ON ll.id = lq.lesson_id
+WHERE lq.lesson_id = @lesson_id
+ORDER BY lq.position ASC;
 
 -- =====================
 -- Admin List Operations

@@ -5,7 +5,7 @@
 	import { resolveIcon } from '$lib/components/ui/icons';
 	import { t } from '$lib/i18n';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import { loginUrl, profileUrl } from '$lib/appOrigins';
+	import { loginUrl, profileUrl, resolveMenuUrl } from '$lib/appOrigins';
 	import type { Menu, MenuItem, SessionUser } from '$lib/types';
 
 	interface Props {
@@ -21,12 +21,8 @@
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
-	// Cross-app routes (e.g. /login, which lives on the Main app) are rewritten
-	// to absolute Main-app URLs so they don't 404 on the Learn app.
-	function resolveItemUrl(url: string): string {
-		if (url === '/login') return loginUrl();
-		return url;
-	}
+	// Menu URLs that have no route on Learn (/login, /docs, …) are rewritten to
+	// absolute Main-app URLs so they don't 404 (resolveMenuUrl).
 
 	const items = $derived(
 		(menu?.items ?? []).filter((item: MenuItem) => {
@@ -102,8 +98,9 @@
 			{@const active = isActive(item.url)}
 			<li>
 				<a
-					href={resolveItemUrl(item.url)}
-					target={item.target}
+					href={resolveMenuUrl(item.url)}
+					target={item.target === '_blank' ? '_blank' : undefined}
+					rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
 					title={collapsed ? item.label : undefined}
 					aria-current={active ? 'page' : undefined}
 					class={itemClass(active)}

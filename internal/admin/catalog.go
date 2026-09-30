@@ -136,6 +136,18 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "purchase", Label: "Purchase"},
 		{Value: "pro_stream", Label: "Pro Stream"},
 	},
+	// Catalog sort modes supported by ListUniversityCatalog (ORDER BY CASE).
+	"university.catalog.sort": {
+		{Value: "popular", Label: "Most popular"},
+		{Value: "newest", Label: "Newest"},
+		{Value: "rating", Label: "Top rated"},
+	},
+	// Page sizes offered by the marketplace catalog/search page-size control.
+	"university.catalog.page_sizes": {
+		{Value: "12", Label: "12"},
+		{Value: "24", Label: "24"},
+		{Value: "48", Label: "48"},
+	},
 	"community.mutual_aid.status": {
 		{Value: "active", Label: "Active"},
 		{Value: "fulfilled", Label: "Fulfilled"},

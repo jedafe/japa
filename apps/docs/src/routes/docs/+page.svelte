@@ -4,7 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { AUDIENCE_LABEL_KEY } from '$lib/types';
-	import type { DocAudience } from '$lib/types';
+	import type { DocAudience, DocNavItem } from '$lib/types';
 	import type { PageData } from './$types';
 	import { ArrowRight } from 'lucide-svelte';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -36,6 +36,15 @@
 
 	function audienceHref(a: DocAudience): string {
 		return `/docs/${a}`;
+	}
+
+	// Nav items nest — count children recursively so the card total matches
+	// what the nav tree actually shows.
+	function countPages(audience: DocAudience): number {
+		const node = data.nav.find((n) => n.audience === audience);
+		const count = (items: DocNavItem[] | undefined): number =>
+			(items ?? []).reduce((acc, i) => acc + 1 + count(i.children), 0);
+		return count(node?.items);
 	}
 </script>
 
@@ -80,9 +89,13 @@
 					<a href={audienceHref(audience)} class="audience-card">
 						<div class="audience-card-body">
 							<span class="audience-name">{t(AUDIENCE_LABEL_KEY[audience], audience)}</span>
-							<span class="audience-count">
-								{data.nav.find((n) => n.audience === audience)?.items.length ?? 0} pages
-							</span>
+							<!-- 'api' lists OpenAPI endpoints, not doc pages — a 0-page
+							     count would misread as empty. -->
+							{#if audience !== 'api'}
+								<span class="audience-count">
+									{t('landing.pages', '{count} pages', { count: String(countPages(audience)) })}
+								</span>
+							{/if}
 						</div>
 						<ArrowRight size={18} class="audience-arrow" />
 					</a>

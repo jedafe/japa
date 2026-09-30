@@ -475,8 +475,9 @@ ORDER BY u.id;
 -- Synthetic video-channel anchors are excluded — their public page is /sources/{slug}
 -- (§106 sources-directory channel model). Search filters
 -- by username or display_name. profile_type filter is optional (empty = all).
--- Ordered by follower_count DESC then created_at DESC so the directory surfaces
--- prominent users first.
+-- Sort is whitelisted via @sort_key ('followers'|'newest'|'oldest'|'name');
+-- anything else falls back to follower_count DESC so the directory surfaces
+-- prominent users first. CASE arms keep the ORDER BY injection-safe.
 -- Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 -- japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 SELECT u.id AS user_id,
@@ -502,7 +503,13 @@ WHERE u.status = 'active'
  AND COALESCE(ups.search_indexable, true) = true
  AND (@search::text = '' OR u.username ILIKE '%' || @search || '%' OR up.display_name ILIKE '%' || @search || '%')
  AND (@profile_type::text = '' OR u.profile_type = @profile_type)
-ORDER BY u.follower_count DESC NULLS LAST, u.created_at DESC
+ORDER BY
+ CASE WHEN @sort_key::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
+ CASE WHEN @sort_key::text = 'newest' THEN COALESCE(up.created_at, u.created_at) END DESC NULLS LAST,
+ CASE WHEN @sort_key::text = 'oldest' THEN COALESCE(up.created_at, u.created_at) END ASC NULLS LAST,
+ CASE WHEN @sort_key::text = 'name' THEN lower(COALESCE(up.display_name, u.username)) END ASC NULLS LAST,
+ CASE WHEN @sort_key::text = 'name' THEN u.username END ASC,
+ u.follower_count DESC NULLS LAST, u.created_at DESC, u.id
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountPublicUsers :one

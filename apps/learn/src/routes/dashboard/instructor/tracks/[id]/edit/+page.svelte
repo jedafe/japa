@@ -36,6 +36,7 @@
 	let currency = $state('');
 	let category = $state('');
 	let language = $state(page.data.locale ?? '');
+	let languages = $state<string[]>([]);
 	let subscriptionEligible = $state(false);
 
 	// Geo targeting — country selector consumes GET /api/v1/geo/countries.
@@ -47,7 +48,7 @@
 		const [catRes, geoRes, optRes] = await Promise.all([
 			api.get<Category[]>('/learn/university/categories'),
 			api.get<GeoCountry[]>('/geo/countries'),
-			api.get<{ difficulty_levels: CatalogOption[] }>('/learn/university/catalog/options')
+			api.get<{ difficulty_levels: CatalogOption[]; languages: string[] }>('/learn/university/catalog/options')
 		]);
 		if (!catRes.error && catRes.data) {
 			categories = catRes.data;
@@ -57,7 +58,18 @@
 		}
 		if (!optRes.error && optRes.data) {
 			difficultyLevels = optRes.data.difficulty_levels ?? [];
+			languages = optRes.data.languages ?? [];
 		}
+	});
+
+	// Keep the current value selectable even when it isn't in the backend
+	// list (e.g. a legacy language code no longer offered).
+	const languageOptions = $derived.by(() => {
+		const opts = languages.map((l) => ({ value: l, label: l.toUpperCase() }));
+		if (language && !opts.some((o) => o.value === language)) {
+			opts.unshift({ value: language, label: language.toUpperCase() });
+		}
+		return opts;
 	});
 
 	// Autocomplete fetchers — filter the already-loaded categories client-side.
@@ -300,17 +312,18 @@
 				/>
 			</div>
 
-			<!-- Language (defaults to the user's UI locale, not hardcoded 'en') -->
+			<!-- Language — options come from the backend catalog/options endpoint -->
 			<div>
 				<label for="language" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('university.language_label', 'Language')}
 				</label>
-				<input
+				<AutocompleteSelect
 					id="language"
-					type="text"
 					bind:value={language}
+					options={languageOptions}
 					placeholder={page.data.locale || 'en'}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none"
+					clearable
+					class="w-full"
 				/>
 			</div>
 

@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // Store wraps the sqlc-generated queries with read/write pool separation.
@@ -408,8 +409,8 @@ func catalogTrackFromRow(r gen.ListUniversityCatalogRow) CatalogTrack {
 		c.GeoSpaceID = &s
 	}
 
-	if r.ThumbnailUrl != nil {
-		c.ThumbnailURL = r.ThumbnailUrl
+	if u := media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}); u != nil {
+		c.ThumbnailURL = u
 	}
 
 	if r.InstructorName != nil {
@@ -453,6 +454,12 @@ func (s *Store) CountCatalog(ctx context.Context, f CatalogFilter) (int64, error
 		Category: f.Category, Language: f.Language,
 		IsFree: f.IsFree, Level: f.Level, Q: f.Q, SpaceID: f.SpaceID,
 	})
+}
+
+// ListCatalogLanguages returns the distinct languages present in the live
+// marketplace catalog — drives the language filter dropdown (Rule 16).
+func (s *Store) ListCatalogLanguages(ctx context.Context) ([]string, error) {
+	return s.read.ListUniversityCatalogLanguages(ctx)
 }
 
 // GetCatalogTrackBySlug returns a single marketplace track with instructor + rating.

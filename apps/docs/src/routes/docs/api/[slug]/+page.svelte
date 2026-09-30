@@ -8,6 +8,7 @@
 	import { t } from '$lib/i18n';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { persistNavCollapse } from '$lib/nav-collapse';
+	import { env } from '$env/dynamic/public';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -19,14 +20,26 @@
 		await persistNavCollapse(collapsed);
 	}
 
+	// OpenAPI paths are relative to the spec's server URL (…/api/v1) — prepend
+	// the configured API base so the sample is copy-paste runnable. Join with
+	// PUBLIC_MAIN_ORIGIN when the API base is a relative path.
+	const apiBaseUrl = env.PUBLIC_JC_API_URL ?? '/api/v1';
+	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? '').replace(/\/$/, '');
+	const curlBaseUrl = apiBaseUrl.startsWith('http')
+		? apiBaseUrl.replace(/\/$/, '')
+		: mainOrigin
+			? `${mainOrigin}${apiBaseUrl}`
+			: apiBaseUrl;
+
 	// Derive code-pane samples from the matched operation (best-effort).
 	let method = $derived(
 		data.operation ? (data.operation.method as 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE') : 'GET'
 	);
 	let path = $derived(data.operation?.path ?? '');
+	// DOC-005: public API key auth uses the X-API-Key header.
 	let requestSample = $derived(
 		data.operation
-			? `curl -X ${method} "${path}" \\\n  -H "Authorization: Bearer $JC_API_KEY" \\\n  -H "Content-Type: application/json"`
+			? `curl -X ${method} "${curlBaseUrl}${path}" \\\n  -H "X-API-Key: $JC_API_KEY"${method !== 'GET' && method !== 'DELETE' ? ' \\\n  -H "Content-Type: application/json"' : ''}`
 			: ''
 	);
 	let responseSample = $derived(

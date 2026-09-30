@@ -22,7 +22,7 @@ export const load: PageServerLoad = async (event) => {
 
 	let spec: OpenAPISpec | null = null;
 	try {
-		const res = await fetch(`${API_BASE}/docs/openapi.json`);
+		const res = await event.fetch(`${API_BASE}/docs/openapi.json`);
 		if (res.ok) spec = (await res.json()) as OpenAPISpec;
 	} catch {
 		spec = null;
@@ -53,5 +53,15 @@ export const load: PageServerLoad = async (event) => {
 		path: '/docs/api/playground'
 	});
 
-	return { spec, apiKeys, meta };
+	// Prefill from ?method=&path= — used by the "Try it" links on the API
+	// landing endpoint browser.
+	const VALID_METHODS = new Set(['GET', 'POST', 'PATCH', 'PUT', 'DELETE']);
+	const rawMethod = (event.url.searchParams.get('method') ?? '').toUpperCase();
+	const rawPath = (event.url.searchParams.get('path') ?? '').trim();
+	const prefill = {
+		method: VALID_METHODS.has(rawMethod) ? rawMethod : '',
+		path: rawPath.startsWith('/') ? rawPath : ''
+	};
+
+	return { spec, apiKeys, prefill, meta };
 };

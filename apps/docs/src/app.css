@@ -70,7 +70,7 @@
 	--nav-width-collapsed: 64px;
 	/* Docs right sidebar is narrower than main's social sidebar — it's a TOC. */
 	--sidebar-width: 260px;
-	--left-rail-width: 220px;
+	--left-rail-width: 188px;
 	/* API reference right code-sample pane is wider than the TOC. */
 	--api-pane-width: 420px;
 

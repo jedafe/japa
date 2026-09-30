@@ -10,12 +10,14 @@ package rss
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -275,10 +277,24 @@ func (h *Handlers) HandleTagFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleUserFeed serves a user-specific RSS feed at /users/{username}/feed.xml.
+// The channel <link> points at the canonical public profile route /u/{username}
+// (the frontend proxies /u/{username}/feed.xml to this handler).
 func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 	username := httpx.URLParamDecoded(r, "username")
 	if username == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "Username is required")
+		return
+	}
+
+	// A feed for a nonexistent user must 404, not serve an empty phantom
+	// channel (the list query alone can't tell "no posts" from "no user").
+	if _, err := h.q.GetUserByUsername(r.Context(), username); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "user_not_found", "User not found")
+			return
+		}
+		slog.Error("rss: lookup user for feed", "username", username, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load feed")
 		return
 	}
 
@@ -301,7 +317,7 @@ func (h *Handlers) HandleUserFeed(w http.ResponseWriter, r *http.Request) {
 			return feedItemsFromUserRows(rows, siteURL), nil
 		},
 		h.siteName+" — "+username,
-		siteURL+"/users/"+username,
+		siteURL+"/u/"+username,
 		"Posts by "+username+" on "+h.siteName,
 	)
 }

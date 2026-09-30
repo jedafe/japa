@@ -56,7 +56,9 @@
 
 	const titleKey = $derived(type === 'followers' ? 'profile.followers_label' : 'profile.following_label');
 	// Mirrored from /u/[username]/+page.server.ts FOLLOW_LIST_PAGE_SIZE.
-	const endpoint = $derived(`/users/${userId}/${type}?page_size=100`);
+	// Pages are looped below so long lists (>100) are not truncated.
+	const FOLLOW_LIST_PAGE_SIZE = 100;
+	const MAX_LIST_PAGES = 5;
 
 	function mapList(raw: unknown[], listType: 'followers' | 'following'): FollowListItem[] {
 		if (listType === 'following') {
@@ -113,8 +115,26 @@
 		if (loaded || loading) return;
 		loading = true;
 		try {
-			const res = await api.get<unknown[]>(endpoint);
-			items = mapList(res.data ?? [], type);
+			const all: unknown[] = [];
+			const seen = new Set<string>();
+			for (let p = 0; p < MAX_LIST_PAGES; p++) {
+				const res = await api.get<unknown[]>(
+					`/users/${userId}/${type}?page_size=${FOLLOW_LIST_PAGE_SIZE}&page_offset=${p * FOLLOW_LIST_PAGE_SIZE}`
+				);
+				const pageItems = res.data ?? [];
+				let added = 0;
+				for (const item of pageItems) {
+					const rec = item as { id?: string; entity_id?: string };
+					const key = rec.id ?? rec.entity_id ?? JSON.stringify(item);
+					if (!seen.has(key)) {
+						seen.add(key);
+						all.push(item);
+						added++;
+					}
+				}
+				if (added === 0 || pageItems.length < FOLLOW_LIST_PAGE_SIZE) break;
+			}
+			items = mapList(all, type);
 			loaded = true;
 		} catch {
 			items = [];

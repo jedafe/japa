@@ -60,9 +60,9 @@
 </div>
 
 <style>
+	/* No padding/max-width here — the parent .doc-article column already
+	   provides them; nesting another padded column doubled the insets. */
 	.doc-content {
-		max-width: 760px;
-		margin: 0 auto;
-		padding: 2.5rem 1.5rem 4rem;
+		min-width: 0;
 	}
 </style>

@@ -525,7 +525,7 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 		DisplayName: displayName,
 		Bio:         bio,
 		AvatarURL:   avatarURL,
-		URL:         "/users/" + row.Username,
+		URL:         "/u/" + row.Username,
 		CreatedAt:   row.CreatedAt.Time.Unix(),
 	}
 

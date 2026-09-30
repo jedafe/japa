@@ -38,6 +38,9 @@ type PaymentRequest struct {
 	PurposeID    string
 	Metadata     map[string]interface{}
 	DiscountCode string
+	// ReturnURL is where the provider sends the user after checkout —
+	// Paystack callback_url, Stripe success/cancel URL.
+	ReturnURL string
 }
 
 // PaymentResponse holds the result of initiating a payment.
@@ -141,10 +144,11 @@ func (p *PaystackProvider) InitiatePayment(ctx context.Context, req PaymentReque
 	}
 
 	payload := paystackInitRequest{
-		Amount:   req.Amount,
-		Email:    req.Email,
-		Currency: req.Currency,
-		Metadata: req.Metadata,
+		Amount:      req.Amount,
+		Email:       req.Email,
+		Currency:    req.Currency,
+		Metadata:    req.Metadata,
+		CallbackURL: req.ReturnURL,
 	}
 	if payload.Currency == "" {
 		payload.Currency = "NGN"
@@ -433,6 +437,11 @@ func (p *StripeProvider) InitiatePayment(ctx context.Context, req PaymentRequest
 		strings.ToLower(req.Currency),
 		req.Amount,
 	)
+
+	if req.ReturnURL != "" {
+		body += "&success_url=" + url.QueryEscape(req.ReturnURL)
+		body += "&cancel_url=" + url.QueryEscape(req.ReturnURL)
+	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.stripe.com/v1/checkout/sessions", strings.NewReader(body))
 	if err != nil {

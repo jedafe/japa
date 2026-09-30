@@ -638,7 +638,7 @@ func buildLinkedEntity(row gen.GetIntelSourceBySlugWithLinkedEntityRow) *linkedE
 			Type: "user",
 			Slug: *row.UserSlug,
 			Name: row.UserName,
-			Href: "/users/" + *row.UserSlug,
+			Href: "/u/" + *row.UserSlug,
 		}
 	}
 

@@ -31,6 +31,7 @@ type RawFollowing = {
 	entity_avatar_url?: string;
 	is_following?: boolean;
 	entity_type?: string;
+	created_at?: string;
 };
 
 // Raw shape returned by GET /users/{id}/followers (FollowerInfo). `id` is the
@@ -149,6 +150,42 @@ export const load: PageServerLoad = async (event) => {
 	// §31 — Follower and following lists are public (the endpoint includes an
 	// `is_following` boolean for the caller). Degrade to empty on failure.
 	const FOLLOW_LIST_PAGE_SIZE = 100;
+	// Tabs filter/search/paginate client-side, so they need the full list —
+	// not just the first page. Loop pages (page_size=100 is the backend cap)
+	// until a short page or the reported total is reached. Max 5 pages
+	// (500 items) bounds worst-case load time for prolific users.
+	const MAX_LIST_PAGES = 5;
+
+	async function listAllPages<T>(
+		path: string,
+		opts: { sizeParam?: string; offsetParam?: string } = {}
+	): Promise<T[]> {
+		const sizeParam = opts.sizeParam ?? 'page_size';
+		const offsetParam = opts.offsetParam ?? 'page_offset';
+		const sep = path.includes('?') ? '&' : '?';
+		const all: T[] = [];
+		const seen = new Set<string>();
+		for (let p = 0; p < MAX_LIST_PAGES; p++) {
+			const url = `${path}${sep}${sizeParam}=${FOLLOW_LIST_PAGE_SIZE}&${offsetParam}=${p * FOLLOW_LIST_PAGE_SIZE}`;
+			const r = await apiList<T>(ctx, url);
+			let added = 0;
+			for (const item of r.items) {
+				const rec = item as { id?: string; entity_id?: string };
+				const key = rec.id ?? rec.entity_id ?? JSON.stringify(item);
+				if (!seen.has(key)) {
+					seen.add(key);
+					all.push(item);
+					added++;
+				}
+			}
+			// Nothing new — the list is exhausted or the endpoint ignores
+			// pagination params (e.g. certificates return all rows).
+			if (added === 0) break;
+			if (r.items.length < FOLLOW_LIST_PAGE_SIZE) break; // short page = end
+			if (r.meta?.total !== undefined && all.length >= r.meta.total) break;
+		}
+		return all;
+	}
 
 	// Best-effort loaders log failures before degrading, so transient API
 	// errors do not silently hide content from the profile sidebar or tabs.
@@ -177,15 +214,15 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos] = await Promise.all([
-		// Tabs paginate client-side over the loaded list, so request the max
-		// page size (100, same cap as the follow lists) — the backend default
-		// of 20 would silently truncate tabs for prolific users.
-		apiList<ProfilePost>(ctx, `/users/${userId}/content?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfilePost>('posts')),
-		apiList<ProfileReply>(ctx, `/users/${userId}/replies?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileReply>('replies')),
-		apiList<ProfileMedia>(ctx, `/users/${userId}/media?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileMedia>('media')),
-		apiList<ProfileSpace>(ctx, `/users/${userId}/spaces?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileSpace>('spaces')),
-		apiList<ProfileCertificate>(ctx, `/users/${userId}/certificates?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileCertificate>('certificates')),
-		apiList<ProfileLike>(ctx, `/users/${userId}/likes?page_size=${FOLLOW_LIST_PAGE_SIZE}`).then((r) => r.items).catch(catchEmpty<ProfileLike>('likes')),
+		// Tabs paginate client-side over the loaded list — fetch every page so
+		// totals, search, and paging reflect the whole dataset (capped at
+		// MAX_LIST_PAGES × 100).
+		listAllPages<ProfilePost>(`/users/${userId}/content`).catch(catchEmpty<ProfilePost>('posts')),
+		listAllPages<ProfileReply>(`/users/${userId}/replies`).catch(catchEmpty<ProfileReply>('replies')),
+		listAllPages<ProfileMedia>(`/users/${userId}/media`).catch(catchEmpty<ProfileMedia>('media')),
+		listAllPages<ProfileSpace>(`/users/${userId}/spaces`).catch(catchEmpty<ProfileSpace>('spaces')),
+		listAllPages<ProfileCertificate>(`/users/${userId}/certificates`).catch(catchEmpty<ProfileCertificate>('certificates')),
+		listAllPages<ProfileLike>(`/users/${userId}/likes`).catch(catchEmpty<ProfileLike>('likes')),
 		// Phase 11.07 — analytics dashboard, owner-only per JEOS §342 [auth,
 		// self]. Only fetch for the profile owner; for guests and other users
 		// the tab is hidden and the route would 403, so skip the request.
@@ -219,25 +256,27 @@ export const load: PageServerLoad = async (event) => {
 		// stage set. The route returns an empty DTO (no stage field) when
 		// is_public is false, so we treat a missing stage as "no badge".
 		apiGet<PublicJapaStage>(ctx, `/users/${username}/japa-stage`).catch(catchNull<PublicJapaStage>('japa-stage')),
-		apiList<RawFollower>(ctx, `/users/${userId}/followers?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
-			.then((r) => r.items.map((u) => ({ ...u, id: u.follower_id ?? u.id, entity_type: 'user' as const })))
+		listAllPages<RawFollower>(`/users/${userId}/followers`)
+			.then((items) => items.map((u) => ({ ...u, id: u.follower_id ?? u.id, entity_type: 'user' as const })))
 			.catch(catchEmpty<ProfileFollower>('followers')),
-		apiList<RawFollowing>(ctx, `/users/${userId}/following?page_size=${FOLLOW_LIST_PAGE_SIZE}`)
-			.then((r) =>
-				r.items.map((f) => ({
+		listAllPages<RawFollowing>(`/users/${userId}/following`)
+			.then((items) =>
+				items.map((f) => ({
 					id: f.entity_id, // real followed entity id (fixes /u/ link + FollowButton target)
 					username: f.entity_slug, // user-type: == username; else slug
 					display_name: f.entity_display_name || f.entity_name,
 					avatar_url: f.entity_avatar_url || null,
 					is_following: f.is_following,
-					entity_type: f.entity_type // tells the template how to link + which FollowButton entityType to use
+					entity_type: f.entity_type, // tells the template how to link + which FollowButton entityType to use
+					created_at: f.created_at
 				}))
 			)
 			.catch(catchEmpty<ProfileFollowing>('following')),
 		// §106 video — channel/uploaded video sources for the profile Videos
-		// tab (GET /u/{username}/videos returns VideoSource rows). Best-effort:
+		// tab (GET /u/{username}/videos returns VideoSource rows; it paginates
+		// with limit/offset rather than page_size/page_offset). Best-effort:
 		// a failure degrades to an empty list so the tab never blanks the page.
-		apiList<VideoSource>(ctx, `/u/${username}/videos?limit=100`).then((r) => r.items).catch(catchEmpty<VideoSource>('videos'))
+		listAllPages<VideoSource>(`/u/${username}/videos`, { sizeParam: 'limit', offsetParam: 'offset' }).catch(catchEmpty<VideoSource>('videos'))
 	]);
 
 	return {

@@ -6,7 +6,7 @@
 	import { page } from '$app/state';
 	import { resolveIcon } from '$lib/components/ui/icons';
 	import { t } from '$lib/i18n';
-	import { loginUrl, profileUrl } from '$lib/appOrigins';
+	import { loginUrl, profileUrl, resolveMenuUrl } from '$lib/appOrigins';
 	import type { Menu, MenuItem, SessionUser } from '$lib/types';
 
 	interface Props {
@@ -20,12 +20,12 @@
 		return page.url.pathname === url || page.url.pathname.startsWith(url + '/');
 	}
 
-	// Cross-app routes (e.g. /login, /profile) are rewritten to absolute Main-app
-	// URLs or the user's profile URL so they don't 404 on the Learn app.
+	// Cross-app routes are rewritten to absolute Main-app URLs so they don't
+	// 404 on the Learn app (resolveMenuUrl). /profile resolves to the signed-in
+	// user's profile on the Main app — guests get the login URL instead.
 	function resolveItemUrl(url: string): string {
-		if (url === '/login') return loginUrl();
 		if (url === '/profile') return user ? profileUrl(user.username) : loginUrl();
-		return url;
+		return resolveMenuUrl(url);
 	}
 
 	const menuItems = $derived(
@@ -46,7 +46,8 @@
 		{@const active = isActive(item.url)}
 		<a
 			href={resolveItemUrl(item.url)}
-			target={item.target}
+			target={item.target === '_blank' ? '_blank' : undefined}
+			rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
 			class="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] {active
 				? 'text-[var(--color-primary)]'
 				: 'text-[var(--color-muted)]'}"

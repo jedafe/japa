@@ -17,18 +17,22 @@
 	let loading = $state(true);
 	let error = $state(false);
 
+	async function loadStats() {
+		loading = true;
+		error = false;
+		const res = await api.get<InstructorTrackStats>(
+			`/learn/university/my/tracks/${trackId}/stats`
+		);
+		loading = false;
+		if (res.data) {
+			stats = res.data;
+		} else {
+			error = true;
+		}
+	}
+
 	$effect(() => {
-		(async () => {
-			const res = await api.get<InstructorTrackStats>(
-				`/learn/university/my/tracks/${trackId}/stats`
-			);
-			loading = false;
-			if (res.data) {
-				stats = res.data;
-			} else {
-				error = true;
-			}
-		})();
+		loadStats();
 	});
 
 	// Revenue chart data (dates → Date, kobo → naira for display).
@@ -87,7 +91,17 @@
 			<LoadingSkeleton class="h-64 w-full" />
 		</div>
 	{:else if error || !stats}
-		<EmptyState title={t('common.error')} description={t('university.track_stats_unavailable')} />
+		<EmptyState title={t('common.error')} description={t('university.track_stats_unavailable')}>
+			{#snippet action()}
+				<button
+					type="button"
+					onclick={loadStats}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('common.retry')}
+				</button>
+			{/snippet}
+		</EmptyState>
 	{:else}
 		<!-- Stat cards -->
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-3">

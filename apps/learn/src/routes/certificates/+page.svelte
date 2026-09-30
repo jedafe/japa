@@ -13,8 +13,9 @@
 	let error = $state<string | null>(null);
 	let initialized = $state(false);
 
-	async function load() {
-		if (initialized) return;
+	async function load(force = false) {
+		// Retry must bypass the guard — the error EmptyState calls load again.
+		if (initialized && !force) return;
 		initialized = true;
 		loading = true;
 		error = null;
@@ -63,7 +64,7 @@
 			{#snippet action()}
 				<button
 					type="button"
-					onclick={load}
+					onclick={() => load(true)}
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 				>
 					{t('common.retry')}

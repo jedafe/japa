@@ -14,6 +14,7 @@
 	let saving = $state(false);
 	let success = $state<string | null>(null);
 	let error = $state<string | null>(null);
+	let loadError = $state<string | null>(null);
 
 	// Form fields
 	let displayName = $state('');
@@ -53,7 +54,11 @@
 		})()
 	);
 
-	onMount(async () => {
+	onMount(loadProfile);
+
+	async function loadProfile() {
+		loading = true;
+		loadError = null;
 		const [profRes, optsRes] = await Promise.all([
 			api.get<InstructorProfile>('/learn/university/instructor/me'),
 			api.get<{ difficulty_levels: CatalogOption[]; social_platforms: CatalogOption[] }>(
@@ -76,8 +81,12 @@
 				if (!(p.value in links)) links[p.value] = '';
 			}
 			socialLinks = links;
+		} else if (profRes.error && profRes.error.status !== 404) {
+			// A real failure must not render as "not approved" (404 = no
+			// profile yet is legitimate and shows the apply CTA).
+			loadError = profRes.error.message || t('common.error');
 		}
-	});
+	}
 
 	async function save(e: SubmitEvent) {
 		e.preventDefault();
@@ -138,6 +147,18 @@
 				</div>
 			{/each}
 		</div>
+	{:else if loadError}
+		<EmptyState title={t('common.error')} description={loadError}>
+			{#snippet action()}
+				<button
+					type="button"
+					onclick={loadProfile}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('common.retry')}
+				</button>
+			{/snippet}
+		</EmptyState>
 	{:else if !profile || profile.status !== 'approved'}
 		<EmptyState
 			title={t('university.not_approved_title')}

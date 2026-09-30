@@ -243,6 +243,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.cookies.set('jc_locale', pathLocale, {
 			path: '/',
 			maxAge: 60 * 60 * 24 * 365,
+			httpOnly: false,
 			sameSite: 'lax'
 		});
 		// Route matching for the prefix happens in the `reroute` hook

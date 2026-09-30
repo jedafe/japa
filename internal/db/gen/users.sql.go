@@ -1863,13 +1863,20 @@ WHERE u.status = 'active'
  AND COALESCE(ups.search_indexable, true) = true
  AND ($1::text = '' OR u.username ILIKE '%' || $1 || '%' OR up.display_name ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR u.profile_type = $2)
-ORDER BY u.follower_count DESC NULLS LAST, u.created_at DESC
-LIMIT $4 OFFSET $3
+ORDER BY
+ CASE WHEN $3::text = 'followers' THEN u.follower_count END DESC NULLS LAST,
+ CASE WHEN $3::text = 'newest' THEN COALESCE(up.created_at, u.created_at) END DESC NULLS LAST,
+ CASE WHEN $3::text = 'oldest' THEN COALESCE(up.created_at, u.created_at) END ASC NULLS LAST,
+ CASE WHEN $3::text = 'name' THEN lower(COALESCE(up.display_name, u.username)) END ASC NULLS LAST,
+ CASE WHEN $3::text = 'name' THEN u.username END ASC,
+ u.follower_count DESC NULLS LAST, u.created_at DESC, u.id
+LIMIT $5 OFFSET $4
 `
 
 type ListPublicUsersParams struct {
 	Search      string `json:"search"`
 	ProfileType string `json:"profile_type"`
+	SortKey     string `json:"sort_key"`
 	PageOffset  int32  `json:"page_offset"`
 	PageLimit   int32  `json:"page_limit"`
 }
@@ -1895,14 +1902,16 @@ type ListPublicUsersRow struct {
 // Synthetic video-channel anchors are excluded — their public page is /sources/{slug}
 // (§106 sources-directory channel model). Search filters
 // by username or display_name. profile_type filter is optional (empty = all).
-// Ordered by follower_count DESC then created_at DESC so the directory surfaces
-// prominent users first.
+// Sort is whitelisted via @sort_key ('followers'|'newest'|'oldest'|'name');
+// anything else falls back to follower_count DESC so the directory surfaces
+// prominent users first. CASE arms keep the ORDER BY injection-safe.
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 // japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
 func (q *Queries) ListPublicUsers(ctx context.Context, arg ListPublicUsersParams) ([]ListPublicUsersRow, error) {
 	rows, err := q.db.Query(ctx, listPublicUsers,
 		arg.Search,
 		arg.ProfileType,
+		arg.SortKey,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

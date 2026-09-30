@@ -1954,7 +1954,7 @@ func (q *Queries) GdprExportUserLearningCertificates(ctx context.Context, userID
 
 const gdprExportUserLessonProgress = `-- name: GdprExportUserLessonProgress :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, lesson_id, status, completed_at, created_at FROM lesson_progress WHERE user_id = $1) t
+FROM (SELECT id, user_id, lesson_id, status, completed_at, created_at, position_secs FROM lesson_progress WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserLessonProgress(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

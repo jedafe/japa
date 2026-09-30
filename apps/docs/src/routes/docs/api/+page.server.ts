@@ -41,7 +41,7 @@ export const load: PageServerLoad = async (event) => {
 	let endpoints: ApiEndpoint[] = [];
 	if (pages.length === 0) {
 		try {
-			const res = await fetch(`${API_BASE}/docs/openapi.json`);
+			const res = await event.fetch(`${API_BASE}/docs/openapi.json`);
 			if (res.ok) {
 				const spec = (await res.json()) as Record<string, any>;
 				const paths: Record<string, Record<string, any>> = spec.paths ?? {};

@@ -144,10 +144,10 @@
 					>
 						<span>{t(AUDIENCE_LABEL_KEY[tree.audience], tree.audience)}</span>
 						{#if tree.items.length > 0}
-							<ChevronDown size={14} class={`chevron ${expanded[tree.audience] ?? true ? 'rot' : ''}`} />
+							<ChevronDown size={14} class={`chevron ${expanded[tree.audience] ?? false ? 'rot' : ''}`} />
 						{/if}
 					</a>
-				{#if expanded[tree.audience] ?? true}
+				{#if expanded[tree.audience] ?? false}
 					{#if tree.items.length > 0}
 						<ul class="page-list">
 							{#each tree.items as item (item.id)}

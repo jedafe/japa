@@ -228,8 +228,13 @@ export interface ApiKeySummary {
 	/** Rate-limit tier requested by the user; the backend caps by user tier. */
 	rate_limit_tier: 'basic' | 'standard' | 'premium' | 'unlimited';
 	scopes: string[];
+	/** CIDR allowlist entries (omitted when empty). */
+	allowed_ips?: string[];
 	last_used_at?: string | null;
-	status: 'active' | 'revoked';
+	request_count?: number;
+	/** Rotated keys keep 'active' with a 24h grace expires_at (§47). */
+	expires_at?: string | null;
+	status: 'active' | 'suspended' | 'revoked';
 	created_at: string;
 }
 
@@ -237,6 +242,23 @@ export interface ApiKeySummary {
 export interface ApiKeyCreated extends ApiKeySummary {
 	/** The full API key — shown once on creation, never again. */
 	key: string;
+}
+
+/** Canonical API scope from GET /developer/scopes (self-service subset). */
+export interface ApiScopeOption {
+	value: string;
+	label: string;
+	description: string;
+	admin_only?: boolean;
+}
+
+/** IP allowlist entry from GET /me/api-keys/{id}/ip-allowlist. */
+export interface ApiKeyIpEntry {
+	id: string;
+	api_key_id: string;
+	cidr: string;
+	description?: string;
+	created_at: string;
 }
 
 /* ------------------------------------------------------------------ *

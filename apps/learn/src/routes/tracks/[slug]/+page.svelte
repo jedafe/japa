@@ -40,6 +40,10 @@
 	let reviewSubmitting = $state(false);
 	let reviewError = $state<string | null>(null);
 	let reviewSuccess = $state(false);
+	let reviewsLoadingMore = $state(false);
+	let reviewsLoadMoreError = $state<string | null>(null);
+	const REVIEW_PAGE_SIZE = 10;
+	const hasMoreReviews = $derived((reviewAggregate?.count ?? 0) > reviews.length);
 
 	// Sync local review state when navigating between tracks (data is a prop).
 	$effect(() => {
@@ -50,6 +54,8 @@
 		reviewBody = '';
 		reviewError = null;
 		reviewSuccess = false;
+		reviewsLoadingMore = false;
+		reviewsLoadMoreError = null;
 	});
 
 	// Whether this is a paid course that requires checkout.
@@ -167,9 +173,11 @@
 		}
 		if (r.data) {
 			// Re-fetch the reviews list (with aggregate) from the backend so the
-			// UI matches the canonical state rather than a local patch.
+			// UI matches the canonical state rather than a local patch. Keep the
+			// currently-loaded window size so load-more progress isn't lost.
+			const windowSize = Math.max(REVIEW_PAGE_SIZE, reviews.length + 1);
 			const listRes = await api.getBody<{ data: TrackReview[]; aggregate: ReviewAggregate }>(
-				`/learn/university/tracks/${track.id}/reviews?page_size=10`
+				`/learn/university/tracks/${track.id}/reviews?page_size=${windowSize}`
 			);
 			if (listRes.data) {
 				reviews = listRes.data.data;
@@ -180,6 +188,22 @@
 			reviewBody = '';
 			reviewSuccess = true;
 		}
+	}
+
+	async function loadMoreReviews() {
+		if (reviewsLoadingMore) return;
+		reviewsLoadingMore = true;
+		reviewsLoadMoreError = null;
+		const r = await api.getBody<{ data: TrackReview[]; aggregate: ReviewAggregate }>(
+			`/learn/university/tracks/${track.id}/reviews?page_size=${REVIEW_PAGE_SIZE}&page_offset=${reviews.length}`
+		);
+		reviewsLoadingMore = false;
+		if (r.error || !r.data) {
+			reviewsLoadMoreError = r.error?.message ?? t('common.error');
+			return;
+		}
+		reviews = [...reviews, ...r.data.data];
+		if (r.data.aggregate) reviewAggregate = r.data.aggregate;
 	}
 
 	function onCheckoutSuccess() {
@@ -526,6 +550,21 @@
 							</li>
 						{/each}
 					</ul>
+					{#if hasMoreReviews}
+						<div class="mt-4 text-center">
+							<button
+								type="button"
+								onclick={loadMoreReviews}
+								disabled={reviewsLoadingMore}
+								class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-60"
+							>
+								{reviewsLoadingMore ? t('common.loading') : t('learn.load_more', 'Load more')}
+							</button>
+							{#if reviewsLoadMoreError}
+								<p class="mt-2 text-xs text-[var(--color-destructive)]">{reviewsLoadMoreError}</p>
+							{/if}
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</Tabs.Content>

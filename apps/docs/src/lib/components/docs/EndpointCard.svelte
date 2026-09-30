@@ -67,10 +67,13 @@
 			? `${mainOrigin}${apiBaseUrl}`
 			: '';
 
+	// DOC-005: public API key auth uses the X-API-Key header, not
+	// Authorization: Bearer (internal/publicapi/middleware.go reads
+	// r.Header.Get("X-API-Key")).
 	let curlExample = $derived(
 		example ||
 			`curl -X ${method} "${curlBaseUrl}${path}" \\
-  -H "Authorization: Bearer $JC_API_KEY"${method !== 'GET' && method !== 'DELETE' ? ' \\\n  -H "Content-Type: application/json"' : ''}`
+  -H "X-API-Key: $JC_API_KEY"${method !== 'GET' && method !== 'DELETE' ? ' \\\n  -H "Content-Type: application/json"' : ''}`
 	);
 
 	async function copyCurl() {

@@ -2,13 +2,14 @@
 	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
-	import { Plus, Trash2, Copy, Check, AlertTriangle } from 'lucide-svelte';
+	import { Plus, Trash2, Copy, Check, AlertTriangle, Pencil, RefreshCw, Shield, X } from 'lucide-svelte';
 	import type { PageData, ActionData } from './$types';
-import type { ApiKeySummary } from '$lib/types';
+	import type { ApiKeySummary } from '$lib/types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -23,17 +24,25 @@ import type { ApiKeySummary } from '$lib/types';
 	let showCreate = $state(false);
 	let keyName = $state('');
 	let rateLimitTier = $state<ApiKeySummary['rate_limit_tier']>('basic');
-	let scopesInput = $state('');
+	let selectedScopes = $state<string[]>([]);
 	let creating = $state(false);
 	let createError = $state('');
 
-	// Newly created key — shown once (Ref: §47 ROADMAP 06.02)
+	// Newly created/rotated key — shown once (Ref: §47 ROADMAP 06.02)
 	let newKey = $state('');
+	let newKeyRotated = $state(false);
 	let copiedNew = $state(false);
 
-	// Revoke confirmation
-	let revokeId = $state<string | null>(null);
-	let revokeName = $state('');
+	// Single-dialog state — only one of these can be open at a time, so a
+	// shared error field renders inside whichever dialog is open.
+	type DialogKind = 'rename' | 'rotate' | 'ips' | 'revoke';
+	let dialog = $state<DialogKind | null>(null);
+	let dialogKey = $state<ApiKeySummary | null>(null);
+	let dialogError = $state('');
+	let dialogWorking = $state(false);
+	let renameName = $state('');
+	let ipCidr = $state('');
+	let ipDesc = $state('');
 
 	// Copied prefix indicator
 	let copiedId = $state<string | null>(null);
@@ -43,26 +52,57 @@ import type { ApiKeySummary } from '$lib/types';
 	let activeKeyCount = $derived(data.keys.filter((k) => k.status === 'active').length);
 	let atLimit = $derived(activeKeyCount >= data.maxKeys);
 
-	// Fallback scope descriptions for the help section (meta-tooling, not platform content — Ref: §47 ROADMAP 06.05)
-	// Unknown scopes still display — they just use the default description below.
-	const scopeDescriptions: Record<string, string> = {
-		'api.read.spaces': 'Read spaces, spaces metadata, and space membership',
-		'api.read.content': 'Read published content (posts, pages, threads)',
-		'api.write.content': 'Create and update content on behalf of the user',
-		'api.read.users': 'Read user profiles and public settings',
-		'api.read.search': 'Search the platform via the search API'
-	};
-
-	// All known scopes (hardcoded + any from the user's existing keys)
-	let allScopes = $derived.by(() => {
-		const scopes = new Set(Object.keys(scopeDescriptions));
+	// Selectable scopes = the self-service catalog only (GET /developer/scopes —
+	// Rule 16). Admin-granted scopes on existing keys (write scopes, 'mcp', '*')
+	// render in the help list but must NOT be pickable — the backend rejects
+	// them on self-service create (§47).
+	let catalogScopes = $derived(data.scopes ?? []);
+	let scopeOptions = $derived.by(() => {
+		const seen = new Map<string, { value: string; label: string; description: string }>();
+		for (const s of catalogScopes) {
+			seen.set(s.value, { value: s.value, label: s.label, description: s.description });
+		}
 		for (const k of data.keys) {
-			if (k.scopes) {
-				for (const s of k.scopes) scopes.add(s);
+			for (const s of k.scopes ?? []) {
+				if (!seen.has(s)) {
+					seen.set(s, {
+						value: s,
+						label: s,
+						description: t('api.scope_admin_granted', 'Admin-granted scope')
+					});
+				}
 			}
 		}
-		return [...scopes].sort();
+		return [...seen.values()];
 	});
+
+	// Scope multi-select: Autocomplete is single-select, so each pick appends
+	// to selectedScopes (rendered as removable chips) and the hidden input
+	// carries the comma-joined contract the action expects.
+	const scopeFetcher = $derived(
+		(q: string): Promise<AutocompleteItem[]> => {
+			const needle = q.trim().toLowerCase();
+			return Promise.resolve(
+				catalogScopes
+					.filter((s) => !selectedScopes.includes(s.value))
+					.filter(
+						(s) =>
+							!needle ||
+							s.value.toLowerCase().includes(needle) ||
+							s.label.toLowerCase().includes(needle) ||
+							s.description.toLowerCase().includes(needle)
+					)
+					.map((s) => ({ id: s.value, label: s.label, sublabel: s.value }))
+			);
+		}
+	);
+
+	function addScope(item: AutocompleteItem) {
+		if (!selectedScopes.includes(item.id)) selectedScopes = [...selectedScopes, item.id];
+	}
+	function removeScope(s: string) {
+		selectedScopes = selectedScopes.filter((x) => x !== s);
+	}
 
 	async function copyText(text: string, id: string) {
 		try {
@@ -78,30 +118,73 @@ import type { ApiKeySummary } from '$lib/types';
 		showCreate = true;
 		keyName = '';
 		rateLimitTier = 'basic';
-		scopesInput = '';
+		selectedScopes = [];
 		createError = '';
 		newKey = '';
 	}
 
-	function confirmRevoke(id: string, name: string) {
-		revokeId = id;
-		revokeName = name;
+	function openDialog(kind: DialogKind, key: ApiKeySummary) {
+		dialog = kind;
+		dialogKey = key;
+		dialogError = '';
+		dialogWorking = false;
+		if (kind === 'rename') renameName = key.name;
+		if (kind === 'ips') {
+			ipCidr = '';
+			ipDesc = '';
+		}
+	}
+
+	function closeDialog() {
+		dialog = null;
+		dialogKey = null;
+		dialogError = '';
+	}
+
+	function statusLabel(status: string): string {
+		return t(`api.status_${status}`, status);
+	}
+
+	function expiryLabel(key: ApiKeySummary): string | null {
+		if (!key.expires_at) return null;
+		const at = new Date(key.expires_at);
+		if (Number.isNaN(at.getTime())) return null;
+		return t('api.expires_on', 'Expires {date}', {
+			date: at.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+		});
 	}
 
 	// Handle form action results
 	$effect(() => {
 		if (form?.created) {
 			newKey = form.created.key;
+			newKeyRotated = false;
 			copiedNew = false;
 			showCreate = false;
 			invalidateAll();
 		}
-		if (form?.revoked) {
-			revokeId = null;
+		if (form?.rotated) {
+			newKey = form.rotated.key;
+			newKeyRotated = true;
+			copiedNew = false;
+			closeDialog();
+			invalidateAll();
+		}
+		if (form?.revoked || form?.renamed) {
+			closeDialog();
+			invalidateAll();
+		}
+		if (form?.ipAdded || form?.ipRemoved) {
+			// Keep the allowlist dialog open — invalidateAll refreshes the
+			// entry list in place so the user sees the change immediately.
+			ipCidr = '';
+			ipDesc = '';
 			invalidateAll();
 		}
 		if (form?.error) {
-			createError = form.error;
+			if (showCreate) createError = form.error;
+			else if (dialog) dialogError = form.error;
+			else createError = form.error;
 		}
 	});
 </script>
@@ -138,7 +221,11 @@ import type { ApiKeySummary } from '$lib/types';
 			<div class="new-key-banner" role="alert">
 				<div class="new-key-head">
 					<AlertTriangle size={16} />
-					<span>{t('api.key_created_once', 'Your new API key — copy it now. It will not be shown again.')}</span>
+					<span>
+						{newKeyRotated
+							? t('api.key_rotated_once', 'Your rotated API key — copy it now. It will not be shown again. The old key expires in 24 hours.')
+							: t('api.key_created_once', 'Your new API key — copy it now. It will not be shown again.')}
+					</span>
 				</div>
 				<div class="new-key-row">
 					<code class="new-key-value">{newKey}</code>
@@ -186,6 +273,7 @@ import type { ApiKeySummary } from '$lib/types';
 						<th>{t('api.key_prefix', 'Key')}</th>
 						<th>{t('api.rate_limit_tier', 'Tier')}</th>
 						<th>{t('api.scopes', 'Scopes')}</th>
+						<th>{t('api.status', 'Status')}</th>
 						<th>{t('api.last_used', 'Last Used')}</th>
 						<th>{t('api.actions', 'Actions')}</th>
 					</tr>
@@ -215,6 +303,12 @@ import type { ApiKeySummary } from '$lib/types';
 									<span class="muted">—</span>
 								{/if}
 							</td>
+							<td>
+								<span class="status-badge status-{k.status}">{statusLabel(k.status)}</span>
+								{#if expiryLabel(k)}
+									<span class="expiry-note">{expiryLabel(k)}</span>
+								{/if}
+							</td>
 							<td class="muted">
 								{#if k.last_used_at}
 									{new Date(k.last_used_at).toLocaleDateString()}
@@ -224,16 +318,44 @@ import type { ApiKeySummary } from '$lib/types';
 							</td>
 							<td>
 								{#if k.status === 'active'}
-									<button
-										type="button"
-										class="revoke-btn"
-										onclick={() => confirmRevoke(k.id, k.name)}
-									>
-										<Trash2 size={14} />
-										{t('api.revoke', 'Revoke')}
-									</button>
-								{:else}
-									<span class="revoked-badge">{t('api.revoked', 'revoked')}</span>
+									<div class="row-actions">
+										<button
+											type="button"
+											class="row-btn"
+											onclick={() => openDialog('rename', k)}
+											title={t('api.rename', 'Rename')}
+											aria-label={t('api.rename', 'Rename')}
+										>
+											<Pencil size={13} />
+										</button>
+										<button
+											type="button"
+											class="row-btn"
+											onclick={() => openDialog('rotate', k)}
+											title={t('api.rotate', 'Rotate')}
+											aria-label={t('api.rotate', 'Rotate')}
+										>
+											<RefreshCw size={13} />
+										</button>
+										<button
+											type="button"
+											class="row-btn"
+											onclick={() => openDialog('ips', k)}
+											title={t('api.ip_allowlist', 'IP allowlist')}
+											aria-label={t('api.ip_allowlist', 'IP allowlist')}
+										>
+											<Shield size={13} />
+										</button>
+										<button
+											type="button"
+											class="row-btn danger"
+											onclick={() => openDialog('revoke', k)}
+											title={t('api.revoke', 'Revoke')}
+											aria-label={t('api.revoke', 'Revoke')}
+										>
+											<Trash2 size={13} />
+										</button>
+									</div>
 								{/if}
 							</td>
 						</tr>
@@ -242,13 +364,13 @@ import type { ApiKeySummary } from '$lib/types';
 			</table>
 		{/if}
 
-		<!-- Scope explanations (Ref: §47 ROADMAP 06.05) -->
+		<!-- Scope explanations — sourced from GET /developer/scopes (§47 ROADMAP 06.05, Rule 16) -->
 		<div class="scope-help">
 			<h2>{t('api.scope_help_title', 'Available scopes')}</h2>
 			<dl>
-				{#each allScopes as scope}
-					<dt><code>{scope}</code></dt>
-					<dd>{scopeDescriptions[scope] ?? 'API scope — see documentation for details'}</dd>
+				{#each scopeOptions as scope (scope.value)}
+					<dt><code>{scope.value}</code></dt>
+					<dd>{scope.description}</dd>
 				{/each}
 			</dl>
 		</div>
@@ -259,11 +381,11 @@ import type { ApiKeySummary } from '$lib/types';
 				<form class="dialog" method="POST" action="?/create" use:enhance={() => {
 					creating = true;
 					createError = '';
-					return async ({ result }) => {
+					return async ({ update }) => {
 						creating = false;
-						if (result.type === 'success') {
-							// form effect handles the rest
-						}
+						// update() assigns `form` + invalidates — the $effect on
+						// `form` then shows the secret / error and refreshes the list.
+						await update();
 					};
 				}}>
 					<h2>{t('api.create_key', 'Create API Key')}</h2>
@@ -285,10 +407,36 @@ import type { ApiKeySummary } from '$lib/types';
 							}))}
 						/>
 					</label>
-					<label>
-						<span>{t('api.scopes', 'Scopes')} <span class="muted">(comma-separated)</span></span>
-						<input name="scopes" type="text" bind:value={scopesInput} placeholder="api.read.spaces, api.read.content" />
-					</label>
+					<div class="scope-field">
+						<span class="scope-field-label">{t('api.scopes', 'Scopes')}</span>
+						<Autocomplete
+							placeholder={t('api.add_scope', 'Add a scope…')}
+							ariaLabel={t('api.add_scope', 'Add a scope')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={scopeFetcher}
+							initialFetcher={() => scopeFetcher('')}
+							selectedId={null}
+							onSelect={addScope}
+						/>
+						{#if selectedScopes.length > 0}
+							<div class="scope-chips">
+								{#each selectedScopes as s (s)}
+									<span class="scope-chip">
+										<code>{s}</code>
+										<button
+											type="button"
+											class="scope-chip-x"
+											onclick={() => removeScope(s)}
+											aria-label={t('common.remove', 'Remove')}
+										>
+											<X size={11} />
+										</button>
+									</span>
+								{/each}
+							</div>
+						{/if}
+						<input type="hidden" name="scopes" value={selectedScopes.join(',')} />
+					</div>
 					<div class="dialog-actions">
 						<button type="button" class="cancel-btn" onclick={() => (showCreate = false)}>
 							{t('api.cancel', 'Cancel')}
@@ -301,22 +449,149 @@ import type { ApiKeySummary } from '$lib/types';
 			</div>
 		{/if}
 
-		<!-- Revoke confirmation dialog -->
-		{#if revokeId}
-			<div class="dialog-overlay" role="dialog" aria-modal="true" aria-label={t('api.revoke')}>
-				<form class="dialog confirm" method="POST" action="?/revoke" use:enhance>
-					<h2>{t('api.revoke_confirm', 'Revoke API Key')}</h2>
-					<p class="confirm-text">
-						{t('api.revoke_warning', 'Are you sure you want to revoke the key for')}
-						<strong>{revokeName}</strong>?
-						{t('api.revoke_irreversible', 'This cannot be undone. All requests using this key will immediately fail.')}
-					</p>
-					<input type="hidden" name="id" value={revokeId} />
+		<!-- Rename dialog -->
+		{#if dialog === 'rename' && dialogKey}
+			<div class="dialog-overlay" role="dialog" aria-modal="true" aria-label={t('api.rename', 'Rename')}>
+				<form class="dialog" method="POST" action="?/rename" use:enhance={() => {
+					dialogWorking = true;
+					dialogError = '';
+					return async ({ update }) => { dialogWorking = false; await update(); };
+				}}>
+					<h2>{t('api.rename_key', 'Rename API Key')}</h2>
+					{#if dialogError}
+						<p class="form-error">{dialogError}</p>
+					{/if}
+					<label>
+						<span>{t('api.app_name', 'App Name')}</span>
+						<input name="name" type="text" bind:value={renameName} required />
+					</label>
+					<input type="hidden" name="id" value={dialogKey.id} />
 					<div class="dialog-actions">
-						<button type="button" class="cancel-btn" onclick={() => (revokeId = null)}>
+						<button type="button" class="cancel-btn" onclick={closeDialog}>
 							{t('api.cancel', 'Cancel')}
 						</button>
-						<button type="submit" class="revoke-confirm-btn">
+						<button type="submit" class="submit-btn" disabled={dialogWorking || !renameName.trim()}>
+							{t('api.save', 'Save')}
+						</button>
+					</div>
+				</form>
+			</div>
+		{/if}
+
+		<!-- Rotate confirmation dialog -->
+		{#if dialog === 'rotate' && dialogKey}
+			<div class="dialog-overlay" role="dialog" aria-modal="true" aria-label={t('api.rotate', 'Rotate')}>
+				<form class="dialog confirm" method="POST" action="?/rotate" use:enhance={() => {
+					dialogWorking = true;
+					dialogError = '';
+					return async ({ update }) => { dialogWorking = false; await update(); };
+				}}>
+					<h2>{t('api.rotate_key', 'Rotate API Key')}</h2>
+					{#if dialogError}
+						<p class="form-error">{dialogError}</p>
+					{/if}
+					<p class="confirm-text">
+						{t('api.rotate_warning', 'A new secret will be generated for')}
+						<strong>{dialogKey.name}</strong>.
+						{t('api.rotate_grace', 'The old key keeps working for 24 hours, then expires permanently.')}
+					</p>
+					<input type="hidden" name="id" value={dialogKey.id} />
+					<div class="dialog-actions">
+						<button type="button" class="cancel-btn" onclick={closeDialog}>
+							{t('api.cancel', 'Cancel')}
+						</button>
+						<button type="submit" class="submit-btn" disabled={dialogWorking}>
+							<RefreshCw size={14} />
+							{t('api.rotate', 'Rotate')}
+						</button>
+					</div>
+				</form>
+			</div>
+		{/if}
+
+		<!-- IP allowlist dialog -->
+		{#if dialog === 'ips' && dialogKey}
+			{@const entries = data.allowlists[dialogKey.id] ?? []}
+			<div class="dialog-overlay" role="dialog" aria-modal="true" aria-label={t('api.ip_allowlist', 'IP allowlist')}>
+				<div class="dialog">
+					<h2>{t('api.ip_allowlist_title', 'IP allowlist')} — {dialogKey.name}</h2>
+					{#if dialogError}
+						<p class="form-error">{dialogError}</p>
+					{/if}
+					<p class="confirm-text">
+						{t('api.ip_allowlist_help', 'When entries exist, only requests from these IPs/CIDRs can use this key.')}
+					</p>
+					{#if entries.length === 0}
+						<p class="muted ip-empty">{t('api.ip_allowlist_empty', 'No restrictions — the key works from any IP.')}</p>
+					{:else}
+						<ul class="ip-list">
+							{#each entries as entry (entry.id)}
+								<li class="ip-entry">
+									<code>{entry.cidr}</code>
+									{#if entry.description}<span class="muted ip-desc">{entry.description}</span>{/if}
+									<form method="POST" action="?/removeIp" use:enhance={() => {
+										return async ({ update }) => { await update(); };
+									}}>
+										<input type="hidden" name="id" value={dialogKey.id} />
+										<input type="hidden" name="ip_id" value={entry.id} />
+										<button type="submit" class="row-btn danger" aria-label={t('common.remove', 'Remove')}>
+											<Trash2 size={12} />
+										</button>
+									</form>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<form class="ip-add" method="POST" action="?/addIp" use:enhance={() => {
+						dialogWorking = true;
+						dialogError = '';
+						return async ({ update }) => { dialogWorking = false; await update(); };
+					}}>
+						<input type="hidden" name="id" value={dialogKey.id} />
+						<label>
+							<span>{t('api.ip_cidr', 'IP or CIDR')}</span>
+							<input name="cidr" type="text" bind:value={ipCidr} placeholder="203.0.113.0/24" required />
+						</label>
+						<label>
+							<span>{t('api.ip_description', 'Description')} <span class="muted">({t('common.optional', 'optional')})</span></span>
+							<input name="description" type="text" bind:value={ipDesc} placeholder={t('api.ip_desc_placeholder', 'Office egress')} />
+						</label>
+						<div class="dialog-actions">
+							<button type="button" class="cancel-btn" onclick={closeDialog}>
+								{t('api.close', 'Close')}
+							</button>
+							<button type="submit" class="submit-btn" disabled={dialogWorking || !ipCidr.trim()}>
+								{t('api.ip_add', 'Add entry')}
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Revoke confirmation dialog -->
+		{#if dialog === 'revoke' && dialogKey}
+			<div class="dialog-overlay" role="dialog" aria-modal="true" aria-label={t('api.revoke')}>
+				<form class="dialog confirm" method="POST" action="?/revoke" use:enhance={() => {
+					dialogWorking = true;
+					dialogError = '';
+					return async ({ update }) => { dialogWorking = false; await update(); };
+				}}>
+					<h2>{t('api.revoke_confirm', 'Revoke API Key')}</h2>
+					{#if dialogError}
+						<p class="form-error">{dialogError}</p>
+					{/if}
+					<p class="confirm-text">
+						{t('api.revoke_warning', 'Are you sure you want to revoke the key for')}
+						<strong>{dialogKey.name}</strong>?
+						{t('api.revoke_irreversible', 'This cannot be undone. All requests using this key will immediately fail.')}
+					</p>
+					<input type="hidden" name="id" value={dialogKey.id} />
+					<div class="dialog-actions">
+						<button type="button" class="cancel-btn" onclick={closeDialog}>
+							{t('api.cancel', 'Cancel')}
+						</button>
+						<button type="submit" class="revoke-confirm-btn" disabled={dialogWorking}>
 							<Trash2 size={14} />
 							{t('api.revoke', 'Revoke')}
 						</button>
@@ -329,7 +604,7 @@ import type { ApiKeySummary } from '$lib/types';
 
 <style>
 	.keys-page {
-		max-width: 900px;
+		max-width: 1040px;
 		margin: 0 auto;
 		padding: 2.5rem 1.5rem 4rem;
 	}
@@ -465,26 +740,47 @@ import type { ApiKeySummary } from '$lib/types';
 		font-family: var(--font-mono);
 		font-size: 0.75rem;
 		color: var(--color-text-subtle);
+		max-width: 220px;
+		word-break: break-all;
+	}
+	.status-badge {
+		display: inline-block;
+		font-size: 0.6875rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		padding: 0.125rem 0.5rem;
+		border-radius: 4px;
+		font-weight: 600;
+	}
+	.status-active { color: var(--method-get); background: var(--method-get-bg); }
+	.status-suspended { color: var(--method-patch); background: var(--method-patch-bg); }
+	.status-revoked { color: var(--method-delete); background: var(--method-delete-bg); }
+	.expiry-note {
+		display: block;
+		font-size: 0.6875rem;
+		color: var(--color-muted);
+		margin-top: 0.25rem;
 	}
 	.muted { color: var(--color-muted); }
-	.revoke-btn {
-		display: inline-flex;
-		align-items: center;
+
+	.row-actions {
+		display: flex;
 		gap: 0.25rem;
-		padding: 0.25rem 0.5rem;
+	}
+	.row-btn {
+		display: inline-grid;
+		place-items: center;
+		height: 1.75rem;
+		width: 1.75rem;
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-bg);
-		color: var(--method-delete);
-		font-size: 0.75rem;
+		color: var(--color-text-subtle);
 		cursor: pointer;
 	}
-	.revoke-btn:hover { border-color: var(--method-delete); }
-	.revoked-badge {
-		font-size: 0.6875rem;
-		text-transform: uppercase;
-		color: var(--color-muted);
-	}
+	.row-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
+	.row-btn.danger { color: var(--method-delete); }
+	.row-btn.danger:hover { border-color: var(--method-delete); }
 
 	.copy-btn {
 		display: inline-grid;
@@ -548,6 +844,8 @@ import type { ApiKeySummary } from '$lib/types';
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
+		max-height: calc(100vh - 4rem);
+		overflow-y: auto;
 	}
 	.dialog.confirm { max-width: 400px; }
 	.dialog h2 {
@@ -600,6 +898,9 @@ import type { ApiKeySummary } from '$lib/types';
 		cursor: pointer;
 	}
 	.submit-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
 		padding: 0.5rem 1rem;
 		border: none;
 		border-radius: var(--radius);
@@ -622,5 +923,77 @@ import type { ApiKeySummary } from '$lib/types';
 		font-size: 0.875rem;
 		font-weight: 600;
 		cursor: pointer;
+	}
+	.revoke-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	.scope-field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+		font-size: 0.8125rem;
+	}
+	.scope-field-label { color: var(--color-text); }
+	.scope-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+	}
+	.scope-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.125rem 0.375rem;
+		border: 1px solid var(--color-border);
+		border-radius: 9999px;
+		background: var(--color-surface-subtle);
+	}
+	.scope-chip code {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--color-text);
+	}
+	.scope-chip-x {
+		display: inline-grid;
+		place-items: center;
+		width: 1rem;
+		height: 1rem;
+		border: none;
+		border-radius: 50%;
+		background: transparent;
+		color: var(--color-muted);
+		cursor: pointer;
+		padding: 0;
+	}
+	.scope-chip-x:hover { color: var(--method-delete); }
+
+	.ip-list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+	.ip-entry {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.375rem 0.5rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		font-size: 0.8125rem;
+	}
+	.ip-entry code {
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--color-text);
+	}
+	.ip-entry form { margin-left: auto; }
+	.ip-desc { font-size: 0.75rem; }
+	.ip-empty { font-size: 0.8125rem; }
+	.ip-add {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
 	}
 </style>
