@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { Check, ChevronRight, Sparkles, MapPin, Trophy, Heart } from 'lucide-svelte';
+	import { Check, ChevronRight, Sparkles, MapPin, Trophy, Heart, ShieldCheck, Plane, Globe, Landmark, Luggage, Lightbulb } from 'lucide-svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -225,6 +226,9 @@
 				// Section 09 Product Tour: redirect to home with ?tour=1 so the
 				// app shell can trigger the contextual walkthrough after it
 				// renders the tour targets (primary nav, space switcher, compose).
+				// invalidateAll refreshes root-layout onboardingCompleted so the
+				// finish-setup card disappears immediately after completion.
+				await invalidateAll();
 				await goto('/?tour=1');
 			}
 		} catch {
@@ -270,22 +274,67 @@
 	<title>{t('onboarding.title', 'Welcome to JapaConnect')} — {t('app.name')}</title>
 </svelte:head>
 
-<div class="min-h-screen bg-[var(--color-bg)]">
-	<div class="mx-auto max-w-full px-6 py-12">
-		<!-- Step indicator -->
-		<div class="mb-10 flex items-center justify-center gap-2">
-			{#each Array(totalSteps) as _, i (i)}
-				<div
-					class="h-2 rounded-full transition-all {i + 1 === currentStep
-						? 'w-8 bg-[var(--color-primary)]'
-						: i + 1 < currentStep
-							? 'w-2 bg-[var(--color-primary)]'
-							: 'w-2 bg-[var(--color-border)]'}"
-				></div>
-			{/each}
-		</div>
+<div class="min-h-screen bg-[var(--color-bg)] px-4 py-6 sm:px-6 sm:py-10">
+	<div class="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl lg:grid-cols-[360px_1fr]">
+		<!-- Brand panel — decorative illustration + privacy note. -->
+		<aside aria-hidden="true" class="onb-side relative hidden flex-col gap-4 overflow-hidden p-8 lg:flex xl:p-10">
+			<ThemeLogo alt={t('app.name', 'JapaConnect')} class="h-7 w-auto self-start" />
+			<h2 class="text-[1.4rem] leading-snug font-bold text-[var(--color-text)]">
+				{t('onboarding.side_title', "Let's personalize your Japa journey")} <span aria-hidden="true">👋</span>
+			</h2>
+			<p class="text-sm leading-relaxed text-[var(--color-text-subtle)]">
+				{t('onboarding.side_subtitle', 'Tell us a bit about yourself so we can recommend the right opportunities, resources, and tools for your goals.')}
+			</p>
 
-		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-8">
+			<!-- CSS illustration: flight route + landmark chips. -->
+			<div class="relative mt-2 min-h-52 flex-1">
+				<svg class="absolute inset-0 h-full w-full" viewBox="0 0 300 220" fill="none" aria-hidden="true">
+					<path d="M30 195 C 60 110, 140 120, 255 45" stroke="var(--color-primary)" stroke-width="1.5" stroke-dasharray="5 6" stroke-linecap="round" opacity="0.45" />
+					<circle cx="30" cy="195" r="4.5" fill="var(--color-primary)" opacity="0.5" />
+					<circle cx="255" cy="45" r="4.5" fill="var(--color-primary)" opacity="0.5" />
+				</svg>
+				<div class="onb-focal">
+					<Globe size={64} strokeWidth={1.1} class="text-[var(--color-primary)]" />
+				</div>
+				<div class="onb-chip" style="top: 8%; left: 12%;"><Landmark size={18} class="text-[var(--color-primary)]" /></div>
+				<div class="onb-chip" style="top: 30%; right: 8%;"><Luggage size={18} class="text-[var(--color-primary)]" /></div>
+				<div class="onb-chip" style="bottom: 22%; left: 6%;"><MapPin size={18} class="text-[var(--color-primary)]" /></div>
+				<div class="onb-plane"><Plane size={20} class="text-[var(--color-primary)]" /></div>
+			</div>
+
+			<div class="mt-auto flex items-start gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]/80 px-4 py-3 backdrop-blur-sm">
+				<ShieldCheck size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
+				<p class="text-xs leading-relaxed text-[var(--color-text-subtle)]">
+					<span class="block font-semibold text-[var(--color-text)]">{t('onboarding.privacy_title', 'Your data is safe with us.')}</span>
+					{t('onboarding.privacy_body', 'We respect your privacy and never share your data.')}
+				</p>
+			</div>
+		</aside>
+
+		<div class="flex min-w-0 flex-col p-6 sm:p-10">
+			<!-- Numbered stepper -->
+			<nav aria-label={t('onboarding.steps_label', 'Onboarding steps')} class="mb-8 flex items-start">
+				{#each stepLabels as label, i (i)}
+					{@const n = i + 1}
+					<div class="flex flex-1 flex-col items-center gap-1.5 last:flex-none">
+						<div class="flex w-full items-center">
+							{#if i > 0}<span class="h-px flex-1 {n <= currentStep ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{/if}
+							<span
+								class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold transition-colors {n === currentStep
+									? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+									: n < currentStep
+										? 'bg-[var(--color-primary)]/15 text-[var(--color-primary)]'
+										: 'bg-[var(--color-surface-subtle)] text-[var(--color-muted)]'}"
+								aria-current={n === currentStep ? 'step' : undefined}
+							>
+								{#if n < currentStep}<Check size={15} />{:else}{n}{/if}
+							</span>
+							{#if i < totalSteps - 1}<span class="h-px flex-1 {n < currentStep ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"></span>{/if}
+						</div>
+						<span class="hidden text-[11px] font-medium sm:block {n === currentStep ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'}">{label}</span>
+					</div>
+				{/each}
+			</nav>
 			<!-- Step 1: Welcome & Core Identity -->
 			{#if currentStep === 1}
 				<div class="mb-6 flex items-center gap-3">
@@ -528,21 +577,12 @@
 
 			<!-- Actions -->
 			<div class="mt-8 flex items-center justify-between">
-				{#if currentStep === 5}
+				{#if currentStep === 5 || currentStep > 2}
 					<button
 						type="button"
 						onclick={skipStep}
 						disabled={saving}
-						class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
-					>
-						{t('onboarding.skip', 'Skip')}
-					</button>
-				{:else if currentStep > 2}
-					<button
-						type="button"
-						onclick={skipStep}
-						disabled={saving}
-						class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-50"
+						class="text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:opacity-50"
 					>
 						{t('onboarding.skip', 'Skip')}
 					</button>
@@ -553,15 +593,82 @@
 					type="button"
 					onclick={saveStep}
 					disabled={saving || !canAdvance}
-					class="flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+					class="flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>
-					{saving ? t('onboarding.saving', 'Saving...') : currentStep === totalSteps ? t('onboarding.finish', 'Get started') : t('onboarding.next', 'Next')}
+					{saving ? t('onboarding.saving', 'Saving...') : currentStep === totalSteps ? t('onboarding.finish', 'Get started') : t('onboarding.next', 'Continue')}
 					{#if currentStep < totalSteps}<ChevronRight size={16} />{/if}
 				</button>
 			</div>
-		</div>
 
-		<!-- Step label -->
-		<p class="mt-4 text-center text-xs text-[var(--color-muted)]">{currentStep} / {totalSteps} — {stepLabels[currentStep - 1]}</p>
+			<!-- Footer: hint + progress dots -->
+			<div class="mt-auto flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-5">
+				<p class="flex min-w-0 items-center gap-1.5 text-xs text-[var(--color-muted)]">
+					<Lightbulb size={14} class="shrink-0 text-[var(--color-primary)]" />
+					<span class="truncate">
+						<span class="font-medium">{t('onboarding.why_ask', 'Why we ask this?')}</span>
+						{t('onboarding.why_ask_body', 'It helps us show you relevant scholarships, jobs, and opportunities.')}
+					</span>
+				</p>
+				<div class="flex shrink-0 items-center gap-1.5">
+					{#each Array(totalSteps) as _, i (i)}
+						<span
+							class="h-2 w-2 rounded-full transition-colors {i + 1 <= currentStep ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'}"
+						></span>
+					{/each}
+				</div>
+			</div>
+		</div>
 	</div>
 </div>
+
+<style>
+	.onb-side {
+		background:
+			radial-gradient(ellipse 80% 55% at 35% 42%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent),
+			color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+	}
+	.onb-focal {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		translate: -50% -50%;
+		display: grid;
+		place-items: center;
+		width: 8rem;
+		height: 8rem;
+		border-radius: 9999px;
+		background: var(--color-surface);
+		box-shadow: 0 10px 28px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	.onb-chip {
+		position: absolute;
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 0.75rem;
+		background: var(--color-surface);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+	}
+	.onb-plane {
+		position: absolute;
+		top: 10%;
+		right: 18%;
+		color: var(--color-primary);
+		opacity: 0.8;
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.onb-chip {
+			animation: onb-float 4s ease-in-out infinite;
+		}
+		.onb-chip:nth-of-type(3) { animation-delay: 0.7s; }
+		.onb-chip:nth-of-type(4) { animation-delay: 1.4s; }
+		.onb-plane {
+			animation: onb-float 3.5s ease-in-out infinite;
+		}
+	}
+	@keyframes onb-float {
+		0%, 100% { translate: 0 0; }
+		50% { translate: 0 -6px; }
+	}
+</style>
