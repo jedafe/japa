@@ -64,13 +64,11 @@
 
 - [ ] **Step 1: JEOS §11 task catalog entry**
 
-In `.jeos/sections/11-job-queue-asynq.md`, find the periodic-sweep tasks table (where `content:publish_sweep`, `gdpr:retention_sweep` etc. are listed) and add:
+In `.jeos/sections/11-job-queue-asynq.md`, the catalog is a flat `task_name — description` list (e.g. `coupon:expire_check — deactivate coupons past expires_at (periodic sweep) (Section 55)` near line 133). Add a line in that block:
 
-```markdown
-| `onboarding:reminder_sweep` | Daily (`0 9 * * *`) | default | none (scheduler payload ignored) | Finds active users with incomplete onboarding inside `onboarding.reminder_window_days`, under `onboarding.reminder_max_count`, past `onboarding.reminder_min_interval_hours`; upserts `onboarding_state.reminder_count`/`last_reminder_at` and inserts an `onboarding_reminder` in-app notification. |
+```text
+onboarding:reminder_sweep         — daily sweep (0 9 * * *): in-app notification reminder to active users with incomplete onboarding within onboarding.reminder_window_days, under onboarding.reminder_max_count, past onboarding.reminder_min_interval_hours (Section 09)
 ```
-
-Adjust column count to match the actual table in the file.
 
 - [ ] **Step 2: JEOS §09 update**
 
