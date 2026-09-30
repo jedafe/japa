@@ -3,6 +3,8 @@ package onboarding
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -140,14 +142,22 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": recs})
 }
 
-// DismissTour handles POST /api/v1/onboarding/tour/dismiss.
+// DismissTour handles POST /api/v1/onboarding/tour/dismiss. The body is
+// optional — {"surface": "docs"|"learn"|...} records a per-surface
+// dismissal; an empty body defaults to the "main" surface (Section 09).
 func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	if err := h.Service.DismissTour(r.Context(), user.UserID); err != nil {
+	var req DismissTourRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Request body is not valid JSON")
+		return
+	}
+
+	if err := h.Service.DismissTour(r.Context(), user.UserID, req.Surface); err != nil {
 		handleServiceError(w, err)
 		return
 	}

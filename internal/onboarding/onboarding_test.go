@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -93,6 +94,128 @@ func TestUpdateStepRequestUnmarshal(t *testing.T) {
 
 	if len(req.StepData) == 0 {
 		t.Error("step_data should not be empty")
+	}
+}
+
+func TestDismissTourRequestUnmarshal(t *testing.T) {
+	t.Parallel()
+
+	var req DismissTourRequest
+	if err := json.Unmarshal([]byte(`{"surface":"docs"}`), &req); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if req.Surface != "docs" {
+		t.Errorf("surface = %q, want docs", req.Surface)
+	}
+
+	// Empty body decodes to the zero value — the service defaults it to "main".
+	var empty DismissTourRequest
+	if err := json.Unmarshal([]byte(`{}`), &empty); err != nil {
+		t.Fatalf("unmarshal empty: %v", err)
+	}
+	if empty.Surface != "" {
+		t.Errorf("surface = %q, want empty", empty.Surface)
+	}
+}
+
+func TestTourDismissalsJSONTags(t *testing.T) {
+	t.Parallel()
+
+	r := OnboardingStatusResponse{
+		TourDismissed:  true,
+		TourDismissals: map[string]bool{"main": true, "docs": true},
+	}
+
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	dismissals, ok := got["tour_dismissals"].(map[string]any)
+	if !ok {
+		t.Fatalf("tour_dismissals = %v, want object", got["tour_dismissals"])
+	}
+	if dismissals["docs"] != true {
+		t.Errorf("tour_dismissals[docs] = %v, want true", dismissals["docs"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// tour dismissal helpers
+// ---------------------------------------------------------------------------
+
+func TestNormalizeTourSurface(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "main"},
+		{"   ", "main"},
+		{"main", "main"},
+		{"Docs", "docs"},
+		{"  LEARN  ", "learn"},
+		{"admin-panel", "admin-panel"},
+		{"main'; DROP TABLE users;--", "maindroptableusers--"},
+		{strings.Repeat("a", 64), strings.Repeat("a", 32)},
+		{"!!!", "main"},
+	}
+
+	for _, tc := range cases {
+		if got := normalizeTourSurface(tc.in); got != tc.want {
+			t.Errorf("normalizeTourSurface(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestIsTourStepKey(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{"primary-nav", "docs-search", "a", "step1", "learn-account"}
+	for _, k := range valid {
+		if !isTourStepKey(k) {
+			t.Errorf("isTourStepKey(%q) = false, want true", k)
+		}
+	}
+
+	invalid := []string{"", "Primary-Nav", "space switcher", "a_b", `<x>`, strings.Repeat("k", 65)}
+	for _, k := range invalid {
+		if isTourStepKey(k) {
+			t.Errorf("isTourStepKey(%q) = true, want false", k)
+		}
+	}
+}
+
+func TestParseTourDismissals(t *testing.T) {
+	t.Parallel()
+
+	// Empty/absent jsonb decodes to an empty map, not nil.
+	got := parseTourDismissals(nil)
+	if len(got) != 0 {
+		t.Errorf("parseTourDismissals(nil) = %v, want empty map", got)
+	}
+	if got == nil {
+		t.Error("parseTourDismissals(nil) should return a non-nil map")
+	}
+
+	got = parseTourDismissals([]byte(`{"main":true,"docs":true}`))
+	if !got["main"] || !got["docs"] {
+		t.Errorf("parseTourDismissals valid = %v, want main+docs", got)
+	}
+	if got["learn"] {
+		t.Error("parseTourDismissals valid: learn should be absent")
+	}
+
+	// Corrupted payload degrades to an empty map rather than failing.
+	got = parseTourDismissals([]byte(`{not json`))
+	if len(got) != 0 {
+		t.Errorf("parseTourDismissals corrupted = %v, want empty map", got)
 	}
 }
 
