@@ -9,6 +9,7 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type {
 		GeoSpaceOption,
 		EcaProvider,
@@ -198,22 +199,26 @@
 					<label class="block text-sm font-medium mb-1" for="purpose">
 						{t('eca_guide.purpose', 'Purpose')}
 					</label>
-					<select id="purpose" bind:value={selectedPurpose} class="input w-full">
-						{#each purposeOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="purpose"
+						bind:value={selectedPurpose}
+						options={purposeOptions}
+						class="w-full"
+					/>
 				</div>
 				<div>
 					<label class="block text-sm font-medium mb-1" for="provider">
 						{t('eca_guide.provider', 'Provider')}
 					</label>
-					<select id="provider" bind:value={selectedProvider} class="input w-full">
-						<option value="">{t('eca_guide.all_providers', 'All providers')}</option>
-						{#each providers as p (p.id)}
-							<option value={p.id}>{p.name}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="provider"
+						bind:value={selectedProvider}
+						options={[
+							{ value: '', label: t('eca_guide.all_providers', 'All providers') },
+							...providers.map((p) => ({ value: p.id, label: p.name }))
+						]}
+						class="w-full"
+					/>
 				</div>
 			</div>
 			<div class="mt-4">

@@ -9,6 +9,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, RefreshCw } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type MutualAidItem = {
 		id: string;
@@ -207,16 +208,12 @@
 		</p>
 		<div>
 			<label for="status-select" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.mutual_aid.col_status', 'Status')}</label>
-			<select
+			<AutocompleteSelect
 				id="status-select"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={newStatus}
-			>
-				{#each statusOptions as opt (opt)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				options={statusOptions}
+				class="w-full"
+			/>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

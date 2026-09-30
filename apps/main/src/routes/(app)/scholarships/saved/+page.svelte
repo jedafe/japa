@@ -5,7 +5,7 @@
 	import { GraduationCap, ClipboardList, ArrowLeft, ExternalLink, Trash2 } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { goto } from '$app/navigation';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import type { SavedScholarship } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -111,7 +111,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<div class="flex items-center gap-2">
 			<ClipboardList size={18} class="text-[var(--color-primary)]" />
 			<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('scholarships.saved_title', 'Saved Scholarships')}</h1>
@@ -119,7 +119,7 @@
 		<p class="mt-1 text-sm text-[var(--color-muted)]">{description}</p>
 	</div>
 
-	<div class="border-b border-[var(--color-border)] px-4 py-2">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-2">
 		<a
 			href="/scholarships"
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
@@ -237,16 +237,14 @@
 								</div>
 							</div>
 							<div class="flex flex-col gap-2">
-								<select
+								<AutocompleteSelect
+									class="w-40"
 									value={item.status}
-									onchange={(e) => updateStatus(item, (e.currentTarget as HTMLSelectElement).value)}
+									options={statusOptions}
+									onValueChange={(v) => updateStatus(item, v)}
 									disabled={updating[item.id]}
-									class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-								>
-									{#each statusOptions as opt (opt.value)}
-										<option value={opt.value}>{opt.label}</option>
-									{/each}
-								</select>
+									inputClass="text-xs"
+								/>
 								<button
 									type="button"
 									onclick={() => unsave(item)}

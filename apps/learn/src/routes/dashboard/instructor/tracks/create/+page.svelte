@@ -12,6 +12,7 @@
 	import { Plus, Save, ArrowLeft } from 'lucide-svelte';
 	import { formatPriceKobo } from '$lib/format';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { GeoCountry, CatalogOption } from '$lib/types';
 
@@ -213,15 +214,12 @@
 			<label for="difficulty" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 				{t('university.track_difficulty_label')}
 			</label>
-			<select
+			<AutocompleteSelect
 				id="difficulty"
 				bind:value={difficulty}
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-			>
-				{#each difficultyLevels as opt (opt.value)}
-					<option value={opt.value}>{t(`level.${opt.value}`)}</option>
-				{/each}
-			</select>
+				options={difficultyLevels.map((opt) => ({ value: opt.value, label: t(`level.${opt.value}`) }))}
+				class="w-full"
+			/>
 		</div>
 
 		<!-- Price (main currency unit → kobo/cents) -->

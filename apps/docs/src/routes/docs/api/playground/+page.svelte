@@ -1,6 +1,7 @@
 <script lang="ts">
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import JsonEditor from '$lib/components/docs/JsonEditor.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/i18n';
 	import { env } from '$env/dynamic/public';
 	import { Plus, X, Send, AlertTriangle, History, KeyRound, AlignLeft } from 'lucide-svelte';
@@ -270,12 +271,14 @@
 							{t('api.create_key', 'Create an API key')}
 						</a>
 					{:else}
-						<select bind:value={selectedKeyId} aria-label={t('api.select_key', 'Select API key')}>
-							<option value="">{t('api.select_key', 'Select an API key…')}</option>
-							{#each activeKeys as k (k.id)}
-								<option value={k.id}>{k.name} ({k.key_prefix}…)</option>
-							{/each}
-						</select>
+						<AutocompleteSelect
+							bind:value={selectedKeyId}
+							ariaLabel={t('api.select_key', 'Select API key')}
+							options={[
+								{ value: '', label: t('api.select_key', 'Select an API key…') },
+								...activeKeys.map((k) => ({ value: k.id, label: `${k.name} (${k.key_prefix}…)` }))
+							]}
+						/>
 						{#if selectedKeyId}
 							{@const selectedKey = activeKeys.find((k) => k.id === selectedKeyId)}
 							<div class="pg-key-hint">
@@ -316,13 +319,12 @@
 			<section class="pg-section">
 				<h2>{t('api.request')}</h2>
 				<div class="method-url">
-					<select bind:value={method} aria-label={t('api.method')}>
-						<option value="GET">GET</option>
-						<option value="POST">POST</option>
-						<option value="PATCH">PATCH</option>
-						<option value="PUT">PUT</option>
-						<option value="DELETE">DELETE</option>
-					</select>
+					<AutocompleteSelect
+						bind:value={method}
+						ariaLabel={t('api.method')}
+						options={['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].map((m) => ({ value: m, label: m }))}
+						class="pg-method"
+					/>
 					<input bind:value={url} placeholder="/api/v1/…" aria-label={t('api.endpoint')} />
 				</div>
 
@@ -496,7 +498,7 @@
 		color: var(--color-muted);
 		margin: 0 0 0.75rem;
 	}
-	input, select {
+	input {
 		width: 100%;
 		background: var(--color-bg);
 		border: 1px solid var(--color-border);
@@ -507,7 +509,7 @@
 		font-size: 0.875rem;
 		outline: none;
 	}
-	input:focus, select:focus { border-color: var(--color-primary); }
+	input:focus { border-color: var(--color-primary); }
 	.field-label { display: block; font-size: 0.75rem; color: var(--color-muted); margin-bottom: 0.25rem; }
 	.body-header {
 		display: flex;
@@ -646,7 +648,7 @@
 		gap: 0.5rem;
 		margin-bottom: 0.75rem;
 	}
-	.method-url select { width: 120px; flex-shrink: 0; }
+	.method-url :global(.pg-method) { width: 120px; flex-shrink: 0; }
 	.headers { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 0.75rem; }
 	.header-row { display: flex; gap: 0.375rem; }
 	.header-row .hkey { flex: 1; }

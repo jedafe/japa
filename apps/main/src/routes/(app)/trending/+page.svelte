@@ -85,9 +85,9 @@
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<!-- Header: title + description (kept) -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
 		<div class="min-w-0">
 			<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 				<Flame size={20} /> {t('trending.heading', 'Trending')}

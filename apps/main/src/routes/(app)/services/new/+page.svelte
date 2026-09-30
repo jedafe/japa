@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -144,7 +145,7 @@
 
 <div class="mx-auto w-full max-w-2xl">
 	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Briefcase size={20} /> {t('services.new_heading', 'List a Service')}
 		</h1>
@@ -187,11 +188,12 @@
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_category', 'Service category')}
 				</label>
-				<select id="category" bind:value={serviceCategory} class={inputClass}>
-					{#each categoryOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="category"
+					value={serviceCategory}
+					options={categoryOptions}
+					onValueChange={(v) => (serviceCategory = v as ServiceCategory)}
+				/>
 			</div>
 
 			<!-- Destination + City -->
@@ -215,23 +217,22 @@
 					<label for="city" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_city', 'City')}
 					</label>
-					<select
+					<AutocompleteSelect
 						id="city"
 						bind:value={citySpaceId}
-						class={inputClass}
 						disabled={!destinationSpaceId || loadingCities}
-					>
-						<option value="">
-							{loadingCities
-								? t('services.city_loading', 'Loading cities…')
-								: destinationSpaceId
-									? t('services.city_select', 'Select a city (optional)')
-									: t('services.city_select_dest_first', 'Select a country first')}
-						</option>
-						{#each cities as city (city.id)}
-							<option value={city.id}>{city.name}</option>
-						{/each}
-					</select>
+						options={[
+							{
+								value: '',
+								label: loadingCities
+									? t('services.city_loading', 'Loading cities…')
+									: destinationSpaceId
+										? t('services.city_select', 'Select a city (optional)')
+										: t('services.city_select_dest_first', 'Select a country first')
+							},
+							...cities.map((c) => ({ value: c.id, label: c.name }))
+						]}
+					/>
 				</div>
 			</div>
 

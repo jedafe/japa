@@ -36,7 +36,6 @@
 	const mode: StudioMode = $derived(canPersona ? 'operator' : 'member');
 
 	let copied = $state(false);
-	let frameworkTouched = $state(false);
 
 	const selectedType = $derived(contentTypes.find((ct) => ct.value === values.content_type));
 	const categories = $derived(selectedType?.categories ?? []);
@@ -57,10 +56,11 @@
 		categories.find((c) => c.Slug === values.guide_category)?.Label ?? values.guide_category
 	);
 
+	// The framework always follows the selected content type's default —
+	// the user can override it in the right rail afterwards, and switching
+	// type re-defaults it.
 	$effect(() => {
-		if (!frameworkTouched) {
-			values.framework = (defaultFrameworkFor(values.content_type) || '') as PromptFormValues['framework'];
-		}
+		values.framework = (defaultFrameworkFor(values.content_type) || '') as PromptFormValues['framework'];
 	});
 
 	// Load category-specific custom field groups when a guide category is

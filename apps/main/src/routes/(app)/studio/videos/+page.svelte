@@ -70,7 +70,10 @@
 	const TERMINAL_STATUSES = ['completed', 'failed', 'partial'];
 	let liveStatus = $state<Record<string, VideoImportJob>>({});
 	const displayJobs = $derived(jobs.map((j) => liveStatus[j.id] ?? j));
-	const activeJobs = $derived(jobs.filter((j) => ACTIVE_STATUSES.includes(j.status)));
+	// Filter the merged view, not the raw server list — a job that reached a
+	// terminal status via polling (liveStatus) must leave the poll set
+	// immediately, not only after the invalidate round-trip refreshes `jobs`.
+	const activeJobs = $derived(displayJobs.filter((j) => ACTIVE_STATUSES.includes(j.status)));
 
 	async function doPreview() {
 		if (previewing) return;
@@ -109,6 +112,10 @@
 				result = { error: r.error.code, message: r.error.message };
 			} else if (r.data) {
 				result = { ok: true, job: r.data };
+				// Seed liveStatus with the retried job immediately — otherwise
+				// the row keeps displaying the stale terminal status until the
+				// next invalidate round-trip or poll tick.
+				liveStatus = { ...liveStatus, [job.id]: r.data };
 				await invalidate(STUDIO_CACHE_TAG);
 			}
 		} catch (e) {
@@ -204,11 +211,18 @@
 					submitting = true;
 					return async ({ result: r }) => {
 						submitting = false;
-						if (r.type === 'success') {
+						if (r.type === 'success' || r.type === 'failure') {
 							result = r.data as { ok?: boolean; error?: string; message?: string; job?: VideoImportJob };
 							if (result?.ok && result?.job) {
+								// The import was queued — the preview panel served its
+								// purpose and would be misleading under a "started" banner.
+								preview = null;
 								await invalidate(STUDIO_CACHE_TAG);
 							}
+						} else if (r.type === 'error') {
+							// Thrown action errors (network/5xx) land here — without
+							// this branch the form would fail silently.
+							result = { error: 'import_failed', message: t('studio.start_error', 'Import failed to start — please try again') };
 						}
 					};
 				}}
@@ -317,7 +331,7 @@
 									{preview.sample.title || t('studio.preview_untitled', 'Untitled video')}
 								</p>
 								<p class="mt-0.5 text-xs text-[var(--color-muted)]">
-									<span class="capitalize">{preview.sample.source_type}</span>
+									<span>{currentTab.label}</span>
 									{#if preview.sample.duration_secs}
 										· {formatDuration(preview.sample.duration_secs)}
 									{/if}

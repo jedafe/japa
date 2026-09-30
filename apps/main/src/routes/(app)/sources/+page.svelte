@@ -124,9 +124,9 @@
 	<meta name="description" content={description} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<div class="min-w-0 flex-1 basis-56">
 				<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
@@ -158,7 +158,7 @@
 	</div>
 
 	{#if showFilters}
-		<div id="sources-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+		<div id="sources-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3" style="margin-inline: var(--page-gutter)">
 			<div class="grid gap-3 sm:grid-cols-3">
 				<form
 					class="w-full"

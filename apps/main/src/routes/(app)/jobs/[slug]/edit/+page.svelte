@@ -5,7 +5,7 @@
 	import { Briefcase, Lock, Loader2, Save, ArrowLeft } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { EmptyState } from '$lib/components/ui';
+	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import CustomFieldGroupCmp from '$lib/components/create/panel/CustomFieldGroup.svelte';
 	import JobGeoFields from '$lib/components/jobs/JobGeoFields.svelte';
 	import JobLogoUpload from '$lib/components/jobs/JobLogoUpload.svelte';
@@ -198,16 +198,12 @@
 				<label for="job-org" class="text-sm font-medium text-[var(--color-text)]">
 					{t('jobs.organization', 'Organization')} <span class="text-[var(--destructive)]">*</span>
 				</label>
-				<select
+				<AutocompleteSelect
 					id="job-org"
 					bind:value={orgId}
 					disabled={true}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] disabled:opacity-60"
-				>
-					{#each data.organizations as org (org.id)}
-						<option value={org.id}>{org.name}</option>
-					{/each}
-				</select>
+					options={(data.organizations ?? []).map((org) => ({ value: org.id, label: org.name }))}
+				/>
 				<p class="text-xs text-[var(--color-muted)]">{t('jobs.org_readonly', 'The organization for an existing job cannot be changed.')}</p>
 			</div>
 

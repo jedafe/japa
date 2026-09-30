@@ -8,6 +8,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Banknote, Plus, RefreshCw, Pencil, Download } from 'lucide-svelte';
 	import { api } from '$lib/api';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type RemittanceProvider = {
 		id: string;
@@ -251,10 +252,12 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label for="remittance-data-source" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.data_source', 'Data Source')}</label>
-				<select id="remittance-data-source" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" bind:value={newProvider.data_source}>
-					<option value="manual">Manual</option>
-					<option value="api">API</option>
-				</select>
+				<AutocompleteSelect
+					id="remittance-data-source"
+					bind:value={newProvider.data_source}
+					options={[{ value: 'manual', label: 'Manual' }, { value: 'api', label: 'API' }]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="remittance-order" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">{t('remittance.order', 'Display Order')}</label>

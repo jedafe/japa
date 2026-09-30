@@ -26,7 +26,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('explore.heading', 'Explore')}</h1>
 	</div>
 	<JourneyContextBar />

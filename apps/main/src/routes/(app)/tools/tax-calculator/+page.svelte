@@ -16,6 +16,7 @@
 	import type { TaxGuideWithAi, TaxTreaty, GeoCountry, CatalogOption } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
 	/**
@@ -148,7 +149,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Receipt size={20} /> {title}
 		</h1>
@@ -231,18 +232,14 @@
 				<label for="employment" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 					{t('tax_calculator.employment_status', 'Employment status:')}
 				</label>
-				<select
+				<AutocompleteSelect
 					id="employment"
 					value={employmentStatus}
-					onchange={(e) => (employmentStatus = (e.currentTarget as HTMLSelectElement).value)}
-					class="flex-1 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{#each employmentOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{:else}
-						<option value="">{t('tax_calculator.employment_any', 'Any (optional)')}</option>
-					{/each}
-				</select>
+					options={employmentOptions.length > 0
+						? employmentOptions
+						: [{ value: '', label: t('tax_calculator.employment_any', 'Any (optional)') }]}
+					onValueChange={(v) => (employmentStatus = v)}
+				/>
 				<button
 					onclick={search}
 					disabled={!canSearch || loading}

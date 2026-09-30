@@ -22,6 +22,7 @@
 	import { join } from '@tauri-apps/api/path';
 	import { mkdir, readTextFile, writeTextFile, remove } from '@tauri-apps/plugin-fs';
 	import { queueStore } from '$lib/stores/queue.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { scanProject } from '$lib/services/file-scanner';
 	import { parseFrontmatter, buildMarkdown, markdownToHtml } from '$lib/services/markdown';
 	import { isPublishing, publishWorker } from '$lib/services/publisher';
@@ -582,6 +583,7 @@
 			{#if settings.autoSync}
 				<div class="flex flex-col gap-1">
 					<label for="auto-sync-types" class="text-xs text-muted-foreground">Auto-sync types</label>
+					<!-- Native multi-select list kept intentionally: AutocompleteSelect is single-select. -->
 					<select
 						id="auto-sync-types"
 						multiple
@@ -740,63 +742,49 @@
 					oninput={(event) => (search = (event.currentTarget as HTMLInputElement).value)}
 				/>
 			</div>
-			<select
-				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+			<AutocompleteSelect
+				class="w-44"
 				value={filterStatus}
-				onchange={(event) =>
-					(filterStatus = (event.currentTarget as HTMLSelectElement).value as FileState['syncState'] | 'all')}
-			>
-				<option value="all">All statuses</option>
-				{#each stateOptions as option}
-					<option value={option.value}>{option.label}</option>
-				{/each}
-			</select>
-			<select
-				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				onValueChange={(v) => (filterStatus = v as FileState['syncState'] | 'all')}
+				options={[{ value: 'all', label: 'All statuses' }, ...stateOptions]}
+			/>
+			<AutocompleteSelect
+				class="w-44"
 				value={filterContentType}
-				onchange={(event) =>
-					(filterContentType = (event.currentTarget as HTMLSelectElement).value)}
-			>
-				<option value="all">All types</option>
-				{#each contentTypeFilterOptions as type}
-					<option value={type}>{type === 'all' ? 'All types' : contentTypeLabel(type)}</option>
-				{/each}
-			</select>
-			<select
-				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				onValueChange={(v) => (filterContentType = v)}
+				options={contentTypeFilterOptions.map((type) => ({
+					value: type,
+					label: type === 'all' ? 'All types' : contentTypeLabel(type)
+				}))}
+			/>
+			<AutocompleteSelect
+				class="w-44"
 				value={filterGuideCategory}
-				onchange={(event) =>
-					(filterGuideCategory = (event.currentTarget as HTMLSelectElement).value)}
-			>
-				<option value="all">All categories</option>
-				{#each guideCategoryFilterOptions as value}
-					<option value={value}>
-						{value === 'all' ? 'All categories' : findGuideCategoryLabel(value)}
-					</option>
-				{/each}
-			</select>
-			<select
-				class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				onValueChange={(v) => (filterGuideCategory = v)}
+				options={guideCategoryFilterOptions.map((value) => ({
+					value,
+					label: value === 'all' ? 'All categories' : findGuideCategoryLabel(value)
+				}))}
+			/>
+			<AutocompleteSelect
+				class="w-44"
 				value={filterSpace}
-				onchange={(event) => (filterSpace = (event.currentTarget as HTMLSelectElement).value)}
-			>
-				<option value="all">All spaces</option>
-				{#each spaceFilterOptions as id}
-					<option value={id}>{id === 'all' ? 'All spaces' : displayName(id, spaces)}</option>
-				{/each}
-			</select>
+				onValueChange={(v) => (filterSpace = v)}
+				options={spaceFilterOptions.map((id) => ({
+					value: id,
+					label: id === 'all' ? 'All spaces' : displayName(id, spaces)
+				}))}
+			/>
 			{#if settings.mode !== 'member'}
-				<select
-					class="rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+				<AutocompleteSelect
+					class="w-44"
 					value={filterPersona}
-					onchange={(event) =>
-						(filterPersona = (event.currentTarget as HTMLSelectElement).value)}
-				>
-					<option value="all">All personas</option>
-					{#each personaFilterOptions as id}
-						<option value={id}>{id === 'all' ? 'All personas' : displayName(id, personas)}</option>
-					{/each}
-				</select>
+					onValueChange={(v) => (filterPersona = v)}
+					options={personaFilterOptions.map((id) => ({
+						value: id,
+						label: id === 'all' ? 'All personas' : displayName(id, personas)
+					}))}
+				/>
 			{/if}
 		</div>
 
@@ -916,19 +904,13 @@
 								</td>
 							{/if}
 							<td class="px-4 py-2">
-								<select
-									class="rounded border border-border bg-surface px-2 py-1 text-xs capitalize focus:outline-none focus:ring-2 focus:ring-primary"
+								<AutocompleteSelect
+									class="inline-block w-32 align-middle capitalize"
+									inputClass="!px-2 !py-1 text-xs"
 									value={row.syncState}
-									onchange={(event) =>
-										handleStateChange(
-											row.relativePath,
-											(event.currentTarget as HTMLSelectElement).value
-										)}
-								>
-									{#each stateOptions as option}
-										<option value={option.value}>{option.label}</option>
-									{/each}
-								</select>
+									onValueChange={(v) => handleStateChange(row.relativePath, v)}
+									options={stateOptions}
+								/>
 								<span
 									class="ml-2 inline-flex items-center rounded border px-2 py-0.5 text-xs capitalize {stateBadgeClasses(
 										row.syncState
@@ -1100,18 +1082,14 @@
 				</label>
 				<label class="block text-sm font-medium">
 					Content type
-					<select
-						class="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+					<AutocompleteSelect
+						class="mt-1 w-full"
 						value={newPostType}
-						onchange={(event) => (newPostType = (event.currentTarget as HTMLSelectElement).value)}
-					>
-						{#each newPostTypeOptions as type}
-							<option value={type}>{contentTypeLabel(type)}</option>
-						{/each}
-						{#if newPostTypeOptions.length === 0}
-							<option value="guide">guide</option>
-						{/if}
-					</select>
+						onValueChange={(v) => (newPostType = v)}
+						options={newPostTypeOptions.length > 0
+							? newPostTypeOptions.map((type) => ({ value: type, label: contentTypeLabel(type) }))
+							: [{ value: 'guide', label: 'guide' }]}
+					/>
 				</label>
 			</div>
 			<div class="mt-6 flex justify-end gap-2">

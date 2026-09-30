@@ -12,6 +12,7 @@
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { arrivalChecklistAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// GuideDTO — matches the backend response shape (internal/arrivalchecklist/service.go).
 	type ArrivalChecklistGuide = {
@@ -303,16 +304,12 @@
 		</div>
 		<div>
 			<label for="gen-app-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_applicant_type', 'Applicant Type')}</label>
-			<select
+			<AutocompleteSelect
 				id="gen-app-type"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateApplicantType}
-			>
-				<option value="individual">{t('app.tools.applicant_individual', 'Individual')}</option>
-				<option value="couple">{t('app.tools.applicant_couple', 'Couple')}</option>
-				<option value="family">{t('app.tools.applicant_family', 'Family')}</option>
-			</select>
+				options={[{ value: 'individual', label: t('app.tools.applicant_individual', 'Individual') }, { value: 'couple', label: t('app.tools.applicant_couple', 'Couple') }, { value: 'family', label: t('app.tools.applicant_family', 'Family') }]}
+				class="w-full"
+			/>
 		</div>
 	</div>
 	<div class="mt-4 flex justify-end gap-2">

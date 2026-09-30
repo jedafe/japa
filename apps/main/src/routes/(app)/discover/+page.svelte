@@ -106,13 +106,13 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('discover.heading', 'Discover')}</h1>
 	</div>
 
 	<!-- Tab bar -->
 	<nav
-		class="discover-tabs sticky top-0 z-10"
+		class="discover-tabs sticky top-0 z-10 mx-3"
 		aria-label={t('discover.tabs_label', 'Discover tabs')}
 	>
 		<UrlTabs {tabs} value={data.tab} onValueChange={(v) => goto(`?tab=${v}`)} />

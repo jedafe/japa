@@ -9,6 +9,7 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type {
 		GeoSpaceOption,
 		SopTemplate,
@@ -236,11 +237,12 @@
 					<label class="block text-sm font-medium mb-1" for="genPurpose">
 						{t('sop_generator.purpose', 'Purpose')}
 					</label>
-					<select id="genPurpose" bind:value={genPurpose} class="input w-full">
-						{#each purposeOptions as opt (opt.value)}
-							<option value={opt.value}>{opt.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="genPurpose"
+						bind:value={genPurpose}
+						options={purposeOptions}
+						class="w-full"
+					/>
 				</div>
 				<div>
 					<label class="block text-sm font-medium mb-1" for="genProgram">

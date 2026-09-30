@@ -2,6 +2,7 @@
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -158,7 +159,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl">
-	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<a
 			href="/calendar"
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
@@ -242,11 +243,12 @@
 				<label for="category" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">
 					{t('calendar.new.label_category', 'Category')}
 				</label>
-				<select id="category" bind:value={category} class={inputClass}>
-					{#each categories as cat (cat.value)}
-						<option value={cat.value}>{cat.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="category"
+					value={category}
+					options={categories}
+					onValueChange={(v) => (category = v as CalendarCategory)}
+				/>
 			</div>
 
 			<!-- Description -->

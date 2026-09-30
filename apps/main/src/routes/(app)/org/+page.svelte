@@ -130,7 +130,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<!-- Header + search + filters -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Building2 size={20} /> {t('organizations.heading', 'Organizations')}
 		</h1>

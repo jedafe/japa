@@ -6,6 +6,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -171,16 +172,12 @@
 				{t('achievements.field_milestone_type', 'Milestone type')}
 				<span class="text-red-500" aria-hidden="true">*</span>
 			</label>
-			<select
+			<AutocompleteSelect
 				id="milestone_type"
 				value={milestoneType}
-				onchange={(e) => (milestoneType = e.currentTarget.value as AchievementMilestoneType)}
-				class={inputClass}
-			>
-				{#each milestoneOpts as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				options={milestoneOpts}
+				onValueChange={(v) => (milestoneType = v as AchievementMilestoneType)}
+			/>
 		</div>
 
 		<div class="grid gap-4 sm:grid-cols-2">

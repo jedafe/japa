@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Megaphone, Plus, Pause, Play, BarChart3, ArrowLeft, Check, X } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
@@ -257,14 +258,17 @@
 					<label for="ad-slot" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('org_ads.slot_type', 'Ad Slot')}
 					</label>
-					<select id="ad-slot" class={inputClass} bind:value={formSlotTypeId} required>
-						<option value="">{t('org_ads.select_slot', 'Select a slot...')}</option>
-						{#each slots as slot (slot.id)}
-							<option value={slot.id}>
-								{slot.slot_name} — {slot.flat_rate} {t('org_ads.credits_day', 'credits/day')}
-							</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="ad-slot"
+						bind:value={formSlotTypeId}
+						options={[
+							{ value: '', label: t('org_ads.select_slot', 'Select a slot...') },
+							...slots.map((slot) => ({
+								value: slot.id,
+								label: `${slot.slot_name} — ${slot.flat_rate} ${t('org_ads.credits_day', 'credits/day')}`
+							}))
+						]}
+					/>
 				</div>
 
 				<div>

@@ -8,6 +8,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import type { SavedScholarship, ScholarshipStatus, CatalogOption } from '$lib/types';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	/**
 	 * Saved Scholarships tracker — §73, ADR-073.
@@ -171,15 +172,15 @@
 							</div>
 						</div>
 						<div class="flex-shrink-0 flex items-center gap-2">
-							<select
+							<AutocompleteSelect
 								value={item.status}
-								onchange={(e) => updateStatus(item.scholarship.guide_id, e.currentTarget.value as ScholarshipStatus)}
-								class="px-2 py-1 text-xs bg-surface border border-border rounded focus:border-primary focus:outline-none"
-							>
-								{#each statusOptions as opt (opt.value)}
-									<option value={opt.value}>{t(`scholarships.status_${opt.value}`, opt.label)}</option>
-								{/each}
-							</select>
+								onValueChange={(v) => updateStatus(item.scholarship.guide_id, v as ScholarshipStatus)}
+								options={statusOptions.map((opt) => ({
+									value: opt.value,
+									label: t(`scholarships.status_${opt.value}`, opt.label)
+								}))}
+								class="w-36"
+							/>
 							<button
 								onclick={() => unsave(item.scholarship.guide_id)}
 								class="p-1.5 text-muted hover:text-red-500 transition-colors"

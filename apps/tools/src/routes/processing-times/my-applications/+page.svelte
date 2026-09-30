@@ -8,6 +8,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type {
 		VisaTimeline,
 		VisaTimelineMilestone,
@@ -326,16 +327,15 @@
 						<label class="block text-xs font-medium text-muted mb-1" for="new-method">
 							{t('processing_tracker.method', 'Application method')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="new-method"
 							bind:value={newMethod}
-							class="w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text"
-						>
-							<option value="">{t('common.optional', 'Optional')}</option>
-							{#each methodOptions as o (o.value)}
-								<option value={o.value}>{o.label}</option>
-							{/each}
-						</select>
+							options={[
+								{ value: '', label: t('common.optional', 'Optional') },
+								...methodOptions
+							]}
+							class="w-full"
+						/>
 					</div>
 					<label class="flex items-center gap-2 text-sm text-text pb-2">
 						<input type="checkbox" bind:checked={newShared} class="rounded border-border" />
@@ -403,16 +403,13 @@
 							<div class="px-4 pb-4 border-t border-border pt-4 space-y-4">
 								<!-- Outcome + share controls -->
 								<div class="flex flex-wrap items-center gap-3">
-									<select
+									<AutocompleteSelect
 										value={tl.outcome ?? 'pending'}
-										onchange={(e) => updateTimeline(tl, { outcome: e.currentTarget.value })}
+										onValueChange={(v) => updateTimeline(tl, { outcome: v })}
 										disabled={savingTimeline === tl.id}
-										class="px-3 py-1.5 text-sm bg-surface border border-border rounded-lg text-text"
-									>
-										{#each outcomeOptions as o (o.value)}
-											<option value={o.value}>{o.label}</option>
-										{/each}
-									</select>
+										options={outcomeOptions}
+										class="w-36"
+									/>
 									<label class="flex items-center gap-2 text-sm text-text">
 										<input
 											type="checkbox"
@@ -438,14 +435,11 @@
 												{#if editingMilestone === m.id}
 													<div class="p-3 bg-surface-subtle rounded-lg space-y-2">
 														<div class="grid sm:grid-cols-2 gap-2">
-															<select
+															<AutocompleteSelect
 																bind:value={editMilestoneType}
-																class="px-3 py-1.5 text-sm bg-surface border border-border rounded-lg text-text"
-															>
-																{#each milestoneTypes as o (o.value)}
-																	<option value={o.value}>{o.label}</option>
-																{/each}
-															</select>
+																options={milestoneTypes}
+																class="w-48"
+															/>
 															<input
 																type="date"
 																bind:value={editMilestoneDate}
@@ -502,15 +496,14 @@
 									{#if addingTo === tl.id}
 										<div class="mt-3 p-3 bg-surface-subtle rounded-lg space-y-2">
 											<div class="grid sm:grid-cols-2 gap-2">
-												<select
+												<AutocompleteSelect
 													bind:value={milestoneType}
-													class="px-3 py-1.5 text-sm bg-surface border border-border rounded-lg text-text"
-												>
-													<option value="">{t('processing_tracker.milestone_type', 'Milestone type…')}</option>
-													{#each milestoneTypes as o (o.value)}
-														<option value={o.value}>{o.label}</option>
-													{/each}
-												</select>
+													options={[
+														{ value: '', label: t('processing_tracker.milestone_type', 'Milestone type…') },
+														...milestoneTypes
+													]}
+													class="w-48"
+												/>
 												<input
 													type="date"
 													bind:value={milestoneDate}

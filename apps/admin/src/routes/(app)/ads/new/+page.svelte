@@ -12,6 +12,7 @@
 	import MediaPickerModal from "$lib/components/ui/MediaPickerModal.svelte";
 	import { sanitizeHtml } from "$lib/utils/html";
 	import { useCountries } from "$lib/utils/countries.svelte";
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// Ref: japaconnect-engineering/sections/25-ad-placement.md — the backend
 	// AdSlotType sqlc struct exposes `slot_name` and `max_display_per_page`
@@ -239,12 +240,18 @@
 
 			<div>
 				<label for="ad-slot" class="mb-1 block text-sm font-medium">{t('ads.slot_type', 'Slot Type')} *</label>
-				<select id="ad-slot" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={slotTypeName}>
-					<option value="">{t('ads.select_slot', 'Select a slot type...')}</option>
-					{#each slotTypes as slot (slot)}
-						<option value={slot.slot_name}>{slot.slot_name}{#if slot.max_display_per_page} ({slot.max_display_per_page}/page){/if}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="ad-slot"
+					bind:value={slotTypeName}
+					options={[
+						{ value: '', label: t('ads.select_slot', 'Select a slot type...') },
+						...slotTypes.map((slot) => ({
+							value: slot.slot_name,
+							label: slot.slot_name + (slot.max_display_per_page ? ` (${slot.max_display_per_page}/page)` : '')
+						}))
+					]}
+					class="w-full"
+				/>
 			</div>
 
 			<div>

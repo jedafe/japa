@@ -9,6 +9,7 @@
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Pin, PinOff, CheckCircle, XCircle, Copy } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type ScamAlertItem = {
 		id: string;
@@ -335,23 +336,13 @@
 					<label for="review-status" class="text-sm font-medium" style="color: var(--color-foreground)">
 						{t('app.scam_alert.review_status', 'Decision')} <span class="text-red-500">*</span>
 					</label>
-					<select
+					<AutocompleteSelect
 						id="review-status"
 						value={reviewStatus}
-						onchange={(e) => (reviewStatus = e.currentTarget.value as 'confirmed' | 'debunked' | 'duplicate')}
-						class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
-						style="color: var(--color-foreground)"
-					>
-						<option value="confirmed">
-							{t('app.scam_alert.status_confirmed', 'Confirmed — verified scam')}
-						</option>
-						<option value="debunked">
-							{t('app.scam_alert.status_debunked', 'Debunked — not a scam')}
-						</option>
-						<option value="duplicate">
-							{t('app.scam_alert.status_duplicate', 'Duplicate — already reported')}
-						</option>
-					</select>
+						onValueChange={(v) => (reviewStatus = v as 'confirmed' | 'debunked' | 'duplicate')}
+						options={[{ value: 'confirmed', label: t('app.scam_alert.status_confirmed', 'Confirmed — verified scam') }, { value: 'debunked', label: t('app.scam_alert.status_debunked', 'Debunked — not a scam') }, { value: 'duplicate', label: t('app.scam_alert.status_duplicate', 'Duplicate — already reported') }]}
+						class="w-full"
+					/>
 				</div>
 
 				<!-- Moderator note -->

@@ -29,6 +29,7 @@
 	import { parseJson, jsonToString } from '$lib/utils/json';
 	import { Tabs } from '$lib/components/ui/tabs';
 	import { GitCompare, Shield, Trash2, Eye, Pencil, Sliders } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	const canCreateType = $derived(hasPermission('comparison.type.create'));
 	const canEditType = $derived(hasPermission('comparison.type.edit'));
@@ -999,17 +1000,12 @@
 									<label for="ct-user-group" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">
 										{t('comparison_types.user_group', 'User group ID')}
 									</label>
-									<select
+									<AutocompleteSelect
 										id="ct-user-group"
-										class="w-full rounded-md border px-3 py-2 text-sm"
-										style="border-color: var(--color-border); background-color: var(--color-background)"
 										bind:value={accessForm.user_group_id}
-									>
-										<option value="">{t('comparison_types.user_group_placeholder', 'Leave empty for AI-agent-only access')}</option>
-										{#each userGroups as ug (ug.id)}
-											<option value={ug.id}>{ug.name}</option>
-										{/each}
-									</select>
+										options={[{ value: '', label: t('comparison_types.user_group_placeholder', 'Leave empty for AI-agent-only access') }, ...userGroups.map((ug) => ({ value: ug.id, label: ug.name }))]}
+										class="w-full"
+									/>
 								</div>
 								<div class="flex flex-wrap items-center gap-4">
 									<label class="flex items-center gap-2 text-xs">
@@ -1150,17 +1146,13 @@
 						<label for="sf-data-source" class="block text-xs font-medium" style="color: var(--color-muted)">
 							{t('score_factors.data_source', 'Data source')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="sf-data-source"
-							class="mt-1 w-full rounded-lg border p-2 text-sm"
-							style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 							bind:value={factorForm.data_source}
 							disabled={!!selectedFactor?.is_system || !canManageFactors}
-						>
-							{#each DATA_SOURCE_OPTIONS as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
+							options={DATA_SOURCE_OPTIONS}
+							class="w-full"
+						/>
 					</div>
 					{#if factorForm.data_source === 'dimension'}
 						<div>
@@ -1198,18 +1190,13 @@
 							<label for="sf-kind" class="block text-xs font-medium" style="color: var(--color-muted)">
 								{t('score_factors.kind', 'Kind')}
 							</label>
-							<select
+							<AutocompleteSelect
 								id="sf-kind"
-								class="mt-1 w-full rounded-lg border p-2 text-sm"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={factorForm.config.kind}
 								disabled={!!selectedFactor?.is_system || !canManageFactors}
-							>
-								<option value="">{t('common.select', 'Select…')}</option>
-								{#each SF_KIND_OPTIONS as option (option.value)}
-									<option value={option.value}>{option.label}</option>
-								{/each}
-							</select>
+								options={[{ value: '', label: t('common.select', 'Select…') }, ...SF_KIND_OPTIONS]}
+								class="w-full"
+							/>
 						</div>
 					{/if}
 					{#if sfConfigVisible('direction', String(factorForm.data_source ?? 'dimension'))}
@@ -1217,18 +1204,13 @@
 							<label for="sf-direction" class="block text-xs font-medium" style="color: var(--color-muted)">
 								{t('score_factors.direction', 'Direction')}
 							</label>
-							<select
+							<AutocompleteSelect
 								id="sf-direction"
-								class="mt-1 w-full rounded-lg border p-2 text-sm"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={factorForm.config.direction}
 								disabled={!!selectedFactor?.is_system || !canManageFactors}
-							>
-								<option value="">{t('common.select', 'Select…')}</option>
-								{#each SF_DIRECTION_OPTIONS as option (option.value)}
-									<option value={option.value}>{option.label}</option>
-								{/each}
-							</select>
+								options={[{ value: '', label: t('common.select', 'Select…') }, ...SF_DIRECTION_OPTIONS]}
+								class="w-full"
+							/>
 						</div>
 					{/if}
 					{#if sfConfigVisible('value_key', String(factorForm.data_source ?? 'dimension'))}
@@ -1281,18 +1263,13 @@
 							<label for="sf-match-strategy" class="block text-xs font-medium" style="color: var(--color-muted)">
 								{t('score_factors.match_strategy', 'Match strategy')}
 							</label>
-							<select
+							<AutocompleteSelect
 								id="sf-match-strategy"
-								class="mt-1 w-full rounded-lg border p-2 text-sm"
-								style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 								bind:value={factorForm.config.match_strategy}
 								disabled={!!selectedFactor?.is_system || !canManageFactors}
-							>
-								<option value="">{t('common.select', 'Select…')}</option>
-								{#each SF_MATCH_STRATEGY_OPTIONS as option (option.value)}
-									<option value={option.value}>{option.label}</option>
-								{/each}
-							</select>
+								options={[{ value: '', label: t('common.select', 'Select…') }, ...SF_MATCH_STRATEGY_OPTIONS]}
+								class="w-full"
+							/>
 						</div>
 					{/if}
 					{#if sfConfigVisible('ideal_texts', String(factorForm.data_source ?? 'dimension'))}
@@ -1861,15 +1838,11 @@
 								{#each (cfg.eligibility_rules ?? []) as rule, i (i)}
 									<div class="grid grid-cols-12 gap-2 rounded-md border p-2" style="border-color: var(--color-border)">
 										<div class="col-span-2">
-											<select
-												class="w-full rounded border p-1.5 text-xs"
-												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+											<AutocompleteSelect
 												bind:value={rule.operator}
-											>
-												{#each ENGINE_OPERATORS as op (op)}
-													<option value={op}>{op}</option>
-												{/each}
-											</select>
+												options={ENGINE_OPERATORS.map((op) => ({ value: op, label: op }))}
+												class="w-full"
+											/>
 										</div>
 										<div class="col-span-3">
 											<input
@@ -1969,16 +1942,11 @@
 											</Button>
 										</div>
 										<div class="col-span-3">
-											<select
-												class="w-full rounded border p-1.5 text-xs"
-												style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+											<AutocompleteSelect
 												bind:value={template.condition}
-											>
-												<option value="">{t('score_engine.condition', 'Condition')}</option>
-												{#each RECOMMENDATION_CONDITIONS as c (c)}
-													<option value={c}>{c}</option>
-												{/each}
-											</select>
+												options={[{ value: '', label: t('score_engine.condition', 'Condition') }, ...RECOMMENDATION_CONDITIONS.map((c) => ({ value: c, label: c }))]}
+												class="w-full"
+											/>
 										</div>
 										<div class="col-span-2">
 											<input

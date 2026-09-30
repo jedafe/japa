@@ -12,6 +12,7 @@
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { credentialCheckerAdminApi, apiFetch, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type CredentialCheckerItem = {
 		id: string;
@@ -300,17 +301,12 @@
 	<div class="space-y-4">
 		<div>
 			<label for="gen-profession" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_profession', 'Profession')}</label>
-			<select
+			<AutocompleteSelect
 				id="gen-profession"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateProfessionId}
-			>
-				<option value="">{t('credential_checker.select_profession', 'Select a profession…')}</option>
-				{#each professions as prof (prof.id)}
-					<option value={prof.id}>{prof.name}</option>
-				{/each}
-			</select>
+				options={[{ value: '', label: t('credential_checker.select_profession', 'Select a profession…') }, ...professions.map((prof) => ({ value: prof.id, label: prof.name }))]}
+				class="w-full"
+			/>
 		</div>
 		<div>
 			<label for="gen-issuing-country" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_issuing_country', 'Issuing Country')}</label>

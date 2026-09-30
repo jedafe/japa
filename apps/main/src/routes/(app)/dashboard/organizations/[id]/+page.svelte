@@ -7,7 +7,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { UrlTabs, type UrlTab, AutocompleteSelect } from '$lib/components/ui';
 	import { Building2, Save, Trash2, Mail, Check, X, FileText, BarChart3, Send, UserPlus, UserCheck, Megaphone, Image } from 'lucide-svelte';
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
@@ -342,20 +342,21 @@
 		<div class="flex items-center justify-end gap-2">
 			<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 				<span>{t('org_admin.analytics_period', 'Period')}:</span>
-				<select
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]"
+				<AutocompleteSelect
+					class="w-44"
 					value={data.period}
-					onchange={(e) => {
+					options={[
+						{ value: '7d', label: t('org_admin.analytics_7d', 'Last 7 days') },
+						{ value: '30d', label: t('org_admin.analytics_30d', 'Last 30 days') },
+						{ value: '90d', label: t('org_admin.analytics_90d', 'Last 90 days') }
+					]}
+					onValueChange={(v) => {
 						const url = new URL(page.url);
 						url.searchParams.set('tab', 'analytics');
-						url.searchParams.set('period', e.currentTarget.value);
+						url.searchParams.set('period', v);
 						goto(`${url.pathname}${url.search}`);
 					}}
-				>
-					<option value="7d">{t('org_admin.analytics_7d', 'Last 7 days')}</option>
-					<option value="30d">{t('org_admin.analytics_30d', 'Last 30 days')}</option>
-					<option value="90d">{t('org_admin.analytics_90d', 'Last 90 days')}</option>
-				</select>
+				/>
 			</label>
 		</div>
 		{#if analytics}
@@ -442,11 +443,11 @@
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.field_type')}</span>
-				<select class={inputClass} bind:value={orgType} disabled={!data.orgMeta?.org_types?.length}>
-					{#each data.orgMeta?.org_types ?? [] as ot (ot.value)}
-						<option value={ot.value}>{ot.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					bind:value={orgType}
+					options={data.orgMeta?.org_types ?? []}
+					disabled={!data.orgMeta?.org_types?.length}
+				/>
 			</label>
 		</div>
 
@@ -487,11 +488,11 @@
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
-				<select class={inputClass} bind:value={inviteRole} disabled={!data.orgMeta?.invitation_roles?.length}>
-					{#each data.orgMeta?.invitation_roles ?? [] as ir (ir.value)}
-						<option value={ir.value}>{ir.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					bind:value={inviteRole}
+					options={data.orgMeta?.invitation_roles ?? []}
+					disabled={!data.orgMeta?.invitation_roles?.length}
+				/>
 			</label>
 			<button
 				type="submit"
@@ -525,11 +526,11 @@
 			</label>
 			<label class="flex flex-col gap-1.5">
 				<span class="text-sm font-medium text-[var(--color-text)]">{t('org_admin.invite_role', 'Role')}</span>
-				<select class={inputClass} bind:value={addRole} disabled={!data.orgMeta?.member_roles?.length}>
-					{#each (data.orgMeta?.member_roles ?? []).filter((r) => r.value !== 'owner') as mr (mr.value)}
-						<option value={mr.value}>{mr.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					bind:value={addRole}
+					options={(data.orgMeta?.member_roles ?? []).filter((r) => r.value !== 'owner')}
+					disabled={!data.orgMeta?.member_roles?.length}
+				/>
 			</label>
 			<button
 				type="submit"
@@ -568,17 +569,15 @@
 							</div>
 						</div>
 						<div class="flex shrink-0 items-center gap-2">
-							<select
+							<AutocompleteSelect
+								class="w-40"
 								value={m.role}
-								onchange={(e) => changeRole(m.user.id, e.currentTarget.value)}
-								class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)]"
-								aria-label={t('org_admin.role_label')}
+								options={data.orgMeta?.member_roles ?? []}
+								onValueChange={(v) => changeRole(m.user.id, v)}
+								ariaLabel={t('org_admin.role_label')}
 								disabled={!data.orgMeta?.member_roles?.length}
-							>
-								{#each data.orgMeta?.member_roles ?? [] as mr (mr.value)}
-									<option value={mr.value}>{mr.label}</option>
-								{/each}
-							</select>
+								inputClass="text-xs"
+							/>
 							<button
 								type="button"
 								onclick={() => removeMember(m.user.id)}

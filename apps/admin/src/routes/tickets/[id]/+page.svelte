@@ -17,6 +17,7 @@
 		ArrowLeft, RefreshCw, Pencil, Trash2, CheckCircle, Clock,
 		AlertCircle, MessageSquare, StickyNote, Send, Ticket as TicketIcon
 	} from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type TicketItem = {
 		id: string;
@@ -451,23 +452,21 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label class="text-sm font-medium" for="edit-status">{t('common.status', 'Status')}</label>
-				<select id="edit-status" bind:value={editForm.status} class="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm">
-					<option value="open">open</option>
-					<option value="in_progress">in_progress</option>
-					<option value="waiting_on_user">waiting_on_user</option>
-					<option value="resolved">resolved</option>
-					<option value="closed">closed</option>
-					<option value="spam">spam</option>
-				</select>
+				<AutocompleteSelect
+					id="edit-status"
+					bind:value={editForm.status}
+					options={[{ value: 'open', label: 'open' }, { value: 'in_progress', label: 'in_progress' }, { value: 'waiting_on_user', label: 'waiting_on_user' }, { value: 'resolved', label: 'resolved' }, { value: 'closed', label: 'closed' }, { value: 'spam', label: 'spam' }]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label class="text-sm font-medium" for="edit-priority">{t('tickets.priority', 'Priority')}</label>
-				<select id="edit-priority" bind:value={editForm.priority} class="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm">
-					<option value="low">low</option>
-					<option value="normal">normal</option>
-					<option value="high">high</option>
-					<option value="urgent">urgent</option>
-				</select>
+				<AutocompleteSelect
+					id="edit-priority"
+					bind:value={editForm.priority}
+					options={[{ value: 'low', label: 'low' }, { value: 'normal', label: 'normal' }, { value: 'high', label: 'high' }, { value: 'urgent', label: 'urgent' }]}
+					class="w-full"
+				/>
 			</div>
 		</div>
 		<div>

@@ -10,6 +10,7 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { Scholarship, SavedScholarship, ScholarshipStatus, GeoSpaceOption, CatalogOption } from '$lib/types';
 	import { t } from '$lib/i18n';
@@ -322,21 +323,20 @@
 
 				<div>
 					<label class="block text-xs font-medium text-muted mb-1" for="scholarship-renewable">{t('scholarships.renewable', 'Renewable')}</label>
-					<select
+					<AutocompleteSelect
 						id="scholarship-renewable"
 						bind:value={filterRenewable}
-						class="w-full px-3 py-2 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
-					>
-						{#each renewableOptions as opt (opt.value)}
-							<option value={opt.value}>
-								{opt.value === 'true'
+						options={renewableOptions.map((opt) => ({
+							value: opt.value,
+							label:
+								opt.value === 'true'
 									? t('scholarships.renewable_yes', opt.label)
 									: opt.value === 'false'
 										? t('scholarships.renewable_no', opt.label)
-										: t('scholarships.renewable_any', opt.label)}
-							</option>
-						{/each}
-					</select>
+										: t('scholarships.renewable_any', opt.label)
+						}))}
+						class="w-full"
+					/>
 				</div>
 
 				<div class="grid grid-cols-2 gap-2">
@@ -462,15 +462,15 @@
 
 								<div class="flex items-center gap-2">
 									{#if savedItem}
-										<select
+										<AutocompleteSelect
 											value={savedItem.status}
-											onchange={(e) => updateStatus(s.guide_id, e.currentTarget.value as ScholarshipStatus)}
-											class="px-2 py-1 text-xs bg-surface border border-border rounded focus:border-primary focus:outline-none"
-										>
-											{#each statusOptions as opt (opt.value)}
-												<option value={opt.value}>{t(`scholarships.status_${opt.value}`, opt.label)}</option>
-											{/each}
-										</select>
+											onValueChange={(v) => updateStatus(s.guide_id, v as ScholarshipStatus)}
+											options={statusOptions.map((opt) => ({
+												value: opt.value,
+												label: t(`scholarships.status_${opt.value}`, opt.label)
+											}))}
+											class="text-xs"
+										/>
 									{/if}
 									<button
 										onclick={() => toggleSave(s)}

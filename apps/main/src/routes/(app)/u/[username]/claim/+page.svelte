@@ -7,6 +7,7 @@
 	import { api } from '$lib/api/client';
 	import { ShieldQuestion, Loader2, Send, FileCheck, Video } from 'lucide-svelte';
 	import { listMyVideoClaims, submitChannelClaim } from '$lib/api/videos';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { PublicUser, VideoChannelClaim, VideoSource } from '$lib/types';
 
 	const username = $derived(page.params.username);
@@ -142,7 +143,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<ShieldQuestion size={20} />
 			{t('video_claims.heading', 'Claim or report channel')}
@@ -279,20 +280,14 @@
 						<label for="video-source" class="text-sm font-medium text-[var(--color-text)]">
 							{t('video_claims.video_label', 'Video to remove')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="video-source"
 							bind:value={selectedVideoId}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-						>
-							<option value="">
-								{t('video_claims.select_video', 'Select a video…')}
-							</option>
-							{#each videos as video (video.id)}
-								<option value={video.id}>
-									{video.title || video.source_url}
-								</option>
-							{/each}
-						</select>
+							options={[
+								{ value: '', label: t('video_claims.select_video', 'Select a video…') },
+								...videos.map((v) => ({ value: v.id, label: v.title || v.source_url }))
+							]}
+						/>
 					</div>
 				{/if}
 

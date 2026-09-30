@@ -12,6 +12,7 @@
 	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type GuideItem = {
 		id: string;
@@ -284,18 +285,12 @@
 		</div>
 		<div>
 			<label for="gen-emp" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.employment_status', 'Employment Status')}</label>
-			<select
+			<AutocompleteSelect
 				id="gen-emp"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateEmployment}
-			>
-				<option value="">{t('common.select', 'Select…')}</option>
-				<option value="employed">{t('tax_calculator.employed', 'Employed')}</option>
-				<option value="self_employed">{t('tax_calculator.self_employed', 'Self-employed')}</option>
-				<option value="contractor">{t('tax_calculator.contractor', 'Contractor')}</option>
-				<option value="unemployed">{t('tax_calculator.unemployed', 'Unemployed')}</option>
-			</select>
+				options={[{ value: '', label: t('common.select', 'Select…') }, { value: 'employed', label: t('tax_calculator.employed', 'Employed') }, { value: 'self_employed', label: t('tax_calculator.self_employed', 'Self-employed') }, { value: 'contractor', label: t('tax_calculator.contractor', 'Contractor') }, { value: 'unemployed', label: t('tax_calculator.unemployed', 'Unemployed') }]}
+				class="w-full"
+			/>
 		</div>
 		<div>
 			<label for="gen-prompt" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.topic_prompt', 'Prompt')}</label>

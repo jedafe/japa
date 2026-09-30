@@ -11,6 +11,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, Download, Upload } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type Template = JsonLdTemplate & { content: string };
 
@@ -357,23 +358,14 @@
 				<label for="template-content-type" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">
 					{t('jsonld-templates.content_type', 'Content Type')}
 				</label>
-				<select
+				<AutocompleteSelect
 					id="template-content-type"
-					class="w-full rounded-lg border px-3 py-2 text-sm"
-					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 					bind:value={value.content_type}
 					disabled={!!editing}
-				>
-					{#if !value.content_type}
-						<option value="" disabled>{t('jsonld-templates.select_content_type', 'Select a content type')}</option>
-					{/if}
-					{#each contentTypeOptions as ct (ct.value)}
-						<option value={ct.value}>{ct.label}</option>
-					{/each}
-					{#if editing && value.content_type && !contentTypeOptions.some((ct) => ct.value === value.content_type)}
-						<option value={value.content_type}>{value.content_type}</option>
-					{/if}
-				</select>
+					placeholder={t('jsonld-templates.select_content_type', 'Select a content type')}
+					options={contentTypeOptions}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="template-is-active" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground-alt)">

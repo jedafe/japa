@@ -13,6 +13,7 @@
 	import { Eye, CheckCircle, Sparkles, Plus } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type TestOption = { id: string; slug: string; name: string };
 
@@ -334,17 +335,12 @@
 		</div>
 		<div>
 			<label for="gen-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test', 'Test')}</label>
-			<select
+			<AutocompleteSelect
 				id="gen-test"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={generateTestSlug}
-			>
-				<option value="">{t('common.select_test', 'Select test...')}</option>
-				{#each tests as tt (tt.id)}
-					<option value={tt.slug}>{tt.name}</option>
-				{/each}
-			</select>
+				options={[{ value: '', label: t('common.select_test', 'Select test...') }, ...tests.map((tt) => ({ value: tt.slug, label: tt.name }))]}
+				class="w-full"
+			/>
 		</div>
 		<div>
 			<label for="gen-visa" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.visa_category', 'Visa Category')}</label>
@@ -385,17 +381,12 @@
 		</div>
 		<div>
 			<label for="cr-test" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.test', 'Test')} *</label>
-			<select
+			<AutocompleteSelect
 				id="cr-test"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={createTestSlug}
-			>
-				<option value="">{t('common.select_test', 'Select test...')}</option>
-				{#each tests as tt (tt.id)}
-					<option value={tt.slug}>{tt.name}</option>
-				{/each}
-			</select>
+				options={[{ value: '', label: t('common.select_test', 'Select test...') }, ...tests.map((tt) => ({ value: tt.slug, label: tt.name }))]}
+				class="w-full"
+			/>
 		</div>
 		<div>
 			<label for="cr-score" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('common.minimum_score', 'Minimum Score')} *</label>

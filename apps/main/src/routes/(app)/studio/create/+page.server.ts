@@ -278,11 +278,14 @@ export const load: PageServerLoad = async (event) => {
 	// silently rewrite a job listing / event / page into a blog post on the
 	// next save. Redirect such content to its canonical public page (or back
 	// to the contents manager when it has no slug yet) instead of serving an
-	// editor that would corrupt it.
+	// editor that would corrupt it. The public detail routes only serve
+	// status='published', so non-published items redirect to the contents
+	// manager — sending them to the canonical page would land on a 404.
 	if (draft?.content_type && !(CREATE_ALLOWED_TYPES as readonly string[]).includes(draft.content_type)) {
-		const dest = draft.slug
-			? contentHref({ slug: draft.slug, content_type: draft.content_type })
-			: '/studio/contents';
+		const dest =
+			draft.status === 'published' && draft.slug
+				? contentHref({ slug: draft.slug, content_type: draft.content_type })
+				: '/studio/contents';
 		throw redirect(303, dest);
 	}
 

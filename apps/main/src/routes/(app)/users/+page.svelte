@@ -97,9 +97,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-full">
+<div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
 	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="border-b border-[var(--color-border)] px-4 py-4" style="margin-inline: var(--page-gutter)">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Users size={20} /> {t('users.heading', 'People')}
 		</h1>

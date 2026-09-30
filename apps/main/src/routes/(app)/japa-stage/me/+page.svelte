@@ -9,6 +9,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import { ArrowLeft, Compass, Save } from 'lucide-svelte';
 	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
@@ -202,25 +203,27 @@
 			<label for="intent" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_intent.label', 'Journey type')}
 			</label>
-			<select id="intent" bind:value={intent} class={inputClass}>
-				{#each intentOpts as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect
+				id="intent"
+				value={intent}
+				options={intentOpts}
+				onValueChange={(v) => (intent = v as JapaIntent)}
+			/>
 		</div>
 
 		<div class="flex flex-col gap-1.5">
 			<label for="stage" class="text-sm font-medium text-[var(--color-text)]">
 				{t('japa_stage.current_stage', 'Current stage')}
 			</label>
-			<select id="stage" bind:value={stage} class={inputClass}>
-				{#if !stage}
-					<option value="">{t('japa_stage.stage_unset', 'Not set yet')}</option>
-				{/if}
-				{#each stageOpts as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+			<AutocompleteSelect
+				id="stage"
+				value={stage}
+				options={[
+					...(stage ? [] : [{ value: '', label: t('japa_stage.stage_unset', 'Not set yet') }]),
+					...stageOpts
+				]}
+				onValueChange={(v) => (stage = v as JapaStage | '')}
+			/>
 		</div>
 
 		<div class="flex flex-col gap-1.5">

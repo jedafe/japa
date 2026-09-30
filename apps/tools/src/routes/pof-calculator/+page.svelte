@@ -7,6 +7,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type {
 		GeoSpaceOption,
 		PofRequirement,
@@ -159,12 +160,13 @@
 					<label class="block text-sm font-medium mb-1" for="visaType">
 						{t('pof_calculator.visa_type', 'Visa / program type')}
 					</label>
-					<select id="visaType" bind:value={selectedVisaType} class="input w-full">
-						<option value="" disabled>{t('pof_calculator.select_visa', 'Select visa type')}</option>
-						{#each visaTypes as vt (vt)}
-							<option value={vt}>{vt}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="visaType"
+						bind:value={selectedVisaType}
+						placeholder={t('pof_calculator.select_visa', 'Select visa type')}
+						options={visaTypes.map((vt) => ({ value: vt, label: vt }))}
+						class="w-full"
+					/>
 				</div>
 			{/if}
 

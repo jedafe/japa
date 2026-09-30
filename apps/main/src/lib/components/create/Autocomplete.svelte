@@ -56,6 +56,8 @@
 		class?: string;
 		/** Extra classes for the input element. */
 		inputClass?: string;
+		/** Disabled — the field renders inert (no focus/dropdown, dimmed). */
+		disabled?: boolean;
 	}
 
 	let {
@@ -78,8 +80,14 @@
 		debounceMs = 300,
 		allowFreeText = false,
 		addActionLabel,
-		onAdd
+		onAdd,
+		disabled = false
 	}: Props = $props();
+
+	// Unique per-instance listbox id — pages mount several Autocompletes
+	// (the contents manager alone renders three), so a hardcoded id would
+	// produce duplicate DOM ids and a dangling aria-controls.
+	const listId = $props.id();
 
 	let open = $state(false);
 	let query = $state('');
@@ -119,6 +127,7 @@
 	const selectedDisplay = $derived(selectedLabel ?? '');
 
 	async function open_() {
+		if (disabled) return;
 		open = true;
 		onfocus?.();
 		query = '';
@@ -309,7 +318,9 @@
 		class="autocomplete-input-wrapper {wrapperClass}"
 		class:focused
 		class:has-value={!!selectedId}
+		class:disabled
 		onclick={(e) => {
+			if (disabled) return;
 			// The selection chip is pointer-events:none — a click landing on it
 			// reaches this wrapper instead of the input. Forward focus so the
 			// dropdown opens; ignore clicks on the chip's clear button.
@@ -343,13 +354,14 @@
 			aria-label={ariaLabel ?? placeholder}
 			bind:this={inputEl}
 			bind:value={query}
+			{disabled}
 			onfocus={onFocus}
 			onblur={onBlur}
 			onkeydown={handleKeydown}
 			role="combobox"
 			aria-expanded={showDropdown}
 			aria-autocomplete="list"
-			aria-controls="autocomplete-list"
+			aria-controls={listId}
 			aria-haspopup="listbox"
 		/>
 
@@ -365,7 +377,7 @@
 			class:bottom={placement === 'bottom'}
 			role="listbox"
 		>
-			<div class="autocomplete-options" id="autocomplete-list" style:max-height="{dropdownMaxHeight}px">
+			<div class="autocomplete-options" id={listId} style:max-height="{dropdownMaxHeight}px">
 				{#if loadingInitial}
 					<div class="autocomplete-empty">{t('common.loading')}</div>
 				{:else if query.trim().length > 0}
@@ -464,6 +476,10 @@
 	.autocomplete-input-wrapper.focused {
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	.autocomplete-input-wrapper.disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	.autocomplete-input {

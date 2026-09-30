@@ -9,6 +9,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type {
 		AssessmentForm,
 		AssessmentResult,
@@ -655,17 +656,16 @@
 								</p>
 
 								{#if isCountryField(f) && data.countryOptions.length > 0}
-									<select
+									<AutocompleteSelect
 										id={f.key}
-										value={typeof answers[f.key] === 'string' ? answers[f.key] : ''}
-										onchange={(e) => setAnswer(f.key, (e.currentTarget as HTMLSelectElement).value)}
-										class="w-full px-4 py-2.5 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-									>
-										<option value="">{f.placeholder || t('readiness.select_country', 'Select a country')}</option>
-										{#each data.countryOptions as opt (opt.value)}
-											<option value={opt.value}>{opt.label}</option>
-										{/each}
-									</select>
+										value={typeof answers[f.key] === 'string' ? (answers[f.key] as string) : ''}
+										onValueChange={(v) => setAnswer(f.key, v)}
+										options={[
+											{ value: '', label: f.placeholder || t('readiness.select_country', 'Select a country') },
+											...data.countryOptions
+										]}
+										class="w-full"
+									/>
 								{:else if (f.field_type === 'select' || f.field_type === 'radio') && fieldOptions(f).length > 0}
 									<div class="space-y-2">
 										{#each fieldOptions(f) as opt (opt.value)}

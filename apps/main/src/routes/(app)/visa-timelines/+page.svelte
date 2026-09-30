@@ -162,7 +162,7 @@
 	<meta property="og:type" content="website" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-4xl">
+<div class="mx-auto w-full max-w-4xl" style="--page-gutter: 1rem">
 	<ListPageBar title={t('visa_timelines.heading', 'Visa Timeline Tracker')}>
 		{#snippet actions()}
 			<FilterToggle bind:show={showFilters} active={hasFilters} controls="visa-timelines-filter-panel" />

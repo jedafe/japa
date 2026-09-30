@@ -13,7 +13,7 @@
 	import SpaceSidebar from '$lib/components/spaces/SpaceSidebar.svelte';
 	import SpaceSettings from '$lib/components/spaces/SpaceSettings.svelte';
 	import ForumList from '$lib/components/forum/ForumList.svelte';
-	import { EmptyState, UrlTabs } from '$lib/components/ui';
+	import { EmptyState, UrlTabs, AutocompleteSelect } from '$lib/components/ui';
 	import type { UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
@@ -1067,17 +1067,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							<label for="report-reason" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
 								{t('space.report_reason', 'Reason')}
 							</label>
-							<select
+							<AutocompleteSelect
 								id="report-reason"
 								bind:value={reportReason}
-								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-								required
-							>
-								<option value="">{t('space.report_reason_select', 'Select a reason…')}</option>
-								{#each reportReasons as reason (reason)}
-									<option value={reason}>{t(`report.reason.${reason}`, humanize(reason))}</option>
-								{/each}
-							</select>
+								options={[
+									{ value: '', label: t('space.report_reason_select', 'Select a reason…') },
+									...reportReasons.map((r) => ({ value: r, label: t(`report.reason.${r}`, humanize(r)) }))
+								]}
+							/>
 						</div>
 						<div>
 							<label for="report-notes" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">

@@ -64,7 +64,7 @@
 
 <div class="mx-auto w-full max-w-3xl">
 	<!-- Header -->
-	<div class="border-b border-[var(--color-border)] px-4 py-4">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
 		<a
 			href="/universities/{offering.university.slug}"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"

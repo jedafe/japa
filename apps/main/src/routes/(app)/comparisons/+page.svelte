@@ -136,7 +136,7 @@
 	}
 </script>
 
-<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+<div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6" style="--page-gutter: 0px">
 	<h1 class="sr-only">{t('jce.comparisons.heading')}</h1>
 
 	<!-- Tab + filter bar: ListPageBar pattern, same as /guides -->

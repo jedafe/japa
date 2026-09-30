@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -183,21 +184,20 @@
 				<label for="city" class="text-sm font-medium text-[var(--color-text)]">
 					{t('mutual_aid.field_city', 'City')}
 				</label>
-				<select
+				<AutocompleteSelect
 					id="city"
 					bind:value={citySpaceId}
 					disabled={!destinationSpaceId || loadingCities}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none disabled:opacity-50"
-				>
-					<option value="">
-						{loadingCities
-							? t('common.loading', 'Loading…')
-							: t('mutual_aid.field_city_placeholder', 'Select a city (optional)')}
-					</option>
-					{#each cities as c (c.id)}
-						<option value={c.id}>{c.name}</option>
-					{/each}
-				</select>
+					options={[
+						{
+							value: '',
+							label: loadingCities
+								? t('common.loading', 'Loading…')
+								: t('mutual_aid.field_city_placeholder', 'Select a city (optional)')
+						},
+						...cities.map((c) => ({ value: c.id, label: c.name }))
+					]}
+				/>
 			</div>
 
 			<!-- Post type -->
@@ -206,15 +206,12 @@
 					{t('mutual_aid.field_post_type', 'Post type')}
 					<span class="text-red-500" aria-hidden="true">*</span>
 				</label>
-				<select
+				<AutocompleteSelect
 					id="post_type"
-					bind:value={postType}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{#each postTypeOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+					value={postType}
+					options={postTypeOptions}
+					onValueChange={(v) => (postType = v as MutualAidPostType)}
+				/>
 			</div>
 
 			<!-- Category -->
@@ -223,15 +220,12 @@
 					{t('mutual_aid.field_category', 'Category')}
 					<span class="text-red-500" aria-hidden="true">*</span>
 				</label>
-				<select
+				<AutocompleteSelect
 					id="category"
-					bind:value={category}
-					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{#each categoryOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+					value={category}
+					options={categoryOptions}
+					onValueChange={(v) => (category = v as MutualAidCategory)}
+				/>
 			</div>
 
 			<!-- Title -->

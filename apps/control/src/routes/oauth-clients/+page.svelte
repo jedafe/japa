@@ -7,6 +7,7 @@
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { Dialog } from 'bits-ui';
 	import { KeyRound, Plus, Trash2, RefreshCw, CheckCircle, XCircle, Copy, Check } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// RBAC CRUD: OAuth Clients management
 
@@ -330,11 +331,12 @@
 				</div>
 				<div>
 					<label for="oauth-provider" class="text-foreground mb-1 block text-sm font-medium">{t('oauth_clients.provider_label', 'Provider')}</label>
-					<select id="oauth-provider" bind:value={createProvider} class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm">
-						{#each providers as p (p.key)}
-							<option value={p.key}>{p.label}</option>
-						{/each}
-					</select>
+					<AutocompleteSelect
+						id="oauth-provider"
+						bind:value={createProvider}
+						options={providers.map((p) => ({ value: p.key, label: p.label }))}
+						class="w-full"
+					/>
 					<p class="text-muted-foreground mt-1 text-xs">
 						{providers.find((p) => p.key === createProvider)?.description ?? ''}
 					</p>

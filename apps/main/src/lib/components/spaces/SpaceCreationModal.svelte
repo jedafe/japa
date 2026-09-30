@@ -11,6 +11,7 @@
 	import { goto } from '$app/navigation';
 	import { suggestSlug } from '../create/slug';
 	import SpaceCombobox from './SpaceCombobox.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	interface SpaceType {
 		id: string;
@@ -233,16 +234,12 @@
 						<label for="space-type" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
 							{t('spaces.type_label', 'Space type')}
 						</label>
-						<select
+						<AutocompleteSelect
 							id="space-type"
 							bind:value={selectedSpaceTypeId}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+							options={spaceTypes.map((st) => ({ value: st.id, label: st.name }))}
 							disabled={submitting}
-						>
-							{#each spaceTypes as st (st.id)}
-								<option value={st.id}>{st.name}</option>
-							{/each}
-						</select>
+						/>
 					</div>
 
 					<!-- Space name — auto-suggests existing spaces to prevent duplicates -->
@@ -346,17 +343,15 @@
 								{t('spaces.preset_label', 'Permission preset')}
 								<span class="font-normal text-[var(--color-muted)]">({t('spaces.optional_label', 'optional')})</span>
 							</label>
-							<select
+							<AutocompleteSelect
 								id="space-preset"
 								bind:value={selectedPresetName}
-								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+								options={[
+									{ value: '', label: t('spaces.preset_default', 'Default') },
+									...presets.map((p) => ({ value: p.name, label: p.name }))
+								]}
 								disabled={submitting}
-							>
-								<option value="">{t('spaces.preset_default', 'Default')}</option>
-								{#each presets as p (p.name)}
-									<option value={p.name}>{p.name}</option>
-								{/each}
-							</select>
+							/>
 						</div>
 					{/if}
 

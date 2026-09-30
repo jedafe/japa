@@ -12,6 +12,7 @@
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 	import { cvFormatterAdminApi } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// CVStandardRow matches the backend StandardDTO (§95, ADR-103).
 	type CVStandardRow = {
@@ -238,18 +239,12 @@
 		</div>
 		<div>
 			<label for="upsert-photo" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_photo_policy', 'Photo Policy')}</label>
-			<select
+			<AutocompleteSelect
 				id="upsert-photo"
-				class="w-full rounded-lg border p-3 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={upsertPhotoPolicy}
-			>
-				<option value="">{t('common.none', 'None')}</option>
-				<option value="required">{t('app.tools.photo_required', 'Required')}</option>
-				<option value="optional">{t('app.tools.photo_optional', 'Optional')}</option>
-				<option value="not_recommended">{t('app.tools.photo_not_recommended', 'Not Recommended')}</option>
-				<option value="prohibited">{t('app.tools.photo_prohibited', 'Prohibited')}</option>
-			</select>
+				options={[{ value: '', label: t('common.none', 'None') }, { value: 'required', label: t('app.tools.photo_required', 'Required') }, { value: 'optional', label: t('app.tools.photo_optional', 'Optional') }, { value: 'not_recommended', label: t('app.tools.photo_not_recommended', 'Not Recommended') }, { value: 'prohibited', label: t('app.tools.photo_prohibited', 'Prohibited') }]}
+				class="w-full"
+			/>
 		</div>
 		<div>
 			<label for="upsert-date" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.tools.col_date_format', 'Date Format')}</label>

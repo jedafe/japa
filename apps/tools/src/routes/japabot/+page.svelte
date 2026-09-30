@@ -6,6 +6,7 @@
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import { t } from '$lib/i18n';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type {
 		ChatMessage,
 		ChatConversationSummary,
@@ -348,19 +349,21 @@
 					<div class="max-w-2xl mx-auto flex items-end gap-2 mb-2">
 						<div class="flex-1">
 							<label for="japabot-model" class="sr-only">{t('japabot.model_label', 'Model')}</label>
-							<select id="japabot-model" bind:value={selectedModel} class="w-full px-3 py-1.5 text-sm bg-surface border border-border rounded-lg text-text">
-								{#each models as option (option.id)}
-									<option value={option.id}>{option.label}</option>
-								{/each}
-							</select>
+							<AutocompleteSelect
+								id="japabot-model"
+								bind:value={selectedModel}
+								options={models.map((o) => ({ value: o.id, label: o.label }))}
+								class="w-full"
+							/>
 						</div>
 						<div class="flex-1">
 							<label for="japabot-voice" class="sr-only">{t('japabot.voice_label', 'Voice / Tone')}</label>
-							<select id="japabot-voice" bind:value={selectedVoice} class="w-full px-3 py-1.5 text-sm bg-surface border border-border rounded-lg text-text">
-								{#each voices as option (option.id)}
-									<option value={option.id}>{option.label}</option>
-								{/each}
-							</select>
+							<AutocompleteSelect
+								id="japabot-voice"
+								bind:value={selectedVoice}
+								options={voices.map((o) => ({ value: o.id, label: o.label }))}
+								class="w-full"
+							/>
 						</div>
 					</div>
 					<div class="max-w-2xl mx-auto flex items-end gap-2">

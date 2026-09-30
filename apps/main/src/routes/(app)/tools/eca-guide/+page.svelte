@@ -4,7 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { ChevronDown, ChevronUp, FileBadge } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '$lib/components/ui';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import type { GeoSpaceOption, EcaProvider, EcaGuide, EcaGuideDetail } from '$lib/types';
 	import type { PageData } from './$types';
@@ -156,22 +156,20 @@
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="purpose">
 					{t('eca_guide.purpose', 'Purpose')}
 				</label>
-				<select id="purpose" bind:value={selectedPurpose} class={inputCls}>
-					{#each purposeOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect id="purpose" bind:value={selectedPurpose} options={purposeOptions} />
 			</div>
 			<div>
 				<label class="mb-1 block text-sm font-medium text-[var(--color-text)]" for="provider">
 					{t('eca_guide.provider', 'Provider')}
 				</label>
-				<select id="provider" bind:value={selectedProvider} class={inputCls}>
-					<option value="">{t('eca_guide.all_providers', 'All providers')}</option>
-					{#each providers as p (p.id)}
-						<option value={p.id}>{p.name}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="provider"
+					bind:value={selectedProvider}
+					options={[
+						{ value: '', label: t('eca_guide.all_providers', 'All providers') },
+						...providers.map((p) => ({ value: p.id, label: p.name }))
+					]}
+				/>
 			</div>
 		</div>
 		<div class="mt-4">

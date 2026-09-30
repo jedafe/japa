@@ -3,6 +3,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus } from 'lucide-svelte';
 	import { Dialog } from 'bits-ui';
 	import { relativeTime } from '$lib/feed/time';
@@ -859,22 +860,21 @@ import { contentHref } from '$lib/utils/contentLink';
 							<label for="report-reason" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">
 								{t('forum.report_reason', 'Reason')}
 							</label>
-							<select
+							<AutocompleteSelect
 								id="report-reason"
 								bind:value={reportReason}
-								class="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-								required
-							>
-								<option value="">{t('forum.report_reason_select', 'Select a reason…')}</option>
-								<option value="spam">{t('forum.report_spam', 'Spam')}</option>
-								<option value="harassment">{t('forum.report_harassment', 'Harassment')}</option>
-								<option value="hate_speech">{t('forum.report_hate_speech', 'Hate speech')}</option>
-								<option value="misinformation">{t('forum.report_misinformation', 'Misinformation')}</option>
-								<option value="illegal_content">{t('forum.report_illegal', 'Illegal content')}</option>
-								<option value="self_harm">{t('forum.report_self_harm', 'Self harm')}</option>
-								<option value="copyright">{t('forum.report_copyright', 'Copyright')}</option>
-								<option value="other">{t('forum.report_other', 'Other')}</option>
-							</select>
+								options={[
+									{ value: '', label: t('forum.report_reason_select', 'Select a reason…') },
+									{ value: 'spam', label: t('forum.report_spam', 'Spam') },
+									{ value: 'harassment', label: t('forum.report_harassment', 'Harassment') },
+									{ value: 'hate_speech', label: t('forum.report_hate_speech', 'Hate speech') },
+									{ value: 'misinformation', label: t('forum.report_misinformation', 'Misinformation') },
+									{ value: 'illegal_content', label: t('forum.report_illegal', 'Illegal content') },
+									{ value: 'self_harm', label: t('forum.report_self_harm', 'Self harm') },
+									{ value: 'copyright', label: t('forum.report_copyright', 'Copyright') },
+									{ value: 'other', label: t('forum.report_other', 'Other') }
+								]}
+							/>
 						</div>
 						<div>
 							<label for="report-notes" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">

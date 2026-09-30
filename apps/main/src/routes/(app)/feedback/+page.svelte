@@ -7,6 +7,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { MessageSquare, Send } from 'lucide-svelte';
 	import type { FormField } from '$lib/types';
 
@@ -118,17 +119,15 @@
 							class={inputClass(field)}
 						></textarea>
 					{:else if field.type === 'select' && field.options && field.options.length > 0}
-						<select
+						<AutocompleteSelect
 							id="field-{field.id}"
 							value={values[field.label] ?? ''}
-							onchange={(e) => (values = { ...values, [field.label]: e.currentTarget.value })}
-							class={inputClass(field)}
-						>
-							<option value="">{t('feedback.select_placeholder')}</option>
-							{#each field.options as opt (opt)}
-								<option value={opt}>{opt}</option>
-							{/each}
-						</select>
+							options={[
+								{ value: '', label: t('feedback.select_placeholder') },
+								...field.options.map((opt) => ({ value: opt, label: opt }))
+							]}
+							onValueChange={(v) => (values = { ...values, [field.label]: v })}
+						/>
 					{:else if field.type === 'checkbox'}
 						<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
 							<input

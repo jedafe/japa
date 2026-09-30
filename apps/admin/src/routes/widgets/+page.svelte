@@ -14,6 +14,7 @@
 		type WidgetConfigOptions
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type Widget = {
 		id: string;
@@ -373,21 +374,17 @@
 			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('widgets.type', 'Type')} *
 			</label>
-			<select
+			<AutocompleteSelect
 				id="widget-type"
-				class="mt-1 w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.widget_type}
-				onchange={(e) => {
+				onValueChange={(v) => {
 					// Reset config defaults when type changes.
-					const newType = e.currentTarget.value;
+					const newType = v;
 					value._config = defaultConfig(newType);
 				}}
-			>
-				{#each widgetTypeOptions as opt}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				options={widgetTypeOptions}
+				class="w-full"
+			/>
 			<p class="mt-1 text-[10px]" style="color: var(--color-muted)">Data source for the widget (Section 16)</p>
 		</div>
 
@@ -483,16 +480,12 @@
 									<span class="text-sm" style="color: var(--color-foreground)">{field.label}</span>
 								</label>
 							{:else if field.type === 'select'}
-								<select
-									class="w-full rounded border px-2 py-1 text-sm"
-									style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)"
+								<AutocompleteSelect
 									value={String(existingConfig[field.key] ?? field.default ?? '')}
-									onchange={(e) => { value._config = { ...(value._config ?? existingConfig), [field.key]: e.currentTarget.value }; }}
-								>
-									{#each field.options ?? [] as opt}
-										<option value={opt.value}>{opt.label}</option>
-									{/each}
-								</select>
+									onValueChange={(v) => { value._config = { ...(value._config ?? existingConfig), [field.key]: v }; }}
+									options={field.options ?? []}
+									class="w-full"
+								/>
 							{/if}
 							{#if field.help}
 								<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{field.help}</p>

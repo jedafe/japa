@@ -84,7 +84,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<a
 			href="/ama/{session.id}"
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"

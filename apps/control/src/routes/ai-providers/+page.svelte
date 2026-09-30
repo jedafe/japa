@@ -11,6 +11,7 @@
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 
 	let {} = $props();
@@ -677,20 +678,19 @@ const providerPresets: ProviderPreset[] = [
 				<!-- Preset -->
 				<div>
 					<label for="create-preset" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_providers.preset', 'Start from preset')}</label>
-					<select
+					<AutocompleteSelect
 						id="create-preset"
 						bind:value={selectedPreset}
-						onchange={() => {
-							const preset = providerPresets.find((p) => p.name === selectedPreset);
+						onValueChange={(v) => {
+							const preset = providerPresets.find((p) => p.name === v);
 							if (preset) applyPreset(preset);
 						}}
-						class="border-border-input bg-background-alt text-foreground w-full rounded-9px border px-3 py-2 text-sm"
-					>
-						<option value="">{t('ai_providers.preset_none', '— No preset —')}</option>
-						{#each providerPresets as preset}
-							<option value={preset.name}>{preset.label}</option>
-						{/each}
-					</select>
+						options={[
+							{ value: '', label: t('ai_providers.preset_none', '— No preset —') },
+							...providerPresets.map((p) => ({ value: p.name, label: p.label }))
+						]}
+						class="w-full"
+					/>
 					<p class="text-muted-foreground mt-1 text-[10px]">{t('ai_providers.preset_help', 'Select a common provider to auto-fill the fields. API key is still required.')}</p>
 				</div>
 

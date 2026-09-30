@@ -6,6 +6,7 @@
 	import { ArrowLeft, Send, Loader2, TriangleAlert } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import { scamTypeOptions, scamPlatformOptions } from '$lib/enumOptions';
@@ -127,7 +128,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
-	<div class="flex items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-auto flex max-w-2xl items-center gap-3 border-b border-[var(--color-border)] px-4 py-3">
 		<a
 			href="/scam-alerts/{alert.id}"
 			class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
@@ -186,16 +187,12 @@
 			<label for="scam_type" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_scam_type', 'Scam type')} <span class="text-red-500">*</span>
 			</label>
-			<select
+			<AutocompleteSelect
 				id="scam_type"
 				value={scamType}
-				onchange={(e) => (scamType = e.currentTarget.value as ScamType)}
-				class={inputClass}
-			>
-				{#each scamTypeOpts as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				options={scamTypeOpts}
+				onValueChange={(v) => (scamType = v as ScamType)}
+			/>
 		</div>
 
 		<!-- Origin community -->
@@ -218,16 +215,12 @@
 			<label for="platform_used" class="text-sm font-medium text-[var(--color-text)]">
 				{t('scam_alerts.field_platform', 'Platform used')}
 			</label>
-			<select
+			<AutocompleteSelect
 				id="platform_used"
 				value={platformUsed}
-				onchange={(e) => (platformUsed = e.currentTarget.value as ScamPlatform)}
-				class={inputClass}
-			>
-				{#each scamPlatformOpts as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				options={scamPlatformOpts}
+				onValueChange={(v) => (platformUsed = v as ScamPlatform)}
+			/>
 		</div>
 
 		<!-- Approximate date + amount range -->

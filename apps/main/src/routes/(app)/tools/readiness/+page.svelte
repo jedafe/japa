@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import { Gauge, Lock, CheckCircle2, ArrowRight, TrendingUp, X, MapPin, Plane, Calendar, Flag, Briefcase } from 'lucide-svelte';
 	import { LineChart } from 'layerchart';
-	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { AssessmentForm, AssessmentResult, AssessmentField, FeedItem } from '$lib/types';
 	import type { PageData } from './$types';
@@ -397,7 +397,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<Gauge size={20} /> {t('tools.readiness', 'Readiness Assessment')}
 		</h1>
@@ -720,17 +720,15 @@
 								{#if field.is_required}<span class="text-[var(--color-primary)]">*</span>{/if}
 							</label>
 							{#if isCountryField(field) && data.countryOptions.length > 0}
-								<select
+								<AutocompleteSelect
 									id={field.key}
-									value={typeof answers[field.key] === 'string' ? answers[field.key] : ''}
-									onchange={(e) => setAnswer(field.key, (e.currentTarget as HTMLSelectElement).value)}
-									class="mt-2 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-								>
-									<option value="">{field.placeholder || t('assessment.select_country', 'Select a country')}</option>
-									{#each data.countryOptions as opt (opt.value)}
-										<option value={opt.value}>{opt.label}</option>
-									{/each}
-								</select>
+									value={typeof answers[field.key] === 'string' ? (answers[field.key] as string) : ''}
+									options={[
+										{ value: '', label: field.placeholder || t('assessment.select_country', 'Select a country') },
+										...data.countryOptions.map((o) => ({ value: o.value, label: o.label }))
+									]}
+									onValueChange={(v) => setAnswer(field.key, v)}
+								/>
 							{:else if (field.field_type === 'select' || field.field_type === 'radio') && fieldOptions(field).length > 0}
 								<div class="mt-2 space-y-1">
 									{#each fieldOptions(field) as opt (opt.value)}

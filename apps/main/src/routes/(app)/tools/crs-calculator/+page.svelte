@@ -4,6 +4,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { Gauge } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { LineChart } from 'layerchart';
 	import type {
 		CrsFactorsResponse,
@@ -253,10 +254,15 @@
 			<!-- Marital status -->
 			<div>
 				<label class={labelCls} for="marital">{t('crs_calculator.marital', 'Marital status')}</label>
-				<select id="marital" bind:value={maritalStatus} class={inputCls}>
-					<option value="single">{t('crs_calculator.single', 'Single / not accompanying spouse')}</option>
-					<option value="married">{t('crs_calculator.married', 'Married (spouse accompanying)')}</option>
-				</select>
+				<AutocompleteSelect
+					id="marital"
+					value={maritalStatus}
+					options={[
+						{ value: 'single', label: t('crs_calculator.single', 'Single / not accompanying spouse') },
+						{ value: 'married', label: t('crs_calculator.married', 'Married (spouse accompanying)') }
+					]}
+					onValueChange={(v) => (maritalStatus = v as 'single' | 'married')}
+				/>
 			</div>
 
 			<!-- Age -->
@@ -268,11 +274,7 @@
 			<!-- Education -->
 			<div>
 				<label class={labelCls} for="education">{t('crs_calculator.education', 'Highest education')}</label>
-				<select id="education" bind:value={education} class={inputCls}>
-					{#each educationOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect id="education" bind:value={education} options={educationOptions} />
 			</div>
 
 			<!-- Canadian experience -->
@@ -290,11 +292,11 @@
 			<!-- Canadian education -->
 			<div>
 				<label class={labelCls} for="canadianEdu">{t('crs_calculator.canadian_edu', 'Canadian education')}</label>
-				<select id="canadianEdu" bind:value={canadianEducation} class={inputCls}>
-					{#each canadianEducationOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="canadianEdu"
+					bind:value={canadianEducation}
+					options={canadianEducationOptions}
+				/>
 			</div>
 		</div>
 
@@ -370,11 +372,11 @@
 				<div class="grid gap-4 sm:grid-cols-3">
 					<div>
 						<label class={subLabelCls} for="spouseEdu">Education</label>
-						<select id="spouseEdu" bind:value={spouseEducation} class={inputCls}>
-							{#each educationOptions as opt (opt.value)}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
+						<AutocompleteSelect
+							id="spouseEdu"
+							bind:value={spouseEducation}
+							options={educationOptions}
+						/>
 					</div>
 					<div>
 						<label class={subLabelCls} for="spouseExp">Canadian experience (yrs)</label>

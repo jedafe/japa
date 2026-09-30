@@ -8,6 +8,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import { LineChart } from 'layerchart';
 	import type { ProcessingStat, ProcessingTrendPoint } from '$lib/types';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	/**
 	 * Aggregate corridor page — §83/§93.
@@ -140,16 +141,16 @@
 				<label class="block text-xs font-medium text-muted mb-1" for="origin">
 					{t('processing_tracker.origin', 'Origin country')}
 				</label>
-				<select
+				<AutocompleteSelect
 					id="origin"
 					name="origin"
-					class="w-full px-3 py-2 text-sm bg-surface border border-border rounded-lg text-text"
-				>
-					<option value="">{t('processing_tracker.any_origin', 'Any origin')}</option>
-					{#each data.origins as o (o.id)}
-						<option value={o.id} selected={o.id === data.originId}>{o.name}</option>
-					{/each}
-				</select>
+					value={data.originId ?? ''}
+					options={[
+						{ value: '', label: t('processing_tracker.any_origin', 'Any origin') },
+						...data.origins.map((o) => ({ value: o.id, label: o.name }))
+					]}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label class="block text-xs font-medium text-muted mb-1" for="consulate">

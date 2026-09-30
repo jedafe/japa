@@ -48,7 +48,7 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl">
-	<div class="border-b border-[var(--color-border)] px-4 py-3">
+	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="text-base font-semibold text-[var(--color-text)]">
 			{t('messages.requests_heading', 'Message requests')}
 		</h1>

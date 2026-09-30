@@ -8,6 +8,7 @@
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import { Check, X, Ban, RotateCcw, Eye, Trash2, Pencil } from "lucide-svelte";
 	import type { ActionItem, FilterDef } from "$lib/components/ui/data-table";
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type InstructorProfile = {
 		id: string;
@@ -298,11 +299,12 @@
 			<p class="text-sm" style="color: var(--color-muted)">{t("university.approve_confirm", "Approve")} <strong>{target.display_name}</strong>?</p>
 			<div>
 				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
-				<select id="approve-tier" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={approveTier}>
-					{#each tierOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="approve-tier"
+					bind:value={approveTier}
+					options={tierOptions}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="approve-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.commission_override", "Commission Override (%) — optional")}</label>
@@ -377,11 +379,12 @@
 			<p class="text-sm" style="color: var(--color-muted)">{t("university.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
 			<div>
 				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
-				<select id="edit-tier" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" bind:value={editTier}>
-					{#each tierOptions as opt (opt.value)}
-						<option value={opt.value}>{opt.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="edit-tier"
+					bind:value={editTier}
+					options={tierOptions}
+					class="w-full"
+				/>
 			</div>
 			<div>
 				<label for="edit-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.commission_override", "Commission Override (%) — optional")}</label>

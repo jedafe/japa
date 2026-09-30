@@ -12,6 +12,7 @@
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Loader2, ScanSearch, AlertTriangle, X } from 'lucide-svelte';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { sourceCategoryOptions, sourceCategoryLabel } from '$lib/sources';
 	import type { SourceMeta, ProbeReport } from '$lib/types/sources';
@@ -478,11 +479,7 @@
 				<label class="mb-1 block text-sm font-medium" for="psf-source-kind">
 					{t('sources.submit.source_kind', 'Source kind')}
 				</label>
-				<select id="psf-source-kind" name="source_kind" bind:value={sourceKind} class={inputClass()} disabled={loading}>
-					{#each kindOptions as k (k.value)}
-						<option value={k.value}>{k.label}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect id="psf-source-kind" name="source_kind" bind:value={sourceKind} options={kindOptions} disabled={loading} />
 			</div>
 		{/if}
 
