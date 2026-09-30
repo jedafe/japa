@@ -126,7 +126,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description,
  lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
  lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
  lt.created_at, lt.updated_at,
- m.storage_path AS thumbnail_url,
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path,
  ip.display_name AS instructor_name,
  COALESCE(ra.average_rating, 0) AS avg_rating,
  COALESCE(ra.review_count, 0) AS review_count
@@ -138,7 +138,7 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
 WHERE lt.is_published_to_university = true
  AND (@category::text = '' OR lt.category = @category)
  AND (@language::text = '' OR lt.language = @language)
- AND (@is_free::bool = false OR lt.price_kobo IS NULL)
+ AND (@is_free::bool = false OR lt.price_kobo IS NULL OR lt.price_kobo = 0)
  AND (@level::text = '' OR lt.difficulty = @level)
  AND (@q::text = '' OR lt.title ILIKE '%' || @q || '%')
  AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id)
@@ -155,10 +155,18 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
 WHERE lt.is_published_to_university = true
  AND (@category::text = '' OR lt.category = @category)
  AND (@language::text = '' OR lt.language = @language)
- AND (@is_free::bool = false OR lt.price_kobo IS NULL)
+ AND (@is_free::bool = false OR lt.price_kobo IS NULL OR lt.price_kobo = 0)
  AND (@level::text = '' OR lt.difficulty = @level)
  AND (@q::text = '' OR lt.title ILIKE '%' || @q || '%')
  AND (@space_id::uuid IS NULL OR lt.geo_space_id = @space_id);
+
+-- name: ListUniversityCatalogLanguages :many
+-- Distinct languages present in the live marketplace catalog — the language
+-- filter dropdown is driven by this so options reflect real data (Rule 16).
+SELECT DISTINCT lt.language
+FROM learning_tracks lt
+WHERE lt.is_published_to_university = true
+ORDER BY lt.language;
 
 -- name: GetUniversityTrackBySlug :one
 SELECT lt.id, lt.title, lt.slug, lt.description,
@@ -244,7 +252,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
  lt.university_reviewed_at, lt.university_rejection_reason,
  lt.created_at, lt.updated_at,
  COALESCE(rs.total_revenue_kobo, 0)::bigint AS total_revenue_kobo,
- m.storage_path AS thumbnail_url
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path
 FROM learning_tracks lt
 LEFT JOIN (
  SELECT track_id, SUM(creator_kobo)::bigint AS total_revenue_kobo
@@ -664,7 +672,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
  lt.university_submission_status, lt.university_submitted_at,
  lt.university_reviewed_at, lt.university_rejection_reason,
  lt.created_at, lt.updated_at,
- m.storage_path AS thumbnail_url
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path
 FROM learning_tracks lt
 LEFT JOIN media m ON m.id = lt.cover_media_id
 WHERE lt.instructor_id = @instructor_id

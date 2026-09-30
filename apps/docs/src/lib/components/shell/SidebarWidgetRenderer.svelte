@@ -7,14 +7,14 @@
 	// no-ops below (never a permanent "Loading…" state).
 
 	import { t } from '$lib/i18n';
-	import { Sun, Moon, Languages, Check, Mail, Share2, BarChart3, MousePointerClick, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity, Star, Trophy, Calendar, MessageSquare, BookOpen, Bookmark, Bell, Hash } from 'lucide-svelte';
+	import { Sun, Moon, Languages, Mail, Share2, BarChart3, MousePointerClick, AtSign, Globe, Link, Rss, Users, TrendingUp, Activity, Star, Trophy, Calendar, MessageSquare, BookOpen, Bookmark, Bell, Hash } from 'lucide-svelte';
 	import HelpfulWidget from '$lib/components/docs/HelpfulWidget.svelte';
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
 	import { apiPost } from '$lib/api/client';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { DropdownMenu } from 'bits-ui';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import AdSlot from './AdSlot.svelte';
@@ -193,28 +193,19 @@
 	</button>
 {:else if widget.widget_type === 'language_toggle'}
 	{#if showLanguageToggle}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger
-				class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-				aria-label={t('locale.switch_language', 'Switch language')}
-				title={localeLabel(i18n.locale)}
-			>
-				<Languages size={18} />
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Portal>
-				<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-					{#each langList as lang (lang)}
-						<DropdownMenu.Item
-							onclick={() => switchLanguage(lang)}
-							class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-						>
-							<span>{localeLabel(lang)}</span>
-							{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
-						</DropdownMenu.Item>
-					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Portal>
-		</DropdownMenu.Root>
+		<!-- Language selector — a dropdown field rendered through the shared
+		     Autocomplete component (app-wide dropdown contract). -->
+		<div class="flex items-center gap-1.5 text-[var(--color-muted)]">
+			<Languages size={16} class="shrink-0" />
+			<AutocompleteSelect
+				value={i18n.locale}
+				options={langList.map((lang) => ({ value: lang, label: localeLabel(lang) }))}
+				onValueChange={(lang) => { if (lang && lang !== i18n.locale) switchLanguage(lang); }}
+				ariaLabel={t('locale.switch_language', 'Switch language')}
+				class="lang-select"
+				inputClass="lang-input"
+			/>
+		</div>
 	{/if}
 {:else if widget.widget_type === 'helpful_widget'}
 	<!-- DOC-011: helpful widget delegates to the canonical HelpfulWidget so
@@ -332,3 +323,18 @@
 {:else}
 	<!-- Unknown widget type — render nothing rather than crashing. -->
 {/if}
+
+<style>
+	/* Compact language selector — sits in the topbar icon row. */
+	:global(.lang-select) {
+		width: 8.5rem;
+	}
+	:global(.lang-select .autocomplete-input-wrapper) {
+		height: 2rem;
+		padding: 0 0.5rem;
+		font-size: 0.8125rem;
+	}
+	:global(.lang-select .autocomplete-chip-label) {
+		max-width: 5rem;
+	}
+</style>

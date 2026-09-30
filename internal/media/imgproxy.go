@@ -175,3 +175,36 @@ func mediaURLWithConfig(storageBucket, storagePath string, opts ImageProxyOpts, 
 func MediaURL(storageBucket, storagePath string, opts ImageProxyOpts) string { //nolint:revive // stuttering type name preserved for API compatibility
 	return mediaURLWithConfig(storageBucket, storagePath, opts, loadMediaURLConfig())
 }
+
+// ServeURL returns the same-origin serving endpoint for a media item
+// (GET /api/v1/media/serve/{bucket}/{path}, Section 34). Used for binaries
+// imgproxy cannot transform — videos, audio, PDFs — where the imgproxy
+// pipeline would corrupt or reject the payload.
+func ServeURL(storageBucket, storagePath string) string {
+	return "/api/v1/media/serve/" + storageBucket + "/" + storagePath
+}
+
+// URLFromParts resolves a displayable URL from a nullable storage bucket/path
+// pair (typically the right side of a LEFT JOIN to media). Returns nil when
+// either part is absent so consumers serialize the field as omitted.
+func URLFromParts(storageBucket, storagePath *string, opts ImageProxyOpts) *string {
+	if storageBucket == nil || storagePath == nil || *storageBucket == "" || *storagePath == "" {
+		return nil
+	}
+
+	u := MediaURL(*storageBucket, *storagePath, opts)
+
+	return &u
+}
+
+// ServeURLFromParts is URLFromParts for non-image media — it always returns
+// the local serve endpoint, never an imgproxy URL.
+func ServeURLFromParts(storageBucket, storagePath *string) *string {
+	if storageBucket == nil || storagePath == nil || *storageBucket == "" || *storagePath == "" {
+		return nil
+	}
+
+	u := ServeURL(*storageBucket, *storagePath)
+
+	return &u
+}

@@ -143,6 +143,18 @@ export interface TrackCategory {
 	sort_order?: number;
 }
 
+/** Catalog option lists — GET /learn/university/catalog/options. */
+export interface CatalogOptionsResponse {
+	difficulty_levels?: CatalogOption[];
+	social_platforms?: CatalogOption[];
+	/** Catalog sort modes — values the `sort` query param accepts. */
+	sort_options?: CatalogOption[];
+	/** Page-size choices for the catalog/search per-page control. */
+	page_sizes?: CatalogOption[];
+	/** Distinct languages present in the live catalog. */
+	languages?: string[];
+}
+
 /** Social / share platform — GET /share-platforms/enabled. */
 export interface SharePlatform {
 	key: string;

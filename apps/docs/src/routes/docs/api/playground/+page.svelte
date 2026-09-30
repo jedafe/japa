@@ -3,6 +3,7 @@
 	import JsonEditor from '$lib/components/docs/JsonEditor.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/i18n';
+	import { untrack } from 'svelte';
 	import { env } from '$env/dynamic/public';
 	import { Plus, X, Send, AlertTriangle, History, KeyRound, AlignLeft } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -11,11 +12,21 @@
 
 	type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
+	// OpenAPI paths are relative to the spec server URL (…/api/v1) — the
+	// request input needs the /api/v1 prefix to reach the API (dev proxy and
+	// prod apiBase both expect it).
+	function apiPath(path: string): string {
+		if (!path.startsWith('/')) return `/api/v1/${path}`;
+		return path.startsWith('/api/v1') ? path : `/api/v1${path}`;
+	}
+
 	let apiKey = $state('');
 	let useMyKey = $state(false);
 	let selectedKeyId = $state<string>('');
-	let method = $state<HttpMethod>('GET');
-	let url = $state('/api/v1/spaces');
+	// Prefill values seed the initial form state only — untrack so later
+	// navigations don't reset an in-progress request.
+	let method = $state<HttpMethod>(untrack(() => (data.prefill?.method as HttpMethod) || 'GET'));
+	let url = $state(untrack(() => (data.prefill?.path ? apiPath(data.prefill.path) : '/api/v1/spaces')));
 	let body = $state('');
 	const bodyPlaceholder = '{"key": "value"}';
 	let headers = $state<{ key: string; value: string }[]>([
@@ -186,7 +197,7 @@
 
 	function useQuick(q: { method: HttpMethod; path: string }) {
 		method = q.method;
-		url = q.path;
+		url = apiPath(q.path);
 	}
 
 	/** Pretty-print the JSON body (Ref: §47 ROADMAP 04.07). */

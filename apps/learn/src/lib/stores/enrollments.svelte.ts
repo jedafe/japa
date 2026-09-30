@@ -50,7 +50,15 @@ class EnrollmentsStore {
 		this.fetchPromise = (async () => {
 			try {
 				const r = await api.get<Enrollment[]>('/me/enrollments');
-				this.enrollments = r.data ?? [];
+				// api.get returns { data, error } — HTTP failures land in
+				// r.error, they do not throw. Surface them on this.error so
+				// subscribers can render a retry state.
+				if (r.error) {
+					this.error = r.error.message || 'Failed to load enrollments';
+					this.enrollments = [];
+				} else {
+					this.enrollments = r.data ?? [];
+				}
 			} catch (e) {
 				this.error = e instanceof Error ? e.message : 'Failed to load enrollments';
 				this.enrollments = [];
@@ -92,7 +100,12 @@ class EnrollmentsStore {
 			try {
 				const r = await api.get<Enrollment[]>('/me/enrollments');
 				if (this.requestGen === myGen) {
-					this.enrollments = r.data ?? [];
+					if (r.error) {
+						this.error = r.error.message || 'Failed to load enrollments';
+						this.enrollments = [];
+					} else {
+						this.enrollments = r.data ?? [];
+					}
 				}
 			} catch (e) {
 				if (this.requestGen === myGen) {

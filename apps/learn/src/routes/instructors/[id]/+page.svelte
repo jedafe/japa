@@ -21,28 +21,34 @@
 	let tracks = $state<TrackSummary[]>([]);
 	let loading = $state(true);
 	let notFound = $state(false);
+	let error = $state<string | null>(null);
 
 	$effect(() => {
 		// Re-run when the route param changes.
 		const instructorId = id;
 		if (!instructorId) return;
+		loadInstructor(instructorId);
+	});
+
+	async function loadInstructor(instructorId: string) {
 		loading = true;
 		notFound = false;
+		error = null;
 		instructor = null;
 		tracks = [];
-		(async () => {
-			const r = await api.get<InstructorProfileResponse>(
-				`/learn/university/instructors/${instructorId}`
-			);
-			loading = false;
-			if (r.data) {
-				instructor = r.data.instructor;
-				tracks = r.data.tracks;
-			} else if (r.status === 404) {
-				notFound = true;
-			}
-		})();
-	});
+		const r = await api.get<InstructorProfileResponse>(
+			`/learn/university/instructors/${instructorId}`
+		);
+		loading = false;
+		if (r.data) {
+			instructor = r.data.instructor;
+			tracks = r.data.tracks;
+		} else if (r.status === 404) {
+			notFound = true;
+		} else {
+			error = r.error?.message ?? t('common.error');
+		}
+	}
 
 	const socialEntries = $derived(
 		instructor?.social_links
@@ -94,6 +100,18 @@
 				</div>
 			{/each}
 		</div>
+	{:else if error}
+		<EmptyState title={t('common.error')} description={error}>
+			{#snippet action()}
+				<button
+					type="button"
+					onclick={() => id && loadInstructor(id)}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('common.retry')}
+				</button>
+			{/snippet}
+		</EmptyState>
 	{:else if notFound || !instructor}
 		<EmptyState
 			title={t('university.instructor_not_found', 'Instructor not found')}

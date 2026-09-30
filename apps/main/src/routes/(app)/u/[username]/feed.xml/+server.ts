@@ -20,6 +20,10 @@ export const GET: RequestHandler = async ({ fetch, params, url }) => {
 	});
 
 	if (!res.ok) {
+		// 404 means the user doesn't exist — surface it as 404, not a proxy error.
+		if (res.status === 404) {
+			return new Response('User not found', { status: 404 });
+		}
 		return new Response('RSS feed temporarily unavailable', { status: 502 });
 	}
 

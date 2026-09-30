@@ -48,6 +48,43 @@ export function profileUrl(username: string): string {
 	return `${MAIN_ORIGIN}/u/${username}`;
 }
 
+// Path prefixes this app actually routes — menu items pointing anywhere else
+// (login, signup, docs, privacy, settings, …) are platform pages hosted on the
+// Main app and must be rewritten to absolute URLs or they 404 on Learn.
+const LEARN_PATH_PREFIXES = [
+	'/tracks',
+	'/search',
+	'/my-learning',
+	'/certificates',
+	'/bookmarks',
+	'/instructors',
+	'/dashboard'
+];
+
+/**
+ * Resolve an admin-managed menu item URL for the Learn app.
+ *
+ * Menu items are seeded platform-wide (e.g. learn_footer links to /docs,
+ * /privacy, /login) — relative URLs that have no route on Learn would 404.
+ * Anything outside the Learn route set is rewritten to an absolute Main-app
+ * URL (which also makes the browser treat it as cross-origin navigation —
+ * correct, since the Main app owns those pages). Absolute URLs, anchors and
+ * non-http schemes pass through unchanged.
+ */
+export function resolveMenuUrl(url: string): string {
+	if (!url) return '/';
+	// External URL, anchor, or non-http scheme (mailto:, tel:) — leave as-is.
+	if (/^([a-z][a-z0-9+.-]*:|#)/i.test(url)) return url;
+	if (!url.startsWith('/')) return url;
+
+	const path = url.split(/[?#]/)[0];
+	if (path === '/login') return loginUrl();
+	if (path === '/' || LEARN_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+		return url;
+	}
+	return `${MAIN_ORIGIN}${url}`;
+}
+
 /**
  * Switch the UI locale by navigating to the locale-prefixed URL.
  *

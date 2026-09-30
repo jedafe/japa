@@ -513,6 +513,12 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 		item.Username = stringField(hit, "title")
 		item.DisplayName = stringField(hit, "excerpt")
 		item.AvatarURL = stringField(hit, "avatar_url")
+		// Canonical profile route is /u/{username} — older index docs carry
+		// /users/{username}, which 404s on the frontend. Rewrite at read time
+		// so stale docs resolve correctly until the index is rebuilt.
+		if item.Username != "" {
+			item.URL = "/u/" + item.Username
+		}
 		// Clear title/excerpt since we've mapped them to type-specific fields.
 		item.Title = ""
 		item.Excerpt = ""
@@ -884,6 +890,11 @@ func mapAutocompleteResults(indexResults []IndexResult) []AutocompleteSuggestion
 				s.Username = stringField(hit, "title")
 				s.DisplayName = stringField(hit, "excerpt")
 				s.AvatarURL = stringField(hit, "avatar_url")
+				// Canonical profile route is /u/{username} — rewrite stale
+				// /users/{username} index URLs so suggestions never 404.
+				if s.Username != "" {
+					s.URL = "/u/" + s.Username
+				}
 			case "space":
 				s.Name = stringField(hit, "title")
 				s.Level = stringField(hit, "level")

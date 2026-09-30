@@ -319,3 +319,197 @@ bun run test
 ```
 
 Playwright is not configured for `apps/docs`; existing unit and build checks passed. Manual browser checks of the search palette, feedback, and API key flows are recommended once the dev server is running against a seeded backend.
+
+---
+
+# Third Pass — Search/Filters/Pagination/Sort/Actions Audit (Playwright, guest + authenticated)
+
+**Scope:** `/docs` landing, `/docs/search` (query, audience filter, page-size), `/docs/api` (endpoint search, method filter, tag grouping), `/docs/api/keys` (create/rename/rotate/revoke/IP-allowlist), `/docs/api/playground` (prefill, live send), `HelpfulWidget`, language toggle, `AudienceSwitcher`, and every dropdown field (Autocomplete consistency).
+
+**Method:** Playwright MCP browser (guest + `jc_token` authed session), live API smoke tests (`curl`), Meilisearch reindex + excerpt verification, `svelte-check` on all touched apps.
+
+## Fixed bugs
+
+### 26. Search page-size control missing; absent `limit` defaulted to `5` instead of `20`
+
+**Severity:** Medium — no page-size UI existed, and `Number(null) === 0` meant a param-less `?q=test` URL produced `limit=5` (clamped minimum) rather than the intended `20` default.
+
+**Fix:**
+- `routes/docs/search/+page.server.ts` checks `searchParams.has('limit')` before converting; absent → `20`, integer → clamp `[5, 50]`, non-integer → `20`.
+- `routes/docs/search/+page.svelte` adds a page-size `AutocompleteSelect` (10/20/50) that navigates with `q`, `audience`, `limit` preserved.
+- Verified: `?q=test` shows 20/page; `?q=test&limit=50` and `?q=test&audience=users&limit=50` compose correctly.
+
+### 27. API landing page had no endpoint search or method filter
+
+**Severity:** Medium — 90+ operations rendered as one undifferentiated list; no way to locate an endpoint.
+
+**Fix:** `routes/docs/api/+page.svelte` adds a text filter (path/summary/description), a method `AutocompleteSelect` (driven by the methods actually present in the spec — GET/POST/PUT/DELETE; PATCH absent because the spec has zero PATCH ops), tag grouping, and per-endpoint "Try it" links into `/docs/api/playground?method=…&path=…`.
+
+### 28. Playground sent requests to un-prefixed paths
+
+**Severity:** High — OpenAPI paths like `/public/scholarships` were requested verbatim against the docs origin, missing `/api/v1` — quick-endpoint links produced 404s.
+
+**Fix:** `routes/docs/api/playground/+page.svelte` `apiPath()` normalizes spec paths to `/api/v1/...` (relative → prefixed, absolute `/x` → `/api/v1/x`, already-prefixed unchanged). Verified live: prefill `/public/scholarships` → request to `/api/v1/public/scholarships`; authenticated send to `/api/v1/me` returned 200 with real data.
+
+### 29. API keys page: hardcoded scope catalog exposed admin-only scopes; missing key-management actions
+
+**Severity:** High — the create form offered `mcp`, `api.write.content`, etc., which self-service `POST /me/api-keys` rejects; and the canonical self-service catalog `GET /developer/scopes` was unconsumed. Rename (`PATCH`), rotate (`POST .../rotate`), and IP allowlist (`GET/POST/DELETE .../ip-allowlist`) routes existed in the backend with no UI.
+
+**Fix:**
+- `routes/docs/api/keys/+page.server.ts` fetches `GET /developer/scopes` (canonical catalog) and per-key allowlists; adds `rename`, `rotate`, `addIp`, `removeIp` form actions; parses the `api.keys.max_per_user` setting.
+- `routes/docs/api/keys/+page.svelte` — scope picker via `Autocomplete` multi-select restricted to `data.scopes` (admin-granted scopes still render as read-only chips on existing keys); rename/rotate dialogs; IP allowlist dialog with add/remove; status badges (`active`/`suspended`/`revoked`); one-time create/rotate secret banners preserved.
+- Verified live: create (secret shown once), rename, rotate (grace-period copy), revoke, IP allowlist add/remove — all round-trip against the backend.
+
+### 30. Keys page `use:enhance` callbacks suppressed `update()` — form results never landed
+
+**Severity:** High — six forms returned `({ update }) => async () => { ...custom... }` without calling `update()`, so `form` never populated and `invalidateAll` never ran. Created keys appeared to vanish; the dialog stayed open. (Found when the same click submitted twice and both rows hit the backend.)
+
+**Fix:** every enhance callback now calls `await update()` before custom handling. Verified: create → secret banner + row; revoke → status flip; rename → row update — all in one submission.
+
+### 31. `HelpfulWidget` let guests vote and implied toggle/switch semantics the backend doesn't have
+
+**Severity:** Medium — `POST /docs/{audience}/{slug}/feedback` is increment-only aggregate (no un-vote, no switch) and requires auth; guests got an actionable widget that could only 401.
+
+**Fix:** `HelpfulWidget.svelte` shows a sign-in link (with `redirect`) to guests; authed users get buttons that lock after a successful vote. Verified both states live.
+
+### 32. Dropdown fields not using `Autocomplete`
+
+**Severity:** Low — `AudienceSwitcher` (custom listbox) and the `language_toggle` widget (custom dropdown) bypassed the shared component.
+
+**Fix:** both migrated to `AutocompleteSelect` (which wraps `Autocomplete.svelte`). Audit confirmed zero raw `<select>` elements remain; `UserDropdown` (a nav menu, not a field) is unchanged. All field-type dropdowns (audience, language, page-size, method filter, key tier, key scopes, playground method, playground key) now go through the shared component.
+
+### 33. `jc_locale` language switch broken cross-app — sibling apps set it HttpOnly
+
+**Severity:** High — `apps/main`, `apps/learn`, `apps/tools` `hooks.server.ts` set `jc_locale` via `event.cookies.set` without `httpOnly: false` (SvelteKit defaults HttpOnly). Cookies ignore ports, so visiting `/fr/...` on `localhost:3000` planted an HttpOnly `jc_locale=fr` that the docs app could neither read (`document.cookie`) nor overwrite — the switcher silently no-oped and the UI stayed French (`cookieStore.set` threw "Cookie was malformed").
+
+**Fix:** `httpOnly: false` added to the `jc_locale` set in `apps/main/src/hooks.server.ts`, `apps/learn/src/hooks.server.ts`, `apps/tools/src/hooks.server.ts` (docs already fixed in pass 2). Verified round-trip in one session sharing the jar: `/fr/docs/users` → English → `/docs/users` (en) → French → `/fr/docs/users`.
+
+### 34. cURL examples used `Authorization: Bearer` for API-key auth
+
+**Severity:** Medium — API-key auth uses `X-API-Key`; docs examples drifted from the contract.
+
+**Fix:** `EndpointCard.svelte` and `docs/api/[slug]/+page.svelte` samples now emit `X-API-Key: <key>`. Playground was already correct.
+
+### 35. Landing page miscounted nested pages; API card showed "0 pages"
+
+**Severity:** Low — the users audience has nested nav children; the counter only read top-level entries, and the API card (spec-driven, not doc pages) displayed a misleading `0 pages`.
+
+**Fix:** `routes/docs/+page.svelte` counts recursively and hides the count for the `api` audience. Verified: `3 pages` on Utilisateurs, no label on API.
+
+### 36. Stale Meilisearch excerpt + misc gaps
+
+**Severity:** Medium — `doc_pages` index carried a pre-fix excerpt (`""`-style escaped JSON).
+
+**Fix:** `source .env && go run ./cmd/reindex/` — 4 doc pages reindexed, 0 errors. Verified: `/api/v1/docs/search?q=test` returns `"# Hello World This is a test page."`.
+
+**i18n:** ~25 missing keys added to `en.json`/`fr.json` (`api.*` filter/action strings, `common.no_results`/`optional`/`remove`, `landing.pages`, `page.feedback_sign_in`/`feedback_recorded`, `search.per_page`).
+
+## Verified-accurate findings (no bug)
+
+| # | Observation | Verdict |
+|---|---|---|
+| V1 | Method filter lacks PATCH | Spec has 0 PATCH ops (get:128, post:10, put:1, delete:2) — filter is correct |
+| V2 | `GET /api/v1/docs/openapi.json` → `invalid_audience` | Spec is deliberately mounted at `/docs/openapi.json` outside `/api/v1` (§6.4 dedupe) — frontend fetch is correct |
+| V3 | Playground key selector showed two same-named keys | One was the pre-rotation secret inside its 24h grace window — correct |
+| V4 | `DELETE /me/api-keys/{id}` returns 200 but key remains listed | Soft-delete → `status=revoked` — matches contract |
+
+## Verification (pass 3)
+
+| Check | Result |
+|---|---|
+| `svelte-check` apps/docs, apps/main, apps/learn, apps/tools | 0 errors, 0 warnings (all four) |
+| Search `?q=test` default page size | 20 (was 5); 10/20/50 selectable; `limit` in URL |
+| Search audience + limit compose | `?q=test&audience=users&limit=50` correct |
+| API landing filter/method/tag grouping | live; method list matches spec exactly |
+| Playground prefill + authed send | `/public/scholarships`→`/api/v1/...`; `/api/v1/me` → 200 real data |
+| Keys: create/rename/rotate/revoke/IP-allowlist | all round-trip; one-time secrets shown once; admin scopes not selectable |
+| HelpfulWidget guest/authed | sign-in link / vote + lock |
+| Language toggle en→fr→en | works end-to-end (cookie + prefix + cookie back) |
+| AudienceSwitcher | navigates correctly |
+| Landing page counts | `3 pages` users; no `0 pages` on API |
+| Console errors/warnings | 0 / 0 |
+| Test API keys created during audit | revoked (cleanup) |
+
+## Files changed (pass 3)
+
+```
+apps/docs/src/lib/components/docs/EndpointCard.svelte
+apps/docs/src/lib/components/docs/HelpfulWidget.svelte
+apps/docs/src/lib/components/shell/AudienceSwitcher.svelte
+apps/docs/src/lib/components/shell/SidebarWidgetRenderer.svelte
+apps/docs/src/lib/i18n/en.json, fr.json
+apps/docs/src/lib/types/index.ts
+apps/docs/src/routes/docs/+page.svelte
+apps/docs/src/routes/docs/api/+page.server.ts, +page.svelte
+apps/docs/src/routes/docs/api/[slug]/+page.svelte
+apps/docs/src/routes/docs/api/keys/+page.server.ts, +page.svelte
+apps/docs/src/routes/docs/api/playground/+page.server.ts, +page.svelte
+apps/docs/src/routes/docs/search/+page.server.ts, +page.svelte
+apps/main/src/hooks.server.ts    (jc_locale httpOnly:false)
+apps/learn/src/hooks.server.ts   (jc_locale httpOnly:false)
+apps/tools/src/hooks.server.ts   (jc_locale httpOnly:false)
+```
+
+**Ops:** `go run ./cmd/reindex/` (doc_pages reindexed, excerpt corrected).
+
+---
+
+# Fourth Pass — Contract Drift + Consistency Sweep
+
+**Scope:** dead contract fields, cross-component consistency, locale-prefixed scoping, i18n coverage audit, DOM-level verification.
+
+## Fixed bugs
+
+### 37. `breadcrumb` / `prev` / `next` were dead fields — backend never returns them
+
+**Severity:** Medium — `DocPage` in `internal/docs/types.go` has no `breadcrumb`, `prev`, or `next` fields, so the breadcrumb nav and prev/next cards (§44 ROADMAP 02.03/02.05) could never render.
+
+**Fix:** `docs/[audience]/[slug]/+page.svelte` derives them from the nav tree (`GET /docs/nav` — already loaded by the layout): breadcrumb walks `parent_id`; prev/next flatten the audience tree in display order. Server fields still win if the backend ever sends them. Verified live: `/docs/users/new-title` renders "Précédent → Console Debug" and "Suivant → Test Documentation Page".
+
+### 38. `last_reviewed_by` rendered a raw UUID
+
+**Severity:** Low — the field is a `pgtype.UUID` (reviewer user id), not a display name; the widget appended `· <uuid>` after the review date.
+
+**Fix:** `HelpfulWidget.svelte` no longer renders it (prop retained for API-shape parity, documented as internal id).
+
+### 39. Nav tree expanded every audience section (contradicted documented behavior)
+
+**Severity:** Low — `DocNavTree` used `expanded[tree.audience] ?? true` while the component documents "active audience expanded, others collapsed".
+
+**Fix:** default flipped to `?? false` — active audience expands via the existing `$effect`, others start collapsed. Verified: on `/docs/users/*` the users section lists its pages, API section collapsed.
+
+### 40. `DocContent` doubled article padding
+
+**Severity:** Low — `.doc-content` applied the same `2.5rem 1.5rem 4rem` padding + max-width inside the already-padded `.doc-article` column → ~5rem vertical inset and a narrower content column than the header.
+
+**Fix:** `.doc-content` reduced to a plain wrapper; the `.doc-article` column owns layout.
+
+### 41. Search palette lost API scoping on locale-prefixed URLs
+
+**Severity:** Medium — `page.url.pathname.startsWith('/docs/api')` fails on `/fr/docs/api/...`, so palette searches on localized API pages were unscoped.
+
+**Fix:** `SearchPalette.svelte` strips the enabled-locale prefix before the `/docs/api` check (same approach as `DocNavTree`). Verified live: on `/fr/docs/api`, palette fires `/api/docs/search?q=test&limit=10&audience=api`.
+
+### 42. Missing i18n keys for Autocomplete internals
+
+**Severity:** Low — `common.clear` / `common.loading` (used by `Autocomplete.svelte`) had no dictionary entries; French UI fell back to English strings.
+
+**Fix:** added to `en.json` (`Clear` / `Loading…`) and `fr.json` (`Effacer` / `Chargement…`).
+
+## Verified clean (no bug)
+
+- `+error.svelte` Tailwind-style vars (`--foreground`, `--destructive`, `--muted-foreground`) all exist in `app.css`.
+- `MethodBadge` classes map to `--method-*` vars for all five methods.
+- `access-denied` route, `/de/docs` → 404, feedback/search proxies, nav-collapse cookie endpoint — all verified.
+- Zero `console.log`/`debugger`/TODO leftovers; zero missing i18n keys after additions; `svelte-check` 0 errors/0 warnings.
+
+## Files changed (pass 4)
+
+```
+apps/docs/src/routes/docs/[audience]/[slug]/+page.svelte  (breadcrumb/prev/next from nav tree)
+apps/docs/src/lib/components/docs/HelpfulWidget.svelte    (drop UUID render)
+apps/docs/src/lib/components/docs/DocContent.svelte       (dedupe padding)
+apps/docs/src/lib/components/docs/SearchPalette.svelte    (locale-aware api scoping)
+apps/docs/src/lib/components/shell/DocNavTree.svelte      (collapse non-active sections)
+apps/docs/src/lib/i18n/en.json, fr.json                   (common.clear, common.loading)
+```

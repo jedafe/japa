@@ -906,6 +906,8 @@ export interface ProfileFollowing {
 	avatar_url: string | null;
 	is_following?: boolean;
 	entity_type?: string;
+	/** Follow-row timestamp — used for newest/oldest sorting on the tab. */
+	created_at?: string;
 }
 
 /** GET /users/{id}/content and /organizations/{id}/content — PostCard row.
@@ -945,6 +947,9 @@ export interface ProfilePost {
 	target_country?: string | null;
 	guide_category?: string | null;
 	video_source_id?: string | null;
+	/** GET /users/{id}/content emits the linked video's length as
+	 *  video_duration_secs (PostCard). duration_secs is the legacy alias. */
+	video_duration_secs?: number | null;
 	duration_secs?: number | null;
 	published_at: string;
 	created_at: string;

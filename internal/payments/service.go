@@ -25,6 +25,10 @@ type CreatePaymentInput struct {
 	Email        string // Payer email — required by Paystack /transaction/initialize
 	Metadata     map[string]interface{}
 	DiscountCode string
+	// ReturnURL is where external providers send the user after checkout
+	// (Paystack callback_url, Stripe success/cancel URL). Passed through from
+	// the request body's return_url field.
+	ReturnURL string
 }
 
 // CreatePaymentResult — CreatePayment creates a new payment record and initiates the payment with the provider.
@@ -106,6 +110,7 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 			PurposeType: input.PurposeType,
 			PurposeID:   input.PurposeID,
 			Metadata:    input.Metadata,
+			ReturnURL:   input.ReturnURL,
 		})
 		if err != nil {
 			return CreatePaymentResult{}, fmt.Errorf("initiating payment with %s: %w", input.Provider, err)
@@ -268,12 +273,15 @@ func (s *Service) payWithCreditInternal(ctx context.Context, userID pgtype.UUID,
 		return gen.Payment{}, fmt.Errorf("%w: %w", ErrInsufficientCredit, err)
 	}
 
-	// Step 3: Mark the payment as succeeded.
+	// Step 3: Mark the payment as succeeded and return the updated row —
+	// callers (e.g. the Learn checkout) read payment.status from the response,
+	// so returning the stale pending row would misreport a completed payment.
 	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded)
 	if err != nil {
 		slog.Error("payments: failed to mark credit payment as succeeded", "payment_id", payment.ID, "error", err)
 	} else {
 		s.emitPaymentStatusWebhook(ctx, succeeded)
+		return succeeded, nil
 	}
 
 	return payment, nil

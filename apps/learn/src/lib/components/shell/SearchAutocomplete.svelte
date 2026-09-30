@@ -1,7 +1,8 @@
 <script lang="ts">
 	// Ref: ADR-060 (Learn search), sections/10 (search autocomplete)
 	// Debounced course search combobox. As the user types (≥2 chars), it queries
-	// GET /learn/tracks?q=... and shows a dropdown of course suggestions.
+	// GET /learn/university/catalog?q=...&limit=8 and shows a dropdown of
+	// course suggestions.
 	// Selecting a suggestion navigates to the track detail page.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';

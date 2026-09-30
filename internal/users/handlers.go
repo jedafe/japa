@@ -445,7 +445,11 @@ func (h *Handlers) ListPublicUsers(w http.ResponseWriter, r *http.Request) {
 
 	profileType := strings.TrimSpace(r.URL.Query().Get("profile_type"))
 
-	result, err := h.Service.ListPublicUsers(r.Context(), search, profileType, limit, offset)
+	// Optional whitelisted sort key: followers|newest|oldest|name. Unknown
+	// values fall back to the default follower_count ordering in the service.
+	sortKey := strings.TrimSpace(r.URL.Query().Get("sort"))
+
+	result, err := h.Service.ListPublicUsers(r.Context(), search, profileType, sortKey, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return

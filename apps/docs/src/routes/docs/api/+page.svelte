@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/i18n';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { Play, Download } from 'lucide-svelte';
+	import { Play, Download, Search } from 'lucide-svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -14,6 +15,47 @@
 	async function toggleCollapse() {
 		collapsed = !collapsed;
 		await persistNavCollapse(collapsed);
+	}
+
+	// Endpoint browser — client-side text + method filtering over the
+	// OpenAPI-derived list, grouped by tag. Each row links into the
+	// playground with method/path prefilled.
+	let epQuery = $state('');
+	let epMethod = $state('');
+
+	const METHOD_ORDER = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+	let methodOptions = $derived(
+		[
+			{ value: '', label: t('api.all_methods', 'All methods') },
+			...[...new Set(data.endpoints.map((e) => e.method))]
+				.sort((a, b) => METHOD_ORDER.indexOf(a) - METHOD_ORDER.indexOf(b))
+				.map((m) => ({ value: m, label: m }))
+		]
+	);
+
+	let filteredEndpoints = $derived.by(() => {
+		const needle = epQuery.trim().toLowerCase();
+		return data.endpoints.filter(
+			(ep) =>
+				(!epMethod || ep.method === epMethod) &&
+				(!needle ||
+					ep.path.toLowerCase().includes(needle) ||
+					ep.summary.toLowerCase().includes(needle))
+		);
+	});
+
+	let groupedEndpoints = $derived.by(() => {
+		const groups = new Map<string, typeof filteredEndpoints>();
+		for (const ep of filteredEndpoints) {
+			const list = groups.get(ep.tag) ?? [];
+			list.push(ep);
+			groups.set(ep.tag, list);
+		}
+		return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+	});
+
+	function playgroundHref(ep: { method: string; path: string }): string {
+		return `/docs/api/playground?method=${encodeURIComponent(ep.method)}&path=${encodeURIComponent(ep.path)}`;
 	}
 </script>
 
@@ -75,17 +117,49 @@
 				<div class="spec-endpoints">
 					<h2 class="spec-heading">{t('api.endpoints_from_spec')}</h2>
 					<p class="spec-hint">{t('api.spec_endpoints_hint')}</p>
-					<ul class="endpoint-list">
-						{#each data.endpoints as ep (`${ep.method}${ep.path}`)}
-							<li class="endpoint-item">
-								<span class="method-badge method-{ep.method}">{ep.method}</span>
-								<code class="endpoint-path">{ep.path}</code>
-								{#if ep.summary}
-									<span class="endpoint-summary">{ep.summary}</span>
-								{/if}
-							</li>
+
+					<div class="endpoint-filters">
+						<div class="ep-search-wrap">
+							<Search size={14} class="ep-search-icon" />
+							<input
+								type="text"
+								bind:value={epQuery}
+								placeholder={t('api.filter_endpoints', 'Filter endpoints…')}
+								aria-label={t('api.filter_endpoints', 'Filter endpoints')}
+								class="ep-search"
+							/>
+						</div>
+						<AutocompleteSelect
+							bind:value={epMethod}
+							options={methodOptions}
+							ariaLabel={t('api.method', 'Method')}
+							class="ep-method-select"
+						/>
+					</div>
+
+					{#if groupedEndpoints.length === 0}
+						<p class="empty">{t('common.no_results', 'No results found')}</p>
+					{:else}
+						{#each groupedEndpoints as [tag, eps] (tag)}
+							<div class="endpoint-group">
+								<h3 class="endpoint-tag">{tag}</h3>
+								<ul class="endpoint-list">
+									{#each eps as ep (`${ep.method}${ep.path}`)}
+										<li>
+											<a href={playgroundHref(ep)} class="endpoint-item">
+												<span class="method-badge method-{ep.method}">{ep.method}</span>
+												<code class="endpoint-path">{ep.path}</code>
+												{#if ep.summary}
+													<span class="endpoint-summary">{ep.summary}</span>
+												{/if}
+												<span class="endpoint-cta">{t('api.try_it', 'Try it →')}</span>
+											</a>
+										</li>
+									{/each}
+								</ul>
+							</div>
 						{/each}
-					</ul>
+					{/if}
 				</div>
 			{:else}
 				<p class="empty">{t('nav.empty', 'No pages yet')}</p>
@@ -214,6 +288,52 @@
 		color: var(--color-muted);
 		margin: 0 0 1rem;
 	}
+	.endpoint-filters {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 1.25rem;
+	}
+	.ep-search-wrap {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+	}
+	.ep-search-wrap :global(.ep-search-icon) {
+		position: absolute;
+		left: 0.625rem;
+		top: 50%;
+		transform: translateY(-50%);
+		color: var(--color-muted);
+		pointer-events: none;
+	}
+	.ep-search {
+		width: 100%;
+		padding: 0.5rem 0.75rem 0.5rem 2rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		color: var(--color-text);
+		font-size: 0.875rem;
+		outline: none;
+	}
+	.ep-search:focus { border-color: var(--color-primary); }
+	.endpoint-filters :global(.ep-method-select) {
+		width: 9rem;
+		flex-shrink: 0;
+	}
+	.endpoint-filters :global(.ep-method-select .autocomplete-input-wrapper) {
+		height: 2.375rem;
+	}
+	.endpoint-group { margin-bottom: 1.25rem; }
+	.endpoint-tag {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-muted);
+		margin: 0 0 0.375rem;
+	}
 	.endpoint-list {
 		list-style: none;
 		padding: 0;
@@ -230,6 +350,19 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
+		text-decoration: none;
+		transition: border-color 0.15s;
+	}
+	.endpoint-item:hover { border-color: var(--color-primary); }
+	.endpoint-cta {
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-primary);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+	.endpoint-item:not(:hover) .endpoint-cta {
+		visibility: hidden;
 	}
 	.endpoint-path {
 		font-family: var(--font-mono, monospace);

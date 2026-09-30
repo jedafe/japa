@@ -281,7 +281,7 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
 WHERE lt.is_published_to_university = true
  AND ($1::text = '' OR lt.category = $1)
  AND ($2::text = '' OR lt.language = $2)
- AND ($3::bool = false OR lt.price_kobo IS NULL)
+ AND ($3::bool = false OR lt.price_kobo IS NULL OR lt.price_kobo = 0)
  AND ($4::text = '' OR lt.difficulty = $4)
  AND ($5::text = '' OR lt.title ILIKE '%' || $5 || '%')
  AND ($6::uuid IS NULL OR lt.geo_space_id = $6)
@@ -1741,7 +1741,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
  lt.university_submission_status, lt.university_submitted_at,
  lt.university_reviewed_at, lt.university_rejection_reason,
  lt.created_at, lt.updated_at,
- m.storage_path AS thumbnail_url
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path
 FROM learning_tracks lt
 LEFT JOIN media m ON m.id = lt.cover_media_id
 WHERE lt.instructor_id = $1
@@ -1773,7 +1773,8 @@ type ListPublishedTracksByInstructorRow struct {
 	UniversityRejectionReason  *string            `json:"university_rejection_reason"`
 	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
-	ThumbnailUrl               *string            `json:"thumbnail_url"`
+	ThumbnailStorageBucket     *string            `json:"thumbnail_storage_bucket"`
+	ThumbnailStoragePath       *string            `json:"thumbnail_storage_path"`
 }
 
 // Public instructor profile: only live marketplace tracks, filtered at the
@@ -1811,7 +1812,8 @@ func (q *Queries) ListPublishedTracksByInstructor(ctx context.Context, instructo
 			&i.UniversityRejectionReason,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.ThumbnailUrl,
+			&i.ThumbnailStorageBucket,
+			&i.ThumbnailStoragePath,
 		); err != nil {
 			return nil, err
 		}
@@ -1975,7 +1977,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description,
  lt.difficulty, lt.cover_media_id, lt.instructor_id, lt.price_kobo,
  lt.currency, lt.category, lt.language, lt.geo_space_id, lt.total_enrolled, lt.subscription_eligible,
  lt.created_at, lt.updated_at,
- m.storage_path AS thumbnail_url,
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path,
  ip.display_name AS instructor_name,
  COALESCE(ra.average_rating, 0) AS avg_rating,
  COALESCE(ra.review_count, 0) AS review_count
@@ -1987,7 +1989,7 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'learning_track'
 WHERE lt.is_published_to_university = true
  AND ($1::text = '' OR lt.category = $1)
  AND ($2::text = '' OR lt.language = $2)
- AND ($3::bool = false OR lt.price_kobo IS NULL)
+ AND ($3::bool = false OR lt.price_kobo IS NULL OR lt.price_kobo = 0)
  AND ($4::text = '' OR lt.difficulty = $4)
  AND ($5::text = '' OR lt.title ILIKE '%' || $5 || '%')
  AND ($6::uuid IS NULL OR lt.geo_space_id = $6)
@@ -2011,26 +2013,27 @@ type ListUniversityCatalogParams struct {
 }
 
 type ListUniversityCatalogRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	Title                string             `json:"title"`
-	Slug                 string             `json:"slug"`
-	Description          *string            `json:"description"`
-	Difficulty           string             `json:"difficulty"`
-	CoverMediaID         pgtype.UUID        `json:"cover_media_id"`
-	InstructorID         pgtype.UUID        `json:"instructor_id"`
-	PriceKobo            *int64             `json:"price_kobo"`
-	Currency             string             `json:"currency"`
-	Category             *string            `json:"category"`
-	Language             string             `json:"language"`
-	GeoSpaceID           pgtype.UUID        `json:"geo_space_id"`
-	TotalEnrolled        int32              `json:"total_enrolled"`
-	SubscriptionEligible bool               `json:"subscription_eligible"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	ThumbnailUrl         *string            `json:"thumbnail_url"`
-	InstructorName       *string            `json:"instructor_name"`
-	AvgRating            pgtype.Numeric     `json:"avg_rating"`
-	ReviewCount          int32              `json:"review_count"`
+	ID                     pgtype.UUID        `json:"id"`
+	Title                  string             `json:"title"`
+	Slug                   string             `json:"slug"`
+	Description            *string            `json:"description"`
+	Difficulty             string             `json:"difficulty"`
+	CoverMediaID           pgtype.UUID        `json:"cover_media_id"`
+	InstructorID           pgtype.UUID        `json:"instructor_id"`
+	PriceKobo              *int64             `json:"price_kobo"`
+	Currency               string             `json:"currency"`
+	Category               *string            `json:"category"`
+	Language               string             `json:"language"`
+	GeoSpaceID             pgtype.UUID        `json:"geo_space_id"`
+	TotalEnrolled          int32              `json:"total_enrolled"`
+	SubscriptionEligible   bool               `json:"subscription_eligible"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	ThumbnailStorageBucket *string            `json:"thumbnail_storage_bucket"`
+	ThumbnailStoragePath   *string            `json:"thumbnail_storage_path"`
+	InstructorName         *string            `json:"instructor_name"`
+	AvgRating              pgtype.Numeric     `json:"avg_rating"`
+	ReviewCount            int32              `json:"review_count"`
 }
 
 // =====================================================================
@@ -2078,7 +2081,8 @@ func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityC
 			&i.SubscriptionEligible,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.ThumbnailUrl,
+			&i.ThumbnailStorageBucket,
+			&i.ThumbnailStoragePath,
 			&i.InstructorName,
 			&i.AvgRating,
 			&i.ReviewCount,
@@ -2086,6 +2090,35 @@ func (q *Queries) ListUniversityCatalog(ctx context.Context, arg ListUniversityC
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUniversityCatalogLanguages = `-- name: ListUniversityCatalogLanguages :many
+SELECT DISTINCT lt.language
+FROM learning_tracks lt
+WHERE lt.is_published_to_university = true
+ORDER BY lt.language
+`
+
+// Distinct languages present in the live marketplace catalog — the language
+// filter dropdown is driven by this so options reflect real data (Rule 16).
+func (q *Queries) ListUniversityCatalogLanguages(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listUniversityCatalogLanguages)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var language string
+		if err := rows.Scan(&language); err != nil {
+			return nil, err
+		}
+		items = append(items, language)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -2151,7 +2184,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
  lt.university_reviewed_at, lt.university_rejection_reason,
  lt.created_at, lt.updated_at,
  COALESCE(rs.total_revenue_kobo, 0)::bigint AS total_revenue_kobo,
- m.storage_path AS thumbnail_url
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path
 FROM learning_tracks lt
 LEFT JOIN (
  SELECT track_id, SUM(creator_kobo)::bigint AS total_revenue_kobo
@@ -2189,7 +2222,8 @@ type ListUniversityTracksByInstructorRow struct {
 	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
 	TotalRevenueKobo           int64              `json:"total_revenue_kobo"`
-	ThumbnailUrl               *string            `json:"thumbnail_url"`
+	ThumbnailStorageBucket     *string            `json:"thumbnail_storage_bucket"`
+	ThumbnailStoragePath       *string            `json:"thumbnail_storage_path"`
 }
 
 func (q *Queries) ListUniversityTracksByInstructor(ctx context.Context, instructorID pgtype.UUID) ([]ListUniversityTracksByInstructorRow, error) {
@@ -2226,7 +2260,8 @@ func (q *Queries) ListUniversityTracksByInstructor(ctx context.Context, instruct
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.TotalRevenueKobo,
-			&i.ThumbnailUrl,
+			&i.ThumbnailStorageBucket,
+			&i.ThumbnailStoragePath,
 		); err != nil {
 			return nil, err
 		}

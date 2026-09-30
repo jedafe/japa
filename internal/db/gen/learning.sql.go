@@ -465,10 +465,13 @@ SELECT ll.id, ll.module_id, ll.title, ll.slug, ll.lesson_type,
  ll.content, ll.media_id, ll.duration_minutes, ll.sort_order,
  ll.is_published, ll.is_preview, ll.created_at, ll.updated_at,
  lm.title AS module_title, lm.slug AS module_slug,
- lt.id AS track_id, lt.slug AS track_slug, lt.title AS track_title
+ lt.id AS track_id, lt.slug AS track_slug, lt.title AS track_title,
+ vm.storage_bucket AS video_storage_bucket, vm.storage_path AS video_storage_path,
+ vm.duration_secs AS video_duration_secs
 FROM learning_lessons ll
 JOIN learning_modules lm ON lm.id = ll.module_id
 JOIN learning_tracks lt ON lt.id = lm.track_id
+LEFT JOIN media vm ON vm.id = ll.media_id
 WHERE ll.module_id = $1 AND ll.slug = $2
 `
 
@@ -478,24 +481,27 @@ type GetLearningLessonDetailBySlugParams struct {
 }
 
 type GetLearningLessonDetailBySlugRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	ModuleID        pgtype.UUID        `json:"module_id"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	LessonType      string             `json:"lesson_type"`
-	Content         *string            `json:"content"`
-	MediaID         pgtype.UUID        `json:"media_id"`
-	DurationMinutes *int32             `json:"duration_minutes"`
-	SortOrder       int32              `json:"sort_order"`
-	IsPublished     bool               `json:"is_published"`
-	IsPreview       bool               `json:"is_preview"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	ModuleTitle     string             `json:"module_title"`
-	ModuleSlug      string             `json:"module_slug"`
-	TrackID         pgtype.UUID        `json:"track_id"`
-	TrackSlug       string             `json:"track_slug"`
-	TrackTitle      string             `json:"track_title"`
+	ID                 pgtype.UUID        `json:"id"`
+	ModuleID           pgtype.UUID        `json:"module_id"`
+	Title              string             `json:"title"`
+	Slug               string             `json:"slug"`
+	LessonType         string             `json:"lesson_type"`
+	Content            *string            `json:"content"`
+	MediaID            pgtype.UUID        `json:"media_id"`
+	DurationMinutes    *int32             `json:"duration_minutes"`
+	SortOrder          int32              `json:"sort_order"`
+	IsPublished        bool               `json:"is_published"`
+	IsPreview          bool               `json:"is_preview"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	ModuleTitle        string             `json:"module_title"`
+	ModuleSlug         string             `json:"module_slug"`
+	TrackID            pgtype.UUID        `json:"track_id"`
+	TrackSlug          string             `json:"track_slug"`
+	TrackTitle         string             `json:"track_title"`
+	VideoStorageBucket *string            `json:"video_storage_bucket"`
+	VideoStoragePath   *string            `json:"video_storage_path"`
+	VideoDurationSecs  pgtype.Numeric     `json:"video_duration_secs"`
 }
 
 // Fetches a lesson joined to its module and track for the lesson player
@@ -523,6 +529,9 @@ func (q *Queries) GetLearningLessonDetailBySlug(ctx context.Context, arg GetLear
 		&i.TrackID,
 		&i.TrackSlug,
 		&i.TrackTitle,
+		&i.VideoStorageBucket,
+		&i.VideoStoragePath,
+		&i.VideoDurationSecs,
 	)
 	return i, err
 }
@@ -693,7 +702,7 @@ SELECT lt.id, lt.title, lt.slug, lt.description, lt.difficulty,
  lt.cover_media_id, lt.is_published, lt.sort_order, lt.created_at, lt.updated_at,
  lt.instructor_id, lt.price_kobo, lt.currency, lt.is_published_to_university,
  lt.category, lt.language, lt.total_enrolled, lt.subscription_eligible,
- m.storage_path AS thumbnail_url,
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path,
  ip.id AS instructor_profile_id, ip.display_name AS instructor_name,
  ip.bio AS instructor_bio,
  u.username AS instructor_username,
@@ -725,7 +734,8 @@ type GetLearningTrackDetailBySlugRow struct {
 	Language                string             `json:"language"`
 	TotalEnrolled           int32              `json:"total_enrolled"`
 	SubscriptionEligible    bool               `json:"subscription_eligible"`
-	ThumbnailUrl            *string            `json:"thumbnail_url"`
+	ThumbnailStorageBucket  *string            `json:"thumbnail_storage_bucket"`
+	ThumbnailStoragePath    *string            `json:"thumbnail_storage_path"`
 	InstructorProfileID     pgtype.UUID        `json:"instructor_profile_id"`
 	InstructorName          *string            `json:"instructor_name"`
 	InstructorBio           *string            `json:"instructor_bio"`
@@ -761,7 +771,8 @@ func (q *Queries) GetLearningTrackDetailBySlug(ctx context.Context, slug string)
 		&i.Language,
 		&i.TotalEnrolled,
 		&i.SubscriptionEligible,
-		&i.ThumbnailUrl,
+		&i.ThumbnailStorageBucket,
+		&i.ThumbnailStoragePath,
 		&i.InstructorProfileID,
 		&i.InstructorName,
 		&i.InstructorBio,
@@ -772,7 +783,7 @@ func (q *Queries) GetLearningTrackDetailBySlug(ctx context.Context, slug string)
 }
 
 const getLessonCompletionStatus = `-- name: GetLessonCompletionStatus :one
-SELECT (lp.status = 'completed') AS is_completed
+SELECT (lp.status = 'completed') AS is_completed, lp.position_secs
 FROM lesson_progress lp
 WHERE lp.user_id = $1 AND lp.lesson_id = $2
 `
@@ -782,19 +793,24 @@ type GetLessonCompletionStatusParams struct {
 	LessonID pgtype.UUID `json:"lesson_id"`
 }
 
+type GetLessonCompletionStatusRow struct {
+	IsCompleted  bool   `json:"is_completed"`
+	PositionSecs *int32 `json:"position_secs"`
+}
+
 // Checks whether a user has completed a specific lesson. Used by GetLessonDetail
 // to populate is_completed for authenticated users so the lesson player can
 // show the "Completed" state on SSR render without waiting for CSR.
-func (q *Queries) GetLessonCompletionStatus(ctx context.Context, arg GetLessonCompletionStatusParams) (bool, error) {
+func (q *Queries) GetLessonCompletionStatus(ctx context.Context, arg GetLessonCompletionStatusParams) (GetLessonCompletionStatusRow, error) {
 	row := q.db.QueryRow(ctx, getLessonCompletionStatus, arg.UserID, arg.LessonID)
-	var is_completed bool
-	err := row.Scan(&is_completed)
-	return is_completed, err
+	var i GetLessonCompletionStatusRow
+	err := row.Scan(&i.IsCompleted, &i.PositionSecs)
+	return i, err
 }
 
 const getLessonProgress = `-- name: GetLessonProgress :one
 
-SELECT id, user_id, lesson_id, status, completed_at, created_at
+SELECT id, user_id, lesson_id, status, position_secs, completed_at, created_at
 FROM lesson_progress
 WHERE user_id = $1 AND lesson_id = $2
 `
@@ -804,17 +820,28 @@ type GetLessonProgressParams struct {
 	LessonID pgtype.UUID `json:"lesson_id"`
 }
 
+type GetLessonProgressRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	LessonID     pgtype.UUID        `json:"lesson_id"`
+	Status       string             `json:"status"`
+	PositionSecs *int32             `json:"position_secs"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 // =====================
 // Progress Operations
 // =====================
-func (q *Queries) GetLessonProgress(ctx context.Context, arg GetLessonProgressParams) (LessonProgress, error) {
+func (q *Queries) GetLessonProgress(ctx context.Context, arg GetLessonProgressParams) (GetLessonProgressRow, error) {
 	row := q.db.QueryRow(ctx, getLessonProgress, arg.UserID, arg.LessonID)
-	var i LessonProgress
+	var i GetLessonProgressRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.LessonID,
 		&i.Status,
+		&i.PositionSecs,
 		&i.CompletedAt,
 		&i.CreatedAt,
 	)
@@ -861,24 +888,38 @@ func (q *Queries) GetNextIncompleteLessonByTrack(ctx context.Context, arg GetNex
 
 const getQuizQuestionsByLesson = `-- name: GetQuizQuestionsByLesson :many
 
-SELECT id, lesson_id, question, options, answer, explanation, position, created_at
-FROM lesson_quizzes
-WHERE lesson_id = $1
-ORDER BY position ASC
+SELECT lq.id, lq.lesson_id, lq.question, lq.options, lq.answer, lq.explanation,
+ lq.position, lq.created_at, ll.title AS lesson_title
+FROM lesson_quizzes lq
+JOIN learning_lessons ll ON ll.id = lq.lesson_id
+WHERE lq.lesson_id = $1
+ORDER BY lq.position ASC
 `
+
+type GetQuizQuestionsByLessonRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	LessonID    pgtype.UUID        `json:"lesson_id"`
+	Question    string             `json:"question"`
+	Options     string             `json:"options"`
+	Answer      string             `json:"answer"`
+	Explanation *string            `json:"explanation"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	LessonTitle string             `json:"lesson_title"`
+}
 
 // =====================
 // Quiz Operations
 // =====================
-func (q *Queries) GetQuizQuestionsByLesson(ctx context.Context, lessonID pgtype.UUID) ([]LessonQuiz, error) {
+func (q *Queries) GetQuizQuestionsByLesson(ctx context.Context, lessonID pgtype.UUID) ([]GetQuizQuestionsByLessonRow, error) {
 	rows, err := q.db.Query(ctx, getQuizQuestionsByLesson, lessonID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []LessonQuiz
+	var items []GetQuizQuestionsByLessonRow
 	for rows.Next() {
-		var i LessonQuiz
+		var i GetQuizQuestionsByLessonRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.LessonID,
@@ -888,6 +929,7 @@ func (q *Queries) GetQuizQuestionsByLesson(ctx context.Context, lessonID pgtype.
 			&i.Explanation,
 			&i.Position,
 			&i.CreatedAt,
+			&i.LessonTitle,
 		); err != nil {
 			return nil, err
 		}
@@ -1278,7 +1320,7 @@ SELECT e.id, e.user_id, e.track_id, e.access_type,
  THEN COALESCE(e.completed_at, lp_stats.last_activity_at)
  END::timestamptz AS completed_at,
  lt.slug AS track_slug, lt.title AS track_title, lt.difficulty AS level,
- m.storage_path AS thumbnail_url,
+ m.storage_bucket AS thumbnail_storage_bucket, m.storage_path AS thumbnail_storage_path,
  COALESCE(lp_stats.lessons_completed, 0) AS lessons_completed,
  COALESCE(lp_stats.lessons_total, 0) AS lessons_total,
  lp_stats.last_activity_at,
@@ -1313,23 +1355,24 @@ ORDER BY e.enrolled_at DESC
 `
 
 type ListEnrollmentsByUserIDWithDetailsRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	UserID               pgtype.UUID        `json:"user_id"`
-	TrackID              pgtype.UUID        `json:"track_id"`
-	AccessType           string             `json:"access_type"`
-	ProgressPct          pgtype.Numeric     `json:"progress_pct"`
-	EnrolledAt           pgtype.Timestamptz `json:"enrolled_at"`
-	CompletedAt          pgtype.Timestamptz `json:"completed_at"`
-	TrackSlug            string             `json:"track_slug"`
-	TrackTitle           string             `json:"track_title"`
-	Level                string             `json:"level"`
-	ThumbnailUrl         *string            `json:"thumbnail_url"`
-	LessonsCompleted     int64              `json:"lessons_completed"`
-	LessonsTotal         int64              `json:"lessons_total"`
-	LastActivityAt       interface{}        `json:"last_activity_at"`
-	NextLessonSlug       string             `json:"next_lesson_slug"`
-	NextLessonTitle      string             `json:"next_lesson_title"`
-	NextLessonModuleSlug string             `json:"next_lesson_module_slug"`
+	ID                     pgtype.UUID        `json:"id"`
+	UserID                 pgtype.UUID        `json:"user_id"`
+	TrackID                pgtype.UUID        `json:"track_id"`
+	AccessType             string             `json:"access_type"`
+	ProgressPct            pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt             pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt            pgtype.Timestamptz `json:"completed_at"`
+	TrackSlug              string             `json:"track_slug"`
+	TrackTitle             string             `json:"track_title"`
+	Level                  string             `json:"level"`
+	ThumbnailStorageBucket *string            `json:"thumbnail_storage_bucket"`
+	ThumbnailStoragePath   *string            `json:"thumbnail_storage_path"`
+	LessonsCompleted       int64              `json:"lessons_completed"`
+	LessonsTotal           int64              `json:"lessons_total"`
+	LastActivityAt         interface{}        `json:"last_activity_at"`
+	NextLessonSlug         string             `json:"next_lesson_slug"`
+	NextLessonTitle        string             `json:"next_lesson_title"`
+	NextLessonModuleSlug   string             `json:"next_lesson_module_slug"`
 }
 
 // Enriched enrollment list for GET /me/enrollments — joins learning_tracks
@@ -1358,7 +1401,8 @@ func (q *Queries) ListEnrollmentsByUserIDWithDetails(ctx context.Context, userID
 			&i.TrackSlug,
 			&i.TrackTitle,
 			&i.Level,
-			&i.ThumbnailUrl,
+			&i.ThumbnailStorageBucket,
+			&i.ThumbnailStoragePath,
 			&i.LessonsCompleted,
 			&i.LessonsTotal,
 			&i.LastActivityAt,
@@ -1871,34 +1915,48 @@ func (q *Queries) UpdateLearningTrack(ctx context.Context, arg UpdateLearningTra
 }
 
 const upsertLessonProgress = `-- name: UpsertLessonProgress :one
-INSERT INTO lesson_progress (user_id, lesson_id, status, completed_at) VALUES ($1, $2, $3, $4)
+INSERT INTO lesson_progress (user_id, lesson_id, status, position_secs, completed_at) VALUES ($1, $2, $3, $4, $5)
 
 ON CONFLICT (user_id, lesson_id) DO UPDATE
 SET status = EXCLUDED.status,
+ position_secs = COALESCE(EXCLUDED.position_secs, lesson_progress.position_secs),
  completed_at = COALESCE(EXCLUDED.completed_at, lesson_progress.completed_at)
-RETURNING id, user_id, lesson_id, status, completed_at, created_at
+RETURNING id, user_id, lesson_id, status, position_secs, completed_at, created_at
 `
 
 type UpsertLessonProgressParams struct {
-	UserID      pgtype.UUID        `json:"user_id"`
-	LessonID    pgtype.UUID        `json:"lesson_id"`
-	Status      string             `json:"status"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	LessonID     pgtype.UUID        `json:"lesson_id"`
+	Status       string             `json:"status"`
+	PositionSecs *int32             `json:"position_secs"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
 }
 
-func (q *Queries) UpsertLessonProgress(ctx context.Context, arg UpsertLessonProgressParams) (LessonProgress, error) {
+type UpsertLessonProgressRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	LessonID     pgtype.UUID        `json:"lesson_id"`
+	Status       string             `json:"status"`
+	PositionSecs *int32             `json:"position_secs"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) UpsertLessonProgress(ctx context.Context, arg UpsertLessonProgressParams) (UpsertLessonProgressRow, error) {
 	row := q.db.QueryRow(ctx, upsertLessonProgress,
 		arg.UserID,
 		arg.LessonID,
 		arg.Status,
+		arg.PositionSecs,
 		arg.CompletedAt,
 	)
-	var i LessonProgress
+	var i UpsertLessonProgressRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.LessonID,
 		&i.Status,
+		&i.PositionSecs,
 		&i.CompletedAt,
 		&i.CreatedAt,
 	)

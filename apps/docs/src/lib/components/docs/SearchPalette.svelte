@@ -32,11 +32,23 @@
 	// Resolve the active audience from the route (/docs/[audience]/...) when the
 	// caller doesn't pass one explicitly. ADR-060 — audience-filtered search.
 	// /docs/api/* routes have no `audience` param — the api section is scoped
-	// by path prefix instead.
+	// by path prefix instead. page.url.pathname keeps the locale prefix on
+	// /{lang}/docs/... URLs, so strip it before the prefix check.
+	const enabledLangs = $derived(
+		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en')
+			.split(',')
+			.map((l) => l.trim())
+			.filter(Boolean)
+	);
+	const unprefixedPath = $derived.by(() => {
+		const p = page.url.pathname;
+		const seg = p.split('/')[1];
+		return seg && enabledLangs.includes(seg) ? p.slice(seg.length + 1) || '/' : p;
+	});
 	let resolvedAudience = $derived<DocAudience | null>(
 		audience ??
 			(page.params.audience as DocAudience | undefined) ??
-			(page.url.pathname.startsWith('/docs/api') ? 'api' : null)
+			(unprefixedPath.startsWith('/docs/api') ? 'api' : null)
 	);
 
 	// Debounced fetch — 200ms → /docs/search?q=&audience=&limit= (ADR-060).

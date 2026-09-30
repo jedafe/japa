@@ -1,8 +1,8 @@
-import { redirect, error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiPost, apiDelete, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiPost, apiPatch, apiDelete, ApiError } from '$lib/server/api';
 import { buildMeta } from '$lib/seo/meta';
-import type { ApiKeySummary, ApiKeyCreated } from '$lib/types';
+import type { ApiKeySummary, ApiKeyCreated, ApiScopeOption, ApiKeyIpEntry } from '$lib/types';
 import { env } from '$env/dynamic/public';
 import { tServer } from '$lib/i18n/dict';
 
@@ -12,9 +12,10 @@ const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/
 
 /**
  * Developer Self-Service API Keys page (Ref: §47 ROADMAP Phase 06).
- * Auth required: guests are redirected to login. Lists, creates, and revokes
- * the user's own API keys via /me/api-keys. The full key is shown once on
- * creation, then only the prefix is visible.
+ * Auth required: guests are redirected to login. Lists, creates, renames,
+ * rotates, revokes, and manages IP allowlists for the user's own API keys
+ * via /me/api-keys. The full key is shown once on creation/rotation, then
+ * only the prefix is visible.
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
@@ -28,6 +29,33 @@ export const load: PageServerLoad = async (event) => {
 	} catch {
 		keys = [];
 	}
+
+	// Canonical scope catalog from GET /developer/scopes (Rule 16 — the
+	// backend catalog is the source of truth, not a hardcoded list). The
+	// endpoint already withholds admin-only scopes (api.write.*, *).
+	let scopes: ApiScopeOption[] = [];
+	try {
+		scopes = await apiGet<ApiScopeOption[]>(ctx, '/developer/scopes');
+	} catch {
+		scopes = [];
+	}
+
+	// IP allowlist entries per key (GET /me/api-keys/{id}/ip-allowlist).
+	// Key count is bounded by api.keys.max_per_user, so a small parallel
+	// fan-out is safe; failures degrade to an empty list per key.
+	const allowlists: Record<string, ApiKeyIpEntry[]> = {};
+	await Promise.all(
+		keys.map(async (k) => {
+			try {
+				allowlists[k.id] = await apiGet<ApiKeyIpEntry[]>(
+					ctx,
+					`/me/api-keys/${k.id}/ip-allowlist`
+				);
+			} catch {
+				allowlists[k.id] = [];
+			}
+		})
+	);
 
 	// Key limit from system_settings (Ref: §47 ROADMAP 06.04). The backend
 	// exposes this via the public settings endpoint; degrade to a high
@@ -58,8 +86,13 @@ export const load: PageServerLoad = async (event) => {
 		path: '/docs/api/keys'
 	});
 
-	return { keys, maxKeys, meta };
+	return { keys, scopes, allowlists, maxKeys, meta };
 };
+
+function failFrom(err: unknown, fallback: string): { error: string } {
+	if (err instanceof ApiError) return { error: err.message };
+	return { error: fallback };
+}
 
 export const actions: Actions = {
 	/** Create a new API key (Ref: §47 ROADMAP 06.02). */
@@ -90,10 +123,84 @@ export const actions: Actions = {
 			});
 			return { created };
 		} catch (err) {
-			if (err instanceof ApiError) {
-				return { error: err.message };
-			}
-			return { error: 'Failed to create API key' };
+			return failFrom(err, 'Failed to create API key');
+		}
+	},
+
+	/** Rename an API key — PATCH /me/api-keys/{id} (P5.6, name only). */
+	rename: async (event) => {
+		if (!event.locals.user) {
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+		}
+		const ctx = apiContext(event);
+		const form = await event.request.formData();
+		const id = form.get('id') as string | null;
+		const name = (form.get('name') as string | null)?.trim();
+		if (!id || !name) return { error: 'Missing key id or name' };
+
+		try {
+			await apiPatch(ctx, `/me/api-keys/${id}`, { name });
+			return { renamed: id };
+		} catch (err) {
+			return failFrom(err, 'Failed to rename API key');
+		}
+	},
+
+	/** Rotate an API key — POST /me/api-keys/{id}/rotate (P5.6). The new
+	 *  secret is returned once; the old key expires after a 24h grace. */
+	rotate: async (event) => {
+		if (!event.locals.user) {
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+		}
+		const ctx = apiContext(event);
+		const form = await event.request.formData();
+		const id = form.get('id') as string | null;
+		if (!id) return { error: 'Missing key id' };
+
+		try {
+			const rotated = await apiPost<ApiKeyCreated>(ctx, `/me/api-keys/${id}/rotate`);
+			return { rotated };
+		} catch (err) {
+			return failFrom(err, 'Failed to rotate API key');
+		}
+	},
+
+	/** Add a CIDR entry to a key's IP allowlist (§47). */
+	addIp: async (event) => {
+		if (!event.locals.user) {
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+		}
+		const ctx = apiContext(event);
+		const form = await event.request.formData();
+		const id = form.get('id') as string | null;
+		const cidr = (form.get('cidr') as string | null)?.trim();
+		const description = (form.get('description') as string | null)?.trim() ?? '';
+		if (!id || !cidr) return { error: 'Missing key id or CIDR' };
+
+		try {
+			await apiPost(ctx, `/me/api-keys/${id}/ip-allowlist`, { cidr, description });
+			return { ipAdded: id };
+		} catch (err) {
+			return failFrom(err, 'Failed to add allowlist entry');
+		}
+	},
+
+	/** Remove an IP allowlist entry (§47). */
+	removeIp: async (event) => {
+		if (!event.locals.user) {
+			throw redirect(307, `${mainOrigin}/login?redirect=${encodeURIComponent(event.url.href)}`);
+		}
+		const ctx = apiContext(event);
+		const form = await event.request.formData();
+		const id = form.get('id') as string | null;
+		const ipId = form.get('ip_id') as string | null;
+		if (!id || !ipId) return { error: 'Missing key id or entry id' };
+
+		try {
+			await apiDelete(ctx, `/me/api-keys/${id}/ip-allowlist/${ipId}`);
+			return { ipRemoved: id };
+		} catch (err) {
+			return failFrom(err, 'Failed to remove allowlist entry');
 		}
 	},
 
@@ -111,10 +218,7 @@ export const actions: Actions = {
 			await apiDelete(ctx, `/me/api-keys/${id}`);
 			return { revoked: id };
 		} catch (err) {
-			if (err instanceof ApiError) {
-				return { error: err.message };
-			}
-			return { error: 'Failed to revoke API key' };
+			return failFrom(err, 'Failed to revoke API key');
 		}
 	}
 };

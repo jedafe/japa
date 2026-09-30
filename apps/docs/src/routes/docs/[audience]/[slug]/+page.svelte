@@ -39,6 +39,27 @@
 	const defaultLanguage = $derived(
 		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
 	);
+
+	// The backend DocPage response has no breadcrumb/prev/next fields — derive
+	// them from the nav tree (GET /docs/nav), which carries parent_id nesting
+	// and position ordering for the current audience (Rule 16).
+	const audienceTree = $derived(data.nav.find((tree) => tree.audience === data.audience));
+	const flatNav = $derived(
+		(audienceTree?.items ?? []).flatMap((item) => [item, ...(item.children ?? [])])
+	);
+	const navIndex = $derived(flatNav.findIndex((i) => i.slug === data.page.slug));
+	const breadcrumb = $derived.by(() => {
+		if (data.page.breadcrumb?.length) return data.page.breadcrumb;
+		const self = navIndex >= 0 ? flatNav[navIndex] : null;
+		const parent = self?.parent_id
+			? (audienceTree?.items ?? []).find((i) => i.id === self.parent_id)
+			: null;
+		return parent ? [{ title: parent.title, slug: parent.slug, audience: data.audience }] : [];
+	});
+	const prev = $derived(data.page.prev ?? (navIndex > 0 ? flatNav[navIndex - 1] : null));
+	const next = $derived(
+		data.page.next ?? (navIndex >= 0 && navIndex < flatNav.length - 1 ? flatNav[navIndex + 1] : null)
+	);
 </script>
 
 <svelte:head>
@@ -98,12 +119,12 @@
 	<article class="doc-article">
 		<header class="doc-header">
 			<!-- Breadcrumb (Ref: §44 ROADMAP 02.03) -->
-			{#if data.page.breadcrumb && data.page.breadcrumb.length > 0}
+			{#if breadcrumb.length > 0}
 				<nav class="breadcrumb" aria-label="Breadcrumb">
 					<a href="/docs/{data.audience}" class="crumb">
 						{t(data.audienceLabelKey, data.audience)}
 					</a>
-					{#each data.page.breadcrumb as crumb}
+					{#each breadcrumb as crumb (crumb.slug)}
 						<span class="crumb-sep">/</span>
 						<a href="/docs/{data.audience}/{crumb.slug}" class="crumb">{crumb.title}</a>
 					{/each}
@@ -136,20 +157,20 @@
 		</div>
 
 		<!-- Prev/Next navigation (Ref: §44 ROADMAP 02.05) -->
-		{#if data.page.prev || data.page.next}
+		{#if prev || next}
 			<nav class="prev-next" aria-label="Page navigation">
-				{#if data.page.prev}
-					<a href="/docs/{data.audience}/{data.page.prev.slug}" class="pn-card pn-prev">
+				{#if prev}
+					<a href="/docs/{data.audience}/{prev.slug}" class="pn-card pn-prev">
 						<span class="pn-label"><ArrowLeft size={14} /> {t('page.previous', 'Previous')}</span>
-						<span class="pn-title">{data.page.prev.title}</span>
+						<span class="pn-title">{prev.title}</span>
 					</a>
 				{:else}
 					<span class="pn-card pn-placeholder"></span>
 				{/if}
-				{#if data.page.next}
-					<a href="/docs/{data.audience}/{data.page.next.slug}" class="pn-card pn-next">
+				{#if next}
+					<a href="/docs/{data.audience}/{next.slug}" class="pn-card pn-next">
 						<span class="pn-label">{t('page.next', 'Next')} <ArrowRight size={14} /></span>
-						<span class="pn-title">{data.page.next.title}</span>
+						<span class="pn-title">{next.title}</span>
 					</a>
 				{:else}
 					<span class="pn-card pn-placeholder"></span>

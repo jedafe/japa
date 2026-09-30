@@ -36,10 +36,9 @@
 
 	async function loadBookmarks(folderId: string | null) {
 		loading = true;
-		const params = new URLSearchParams();
+		const params = new URLSearchParams({ entity_type: 'learning_track' });
 		if (folderId) params.set('folder_id', folderId);
-		const qs = params.toString() ? `?${params.toString()}` : '';
-		const r = await api.get<Bookmark[]>(`/me/bookmarks${qs}`);
+		const r = await api.get<Bookmark[]>(`/me/bookmarks?${params.toString()}`);
 		loading = false;
 		if (r.data) {
 			bookmarks = r.data;
@@ -52,10 +51,14 @@
 		if (r.data) folders = r.data;
 	}
 
+	let urlInitDone = false;
 	$effect(() => {
-		(async () => {
-			await Promise.all([loadBookmarks(null), loadFolders()]);
-		})();
+		if (urlInitDone) return;
+		urlInitDone = true;
+		// Deep-link support: ?folder=<id> selects the folder on first load.
+		const initial = new URL(window.location.href).searchParams.get('folder');
+		activeFolder = initial;
+		void Promise.all([loadBookmarks(initial), loadFolders()]);
 	});
 
 	function selectFolder(id: string | null) {

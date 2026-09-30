@@ -17,10 +17,18 @@ export const load: PageServerLoad = async (event) => {
 	// from page data so the UI doesn't label results with a bogus section.
 	const audience = event.locals.audienceOrder.includes(rawAudience) ? rawAudience : null;
 
+	// Page size — the backend caps at 50; clamp defensively so an out-of-range
+	// ?limit= doesn't produce a surprising result set. Note: `Number(null)` is
+	// 0 (an integer), so the absent-param case must be guarded explicitly —
+	// otherwise every default search would silently clamp to the 5 minimum.
+	const limitParam = event.url.searchParams.get('limit');
+	const rawLimit = limitParam ? Number(limitParam) : NaN;
+	const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 5), 50) : 20;
+
 	let results: DocSearchResult[] = [];
 	if (q.length >= 2) {
 		try {
-			const params = new URLSearchParams({ q, limit: '20' });
+			const params = new URLSearchParams({ q, limit: String(limit) });
 			if (audience) params.set('audience', audience);
 			results = await apiGet<DocSearchResult[]>(apiContext(event), `/docs/search?${params}`);
 		} catch {
@@ -41,5 +49,5 @@ export const load: PageServerLoad = async (event) => {
 		path: q ? `/docs/search?q=${encodeURIComponent(q)}` : '/docs/search'
 	});
 
-	return { q, audience, results, meta };
+	return { q, audience, results, limit, meta };
 }

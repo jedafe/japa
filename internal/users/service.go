@@ -698,15 +698,22 @@ func (s *Service) ListUsers(ctx context.Context, search, status, groupSlug, sort
 	}, nil
 }
 
+// publicUserSortKeys is the whitelist of ListPublicUsers sort keys. The SQL
+// maps each key via CASE — anything else falls back to follower_count DESC.
+var publicUserSortKeys = map[string]bool{
+	"followers": true, "newest": true, "oldest": true, "name": true,
+}
+
 // ListPublicUsers returns a paginated, PII-safe list of active, search-indexable
 // users for the public directory at GET /users. Never exposes email, status,
 // last_login_at, or groups (Section 19 / ADR-014). Search filters by username
-// or display_name. profileType filters by profile_type (empty = all). Results
-// are ordered by follower_count DESC so the directory surfaces prominent
-// users first. Returns items + pagination metadata (total, page, total_pages).
+// or display_name. profileType filters by profile_type (empty = all). sortKey
+// selects the ordering (empty/unknown = follower_count DESC so the directory
+// surfaces prominent users first). Returns items + pagination metadata
+// (total, page, total_pages).
 // Ref: japaconnect-engineering/sections/02-authentication-sessions.md
 // //	japaconnect-engineering/sections/19-privacy-gdpr.md (search_indexable opt-out)
-func (s *Service) ListPublicUsers(ctx context.Context, search, profileType string, limit, offset int32) (*PublicUserListResponse, error) {
+func (s *Service) ListPublicUsers(ctx context.Context, search, profileType, sortKey string, limit, offset int32) (*PublicUserListResponse, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -715,7 +722,11 @@ func (s *Service) ListPublicUsers(ctx context.Context, search, profileType strin
 		offset = 0
 	}
 
-	rows, err := s.store.listPublicUsers(ctx, search, profileType, limit, offset)
+	if !publicUserSortKeys[sortKey] {
+		sortKey = ""
+	}
+
+	rows, err := s.store.listPublicUsers(ctx, search, profileType, sortKey, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing public users: %w", err)
 	}

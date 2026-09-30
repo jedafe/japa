@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -330,6 +331,16 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Embed the quiz for quiz-type lessons — the lesson player renders the
+	// quiz engine from lesson.quiz (§36). Answers are never included.
+	if lesson.LessonType == "quiz" {
+		if quiz, qerr := h.store.GetQuiz(r.Context(), lesson.ID); qerr == nil {
+			lesson.Quiz = quiz
+		} else {
+			slog.Warn("learning: lesson quiz embed failed", "lesson_id", lesson.ID.String(), "error", qerr)
+		}
+	}
+
 	h.resolveLiterals(r, lesson)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
@@ -366,6 +377,10 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 		return
+	}
+
+	if input.Complete != nil && *input.Complete {
+		input.Status = "completed"
 	}
 
 	if input.Status == "" {
@@ -1010,15 +1025,20 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	questions, err := h.store.GetQuizQuestions(r.Context(), lessonID)
+	quiz, err := h.store.GetQuiz(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
 		return
 	}
 
-	h.resolveLiterals(r, &questions)
+	if quiz == nil {
+		errpkg.WriteError(w, http.StatusNotFound, "quiz_not_found", "This lesson has no quiz")
+		return
+	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": questions})
+	h.resolveLiterals(r, quiz)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": quiz})
 }
 
 // SubmitQuiz handles POST /learn/quizzes/:id/submit.
@@ -1033,12 +1053,21 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Accept both the array form the Learn frontend posts
+	// ({answers: [{question_id, answer: string | string[]}]}) and the map form
+	// ({answers: {question_id: answer}}) for API compatibility.
 	var input struct {
-		Answers map[string]string `json:"answers"` // question_id -> answer
+		Answers json.RawMessage `json:"answers"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	answers, err := parseQuizSubmission(input.Answers)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid answers payload")
 		return
 	}
 
@@ -1048,34 +1077,118 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(questions) == 0 {
+		errpkg.WriteError(w, http.StatusNotFound, "quiz_not_found", "This lesson has no quiz")
+		return
+	}
+
+	type questionResult struct {
+		QuestionID     string   `json:"question_id"`
+		Correct        bool     `json:"correct"`
+		Selected       []string `json:"selected"`
+		CorrectAnswers []string `json:"correct_answers"`
+		Explanation    *string  `json:"explanation,omitempty"`
+	}
+
 	correct := 0
-	total := len(questions)
-	correctAnswers := make(map[string]bool)
+	results := make([]questionResult, 0, len(questions))
 
 	for _, q := range questions {
 		qID := q.ID.String()
-		if input.Answers[qID] == q.Answer {
-			correct++
-			correctAnswers[qID] = true
+		selected := answers[qID]
+		matched := false
+		for _, a := range selected {
+			if strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(q.Answer)) {
+				matched = true
+				break
+			}
 		}
+		if matched {
+			correct++
+		}
+		results = append(results, questionResult{
+			QuestionID:     qID,
+			Correct:        matched,
+			Selected:       selected,
+			CorrectAnswers: []string{q.Answer},
+			Explanation:    q.Explanation,
+		})
 	}
 
+	total := len(questions)
 	score := 0.0
 	if total > 0 {
 		score = float64(correct) / float64(total) * 100
 	}
 
-	passed := score >= 70
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
-			"score":           score,
-			"passed":          passed,
-			"correct_answers": correctAnswers,
-			"total":           total,
-			"correct":         correct,
+			// Frontend QuizResult contract (ADR-060 lesson player).
+			"score_pct":     score,
+			"passed":        score >= quizPassScorePct,
+			"earned_points": correct,
+			"total_points":  total,
+			"results":       results,
+			// Legacy fields kept for any consumer of the pre-drift contract.
+			"score":   score,
+			"total":   total,
+			"correct": correct,
 		},
 	})
+}
+
+// parseQuizSubmission normalizes the answers payload into a question_id →
+// selected-answers map. It accepts the array form
+// [{question_id, answer: string | string[]}] and the map form
+// {question_id: string | string[]}.
+func parseQuizSubmission(raw json.RawMessage) (map[string][]string, error) {
+	if len(raw) == 0 {
+		return map[string][]string{}, nil
+	}
+
+	normalize := func(v json.RawMessage) ([]string, error) {
+		var arr []string
+		if err := json.Unmarshal(v, &arr); err == nil {
+			return arr, nil
+		}
+
+		var s string
+		if err := json.Unmarshal(v, &s); err != nil {
+			return nil, err
+		}
+
+		return []string{s}, nil
+	}
+
+	out := map[string][]string{}
+
+	var arr []struct {
+		QuestionID string          `json:"question_id"`
+		Answer     json.RawMessage `json:"answer"`
+	}
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		for _, item := range arr {
+			vals, err := normalize(item.Answer)
+			if err != nil {
+				return nil, err
+			}
+			out[item.QuestionID] = vals
+		}
+		return out, nil
+	}
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	for qid, v := range m {
+		vals, err := normalize(v)
+		if err != nil {
+			return nil, err
+		}
+		out[qid] = vals
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------

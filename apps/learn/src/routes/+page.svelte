@@ -2,8 +2,10 @@
 	// Course Catalog — SSR track grid + CSR enrollment state.
 	// Ref: ADR-060 (Explore is the center column), ADR-060 SSR/CSR boundary.
 	import { t } from '$lib/i18n';
+	import { goto } from '$app/navigation';
 	import TrackCard from '$lib/components/learn/TrackCard.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Compass, GraduationCap, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
@@ -27,13 +29,17 @@
 	);
 
 	// Build a query string that preserves the current active filters, so users
-	// can combine level, category, and free filters plus pagination.
+	// can combine level, category, language, sort, and free filters plus
+	// pagination/page-size.
 	function buildHref(partial: Record<string, string | number | boolean> = {}) {
 		const qs = new URLSearchParams();
 		if (data.query) qs.set('q', data.query);
 		if (data.levelFilter) qs.set('level', data.levelFilter);
 		if (data.categoryFilter) qs.set('category', data.categoryFilter);
+		if (data.languageFilter) qs.set('language', data.languageFilter);
+		if (data.sortFilter) qs.set('sort', data.sortFilter);
 		if (data.isFreeFilter) qs.set('is_free', 'true');
+		if (data.limit !== 24) qs.set('limit', String(data.limit));
 		if (data.offset) qs.set('offset', String(data.offset));
 
 		for (const [key, value] of Object.entries(partial)) {
@@ -44,6 +50,17 @@
 		const s = qs.toString();
 		return s ? `/?${s}` : '/';
 	}
+
+	const sortSelectOptions = $derived(
+		(data.sortOptions ?? []).map((o) => ({ value: o.value, label: o.label }))
+	);
+	const languageSelectOptions = $derived([
+		{ value: '', label: t('learn.all_languages', 'All languages') },
+		...(data.languages ?? []).map((l) => ({ value: l, label: l.toUpperCase() }))
+	]);
+	const pageSizeSelectOptions = $derived(
+		(data.pageSizes ?? []).map((o) => ({ value: o.value, label: o.label }))
+	);
 
 	const canGoPrev = $derived(data.offset > 0);
 	const canGoNext = $derived(data.offset + data.tracks.length < data.total);
@@ -76,7 +93,7 @@
 	</header>
 
 	<!-- Become an Instructor CTA -->
-	{#if !data.query && !data.levelFilter && !data.categoryFilter && !data.isFreeFilter}
+	{#if !data.query && !data.levelFilter && !data.categoryFilter && !data.languageFilter && !data.sortFilter && !data.isFreeFilter}
 		<div class="mb-6 flex items-center justify-between gap-4 rounded-[var(--radius-card)] border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 p-4">
 			<div class="flex items-center gap-3">
 				<div class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10">
@@ -140,6 +157,47 @@
 		</a>
 	</div>
 
+	<!-- Secondary filters: sort, language, page size — every dropdown uses
+	     the shared AutocompleteSelect component (no native <select>). -->
+	<div class="mb-6 flex flex-wrap items-center gap-3">
+		{#if sortSelectOptions.length > 0}
+			<div class="flex items-center gap-2">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('common.sort_by', 'Sort')}</span>
+				<AutocompleteSelect
+					options={sortSelectOptions}
+					value={data.sortFilter || 'popular'}
+					ariaLabel={t('common.sort_by', 'Sort')}
+					class="w-40"
+					onValueChange={(v) => goto(buildHref({ sort: v === 'popular' ? false : v, offset: false }))}
+				/>
+			</div>
+		{/if}
+		{#if languageSelectOptions.length > 1}
+			<div class="flex items-center gap-2">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('learn.language', 'Language')}</span>
+				<AutocompleteSelect
+					options={languageSelectOptions}
+					value={data.languageFilter}
+					ariaLabel={t('learn.language', 'Language')}
+					class="w-40"
+					onValueChange={(v) => goto(buildHref({ language: v || false, offset: false }))}
+				/>
+			</div>
+		{/if}
+		{#if pageSizeSelectOptions.length > 0}
+			<div class="ml-auto flex items-center gap-2">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('common.per_page', 'Per page')}</span>
+				<AutocompleteSelect
+					options={pageSizeSelectOptions}
+					value={String(data.limit)}
+					ariaLabel={t('common.per_page', 'Per page')}
+					class="w-24"
+					onValueChange={(v) => goto(buildHref({ limit: v === '24' ? false : v, offset: false }))}
+				/>
+			</div>
+		{/if}
+	</div>
+
 	<!-- Catalog grid -->
 	{#if data.tracks.length === 0}
 		<EmptyState
@@ -149,7 +207,7 @@
 				: t('learn.no_courses_yet', 'No courses published yet.')}
 		>
 			{#snippet action()}
-				{#if data.query || data.levelFilter || data.categoryFilter || data.isFreeFilter}
+				{#if data.query || data.levelFilter || data.categoryFilter || data.languageFilter || data.sortFilter || data.isFreeFilter}
 					<a
 						href="/"
 						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"

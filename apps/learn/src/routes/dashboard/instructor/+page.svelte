@@ -5,11 +5,10 @@
 	import { LineChart } from 'layerchart';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { formatPriceKobo, formatCount } from '$lib/format';
-	import { GraduationCap, DollarSign, Users, TrendingUp, PenLine, CheckCircle, Clock, XCircle } from 'lucide-svelte';
+	import { GraduationCap, DollarSign, Users, TrendingUp, PenLine, CheckCircle, Clock, XCircle, Plus, Pencil, BarChart3 } from 'lucide-svelte';
 	import type { InstructorProfile, InstructorTrack, EarningsSummary, Payout } from '$lib/types';
 
 	let profile = $state<InstructorProfile | null>(null);
@@ -22,9 +21,11 @@
 	let submitError = $state<string | null>(null);
 	let initialized = $state(false);
 
-	async function loadDashboard() {
+	async function loadDashboard(force = false) {
 		// Avoid duplicate fetches when the data prop updates after hydration.
-		if (initialized) return;
+		// Pass force=true from retry/refresh paths — without it the error
+		// EmptyState's retry button and post-submit refresh would be dead.
+		if (initialized && !force) return;
 		initialized = true;
 
 		loading = true;
@@ -105,7 +106,9 @@
 				submitError = r.error.message;
 				return;
 			}
-			goto('/dashboard/instructor');
+			// Same-route goto() does not remount this page, so re-fetch in
+			// place to pick up the new 'pending' submission status.
+			await loadDashboard(true);
 		} catch (e) {
 			submitError = e instanceof Error ? e.message : t('common.error');
 		} finally {
@@ -157,7 +160,7 @@
 			{#snippet action()}
 				<button
 					type="button"
-					onclick={loadDashboard}
+					onclick={() => loadDashboard(true)}
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 				>
 					{t('common.retry')}
@@ -252,6 +255,13 @@
 		<section class="mt-6">
 			<div class="mb-3 flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('university.my_tracks')}</h2>
+				<a
+					href="/dashboard/instructor/tracks/create"
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					<Plus size={16} />
+					{t('university.new_track', 'New track')}
+				</a>
 			</div>
 			{#if tracks.length === 0}
 				<p class="text-sm text-[var(--color-muted)]">{t('common.empty')}</p>
@@ -280,16 +290,32 @@
 										<StatusIcon size={14} />
 										{t(`university.submission_${tr.submission_status}`)}
 									</span>
-									{#if tr.submission_status === 'draft' || tr.submission_status === 'rejected'}
-										<button
-											type="button"
-											disabled={submittingTrackId === tr.id}
-											class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-											onclick={() => submitTrack(tr.id)}
+									<div class="flex items-center gap-2">
+										<a
+											href="/dashboard/instructor/tracks/{tr.id}/stats"
+											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 										>
-											{submittingTrackId === tr.id ? t('common.processing', 'Processing...') : t('university.submit_course')}
-										</button>
-									{/if}
+											<BarChart3 size={12} />
+											{t('university.stats', 'Stats')}
+										</a>
+										<a
+											href="/dashboard/instructor/tracks/{tr.id}/edit"
+											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+										>
+											<Pencil size={12} />
+											{t('common.edit', 'Edit')}
+										</a>
+										{#if tr.submission_status === 'draft' || tr.submission_status === 'rejected'}
+											<button
+												type="button"
+												disabled={submittingTrackId === tr.id}
+												class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+												onclick={() => submitTrack(tr.id)}
+											>
+												{submittingTrackId === tr.id ? t('common.processing', 'Processing...') : t('university.submit_course')}
+											</button>
+										{/if}
+									</div>
 								</div>
 							</div>
 						</li>

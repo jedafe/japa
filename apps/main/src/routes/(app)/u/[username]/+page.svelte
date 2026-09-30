@@ -19,7 +19,7 @@
 	import type { ProfileAnalytics, ProfilePost, FeedItem, FollowerGrowthItem, TopContentItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
 	import { formatMetric } from '$lib/components/hub/charts/format';
-	import { tiptapExcerpt } from '$lib/tiptap/serialize';
+	import { tiptapExcerpt, decodeTipTapDoc, tiptapToText } from '$lib/tiptap/serialize';
 	import { blockUser, unblockUser, muteUser, unmuteUser } from '$lib/api/hub';
 	import type { FollowableType } from '$lib/api/hub';
 	import type { PageData } from './$types';
@@ -60,7 +60,9 @@
 			target_country: post.target_country,
 			guide_category: post.guide_category,
 			video_source_id: post.video_source_id,
-			duration_secs: post.duration_secs
+			// PostCard emits the linked video's length as video_duration_secs —
+			// FeedItem.duration_secs is what FeedCard's duration badge reads.
+			duration_secs: post.video_duration_secs ?? post.duration_secs
 		};
 	}
 
@@ -82,12 +84,16 @@
 	let currentPage = $state(1);
 	let pageSize = $state(10);
 	let q = $state('');
+	let sortVal = $state<'newest' | 'oldest'>('newest');
 
-	// Reset the filter + page whenever the active tab changes. `activeTab` is the
-	// only dependency; the writes below must not create reactive deps of their own.
+	// Reset the filter, search, sort + page whenever the active tab changes.
+	// `activeTab` is the only dependency; the writes below must not create
+	// reactive deps of their own.
 	$effect(() => {
 		activeTab;
 		filterVal = 'all';
+		q = '';
+		sortVal = 'newest';
 		currentPage = 1;
 	});
 
@@ -281,9 +287,13 @@
 		fv: string;
 		currentPage: number;
 		pageSize: number;
+		/** Optional date field to sort by (ISO string). sortDir 'newest' is
+		 *  descending, 'oldest' ascending. Absent = preserve server order. */
+		sortField?: keyof T;
+		sortDir?: 'newest' | 'oldest';
 	}): { items: T[]; total: number; totalPages: number } {
 		const needle = opts.q.trim().toLowerCase();
-		const filtered = items.filter((item) => {
+		let filtered = items.filter((item) => {
 			if (opts.fv !== 'all' && !opts.filter(item, opts.fv)) return false;
 			if (needle.length > 0) {
 				const hay = opts.searchFields
@@ -294,6 +304,15 @@
 			}
 			return true;
 		});
+		if (opts.sortField) {
+			const field = opts.sortField;
+			const dir = opts.sortDir === 'oldest' ? 1 : -1;
+			const ts = (v: unknown): number => {
+				const t = Date.parse(typeof v === 'string' ? v : '');
+				return Number.isNaN(t) ? 0 : t;
+			};
+			filtered = filtered.slice().sort((a, b) => dir * (ts(a[field]) - ts(b[field])));
+		}
 		const total = filtered.length;
 		const totalPages = Math.max(1, Math.ceil(total / opts.pageSize));
 		const start = (opts.currentPage - 1) * opts.pageSize;
@@ -355,6 +374,13 @@
 		}))
 	]);
 
+	const spacesFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_roles', 'All roles') },
+		...Array.from(new Set(data.spaces.map((s) => s.role).filter((r): r is string => Boolean(r)))).map(
+			(r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) })
+		)
+	]);
+
 	const followersFilterOptions = $derived<FilterOption[]>([
 		{ value: 'all', label: t('profile.filter.all_users', 'All users') }
 	]);
@@ -368,6 +394,21 @@
 		{ value: 'source', label: t('profile.filter.sources', 'Sources') }
 	]);
 
+	const videosFilterOptions = $derived<FilterOption[]>([
+		{ value: 'all', label: t('profile.filter.all_sources', 'All sources') },
+		...Array.from(new Set(data.videos.map((v) => v.source_type).filter(Boolean))).map((st) => ({
+			value: st,
+			label: st
+		}))
+	]);
+
+	// Shared newest/oldest ordering for the per-tab list sort control.
+	const sortOptions = $derived<FilterOption[]>([
+		{ value: 'newest', label: t('profile.sort.newest', 'Newest first') },
+		{ value: 'oldest', label: t('profile.sort.oldest', 'Oldest first') }
+	]);
+	const sortItems = $derived(toAutocompleteItems(sortOptions));
+
 	// One derived, sliced view per tab, sharing the q/filterVal/page/pageSize state.
 	const postsView = $derived(
 		view(data.posts, {
@@ -376,24 +417,35 @@
 			q,
 			fv: filterVal,
 			currentPage,
-			pageSize
+			pageSize,
+			sortField: 'published_at',
+			sortDir: sortVal
 		})
 	);
 
+	// Reply bodies arrive base64-encoded TipTap JSON — searching the raw blob
+	// can never match typed text. Decode once into search_text so tab search
+	// covers what the user actually sees.
+	const repliesDecoded = $derived(
+		data.replies.map((r) => ({ ...r, search_text: tiptapToText(decodeTipTapDoc(r.body)) }))
+	);
+
 	const repliesView = $derived(
-		view(data.replies, {
-			searchFields: ['body', 'content_title'],
+		view(repliesDecoded, {
+			searchFields: ['search_text', 'content_title'],
 			filter: (i, fv) => (fv === 'top' ? i.parent_id === null : i.parent_id !== null),
 			q,
 			fv: filterVal,
 			currentPage,
-			pageSize
+			pageSize,
+			sortField: 'created_at',
+			sortDir: sortVal
 		})
 	);
 
 	const mediaView = $derived(
 		view(data.media, {
-			searchFields: ['alt_text', 'filename', 'url'],
+			searchFields: ['alt_text', 'filename'],
 			filter: (i, fv) => {
 				const mt = i.mime_type ?? '';
 				if (fv === 'image') return mt.startsWith('image/');
@@ -406,7 +458,9 @@
 			q,
 			fv: filterVal,
 			currentPage,
-			pageSize
+			pageSize,
+			sortField: 'created_at',
+			sortDir: sortVal
 		})
 	);
 
@@ -414,6 +468,33 @@
 		view(data.likes, {
 			searchFields: ['title', 'excerpt', 'author_name', 'content_type'],
 			filter: (i, fv) => i.content_type === fv,
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize,
+			sortField: 'reacted_at',
+			sortDir: sortVal
+		})
+	);
+
+	const videosView = $derived(
+		view(data.videos, {
+			searchFields: ['title', 'source_type', 'category'],
+			filter: (i, fv) => i.source_type === fv,
+			q,
+			fv: filterVal,
+			currentPage,
+			pageSize,
+			sortField: 'created_at',
+			sortDir: sortVal
+		})
+	);
+
+	// Spaces have no date field — sort is name A–Z instead of newest/oldest.
+	const spacesView = $derived(
+		view(data.spaces, {
+			searchFields: ['name', 'slug', 'role'],
+			filter: (i, fv) => i.role === fv,
 			q,
 			fv: filterVal,
 			currentPage,
@@ -428,7 +509,9 @@
 			q,
 			fv: filterVal,
 			currentPage,
-			pageSize
+			pageSize,
+			sortField: 'created_at',
+			sortDir: sortVal
 		})
 	);
 
@@ -439,7 +522,9 @@
 			q,
 			fv: filterVal,
 			currentPage,
-			pageSize
+			pageSize,
+			sortField: 'created_at',
+			sortDir: sortVal
 		})
 	);
 </script>
@@ -536,28 +621,55 @@ profile is private, or no stage is set. -->
 <UrlTabs {tabs} bind:value={activeTab} />
 
 <div class="mx-auto w-full max-w-full">
-	{#snippet toolbar(options: FilterOption[], count: number)}
-		<!-- Search + filter are only useful past one default page of items. -->
+	{#snippet toolbar(options: FilterOption[], count: number, sortable = false)}
+		<!-- Search + filter are only useful past one default page of items.
+		     A single-option filter dropdown (e.g. followers = "All users")
+		     adds no value, so it renders only when a real choice exists. -->
 		{#if count > 10}
 		{@const items = toAutocompleteItems(options)}
 		<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-			<div class="w-full sm:w-56">
-				<Autocomplete
-					placeholder={t('profile.filter.label', 'Filter')}
-					emptyMessage={t('profile.empty.no_results', 'No results')}
-					fetcher={staticFilterFetcher(items)}
-					initialFetcher={() => Promise.resolve(items)}
-					selectedId={filterVal}
-					selectedLabel={options.find((o) => o.value === filterVal)?.label}
-					onSelect={(item) => {
-						filterVal = item.id;
-						currentPage = 1;
-					}}
-					onClear={() => {
-						filterVal = 'all';
-						currentPage = 1;
-					}}
-				/>
+			<div class="flex flex-wrap items-center gap-2">
+				{#if options.length > 1}
+					<div class="w-full sm:w-44">
+						<Autocomplete
+							placeholder={t('profile.filter.label', 'Filter')}
+							emptyMessage={t('profile.empty.no_results', 'No results')}
+							fetcher={staticFilterFetcher(items)}
+							initialFetcher={() => Promise.resolve(items)}
+							selectedId={filterVal}
+							selectedLabel={options.find((o) => o.value === filterVal)?.label}
+							onSelect={(item) => {
+								filterVal = item.id;
+								currentPage = 1;
+							}}
+							onClear={() => {
+								filterVal = 'all';
+								currentPage = 1;
+							}}
+						/>
+					</div>
+				{/if}
+				{#if sortable}
+					<div class="w-full sm:w-40">
+						<Autocomplete
+							placeholder={t('profile.sort.label', 'Sort')}
+							ariaLabel={t('profile.sort.label', 'Sort')}
+							emptyMessage={t('profile.empty.no_results', 'No results')}
+							fetcher={staticFilterFetcher(sortItems)}
+							initialFetcher={() => Promise.resolve(sortItems)}
+							selectedId={sortVal}
+							selectedLabel={sortOptions.find((o) => o.value === sortVal)?.label}
+							onSelect={(item) => {
+								sortVal = item.id === 'oldest' ? 'oldest' : 'newest';
+								currentPage = 1;
+							}}
+							onClear={() => {
+								sortVal = 'newest';
+								currentPage = 1;
+							}}
+						/>
+					</div>
+				{/if}
 			</div>
 			<div class="w-full sm:w-64">
 				<SearchInput
@@ -610,7 +722,7 @@ profile is private, or no stage is set. -->
 
 	<div class="p-3">
 		{#if activeTab === 'posts'}
-			{@render toolbar(postsFilterOptions, data.posts.length)}
+			{@render toolbar(postsFilterOptions, data.posts.length, true)}
 			{#if data.posts.length === 0}
 				<EmptyState icon={FileText} title={t('profile.posts_empty', 'No posts yet')} />
 			{:else if postsView.total === 0}
@@ -670,7 +782,7 @@ profile is private, or no stage is set. -->
 				</dl>
 			</section>
 		{:else if activeTab === 'replies'}
-			{@render toolbar(repliesFilterOptions, data.replies.length)}
+			{@render toolbar(repliesFilterOptions, data.replies.length, true)}
 			{#if data.replies.length === 0}
 				<EmptyState icon={MessageSquare} title={t('profile.replies_empty', 'No replies yet')} />
 			{:else if repliesView.total === 0}
@@ -689,7 +801,7 @@ profile is private, or no stage is set. -->
 				{@render pager(repliesView)}
 			{/if}
 		{:else if activeTab === 'media'}
-			{@render toolbar(mediaFilterOptions, data.media.length)}
+			{@render toolbar(mediaFilterOptions, data.media.length, true)}
 			{#if data.media.length === 0}
 				<EmptyState icon={Image} title={t('profile.media_empty', 'No media yet')} />
 			{:else if mediaView.total === 0}
@@ -697,9 +809,14 @@ profile is private, or no stage is set. -->
 			{:else}
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 					{#each mediaView.items as item (item.id)}
-						<div class="aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
+						<a
+							href={item.url}
+							target="_blank"
+							rel="noopener"
+							class="block aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]"
+						>
 							<img src={item.url} alt={item.alt_text ?? ''} class="h-full w-full object-cover" loading="lazy" />
-						</div>
+						</a>
 					{/each}
 				</div>
 				{@render pager(mediaView)}
@@ -741,7 +858,13 @@ profile is private, or no stage is set. -->
 				<EmptyState icon={Video} title={t('profile.videos_empty', 'No videos yet')} />
 			{:else}
 				{#if data.videos.length > 0}
-					<VideoGrid videos={data.videos} isChannel={user.is_synthetic ?? false} />
+					{@render toolbar(videosFilterOptions, data.videos.length, true)}
+					{#if videosView.total === 0}
+						<EmptyState icon={Video} title={t('profile.empty.no_results', 'No results')} />
+					{:else}
+						<VideoGrid videos={videosView.items} isChannel={user.is_synthetic ?? false} />
+						{@render pager(videosView)}
+					{/if}
 				{/if}
 
 				<!-- §106 video — real users' own video content posts (content_type='video')
@@ -764,7 +887,7 @@ profile is private, or no stage is set. -->
 				{/if}
 			{/if}
 		{:else if activeTab === 'likes'}
-			{@render toolbar(likesFilterOptions, data.likes.length)}
+			{@render toolbar(likesFilterOptions, data.likes.length, true)}
 			{#if data.likes.length === 0}
 				<EmptyState icon={Heart} title={t('profile.likes_empty', 'No liked posts yet')} />
 			{:else if likesView.total === 0}
@@ -790,11 +913,14 @@ profile is private, or no stage is set. -->
 				{@render pager(likesView)}
 			{/if}
 		{:else if activeTab === 'spaces'}
+			{@render toolbar(spacesFilterOptions, data.spaces.length, false)}
 			{#if data.spaces.length === 0}
 				<EmptyState icon={Users} title={t('profile.spaces_empty', 'No spaces yet')} />
+			{:else if spacesView.total === 0}
+				<EmptyState icon={Users} title={t('profile.empty.no_results', 'No results')} />
 			{:else}
 				<ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-					{#each data.spaces as space (space.id)}
+					{#each spacesView.items as space (space.id)}
 						<li>
 							<a
 								href={`/spaces/${space.slug}`}
@@ -811,13 +937,14 @@ profile is private, or no stage is set. -->
 						</li>
 					{/each}
 				</ul>
+				{@render pager(spacesView)}
 			{/if}
 		{:else if activeTab === 'followers' || activeTab === 'following'}
 			{@const isFollowers = activeTab === 'followers'}
 			{@const list = isFollowers ? data.followers : data.following}
 			{@const tabView = isFollowers ? followersView : followingView}
 			{@const emptyTitle = isFollowers ? t('profile.followers_empty', 'No followers yet') : t('profile.following_empty', 'Not following anyone yet')}
-			{@render toolbar(isFollowers ? followersFilterOptions : followingFilterOptions, list.length)}
+			{@render toolbar(isFollowers ? followersFilterOptions : followingFilterOptions, list.length, true)}
 			{#if list.length === 0}
 				<EmptyState icon={Users} title={emptyTitle} />
 			{:else if tabView.total === 0}
@@ -849,7 +976,7 @@ profile is private, or no stage is set. -->
 										{(u.display_name?.charAt(0) ?? u.username?.charAt(0) ?? '?').toUpperCase()}
 									</span>
 								{/if}
-								<span class="min-w-0 flex-1 min-w-0">
+								<span class="min-w-0 flex-1">
 									<span class="block truncate text-sm font-medium text-[var(--color-text)]">{u.display_name ?? u.username}</span>
 									<span class="block text-xs text-[var(--color-muted)]">{handle}</span>
 								</span>

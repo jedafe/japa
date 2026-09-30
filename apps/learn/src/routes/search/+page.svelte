@@ -3,8 +3,10 @@
 	// SSR results grid + CSR enrollment state (ADR-060 SSR/CSR boundary).
 	// Filters (level) are URL params → re-triggers load().
 	import { t } from '$lib/i18n';
+	import { goto } from '$app/navigation';
 	import TrackCard from '$lib/components/learn/TrackCard.svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Search, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
@@ -23,13 +25,17 @@
 	const loadingEnrollments = $derived(enrollmentsStore.loading && enrollments.length === 0);
 	const enrollmentMap = $derived(new Map(enrollments.map((e) => [e.track_id, e])));
 
-	// Build a query string that preserves the current search and active filters.
+	// Build a query string that preserves the current search and active filters
+	// (level, category, language, sort, free, page-size, offset).
 	function buildHref(partial: Record<string, string | number | boolean> = {}) {
 		const qs = new URLSearchParams();
 		if (data.query) qs.set('q', data.query);
 		if (data.levelFilter) qs.set('level', data.levelFilter);
 		if (data.categoryFilter) qs.set('category', data.categoryFilter);
+		if (data.languageFilter) qs.set('language', data.languageFilter);
+		if (data.sortFilter) qs.set('sort', data.sortFilter);
 		if (data.isFreeFilter) qs.set('is_free', 'true');
+		if (data.limit !== 24) qs.set('limit', String(data.limit));
 		if (data.offset) qs.set('offset', String(data.offset));
 
 		for (const [key, value] of Object.entries(partial)) {
@@ -40,6 +46,17 @@
 		const s = qs.toString();
 		return s ? `/search?${s}` : '/search';
 	}
+
+	const sortSelectOptions = $derived(
+		(data.sortOptions ?? []).map((o) => ({ value: o.value, label: o.label }))
+	);
+	const languageSelectOptions = $derived([
+		{ value: '', label: t('learn.all_languages', 'All languages') },
+		...(data.languages ?? []).map((l) => ({ value: l, label: l.toUpperCase() }))
+	]);
+	const pageSizeSelectOptions = $derived(
+		(data.pageSizes ?? []).map((o) => ({ value: o.value, label: o.label }))
+	);
 
 	const canGoPrev = $derived(data.offset > 0);
 	const canGoNext = $derived(data.offset + data.results.length < data.total);
@@ -108,6 +125,47 @@
 		>
 			{t(data.isFreeFilter ? 'learn.free_only' : 'learn.show_free_only')}
 		</a>
+	</div>
+
+	<!-- Secondary filters: sort, language, page size — every dropdown uses
+	     the shared AutocompleteSelect component (no native <select>). -->
+	<div class="mb-6 flex flex-wrap items-center gap-3">
+		{#if sortSelectOptions.length > 0}
+			<div class="flex items-center gap-2">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('common.sort_by', 'Sort')}</span>
+				<AutocompleteSelect
+					options={sortSelectOptions}
+					value={data.sortFilter || 'popular'}
+					ariaLabel={t('common.sort_by', 'Sort')}
+					class="w-40"
+					onValueChange={(v) => goto(buildHref({ sort: v === 'popular' ? false : v, offset: false }))}
+				/>
+			</div>
+		{/if}
+		{#if languageSelectOptions.length > 1}
+			<div class="flex items-center gap-2">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('learn.language', 'Language')}</span>
+				<AutocompleteSelect
+					options={languageSelectOptions}
+					value={data.languageFilter}
+					ariaLabel={t('learn.language', 'Language')}
+					class="w-40"
+					onValueChange={(v) => goto(buildHref({ language: v || false, offset: false }))}
+				/>
+			</div>
+		{/if}
+		{#if pageSizeSelectOptions.length > 0}
+			<div class="ml-auto flex items-center gap-2">
+				<span class="text-xs font-medium text-[var(--color-muted)]">{t('common.per_page', 'Per page')}</span>
+				<AutocompleteSelect
+					options={pageSizeSelectOptions}
+					value={String(data.limit)}
+					ariaLabel={t('common.per_page', 'Per page')}
+					class="w-24"
+					onValueChange={(v) => goto(buildHref({ limit: v === '24' ? false : v, offset: false }))}
+				/>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Results grid -->

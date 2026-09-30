@@ -143,9 +143,20 @@
 		certPolling = false;
 	}
 
-	// Video progress tracking (browser-guarded init).
+	// Video progress tracking (browser-guarded init). The backend persists
+	// progress_secs → lesson_progress.position_secs and returns it on the
+	// lesson payload, so the player resumes where the user left off.
 	let videoEl = $state<HTMLVideoElement | null>(null);
 	let lastProgressSave = 0;
+	let resumeApplied = $state(false);
+	function onVideoLoaded() {
+		if (resumeApplied || !videoEl) return;
+		resumeApplied = true;
+		const pos = lesson.progress_secs ?? 0;
+		if (pos > 0 && videoEl.duration && pos < videoEl.duration - 2) {
+			videoEl.currentTime = pos;
+		}
+	}
 	function onVideoTimeUpdate() {
 		if (!videoEl || !data.user) return;
 		const now = Math.floor(videoEl.currentTime);
@@ -331,6 +342,7 @@
 						controls
 						class="w-full rounded-[var(--radius-card)] bg-black"
 						ontimeupdate={onVideoTimeUpdate}
+						onloadedmetadata={onVideoLoaded}
 					></video>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>

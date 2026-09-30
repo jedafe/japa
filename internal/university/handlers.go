@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -1167,7 +1168,7 @@ func trackFromGetRow(r gen.ListUniversityTracksByInstructorRow) Track {
 		SubmissionStatus:        r.UniversitySubmissionStatus,
 		TotalRevenueKobo:        r.TotalRevenueKobo,
 		RejectionReason:         r.UniversityRejectionReason,
-		ThumbnailURL:            r.ThumbnailUrl,
+		ThumbnailURL:            media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
 		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 
@@ -1217,7 +1218,7 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 		IsPublishedToUniversity: r.IsPublishedToUniversity,
 		SubmissionStatus:        r.UniversitySubmissionStatus,
 		RejectionReason:         r.UniversityRejectionReason,
-		ThumbnailURL:            r.ThumbnailUrl,
+		ThumbnailURL:            media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
 		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 
@@ -1617,10 +1618,27 @@ func (h *Handlers) GetCatalogOptions(w http.ResponseWriter, r *http.Request) {
 
 	difficulty, _ := admin.CatalogOptions("university.tracks.difficulty")
 	social, _ := admin.CatalogOptions("university.instructor.social_platforms")
+	sortOptions, _ := admin.CatalogOptions("university.catalog.sort")
+	pageSizes, _ := admin.CatalogOptions("university.catalog.page_sizes")
+
+	// Languages reflect what's actually in the live catalog (Rule 16) rather
+	// than a static locale list.
+	languages, err := h.service.store.ListCatalogLanguages(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if languages == nil {
+		languages = []string{}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"difficulty_levels": difficulty,
 			"social_platforms":  social,
+			"sort_options":      sortOptions,
+			"page_sizes":        pageSizes,
+			"languages":         languages,
 		},
 	})
 }

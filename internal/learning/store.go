@@ -2,6 +2,7 @@ package learning
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // Store provides direct pgx CRUD for learning tracks, modules, lessons,
@@ -445,10 +447,11 @@ type TrackDetail struct {
 	DurationISO   string `json:"duration_iso,omitempty"`
 	// Optional fields the frontend reads with {#if} guards — omitted from JSON
 	// when absent so they're undefined on the client (falsy).
-	ThumbnailURL   *string        `json:"thumbnail_url,omitempty"`
-	Subtitle       *string        `json:"subtitle,omitempty"`
-	InstructorName *string        `json:"instructor_name,omitempty"`
-	Instructor     *InstructorRef `json:"instructor,omitempty"`
+	ThumbnailURL         *string        `json:"thumbnail_url,omitempty"`
+	Subtitle             *string        `json:"subtitle,omitempty"`
+	InstructorName       *string        `json:"instructor_name,omitempty"`
+	Instructor           *InstructorRef `json:"instructor,omitempty"`
+	SubscriptionEligible bool           `json:"subscription_eligible"`
 }
 
 // CreateModuleInput represents create module input.
@@ -610,8 +613,9 @@ func (s *Store) GetTrackDetail(ctx context.Context, slug string) (*TrackDetail, 
 		Language:                track.Language,
 		DurationLabel:           durationLabel,
 		DurationISO:             durationISO,
-		ThumbnailURL:            row.ThumbnailUrl,
+		ThumbnailURL:            media.URLFromParts(row.ThumbnailStorageBucket, row.ThumbnailStoragePath, media.ImageProxyOpts{}),
 		InstructorName:          row.InstructorName,
+		SubscriptionEligible:    track.SubscriptionEligible,
 	}
 
 	// Build the InstructorRef from the joined profile/user columns. The join
@@ -976,14 +980,25 @@ type LessonNavRef struct {
 // The frontend Lesson type expects these fields (contract: §3.3).
 type LessonDetail struct {
 	Lesson
-	ModuleTitle string        `json:"module_title"`
-	ModuleSlug  string        `json:"module_slug"`
-	TrackID     pgtype.UUID   `json:"track_id"`
-	TrackSlug   string        `json:"track_slug"`
-	TrackTitle  string        `json:"track_title"`
-	ContentHTML string        `json:"content_html,omitempty"`
-	PrevLesson  *LessonNavRef `json:"prev_lesson,omitempty"`
-	NextLesson  *LessonNavRef `json:"next_lesson,omitempty"`
+	ModuleTitle string      `json:"module_title"`
+	ModuleSlug  string      `json:"module_slug"`
+	TrackID     pgtype.UUID `json:"track_id"`
+	TrackSlug   string      `json:"track_slug"`
+	TrackTitle  string      `json:"track_title"`
+	ContentHTML string      `json:"content_html,omitempty"`
+	// VideoURL/VideoDurationSecs are populated for video lessons from the
+	// joined media row (ll.media_id → media). VideoURL uses the same-origin
+	// serve endpoint — imgproxy cannot transform video payloads.
+	VideoURL          *string  `json:"video_url,omitempty"`
+	VideoDurationSecs *float64 `json:"video_duration_secs,omitempty"`
+	// ProgressSecs is the saved playback position for the requesting user
+	// (lesson_progress.position_secs); the video player resumes from it.
+	ProgressSecs *int32 `json:"progress_secs,omitempty"`
+	// Quiz is populated by the handler for lesson_type='quiz' lessons —
+	// the lesson page renders the quiz engine from lesson.quiz (§36).
+	Quiz       *Quiz         `json:"quiz,omitempty"`
+	PrevLesson *LessonNavRef `json:"prev_lesson,omitempty"`
+	NextLesson *LessonNavRef `json:"next_lesson,omitempty"`
 }
 
 // GetLessonDetail retrieves a lesson by slug with track/module context and
@@ -1028,17 +1043,26 @@ func (s *Store) GetLessonDetail(ctx context.Context, moduleID pgtype.UUID, slug 
 		TrackSlug:   r.TrackSlug,
 		TrackTitle:  r.TrackTitle,
 		ContentHTML: renderLessonContentHTML(r.Content),
+		VideoURL:    media.ServeURLFromParts(r.VideoStorageBucket, r.VideoStoragePath),
 	}
 
-	// Populate IsCompleted for authenticated users. pgx.ErrNoRows means no
-	// progress row exists — the lesson is not completed.
+	if r.VideoDurationSecs.Valid {
+		if f, ferr := r.VideoDurationSecs.Float64Value(); ferr == nil && f.Valid {
+			detail.VideoDurationSecs = &f.Float64
+		}
+	}
+
+	// Populate IsCompleted and the saved playback position for authenticated
+	// users. pgx.ErrNoRows means no progress row exists — the lesson is not
+	// completed and has no resume position.
 	if len(userID) > 0 && userID[0].Valid {
-		isCompleted, err := s.read.GetLessonCompletionStatus(ctx, gen.GetLessonCompletionStatusParams{
+		status, err := s.read.GetLessonCompletionStatus(ctx, gen.GetLessonCompletionStatusParams{
 			UserID:   userID[0],
 			LessonID: r.ID,
 		})
 		if err == nil {
-			detail.IsCompleted = isCompleted
+			detail.IsCompleted = status.IsCompleted
+			detail.ProgressSecs = status.PositionSecs
 		}
 	}
 
@@ -1212,17 +1236,24 @@ func (s *Store) DeleteLesson(ctx context.Context, id pgtype.UUID) error {
 
 // Progress represents progress.
 type Progress struct {
-	ID          pgtype.UUID `json:"id"`
-	UserID      pgtype.UUID `json:"user_id"`
-	LessonID    pgtype.UUID `json:"lesson_id"`
-	Status      string      `json:"status"`
-	CompletedAt *time.Time  `json:"completed_at,omitempty"`
-	CreatedAt   time.Time   `json:"created_at"`
+	ID       pgtype.UUID `json:"id"`
+	UserID   pgtype.UUID `json:"user_id"`
+	LessonID pgtype.UUID `json:"lesson_id"`
+	Status   string      `json:"status"`
+	// ProgressSecs is the last saved playback position (video lessons); the
+	// frontend posts `progress_secs` and resumes from this value.
+	ProgressSecs *int32     `json:"progress_secs,omitempty"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 }
 
 // UpdateProgressInput represents update progress input.
 type UpdateProgressInput struct {
-	Status string `json:"status"`
+	Status       string `json:"status"`
+	ProgressSecs *int32 `json:"progress_secs"`
+	// Complete is a shorthand the frontend uses to mark a lesson complete via
+	// the progress endpoint (§36 body: { progress_secs, status }).
+	Complete *bool `json:"complete"`
 }
 
 // GetProgress retrieves progress for a specific lesson.
@@ -1238,11 +1269,12 @@ func (s *Store) GetProgress(ctx context.Context, userID, lessonID pgtype.UUID) (
 	return &Progress{
 		ID: r.ID,
 
-		UserID:      r.UserID,
-		LessonID:    r.LessonID,
-		Status:      r.Status,
-		CompletedAt: completedAtFromTimestamptz(r.CompletedAt),
-		CreatedAt:   r.CreatedAt.Time,
+		UserID:       r.UserID,
+		LessonID:     r.LessonID,
+		Status:       r.Status,
+		ProgressSecs: r.PositionSecs,
+		CompletedAt:  completedAtFromTimestamptz(r.CompletedAt),
+		CreatedAt:    r.CreatedAt.Time,
 	}, nil
 }
 
@@ -1262,10 +1294,11 @@ func (s *Store) UpsertProgress(ctx context.Context, userID, lessonID pgtype.UUID
 
 	r, err := s.write.UpsertLessonProgress(ctx, gen.UpsertLessonProgressParams{
 
-		UserID:      userID,
-		LessonID:    lessonID,
-		Status:      input.Status,
-		CompletedAt: completedAtTS,
+		UserID:       userID,
+		LessonID:     lessonID,
+		Status:       input.Status,
+		PositionSecs: input.ProgressSecs,
+		CompletedAt:  completedAtTS,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert progress: %w", err)
@@ -1274,11 +1307,12 @@ func (s *Store) UpsertProgress(ctx context.Context, userID, lessonID pgtype.UUID
 	return &Progress{
 		ID: r.ID,
 
-		UserID:      r.UserID,
-		LessonID:    r.LessonID,
-		Status:      r.Status,
-		CompletedAt: completedAtFromTimestamptz(r.CompletedAt),
-		CreatedAt:   r.CreatedAt.Time,
+		UserID:       r.UserID,
+		LessonID:     r.LessonID,
+		Status:       r.Status,
+		ProgressSecs: r.PositionSecs,
+		CompletedAt:  completedAtFromTimestamptz(r.CompletedAt),
+		CreatedAt:    r.CreatedAt.Time,
 	}, nil
 }
 
@@ -1568,7 +1602,7 @@ func (s *Store) ListEnrollmentsByUser(ctx context.Context, userID pgtype.UUID) (
 			CompletedAt:      completedAtFromTimestamptz(r.CompletedAt),
 			TrackSlug:        r.TrackSlug,
 			TrackTitle:       r.TrackTitle,
-			ThumbnailURL:     r.ThumbnailUrl,
+			ThumbnailURL:     media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
 			Level:            r.Level,
 			LessonsCompleted: int32(r.LessonsCompleted), // #nosec G115 -- DB count, bounded by int32 column type
 			LessonsTotal:     int32(r.LessonsTotal),     // #nosec G115 -- DB count, bounded by int32 column type
@@ -1691,7 +1725,7 @@ func (s *Store) ListEnrollmentsByTrack(ctx context.Context, trackID pgtype.UUID,
 // Quiz operations
 // ---------------------------------------------------------------------------
 
-// QuizQuestion represents a quiz question.
+// QuizQuestion represents a quiz question row (internal — grading path only).
 type QuizQuestion struct {
 	ID          pgtype.UUID `json:"id"`
 	LessonID    pgtype.UUID `json:"lesson_id"`
@@ -1702,10 +1736,90 @@ type QuizQuestion struct {
 	Position    int32       `json:"position"`
 }
 
-// GetQuizQuestions retrieves quiz questions for a lesson WITHOUT answers or
-// explanations. Used by the public GET /learn/quizzes/:id endpoint so users
-// cannot read the correct answers before submitting (§36: "no answers revealed").
-func (s *Store) GetQuizQuestions(ctx context.Context, lessonID pgtype.UUID) ([]QuizQuestion, error) {
+// quizPassScorePct is the pass threshold for lesson quizzes (§36 quiz engine).
+const quizPassScorePct = 70
+
+// QuizOption is one selectable answer in the frontend QuizOption contract.
+// The option's ID is its text — lesson_quizzes stores the correct answer as
+// the option text (answer column), so the selected option's label is also
+// its identity.
+type QuizOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// QuizDTOQuestion is a quiz question in the frontend QuizQuestion contract
+// (prompt/options/points). lesson_quizzes has a single free-text answer per
+// question, so every rendered question is type "single" worth 1 point.
+type QuizDTOQuestion struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Prompt   string       `json:"prompt"`
+	Options  []QuizOption `json:"options,omitempty"`
+	Points   int          `json:"points"`
+	Position int32        `json:"position"`
+}
+
+// Quiz is the quiz object embedded in the lesson detail response
+// (lesson.quiz) and returned by GET /learn/quizzes/{lesson_id}. The ID is the
+// lesson ID — a quiz belongs to exactly one lesson (lesson_id FK), and the
+// route path parameter is the lesson ID (§36).
+type Quiz struct {
+	ID           string            `json:"id"`
+	Title        string            `json:"title"`
+	PassScorePct int               `json:"pass_score_pct"`
+	Questions    []QuizDTOQuestion `json:"questions"`
+}
+
+// parseQuizOptions decodes the lesson_quizzes.options text column. Seed data
+// and §36 write either a JSON array of strings (["A","B"]) or objects
+// ([{text, is_correct}]) — accept both, emitting plain option labels. The
+// is_correct flag is never surfaced to the client (answers are server-only).
+func parseQuizOptions(raw string) []QuizOption {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+
+	var objects []struct {
+		Text  string `json:"text"`
+		Label string `json:"label"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &objects); err == nil {
+		out := make([]QuizOption, 0, len(objects))
+		for _, o := range objects {
+			label := o.Text
+			if label == "" {
+				label = o.Label
+			}
+			if label == "" {
+				continue
+			}
+			out = append(out, QuizOption{ID: label, Label: label})
+		}
+		return out
+	}
+
+	var labels []string
+	if err := json.Unmarshal([]byte(trimmed), &labels); err == nil {
+		out := make([]QuizOption, 0, len(labels))
+		for _, label := range labels {
+			if label == "" {
+				continue
+			}
+			out = append(out, QuizOption{ID: label, Label: label})
+		}
+		return out
+	}
+
+	return nil
+}
+
+// GetQuiz retrieves the quiz for a lesson WITHOUT answers or explanations.
+// Used by the public GET /learn/quizzes/:id endpoint and the quiz-lesson
+// embed so users cannot read correct answers before submitting (§36: "no
+// answers revealed"). Returns nil (no error) when the lesson has no quiz.
+func (s *Store) GetQuiz(ctx context.Context, lessonID pgtype.UUID) (*Quiz, error) {
 	rows, err := s.read.GetQuizQuestionsByLesson(ctx,
 
 		lessonID,
@@ -1714,21 +1828,29 @@ func (s *Store) GetQuizQuestions(ctx context.Context, lessonID pgtype.UUID) ([]Q
 		return nil, fmt.Errorf("get quiz questions: %w", err)
 	}
 
-	questions := make([]QuizQuestion, 0, len(rows))
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	questions := make([]QuizDTOQuestion, 0, len(rows))
 
 	for _, r := range rows {
-		questions = append(questions, QuizQuestion{
-			ID:       r.ID,
-			LessonID: r.LessonID,
-			Question: r.Question,
-			Options:  r.Options,
-			// Answer and Explanation intentionally omitted — the public
-			// quiz endpoint must not reveal correct answers.
+		questions = append(questions, QuizDTOQuestion{
+			ID:       r.ID.String(),
+			Type:     "single",
+			Prompt:   r.Question,
+			Options:  parseQuizOptions(r.Options),
+			Points:   1,
 			Position: r.Position,
 		})
 	}
 
-	return questions, nil
+	return &Quiz{
+		ID:           lessonID.String(),
+		Title:        rows[0].LessonTitle,
+		PassScorePct: quizPassScorePct,
+		Questions:    questions,
+	}, nil
 }
 
 // GetQuizQuestionsWithAnswers retrieves quiz questions with correct answers and

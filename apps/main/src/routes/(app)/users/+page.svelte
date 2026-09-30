@@ -12,6 +12,9 @@
 		type SearchSuggestion,
 		type UrlTab
 	} from '$lib/components/ui';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import UserCard from '$lib/components/profile/UserCard.svelte';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
@@ -36,11 +39,15 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let query = $state(untrack(() => data.q));
 	let selectedProfileType = $state(untrack(() => data.profileType));
+	let sort = $state(untrack(() => data.sort));
+	let pageSize = $state(untrack(() => data.pageSize));
 	const searchPlaceholder = $derived(t('users.search_placeholder', 'Search people…'));
 
 	$effect(() => {
 		query = data.q;
 		selectedProfileType = data.profileType;
+		sort = data.sort;
+		pageSize = data.pageSize;
 	});
 
 	// User-account profile_type enum — fixed backend constraint per §unified-tiers.
@@ -52,10 +59,29 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		{ value: 'business', label: t('users.profile_type_business', 'Business') }
 	]);
 
+	// Sort keys are whitelisted on the backend (GET /users?sort=) — unknown
+	// values fall back to 'followers'. Sorted via the shared Autocomplete
+	// component per the directory dropdown convention.
+	const sortOptions = $derived<{ value: string; label: string }[]>([
+		{ value: 'followers', label: t('users.sort.followers', 'Most followed') },
+		{ value: 'newest', label: t('users.sort.newest', 'Newest') },
+		{ value: 'oldest', label: t('users.sort.oldest', 'Oldest') },
+		{ value: 'name', label: t('users.sort.name', 'Name A–Z') }
+	]);
+	const sortItems = $derived<AutocompleteItem[]>(sortOptions.map((o) => ({ id: o.value, label: o.label })));
+
+	// Page-size choices mirror the backend whitelist (12/24/48/96, max 100).
+	const pageSizeOptions = $derived<{ value: string; label: string }[]>(
+		['12', '24', '48', '96'].map((v) => ({ value: v, label: v }))
+	);
+	const pageSizeItems = $derived<AutocompleteItem[]>(pageSizeOptions.map((o) => ({ id: o.value, label: o.label })));
+
 	function buildHref(pageNum: number): string {
 		const params = new URLSearchParams();
 		if (data.q) params.set('q', data.q);
 		if (data.profileType) params.set('profile_type', data.profileType);
+		if (data.sort !== 'followers') params.set('sort', data.sort);
+		if (data.pageSize !== 24) params.set('page_size', String(data.pageSize));
 		if (pageNum > 0) params.set('page', String(pageNum));
 		const qs = params.toString();
 		return qs ? `/users?${qs}` : '/users';
@@ -65,21 +91,32 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		const params = new URLSearchParams();
 		if (query.trim()) params.set('q', query.trim());
 		if (selectedProfileType) params.set('profile_type', selectedProfileType);
+		if (sort !== 'followers') params.set('sort', sort);
+		if (pageSize !== 24) params.set('page_size', String(pageSize));
 		const qs = params.toString();
 		goto(qs ? `/users?${qs}` : '/users', { keepFocus: true });
 	}
 
+	// User typeahead — GET /search/autocomplete (public, type=user) returns
+	// flat suggestions {id, url, username, display_name}; the search index
+	// now emits canonical /u/{username} urls (stale /users/ docs are
+	// normalised server-side).
 	async function userSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<{ data: { results: { type: string; id: string; title: string; excerpt?: string; url: string }[] } }>(
-			`/search?q=${encodeURIComponent(q)}&type=user&limit=8`
-		);
+		// api.get already unwraps the {data: ...} envelope.
+		const res = await api.get<{
+			suggestions: { type: string; id: string; url?: string; username?: string; display_name?: string }[];
+		}>(`/search/autocomplete?q=${encodeURIComponent(q)}&type=user&limit=8`);
 		if (res.error || !res.data) return [];
-		return (res.data.data?.results ?? []).map((r) => ({
-			id: r.id,
-			title: r.title,
-			url: r.url,
-			excerpt: r.excerpt,
-			type: r.type
+		return (res.data.suggestions ?? []).map((s) => ({
+			id: s.id,
+			title: s.display_name || s.username || '',
+			url: s.url
+				? s.url.replace(/^\/users\//, '/u/')
+				: s.username
+					? `/u/${s.username}`
+					: '/users',
+			excerpt: s.username ? `@${s.username}` : undefined,
+			type: s.type
 		}));
 	}
 </script>
@@ -120,18 +157,64 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			class="!border-b-0 !bg-transparent"
 		/>
 		{#snippet actions()}
-			<form action="/users" method="get" role="search" class="w-36 sm:w-56">
-				<SearchInput
-					bind:value={query}
-					placeholder={searchPlaceholder}
-					ariaLabel={t('users.heading', 'People')}
-					fetcher={userSearchFetcher}
-				/>
-				<!-- Hidden field to preserve the active tab on submit -->
-				{#if selectedProfileType}
-					<input type="hidden" name="profile_type" value={selectedProfileType} />
-				{/if}
-			</form>
+			<div class="flex items-center gap-2">
+				<div class="w-32 sm:w-40">
+					<Autocomplete
+						placeholder={t('users.sort.label', 'Sort')}
+						ariaLabel={t('users.sort.label', 'Sort')}
+						emptyMessage={t('users.empty', 'No people yet.')}
+						fetcher={staticAutocompleteFetcher(sortItems)}
+						initialFetcher={() => Promise.resolve(sortItems)}
+						selectedId={sort}
+						selectedLabel={sortOptions.find((o) => o.value === sort)?.label}
+						onSelect={(item) => {
+							sort = item.id;
+							onFilterChange();
+						}}
+						onClear={() => {
+							sort = 'followers';
+							onFilterChange();
+						}}
+					/>
+				</div>
+				<div class="w-20 sm:w-24">
+					<Autocomplete
+						placeholder={t('users.per_page', 'Per page')}
+						ariaLabel={t('users.per_page', 'Per page')}
+						emptyMessage={t('users.empty', 'No people yet.')}
+						fetcher={staticAutocompleteFetcher(pageSizeItems)}
+						initialFetcher={() => Promise.resolve(pageSizeItems)}
+						selectedId={String(pageSize)}
+						selectedLabel={String(pageSize)}
+						onSelect={(item) => {
+							pageSize = parseInt(item.id, 10) || 24;
+							onFilterChange();
+						}}
+						onClear={() => {
+							pageSize = 24;
+							onFilterChange();
+						}}
+					/>
+				</div>
+				<form action="/users" method="get" role="search" class="w-36 sm:w-56">
+					<SearchInput
+						bind:value={query}
+						placeholder={searchPlaceholder}
+						ariaLabel={t('users.heading', 'People')}
+						fetcher={userSearchFetcher}
+					/>
+					<!-- Hidden fields to preserve the active filters on submit -->
+					{#if selectedProfileType}
+						<input type="hidden" name="profile_type" value={selectedProfileType} />
+					{/if}
+					{#if sort !== 'followers'}
+						<input type="hidden" name="sort" value={sort} />
+					{/if}
+					{#if pageSize !== 24}
+						<input type="hidden" name="page_size" value={pageSize} />
+					{/if}
+				</form>
+			</div>
 		{/snippet}
 	</ListPageBar>
 

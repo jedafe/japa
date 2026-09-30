@@ -4949,7 +4949,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// user-scoped analytics logging). Ref: sections/13-search.md
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search", searchHandlers.Search)
 			// Rate-limit autocomplete to prevent enumeration/abuse (SEC-010).
-			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search/autocomplete", searchHandlers.Autocomplete)
+			// OptionalAuth so §41 blocked-user filtering applies for
+			// authenticated callers (auth.FromContext is nil without it).
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/search/autocomplete", searchHandlers.Autocomplete)
 			// catalog: GET /spaces/search — space-discovery search (distinct from
 			// /spaces/{id}/search below, which searches one space's content).
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).Get("/spaces/search", searchHandlers.SearchSpaces)

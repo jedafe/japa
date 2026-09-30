@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { ThumbsUp, ThumbsDown } from 'lucide-svelte';
+	import { ThumbsUp, ThumbsDown, LogIn } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { getCookie } from '$lib/api/client';
+	import { page } from '$app/state';
+	import { env } from '$env/dynamic/public';
 
 	interface Props {
 		/** Page ID for localStorage persistence of the vote. */
@@ -14,16 +16,26 @@
 		question?: string;
 		/** ISO timestamp of last review, or null. */
 		lastReviewedAt?: string | null;
+		/** Reviewer user id (UUID) — accepted for API shape parity but not
+		 *  displayed: the backend sends an internal id, not a display name. */
 		lastReviewedBy?: string | null;
 	}
 
-	let { pageId, audience, slug, question = '', lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
+	let { pageId, audience, slug, question = '', lastReviewedAt = null }: Props = $props();
 
 	let vote = $state<'up' | 'down' | null>(null);
 	let voteError = $state('');
 	let submitting = $state(false);
 
 	const storageKey = $derived(`jc:docs:vote:${pageId}`);
+
+	// /docs/{audience}/{slug}/feedback requires a session (RequireAuth), so
+	// guests get a sign-in link instead of vote buttons that can only 401.
+	const user = $derived(page.data?.user ?? null);
+	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
+	const loginHref = $derived(
+		`${mainOrigin}/login?redirect=${encodeURIComponent(page.url.href)}`
+	);
 
 	// Load saved vote from localStorage after hydration (browser-only).
 	// Uses $effect keyed on pageId so the vote resets on client-side
@@ -43,34 +55,15 @@
 		}
 	});
 
-	function persistLocal(v: 'up' | 'down' | null) {
-		vote = v;
-		try {
-			if (v) localStorage.setItem(storageKey, v);
-			else localStorage.removeItem(storageKey);
-		} catch {
-			// localStorage unavailable
-		}
-	}
-
-	async function submitVote(v: 'up' | 'down' | null) {
-		// In-flight guard — the backend only increments aggregate counters, so
-		// a double-click would double-count the vote (DOC-011).
-		if (submitting) return;
-		const newVote = vote === v ? null : v;
-		const previousVote = vote;
-
-		// Optimistically update UI, but not localStorage yet — only persist
-		// after the server confirms the vote (BUG-HUNT-012: failed votes
-		// were being persisted).
-		vote = newVote;
+	// The backend only increments aggregate helpful/unhelpful counters — it
+	// has no un-vote or vote-switch contract (internal/docs SubmitDocPageFeedback).
+	// So once a vote is recorded the widget locks: clicking the active or
+	// other button again is a no-op rather than lying about undo semantics.
+	async function submitVote(v: 'up' | 'down') {
+		// In-flight + already-voted guards — a double-click would double-count
+		// the vote (DOC-011) and there is no undo endpoint.
+		if (submitting || vote) return;
 		voteError = '';
-
-		if (!newVote) {
-			// User toggled off their vote — clear persistence.
-			persistLocal(null);
-			return;
-		}
 
 		submitting = true;
 		try {
@@ -80,7 +73,7 @@
 					'content-type': 'application/json',
 					'x-csrf-token': getCookie('csrf_token') ?? ''
 				},
-				body: JSON.stringify({ audience, slug, vote: newVote })
+				body: JSON.stringify({ audience, slug, vote: v })
 			});
 			if (!res.ok) {
 				// SvelteKit endpoint errors serialize as {message} (thrown error())
@@ -89,21 +82,19 @@
 				const json = await res.json().catch(() => ({}));
 				throw new Error(json?.error?.message ?? json?.message ?? 'Feedback failed');
 			}
-			persistLocal(newVote);
+			// Persist only after the server confirms (BUG-HUNT-012: failed
+			// votes were being persisted).
+			vote = v;
+			try {
+				localStorage.setItem(storageKey, v);
+			} catch {
+				// localStorage unavailable
+			}
 		} catch (err) {
-			// Revert optimistic UI update on failure.
-			vote = previousVote;
 			voteError = err instanceof Error ? err.message : 'Feedback failed';
 		} finally {
 			submitting = false;
 		}
-	}
-
-	function voteUp() {
-		submitVote('up');
-	}
-	function voteDown() {
-		submitVote('down');
 	}
 
 	let reviewedLabel = $derived(
@@ -125,33 +116,41 @@
 	{/if}
 	<div class="helpful-row">
 		<span class="helpful-label">{question || t('a11y.helpful')}</span>
-		<div class="helpful-buttons">
-			<button
-				type="button"
-				class="vote-btn"
-				class:active={vote === 'up'}
-				onclick={voteUp}
-				disabled={submitting}
-				aria-label={t('a11y.helpful_yes')}
-				aria-pressed={vote === 'up'}
-			>
-				<ThumbsUp size={16} />
-			</button>
-			<button
-				type="button"
-				class="vote-btn"
-				class:active={vote === 'down'}
-				onclick={voteDown}
-				disabled={submitting}
-				aria-label={t('a11y.helpful_no')}
-				aria-pressed={vote === 'down'}
-			>
-				<ThumbsDown size={16} />
-			</button>
-		</div>
+		{#if !user}
+			<a href={loginHref} class="signin-link">
+				<LogIn size={14} />
+				{t('page.feedback_sign_in', 'Sign in to vote')}
+			</a>
+		{:else if vote}
+			<span class="vote-thanks">
+				{#if vote === 'up'}<ThumbsUp size={14} />{:else}<ThumbsDown size={14} />{/if}
+				{t('page.feedback_recorded', 'Thanks for your feedback')}
+			</span>
+		{:else}
+			<div class="helpful-buttons">
+				<button
+					type="button"
+					class="vote-btn"
+					onclick={() => submitVote('up')}
+					disabled={submitting}
+					aria-label={t('a11y.helpful_yes')}
+				>
+					<ThumbsUp size={16} />
+				</button>
+				<button
+					type="button"
+					class="vote-btn"
+					onclick={() => submitVote('down')}
+					disabled={submitting}
+					aria-label={t('a11y.helpful_no')}
+				>
+					<ThumbsDown size={16} />
+				</button>
+			</div>
+		{/if}
 	</div>
 	<p class="reviewed">
-		{reviewedLabel}{#if lastReviewedBy && lastReviewedAt} · {lastReviewedBy}{/if}
+		{reviewedLabel}
 	</p>
 </div>
 
@@ -186,11 +185,27 @@
 		cursor: pointer;
 	}
 	.vote-btn:hover { border-color: var(--color-border-input-hover); color: var(--color-text); }
-	.vote-btn.active {
-		border-color: var(--color-primary);
+	.vote-thanks {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-size: 0.8125rem;
+		font-weight: 500;
 		color: var(--color-primary);
-		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 	}
+	.signin-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-primary);
+		text-decoration: none;
+		padding: 0.375rem 0.625rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+	}
+	.signin-link:hover { border-color: var(--color-primary); }
 	.reviewed {
 		margin: 0.75rem 0 0;
 		font-size: 0.75rem;

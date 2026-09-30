@@ -4,6 +4,7 @@
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.
 	import { t } from '$lib/i18n';
+	import { resolveMenuUrl } from '$lib/appOrigins';
 	import type { Menu, MenuItem } from '$lib/types';
 
 	interface Props {
@@ -27,7 +28,7 @@
 					{#each footerItems as item (item.id)}
 						<li>
 							<a
-								href={item.url}
+								href={resolveMenuUrl(item.url)}
 								class="footer-link"
 								target={item.target === '_blank' ? '_blank' : undefined}
 								rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}

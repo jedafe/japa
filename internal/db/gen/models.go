@@ -2273,12 +2273,13 @@ type LearningTrack struct {
 }
 
 type LessonProgress struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	LessonID    pgtype.UUID        `json:"lesson_id"`
-	Status      string             `json:"status"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	LessonID     pgtype.UUID        `json:"lesson_id"`
+	Status       string             `json:"status"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	PositionSecs *int32             `json:"position_secs"`
 }
 
 type LessonQuiz struct {

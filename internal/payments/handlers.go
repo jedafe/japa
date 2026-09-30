@@ -332,6 +332,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		Currency     string                 `json:"currency"`
 		Metadata     map[string]interface{} `json:"metadata"`
 		DiscountCode string                 `json:"discount_code"`
+		ReturnURL    string                 `json:"return_url"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -387,6 +388,7 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 		Email:        email,
 		Metadata:     input.Metadata,
 		DiscountCode: input.DiscountCode,
+		ReturnURL:    input.ReturnURL,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -1137,7 +1139,26 @@ func (h *Handlers) ValidateDiscountCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": code})
+	// Serialize discount_value as a plain number — the raw pgtype.Numeric
+	// marshals to an object that breaks the frontend's discount preview.
+	var value float64
+	if f, ferr := code.DiscountValue.Float64Value(); ferr == nil && f.Valid {
+		value = f.Float64
+	}
+
+	var validUntil *time.Time
+	if code.ValidUntil.Valid {
+		validUntil = &code.ValidUntil.Time
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id":             code.ID,
+		"code":           code.Code,
+		"discount_type":  code.DiscountType,
+		"discount_value": value,
+		"applicable_to":  code.ApplicableTo,
+		"valid_until":    validUntil,
+	}})
 }
 
 // DeleteDiscountCode handles DELETE /api/v1/discount-codes/{id}.
