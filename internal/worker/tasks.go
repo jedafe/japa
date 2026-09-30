@@ -124,6 +124,7 @@ const (
 	TypeGdprRetentionSweep      = "gdpr:retention_sweep"
 	TypeJceRefreshStale         = "jce:refresh_stale"
 	TypeSubscriptionExpirySweep = "subscription:expiry_sweep" // §17 webhook-miss safety net
+	TypeOnboardingReminderSweep = "onboarding:reminder_sweep" // §09: nudge users who haven't finished onboarding
 
 	// ---- Intelligence System (Section INTEL) ----.
 
@@ -253,6 +254,7 @@ var handlerRegistry = []struct {
 	// Periodic sweep handlers
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
 	{TypeGdprRetentionSweep, HandleGdprRetentionSweep},
+	{TypeOnboardingReminderSweep, HandleOnboardingReminderSweep},
 	{TypeJceRefreshStale, HandleJceRefreshStale},
 	// V2 feature handlers (Sections 60–77, ADRs 068, 070–085).
 	// Each delegates to a registered processor; nil-safe if unregistered.
