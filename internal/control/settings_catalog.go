@@ -260,6 +260,14 @@ var settingsCatalog = map[string]settingMeta{
 	"onboarding.min_spaces_join":  {Type: "int", DefaultValue: "3", Description: "Minimum number of spaces a new user must join during onboarding.", Public: true, Panel: "control"},
 	"onboarding.min_tags_follow":  {Type: "int", DefaultValue: "5", Description: "Minimum number of tags a new user must follow during onboarding.", Public: true, Panel: "control"},
 	"onboarding.min_users_follow": {Type: "int", DefaultValue: "3", Description: "Minimum number of users a new user must follow during onboarding.", Public: true, Panel: "control"},
+	// Section 09 Product Tour: per-surface ordered step lists (data-tour
+	// target keys). Frontends translate keys via their i18n dictionaries and
+	// fall back to built-in defaults when the list is empty.
+	"onboarding.tour_steps":                  {Type: "json", DefaultValue: `{"main":["primary-nav","home","notifications","messages","stories","forum","discover","explore","learn","jobs","achievements","bookmarks","search","space-switcher","compose","sidebar","account"],"docs":["docs-nav","docs-audience","docs-search","docs-topbar","docs-sidebar"],"learn":["primary-nav","learn-browse","my-learning","certificates","learn-bookmarks","instructor","learn-search","learn-sidebar","learn-account"]}`, Description: "Per-surface product tour step lists — JSON map of surface slug to ordered data-tour target keys.", Panel: "control"},
+	"onboarding.reminder_enabled":            {Type: "bool", DefaultValue: "true", Description: "Daily in-app reminder for users who haven't finished onboarding.", Panel: "control"},
+	"onboarding.reminder_max_count":          {Type: "int", DefaultValue: "5", Description: "Max onboarding reminder notifications sent per user.", Panel: "control"},
+	"onboarding.reminder_window_days":        {Type: "int", DefaultValue: "14", Description: "Only accounts younger than this many days receive onboarding reminders.", Panel: "control"},
+	"onboarding.reminder_min_interval_hours": {Type: "int", DefaultValue: "20", Description: "Minimum hours between onboarding reminder sends.", Panel: "control"},
 	// General platform settings (exist in DB, now catalogued for type metadata).
 	// Public so the main site can render the site name and description in SEO/meta.
 	"general.site_name":         {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name.", Public: true, Panel: "admin"},

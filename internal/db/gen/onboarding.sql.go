@@ -83,25 +83,50 @@ func (q *Queries) DeleteOnboardingTemplate(ctx context.Context, id pgtype.UUID) 
 }
 
 const dismissTour = `-- name: DismissTour :exec
-UPDATE onboarding_state
-SET tour_dismissed = true, updated_at = now()
-WHERE user_id = $1
+INSERT INTO onboarding_state (user_id, tour_dismissed, tour_dismissals) VALUES ($1, $2, $3)
+
+ON CONFLICT (user_id) DO UPDATE SET
+ tour_dismissed = onboarding_state.tour_dismissed OR EXCLUDED.tour_dismissed,
+ tour_dismissals = onboarding_state.tour_dismissals || EXCLUDED.tour_dismissals,
+ updated_at = now()
 `
 
-func (q *Queries) DismissTour(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, dismissTour, userID)
+type DismissTourParams struct {
+	UserID         pgtype.UUID `json:"user_id"`
+	TourDismissed  bool        `json:"tour_dismissed"`
+	TourDismissals []byte      `json:"tour_dismissals"`
+}
+
+// Upserts so tour dismissal also works on surfaces (docs, learn) where the
+// user may never have run the main onboarding wizard and therefore has no
+// onboarding_state row yet. tour_dismissals is merged per-surface; the
+// legacy tour_dismissed flag is only set for the "main" surface.
+func (q *Queries) DismissTour(ctx context.Context, arg DismissTourParams) error {
+	_, err := q.db.Exec(ctx, dismissTour, arg.UserID, arg.TourDismissed, arg.TourDismissals)
 	return err
 }
 
 const getOnboardingState = `-- name: GetOnboardingState :one
-SELECT id, user_id, current_step, completed, step_data, tour_dismissed, created_at, updated_at
+SELECT id, user_id, current_step, completed, step_data, tour_dismissed, tour_dismissals, created_at, updated_at
 FROM onboarding_state
 WHERE user_id = $1
 `
 
-func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (OnboardingState, error) {
+type GetOnboardingStateRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	CurrentStep    int32              `json:"current_step"`
+	Completed      bool               `json:"completed"`
+	StepData       []byte             `json:"step_data"`
+	TourDismissed  bool               `json:"tour_dismissed"`
+	TourDismissals []byte             `json:"tour_dismissals"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (GetOnboardingStateRow, error) {
 	row := q.db.QueryRow(ctx, getOnboardingState, userID)
-	var i OnboardingState
+	var i GetOnboardingStateRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -109,6 +134,7 @@ func (q *Queries) GetOnboardingState(ctx context.Context, userID pgtype.UUID) (O
 		&i.Completed,
 		&i.StepData,
 		&i.TourDismissed,
+		&i.TourDismissals,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -135,6 +161,61 @@ func (q *Queries) GetOnboardingTemplate(ctx context.Context, id pgtype.UUID) (On
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listOnboardingReminderCandidates = `-- name: ListOnboardingReminderCandidates :many
+SELECT u.id
+FROM users u
+LEFT JOIN onboarding_state o ON o.user_id = u.id
+WHERE u.status = 'active'
+  AND COALESCE(o.completed, false) = false
+  AND u.created_at > now() - make_interval(days => $1::int)
+  AND COALESCE(o.reminder_count, 0) < $2::int
+  AND (o.last_reminder_at IS NULL
+       OR o.last_reminder_at < now() - make_interval(hours => $3::int))
+  AND NOT EXISTS (
+      SELECT 1 FROM notification_preferences np
+      WHERE np.user_id = u.id
+        AND np.notification_type = 'onboarding_reminder'
+        AND np.in_app = false
+  )
+ORDER BY u.created_at DESC
+LIMIT $4::int
+`
+
+type ListOnboardingReminderCandidatesParams struct {
+	WindowDays       int32 `json:"window_days"`
+	MaxCount         int32 `json:"max_count"`
+	MinIntervalHours int32 `json:"min_interval_hours"`
+	BatchLimit       int32 `json:"batch_limit"`
+}
+
+// Active, non-completed onboarding users inside the reminder window who
+// haven't hit the send cap or the minimum interval, and who haven't opted
+// out of onboarding_reminder in-app notifications (§35 preferences).
+func (q *Queries) ListOnboardingReminderCandidates(ctx context.Context, arg ListOnboardingReminderCandidatesParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listOnboardingReminderCandidates,
+		arg.WindowDays,
+		arg.MaxCount,
+		arg.MinIntervalHours,
+		arg.BatchLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listOnboardingTemplates = `-- name: ListOnboardingTemplates :many
@@ -173,6 +254,22 @@ func (q *Queries) ListOnboardingTemplates(ctx context.Context) ([]OnboardingTemp
 	return items, nil
 }
 
+const markOnboardingReminded = `-- name: MarkOnboardingReminded :exec
+INSERT INTO onboarding_state (user_id, reminder_count, last_reminder_at)
+VALUES ($1, 1, now())
+ON CONFLICT (user_id) DO UPDATE SET
+    reminder_count = onboarding_state.reminder_count + 1,
+    last_reminder_at = now(),
+    updated_at = now()
+`
+
+// Upserts so users with no onboarding_state row (never started the wizard)
+// are tracked too — same pattern as DismissTour.
+func (q *Queries) MarkOnboardingReminded(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, markOnboardingReminded, userID)
+	return err
+}
+
 const updateOnboardingTemplate = `-- name: UpdateOnboardingTemplate :exec
 UPDATE onboarding_templates
 SET name = $1, description = $2, steps = $3, is_active = $4, updated_at = now()
@@ -199,22 +296,24 @@ func (q *Queries) UpdateOnboardingTemplate(ctx context.Context, arg UpdateOnboar
 }
 
 const upsertOnboardingState = `-- name: UpsertOnboardingState :exec
-INSERT INTO onboarding_state (user_id, current_step, completed, step_data, tour_dismissed) VALUES ($1, $2, $3, $4, $5)
+INSERT INTO onboarding_state (user_id, current_step, completed, step_data, tour_dismissed, tour_dismissals) VALUES ($1, $2, $3, $4, $5, $6)
 
 ON CONFLICT (user_id) DO UPDATE SET
  current_step = EXCLUDED.current_step,
  completed = EXCLUDED.completed,
  step_data = EXCLUDED.step_data,
  tour_dismissed = EXCLUDED.tour_dismissed,
+ tour_dismissals = EXCLUDED.tour_dismissals,
  updated_at = now()
 `
 
 type UpsertOnboardingStateParams struct {
-	UserID        pgtype.UUID `json:"user_id"`
-	CurrentStep   int32       `json:"current_step"`
-	Completed     bool        `json:"completed"`
-	StepData      []byte      `json:"step_data"`
-	TourDismissed bool        `json:"tour_dismissed"`
+	UserID         pgtype.UUID `json:"user_id"`
+	CurrentStep    int32       `json:"current_step"`
+	Completed      bool        `json:"completed"`
+	StepData       []byte      `json:"step_data"`
+	TourDismissed  bool        `json:"tour_dismissed"`
+	TourDismissals []byte      `json:"tour_dismissals"`
 }
 
 func (q *Queries) UpsertOnboardingState(ctx context.Context, arg UpsertOnboardingStateParams) error {
@@ -224,6 +323,7 @@ func (q *Queries) UpsertOnboardingState(ctx context.Context, arg UpsertOnboardin
 		arg.Completed,
 		arg.StepData,
 		arg.TourDismissed,
+		arg.TourDismissals,
 	)
 	return err
 }
