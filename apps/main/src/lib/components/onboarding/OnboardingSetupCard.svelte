@@ -12,8 +12,11 @@
 
 	let snoozed = $state(browser && sessionStorage.getItem(SNOOZE_KEY) === '1');
 
+	// browser gate: skip SSR entirely — a session-snoozed user would
+	// otherwise see the card flash on every page load before hydration
+	// reads sessionStorage.
 	const visible = $derived(
-		!!page.data.user && page.data.onboardingCompleted === false && !snoozed
+		browser && !!page.data.user && page.data.onboardingCompleted === false && !snoozed
 	);
 	const step = $derived((page.data.onboardingStep as number) ?? 1);
 

@@ -2,6 +2,10 @@
 
 BEGIN;
 
+-- Remove dependent rows first: both notifications.notification_type and
+-- notification_preferences.notification_type FK to notification_types(key).
+DELETE FROM public.notification_preferences WHERE notification_type = 'onboarding_reminder';
+DELETE FROM public.notifications WHERE notification_type = 'onboarding_reminder';
 DELETE FROM public.notification_types WHERE key = 'onboarding_reminder';
 
 DELETE FROM system_settings WHERE key IN (
