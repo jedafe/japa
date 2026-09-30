@@ -4,6 +4,7 @@
 	import LeftNav from './LeftNav.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import RightSidebar from './RightSidebar.svelte';
+	import GuestFooter from './GuestFooter.svelte';
 	import LeftRail from './LeftRail.svelte';
 	import { t } from '$lib/i18n';
 	import type { Menu, SessionUser } from '$lib/types';
@@ -123,6 +124,8 @@
 				</a>
 			</div>
 			{@render children()}
+			<!-- ADR-054: guest footer from the admin-managed learn_footer menu. -->
+			<GuestFooter menu={footerMenu} />
 		</main>
 
 		{#if !hideRightSidebar}

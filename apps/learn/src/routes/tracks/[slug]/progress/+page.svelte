@@ -25,8 +25,12 @@
 	let notFound = $state(false);
 	let error = $state<string | null>(null);
 
-	$effect(() => {
-		// Re-run when the route param changes.
+	// Request generation guard: a retry or slug change starts a new load, and a
+	// slow response from a superseded load must not clobber the newer state.
+	let loadGen = 0;
+
+	async function loadProgress() {
+		const gen = ++loadGen;
 		const trackSlug = slug;
 		if (!trackSlug) return;
 		loading = true;
@@ -34,26 +38,32 @@
 		error = null;
 		track = null;
 		progress = null;
-		(async () => {
-			// 1. Resolve the track by slug to get its UUID.
-			const trackRes = await api.get<TrackDetail>(`/learn/university/tracks/${trackSlug}`);
-			if (!trackRes.data) {
-				loading = false;
-				if (trackRes.status === 404) notFound = true;
-				else if (trackRes.error) error = trackRes.error.message;
-				return;
-			}
-			track = trackRes.data;
 
-			// 2. Fetch progress using the track's UUID.
-			const progRes = await api.get<TrackProgress>(`/learn/university/progress/${track.id}`);
+		// 1. Resolve the track by slug to get its UUID.
+		const trackRes = await api.get<TrackDetail>(`/learn/university/tracks/${trackSlug}`);
+		if (gen !== loadGen) return;
+		if (!trackRes.data) {
 			loading = false;
-			if (progRes.data) {
-				progress = progRes.data;
-			} else if (progRes.error) {
-				error = progRes.error.message;
-			}
-		})();
+			if (trackRes.status === 404) notFound = true;
+			else error = trackRes.error?.message ?? t('common.error');
+			return;
+		}
+		track = trackRes.data;
+
+		// 2. Fetch progress using the track's UUID.
+		const progRes = await api.get<TrackProgress>(`/learn/university/progress/${track.id}`);
+		if (gen !== loadGen) return;
+		loading = false;
+		if (progRes.data) {
+			progress = progRes.data;
+		} else {
+			error = progRes.error?.message ?? t('common.error');
+		}
+	}
+
+	$effect(() => {
+		// Re-run when the route param changes.
+		if (slug) loadProgress();
 	});
 
 	const isComplete = $derived((progress?.percent ?? 0) >= 100);
