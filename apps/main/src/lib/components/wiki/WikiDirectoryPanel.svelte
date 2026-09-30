@@ -86,7 +86,8 @@
 	}
 </script>
 
-<section class="mt-6 space-y-4">
+<!-- §80 Reader UX — fixed anchor for the "On this page" rail. -->
+<section id="wiki-directory" class="mt-6 scroll-mt-24 space-y-4">
 	<div class="w-full max-w-sm">
 		<Autocomplete
 			id="wiki-directory-search"

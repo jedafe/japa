@@ -5,7 +5,7 @@
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus } from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
@@ -829,17 +829,7 @@ import { contentHref } from '$lib/utils/contentLink';
 
 <!-- Report thread dialog — POST /content/{content_id}/report (Section 51) -->
 {#if reportOpen}
-	<Dialog.Root open={reportOpen}>
-		<Dialog.Portal>
-			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-				<Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={closeReport}>
-					<X size={20} />
-				</Dialog.Close>
-				<div class="mb-4 flex items-center gap-2">
-					<Flag size={20} class="text-red-500" />
-					<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('forum.report_title', 'Report this discussion')}</h2>
-				</div>
+	<Modal open={reportOpen} onOpenChange={(v) => { if (!v) closeReport(); }} icon={Flag} title={t('forum.report_title', 'Report this discussion')} overlayClass="backdrop-blur-sm" size="md">
 				{#if reportSubmitted}
 					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
 						{t('forum.report_submitted', 'Your report has been submitted. Our team will review it.')}
@@ -906,7 +896,5 @@ import { contentHref } from '$lib/utils/contentLink';
 						</div>
 					</form>
 				{/if}
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	</Modal>
 {/if}

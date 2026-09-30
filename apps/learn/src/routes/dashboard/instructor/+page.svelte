@@ -78,7 +78,7 @@
 	const revenueData = $derived(
 		(earnings?.revenue_series ?? []).map((d) => ({
 			date: new Date(d.date),
-			kobo: d.kobo / 100 // Convert to naira for display
+			kobo: d.kobo / 100 // minor units → major units for display
 		}))
 	);
 
@@ -215,7 +215,7 @@
 					<DollarSign size={16} class="text-[var(--level-intermediate)]" />
 					{t('university.total_revenue')}
 				</div>
-				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">{formatPriceKobo(profile.total_revenue_kobo, profile.currency, page.data.locale)}</p>
+				<p class="mt-2 text-3xl font-bold text-[var(--color-text)]">{formatPriceKobo(profile.total_revenue_kobo, profile.currency, page.data.locale, page.data.currencies)}</p>
 			</div>
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<div class="flex items-center gap-2 text-sm text-[var(--color-muted)]">
@@ -282,7 +282,7 @@
 										<span class="inline-flex items-center gap-1">
 											<Users size={12} /> {t('learn.enrolled_count', '{count} enrolled').replace('{count}', formatCount(tr.total_enrolled))}
 										</span>
-										<span>{formatPriceKobo(tr.total_revenue_kobo, tr.currency, page.data.locale)}</span>
+										<span>{formatPriceKobo(tr.total_revenue_kobo, tr.currency, page.data.locale, page.data.currencies)}</span>
 									</div>
 								</div>
 								<div class="flex flex-col items-end gap-2">
@@ -332,7 +332,7 @@
 					{#each payouts as p (p.id)}
 						<li class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm">
 							<span class="text-[var(--color-text-subtle)]">{new Date(p.period_start).toLocaleDateString()} – {new Date(p.period_end).toLocaleDateString()}</span>
-							<span class="font-medium text-[var(--color-text)]">{formatPriceKobo(p.amount_kobo, p.currency, page.data.locale)}</span>
+							<span class="font-medium text-[var(--color-text)]">{formatPriceKobo(p.amount_kobo, p.currency, page.data.locale, page.data.currencies)}</span>
 							<span class="text-xs text-[var(--color-muted)]">{p.status}</span>
 						</li>
 					{/each}

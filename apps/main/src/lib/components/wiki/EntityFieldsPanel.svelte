@@ -17,6 +17,7 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import SuggestEdit from './SuggestEdit.svelte';
 	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
+	import type { CurrencyInfo } from '$lib/utils/currency';
 
 	let {
 		entityType,
@@ -120,8 +121,15 @@
 		schema && groupId ? { ...schema, groups: schema.groups.filter((g) => g.id === groupId) } : schema
 	);
 
+	// §58 — active currency list from the root layout for symbol resolution
+	// on currency/price_range field values; the entity's resolved country
+	// currency is the display fallback when a field doesn't declare
+	// {currency_code} in options.
+	const currencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
+	const contextCurrency = $derived(schema?.entity_currency_code ?? '');
+
 	function formatValue(f: WikiEntityField): string {
-		return formatWikiFieldValue(f);
+		return formatWikiFieldValue(f, currencies, contextCurrency);
 	}
 </script>
 

@@ -4,7 +4,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon, Search, UserCircle } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
@@ -588,19 +588,7 @@
 </div>
 
 <!-- Edit Tag Modal — visible only to users with tags.manage permission -->
-<Dialog.Root bind:open={editOpen}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-			<div class="mb-4 flex items-center justify-between">
-				<Dialog.Title class="text-lg font-semibold text-[var(--color-text)]">
-					{t('tag.edit_title', 'Edit Tag')}
-				</Dialog.Title>
-				<Dialog.Close class="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]">
-					<X size={18} />
-				</Dialog.Close>
-			</div>
-
+<Modal bind:open={editOpen} title={t('tag.edit_title', 'Edit Tag')} size="lg">
 			<div class="space-y-4">
 				<!-- Name -->
 				<div>
@@ -715,9 +703,7 @@
 					{t('common.save', 'Save')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 
 {#if logoPickerOpen}
 	<MediaLibraryModal onSelect={handleLogoSelect} onClose={() => (logoPickerOpen = false)} />

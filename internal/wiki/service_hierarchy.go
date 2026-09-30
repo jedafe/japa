@@ -27,6 +27,9 @@ const ancestorDepth = 3
 // minimal space identity a breadcrumb or table cell needs.
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiSpaceRefDTO struct {
+	// ID enables compare-preselect deep links on rollup rows (§80 Reader
+	// UX); omitted when unknown.
+	ID       string `json:"id,omitempty"`
 	Slug     string `json:"slug"`
 	Name     string `json:"name"`
 	Level    string `json:"level"`
@@ -91,8 +94,12 @@ type WikiRollupFieldDTO struct {
 	Label     string              `json:"label"`
 	FieldType string              `json:"field_type"`
 	Section   string              `json:"section,omitempty"`
-	Metrics   WikiRollupMetricDTO `json:"metrics"`
-	Samples   int                 `json:"samples"`
+	// CurrencyCode is the ISO 4217 code declared on the field's options
+	// ({currency_code}) for currency/price_range fields — lets the read
+	// surface render the currency name/symbol next to aggregated amounts.
+	CurrencyCode string              `json:"currency_code,omitempty"`
+	Metrics      WikiRollupMetricDTO `json:"metrics"`
+	Samples      int                 `json:"samples"`
 }
 
 // WikiRollupRowDTO is one contributing descendant space and its values —
@@ -296,6 +303,7 @@ func (s *Service) getAncestors(ctx context.Context, spaceID, spaceTypeID pgtype.
 
 func spaceRefFromLink(p WikiParentLink) WikiSpaceRefDTO {
 	return WikiSpaceRefDTO{
+		ID:        p.ID.String(),
 		Slug:      p.Slug,
 		Name:      p.Name,
 		Level:     p.Level,
@@ -529,6 +537,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 				if f.Section != nil {
 					def.section = *f.Section
 				}
+				def.currency = customfields.CurrencyCodeFromOptions(f.Options)
 				// Per-field aggregation keeps its own declared type so a
 				// mixed-type key (price_range on one type, number on
 				// another) never feeds incompatible values into one slice;
@@ -607,6 +616,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 		}
 		rowsOut = append(rowsOut, WikiRollupRowDTO{
 			Space: WikiSpaceRefDTO{
+				ID:       d.ID.String(),
 				Slug:     d.Slug,
 				Name:     d.Name,
 				Level:    d.Level,
@@ -626,11 +636,12 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 // rollupFieldDef is the schema member a rollup aggregates — one custom
 // field on a descendant type's same-category group.
 type rollupFieldDef struct {
-	key     string
-	label   string
-	typ     string
-	section string
-	pos     int32
+	key      string
+	label    string
+	typ      string
+	section  string
+	currency string
+	pos      int32
 }
 
 // aggregateRollupValues folds raw cfv rows into per-key metric DTOs and
@@ -768,7 +779,7 @@ func aggregateRollupValues(
 
 		fieldsOut = append(fieldsOut, WikiRollupFieldDTO{
 			Key: key, Label: def.label, FieldType: def.typ, Section: def.section,
-			Metrics: m, Samples: samples,
+			CurrencyCode: def.currency, Metrics: m, Samples: samples,
 		})
 	}
 

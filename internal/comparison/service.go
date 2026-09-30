@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -1495,6 +1496,10 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 	Value        *string     `json:"value"`
 	ValueRating  *float64    `json:"value_rating"`
 	ValueBoolean *bool       `json:"value_boolean"`
+	// CurrencyCode is the ISO code bound to a currency dimension via its
+	// source custom field's {currency_code} option (§58) — frontends resolve
+	// it to the managed currency's name/symbol for display.
+	CurrencyCode string `json:"currency_code,omitempty"`
 	// HydratedFrom records how the cell was filled when no persisted
 	// comparison_values row exists. "entity_field" means the value came from
 	// the resolved item's field_values metadata via the dimension's
@@ -1598,6 +1603,9 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 				DimensionID: dim.ID,
 				Label:       dim.Label,
 				Type:        dim.DimensionType,
+			}
+			if dim.DimensionType == DimensionTypeCurrency {
+				md.CurrencyCode = customfields.CurrencyCodeFromOptions(dim.SourceFieldOptions)
 			}
 			if val, ok := valueIndex[valueKey{item.ID.Bytes, dim.ID.Bytes}]; ok {
 				md.Value = val.Value

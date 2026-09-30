@@ -527,6 +527,8 @@ export interface MeProfile {
 	username: string;
 	display_name?: string | null;
 	bio?: string | null;
+	/** IANA timezone — PATCH /me/profile accepts it (backend user_profiles.timezone). */
+	timezone?: string | null;
 	avatar_url?: string | null;
 	cover_url?: string | null;
 	primary_space?: SpaceRef | null;
@@ -609,6 +611,11 @@ export interface OnboardingStatus {
 	completed: boolean;
 	step_data: unknown;
 	tour_dismissed: boolean;
+	/** Per-surface tour dismissals — { "main": true, "docs": true, … } (§09). */
+	tour_dismissals?: Record<string, boolean>;
+	/** Per-surface ordered tour step keys from the onboarding.tour_steps
+	 *  system setting — { "main": ["primary-nav", …], … } (§09). */
+	tour_steps?: Record<string, string[]>;
 }
 
 /** GET /onboarding/recommendations item (Section 09). */
@@ -1373,6 +1380,10 @@ export interface SpaceDetail {
 	is_pending?: boolean;
 	/** Viewer-scoped: true when the caller follows the space. */
 	is_following?: boolean;
+	/** §58 — the space's resolved country currency (own code when the space
+	 *  is a country, else its country ancestor's); display fallback for
+	 *  currency/price_range fields without an explicit {currency_code}. */
+	country_currency_code?: string;
 }
 
 /** GET /spaces/{slug}/moderators item — ListSpaceModeratorsRow. */
@@ -2046,6 +2057,9 @@ export interface ComparisonMatrixDimensionValue {
 	value?: string | null;
 	value_rating?: number | null;
 	value_boolean?: boolean | null;
+	/** ISO code for currency dimensions — from the source field's
+	 *  {currency_code} option (§58). */
+	currency_code?: string;
 }
 
 /** POST /jce/comparisons — created comparison result. */
@@ -3069,6 +3083,11 @@ export interface WikiDestination {
 	 *  universities report 'custom', not 'university'). */
 	level: string;
 	page_count: number;
+	/** §80 Reader UX: space logo resolved to a signed URL; absent when
+	 *  the space has no logo media. */
+	logo_url?: string;
+	/** §80 Reader UX: space description excerpt for card subtitles. */
+	description?: string;
 }
 
 /** One row of GET /wiki/types — an enabled wiki type over a space_type. */
@@ -3088,6 +3107,9 @@ export interface WikiTypeItem {
 /** §80 Hierarchical UX — one node in a page's ancestor chain (breadcrumb)
  *  or a descendant row reference (rollup table). */
 export interface WikiSpaceRef {
+	/** §80 Reader UX: space UUID — enables compare-preselect links on
+	 *  rollup rows; absent when the backend can't resolve it. */
+	id?: string;
 	slug: string;
 	name: string;
 	level: string;
@@ -3120,6 +3142,9 @@ export interface WikiRollupField {
 	label: string;
 	field_type: string;
 	section?: string;
+	/** ISO code from the field's {currency_code} option — resolved to a
+	 *  name/symbol via the shared currency list. */
+	currency_code?: string;
 	metrics: WikiRollupMetric;
 	samples: number;
 }
@@ -3167,6 +3192,11 @@ export interface WikiPage extends WikiPageIndex {
 	current_content: unknown;
 	revision_summary?: string;
 	submitted_by?: string;
+	/** §80 Reader UX: byline avatar for the approved submitter. */
+	submitted_by_avatar_url?: string;
+	/** §80 Reader UX: "Was this page helpful?" aggregate + the viewer's
+	 *  own vote; absent on lazy pages (no row to vote on). */
+	helpful?: WikiHelpful | null;
 	/** §80 Wiki Types: the page category's bound field group — schema + this
 	 *  space's stored values. The group is the page's schema (always bound);
 	 *  a prose-only page has a group with no fields. */
@@ -3196,6 +3226,9 @@ export interface WikiPage extends WikiPageIndex {
 	 *  directory-mode category's canonical page (which is always its lazy
 	 *  or materialized stub page). */
 	directory?: WikiDirectory;
+	/** §58 — the host space's resolved country currency; display fallback
+	 *  for currency/price_range fields without an explicit {currency_code}. */
+	space_currency_code?: string;
 	/** §80 Hierarchical UX: the page template the page was created from —
 	 *  echoed so UIs can link sibling template pages. */
 	page_template_id?: string;
@@ -3208,6 +3241,14 @@ export interface WikiPage extends WikiPageIndex {
 	/** §80 lazy template pages: the page rendered straight from its
 	 *  template — no wiki_pages row until the first submission. */
 	lazy?: boolean;
+}
+
+/** §80 Reader UX: aggregated "Was this page helpful?" votes on a page. */
+export interface WikiHelpful {
+	up: number;
+	down: number;
+	/** The viewer's current vote — null when unsigned-in or unvoted. */
+	my_vote?: 'up' | 'down' | null;
 }
 
 /** One page-template discovery link on a wiki page (§80 lazy pages). */

@@ -128,20 +128,19 @@
 		const wasGranted = consentMap.get(type) ?? false;
 		// Optimistic update
 		consentMap.set(type, !wasGranted);
-		try {
-			if (wasGranted) {
-				await api.delete(`/consent/${type}`);
-			} else {
-				await api.post('/consent', {
+		// api.* returns { error } — it never throws — so the failure branch
+		// must inspect the result envelope, not catch (the previous try/catch
+		// rollback was dead code and a failed toggle left phantom state).
+		const res = wasGranted
+			? await api.delete(`/consent/${type}`)
+			: await api.post('/consent', {
 					consent_type: type,
 					granted: true,
 					policy_version: policyVersion
 				});
-			}
-		} catch (e) {
-			// Revert on error
+		if (res.error) {
 			consentMap.set(type, wasGranted);
-			consentError = t('settings.data_privacy.consent_error', 'Failed to update consent. Try again.');
+			consentError = res.error.message || t('settings.data_privacy.consent_error', 'Failed to update consent. Try again.');
 		}
 		toggling = null;
 	}
@@ -186,11 +185,17 @@
 			if (res.data) {
 				if (res.data.consent_types?.length) consentTypes = res.data.consent_types;
 				if (res.data.policy_version) policyVersion = res.data.policy_version;
-				// Rebuild the map so new types default to granted.
-				consentMap = buildConsentMap(consentTypes, payload?.consents ?? []);
 			}
 		} catch {
 			// The server-loaded config is already in place; leave it.
+		}
+		// Rebuild the map from a fresh /consent fetch rather than the SSR
+		// snapshot — payload.consents is stale as soon as a toggle lands
+		// (a toggle during this fetch window would otherwise be clobbered),
+		// and a failed SSR fetch would seed phantom defaults.
+		const records = await api.get<ConsentRecord[]>('/consent');
+		if (records?.data) {
+			consentMap = buildConsentMap(consentTypes, records.data);
 		}
 	});
 

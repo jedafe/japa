@@ -24,6 +24,8 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/config"
 	contentpkg "github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -76,6 +78,9 @@ type WikiPageDetailDTO struct {
 	CurrentContent  json.RawMessage `json:"current_content"`
 	RevisionSummary string          `json:"revision_summary,omitempty"`
 	SubmittedBy     string          `json:"submitted_by,omitempty"`
+	// §80 Reader UX — the approved submitter's avatar for the byline;
+	// empty for AI/system-generated pages or users without one.
+	SubmittedByAvatarURL string `json:"submitted_by_avatar_url,omitempty"`
 	// Fields is the bound field group's schema+values block (§80); every
 	// category binds a group, so nil only when the group lookup itself
 	// fails. CategoryLabel echoes the template's admin-set label so the
@@ -117,6 +122,23 @@ type WikiPageDetailDTO struct {
 	// uses it to show the "not yet created" affordance instead of revision
 	// history.
 	Lazy bool `json:"lazy,omitempty"`
+	// SpaceCurrencyCode is the host space's resolved country currency
+	// (§58 "Country → currency linkage") — the display fallback for
+	// currency/price_range fields that don't declare {currency_code}.
+	SpaceCurrencyCode string `json:"space_currency_code,omitempty"`
+	// Helpful is the page's aggregated "Was this page helpful?" votes plus
+	// the viewer's own (§80 Reader UX). Nil on lazy pages — no wiki_pages
+	// row exists to hold votes.
+	Helpful *WikiHelpfulDTO `json:"helpful,omitempty"`
+}
+
+// WikiHelpfulDTO is the helpful-vote summary embedded in a page read and
+// returned by POST /wiki/:space/:page/feedback (§80 Reader UX).
+// //nolint:revive // exported: DTO naming follows package convention
+type WikiHelpfulDTO struct {
+	Up     int64   `json:"up"`
+	Down   int64   `json:"down"`
+	MyVote *string `json:"my_vote"`
 }
 
 // WikiPageTemplateItemDTO is the public shape for one page template link —
@@ -158,6 +180,11 @@ type WikiDestinationDTO struct {
 	Region    string `json:"region,omitempty"`
 	Level     string `json:"level"`
 	PageCount int64  `json:"page_count"`
+	// §80 Reader UX — LogoURL resolves spaces.logo_media_id through the
+	// media service (128px webp, same as /spaces); Description is the
+	// space's free-text excerpt for card subtitles.
+	LogoURL     string `json:"logo_url,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // WikiRevisionDTO is the API response shape for a revision. The §80 community
@@ -276,6 +303,15 @@ type Service struct {
 	jceBuster        jceCacheBuster        // JCE comparison cache invalidation
 	enqueuer         TaskEnqueuer          // Asynq enqueue for wiki:fields_propagate
 	perms            permissionChecker     // per-op RBAC node checks
+	media            mediaURLResolver      // destination logo_url resolution (§80 Reader UX)
+}
+
+// mediaURLResolver is the subset of media.Service used to resolve a space's
+// logo_media_id to an imgproxy-signed URL — same shape the spaces package
+// consumes; nil leaves logo_url empty (§80 Reader UX).
+type mediaURLResolver interface {
+	GetMedia(ctx context.Context, mediaID pgtype.UUID) (gen.Medium, error)
+	GetMediaURL(m *gen.Medium, opts media.ImageProxyOpts) string
 }
 
 // NewService creates a wiki service.
@@ -326,6 +362,26 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // permissionChecker shape the wiki Handlers already use.
 func (s *Service) SetPermissionChecker(pc permissionChecker) { s.perms = pc }
 
+// SetMediaResolver injects the media service used to resolve destination
+// logo_media_id values into imgproxy URLs (§80 Reader UX). Optional —
+// logo_url stays empty when unwired.
+func (s *Service) SetMediaResolver(m mediaURLResolver) { s.media = m }
+
+// resolveLogoURL resolves a space logo to a 128×128 webp imgproxy URL —
+// mirrors spaces.Handlers.resolveLogoURL; best-effort, never errors.
+func (s *Service) resolveLogoURL(ctx context.Context, logoMediaID pgtype.UUID) string {
+	if !logoMediaID.Valid || s.media == nil {
+		return ""
+	}
+
+	m, err := s.media.GetMedia(ctx, logoMediaID)
+	if err != nil {
+		return ""
+	}
+
+	return s.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 128, Height: 128, Format: "webp"})
+}
+
 // Enabled checks whether the wiki feature is enabled for the given platform.
 // Delegates to the features.Checker (feature_flags table) when available,
 // falling back to system_settings for backward compatibility.
@@ -367,10 +423,51 @@ func (s *Service) MinReputationToEdit(ctx context.Context) int {
 // non-empty parentSlug filters to direct children of that space; a non-empty
 // region filters country-level spaces by spaces.region; hasWiki, when true,
 // only returns spaces with at least one active wiki page.
-func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool) ([]WikiDestinationDTO, error) {
-	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki)
+// §80 Reader UX adds: sort ('name'|'page_count'), pagination when paginate
+// is true (limit 0 → the wiki.destinations_page_limit setting; capped at
+// 100), the pre-pagination total, and logo/description card fields (logo
+// resolved via the media service).
+func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, region, search, within string, hasWiki bool, sort string, page, limit int32, paginate bool) ([]WikiDestinationDTO, int64, int32, error) {
+	switch sort {
+	case "", "name":
+		sort = "name"
+	case "page_count":
+	default:
+		return nil, 0, 0, fmt.Errorf("%w: unknown destinations sort %q", ErrInvalidInput, sort)
+	}
+
+	if paginate && limit == 0 {
+		// The caller asked for a page but not a size — use the configured
+		// page size (§80 Reader UX; wiki.destinations_page_limit).
+		if s.settings != nil {
+			limit = int32(s.settings.GetIntOr(ctx, "wiki.destinations_page_limit", 24)) // #nosec G115 — bounded setting
+		} else {
+			limit = 24
+		}
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if page < 1 {
+		page = 1
+	}
+
+	var offset int32
+	if limit > 0 {
+		offset = (page - 1) * limit
+	}
+
+	dests, err := s.store.ListWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki, sort, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("wiki: get destinations: %w", err)
+		return nil, 0, 0, fmt.Errorf("wiki: get destinations: %w", err)
+	}
+
+	total, err := s.store.CountWikiDestinations(ctx, level, parentSlug, region, search, within, hasWiki)
+	if err != nil {
+		return nil, 0, 0, err
 	}
 
 	dtos := make([]WikiDestinationDTO, 0, len(dests))
@@ -382,6 +479,7 @@ func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, re
 			Name:      d.Name,
 			Level:     d.Level,
 			PageCount: d.PageCount,
+			LogoURL:   s.resolveLogoURL(ctx, d.LogoMediaID),
 		}
 		if d.GeoCode != nil {
 			dto.GeoCode = *d.GeoCode
@@ -391,10 +489,87 @@ func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, re
 			dto.Region = *d.Region
 		}
 
+		if d.Description != nil {
+			dto.Description = *d.Description
+		}
+
 		dtos = append(dtos, dto)
 	}
 
-	return dtos, nil
+	return dtos, total, limit, nil
+}
+
+// SubmitPageFeedback records the member's helpful-vote on a wiki page —
+// creating, switching, or retracting (vote "") the vote. Guests get a
+// friendly prompt instead of an error so the frontend can hint login
+// (§80 Reader UX). Resolves the page by space+page slug — pgx.ErrNoRows
+// for a missing page (lazy pages carry no row), ErrSpaceNotFound for a
+// bad space. Returns the post-write aggregate counts.
+func (s *Service) SubmitPageFeedback(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug, vote string) (*WikiHelpfulDTO, error) {
+	if !userID.Valid {
+		return nil, fmt.Errorf("%w: sign in to rate this page", ErrInvalidInput)
+	}
+
+	if _, _, err := s.store.GetSpaceBySlug(ctx, spaceSlug); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrSpaceNotFound
+		}
+
+		return nil, fmt.Errorf("wiki: feedback: resolve space: %w", err)
+	}
+
+	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
+	if err != nil {
+		return nil, err
+	}
+
+	pageID := page.ID
+
+	// Re-posting the current vote retracts it (same toggle as docs
+	// feedback); a different vote switches in place; "" clears.
+	current, _ := s.store.GetPageViewerVote(ctx, pageID, userID)
+
+	switch {
+	case vote == "" || (vote == current && vote != ""):
+		if err := s.store.DeletePageFeedback(ctx, pageID, userID); err != nil {
+			return nil, err
+		}
+	case vote == "up" || vote == "down":
+		if err := s.store.UpsertPageFeedback(ctx, pageID, userID, vote); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("%w: vote must be 'up' or 'down'", ErrInvalidInput)
+	}
+
+	counts, err := s.store.GetPageFeedbackCounts(ctx, pageID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	dto := &WikiHelpfulDTO{Up: counts.Up, Down: counts.Down}
+	if counts.MyVote != "" {
+		dto.MyVote = &counts.MyVote
+	}
+
+	return dto, nil
+}
+
+// pageFeedbackDTO aggregates a page's helpful votes for one viewer — a
+// best-effort read (nil on error or for lazy pages) so page GETs never fail
+// on the feedback table (§80 Reader UX).
+func (s *Service) pageFeedbackDTO(ctx context.Context, pageID pgtype.UUID, viewerID pgtype.UUID) *WikiHelpfulDTO {
+	counts, err := s.store.GetPageFeedbackCounts(ctx, pageID, viewerID)
+	if err != nil {
+		return nil
+	}
+
+	dto := &WikiHelpfulDTO{Up: counts.Up, Down: counts.Down}
+	if counts.MyVote != "" {
+		dto.MyVote = &counts.MyVote
+	}
+
+	return dto
 }
 
 // IsUniversitySpace reports whether the slug resolves to a university space
@@ -515,6 +690,14 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 		return WikiPageDetailDTO{}, fmt.Errorf("wiki: get page: resolve space: %w", err)
 	}
 
+	// §58 — host space's country currency, resolved once for every page
+	// variant (materialized, lazy template, lazy category). Failures are
+	// best-effort: a missing country leaves currency fields code-less.
+	spaceCurrency, cerr := s.store.ResolveSpaceCurrencyCode(ctx, spaceID)
+	if cerr != nil {
+		slog.Warn("wiki: space currency resolve failed", "space_id", spaceID.String(), "error", cerr)
+	}
+
 	page, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -533,16 +716,21 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 				return WikiPageDetailDTO{}, pgx.ErrNoRows
 			}
 
-			return s.getLazyPage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
+			lazy, lerr := s.getLazyPage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
+			if lerr == nil {
+				lazy.SpaceCurrencyCode = spaceCurrency
+			}
+			return lazy, lerr
 		}
 
 		return WikiPageDetailDTO{}, fmt.Errorf("wiki: get page: %w", err)
 	}
 
 	dto := WikiPageDetailDTO{
-		WikiPageDTO: pageToDTO(page),
-		SpaceSlug:   page.SpaceSlug,
-		SpaceName:   page.SpaceName,
+		WikiPageDTO:       pageToDTO(page),
+		SpaceSlug:         page.SpaceSlug,
+		SpaceName:         page.SpaceName,
+		SpaceCurrencyCode: spaceCurrency,
 	}
 
 	// Fetch the current approved revision.
@@ -556,9 +744,17 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 		if rev.SubmittedByName != nil {
 			dto.SubmittedBy = *rev.SubmittedByName
 		}
+
+		if rev.SubmittedByAvatarURL != nil {
+			dto.SubmittedByAvatarURL = *rev.SubmittedByAvatarURL
+		}
 	}
 	// If no approved revision exists, current_content is nil — the page
 	// is a stub waiting for its first approved content.
+
+	// §80 Reader UX — helpful-vote counts ride on every materialized page
+	// read; lazy pages have no row to vote on so Helpful stays nil.
+	dto.Helpful = s.pageFeedbackDTO(ctx, page.ID, userID)
 
 	// §80 Wiki Types: resolve the page's category template and attach the
 	// bound field group's schema+values. Failures degrade to a prose-only

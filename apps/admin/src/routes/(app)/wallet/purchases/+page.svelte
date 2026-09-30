@@ -5,6 +5,7 @@
 	// Ref: japaconnect-engineering/sections/58-credit-currency-system.md
 	import { t } from '$lib/stores/i18n.svelte';
 	import { walletApi } from '$lib/api';
+	import { loadCurrencies, formatMoney, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { DataTable } from '$lib/components/ui/data-table';
@@ -26,6 +27,8 @@
 	let purchases = $state<CreditPurchase[]>([]);
 	let loading = $state(true);
 	let errorMessage = $state('');
+	// §58 — managed currency list for symbol/name rendering.
+	let currencies = $state<CurrencyInfo[]>([]);
 
 	let filters = $state({
 		user_id: '',
@@ -61,8 +64,7 @@
 	}
 
 	function formatAmount(minor: number, currency: string): string {
-		const major = minor / 100;
-		return `${major.toFixed(2)} ${currency}`;
+		return formatMoney(minor, currency, currencies, { minor: true, fractionDigits: 2, withCode: true });
 	}
 
 	function formatDate(iso: string): string {
@@ -73,7 +75,7 @@
 		{ key: 'created_at', label: 'Date', sortable: true, render: (v: string) => formatDate(v) },
 		{ key: 'display_name', label: t('app.wallet.filter_user', 'User'), render: (v: string, row: CreditPurchase) => `<span class="text-sm">${v || row.username || 'anonymous'}</span>` },
 		{ key: 'amount', label: t('app.wallet.fiat_amount', 'Fiat Amount'), sortable: true, render: (_: number, row: CreditPurchase) => formatAmount(row.amount, row.currency) },
-		{ key: 'currency', label: t('app.wallet.filter_currency', 'Currency'), render: (v: string) => v },
+		{ key: 'currency', label: t('app.wallet.filter_currency', 'Currency'), render: (v: string) => currencyLabel(v, currencies) },
 		{ key: 'provider', label: t('app.wallet.provider', 'Provider'), render: (v: string) => v },
 		{
 			key: 'status',
@@ -85,6 +87,7 @@
 		}
 	];
 
+	loadCurrencies().then((list) => (currencies = list));
 	loadPurchases();
 </script>
 
@@ -114,7 +117,16 @@
 				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="filter-currency">{t('app.wallet.filter_currency', 'Currency')}</label>
-					<input id="filter-currency" type="text" bind:value={filters.currency} class="w-24 rounded-md border border-input bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.purchases.ph_usd', 'USD')} />
+					{#if currencies.length > 0}
+						<select id="filter-currency" bind:value={filters.currency} class="w-40 rounded-md border border-input bg-surface px-3 py-2 text-sm">
+							<option value="">{t('common.all', 'All')}</option>
+							{#each currencies as c (c.code)}
+								<option value={c.code}>{currencyLabel(c.code, currencies)}</option>
+							{/each}
+						</select>
+					{:else}
+						<input id="filter-currency" type="text" bind:value={filters.currency} class="w-24 rounded-md border border-input bg-surface px-3 py-2 text-sm" placeholder={t('app.wallet.purchases.ph_usd', 'USD')} />
+					{/if}
 				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium" for="filter-from">{t('app.wallet.filter_date_from', 'From Date')}</label>

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import { Star, Check, X, Trash2 } from 'lucide-svelte';
+	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import type {
 		ComparisonItem,
 		ComparisonDimension,
@@ -26,6 +28,11 @@
 	}
 
 	let { items, dimensions, matrix, canManage = false, onRemove }: Props = $props();
+
+	// §58 — currency dimension cells store their amount in value_rating and
+	// carry currency_code on the dimension; resolve symbols via the shared
+	// active-currency list from the root layout.
+	const currencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
 
 	// Sort items + dimensions by position for stable table rendering.
 	const sortedItems = $derived([...items].sort((a, b) => a.position - b.position));
@@ -104,8 +111,14 @@
 								{:else}
 									<span class="text-[var(--color-muted)]">—</span>
 								{/if}
+							{:else if dv.type === 'currency'}
+								{#if dv.value_rating != null}
+									{formatMoney(dv.value_rating, dv.currency_code, currencies)}
+								{:else}
+									{dv.value ?? '—'}
+								{/if}
 							{:else}
-								<!-- text, number, currency — render the string value -->
+								<!-- text, number — render the string value -->
 								{dv.value ?? '—'}
 							{/if}
 						</td>

@@ -49,10 +49,12 @@ var sourceItemEntityTypes = []sourceOption{
 }
 
 // sourceSortOptions are the sorts exposed by the public source directory.
+// "rising" is trending restricted to sources created in the last 7 days.
 var sourceSortOptions = []sourceOption{
 	{Value: "popular", Label: "Popular"},
 	{Value: "recent", Label: "Recently added"},
 	{Value: "trending", Label: "Trending"},
+	{Value: "rising", Label: "Rising"},
 }
 
 // sourceKindOptions are the publisher kinds a directory visitor can filter

@@ -6,6 +6,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Trash2 } from 'lucide-svelte';
 	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO, isoTimestampToDateInput } from '$lib/utils/date';
+	import { loadCurrencies, currencyOptions, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import { onMount } from 'svelte';
 
 	type Coupon = {
@@ -40,9 +41,13 @@
 	let pageError = $state('');
 	let bulkDeleting = $state(false);
 	let providerOptions = $state<Array<{ value: string; label: string }>>([]);
+	// §58 — managed currency list: drives the currency select options and
+	// symbol rendering for fixed-amount discounts.
+	let currencies = $state<CurrencyInfo[]>([]);
 
 	// Load affiliate providers for the provider_id select (Section 55 — provider linkage).
 	onMount(async () => {
+		loadCurrencies().then((list) => (currencies = list));
 		try {
 			const res = await affiliateProvidersAdminApi.list('page_size=100');
 			if (res.ok && Array.isArray(res.data)) {
@@ -112,7 +117,9 @@
 		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'autocomplete', placeholder: t('coupons.provider_placeholder', 'Search provider…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
 		{ key: 'discount_type', label: t('coupons.type', 'Discount Type'), type: 'select', options: discountTypeOptions },
 		{ key: 'discount_value', label: t('coupons.value', 'Value'), type: 'number' },
-		{ key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', placeholder: 'e.g. NGN, USD' },
+		currencies.length > 0
+			? { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'select', options: currencyOptions(currencies) }
+			: { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', placeholder: 'e.g. NGN, USD' },
 		{ key: 'description', label: t('coupons.description_field', 'Description'), type: 'textarea' },
 		{ key: 'referral_url', label: t('coupons.referral_url', 'Referral URL'), type: 'url' },
 		{ key: 'terms_url', label: t('coupons.terms_url', 'Terms URL'), type: 'url' },
@@ -139,7 +146,7 @@
 					if (v == null) return '—';
 					if (row.discount_type === 'percent') return `${v}%`;
 					if (row.discount_type === 'free_shipping') return t('coupons.free_shipping', 'Free Shipping');
-					return `${v} ${row.currency ?? ''}`.trim();
+					return formatMoney(v, row.currency, currencies);
 				}
 			},
 			{
@@ -208,7 +215,7 @@
 				status: body.is_active ? 'active' : 'suspended'
 			};
 			if (body.provider_id) payload.provider_id = String(body.provider_id);
-			if (body.currency) payload.currency = String(body.currency).trim();
+			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
 			if (body.description) payload.description = String(body.description).trim();
 			if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
 			if (body.terms_url) payload.terms_url = String(body.terms_url).trim();
@@ -228,7 +235,7 @@
 				status: body.is_active ? 'active' : 'suspended'
 			};
 			if (body.provider_id) payload.provider_id = String(body.provider_id);
-			if (body.currency) payload.currency = String(body.currency).trim();
+			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
 			if (body.description) payload.description = String(body.description).trim();
 			if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
 			if (body.terms_url) payload.terms_url = String(body.terms_url).trim();
@@ -289,7 +296,7 @@
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.discount', 'Discount')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
-				{row.discount_type === 'percent' ? `${row.discount_value}%` : row.discount_type === 'free_shipping' ? t('coupons.free_shipping', 'Free Shipping') : `${row.discount_value ?? ''} ${row.currency ?? ''}`.trim()}
+				{row.discount_type === 'percent' ? `${row.discount_value}%` : row.discount_type === 'free_shipping' ? t('coupons.free_shipping', 'Free Shipping') : formatMoney(row.discount_value, row.currency, currencies)}
 			</p>
 		</div>
 		{#if row.referral_url}

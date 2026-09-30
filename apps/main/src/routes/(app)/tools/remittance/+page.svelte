@@ -32,6 +32,7 @@
 		CatalogOption
 	} from '$lib/types';
 	import type { PageData, ActionData } from './$types';
+	import { formatMoney, currencyLabel, currencySymbol } from '$lib/utils/currency';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 
@@ -250,11 +251,18 @@
 	}
 
 	// Autocomplete fetchers — filter the already-loaded corridors client-side.
+	// Labels resolve currency names from the managed currency list (§58) so
+	// users see "GBP — British Pound", not a bare code.
+	function currencyItem(code: string): AutocompleteItem {
+		return { id: code, label: currencyLabel(code, data.currencies) };
+	}
 	function fetchSendCurrencies(q: string): Promise<AutocompleteItem[]> {
 		const codes = [...new Set(corridors.map((c) => c.send_currency))];
 		const query = q.toLowerCase();
-		const filtered = query === '' ? codes : codes.filter((c) => c.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((c) => ({ id: c, label: c })));
+		const filtered = query === ''
+			? codes
+			: codes.filter((c) => currencyItem(c).label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map(currencyItem));
 	}
 	function fetchSendCurrenciesInitial(): Promise<AutocompleteItem[]> {
 		return fetchSendCurrencies('');
@@ -262,8 +270,10 @@
 	function fetchReceiveCurrencies(q: string): Promise<AutocompleteItem[]> {
 		const codes = [...new Set(corridors.map((c) => c.receive_currency))];
 		const query = q.toLowerCase();
-		const filtered = query === '' ? codes : codes.filter((c) => c.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((c) => ({ id: c, label: c })));
+		const filtered = query === ''
+			? codes
+			: codes.filter((c) => currencyItem(c).label.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map(currencyItem));
 	}
 	function fetchReceiveCurrenciesInitial(): Promise<AutocompleteItem[]> {
 		return fetchReceiveCurrencies('');
@@ -375,7 +385,7 @@
 												{/if}
 											</td>
 											<td class="px-3 py-2 text-right font-medium text-[var(--color-text)]">{r.rate.toFixed(2)}</td>
-											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{r.fee_flat ? r.fee_flat.toFixed(2) : '—'}</td>
+											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{r.fee_flat ? formatMoney(r.fee_flat, sendCurrency, data.currencies) : '—'}</td>
 											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{r.transfer_time || '—'}</td>
 											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{ratioVsBest(r)}</td>
 										</tr>
@@ -422,7 +432,7 @@
 								min="1"
 								class="w-32 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
 							/>
-							<span class="text-sm text-[var(--color-muted)]">{sendCurrency}</span>
+							<span class="text-sm text-[var(--color-muted)]">{currencySymbol(sendCurrency, data.currencies) || sendCurrency}</span>
 						</div>
 
 						{#if calcLoading}
@@ -431,7 +441,7 @@
 							{@const best = bestCalcProvider(calculation)}
 							<p class="mt-2 text-sm text-[var(--color-text)]">
 								{t('remittance.best_rate_label', 'Best value')}:
-								<strong class="font-semibold">{best?.receive_amount.toFixed(2)} {receiveCurrency}</strong>
+								<strong class="font-semibold">{formatMoney(best?.receive_amount, receiveCurrency, data.currencies)}</strong>
 								<span class="text-[var(--color-muted)]">({t('remittance.via', 'via')} {best?.provider_name})</span>
 							</p>
 							<div class="mt-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--color-border)]">
@@ -450,9 +460,9 @@
 											<tr class="border-b border-[var(--color-border)] last:border-0">
 												<td class="px-3 py-2 text-[var(--color-text)]">{p.provider_name}</td>
 												<td class="px-3 py-2 text-right">{p.rate.toFixed(2)}</td>
-												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.fee_flat ? p.fee_flat.toFixed(2) : '—'}</td>
-												<td class="px-3 py-2 text-right font-medium">{p.receive_amount.toFixed(2)} {receiveCurrency}</td>
-												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.total_cost.toFixed(2)} {sendCurrency}</td>
+												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.fee_flat ? formatMoney(p.fee_flat, sendCurrency, data.currencies) : '—'}</td>
+												<td class="px-3 py-2 text-right font-medium">{formatMoney(p.receive_amount, receiveCurrency, data.currencies)}</td>
+												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{formatMoney(p.total_cost, sendCurrency, data.currencies)}</td>
 											</tr>
 										{/each}
 									</tbody>
@@ -460,7 +470,7 @@
 							</div>
 						{:else if bestRate}
 							<p class="mt-2 text-sm text-[var(--color-text)]">
-								≈ {(parseFloat(sendAmount || '0') * bestRate.rate).toFixed(2)} {receiveCurrency}
+								≈ {formatMoney(parseFloat(sendAmount || '0') * bestRate.rate, receiveCurrency, data.currencies)}
 								<span class="text-[var(--color-muted)]"> ({t('remittance.via', 'via')} {bestRate.provider_name})</span>
 							</p>
 						{/if}

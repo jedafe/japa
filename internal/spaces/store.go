@@ -504,6 +504,33 @@ func (s *Service) GetSpaceByGeoCode(ctx context.Context, countryCode string) (ge
 	return space, nil
 }
 
+// ResolveCountryCurrencyCode returns the ISO 4217 currency code of the
+// space's country context (§58 "Country → currency linkage"): the
+// country-level ancestor's currency_code via the geo parent chain, or —
+// for spaces outside the chain whose geo_code is a country ISO (e.g.
+// university spaces carry 'CA') — that country's currency_code. Display
+// context only (name/symbol lookups); inactive currencies resolve fine.
+// Empty string when no country resolves. Never returns an error to its
+// caller's response path — failures degrade to "".
+func (s *Service) ResolveCountryCurrencyCode(ctx context.Context, spaceID pgtype.UUID, geoCode *string) string {
+	code, err := s.read.GetSpaceCountryCurrencyCode(ctx, spaceID)
+	if err == nil && code != nil && *code != "" {
+		return *code
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		slog.Warn("spaces: country currency walk failed", "space_id", spaceID.String(), "error", err)
+	}
+
+	if geoCode == nil || *geoCode == "" {
+		return ""
+	}
+	country, err := s.read.GetSpaceByGeoCode(ctx, geoCode)
+	if err != nil || country.CurrencyCode == nil {
+		return ""
+	}
+	return *country.CurrencyCode
+}
+
 // FindCitySpaceByName returns the city-level Space whose name matches the
 // given city name (case-insensitive), scoped to the platform. Used by the
 // /geo/me suggested_spaces algorithm (Section 37) and the reverse-geocoding

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { exportData, deactivateAccount } from '$lib/api/hub';
 	import DeleteAccountDialog from '../flows/DeleteAccountDialog.svelte';
@@ -16,6 +17,7 @@
 	let deleteOpen = $state(false);
 	let deactivating = $state(false);
 	let deactivateError = $state<string | null>(null);
+	let deactivatePassword = $state('');
 
 	async function doExport() {
 		exportError = null;
@@ -28,15 +30,20 @@
 	}
 
 	async function doDeactivate() {
+		if (deactivating || !deactivatePassword) return;
 		deactivating = true;
 		deactivateError = null;
-		const res = await deactivateAccount();
+		const res = await deactivateAccount(deactivatePassword);
 		deactivating = false;
-		deactivateOpen = false;
 		if (res.error) {
+			// Keep the dialog open so the user can correct the password.
 			deactivateError = res.error.message;
 			return;
 		}
+		// Deactivation revokes every session server-side — send the user to
+		// the login screen; signing back in reactivates the account (§50).
+		deactivateOpen = false;
+		await goto('/login');
 	}
 </script>
 
@@ -69,37 +76,48 @@
 		<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<h2 class="mb-1 text-sm font-medium text-[var(--color-text)]">{t('settings.danger.deactivate_title')}</h2>
 			<p class="mb-3 text-sm text-[var(--color-muted)]">{t('settings.danger.deactivate_desc')}</p>
-			{#if deactivateError}<p class="mb-2 text-xs text-[var(--color-danger,#dc2626)]">{deactivateError}</p>{/if}
-			<Dialog.Root bind:open={deactivateOpen}>
-				<Dialog.Trigger
-					class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-				>
+			<Modal
+				bind:open={deactivateOpen}
+				onOpenChange={(v) => { if (!v) { deactivatePassword = ''; deactivateError = null; } }}
+				title={t('settings.danger.deactivate_confirm_title')}
+				description={t('settings.danger.deactivate_confirm_body')}
+				triggerClass="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				size="md"
+			>
+				{#snippet trigger()}
 					{t('settings.danger.deactivate_button')}
-				</Dialog.Trigger>
-				<Dialog.Portal>
-					<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-						<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-							{t('settings.danger.deactivate_confirm_title')}
-						</Dialog.Title>
-						<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-							{t('settings.danger.deactivate_confirm_body')}
-						</Dialog.Description>
+				{/snippet}
+				{#snippet children(close)}
+						<!-- The backend requires the account password — it verifies
+						     ownership before deactivating (missing_password → 400). -->
+						<label class="mb-4 block">
+							<span class="mb-1 block text-sm text-[var(--color-muted)]">
+								{t('settings.danger.deactivate_password', 'Confirm with your password')}
+							</span>
+							<input
+								type="password"
+								autocomplete="current-password"
+								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
+								value={deactivatePassword}
+								oninput={(e) => (deactivatePassword = e.currentTarget.value)}
+							/>
+						</label>
+						{#if deactivateError}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{deactivateError}</p>{/if}
 						<div class="flex justify-end gap-2">
-							<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
+							<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
 								{t('common.cancel')}
-							</Dialog.Close>
+							</button>
 							<button
 								type="button"
-								disabled={deactivating}
+								disabled={deactivating || !deactivatePassword}
 								class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
 								onclick={doDeactivate}
 							>
-								{t('settings.danger.deactivate_confirm')}
+								{deactivating ? t('common.submitting', 'Submitting…') : t('settings.danger.deactivate_confirm')}
 							</button>
 						</div>
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+				{/snippet}
+			</Modal>
 		</div>
 
 		<!-- Delete account -->

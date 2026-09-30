@@ -5,6 +5,7 @@
 	// Ref: sections/109-eca-guide.md, ADR-120.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
+	import { loadCurrencies, currencyOptions, currencyLabel, currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
@@ -51,6 +52,9 @@
 	let activeTab = $state<'providers' | 'guides' | 'updates'>(initTabParam('providers', { valid: ECA_TABS }));
 	bindTabParam(() => activeTab, (v) => (activeTab = v), { valid: ECA_TABS, preserve: [] });
 	let pageError = $state('');
+	// §58 — managed currency list for the guide currency select.
+	let currencies = $state<CurrencyInfo[]>([]);
+	$effect(() => { loadCurrencies().then((list) => (currencies = list)); });
 
 	// ── Providers tab ─────────────────────────────────────────────────────────
 
@@ -105,7 +109,7 @@
 
 	let guideController = $state<EntityPageController | undefined>(undefined);
 
-	const guideFields: FieldDef[] = [
+	const guideFields = $derived<FieldDef[]>([
 		{ key: 'destination_space_id', label: 'Destination space ID', type: 'text', required: true },
 		{ key: 'provider_id', label: 'Provider ID', type: 'text', required: true },
 		{ key: 'purpose', label: 'Purpose', type: 'select', required: true, options: [
@@ -114,10 +118,12 @@
 		]},
 		{ key: 'pathway_steps', label: 'Pathway steps (JSON)', type: 'textarea', required: true },
 		{ key: 'fee_estimate', label: 'Fee estimate', type: 'text' },
-		{ key: 'currency', label: 'Currency', type: 'text' },
+		currencies.length > 0
+			? { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions(currencies) }
+			: { key: 'currency', label: 'Currency', type: 'text' },
 		{ key: 'timeline_estimate', label: 'Timeline estimate', type: 'text' },
 		{ key: 'official_url', label: 'Official URL', type: 'url' },
-	];
+	]);
 
 	async function loadGuides(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
@@ -153,7 +159,7 @@
 		else { pageError = res.error ?? 'Generate failed'; }
 	}
 
-	const guideConfig: EntityPageConfig = {
+	const guideConfig = $derived<EntityPageConfig>({
 		title: 'ECA Guides',
 		description: 'Step-by-step credential-assessment guides per provider + destination',
 		createPermission: 'eca_guide.manage',
@@ -164,7 +170,15 @@
 			{ key: 'destination_space_name', label: 'Destination', sortable: true },
 			{ key: 'provider_name', label: 'Provider', sortable: true },
 			{ key: 'purpose', label: 'Purpose' },
-			{ key: 'fee_estimate', label: 'Fee' },
+			{ key: 'fee_estimate', label: 'Fee', render: (v: string, row: Guide) => {
+				const fee = v ?? '';
+				if (!fee) return '—';
+				const sym = currencySymbol(row.currency, currencies);
+				// fee_estimate may already embed the code (e.g. "200 USD").
+				if (!sym || (row.currency && fee.toUpperCase().includes(row.currency.toUpperCase()))) return fee;
+				return `${sym} ${fee}`;
+			} },
+			{ key: 'currency', label: 'Currency', render: (v: string) => currencyLabel(v, currencies) },
 			{
 				key: 'status', label: 'Status',
 				render: (v: string) => v === 'published' ? '<span style="color:var(--color-success)">published</span>' : v === 'ai_draft' ? '<span style="color:var(--color-warning)">ai_draft</span>' : v
@@ -207,7 +221,7 @@
 				onclick: (row: Guide) => rejectGuide(row),
 			},
 		],
-	};
+	});
 
 	// ── Community updates tab ─────────────────────────────────────────────────
 

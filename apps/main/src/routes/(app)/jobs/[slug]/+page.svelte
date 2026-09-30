@@ -8,7 +8,7 @@
 		Flag, ArrowRight, ChevronRight, Building2, Wallet, GraduationCap, X,
 		UserRound, Layers
 	} from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { EmptyState, AutocompleteSelect } from '$lib/components/ui';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import { api } from '$lib/api/client';
@@ -21,6 +21,7 @@
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
 	import { salaryPeriodLabel } from '$lib/utils/jobs';
+	import { currencySymbol } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
 
@@ -165,7 +166,10 @@
 		if (!min && !max) return '';
 		const range = [min, max].filter(Boolean).join(' – ');
 		const period = salaryPeriodLabel(field('salary_period'));
-		const amount = currency ? `${currency} ${range}` : range;
+		const sym = currency ? currencySymbol(currency, data.currencies) : '';
+		// Symbol prefix sits tight ("₦5,000"); a bare-code fallback keeps a
+		// space ("USD 5,000").
+		const amount = sym ? (sym === currency.trim().toUpperCase() ? `${sym} ${range}` : `${sym}${range}`) : range;
 		return period ? `${amount} ${period}` : amount;
 	});
 
@@ -847,17 +851,7 @@
 
 <!-- Report job dialog — POST /content/{content_id}/report (Section 51) -->
 {#if reportOpen}
-	<Dialog.Root open={reportOpen}>
-		<Dialog.Portal>
-			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-				<Dialog.Close class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]" onclick={closeReport}>
-					<X size={20} />
-				</Dialog.Close>
-				<div class="mb-4 flex items-center gap-2">
-					<Flag size={20} class="text-red-500" />
-					<h2 class="text-lg font-semibold text-[var(--color-text)]">{t('jobs.report_title', 'Report this job')}</h2>
-				</div>
+	<Modal open={reportOpen} onOpenChange={(v) => { if (!v) closeReport(); }} icon={Flag} title={t('jobs.report_title', 'Report this job')} overlayClass="backdrop-blur-sm" size="md">
 				{#if reportSubmitted}
 					<p class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700 dark:bg-green-950/30 dark:text-green-400">
 						{t('jobs.report_submitted', 'Your report has been submitted. Our team will review it.')}
@@ -924,7 +918,5 @@
 						</div>
 					</form>
 				{/if}
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	</Modal>
 {/if}

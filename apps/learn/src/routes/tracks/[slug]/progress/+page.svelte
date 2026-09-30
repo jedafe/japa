@@ -115,12 +115,21 @@
 	{:else if error}
 		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
 			<p class="text-sm text-[var(--color-destructive)]">{error}</p>
-			<a
-				href="/"
-				class="mt-4 inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
-			>
-				<ArrowLeft size={16} /> {t('learn.back_to_explore', 'Back to explore')}
-			</a>
+			<div class="mt-4 flex flex-wrap items-center justify-center gap-3">
+				<button
+					type="button"
+					onclick={loadProgress}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('common.retry')}
+				</button>
+				<a
+					href="/"
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				>
+					<ArrowLeft size={16} /> {t('learn.back_to_explore', 'Back to explore')}
+				</a>
+			</div>
 		</div>
 	{:else if track && progress}
 		<!-- Hero -->

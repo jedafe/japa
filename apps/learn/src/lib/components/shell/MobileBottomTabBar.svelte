@@ -35,17 +35,33 @@
 			return true;
 		})
 	);
+
+	// Section 09 Product Tour: map tab-bar URLs to the same per-feature tour
+	// targets as the desktop LeftNav so mobile users get the same steps.
+	function tabTourKey(url: string): string | undefined {
+		const map: Record<string, string> = {
+			'/': 'learn-browse',
+			'/my-learning': 'my-learning',
+			'/certificates': 'certificates',
+			'/bookmarks': 'learn-bookmarks',
+			'/dashboard/instructor': 'instructor',
+			'/profile': 'learn-account'
+		};
+		return map[url];
+	}
 </script>
 
 <nav
 	class="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur sm:hidden"
 	aria-label={t('a11y.main_nav')}
+	data-tour="primary-nav"
 >
 	{#each menuItems as item (item.id)}
 		{@const Icon = resolveIcon(item.icon)}
 		{@const active = isActive(item.url)}
 		<a
 			href={resolveItemUrl(item.url)}
+			data-tour={tabTourKey(item.url)}
 			target={item.target === '_blank' ? '_blank' : undefined}
 			rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
 			class="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] {active

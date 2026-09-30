@@ -24,7 +24,7 @@
 	import { env } from '$env/dynamic/public';
 	import TopBar from '$lib/components/layout/TopBar.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
-	import { Tooltip } from 'bits-ui';
+	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import '../app.css';
 	import {
 		Menu,
@@ -265,7 +265,6 @@
 	{/if}
 </svelte:head>
 
-<Tooltip.Provider>
 {#if isAuthPage}
 	<main class="bg-background text-foreground flex min-h-screen items-center justify-center">
 		{@render children()}
@@ -299,27 +298,16 @@
 			<nav class="flex-1 space-y-0.5 overflow-y-auto p-3">
 				{#each nav as item}
 					{@const isActive = item.href === '/' ? currentPath === '/' : currentPath.startsWith(item.href)}
-					<Tooltip.Root delayDuration={200}>
-						<Tooltip.Trigger>
-							<a
-								href={item.href}
-								class="hover:bg-dark-04 data-[state=active]:bg-accent flex items-center gap-3 rounded-9px px-3 py-2.5 text-base font-medium transition-colors {isActive ? 'bg-accent text-accent-foreground' : 'text-foreground-alt'}"
-								onclick={() => (sidebarOpen = false)}
-							>
-								<item.icon class="size-4" />
-								{item.label}
-							</a>
-						</Tooltip.Trigger>
-						<Tooltip.Portal>
-							<Tooltip.Content
-								side="right"
-								sideOffset={8}
-								class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-1.5 text-xs font-medium"
-							>
-								{item.tooltip}
-							</Tooltip.Content>
-						</Tooltip.Portal>
-					</Tooltip.Root>
+					<Tooltip content={item.tooltip} side="right">
+						<a
+							href={item.href}
+							class="hover:bg-dark-04 data-[state=active]:bg-accent flex items-center gap-3 rounded-9px px-3 py-2.5 text-base font-medium transition-colors {isActive ? 'bg-accent text-accent-foreground' : 'text-foreground-alt'}"
+							onclick={() => (sidebarOpen = false)}
+						>
+							<item.icon class="size-4" />
+							{item.label}
+						</a>
+					</Tooltip>
 				{/each}
 			</nav>
 		</aside>
@@ -346,4 +334,3 @@
 		</div>
 	</div>
 {/if}
-</Tooltip.Provider>

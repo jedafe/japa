@@ -5,7 +5,7 @@
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Cpu, Plus, Pencil, Trash2, Zap, Check, X } from 'lucide-svelte';
-	import { Dialog } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import type { AiProvider } from '$lib/api/types';
 	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
@@ -667,13 +667,7 @@ const providerPresets: ProviderPreset[] = [
 />
 
 <!-- Create Provider Dialog -->
-<Dialog.Root bind:open={createModalOpen}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 fixed inset-0 z-40" />
-		<Dialog.Content class="bg-background border-border-card fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 shadow-lg max-h-[90vh] overflow-y-auto">
-			<Dialog.Title class="text-foreground text-lg font-semibold">{t('ai_providers.create_title', 'Add AI Provider')}</Dialog.Title>
-			<Dialog.Description class="text-muted-foreground mt-1 text-sm">{t('ai_providers.create_description', 'Configure a new AI backend for the dispatcher.')}</Dialog.Description>
-
+<Modal bind:open={createModalOpen} title={t('ai_providers.create_title', 'Add AI Provider')} description={t('ai_providers.create_description', 'Configure a new AI backend for the dispatcher.')} size="lg">
 			<div class="mt-4 space-y-4">
 				<!-- Preset -->
 				<div>
@@ -839,19 +833,13 @@ const providerPresets: ProviderPreset[] = [
 					{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 
 <!-- Edit Provider Dialog -->
-<Dialog.Root bind:open={editModalOpen}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 fixed inset-0 z-40" />
-		<Dialog.Content class="bg-background border-border-card fixed top-1/2 left-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 shadow-lg max-h-[90vh] overflow-y-auto">
-			<Dialog.Title class="text-foreground text-lg font-semibold">{t('ai_providers.edit_title', 'Edit AI Provider')}</Dialog.Title>
-			<Dialog.Description class="text-muted-foreground mt-1 text-sm">
-				{editingProvider?.name} · <span class="font-mono">{getProviderTypeLabel(editingProvider?.provider_type ?? '')}</span>
-			</Dialog.Description>
+<Modal bind:open={editModalOpen} title={t('ai_providers.edit_title', 'Edit AI Provider')} size="lg">
+	{#snippet description()}
+		{editingProvider?.name} · <span class="font-mono">{getProviderTypeLabel(editingProvider?.provider_type ?? '')}</span>
+	{/snippet}
 
 			<div class="mt-4 space-y-4">
 				<!-- Name -->
@@ -1001,9 +989,7 @@ const providerPresets: ProviderPreset[] = [
 					{saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 
 <!-- Delete Confirmation -->
 <ConfirmModal

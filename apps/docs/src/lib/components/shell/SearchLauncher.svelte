@@ -32,6 +32,7 @@
 <button
 	type="button"
 	class="launcher"
+	data-tour="docs-search"
 	onclick={() => (open = true)}
 	aria-label={t('a11y.open_search')}
 >

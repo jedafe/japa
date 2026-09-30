@@ -3,7 +3,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 
-	import { Select } from 'bits-ui';
+	import Select from '$lib/components/ui/Select.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { actionColorClass } from '$lib/constants/audit';
@@ -328,58 +328,22 @@
 	<!-- H3: Select and date filters auto-apply on change (filter-on-change
 	     per DataTable spec). Text inputs keep Enter-to-apply to avoid
 	     fetching on every keystroke. -->
-	<Select.Root type="single" bind:value={filterAction} items={actionTypes} onValueChange={() => applyFilters()}>
-		<Select.Trigger
-			class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 w-full items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
-			aria-label={t('audit.action_placeholder', 'Filter by action')}
-		>
-			<Select.Value placeholder={t('audit.action_all', 'All Actions')} />
-		</Select.Trigger>
-		<Select.Portal>
-			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
-				<Select.Viewport class="p-1">
-					{#each actionTypes as item}
-						<Select.Item
-							class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-							value={item.value}
-							label={item.label}
-						>
-							{#snippet children({ selected })}
-								{item.label}
-								{#if selected}<span class="ml-auto">&#10003;</span>{/if}
-							{/snippet}
-						</Select.Item>
-					{/each}
-				</Select.Viewport>
-			</Select.Content>
-		</Select.Portal>
-	</Select.Root>
-	<Select.Root type="single" bind:value={filterTarget} items={targetTypes} onValueChange={() => applyFilters()}>
-		<Select.Trigger
-			class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 w-full items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
-			aria-label={t('audit.target_placeholder', 'Filter by target type')}
-		>
-			<Select.Value placeholder={t('audit.target_all', 'All Target Types')} />
-		</Select.Trigger>
-		<Select.Portal>
-			<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1" sideOffset={4}>
-				<Select.Viewport class="p-1">
-					{#each targetTypes as item}
-						<Select.Item
-							class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-							value={item.value}
-							label={item.label}
-						>
-							{#snippet children({ selected })}
-								{item.label}
-								{#if selected}<span class="ml-auto">&#10003;</span>{/if}
-							{/snippet}
-						</Select.Item>
-					{/each}
-				</Select.Viewport>
-			</Select.Content>
-		</Select.Portal>
-	</Select.Root>
+	<Select
+		bind:value={filterAction}
+		items={actionTypes}
+		onValueChange={() => applyFilters()}
+		placeholder={t('audit.action_all', 'All Actions')}
+		ariaLabel={t('audit.action_placeholder', 'Filter by action')}
+		triggerClass="h-10 w-full"
+	/>
+	<Select
+		bind:value={filterTarget}
+		items={targetTypes}
+		onValueChange={() => applyFilters()}
+		placeholder={t('audit.target_all', 'All Target Types')}
+		ariaLabel={t('audit.target_placeholder', 'Filter by target type')}
+		triggerClass="h-10 w-full"
+	/>
 	<input
 		type="date"
 		class="border-border-input bg-background text-foreground rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"

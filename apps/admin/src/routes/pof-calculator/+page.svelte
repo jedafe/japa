@@ -4,6 +4,7 @@
 	// Ref: sections/108-pof-calculator.md, ADR-119.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { api } from '$lib/api';
+	import { loadCurrencies, currencyOptions, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
 
@@ -28,19 +29,24 @@
 
 	let pageError = $state('');
 	let controller = $state<EntityPageController | undefined>(undefined);
+	// §58 — managed currency list for the currency select + display labels.
+	let currencies = $state<CurrencyInfo[]>([]);
+	$effect(() => { loadCurrencies().then((list) => (currencies = list)); });
 
-	const fields: FieldDef[] = [
+	const fields = $derived<FieldDef[]>([
 		{ key: 'destination_space_id', label: 'Destination space ID', type: 'text', required: true, placeholder: 'UUID of the space' },
 		{ key: 'visa_type', label: 'Visa type', type: 'text', required: true, placeholder: 'study_permit|express_entry|work_visa' },
 		{ key: 'program_label', label: 'Program label', type: 'text', required: true },
-		{ key: 'currency', label: 'Currency', type: 'text', required: true, placeholder: 'CAD|GBP|EUR' },
+		currencies.length > 0
+			? { key: 'currency', label: 'Currency', type: 'select', required: true, options: currencyOptions(currencies) }
+			: { key: 'currency', label: 'Currency', type: 'text', required: true, placeholder: 'CAD|GBP|EUR' },
 		{ key: 'effective_date', label: 'Effective date', type: 'date' },
 		{ key: 'source_url', label: 'Source URL', type: 'url' },
 		{ key: 'amount_schedule', label: 'Amount schedule (JSON)', type: 'textarea', required: true, placeholder: '[{"members":1,"amount":14500}] or {"base":13347,"per_dependant":680}' },
 		{ key: 'funds_must_be_liquid', label: 'Funds must be liquid', type: 'checkbox' },
 		{ key: 'accepted_proof', label: 'Accepted proof (JSON array)', type: 'textarea', placeholder: '["bank_statement","gift_deed"]' },
 		{ key: 'notes', label: 'Notes', type: 'textarea' },
-	];
+	]);
 
 	async function load(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
@@ -76,7 +82,7 @@
 		else { pageError = res.error ?? 'Generate failed'; }
 	}
 
-	const config: EntityPageConfig = {
+	const config = $derived<EntityPageConfig>({
 		title: 'POF Requirements',
 		description: 'Proof-of-funds amounts per destination + visa type (§108)',
 		createPermission: 'pof_calculator.manage',
@@ -87,7 +93,7 @@
 			{ key: 'destination_space_name', label: 'Destination', sortable: true },
 			{ key: 'visa_type', label: 'Visa type', sortable: true },
 			{ key: 'program_label', label: 'Program' },
-			{ key: 'currency', label: 'Currency' },
+			{ key: 'currency', label: 'Currency', render: (v: string) => currencyLabel(v, currencies) },
 			{ key: 'effective_date', label: 'Effective', sortable: true },
 			{
 				key: 'status', label: 'Status',
@@ -132,7 +138,7 @@
 				onclick: (row: Requirement) => reject(row),
 			},
 		],
-	};
+	});
 </script>
 
 <svelte:head>

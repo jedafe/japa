@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem, MenuSeparator } from '@japaconnect/ui';
 	import {
 		User,
 		LayoutDashboard,
 		Settings,
 		LogOut,
-		LogIn
+		LogIn,
+		Compass
 	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { env } from '$env/dynamic/public';
@@ -34,81 +35,40 @@
 					.toUpperCase()
 			: ''
 	);
-
-	const itemClass =
-		'flex cursor-pointer items-center gap-2 rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]';
 </script>
 
 <div class="dropdown">
-	<!-- Avatar dropdown menu (Bits UI — portals to body, keyboard accessible). -->
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger
-			class="grid h-9 w-9 shrink-0 place-items-center rounded-full overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)] cursor-pointer hover:outline hover:outline-2 hover:outline-[var(--color-border)] hover:outline-offset-1"
-			aria-label={t('nav.account', 'Account')}
-		>
-			{#if user?.avatar_url}
-				<img src={user.avatar_url} alt={user.displayName} class="h-full w-full object-cover" />
-			{:else if user}
-				<span class="grid h-full w-full place-items-center text-xs font-semibold text-[var(--color-primary-contrast)] bg-[var(--color-primary)]">{initials}</span>
-			{:else}
-				<User size={18} />
-			{/if}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Portal>
-			<DropdownMenu.Content
-				align="end"
-				sideOffset={8}
-				class="z-50 min-w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+	<!-- Avatar dropdown menu (shared Menu wraps bits-ui — portals to body, keyboard accessible). -->
+	<Menu contentClass="min-w-44">
+		{#snippet trigger(props)}
+			<button
+				type="button"
+				{...props}
+				class="grid h-9 w-9 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)] hover:outline hover:outline-2 hover:outline-[var(--color-border)] hover:outline-offset-1"
+				aria-label={t('nav.account', 'Account')}
 			>
-				{#if user}
-					<DropdownMenu.Item class={itemClass}>
-						{#snippet child({ props })}
-							<a href={`${mainOrigin}/u/${user.username}`} {...props}>
-								<User size={16} /> {t('nav.profile', 'Profile')}
-							</a>
-						{/snippet}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item class={itemClass}>
-						{#snippet child({ props })}
-							<a href={`${mainOrigin}/dashboard`} {...props}>
-								<LayoutDashboard size={16} /> {t('nav.dashboard', 'Dashboard')}
-							</a>
-						{/snippet}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item class={itemClass}>
-						{#snippet child({ props })}
-							<a href={`${mainOrigin}/settings/profile`} {...props}>
-								<Settings size={16} /> {t('nav.settings', 'Settings')}
-							</a>
-						{/snippet}
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator class="my-1 h-px bg-[var(--color-border)]" />
-					<DropdownMenu.Item class={itemClass}>
-						{#snippet child({ props })}
-							<a href={`${mainOrigin}/logout`} {...props}>
-								<LogOut size={16} /> {t('nav.logout', 'Logout')}
-							</a>
-						{/snippet}
-					</DropdownMenu.Item>
+				{#if user?.avatar_url}
+					<img src={user.avatar_url} alt={user.displayName} class="h-full w-full object-cover" />
+				{:else if user}
+					<span class="grid h-full w-full place-items-center bg-[var(--color-primary)] text-xs font-semibold text-[var(--color-primary-contrast)]">{initials}</span>
 				{:else}
-					<DropdownMenu.Item class={itemClass}>
-						{#snippet child({ props })}
-						<a href={`${mainOrigin}/login?redirect=${returnTo}`} {...props}>
-							<LogIn size={16} /> {t('auth.login')}
-							</a>
-						{/snippet}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item class={itemClass}>
-						{#snippet child({ props })}
-						<a href={`${mainOrigin}/signup?redirect=${returnTo}`} {...props}>
-							<User size={16} /> {t('auth.signup')}
-							</a>
-						{/snippet}
-					</DropdownMenu.Item>
+					<User size={18} />
 				{/if}
-			</DropdownMenu.Content>
-		</DropdownMenu.Portal>
-	</DropdownMenu.Root>
+			</button>
+		{/snippet}
+		{#if user}
+			<MenuItem href={`${mainOrigin}/u/${user.username}`} icon={User}>{t('nav.profile', 'Profile')}</MenuItem>
+			<MenuItem href={`${mainOrigin}/dashboard`} icon={LayoutDashboard}>{t('nav.dashboard', 'Dashboard')}</MenuItem>
+			<MenuItem href={`${mainOrigin}/settings/profile`} icon={Settings}>{t('nav.settings', 'Settings')}</MenuItem>
+			<!-- Section 09 Product Tour: replay the docs walkthrough. -->
+			<MenuItem href="/docs?tour=replay" icon={Compass}>{t('nav.replay_tour', 'Replay tour')}</MenuItem>
+			<MenuSeparator />
+			<MenuItem href={`${mainOrigin}/logout`} icon={LogOut}>{t('nav.logout', 'Logout')}</MenuItem>
+		{:else}
+			<MenuItem href={`${mainOrigin}/login?redirect=${returnTo}`} icon={LogIn}>{t('auth.login')}</MenuItem>
+			<MenuItem href={`${mainOrigin}/signup?redirect=${returnTo}`} icon={User}>{t('auth.signup')}</MenuItem>
+		{/if}
+	</Menu>
 </div>
 
 <style>

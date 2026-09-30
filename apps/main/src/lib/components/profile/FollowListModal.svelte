@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { X, UserCircle } from 'lucide-svelte';
@@ -164,25 +164,24 @@
 		(name?.charAt(0) ?? fallback?.charAt(0) ?? '?').toUpperCase();
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50" />
-		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-50 flex max-h-[80vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg"
-		>
-			<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
-				<Dialog.Title class="text-base font-medium text-[var(--color-text)]">
-					{t(titleKey, type === 'followers' ? 'Followers' : 'Following')}
-					<span class="ml-1.5 text-sm font-normal text-[var(--color-muted)]">{count}</span>
-				</Dialog.Title>
-				<Dialog.Close
-					class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-				>
-					<X size={16} />
-				</Dialog.Close>
-			</div>
+<Modal bind:open hideHeader ariaTitle={t(titleKey, 'Followers')} padded={false} size="md">
+	{#snippet children(close)}
+		<div class="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3">
+			<h2 class="text-base font-medium text-[var(--color-text)]">
+				{t(titleKey, type === 'followers' ? 'Followers' : 'Following')}
+				<span class="ml-1.5 text-sm font-normal text-[var(--color-muted)]">{count}</span>
+			</h2>
+			<button
+				type="button"
+				onclick={close}
+				aria-label={t('common.close', 'Close')}
+				class="grid h-7 w-7 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				<X size={16} />
+			</button>
+		</div>
 
-			<div class="flex-1 overflow-y-auto px-2 py-2">
+		<div class="flex-1 overflow-y-auto px-2 py-2">
 				{#if loading}
 					<div class="space-y-2 p-2">
 						{#each Array(Math.min(count, 5)) as _, i (i)}
@@ -239,6 +238,5 @@
 					</ul>
 				{/if}
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+	{/snippet}
+</Modal>

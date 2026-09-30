@@ -12,7 +12,7 @@
 	import { page as pageState } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
-	import { Switch } from 'bits-ui';
+	import { Switch } from '$lib/components/ui/switch';
 
 	const canGenerate = $derived(hasPermission('ai.generate'));
 	const canReviewHitl = $derived(hasPermission('ai.hitl.review'));
@@ -939,17 +939,10 @@
 			<textarea id="tool-desc" bind:value={toolDescription} rows="3" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"></textarea>
 		</div>
 		<div class="flex items-center gap-3">
-			<Switch.Root
-				checked={toolEnabled}
-				onCheckedChange={(v: boolean) => (toolEnabled = v)}
-				class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {toolEnabled ? 'bg-primary' : 'bg-surface'}"
-				style="--ring-color: var(--color-primary); --ring-offset-color: var(--color-surface)"
-				aria-label={t('ai.tools.enabled')}
-			>
-				<Switch.Thumb
-					class="inline-block h-4 w-4 transform rounded-full bg-surface shadow-sm transition-transform {toolEnabled ? 'translate-x-6' : 'translate-x-1'}"
-				/>
-			</Switch.Root>
+			<Switch
+				bind:checked={toolEnabled}
+				ariaLabel={t('ai.tools.enabled')}
+			/>
 			<span class="text-sm font-medium text-foreground-alt">{t('ai.tools.enabled')}</span>
 		</div>
 	</div>

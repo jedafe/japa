@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { DropdownMenu } from 'bits-ui';
+	import { MenuItem } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
 	import { shareContrastColor } from '$lib/utils/shareColor';
@@ -46,10 +46,7 @@
 </script>
 
 {#each platforms as platform (platform.key)}
-	<DropdownMenu.Item
-		class="flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-		onclick={() => shareToPlatform(platform)}
-	>
+	<MenuItem onSelect={() => shareToPlatform(platform)}>
 		<span
 			class="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-bold"
 			style:background-color={platform.color || 'var(--color-muted)'}
@@ -58,5 +55,5 @@
 			{platform.label.charAt(0)}
 		</span>
 		{platform.label}
-	</DropdownMenu.Item>
+	</MenuItem>
 {/each}

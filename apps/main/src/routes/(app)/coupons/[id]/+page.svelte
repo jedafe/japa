@@ -6,6 +6,7 @@
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { currencySymbol } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
 
@@ -38,7 +39,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			? t('coupon.percent_off', '{n}% off').replace('{n}', String(coupon.discount_value ?? ''))
 			: coupon.discount_type === 'fixed'
 				? t('coupon.amount_off', '{cur}{n} off')
-						.replace('{cur}', coupon.currency ?? '')
+						.replace('{cur}', currencySymbol(coupon.currency, data.currencies) || (coupon.currency ?? ''))
 						.replace('{n}', String(coupon.discount_value ?? ''))
 				: coupon.discount_type === 'free_shipping'
 					? t('coupon.free_shipping', 'Free shipping')

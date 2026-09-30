@@ -4,7 +4,9 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
-	import { Tabs, Tooltip } from 'bits-ui';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
+	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import { api } from '$lib/api';
 	import type { DlqEntry, DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
@@ -359,36 +361,26 @@
 		{t('common.refresh')}
 	</button>
 	{#if entries.length > 0}
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<button
-					class="border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors"
-					onclick={() => { confirmDiscardAll = true; confirmDiscardAllOpen = true; }}
-				>
-					<Trash2 class="size-3" />
-					{t('dlq.discard_all')}
-				</button>
-			</Tooltip.Trigger>
-			<Tooltip.Portal>
-				<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 rounded-input border px-3 py-2 text-xs">
-					{t('dlq.discard_all_tooltip').replace('{count}', String(entries.length))}
-				</Tooltip.Content>
-			</Tooltip.Portal>
-		</Tooltip.Root>
+		<Tooltip content={t('dlq.discard_all_tooltip').replace('{count}', String(entries.length))} sideOffset={4}>
+			<button
+				class="border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors"
+				onclick={() => { confirmDiscardAll = true; confirmDiscardAllOpen = true; }}
+			>
+				<Trash2 class="size-3" />
+				{t('dlq.discard_all')}
+			</button>
+		</Tooltip>
 	{/if}
 </div>
 
-<Tabs.Root bind:value={activeTab}>
-	<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
-		<Tabs.Trigger value="all" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('dlq.all')} ({entries.length})
-		</Tabs.Trigger>
-		<Tabs.Trigger value="by-type" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-			{t('dlq.by_type')} ({byTaskType.length})
-		</Tabs.Trigger>
-	</Tabs.List>
-
-	<Tabs.Content value="all" class="mt-4">
+<Tabs
+	bind:value={activeTab}
+	tabs={[
+		{ value: 'all', label: `${t('dlq.all')} (${entries.length})` },
+		{ value: 'by-type', label: `${t('dlq.by_type')} (${byTaskType.length})` }
+	]}
+>
+	<TabsContent value="all">
 		<DataTable
 			{columns}
 			{rows}
@@ -404,9 +396,9 @@
 			emptyMessage={t('dlq.no_entries')}
 			getRowId={(row) => (row as Record<string, unknown>).id as string}
 		/>
-	</Tabs.Content>
+	</TabsContent>
 
-	<Tabs.Content value="by-type" class="mt-4">
+	<TabsContent value="by-type">
 		<div class="space-y-4">
 			{#each byTaskType as [taskType, items]}
 				<div class="border-border-card bg-background-alt shadow-card rounded-xl">
@@ -445,8 +437,8 @@
 				</div>
 			{/each}
 		</div>
-	</Tabs.Content>
-</Tabs.Root>
+	</TabsContent>
+</Tabs>
 
 {#if confirmRetryEntry}
 	<ConfirmModal

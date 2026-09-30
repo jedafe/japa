@@ -11,25 +11,27 @@
 	 * app data).
 	 *
 	 * Language persists via PUT /me/preferences ({ language }).
-	 * Timezone persists via PATCH /me/account ({ timezone }).
+	 * Timezone persists via PATCH /me/profile ({ timezone }) — §50 puts
+	 * timezone on the profile contract; PATCH /me/account only accepts
+	 * username/email/display_name and silently drops unknown keys.
 	 * Content-country persists via PATCH /me/preferences/content-country.
 	 *
 	 * Ref: japaconnect-engineering/sections/18-i18n-language-packs.md
 	 *      japaconnect-engineering/sections/50-user-dashboard-settings.md
 	 */
-	import { Select } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
-	import { patchAccount, putPreferences } from '$lib/api/hub';
+	import { patchProfile, putPreferences } from '$lib/api/hub';
 	import { setContentCountry } from '$lib/api/geo';
 	import { t, i18n } from '$lib/i18n';
 	import { Globe, Clock, MapPin } from 'lucide-svelte';
 	import type { GeoCountry } from '$lib/types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 
 	interface LanguageData {
 		packs: string[];
@@ -83,12 +85,13 @@
 			language: prefs.language ?? 'en',
 			timezone: profile.timezone ?? browserTz
 		})),
-		// Language saves via PUT /me/preferences; timezone saves via PATCH /me/account.
+		// Language saves via PUT /me/preferences; timezone saves via PATCH
+		// /me/profile (the §50 contract — /me/account drops unknown keys).
 		// Both fire in parallel — they are independent fields on different endpoints.
 		async (v) => {
 			const [langRes, tzRes] = await Promise.all([
 				putPreferences({ language: v.language }),
-				patchAccount({ timezone: v.timezone })
+				patchProfile({ timezone: v.timezone })
 			]);
 			// Surface the first error if either call failed.
 			const err = langRes.error ?? tzRes.error;
@@ -172,6 +175,11 @@
 	function fetchCountriesInitial(): Promise<AutocompleteItem[]> {
 		return fetchCountries('');
 	}
+
+	// Timezone autocomplete — static client-side filter over the IANA list.
+	const tzFetcher = $derived(
+		staticAutocompleteFetcher(timezones.map((tz) => ({ id: tz, label: tz })))
+	);
 	const selectedCountryLabel = $derived(
 		contentCountry
 			? countries.find((c) => c.geo_code === contentCountry)?.name ?? contentCountry
@@ -192,7 +200,6 @@
 			selectedId={form.values.language || null}
 			selectedLabel={selectedLanguageLabel}
 			onSelect={(item) => form.set({ language: item.id })}
-			onClear={() => form.set({ language: 'en' })}
 		/>
 	</label>
 
@@ -200,33 +207,15 @@
 		<span class="mb-1.5 flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
 			<Clock size={14} /> {t('settings.language.timezone', 'Timezone')}
 		</span>
-		<Select.Root
-			type="single"
-			value={form.values.timezone}
-			onValueChange={(v) => v && form.set({ timezone: v })}
-		>
-			<Select.Trigger
-				class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-				aria-label={t('settings.language.timezone', 'Timezone')}
-			>
-				{form.values.timezone}
-			</Select.Trigger>
-			<Select.Portal>
-				<Select.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-					<Select.Viewport>
-						{#each timezones as tz (tz)}
-							<Select.Item
-								value={tz}
-								label={tz}
-								class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							>
-								{tz}
-							</Select.Item>
-						{/each}
-					</Select.Viewport>
-				</Select.Content>
-			</Select.Portal>
-		</Select.Root>
+		<Autocomplete
+			placeholder={t('settings.language.timezone', 'Timezone')}
+			emptyMessage={t('common.no_results', 'No results found')}
+			fetcher={tzFetcher}
+			initialFetcher={tzFetcher}
+			selectedId={form.values.timezone || null}
+			selectedLabel={form.values.timezone || null}
+			onSelect={(item) => form.set({ timezone: item.id })}
+		/>
 		<p class="mt-1.5 text-xs text-[var(--color-muted)]">
 			{t('settings.language.timezone_hint', 'Times will be displayed in your selected timezone.')}
 		</p>

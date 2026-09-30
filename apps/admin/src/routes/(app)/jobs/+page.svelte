@@ -8,6 +8,7 @@
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card';
 	import { jobsAdminApi, contentAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
+	import { loadCurrencies, currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Star, Eye, Pencil, Trash2 } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
@@ -41,6 +42,9 @@
 		{ value: 'draft', label: t('jobs.status_draft', 'Draft') }
 	]);
 
+	// §58 — managed currency list for the salary-range symbol.
+	let currencies = $state<CurrencyInfo[]>([]);
+
 	$effect(() => {
 		void (async () => {
 			const res = await contentAdminApi.getStatusOptions();
@@ -48,6 +52,7 @@
 				statusOptions = res.data;
 			}
 		})();
+		loadCurrencies().then((list) => (currencies = list));
 	});
 
 	// ── Feature-toggle state action ─────
@@ -340,8 +345,7 @@
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('jobs.salary', 'Salary Range')}</p>
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
-					{[field(row, 'salary_min'), field(row, 'salary_max')].filter(Boolean).join('–') || '—'}
-					{#if field(row, 'salary_currency')}<span class="text-muted-foreground text-xs"> {field(row, 'salary_currency')}</span>{/if}
+					{#if field(row, 'salary_currency')}{currencySymbol(field(row, 'salary_currency'), currencies)} {/if}{[field(row, 'salary_min'), field(row, 'salary_max')].filter(Boolean).join('–') || '—'}
 				</p>
 			</div>
 			<div>

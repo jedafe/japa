@@ -14,6 +14,7 @@ package customfields
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -82,6 +83,23 @@ const (
 type FieldOption struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
+}
+
+// CurrencyCodeFromOptions extracts the ISO 4217 code from a field's options
+// JSON ({currency_code: "USD"}) — the binding that denominates currency and
+// price_range field values (§58). Empty when the field declares none or the
+// JSON is malformed.
+func CurrencyCodeFromOptions(options []byte) string {
+	if len(options) == 0 {
+		return ""
+	}
+	var o struct {
+		CurrencyCode string `json:"currency_code"`
+	}
+	if err := json.Unmarshal(options, &o); err != nil {
+		return ""
+	}
+	return o.CurrencyCode
 }
 
 // validFieldTypes is the set of all supported field types.

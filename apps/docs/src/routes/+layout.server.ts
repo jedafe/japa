@@ -3,6 +3,13 @@ import { apiContext, apiGet } from '$lib/server/api';
 import { fetchDocNav } from '$lib/server/nav';
 import type { DocNavTree, Menu } from '$lib/types';
 
+/** Onboarding status (Section 09) — only the tour dismissals are read. */
+interface OnboardingStatusLite {
+	tour_dismissed?: boolean;
+	tour_dismissals?: Record<string, boolean>;
+	tour_steps?: Record<string, string[]>;
+}
+
 /**
  * Shared shell data for every docs route: the resolved session (from hooks),
  * the audience-filtered nav tree, and the accessible audiences.
@@ -63,6 +70,20 @@ export const load: LayoutServerLoad = async (event) => {
 	if (rightRes.status === 'fulfilled') rightSidebarWidgets = rightRes.value.widgets ?? [];
 	if (leftRes.status === 'fulfilled') leftSidebarWidgets = leftRes.value.widgets ?? [];
 
+	// Section 09 Product Tour (docs surface): dismissal state for the
+	// contextual walkthrough. Authed only — guests never see the tour.
+	let tourDismissed = false;
+	let tourSteps: string[] | null = null;
+	if (event.locals.user) {
+		try {
+			const status = await apiGet<OnboardingStatusLite>(ctx, '/onboarding/status');
+			tourDismissed = status?.tour_dismissals?.['docs'] === true;
+			tourSteps = status?.tour_steps?.['docs'] ?? null;
+		} catch {
+			tourDismissed = false;
+		}
+	}
+
 	return {
 		user: event.locals.user,
 		theme: event.locals.theme,
@@ -76,6 +97,8 @@ export const load: LayoutServerLoad = async (event) => {
 		rightSidebarWidgets,
 		leftSidebarWidgets,
 		audienceOrder: event.locals.audienceOrder,
-		navCollapsed: event.locals.navCollapsed
+		navCollapsed: event.locals.navCollapsed,
+		tourDismissed,
+		tourSteps
 	};
 };

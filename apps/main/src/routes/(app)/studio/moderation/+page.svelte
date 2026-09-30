@@ -3,7 +3,7 @@
 	// scoped report queue for space/tag moderators, assignees, and platform
 	// moderators. Actions hit PATCH /me/moderation/queue/{id} and the list
 	// re-syncs via invalidateAll() (Rule 16 — no local patching).
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { t, i18n } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -635,42 +635,40 @@
 		{/if}
 	{/if}
 
-	<Dialog.Root open={pendingAction !== null} onOpenChange={(v) => { if (!v) pendingAction = null; }}>
-		<Dialog.Portal>
-			<Dialog.Overlay class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
-			<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-xl">
-				<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-					{#if pendingAction?.action === 'ban'}
-						{t('studio.moderation.confirm_ban', 'Ban user')}
-					{:else if pendingAction?.action === 'warn'}
-						{t('studio.moderation.confirm_warn', 'Warn user')}
-					{:else if pendingAction?.action === 'clear'}
-						{t('studio.moderation.confirm_clear', 'Clear report')}
-					{:else}
-						{t('studio.moderation.confirm_remove', 'Remove report')}
-					{/if}
-					{#if pendingAction && pendingAction.ids.length > 1}
-						<span class="ml-1 text-sm font-normal text-[var(--color-muted)]">
-							({pendingAction.ids.length})
-						</span>
-					{/if}
-				</Dialog.Title>
-				<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-					{#if pendingAction?.action === 'ban'}
-						{t('studio.moderation.confirm_ban_body', 'This bans the reported user and marks the report actioned.')}
-					{:else if pendingAction?.action === 'warn'}
-						{t('studio.moderation.confirm_warn_body', 'This records a warning against the reported user and marks the report actioned.')}
-					{:else if pendingAction?.action === 'clear'}
-						{t('studio.moderation.confirm_clear_body', 'This permanently deletes the resolved report from the queue. This cannot be undone.')}
-					{:else}
-						{t('studio.moderation.confirm_remove_body', 'This marks the report as actioned.')}
-					{/if}
-					{#if pendingAction && pendingAction.ids.length > 1}
-						<span class="mt-1 block text-xs">
-							{t('studio.moderation.bulk_applies_to', 'Applies to {count} selected reports.', { count: pendingAction.ids.length })}
-						</span>
-					{/if}
-				</Dialog.Description>
+	<Modal open={pendingAction !== null} onOpenChange={(v) => { if (!v) pendingAction = null; }} overlayClass="backdrop-blur-sm" size="md">
+		{#snippet title()}
+			{#if pendingAction?.action === 'ban'}
+				{t('studio.moderation.confirm_ban', 'Ban user')}
+			{:else if pendingAction?.action === 'warn'}
+				{t('studio.moderation.confirm_warn', 'Warn user')}
+			{:else if pendingAction?.action === 'clear'}
+				{t('studio.moderation.confirm_clear', 'Clear report')}
+			{:else}
+				{t('studio.moderation.confirm_remove', 'Remove report')}
+			{/if}
+			{#if pendingAction && pendingAction.ids.length > 1}
+				<span class="ml-1 text-sm font-normal text-[var(--color-muted)]">
+					({pendingAction.ids.length})
+				</span>
+			{/if}
+		{/snippet}
+		{#snippet description()}
+			{#if pendingAction?.action === 'ban'}
+				{t('studio.moderation.confirm_ban_body', 'This bans the reported user and marks the report actioned.')}
+			{:else if pendingAction?.action === 'warn'}
+				{t('studio.moderation.confirm_warn_body', 'This records a warning against the reported user and marks the report actioned.')}
+			{:else if pendingAction?.action === 'clear'}
+				{t('studio.moderation.confirm_clear_body', 'This permanently deletes the resolved report from the queue. This cannot be undone.')}
+			{:else}
+				{t('studio.moderation.confirm_remove_body', 'This marks the report as actioned.')}
+			{/if}
+			{#if pendingAction && pendingAction.ids.length > 1}
+				<span class="mt-1 block text-xs">
+					{t('studio.moderation.bulk_applies_to', 'Applies to {count} selected reports.', { count: pendingAction.ids.length })}
+				</span>
+			{/if}
+		{/snippet}
+		{#snippet children(close)}
 				{#if pendingAction?.action !== 'clear'}
 					<label class="mb-4 block text-sm text-[var(--color-muted)]" for="moderation-action-reason">
 						{t('studio.moderation.reason_label', 'Reason (optional)')}
@@ -683,9 +681,9 @@
 					></textarea>
 				{/if}
 				<div class="flex justify-end gap-2">
-					<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
+					<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
 						{t('common.cancel', 'Cancel')}
-					</Dialog.Close>
+					</button>
 					<button
 						type="button"
 						class="rounded-[var(--radius)] px-4 py-1.5 text-sm font-medium text-white {pendingAction?.action === 'ban' || pendingAction?.action === 'clear' ? 'bg-[var(--color-danger)]' : 'bg-[var(--color-primary)]'}"
@@ -694,7 +692,6 @@
 						{t('common.confirm', 'Confirm')}
 					</button>
 				</div>
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+		{/snippet}
+	</Modal>
 </section>

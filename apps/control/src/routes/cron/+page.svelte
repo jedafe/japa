@@ -3,7 +3,8 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Dialog, Select } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
 	import { api } from '$lib/api';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
@@ -512,35 +513,13 @@
 />
 
 <div class="mb-4 flex flex-wrap items-center gap-3">
-	<Select.Root type="single" bind:value={filterStatus} items={statusItems}>
-		<Select.Trigger
-			class="border-border-input bg-background data-placeholder:text-muted-foreground/50 rounded-9px flex h-10 items-center border px-3 text-sm transition-colors hover:border-border-input-hover"
-			aria-label={t('cron.filter_status', 'Filter by status')}
-		>
-			<Select.Value placeholder={t('cron.all_status', 'All Status')} />
-		</Select.Trigger>
-		<Select.Portal>
-			<Select.Content
-				class="border-border-input bg-background shadow-popover z-50 rounded-xl border px-1 py-1"
-				sideOffset={4}
-			>
-				<Select.Viewport class="p-1">
-					{#each statusItems as item}
-						<Select.Item
-							class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-							value={item.value}
-							label={item.label}
-						>
-							{#snippet children({ selected })}
-								{item.label}
-								{#if selected}<span class="ml-auto">✓</span>{/if}
-							{/snippet}
-						</Select.Item>
-					{/each}
-				</Select.Viewport>
-			</Select.Content>
-		</Select.Portal>
-	</Select.Root>
+	<Select
+		bind:value={filterStatus}
+		items={statusItems}
+		placeholder={t('cron.all_status', 'All Status')}
+		ariaLabel={t('cron.filter_status', 'Filter by status')}
+		triggerClass="h-10"
+	/>
 	<div class="flex-1"></div>
 	<button
 		class="bg-foreground text-background flex items-center gap-1.5 rounded-9px px-3 py-2 text-xs font-medium transition-colors hover:opacity-90"
@@ -581,20 +560,7 @@
 	bind:selectedIds
 />
 
-<Dialog.Root bind:open={editModalOpen}>
-	<Dialog.Portal>
-		<Dialog.Overlay
-			class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50"
-		/>
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{editingJob ? t('cron.edit_job', 'Edit Job') : t('cron.create_job', 'Create Job')}
-			</Dialog.Title>
+<Modal bind:open={editModalOpen} title={editingJob ? t('cron.edit_job', 'Edit Job') : t('cron.create_job', 'Create Job')} size="lg">
 			<div class="mt-4 space-y-4">
 				<div>
 					<label for="cron-type" class="text-foreground mb-1 block text-sm font-medium">
@@ -662,12 +628,13 @@
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close
+				<button
+					type="button"
 					class="border-border-input bg-background hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
 					onclick={closeEditModal}
 				>
 					{t('common.cancel', 'Cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 					onclick={submitJob}
@@ -680,9 +647,7 @@
 							: t('cron.create', 'Create')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 
 <ConfirmModal
 	bind:open={deleteModalOpen}

@@ -11,13 +11,13 @@
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import NotificationCentre from './NotificationCentre.svelte';
 	import { AdSlot } from '$lib/components/ui';
-	import ProgressRing from '$lib/components/ui/ProgressRing.svelte';
+	import ProgressRing from '$lib/components/shell/ProgressRing.svelte';
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { learnUrl } from '$lib/appOrigins';
@@ -38,6 +38,10 @@
 		suggestedSpaces?: SpaceSuggestion[];
 		enabledLanguages?: string;
 		isDashboard?: boolean;
+		/** §09 Product Tour: true only for the first search-typed widget in
+		 *  DOM order (set by RightSidebar) — keeps a single search data-tour
+		 *  target even when multiple search widgets exist. */
+		searchTourTarget?: boolean;
 	}
 
 	let {
@@ -46,7 +50,8 @@
 		trendingTags = [],
 		suggestedSpaces = [],
 		enabledLanguages = 'en,fr',
-		isDashboard = false
+		isDashboard = false,
+		searchTourTarget = false
 	}: Props = $props();
 
 	const widgetProps = $derived(widget.props ?? {});
@@ -726,7 +731,12 @@
 </script>
 
 {#if widget.widget_type === 'search'}
-	<SearchAutocomplete placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
+	<!-- data-tour hook: product tour (§09) highlights site search when the
+	     admin-managed search widget is configured. RightSidebar tags only the
+	     first search widget via searchTourTarget. -->
+	<div data-tour={searchTourTarget ? 'search' : undefined}>
+		<SearchAutocomplete placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
+	</div>
 {:else if widget.widget_type === 'theme_toggle'}
 	<button
 		type="button"
@@ -738,28 +748,25 @@
 	</button>
 {:else if widget.widget_type === 'language_toggle'}
 	{#if showLanguageToggle}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger
-				class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-				aria-label={t('locale.switch_language', 'Switch language')}
-				title={localeLabel(i18n.locale)}
-			>
-				<Languages size={18} />
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Portal>
-				<DropdownMenu.Content class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg">
-					{#each langList as lang (lang)}
-						<DropdownMenu.Item
-							onclick={() => switchLanguage(lang)}
-							class="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-						>
-							<span>{localeLabel(lang)}</span>
-							{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
-						</DropdownMenu.Item>
-					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Portal>
-		</DropdownMenu.Root>
+		<Menu contentClass="max-h-60 overflow-y-auto">
+			{#snippet trigger(props)}
+				<button
+					type="button"
+					{...props}
+					class="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
+					aria-label={t('locale.switch_language', 'Switch language')}
+					title={localeLabel(i18n.locale)}
+				>
+					<Languages size={18} />
+				</button>
+			{/snippet}
+			{#each langList as lang (lang)}
+				<MenuItem onSelect={() => switchLanguage(lang)}>
+					<span class="flex-1">{localeLabel(lang)}</span>
+					{#if lang === i18n.locale}<Check size={14} class="text-[var(--color-primary)]" />{/if}
+				</MenuItem>
+			{/each}
+		</Menu>
 	{/if}
 {:else if widget.widget_type === 'user_dropdown'}
 	<UserDropdown {user} />

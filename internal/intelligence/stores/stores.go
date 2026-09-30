@@ -1474,6 +1474,10 @@ func (s *Store) ListPublicSources(ctx context.Context, category, sourceKind, q, 
 		rows, err = s.queries.ListPublicSourcesTrending(ctx, gen.ListPublicSourcesTrendingParams{Column1: category, Column2: sourceKind, Column3: q, Limit: limit,
 			Offset: offset,
 		})
+	case "rising":
+		rows, err = s.queries.ListPublicSourcesRising(ctx, gen.ListPublicSourcesRisingParams{Column1: category, Column2: sourceKind, Column3: q, Limit: limit,
+			Offset: offset,
+		})
 	default:
 		rows, err = s.queries.ListPublicSourcesPopular(ctx, gen.ListPublicSourcesPopularParams{Column1: category, Column2: sourceKind, Column3: q, Limit: limit,
 			Offset: offset,

@@ -92,10 +92,12 @@ WHERE user_id = @user_id;
 -- =====================
 
 -- name: GetCurrencyByCountryCode :one
+-- Wallet resolver only — must skip inactive reference currencies so
+-- unsupported countries fall through to the default currency.
 SELECT c.code, c.name, c.symbol, c.credits_per_unit, c.is_active, c.position, c.created_at, c.updated_at
 FROM currencies c
 JOIN spaces s ON s.currency_code = c.code
-WHERE s.geo_code = @geo_code AND s.level = 'country'
+WHERE s.geo_code = @geo_code AND s.level = 'country' AND c.is_active
 LIMIT 1;
 
 -- =====================

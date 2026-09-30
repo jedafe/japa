@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem } from '$lib/components/ui';
 	import { MoreVertical, Ban, Flag, Share2, Check, Pencil, Trash2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -158,81 +158,51 @@
 	}
 </script>
 
-<DropdownMenu.Root bind:open>
-	<DropdownMenu.Trigger
-		type="button"
-		class={triggerClass ??
-			"rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-hover)]"}
-		aria-label={t('sources.actions', 'Source actions')}
-	>
-		<MoreVertical class="h-4 w-4" />
-	</DropdownMenu.Trigger>
-
-	<DropdownMenu.Portal>
-		<DropdownMenu.Content
-			align="end"
-			sideOffset={8}
-			class="z-50 min-w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+<Menu bind:open>
+	{#snippet trigger(props)}
+		<button
+			type="button"
+			{...props}
+			class={triggerClass ??
+				"rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-hover)]"}
+			aria-label={t('sources.actions', 'Source actions')}
 		>
-			{#if canEdit}
-				<DropdownMenu.Item
-					onSelect={openEdit}
-					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-				>
-					<Pencil class="h-4 w-4" />
-					{t('sources.edit.label', 'Edit')}
-				</DropdownMenu.Item>
-			{/if}
+			<MoreVertical class="h-4 w-4" />
+		</button>
+	{/snippet}
 
-			{#if showDelete && canDelete}
-				<DropdownMenu.Item
-					disabled={deleteLoading}
-					onSelect={deleteSource}
-					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-red-600 transition hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
-				>
-					<Trash2 class="h-4 w-4" />
-					{deleteLoading ? t('sources.delete.loading', 'Deleting…') : t('sources.delete.label', 'Delete')}
-				</DropdownMenu.Item>
-			{/if}
+	{#if canEdit}
+		<MenuItem icon={Pencil} onSelect={openEdit}>{t('sources.edit.label', 'Edit')}</MenuItem>
+	{/if}
 
-			{#if showBlock}
-				<DropdownMenu.Item
-					disabled={blockLoading}
-					onSelect={toggleBlock}
-					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
-				>
-					<Ban class="h-4 w-4" />
-					{isBlocked ? t('sources.block.unblock', 'Unblock source') : t('sources.block.block', 'Block source')}
-				</DropdownMenu.Item>
-			{/if}
+	{#if showDelete && canDelete}
+		<MenuItem icon={Trash2} destructive disabled={deleteLoading} onSelect={deleteSource}>
+			{deleteLoading ? t('sources.delete.loading', 'Deleting…') : t('sources.delete.label', 'Delete')}
+		</MenuItem>
+	{/if}
 
-			{#if showReport}
-				<DropdownMenu.Item
-					onSelect={openReport}
-					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-				>
-					<Flag class="h-4 w-4" />
-					{t('sources.report', 'Report')}
-				</DropdownMenu.Item>
-			{/if}
+	{#if showBlock}
+		<MenuItem icon={Ban} disabled={blockLoading} onSelect={toggleBlock}>
+			{isBlocked ? t('sources.block.unblock', 'Unblock source') : t('sources.block.block', 'Block source')}
+		</MenuItem>
+	{/if}
 
-			{#if showShare}
-				<DropdownMenu.Item
-					onSelect={share}
-					class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-				>
-					{#if shared}
-						<Check class="h-4 w-4 text-[var(--color-success)]" />
-						{t('common.copied', 'Copied')}
-					{:else}
-						<Share2 class="h-4 w-4" />
-						{t('common.share', 'Share')}
-					{/if}
-				</DropdownMenu.Item>
+	{#if showReport}
+		<MenuItem icon={Flag} onSelect={openReport}>{t('sources.report', 'Report')}</MenuItem>
+	{/if}
+
+	{#if showShare}
+		<MenuItem onSelect={share}>
+			{#if shared}
+				<Check class="h-4 w-4 text-[var(--color-success)]" />
+				{t('common.copied', 'Copied')}
+			{:else}
+				<Share2 class="h-4 w-4" />
+				{t('common.share', 'Share')}
 			{/if}
-		</DropdownMenu.Content>
-	</DropdownMenu.Portal>
-</DropdownMenu.Root>
+		</MenuItem>
+	{/if}
+</Menu>
 
 {#if blockError}
 	<p class="mt-1 text-xs text-red-600">{blockError}</p>

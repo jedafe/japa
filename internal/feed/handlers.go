@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -509,6 +510,12 @@ func (h *Handlers) invalidateVisitorContextCache(r *http.Request) {
 		return
 	}
 
+	// Anonymous visitors resolve under IP-scoped keys (visitor resolver,
+	// ADR-064). Without this the stale cached context suppresses the new
+	// jc_journey_token cookie for up to the 30-minute visitor cache TTL.
+	ip := clientip.FromRequest(r)
+	_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("visitor:ctx:ip:%s", ip)).Build()).Error()
+	_ = h.cache.Do(ctx, h.cache.B().Del().Key(vkcache.MustKey("recommendations:ip:%s", ip)).Build()).Error()
 }
 
 // GetCardStyle handles GET /api/v1/feed/card-style — public endpoint.

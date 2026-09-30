@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Dialog, Select } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2 } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
@@ -337,24 +338,16 @@
 	const labelClass = 'text-foreground block text-sm font-medium';
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{isEdit ? t('intel.edit_source', 'Edit Source') : t('intel.new_source', 'New Source')}
-			</Dialog.Title>
-			<p class="text-muted-foreground mt-1 text-sm">
-				{isEdit
-					? t('intel.edit_source_desc', 'Update the intelligence source registry entry.')
-					: t('intel.new_source_desc', 'Register a new intelligence source for the crawl pipeline.')}
-			</p>
-
+<Modal
+	bind:open
+	title={isEdit ? t('intel.edit_source', 'Edit Source') : t('intel.new_source', 'New Source')}
+	description={isEdit
+		? t('intel.edit_source_desc', 'Update the intelligence source registry entry.')
+		: t('intel.new_source_desc', 'Register a new intelligence source for the crawl pipeline.')}
+	size="max-w-2xl"
+>
+	{#snippet children(close)}
+		<div>
 			{#if errorMessage}
 				<div class="bg-destructive/10 text-destructive mt-3 rounded-md p-3 text-sm">
 					{errorMessage}
@@ -400,26 +393,15 @@
 					</div>
 					<div>
 						<label for="sf-kind" class={labelClass}>{t('intel.field_source_kind', 'Source Kind')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="sf-kind"
 							value={form.source_kind}
-							onValueChange={(v) => { if (v !== undefined) form.source_kind = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value placeholder={t('intel.field_source_kind', 'Source Kind')} />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each kindItems as k}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={k.value} label={k.label}>
-												{k.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.source_kind = v; }}
+							items={kindItems}
+							placeholder={t('intel.field_source_kind', 'Source Kind')}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					</div>
 				</div>
 
@@ -445,101 +427,54 @@
 					{:else}
 						<!-- Fallback when the meta catalog failed to load: keep the
 							legacy single-category select rather than a dead form. -->
-						<Select.Root
-							type="single"
+						<Select
 							value={form.category}
-							onValueChange={(v) => { if (v !== undefined) form.category = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value placeholder={t('intel.field_category', 'Category')} />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each categoryItems as c}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={c.value} label={c.label}>
-												{c.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.category = v; }}
+							items={categoryItems}
+							placeholder={t('intel.field_category', 'Category')}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					{/if}
 				</div>
 
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-type" class={labelClass}>{t('intel.field_source_type', 'Source Type')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="sf-type"
 							value={form.source_type}
-							onValueChange={(v) => { if (v !== undefined) form.source_type = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value placeholder={t('intel.field_source_type', 'Source Type')} />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each typeItems as st}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={st.value} label={st.label}>
-												{st.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.source_type = v; }}
+							items={typeItems}
+							placeholder={t('intel.field_source_type', 'Source Type')}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					</div>
 				</div>
 
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-trust" class={labelClass}>{t('intel.field_trust_level', 'Trust Level')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="sf-trust"
 							value={String(form.trust_level)}
-							onValueChange={(v) => { if (v !== undefined) form.trust_level = Number(v); }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each trustItems as tr}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={tr.value} label={tr.label}>
-												{tr.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.trust_level = Number(v); }}
+							items={trustItems}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					</div>
 					<div>
 						<label for="sf-method" class={labelClass}>{t('intel.field_crawl_method', 'Crawl Method')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="sf-method"
 							value={form.crawl_method}
-							onValueChange={(v) => { if (v !== undefined) form.crawl_method = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each methodItems as m}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={m.value} label={m.label}>
-												{m.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.crawl_method = v; }}
+							items={methodItems}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					</div>
 				</div>
 
@@ -552,26 +487,14 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-freq" class={labelClass}>{t('intel.field_crawl_frequency', 'Crawl Frequency')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="sf-freq"
 							value={form.crawl_frequency}
-							onValueChange={(v) => { if (v !== undefined) form.crawl_frequency = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each frequencyItems as f}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={f.value} label={f.label}>
-												{f.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.crawl_frequency = v; }}
+							items={frequencyItems}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					</div>
 					<div>
 						<label for="sf-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}</label>
@@ -643,9 +566,13 @@
 			</form>
 
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={close}
+				>
 					{t('common.cancel', 'Cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					type="button"
 					class="bg-foreground text-background flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
@@ -660,6 +587,6 @@
 					{/if}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+		</div>
+	{/snippet}
+</Modal>

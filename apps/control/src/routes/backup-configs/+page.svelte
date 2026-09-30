@@ -4,7 +4,9 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Dialog, Select, Popover } from 'bits-ui';
+	import { Popover } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
@@ -508,21 +510,10 @@
 	bind:selectedIds
 />
 
-<Dialog.Root bind:open={createModalOpen}>
-	<Dialog.Portal>
-		<Dialog.Overlay
-			class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50"
-		/>
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 focus:outline-none"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{t('backup_configs.create_config', 'Create Backup Config')}
-			</Dialog.Title>
-			<div class="mt-4 space-y-4">
+<Modal bind:open={createModalOpen} title={t('backup_configs.create_config', 'Create Backup Config')} size="lg">
+	{#snippet children()}
+		<div>
+			<div class="space-y-4">
 				<div>
 					<label for="bc-name" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.name', 'Name')}
@@ -646,36 +637,16 @@
 					<label for="bc-storage" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.storage_type', 'Storage Type')}
 					</label>
-					<Select.Root type="single" value={createForm.storage_type} onValueChange={(v) => { if (v) createForm.storage_type = v as BackupConfig['storage_type']; }}>
-						<Select.Trigger
-							id="bc-storage"
-							class="border-border-input bg-background text-foreground w-full rounded-9px border px-3 py-2 text-sm transition-colors hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus"
-							aria-label={t('backup_configs.storage_type', 'Storage Type')}
-						>
-							<Select.Value placeholder={t('backup_configs.select_storage', 'Select storage type...')} />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content
-								class="border-border-input bg-background shadow-popover z-50 rounded-xl border"
-								sideOffset={4}
-							>
-								<Select.Viewport class="p-1">
-									{#each storageTypeOptions as option}
-										<Select.Item
-											class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none"
-											value={option.value}
-											label={option.label}
-										>
-											{#snippet children({ selected })}
-												<span>{option.label}</span>
-												{#if selected}<span class="ml-auto">✓</span>{/if}
-											{/snippet}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+					<Select
+						id="bc-storage"
+						value={createForm.storage_type}
+						onValueChange={(v) => { createForm.storage_type = v as BackupConfig['storage_type']; }}
+						items={storageTypeOptions}
+						placeholder={t('backup_configs.select_storage', 'Select storage type...')}
+						ariaLabel={t('backup_configs.storage_type', 'Storage Type')}
+						triggerClass="w-full"
+						zIndex={70}
+					/>
 				</div>
 				<div>
 					<label for="bc-destination" class="text-foreground mb-1 block text-sm font-medium">
@@ -707,12 +678,13 @@
 				</div>
 			</div>
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close
+				<button
+					type="button"
 					class="border-border-input bg-background hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
 					onclick={closeCreateModal}
 				>
 					{t('common.cancel', 'Cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					class="bg-foreground text-background rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
 					onclick={submitCreate}
@@ -723,9 +695,9 @@
 						: t('backup_configs.create', 'Create')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+		</div>
+	{/snippet}
+</Modal>
 
 <ConfirmModal
 	bind:open={deleteModalOpen}

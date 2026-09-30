@@ -145,6 +145,18 @@ export const actions: Actions = {
 			return fail(500, { error: 'detail_failed', message });
 		}
 
+		// §58 — managed currency list so the "Salary Currency" dimension shows
+		// "USD — US Dollar" labels instead of bare ISO codes.
+		let currencyNameByCode = new Map<string, string>();
+		try {
+			const currencies = await apiGet<{ code: string; name?: string }[]>(ctx, '/currencies');
+			currencyNameByCode = new Map(
+				(currencies ?? []).map((c) => [c.code.toUpperCase(), c.name || c.code])
+			);
+		} catch {
+			// degrade to raw codes
+		}
+
 		const itemByPosition = new Map<number, ComparisonItem>();
 		for (const item of jce.items) {
 			itemByPosition.set(item.position, item);
@@ -170,8 +182,12 @@ export const actions: Actions = {
 					return v.salary_min ?? '';
 				case 'Salary Max':
 					return v.salary_max ?? '';
-				case 'Salary Currency':
-					return v.salary_currency ?? '';
+				case 'Salary Currency': {
+					const code = v.salary_currency ?? '';
+					if (!code) return '';
+					const name = currencyNameByCode.get(code.toUpperCase());
+					return name && name !== code ? `${code} — ${name}` : code;
+				}
 				case 'Experience Level':
 					return v.experience_level ?? '';
 				case 'Application Deadline':

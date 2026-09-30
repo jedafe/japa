@@ -81,18 +81,32 @@
 		if (!href.startsWith('/')) return false;
 		return path === href || path.startsWith(href + '/');
 	}
+
+	// Section 09 Product Tour: map tab-bar URLs to the same per-feature tour
+	// targets as the desktop LeftNav so mobile users get the same steps.
+	function tabTourKey(href: string): string | undefined {
+		if (href === '/') return 'home';
+		if (href === '/search') return 'search';
+		if (href === '/notifications') return 'notifications';
+		if (href === '/profile' || href.startsWith('/u/')) return 'account';
+		return undefined;
+	}
 </script>
 
 <nav
 	class="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:hidden"
 	aria-label={t('nav.main', 'Main navigation')}
+	data-tour="primary-nav"
 >
 	{#each entries as entry (entry.kind === 'link' ? entry.href : 'compose')}
 		{#if entry.kind === 'compose'}
 			<!-- Compose button (center, elevated) — guests get a login link with
-			     returnTo instead of opening the auth-gated composer modal. -->
+			     returnTo instead of opening the auth-gated composer modal. The
+			     data-tour hook lets the product tour (§09) highlight compose on
+			     mobile, where the left nav is hidden. -->
 			{#if user}
 				<button
+					data-tour="compose"
 					type="button"
 					onclick={() => compose.openMenu()}
 					class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
@@ -107,6 +121,7 @@
 				</button>
 			{:else}
 				<a
+					data-tour="compose"
 					href="/login?redirect=/create"
 					class="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] text-[var(--color-primary)]"
 					aria-label={t('nav.compose', 'Compose')}
@@ -122,6 +137,7 @@
 		{:else}
 			<a
 				href={entry.href}
+				data-tour={tabTourKey(entry.href)}
 				class="relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] {isActive(
 					entry.href
 				)

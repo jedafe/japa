@@ -7,6 +7,7 @@
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { Coupon } from '$lib/types';
+	import { currencySymbol } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
 
@@ -30,7 +31,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			return t('coupons.percent_off', '{n}% off').replace('{n}', String(c.discount_value ?? ''));
 		}
 		if (c.discount_type === 'fixed') {
-			const cur = c.currency ?? '';
+			const cur = currencySymbol(c.currency, data.currencies) || (c.currency ?? '');
 			return t('coupons.amount_off', '{cur}{n} off')
 				.replace('{cur}', cur)
 				.replace('{n}', String(c.discount_value ?? ''));

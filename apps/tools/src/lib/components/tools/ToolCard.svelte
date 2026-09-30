@@ -1,5 +1,5 @@
 <script lang="ts">
-	import Icon from './Icon.svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
 	import { t } from '$lib/i18n';
 	import type { ToolMeta } from '$lib/tools/registry';
 

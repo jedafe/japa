@@ -4,7 +4,7 @@
 	import { untrack } from 'svelte';
 	import { afterNavigate, invalidate } from '$app/navigation';
 	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin } from 'lucide-svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { MenuItem } from '$lib/components/ui';
 	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
@@ -13,6 +13,7 @@
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
 	import VideoGrid from '$lib/components/profile/VideoGrid.svelte';
 	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SearchInput } from '$lib/components/ui';
+	import { openLightbox } from '$lib/lightbox.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { UrlTab } from '$lib/components/ui';
@@ -291,7 +292,7 @@
 		 *  descending, 'oldest' ascending. Absent = preserve server order. */
 		sortField?: keyof T;
 		sortDir?: 'newest' | 'oldest';
-	}): { items: T[]; total: number; totalPages: number } {
+	}): { items: T[]; total: number; totalPages: number; filtered: T[] } {
 		const needle = opts.q.trim().toLowerCase();
 		let filtered = items.filter((item) => {
 			if (opts.fv !== 'all' && !opts.filter(item, opts.fv)) return false;
@@ -316,7 +317,7 @@
 		const total = filtered.length;
 		const totalPages = Math.max(1, Math.ceil(total / opts.pageSize));
 		const start = (opts.currentPage - 1) * opts.pageSize;
-		return { items: filtered.slice(start, start + opts.pageSize), total, totalPages };
+		return { items: filtered.slice(start, start + opts.pageSize), total, totalPages, filtered };
 	}
 
 	const pageSizeOptions: FilterOption[] = [
@@ -564,37 +565,21 @@
 	{/if}
 	{#snippet menuItems()}
 		{#if isAuthenticated && !isOwnProfile}
-			<DropdownMenu.Item
-				disabled={mutePending}
-				onSelect={toggleMute}
-				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
-				aria-label={isMuted ? t('profile.unmute_user', 'Unmute user') : t('profile.mute_user', 'Mute user')}
-			>
-				<VolumeX class="h-4 w-4" />
+			<MenuItem icon={VolumeX} disabled={mutePending} onSelect={toggleMute}>
 				{isMuted ? t('profile.unmute', 'Unmute') : t('profile.mute', 'Mute')}
-			</DropdownMenu.Item>
-			<DropdownMenu.Item
-				disabled={blockPending}
-				onSelect={toggleBlock}
-				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-danger)] transition hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
-				aria-label={isBlocked ? t('profile.unblock_user', 'Unblock user') : t('profile.block_user', 'Block user')}
-			>
-				<Ban class="h-4 w-4" />
+			</MenuItem>
+			<MenuItem icon={Ban} destructive disabled={blockPending} onSelect={toggleBlock}>
 				{isBlocked ? t('profile.unblock', 'Unblock') : t('profile.block', 'Block')}
-			</DropdownMenu.Item>
-			<DropdownMenu.Item
-				onSelect={() => (reportOpen = true)}
-				class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-				aria-label={t('profile.report_user', 'Report user')}
-			>
-				<Flag class="h-4 w-4" />
+			</MenuItem>
+			<MenuItem icon={Flag} onSelect={() => (reportOpen = true)}>
 				{t('profile.report', 'Report')}
-			</DropdownMenu.Item>
+			</MenuItem>
 		{/if}
 	{/snippet}
 </ProfileHeader>
 
 <ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
+
 
 <!-- §87 — Japa Stage badge. Shown when the profile user has a public stage
 set. Best-effort: data.japaStage is null when the feature flag is off, the
@@ -809,14 +794,13 @@ profile is private, or no stage is set. -->
 			{:else}
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 					{#each mediaView.items as item (item.id)}
-						<a
-							href={item.url}
-							target="_blank"
-							rel="noopener"
-							class="block aspect-square overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]"
+						<button
+							type="button"
+							class="block aspect-square cursor-zoom-in overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]"
+							onclick={() => openLightbox(mediaView.filtered, mediaView.filtered.indexOf(item))}
 						>
 							<img src={item.url} alt={item.alt_text ?? ''} class="h-full w-full object-cover" loading="lazy" />
-						</a>
+						</button>
 					{/each}
 				</div>
 				{@render pager(mediaView)}
@@ -962,11 +946,11 @@ profile is private, or no stage is set. -->
 							`/u/${u.username}`}
 						{@const handle =
 							et === 'user' ? `@${u.username}` :
-							et === 'space' ? 'Space' :
-							et === 'tag' ? 'Tag' :
-							et === 'organization' ? 'Organization' :
-							et === 'source' ? 'Source' :
-							'User'}
+							et === 'space' ? t('profile.type.space', 'Space') :
+							et === 'tag' ? t('profile.type.tag', 'Tag') :
+							et === 'organization' ? t('profile.type.organization', 'Organization') :
+							et === 'source' ? t('profile.type.source', 'Source') :
+							t('profile.type.user', 'User')}
 						<li class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
 							<a href={href} class="flex min-w-0 flex-1 items-center gap-3">
 								{#if u.avatar_url}

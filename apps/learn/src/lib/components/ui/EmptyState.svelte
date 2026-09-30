@@ -1,22 +1,10 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	// Thin wrapper over @japaconnect/ui — preserves the localized default title.
+	import { EmptyState } from '@japaconnect/ui';
 	import { t } from '$lib/i18n';
+	import type { ComponentProps } from 'svelte';
 
-	interface Props {
-		title?: string;
-		description?: string;
-		/** Optional action snippet (e.g. a "Browse courses" button). */
-		action?: Snippet;
-	}
-	let { title = t('common.empty'), description, action }: Props = $props();
+	let { title, ...rest }: ComponentProps<typeof EmptyState> = $props();
 </script>
 
-<div class="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-	<p class="text-base font-medium text-[var(--color-text)]">{title}</p>
-	{#if description}
-		<p class="max-w-md text-sm text-[var(--color-muted)]">{description}</p>
-	{/if}
-	{#if action}
-		<div class="mt-2">{@render action()}</div>
-	{/if}
-</div>
+<EmptyState title={title ?? t('common.empty')} {...rest} />

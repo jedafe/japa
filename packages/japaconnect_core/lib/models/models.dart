@@ -12,6 +12,7 @@ export 'entity_card_maps.dart';
 export 'scholarship.dart';
 export 'remittance_provider.dart';
 export 'remittance_rate.dart';
+export 'currency.dart';
 export 'japabot_conversation.dart';
 export 'japabot_conversation_detail.dart';
 export 'japabot_message.dart';

@@ -27,6 +27,7 @@
 		currencies.map((c) => ({ value: c.code, label: c.name ? `${c.name} (${c.code})` : c.code }))
 	);
 	const currencySymbolMap = $derived(new Map(currencies.map((c) => [c.code, c.symbol])));
+	const currencyNameMap = $derived(new Map(currencies.map((c) => [c.code, c.name ?? ''])));
 
 	const statuses = [
 		{ value: 'active', label: t('plans.status_active', 'Active') },
@@ -424,7 +425,7 @@
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('plans.currency', 'Currency')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.currency}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{currencyNameMap.get(row.currency) ? `${row.currency} — ${currencyNameMap.get(row.currency)}` : row.currency}</p>
 			</div>
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('plans.sort_order', 'Sort Order')}</p>

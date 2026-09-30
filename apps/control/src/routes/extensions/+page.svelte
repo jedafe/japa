@@ -1,7 +1,7 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Switch } from 'bits-ui';
+	import Switch from '$lib/components/ui/Switch.svelte';
 	import { api } from '$lib/api';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import {
@@ -378,17 +378,12 @@
 						{#if isToggling}
 							<Loader2 class="text-muted-foreground size-4 animate-spin" />
 						{/if}
-						<Switch.Root
+						<Switch
 							id="ext-{ext.key}"
 							checked={ext.enabled}
 							disabled={isToggling}
 							onCheckedChange={(checked) => handleToggle(ext, checked)}
-							class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							<Switch.Thumb
-								class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
-							/>
-						</Switch.Root>
+						/>
 					</div>
 				</div>
 

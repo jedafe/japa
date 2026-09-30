@@ -3,7 +3,7 @@
 	// Bits UI Dialog hosting LoginForm | SignupForm via an internal tab.
 	// Triggered from the guest homepage header and any "Sign in to continue"
 	// affordance in the shell. On success, invalidates all data and closes.
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { X } from 'lucide-svelte';
 	import { t } from '$lib/i18n/store.svelte';
@@ -33,20 +33,17 @@
 	}
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Overlay
-			class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out"
-		/>
-		<Dialog.Content
-			class="fixed left-1/2 top-1/2 z-50 w-full max-w-[460px] -translate-x-1/2 -translate-y-1/2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-bg)] p-6 shadow-xl sm:p-8"
+<Modal bind:open ariaTitle={t('auth.login.submit')} class="bg-[var(--color-bg)] sm:p-8" overlayClass="backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out" size="max-w-[460px]">
+	{#snippet header(close)}
+		<button
+			type="button"
+			onclick={close}
+			aria-label={t('common.close', 'Close')}
+			class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
-			<Dialog.Close
-				class="absolute right-4 top-4 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-			>
-				<X size={20} />
-			</Dialog.Close>
-
+			<X size={20} />
+		</button>
+	{/snippet}
 			<div class="mb-4 flex gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-1">
 				<button
 					type="button"
@@ -75,6 +72,4 @@
 			{:else}
 				<SignupForm redirectTarget="/onboarding" {onSuccess} showSwitchLink={false} />
 			{/if}
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>

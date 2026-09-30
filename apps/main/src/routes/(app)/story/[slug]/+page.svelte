@@ -7,7 +7,7 @@
 	import { api } from '$lib/api/client';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { relativeTime } from '$lib/feed/time';
-	import { ArrowLeft, BadgeCheck, MapPin, Calendar, CreditCard, Briefcase, Lightbulb, BookMarked, Quote, Pencil, Trash2, Loader2, Eye, ExternalLink } from 'lucide-svelte';
+	import { ArrowLeft, BadgeCheck, MapPin, Calendar, CreditCard, Briefcase, Lightbulb, BookMarked, Quote, Pencil, Trash2, Loader2, Eye, ExternalLink, Maximize2 } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -18,6 +18,7 @@
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
+	import { imgLightbox, openLightbox } from '$lib/lightbox.svelte';
 	import { parseMostUsefulResource } from '$lib/utils/storyResources';
 	import type { PageData } from './$types';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
@@ -238,7 +239,17 @@
 			</div>
 
 			{#if story.featured_image_url}
-				<img src={story.featured_image_url} alt={story.title} class="mt-6 aspect-[16/9] w-full rounded-[var(--radius-card)] object-cover" />
+				<button
+					type="button"
+					class="group relative mt-6 block w-full cursor-zoom-in overflow-hidden rounded-[var(--radius-card)]"
+					onclick={() => openLightbox([{ id: `hero-${story.id}`, url: story.featured_image_url!, alt_text: story.title }])}
+					aria-label={t('lightbox.view_image', 'View image')}
+				>
+					<img src={story.featured_image_url} alt={story.title} class="aspect-[16/9] w-full object-cover" />
+					<span class="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100">
+						<Maximize2 size={15} />
+					</span>
+				</button>
 			{/if}
 
 			<!-- Author + date + views -->
@@ -284,7 +295,7 @@
 
 			<!-- Body: sanitized TipTap HTML with prose styling -->
 			{#if sanitizedBody}
-				<div class="prose mt-8" use:hydrateVideoEmbeds>
+				<div class="prose mt-8" use:hydrateVideoEmbeds use:imgLightbox>
 					{@html sanitizedBody}
 				</div>
 			{/if}

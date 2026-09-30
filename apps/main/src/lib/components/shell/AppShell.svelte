@@ -123,7 +123,7 @@
 	</main>
 
 	{#if !hideRightSidebar}
-		<div class="shell-sidebar">
+		<div class="shell-sidebar" data-tour="sidebar">
 			<RightSidebar {user} {trendingTags} {suggestedSpaces} {enabledLanguages} {rightSidebarWidgets} />
 		</div>
 	{/if}

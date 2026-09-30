@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 	import { deleteAccount } from '$lib/api/hub';
 	import { goto } from '$app/navigation';
@@ -39,16 +39,12 @@
 	}
 </script>
 
-<Dialog.Root bind:open onOpenChange={(v) => { if (!v) reset(); }}>
-	<Dialog.Portal>
-		<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-			<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-				{t('settings.danger.delete_title')}
-			</Dialog.Title>
-			<Dialog.Description class="mb-4 text-sm text-[var(--color-danger,#dc2626)]">
-				{t('settings.danger.delete_warning')}
-			</Dialog.Description>
-			<p class="mb-2 text-sm text-[var(--color-text)]">
+<Modal bind:open onOpenChange={(v) => { if (!v) reset(); }} title={t('settings.danger.delete_title')} size="md">
+	{#snippet children(close)}
+		<p class="mb-4 text-sm text-[var(--color-danger,#dc2626)]">
+			{t('settings.danger.delete_warning')}
+		</p>
+		<p class="mb-2 text-sm text-[var(--color-text)]">
 				{t('settings.danger.delete_confirm_prompt')} <strong>{username}</strong>
 			</p>
 			<input
@@ -58,11 +54,11 @@
 				value={typed}
 				oninput={(e) => (typed = e.currentTarget.value)}
 			/>
-			{#if error}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
-			<div class="flex justify-end gap-2">
-				<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
-					{t('common.cancel')}
-				</Dialog.Close>
+		{#if error}<p class="mb-4 text-xs text-[var(--color-danger,#dc2626)]">{error}</p>{/if}
+		<div class="flex justify-end gap-2">
+			<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]">
+				{t('common.cancel')}
+			</button>
 				<button
 					type="button"
 					disabled={!canConfirm || deleting}
@@ -70,8 +66,7 @@
 					onclick={doDelete}
 				>
 					{deleting ? t('settings.danger.deleting') : t('settings.danger.delete_confirm')}
-				</button>
-			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+			</button>
+		</div>
+	{/snippet}
+</Modal>

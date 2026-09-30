@@ -175,6 +175,11 @@ type EntityFieldsDTO struct {
 	CanPropose   bool                  `json:"can_propose"`
 	CanManage    bool                  `json:"can_manage"`
 	EntityClass  string                `json:"entity_class,omitempty"`
+	// EntityCurrencyCode is the entity's resolved country currency
+	// (§58 "Country → currency linkage" via its geo space) — the display
+	// fallback for currency/price_range fields that don't declare
+	// {currency_code} in options.
+	EntityCurrencyCode string `json:"entity_currency_code,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -554,8 +559,46 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	if len(entityClasses) > 0 {
 		dto.EntityClass = entityClasses[0]
 	}
+	dto.EntityCurrencyCode = s.resolveEntityCurrencyCode(ctx, entityType, entityID, isSpaceBackedEntityType(entityType))
 
 	return dto, nil
+}
+
+// resolveEntityCurrencyCode best-effort resolves the entity's country
+// currency (§58) for currency/price_range field display. Space-backed
+// entity ids ARE space ids; other entity types reach their space via the
+// JCE resolver's geo_space_id metadata (same pattern as SuggestFields).
+// Never fails the read — misses and resolver gaps return "".
+func (s *Service) resolveEntityCurrencyCode(ctx context.Context, entityType string, entityID pgtype.UUID, spaceBacked bool) string {
+	spaceID := entityID
+
+	if !spaceBacked {
+		if s.entityResolver == nil {
+			return ""
+		}
+		item, err := s.entityResolver.Resolve(ctx, map[string]any{
+			"type": entityType,
+			"id":   entityID.String(),
+		})
+		if err != nil {
+			return ""
+		}
+		raw, ok := item.Metadata["geo_space_id"].(string)
+		if !ok || raw == "" {
+			return ""
+		}
+		if err := spaceID.Scan(raw); err != nil || !spaceID.Valid {
+			return ""
+		}
+	}
+
+	code, err := s.store.ResolveSpaceCurrencyCode(ctx, spaceID)
+	if err != nil {
+		slog.Warn("wiki: entity currency resolve failed",
+			"entity_type", entityType, "entity_id", entityID.String(), "error", err)
+		return ""
+	}
+	return code
 }
 
 // visibleFieldIDs resolves the caller's viewable-field set: membership-based

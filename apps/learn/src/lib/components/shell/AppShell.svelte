@@ -129,7 +129,7 @@
 		</main>
 
 		{#if !hideRightSidebar}
-			<div class="shell-sidebar">
+			<div class="shell-sidebar" data-tour="learn-sidebar">
 				<RightSidebar {user} {sidebar} rightSidebarWidgets={rightSidebarWidgets} suppressAds={lessonPlayer} />
 			</div>
 		{/if}
@@ -187,7 +187,7 @@
 		</main>
 
 		{#if !hideRightSidebar}
-			<div class="shell-sidebar">
+			<div class="shell-sidebar" data-tour="learn-sidebar">
 				<RightSidebar {user} {sidebar} {rightSidebarWidgets} suppressAds={lessonPlayer} />
 			</div>
 		{/if}

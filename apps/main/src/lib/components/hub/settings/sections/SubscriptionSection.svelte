@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 	import {
 		cancelSubscription,
@@ -78,8 +78,7 @@
 	let error = $state<string | null>(null);
 	let success = $state<string | null>(null);
 
-	// Subscribe flow state
-	let subscribeOpen = $state(false);
+	// Subscribe flow state — plan/cycle/provider selection is inline below.
 	let selectedPlan = $state<string>('');
 	let billingCycle = $state<'monthly' | 'yearly'>('monthly');
 	let selectedProvider = $state<string>('');
@@ -129,18 +128,14 @@
 		return `${symbol}${(amount / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 	}
 
-	function openSubscribe() {
-		selectedPlan = subscribablePlans[0]?.id ?? '';
-		billingCycle = 'monthly';
-		selectedProvider = enabledProviders[0]?.id ?? '';
-		error = null;
-		success = null;
-		subscribeOpen = true;
-	}
+	// Seed the subscribe flow defaults once plans/providers arrive.
+	$effect(() => {
+		if (!selectedPlan && subscribablePlans.length > 0) selectedPlan = subscribablePlans[0].id;
+		if (!selectedProvider && enabledProviders.length > 0) selectedProvider = enabledProviders[0].id;
+	});
 
 	async function doSubscribe() {
 		if (!selectedPlan || !selectedProvider) return;
-		subscribeOpen = false;
 		error = null;
 		success = null;
 		loading = true;
@@ -242,38 +237,30 @@
 				{loading ? t('settings.subscription.loading') : t('settings.subscription.reactivate')}
 			</button>
 		{:else}
-			<Dialog.Root bind:open={cancelOpen}>
-				<Dialog.Trigger
-					class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-				>
+			<Modal bind:open={cancelOpen} title={t('settings.subscription.cancel_confirm_title')} description={t('settings.subscription.cancel_confirm_body')} triggerClass="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]" size="md">
+				{#snippet trigger()}
 					{t('settings.subscription.cancel')}
-				</Dialog.Trigger>
-				<Dialog.Portal>
-					<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-						<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-							{t('settings.subscription.cancel_confirm_title')}
-						</Dialog.Title>
-						<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-							{t('settings.subscription.cancel_confirm_body')}
-						</Dialog.Description>
-						<div class="flex justify-end gap-2">
-							<Dialog.Close
-								class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]"
-							>
-								{t('common.cancel')}
-							</Dialog.Close>
-							<button
-								type="button"
-								disabled={loading}
-								class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-								onclick={doCancel}
-							>
-								{loading ? t('settings.subscription.loading') : t('settings.subscription.cancel_confirm')}
-							</button>
-						</div>
-					</Dialog.Content>
-				</Dialog.Portal>
-			</Dialog.Root>
+				{/snippet}
+				{#snippet children(close)}
+					<div class="flex justify-end gap-2">
+						<button
+							type="button"
+							onclick={close}
+							class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)]"
+						>
+							{t('common.cancel')}
+						</button>
+						<button
+							type="button"
+							disabled={loading}
+							class="rounded-[var(--radius)] bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+							onclick={doCancel}
+						>
+							{loading ? t('settings.subscription.loading') : t('settings.subscription.cancel_confirm')}
+						</button>
+					</div>
+				{/snippet}
+			</Modal>
 		{/if}
 	{:else}
 		{#if justSubscribed}

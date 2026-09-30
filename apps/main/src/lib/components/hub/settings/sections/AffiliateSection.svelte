@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -38,6 +38,7 @@
 
 	interface AffiliateSectionData {
 		links?: AffiliateLink[];
+		linksPageSize?: number;
 		earnings?: AffiliateEarnings | null;
 		program?: AffiliateProgramInfo | null;
 		enrolled?: boolean;
@@ -47,8 +48,48 @@
 	const sectionData = $derived((data as AffiliateSectionData | null) ?? {});
 	const enrolled = $derived(sectionData.enrolled ?? true);
 	const program = $derived(sectionData.program ?? null);
+	const linksPageSize = $derived(sectionData.linksPageSize ?? 20);
 	let links = $state<AffiliateLink[]>(untrack(() => sectionData.links ?? []));
+	// Page-based pagination: page 1 arrives via SSR; further pages append.
+	// The endpoint returns no total — "more" is inferred from a full page.
+	let linksNextPage = $state(2);
+	let linksHasMore = $state(untrack(() => (sectionData.links ?? []).length === linksPageSize));
+	// Resync when the server loader data is replaced (e.g. invalidateAll) —
+	// the initial untracked read alone leaves the list permanently stale.
+	// Pagination state resets with it: the refreshed list is page 1 again,
+	// so the next load-more must resume from page 2 (otherwise pages would
+	// be skipped). Reads only sectionData so local mutations
+	// (create/delete/load-more) don't retrigger it.
+	$effect(() => {
+		const incoming = sectionData.links;
+		if (incoming) {
+			links = incoming;
+			linksNextPage = 2;
+			linksHasMore = incoming.length === linksPageSize;
+		}
+	});
+	let linksLoadingMore = $state(false);
+	let linksLoadError = $state<string | null>(null);
 	const earnings = $derived(sectionData.earnings ?? null);
+
+	async function loadMoreLinks() {
+		if (linksLoadingMore || !linksHasMore) return;
+		linksLoadingMore = true;
+		linksLoadError = null;
+		const res = await api.get<AffiliateLink[]>(
+			`/me/affiliate-links?page=${linksNextPage}&page_size=${linksPageSize}`
+		);
+		if (res.error) {
+			linksLoadError = res.error.message;
+		} else {
+			const batch = res.data ?? [];
+			const seen = new Set(links.map((l) => l.id));
+			links = [...links, ...batch.filter((l) => !seen.has(l.id))];
+			linksNextPage += 1;
+			linksHasMore = batch.length === linksPageSize;
+		}
+		linksLoadingMore = false;
+	}
 	let newUrl = $state('');
 	let newDescription = $state('');
 	let newProductType = $state('pro_subscription');
@@ -431,19 +472,24 @@
 				</li>
 			{/each}
 		</ul>
+		{#if linksLoadError}
+			<p class="mt-3 rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{linksLoadError}</p>
+		{/if}
+		{#if linksHasMore}
+			<button
+				type="button"
+				onclick={loadMoreLinks}
+				disabled={linksLoadingMore}
+				class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+			>
+				{linksLoadingMore ? t('settings.common.loading', 'Loading…') : t('settings.common.load_more', 'Load more')}
+			</button>
+		{/if}
 	{/if}
 	{/if}
 
-	<Dialog.Root open={editOpen} onOpenChange={(v) => { if (!v) closeEdit(); }}>
-		<Dialog.Portal>
-			<Dialog.Content class="z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-				<Dialog.Title class="mb-4 flex items-center justify-between text-base font-medium text-[var(--color-text)]">
-					<span>{t('settings.affiliate.edit_title')}</span>
-					<Dialog.Close class="text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label={t('common.cancel')}>
-						{t('common.cancel')}
-					</Dialog.Close>
-				</Dialog.Title>
-
+	<Modal open={editOpen} onOpenChange={(v) => { if (!v) closeEdit(); }} title={t('settings.affiliate.edit_title')} closeLabel={t('common.cancel')} size="md">
+			{#snippet children(close)}
 				{#if editLoading}
 					<p class="text-sm text-[var(--color-muted)]">{t('settings.affiliate.loading')}</p>
 				{:else if editTarget}
@@ -472,9 +518,9 @@
 						</label>
 						{#if editError}<p class="text-xs text-[var(--color-danger,#dc2626)]">{editError}</p>{/if}
 						<div class="flex justify-end gap-2">
-							<Dialog.Close class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+							<button type="button" onclick={close} class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 								{t('common.cancel')}
-							</Dialog.Close>
+							</button>
 							<button
 								type="button"
 								disabled={editSaving}
@@ -486,7 +532,6 @@
 						</div>
 					</div>
 				{/if}
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+			{/snippet}
+	</Modal>
 </section>

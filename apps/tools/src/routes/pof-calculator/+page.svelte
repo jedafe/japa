@@ -8,6 +8,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { formatMoney, currencySymbol, currencyName } from '$lib/utils/currency';
 	import type {
 		GeoSpaceOption,
 		PofRequirement,
@@ -208,7 +209,7 @@
 					{t('pof_calculator.required', 'Required proof of funds')}
 				</div>
 				<div class="mt-2 text-4xl font-bold tabular-nums text-accent">
-					{result.amount.toLocaleString()} {result.currency}
+					{formatMoney(result.amount, result.currency, data.currencies)}
 				</div>
 				<div class="mt-1 text-sm text-muted">
 					{result.program_label} · {t('pof_calculator.household', 'household of')} {result.household}
@@ -220,7 +221,7 @@
 							<div class="rounded-lg border border-border p-3">
 								<div class="text-xs text-muted">NGN</div>
 								<div class="text-lg font-semibold tabular-nums">
-									₦{result.ngn_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+									{currencySymbol('NGN', data.currencies)}{result.ngn_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 								</div>
 							</div>
 						{/if}
@@ -228,7 +229,7 @@
 							<div class="rounded-lg border border-border p-3">
 								<div class="text-xs text-muted">USD</div>
 								<div class="text-lg font-semibold tabular-nums">
-									${result.usd_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+									{currencySymbol('USD', data.currencies)}{result.usd_equivalent.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 								</div>
 							</div>
 						{/if}
@@ -278,7 +279,7 @@
 								<div>
 									<div class="font-medium">{req.program_label}</div>
 									<div class="text-xs text-muted mt-0.5">
-										{req.visa_type} · {req.currency} · {t('pof_calculator.effective', 'effective')} {req.effective_date}
+										{req.visa_type} · {currencyName(req.currency, data.currencies) || req.currency} · {t('pof_calculator.effective', 'effective')} {req.effective_date}
 									</div>
 								</div>
 								{#if req.source_url}

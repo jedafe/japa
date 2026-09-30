@@ -18,8 +18,10 @@
 		Users
 	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
+	import { page } from '$app/state';
 	import { getEntityFields, type WikiEntityField } from '$lib/api/wiki';
 	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
+	import type { CurrencyInfo } from '$lib/utils/currency';
 	import type { IconComponent } from '$lib/components/ui/icons';
 
 	let {
@@ -33,7 +35,13 @@
 	} = $props();
 
 	let fields = $state<WikiEntityField[] | null>(null);
+	// §58 — the entity's resolved country currency, display fallback for
+	// currency/price_range fields that don't declare {currency_code}.
+	let contextCurrency = $state('');
 	let loading = $state(true);
+	// §58 — shared active currency list from the root layout, used to
+	// resolve symbols on currency/price_range field values.
+	const currencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
 
 	$effect(() => {
 		void entityType;
@@ -43,6 +51,7 @@
 		getEntityFields(entityType, entityId)
 			.then((data) => {
 				if (cancelled) return;
+				contextCurrency = data?.entity_currency_code ?? '';
 				const flat = (data?.groups ?? []).flatMap((g) => g.fields);
 				fields = flat.filter((f) => f.visible && hasValue(f));
 			})
@@ -108,7 +117,7 @@
 					<span class="min-w-0">
 						<span class="block text-xs text-[var(--color-muted)]">{f.label}</span>
 						<span class="block truncate text-sm font-medium text-[var(--color-text)]">
-							{formatWikiFieldValue(f)}
+							{formatWikiFieldValue(f, currencies, contextCurrency)}
 						</span>
 					</span>
 				</li>

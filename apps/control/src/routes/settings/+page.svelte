@@ -2,7 +2,9 @@
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Switch, Tooltip, Label, Select } from 'bits-ui';
+	import Select from '$lib/components/ui/Select.svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
+	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import { api, getToken } from '$lib/api';
 	import type { SystemSetting } from '$lib/api/types';
 	import { t, translations } from '$lib/stores/i18n.svelte';
@@ -21,7 +23,6 @@
 		RotateCcw,
 		Check,
 		Loader2,
-		ChevronDown,
 		Save,
 		Undo2,
 		AlertTriangle,
@@ -919,11 +920,6 @@
 		'border-border-input bg-background text-foreground rounded-lg border px-3 py-1.5 text-sm transition-all hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus disabled:opacity-50';
 	const selectTriggerClasses =
 		'border-border-input bg-background text-foreground flex items-center justify-between rounded-lg border px-3 py-1.5 text-sm transition-all hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus w-44';
-	const selectContentClasses =
-		'border-border-input bg-background shadow-popover z-50 rounded-xl border p-1';
-	const selectItemClasses =
-		'data-highlighted:bg-accent rounded-lg flex h-9 cursor-pointer items-center px-3 text-sm outline-none';
-
 	const sensitiveKeys = new Set(categorySensitiveKeys);
 
 	// L7: Prefer the backend's `sensitive` field (Rule 16 — backend is source
@@ -1061,41 +1057,16 @@
 	<div class="min-w-0 flex-1">
 		<!-- Mobile category selector -->
 		<div class="mb-4 md:hidden">
-			<Select.Root
-				type="single"
+			<Select
 				value={activeCategory}
-				onValueChange={(v) => {
-					if (v !== undefined) selectCategory(v);
-				}}
-			>
-				<Select.Trigger
-					class="border-border-input bg-background text-foreground w-full rounded-lg border px-3 py-2 text-sm"
-				>
-					<Select.Value placeholder={t('settings.all', 'All')} />
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-xl border">
-						<Select.Viewport class="p-1">
-							<Select.Item
-								class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none"
-								value="all"
-								label={t('settings.all', 'All')}
-							>
-								{t('settings.all', 'All')} ({currentSettings.length})
-							</Select.Item>
-							{#each categoryItems as { category, count }}
-								<Select.Item
-									class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none"
-									value={category}
-									label={formatNamespace(category)}
-								>
-									{formatNamespace(category)} ({count})
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+				onValueChange={(v) => selectCategory(v)}
+				placeholder={t('settings.all', 'All')}
+				triggerClass="w-full"
+				items={[
+					{ value: 'all', label: `${t('settings.all', 'All')} (${currentSettings.length})` },
+					...categoryItems.map(({ category, count }) => ({ value: category, label: `${formatNamespace(category)} (${count})` }))
+				]}
+			/>
 		</div>
 
 		<!-- Page Header -->
@@ -1198,9 +1169,9 @@
 							<!-- Label + description -->
 							<div class="min-w-0 flex-1">
 								<div class="flex items-center gap-2">
-									<Label.Root for="setting-{setting.key}" class="text-foreground text-sm font-medium">
+									<label for="setting-{setting.key}" class="text-foreground text-sm font-medium">
 										{formatSettingKey(setting.key)}
-									</Label.Root>
+									</label>
 									{#if dirty}
 										<span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
 											{t('settings.badge_dirty')}
@@ -1227,17 +1198,12 @@
 										<span class="text-muted-foreground w-8 text-right text-xs">
 											{isTrue ? t('settings.on') : t('settings.off')}
 										</span>
-										<Switch.Root
+										<Switch
 											id="setting-{setting.key}"
 											checked={isTrue}
 											onCheckedChange={(checked) =>
 												handleSettingToggle(setting.key, checked)}
-											class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-										>
-											<Switch.Thumb
-												class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0"
-											/>
-										</Switch.Root>
+										/>
 									</div>
 
 								{:else if componentType === 'studio-persona-autocomplete'}
@@ -1299,32 +1265,14 @@
 									</div>
 
 								{:else if componentType === 'select'}
-									<Select.Root
-										type="single"
+									<Select
+										id="setting-{setting.key}"
 										value={getSelectValue(getDisplayValue(setting))}
-										onValueChange={(v) => {
-											if (v !== undefined) updateSetting(setting.key, v);
-										}}
-									>
-										<Select.Trigger class={selectTriggerClasses} id="setting-{setting.key}">
-											<Select.Value placeholder={t('settings.select_placeholder')} />
-											<ChevronDown class="text-muted-foreground size-3.5" />
-										</Select.Trigger>
-										<Select.Portal>
-											<Select.Content class={selectContentClasses}>
-												<Select.Viewport class="p-1">
-													{#each getSelectOptionsForSetting(setting) as option}
-														<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
-															{#snippet children({ selected })}
-																{option.label}
-																{#if selected}<span class="ml-auto">✓</span>{/if}
-															{/snippet}
-														</Select.Item>
-													{/each}
-												</Select.Viewport>
-											</Select.Content>
-										</Select.Portal>
-									</Select.Root>
+										onValueChange={(v) => updateSetting(setting.key, v)}
+										items={getSelectOptionsForSetting(setting)}
+										placeholder={t('settings.select_placeholder')}
+										triggerClass={selectTriggerClasses}
+									/>
 
 								{:else if componentType === 'multi-select'}
 									{@const selectedValues = getMultiSelectValues(getDisplayValue(setting))}
@@ -1338,27 +1286,18 @@
 												</span>
 											{/each}
 										</div>
-										<Select.Root type="single" value="" onValueChange={(v) => {
-											if (v && !selectedValues.includes(v)) {
-												updateSetting(setting.key, [...selectedValues, v].join(','));
-											}
-										}}>
-											<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
-												<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
-												<ChevronDown class="text-muted-foreground size-3.5" />
-											</Select.Trigger>
-											<Select.Portal>
-												<Select.Content class={selectContentClasses}>
-													<Select.Viewport class="p-1">
-														{#each getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value)) as option}
-															<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
-																{option.label}
-															</Select.Item>
-														{/each}
-													</Select.Viewport>
-												</Select.Content>
-											</Select.Portal>
-										</Select.Root>
+										<Select
+											id="setting-{setting.key}"
+											value=""
+											onValueChange={(v) => {
+												if (v && !selectedValues.includes(v)) {
+													updateSetting(setting.key, [...selectedValues, v].join(','));
+												}
+											}}
+											items={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
+											placeholder={t('settings.add_placeholder', 'Add...')}
+											triggerClass="{selectTriggerClasses} w-full"
+										/>
 									</div>
 
 							{:else if componentType === 'csv-repeater'}
@@ -1570,34 +1509,26 @@
 								{/if}
 
 								<!-- Reset button -->
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											class="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-1 transition-colors"
-											onclick={() => {
-												confirmResetSetting = setting;
-												resetModalOpen = true;
-											}}
-										>
-											<RotateCcw class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Portal>
-										<Tooltip.Content
-											side="top"
-											sideOffset={4}
-											class="border-dark-10 bg-background shadow-popover z-50 w-[220px] rounded-xl border p-3 text-xs"
-										>
-											<p class="font-medium">{t('settings.reset_to_default')}</p>
-											<p class="text-muted-foreground mt-1">
-												{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.value) : setting.value}</span>
-											</p>
-											<p class="text-muted-foreground">
-												{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.default_value) : setting.default_value}</span>
-											</p>
-										</Tooltip.Content>
-									</Tooltip.Portal>
-								</Tooltip.Root>
+								<Tooltip sideOffset={4} class="w-[220px] rounded-xl p-3">
+									<button
+										class="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-1 transition-colors"
+										onclick={() => {
+											confirmResetSetting = setting;
+											resetModalOpen = true;
+										}}
+									>
+										<RotateCcw class="size-3.5" />
+									</button>
+									{#snippet content()}
+										<p class="font-medium">{t('settings.reset_to_default')}</p>
+										<p class="text-muted-foreground mt-1">
+											{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.value) : setting.value}</span>
+										</p>
+										<p class="text-muted-foreground">
+											{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.default_value) : setting.default_value}</span>
+										</p>
+									{/snippet}
+								</Tooltip>
 							</div>
 						</div>
 					{/each}
@@ -1647,9 +1578,9 @@
 								<div class="flex items-center gap-4 px-5 py-3 transition-colors {dirty ? 'bg-amber-500/5' : 'hover:bg-muted/30'}">
 									<div class="min-w-0 flex-1">
 										<div class="flex items-center gap-2">
-											<Label.Root for="setting-{setting.key}" class="text-foreground text-sm font-medium">
+											<label for="setting-{setting.key}" class="text-foreground text-sm font-medium">
 												{formatSettingKey(setting.key)}
-											</Label.Root>
+											</label>
 											{#if dirty}
 												<span class="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-600">
 													{t('settings.badge_dirty')}
@@ -1665,14 +1596,11 @@
 											{@const isTrue = isBoolValue(setting.value) && setting.value.replace(/^"(.*)"$/, '$1').toLowerCase() === 'true'}
 											<div class="flex items-center gap-2">
 												<span class="text-muted-foreground w-8 text-right text-xs">{isTrue ? t('settings.on') : t('settings.off')}</span>
-												<Switch.Root
+												<Switch
 													id="setting-{setting.key}"
 													checked={isTrue}
 													onCheckedChange={(checked) => handleSettingToggle(setting.key, checked)}
-													class="bg-muted data-[state=checked]:bg-emerald-500 peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full px-[2px] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-												>
-													<Switch.Thumb class="bg-background pointer-events-none block size-4 shrink-0 rounded-full shadow-lg transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
-												</Switch.Root>
+												/>
 											</div>
 										{:else if componentType === 'studio-persona-autocomplete'}
 											{@const personaId = getDisplayValue(setting) || null}
@@ -1733,26 +1661,14 @@
 											</div>
 
 										{:else if componentType === 'select'}
-											<Select.Root type="single" value={getSelectValue(getDisplayValue(setting))} onValueChange={(v) => { if (v !== undefined) updateSetting(setting.key, v); }}>
-												<Select.Trigger class={selectTriggerClasses} id="setting-{setting.key}">
-													<Select.Value placeholder={t('settings.select_placeholder')} />
-													<ChevronDown class="text-muted-foreground size-3.5" />
-												</Select.Trigger>
-												<Select.Portal>
-													<Select.Content class={selectContentClasses}>
-														<Select.Viewport class="p-1">
-															{#each getSelectOptionsForSetting(setting) as option}
-																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
-																	{#snippet children({ selected })}
-																		{option.label}
-																		{#if selected}<span class="ml-auto">✓</span>{/if}
-																	{/snippet}
-																</Select.Item>
-															{/each}
-														</Select.Viewport>
-													</Select.Content>
-												</Select.Portal>
-											</Select.Root>
+											<Select
+												id="setting-{setting.key}"
+												value={getSelectValue(getDisplayValue(setting))}
+												onValueChange={(v) => updateSetting(setting.key, v)}
+												items={getSelectOptionsForSetting(setting)}
+												placeholder={t('settings.select_placeholder')}
+												triggerClass={selectTriggerClasses}
+											/>
 
 									{:else if componentType === 'multi-select'}
 										{@const selectedValues = getMultiSelectValues(getDisplayValue(setting))}
@@ -1766,27 +1682,18 @@
 													</span>
 												{/each}
 											</div>
-											<Select.Root type="single" value="" onValueChange={(v) => {
-												if (v && !selectedValues.includes(v)) {
-													updateSetting(setting.key, [...selectedValues, v].join(','));
-												}
-											}}>
-												<Select.Trigger class="{selectTriggerClasses} w-full" id="setting-{setting.key}">
-													<Select.Value placeholder={t('settings.add_placeholder', 'Add...')} />
-													<ChevronDown class="text-muted-foreground size-3.5" />
-												</Select.Trigger>
-												<Select.Portal>
-													<Select.Content class={selectContentClasses}>
-														<Select.Viewport class="p-1">
-															{#each getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value)) as option}
-																<Select.Item class={selectItemClasses} value={option.value} label={option.label}>
-																	{option.label}
-																</Select.Item>
-															{/each}
-														</Select.Viewport>
-													</Select.Content>
-												</Select.Portal>
-											</Select.Root>
+											<Select
+												id="setting-{setting.key}"
+												value=""
+												onValueChange={(v) => {
+													if (v && !selectedValues.includes(v)) {
+														updateSetting(setting.key, [...selectedValues, v].join(','));
+													}
+												}}
+												items={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
+												placeholder={t('settings.add_placeholder', 'Add...')}
+												triggerClass="{selectTriggerClasses} w-full"
+											/>
 										</div>
 
 									{:else if componentType === 'textarea'}
@@ -1912,20 +1819,16 @@
 										{:else}
 											<input id="setting-{setting.key}" type="text" value={getDisplayValue(setting)} onchange={(e) => updateSetting(setting.key, (e.currentTarget as HTMLInputElement).value)} class="{inputClasses} w-44" />
 										{/if}
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<button class="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-1 transition-colors" onclick={() => { confirmResetSetting = setting; resetModalOpen = true; }}>
-													<RotateCcw class="size-3.5" />
-												</button>
-											</Tooltip.Trigger>
-											<Tooltip.Portal>
-												<Tooltip.Content side="top" sideOffset={4} class="border-dark-10 bg-background shadow-popover z-50 w-[220px] rounded-xl border p-3 text-xs">
-													<p class="font-medium">{t('settings.reset_to_default')}</p>
-													<p class="text-muted-foreground mt-1">{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.value) : setting.value}</span></p>
-													<p class="text-muted-foreground">{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.default_value) : setting.default_value}</span></p>
-												</Tooltip.Content>
-											</Tooltip.Portal>
-										</Tooltip.Root>
+										<Tooltip sideOffset={4} class="w-[220px] rounded-xl p-3">
+											<button class="text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg p-1 transition-colors" onclick={() => { confirmResetSetting = setting; resetModalOpen = true; }}>
+												<RotateCcw class="size-3.5" />
+											</button>
+											{#snippet content()}
+												<p class="font-medium">{t('settings.reset_to_default')}</p>
+												<p class="text-muted-foreground mt-1">{t('settings.current_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.value) : setting.value}</span></p>
+												<p class="text-muted-foreground">{t('settings.default_label')} <span class="font-medium">{isSensitiveKey(setting.key, setting) ? getMaskedValue(setting.default_value) : setting.default_value}</span></p>
+											{/snippet}
+										</Tooltip>
 									</div>
 								</div>
 							{/each}

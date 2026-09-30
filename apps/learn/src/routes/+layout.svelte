@@ -2,6 +2,7 @@
 	import { untrack, onMount, type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
+	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import { sidebarStore } from '$lib/components/shell/sidebar.svelte';
 	import { api } from '$lib/api/client';
@@ -35,6 +36,26 @@
 
 	// Route-specific right-sidebar snippet (set by child routes via setSidebar).
 	const routeSidebar = $derived(sidebarStore.current);
+
+	// Section 09 Product Tour (learn surface): `?tour=1` starts the tour once
+	// for signed-in users until dismissed; `?tour=replay` always replays it
+	// (account dropdown replay link). Authed users who have not dismissed it
+	// get one auto-run.
+	const tourParam = $derived(page.url.searchParams.get('tour'));
+	const tourActive = $derived(
+		!!data.user &&
+			(tourParam === 'replay' ||
+				(!data.tourDismissed && (tourParam === '1' || tourParam === null)))
+	);
+
+	// Latch: ProductTour strips the ?tour param once the tour starts, which
+	// flips tourActive back to false for replay+dismissed users — keep the
+	// component mounted so its navigation guard can tear the driver down
+	// cleanly instead of leaving an orphaned overlay.
+	let tourMounted = $state(false);
+	$effect(() => {
+		if (tourActive) tourMounted = true;
+	});
 
 	// Lesson player route: the reading exception (ADR-060). Auto-collapses the
 	// nav to 72px and is detected by route id so the user's persisted preference
@@ -107,3 +128,8 @@
 </AppShell>
 
 <MobileBottomTabBar user={data.user} menu={data.bottomMenu} />
+
+{#if tourMounted}
+	<!-- §09 Product Tour: steps come from onboarding.tour_steps (admin-managed) -->
+	<ProductTour steps={data.tourSteps} />
+{/if}

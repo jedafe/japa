@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { t, i18n } from '$lib/i18n';
+	import { api } from '$lib/api/client';
 	import { Plus } from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import type { WalletData } from './types';
+	import type { LedgerEntry, WalletData } from './types';
 
 	interface Props {
 		data: WalletData;
@@ -13,8 +14,100 @@
 	type LedgerFilter = 'all' | 'points' | 'credits';
 	let filter = $state<LedgerFilter>('all');
 
-	const ledger = $derived(data.ledger ?? []);
+	// The merged ledger is the first page of both streams (page_size=50,
+	// page_size/page_offset pagination). Further pages append via
+	// load-more — each stream pages independently; "more" is inferred
+	// from a full page since the endpoints return no total.
+	const LEDGER_PAGE = 50;
+
+	interface RawLedgerEntry {
+		id: string;
+		amount?: number;
+		reference?: unknown;
+		reason?: unknown;
+		created_at?: string;
+	}
+
+	// Mirrors the loader's mapping (reference falls back to reason).
+	function mapEntries(entries: RawLedgerEntry[] | undefined, type: string): LedgerEntry[] {
+		return (entries ?? []).map((raw) => {
+			const ref = raw?.reference?.toString().trim();
+			const reason = raw?.reason?.toString().trim();
+			return { id: raw.id, type, amount: raw.amount, description: ref || reason || null, created_at: raw.created_at };
+		});
+	}
+
+	let extra = $state<LedgerEntry[]>([]);
+	let pointsOffset = $state(0);
+	let creditsOffset = $state(0);
+	let pointsMore = $state(false);
+	let creditsMore = $state(false);
+	let moreLoading = $state(false);
+	let moreError = $state('');
+
+	// Resync when the loader data is replaced (invalidateAll) — resets the
+	// appended pages back to the fresh first page of each stream.
+	$effect(() => {
+		extra = [];
+		pointsOffset = data.pointsLoaded ?? 0;
+		creditsOffset = data.creditsLoaded ?? 0;
+		pointsMore = (data.pointsLoaded ?? 0) >= LEDGER_PAGE;
+		creditsMore = (data.creditsLoaded ?? 0) >= LEDGER_PAGE;
+	});
+
+	// Merge the SSR ledger with appended pages, dedupe (entries can straddle
+	// a page boundary if new rows land between fetches), sort newest-first.
+	const ledger = $derived.by(() => {
+		const seen = new Set<string>();
+		return [...(data.ledger ?? []), ...extra]
+			.filter((e) => {
+				const k = `${e.type}:${e.id}`;
+				if (seen.has(k)) return false;
+				seen.add(k);
+				return true;
+			})
+			.sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime());
+	});
 	const filtered = $derived(filter === 'all' ? ledger : ledger.filter((e) => e.type === filter));
+	const hasMore = $derived(pointsMore || creditsMore);
+
+	async function loadMore() {
+		if (moreLoading || !hasMore) return;
+		moreLoading = true;
+		moreError = '';
+		const results = await Promise.allSettled([
+			pointsMore
+				? api
+						.get<{ entries?: RawLedgerEntry[] }>(
+							`/me/wallet/points?page_size=${LEDGER_PAGE}&page_offset=${pointsOffset}`
+						)
+						.then((res) => {
+							if (res.error) throw new Error(res.error.message);
+							const batch = res.data?.entries ?? [];
+							extra = [...extra, ...mapEntries(batch, 'points')];
+							pointsOffset += batch.length;
+							pointsMore = batch.length === LEDGER_PAGE;
+						})
+				: Promise.resolve(),
+			creditsMore
+				? api
+						.get<{ entries?: RawLedgerEntry[] }>(
+							`/me/wallet/credits?page_size=${LEDGER_PAGE}&page_offset=${creditsOffset}`
+						)
+						.then((res) => {
+							if (res.error) throw new Error(res.error.message);
+							const batch = res.data?.entries ?? [];
+							extra = [...extra, ...mapEntries(batch, 'credits')];
+							creditsOffset += batch.length;
+							creditsMore = batch.length === LEDGER_PAGE;
+						})
+				: Promise.resolve()
+		]);
+		if (results.some((r) => r.status === 'rejected')) {
+			moreError = t('settings.common.load_error', 'Could not load more entries.');
+		}
+		moreLoading = false;
+	}
 
 	const filters: { key: LedgerFilter; labelKey: string; default: string }[] = [
 		{ key: 'all', labelKey: 'settings.wallet.filter_all', default: 'All' },
@@ -47,7 +140,7 @@
 		<EmptyState icon={Plus} title={t('wallet.history.empty', 'No transactions yet')} />
 	{:else}
 		<ul class="max-h-96 space-y-2 overflow-auto">
-			{#each filtered as entry (entry.id)}
+			{#each filtered as entry (`${entry.type}:${entry.id}`)}
 				<li class="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm">
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-[var(--color-text)]">
@@ -61,5 +154,18 @@
 				</li>
 			{/each}
 		</ul>
+		{#if moreError}
+			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{moreError}</p>
+		{/if}
+		{#if hasMore}
+			<button
+				type="button"
+				onclick={loadMore}
+				disabled={moreLoading}
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+			>
+				{moreLoading ? t('settings.common.loading', 'Loading…') : t('settings.common.load_more', 'Load more')}
+			</button>
+		{/if}
 	{/if}
 </div>

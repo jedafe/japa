@@ -52,6 +52,10 @@ export interface WikiEntityFields {
 	can_manage?: boolean;
 	/** The entity's resolved custom-fields class (propose_group payload). */
 	entity_class?: string;
+	/** §58 — the entity's resolved country currency (its geo space's
+	 *  country currency_code); display fallback for currency/price_range
+	 *  fields that don't declare {currency_code} in options. */
+	entity_currency_code?: string;
 }
 
 /** Field definition carried by propose_field / propose_group ops. */

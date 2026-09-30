@@ -12,10 +12,12 @@
 
 	const points = $derived(data.wallet?.points_balance ?? 0);
 	const rate = $derived(data.settings?.settings?.points_to_credits_rate ?? 0);
-	const minConvert = $derived(data.settings?.min_convert_points ?? 100);
+	// null = settings endpoint unavailable → no client-side floor beyond
+	// the conversion rate itself (backend still enforces the real minimum).
+	const minConvert = $derived(data.minConvertPoints ?? 0);
 	// Conversion must yield at least 1 credit, so the practical floor is the
 	// larger of the admin minimum and the current rate.
-	const effectiveMin = $derived(Math.max(minConvert, rate));
+	const effectiveMin = $derived(Math.max(minConvert, rate, 1));
 
 	let amount = $state('');
 	let converting = $state(false);

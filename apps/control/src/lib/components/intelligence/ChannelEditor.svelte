@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Dialog, Select } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Select from '$lib/components/ui/Select.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2 } from 'lucide-svelte';
 
@@ -253,24 +254,17 @@
 	const labelClass = 'text-foreground block text-sm font-medium';
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-[60]" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-[60] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
-			<Dialog.Title class="text-foreground text-lg font-semibold">
-				{isEdit ? t('intel.edit_channel', 'Edit Channel') : t('intel.new_channel', 'Add Channel')}
-			</Dialog.Title>
-			<p class="text-muted-foreground mt-1 text-sm">
-				{isEdit
-					? t('intel.edit_channel_desc', 'Update this channel entry point. Only changed fields are sent.')
-					: t('intel.new_channel_desc', 'Register a new entry point (URL + method + pipeline) under this source.')}
-			</p>
-
+<Modal
+	bind:open
+	title={isEdit ? t('intel.edit_channel', 'Edit Channel') : t('intel.new_channel', 'Add Channel')}
+	description={isEdit
+		? t('intel.edit_channel_desc', 'Update this channel entry point. Only changed fields are sent.')
+		: t('intel.new_channel_desc', 'Register a new entry point (URL + method + pipeline) under this source.')}
+	size="max-w-2xl"
+	zIndex={60}
+>
+	{#snippet children(close)}
+		<div>
 			{#if errorMessage}
 				<div class="bg-destructive/10 text-destructive mt-3 rounded-md p-3 text-sm">
 					{errorMessage}
@@ -296,49 +290,26 @@
 				<div class="grid grid-cols-3 gap-4">
 					<div>
 						<label for="ce-method" class={labelClass}>{t('intel.field_crawl_method', 'Method')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="ce-method"
 							value={form.crawl_method}
-							onValueChange={(v) => { if (v !== undefined) form.crawl_method = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-[70] rounded-xl border">
-									<Select.Viewport class="max-h-64 p-1">
-										{#each methodItems as m (m.value)}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={m.value} label={m.label}>
-												{m.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.crawl_method = v; }}
+							items={methodItems}
+							triggerClass="mt-1 w-full"
+							viewportClass="max-h-64"
+							zIndex={70}
+						/>
 					</div>
 					<div>
 						<label for="ce-pipeline" class={labelClass}>{t('intel.channel_pipeline', 'Pipeline')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="ce-pipeline"
 							value={form.pipeline}
-							onValueChange={(v) => { if (v !== undefined) form.pipeline = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-[70] rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each pipelineItems as p (p.value)}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={p.value} label={p.label}>
-												{p.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.pipeline = v; }}
+							items={pipelineItems}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					</div>
 					<div>
 						<label for="ce-mins" class={labelClass}>{t('intel.field_crawl_mins', 'Crawl Interval (mins)')}</label>
@@ -390,26 +361,14 @@
 				<div class="grid grid-cols-1 gap-4">
 					<div>
 						<label for="ce-relevance" class={labelClass}>{t('intel.channel_relevance_mode', 'Relevance mode')}</label>
-						<Select.Root
-							type="single"
+						<Select
+							id="ce-relevance"
 							value={form.relevance_mode}
-							onValueChange={(v) => { if (v !== undefined) form.relevance_mode = v; }}
-						>
-							<Select.Trigger class={inputClass}>
-								<Select.Value />
-							</Select.Trigger>
-							<Select.Portal>
-								<Select.Content class="border-border-input bg-background shadow-popover z-[70] rounded-xl border">
-									<Select.Viewport class="p-1">
-										{#each relevanceItems as r (r.value)}
-											<Select.Item class="data-highlighted:bg-accent rounded-9px flex h-9 cursor-pointer items-center px-3 text-sm outline-none" value={r.value} label={r.label}>
-												{r.label}
-											</Select.Item>
-										{/each}
-									</Select.Viewport>
-								</Select.Content>
-							</Select.Portal>
-						</Select.Root>
+							onValueChange={(v) => { form.relevance_mode = v; }}
+							items={relevanceItems}
+							triggerClass="mt-1 w-full"
+							zIndex={70}
+						/>
 					</div>
 				</div>
 
@@ -458,9 +417,13 @@
 			</form>
 
 			<div class="mt-6 flex justify-end gap-3">
-				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={close}
+				>
 					{t('common.cancel', 'Cancel')}
-				</Dialog.Close>
+				</button>
 				<button
 					type="button"
 					class="bg-foreground text-background flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
@@ -475,6 +438,6 @@
 					{/if}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+		</div>
+	{/snippet}
+</Modal>

@@ -11,6 +11,8 @@
 
 @import 'tailwindcss';
 
+@source '../../../packages/ui/src';
+
 /*
  * JapaConnect Docs App — design tokens (ADR-058 / ADR-059 / ADR-060).
  * Dark mode is driven by [data-theme="dark"] on <html>, set server-side from the

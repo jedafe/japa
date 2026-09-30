@@ -51,7 +51,8 @@
 	import { isContainerLike, isChildOnlyType, childrenOf, childSlotsOf, mapChildSlots, defaultSlotKey, getContainerLayout, getContainerColumns, seedAllContainerDefaults, seedBlockDefaults, defaultChildrenFor } from '$lib/utils/blocks';
 	import { Button } from '$lib/components/ui/button';
 
-	import { Tabs, Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Tabs } from 'bits-ui';
 	import * as LucideIcons from 'lucide-svelte';
 	import { ArrowLeft, Save, Plus, Search, LayoutTemplate, Rocket, Archive, PanelLeft, PanelRight, PanelTop, Maximize2, Minimize2, Settings } from 'lucide-svelte';
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
@@ -1555,11 +1556,7 @@
 <!-- Page settings dialog — the only UI where slug/page_type/description/SEO
      title can be edited after creation (the list page's Edit action opens
      this editor, which previously had no metadata form). -->
-<Dialog.Root bind:open={showPageSettings}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl" style="border-color: var(--color-border); background: var(--color-background)">
-			<Dialog.Title class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('page_builder.page_settings', 'Page Settings')}</Dialog.Title>
+<Modal bind:open={showPageSettings} title={t('page_builder.page_settings', 'Page Settings')} size="sm">
 			<div class="space-y-4">
 				<div>
 					<label for="page-slug" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.slug', 'Slug')}</label>
@@ -1592,17 +1589,10 @@
 			<div class="mt-4 flex justify-end gap-2">
 				<Button variant="ghost" onclick={() => { showPageSettings = false; }}>{t('common.done', 'Done')}</Button>
 			</div>
-			<Dialog.Close class="absolute right-4 top-4" style="color: var(--color-muted)" aria-label="Close">&#10005;</Dialog.Close>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 
 <!-- Save-as-template dialog -->
-<Dialog.Root bind:open={showSaveAsTemplate}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl" style="border-color: var(--color-border); background: var(--color-background)">
-			<Dialog.Title class="mb-4 text-lg font-semibold" style="color: var(--color-foreground)">{t('page_builder.save_as_template', 'Save as Template')}</Dialog.Title>
+<Modal bind:open={showSaveAsTemplate} title={t('page_builder.save_as_template', 'Save as Template')} size="sm">
 			<div>
 				<label for="tpl-name" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('page_builder.template_name', 'Template name')}</label>
 				<input id="tpl-name" type="text" bind:value={templateName} class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-background); color: var(--color-foreground)" />
@@ -1611,17 +1601,10 @@
 				<Button variant="ghost" onclick={() => { showSaveAsTemplate = false; }}>{t('common.cancel', 'Cancel')}</Button>
 				<Button onclick={saveAsTemplate} disabled={savingTemplate || !templateName.trim()}>{savingTemplate ? t('common.saving', 'Saving...') : t('common.save', 'Save')}</Button>
 			</div>
-			<Dialog.Close class="absolute right-4 top-4" style="color: var(--color-muted)" aria-label="Close">&#10005;</Dialog.Close>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 
 <!-- Publish confirmation dialog -->
-<Dialog.Root bind:open={showPublishDialog}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="fixed inset-0 z-50 bg-black/50" />
-		<Dialog.Content class="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border p-6 shadow-xl" style="border-color: var(--color-border); background: var(--color-background)">
-			<Dialog.Title class="mb-2 text-lg font-semibold" style="color: var(--color-foreground)">{t('pageBuilder.publish_confirm_title', 'Publish Page?')}</Dialog.Title>
+<Modal bind:open={showPublishDialog} title={t('pageBuilder.publish_confirm_title', 'Publish Page?')} size="sm">
 			<p class="mb-4 text-sm" style="color: var(--color-muted)">{t('pageBuilder.publish_confirm_body', 'This will make the current draft live. Visitors will see the published version immediately.')}</p>
 			{#if publishError}<p class="mb-4 text-sm" style="color: var(--color-danger)">{publishError}</p>{/if}
 			<div class="flex justify-end gap-2">
@@ -1630,7 +1613,4 @@
 					{publishing ? t('pageBuilder.publishing', 'Publishing...') : t('page_builder.publish', 'Publish')}
 				</button>
 			</div>
-			<Dialog.Close class="absolute right-4 top-4" style="color: var(--color-muted)" aria-label="Close">&#10005;</Dialog.Close>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>

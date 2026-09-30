@@ -26,13 +26,14 @@
 	let error = $state<string | null>(null);
 	let applying = $state(false);
 
-	const displayPrice = $derived(formatPriceKobo(track.price_kobo, track.currency, page.data.locale));
+	const displayPrice = $derived(formatPriceKobo(track.price_kobo, track.currency, page.data.locale, page.data.currencies));
 	const finalPrice = $derived(
 		discountApplied
 			? formatPriceKobo(
 					Math.max(0, track.price_kobo! - discountApplied.amount_kobo),
 					track.currency,
-					page.data.locale
+					page.data.locale,
+					page.data.currencies
 				)
 			: displayPrice
 	);
@@ -179,7 +180,7 @@
 					</div>
 					{#if discountApplied}
 						<p class="text-xs text-[var(--color-progress)]">
-							{t('university.discount_applied', 'Discount applied')}: -{formatPriceKobo(discountApplied.amount_kobo, track.currency, page.data.locale)}
+							{t('university.discount_applied', 'Discount applied')}: -{formatPriceKobo(discountApplied.amount_kobo, track.currency, page.data.locale, page.data.currencies)}
 						</p>
 					{/if}
 				</div>

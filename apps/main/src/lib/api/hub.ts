@@ -87,8 +87,10 @@ export const setCurrencyPreference = (currencyCode: string) =>
 	api.patch<{ preferred_currency: string }>('/me/preferences/currency', { currency_code: currencyCode });
 
 // Public currency list — managed in Control → Currencies (Section 58).
+// Uses the unauthenticated reference endpoint so symbol lookup also works
+// for guests and pre-auth surfaces.
 export const listCurrencies = () =>
-	api.get<Array<{ code: string; name: string; symbol: string }>>('/wallet/currencies');
+	api.get<Array<{ code: string; name: string; symbol: string }>>('/currencies');
 export const listCreditPacks = () => api.get<Array<unknown>>('/wallet/credit-packs');
 export const purchaseCredits = (body: { pack_id?: string; credit_amount?: number; currency?: string; provider?: string }) =>
 	api.post<{ checkout_url?: string }>('/wallet/purchase-credits', body, {
@@ -189,7 +191,10 @@ export const createSubscription = (plan: string, provider: string) =>
 /* ---- danger ---- */
 export const exportData = () => api.post('/me/data-export');
 export const cancelDataExport = () => api.delete('/me/data-export');
-export const deactivateAccount = () => api.post('/me/deactivate');
+// POST /me/deactivate requires { password } — the backend verifies the
+// credential before soft-deactivating so a stolen session token alone
+// cannot deactivate the account (Section 50 / DeactivateAccount handler).
+export const deactivateAccount = (password: string) => api.post('/me/deactivate', { password });
 export const deleteAccount = () => api.delete('/me');
 
 /* ---- content manager (dashboard) ---- */

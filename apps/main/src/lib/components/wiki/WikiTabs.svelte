@@ -7,7 +7,7 @@
 	// width via a hidden mirror row + ResizeObserver, so it adapts to
 	// viewport, locale, and font changes).
 	import { untrack } from 'svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem } from '$lib/components/ui';
 	import { ChevronDown } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { categoryIcon, categoryIconResolved } from './icons';
@@ -198,40 +198,30 @@
 	{/each}
 
 	{#if overflowTabs.length > 0}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger
-				class="{TAB_CLASSES} cursor-pointer {overflowActive
-					? 'text-[var(--color-primary)] after:bg-[var(--color-primary)]'
-					: 'text-[var(--color-muted)] after:bg-transparent hover:text-[var(--color-text)]'}"
-			>
-				{t('wiki.more_tab', 'More')}
-				<ChevronDown size={14} aria-hidden="true" />
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Portal>
-				<DropdownMenu.Content
-					align="end"
-					sideOffset={6}
-					class="z-50 min-w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+		<Menu sideOffset={6}>
+			{#snippet trigger(props)}
+				<button
+					type="button"
+					{...props}
+					class="{TAB_CLASSES} cursor-pointer {overflowActive
+						? 'text-[var(--color-primary)] after:bg-[var(--color-primary)]'
+						: 'text-[var(--color-muted)] after:bg-transparent hover:text-[var(--color-text)]'}"
 				>
-					{#each overflowTabs as tab (tab.slug)}
-						{@const Icon = tab.icon}
-						<DropdownMenu.Item
-							class="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] data-[highlighted]:bg-[var(--color-surface-subtle)] {tab.slug ===
-							active
-								? 'font-medium text-[var(--color-primary)]'
-								: ''}"
-						>
-							{#snippet child({ props })}
-								<a href={tab.href} {...props}>
-									<Icon size={14} class="shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
-									{tab.label}
-								</a>
-							{/snippet}
-						</DropdownMenu.Item>
-					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Portal>
-		</DropdownMenu.Root>
+					{t('wiki.more_tab', 'More')}
+					<ChevronDown size={14} aria-hidden="true" />
+				</button>
+			{/snippet}
+			{#each overflowTabs as tab (tab.slug)}
+				{@const Icon = tab.icon}
+				<MenuItem
+					href={tab.href}
+					icon={Icon}
+					class={tab.slug === active ? 'font-medium text-[var(--color-primary)]' : ''}
+				>
+					{tab.label}
+				</MenuItem>
+			{/each}
+		</Menu>
 	{/if}
 
 	<!-- Hidden mirror row: all tabs + the More trigger at natural width,

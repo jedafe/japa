@@ -1,7 +1,9 @@
 <script lang="ts">
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import MetricCard from '$lib/components/MetricCard.svelte';
-	import { Tabs, Dialog } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import Tabs from '$lib/components/ui/Tabs.svelte';
+	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { api } from '$lib/api';
 	import type { AiBudget } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -167,20 +169,15 @@
 		</div>
 	</div>
 
-	<Tabs.Root bind:value={activeTab}>
-		<Tabs.List class="bg-muted inline-flex gap-1 rounded-9px p-1">
-			<Tabs.Trigger value="overview" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-				{t('ai_budget.tab_overview')}
-			</Tabs.Trigger>
-			<Tabs.Trigger value="by-provider" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-				{t('ai_budget.cost_by_provider')} ({(budget.by_provider ?? []).length})
-			</Tabs.Trigger>
-			<Tabs.Trigger value="by-task" class="data-[state=active]:bg-background data-[state=active]:shadow-mini rounded-7px px-4 py-2 text-sm font-medium transition-all">
-				{t('ai_budget.cost_by_task')} ({(budget.by_task_type ?? []).length})
-			</Tabs.Trigger>
-		</Tabs.List>
-
-		<Tabs.Content value="overview" class="mt-4">
+	<Tabs
+		bind:value={activeTab}
+		tabs={[
+			{ value: 'overview', label: t('ai_budget.tab_overview') },
+			{ value: 'by-provider', label: `${t('ai_budget.cost_by_provider')} (${(budget.by_provider ?? []).length})` },
+			{ value: 'by-task', label: `${t('ai_budget.cost_by_task')} (${(budget.by_task_type ?? []).length})` }
+		]}
+	>
+		<TabsContent value="overview">
 			<!-- M8: Daily spend BarChart + cumulative Spline -->
 			{#if providerBarData.length > 0}
 				<div class="grid gap-4 lg:grid-cols-2 mb-4">
@@ -239,9 +236,9 @@
 					</div>
 				</div>
 			</div>
-		</Tabs.Content>
+		</TabsContent>
 
-		<Tabs.Content value="by-provider" class="mt-4">
+		<TabsContent value="by-provider">
 			{#if budget.by_provider && budget.by_provider.length > 0}
 				<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
 					<div class="border-border-card border-b px-4 py-3">
@@ -276,9 +273,9 @@
 			{:else}
 				<p class="text-muted-foreground py-8 text-center text-sm">{t('ai_budget.no_provider_data')}</p>
 			{/if}
-		</Tabs.Content>
+		</TabsContent>
 
-		<Tabs.Content value="by-task" class="mt-4">
+		<TabsContent value="by-task">
 			{#if budget.by_task_type && budget.by_task_type.length > 0}
 				<div class="border-border-card bg-background-alt shadow-card overflow-hidden rounded-xl">
 					<div class="border-border-card border-b px-4 py-3">
@@ -308,8 +305,8 @@
 			{:else}
 				<p class="text-muted-foreground py-8 text-center text-sm">{t('ai_budget.no_task_data')}</p>
 			{/if}
-		</Tabs.Content>
-	</Tabs.Root>
+		</TabsContent>
+	</Tabs>
 {:else}
 	<div class="border-border-card bg-background-alt rounded-9px border p-8 text-center">
 		<DollarSign class="text-muted-foreground mx-auto size-8" />
@@ -317,13 +314,7 @@
 	</div>
 {/if}
 
-<Dialog.Root bind:open={editModalOpen}>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 fixed inset-0 z-40" />
-		<Dialog.Content class="bg-background border-border-card fixed top-1/2 left-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border p-6 shadow-lg">
-			<Dialog.Title class="text-foreground text-lg font-semibold">{t('ai_budget.edit_threshold', 'Edit Budget Threshold')}</Dialog.Title>
-			<Dialog.Description class="text-muted-foreground mt-1 text-sm">{t('ai_budget.edit_threshold_desc', 'Set the monthly AI spend alert threshold in USD.')}</Dialog.Description>
-
+<Modal bind:open={editModalOpen} title={t('ai_budget.edit_threshold', 'Edit Budget Threshold')} description={t('ai_budget.edit_threshold_desc', 'Set the monthly AI spend alert threshold in USD.')}>
 			<div class="mt-4">
 				<label for="threshold-input" class="text-muted-foreground mb-1 block text-xs font-medium uppercase tracking-wider">{t('ai_budget.budget_threshold')}</label>
 				<input
@@ -355,7 +346,5 @@
 					{saving ? t('common.saving') : t('common.save')}
 				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+</Modal>
 {/if}

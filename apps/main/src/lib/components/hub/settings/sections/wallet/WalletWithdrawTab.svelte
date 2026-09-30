@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { invalidateAll } from '$app/navigation';
+	import { api } from '$lib/api/client';
 	import { calculateWithdrawal, createWithdrawal, createWithdrawalMethod } from '$lib/api/hub';
-	import type { WalletData } from './types';
+	import type { WalletData, Withdrawal } from './types';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	interface Props {
@@ -14,7 +15,38 @@
 	const creditsBalance = $derived(data.wallet?.credits_balance ?? 0);
 	const currencies = $derived(data.currencies ?? []);
 	const methods = $derived(data.withdrawalMethods ?? []);
-	const withdrawals = $derived(data.withdrawals ?? []);
+	// Withdrawal history is page_size/page_offset-paginated (SSR loads the
+	// first page of 20); further pages append via load-more. Resyncs when
+	// the loader data is replaced by invalidateAll.
+	const withdrawalsPageSize = 20;
+	let withdrawals = $state<Withdrawal[]>([]);
+	let withdrawalsHasMore = $state(false);
+	let withdrawalsLoading = $state(false);
+	let withdrawalsError = $state<string | null>(null);
+	// Reads only data.withdrawals so appended pages don't retrigger a reset.
+	$effect(() => {
+		const incoming = data.withdrawals ?? [];
+		withdrawals = incoming;
+		withdrawalsHasMore = incoming.length === withdrawalsPageSize;
+	});
+
+	async function loadMoreWithdrawals() {
+		if (withdrawalsLoading || !withdrawalsHasMore) return;
+		withdrawalsLoading = true;
+		withdrawalsError = null;
+		const res = await api.get<Withdrawal[]>(
+			`/me/wallet/withdrawals?page_size=${withdrawalsPageSize}&page_offset=${withdrawals.length}`
+		);
+		if (res.error) {
+			withdrawalsError = res.error.message;
+		} else {
+			const batch = res.data ?? [];
+			const seen = new Set(withdrawals.map((w) => w.id));
+			withdrawals = [...withdrawals, ...batch.filter((w) => !seen.has(w.id))];
+			withdrawalsHasMore = batch.length === withdrawalsPageSize;
+		}
+		withdrawalsLoading = false;
+	}
 	const withdrawalProviders = $derived(data.withdrawalProviders ?? []);
 
 	const preferredCode = $derived(data.preferredCurrency?.preferred_currency ?? '');
@@ -59,7 +91,9 @@
 		}
 	});
 
-	const minWithdraw = $derived(data.minWithdrawCredits ?? 1000);
+	// 0 = settings endpoint unavailable → no client-side minimum; the
+	// backend validates the real configured minimum on submit.
+	const minWithdraw = $derived(data.minWithdrawCredits ?? 0);
 
 	function formatFiat(minor: number, code: string): string {
 		const currency = currencies.find((c) => c.code === code);
@@ -73,7 +107,7 @@
 			error = t('wallet.withdraw.invalid_amount', 'Please enter a valid credit amount.');
 			return;
 		}
-		if (creditAmount < minWithdraw) {
+		if (minWithdraw > 0 && creditAmount < minWithdraw) {
 			error = t('wallet.withdraw.minimum', 'Minimum withdrawal is {n} credits.').replace('{n}', String(minWithdraw));
 			return;
 		}
@@ -164,7 +198,7 @@
 
 		success = t('wallet.withdraw.method_added', 'Payout method added.');
 		newAccount = '';
-		newCurrency = 'usdttrc20';
+		newCurrency = '';
 		newLabel = '';
 		await invalidateAll();
 	}
@@ -207,15 +241,17 @@
 					<input
 						id="withdraw-amount"
 						type="number"
-						min={minWithdraw}
+						min={minWithdraw || 1}
 						bind:value={amount}
 						oninput={() => (calcResult = null)}
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 						placeholder={t('wallet.withdraw.enter_amount', 'Enter credit amount')}
 					/>
-					<p class="mt-1 text-xs text-[var(--color-muted)]">
-						{t('wallet.withdraw.minimum', 'Minimum {n} credits').replace('{n}', minWithdraw.toLocaleString())}
-					</p>
+					{#if minWithdraw > 0}
+						<p class="mt-1 text-xs text-[var(--color-muted)]">
+							{t('wallet.withdraw.minimum', 'Minimum {n} credits').replace('{n}', minWithdraw.toLocaleString())}
+						</p>
+					{/if}
 				</div>
 
 				<div>
@@ -402,6 +438,19 @@
 					</li>
 				{/each}
 			</ul>
+			{#if withdrawalsError}
+				<p class="mt-3 rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{withdrawalsError}</p>
+			{/if}
+			{#if withdrawalsHasMore}
+				<button
+					type="button"
+					onclick={loadMoreWithdrawals}
+					disabled={withdrawalsLoading}
+					class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+				>
+					{withdrawalsLoading ? t('settings.common.loading', 'Loading…') : t('settings.common.load_more', 'Load more')}
+				</button>
+			{/if}
 		</div>
 	{/if}
 </div>

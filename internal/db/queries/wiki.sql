@@ -67,6 +67,7 @@ ORDER BY wp.category, wp.title;
 -- appear automatically. ?level matches sp.level OR st.slug so legacy
 -- level='university' spaces and future type slugs both resolve.
 SELECT sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
+       sp.logo_media_id, sp.description,
        COUNT(wp.id) FILTER (WHERE wp.is_active = true) AS page_count
 FROM spaces sp
 JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
@@ -128,9 +129,76 @@ WHERE sp.status = 'active'
                   )
            )
       ))
-GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level
+GROUP BY sp.id, sp.slug, sp.name, sp.geo_code, sp.region, sp.level,
+         sp.logo_media_id, sp.description
 HAVING (NOT @has_wiki::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
-ORDER BY sp.name;
+-- §80 Reader UX: ?sort=name (default, A–Z) or page_count (most guides
+-- first). Each non-selected CASE collapses to all-NULL, so only the
+-- picked key orders; sp.name is the stable tiebreak.
+ORDER BY
+    CASE WHEN @sort::text = 'name' THEN sp.name END ASC,
+    CASE WHEN @sort::text = 'page_count' THEN COUNT(wp.id) FILTER (WHERE wp.is_active = true) END DESC,
+    sp.name ASC
+LIMIT NULLIF(@page_limit::int, 0) OFFSET @page_offset;
+
+-- name: CountWikiDestinations :one
+-- §80 Reader UX: total matching the ListWikiDestinations filters (pre-
+-- pagination) so the response can carry `total` for "Showing N" counts
+-- and numbered pagination. Same predicates, same within-CTE.
+SELECT COUNT(*) FROM (
+    SELECT sp.id
+    FROM spaces sp
+    JOIN wiki_type_configs wtc ON wtc.space_type_id = sp.space_type_id AND wtc.enabled = true
+    LEFT JOIN space_types st ON st.id = sp.space_type_id
+    LEFT JOIN wiki_pages wp ON wp.space_id = sp.id
+    WHERE sp.status = 'active'
+      AND (@level::text = '' OR sp.level = @level OR st.slug = @level)
+      AND (@region::text = '' OR sp.region = @region)
+      AND (@search::text = '' OR sp.name ILIKE '%' || @search || '%')
+      AND (@parent::text = '' OR sp.parent_id = (SELECT p.id FROM spaces p WHERE p.slug = @parent))
+      AND (@within::text = '' OR sp.slug <> @within)
+      AND (@within::text = '' OR EXISTS (
+            SELECT 1
+            FROM (
+                SELECT sps.parent_space_id AS pid
+                FROM space_parent_spaces sps
+                WHERE sps.space_id = sp.id
+                UNION
+                SELECT sp.parent_id
+                WHERE sp.parent_id IS NOT NULL
+            ) l1
+            JOIN spaces g ON g.id = l1.pid AND g.deleted_at IS NULL
+            WHERE g.slug = @within
+               OR EXISTS (
+                   SELECT 1
+                   FROM (
+                       SELECT sps2.parent_space_id AS pid
+                       FROM space_parent_spaces sps2
+                       WHERE sps2.space_id = g.id
+                       UNION
+                       SELECT g.parent_id
+                       WHERE g.parent_id IS NOT NULL
+                   ) l2
+                   JOIN spaces gp ON gp.id = l2.pid AND gp.deleted_at IS NULL
+                   WHERE gp.slug = @within
+                      OR EXISTS (
+                          SELECT 1
+                          FROM (
+                              SELECT sps3.parent_space_id AS pid
+                              FROM space_parent_spaces sps3
+                              WHERE sps3.space_id = gp.id
+                              UNION
+                              SELECT gp.parent_id
+                              WHERE gp.parent_id IS NOT NULL
+                          ) l3
+                          JOIN spaces ggp ON ggp.id = l3.pid AND ggp.deleted_at IS NULL
+                          WHERE ggp.slug = @within
+                      )
+               )
+          ))
+    GROUP BY sp.id
+    HAVING (NOT @has_wiki::bool OR COUNT(wp.id) FILTER (WHERE wp.is_active = true) > 0)
+) counted;
 
 -- =====================
 -- Revisions
@@ -146,9 +214,11 @@ SELECT wr.id, wr.wiki_page_id, wr.content, wr.summary,
        wr.ai_generated, wr.ai_model, wr.ai_prompt_hash,
        wr.hitl_reviewed_by, wr.hitl_reviewed_at, wr.hitl_review_notes,
        wr.created_at,
-       COALESCE(u.username, '') AS submitted_by_name
+       COALESCE(u.username, '') AS submitted_by_name,
+       up.avatar_url AS submitted_by_avatar_url
 FROM wiki_revisions wr
 LEFT JOIN users u ON u.id = wr.submitted_by
+LEFT JOIN user_profiles up ON up.user_id = wr.submitted_by
 WHERE wr.wiki_page_id = @page_id AND wr.status = 'approved'
   AND wr.kind IN ('content', 'mixed') AND wr.deleted_at IS NULL
 ORDER BY wr.created_at DESC
@@ -528,3 +598,34 @@ WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
 -- ingestion → wiki_pages). Mirrors the partial unique index: soft-deleted
 -- pages no longer occupy their slug (000744).
 SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE space_id = @space_id AND slug = @slug AND deleted_at IS NULL) AS exists;
+
+-- =====================
+-- Page Feedback (§80 Reader UX)
+-- =====================
+
+-- name: UpsertWikiPageFeedback :one
+-- Upsert the member's vote; the service pre-reads the current vote so a
+-- repeated vote can retract instead (toggle semantics live in the service).
+INSERT INTO wiki_page_feedback (wiki_page_id, user_id, vote)
+VALUES (@wiki_page_id, @user_id, @vote)
+ON CONFLICT (wiki_page_id, user_id)
+DO UPDATE SET vote = EXCLUDED.vote, updated_at = now()
+RETURNING id;
+
+-- name: DeleteWikiPageFeedback :exec
+DELETE FROM wiki_page_feedback
+WHERE wiki_page_id = @wiki_page_id AND user_id = @user_id;
+
+-- name: GetWikiPageViewerVote :one
+SELECT vote FROM wiki_page_feedback
+WHERE wiki_page_id = @wiki_page_id AND user_id = @user_id;
+
+-- name: GetWikiPageFeedbackCounts :one
+-- Aggregate votes for one page. Reads are per-page; the page_id index
+-- covers it. The viewer's own vote is a separate GetWikiPageViewerVote
+-- lookup — sqlc can't type a correlated subquery inside this aggregate.
+SELECT
+    COUNT(*) FILTER (WHERE f.vote = 'up') AS up_count,
+    COUNT(*) FILTER (WHERE f.vote = 'down') AS down_count
+FROM wiki_page_feedback f
+WHERE f.wiki_page_id = @wiki_page_id;

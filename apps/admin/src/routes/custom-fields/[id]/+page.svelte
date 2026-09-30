@@ -4,7 +4,8 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Plus, Pencil, Trash2, ArrowLeft, GripVertical } from 'lucide-svelte';
-	import Modal from '$lib/components/Modal.svelte';
+	import { Modal } from '$lib/components/ui/modal';
+	import { Button } from '$lib/components/ui/button';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { DataTable } from '$lib/components/ui/data-table';
 	import type { ActionItem, Column } from '$lib/components/ui/data-table';
@@ -538,8 +539,12 @@
 </SlideOver>
 
 <!-- Delete Field Confirmation -->
-<Modal bind:open={showDeleteConfirm} title={t('fieldGroups.delete_field')} confirmLabel={t('common.delete')} onConfirm={executeDeleteField}>
+<Modal bind:open={showDeleteConfirm} title={t('fieldGroups.delete_field')} size="sm">
 	<p class="text-sm" style="color: var(--color-muted)">
 		{t('common.delete')} <strong>{deleteTarget?.label}</strong>? {t('fieldGroups.delete_field_confirm')}
 	</p>
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeleteConfirm = false)}>{t('common.cancel')}</Button>
+		<Button variant="destructive" onclick={executeDeleteField}>{t('common.delete')}</Button>
+	</div>
 </Modal>

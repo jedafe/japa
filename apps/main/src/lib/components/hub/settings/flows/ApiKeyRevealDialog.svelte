@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 
 	interface Props {
@@ -27,16 +27,8 @@
 	}
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-			<Dialog.Title class="mb-2 text-lg font-medium text-[var(--color-text)]">
-				{t('settings.apikeys.reveal_title')}
-			</Dialog.Title>
-			<Dialog.Description class="mb-4 text-sm text-[var(--color-danger,#dc2626)]">
-				{t('settings.apikeys.reveal_warning')}
-			</Dialog.Description>
-			<div class="mb-4 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
+<Modal bind:open title={t('settings.apikeys.reveal_title')} description={t('settings.apikeys.reveal_warning')} size="md">
+		<div class="mb-4 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] p-3">
 				<code class="block break-all text-sm text-[var(--color-text)]">{apiKey}</code>
 			</div>
 			<div class="mb-4 flex items-center gap-2">
@@ -66,7 +58,5 @@
 				>
 					{t('settings.apikeys.done')}
 				</button>
-			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+		</div>
+</Modal>

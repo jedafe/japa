@@ -12,7 +12,7 @@
 	 * Ref: japaconnect-engineering/sections/62-newsletter-digest.md
 	 *      japaconnect-engineering/adr/ADR-080-newsletter-digest.md
 	 */
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import { beforeNavigate, invalidateAll } from '$app/navigation';
 	import { DirtyForm } from '$lib/components/hub/useDirtyForm.svelte';
@@ -156,38 +156,31 @@
 			</div>
 		{/if}
 
-		<Dialog.Root bind:open={unsubscribeOpen}>
-			<Dialog.Portal>
-				<Dialog.Content class="z-50 max-h-[85vh] w-full max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-					<Dialog.Title class="mb-2 text-base font-medium text-[var(--color-text)]">
-						{t('settings.newsletter.unsubscribe_confirm_title', 'Unsubscribe from newsletter?')}
-					</Dialog.Title>
-					<Dialog.Description class="mb-4 text-sm text-[var(--color-muted)]">
-						{t('settings.newsletter.unsubscribe_confirm_desc', 'You can resubscribe at any time from this page.')}
-					</Dialog.Description>
-					{#if unsubscribeMessage}
-						<p class="mb-3 text-xs text-[var(--color-danger,#dc2626)]">{unsubscribeMessage}</p>
-					{/if}
-					<div class="flex items-center justify-end gap-2">
-						<Dialog.Close
-							type="button"
-							disabled={unsubscribing}
-							class="rounded-[var(--radius)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-						>
-							{t('settings.action.cancel', 'Cancel')}
-						</Dialog.Close>
-						<button
-							type="button"
-							disabled={unsubscribing}
-							onclick={handleUnsubscribe}
-							class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-						>
-							{unsubscribing ? t('common.submitting', 'Submitting…') : t('settings.newsletter.unsubscribe', 'Unsubscribe')}
-						</button>
-					</div>
-				</Dialog.Content>
-			</Dialog.Portal>
-		</Dialog.Root>
+		<Modal bind:open={unsubscribeOpen} title={t('settings.newsletter.unsubscribe_confirm_title', 'Unsubscribe from newsletter?')} description={t('settings.newsletter.unsubscribe_confirm_desc', 'You can resubscribe at any time from this page.')} size="sm">
+			{#snippet children(close)}
+				{#if unsubscribeMessage}
+					<p class="mb-3 text-xs text-[var(--color-danger,#dc2626)]">{unsubscribeMessage}</p>
+				{/if}
+				<div class="flex items-center justify-end gap-2">
+					<button
+						type="button"
+						disabled={unsubscribing}
+						onclick={close}
+						class="rounded-[var(--radius)] px-3 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('settings.action.cancel', 'Cancel')}
+					</button>
+					<button
+						type="button"
+						disabled={unsubscribing}
+						onclick={handleUnsubscribe}
+						class="rounded-[var(--radius)] bg-[var(--color-danger,#dc2626)] px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+					>
+						{unsubscribing ? t('common.submitting', 'Submitting…') : t('settings.newsletter.unsubscribe', 'Unsubscribe')}
+					</button>
+				</div>
+			{/snippet}
+		</Modal>
 
 		{#if form.dirty}
 			<div

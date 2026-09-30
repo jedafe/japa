@@ -3,23 +3,61 @@
 	// Billing / Payments section. Displays the user's payment history fetched
 	// from GET /me/payments and lets the user view a single payment's details
 	// via GET /me/payments/{id}.
-	import { Dialog } from 'bits-ui';
+	import { Modal } from '$lib/components/ui';
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { Receipt, X } from 'lucide-svelte';
+	import { Receipt } from 'lucide-svelte';
+	import { loadCurrencies, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import type { Payment } from '$lib/types';
 
 	interface PaymentsData {
 		payments: Payment[];
+		pageSize?: number;
 	}
 
 	let { data }: { data: unknown } = $props();
 
-	let payments = $derived((data as PaymentsData | null)?.payments ?? []);
+	const pageSize = $derived((data as PaymentsData | null)?.pageSize ?? 20);
+	let payments = $state<Payment[]>([]);
 	let selected = $state<Payment | null>(null);
 	let detailLoading = $state(false);
+	let loadingMore = $state(false);
+	let loadMoreError = $state('');
+	// §58 — managed currency list for amount display.
+	let currencies = $state<CurrencyInfo[]>([]);
+	// The list endpoint returns no total — "more" is inferred from a full page.
+	let hasMore = $state(false);
+	let currentPage = $state(0);
+
+	// The resync reads only the loader payload (not `payments`) so appended
+	// load-more pages don't retrigger a reset.
+	$effect(() => {
+		loadCurrencies().then((list) => (currencies = list));
+		const incoming = (data as PaymentsData | null)?.payments ?? [];
+		payments = incoming;
+		currentPage = incoming.length > 0 ? 1 : 0;
+		hasMore = incoming.length === pageSize;
+	});
+
+	async function loadMore() {
+		if (loadingMore || !hasMore) return;
+		loadingMore = true;
+		loadMoreError = '';
+		const res = await api.get<Payment[]>(
+			`/me/payments?page_size=${pageSize}&page_offset=${payments.length}`
+		);
+		if (res.error) {
+			loadMoreError = res.error.message;
+		} else {
+			const batch = res.data ?? [];
+			payments = [...payments, ...batch];
+			currentPage = Math.ceil(payments.length / pageSize);
+			hasMore = batch.length === pageSize;
+		}
+		loadingMore = false;
+	}
 
 	function formatDate(iso: string): string {
 		try {
@@ -36,11 +74,7 @@
 	function formatCurrency(amount: string, currency: string): string {
 		const num = Number(amount);
 		if (Number.isNaN(num)) return `${amount} ${currency}`;
-		try {
-			return new Intl.NumberFormat(i18n.locale, { style: 'currency', currency }).format(num);
-		} catch {
-			return `${amount} ${currency}`;
-		}
+		return formatMoney(num, currency, currencies, { locale: i18n.locale }) || `${amount} ${currency}`;
 	}
 
 	function statusLabel(status: string): string {
@@ -104,18 +138,27 @@
 				{/each}
 			</tbody>
 		</table>
+		{#if currentPage > 0}
+			<p class="pt-2 text-xs text-[var(--color-muted)]">
+				{t('settings.common.page', 'Page {n}').replace('{n}', String(currentPage))} · {payments.length}
+			</p>
+		{/if}
+		{#if loadMoreError}
+			<p class="rounded-[var(--radius)] bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{loadMoreError}</p>
+		{/if}
+		{#if hasMore}
+			<button
+				type="button"
+				onclick={loadMore}
+				disabled={loadingMore}
+				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50"
+			>
+				{loadingMore ? t('settings.common.loading', 'Loading…') : t('settings.common.load_more', 'Load more')}
+			</button>
+		{/if}
 	{/if}
 
-	<Dialog.Root open={selected !== null} onOpenChange={(v) => { if (!v) selected = null; }}>
-		<Dialog.Portal>
-			<Dialog.Content class="z-50 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
-				<Dialog.Title class="mb-4 flex items-center justify-between text-base font-medium text-[var(--color-text)]">
-					<span>{t('settings.payments.detail_title')}</span>
-					<Dialog.Close class="text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label={t('settings.payments.close')}>
-						<X class="h-4 w-4" />
-					</Dialog.Close>
-				</Dialog.Title>
-
+	<Modal open={selected !== null} onOpenChange={(v) => { if (!v) selected = null; }} title={t('settings.payments.detail_title')} closeLabel={t('settings.payments.close')} size="md">
 				{#if detailLoading}
 					<p class="text-sm text-[var(--color-muted)]">{t('settings.payments.loading')}</p>
 				{:else if selected}
@@ -162,7 +205,5 @@
 						{/if}
 					</dl>
 				{/if}
-			</Dialog.Content>
-		</Dialog.Portal>
-	</Dialog.Root>
+	</Modal>
 </section>

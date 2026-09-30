@@ -1,6 +1,33 @@
 import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
+import type { CurrencyInfo } from '$lib/utils/currency';
 import type { Menu } from '$lib/types';
+
+/** Onboarding status (Section 09) — only the tour dismissals are read. */
+interface OnboardingStatusLite {
+	tour_dismissed?: boolean;
+	tour_dismissals?: Record<string, boolean>;
+	tour_steps?: Record<string, string[]>;
+}
+
+// §58 — the active currency table changes rarely (Control → Currencies), so
+// cache it briefly rather than re-fetching on every page load; helpers
+// degrade to Intl symbols when it's unavailable.
+const CURRENCIES_TTL_MS = 60_000;
+let currenciesCache: { at: number; items: CurrencyInfo[] } | null = null;
+
+async function loadCurrenciesCached(ctx: ReturnType<typeof apiContext>): Promise<CurrencyInfo[]> {
+	if (currenciesCache && Date.now() - currenciesCache.at < CURRENCIES_TTL_MS) {
+		return currenciesCache.items;
+	}
+	try {
+		const items = (await apiGet<CurrencyInfo[]>(ctx, '/currencies')) ?? [];
+		currenciesCache = { at: Date.now(), items };
+		return items;
+	} catch {
+		return currenciesCache?.items ?? [];
+	}
+}
 
 /**
  * Shared shell data for every Learn route: the resolved session (from hooks),
@@ -64,6 +91,11 @@ export const load: LayoutServerLoad = async (event) => {
 		bottomMenu = null;
 	}
 
+	// Active currency table (§58, ADR-065) — public reference endpoint shared
+	// by every app so prices render the platform's managed names/symbols.
+	// Degrades to [] — helpers fall back to Intl/browser symbols.
+	const currencies = await loadCurrenciesCached(ctx);
+
 	// Authed-only: unread notification count for the LeftNav badge. Seeded
 	// server-side so the badge paints during SSR; the realtime store keeps it
 	// live via WebSocket notification events.
@@ -74,6 +106,20 @@ export const load: LayoutServerLoad = async (event) => {
 			unreadNotifications = res.count;
 		} catch {
 			unreadNotifications = 0;
+		}
+	}
+
+	// Section 09 Product Tour (learn surface): dismissal state for the
+	// contextual walkthrough. Authed only — guests never see the tour.
+	let tourDismissed = false;
+	let tourSteps: string[] | null = null;
+	if (user) {
+		try {
+			const status = await apiGet<OnboardingStatusLite>(ctx, '/onboarding/status');
+			tourDismissed = status?.tour_dismissals?.['learn'] === true;
+			tourSteps = status?.tour_steps?.['learn'] ?? null;
+		} catch {
+			tourDismissed = false;
 		}
 	}
 
@@ -106,8 +152,11 @@ export const load: LayoutServerLoad = async (event) => {
 		bottomMenu,
 		footerMenu,
 		unreadNotifications,
+		currencies,
 		rightSidebarWidgets,
 		leftSidebarWidgets,
+		tourDismissed,
+		tourSteps,
 		navCollapsed: user?.ui?.nav_collapsed ?? false,
 		// Platform logo from appearance.logo_url / appearance.logo_url_dark (control panel).
 		logoUrl: (siteSettings['appearance.logo_url'] as string | undefined) ?? '',

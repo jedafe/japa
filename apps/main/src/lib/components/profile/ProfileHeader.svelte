@@ -3,7 +3,7 @@
 	import { t } from '$lib/i18n';
 	import { i18n } from '$lib/i18n';
 	import { BadgeCheck, Calendar, MessageSquare, MoreVertical, Pencil } from 'lucide-svelte';
-	import { DropdownMenu } from 'bits-ui';
+	import { Menu, MenuItem } from '$lib/components/ui';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { PublicUser } from '$lib/types';
@@ -47,34 +47,25 @@
 		     row keeps only primary actions (e.g. Follow) as buttons. -->
 		{#if isOwnProfile || (menuItems && page.data.isAuthed)}
 			<div class="absolute right-3 top-3 z-10">
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger
-						type="button"
-						class="grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
-						aria-label={t('common.actions', 'Actions')}
-					>
-						<MoreVertical size={16} />
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Portal>
-						<DropdownMenu.Content
-							align="end"
-							sideOffset={8}
-							class="z-50 min-w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+				<Menu>
+					{#snippet trigger(props)}
+						<button
+							type="button"
+							{...props}
+							class="grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60"
+							aria-label={t('common.actions', 'Actions')}
 						>
-							{#if isOwnProfile}
-								<DropdownMenu.Item
-									onSelect={() => goto('/settings/profile')}
-									class="flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-hover)]"
-								>
-									<Pencil size={16} />
-									{t('profile.edit_profile', 'Edit profile')}
-								</DropdownMenu.Item>
-							{:else if menuItems}
-								{@render menuItems()}
-							{/if}
-						</DropdownMenu.Content>
-					</DropdownMenu.Portal>
-				</DropdownMenu.Root>
+							<MoreVertical size={16} />
+						</button>
+					{/snippet}
+					{#if isOwnProfile}
+						<MenuItem icon={Pencil} onSelect={() => goto('/settings/profile')}>
+							{t('profile.edit_profile', 'Edit profile')}
+						</MenuItem>
+					{:else if menuItems}
+						{@render menuItems()}
+					{/if}
+				</Menu>
 			</div>
 		{/if}
 	</div>

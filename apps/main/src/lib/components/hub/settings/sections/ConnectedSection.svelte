@@ -14,6 +14,13 @@
 	let { data }: { data: unknown } = $props();
 	let accounts = $state<ConnectedAccount[]>(untrack(() => (data as ConnectedAccount[] | null) ?? []));
 
+	// Resync when the loader data is replaced (e.g. invalidateAll) — the
+	// untracked init alone leaves the list permanently stale (BUG-P014).
+	// Reads only `data` so optimistic removals don't retrigger it.
+	$effect(() => {
+		accounts = (data as ConnectedAccount[] | null) ?? [];
+	});
+
 	async function doUnlink(provider: string) {
 		const idx = accounts.findIndex((a) => a.provider === provider);
 		if (idx < 0) return;

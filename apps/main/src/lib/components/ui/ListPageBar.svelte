@@ -20,8 +20,13 @@
 	let { title = '', actions, children }: Props = $props();
 </script>
 
+	<!-- relative + z-20: backdrop-blur makes this bar a stacking context, so
+	     dropdowns opened by bar controls (e.g. Autocomplete) are trapped at
+	     its layer. Without an explicit z-index the bar paints in normal flow
+	     and positioned content below (user cards, -mt-* overlap rows) covers
+	     open dropdowns. -->
 <div
-	class="flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
+	class="relative z-20 flex items-stretch border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_90%,transparent)] backdrop-blur"
 	style="margin-inline: var(--page-gutter, 0.75rem)"
 >
 	<div class="min-w-0 flex-1">

@@ -7,6 +7,7 @@
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
 	import WikiItemTables from '$lib/components/wiki/WikiItemTables.svelte';
+	import WikiHelpfulWidget from '$lib/components/wiki/WikiHelpfulWidget.svelte';
 	import WikiRollupPanel from '$lib/components/wiki/WikiRollupPanel.svelte';
 	import WikiDirectoryPanel from '$lib/components/wiki/WikiDirectoryPanel.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
@@ -18,7 +19,7 @@
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
-	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
+	import { tiptapToHtml, tiptapToText, tiptapToc, type TipTapDoc, type TocEntry } from '$lib/tiptap/serialize';
 
 	let { data }: { data: PageData } = $props();
 
@@ -43,6 +44,57 @@
 		return data.page?.category_label || t(`wiki.category_${cat}`, cat.replace(/_/g, ' '));
 	}
 
+	// §80 Reader UX — "On this page" TOC: prose headings (h2/h3) get slug
+	// anchors injected during serialization; field-group sections and the
+	// rollup/directory panels expose fixed anchors of their own.
+	const proseToc = $derived.by(() => {
+		const c = data.page?.current_content;
+		if (!c || typeof c !== 'object') {
+			return { entries: [] as TocEntry[], ids: new Map() };
+		}
+		return tiptapToc(c as unknown as TipTapDoc);
+	});
+
+	function sectionLabel(key: string): string {
+		return t(
+			`wiki.section_${key}`,
+			key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+		);
+	}
+
+	const tocEntries = $derived.by(() => {
+		const list: TocEntry[] = [...proseToc.entries];
+		if (data.page?.rollup) {
+			list.push({
+				id: 'wiki-rollup',
+				level: 2,
+				text: data.page.category_label || t('wiki.toc_rollup', 'Breakdown by destination')
+			});
+		}
+		if (data.page?.directory) {
+			list.push({
+				id: 'wiki-directory',
+				level: 2,
+				text: data.page.category_label || t('wiki.toc_directory', 'Places')
+			});
+		}
+		for (const s of data.page?.fields?.sections ?? []) {
+			if (s.key) {
+				list.push({ id: `section-${s.key}`, level: 3, text: sectionLabel(s.key) });
+			}
+		}
+		return list;
+	});
+
+	// §80 Reader UX — estimated read time from the prose word count.
+	const readMinutes = $derived.by(() => {
+		const c = data.page?.current_content;
+		if (c == null) return 0;
+		const text = typeof c === 'string' ? c.replace(/<[^>]*>/g, ' ') : tiptapToText(c as TipTapDoc);
+		const words = text.split(/\s+/).filter(Boolean).length;
+		return words > 0 ? Math.max(1, Math.ceil(words / 200)) : 0;
+	});
+
 	// Render the wiki content to safe HTML. TipTap JSON is serialized to HTML;
 	// legacy HTML strings are sanitized directly (Rule 16 / §5.1).
 	const htmlContent = $derived.by(() => {
@@ -50,7 +102,9 @@
 		if (c == null) return '';
 		if (typeof c === 'string') return sanitizeContentHtml(c);
 		if (typeof c === 'object') {
-			return sanitizeContentHtml(tiptapToHtml(c as unknown as TipTapDoc));
+			return sanitizeContentHtml(
+				tiptapToHtml(c as unknown as TipTapDoc, { headingIds: proseToc.ids })
+			);
 		}
 		return '';
 	});
@@ -316,7 +370,8 @@
 				</div>
 			</div>
 		{:else}
-			<article class="mx-auto max-w-3xl">
+			<div class="mx-auto flex w-full max-w-6xl justify-center gap-8">
+			<article class="w-full min-w-0 max-w-3xl">
 				<header class="mb-4 flex flex-wrap items-center gap-2">
 					<h1 class="text-2xl font-semibold text-[var(--color-text)]">{data.page.title}</h1>
 					<span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">
@@ -328,6 +383,43 @@
 						</span>
 					{/if}
 				</header>
+
+				<!-- §80 Reader UX byline: approved submitter + avatar, last-updated
+				     date, and a prose-derived read time. -->
+				{#if data.page.submitted_by || data.page.updated_at || readMinutes > 0}
+					<div class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-muted)]">
+						{#if data.page.submitted_by_avatar_url}
+							<img
+								src={data.page.submitted_by_avatar_url}
+								alt=""
+								class="h-5 w-5 rounded-full object-cover"
+								loading="lazy"
+							/>
+						{/if}
+						{#if data.page.submitted_by}
+							<span>
+								{t('wiki.byline', 'By {name}').replace('{name}', data.page.submitted_by)}
+							</span>
+						{/if}
+						{#if data.page.updated_at}
+							<span aria-hidden="true">·</span>
+							<span>
+								{t('wiki.updated_on', 'Updated {date}').replace(
+									'{date}',
+									new Date(data.page.updated_at).toLocaleDateString(undefined, {
+										year: 'numeric',
+										month: 'short',
+										day: 'numeric'
+									})
+								)}
+							</span>
+						{/if}
+						{#if readMinutes > 0}
+							<span aria-hidden="true">·</span>
+							<span>{t('wiki.read_time', '{min} min read').replace('{min}', String(readMinutes))}</span>
+						{/if}
+					</div>
+				{/if}
 
 				<div class="mb-6 flex flex-wrap items-center gap-3 text-sm">
 					{#if canEdit}
@@ -438,7 +530,11 @@
 					     bound group's itemized sections (city prices pages). The
 					     EntityFieldsPanel below stays the edit surface. -->
 					{#if data.page.rollup}
-						<WikiRollupPanel rollup={data.page.rollup} spaceSlug={spaceName} />
+						<WikiRollupPanel
+							rollup={data.page.rollup}
+							spaceSlug={spaceName}
+							contextCurrency={data.page.space_currency_code ?? ''}
+						/>
 					{/if}
 					{#if data.page.directory}
 						<WikiDirectoryPanel directory={data.page.directory} spaceSlug={data.spaceSlug} />
@@ -447,6 +543,7 @@
 						<div class="mt-6">
 							<WikiItemTables
 								group={data.page.fields}
+								contextCurrency={data.page.space_currency_code ?? ''}
 								activeSection={data.section || undefined}
 								allHref="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(
 									data.pageSlug
@@ -486,6 +583,17 @@
 							entityId={panelSpaceId}
 							groupId={data.page.field_group_id ?? undefined}
 							groupSlug={data.page.field_group_slug ?? undefined}
+						/>
+					{/if}
+
+					<!-- §80 Reader UX — per-member helpful votes; absent on lazy
+					     pages (no wiki_pages row to vote on). -->
+					{#if data.page.helpful !== undefined}
+						<WikiHelpfulWidget
+							spaceSlug={data.spaceSlug}
+							pageSlug={data.pageSlug}
+							helpful={data.page.helpful}
+							authed={data.authed}
 						/>
 					{/if}
 
@@ -547,6 +655,33 @@
 					{/if}
 				{/if}
 			</article>
+
+			<!-- §80 Reader UX — "On this page" rail: prose headings plus the
+			     structured panels' anchors; hidden below xl. -->
+			{#if tocEntries.length > 0}
+				<aside class="hidden w-60 shrink-0 xl:block">
+					<nav
+						class="sticky top-24 space-y-0.5 border-l border-[var(--color-border)] pl-4"
+						aria-label={t('wiki.toc_label', 'On this page')}
+					>
+						<p class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+							{t('wiki.toc_label', 'On this page')}
+						</p>
+						{#each tocEntries as entry (entry.id)}
+							<a
+								href="#{entry.id}"
+								class="block truncate py-1 text-xs text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-primary)] {entry.level ===
+								3
+									? 'pl-3'
+									: ''}"
+							>
+								{entry.text}
+							</a>
+						{/each}
+					</nav>
+				</aside>
+			{/if}
+			</div>
 		{/if}
 	</div>
 </div>

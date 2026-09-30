@@ -12,7 +12,8 @@
 		Ellipsis,
 		Inbox
 	} from 'lucide-svelte';
-	import { DropdownMenu, Select } from 'bits-ui';
+	import { Menu, MenuItem } from '@japaconnect/ui';
+	import Select from '$lib/components/ui/Select.svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { sanitizeHtml } from '$lib/utils';
 
@@ -296,37 +297,31 @@
 						{#if rowActions.length > 0}
 							<td class="px-3 py-2.5">
 								<div role="presentation" onclick={(e) => e.stopPropagation()}>
-									<DropdownMenu.Root>
-										<DropdownMenu.Trigger
-											class="text-muted-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors outline-none"
-											aria-label="Row actions"
-										>
-											<Ellipsis class="size-4" />
-										</DropdownMenu.Trigger>
-										<DropdownMenu.Portal>
-											<DropdownMenu.Content
-												class="border-border-input bg-background shadow-popover z-50 min-w-[160px] rounded-xl border px-1 py-1.5"
-												sideOffset={4}
-												align="end"
+									<Menu sideOffset={4} contentClass="min-w-[160px]">
+										{#snippet trigger(props)}
+											<button
+												type="button"
+												{...props}
+												class="text-muted-foreground hover:bg-dark-04 flex h-7 w-7 items-center justify-center rounded-lg transition-colors outline-none"
+												aria-label="Row actions"
 											>
-												{#each rowActions.filter(a => !a.hidden?.(row as Record<string, unknown>)) as action}
-													<DropdownMenu.Item
-														class="data-highlighted:bg-accent flex cursor-pointer items-center gap-2 rounded-9px px-3 py-2 text-sm outline-none {action.variant === 'destructive' ? 'text-destructive data-highlighted:text-destructive' : 'text-foreground'}"
-														disabled={action.disabled?.(row as Record<string, unknown>)}
-														onSelect={async () => {
-															await tick();
-															action.onClick(row as Record<string, unknown>);
-														}}
-													>
-													{#if action.icon}
-														<action.icon class="size-4" />
-													{/if}
-													{action.label}
-													</DropdownMenu.Item>
-												{/each}
-											</DropdownMenu.Content>
-										</DropdownMenu.Portal>
-									</DropdownMenu.Root>
+												<Ellipsis class="size-4" />
+											</button>
+										{/snippet}
+										{#each rowActions.filter(a => !a.hidden?.(row as Record<string, unknown>)) as action}
+											<MenuItem
+												destructive={action.variant === 'destructive'}
+												disabled={action.disabled?.(row as Record<string, unknown>)}
+												icon={action.icon}
+												onSelect={async () => {
+													await tick();
+													action.onClick(row as Record<string, unknown>);
+												}}
+											>
+												{action.label}
+											</MenuItem>
+										{/each}
+									</Menu>
 								</div>
 							</td>
 						{/if}
@@ -342,37 +337,16 @@
 				<span>{totalRows} {totalRows !== 1 ? t('lib.components.DataTable.items', 'items') : t('lib.components.DataTable.item', 'item')}</span>
 				<div class="flex items-center gap-1.5">
 					<span class="text-xs">{t('lib.components.DataTable.svelte.per_page')}</span>
-					<Select.Root
-						type="single"
+					<Select
 						value={String(pageSize)}
 						onValueChange={(v) => {
-							if (v !== undefined) {
-								pageSize = Number(v);
-								page = 0;
-							}
+							pageSize = Number(v);
+							page = 0;
 						}}
-					>
-						<Select.Trigger
-							class="border-border-input bg-background text-foreground h-7 rounded-lg border px-2 text-xs focus:outline-none focus:ring-2 focus:ring-foreground/20"
-						>
-							<Select.Value />
-						</Select.Trigger>
-						<Select.Portal>
-							<Select.Content class="border-border-input bg-background shadow-popover z-50 rounded-lg border">
-								<Select.Viewport class="p-1">
-									{#each [10, 25, 50, 100] as opt}
-										<Select.Item
-											class="data-highlighted:bg-accent rounded-lg px-3 py-1.5 text-sm outline-none"
-											value={String(opt)}
-											label={String(opt)}
-										>
-											{opt}
-										</Select.Item>
-									{/each}
-								</Select.Viewport>
-							</Select.Content>
-						</Select.Portal>
-					</Select.Root>
+						items={[10, 25, 50, 100].map((opt) => ({ value: String(opt), label: String(opt) }))}
+						ariaLabel={t('lib.components.DataTable.svelte.per_page')}
+						compact
+					/>
 				</div>
 			</div>
 

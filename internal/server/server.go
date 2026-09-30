@@ -1301,6 +1301,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// wiki.community_edits (§80 business-logic gates).
 	wikiHandlers.SetPointsChecker(walletService)
 	wikiHandlers.SetPermissionChecker(rbacResolver)
+	// §80 Reader UX: resolves spaces.logo_media_id → signed logo_url on
+	// destination cards.
+	wikiService.SetMediaResolver(mediaService)
 
 	// Ref: japaconnect-engineering/sections/81-scam-alert-board.md (ADR-089)
 	scamAlertStore := scamalert.NewStore(database)
@@ -3522,6 +3525,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/geo/countries", geoHandlers.HandleListCountries)
 			r.Get("/geo/countries/{code}/states", geoHandlers.HandleListStates)
 			r.Get("/geo/states/{id}/cities", geoHandlers.HandleListCities)
+			// Public currency reference (Section 58, ADR-065) — name/symbol
+			// lookup for anonymous surfaces (jobs, universities, wiki, tools).
+			// Intentionally outside the feature.wallet gate.
+			r.Get("/currencies", walletHandlers.ListPublicCurrencies)
 			// Authenticated users can add a missing city to the geo catalog for
 			// location settings. It is intentionally quota-free.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/geo/states/{id}/cities", geoHandlers.CreateCity)
@@ -6484,6 +6491,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/wiki/{space_slug}", wikiHandlers.HandleGetIndex)
 				r.Get("/wiki/{space_slug}/{page_slug}", wikiHandlers.HandleGetPage)
 				r.Get("/wiki/{space_slug}/{page_slug}/history", wikiHandlers.HandleGetHistory)
+				// §80 Reader UX: authenticated helpful-vote — any member
+				// may rate a page (no permission node required).
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Post("/wiki/{space_slug}/{page_slug}/feedback", wikiHandlers.HandlePageFeedback)
 				// Authenticated: create page + submit revision (wiki.edit permission).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.edit")).
 					Post("/wiki/{space_slug}", wikiHandlers.HandleCreatePage)

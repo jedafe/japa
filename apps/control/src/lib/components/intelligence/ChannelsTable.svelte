@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
+	import Modal from '$lib/components/ui/Modal.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
@@ -267,20 +267,14 @@
 	}
 </script>
 
-<Dialog.Root bind:open>
-	<Dialog.Portal>
-		<Dialog.Overlay class="bg-black/50 data-[state=open]:animate-in data-[state=open]:fade-in data-[state=closed]:animate-out data-[state=closed]:fade-out fixed inset-0 z-50" />
-		<Dialog.Content
-			class="border-border-card bg-background shadow-popover focus:outline-none fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-full max-w-4xl -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl border p-6"
-			role="dialog"
-			aria-modal="true"
-			onOpenAutoFocus={(e) => e.preventDefault()}
-		>
+<Modal bind:open title={t('intel.channels_title', 'Channels')} size="max-w-4xl" hideHeader>
+	{#snippet children(close)}
+		<div class="flex h-full flex-col">
 			<div class="flex items-start justify-between gap-4">
 				<div>
-					<Dialog.Title class="text-foreground text-lg font-semibold">
+					<h2 class="text-foreground text-lg font-semibold">
 						{t('intel.channels_title', 'Channels')}
-					</Dialog.Title>
+					</h2>
 					<p class="text-muted-foreground mt-1 text-sm">
 						{source?.name ?? ''} — {t('intel.channels_desc', 'Entry points (URL + method + pipeline) the crawler fetches for this source.')}
 					</p>
@@ -474,13 +468,17 @@
 						{t('intel.probe_channels_note', 'Channels marked by the probe re-materialize on re-probe; admin edits are preserved.')}
 					{/if}
 				</p>
-				<Dialog.Close class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors">
+				<button
+					type="button"
+					class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
+					onclick={close}
+				>
 					{t('common.close', 'Close')}
-				</Dialog.Close>
+				</button>
 			</div>
-		</Dialog.Content>
-	</Dialog.Portal>
-</Dialog.Root>
+		</div>
+	{/snippet}
+</Modal>
 
 <ChannelEditor
 	bind:open={editorOpen}

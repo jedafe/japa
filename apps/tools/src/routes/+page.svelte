@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ToolCard } from '$lib/components/ui';
+	import ToolCard from '$lib/components/tools/ToolCard.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { getEnabledTools } from '$lib/tools/registry';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';

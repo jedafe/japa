@@ -4,10 +4,12 @@
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus, GitCompare, Loader2, Building2, Globe, BadgeCheck, CircleDollarSign, Users, ChevronRight } from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, BookmarkButton, type SearchSuggestion } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, type SearchSuggestion } from '$lib/components/ui';
+	import BookmarkButton from '$lib/components/jobs/BookmarkButton.svelte';
 	import { relativeTime } from '$lib/feed/time';
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { salaryPeriodLabel } from '$lib/utils/jobs';
+	import { currencySymbol } from '$lib/utils/currency';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
 	import SelectField from '$lib/components/ui/SelectField.svelte';
 	import { staticAutocompleteFetcher, autocompleteItems } from '$lib/autocomplete';
@@ -479,7 +481,7 @@
 											<CircleDollarSign size={20} class="shrink-0 text-emerald-500" />
 											<div class="min-w-0">
 												<span class="text-sm font-semibold text-[var(--color-text)]">
-													{#if salCur}{salCur.toUpperCase()} {/if}{[fmtNum(salMin), fmtNum(salMax)].filter(Boolean).join(' – ')}
+													{#if salCur}{@const sym = currencySymbol(salCur, data.currencies)}{sym === salCur.trim().toUpperCase() ? `${sym} ` : sym}{/if}{[fmtNum(salMin), fmtNum(salMax)].filter(Boolean).join(' – ')}
 												</span>
 												{#if salPeriod}
 													<span class="block text-xs text-[var(--color-muted)]">{salPeriod}</span>
