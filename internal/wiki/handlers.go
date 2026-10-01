@@ -481,7 +481,9 @@ func (h *Handlers) HandleGetFieldTypes(w http.ResponseWriter, r *http.Request) {
 //	               least one active wiki page are returned.
 //	?sort=         name (default, A–Z) | page_count (most guides first)
 //	?page=         1-based page number (default 1)
-//	?limit=        page size, 1..100 (0/omitted = the full list)
+//	?limit=        page size, capped at 100. Passing either ?page or ?limit
+//	               engages pagination; ?page alone sizes pages via
+//	               wiki.destinations_page_limit. Neither = the full list.
 //
 // §80 Reader UX — paginated responses carry the standard sidecar:
 // {data, pagination:{page, limit, total}}.

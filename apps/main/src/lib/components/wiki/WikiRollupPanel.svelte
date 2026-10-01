@@ -16,11 +16,11 @@
 
 	let {
 		rollup,
-		spaceSlug,
+		spaceName,
 		/** §58 — host space's resolved country currency; display fallback
 		 *  for rollup fields that don't carry options.currency_code. */
 		contextCurrency = ''
-	}: { rollup: WikiRollup; spaceSlug: string; contextCurrency?: string } = $props();
+	}: { rollup: WikiRollup; spaceName: string; contextCurrency?: string } = $props();
 
 	// §58 — active currency list from the root layout; rollup fields carry
 	// currency_code from their field definition's options, else the host
@@ -130,9 +130,28 @@
 		return rows.find((r) => r.space.id)?.space.type_slug ?? '';
 	}
 	const compareRows = $derived(
-		compareTarget ? rollup.rows.filter((r) => r.space.id) : []
+		compareTarget
+			? rollup.rows.filter(
+					(r) => r.space.id && r.space.type_slug === compareTarget.source
+				)
+			: []
 	);
 	let compareIds = $state<string[]>([]);
+
+	// The component instance is reused across same-route navigations —
+	// drop selections when a different rollup (another space's page)
+	// arrives so stale foreign ids never leak into the preselect link.
+	$effect(() => {
+		rollup;
+		compareIds = [];
+	});
+
+	// First-column label derives from the descendants' space_type slug
+	// (singular wiki.*_label keys; 'Place' when the type is unknown).
+	const spaceColLabel = $derived.by(() => {
+		const slug = rollup.rows[0]?.space.type_slug ?? '';
+		return slug ? t(`wiki.${slug}_label`, slug) : t('wiki.rollup_col_space', 'Place');
+	});
 
 	function toggleCompare(id: string) {
 		if (compareIds.includes(id)) {
@@ -190,7 +209,7 @@
 						{totalSymbol}{fmtNum(estimatedTotal)}
 					</p>
 					<p class="mt-1 text-xs text-[var(--color-muted)]">
-						{t('wiki.rollup_estimated_total_note', 'Average across {count} tracked items', {
+						{t('wiki.rollup_estimated_total_note', 'Sum of {count} averaged line items', {
 							count: totalFields.length
 						})}
 					</p>
@@ -244,7 +263,7 @@
 					<thead>
 						<tr class="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
 							<th class="px-4 py-2 font-medium">
-								{t('wiki.rollup_col_space', 'City')}
+								{spaceColLabel}
 							</th>
 							{#each rollup.fields.slice(0, 5) as f (f.key)}
 								<th class="px-4 py-2 font-medium">{f.label}</th>
@@ -312,7 +331,7 @@
 			<p class="text-xs text-[var(--color-muted)]">
 				{t('wiki.rollup_scope', 'Aggregated from {count} places under {name}', {
 					count: rollup.spaces,
-					name: spaceSlug
+					name: spaceName
 				})}
 			</p>
 		{/if}

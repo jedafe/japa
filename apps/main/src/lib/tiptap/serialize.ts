@@ -183,53 +183,6 @@ function renderMarks(text: string, marks: PMMark[] | undefined): string {
 	return out;
 }
 
-/* ------------------------------------------------------------------ *
- * "On this page" TOC (§80 Reader UX)
- * ------------------------------------------------------------------ */
-
-/** One TOC line — `id` is the slug injected onto the serialized heading. */
-export interface TocEntry {
-	id: string;
-	level: number;
-	text: string;
-}
-
-const slugifyHeading = (s: string): string =>
-	s
-		.toLowerCase()
-		.trim()
-		.replace(/[^\p{L}\p{N}\s-]/gu, '')
-		.replace(/\s+/g, '-')
-		.replace(/^-+|-+$/g, '');
-
-/** Collect the top-level h2/h3 headings of a TipTap doc for an "On this
- *  page" rail. `ids` maps each heading node to a unique slug (`-2`, `-3`
- *  on collisions) — pass it back to {@link tiptapToHtml} via
- *  `headingIds` to inject matching `id` anchors. */
-export function tiptapToc(doc: TipTapDoc | PMNode[] | null): {
-	entries: TocEntry[];
-	ids: Map<PMNode, string>;
-} {
-	const entries: TocEntry[] = [];
-	const ids = new Map<PMNode, string>();
-	const blocks = Array.isArray(doc) ? doc : (doc?.content ?? []);
-	const seen = new Map<string, number>();
-	for (const node of blocks) {
-		if (node.type !== 'heading') continue;
-		const level = Number(node.attrs?.level ?? 2);
-		if (level < 2 || level > 3) continue;
-		const text = tiptapToText(node);
-		if (!text) continue;
-		const base = slugifyHeading(text) || 'section';
-		const n = seen.get(base) ?? 0;
-		seen.set(base, n + 1);
-		const id = n > 0 ? `${base}-${n + 1}` : base;
-		entries.push({ id, level, text });
-		ids.set(node, id);
-	}
-	return { entries, ids };
-}
-
 /** §80 Reader UX callout marker — a blockquote whose first line starts
  *  with `Tip:`/`Note:`/`Warning:`/`Important:` (optionally bold-marked)
  *  renders as a colored callout, no schema change needed. */
@@ -249,23 +202,14 @@ function calloutKind(node: PMNode): string {
  * @param deletedLabel Optional localized placeholder for erased users
  *   (defaults to "[deleted user]"). Callers should pass the i18n-sourced
  *   label so the placeholder respects the active locale (Rule 16 / §18).
- * @param headingIds Optional node→slug map from {@link tiptapToc} —
- *   headings present in the map get an `id` anchor (§80 Reader UX).
  */
-function renderNode(
-	node: PMNode,
-	deleted?: Set<string>,
-	deletedLabel?: string,
-	headingIds?: Map<PMNode, string>
-): string {
+function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string): string {
 	// Text node — apply marks.
 	if (typeof node.text === 'string') {
 		return renderMarks(node.text, node.marks);
 	}
 
-	const inner = (node.content ?? [])
-		.map((n) => renderNode(n, deleted, deletedLabel, headingIds))
-		.join('');
+	const inner = (node.content ?? []).map((n) => renderNode(n, deleted, deletedLabel)).join('');
 
 	switch (node.type) {
 		case 'doc':
@@ -275,8 +219,7 @@ function renderNode(
 		case 'heading': {
 			const level = Number(node.attrs?.level ?? 2);
 			const tag = level >= 1 && level <= 6 ? `h${level}` : 'h2';
-			const hid = headingIds?.get(node);
-			return `<${tag}${hid ? ` id="${escapeAttr(hid)}"` : ''}>${inner}</${tag}>`;
+			return `<${tag}>${inner}</${tag}>`;
 		}
 		case 'bulletList':
 			return `<ul>${inner}</ul>`;
@@ -394,21 +337,17 @@ export function tiptapToHtml(
 	opts?: {
 		deletedUserIds?: Set<string>;
 		deletedUserLabel?: string;
-		/** §80 Reader UX — node→slug map from {@link tiptapToc}; headings in
-		 *  the map emit an `id` attribute for in-page anchors. */
-		headingIds?: Map<PMNode, string>;
 	}
 ): string {
 	if (!doc) return '';
 	const deleted = opts?.deletedUserIds;
 	const deletedLabel = opts?.deletedUserLabel;
-	const headingIds = opts?.headingIds;
 	// The backend may store the body as a bare array of nodes (no `doc` wrapper)
 	// or as a full TipTap document. Handle both.
 	if (Array.isArray(doc)) {
-		return doc.map((n) => renderNode(n, deleted, deletedLabel, headingIds)).join('');
+		return doc.map((n) => renderNode(n, deleted, deletedLabel)).join('');
 	}
-	return renderNode(doc, deleted, deletedLabel, headingIds);
+	return renderNode(doc, deleted, deletedLabel);
 }
 
 /** Decode a base64 TipTap body and serialize to HTML in one call.

@@ -23,11 +23,4 @@ CREATE TABLE wiki_page_feedback (
 -- Read path is always per-page aggregation.
 CREATE INDEX idx_wiki_page_feedback_page ON wiki_page_feedback (wiki_page_id);
 
--- §80 Reader UX: destinations directory default page size. Code falls back
--- to 24 via GetIntOr when absent; the seed makes the key admin-editable
--- (system-settings-catalog convention: keys with defaults are seeded).
-INSERT INTO system_settings (key, value) VALUES
-    ('wiki.destinations_page_limit', to_jsonb(24))
-ON CONFLICT (key) DO NOTHING;
-
 COMMIT;

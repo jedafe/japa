@@ -23,11 +23,15 @@
 	let votes = $state<WikiHelpful>({ up: 0, down: 0, my_vote: null });
 	let loading = $state(false);
 	let errorKey = $state('');
+	// A mid-page session expiry flips this — the vote row then shows the
+	// sign-in hint rather than a bare error.
+	let sessionLost = $state(false);
 
 	// Keep the local copy in sync when the page data refreshes (navigation
 	// to another wiki page reuses this component).
 	$effect(() => {
 		votes = { up: helpful?.up ?? 0, down: helpful?.down ?? 0, my_vote: helpful?.my_vote ?? null };
+		sessionLost = false;
 	});
 
 	async function vote(v: 'up' | 'down') {
@@ -41,6 +45,8 @@
 		loading = false;
 		if (res.data) {
 			votes = { up: res.data.up ?? 0, down: res.data.down ?? 0, my_vote: res.data.my_vote ?? null };
+		} else if (res.status === 401 || res.error?.code === 'unauthorized') {
+			sessionLost = true;
 		} else {
 			errorKey = res.error?.code ?? 'failed';
 		}
@@ -59,7 +65,7 @@
 	<div class="flex items-center gap-2">
 		<button
 			type="button"
-			disabled={!authed || loading}
+			disabled={!authed || sessionLost || loading}
 			onclick={() => vote('up')}
 			aria-pressed={selected === 'up'}
 			class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 {selected ===
@@ -75,7 +81,7 @@
 		</button>
 		<button
 			type="button"
-			disabled={!authed || loading}
+			disabled={!authed || sessionLost || loading}
 			onclick={() => vote('down')}
 			aria-pressed={selected === 'down'}
 			class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 {selected ===
@@ -90,7 +96,7 @@
 			{/if}
 		</button>
 	</div>
-	{#if !authed}
+	{#if !authed || sessionLost}
 		<a href="/login" class="text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]">
 			{t('wiki.helpful_signin', 'Sign in to vote')}
 		</a>
