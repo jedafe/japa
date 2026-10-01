@@ -30,6 +30,11 @@ const (
 	PurposeCreditPurchase = "credit_purchase"
 	PurposeAdSlot         = "ad_slot"
 	PurposeFormSubmission = "form_submission"
+	// PurposeServiceBookingFee is the §111 platform fee collected
+	// on-platform when a user books a paid service package. It is
+	// platform revenue — not a deposit toward the package price; the
+	// agent collects the remaining balance directly.
+	PurposeServiceBookingFee = "service_booking_fee"
 )
 
 // Payment statuses.
@@ -93,13 +98,14 @@ var validProviders = map[string]bool{
 // values are rejected with a structured 400 at the handler boundary instead
 // of surfacing as a raw 500 from the DB (BUG-P015).
 var validPurposeTypes = map[string]bool{
-	PurposeProMembership:  true,
-	PurposeOrgBoost:       true,
-	PurposeDonation:       true,
-	PurposeCourseAccess:   true,
-	PurposeCreditPurchase: true,
-	PurposeAdSlot:         true,
-	PurposeFormSubmission: true,
+	PurposeProMembership:     true,
+	PurposeOrgBoost:          true,
+	PurposeDonation:          true,
+	PurposeCourseAccess:      true,
+	PurposeCreditPurchase:    true,
+	PurposeAdSlot:            true,
+	PurposeFormSubmission:    true,
+	PurposeServiceBookingFee: true,
 }
 
 // IsValidProvider reports whether v is a recognized payment provider.

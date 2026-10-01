@@ -47,8 +47,8 @@ build/
 Thumbs.db
 
 # Binaries (download or build, never commit)
-meilisearch
-seed
+/meilisearch
+/seed
 
 # Meilisearch runtime data
 data.ms/
@@ -76,19 +76,21 @@ Untitled.md
 Prompts/* (Copy).md
 .password.md
 
-# Binaries
-seed-geo-enqueue
-seed-geo-wiki
-fix-geo-logos
-seed-geo-enrich
-seed-universities
+# Binaries (repo-root outputs of `go build ./cmd/...` — anchored so they
+# don't shadow same-named directories like db/seed or cmd/seed-geo-cities)
+/seed-geo-enqueue
+/seed-geo-wiki
+/seed-geo-cities
+/fix-geo-logos
+/seed-geo-enrich
+/seed-universities
 /backfill-university-geo
 /api
-jc-api
-reindex
-meilisearch
-migrate
-seed
+/jc-api
+/reindex
+/meilisearch
+/migrate
+/seed
 bin/japa-api
 /japa-api
 

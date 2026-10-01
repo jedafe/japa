@@ -62,6 +62,15 @@ const (
 	TypeDocsGeneratePage              = "docs:generate_page"
 	TypeFormFireSubmissionTriggers    = "form:fire_submission_triggers"
 
+	// ---- Service Packages & Bookings (§111, ADR-123) ----.
+	// booking_created/status_changed fan out org/booker notifications on the
+	// default tier; fee_settle is a financial side effect → critical;
+	// expire_pending is the hourly pending-SLA sweep → low tier.
+	TypeServiceBookingCreated       = "service:booking_created"
+	TypeServiceBookingStatusChanged = "service:booking_status_changed"
+	TypeServiceBookingFeeSettle     = "service:booking_fee_settle"
+	TypeServiceBookingExpirePending = "service:booking_expire_pending"
+
 	// ---- Japa University creator economy (ADR-063) ----.
 	// Critical: paid enrollment must credit the creator ledger immediately.
 	TypeUniversityProcessEnrollment        = "university:process_enrollment"
@@ -203,6 +212,12 @@ var handlerRegistry = []struct {
 	{TypeScholarshipSyncFromGuide, HandleScholarshipSyncFromGuide},
 	{TypeDocsGeneratePage, HandleDocsGeneratePage},
 	{TypeFormFireSubmissionTriggers, HandleFormFireSubmissionTriggers},
+
+	// §111 Service Packages & Bookings (ADR-123)
+	{TypeServiceBookingCreated, HandleServiceBookingCreated},
+	{TypeServiceBookingStatusChanged, HandleServiceBookingStatusChanged},
+	{TypeServiceBookingFeeSettle, HandleServiceBookingFeeSettle},
+	{TypeServiceBookingExpirePending, HandleServiceBookingExpirePending},
 	// Japa University creator economy (ADR-063)
 	{TypeUniversityProcessEnrollment, HandleUniversityProcessEnrollment},
 	{TypeUniversityNotifyInstructorApproved, HandleUniversityNotifyInstructorApproved},

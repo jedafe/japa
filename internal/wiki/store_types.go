@@ -57,6 +57,11 @@ type WikiCategory struct {
 	// nil falls back to the frontend's slug→icon map.
 	Icon      *string
 	CreatedAt pgtype.Timestamptz
+	// Empty is space-scoped (ListCategoriesForSpace only): true when a
+	// directory-mode category has zero matching descendants for the
+	// requested space — the read surfaces hide those tabs/cards so a
+	// "Universities" listing never renders for a space without any (§80).
+	Empty bool
 }
 
 // ErrWikiTypeNotFound is returned when a wiki_type_configs row does not

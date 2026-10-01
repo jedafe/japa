@@ -352,6 +352,10 @@ type wikiCategoryItem struct {
 	// mode:"directory" — its stub page is the child-space listing, so
 	// the frontend must link page_slug even with no materialized pages.
 	Directory bool `json:"directory,omitempty"`
+	// Empty is only meaningful on ?space= requests for directory
+	// categories: true when the space has zero matching descendants —
+	// tabs/cards should hide it rather than link a dead listing.
+	Empty bool `json:"empty,omitempty"`
 	// PageTemplates lists the category's declared sibling pages — lazy
 	// template pages the frontend links into (§80); empty when the
 	// category declares none or the request has no space context.
@@ -382,6 +386,7 @@ func categoryItem(c WikiCategory) wikiCategoryItem {
 	}
 	if rcfg := parseRollupConfig(c.Rollup); rcfg != nil && rcfg.Mode == rollupModeDirectory {
 		item.Directory = true
+		item.Empty = c.Empty
 	}
 
 	return item
@@ -528,14 +533,17 @@ func (h *Handlers) HandleGetDestinations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": dests,
-		"pagination": map[string]any{
+	resp := map[string]any{"data": dests}
+	// The sidecar only ships on paginated calls — legacy callers that pass
+	// neither ?page nor ?limit keep the original {data:[...]} shape (§80).
+	if paginate {
+		resp["pagination"] = map[string]any{
 			"page":  page,
 			"limit": effLimit,
 			"total": total,
-		},
-	})
+		}
+	}
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // HandlePageFeedback handles POST /wiki/:space_slug/:page_slug/feedback —

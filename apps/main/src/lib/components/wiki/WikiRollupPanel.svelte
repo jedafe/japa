@@ -291,7 +291,7 @@
 								{/each}
 								{#if compareRows.length >= 2}
 									<td class="px-4 py-2 text-right">
-										{#if row.space.id}
+										{#if row.space.id && compareTarget && row.space.type_slug === compareTarget.source}
 											<label class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--color-muted)]">
 												<input
 													type="checkbox"

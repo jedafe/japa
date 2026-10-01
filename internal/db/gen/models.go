@@ -3352,6 +3352,35 @@ type SecurityScanResult struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type ServiceBooking struct {
+	ID              pgtype.UUID        `json:"id"`
+	ListingMetaID   pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID     pgtype.UUID        `json:"departure_id"`
+	BookerUserID    pgtype.UUID        `json:"booker_user_id"`
+	OrgID           pgtype.UUID        `json:"org_id"`
+	Intent          string             `json:"intent"`
+	PartySize       int32              `json:"party_size"`
+	PreferredDates  []byte             `json:"preferred_dates"`
+	Note            *string            `json:"note"`
+	Status          string             `json:"status"`
+	PurchaseMode    string             `json:"purchase_mode"`
+	PaymentID       pgtype.UUID        `json:"payment_id"`
+	TotalPrice      *int64             `json:"total_price"`
+	FeeAmount       *int64             `json:"fee_amount"`
+	FeeCurrency     *string            `json:"fee_currency"`
+	AgentBalanceDue *int64             `json:"agent_balance_due"`
+	OrgResponseNote *string            `json:"org_response_note"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt     pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt     pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt     pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason    *string            `json:"cancel_reason"`
+	AnonymizedAt    pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt      pgtype.Timestamptz `json:"reminded_at"`
+}
+
 type ServiceListingMetum struct {
 	ID                 pgtype.UUID        `json:"id"`
 	ContentID          pgtype.UUID        `json:"content_id"`
@@ -3372,6 +3401,37 @@ type ServiceListingMetum struct {
 	OriginCommunities  []string           `json:"origin_communities"`
 	VerifiedBy         pgtype.UUID        `json:"verified_by"`
 	VerifiedAt         pgtype.Timestamptz `json:"verified_at"`
+	ListingKind        string             `json:"listing_kind"`
+	PriceAmount        *int64             `json:"price_amount"`
+	PriceCurrency      *string            `json:"price_currency"`
+	PricePer           *string            `json:"price_per"`
+	PurchaseMode       string             `json:"purchase_mode"`
+	Capacity           *int32             `json:"capacity"`
+	AvailableFrom      pgtype.Date        `json:"available_from"`
+	AvailableUntil     pgtype.Date        `json:"available_until"`
+}
+
+type ServicePackageDeparture struct {
+	ID            pgtype.UUID        `json:"id"`
+	PackageMetaID pgtype.UUID        `json:"package_meta_id"`
+	StartsOn      pgtype.Date        `json:"starts_on"`
+	EndsOn        pgtype.Date        `json:"ends_on"`
+	Capacity      *int32             `json:"capacity"`
+	BookedCount   int32              `json:"booked_count"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type ServicePackageItem struct {
+	ID                 pgtype.UUID        `json:"id"`
+	PackageMetaID      pgtype.UUID        `json:"package_meta_id"`
+	Position           int32              `json:"position"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	ComponentContentID pgtype.UUID        `json:"component_content_id"`
+	Included           bool               `json:"included"`
+	Optional           bool               `json:"optional"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 }
 
 type SharePlatform struct {

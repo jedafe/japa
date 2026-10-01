@@ -1,0 +1,40 @@
+# Admin1 name overrides: GeoNames admin1 code -> seeded state space name.
+# Used when the GeoNames admin1 name differs from the seeded state name
+# (language variants, abbreviations). Loaded over admin1_codes.tsv, so the
+# GeoNames name never reaches name-matching for these codes.
+#
+# Format: <country ISO2>\t<geonames admin1 code>\t<seeded state name>
+#
+# Nigeria — GeoNames names FCT "FCT"; seeded state is "Federal Capital Territory".
+NG	11	Federal Capital Territory
+#
+# Indonesia — seeded states use Indonesian names (and island-level parents
+# like 'Jawa'/'Sumatera' exist); GeoNames uses English ("West Java").
+ID	10	DI Yogyakarta
+ID	04	DKI Jakarta
+ID	30	Jawa Barat
+ID	07	Jawa Tengah
+ID	08	Jawa Timur
+ID	24	Sumatera Barat
+ID	26	Sumatera Utara
+ID	32	Sumatera Selatan
+ID	11	Kalimantan Barat
+ID	13	Kalimantan Tengah
+ID	12	Kalimantan Selatan
+ID	14	Kalimantan Timur
+ID	42	Kalimantan Utara
+ID	31	Sulawesi Utara
+ID	21	Sulawesi Tengah
+ID	38	Sulawesi Selatan
+ID	22	Sulawesi Tenggara
+ID	41	Sulawesi Barat
+ID	17	Nusa Tenggara Barat
+ID	18	Nusa Tenggara Timur
+ID	35	Kepulauan Bangka Belitung
+ID	40	Kepulauan Riau
+ID	29	Maluku Utara
+ID	39	Papua Barat
+ID	PD	Papua Barat Daya
+ID	PT	Papua Tengah
+ID	PE	Papua Pegunungan
+ID	PS	Papua Selatan

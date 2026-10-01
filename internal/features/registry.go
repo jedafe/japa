@@ -70,6 +70,7 @@ var Registry = []Feature{
 	{Key: "forum.ama.enabled", Label: "Ask an Expat AMA", Default: false},
 	{Key: "achievement.enabled", Label: "Community Achievement Feed", Default: false},
 	{Key: "service_directory.enabled", Label: "Service Directory", Default: false},
+	{Key: "service_packages.enabled", Label: "Service Packages & Bookings", Default: false},
 	// V2 Functional Tools (§90–§97, §99–§101) — Phase 49
 	{Key: "visa_routes.enabled", Label: "Visa Route Comparison", Default: false},
 	{Key: "appointment_alert.enabled", Label: "Embassy Appointment Alerter", Default: false},

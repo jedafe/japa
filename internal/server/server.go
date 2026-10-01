@@ -819,6 +819,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// wallet.PaymentCreator interface and payments.Service.CreatePayment.
 	walletService.SetPaymentsService(&walletPaymentAdapter{svc: paymentService})
 
+	// §111: the service:booking_fee_settle worker task refunds platform
+	// fees through this payments-side adapter (worker can't import
+	// payments — payments already imports worker for task constants).
+	worker.RegisterServiceBookingFeeRefunder(payments.NewBookingFeeRefunder(paymentService))
+
 	// Wire the wallet activity emitter into the domain services that produce
 	// §64 badge/challenge triggers — without this the activity_events rows are
 	// never written and activity_count badges cannot fire (BUG-GAMMA-004).
@@ -1421,9 +1426,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	achievementHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in achievement titles/bodies
 
 	// Ref: japaconnect-engineering/sections/98-service-directory.md (ADR-106)
-	serviceDirStore := servicedir.NewStore(database)
+	//        japaconnect-engineering/sections/111-service-packages-bookings.md (ADR-123)
+	serviceDirStore := servicedir.NewStore(gen.New(database.Reader), gen.New(database.Writer), database)
 	serviceDirService := servicedir.NewService(serviceDirStore, contentService, settingsService)
 	serviceDirService.SetFeatureChecker(featureChecker)
+	// §111 seams: package detail cache (jc:svc_package:*), booking task
+	// fan-out, and the §17 platform-fee payment creator.
+	serviceDirService.SetCache(vkClient.Redis())
+	serviceDirService.SetEnqueuer(taskEnqueuer)
+	serviceDirService.SetPayments(&serviceDirPaymentAdapter{svc: paymentService})
 	// BUG-014: §98 spec says GET /services/:slug returns "service detail +
 	// reviews". The adapter bridges the §29 reviews subsystem to the
 	// servicedir.ReviewFetcher interface using the read pool.
@@ -6787,6 +6798,32 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/services/{id}/unverify", serviceDirHandlers.HandleAdminUnverify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
 					Patch("/admin/services/{id}/claim/{claim_id}", serviceDirHandlers.HandleAdminResolveClaim)
+
+				// Section 111 — Service Packages & Bookings (ADR-123).
+				// Handlers self-gate on service_packages.enabled (404 when
+				// off); this group inherits the directory flag so packages
+				// can't outlive their parent feature.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()),
+					rbac.RequirePermission(rbacResolver, "service.booking.create"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)). // Rule 9: fee checkout is financial
+					Post("/services/{id}/bookings", serviceDirHandlers.HandleCreateBooking)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/service-bookings", serviceDirHandlers.HandleMyBookings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
+				r.Get("/org/{org_id}/packages", serviceDirHandlers.HandleOrgPackages)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).
+					Get("/org/{org_id}/service-bookings", serviceDirHandlers.HandleOrgBookings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).
+					Patch("/org/{org_id}/service-bookings/{id}", serviceDirHandlers.HandleOrgBookingTransition)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.admin")).
+					Get("/admin/service-bookings", serviceDirHandlers.HandleAdminBookings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.admin")).
+					Get("/admin/service-bookings/{id}", serviceDirHandlers.AdminGetBooking)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.admin")).
+					Patch("/admin/service-bookings/{id}", serviceDirHandlers.HandleAdminBookingTransition)
 			})
 
 			// Section 71 — Japa Readiness Assessment (ADR-071)

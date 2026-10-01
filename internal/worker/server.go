@@ -138,6 +138,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	schedule("0 * * * *", TypeCouponExpireCheck, 1*time.Hour)
 	schedule("5 * * * *", TypeCouponTrackEvents, 1*time.Hour)
 
+	// §111: pending service bookings past their org-response SLA — hourly.
+	// Overridable via JC_SCHEDULER_CRON_SERVICE_BOOKING_EXPIRE_PENDING.
+	schedule("15 * * * *", TypeServiceBookingExpirePending, 1*time.Hour)
+
 	// Affiliate link expiry — daily.
 	schedule("0 4 * * *", TypeAffiliateExpireCheck, 24*time.Hour)
 

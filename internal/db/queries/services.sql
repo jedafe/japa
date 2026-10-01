@@ -1,0 +1,728 @@
+-- =====================================================================
+-- Service Directory (§98, ADR-106) + Service Packages & Bookings
+-- (§111, ADR-123) queries.
+--
+-- Service listings live in contents (content_type='service_listing') with
+-- structured fields in service_listing_meta. Packages are the same rows
+-- with listing_kind='package' plus items/departures/bookings tables.
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- service_listing_meta CRUD
+-- ---------------------------------------------------------------------
+
+-- name: CreateServiceListingMeta :one
+INSERT INTO service_listing_meta (
+    content_id, org_id, service_category, destination_space_id,
+    city_space_id, origin_communities, is_remote, website_url, booking_url,
+    price_range, is_verified, verification_type, claim_status, claimed_by_org_id,
+    listing_kind, price_amount, price_currency, price_per, purchase_mode,
+    capacity, available_from, available_until
+) VALUES (
+    @content_id, sqlc.narg(org_id), sqlc.narg(service_category),
+    sqlc.narg(destination_space_id), sqlc.narg(city_space_id),
+    sqlc.narg(origin_communities), sqlc.narg(is_remote),
+    sqlc.narg(website_url), sqlc.narg(booking_url), sqlc.narg(price_range),
+    sqlc.narg(is_verified), sqlc.narg(verification_type),
+    sqlc.narg(claim_status), sqlc.narg(claimed_by_org_id),
+    sqlc.narg(listing_kind), sqlc.narg(price_amount), sqlc.narg(price_currency),
+    sqlc.narg(price_per), sqlc.narg(purchase_mode), sqlc.narg(capacity),
+    sqlc.narg(available_from), sqlc.narg(available_until)
+) RETURNING *;
+
+-- name: GetServiceListingMetaByContentID :one
+SELECT * FROM service_listing_meta
+WHERE content_id = @content_id;
+
+-- name: GetServiceListingMetaByID :one
+SELECT * FROM service_listing_meta
+WHERE id = @id;
+
+-- Full-row update of the mutable §98/§111 fields. Verification and claim
+-- columns are managed by dedicated queries below. The service layer merges
+-- existing values with the incoming patch before calling this.
+-- name: UpdateServiceListingMeta :one
+UPDATE service_listing_meta
+SET org_id = sqlc.narg(org_id),
+    service_category = sqlc.narg(service_category),
+    destination_space_id = sqlc.narg(destination_space_id),
+    city_space_id = sqlc.narg(city_space_id),
+    origin_communities = sqlc.narg(origin_communities),
+    is_remote = sqlc.narg(is_remote),
+    website_url = sqlc.narg(website_url),
+    booking_url = sqlc.narg(booking_url),
+    price_range = sqlc.narg(price_range),
+    listing_kind = sqlc.narg(listing_kind),
+    price_amount = sqlc.narg(price_amount),
+    price_currency = sqlc.narg(price_currency),
+    price_per = sqlc.narg(price_per),
+    purchase_mode = sqlc.narg(purchase_mode),
+    capacity = sqlc.narg(capacity),
+    available_from = sqlc.narg(available_from),
+    available_until = sqlc.narg(available_until),
+    updated_at = now()
+WHERE content_id = @content_id
+RETURNING *;
+
+-- ---------------------------------------------------------------------
+-- Joined listing reads (contents + meta + spaces + orgs + author)
+-- ---------------------------------------------------------------------
+
+-- name: GetServiceListingBySlug :one
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       c.published_at, c.created_at, c.updated_at,
+       sm.id AS meta_id,
+       sm.org_id, o.name AS org_name, o.slug AS org_slug,
+       sm.service_category,
+       sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       sm.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
+       sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
+       sm.price_range, sm.is_verified, sm.verification_type,
+       sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
+       sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
+       sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       u.username AS author_name, up.avatar_url AS author_avatar
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+LEFT JOIN organizations o ON o.id = sm.org_id
+LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
+LEFT JOIN spaces cs ON cs.id = sm.city_space_id
+LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.slug = @slug AND c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+LIMIT 1;
+
+-- name: GetServiceListingByContentID :one
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       c.published_at, c.created_at, c.updated_at,
+       sm.id AS meta_id,
+       sm.org_id, o.name AS org_name, o.slug AS org_slug,
+       sm.service_category,
+       sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       sm.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
+       sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
+       sm.price_range, sm.is_verified, sm.verification_type,
+       sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
+       sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
+       sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       u.username AS author_name, up.avatar_url AS author_avatar
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+LEFT JOIN organizations o ON o.id = sm.org_id
+LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
+LEFT JOIN spaces cs ON cs.id = sm.city_space_id
+LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.id = @content_id AND c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+LIMIT 1;
+
+-- Public filtered list. Optional filters are sqlc.narg — NULL means
+-- "no filter". sort='top' orders by engagement; anything else is
+-- latest-first. kind filters listing_kind ('service'|'package');
+-- price_max is minor units; date_from filters packages with
+-- available_from >= the given date.
+-- name: ListServiceListings :many
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       c.published_at, c.created_at, c.updated_at,
+       sm.id AS meta_id,
+       sm.org_id, o.name AS org_name, o.slug AS org_slug,
+       sm.service_category,
+       sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       sm.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
+       sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
+       sm.price_range, sm.is_verified, sm.verification_type,
+       sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
+       sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
+       sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       u.username AS author_name, up.avatar_url AS author_avatar
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+LEFT JOIN organizations o ON o.id = sm.org_id
+LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
+LEFT JOIN spaces cs ON cs.id = sm.city_space_id
+LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND c.status = COALESCE(sqlc.narg(status), 'published')
+  AND (sqlc.narg(dest_space_id)::uuid IS NULL OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid)
+  AND (sqlc.narg(city_space_id)::uuid IS NULL OR sm.city_space_id = sqlc.narg(city_space_id)::uuid)
+  AND (sqlc.narg(service_category)::text IS NULL OR sm.service_category = sqlc.narg(service_category)::text)
+  AND (sqlc.narg(origin_community)::text IS NULL OR sqlc.narg(origin_community)::text = ANY(sm.origin_communities))
+  AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
+  AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
+  AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
+  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
+ORDER BY
+  CASE WHEN sqlc.narg(sort)::text = 'top' THEN c.view_count END DESC NULLS LAST,
+  CASE WHEN sqlc.narg(sort)::text = 'top' THEN c.comment_count END DESC NULLS LAST,
+  c.published_at DESC NULLS LAST, c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountServiceListings :one
+SELECT COUNT(*)
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND c.status = COALESCE(sqlc.narg(status), 'published')
+  AND (sqlc.narg(dest_space_id)::uuid IS NULL OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid)
+  AND (sqlc.narg(city_space_id)::uuid IS NULL OR sm.city_space_id = sqlc.narg(city_space_id)::uuid)
+  AND (sqlc.narg(service_category)::text IS NULL OR sm.service_category = sqlc.narg(service_category)::text)
+  AND (sqlc.narg(origin_community)::text IS NULL OR sqlc.narg(origin_community)::text = ANY(sm.origin_communities))
+  AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
+  AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
+  AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
+  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from >= sqlc.narg(date_from)::date);
+
+-- Admin moderation list — same join, any status when not filtered,
+-- supports q + claim_status + kind filters.
+-- name: AdminListServiceListings :many
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       c.published_at, c.created_at, c.updated_at,
+       sm.id AS meta_id,
+       sm.org_id, o.name AS org_name, o.slug AS org_slug,
+       sm.service_category,
+       sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       sm.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
+       sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
+       sm.price_range, sm.is_verified, sm.verification_type,
+       sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
+       sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
+       sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       u.username AS author_name, up.avatar_url AS author_avatar
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+LEFT JOIN organizations o ON o.id = sm.org_id
+LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
+LEFT JOIN spaces cs ON cs.id = sm.city_space_id
+LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND (sqlc.narg(status) IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(dest_space_id)::uuid IS NULL OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid)
+  AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
+  AND (sqlc.narg(claim_status)::text IS NULL OR sm.claim_status = sqlc.narg(claim_status)::text)
+  AND (sqlc.narg(service_category)::text IS NULL OR sm.service_category = sqlc.narg(service_category)::text)
+  AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
+  AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%')
+ORDER BY c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: AdminCountServiceListings :one
+SELECT COUNT(*)
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND (sqlc.narg(status) IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(dest_space_id)::uuid IS NULL OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid)
+  AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
+  AND (sqlc.narg(claim_status)::text IS NULL OR sm.claim_status = sqlc.narg(claim_status)::text)
+  AND (sqlc.narg(service_category)::text IS NULL OR sm.service_category = sqlc.narg(service_category)::text)
+  AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
+  AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%');
+
+-- Org's listings. ?status= filters; the public /org/:org_id/packages
+-- route passes 'published' so in-review drafts never leak.
+-- name: ListServiceListingsByOrg :many
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       c.published_at, c.created_at, c.updated_at,
+       sm.id AS meta_id,
+       sm.org_id, o.name AS org_name, o.slug AS org_slug,
+       sm.service_category,
+       sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       sm.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
+       sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
+       sm.price_range, sm.is_verified, sm.verification_type,
+       sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
+       sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
+       sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       u.username AS author_name, up.avatar_url AS author_avatar
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+LEFT JOIN organizations o ON o.id = sm.org_id
+LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
+LEFT JOIN spaces cs ON cs.id = sm.city_space_id
+LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+WHERE c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND sm.org_id = @org_id
+  AND (sqlc.narg(status) IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
+ORDER BY c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- ---------------------------------------------------------------------
+-- Verification + claim workflow (§98)
+-- ---------------------------------------------------------------------
+
+-- name: SetServiceListingVerified :execrows
+UPDATE service_listing_meta
+SET is_verified = true,
+    verification_type = @verification_type,
+    verified_by = @verified_by,
+    verified_at = now(),
+    updated_at = now()
+WHERE content_id = @content_id;
+
+-- name: ClearServiceListingVerified :execrows
+UPDATE service_listing_meta
+SET is_verified = false,
+    verification_type = null,
+    verified_by = null,
+    verified_at = null,
+    updated_at = now()
+WHERE content_id = @content_id;
+
+-- name: UpdateServiceListingClaimStatus :execrows
+UPDATE service_listing_meta
+SET claim_status = @claim_status,
+    claimed_by_org_id = sqlc.narg(claimed_by_org_id),
+    updated_at = now()
+WHERE content_id = @content_id;
+
+-- Atomically initiate a claim only when unclaimed (BUG-007).
+-- name: ClaimServiceListingIfUnclaimed :execrows
+UPDATE service_listing_meta
+SET claim_status = 'pending', claimed_by_org_id = @org_id, updated_at = now()
+WHERE content_id = @content_id AND claim_status = 'unclaimed';
+
+-- Atomically resolve a pending claim (BUG-015). Rejection clears the
+-- claimant; approval keeps claimed_by_org_id on the org.
+-- name: ApproveServiceClaimIfPending :execrows
+UPDATE service_listing_meta
+SET claim_status = 'approved', claimed_by_org_id = @org_id, updated_at = now()
+WHERE content_id = @content_id AND claim_status = 'pending';
+
+-- name: RejectServiceClaimIfPending :execrows
+UPDATE service_listing_meta
+SET claim_status = 'rejected', claimed_by_org_id = null, updated_at = now()
+WHERE content_id = @content_id AND claim_status = 'pending';
+
+-- ---------------------------------------------------------------------
+-- Org helpers
+-- ---------------------------------------------------------------------
+
+-- name: IsServiceOrgMember :one
+SELECT EXISTS(
+    SELECT 1 FROM organization_members
+    WHERE organization_id = @org_id AND user_id = @user_id
+) AS is_member;
+
+-- §111 verified-org gate: packages require verified=true AND a
+-- business/professional_body verification type.
+-- name: GetServiceOrgVerification :one
+SELECT verified, verification_type FROM organizations
+WHERE id = @org_id;
+
+-- Validate that a component link points to a service listing owned by
+-- the same org (§111 package items). Returns kind too — a package may
+-- not nest another package as a component.
+-- name: GetServiceListingOrgIDByContentID :one
+SELECT sm.org_id, sm.listing_kind
+FROM service_listing_meta sm
+JOIN contents c ON c.id = sm.content_id
+WHERE sm.content_id = @content_id
+  AND c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL;
+
+-- ---------------------------------------------------------------------
+-- Package items (§111) — ordered line items, replace-on-save
+-- ---------------------------------------------------------------------
+
+-- name: DeleteServicePackageItems :exec
+DELETE FROM service_package_items
+WHERE package_meta_id = @package_meta_id;
+
+-- name: CreateServicePackageItem :one
+INSERT INTO service_package_items (
+    package_meta_id, position, title, description,
+    component_content_id, included, optional
+) VALUES (
+    @package_meta_id, @position, @title,
+    sqlc.narg(description), sqlc.narg(component_content_id),
+    sqlc.narg(included), sqlc.narg(optional)
+) RETURNING *;
+
+-- name: ListServicePackageItems :many
+SELECT * FROM service_package_items
+WHERE package_meta_id = @package_meta_id
+ORDER BY position, created_at;
+
+-- ---------------------------------------------------------------------
+-- Package departures (§111)
+-- ---------------------------------------------------------------------
+
+-- name: DeleteServicePackageDepartures :exec
+DELETE FROM service_package_departures
+WHERE package_meta_id = @package_meta_id;
+
+-- Replace-on-save helper: delete departures EXCEPT those that already
+-- carry bookings (their departure_id must survive — bookings keep the
+-- slot association via ON DELETE SET NULL, but we preserve the row so the
+-- booked_count/capacity accounting stays intact).
+-- name: DeleteServicePackageDeparturesExcept :exec
+DELETE FROM service_package_departures
+WHERE package_meta_id = @package_meta_id
+  AND id != ALL(sqlc.arg(keep_ids)::uuid[]);
+
+-- name: ListDeparturesWithBookings :many
+SELECT DISTINCT departure_id FROM service_bookings sb
+JOIN service_package_departures d ON d.id = sb.departure_id
+WHERE d.package_meta_id = @package_meta_id
+  AND sb.departure_id IS NOT NULL;
+
+-- name: CreateServicePackageDeparture :one
+INSERT INTO service_package_departures (
+    package_meta_id, starts_on, ends_on, capacity, status
+) VALUES (
+    @package_meta_id, @starts_on,
+    sqlc.narg(ends_on), sqlc.narg(capacity), sqlc.narg(status)
+) RETURNING *;
+
+-- name: ListServicePackageDepartures :many
+SELECT * FROM service_package_departures
+WHERE package_meta_id = @package_meta_id
+ORDER BY starts_on;
+
+-- Open departures for the public detail page: open, not yet started.
+-- name: ListOpenServicePackageDepartures :many
+SELECT * FROM service_package_departures
+WHERE package_meta_id = @package_meta_id
+  AND status = 'open'
+  AND starts_on >= CURRENT_DATE
+ORDER BY starts_on;
+
+-- name: GetServicePackageDeparture :one
+SELECT * FROM service_package_departures
+WHERE id = @id;
+
+-- Row lock for the capacity-guarded confirm path (§111).
+-- name: GetServicePackageDepartureForUpdate :one
+SELECT * FROM service_package_departures
+WHERE id = @id
+FOR UPDATE;
+
+-- Atomic capacity check + increment + 'full' flip. Returns no rows when
+-- the departure is not open or lacks capacity → service layer maps to
+-- ErrDepartureFull (§111: 409 departure_full). §111 schema: a NULL
+-- departure capacity inherits the package-level capacity (meta.capacity);
+-- both NULL means unlimited.
+-- name: IncrementDepartureBookedCount :one
+UPDATE service_package_departures d
+SET booked_count = d.booked_count + @party_size,
+    status = CASE
+        WHEN eff.capacity IS NOT NULL AND d.booked_count + @party_size >= eff.capacity
+            THEN 'full'
+        ELSE d.status
+    END
+FROM (SELECT d2.id, COALESCE(d2.capacity, sm.capacity) AS capacity
+      FROM service_package_departures d2
+      JOIN service_listing_meta sm ON sm.id = d2.package_meta_id
+      WHERE d2.id = @id) eff
+WHERE d.id = @id
+  AND d.id = eff.id
+  AND d.status = 'open'
+  AND (eff.capacity IS NULL OR d.booked_count + @party_size <= eff.capacity)
+RETURNING d.*;
+
+-- name: DecrementDepartureBookedCount :execrows
+UPDATE service_package_departures
+SET booked_count = GREATEST(0, booked_count - @party_size),
+    status = CASE
+        WHEN status = 'full' AND (capacity IS NULL OR booked_count - @party_size < capacity)
+            THEN 'open'
+        ELSE status
+    END
+WHERE id = @id;
+
+-- ---------------------------------------------------------------------
+-- service_bookings (§111) — unified leads + bookings pipeline
+-- ---------------------------------------------------------------------
+
+-- name: CreateServiceBooking :one
+INSERT INTO service_bookings (
+    listing_meta_id, departure_id, booker_user_id, org_id, intent,
+    party_size, preferred_dates, note, status, purchase_mode,
+    payment_id, total_price, fee_amount, fee_currency, agent_balance_due,
+    expires_at
+) VALUES (
+    @listing_meta_id, sqlc.narg(departure_id), @booker_user_id, @org_id,
+    @intent, sqlc.narg(party_size), sqlc.narg(preferred_dates),
+    sqlc.narg(note), sqlc.narg(status), @purchase_mode,
+    sqlc.narg(payment_id), sqlc.narg(total_price), sqlc.narg(fee_amount),
+    sqlc.narg(fee_currency), sqlc.narg(agent_balance_due),
+    sqlc.narg(expires_at)
+) RETURNING *;
+
+-- name: GetServiceBooking :one
+SELECT * FROM service_bookings
+WHERE id = @id;
+
+-- Detail join for display: listing title/slug/content_id, org name,
+-- departure dates. content_id feeds the jc:svc_package cache key so
+-- seat-count transitions can invalidate the package detail cache.
+-- name: GetServiceBookingDetail :one
+SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title,
+       c.slug AS listing_slug,
+       sm.listing_kind, sm.capacity AS package_capacity,
+       o.name AS org_name, o.slug AS org_slug,
+       p.status AS payment_status,
+       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+JOIN contents c ON c.id = sm.content_id
+LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN payments p ON p.id = sb.payment_id
+LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+WHERE sb.id = @id;
+
+-- name: AttachServiceBookingPayment :one
+UPDATE service_bookings
+SET payment_id = @payment_id, updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- Backfill for the payment-success path: the booking may already have
+-- left 'pending' (expired/cancelled during checkout) so there is no
+-- status guard — only never overwrite an existing link.
+-- name: BackfillServiceBookingPayment :one
+UPDATE service_bookings
+SET payment_id = @payment_id, updated_at = now()
+WHERE id = @id AND payment_id IS NULL
+RETURNING *;
+
+-- Booker history.
+-- name: ListServiceBookingsByUser :many
+SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+JOIN contents c ON c.id = sm.content_id
+LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+WHERE sb.booker_user_id = @booker_user_id
+  AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+ORDER BY sb.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountServiceBookingsByUser :one
+SELECT COUNT(*) FROM service_bookings sb
+WHERE sb.booker_user_id = @booker_user_id
+  AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text);
+
+-- Org inbox — paid bookings only appear once money actually moved
+-- (succeeded or refunded: a pending/failed payment never lands in the
+-- org's work queue, but a refunded booking is still the org's audit
+-- record of work that happened).
+-- name: ListServiceBookingsByOrg :many
+SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
+       u.username AS booker_username, up.avatar_url AS booker_avatar
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+JOIN contents c ON c.id = sm.content_id
+LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+LEFT JOIN payments p ON p.id = sb.payment_id
+LEFT JOIN users u ON u.id = sb.booker_user_id
+LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+-- Note: anonymized rows are NOT filtered out — §111 GDPR says the row
+-- survives erasure as the org's financial/audit record (booker PII is
+-- already wiped by AnonymizeServiceBookings, and the user join just
+-- yields NULL names).
+WHERE sb.org_id = @org_id
+  AND (sb.intent = 'inquiry' OR p.status IN ('succeeded','refunded'))
+  AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(listing_content_id)::uuid IS NULL OR sb.listing_meta_id =
+       (SELECT id FROM service_listing_meta WHERE content_id = sqlc.narg(listing_content_id)::uuid))
+ORDER BY sb.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountServiceBookingsByOrg :one
+SELECT COUNT(*) FROM service_bookings sb
+LEFT JOIN payments p ON p.id = sb.payment_id
+WHERE sb.org_id = @org_id
+  AND (sb.intent = 'inquiry' OR p.status IN ('succeeded','refunded'))
+  AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(listing_content_id)::uuid IS NULL OR sb.listing_meta_id =
+       (SELECT id FROM service_listing_meta WHERE content_id = sqlc.narg(listing_content_id)::uuid));
+
+-- Admin view — all bookings, any payment state.
+-- name: AdminListServiceBookings :many
+SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
+       u.username AS booker_username
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+JOIN contents c ON c.id = sm.content_id
+LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+LEFT JOIN users u ON u.id = sb.booker_user_id
+WHERE (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(org_id)::uuid IS NULL OR sb.org_id = sqlc.narg(org_id)::uuid)
+ORDER BY sb.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: AdminCountServiceBookings :one
+SELECT COUNT(*) FROM service_bookings sb
+WHERE (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(org_id)::uuid IS NULL OR sb.org_id = sqlc.narg(org_id)::uuid);
+
+-- ---------------------------------------------------------------------
+-- Booking state machine (§111). Each transition is guarded on its
+-- legal source status(es); no rows → the service layer maps to
+-- ErrInvalidBookingTransition.
+-- ---------------------------------------------------------------------
+
+-- pending → confirmed (org accepts). Capacity increment happens in the
+-- same tx via IncrementDepartureBookedCount.
+-- name: ConfirmServiceBooking :one
+UPDATE service_bookings
+SET status = 'confirmed',
+    org_response_note = sqlc.narg(org_response_note),
+    confirmed_at = now(),
+    updated_at = now()
+WHERE id = @id AND status = 'pending'
+RETURNING *;
+
+-- pending → declined (org rejects).
+-- name: DeclineServiceBooking :one
+UPDATE service_bookings
+SET status = 'declined',
+    org_response_note = sqlc.narg(org_response_note),
+    updated_at = now()
+WHERE id = @id AND status = 'pending'
+RETURNING *;
+
+-- confirmed → fulfilled (org marks delivery complete; fee settles).
+-- name: FulfillServiceBooking :one
+UPDATE service_bookings
+SET status = 'fulfilled',
+    fulfilled_at = now(),
+    updated_at = now()
+WHERE id = @id AND status = 'confirmed'
+RETURNING *;
+
+-- booker-initiated cancel (pending or confirmed).
+-- name: CancelServiceBooking :one
+UPDATE service_bookings
+SET status = 'cancelled',
+    cancel_reason = sqlc.narg(cancel_reason),
+    cancelled_at = now(),
+    updated_at = now()
+WHERE id = @id AND status IN ('pending','confirmed')
+RETURNING *;
+
+-- org-initiated cancel (pending or confirmed).
+-- name: OrgCancelServiceBooking :one
+UPDATE service_bookings
+SET status = 'cancelled',
+    org_response_note = sqlc.narg(org_response_note),
+    cancel_reason = sqlc.narg(cancel_reason),
+    cancelled_at = now(),
+    updated_at = now()
+WHERE id = @id AND status IN ('pending','confirmed')
+RETURNING *;
+
+-- booker or admin flags a booking as disputed.
+-- name: DisputeServiceBooking :one
+UPDATE service_bookings
+SET status = 'disputed',
+    org_response_note = COALESCE(sqlc.narg(org_response_note), org_response_note),
+    updated_at = now()
+WHERE id = @id AND status IN ('confirmed','fulfilled')
+RETURNING *;
+
+-- Admin dispute resolution / forced transition.
+-- name: AdminSetServiceBookingStatus :one
+UPDATE service_bookings
+SET status = @status,
+    org_response_note = COALESCE(sqlc.narg(org_response_note), org_response_note),
+    cancelled_at = CASE WHEN @status = 'cancelled' THEN now() ELSE cancelled_at END,
+    fulfilled_at = CASE WHEN @status = 'fulfilled' THEN now() ELSE fulfilled_at END,
+    confirmed_at = CASE WHEN @status = 'confirmed' AND confirmed_at IS NULL THEN now() ELSE confirmed_at END,
+    updated_at = now()
+WHERE id = @id
+RETURNING *;
+
+-- Mark fee refunded (set after a successful refund via §17).
+-- name: MarkServiceBookingRefunded :one
+UPDATE service_bookings
+SET status = 'refunded', updated_at = now()
+WHERE id = @id AND status IN ('declined','cancelled','disputed')
+RETURNING *;
+
+-- SLA sweep source rows (service:booking_expire_pending).
+-- name: ListExpiredPendingServiceBookings :many
+SELECT * FROM service_bookings
+WHERE status = 'pending'
+  AND expires_at IS NOT NULL
+  AND expires_at < now()
+ORDER BY expires_at
+LIMIT @page_limit;
+
+-- §111 SLA nudge — pending bookings past the midpoint of their response
+-- window that haven't been reminded yet. expires_at - created_at is the
+-- org_response_sla_hours window stamped at creation.
+-- name: ListPendingBookingsDueReminder :many
+SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+JOIN contents c ON c.id = sm.content_id
+JOIN organizations o ON o.id = sb.org_id
+WHERE sb.status = 'pending'
+  AND sb.reminded_at IS NULL
+  AND sb.expires_at IS NOT NULL
+  AND sb.expires_at > now()
+  AND now() >= sb.created_at + (sb.expires_at - sb.created_at) / 2
+ORDER BY sb.expires_at
+LIMIT @page_limit;
+
+-- name: MarkServiceBookingReminded :execrows
+UPDATE service_bookings
+SET reminded_at = now(), updated_at = now()
+WHERE id = @id AND status = 'pending' AND reminded_at IS NULL;
+
+-- GDPR (§19): anonymize traveler PII on confirmed erasure. The row
+-- survives for the org's financial/audit record; booker_user_id is nulled
+-- so the subsequent HardDeleteUser is not blocked by the FK.
+-- name: AnonymizeServiceBookings :exec
+UPDATE service_bookings
+SET booker_user_id = NULL,
+    note = NULL,
+    preferred_dates = NULL,
+    anonymized_at = now(),
+    updated_at = now()
+WHERE booker_user_id = @booker_user_id
+  AND anonymized_at IS NULL;

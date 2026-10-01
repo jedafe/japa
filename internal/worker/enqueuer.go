@@ -83,6 +83,9 @@ var idempotentTasks = map[string]bool{
 	TypeSubscriptionWebhookProcess:      true,
 	TypeUniversityProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
 	TypeWalletProcessCreditPurchase:     true, // Section 58: double-credit guard
+	TypeServiceBookingFeeSettle:         true, // §111 — refund/settle is money-moving; dedupe by task+payload
+	TypeServiceBookingCreated:           true, // §111 — one org notification fan-out per booking
+	TypeServiceBookingStatusChanged:     true, // §111 — dedupe same-status transitions
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -174,6 +177,7 @@ var taskTier = func() map[string]string {
 		TypeEmbassyDispatchAlerts,     // §91 — time-sensitive slot availability (ADR-099)
 		TypeIntelScheduleCrawls,       // §INTEL — cron entry point, must fire immediately (ADR-112)
 		TypeIntelInboundEmail,         // §INTEL Phase 3 — provider push deliveries are time-sensitive
+		TypeServiceBookingFeeSettle,   // §111 — platform-fee recognize/refund is money-moving (ADR-123)
 	} {
 		m[t] = QueueCritical
 	}
@@ -256,6 +260,9 @@ var taskTier = func() map[string]string {
 		TypeIntelProbeVerify,
 		// §intel-channels Phase 3 — SERP provider poll, default tier.
 		TypeIntelSearchPoll,
+		// §111 Service Packages & Bookings (ADR-123) — notification fan-outs, default tier.
+		TypeServiceBookingCreated,
+		TypeServiceBookingStatusChanged,
 	} {
 		m[t] = QueueDefault
 	}
@@ -335,6 +342,8 @@ var taskTier = func() map[string]string {
 		TypeIntelPruneRejectedRecords,
 		// §intel-channels Phase 4 — outbound source discovery, low tier.
 		TypeIntelHarvestOutbound,
+		// §111 — hourly pending-booking SLA sweep, low tier (ADR-123).
+		TypeServiceBookingExpirePending,
 	} {
 		m[t] = QueueLow
 	}
@@ -410,6 +419,11 @@ var taskTypeCatalog = []struct {
 	{TypeContentGenerateDraft, "default", "Generate a draft content item via the AI Gateway (studio/persona/agent)"},
 	{TypeContentRegenerateFromSource, "default", "Rewrite an existing content row from a linked intelligence extraction (§75, ADR-076 Amendment 2)"},
 	{TypeFormFireSubmissionTriggers, "default", "Fire form submission triggers (assign_user_group / send_email / send_webhook / create_ticket / notify_admin)"},
+	// §111 Service Packages & Bookings (ADR-123)
+	{TypeServiceBookingCreated, "default", "Notify org members of a new service booking/inquiry"},
+	{TypeServiceBookingStatusChanged, "default", "Notify booker of a service booking status transition"},
+	{TypeServiceBookingFeeSettle, "critical", "Recognize or refund the platform fee for a service booking (idempotent by booking_id)"},
+	{TypeServiceBookingExpirePending, "low", "Hourly sweep — expire pending bookings past their response SLA"},
 	{TypeAssessmentScoreSubmission, "default", "Score a completed readiness assessment, generate roadmap, notify (§71, ADR-071)"},
 	{TypeAssessmentCleanupAnonymous, "default", "Hourly cleanup of anonymous assessment_results older than 24h (§71)"},
 	{TypeStudioRunBatch, "default", "Enqueue individual content.generate_draft jobs for a studio batch (§75, ADR-076)"},

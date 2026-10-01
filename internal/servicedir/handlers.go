@@ -24,6 +24,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -153,6 +154,65 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	return page, limit
 }
 
+// writeServiceError maps §111 service-layer sentinels to the standard
+// snake_case API error contract (conventions/api-response-format.md).
+// Falls through to the provided 500 code/message for unexpected errors.
+func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
+	switch {
+	case errors.Is(err, ErrPackagesDisabled):
+		// Disabled feature → 404 per convention.
+		errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
+	case errors.Is(err, ErrOrgNotVerified):
+		errpkg.WriteError(w, http.StatusForbidden, "organization_not_verified", "Only verified organizations can publish packages")
+	case errors.Is(err, ErrOrgRequired):
+		errpkg.WriteError(w, http.StatusBadRequest, "org_required", "org_id is required for package listings")
+	case errors.Is(err, ErrPurchaseModeUnavailable):
+		errpkg.WriteError(w, http.StatusForbidden, "purchase_mode_unavailable", "This purchase mode is not available")
+	case errors.Is(err, ErrInvalidListingKind):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_listing_kind", "listing_kind must be service|package and cannot change after creation")
+	case errors.Is(err, ErrInvalidPurchaseMode):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purchase_mode", "purchase_mode must be inquiry|external|paid")
+	case errors.Is(err, ErrInvalidPricePer):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_price_per", "price_per must be person|package|group")
+	case errors.Is(err, ErrMissingPackagePrice):
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_package_price", "Paid packages require a positive price_amount and price_currency")
+	case errors.Is(err, ErrTooManyPackageItems):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_items", "Package exceeds the maximum number of items")
+	case errors.Is(err, ErrItemCrossOrg):
+		errpkg.WriteError(w, http.StatusBadRequest, "component_cross_org", "Package items can only link to the same organization's listings")
+	case errors.Is(err, ErrItemIsPackage):
+		errpkg.WriteError(w, http.StatusBadRequest, "component_is_package", "A package cannot nest another package as a component")
+	case errors.Is(err, ErrNotOrgMember):
+		errpkg.WriteError(w, http.StatusForbidden, "not_org_member", "You are not a member of this organization")
+	case errors.Is(err, ErrNotOwner):
+		errpkg.WriteError(w, http.StatusForbidden, "not_owner", "Insufficient permissions")
+	case errors.Is(err, ErrDepartureFull):
+		errpkg.WriteError(w, http.StatusConflict, "departure_full", "The selected departure is full or no longer available")
+	case errors.Is(err, ErrInvalidBookingTransition):
+		errpkg.WriteError(w, http.StatusConflict, "invalid_booking_transition", "The booking cannot transition to that status from its current state")
+	case errors.Is(err, ErrBookingUnavailable):
+		errpkg.WriteError(w, http.StatusConflict, "booking_unavailable", "This listing does not accept bookings")
+	case errors.Is(err, ErrIdempotencyRequired):
+		errpkg.WriteError(w, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key header is required")
+	case errors.Is(err, ErrInvalidDeparture):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_departure", "The selected departure is invalid for this package")
+	case errors.Is(err, ErrInvalidIntent):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_intent", "intent must be inquiry|booking and match the listing's purchase_mode")
+	case errors.Is(err, ErrCheckoutFieldsRequired):
+		errpkg.WriteError(w, http.StatusBadRequest, "checkout_fields_required", "provider and email are required for paid bookings")
+	case errors.Is(err, ErrInvalidPreferredDates):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_preferred_dates", "preferred_dates must be {start_on, end_on, flexible} with start_on <= end_on")
+	case errors.Is(err, ErrPackageOrgImmutable):
+		errpkg.WriteError(w, http.StatusBadRequest, "package_org_immutable", "A package's selling organization cannot change after creation")
+	case errors.Is(err, ErrInvalidID):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid id")
+	case errors.Is(err, pgx.ErrNoRows):
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
+	default:
+		errpkg.WriteError(w, http.StatusInternalServerError, code, msg)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public handlers (list + single — anonymous browse per §98)
 // ---------------------------------------------------------------------------
@@ -208,10 +268,37 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// §111 filters — kind is gated by service_packages.enabled in the
+	// service layer (flag off → 404). 'all' is the explicit no-filter
+	// value per the §111 route contract.
+	listingKind := r.URL.Query().Get("kind")
+	if listingKind == "all" {
+		listingKind = ""
+	}
+
+	var priceMax *int64
+	if v := r.URL.Query().Get("price_max"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
+			priceMax = &n
+		}
+	}
+
+	var dateFrom pgtype.Date
+	if v := r.URL.Query().Get("date_from"); v != "" {
+		if t, err := time.Parse("2006-01-02", v); err == nil {
+			dateFrom = pgtype.Date{Time: t, Valid: true}
+		}
+	}
+
 	page, limit := parsePageParams(r)
 
-	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, sort, page, limit)
+	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, listingKind, priceMax, dateFrom, sort, page, limit)
 	if err != nil {
+		if errors.Is(err, ErrPackagesDisabled) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
+			return
+		}
+
 		slog.Error("servicedir: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list services")
 
@@ -317,15 +404,19 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	service, err := h.service.Create(r.Context(), user.UserID, input)
+	// §111: package creation needs the service.package.create node —
+	// resolved in-handler so plain listings still only need service.create.
+	canCreatePackage := h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.package.create")
+
+	service, err := h.service.Create(r.Context(), user.UserID, input, canCreatePackage)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCategory) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
 			return
 		}
 
+		writeServiceError(w, err, "create_failed", "Failed to create service listing")
 		slog.Error("servicedir: create failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_failed", "Failed to create service listing")
 
 		return
 	}
@@ -364,9 +455,12 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 	// Determine whether the user holds service.edit_any (admins bypass
 	// the ownership check — BUG-009). The route middleware already verified
 	// the user has at least one of edit_own/edit_any.
-	isEditAny := h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
+	isEditAny := h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
 
-	service, err := h.service.EditOwn(r.Context(), contentID, user.UserID, input, isEditAny)
+	// §111: editing package fields requires service.package.create.
+	canCreatePackage := isEditAny || (h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.package.create"))
+
+	service, err := h.service.EditOwn(r.Context(), contentID, user.UserID, input, isEditAny, canCreatePackage)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
@@ -384,7 +478,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		slog.Error("servicedir: edit failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "edit_failed", "Failed to edit service listing")
+		writeServiceError(w, err, "edit_failed", "Failed to edit service listing")
 
 		return
 	}
@@ -466,7 +560,8 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 // HandleAdminList handles GET /admin/services — moderation queue listing
 // all service listings (any status). Admin-only (service.verify permission
 // checked at route registration). Supports
-// ?status=&verified=&claim_status=&category=&q=&page=&limit=.
+// ?status=&verified=&claim_status=&category=&kind=&q=&page=&limit=.
+// §111: kind=package powers the package review queue.
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -480,6 +575,11 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	claimStatus := r.URL.Query().Get("claim_status")
 	serviceCategory := r.URL.Query().Get("category")
+	listingKind := r.URL.Query().Get("kind")
+	if listingKind == "all" {
+		listingKind = ""
+	}
+
 	q := r.URL.Query().Get("q")
 
 	var destSpaceID pgtype.UUID
@@ -504,7 +604,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	services, total, err := h.service.AdminList(r.Context(), status, claimStatus, serviceCategory, q, verifiedPtr, destSpaceID, page, limit)
+	services, total, err := h.service.AdminList(r.Context(), status, claimStatus, serviceCategory, listingKind, q, verifiedPtr, destSpaceID, page, limit)
 	if err != nil {
 		slog.Error("servicedir: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list services")
