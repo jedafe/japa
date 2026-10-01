@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { browser } from '$app/environment';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
@@ -103,9 +103,12 @@
 	let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function startTour() {
-		if (!browser || tour) return; // already running
-
+		if (!browser) return;
+		// Strip the trigger param even when a tour is already running —
+		// otherwise a duplicate call leaves ?tour= in the URL and a
+		// refresh replays it.
 		cleanupUrl();
+		if (tour) return; // already running
 
 		const steps: DriveStep[] = tourSteps
 			.map((s) => ({ el: firstVisible(s.selector), def: s }))
@@ -159,6 +162,20 @@
 			// Small delay to let the app shell render the tour targets.
 			setTimeout(startTour, 300);
 		}
+	});
+
+	// Teardown safety net: if the component unmounts while a driver
+	// instance is live (layout swap on logout/redirect), destroy it —
+	// otherwise the overlay orphans on screen. Unmount is not a
+	// dismissal, so the close/dismiss callbacks are intentionally not
+	// invoked here.
+	onDestroy(() => {
+		if (retryTimer) {
+			clearTimeout(retryTimer);
+			retryTimer = null;
+		}
+		tour?.destroy();
+		tour = null;
 	});
 
 	// Stop the tour on real navigation — driver.js caches the resolved
