@@ -23,6 +23,9 @@
 		/** §80 directories — the stub IS the child listing; link it rather
 		 *  than a sibling page that lacks the directory payload. */
 		directory?: boolean;
+		/** §80 directories — true when the space has zero matching
+		 *  descendants; the tab (and its stub page) is hidden. */
+		empty?: boolean;
 		/** §80 category icon — admin-configured lucide name; overrides the
 		 *  slug→icon map when recognized. */
 		icon?: string;
@@ -73,8 +76,14 @@
 				icon: categoryIcon('overview')
 			}
 		];
+		// §80 directories: a directory category with no matching children
+		// (empty:true) is hidden — the stub would render a listing of
+		// nothing.
+		const hiddenCats = new Set(
+			categories.filter((c) => c.directory && c.empty).map((c) => c.slug)
+		);
 		for (const c of categories) {
-			if (c.slug === 'overview') continue;
+			if (c.slug === 'overview' || hiddenCats.has(c.slug)) continue;
 			const p = firstPage(c.slug);
 			// §80 lazy categories: category stubs resolve without a
 			// wiki_pages row. Directory categories link the stub
@@ -102,7 +111,7 @@
 		// the categories endpoint and stored page categories).
 		const covered = new Set(list.map((tab) => tab.slug));
 		for (const p of pages) {
-			if (covered.has(p.category)) continue;
+			if (covered.has(p.category) || hiddenCats.has(p.category)) continue;
 			covered.add(p.category);
 			list.push({
 				slug: p.category,

@@ -86,7 +86,7 @@
 	}
 </script>
 
-<!-- §80 Reader UX — fixed anchor for the "On this page" rail. -->
+<!-- §80 Reader UX — fixed anchor for deep links. -->
 <section id="wiki-directory" class="mt-6 scroll-mt-24 space-y-4">
 	<div class="w-full max-w-sm">
 		<Autocomplete

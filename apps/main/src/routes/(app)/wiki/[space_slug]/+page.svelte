@@ -47,6 +47,9 @@
 		page_slug?: string;
 		/** §80 directories — the stub page is the child-space listing. */
 		directory?: boolean;
+		/** §80 directories — true when the space has no matching
+		 *  descendants; the card/tab is hidden. */
+		empty?: boolean;
 		/** §80 category icon — admin-configured lucide name. */
 		icon?: string;
 	};
@@ -133,10 +136,16 @@
 		/** §80 category icon — admin-configured lucide name override. */
 		icon?: string;
 	}
+	// §80 directories: a directory-mode category with zero matching
+	// descendants (empty:true) earns no card — the stub lists nothing.
+	const hiddenDirCats = new Set(
+		apiCategories.filter((c) => c.directory && c.empty).map((c) => c.slug)
+	);
 	const cardGroups = $derived.by<CardGroup[]>(() => {
 		const order = new Map(apiCategories.map((c, i) => [c.slug, i]));
 		const groups = new Map<string, WikiPageIndex[]>();
 		for (const p of data.index) {
+			if (hiddenDirCats.has(p.category)) continue;
 			const arr = groups.get(p.category);
 			if (arr) arr.push(p);
 			else groups.set(p.category, [p]);
@@ -145,7 +154,7 @@
 		// category still gets a card so its listing/links stay reachable.
 		const cats = new Set(groups.keys());
 		for (const c of apiCategories) {
-			if (c.page_slug) cats.add(c.slug);
+			if (c.page_slug && !hiddenDirCats.has(c.slug)) cats.add(c.slug);
 		}
 		return [...cats]
 			.map((category) => {

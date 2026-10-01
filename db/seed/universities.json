@@ -1,0 +1,50 @@
+[
+  {"name": "University of Oxford", "initials": "OX", "country_code": "GB", "state_code": "ENG", "world_ranking": 1, "type": "research", "founded_year": 1096, "website": "https://www.ox.ac.uk", "email": "undergraduate.admissions@admin.ox.ac.uk"},
+  {"name": "University of Cambridge", "initials": "CAM", "country_code": "GB", "state_code": "ENG", "world_ranking": 2, "type": "research", "founded_year": 1209, "website": "https://www.cam.ac.uk", "email": "undergraduate.admissions@cam.ac.uk"},
+  {"name": "Imperial College London", "initials": "ICL", "country_code": "GB", "state_code": "ENG", "world_ranking": 3, "type": "research", "founded_year": 1907, "website": "https://www.imperial.ac.uk", "email": "admissions@imperial.ac.uk"},
+  {"name": "UCL", "initials": "UCL", "country_code": "GB", "state_code": "ENG", "world_ranking": 4, "type": "research", "founded_year": 1826, "website": "https://www.ucl.ac.uk", "email": "admissions@ucl.ac.uk"},
+  {"name": "University of Edinburgh", "initials": "UEDIN", "country_code": "GB", "state_code": "SCT", "world_ranking": 5, "type": "research", "founded_year": 1583, "website": "https://www.ed.ac.uk", "email": "admissions@ed.ac.uk"},
+  {"name": "University of Manchester", "initials": "MAN", "country_code": "GB", "state_code": "ENG", "world_ranking": 6, "type": "research", "founded_year": 1824, "website": "https://www.manchester.ac.uk", "email": "admissions@manchester.ac.uk"},
+  {"name": "King's College London", "initials": "KCL", "country_code": "GB", "state_code": "ENG", "world_ranking": 7, "type": "research", "founded_year": 1829, "website": "https://www.kcl.ac.uk", "email": "admissions@kcl.ac.uk"},
+  {"name": "London School of Economics", "initials": "LSE", "country_code": "GB", "state_code": "ENG", "world_ranking": 8, "type": "research", "founded_year": 1895, "website": "https://www.lse.ac.uk", "email": "admissions@lse.ac.uk"},
+  {"name": "University of Bristol", "initials": "BRIS", "country_code": "GB", "state_code": "ENG", "world_ranking": 9, "type": "research", "founded_year": 1876, "website": "https://www.bristol.ac.uk", "email": "admissions@bristol.ac.uk"},
+  {"name": "University of Warwick", "initials": "WARW", "country_code": "GB", "state_code": "ENG", "world_ranking": 10, "type": "research", "founded_year": 1965, "website": "https://www.warwick.ac.uk", "email": "admissions@warwick.ac.uk"},
+
+  {"name": "University of Toronto", "initials": "UTOR", "country_code": "CA", "state_code": "ON", "world_ranking": 11, "type": "research", "founded_year": 1827, "website": "https://www.utoronto.ca", "email": "admissions@utoronto.ca"},
+  {"name": "McGill University", "initials": "MCGILL", "country_code": "CA", "state_code": "QC", "world_ranking": 12, "type": "research", "founded_year": 1821, "website": "https://www.mcgill.ca", "email": "admissions@mcgill.ca"},
+  {"name": "University of British Columbia", "initials": "UBC", "country_code": "CA", "state_code": "BC", "world_ranking": 13, "type": "research", "founded_year": 1908, "website": "https://www.ubc.ca", "email": "admissions@ubc.ca"},
+  {"name": "University of Alberta", "initials": "UALB", "country_code": "CA", "state_code": "AB", "world_ranking": 14, "type": "research", "founded_year": 1908, "website": "https://www.ualberta.ca", "email": "admissions@ualberta.ca"},
+  {"name": "McMaster University", "initials": "MAC", "country_code": "CA", "state_code": "ON", "world_ranking": 15, "type": "research", "founded_year": 1887, "website": "https://www.mcmaster.ca", "email": "admissions@mcmaster.ca"},
+  {"name": "University of Waterloo", "initials": "UWAT", "country_code": "CA", "state_code": "ON", "world_ranking": 16, "type": "research", "founded_year": 1957, "website": "https://uwaterloo.ca", "email": "admissions@uwaterloo.ca"},
+
+  {"name": "Massachusetts Institute of Technology", "initials": "MIT", "country_code": "US", "state_code": "MA", "world_ranking": 17, "type": "research", "founded_year": 1861, "website": "https://www.mit.edu", "email": "admissions@mit.edu"},
+  {"name": "Stanford University", "initials": "SU", "country_code": "US", "state_code": "CA", "world_ranking": 18, "type": "research", "founded_year": 1885, "website": "https://www.stanford.edu", "email": "admissions@stanford.edu"},
+  {"name": "Harvard University", "initials": "HARV", "country_code": "US", "state_code": "MA", "world_ranking": 19, "type": "research", "founded_year": 1636, "website": "https://www.harvard.edu", "email": "admissions@harvard.edu"},
+  {"name": "California Institute of Technology", "initials": "CIT", "country_code": "US", "state_code": "CA", "world_ranking": 20, "type": "research", "founded_year": 1891, "website": "https://www.caltech.edu", "email": "admissions@caltech.edu"},
+  {"name": "University of California, Berkeley", "initials": "UCB", "country_code": "US", "state_code": "CA", "world_ranking": 21, "type": "research", "founded_year": 1868, "website": "https://www.berkeley.edu", "email": "admissions@berkeley.edu"},
+  {"name": "Columbia University", "initials": "COL", "country_code": "US", "state_code": "NY", "world_ranking": 22, "type": "research", "founded_year": 1754, "website": "https://www.columbia.edu", "email": "admissions@columbia.edu"},
+  {"name": "University of Chicago", "initials": "UCHI", "country_code": "US", "state_code": "IL", "world_ranking": 23, "type": "research", "founded_year": 1890, "website": "https://www.uchicago.edu", "email": "admissions@uchicago.edu"},
+  {"name": "Yale University", "initials": "YALE", "country_code": "US", "state_code": "CT", "world_ranking": 24, "type": "research", "founded_year": 1701, "website": "https://www.yale.edu", "email": "admissions@yale.edu"},
+  {"name": "Princeton University", "initials": "PRIN", "country_code": "US", "state_code": "NJ", "world_ranking": 25, "type": "research", "founded_year": 1746, "website": "https://www.princeton.edu", "email": "admissions@princeton.edu"},
+
+  {"name": "Trinity College Dublin", "initials": "TCD", "country_code": "IE", "state_code": "L", "world_ranking": 26, "type": "research", "founded_year": 1592, "website": "https://www.tcd.ie", "email": "admissions@tcd.ie"},
+  {"name": "University College Dublin", "initials": "UCD", "country_code": "IE", "state_code": "L", "world_ranking": 27, "type": "research", "founded_year": 1854, "website": "https://www.ucd.ie", "email": "admissions@ucd.ie"},
+  {"name": "University of Dublin", "initials": "UDUB", "country_code": "IE", "state_code": "L", "world_ranking": 28, "type": "research", "founded_year": 1592, "website": "https://www.tcd.ie", "email": "admissions@tcd.ie"},
+
+  {"name": "Ludwig Maximilian University of Munich", "initials": "LMU", "country_code": "DE", "state_code": "BY", "world_ranking": 29, "type": "research", "founded_year": 1472, "website": "https://www.lmu.de", "email": "admissions@lmu.de"},
+  {"name": "Technical University of Munich", "initials": "TUM", "country_code": "DE", "state_code": "BY", "world_ranking": 30, "type": "research", "founded_year": 1868, "website": "https://www.tum.de", "email": "admissions@tum.de"},
+  {"name": "Heidelberg University", "initials": "HEID", "country_code": "DE", "state_code": "BW", "world_ranking": 31, "type": "research", "founded_year": 1386, "website": "https://www.uni-heidelberg.de", "email": "admissions@uni-heidelberg.de"},
+  {"name": "Humboldt University of Berlin", "initials": "HUB", "country_code": "DE", "state_code": "BE", "world_ranking": 32, "type": "research", "founded_year": 1810, "website": "https://www.hu-berlin.de", "email": "admissions@hu-berlin.de"},
+
+  {"name": "University of Amsterdam", "initials": "UvA", "country_code": "NL", "state_code": "NH", "world_ranking": 33, "type": "research", "founded_year": 1632, "website": "https://www.uva.nl", "email": "admissions@uva.nl"},
+  {"name": "Delft University of Technology", "initials": "TUDELFT", "country_code": "NL", "state_code": "ZH", "world_ranking": 34, "type": "research", "founded_year": 1842, "website": "https://www.tudelft.nl", "email": "admissions@tudelft.nl"},
+  {"name": "Leiden University", "initials": "LEID", "country_code": "NL", "state_code": "ZH", "world_ranking": 35, "type": "research", "founded_year": 1575, "website": "https://www.leidenuniv.nl", "email": "admissions@leidenuniv.nl"},
+
+  {"name": "University of Cape Town", "initials": "UCT", "country_code": "ZA", "state_code": "WC", "world_ranking": 36, "type": "research", "founded_year": 1829, "website": "https://www.uct.ac.za", "email": "admissions@uct.ac.za"},
+
+  {"name": "University of Lagos", "initials": "UNILAG", "country_code": "NG", "state_code": "LA", "world_ranking": 37, "type": "research", "founded_year": 1962, "website": "https://www.unilag.edu.ng", "email": "admissions@unilag.edu.ng"},
+  {"name": "University of Ibadan", "initials": "UI", "country_code": "NG", "state_code": "OY", "world_ranking": 38, "type": "research", "founded_year": 1948, "website": "https://www.ui.edu.ng", "email": "admissions@ui.edu.ng"},
+  {"name": "Obafemi Awolowo University", "initials": "OAU", "country_code": "NG", "state_code": "OS", "world_ranking": 39, "type": "research", "founded_year": 1961, "website": "https://www.oauife.edu.ng", "email": "admissions@oauife.edu.ng"},
+  {"name": "Ahmadu Bello University", "initials": "ABU", "country_code": "NG", "state_code": "KD", "world_ranking": 40, "type": "research", "founded_year": 1962, "website": "https://www.abu.edu.ng", "email": "admissions@abu.edu.ng"},
+  {"name": "University of Nigeria, Nsukka", "initials": "UNN", "country_code": "NG", "state_code": "EN", "world_ranking": 41, "type": "research", "founded_year": 1960, "website": "https://www.unn.edu.ng", "email": "admissions@unn.edu.ng"}
+]

@@ -83,7 +83,7 @@
 {#if sections.length > 0}
 	<div class="space-y-5">
 		{#each sections as section (section.key)}
-			<!-- §80 Reader UX — `id` gives the "On this page" rail an anchor. -->
+			<!-- §80 Reader UX — `id` exposes a deep-link anchor per section. -->
 			<section
 				id={section.key ? `section-${section.key}` : undefined}
 				class="scroll-mt-24 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)]"

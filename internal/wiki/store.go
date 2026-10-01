@@ -1524,6 +1524,25 @@ func (s *Store) ListDirectoryChildren(ctx context.Context, spaceID pgtype.UUID, 
 	return out, nil
 }
 
+// HasDirectoryChildren reports whether the space has at least one active,
+// wiki-typed descendant matching typeIDs — the existence check behind the
+// `empty` flag on space-scoped category reads (§80 directories).
+func (s *Store) HasDirectoryChildren(ctx context.Context, spaceID pgtype.UUID, typeIDs []pgtype.UUID) (bool, error) {
+	if typeIDs == nil {
+		typeIDs = []pgtype.UUID{}
+	}
+
+	has, err := s.read.WikiSpaceHasDirectoryChildren(ctx, gen.WikiSpaceHasDirectoryChildrenParams{
+		SpaceID: spaceID,
+		TypeIds: typeIDs,
+	})
+	if err != nil {
+		return false, fmt.Errorf("wiki: has directory children: %w", err)
+	}
+
+	return has, nil
+}
+
 // ListTypeChildIDs returns the space types that declare the given type as
 // a parent (wiki_type_parents reverse edges) — the declared child types
 // driving rollup scope and the landing drill-down.

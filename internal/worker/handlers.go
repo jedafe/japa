@@ -661,6 +661,23 @@ func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, p gen.Payment
 	if p.PurposeType == "form_submission" {
 		processPaidFormSubmission(ctx, queries, p)
 	}
+
+	// §111: a succeeded service_booking_fee payment makes the paid booking
+	// visible to the selling org — enqueue the booking_created fan-out.
+	// The booking row was created before checkout; org-inbox queries join
+	// on the payment status so the org never sees an unpaid reservation.
+	// payment_id is carried so the handler can backfill booking.payment_id
+	// if the intent-time attach raced/failed.
+	if p.PurposeType == "service_booking_fee" && p.PurposeID.Valid {
+		payload, _ := json.Marshal(map[string]string{
+			"booking_id": p.PurposeID.String(),
+			"payment_id": p.ID.String(),
+		})
+		if err := taskEnqueuer.Enqueue(TypeServiceBookingCreated, payload); err != nil {
+			slog.Error("task:payment:process_webhook: booking_created enqueue failed",
+				"payment_id", p.ID, "booking_id", p.PurposeID, "error", err)
+		}
+	}
 }
 
 // resolveWebhookPayment locates the payment for a webhook event by its

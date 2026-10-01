@@ -581,6 +581,16 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if err := s.store.anonymizeCouponEvents(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize coupon events during deletion", "user_id", request.UserID.String(), "error", err)
 		}
+		// Scrub traveler PII from service_bookings (§111, ADR-014):
+		// note + preferred_dates are wiped, booker_user_id nulled, and
+		// anonymized_at stamped. The financial columns survive as the
+		// org's audit record — the booking is a contract artifact, not
+		// erasable PII. Best-effort like the other scrub steps.
+		if err := s.store.write.AnonymizeServiceBookings(ctx,
+			request.UserID,
+		); err != nil {
+			slog.Warn("failed to anonymize service bookings during deletion", "user_id", request.UserID.String(), "error", err)
+		}
 		// Scrub PII from onboarding_state.step_data (name, current_location,
 		// destination) during the anonymization phase (Section 09, ADR-014).
 		// The row has ON DELETE CASCADE from users(id) so it is removed at

@@ -308,7 +308,7 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 		return nil, "", err
 	}
 
-	_, typeSlug, err := s.store.GetSpaceTypeRef(ctx, spaceID)
+	typeID, typeSlug, err := s.store.GetSpaceTypeRef(ctx, spaceID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -316,6 +316,31 @@ func (s *Service) ListCategoriesForSpace(ctx context.Context, spaceSlug string) 
 	cats, err := s.store.ListCategoriesBySpaceSlug(ctx, spaceSlug)
 	if err != nil {
 		return nil, "", err
+	}
+
+	// §80 directories: a directory-mode category only earns a tab/card
+	// when the space actually has matching descendants — a "Universities"
+	// stub on a state with no linked universities is a dead end. Fail
+	// open on lookup errors so a transient failure never hides a
+	// legitimately populated category.
+	for i := range cats {
+		rcfg := parseRollupConfig(cats[i].Rollup)
+		if rcfg == nil || rcfg.Mode != rollupModeDirectory {
+			continue
+		}
+		typeIDs, terr := s.rollupTypeIDs(ctx, typeID, rcfg.Levels)
+		if terr != nil {
+			continue
+		}
+		if len(typeIDs) == 0 {
+			cats[i].Empty = true
+			continue
+		}
+		has, herr := s.store.HasDirectoryChildren(ctx, spaceID, typeIDs)
+		if herr != nil {
+			continue
+		}
+		cats[i].Empty = !has
 	}
 
 	return cats, typeSlug, nil

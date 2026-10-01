@@ -1160,15 +1160,19 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		}
 	}
 
-	// Spaces — offset-paginated via the admin list query.
+	// Spaces — offset-paginated via the admin list query. SpaceTypeID must be a
+	// valid zero UUID — the query's "no filter" sentinel compares
+	// @space_type_id::uuid = '00000000-...', and an invalid (NULL) pgtype.UUID
+	// makes that comparison NULL, silently filtering out every space.
 	for offset := int32(0); ; offset += reindexBatchSize {
 		rows, err := ix.read.AdminListSpaces(ctx, gen.AdminListSpacesParams{
 
-			Search:     "",
-			Status:     "",
-			Visibility: "",
-			OffsetVal:  offset,
-			LimitVal:   reindexBatchSize,
+			Search:      "",
+			Status:      "",
+			Visibility:  "",
+			SpaceTypeID: pgtype.UUID{Valid: true},
+			OffsetVal:   offset,
+			LimitVal:    reindexBatchSize,
 		})
 		if err != nil {
 			slog.Warn("search:reindex: listing spaces failed", "error", err)
@@ -1284,7 +1288,7 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		rows, err := ix.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: "", Column2: // org_type filter (empty = all)
 		"", Column3:// country_code filter (empty = all)
 		"", Column4:// name search (empty = all)
-		"", Column7: // verified filter (empty = all)
+		"", Column7:// verified filter (empty = all)
 		"", // deleted filter (empty = live rows only)
 			Limit:  reindexBatchSize,
 			Offset: offset,

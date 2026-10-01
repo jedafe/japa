@@ -161,7 +161,7 @@
 		</div>
 
 		<div class="mt-6">
-			{#if destinations.length === 0}
+			{#if destinations.length === 0 && total === 0}
 				<div class="mt-2">
 					<EmptyState
 						icon={MapPin}

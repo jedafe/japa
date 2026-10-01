@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/payments"
 	"github.com/jedafe/japa/internal/servicedir"
 )
 
@@ -85,5 +86,37 @@ func (a serviceReviewAdapter) Aggregate(ctx context.Context, entityType string, 
 	return servicedir.ReviewAggregate{
 		Count: agg.ReviewCount,
 		Avg:   avg.Float64,
+	}, nil
+}
+
+// serviceDirPaymentAdapter adapts *payments.Service to the
+// servicedir.PaymentCreator interface (§111 platform-fee intents). Field
+// mapping is one-to-one; the Idempotency-Key header propagates via ctx
+// (mw.IdempotencyKeyFromContext → payments.idempotency_key, BUG-015).
+type serviceDirPaymentAdapter struct {
+	svc *payments.Service
+}
+
+// CreatePayment converts the servicedir input to payments.CreatePaymentInput
+// and projects the result into servicedir.PaymentResult.
+func (a *serviceDirPaymentAdapter) CreatePayment(ctx context.Context, userID pgtype.UUID, in servicedir.PaymentInput) (servicedir.PaymentResult, error) {
+	res, err := a.svc.CreatePayment(ctx, userID, payments.CreatePaymentInput{
+		Provider:    in.Provider,
+		PurposeType: in.PurposeType,
+		PurposeID:   in.PurposeID,
+		Amount:      in.Amount,
+		Currency:    in.Currency,
+		Email:       in.Email,
+		Metadata:    in.Metadata,
+		ReturnURL:   in.ReturnURL,
+	})
+	if err != nil {
+		return servicedir.PaymentResult{}, err
+	}
+
+	return servicedir.PaymentResult{
+		PaymentID:   res.Payment.ID.String(),
+		CheckoutURL: res.CheckoutURL,
+		Status:      res.Payment.Status,
 	}, nil
 }

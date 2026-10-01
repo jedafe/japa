@@ -1490,6 +1490,50 @@ func (q *Queries) UpsertWikiTypeConfig(ctx context.Context, arg UpsertWikiTypeCo
 	return i, err
 }
 
+const wikiSpaceHasDirectoryChildren = `-- name: WikiSpaceHasDirectoryChildren :one
+WITH RECURSIVE descendants AS (
+    SELECT kid.id, 1 AS depth
+    FROM (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = $1
+        UNION
+        SELECT s.id FROM spaces s WHERE s.parent_id = $1
+    ) kid
+    UNION
+    SELECT kid.id, d.depth + 1
+    FROM descendants d
+    JOIN LATERAL (
+        SELECT sps.space_id AS id FROM space_parent_spaces sps WHERE sps.parent_space_id = d.id
+        UNION
+        SELECT s2.id FROM spaces s2 WHERE s2.parent_id = d.id
+    ) kid ON true
+    WHERE d.depth < 3
+)
+SELECT EXISTS (
+    SELECT 1
+    FROM descendants d
+    JOIN spaces s ON s.id = d.id
+    JOIN wiki_type_configs wtc ON wtc.space_type_id = s.space_type_id AND wtc.enabled = true
+    WHERE s.id <> $1 AND s.deleted_at IS NULL AND s.status = 'active'
+      AND (cardinality($2::uuid[]) = 0 OR s.space_type_id = ANY($2::uuid[]))
+)
+`
+
+type WikiSpaceHasDirectoryChildrenParams struct {
+	SpaceID pgtype.UUID   `json:"space_id"`
+	TypeIds []pgtype.UUID `json:"type_ids"`
+}
+
+// §80 directories: existence-only variant of ListWikiDirectoryChildren —
+// true when the space has at least one active, wiki-typed descendant in
+// @type_ids. Powers `empty` on GET /wiki/categories?space= so directory
+// categories with no matching children aren't advertised as tabs/cards.
+func (q *Queries) WikiSpaceHasDirectoryChildren(ctx context.Context, arg WikiSpaceHasDirectoryChildrenParams) (bool, error) {
+	row := q.db.QueryRow(ctx, wikiSpaceHasDirectoryChildren, arg.SpaceID, arg.TypeIds)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const wikiTypeConfigExists = `-- name: WikiTypeConfigExists :one
 SELECT EXISTS(SELECT 1 FROM wiki_type_configs WHERE space_type_id = $1) AS exists
 `
