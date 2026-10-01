@@ -496,6 +496,9 @@ func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
 // tour_dismissals jsonb map so each app manages its own tour state.
 func (s *Service) DismissTour(ctx context.Context, userID pgtype.UUID, surface string) error {
 	surface = normalizeTourSurface(surface)
+	if surface == "" {
+		return fmt.Errorf("%w: surface contains no valid characters", errpkg.ErrInvalid)
+	}
 
 	dismissals, err := json.Marshal(map[string]bool{surface: true})
 	if err != nil {
@@ -511,7 +514,9 @@ func (s *Service) DismissTour(ctx context.Context, userID pgtype.UUID, surface s
 }
 
 // normalizeTourSurface clamps the surface slug to a safe value: lowercase
-// alphanumeric/hyphen, max 32 chars, defaulting to "main".
+// alphanumeric/hyphen, max 32 chars. An absent/blank surface defaults to
+// "main" for backward compatibility; input containing no valid characters
+// returns "" so the caller can reject it.
 func normalizeTourSurface(surface string) string {
 	surface = strings.ToLower(strings.TrimSpace(surface))
 	if surface == "" {
@@ -526,10 +531,6 @@ func normalizeTourSurface(surface string) string {
 		if b.Len() >= 32 {
 			break
 		}
-	}
-
-	if b.Len() == 0 {
-		return "main"
 	}
 
 	return b.String()

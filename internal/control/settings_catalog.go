@@ -268,6 +268,7 @@ var settingsCatalog = map[string]settingMeta{
 	"onboarding.reminder_max_count":          {Type: "int", DefaultValue: "5", Description: "Max onboarding reminder notifications sent per user.", Panel: "control"},
 	"onboarding.reminder_window_days":        {Type: "int", DefaultValue: "14", Description: "Only accounts younger than this many days receive onboarding reminders.", Panel: "control"},
 	"onboarding.reminder_min_interval_hours": {Type: "int", DefaultValue: "20", Description: "Minimum hours between onboarding reminder sends.", Panel: "control"},
+	"onboarding.reminder_batch_limit":        {Type: "int", DefaultValue: "2000", Description: "Max users processed per onboarding reminder sweep run.", Panel: "control"},
 	// General platform settings (exist in DB, now catalogued for type metadata).
 	// Public so the main site can render the site name and description in SEO/meta.
 	"general.site_name":         {Type: "string", DefaultValue: "JapaConnect", Description: "Platform display name.", Public: true, Panel: "admin"},

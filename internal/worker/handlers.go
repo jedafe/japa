@@ -4346,11 +4346,12 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 	}
 
 	q := gen.New(dbPool.Reader)
+	minInterval := onboardingReminderIntSetting(ctx, "onboarding.reminder_min_interval_hours", 20)
 	candidates, err := q.ListOnboardingReminderCandidates(ctx, gen.ListOnboardingReminderCandidatesParams{
 		WindowDays:       onboardingReminderIntSetting(ctx, "onboarding.reminder_window_days", 14),
 		MaxCount:         onboardingReminderIntSetting(ctx, "onboarding.reminder_max_count", 5),
-		MinIntervalHours: onboardingReminderIntSetting(ctx, "onboarding.reminder_min_interval_hours", 20),
-		BatchLimit:       2000,
+		MinIntervalHours: minInterval,
+		BatchLimit:       onboardingReminderIntSetting(ctx, "onboarding.reminder_batch_limit", 2000),
 	})
 	if err != nil {
 		slog.Error("task:onboarding:reminder_sweep: candidate query failed", "error", err)
@@ -4370,10 +4371,20 @@ func HandleOnboardingReminderSweep(ctx context.Context, _ *asynq.Task) error {
 
 	for _, userID := range candidates {
 		// Mark first: a failed insert must not allow the next sweep to
-		// re-send unboundedly — reminder_count is the global cap.
-		if err := wq.MarkOnboardingReminded(ctx, userID); err != nil {
+		// re-send unboundedly — reminder_count is the global cap. The mark
+		// is a conditional upsert guarded by the min-interval: when an
+		// overlapping sweep instance already marked this user it affects 0
+		// rows, closing the select→mark race without row locks.
+		marked, err := wq.MarkOnboardingReminded(ctx, gen.MarkOnboardingRemindedParams{
+			UserID:           userID,
+			MinIntervalHours: minInterval,
+		})
+		if err != nil {
 			slog.Error("task:onboarding:reminder_sweep: mark failed", "user_id", userID.String(), "error", err)
 			continue
+		}
+		if marked == 0 {
+			continue // already marked by a concurrent sweep — no duplicate send
 		}
 
 		if _, err := wq.InsertNotification(ctx, gen.InsertNotificationParams{

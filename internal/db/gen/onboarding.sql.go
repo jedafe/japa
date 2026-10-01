@@ -260,20 +260,33 @@ func (q *Queries) ListOnboardingTemplates(ctx context.Context) ([]OnboardingTemp
 	return items, nil
 }
 
-const markOnboardingReminded = `-- name: MarkOnboardingReminded :exec
+const markOnboardingReminded = `-- name: MarkOnboardingReminded :execrows
 INSERT INTO onboarding_state (user_id, reminder_count, last_reminder_at)
 VALUES ($1, 1, now())
 ON CONFLICT (user_id) DO UPDATE SET
     reminder_count = onboarding_state.reminder_count + 1,
     last_reminder_at = now(),
     updated_at = now()
+WHERE onboarding_state.last_reminder_at IS NULL
+   OR onboarding_state.last_reminder_at < now() - make_interval(hours => $2::int)
 `
 
+type MarkOnboardingRemindedParams struct {
+	UserID           pgtype.UUID `json:"user_id"`
+	MinIntervalHours int32       `json:"min_interval_hours"`
+}
+
 // Upserts so users with no onboarding_state row (never started the wizard)
-// are tracked too — same pattern as DismissTour.
-func (q *Queries) MarkOnboardingReminded(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, markOnboardingReminded, userID)
-	return err
+// are tracked too — same pattern as DismissTour. The WHERE guard on the
+// conflict path makes a concurrent/duplicate sweep a no-op: the interval
+// check is evaluated under the row lock, so overlapping sweep instances
+// can't double-mark (and therefore can't double-send).
+func (q *Queries) MarkOnboardingReminded(ctx context.Context, arg MarkOnboardingRemindedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markOnboardingReminded, arg.UserID, arg.MinIntervalHours)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateOnboardingTemplate = `-- name: UpdateOnboardingTemplate :exec

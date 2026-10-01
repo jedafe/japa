@@ -164,7 +164,7 @@ func TestNormalizeTourSurface(t *testing.T) {
 		{"admin-panel", "admin-panel"},
 		{"main'; DROP TABLE users;--", "maindroptableusers--"},
 		{strings.Repeat("a", 64), strings.Repeat("a", 32)},
-		{"!!!", "main"},
+		{"!!!", ""}, // no valid characters — caller rejects with 400
 	}
 
 	for _, tc := range cases {
