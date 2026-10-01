@@ -92,12 +92,17 @@ WHERE u.status = 'active'
 ORDER BY u.created_at DESC
 LIMIT @batch_limit::int;
 
--- name: MarkOnboardingReminded :exec
+-- name: MarkOnboardingReminded :execrows
 -- Upserts so users with no onboarding_state row (never started the wizard)
--- are tracked too — same pattern as DismissTour.
+-- are tracked too — same pattern as DismissTour. The WHERE guard on the
+-- conflict path makes a concurrent/duplicate sweep a no-op: the interval
+-- check is evaluated under the row lock, so overlapping sweep instances
+-- can't double-mark (and therefore can't double-send).
 INSERT INTO onboarding_state (user_id, reminder_count, last_reminder_at)
 VALUES (@user_id, 1, now())
 ON CONFLICT (user_id) DO UPDATE SET
     reminder_count = onboarding_state.reminder_count + 1,
     last_reminder_at = now(),
-    updated_at = now();
+    updated_at = now()
+WHERE onboarding_state.last_reminder_at IS NULL
+   OR onboarding_state.last_reminder_at < now() - make_interval(hours => @min_interval_hours::int);
