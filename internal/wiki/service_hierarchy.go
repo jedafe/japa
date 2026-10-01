@@ -90,10 +90,10 @@ type WikiRollupMetricDTO struct {
 // minimum of mins, avg the mean of avgs, max the maximum of maxes.
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiRollupFieldDTO struct {
-	Key       string              `json:"key"`
-	Label     string              `json:"label"`
-	FieldType string              `json:"field_type"`
-	Section   string              `json:"section,omitempty"`
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	FieldType string `json:"field_type"`
+	Section   string `json:"section,omitempty"`
 	// CurrencyCode is the ISO 4217 code declared on the field's options
 	// ({currency_code}) for currency/price_range fields — lets the read
 	// surface render the currency name/symbol next to aggregated amounts.

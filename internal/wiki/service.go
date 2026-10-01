@@ -479,7 +479,13 @@ func (s *Service) GetWikiDestinations(ctx context.Context, level, parentSlug, re
 			Name:      d.Name,
 			Level:     d.Level,
 			PageCount: d.PageCount,
-			LogoURL:   s.resolveLogoURL(ctx, d.LogoMediaID),
+		}
+		// Logo resolution is one media lookup per row — only worth it on
+		// paginated responses (the landing grid). Unpaginated callers
+		// (sidebar "popular places", directory search) don't render it and
+		// would pay an N+1 per request.
+		if paginate {
+			dto.LogoURL = s.resolveLogoURL(ctx, d.LogoMediaID)
 		}
 		if d.GeoCode != nil {
 			dto.GeoCode = *d.GeoCode
