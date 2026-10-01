@@ -168,6 +168,10 @@ SELECT u.id
 FROM users u
 LEFT JOIN onboarding_state o ON o.user_id = u.id
 WHERE u.status = 'active'
+  AND EXISTS (
+      SELECT 1 FROM notification_types nt
+      WHERE nt.key = 'onboarding_reminder' AND nt.enabled
+  )
   AND COALESCE(o.completed, false) = false
   AND u.created_at > now() - make_interval(days => $1::int)
   AND COALESCE(o.reminder_count, 0) < $2::int
@@ -193,6 +197,8 @@ type ListOnboardingReminderCandidatesParams struct {
 // Active, non-completed onboarding users inside the reminder window who
 // haven't hit the send cap or the minimum interval, and who haven't opted
 // out of onboarding_reminder in-app notifications (§35 preferences).
+// The EXISTS gate respects the type's admin-facing enabled switch —
+// direct InsertNotification bypasses the dispatch path's own checks.
 func (q *Queries) ListOnboardingReminderCandidates(ctx context.Context, arg ListOnboardingReminderCandidatesParams) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, listOnboardingReminderCandidates,
 		arg.WindowDays,
