@@ -41,8 +41,9 @@
 		label: string;
 		/** §80 lazy template pages — declared sibling page links under the
 		 *  category ({name} substituted server-side). Present only on
-		 *  ?space= requests. */
-		page_templates?: { slug: string; label: string; position: number }[];
+		 *  ?space= requests. Nested topic templates carry parent_template_id
+		 *  and stay off top-level cards (§80 Wiki Topic Pages). */
+		page_templates?: { slug: string; label: string; position: number; parent_template_id?: string }[];
 		/** Stub page slug for /wiki/{space}/{page_slug} links. */
 		page_slug?: string;
 		/** §80 directories — the stub page is the child-space listing. */
@@ -164,7 +165,9 @@
 				const materialized = new Set(pages.map((p) => p.slug));
 				const apiCat = apiCategories.find((c) => c.slug === category);
 				const templates = (apiCat?.page_templates ?? [])
-					.filter((tm) => !materialized.has(tm.slug))
+					// §80 Wiki Topic Pages: nested topics are reached through
+					// their parent page's composite sections, not the index.
+					.filter((tm) => !materialized.has(tm.slug) && !tm.parent_template_id)
 					.map((tm) => ({ slug: tm.slug, label: tm.label }));
 				return {
 					category,

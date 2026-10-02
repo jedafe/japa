@@ -128,10 +128,14 @@ type PackageItemInput struct {
 }
 
 // PackageDepartureInput is one departure in the create/edit departures[]
-// payload.
+// payload. On PATCH, an id referencing an existing departure of the same
+// package updates that row in place (preserving booking links); rows
+// without an id insert, and existing rows absent from the payload delete —
+// except departures carrying bookings, which are always preserved.
 type PackageDepartureInput struct {
-	StartsOn string `json:"starts_on"` // ISO date
-	EndsOn   string `json:"ends_on"`   // optional ISO date
+	ID       string `json:"id,omitempty"` // edit only: existing departure id
+	StartsOn string `json:"starts_on"`    // ISO date
+	EndsOn   string `json:"ends_on"`      // optional ISO date
 	Capacity *int32 `json:"capacity"`
 	Status   string `json:"status"` // open|cancelled ('full' is system-managed)
 }
@@ -219,6 +223,9 @@ type TaskEnqueuer interface {
 // PaymentCreator is the narrow §17 payments seam for platform-fee intents.
 type PaymentCreator interface {
 	CreatePayment(ctx context.Context, userID pgtype.UUID, input PaymentInput) (PaymentResult, error)
+	// ResumePayment re-initiates a hosted checkout on an existing pending
+	// payment row (§111 POST /me/service-bookings/:id/pay).
+	ResumePayment(ctx context.Context, paymentID, userID pgtype.UUID, email, returnURL string) (PaymentResult, error)
 }
 
 // PaymentInput mirrors payments.CreatePaymentInput (declared here to keep
@@ -380,8 +387,13 @@ var (
 	// ErrItemIsPackage — a package cannot nest another package as a
 	// component (§111: components are services).
 	ErrItemIsPackage = errors.New("package items cannot link to another package")
+	// ErrInvalidItem — malformed package item input (missing title, bad
+	// component reference).
+	ErrInvalidItem = errors.New("invalid package item")
 	// ErrInvalidDeparture — malformed departure input.
 	ErrInvalidDeparture = errors.New("invalid departure")
+	// ErrNotPackage — a package-scoped route hit a listing_kind='service' row.
+	ErrNotPackage = errors.New("not a package listing")
 	// ErrDepartureFull — capacity guard rejected a confirm (§111: 409
 	// departure_full).
 	ErrDepartureFull = errors.New("departure_full")
@@ -567,19 +579,25 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		return ServiceDTO{}, err
 	}
 
+	// BUG-013: create as 'in_review' so the listing enters the admin
+	// review queue and can be published. 'draft' would make it
+	// invisible with no publish path. Packages additionally require
+	// review_before_publish per §111 — when that flag is off, a package
+	// goes live immediately instead of entering the queue.
+	createStatus := content.StatusInReview
+	if isPackage && !s.settings.GetBoolOr(ctx, "service_packages.review_before_publish", true) {
+		createStatus = content.StatusPublished
+	}
+
 	contentRow, err := s.content.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:       authorID,
 		OrganizationID: orgID,
 		ContentType:    content.TypeServiceListing,
 		Title:          input.Title,
 		Body:           input.Body,
-		// BUG-013: create as 'in_review' so the listing enters the admin
-		// review queue and can be published. 'draft' would make it
-		// invisible with no publish path. Packages additionally require
-		// review_before_publish per §111 — same in_review state covers it.
-		Status:     content.StatusInReview,
-		Visibility: content.VisibilityPublic,
-		GeoSpaceID: destSpaceID,
+		Status:         createStatus,
+		Visibility:     content.VisibilityPublic,
+		GeoSpaceID:     destSpaceID,
 	})
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: create content: %w", err)
@@ -679,7 +697,7 @@ func (s *Service) validatePackageItems(ctx context.Context, orgID pgtype.UUID, i
 
 	for i, item := range items {
 		if item.Title == "" {
-			return nil, fmt.Errorf("items[%d]: title is required", i)
+			return nil, fmt.Errorf("items[%d]: title is required: %w", i, ErrInvalidItem)
 		}
 
 		p := gen.CreateServicePackageItemParams{
@@ -694,12 +712,12 @@ func (s *Service) validatePackageItems(ctx context.Context, orgID pgtype.UUID, i
 		if item.ComponentContentID != "" {
 			var cid pgtype.UUID
 			if err := cid.Scan(item.ComponentContentID); err != nil {
-				return nil, fmt.Errorf("items[%d]: invalid component_content_id", i)
+				return nil, fmt.Errorf("items[%d]: invalid component_content_id: %w", i, ErrInvalidItem)
 			}
 
 			ownerOrg, ownerKind, err := s.store.GetListingOrgID(ctx, cid)
 			if err != nil {
-				return nil, fmt.Errorf("items[%d]: component listing not found", i)
+				return nil, fmt.Errorf("items[%d]: component listing not found: %w", i, ErrInvalidItem)
 			}
 
 			if !ownerOrg.Valid || ownerOrg != orgID {
@@ -741,34 +759,39 @@ func validatePackageDepartures(deps []PackageDepartureInput) ([]gen.CreateServic
 
 	params := make([]gen.CreateServicePackageDepartureParams, 0, len(deps))
 
+	// Every rejection wraps ErrInvalidDeparture so the error envelope maps
+	// to 400 invalid_departure — a plain fmt.Errorf would surface as a 500.
 	for i, d := range deps {
 		if d.StartsOn == "" {
-			return nil, fmt.Errorf("departures[%d]: starts_on is required", i)
+			return nil, fmt.Errorf("departures[%d]: starts_on is required: %w", i, ErrInvalidDeparture)
 		}
 
 		startsOn, err := parseOptionalDate(d.StartsOn)
 		if err != nil || !startsOn.Valid {
-			return nil, fmt.Errorf("departures[%d]: invalid starts_on: %w", i, err)
+			return nil, fmt.Errorf("departures[%d]: invalid starts_on (%v): %w", i, err, ErrInvalidDeparture)
 		}
 
 		endsOn, err := parseOptionalDate(d.EndsOn)
 		if err != nil {
-			return nil, fmt.Errorf("departures[%d]: invalid ends_on: %w", i, err)
+			return nil, fmt.Errorf("departures[%d]: invalid ends_on (%v): %w", i, err, ErrInvalidDeparture)
 		}
 
 		if endsOn.Valid && endsOn.Time.Before(startsOn.Time) {
-			return nil, fmt.Errorf("departures[%d]: ends_on precedes starts_on", i)
+			return nil, fmt.Errorf("departures[%d]: ends_on precedes starts_on: %w", i, ErrInvalidDeparture)
 		}
 
+		// status defaults to open; 'full' is accepted so a loaded row
+		// round-trips unchanged (the editor displays it but doesn't offer
+		// it — capacity hitting 0 flips it automatically).
 		status := DepartureStatusOpen
-		if d.Status == DepartureStatusCancelled {
-			status = DepartureStatusCancelled
+		if d.Status == DepartureStatusCancelled || d.Status == DepartureStatusFull {
+			status = d.Status
 		} else if d.Status != "" && d.Status != DepartureStatusOpen {
-			return nil, fmt.Errorf("departures[%d]: invalid status %q", i, d.Status)
+			return nil, fmt.Errorf("departures[%d]: invalid status %q: %w", i, d.Status, ErrInvalidDeparture)
 		}
 
 		if d.Capacity != nil && *d.Capacity <= 0 {
-			return nil, fmt.Errorf("departures[%d]: capacity must be positive", i)
+			return nil, fmt.Errorf("departures[%d]: capacity must be positive: %w", i, ErrInvalidDeparture)
 		}
 
 		params = append(params, gen.CreateServicePackageDepartureParams{
@@ -829,6 +852,63 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 
 	if row.ListingKind == ListingKindPackage {
 		s.attachPackageDataCached(ctx, row.ID, row.MetaID, &dto)
+	}
+
+	return dto, nil
+}
+
+// GetBySlugEditor returns a listing by slug without the published-status
+// gate — the /services/:slug?raw=1 editor view. Same permission shape as
+// EditOwn / ListPackageDeparturesForEdit: author, owning-org member, or
+// service.edit_any. Non-published listings have no public URL, so this is
+// the only way an owner can reload an in_review/draft listing.
+func (s *Service) GetBySlugEditor(ctx context.Context, slug string, userID pgtype.UUID, isEditAny bool) (ServiceDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ServiceDTO{}, pgx.ErrNoRows
+		}
+
+		return ServiceDTO{}, fmt.Errorf("servicedir: get by slug: %w", err)
+	}
+
+	meta, err := s.store.GetMeta(ctx, row.ID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ServiceDTO{}, pgx.ErrNoRows
+		}
+
+		return ServiceDTO{}, fmt.Errorf("servicedir: raw get: get meta: %w", err)
+	}
+
+	if !isEditAny && row.AuthorID != userID {
+		if !meta.OrgID.Valid {
+			return ServiceDTO{}, ErrNotOwner
+		}
+
+		isMember, err := s.store.IsOrgMember(ctx, meta.OrgID, userID)
+		if err != nil {
+			return ServiceDTO{}, fmt.Errorf("servicedir: raw get: check org membership: %w", err)
+		}
+
+		if !isMember {
+			return ServiceDTO{}, ErrNotOwner
+		}
+	}
+
+	// Package listings stay gated on the feature flag even in the editor —
+	// a disabled feature leaves no surface, public or owner-scoped.
+	if row.ListingKind == ListingKindPackage && !s.PackagesEnabled(ctx) {
+		return ServiceDTO{}, ErrPackagesDisabled
+	}
+
+	dto := rowToDTO(row)
+
+	if row.ListingKind == ListingKindPackage {
+		// Uncached — editor reads shouldn't hit the public detail cache.
+		if err := s.attachPackageData(ctx, row.MetaID, &dto); err != nil {
+			slog.Warn("servicedir: attach package data failed", "content_id", row.ID, "error", err)
+		}
 	}
 
 	return dto, nil
@@ -927,21 +1007,7 @@ func (s *Service) attachPackageData(ctx context.Context, metaID pgtype.UUID, dto
 
 	dto.Departures = make([]PackageDepartureDTO, 0, len(deps))
 	for _, d := range deps {
-		dep := PackageDepartureDTO{
-			ID:          d.ID.String(),
-			Capacity:    d.Capacity,
-			BookedCount: d.BookedCount,
-			Status:      d.Status,
-		}
-		if d.StartsOn.Valid {
-			dep.StartsOn = d.StartsOn.Time.Format("2006-01-02")
-		}
-
-		if d.EndsOn.Valid {
-			dep.EndsOn = d.EndsOn.Time.Format("2006-01-02")
-		}
-
-		dto.Departures = append(dto.Departures, dep)
+		dto.Departures = append(dto.Departures, departureToDTO(d))
 	}
 
 	// Quote the platform fee for paid packages so the checkout copy can
@@ -954,6 +1020,85 @@ func (s *Service) attachPackageData(ctx context.Context, metaID pgtype.UUID, dto
 	}
 
 	return nil
+}
+
+// departureToDTO maps one departure row to the API shape — used by both
+// the public detail (open rows only) and the editor list (all rows).
+func departureToDTO(d gen.ServicePackageDeparture) PackageDepartureDTO {
+	dep := PackageDepartureDTO{
+		ID:          d.ID.String(),
+		Capacity:    d.Capacity,
+		BookedCount: d.BookedCount,
+		Status:      d.Status,
+	}
+	if d.StartsOn.Valid {
+		dep.StartsOn = d.StartsOn.Time.Format("2006-01-02")
+	}
+
+	if d.EndsOn.Valid {
+		dep.EndsOn = d.EndsOn.Time.Format("2006-01-02")
+	}
+
+	return dep
+}
+
+// ListPackageDeparturesForEdit returns ALL departures of a package —
+// including past/cancelled/full rows the public detail hides — for the
+// §111 editor. Same permission shape as EditOwn: author, org member, or
+// service.edit_any.
+func (s *Service) ListPackageDeparturesForEdit(ctx context.Context, contentID, userID pgtype.UUID, isEditAny bool) ([]PackageDepartureDTO, error) {
+	if !s.PackagesEnabled(ctx) {
+		return nil, ErrPackagesDisabled
+	}
+
+	existing, err := s.content.GetContent(ctx, contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pgx.ErrNoRows
+		}
+
+		return nil, fmt.Errorf("servicedir: departures: get content: %w", err)
+	}
+
+	meta, err := s.store.GetMeta(ctx, contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pgx.ErrNoRows
+		}
+
+		return nil, fmt.Errorf("servicedir: departures: get meta: %w", err)
+	}
+
+	if meta.ListingKind != ListingKindPackage {
+		return nil, ErrNotPackage
+	}
+
+	if !isEditAny && existing.AuthorID != userID {
+		if !meta.OrgID.Valid {
+			return nil, ErrNotOwner
+		}
+
+		isMember, err := s.store.IsOrgMember(ctx, meta.OrgID, userID)
+		if err != nil {
+			return nil, fmt.Errorf("servicedir: departures: check org membership: %w", err)
+		}
+
+		if !isMember {
+			return nil, ErrNotOwner
+		}
+	}
+
+	rows, err := s.store.ListPackageDepartures(ctx, meta.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]PackageDepartureDTO, 0, len(rows))
+	for _, d := range rows {
+		out = append(out, departureToDTO(d))
+	}
+
+	return out, nil
 }
 
 // List returns a paginated, filtered list of published service listings.
@@ -1182,12 +1327,25 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 			}
 		}
 
+		// §111 clear convention: price_amount/capacity take 0 to clear (both
+		// are positive-only fields, so 0 is unambiguous); '' clears
+		// price_currency via nilIfEmpty and the date fields via
+		// parseOptionalDate. Absent fields keep the stored value (JSON null
+		// is indistinguishable from absent on pointer fields).
 		if input.PriceAmount != nil {
-			params.PriceAmount = input.PriceAmount
+			if *input.PriceAmount < 0 {
+				return ServiceDTO{}, fmt.Errorf("servicedir: edit: price_amount must be positive")
+			}
+
+			if *input.PriceAmount == 0 {
+				params.PriceAmount = nil
+			} else {
+				params.PriceAmount = input.PriceAmount
+			}
 		}
 
 		if input.PriceCurrency != nil {
-			params.PriceCurrency = input.PriceCurrency
+			params.PriceCurrency = nilIfEmpty(input.PriceCurrency)
 		}
 
 		if input.PricePer != nil {
@@ -1199,7 +1357,15 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		}
 
 		if input.Capacity != nil {
-			params.Capacity = input.Capacity
+			if *input.Capacity < 0 {
+				return ServiceDTO{}, fmt.Errorf("servicedir: edit: capacity must be positive")
+			}
+
+			if *input.Capacity == 0 {
+				params.Capacity = nil
+			} else {
+				params.Capacity = input.Capacity
+			}
 		}
 
 		if input.AvailableFrom != nil {
@@ -1243,20 +1409,80 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		}
 	}
 
-	var depParams []gen.CreateServicePackageDepartureParams
+	var depInserts []gen.CreateServicePackageDepartureParams
+	var depUpdates []gen.UpdateServicePackageDepartureParams
 	var keepIDs []pgtype.UUID
 	if isPackage && input.Departures != nil {
-		depParams, err = validatePackageDepartures(*input.Departures)
+		depParams, err := validatePackageDepartures(*input.Departures)
 		if err != nil {
 			return ServiceDTO{}, err
 		}
 
+		// §111 id-aware replace: departures carrying an existing row id
+		// update in place — delete+reinsert would break the booking
+		// departure_id association (and re-sending a booked row would
+		// duplicate it). Ids must belong to this package, and capacity
+		// can't shrink below seats already booked.
+		var existingDeps []gen.ServicePackageDeparture
+		hasIDs := false
+		for i := range *input.Departures {
+			if (*input.Departures)[i].ID != "" {
+				hasIDs = true
+				break
+			}
+		}
+		if hasIDs {
+			existingDeps, err = s.store.ListPackageDepartures(ctx, meta.ID)
+			if err != nil {
+				return ServiceDTO{}, fmt.Errorf("servicedir: edit: list package departures: %w", err)
+			}
+		}
+
+		byID := make(map[pgtype.UUID]gen.ServicePackageDeparture, len(existingDeps))
+		for _, e := range existingDeps {
+			byID[e.ID] = e
+		}
+		seenUpdate := make(map[pgtype.UUID]bool)
+
+		for i, d := range *input.Departures {
+			if d.ID == "" {
+				depInserts = append(depInserts, depParams[i])
+				continue
+			}
+
+			var depID pgtype.UUID
+			if err := depID.Scan(d.ID); err != nil {
+				return ServiceDTO{}, ErrInvalidDeparture
+			}
+
+			ex, ok := byID[depID]
+			if !ok || seenUpdate[depID] {
+				return ServiceDTO{}, ErrInvalidDeparture
+			}
+			seenUpdate[depID] = true
+
+			if depParams[i].Capacity != nil && *depParams[i].Capacity < ex.BookedCount {
+				return ServiceDTO{}, fmt.Errorf("departures[%d]: capacity below booked seats (%d): %w", i, ex.BookedCount, ErrInvalidDeparture)
+			}
+
+			depUpdates = append(depUpdates, gen.UpdateServicePackageDepartureParams{
+				ID:            depID,
+				PackageMetaID: meta.ID,
+				StartsOn:      depParams[i].StartsOn,
+				EndsOn:        depParams[i].EndsOn,
+				Capacity:      depParams[i].Capacity,
+				Status:        depParams[i].Status,
+			})
+			keepIDs = append(keepIDs, depID)
+		}
+
 		// §111: departures that already have bookings are preserved —
-		// compute the keep set so replace-on-save never drops them.
-		keepIDs, err = s.store.DeparturesWithBookings(ctx, meta.ID)
+		// the keep set also covers rows absent from the payload.
+		bookedIDs, err := s.store.DeparturesWithBookings(ctx, meta.ID)
 		if err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: list booked departures: %w", err)
 		}
+		keepIDs = append(keepIDs, bookedIDs...)
 	}
 
 	// All input validated — start writing. Title/body first via the
@@ -1281,8 +1507,23 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		updateInput.Status = content.StatusInReview
 	}
 
-	if _, err := s.content.UpdateContent(ctx, contentID, userID, updateInput, false); err != nil {
-		return ServiceDTO{}, fmt.Errorf("servicedir: edit: update content: %w", err)
+	// Skip the contents write when nothing it carries changed — a
+	// departures-only or meta-only save must not hit the §14 edit-window
+	// guard, or package editors would be locked out of schedule updates
+	// once the window expires. The edit form always echoes title/body, so
+	// compare values, not field presence.
+	contentChanged := updateInput.Status != "" ||
+		updateInput.Title != existing.Title ||
+		updateInput.Body != existing.Body
+	if contentChanged {
+		// The §49 edit window guards post-publication bait-and-switch —
+		// non-published listings (in_review/draft) aren't public yet, so
+		// the author must stay able to fix them during review. Bypass the
+		// window for anything that isn't published.
+		bypassEditWindow := existing.Status != content.StatusPublished
+		if _, err := s.content.UpdateContent(ctx, contentID, userID, updateInput, bypassEditWindow); err != nil {
+			return ServiceDTO{}, fmt.Errorf("servicedir: edit: update content: %w", err)
+		}
 	}
 
 	if _, err := s.store.UpdateMeta(ctx, params); err != nil {
@@ -1296,7 +1537,13 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	}
 
 	if isPackage && input.Departures != nil {
-		if err := s.store.ReplacePackageDepartures(ctx, meta.ID, keepIDs, depParams); err != nil {
+		for _, u := range depUpdates {
+			if _, err := s.store.UpdatePackageDeparture(ctx, u); err != nil {
+				return ServiceDTO{}, fmt.Errorf("servicedir: edit: update package departure: %w", err)
+			}
+		}
+
+		if err := s.store.ReplacePackageDepartures(ctx, meta.ID, keepIDs, depInserts); err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: replace package departures: %w", err)
 		}
 	}

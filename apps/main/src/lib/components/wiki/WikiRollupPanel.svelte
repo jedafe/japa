@@ -9,7 +9,12 @@
 	import { page } from '$app/state';
 	import { PieChart } from 'layerchart';
 	import type { WikiRollup, WikiRollupField } from '$lib/types';
-	import { formatPriceRange, priceRangeParts } from '$lib/utils/wikiFieldValue';
+	import {
+		formatPricePart,
+		formatPriceRange,
+		pricePartsValue,
+		priceRangeParts
+	} from '$lib/utils/wikiFieldValue';
 	import { currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
 	import { categoryIcon, categoryTint } from './icons';
 	import { GitCompareArrows, Wallet } from 'lucide-svelte';
@@ -31,7 +36,11 @@
 		if (f.currency_code) return f.currency_code;
 		// Context inheritance is for money-typed fields only — a plain
 		// 'number' rollup (population, speed) must stay undenominated.
-		return f.field_type === 'currency' || f.field_type === 'price_range' ? contextCurrency : '';
+		return f.field_type === 'currency' ||
+			f.field_type === 'price_range' ||
+			f.field_type === 'price_parts'
+			? contextCurrency
+			: '';
 	}
 
 	const fmtNum = (n: number | undefined) =>
@@ -61,6 +70,13 @@
 	}
 
 	function cellValue(f: WikiRollupField, raw: unknown): string {
+		if (f.field_type === 'price_parts') {
+			// §80 Wiki Topic Pages — the row cell projects the declared
+			// primary part of the stored {parts:{...}} object, formatted by
+			// that part's kind (a number primary stays bare, money currency-formats).
+			if (!f.primary_part) return '—';
+			return formatPricePart(pricePartsValue(raw)[f.primary_part], f.primary_kind, fieldCode(f), currencies);
+		}
 		if (f.field_type === 'price_range') {
 			const p = priceRangeParts(raw);
 			if (p?.avg !== undefined && p.min !== undefined && p.max !== undefined) {

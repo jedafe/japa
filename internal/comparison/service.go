@@ -183,6 +183,9 @@ func (s *Service) GetComparisonTypeDetail(ctx context.Context, slug string) (Com
 		fields = filterFieldsByConfigSections(fields, typeDef.Config)
 
 		for _, f := range fields {
+			if fieldToDimensionType(f.FieldType, f.Options) == "" {
+				continue // non-comparable composite — §80 Wiki Topic Pages
+			}
 			dimensions = append(dimensions, ComparisonTypeDimension{
 				ID:          f.ID.String(),
 				Name:        f.Label,
@@ -371,6 +374,26 @@ func fieldTypeToDimensionType(fieldType string) string {
 	default:
 		return DimensionTypeText
 	}
+}
+
+// fieldToDimensionType maps a field to a comparison dimension honoring
+// composite projections: a price_parts field compares on its declared
+// options.primary_part — money parts map to currency, number parts to
+// number (§80 Wiki Topic Pages). Returns "" when the field is
+// non-comparable (a price_parts field without a usable primary_part).
+func fieldToDimensionType(fieldType string, options []byte) string {
+	if fieldType != customfields.FieldTypePriceParts {
+		return fieldTypeToDimensionType(fieldType)
+	}
+
+	opts := customfields.PricePartsOptionsFromJSON(options)
+	if opts == nil || opts.PrimaryPart == "" {
+		return ""
+	}
+	if opts.PricePartKind(opts.PrimaryPart) == customfields.PricePartKindNumber {
+		return DimensionTypeNumber
+	}
+	return DimensionTypeCurrency
 }
 
 // autoDimensionHintGroup describes one heuristic group: if any hint word is
@@ -625,21 +648,29 @@ func (s *Service) CreateComparison(ctx context.Context, userID pgtype.UUID, inpu
 
 		// Auto-generate dimensions from the type's field group (Section 30).
 		if autoFields != nil {
-			for i, f := range autoFields {
+			pos := 0
+			for _, f := range autoFields {
+				dimType := fieldToDimensionType(f.FieldType, f.Options)
+				if dimType == "" {
+					// Non-comparable composite (§80 Wiki Topic Pages — a
+					// price_parts field with no usable primary_part).
+					continue
+				}
 				_, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
 					ContentID: contentRow.ID,
 
 					TypeID:        input.TypeID,
 					Label:         f.Label,
-					DimensionType: fieldTypeToDimensionType(f.FieldType),
-					Position:      toInt32(i),
+					DimensionType: dimType,
+					Position:      toInt32(pos),
 					// §30 Sub-spec 5: link the dimension to its source field so
 					// matrix cells can hydrate from entity field values.
 					SourceFieldID: f.ID,
 				})
 				if derr != nil {
-					return CreateComparisonResult{}, fmt.Errorf("auto-creating dimension %d: %w", i, derr)
+					return CreateComparisonResult{}, fmt.Errorf("auto-creating dimension %d: %w", pos, derr)
 				}
+				pos++
 			}
 		} else {
 			// Use caller-supplied dimension labels.
@@ -1622,7 +1653,7 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 				// §30 Sub-spec 5: no persisted value — hydrate from the
 				// resolved entity's field_values metadata.
 				if resolved := resolveItem(item); resolved != nil {
-					hydrateMatrixCell(&md, dim.DimensionType, *dim.SourceFieldKey, resolved.Metadata)
+					hydrateMatrixCell(&md, dim.DimensionType, *dim.SourceFieldKey, resolved.Metadata, dim.SourceFieldOptions)
 				}
 			}
 
@@ -1638,9 +1669,11 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 // hydrateMatrixCell fills an empty matrix cell from the resolved item's
 // field_values metadata, coercing the raw value into the dimension's storage
 // slot (rating/number/currency → value_rating, boolean → value_boolean,
-// anything else → value). It sets HydratedFrom="entity_field" only when a
-// value was actually written.
-func hydrateMatrixCell(md *ComparisonMatrixDimension, dimType, fieldKey string, meta map[string]any) {
+// anything else → value). fieldOpts carries the source field's options —
+// a price_parts dimension projects its declared primary_part out of the
+// composite value (§80 Wiki Topic Pages). It sets HydratedFrom=
+// "entity_field" only when a value was actually written.
+func hydrateMatrixCell(md *ComparisonMatrixDimension, dimType, fieldKey string, meta map[string]any, fieldOpts []byte) {
 	fieldValues, ok := meta["field_values"].(map[string]any)
 	if !ok {
 		return
@@ -1649,6 +1682,26 @@ func hydrateMatrixCell(md *ComparisonMatrixDimension, dimType, fieldKey string, 
 	raw, ok := fieldValues[fieldKey]
 	if !ok || raw == nil {
 		return
+	}
+
+	// §80 Wiki Topic Pages: price_parts values are {"parts":{...}} —
+	// hydrate the declared primary_part, never the whole composite. The
+	// projection applies only when the source field IS price_parts
+	// (options carry the object schema); a non-parts field whose value
+	// happens to carry a "parts" member hydrates untouched.
+	if customfields.PricePartsOptionsFromJSON(fieldOpts) != nil {
+		if m, isMap := raw.(map[string]any); isMap {
+			if parts, hasParts := m["parts"].(map[string]any); hasParts {
+				pp := customfields.PrimaryPartFromOptions(fieldOpts)
+				if pp == "" {
+					return // non-comparable field — no cell
+				}
+				raw, ok = parts[pp]
+				if !ok || raw == nil {
+					return
+				}
+			}
+		}
 	}
 
 	switch dimType {

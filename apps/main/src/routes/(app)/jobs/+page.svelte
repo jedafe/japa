@@ -3,7 +3,7 @@
 	import EntityHoverChip from '$lib/components/ui/EntityHoverChip.svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
-	import { Briefcase, Lock, MapPin, Clock, ArrowRight, Plus, GitCompare, Loader2, Building2, Globe, BadgeCheck, CircleDollarSign, Users, ChevronRight } from 'lucide-svelte';
+	import { Briefcase, Lock, ArrowRight, Plus, GitCompare, Loader2, Building2, Globe, BadgeCheck, CircleDollarSign, Users, ChevronRight } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton, PaginationControls, SearchInput, ListPageBar, FilterToggle, PageAction, type SearchSuggestion } from '$lib/components/ui';
 	import BookmarkButton from '$lib/components/jobs/BookmarkButton.svelte';
 	import { relativeTime } from '$lib/feed/time';
@@ -77,6 +77,14 @@
 		visaSponsorship = false;
 		sort = 'newest';
 		goto('/jobs');
+	}
+
+	// Feed-style card body navigates to the listing; interactive children
+	// (links, buttons, inputs) are excluded so their own handlers win.
+	function openJob(e: MouseEvent, slug: string) {
+		const el = e.target as HTMLElement | null;
+		if (el?.closest('a,button,input,select,textarea,label')) return;
+		goto(`/jobs/${slug}`);
 	}
 
 	function field(job: JobListing, key: string): string {
@@ -189,10 +197,10 @@
 		<img
 			src={remoteImageUrl(src)}
 			alt={label}
-			class="h-12 w-12 shrink-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] object-contain"
+			class="h-10 w-10 shrink-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] object-contain"
 		/>
 	{:else}
-		<div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-lg font-semibold text-[var(--color-muted)]">
+		<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-subtle)] text-base font-semibold text-[var(--color-muted)]">
 			{label.charAt(0).toUpperCase()}
 		</div>
 	{/if}
@@ -355,7 +363,7 @@
 						</div>
 					{/if}
 
-					<div class="grid gap-4 sm:grid-cols-2">
+					<div class="flex flex-col gap-3">
 						{#each jobs as job (job.id)}
 							{@const jt = field(job, 'job_type')}
 							{@const lt = field(job, 'location_type')}
@@ -365,18 +373,29 @@
 							{@const logo = field(job, 'company_logo') || poster?.logo_url || source?.logo_url || ''}
 							{@const extHref = source ? safeHttpUrl(field(job, 'company_website') || source.source_url) : ''}
 							{@const loc = [field(job, 'city'), field(job, 'country')].filter(Boolean).join(', ')}
-							{@const skills = field(job, 'skills_required').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 4)}
 							{@const salMin = field(job, 'salary_min')}
 							{@const salMax = field(job, 'salary_max')}
 							{@const salCur = field(job, 'salary_currency')}
 							{@const salPeriod = salaryPeriodLabel(field(job, 'salary_period'))}
 							{@const applicants = field(job, 'applicant_count')}
 							{@const posted = relativeTime(job.published_at, new Date(), i18n.locale)}
+							{@const secondary = [lt === 'remote' ? t('jobs.remote', 'Remote') : loc, posted]
+								.filter(Boolean)
+								.join(' · ')}
 							<div
-								class="group flex h-full flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 transition-shadow hover:shadow-md"
+								role="link"
+								tabindex="0"
+								onclick={(e) => openJob(e, job.slug)}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										goto(`/jobs/${job.slug}`);
+									}
+								}}
+								class="group relative flex cursor-pointer flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[color-mix(in_srgb,var(--color-surface-subtle)_40%,transparent)]"
 							>
 								<!-- Identity row: logo + company/poster name (hover card → profile or external site) + compare/bookmark -->
-								<div class="flex items-start justify-between gap-2">
+								<div class="flex items-center gap-2">
 									{#if source?.id}
 										<EntityHoverChip
 											type="source"
@@ -389,9 +408,14 @@
 										>
 											{#snippet trigger()}
 												{@render jobAvatar(logo, company || source.name)}
-												<span class="flex min-w-0 items-center gap-1 text-sm font-medium text-[var(--color-primary)]">
-													<span class="truncate">{company || source.name}</span>
-													<BadgeCheck size={14} class="shrink-0" />
+												<span class="min-w-0">
+													<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
+														<span class="truncate">{company || source.name}</span>
+														<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+													</span>
+													{#if secondary}
+														<span class="block truncate text-xs text-[var(--color-muted)]">{secondary}</span>
+													{/if}
 												</span>
 											{/snippet}
 										</EntityHoverChip>
@@ -406,21 +430,31 @@
 										>
 											{#snippet trigger()}
 												{@render jobAvatar(logo, company || poster.name)}
-												<span class="flex min-w-0 items-center gap-1 text-sm font-medium text-[var(--color-primary)]">
-													<span class="truncate">{company || poster.name}</span>
-													{#if poster.verified}<BadgeCheck size={14} class="shrink-0" />{/if}
+												<span class="min-w-0">
+													<span class="flex items-center gap-1 text-sm font-semibold text-[var(--color-text)]">
+														<span class="truncate">{company || poster.name}</span>
+														{#if poster.verified}<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />{/if}
+													</span>
+													{#if secondary}
+														<span class="block truncate text-xs text-[var(--color-muted)]">{secondary}</span>
+													{/if}
 												</span>
 											{/snippet}
 										</EntityHoverChip>
 									{:else}
 										<div class="flex min-w-0 items-center gap-3">
 											{@render jobAvatar(logo, company || job.title)}
-											{#if company}
-												<span class="truncate text-sm font-medium text-[var(--color-primary)]">{company}</span>
-											{/if}
+											<span class="min-w-0">
+												{#if company}
+													<span class="block truncate text-sm font-semibold text-[var(--color-text)]">{company}</span>
+												{/if}
+												{#if secondary}
+													<span class="block truncate text-xs text-[var(--color-muted)]">{secondary}</span>
+												{/if}
+											</span>
 										</div>
 									{/if}
-									<div class="flex shrink-0 items-center gap-1">
+									<div class="ml-auto flex shrink-0 items-center gap-1">
 										<input
 											type="checkbox"
 											checked={selectedJobSlugs.has(job.slug)}
@@ -435,10 +469,10 @@
 									</div>
 								</div>
 
-								<!-- Title + type badge + location -->
-								<div class="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+								<!-- Title + type badge -->
+								<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
 									<a href="/jobs/{job.slug}" class="min-w-0">
-										<h3 class="text-base font-semibold text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary)]">
+										<h3 class="text-[17px] font-semibold leading-snug tracking-tight text-[var(--color-text)] transition-colors group-hover:text-[var(--color-primary)]">
 											{job.title}
 										</h3>
 									</a>
@@ -453,69 +487,39 @@
 										</span>
 									{/if}
 								</div>
-								{#if loc || lt}
-									<div class="mt-2.5 flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
-										{#if lt === 'remote' || loc}
-											<MapPin size={14} class="shrink-0" />
-											<span class="truncate">{lt === 'remote' ? t('jobs.remote', 'Remote') : loc}</span>
-										{/if}
-										{#if lt}
-											{#if lt === 'remote' || loc}
-												<span aria-hidden="true">·</span>
-											{/if}
-											{#if lt === 'remote'}
-												<Globe size={14} class="shrink-0" />
-												<span>{field(job, 'country') || t('jobs.worldwide', 'Worldwide')}</span>
-											{:else}
-												<Building2 size={14} class="shrink-0" />
-												<span>{locationTypeLabel(lt)}</span>
-											{/if}
-										{/if}
-									</div>
+
+								{#if job.summary}
+									<p class="line-clamp-2 text-sm text-[var(--color-text-subtle)]">{job.summary}</p>
 								{/if}
 
-								<!-- Salary -->
-								{#if salMin || salMax}
-									<div class="mt-4 border-t border-[var(--color-border)] pt-4">
-										<div class="flex items-center gap-2.5">
-											<CircleDollarSign size={20} class="shrink-0 text-emerald-500" />
-											<div class="min-w-0">
-												<span class="text-sm font-semibold text-[var(--color-text)]">
+								<!-- Meta -->
+								{#if lt || salMin || salMax || applicants}
+									<div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-[var(--color-muted)]">
+										{#if lt}
+											<span class="flex items-center gap-1.5">
+												{#if lt === 'remote'}
+													<Globe size={14} class="shrink-0" />
+													<span>{field(job, 'country') || t('jobs.worldwide', 'Worldwide')}</span>
+												{:else}
+													<Building2 size={14} class="shrink-0" />
+													<span>{locationTypeLabel(lt)}</span>
+												{/if}
+											</span>
+										{/if}
+										{#if salMin || salMax}
+											<span class="flex items-center gap-1.5">
+												<CircleDollarSign size={14} class="shrink-0 text-emerald-500" />
+												<span class="font-semibold text-[var(--color-text)]">
 													{#if salCur}{@const sym = currencySymbol(salCur, data.currencies)}{sym === salCur.trim().toUpperCase() ? `${sym} ` : sym}{/if}{[fmtNum(salMin), fmtNum(salMax)].filter(Boolean).join(' – ')}
 												</span>
 												{#if salPeriod}
-													<span class="block text-xs text-[var(--color-muted)]">{salPeriod}</span>
+													<span class="text-xs">{salPeriod}</span>
 												{/if}
-											</div>
-										</div>
-									</div>
-								{/if}
-
-								<!-- Skills -->
-								{#if skills.length > 0}
-									<div class="mt-4 flex flex-wrap gap-2">
-										{#each skills as skill (skill)}
-											<span class="rounded-md bg-[var(--color-primary)]/10 px-2.5 py-1 text-xs font-medium text-[var(--color-primary)]">{skill}</span>
-										{/each}
-									</div>
-								{/if}
-
-								<!-- Spacer pins meta + actions to the card bottom across the row -->
-								<div class="flex-1"></div>
-
-								<!-- Meta -->
-								{#if posted || applicants}
-									<div class="mt-4 flex items-center gap-3 border-t border-[var(--color-border)] pt-4 text-xs text-[var(--color-muted)]">
-										{#if posted}
-											<span class="flex items-center gap-1">
-												<Clock size={13} />
-												{t('jobs.posted_ago', 'Posted {time} ago', { time: posted })}
 											</span>
 										{/if}
 										{#if applicants}
-											<span aria-hidden="true">·</span>
-											<span class="flex items-center gap-1">
-												<Users size={13} />
+											<span class="flex items-center gap-1.5">
+												<Users size={14} class="shrink-0" />
 												{t('jobs.applicants', '{count} applicants', { count: applicants })}
 											</span>
 										{/if}
@@ -523,7 +527,7 @@
 								{/if}
 
 								<!-- Actions -->
-								<div class="mt-4 flex items-center justify-between border-t border-[var(--color-border)] pt-4">
+								<div class="flex items-center justify-between gap-3">
 									<a
 										href="/jobs/{job.slug}"
 										class="inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] hover:underline"

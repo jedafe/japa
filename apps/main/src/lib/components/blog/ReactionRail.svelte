@@ -357,7 +357,7 @@
 					<div class="mb-1 px-2 py-1 text-xs font-semibold uppercase text-[var(--color-muted)]">
 						{t('blog.add_reaction', 'Add reaction')}
 					</div>
-					<div class="grid grid-cols-2 gap-1">
+					<div class="grid grid-cols-1 gap-1">
 						{#each reactionTypes as r (r.key)}
 							{@const active = activeReactions.has(r.key)}
 							{@const count = countFor(r.key)}

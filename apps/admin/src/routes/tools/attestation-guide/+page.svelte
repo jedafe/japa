@@ -271,7 +271,7 @@
 		fields,
 		load: async (params) => {
 			const queryParts: string[] = [];
-			if (params.page) queryParts.push(`page_offset=${params.page}`);
+			queryParts.push(`page_offset=${params.page + 1}`);
 			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			// EntityPage passes sort as "key:dir" (e.g. "document_type:asc").

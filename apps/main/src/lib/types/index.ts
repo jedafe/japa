@@ -3127,6 +3127,14 @@ export interface WikiSibling {
 	current?: boolean;
 }
 
+/** §80 Wiki Topic Pages — one segment of a page's ancestor chain (the
+ *  category stub, then template ancestors root-first). Drives the in-page
+ *  breadcrumb segments and the "Back to {parent}" link. */
+export interface WikiPageParent {
+	slug: string;
+	title: string;
+}
+
 /** Aggregated metric values for one rollup field — absent members are
  *  metrics the category's rollup config didn't request. */
 export interface WikiRollupMetric {
@@ -3145,6 +3153,12 @@ export interface WikiRollupField {
 	/** ISO code from the field's {currency_code} option — resolved to a
 	 *  name/symbol via the shared currency list. */
 	currency_code?: string;
+	/** §80 Wiki Topic Pages — the part a price_parts field aggregates;
+	 *  row cells project this member of the stored {parts:{...}}. */
+	primary_part?: string;
+	/** The primary part's declared kind (money|number) — controls whether
+	 *  the projected cell currency-formats or renders a bare number. */
+	primary_kind?: string;
 	metrics: WikiRollupMetric;
 	samples: number;
 }
@@ -3216,8 +3230,14 @@ export interface WikiPage extends WikiPageIndex {
 	 *  breadcrumb chain — undeclared junction parents and declared
 	 *  runners-up — rendered as "also under X". */
 	ancestors_alt?: WikiSpaceRef[];
+	/** §80 Wiki Topic Pages: page-level ancestor chain — category stub
+	 *  first, then template ancestors root → immediate parent. Empty on
+	 *  the category stub page itself and unmanaged-category pages. */
+	parents?: WikiPageParent[];
 	/** §80 Hierarchical UX: ordered sibling pages in this page's category
-	 *  (Prev/Next derives from neighbors; the current page is flagged). */
+	 *  (Prev/Next derives from neighbors; the current page is flagged).
+	 *  §80 Wiki Topic Pages: same-parentage — nested pages list sibling
+	 *  topic pages under the same parent template. */
 	siblings?: WikiSibling[];
 	/** §80 Hierarchical UX: read-time descendant aggregate — present only on
 	 *  a rollup-enabled category's canonical page. */
@@ -3256,6 +3276,12 @@ export interface WikiPageTemplateLink {
 	slug: string;
 	label: string;
 	position: number;
+	/** §80 Wiki Topic Pages — the template's nesting edge; children group
+	 *  under their parent in "More in this section" nav. */
+	parent_template_id?: string;
+	/** The template row id — parent_template_id references resolve to
+	 *  this without a slug join. */
+	template_id?: string;
 }
 
 export type WikiRevisionStatus = 'approved' | 'rejected' | 'pending';
@@ -3466,12 +3492,15 @@ export interface DigestMember {
 	id?: string;
 	username?: string;
 	name?: string;
+	/** Backend emits display_name (§84 — only username + display_name). */
+	display_name?: string;
 	avatar_url?: string;
 }
 
 export interface DigestEvent {
 	id?: string;
 	title?: string;
+	slug?: string;
 	url?: string;
 	starts_at?: string;
 }
@@ -3737,6 +3766,97 @@ export interface ServiceListing {
 	author_id?: string;
 	author_name?: string;
 	author_avatar?: string;
+	// §111 package fields — populated when listing_kind='package'.
+	listing_kind?: string;
+	price_amount?: number | null; // minor units (kobo/cents)
+	price_currency?: string;
+	price_per?: 'person' | 'package' | 'group' | '';
+	purchase_mode?: 'inquiry' | 'external' | 'paid' | '';
+	capacity?: number | null;
+	available_from?: string;
+	available_until?: string;
+	items?: PackageItem[];
+	departures?: PackageDeparture[];
+	platform_fee?: number | null;
+	agent_balance_due?: number | null;
+}
+
+/** One ordered component line item of a service package (§111). */
+export interface PackageItem {
+	id: string;
+	position: number;
+	title: string;
+	description?: string;
+	component_content_id?: string;
+	included: boolean;
+	optional: boolean;
+}
+
+/** One scheduled departure/intake of a service package (§111). */
+export interface PackageDeparture {
+	id: string;
+	starts_on: string;
+	ends_on?: string;
+	capacity?: number | null;
+	booked_count: number;
+	status: 'open' | 'full' | 'cancelled' | string;
+}
+
+/** A row of GET /me/service-bookings or /org/:id/service-bookings (§111). */
+export interface ServiceBooking {
+	id: string;
+	listing_meta_id: string;
+	listing_id?: string;
+	listing_title: string;
+	listing_slug: string;
+	listing_kind: string;
+	departure_id?: string;
+	departure_starts_on?: string;
+	departure_ends_on?: string;
+	booker_user_id?: string;
+	booker_username?: string;
+	booker_avatar?: string;
+	org_id: string;
+	org_name?: string;
+	org_slug?: string;
+	intent: 'inquiry' | 'booking' | string;
+	party_size: number;
+	preferred_dates?: { start_on: string; end_on: string; flexible: boolean } | null;
+	note?: string;
+	status: string;
+	purchase_mode: string;
+	payment_id?: string;
+	/** Joined payment row — pending means the fee checkout can be resumed. */
+	payment_status?: string;
+	payment_provider?: string;
+	total_price?: number | null;
+	fee_amount?: number | null;
+	fee_currency?: string;
+	agent_balance_due?: number | null;
+	org_response_note?: string;
+	dispute_reason?: string;
+	expires_at?: string;
+	confirmed_at?: string;
+	fulfilled_at?: string;
+	cancelled_at?: string;
+	cancel_reason?: string;
+	created_at: string;
+}
+
+/** POST /services/:id/bookings response — booking + fee checkout when paid. */
+export interface ServiceBookingResult {
+	booking: ServiceBooking;
+	payment?: { id: string; checkout_url: string } | null;
+}
+
+/** One row of GET /me/organizations — org + the caller's membership role. */
+export interface MyOrganization {
+	id: string;
+	name: string;
+	slug: string;
+	verified: boolean;
+	verification_type?: string | null;
+	member_role: string;
 }
 
 /** A single review embedded in GET /services/:slug (§98 + §29 sidecar). */

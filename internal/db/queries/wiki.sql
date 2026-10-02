@@ -9,7 +9,7 @@
 -- Ordered sibling pages within a space+category — the Prev/Next set (§80
 -- Hierarchical UX amendment). position ASC, then created_at for stability.
 -- Soft-deleted pages are excluded like every other wiki_pages read.
-SELECT wp.id, wp.slug, wp.title, wp.position
+SELECT wp.id, wp.slug, wp.title, wp.position, wp.created_at
 FROM wiki_pages wp
 WHERE wp.space_id = @space_id AND wp.category = @category
   AND wp.is_active = true AND wp.deleted_at IS NULL

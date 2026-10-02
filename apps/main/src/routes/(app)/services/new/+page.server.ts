@@ -2,7 +2,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, ServiceCategory } from '$lib/types';
+import type { GeoCountry, MyOrganization, ServiceCategory } from '$lib/types';
 
 /**
  * Create-service form at /services/new — auth-gated. Guests are
@@ -40,5 +40,19 @@ export const load: PageServerLoad = async (event) => {
 		serviceCategories = [];
 	}
 
-	return { authed: true, countries, serviceCategories };
+	// §111: package listings are org-authored — when the packages flag is
+	// on the form needs the caller's orgs (with verification state) for the
+	// selling-org picker.
+	const packagesEnabled = !!features['service_packages.enabled'];
+	let myOrgs: MyOrganization[] = [];
+	if (packagesEnabled) {
+		try {
+			const { items } = await apiList<MyOrganization>(ctx, '/me/organizations');
+			myOrgs = items;
+		} catch {
+			myOrgs = [];
+		}
+	}
+
+	return { authed: true, countries, serviceCategories, packagesEnabled, myOrgs };
 };

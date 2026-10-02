@@ -148,7 +148,8 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // HandleAdminList handles GET /admin/digest — admin list of all editions.
-// Supports ?status=, ?space_id=, ?sort=, ?order=, ?page=, ?limit= query params
+// Supports ?status=, ?dest= (geo-aware standard, space_id legacy alias), ?q=,
+// ?sort=, ?order=, ?page=, ?limit= query params
 // (§84 admin pattern: filter + sort + paginate, no infinite scroll).
 func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
@@ -164,12 +165,19 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	f := AdminListFilter{
 
 		Status: r.URL.Query().Get("status"),
+		Query:  r.URL.Query().Get("q"),
 		Sort:   r.URL.Query().Get("sort"),
 		Order:  r.URL.Query().Get("order"),
 	}
-	if spaceParam := r.URL.Query().Get("space_id"); spaceParam != "" {
-		if err := f.SpaceID.Scan(spaceParam); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid space_id")
+	// Accept ?dest= (geo-aware standard) or ?space_id= (legacy alias), mirroring
+	// HandleGetLatest.
+	destParam := r.URL.Query().Get("dest")
+	if destParam == "" {
+		destParam = r.URL.Query().Get("space_id")
+	}
+	if destParam != "" {
+		if err := f.SpaceID.Scan(destParam); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
 			return
 		}
 	}

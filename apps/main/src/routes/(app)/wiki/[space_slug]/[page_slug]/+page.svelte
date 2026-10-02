@@ -194,13 +194,65 @@
 	// Cost of Living page) — the "View more …" links in the mockups.
 	const otherSiblings = $derived(siblings.filter((s) => !s.current));
 
-	// §80 lazy template pages — the category's declared template slugs that
-	// aren't already materialized siblings, linked as discoverable targets.
-	const templateLinks = $derived.by(() => {
+	// §80 Wiki Topic Pages — "More in this section" nav: same-parentage
+	// siblings (already including lazy templates) plus the category's other
+	// declared templates. Child topic templates nest under their parent's
+	// chip; children of the current page — or whose parent isn't shown —
+	// render as flat dashed chips.
+	const moreNav = $derived.by(() => {
 		const templates = data.page?.page_templates ?? [];
-		const materialized = new Set(siblings.map((s) => s.slug));
-		materialized.add(data.pageSlug);
-		return templates.filter((tm) => !materialized.has(tm.slug));
+		const items: {
+			slug: string;
+			label: string;
+			dashed: boolean;
+			children: typeof templates;
+		}[] = [];
+		const shownParentIdx = new Map<string, number>();
+		for (const sib of otherSiblings) {
+			const tmpl = templates.find((tm) => tm.slug === sib.slug);
+			if (tmpl?.template_id) shownParentIdx.set(tmpl.template_id, items.length);
+			items.push({ slug: sib.slug, label: sib.title, dashed: false, children: [] });
+		}
+		const shownSlugs = new Set(items.map((i) => i.slug));
+		for (const tm of templates) {
+			if (tm.slug === data.pageSlug || shownSlugs.has(tm.slug)) continue;
+			const pIdx = tm.parent_template_id ? shownParentIdx.get(tm.parent_template_id) : undefined;
+			if (pIdx !== undefined) {
+				items[pIdx].children.push(tm);
+				continue;
+			}
+			items.push({ slug: tm.slug, label: tm.label, dashed: true, children: [] });
+		}
+		return items;
+	});
+
+	// §80 Wiki Topic Pages — the page-level ancestor chain (category stub →
+	// template parents) for the breadcrumb's in-page segments and the
+	// "Back to {parent}" link.
+	const pageParents = $derived(data.page?.parents ?? []);
+	const parentPage = $derived(
+		pageParents.length > 0 ? pageParents[pageParents.length - 1] : null
+	);
+
+	// §80 Wiki Topic Pages — ON THIS PAGE anchors: the rendered field-table
+	// sections (named, non-quick_facts, non-empty or composite) plus the
+	// rollup/directory panels. Shown when the page has ≥2 anchors.
+	const toc = $derived.by(() => {
+		const items: { id: string; label: string }[] = [];
+		for (const s of data.page?.fields?.sections ?? []) {
+			if (!s.key || s.key === 'quick_facts') continue;
+			if (s.fields.filter((f) => f.visible).length === 0 && !s.page_slug) continue;
+			const label =
+				s.label ||
+				t(
+					`wiki.section_${s.key}`,
+					s.key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+				);
+			items.push({ id: `section-${s.key}`, label });
+		}
+		if (data.page?.rollup) items.push({ id: 'wiki-rollup', label: t('wiki.rollup_title', 'City-by-city comparison') });
+		if (data.page?.directory) items.push({ id: 'wiki-directory', label: t('wiki.directory_title', 'Places') });
+		return items.length >= 2 ? items : [];
 	});
 
 	$effect(() => {
@@ -241,6 +293,8 @@
 		{spaceLevel}
 		pages={data.index ?? []}
 		currentPageSlug={data.pageSlug}
+		quickFactsGroup={data.page?.field_group_slug ?? ''}
+		{toc}
 	/>
 </SetSidebar>
 
@@ -282,6 +336,19 @@
 						{spaceName}
 					</a>
 				</li>
+				<!-- §80 Wiki Topic Pages — in-page ancestors: category stub +
+				     template chain, each a real /wiki/{space}/{slug} target. -->
+				{#each pageParents as par (par.slug)}
+					<li aria-hidden="true"><ChevronRight size={12} /></li>
+					<li>
+						<a
+							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(par.slug)}"
+							class="truncate transition-colors hover:text-[var(--color-text)]"
+						>
+							{par.title}
+						</a>
+					</li>
+				{/each}
 				{#if data.page}
 					<li aria-hidden="true"><ChevronRight size={12} /></li>
 					<li class="truncate font-medium text-[var(--color-text)]">{data.page.title}</li>
@@ -339,6 +406,19 @@
 			</div>
 		{:else}
 			<article class="mx-auto w-full max-w-3xl">
+				<!-- §80 Wiki Topic Pages — "Back to {parent}" above the article
+				     when the page has a parent segment. -->
+				{#if parentPage}
+					<div class="mb-3">
+						<a
+							href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(parentPage.slug)}"
+							class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+						>
+							<ChevronLeft size={13} class="shrink-0" />
+							{t('wiki.back_to_parent', 'Back to {title}', { title: parentPage.title })}
+						</a>
+					</div>
+				{/if}
 				<header class="mb-4 flex flex-wrap items-center gap-2">
 					<h1 class="text-2xl font-semibold text-[var(--color-text)]">{data.page.title}</h1>
 					<span class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]">
@@ -515,31 +595,43 @@
 								allHref="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(
 									data.pageSlug
 								)}"
-								moreHref={(key) =>
-									`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(
-										data.pageSlug
-									)}?section=${encodeURIComponent(key)}`}
+								moreHref={(sec) =>
+									sec.page_slug
+										? `/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(
+												sec.page_slug
+											)}`
+										: `/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(
+												data.pageSlug
+											)}?section=${encodeURIComponent(sec.key)}`}
 							/>
 						</div>
 					{/if}
 
-					{#if otherSiblings.length > 0 || templateLinks.length > 0}
+					{#if moreNav.length > 0}
 						<nav class="mt-6 flex flex-wrap items-center gap-1.5" aria-label={t('wiki.more_pages', 'More in this section')}>
-							{#each otherSiblings as sib (sib.slug)}
+							{#each moreNav as item (item.slug)}
 								<a
-									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(sib.slug)}"
-									class="inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
+									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(item.slug)}"
+									class={item.dashed
+										? 'inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]'
+										: 'inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]'}
 								>
-									{sib.title}
+									{item.label}
 								</a>
-							{/each}
-							{#each templateLinks as tmpl (tmpl.slug)}
-								<a
-									href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(tmpl.slug)}"
-									class="inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
-								>
-									{tmpl.label}
-								</a>
+								{#if item.children.length > 0}
+									<!-- §80 Wiki Topic Pages — child topic templates nest
+									     under their parent's chip. -->
+									<span class="inline-flex flex-wrap items-center gap-1.5 border-l border-[var(--color-border)] pl-1.5">
+										{#each item.children as child (child.slug)}
+											<a
+												href="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(child.slug)}"
+												class="inline-flex items-center rounded-full border border-dashed border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+											>
+												{child.label}
+											</a>
+										{/each}
+									</span>
+								{/if}
 							{/each}
 						</nav>
 					{/if}
@@ -636,6 +728,7 @@
 										entityType={dataEntityType}
 										entityId={suggestTarget.id}
 										label={suggestTarget.title}
+										proposeGroupSlug={data.page?.field_group_slug ?? undefined}
 										showTrigger={false}
 										bind:open={suggestOpen}
 									/>

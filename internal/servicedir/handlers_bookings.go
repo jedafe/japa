@@ -140,6 +140,39 @@ func (h *Handlers) HandleMyBookingDetail(w http.ResponseWriter, r *http.Request)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": booking})
 }
 
+// HandleMyBookingPay handles POST /me/service-bookings/:id/pay — resumes a
+// pending fee checkout on a paid booking (§111). Returns a fresh
+// checkout_url the client redirects to. Route carries
+// service.booking.create + the idempotency middleware (Rule 9).
+func (h *Handlers) HandleMyBookingPay(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if !h.packagesAvailable(w, r) {
+		return
+	}
+
+	bookingID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input BookingPayInput
+	_ = json.NewDecoder(r.Body).Decode(&input) // email/return_url optional for non-Paystack providers
+
+	payment, err := h.service.ResumeBookingPayment(r.Context(), bookingID, user.UserID, input)
+	if err != nil {
+		slog.Error("servicedir: resume booking payment failed", "booking_id", bookingID, "error", err)
+		writeServiceError(w, err, "payment_resume_failed", "Failed to resume booking payment")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payment})
+}
+
 // HandleMyBookingCancel handles POST /me/service-bookings/:id/cancel.
 func (h *Handlers) HandleMyBookingCancel(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
@@ -209,6 +242,44 @@ func (h *Handlers) HandleMyBookingDispute(w http.ResponseWriter, r *http.Request
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": booking})
+}
+
+// HandlePackageDepartures handles GET /services/:id/departures — ALL
+// departures of a package (open, past, cancelled, full), gated to the
+// listing author / owning-org members / service.edit_any. The public
+// detail embeds only open+future rows, so the §111 editor reads the
+// unmanaged set here.
+func (h *Handlers) HandlePackageDepartures(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if !h.packagesAvailable(w, r) {
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	isEditAny := h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
+
+	deps, err := h.service.ListPackageDeparturesForEdit(r.Context(), contentID, user.UserID, isEditAny)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		slog.Error("servicedir: list package departures failed", "content_id", contentID, "error", err)
+		writeServiceError(w, err, "list_failed", "Failed to list departures")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": deps})
 }
 
 // HandleOrgPackages handles GET /org/:org_id/packages — the org's package

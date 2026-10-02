@@ -60,7 +60,7 @@
 
 	async function loadRulesets(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
-		params.set('page', String(p.page));
+		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		if (p.filter?.status) params.set('status', p.filter.status);
 		const res = await api<Ruleset[] | { data?: Ruleset[]; total?: number }>(`/admin/crs/rulesets?${params}`);
@@ -162,7 +162,7 @@
 
 	async function loadDraws(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
-		params.set('page', String(p.page));
+		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		if (p.filter?.category) params.set('category', p.filter.category);
 		const res = await api<Draw[] | { data?: Draw[]; total?: number }>(`/admin/crs/draws?${params}`);

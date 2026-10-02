@@ -95,6 +95,8 @@
 	"learn.bookmarks_folder_error": "Échec de la mise à jour des dossiers de signets",
 	"learn.bookmarks_remove": "Supprimer le signet",
 	"learn.bookmarks_remove_error": "Échec de la suppression du signet",
+	"learn.bookmarks_show_empty_folders": "Afficher {count} dossiers vides",
+	"learn.bookmarks_hide_empty_folders": "Masquer les dossiers vides",
 	"learn.bookmark_save": "Enregistrer le parcours",
 	"learn.bookmark_saved": "Enregistré dans les signets",
 	"learn.no_certificates": "Aucun certificat pour le moment.",

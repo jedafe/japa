@@ -1302,6 +1302,48 @@ func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCode
 	return i, err
 }
 
+const updatePaymentProviderRef = `-- name: UpdatePaymentProviderRef :one
+UPDATE payments
+SET provider_ref = $1, updated_at = now()
+WHERE id = $2 AND status = 'pending'
+RETURNING id, user_id, provider, provider_ref, purpose_type, purpose_id, amount, currency, status, metadata, subscription_id, discount_code_id, discount_amount, created_at, updated_at, idempotency_key
+`
+
+type UpdatePaymentProviderRefParams struct {
+	ProviderRef *string     `json:"provider_ref"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+// Checkout-resume (§111 POST /me/service-bookings/:id/pay): hosted checkout
+// sessions can't be re-derived — re-initiating produces a fresh provider
+// reference, so the pending row's provider_ref is swapped in place. The
+// status='pending' guard is atomic: a payment that settled (or failed)
+// between the service-layer check and this update yields no row, which the
+// caller maps to invalid_booking_transition.
+func (q *Queries) UpdatePaymentProviderRef(ctx context.Context, arg UpdatePaymentProviderRefParams) (Payment, error) {
+	row := q.db.QueryRow(ctx, updatePaymentProviderRef, arg.ProviderRef, arg.ID)
+	var i Payment
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.ProviderRef,
+		&i.PurposeType,
+		&i.PurposeID,
+		&i.Amount,
+		&i.Currency,
+		&i.Status,
+		&i.Metadata,
+		&i.SubscriptionID,
+		&i.DiscountCodeID,
+		&i.DiscountAmount,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
 const updatePaymentStatus = `-- name: UpdatePaymentStatus :one
 UPDATE payments
 SET status = $1, updated_at = now()

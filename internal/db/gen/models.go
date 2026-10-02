@@ -4557,14 +4557,17 @@ type WikiTypeConfig struct {
 }
 
 type WikiTypePageTemplate struct {
-	ID           pgtype.UUID        `json:"id"`
-	CategoryID   pgtype.UUID        `json:"category_id"`
-	Slug         string             `json:"slug"`
-	Label        string             `json:"label"`
-	FieldGroupID pgtype.UUID        `json:"field_group_id"`
-	Position     int32              `json:"position"`
-	IsSystem     bool               `json:"is_system"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
 }
 
 type WikiTypeParent struct {

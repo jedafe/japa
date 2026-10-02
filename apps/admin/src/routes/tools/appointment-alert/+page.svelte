@@ -155,7 +155,7 @@
 			// Build server-side pagination query params from EntityPage params.
 			// The backend accepts ?page=&limit=&dest=&active= (§91).
 			const qp = new URLSearchParams();
-			qp.set('page', String(params.page ?? 1));
+			qp.set('page', String((params.page ?? 0) + 1));
 			qp.set('limit', String(params.pageSize ?? 25));
 			if (params.q) qp.set('q', params.q);
 			// Filter: pass through any filter keys (e.g. ?dest=, ?active=).

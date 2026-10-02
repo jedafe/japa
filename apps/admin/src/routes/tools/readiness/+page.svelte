@@ -136,7 +136,7 @@
 		fields,
 		load: async (params) => {
 			const queryParts: string[] = [];
-			if (params.page) queryParts.push(`page=${params.page}`);
+			queryParts.push(`page=${params.page + 1}`);
 			if (params.pageSize) queryParts.push(`limit=${params.pageSize}`);
 			// EntityPage passes sort as "key:dir" (e.g. "total_score:desc").
 			// The backend accepts separate sort + dir params.

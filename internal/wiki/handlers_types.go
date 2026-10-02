@@ -256,6 +256,8 @@ func writeWikiTypeErr(w http.ResponseWriter, err error, op string) {
 		errpkg.WriteError(w, http.StatusConflict, "wiki_page_template_protected", "System page templates cannot be deleted")
 	case errors.Is(err, ErrWikiPageTemplateInUse):
 		errpkg.WriteError(w, http.StatusConflict, "wiki_page_template_in_use", "Pages bound to this template still have content")
+	case errors.Is(err, ErrInvalidParentTemplate):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_parent_template", err.Error())
 	default:
 		slog.Error("wiki: "+op+" failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Operation failed")

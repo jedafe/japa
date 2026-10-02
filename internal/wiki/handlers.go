@@ -323,11 +323,14 @@ func (h *Handlers) HandleGetIndex(w http.ResponseWriter, r *http.Request) {
 // wikiPageTemplateItem is the public shape for one page template under a
 // category — the link target for a lazy template page
 // (/wiki/{space}/{slug}); label already has {name} substituted when the
-// request carries ?space=.
+// request carries ?space=. ParentTemplateID marks a nested topic template
+// (§80 Wiki Topic Pages) — the frontend keeps it off top-level nav/cards;
+// the topic stays reachable through its parent page.
 type wikiPageTemplateItem struct {
-	Slug     string `json:"slug"`
-	Label    string `json:"label"`
-	Position int32  `json:"position"`
+	Slug             string `json:"slug"`
+	Label            string `json:"label"`
+	Position         int32  `json:"position"`
+	ParentTemplateID string `json:"parent_template_id,omitempty"`
 }
 
 // wikiCategoryItem is the public GET /wiki/categories payload shape.
@@ -417,11 +420,11 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 			if tmpls, terr := h.service.ListPageTemplatesForSpace(r.Context(), spaceSlug); terr == nil {
 				templatesByCat = make(map[pgtype.UUID][]wikiPageTemplateItem, len(tmpls))
 				for _, tm := range tmpls {
-					templatesByCat[tm.CategoryID] = append(templatesByCat[tm.CategoryID], wikiPageTemplateItem{
-						Slug:     tm.Slug,
-						Label:    tm.Label,
-						Position: tm.Position,
-					})
+					item := wikiPageTemplateItem{Slug: tm.Slug, Label: tm.Label, Position: tm.Position}
+					if tm.ParentTemplateID.Valid {
+						item.ParentTemplateID = tm.ParentTemplateID.String()
+					}
+					templatesByCat[tm.CategoryID] = append(templatesByCat[tm.CategoryID], item)
 				}
 			} else {
 				slog.Warn("wiki: categories page-templates lookup failed", "error", terr)

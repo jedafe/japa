@@ -6783,6 +6783,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
 				r.Get("/services/categories", serviceDirHandlers.HandleCategories)
 				r.Get("/services", serviceDirHandlers.HandleList)
+				// Global OptionalAuth already populates the viewer context —
+				// ?raw=1 (editor view) reads it; guests get the published-only path.
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.create")).
 					Post("/services", serviceDirHandlers.HandleCreate)
@@ -6808,9 +6810,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)). // Rule 9: fee checkout is financial
 					Post("/services/{id}/bookings", serviceDirHandlers.HandleCreateBooking)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/services/{id}/departures", serviceDirHandlers.HandlePackageDepartures)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/me/service-bookings", serviceDirHandlers.HandleMyBookings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
+				// §111 checkout resume — re-initiates a provider session, so
+				// Rule 9 applies: permission node + Idempotency-Key required.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()),
+					rbac.RequirePermission(rbacResolver, "service.booking.create"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Post("/me/service-bookings/{id}/pay", serviceDirHandlers.HandleMyBookingPay)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
 				// §111 booker dispute — report a problem on a confirmed|fulfilled booking.

@@ -202,7 +202,7 @@
 		load: async (params) => {
 			// BUG-011: pass pagination/sort/filter params to the backend.
 			const queryParts: string[] = [];
-			queryParts.push(`page=${params.page ?? 1}`);
+			queryParts.push(`page=${(params.page ?? 0) + 1}`);
 			queryParts.push(`limit=${params.pageSize ?? 25}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {

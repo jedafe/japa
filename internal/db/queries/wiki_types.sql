@@ -228,7 +228,11 @@ LIMIT 1;
 -- =====================
 
 -- name: ListWikiPageTemplates :many
+-- The category's FULL template set — nested topic templates (§80 Wiki
+-- Topic Pages) included. Callers scope by parent_template_id: top-level
+-- pages are parent IS NULL, a topic's siblings share its parent.
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_page_templates t
@@ -240,6 +244,7 @@ ORDER BY t.position, t.slug;
 -- All page templates across a type's categories — admin editor needs the
 -- full set when rendering a category's template list.
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_page_templates t
@@ -250,6 +255,7 @@ ORDER BY c.position, t.position, t.slug;
 
 -- name: GetWikiPageTemplate :one
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at
 FROM wiki_type_page_templates t
 WHERE t.id = @id;
@@ -264,6 +270,7 @@ WHERE t.id = @id;
 -- deterministic. Returns NULL row (ErrNoRows) when the category has no
 -- template for the slug — the page is then a freeform page.
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at
 FROM wiki_type_page_templates t
 JOIN wiki_type_categories c ON c.id = t.category_id
@@ -281,6 +288,7 @@ LIMIT 1;
 -- deterministic when two categories reuse a slug. category_token is the
 -- category's wiki_pages.category token (the lazy page's category).
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at,
        c.category AS category_token,
        cfg.slug AS field_group_slug
@@ -293,19 +301,39 @@ ORDER BY c.position, t.position
 LIMIT 1;
 
 -- name: CreateWikiPageTemplate :one
-INSERT INTO wiki_type_page_templates (category_id, slug, label, field_group_id, position, is_system)
-VALUES (@category_id, @slug, @label, @field_group_id, @position, @is_system)
-RETURNING id, category_id, slug, label, field_group_id, position, is_system, created_at;
+-- parent_template_id nests the template under a same-category top-level
+-- template (§80 Wiki Topic Pages); section_label is the label used when
+-- the child renders as a composite preview section on the parent page;
+-- preview_limit caps the preview rows (0 = all, default 5).
+INSERT INTO wiki_type_page_templates
+    (category_id, slug, label, field_group_id, parent_template_id,
+     section_label, preview_limit, position, is_system)
+VALUES (@category_id, @slug, @label, @field_group_id,
+        @parent_template_id::uuid, sqlc.narg(section_label),
+        COALESCE(sqlc.narg(preview_limit)::int, 5), @position, @is_system)
+RETURNING id, category_id, slug, label, field_group_id, position,
+          parent_template_id, section_label, preview_limit,
+          is_system, created_at;
 
 -- name: UpdateWikiPageTemplate :execrows
--- Slug is immutable (page URLs); label, bound group, and position are
--- editable. update_field_group distinguishes "don't touch" from "rebind".
+-- Slug is immutable (page URLs); label, bound group, position, parentage,
+-- and preview config are editable. update_field_group distinguishes
+-- "don't touch" from "rebind"; update_parent does the same for
+-- parent_template_id (null clears → top-level); update_section_label does
+-- the same for section_label (null clears → the child's label is used).
 UPDATE wiki_type_page_templates
 SET label = COALESCE(sqlc.narg(label), label),
     field_group_id = CASE WHEN @update_field_group::bool
                      THEN @field_group_id
                      ELSE field_group_id END,
-    position = COALESCE(sqlc.narg(position), position)
+    position = COALESCE(sqlc.narg(position), position),
+    parent_template_id = CASE WHEN @update_parent::bool
+                     THEN @parent_template_id::uuid
+                     ELSE parent_template_id END,
+    section_label = CASE WHEN @update_section_label::bool
+                     THEN sqlc.narg(section_label)
+                     ELSE section_label END,
+    preview_limit = COALESCE(sqlc.narg(preview_limit), preview_limit)
 WHERE id = @id;
 
 -- name: DeleteWikiPageTemplate :execrows

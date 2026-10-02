@@ -179,7 +179,7 @@
 		load: async ({ q, page, pageSize, sort, filter }) => {
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
-			if (page) params.set('page', String(page));
+			params.set('page', String(page + 1));
 			if (pageSize) params.set('page_size', String(pageSize));
 			if (filter.status) params.set('status', filter.status);
 			if (filter.coupon_type) params.set('coupon_type', filter.coupon_type);

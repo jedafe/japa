@@ -32,6 +32,7 @@ import (
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 )
@@ -196,6 +197,15 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key header is required")
 	case errors.Is(err, ErrInvalidDeparture):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_departure", "The selected departure is invalid for this package")
+	case errors.Is(err, ErrNotPackage):
+		errpkg.WriteError(w, http.StatusBadRequest, "not_package", "This listing is not a package")
+	case errors.Is(err, ErrInvalidItem):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_item", "A package item is invalid")
+	case errors.Is(err, errpkg.ErrInsufficientBalance):
+		// Credit-provider checkout with too small a wallet balance — the
+		// payment service surfaces the wallet sentinel wrapped inside the
+		// booking error chain.
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "insufficient_balance", "Insufficient credits balance")
 	case errors.Is(err, ErrInvalidIntent):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_intent", "intent must be inquiry|booking and match the listing's purchase_mode")
 	case errors.Is(err, ErrCheckoutFieldsRequired):
@@ -208,6 +218,10 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "package_org_immutable", "A package's selling organization cannot change after creation")
 	case errors.Is(err, ErrInvalidID):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid id")
+	case errors.Is(err, content.ErrEditWindowExpired):
+		// Author edits to a *published* listing after the shared §49 content
+		// edit window. Non-published listings bypass this (see EditOwn).
+		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
 	case errors.Is(err, pgx.ErrNoRows):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Not found")
 	default:
@@ -334,17 +348,48 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	service, err := h.service.GetBySlug(r.Context(), slug)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+	var service ServiceDTO
+
+	// ?raw=1 — editor view: serves non-published listings to the author,
+	// owning-org members, and service.edit_any holders. The route runs
+	// under OptionalAuth so anonymous callers still get the public path.
+	if r.URL.Query().Get("raw") == "1" {
+		user := auth.FromContext(r.Context())
+		if user == nil {
+			errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 			return
 		}
 
-		slog.Error("servicedir: get by slug failed", "slug", slug, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get service")
+		isEditAny := h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
 
-		return
+		rawService, rawErr := h.service.GetBySlugEditor(r.Context(), slug, user.UserID, isEditAny)
+		if rawErr != nil {
+			if errors.Is(rawErr, pgx.ErrNoRows) || errors.Is(rawErr, ErrNotOwner) || errors.Is(rawErr, ErrPackagesDisabled) {
+				errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+				return
+			}
+
+			slog.Error("servicedir: raw get by slug failed", "slug", slug, "error", rawErr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get service")
+
+			return
+		}
+
+		service = rawService
+	} else {
+		var err error
+		service, err = h.service.GetBySlug(r.Context(), slug)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+				return
+			}
+
+			slog.Error("servicedir: get by slug failed", "slug", slug, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "get_failed", "Failed to get service")
+
+			return
+		}
 	}
 
 	// BUG-014: §98 spec says "service detail + reviews". Embed the

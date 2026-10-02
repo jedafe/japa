@@ -600,17 +600,25 @@ func (s *Store) CountCategoryProsePages(ctx context.Context, category string, sp
 // WikiPageTemplate is one row of a category's page template — a named
 // sibling page (e.g. "prices" under cost_of_living) binding a shared
 // type-level field group so item keys stay comparable across spaces.
+// §80 Wiki Topic Pages: ParentTemplateID nests the template under a
+// same-category top-level template (max depth 1 — the parent must itself
+// have no parent). SectionLabel labels the synthesized composite section
+// the child contributes to the parent's page; PreviewLimit caps the rows
+// shown in that preview (0 = all).
 type WikiPageTemplate struct {
-	ID             pgtype.UUID
-	CategoryID     pgtype.UUID
-	Slug           string
-	Label          string
-	FieldGroupID   pgtype.UUID
-	FieldGroupSlug *string
-	FieldGroupName *string
-	Position       int32
-	IsSystem       bool
-	CreatedAt      pgtype.Timestamptz
+	ID               pgtype.UUID
+	CategoryID       pgtype.UUID
+	Slug             string
+	Label            string
+	FieldGroupID     pgtype.UUID
+	FieldGroupSlug   *string
+	FieldGroupName   *string
+	ParentTemplateID pgtype.UUID // invalid → top-level
+	SectionLabel     *string     // nil → Label is used for the composite section
+	PreviewLimit     int32
+	Position         int32
+	IsSystem         bool
+	CreatedAt        pgtype.Timestamptz
 }
 
 // ErrWikiPageTemplateNotFound is returned when a wiki_type_page_templates
@@ -628,10 +636,11 @@ var ErrWikiPageTemplateProtected = errors.New("wiki page template is system-prot
 // pages carry approved prose.
 var ErrWikiPageTemplateInUse = errors.New("wiki page template has pages with content")
 
-func pageTemplateFromRow(id, categoryID pgtype.UUID, slug, label string, fieldGroupID pgtype.UUID, fgSlug, fgName *string, position int32, isSystem bool, createdAt pgtype.Timestamptz) WikiPageTemplate {
+func pageTemplateFromRow(id, categoryID pgtype.UUID, slug, label string, fieldGroupID pgtype.UUID, fgSlug, fgName *string, parentID pgtype.UUID, sectionLabel *string, previewLimit, position int32, isSystem bool, createdAt pgtype.Timestamptz) WikiPageTemplate {
 	return WikiPageTemplate{
 		ID: id, CategoryID: categoryID, Slug: slug, Label: label,
 		FieldGroupID: fieldGroupID, FieldGroupSlug: fgSlug, FieldGroupName: fgName,
+		ParentTemplateID: parentID, SectionLabel: sectionLabel, PreviewLimit: previewLimit,
 		Position: position, IsSystem: isSystem, CreatedAt: createdAt,
 	}
 }
@@ -646,7 +655,7 @@ func (s *Store) ListPageTemplates(ctx context.Context, categoryID pgtype.UUID) (
 
 	out := make([]WikiPageTemplate, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, r.FieldGroupName, r.Position, r.IsSystem, r.CreatedAt))
+		out = append(out, pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, r.FieldGroupName, r.ParentTemplateID, r.SectionLabel, r.PreviewLimit, r.Position, r.IsSystem, r.CreatedAt))
 	}
 
 	return out, nil
@@ -662,7 +671,7 @@ func (s *Store) ListPageTemplatesBySpaceType(ctx context.Context, spaceTypeID pg
 
 	out := make([]WikiPageTemplate, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, r.FieldGroupName, r.Position, r.IsSystem, r.CreatedAt))
+		out = append(out, pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, r.FieldGroupName, r.ParentTemplateID, r.SectionLabel, r.PreviewLimit, r.Position, r.IsSystem, r.CreatedAt))
 	}
 
 	return out, nil
@@ -679,7 +688,7 @@ func (s *Store) GetPageTemplate(ctx context.Context, id pgtype.UUID) (WikiPageTe
 		return WikiPageTemplate{}, fmt.Errorf("wiki: get page template: %w", err)
 	}
 
-	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.Position, r.IsSystem, r.CreatedAt), nil
+	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.ParentTemplateID, r.SectionLabel, r.PreviewLimit, r.Position, r.IsSystem, r.CreatedAt), nil
 }
 
 // GetPageTemplateForSpace resolves a (category, slug) pair to the space
@@ -701,7 +710,7 @@ func (s *Store) GetPageTemplateForSpace(ctx context.Context, spaceID pgtype.UUID
 		return WikiPageTemplate{}, fmt.Errorf("wiki: page template for space: %w", err)
 	}
 
-	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.Position, r.IsSystem, r.CreatedAt), nil
+	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.ParentTemplateID, r.SectionLabel, r.PreviewLimit, r.Position, r.IsSystem, r.CreatedAt), nil
 }
 
 // WikiPageTemplateRef is a page template plus its owning category's token
@@ -731,20 +740,25 @@ func (s *Store) GetPageTemplateBySlug(ctx context.Context, spaceID pgtype.UUID, 
 	}
 
 	return WikiPageTemplateRef{
-		WikiPageTemplate: pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, nil, r.Position, r.IsSystem, r.CreatedAt),
+		WikiPageTemplate: pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, r.FieldGroupSlug, nil, r.ParentTemplateID, r.SectionLabel, r.PreviewLimit, r.Position, r.IsSystem, r.CreatedAt),
 		CategoryToken:    r.CategoryToken,
 	}, nil
 }
 
-// CreatePageTemplate adds a page template to a category.
-func (s *Store) CreatePageTemplate(ctx context.Context, categoryID pgtype.UUID, slug, label string, fieldGroupID pgtype.UUID, position int32, isSystem bool) (WikiPageTemplate, error) {
+// CreatePageTemplate adds a page template to a category. parentID nests the
+// template under a same-category top-level template (§80 Wiki Topic Pages);
+// the service validates parentage before calling.
+func (s *Store) CreatePageTemplate(ctx context.Context, categoryID pgtype.UUID, slug, label string, fieldGroupID, parentID pgtype.UUID, sectionLabel *string, previewLimit *int32, position int32, isSystem bool) (WikiPageTemplate, error) {
 	r, err := s.write.CreateWikiPageTemplate(ctx, gen.CreateWikiPageTemplateParams{
-		CategoryID:   categoryID,
-		Slug:         slug,
-		Label:        label,
-		FieldGroupID: fieldGroupID,
-		Position:     position,
-		IsSystem:     isSystem,
+		CategoryID:       categoryID,
+		Slug:             slug,
+		Label:            label,
+		FieldGroupID:     fieldGroupID,
+		ParentTemplateID: parentID,
+		SectionLabel:     sectionLabel,
+		PreviewLimit:     previewLimit,
+		Position:         position,
+		IsSystem:         isSystem,
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -755,19 +769,28 @@ func (s *Store) CreatePageTemplate(ctx context.Context, categoryID pgtype.UUID, 
 		return WikiPageTemplate{}, fmt.Errorf("wiki: create page template: %w", err)
 	}
 
-	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.Position, r.IsSystem, r.CreatedAt), nil
+	return pageTemplateFromRow(r.ID, r.CategoryID, r.Slug, r.Label, r.FieldGroupID, nil, nil, r.ParentTemplateID, r.SectionLabel, r.PreviewLimit, r.Position, r.IsSystem, r.CreatedAt), nil
 }
 
-// UpdatePageTemplate patches label, bound group, and position — slug is
-// immutable (page URLs). updateFieldGroup distinguishes "don't touch" from
-// "rebind" (field_group_id is NOT NULL — pass a validated id, never zero).
-func (s *Store) UpdatePageTemplate(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32) error {
+// UpdatePageTemplate patches label, bound group, position, parentage, and
+// preview config — slug is immutable (page URLs). updateFieldGroup
+// distinguishes "don't touch" from "rebind" (field_group_id is NOT NULL —
+// pass a validated id, never zero). updateParent does the same for
+// parentage (invalid parentID clears → top-level); updateSectionLabel the
+// same for the composite-section label (nil clears → the child's label
+// renders).
+func (s *Store) UpdatePageTemplate(ctx context.Context, id pgtype.UUID, label *string, updateFieldGroup bool, fieldGroupID pgtype.UUID, position *int32, updateParent bool, parentID pgtype.UUID, updateSectionLabel bool, sectionLabel *string, previewLimit *int32) error {
 	affected, err := s.write.UpdateWikiPageTemplate(ctx, gen.UpdateWikiPageTemplateParams{
-		Label:            label,
-		UpdateFieldGroup: updateFieldGroup,
-		FieldGroupID:     fieldGroupID,
-		Position:         position,
-		ID:               id,
+		Label:              label,
+		UpdateFieldGroup:   updateFieldGroup,
+		FieldGroupID:       fieldGroupID,
+		Position:           position,
+		UpdateParent:       updateParent,
+		ParentTemplateID:   parentID,
+		UpdateSectionLabel: updateSectionLabel,
+		SectionLabel:       sectionLabel,
+		PreviewLimit:       previewLimit,
+		ID:                 id,
 	})
 	if err != nil {
 		return fmt.Errorf("wiki: update page template: %w", err)

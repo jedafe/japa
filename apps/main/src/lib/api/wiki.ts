@@ -25,9 +25,15 @@ export interface WikiEntityField {
 }
 
 /** §80 Itemized Pricing — one named section inside a field group: the
- *  fields sharing a custom_fields.section token, in definition order. */
+ *  fields sharing a custom_fields.section token, in definition order.
+ *  §80 Wiki Topic Pages: a section synthesized from a child page
+ *  template's bound group carries label (its section_label, falling back
+ *  to the template label) and page_slug — the /wiki/{space}/{slug}
+ *  drill-down target for the "View more" link. */
 export interface WikiEntityFieldSection {
 	key: string;
+	label?: string;
+	page_slug?: string;
 	fields: WikiEntityField[];
 }
 
@@ -63,7 +69,9 @@ export interface WikiFieldDefInput {
 	key: string;
 	label: string;
 	field_type: string;
-	options?: Array<{ value: string; label: string }>;
+	/** Array for select/multiselect; object schema for composite types
+	 *  (§80 Wiki Topic Pages — price_parts carries options.parts). */
+	options?: unknown;
 	/** §80 Itemized Pricing — the field's section token; groups the field
 	 *  into an item-table section when set. */
 	section?: string;

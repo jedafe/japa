@@ -1,18 +1,32 @@
 <script lang="ts">
-	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Itemized Pricing)
+	// Ref: japaconnect-engineering/sections/80-destination-wiki.md (Itemized Pricing, Wiki Topic Pages)
 	// Read-only itemized rendering of a bound field group: one table per
 	// custom_fields.section token (transportation, accommodation…), with
-	// price_range fields shown as Item | Average | Range.
+	// price_range fields shown as Item | Average | Range. §80 Wiki Topic
+	// Pages: sections synthesized from child page templates carry label +
+	// page_slug — they render as a capped preview table with a "View more"
+	// link to the real topic page; sections whose fields are all
+	// price_parts render a named-parts table (columns = options.parts).
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import type { WikiEntityField, WikiEntityFieldGroup } from '$lib/api/wiki';
-	import { fieldCurrencyCode, formatPriceRange, formatWikiFieldValue, priceRangeParts } from '$lib/utils/wikiFieldValue';
+	import type { WikiEntityField, WikiEntityFieldGroup, WikiEntityFieldSection } from '$lib/api/wiki';
+	import {
+		fieldCurrencyCode,
+		formatPricePart,
+		formatPriceRange,
+		formatWikiFieldValue,
+		type PricePartDef,
+		pricePartsSchema,
+		pricePartsValue,
+		priceRangeParts
+	} from '$lib/utils/wikiFieldValue';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 
 	let {
 		group,
-		/** Optional per-section "View more {label}" link builder — sibling
-		 *  template pages each render their own section's item table. */
+		/** Optional per-section "View more {label}" link builder —
+		 *  composite sections link to their topic page, token sections to
+		 *  the same-page ?section= filter. */
 		moreHref = undefined,
 		/** ?section={key} filtered view — only this section's table renders,
 		 *  with a link back to the full page. */
@@ -23,7 +37,7 @@
 		contextCurrency = ''
 	}: {
 		group: WikiEntityFieldGroup;
-		moreHref?: (sectionKey: string) => string | undefined;
+		moreHref?: (section: WikiEntityFieldSection) => string | undefined;
 		activeSection?: string;
 		allHref?: string;
 		contextCurrency?: string;
@@ -35,23 +49,60 @@
 
 	// Named sections first-seen order; section-less fields form the '' bucket
 	// and render unlabeled — same contract as the backend fieldSections DTO.
+	// §80 Wiki Topic Pages: the reserved quick_facts token renders in the
+	// right rail, never a body table; composite (page_slug) sections render
+	// even when empty so the drill-down link still shows.
 	const sections = $derived.by(() => {
 		const src =
 			group.sections && group.sections.length > 0
 				? group.sections
 				: [{ key: '', fields: group.fields }];
 		return src
-			.map((s) => ({ key: s.key, fields: s.fields.filter((f) => f.visible) }))
-			.filter((s) => s.fields.length > 0)
+			.filter((s) => s.key !== 'quick_facts')
+			.map((s) => ({ ...s, fields: s.fields.filter((f) => f.visible) }))
+			.filter((s) => s.fields.length > 0 || s.page_slug)
 			.filter((s) => !activeSection || s.key === activeSection);
 	});
 
-	function sectionLabel(key: string): string {
-		return t(`wiki.section_${key}`, key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+	function sectionLabel(s: WikiEntityFieldSection): string {
+		if (s.label) return s.label;
+		return t(`wiki.section_${s.key}`, s.key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
 	}
 
 	function isPriceTable(fields: WikiEntityField[]): boolean {
 		return fields.length > 0 && fields.every((f) => f.field_type === 'price_range');
+	}
+
+	function isPartsTable(fields: WikiEntityField[]): boolean {
+		return fields.length > 0 && fields.every((f) => f.field_type === 'price_parts');
+	}
+
+	/** Column schema for a parts table — the union of every row's
+	 *  options.parts in first-seen order, so mixed-schema sections
+	 *  (transit vs taxi columns) still surface all declared parts.
+	 *  Emphasis flags a total row (options.emphasize). */
+	function partsColumns(fields: WikiEntityField[]) {
+		const seen = new Map<string, PricePartDef>();
+		for (const f of fields) {
+			for (const p of pricePartsSchema(f.options)) {
+				if (!seen.has(p.key)) seen.set(p.key, p);
+			}
+		}
+		return [...seen.values()];
+	}
+
+	function isEmphasized(f: WikiEntityField): boolean {
+		return (
+			f.options !== null &&
+			typeof f.options === 'object' &&
+			!Array.isArray(f.options) &&
+			(f.options as Record<string, unknown>).emphasize === true
+		);
+	}
+
+	function partCell(f: WikiEntityField, key: string, kind: string | undefined): string {
+		const code = fieldCurrencyCode(f.options) || contextCurrency;
+		return formatPricePart(pricePartsValue(f.value)[key], kind, code, currencies);
 	}
 
 	function avgOf(f: WikiEntityField): string {
@@ -91,14 +142,14 @@
 				{#if section.key}
 					<div class="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2.5">
 						<h3 class="text-sm font-semibold text-[var(--color-text)]">
-							{sectionLabel(section.key)}
+							{sectionLabel(section)}
 						</h3>
-						{#if moreHref?.(section.key)}
+						{#if moreHref?.(section)}
 							<a
-								href={moreHref(section.key)}
+								href={moreHref(section)}
 								class="shrink-0 text-xs font-medium text-[var(--color-primary)] hover:underline"
 							>
-								{t('wiki.view_more_prices', 'View more {section} prices', { section: sectionLabel(section.key).toLowerCase() })} →
+								{t('wiki.view_more_prices', 'View more {section} prices', { section: sectionLabel(section).toLowerCase() })} →
 							</a>
 						{/if}
 					</div>
@@ -118,6 +169,29 @@
 									<td class="px-4 py-2 text-[var(--color-text)]">{f.label}</td>
 									<td class="px-4 py-2 text-[var(--color-text)]">{avgOf(f)}</td>
 									<td class="px-4 py-2 text-[var(--color-muted)]">{rangeOf(f)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else if isPartsTable(section.fields)}
+					<!-- §80 Wiki Topic Pages — heterogeneous item table: one field
+					     is one row, columns are the declared options.parts. -->
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
+								<th class="px-4 py-2 font-medium">{t('wiki.item_col_item', 'Item')}</th>
+								{#each partsColumns(section.fields) as col (col.key)}
+									<th class="px-4 py-2 font-medium">{col.label || col.key}</th>
+								{/each}
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-[var(--color-border)]">
+							{#each section.fields as f (f.id)}
+								<tr class={isEmphasized(f) ? 'bg-[var(--color-surface-subtle)] font-semibold' : ''}>
+									<td class="px-4 py-2 text-[var(--color-text)]">{f.label}</td>
+									{#each partsColumns(section.fields) as col (col.key)}
+										<td class="px-4 py-2 text-[var(--color-text)]">{partCell(f, col.key, col.kind)}</td>
+									{/each}
 								</tr>
 							{/each}
 						</tbody>

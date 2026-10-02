@@ -343,6 +343,75 @@ func TestNormalizePriceRange(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// normalizePriceParts (§80 Wiki Topic Pages)
+// ---------------------------------------------------------------------------
+
+var taxiPartsOptions = []byte(`{"parts":[` +
+	`{"key":"base_fare","label":"Base Fare","kind":"money"},` +
+	`{"key":"per_km","label":"per km","kind":"money"},` +
+	`{"key":"service","label":"Service","kind":"text"}],` +
+	`"primary_part":"base_fare"}`)
+
+func TestNormalizePriceParts(t *testing.T) {
+	ok := func(s string) map[string]json.RawMessage {
+		t.Helper()
+		out, err := normalizePriceParts(json.RawMessage(s), "taxi", taxiPartsOptions)
+		if err != nil {
+			t.Fatalf("normalizePriceParts(%s): %v", s, err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(out, &m); err != nil {
+			t.Fatalf("normalized output not an object: %s", s)
+		}
+		var parts map[string]json.RawMessage
+		if err := json.Unmarshal(m["parts"], &parts); err != nil {
+			t.Fatalf("canonical output missing parts member: %s", out)
+		}
+		return parts
+	}
+	bad := func(s string) {
+		t.Helper()
+		if _, err := normalizePriceParts(json.RawMessage(s), "taxi", taxiPartsOptions); err == nil {
+			t.Fatalf("normalizePriceParts(%s) should reject", s)
+		}
+	}
+
+	// Canonical shape.
+	if p := ok(`{"parts":{"base_fare":3.25,"per_km":1.75}}`); len(p) != 2 {
+		t.Fatalf("canonical parts wrong: %v", p)
+	}
+	// Bare parts map is accepted and wrapped.
+	p := ok(`{"base_fare":"4.50","service":"UberX"}`)
+	var fare float64
+	if err := json.Unmarshal(p["base_fare"], &fare); err != nil || fare != 4.5 {
+		t.Fatalf("numeric-string part did not coerce: %s", p["base_fare"])
+	}
+	var svc string
+	if err := json.Unmarshal(p["service"], &svc); err != nil || svc != "UberX" {
+		t.Fatalf("text part did not coerce: %s", p["service"])
+	}
+	// Explicit null parts are dropped; money default kind is number-coerced.
+	if p := ok(`{"parts":{"base_fare":3,"per_km":null}}`); len(p) != 1 {
+		t.Fatalf("null part should drop: %v", p)
+	}
+
+	bad(`{}`)                              // empty
+	bad(`5`)                               // not an object
+	bad(`{"parts":{"bogus":1}}`)           // undeclared part key
+	bad(`{"parts":{"service":5}}`)         // text part must be a string
+	bad(`{"parts":{"base_fare":"cheap"}}`) // non-numeric money part
+	bad(`{"parts":{"base_fare":-1}}`)      // negative money part
+	bad(`{"parts":{"base_fare":null}}`)    // all-null → no usable parts
+	bad(`{"parts":{}}`)                    // empty parts
+}
+
+func TestNormalizePriceParts_NoSchema(t *testing.T) {
+	if _, err := normalizePriceParts(json.RawMessage(`{"parts":{"a":1}}`), "x", nil); err == nil {
+		t.Fatal("price_parts without options.parts must fail closed")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // fieldSections — §80 section-grouped schema ordering
 // ---------------------------------------------------------------------------
 
@@ -501,11 +570,11 @@ func TestGetPageTemplateForSpace_CategoryScoped(t *testing.T) {
 		database.Writer.Exec(context.Background(), `DELETE FROM spaces WHERE id = $1`, spaceID)
 	})
 
-	tmplA, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 0, false)
+	tmplA, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template A: %v", err)
 	}
-	tmplB, err := store.CreatePageTemplate(ctx, hf.catBID, "prices", "Prices alt", hf.groupIDs[1], 0, false)
+	tmplB, err := store.CreatePageTemplate(ctx, hf.catBID, "prices", "Prices alt", hf.groupIDs[1], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template B: %v", err)
 	}
@@ -554,7 +623,7 @@ func TestDeleteWikiPageTemplate_Guards(t *testing.T) {
 
 	svc := NewService(store, nil)
 
-	sys, err := store.CreatePageTemplate(ctx, hf.catAID, "system-t", "System", hf.groupIDs[0], 0, true)
+	sys, err := store.CreatePageTemplate(ctx, hf.catAID, "system-t", "System", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, true)
 	if err != nil {
 		t.Fatalf("create system template: %v", err)
 	}
@@ -567,7 +636,7 @@ func TestDeleteWikiPageTemplate_Guards(t *testing.T) {
 	}
 
 	// Bound page with an approved content revision blocks deletion.
-	prose, err := store.CreatePageTemplate(ctx, hf.catAID, "prose-t", "Prose", hf.groupIDs[0], 0, false)
+	prose, err := store.CreatePageTemplate(ctx, hf.catAID, "prose-t", "Prose", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create prose template: %v", err)
 	}
@@ -597,7 +666,7 @@ func TestDeleteWikiPageTemplate_Guards(t *testing.T) {
 	}
 
 	// A clean template deletes normally.
-	free, err := store.CreatePageTemplate(ctx, hf.catBID, "free-t", "Free", hf.groupIDs[1], 0, false)
+	free, err := store.CreatePageTemplate(ctx, hf.catBID, "free-t", "Free", hf.groupIDs[1], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create free template: %v", err)
 	}
@@ -646,7 +715,7 @@ func TestGetWikiPage_LazyTemplatePage(t *testing.T) {
 
 	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "lazy")
 
-	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 3, false)
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 3, false)
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
@@ -720,7 +789,7 @@ func TestSubmitRevision_MaterializesLazyTemplatePage(t *testing.T) {
 
 	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "lazy")
 
-	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 2, false)
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 2, false)
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
@@ -787,7 +856,7 @@ func TestSubmitPageFieldOps_ValidatesBeforeMaterializing(t *testing.T) {
 
 	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "lazyops")
 
-	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 0, false)
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
@@ -863,7 +932,7 @@ func TestComputeRollup_IncludesTemplateGroupFields(t *testing.T) {
 		"Wop Child Prices "+uniq, "wop_child_prices_"+uniq)
 	childCat := mk(`INSERT INTO wiki_type_categories (space_type_id,slug,category,label,field_group_id)
 		VALUES ($1,'cost-of-living','cost_of_living','Cost of Living',$2) RETURNING id`, childTypeID, childCatGroup)
-	tmpl, err := store.CreatePageTemplate(ctx, childCat, "prices", "Prices in {name}", tmplGroup, 0, false)
+	tmpl, err := store.CreatePageTemplate(ctx, childCat, "prices", "Prices in {name}", tmplGroup, pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create child template: %v", err)
 	}
@@ -952,6 +1021,104 @@ func TestAggregateRollupValues_AvgStandinMixed(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Directory mode (§80 child-type directories)
 // ---------------------------------------------------------------------------
+
+// TestAggregateRollupValues_PricePartsPrimary — a price_parts field
+// aggregates only its declared primary_part (§80 Wiki Topic Pages); a
+// field without one lands in rows[].values but feeds no metric.
+func TestAggregateRollupValues_PricePartsPrimary(t *testing.T) {
+	entityID := pgtype.UUID{Valid: true, Bytes: [16]byte{9}}
+	byID, byKey, order, ids := rollupDefs(t, map[string]rollupFieldDef{
+		"taxi": {key: "taxi", label: "Taxi", typ: customfields.FieldTypePriceParts, primaryPart: "base_fare"},
+		"bus":  {key: "bus", label: "Bus", typ: customfields.FieldTypePriceParts},
+	})
+	metrics := map[string]bool{"min": true, "avg": true, "max": true}
+
+	vals := []gen.ListCustomFieldValuesWithDefsForEntitiesRow{
+		valueRow(ids["taxi"], entityID, customfields.FieldTypePriceParts, pgtype.Numeric{},
+			[]byte(`{"parts":{"base_fare":3.25,"per_km":1.75}}`)),
+		valueRow(ids["bus"], entityID, customfields.FieldTypePriceParts, pgtype.Numeric{},
+			[]byte(`{"parts":{"single":2.50}}`)),
+	}
+
+	fields, rows := aggregateRollupValues(vals, byID, byKey, order, metrics)
+
+	// taxi aggregates on base_fare=3.25 across all three metrics; bus has
+	// no primary_part → no aggregate row.
+	if len(fields) != 1 || fields[0].Key != "taxi" {
+		t.Fatalf("expected only taxi aggregated, got %+v", fields)
+	}
+	if f := fields[0]; f.Metrics.Min == nil || *f.Metrics.Min != 3.25 ||
+		f.Metrics.Avg == nil || *f.Metrics.Avg != 3.25 ||
+		f.Metrics.Max == nil || *f.Metrics.Max != 3.25 {
+		t.Fatalf("primary_part projection wrong: %+v", f.Metrics)
+	}
+	if fields[0].Samples != 1 {
+		t.Fatalf("samples wrong: %+v", fields[0])
+	}
+
+	// Both rows land in the values map — non-comparable is a display row.
+	if len(rows[entityID]) != 2 {
+		t.Fatalf("expected both fields in row values, got %+v", rows[entityID])
+	}
+}
+
+// TestChildTemplates — the parent-scope filter for composite sections and
+// topic siblings (pure, no DB).
+func TestChildTemplates(t *testing.T) {
+	parentID := pgtype.UUID{Valid: true, Bytes: [16]byte{7}}
+	templates := []WikiPageTemplate{
+		{Slug: "prices", ID: parentID},
+		{Slug: "food-groceries-prices", ParentTemplateID: parentID, Position: 1},
+		{Slug: "transportation-prices", ParentTemplateID: parentID, Position: 2},
+		{Slug: "visas"}, // top-level, different parent
+	}
+
+	got := childTemplates(templates, parentID)
+	if len(got) != 2 || got[0].Slug != "food-groceries-prices" || got[1].Slug != "transportation-prices" {
+		t.Fatalf("children wrong: %+v", got)
+	}
+	if got := childTemplates(templates, pgtype.UUID{}); got != nil {
+		t.Fatalf("invalid parent must yield nil, got %+v", got)
+	}
+}
+
+// TestGetSiblings_NestedScope — a topic page siblings with its parent's
+// child templates (lazy included), flagged on the current slug; top-level
+// templates and children of other parents stay out of scope. The nested
+// path is store-free, so a nil-backed Service suffices.
+func TestGetSiblings_NestedScope(t *testing.T) {
+	parentID := pgtype.UUID{Valid: true, Bytes: [16]byte{7}}
+	otherParentID := pgtype.UUID{Valid: true, Bytes: [16]byte{8}}
+	cat := &WikiCategory{Slug: "cost-of-living", Category: "cost_of_living", Label: "Cost of Living"}
+	templates := []WikiPageTemplate{
+		{Slug: "prices", Label: "Prices in {name}", Position: 1},
+		{Slug: "transportation-prices", Label: "Transportation Prices in {name}", ParentTemplateID: parentID, Position: 3},
+		{Slug: "food-groceries-prices", Label: "Food & Groceries Prices in {name}", ParentTemplateID: parentID, Position: 1},
+		{Slug: "restaurant-prices", Label: "Restaurant Prices in {name}", ParentTemplateID: parentID, Position: 2},
+		{Slug: "visas", Label: "Visas in {name}", Position: 9},
+		{Slug: "visa-steps", Label: "Visa Steps in {name}", ParentTemplateID: otherParentID, Position: 1},
+	}
+
+	s := &Service{}
+	got := s.getSiblings(context.Background(), pgtype.UUID{}, "Toronto", cat, "cost_of_living", "transportation-prices", parentID, templates)
+
+	if len(got) != 3 {
+		t.Fatalf("expected the 3 topic siblings, got %+v", got)
+	}
+	// Position order, {name} substituted, current flagged.
+	wantSlugs := []string{"food-groceries-prices", "restaurant-prices", "transportation-prices"}
+	for i, w := range wantSlugs {
+		if got[i].Slug != w {
+			t.Fatalf("sibling %d = %q, want %q (%+v)", i, got[i].Slug, w, got)
+		}
+	}
+	if !got[2].Current || got[0].Current || got[1].Current {
+		t.Fatalf("current flag wrong: %+v", got)
+	}
+	if got[0].Title != "Food & Groceries Prices in Toronto" {
+		t.Fatalf("{name} not substituted: %q", got[0].Title)
+	}
+}
 
 // TestDirectoryChildRows_SortAndCap — the listing helper orders by depth
 // then name (slug tie-break) and truncates at the limit, deterministically
@@ -1161,7 +1328,7 @@ func TestGetWikiPage_LazyCategoryStubPage(t *testing.T) {
 
 	// Template precedence: a page template named after a category stub
 	// slug resolves as the template, not the category.
-	tmpl, err := store.CreatePageTemplate(ctx, hf.catBID, "other", "Template {name}", hf.groupIDs[1], 0, false)
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catBID, "other", "Template {name}", hf.groupIDs[1], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create colliding template: %v", err)
 	}
@@ -1269,7 +1436,7 @@ func TestDeleteWikiPageTemplate_ValuesGuard(t *testing.T) {
 		 VALUES ($1,$2,'Price','price_range',0) RETURNING id`,
 		hf.groupIDs[0], "wopval_"+strings.ReplaceAll(genUUID(t, ctx, database), "-", "")[:8])
 
-	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "vals-t", "Vals", hf.groupIDs[0], 0, false)
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "vals-t", "Vals", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
@@ -1301,7 +1468,7 @@ func TestDeleteWikiPageTemplate_ValuesGuard(t *testing.T) {
 	}
 
 	// A bound page with no content at all deletes fine.
-	empty, err := store.CreatePageTemplate(ctx, hf.catBID, "empty-t", "Empty", hf.groupIDs[1], 0, false)
+	empty, err := store.CreatePageTemplate(ctx, hf.catBID, "empty-t", "Empty", hf.groupIDs[1], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create empty template: %v", err)
 	}
@@ -1422,7 +1589,7 @@ func TestGetWikiPage_LazyRespectsTombstones(t *testing.T) {
 
 	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "tomb")
 
-	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 0, false)
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}
@@ -1492,7 +1659,7 @@ func TestCreatePageWithRevision_Canonicalizes(t *testing.T) {
 
 	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "canon")
 
-	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], 0, false)
+	tmpl, err := store.CreatePageTemplate(ctx, hf.catAID, "prices", "Prices in {name}", hf.groupIDs[0], pgtype.UUID{}, nil, nil, 0, false)
 	if err != nil {
 		t.Fatalf("create template: %v", err)
 	}

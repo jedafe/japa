@@ -69,6 +69,66 @@
 	// 'min'|'avg'|'max' in the template.
 	const PRICE_PARTS = ['min', 'avg', 'max'] as const;
 
+	// §80 Wiki Topic Pages — price_parts: one input per declared
+	// options.parts column, emitting the canonical {parts: {...}} shape
+	// normalizePriceParts expects. Draft strings ride alongside `values`
+	// like the price_range seeds.
+	interface PricePartCol {
+		key: string;
+		label: string;
+		kind?: string;
+	}
+	function pricePartsCols(field: CustomFieldDef): PricePartCol[] {
+		const o = field.options;
+		if (o && !Array.isArray(o) && Array.isArray((o as { parts?: unknown }).parts)) {
+			return ((o as { parts: unknown[] }).parts).filter(
+				(p): p is PricePartCol =>
+					p !== null && typeof p === 'object' && typeof (p as PricePartCol).key === 'string'
+			);
+		}
+		return [];
+	}
+	const partsSeeds = $derived.by(() => {
+		const out: Record<string, Record<string, string>> = {};
+		for (const f of fields) {
+			if (f.field_type !== 'price_parts') continue;
+			const v = values[f.key];
+			const stored =
+				v && typeof v === 'object' && !Array.isArray(v)
+					? (((v as Record<string, unknown>).parts ?? v) as Record<string, unknown>)
+					: {};
+			const seeds: Record<string, string> = {};
+			for (const col of pricePartsCols(f)) {
+				const pv = stored[col.key];
+				seeds[col.key] = pv === null || pv === undefined ? '' : String(pv);
+			}
+			out[f.key] = seeds;
+		}
+		return out;
+	});
+	let partsEdits = $state<Record<string, Record<string, string>>>({});
+
+	function partDraft(field: CustomFieldDef, key: string): string {
+		return partsEdits[field.key]?.[key] ?? partsSeeds[field.key]?.[key] ?? '';
+	}
+
+	// Emits {parts: {key: raw}} — numeric strings coerce server-side; all
+	// cleared collapses to '' (the shared "no value" convention).
+	function setPartDraft(field: CustomFieldDef, key: string, raw: string) {
+		const cur: Record<string, string> = {
+			...(partsSeeds[field.key] ?? {}),
+			...(partsEdits[field.key] ?? {})
+		};
+		cur[key] = raw;
+		partsEdits = { ...partsEdits, [field.key]: cur };
+		const out: Record<string, unknown> = {};
+		for (const col of pricePartsCols(field)) {
+			const v = cur[col.key] ?? '';
+			if (v !== '') out[col.key] = v;
+		}
+		setField(field.key, Object.keys(out).length > 0 ? { parts: out } : '');
+	}
+
 	// §06/§80 price_range — three bound inputs (min / avg / max) emitting one
 	// structured {min?, avg?, max?} value. Raw-string drafts ride alongside
 	// `values` so partial keystrokes ("2.") aren't clobbered by the
@@ -155,7 +215,7 @@
 	// amount's denomination is visible in the input.
 	const layoutCurrencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
 	function fieldCurrencySymbol(field: CustomFieldDef): string {
-		if (field.field_type !== 'currency' && field.field_type !== 'price_range') return '';
+		if (field.field_type !== 'currency' && field.field_type !== 'price_range' && field.field_type !== 'price_parts') return '';
 		const o = field.options;
 		const code =
 			o && !Array.isArray(o) && typeof (o as { currency_code?: unknown }).currency_code === 'string'
@@ -264,6 +324,7 @@
 		'repeater',
 		'multiselect',
 		'price_range',
+		'price_parts',
 		'group'
 	]);
 
@@ -342,6 +403,27 @@
 							step="any"
 							value={pricePart(field, part)}
 							oninput={(e) => setPricePart(field, part, e.currentTarget.value)}
+						/>
+					</label>
+				{/each}
+			</div>
+		{:else if field.field_type === 'price_parts'}
+			<!-- §80 Wiki Topic Pages — one field is one heterogeneous table row;
+			     one input per declared options.parts column. -->
+			{@const cols = pricePartsCols(field)}
+			{@const curSym = fieldCurrencySymbol(field)}
+			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}{#if curSym} <span class="cf-price-currency">({curSym})</span>{/if}</span>
+			<div class="cf-price-range">
+				{#each cols as col (col.key)}
+					<label class="cf-price-bound">
+						<span class="cf-price-bound-label">{col.label || col.key}</span>
+						<input
+							type={col.kind === 'text' ? 'text' : 'number'}
+							class="cf-input"
+							step="any"
+							min={col.kind === 'text' ? undefined : '0'}
+							value={partDraft(field, col.key)}
+							oninput={(e) => setPartDraft(field, col.key, e.currentTarget.value)}
 						/>
 					</label>
 				{/each}

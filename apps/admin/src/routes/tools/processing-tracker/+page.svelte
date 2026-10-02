@@ -246,7 +246,7 @@
 		fields,
 		load: async (params) => {
 			const qs = new URLSearchParams();
-			if (params.page) qs.set('page', String(params.page));
+			qs.set('page', String(params.page + 1));
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) qs.set('sort', params.sort);

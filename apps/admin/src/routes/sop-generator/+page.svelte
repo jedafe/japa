@@ -58,7 +58,7 @@
 
 	async function loadTemplates(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
-		params.set('page', String(p.page));
+		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		const res = await api<{ data?: Template[]; total?: number } | Template[]>(`/admin/sop/templates?${params}`);
 		if (res.ok) {
@@ -154,7 +154,7 @@
 
 	async function loadSamples(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
-		params.set('page', String(p.page));
+		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		if (p.filter?.status) params.set('status', p.filter.status);
 		const res = await api<{ data?: Sample[]; total?: number } | Sample[]>(`/admin/sop/samples?${params}`);

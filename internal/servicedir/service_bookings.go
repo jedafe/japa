@@ -38,40 +38,44 @@ import (
 
 // BookingDTO is the API response shape for one service_bookings row.
 type BookingDTO struct {
-	ID              string               `json:"id"`
-	ListingMetaID   string               `json:"listing_meta_id"`
-	ListingID       string               `json:"listing_id,omitempty"` // the listing's public content id — the ?listing_id= filter key
-	ListingTitle    string               `json:"listing_title"`
-	ListingSlug     string               `json:"listing_slug"`
-	ListingKind     string               `json:"listing_kind"`
-	DepartureID     string               `json:"departure_id,omitempty"`
-	DepartureStart  string               `json:"departure_starts_on,omitempty"`
-	DepartureEnd    string               `json:"departure_ends_on,omitempty"`
-	BookerUserID    string               `json:"booker_user_id,omitempty"`
-	BookerUsername  string               `json:"booker_username,omitempty"`
-	BookerAvatar    string               `json:"booker_avatar,omitempty"`
-	OrgID           string               `json:"org_id"`
-	OrgName         string               `json:"org_name,omitempty"`
-	OrgSlug         string               `json:"org_slug,omitempty"`
-	Intent          string               `json:"intent"`
-	PartySize       int32                `json:"party_size"`
-	PreferredDates  *PreferredDatesInput `json:"preferred_dates,omitempty"`
-	Note            string               `json:"note,omitempty"`
-	Status          string               `json:"status"`
-	PurchaseMode    string               `json:"purchase_mode"`
-	PaymentID       string               `json:"payment_id,omitempty"`
-	TotalPrice      *int64               `json:"total_price,omitempty"`
-	FeeAmount       *int64               `json:"fee_amount,omitempty"`
-	FeeCurrency     string               `json:"fee_currency,omitempty"`
-	AgentBalanceDue *int64               `json:"agent_balance_due,omitempty"`
-	OrgResponseNote string               `json:"org_response_note,omitempty"`
-	DisputeReason   string               `json:"dispute_reason,omitempty"`
-	ExpiresAt       string               `json:"expires_at,omitempty"`
-	ConfirmedAt     string               `json:"confirmed_at,omitempty"`
-	FulfilledAt     string               `json:"fulfilled_at,omitempty"`
-	CancelledAt     string               `json:"cancelled_at,omitempty"`
-	CancelReason    string               `json:"cancel_reason,omitempty"`
-	CreatedAt       string               `json:"created_at"`
+	ID             string               `json:"id"`
+	ListingMetaID  string               `json:"listing_meta_id"`
+	ListingID      string               `json:"listing_id,omitempty"` // the listing's public content id — the ?listing_id= filter key
+	ListingTitle   string               `json:"listing_title"`
+	ListingSlug    string               `json:"listing_slug"`
+	ListingKind    string               `json:"listing_kind"`
+	DepartureID    string               `json:"departure_id,omitempty"`
+	DepartureStart string               `json:"departure_starts_on,omitempty"`
+	DepartureEnd   string               `json:"departure_ends_on,omitempty"`
+	BookerUserID   string               `json:"booker_user_id,omitempty"`
+	BookerUsername string               `json:"booker_username,omitempty"`
+	BookerAvatar   string               `json:"booker_avatar,omitempty"`
+	OrgID          string               `json:"org_id"`
+	OrgName        string               `json:"org_name,omitempty"`
+	OrgSlug        string               `json:"org_slug,omitempty"`
+	Intent         string               `json:"intent"`
+	PartySize      int32                `json:"party_size"`
+	PreferredDates *PreferredDatesInput `json:"preferred_dates,omitempty"`
+	Note           string               `json:"note,omitempty"`
+	Status         string               `json:"status"`
+	PurchaseMode   string               `json:"purchase_mode"`
+	PaymentID      string               `json:"payment_id,omitempty"`
+	// Joined payment row — lets the booker UI offer checkout resume on a
+	// pending fee. Empty when payment_id is unset (inquiries, zero fee).
+	PaymentStatus   string `json:"payment_status,omitempty"`
+	PaymentProvider string `json:"payment_provider,omitempty"`
+	TotalPrice      *int64 `json:"total_price,omitempty"`
+	FeeAmount       *int64 `json:"fee_amount,omitempty"`
+	FeeCurrency     string `json:"fee_currency,omitempty"`
+	AgentBalanceDue *int64 `json:"agent_balance_due,omitempty"`
+	OrgResponseNote string `json:"org_response_note,omitempty"`
+	DisputeReason   string `json:"dispute_reason,omitempty"`
+	ExpiresAt       string `json:"expires_at,omitempty"`
+	ConfirmedAt     string `json:"confirmed_at,omitempty"`
+	FulfilledAt     string `json:"fulfilled_at,omitempty"`
+	CancelledAt     string `json:"cancelled_at,omitempty"`
+	CancelReason    string `json:"cancel_reason,omitempty"`
+	CreatedAt       string `json:"created_at"`
 }
 
 // BookingResult is the POST /services/:id/bookings response — the booking
@@ -193,6 +197,12 @@ func bookingToDTO(r BookingRow) BookingDTO {
 
 	if r.PaymentID.Valid {
 		dto.PaymentID = r.PaymentID.String()
+	}
+	if r.PaymentStatus != nil {
+		dto.PaymentStatus = *r.PaymentStatus
+	}
+	if r.PaymentProvider != nil {
+		dto.PaymentProvider = *r.PaymentProvider
 	}
 
 	if r.FeeCurrency != nil {
@@ -563,6 +573,56 @@ func (s *Service) GetBooking(ctx context.Context, bookingID, viewerID pgtype.UUI
 	}
 
 	return bookingToDTO(row), nil
+}
+
+// BookingPayInput is the POST /me/service-bookings/:id/pay body —
+// the payer email providers require for re-initiation, plus an optional
+// return URL override (same fields the create-checkout path accepts).
+type BookingPayInput struct {
+	Email     string `json:"email"`
+	ReturnURL string `json:"return_url,omitempty"`
+}
+
+// ResumeBookingPayment re-initiates the hosted fee checkout for a pending
+// paid booking whose session was abandoned before capture (§111). The
+// payment row is reused — see payments.ResumePayment. Booker-only: org
+// members and admins cannot pay someone else's fee.
+func (s *Service) ResumeBookingPayment(ctx context.Context, bookingID, userID pgtype.UUID, input BookingPayInput) (*BookingPayment, error) {
+	// Rule 9 — resume mints a new provider session, so it carries the same
+	// Idempotency-Key requirement as booking creation.
+	if mw.IdempotencyKeyFromContext(ctx) == "" {
+		return nil, ErrIdempotencyRequired
+	}
+
+	row, err := s.store.GetBookingDetail(ctx, bookingID)
+	if err != nil {
+		return nil, err // pgx.ErrNoRows → not_found at the handler
+	}
+
+	if row.BookerUserID != userID {
+		return nil, ErrNotOwner
+	}
+
+	// Only a pending paid booking with an unsettled fee has a checkout to
+	// resume. payment_status is joined from the payments row — pending is
+	// the sole resumable state (processing/succeeded/failed/refunded are
+	// all closed for this booking).
+	if row.Intent != BookingIntentBooking || row.Status != BookingStatusPending ||
+		!row.PaymentID.Valid || row.PaymentStatus == nil ||
+		*row.PaymentStatus != "pending" {
+		return nil, ErrInvalidBookingTransition
+	}
+
+	if s.payments == nil {
+		return nil, errors.New("payments service unavailable")
+	}
+
+	res, err := s.payments.ResumePayment(ctx, row.PaymentID, userID, input.Email, input.ReturnURL)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: resume booking payment: %w", err)
+	}
+
+	return &BookingPayment{ID: res.PaymentID, CheckoutURL: res.CheckoutURL}, nil
 }
 
 // ListMyBookings returns the caller's bookings + inquiries.

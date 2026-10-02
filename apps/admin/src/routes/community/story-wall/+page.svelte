@@ -271,7 +271,8 @@
 		load: async (params) => {
 			// Build query string with server-side pagination params.
 			const qp = new URLSearchParams();
-			if (params.page && params.page > 1) qp.set('page_offset', String((params.page - 1) * (params.pageSize ?? 25)));
+			// EntityPage's page is 0-based; page_offset is a row offset.
+			if (params.page) qp.set('page_offset', String(params.page * (params.pageSize ?? 25)));
 			if (params.pageSize) qp.set('page_size', String(params.pageSize));
 			if (params.q) qp.set('q', params.q);
 			if (params.sort) {

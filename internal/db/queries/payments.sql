@@ -59,6 +59,18 @@ SET status = @status, updated_at = now()
 WHERE id = @id
 RETURNING *;
 
+-- Checkout-resume (§111 POST /me/service-bookings/:id/pay): hosted checkout
+-- sessions can't be re-derived — re-initiating produces a fresh provider
+-- reference, so the pending row's provider_ref is swapped in place. The
+-- status='pending' guard is atomic: a payment that settled (or failed)
+-- between the service-layer check and this update yields no row, which the
+-- caller maps to invalid_booking_transition.
+-- name: UpdatePaymentProviderRef :one
+UPDATE payments
+SET provider_ref = @provider_ref, updated_at = now()
+WHERE id = @id AND status = 'pending'
+RETURNING *;
+
 -- =====================
 -- Payment Webhook Events
 -- =====================

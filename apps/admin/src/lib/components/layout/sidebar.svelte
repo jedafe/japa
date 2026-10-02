@@ -24,7 +24,7 @@
 		Route, ListChecks, BadgeCheck, Home,
 		FileCheck, Globe2, Calculator, MapPin,
 		CalendarClock, ClipboardCheck, Gauge, PiggyBank, Timer,
-		ScanSearch, Video
+		ScanSearch, Video, Inbox
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
@@ -164,7 +164,8 @@
 			{ path: "/community/calendar", label: t("nav.community_calendar", "Calendar"), icon: CalendarDays, permission: "calendar.review" },
 			{ path: "/community/digest", label: t("nav.community_digest", "Digest"), icon: Newspaper, permission: "digest.manage" },
 			{ path: "/community/achievements", label: t("nav.community_achievements", "Achievements"), icon: Award, permission: "achievement.moderate" },
-			{ path: "/community/services", label: t("nav.community_services", "Service Directory"), icon: Building2, permission: "service.verify" }
+			{ path: "/community/services", label: t("nav.community_services", "Service Directory"), icon: Building2, permission: "service.verify" },
+			{ path: "/community/service-bookings", label: t("nav.community_service_bookings", "Service Bookings"), icon: Inbox, permission: "service.booking.admin" }
 		]
 	},
 	{

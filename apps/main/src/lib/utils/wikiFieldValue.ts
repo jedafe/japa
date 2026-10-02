@@ -80,6 +80,83 @@ export function formatPriceRange(
 	return single !== undefined ? money(single) : '—';
 }
 
+/** §80 Wiki Topic Pages — one column of a `price_parts` field's declared
+ *  schema (options.parts[]): the part key stored in value_json.parts, its
+ *  display label, and the formatting kind. */
+export interface PricePartDef {
+	key: string;
+	label: string;
+	kind?: string;
+}
+
+/** The declared part columns of a `price_parts` field — [] when the
+ *  options payload doesn't carry the object schema. */
+export function pricePartsSchema(options: unknown): PricePartDef[] {
+	if (options === null || typeof options !== 'object' || Array.isArray(options)) return [];
+	const parts = (options as Record<string, unknown>).parts;
+	if (!Array.isArray(parts)) return [];
+	return parts.filter(
+		(p): p is PricePartDef =>
+			p !== null && typeof p === 'object' && typeof (p as PricePartDef).key === 'string'
+	);
+}
+
+/** The stored part values of a `price_parts` field — the `parts` member
+ *  of the canonical {parts: {...}} shape. */
+export function pricePartsValue(v: unknown): Record<string, unknown> {
+	if (v === null || typeof v !== 'object' || Array.isArray(v)) return {};
+	const parts = (v as Record<string, unknown>).parts;
+	if (parts === null || typeof parts !== 'object' || Array.isArray(parts)) return {};
+	return parts as Record<string, unknown>;
+}
+
+/** Format one part value by its declared kind — `money` resolves through
+ *  the same currency chain as currency/price_range, `number` localizes,
+ *  anything else renders as text. */
+export function formatPricePart(
+	raw: unknown,
+	kind: string | undefined,
+	code: string,
+	currencies?: CurrencyInfo[] | null
+): string {
+	if (raw === null || raw === undefined || raw === '') return '—';
+	if (kind === 'money' || kind === 'number') {
+		const n = typeof raw === 'number' ? raw : Number(raw);
+		if (!Number.isFinite(n)) return '—';
+		if (kind !== 'money') return fmtNum(n);
+		const sym = code ? currencySymbol(code, currencies) : '';
+		if (sym && sym !== code) return `${sym}${fmtNum(n)}`;
+		return code ? `${code} ${fmtNum(n)}` : fmtNum(n);
+	}
+	return String(raw);
+}
+
+/** Inline `price_parts` render for list/dl contexts — the primary part
+ *  alone when the schema declares one, otherwise the parts joined. */
+export function formatPricePartsInline(
+	f: WikiEntityField,
+	contextCurrencyCode: string,
+	currencies?: CurrencyInfo[] | null
+): string {
+	const parts = pricePartsValue(f.value);
+	const schema = pricePartsSchema(f.options);
+	const code = fieldCurrencyCode(f.options) || contextCurrencyCode;
+	const opts = (f.options ?? {}) as { primary_part?: string };
+	const fmt = (key: string, kind?: string) => formatPricePart(parts[key], kind, code, currencies);
+	if (opts.primary_part && parts[opts.primary_part] !== undefined) {
+		const kind = schema.find((p) => p.key === opts.primary_part)?.kind;
+		return fmt(opts.primary_part, kind);
+	}
+	if (schema.length > 0) {
+		const joined = schema
+			.filter((p) => parts[p.key] !== undefined)
+			.map((p) => fmt(p.key, p.kind))
+			.join(' · ');
+		if (joined) return joined;
+	}
+	return '—';
+}
+
 /** §58 — currency display precedence for money-typed fields: the field's
  *  explicit {currency_code} option wins; otherwise the host space/entity's
  *  resolved country currency (space_currency_code / entity_currency_code);
@@ -93,6 +170,7 @@ export function formatWikiFieldValue(
 	if (v === null || v === undefined || v === '') return '—';
 	const code = fieldCurrencyCode(f.options) || contextCurrencyCode || '';
 	if (f.field_type === 'price_range') return formatPriceRange(v, code, currencies);
+	if (f.field_type === 'price_parts') return formatPricePartsInline(f, code, currencies);
 	if (f.field_type === 'currency' && typeof v === 'number') return formatMoney(v, code || undefined, currencies);
 	if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
 	if (typeof v === 'number') return v.toLocaleString(i18n.locale);

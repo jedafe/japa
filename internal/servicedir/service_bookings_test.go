@@ -138,13 +138,29 @@ func TestValidatePackageDepartures(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects system-managed 'full' status from input", func(t *testing.T) {
-		_, err := validatePackageDepartures([]PackageDepartureInput{{
+	// 'full' is system-managed but accepted so a loaded row round-trips
+	// unchanged through the editor — re-saving a full departure must not
+	// 400. Unknown statuses still reject.
+	t.Run("accepts 'full' status for round-trip", func(t *testing.T) {
+		params, err := validatePackageDepartures([]PackageDepartureInput{{
 			StartsOn: "2026-06-01",
 			Status:   DepartureStatusFull,
 		}})
+		if err != nil {
+			t.Fatalf("unexpected error for 'full' status: %v", err)
+		}
+		if *params[0].Status != DepartureStatusFull {
+			t.Fatalf("status not preserved: %s", *params[0].Status)
+		}
+	})
+
+	t.Run("rejects unknown status", func(t *testing.T) {
+		_, err := validatePackageDepartures([]PackageDepartureInput{{
+			StartsOn: "2026-06-01",
+			Status:   "bogus",
+		}})
 		if err == nil {
-			t.Fatal("expected error for caller-supplied 'full' status")
+			t.Fatal("expected error for unknown status")
 		}
 	})
 

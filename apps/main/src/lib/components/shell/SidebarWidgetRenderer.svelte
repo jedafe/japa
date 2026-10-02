@@ -179,6 +179,11 @@
 	let recentContent = $state<RecentContentItem[]>([]);
 	let suggestedContent = $state<RecentContentItem[]>([]);
 	let bookmarkFolders = $state<BookmarkFolderItem[]>([]);
+	// Match the dashboard bookmarks page: empty folders stay hidden — a
+	// folder only surfaces here once it holds at least one bookmark.
+	const nonEmptyBookmarkFolders = $derived(
+		bookmarkFolders.filter((f) => (f.bookmark_count ?? 0) > 0)
+	);
 	let enrollments = $state<LearnEnrollment[]>([]);
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
@@ -1100,11 +1105,11 @@
 				<Bookmark size={18} class="text-[var(--color-text-subtle)]" />
 				<h2 class="text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.bookmarks', 'Bookmarks')}</h2>
 			</div>
-			{#if bookmarkFolders.length === 0}
+			{#if nonEmptyBookmarkFolders.length === 0}
 				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_bookmarks', 'No bookmark folders')}</p>
 			{:else}
 				<ul class="space-y-1.5">
-					{#each bookmarkFolders.slice(0, limit) as folder (folder.id)}
+					{#each nonEmptyBookmarkFolders.slice(0, limit) as folder (folder.id)}
 						<li>
 							<a href={`/dashboard/bookmarks?folder=${folder.id}`} class="flex items-center justify-between text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 								<span class="truncate">{folder.name}</span>

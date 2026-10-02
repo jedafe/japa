@@ -12,6 +12,9 @@
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type FieldOption = { value: string; label: string };
+	// §80 Wiki Topic Pages — one column of a price_parts field's
+	// options.parts schema.
+	type PricePartRow = { key: string; label: string; kind: 'money' | 'number' | 'text' };
 
 	type CustomField = {
 		id: string;
@@ -25,7 +28,9 @@
 		sortable: boolean;
 		searchable: boolean;
 		position: number;
-		options: FieldOption[] | null;
+		// Array for select/multiselect; object schema for composite types
+		// (price_parts carries {parts, primary_part, currency_code}).
+		options: FieldOption[] | Record<string, unknown> | null;
 		/** §80 Itemized Pricing — sub-grouping token inside the group
 		 *  (e.g. 'transportation'); fields sharing one render as one item
 		 *  table on the wiki page. */
@@ -73,6 +78,15 @@
 	let section = $state('');
 	let newOptionValue = $state('');
 	let newOptionLabel = $state('');
+	// §80 Wiki Topic Pages — price_parts schema state: the declared part
+	// columns plus primary_part (JCE/rollup projection) and an optional
+	// currency_code (§58 denomination override).
+	let parts = $state<PricePartRow[]>([]);
+	let primaryPart = $state('');
+	let partsCurrency = $state('');
+	let partsEmphasize = $state(false);
+	let newPartLabel = $state('');
+	let newPartKind = $state<'money' | 'number' | 'text'>('money');
 
 	// --- Delete confirm ---
 	let showDeleteConfirm = $state(false);
@@ -100,6 +114,7 @@
 		{ value: 'color', label: 'Color Picker' },
 		{ value: 'rating', label: 'Rating (1-5)' },
 		{ value: 'price_range', label: 'Price Range (avg + min–max)' },
+		{ value: 'price_parts', label: 'Price Parts (named columns)' },
 		{ value: 'image_single', label: 'Image (Single Upload)' },
 		{ value: 'image_multi', label: 'Images (Multi Upload)' },
 		{ value: 'media', label: 'Media (File Upload)' },
@@ -112,6 +127,7 @@
 	const fieldTypeLabel = (ft: string) => fieldTypes.find((f) => f.value === ft)?.label ?? ft;
 
 	const needsOptions = $derived(fieldType === 'select' || fieldType === 'multiselect');
+	const needsParts = $derived(fieldType === 'price_parts');
 
 	const columns: Column[] = [
 		{
@@ -208,6 +224,12 @@
 		section = '';
 		newOptionValue = '';
 		newOptionLabel = '';
+		parts = [];
+		primaryPart = '';
+		partsCurrency = '';
+		partsEmphasize = false;
+		newPartLabel = '';
+		newPartKind = 'money';
 		fieldError = '';
 		slideOverOpen = true;
 	}
@@ -222,10 +244,30 @@
 		filterable = f.filterable;
 		sortable = f.sortable;
 		searchable = f.searchable;
-		options = f.options ?? [];
+		options = Array.isArray(f.options) ? f.options : [];
 		section = f.section ?? '';
+		// Object-shaped options (price_parts) seed the parts editor.
+		const po =
+			f.options && !Array.isArray(f.options) && typeof f.options === 'object'
+				? (f.options as {
+						parts?: PricePartRow[];
+						primary_part?: string;
+						currency_code?: string;
+						emphasize?: boolean;
+					})
+				: null;
+		parts = (po?.parts ?? []).map((p) => ({
+			key: p.key,
+			label: p.label,
+			kind: p.kind === 'number' || p.kind === 'text' ? p.kind : 'money'
+		}));
+		primaryPart = po?.primary_part ?? '';
+		partsCurrency = po?.currency_code ?? '';
+		partsEmphasize = po?.emphasize === true;
 		newOptionValue = '';
 		newOptionLabel = '';
+		newPartLabel = '';
+		newPartKind = 'money';
 		fieldError = '';
 		slideOverOpen = true;
 	}
@@ -253,6 +295,28 @@
 		options = options.filter((o) => o !== opt);
 	}
 
+	function slugifyPart(s: string): string {
+		return s
+			.toLowerCase()
+			.trim()
+			.replace(/[^a-z0-9]+/g, '_')
+			.replace(/^_+|_+$/g, '');
+	}
+
+	function addPart() {
+		const l = newPartLabel.trim();
+		const k = slugifyPart(l);
+		if (k && l && !parts.some((p) => p.key === k)) {
+			parts = [...parts, { key: k, label: l, kind: newPartKind }];
+			newPartLabel = '';
+		}
+	}
+
+	function removePart(p: PricePartRow) {
+		parts = parts.filter((x) => x !== p);
+		if (primaryPart === p.key) primaryPart = '';
+	}
+
 	function handleOptionKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter') {
 			e.preventDefault();
@@ -267,6 +331,10 @@
 		}
 		if (needsOptions && options.length === 0) {
 			fieldError = 'Select and multiselect fields require at least one option';
+			return;
+		}
+		if (needsParts && parts.length === 0) {
+			fieldError = 'Price parts fields require at least one part';
 			return;
 		}
 
@@ -287,7 +355,17 @@
 				section: section.trim(),
 				position: editingField?.position ?? fields.length,
 			};
-			if (needsOptions) {
+			if (needsParts) {
+				// §80 Wiki Topic Pages — the object-shaped schema:
+				// {parts: [{key,label,kind}], primary_part?, currency_code?,
+				// emphasize?}.
+				body.options = {
+					parts: parts.map((p) => ({ key: p.key, label: p.label, kind: p.kind })),
+					...(primaryPart ? { primary_part: primaryPart } : {}),
+					...(partsCurrency.trim() ? { currency_code: partsCurrency.trim().toUpperCase() } : {}),
+					...(partsEmphasize ? { emphasize: true } : {})
+				};
+			} else if (needsOptions) {
 				body.options = options;
 			}
 
@@ -498,6 +576,82 @@
 							</span>
 						{/each}
 					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- §80 Wiki Topic Pages — price_parts schema editor: the declared
+		     part columns ({key,label,kind}), the JCE primary_part, and an
+		     optional currency_code denomination override. -->
+		{#if needsParts}
+			<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
+				<span class="mb-2 block text-sm font-medium">{t('fieldGroups.parts', 'Parts (columns)')}</span>
+				<div class="flex gap-2">
+					<input
+						type="text"
+						class="flex-1 rounded-md border px-3 py-2 text-sm"
+						style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+						placeholder={t('fieldGroups.part_label', 'Part label (e.g. Base Fare)')}
+						bind:value={newPartLabel}
+						onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPart(); } }}
+					/>
+					<AutocompleteSelect
+						bind:value={newPartKind}
+						options={[
+							{ value: 'money', label: 'Money' },
+							{ value: 'number', label: 'Number' },
+							{ value: 'text', label: 'Text' }
+						]}
+						class="w-32"
+					/>
+					<button
+						type="button"
+						class="rounded-md border px-3 py-2 text-sm font-medium hover:opacity-70"
+						style="border-color: var(--color-border)"
+						onclick={addPart}
+					>
+						Add
+					</button>
+				</div>
+				{#if parts.length > 0}
+					<div class="mt-2 flex flex-wrap gap-2">
+						{#each parts as part (part.key)}
+							<span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs" style="background-color: var(--color-muted-muted)">
+								<span style="color: var(--color-muted)">{part.key}</span>: {part.label}
+								<span style="color: var(--color-muted)">({part.kind})</span>
+								<button type="button" class="ml-0.5 opacity-50 hover:opacity-100" onclick={() => removePart(part)}>&times;</button>
+							</span>
+						{/each}
+					</div>
+					<div class="mt-3 grid grid-cols-2 gap-3">
+						<div>
+							<span class="mb-1 block text-xs font-medium">{t('fieldGroups.primary_part', 'Primary part (comparison)')}</span>
+							<AutocompleteSelect
+								bind:value={primaryPart}
+								options={[
+									{ value: '', label: t('fieldGroups.primary_none', '— none —') },
+									...parts
+										.filter((p) => p.kind !== 'text')
+										.map((p) => ({ value: p.key, label: p.label }))
+								]}
+							/>
+						</div>
+						<div>
+							<span class="mb-1 block text-xs font-medium">{t('fieldGroups.currency_code', 'Currency code')}</span>
+							<input
+								type="text"
+								class="w-full rounded-md border px-3 py-2 font-mono text-sm uppercase"
+								style="border-color: var(--color-border); background-color: var(--color-background); color: var(--color-foreground)"
+								placeholder="CAD"
+								maxlength="3"
+								bind:value={partsCurrency}
+							/>
+						</div>
+					</div>
+					<label class="mt-3 flex items-center gap-2 text-sm">
+						<input type="checkbox" bind:checked={partsEmphasize} class="rounded" />
+						{t('fieldGroups.emphasize', 'Emphasize row (totals)')}
+					</label>
 				{/if}
 			</div>
 		{/if}

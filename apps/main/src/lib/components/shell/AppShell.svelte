@@ -169,6 +169,13 @@
 		height: 100vh;
 	}
 
+	/* Collapsed nav: raise the rail's stacking context so the item-label
+	   flyouts rendered inside LeftNav paint above the left rail and page
+	   content (sticky siblings would otherwise overlay them in DOM order). */
+	.shell[data-nav-collapsed='true'] .shell-nav {
+		z-index: 30;
+	}
+
 	.shell-center {
 		min-width: 0;
 	}

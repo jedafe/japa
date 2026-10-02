@@ -766,27 +766,35 @@ func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 }
 
 // WikiPageTemplateDTO is the admin representation of a page template.
+// parent_template_id nests the template under a same-category top-level
+// template (§80 Wiki Topic Pages); section_label/preview_limit configure
+// the composite section the child contributes to the parent's page.
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiPageTemplateDTO struct {
-	ID             string `json:"id,omitempty"`
-	CategoryID     string `json:"category_id"`
-	Slug           string `json:"slug"`
-	Label          string `json:"label"`
-	FieldGroupID   string `json:"field_group_id,omitempty"`
-	FieldGroupSlug string `json:"field_group_slug,omitempty"`
-	FieldGroupName string `json:"field_group_name,omitempty"`
-	Position       int32  `json:"position"`
-	IsSystem       bool   `json:"is_system"`
+	ID               string  `json:"id,omitempty"`
+	CategoryID       string  `json:"category_id"`
+	Slug             string  `json:"slug"`
+	Label            string  `json:"label"`
+	FieldGroupID     string  `json:"field_group_id,omitempty"`
+	FieldGroupSlug   string  `json:"field_group_slug,omitempty"`
+	FieldGroupName   string  `json:"field_group_name,omitempty"`
+	ParentTemplateID *string `json:"parent_template_id,omitempty"`
+	SectionLabel     *string `json:"section_label,omitempty"`
+	PreviewLimit     int32   `json:"preview_limit"`
+	Position         int32   `json:"position"`
+	IsSystem         bool    `json:"is_system"`
 }
 
 func wikiPageTemplateToDTO(t WikiPageTemplate) WikiPageTemplateDTO {
 	d := WikiPageTemplateDTO{
-		ID:         t.ID.String(),
-		CategoryID: t.CategoryID.String(),
-		Slug:       t.Slug,
-		Label:      t.Label,
-		Position:   t.Position,
-		IsSystem:   t.IsSystem,
+		ID:           t.ID.String(),
+		CategoryID:   t.CategoryID.String(),
+		Slug:         t.Slug,
+		Label:        t.Label,
+		SectionLabel: t.SectionLabel,
+		PreviewLimit: t.PreviewLimit,
+		Position:     t.Position,
+		IsSystem:     t.IsSystem,
 	}
 	if t.FieldGroupID.Valid {
 		d.FieldGroupID = t.FieldGroupID.String()
@@ -796,6 +804,10 @@ func wikiPageTemplateToDTO(t WikiPageTemplate) WikiPageTemplateDTO {
 	}
 	if t.FieldGroupName != nil {
 		d.FieldGroupName = *t.FieldGroupName
+	}
+	if t.ParentTemplateID.Valid {
+		pid := t.ParentTemplateID.String()
+		d.ParentTemplateID = &pid
 	}
 
 	return d
@@ -824,12 +836,60 @@ func (s *Service) ListPageTemplates(ctx context.Context, categoryIDStr string) (
 	return out, nil
 }
 
+// ErrInvalidParentTemplate is returned when a template's parent_template_id
+// does not name a top-level template in the same category (§80 Wiki Topic
+// Pages — nesting depth is capped at one child level, and parents may not
+// cross categories).
+var ErrInvalidParentTemplate = errors.New("invalid parent template")
+
+// resolveTemplateParent validates an optional parent_template_id: the
+// parent must exist, belong to the same category, and be top-level itself
+// (v1 caps nesting at one level). A blank id clears the parent.
+func (s *Service) resolveTemplateParent(ctx context.Context, categoryID, selfID pgtype.UUID, idStr string) (pgtype.UUID, error) {
+	if strings.TrimSpace(idStr) == "" {
+		return pgtype.UUID{}, nil
+	}
+
+	var parentID pgtype.UUID
+	if err := parentID.Scan(idStr); err != nil || !parentID.Valid {
+		return pgtype.UUID{}, fmt.Errorf("%w: parent_template_id is not a uuid", ErrInvalidParentTemplate)
+	}
+	if parentID == selfID {
+		return pgtype.UUID{}, fmt.Errorf("%w: a template cannot parent itself", ErrInvalidParentTemplate)
+	}
+
+	parent, err := s.store.GetPageTemplate(ctx, parentID)
+	if err != nil {
+		if errors.Is(err, ErrWikiPageTemplateNotFound) {
+			return pgtype.UUID{}, fmt.Errorf("%w: not found", ErrInvalidParentTemplate)
+		}
+		return pgtype.UUID{}, err
+	}
+	if parent.CategoryID != categoryID {
+		return pgtype.UUID{}, fmt.Errorf("%w: parent must belong to the same category", ErrInvalidParentTemplate)
+	}
+	if parent.ParentTemplateID.Valid {
+		return pgtype.UUID{}, fmt.Errorf("%w: parent must be a top-level template", ErrInvalidParentTemplate)
+	}
+
+	return parentID, nil
+}
+
 // CreateWikiPageTemplateRequest is the admin add-template payload.
 // //nolint:revive // exported: request DTO naming follows package convention
 type CreateWikiPageTemplateRequest struct {
 	Slug         string `json:"slug"`
 	Label        string `json:"label"`
 	FieldGroupID string `json:"field_group_id"`
+	// ParentTemplateID nests the template under a same-category top-level
+	// template (§80 Wiki Topic Pages); empty = top-level.
+	ParentTemplateID *string `json:"parent_template_id"`
+	// SectionLabel overrides the label the synthesized composite section on
+	// the parent page carries (nil → the template's own label is used).
+	SectionLabel *string `json:"section_label"`
+	// PreviewLimit caps the rows the parent's composite preview section
+	// shows before linking to the full topic page (nil → default 5).
+	PreviewLimit *int32 `json:"preview_limit"`
 	Position     int32  `json:"position"`
 }
 
@@ -873,7 +933,19 @@ func (s *Service) CreateWikiPageTemplate(ctx context.Context, categoryIDStr stri
 		return WikiPageTemplateDTO{}, err
 	}
 
-	t, err := s.store.CreatePageTemplate(ctx, categoryID, slug, label, fgID, req.Position, false)
+	var parentID pgtype.UUID
+	if req.ParentTemplateID != nil {
+		parentID, err = s.resolveTemplateParent(ctx, categoryID, pgtype.UUID{}, *req.ParentTemplateID)
+		if err != nil {
+			return WikiPageTemplateDTO{}, err
+		}
+	}
+
+	if req.PreviewLimit != nil && *req.PreviewLimit < 0 {
+		return WikiPageTemplateDTO{}, fmt.Errorf("%w: preview_limit must be >= 0", ErrInvalidInput)
+	}
+
+	t, err := s.store.CreatePageTemplate(ctx, categoryID, slug, label, fgID, parentID, req.SectionLabel, req.PreviewLimit, req.Position, false)
 	if err != nil {
 		return WikiPageTemplateDTO{}, err
 	}
@@ -947,16 +1019,27 @@ func (s *Service) provisionPageTemplateGroup(ctx context.Context, typeSlug, page
 
 // UpdateWikiPageTemplateRequest is the admin patch payload; nil fields are
 // left unchanged. field_group_id rebinding follows the category contract:
-// an explicit value must resolve to a real group.
+// an explicit value must resolve to a real group. parent_template_id and
+// section_label are three-state: absent leaves them, explicit null clears
+// them (top-level / no section-label override), a value validates/sets.
 // //nolint:revive // exported: request DTO naming follows package convention
 type UpdateWikiPageTemplateRequest struct {
 	Label        *string `json:"label"`
 	FieldGroupID *string `json:"field_group_id"`
 	Position     *int32  `json:"position"`
+
+	// ParentTemplateID is a uuid string or null; absent leaves parentage.
+	ParentTemplateID json.RawMessage `json:"parent_template_id"`
+	// SectionLabel is a string or null; absent leaves the override.
+	SectionLabel json.RawMessage `json:"section_label"`
+	// PreviewLimit replaces the preview cap when non-nil (>= 0; 0 = all).
+	PreviewLimit *int32 `json:"preview_limit"`
 }
 
-// UpdateWikiPageTemplate patches a template's label, group binding, and
-// position. Slug is immutable (page URLs).
+// UpdateWikiPageTemplate patches a template's label, group binding,
+// position, parentage, and preview config. Slug is immutable (page URLs).
+// Re-parenting a template that itself has children is rejected — a child
+// promoted to parent of another would silently exceed the depth cap.
 func (s *Service) UpdateWikiPageTemplate(ctx context.Context, idStr string, req UpdateWikiPageTemplateRequest) error {
 	var id pgtype.UUID
 	if err := id.Scan(idStr); err != nil || !id.Valid {
@@ -980,7 +1063,65 @@ func (s *Service) UpdateWikiPageTemplate(ctx context.Context, idStr string, req 
 		fgID = v
 	}
 
-	return s.store.UpdatePageTemplate(ctx, id, req.Label, updateFG, fgID, req.Position)
+	updateParent := len(req.ParentTemplateID) > 0
+	var parentID pgtype.UUID
+	if updateParent {
+		var pid *string
+		if strings.TrimSpace(string(req.ParentTemplateID)) != "null" {
+			var s string
+			if err := json.Unmarshal(req.ParentTemplateID, &s); err != nil {
+				return fmt.Errorf("%w: parent_template_id must be a uuid string or null", ErrInvalidInput)
+			}
+			pid = &s
+		}
+		if pid != nil {
+			// resolveTemplateParent needs the template's category — fetch
+			// the row once to check same-category parentage.
+			t, err := s.store.GetPageTemplate(ctx, id)
+			if err != nil {
+				return err
+			}
+			// Depth cap (§80 Wiki Topic Pages): a template that already has
+			// children cannot be nested under a parent — that would produce
+			// a second child level.
+			siblings, err := s.store.ListPageTemplates(ctx, t.CategoryID)
+			if err != nil {
+				return err
+			}
+			for _, sib := range siblings {
+				if sib.ParentTemplateID == id {
+					return fmt.Errorf("%w: template has child topics and cannot be nested", ErrInvalidParentTemplate)
+				}
+			}
+			parentID, err = s.resolveTemplateParent(ctx, t.CategoryID, id, *pid)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	updateSectionLabel := len(req.SectionLabel) > 0
+	var sectionLabel *string
+	if updateSectionLabel {
+		if strings.TrimSpace(string(req.SectionLabel)) != "null" {
+			var s string
+			if err := json.Unmarshal(req.SectionLabel, &s); err != nil {
+				return fmt.Errorf("%w: section_label must be a string or null", ErrInvalidInput)
+			}
+			s = strings.TrimSpace(s)
+			if s == "" {
+				sectionLabel = nil
+			} else {
+				sectionLabel = &s
+			}
+		}
+	}
+
+	if req.PreviewLimit != nil && *req.PreviewLimit < 0 {
+		return fmt.Errorf("%w: preview_limit must be >= 0", ErrInvalidInput)
+	}
+
+	return s.store.UpdatePageTemplate(ctx, id, req.Label, updateFG, fgID, req.Position, updateParent, parentID, updateSectionLabel, sectionLabel, req.PreviewLimit)
 }
 
 // DeleteWikiPageTemplate removes a non-system template. Blocked while bound

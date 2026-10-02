@@ -810,12 +810,24 @@ WHERE lower(name) = lower(@state_name)
 LIMIT 1;
 
 -- name: GetSpaceBySlug :one
+-- The {slug} route param also accepts a space UUID — callers holding only
+-- the id (e.g. service_directory dest/city filters) resolve the display
+-- name through the same endpoint. The regex guard keeps @slug::uuid from
+-- erroring on ordinary slugs.
 SELECT id, parent_id, space_type_id, name, slug, description, wiki_content,
  logo_media_id, header_image_id, geo_code, level, member_count, post_count,
  follower_count, visibility, posting_perm, replying_perm, commenting_perm,
  joining_perm, status, created_at, updated_at, deleted_at, currency_code
 FROM spaces
-WHERE slug = @slug AND deleted_at IS NULL;
+WHERE deleted_at IS NULL
+  AND (
+    slug = @slug
+    OR id = CASE
+        WHEN @slug ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        THEN @slug::uuid
+        ELSE NULL
+    END
+  );
 
 -- name: GetPublicSpaceBySlug :one
 -- Public API (Section 47): returns a single space only if it is public,

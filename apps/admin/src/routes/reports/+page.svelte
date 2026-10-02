@@ -240,11 +240,11 @@
 		fields,
 		load: async ({ page, pageSize, q, filter }) => {
 			// Backend ListReports reads `page` (0-indexed) and computes offset
-			// internally as page * page_size. EntityPage passes a 1-based page,
-			// so convert to 0-based.
+			// internally as page * page_size. EntityPage's page is already
+			// 0-based, so pass it through unchanged.
 			const params = new URLSearchParams({
 				page_size: String(pageSize),
-				page: String(Math.max(0, page - 1))
+				page: String(page)
 			});
 			if (q) params.set("q", q);
 			if (filter.status) params.set("status", filter.status);

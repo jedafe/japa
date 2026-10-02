@@ -269,7 +269,7 @@
 		fields,
 		load: async (params) => {
 			const queryParts: string[] = [];
-			queryParts.push(`page=${params.page}`);
+			queryParts.push(`page=${params.page + 1}`);
 			queryParts.push(`limit=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {
