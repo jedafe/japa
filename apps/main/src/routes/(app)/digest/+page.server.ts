@@ -3,7 +3,7 @@
 // Returns the latest published edition or a loadError flag when none exists.
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { DigestEdition } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
@@ -17,9 +17,15 @@ export const load: PageServerLoad = async (event) => {
 	let loadError = false;
 	try {
 		digest = await apiGet<DigestEdition>(ctx, '/digest/latest');
-	} catch {
-		digest = null;
-		loadError = true;
+	} catch (err) {
+		// 404 no_digest means simply "no published edition yet" — render the
+		// empty state, not the error state. Other failures stay errors.
+		if (err instanceof ApiError && err.status === 404) {
+			digest = null;
+		} else {
+			digest = null;
+			loadError = true;
+		}
 	}
 	return { digest, loadError };
 };

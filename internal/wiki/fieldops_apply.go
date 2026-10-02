@@ -9,10 +9,13 @@
 package wiki
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -366,14 +369,23 @@ func assignGroupToClass(ctx context.Context, q *gen.Queries, groupID pgtype.UUID
 	return nil
 }
 
-// marshalFieldOptions encodes field options for the custom_fields.options
-// jsonb column. Empty option lists store NULL, matching the admin handler.
-func marshalFieldOptions(opts []customfields.FieldOption) ([]byte, error) {
-	if len(opts) == 0 {
+// marshalFieldOptions validates and compacts a field definition's raw
+// options payload for the custom_fields.options jsonb column. Empty or
+// "null" payloads store NULL, matching the admin handler.
+func marshalFieldOptions(opts json.RawMessage) ([]byte, error) {
+	if len(opts) == 0 || string(opts) == "null" {
 		return nil, nil
 	}
+	if !json.Valid(opts) {
+		return nil, errors.New("options are not valid JSON")
+	}
 
-	return json.Marshal(opts)
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, opts); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 // valueToUpsertParams maps an op's JSON value onto the custom_field_values
@@ -402,6 +414,18 @@ func valueToUpsertParams(field schemaField, entityType string, entityID pgtype.U
 	// coerce to the canonical shape before the raw-JSON column setter.
 	if field.fieldType == customfields.FieldTypePriceRange {
 		norm, nerr := normalizePriceRange(v, field.key)
+		if nerr != nil {
+			return params, nerr
+		}
+
+		v = norm
+	}
+
+	// §80 Wiki Topic Pages: price_parts is a multi-part composite — coerce
+	// to the canonical {"parts": {...}} shape against the field's declared
+	// options.parts schema; unknown part keys are rejected.
+	if field.fieldType == customfields.FieldTypePriceParts {
+		norm, nerr := normalizePriceParts(v, field.key, field.options)
 		if nerr != nil {
 			return params, nerr
 		}
@@ -548,4 +572,102 @@ func normalizePriceRange(v json.RawMessage, key string) (json.RawMessage, error)
 	}
 
 	return json.Marshal(out)
+}
+
+// normalizePriceParts coerces a set_value payload into the canonical
+// price_parts object {"parts": {"<part_key>": <number|string>}} (§80 Wiki
+// Topic Pages). The input may be the canonical shape or a bare parts map;
+// part keys are validated against the field's options.parts schema —
+// unknown keys are rejected, not silently dropped. money/number parts
+// coerce to non-negative numerics (JSON numbers or numeric strings); text
+// parts must be JSON strings. Fields without a parts schema cannot coerce —
+// the schema is required at definition time (ValidOptionsShape), so a
+// missing schema fails closed.
+func normalizePriceParts(v json.RawMessage, key string, options []byte) (json.RawMessage, error) {
+	opts := customfields.PricePartsOptionsFromJSON(options)
+	if opts == nil {
+		return nil, fmt.Errorf("field %q is price_parts but declares no options.parts schema", key)
+	}
+
+	declared := make(map[string]customfields.PricePartsPart, len(opts.Parts))
+	for _, p := range opts.Parts {
+		declared[p.Key] = p
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(v, &raw); err != nil {
+		return nil, fmt.Errorf("field %q expects a {parts:{...}} object: %w", key, err)
+	}
+
+	// Accept a bare parts map for submission convenience; when the payload
+	// carries a "parts" member it must be the parts object and the only
+	// top-level member.
+	if inner, ok := raw["parts"]; ok {
+		if len(raw) != 1 {
+			return nil, fmt.Errorf("field %q: %q carries members alongside parts", key, key)
+		}
+		raw = nil
+		if err := json.Unmarshal(inner, &raw); err != nil {
+			return nil, fmt.Errorf("field %q: parts must be an object: %w", key, err)
+		}
+	}
+
+	out := make(map[string]any, len(raw))
+
+	for pk, rv := range raw {
+		part, known := declared[pk]
+		if !known {
+			return nil, fmt.Errorf("field %q: unknown part %q (not in options.parts)", key, pk)
+		}
+		if string(rv) == "null" {
+			continue
+		}
+
+		kind := part.Kind
+		if kind == "" {
+			kind = customfields.PricePartKindNumber
+		}
+
+		if kind == customfields.PricePartKindText {
+			var s string
+			if err := json.Unmarshal(rv, &s); err != nil {
+				return nil, fmt.Errorf("field %q: part %q must be a string: %w", key, pk, err)
+			}
+			out[pk] = s
+			continue
+		}
+
+		// money/number parts coerce to a non-negative float — JSON numbers
+		// and numeric strings both accepted (set_value submitters quote
+		// input-field values).
+		var n float64
+		var ns string
+		if err := json.Unmarshal(rv, &n); err != nil {
+			if serr := json.Unmarshal(rv, &ns); serr != nil {
+				return nil, fmt.Errorf("field %q: part %q must be a number: %w", key, pk, err)
+			}
+			n, err = strconv.ParseFloat(strings.TrimSpace(ns), 64)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: part %q must be a number", key, pk)
+			}
+		}
+		if !finite(n) {
+			return nil, fmt.Errorf("field %q: part %q must be a finite number", key, pk)
+		}
+		if n < 0 {
+			return nil, fmt.Errorf("field %q: part %q must not be negative", key, pk)
+		}
+		out[pk] = n
+	}
+
+	if len(out) == 0 {
+		return nil, fmt.Errorf("field %q expects at least one part value", key)
+	}
+
+	parts, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(map[string]json.RawMessage{"parts": parts})
 }

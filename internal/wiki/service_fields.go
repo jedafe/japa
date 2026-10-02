@@ -144,10 +144,16 @@ type EntityFieldDTO struct {
 
 // EntityFieldSectionDTO is one named section inside a field group — fields
 // sharing a custom_fields.section token in definition order. The empty key
-// collects section-less fields (rendered first, unlabeled).
+// collects section-less fields (rendered first, unlabeled). §80 Wiki Topic
+// Pages: a section synthesized from a child page template's bound group
+// carries PageSlug (the /wiki/{space}/{slug} drill-down target) and Label
+// (the child's section_label fallback label); plain token sections carry
+// neither.
 type EntityFieldSectionDTO struct {
-	Key    string           `json:"key"`
-	Fields []EntityFieldDTO `json:"fields"`
+	Key      string           `json:"key"`
+	Label    string           `json:"label,omitempty"`
+	PageSlug string           `json:"page_slug,omitempty"`
+	Fields   []EntityFieldDTO `json:"fields"`
 }
 
 // EntityFieldGroupDTO is a field group assigned to the entity's class, with

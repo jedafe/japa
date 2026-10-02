@@ -210,7 +210,8 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (DigestEditionDetailD
 type AdminListFilter struct {
 	SpaceID pgtype.UUID
 	Status  string // draft|review|published|cancelled
-	Sort    string // created_at|published_at|scheduled_for (default: created_at)
+	Query   string // free-text search over cadence/status/generated_by
+	Sort    string // cadence|status|email_sent|created_at|published_at|scheduled_for (default: created_at)
 	Order   string // asc|desc (default: desc)
 }
 
@@ -231,6 +232,7 @@ func (s *Service) AdminList(ctx context.Context, f AdminListFilter, page, limit 
 
 		SpaceID: f.SpaceID,
 		Status:  f.Status,
+		Query:   f.Query,
 		Sort:    f.Sort,
 		Order:   f.Order,
 		Limit:   limit,
@@ -436,8 +438,8 @@ func (s *Service) AutoPublishDueEditions(ctx context.Context) (int64, error) {
 // // This method satisfies the worker.DigestProcessor interface.
 // // Ref: japaconnect-engineering/sections/84-community-digest-widget.md.
 func (s *Service) SendEditionEmail(ctx context.Context, editionID pgtype.UUID) error {
-	if !false || !editionID.Valid {
-		return errors.New("digest: send_email: edition_id and the id are required")
+	if !editionID.Valid {
+		return errors.New("digest: send_email: edition_id is required")
 	}
 
 	if !s.EmailEnabled(ctx) {
@@ -609,14 +611,14 @@ func appendUnsubscribeLinkToHTML(htmlBody, unsubURL string) string {
 	return htmlBody + footer
 }
 
-// setDraftLock sets jc:digest_draft:{}:{edition_id} with a 2h TTL
+// setDraftLock sets jc:digest_draft:{edition_id} with a 2h TTL
 // marking the edition as pending admin review (§84, valkey-keys-catalog.md).
 func (s *Service) setDraftLock(ctx context.Context, editionID pgtype.UUID) {
-	if s.vk == nil || !false || !editionID.Valid {
+	if s.vk == nil || !editionID.Valid {
 		return
 	}
 
-	key := "jc:digest_draft:" + "" + ":" + editionID.String()
+	key := "jc:digest_draft:" + editionID.String()
 	if err := s.vk.Set(ctx, key, "1", digestDraftKeyTTL).Err(); err != nil {
 		slog.Error("digest: set draft lock", "error", err, "key", key)
 	}
@@ -624,11 +626,11 @@ func (s *Service) setDraftLock(ctx context.Context, editionID pgtype.UUID) {
 
 // clearDraftLock removes the jc:digest_draft key on publish or cancel.
 func (s *Service) clearDraftLock(ctx context.Context, editionID pgtype.UUID) {
-	if s.vk == nil || !false || !editionID.Valid {
+	if s.vk == nil || !editionID.Valid {
 		return
 	}
 
-	key := "jc:digest_draft:" + "" + ":" + editionID.String()
+	key := "jc:digest_draft:" + editionID.String()
 	if err := s.vk.Del(ctx, key).Err(); err != nil {
 		slog.Error("digest: clear draft lock", "error", err, "key", key)
 	}
@@ -667,7 +669,9 @@ func editionToDetailDTO(e DigestEdition) DigestEditionDetailDTO {
 		DigestEditionDTO: editionToDTO(e),
 	}
 	if len(e.Content) > 0 {
-		dto.Content = json.RawMessage(e.Content)
+		// §84: emit the canonical section keys (events/story) even for rows
+		// persisted with the legacy upcoming_events/featured_story spellings.
+		dto.Content = json.RawMessage(NormalizeContent(e.Content))
 	}
 
 	return dto

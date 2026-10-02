@@ -74,12 +74,14 @@ func (q *Queries) AdminCountServiceListings(ctx context.Context, arg AdminCountS
 const adminListServiceBookings = `-- name: AdminListServiceBookings :many
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        u.username AS booker_username
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 LEFT JOIN users u ON u.id = sb.booker_user_id
 WHERE ($1::text IS NULL OR sb.status = $1::text)
@@ -131,6 +133,8 @@ type AdminListServiceBookingsRow struct {
 	ListingKind       string             `json:"listing_kind"`
 	OrgName           *string            `json:"org_name"`
 	OrgSlug           *string            `json:"org_slug"`
+	PaymentStatus     *string            `json:"payment_status"`
+	PaymentProvider   *string            `json:"payment_provider"`
 	DepartureStartsOn pgtype.Date        `json:"departure_starts_on"`
 	DepartureEndsOn   pgtype.Date        `json:"departure_ends_on"`
 	BookerUsername    *string            `json:"booker_username"`
@@ -186,6 +190,8 @@ func (q *Queries) AdminListServiceBookings(ctx context.Context, arg AdminListSer
 			&i.ListingKind,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.PaymentStatus,
+			&i.PaymentProvider,
 			&i.DepartureStartsOn,
 			&i.DepartureEndsOn,
 			&i.BookerUsername,
@@ -780,7 +786,7 @@ WHERE c.content_type = 'service_listing'
   AND ($6::bool IS NULL OR sm.is_verified = $6::bool)
   AND ($7::text IS NULL OR sm.listing_kind = $7::text)
   AND ($8::bigint IS NULL OR sm.price_amount <= $8::bigint)
-  AND ($9::date IS NULL OR sm.available_from >= $9::date)
+  AND ($9::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $9::date)
   AND ($10::text IS NULL OR c.title ILIKE '%' || $10::text || '%')
 `
 
@@ -1415,7 +1421,7 @@ SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id,
        c.slug AS listing_slug,
        sm.listing_kind, sm.capacity AS package_capacity,
        o.name AS org_name, o.slug AS org_slug,
-       p.status AS payment_status,
+       p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
@@ -1462,6 +1468,7 @@ type GetServiceBookingDetailRow struct {
 	OrgName           *string            `json:"org_name"`
 	OrgSlug           *string            `json:"org_slug"`
 	PaymentStatus     *string            `json:"payment_status"`
+	PaymentProvider   *string            `json:"payment_provider"`
 	DepartureStartsOn pgtype.Date        `json:"departure_starts_on"`
 	DepartureEndsOn   pgtype.Date        `json:"departure_ends_on"`
 }
@@ -1508,6 +1515,7 @@ func (q *Queries) GetServiceBookingDetail(ctx context.Context, id pgtype.UUID) (
 		&i.OrgName,
 		&i.OrgSlug,
 		&i.PaymentStatus,
+		&i.PaymentProvider,
 		&i.DepartureStartsOn,
 		&i.DepartureEndsOn,
 	)
@@ -2397,11 +2405,13 @@ func (q *Queries) ListServiceBookingsByOrg(ctx context.Context, arg ListServiceB
 const listServiceBookingsByUser = `-- name: ListServiceBookingsByUser :many
 SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 WHERE sb.booker_user_id = $1
   AND ($2::text IS NULL OR sb.status = $2::text)
@@ -2452,6 +2462,8 @@ type ListServiceBookingsByUserRow struct {
 	ListingKind       string             `json:"listing_kind"`
 	OrgName           *string            `json:"org_name"`
 	OrgSlug           *string            `json:"org_slug"`
+	PaymentStatus     *string            `json:"payment_status"`
+	PaymentProvider   *string            `json:"payment_provider"`
 	DepartureStartsOn pgtype.Date        `json:"departure_starts_on"`
 	DepartureEndsOn   pgtype.Date        `json:"departure_ends_on"`
 }
@@ -2506,6 +2518,8 @@ func (q *Queries) ListServiceBookingsByUser(ctx context.Context, arg ListService
 			&i.ListingKind,
 			&i.OrgName,
 			&i.OrgSlug,
+			&i.PaymentStatus,
+			&i.PaymentProvider,
 			&i.DepartureStartsOn,
 			&i.DepartureEndsOn,
 		); err != nil {
@@ -2553,7 +2567,7 @@ WHERE c.content_type = 'service_listing'
   AND ($6::bool IS NULL OR sm.is_verified = $6::bool)
   AND ($7::text IS NULL OR sm.listing_kind = $7::text)
   AND ($8::bigint IS NULL OR sm.price_amount <= $8::bigint)
-  AND ($9::date IS NULL OR sm.available_from >= $9::date)
+  AND ($9::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $9::date)
   AND ($10::text IS NULL OR c.title ILIKE '%' || $10::text || '%')
 ORDER BY
   CASE WHEN $11::text = 'top' THEN c.view_count END DESC NULLS LAST,
@@ -2631,7 +2645,8 @@ type ListServiceListingsRow struct {
 // "no filter". sort='top' orders by engagement; anything else is
 // latest-first. kind filters listing_kind ('service'|'package');
 // price_max is minor units; date_from filters packages with
-// available_from >= the given date.
+// available_from >= the given date — a NULL available_from means the
+// package is always available and matches any date_from.
 func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListingsParams) ([]ListServiceListingsRow, error) {
 	rows, err := q.db.Query(ctx, listServiceListings,
 		arg.Status,
@@ -3265,6 +3280,52 @@ func (q *Queries) UpdateServiceListingMeta(ctx context.Context, arg UpdateServic
 		&i.Capacity,
 		&i.AvailableFrom,
 		&i.AvailableUntil,
+	)
+	return i, err
+}
+
+const updateServicePackageDeparture = `-- name: UpdateServicePackageDeparture :one
+UPDATE service_package_departures
+SET starts_on = $1,
+    ends_on = $2,
+    capacity = $3,
+    status = $4
+WHERE id = $5 AND package_meta_id = $6
+RETURNING id, package_meta_id, starts_on, ends_on, capacity, booked_count, status, created_at
+`
+
+type UpdateServicePackageDepartureParams struct {
+	StartsOn      pgtype.Date `json:"starts_on"`
+	EndsOn        pgtype.Date `json:"ends_on"`
+	Capacity      *int32      `json:"capacity"`
+	Status        *string     `json:"status"`
+	ID            pgtype.UUID `json:"id"`
+	PackageMetaID pgtype.UUID `json:"package_meta_id"`
+}
+
+// In-place departure update (§111 edit): keeps the row id so bookings
+// holding departure_id stay attached — delete+insert would SET NULL them.
+// Scoped to the owning package meta so a caller can't move rows between
+// packages. Returns no rows when the id doesn't belong to the package.
+func (q *Queries) UpdateServicePackageDeparture(ctx context.Context, arg UpdateServicePackageDepartureParams) (ServicePackageDeparture, error) {
+	row := q.db.QueryRow(ctx, updateServicePackageDeparture,
+		arg.StartsOn,
+		arg.EndsOn,
+		arg.Capacity,
+		arg.Status,
+		arg.ID,
+		arg.PackageMetaID,
+	)
+	var i ServicePackageDeparture
+	err := row.Scan(
+		&i.ID,
+		&i.PackageMetaID,
+		&i.StartsOn,
+		&i.EndsOn,
+		&i.Capacity,
+		&i.BookedCount,
+		&i.Status,
+		&i.CreatedAt,
 	)
 	return i, err
 }

@@ -1,7 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/84-community-digest-widget.md
 	import { t } from '$lib/i18n';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import {
 		Newspaper,
@@ -14,6 +13,7 @@
 	} from 'lucide-svelte';
 	import type { IconComponent } from '$lib/components/ui/icons';
 	import { ListPageBar } from '$lib/components/ui';
+	import { contentHref } from '$lib/utils/contentLink';
 	import type {
 		DigestEdition,
 		DigestContent,
@@ -41,22 +41,36 @@
 	);
 
 	/** Defensively parse the content JSONB into a known shape. The backend stores
-	 * content as a JSONB object; it may arrive as an object, a string, or null. */
+	 * content as a JSONB object; it may arrive as an object, a string, or null.
+	 * Legacy key spellings (upcoming_events/featured_story/members) are mapped
+	 * onto the §84 contract keys (events/story/new_members). */
 	const content = $derived<DigestContent | null>(parseContent(digest?.content));
 
 	function parseContent(raw: unknown): DigestContent | null {
+		let obj: Record<string, unknown> | null = null;
 		if (raw === null || raw === undefined) return null;
 		if (typeof raw === 'string') {
 			try {
 				const parsed = JSON.parse(raw);
-				if (parsed && typeof parsed === 'object') return parsed as DigestContent;
+				if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) obj = parsed;
 			} catch {
 				return null;
 			}
-			return null;
+		} else if (typeof raw === 'object' && !Array.isArray(raw)) {
+			obj = raw as Record<string, unknown>;
 		}
-		if (typeof raw === 'object' && !Array.isArray(raw)) return raw as DigestContent;
-		return null;
+		if (!obj) return null;
+
+		// Legacy key fallback — the API normalizes these, but tolerate both.
+		// Delete the legacy key afterwards so it does not also render as an
+		// unknown "extra" section.
+		if (!('events' in obj) && 'upcoming_events' in obj) obj.events = obj.upcoming_events;
+		if (!('story' in obj) && 'featured_story' in obj) obj.story = obj.featured_story;
+		if (!('new_members' in obj) && 'members' in obj) obj.new_members = obj.members;
+		delete obj.upcoming_events;
+		delete obj.featured_story;
+		delete obj.members;
+		return obj as DigestContent;
 	}
 
 	const cadenceLabel = $derived(
@@ -89,22 +103,24 @@
 
 	function threadHref(t: DigestThread): string | null {
 		if (t.url) return t.url;
-		if (t.slug) return `/forum/${t.slug}`;
+		if (t.slug) return contentHref({ slug: t.slug, content_type: 'discussion' });
 		return null;
 	}
 
 	function storyHref(s: DigestStory): string | null {
 		if (s.url) return s.url;
-		if (s.slug) return `/story/${s.slug}`;
+		if (s.slug) return contentHref({ slug: s.slug, content_type: 'story' });
 		return null;
 	}
 
 	function eventHref(e: DigestEvent): string | null {
-		return e.url ?? null;
+		if (e.url) return e.url;
+		if (e.slug) return contentHref({ slug: e.slug, content_type: 'event' });
+		return null;
 	}
 
 	function memberName(m: DigestMember): string {
-		return m.name ?? m.username ?? t('digest.member', 'Member');
+		return m.display_name ?? m.name ?? m.username ?? t('digest.member', 'Member');
 	}
 
 	const sectionIcons: Record<string, IconComponent> = {
@@ -115,13 +131,13 @@
 		poll: Vote
 	};
 
-	const sectionTitles: Record<string, string> = {
+	const sectionTitles = $derived<Record<string, string>>({
 		top_threads: t('digest.section_top_threads', 'Top threads'),
 		new_members: t('digest.section_new_members', 'New members'),
 		events: t('digest.section_events', 'Upcoming events'),
 		story: t('digest.section_story', 'Featured story'),
 		poll: t('digest.section_poll', 'Community poll')
-	};
+	});
 
 	/** Known section keys rendered in a stable order. */
 	const knownSections = ['top_threads', 'new_members', 'events', 'story', 'poll'] as const;
@@ -199,7 +215,7 @@
 							{sectionTitles.top_threads}
 						</h2>
 						<ul class="space-y-2">
-							{#each topThreads as thread (thread.id ?? thread.title)}
+							{#each topThreads as thread, i (`${thread.slug ?? thread.title ?? 'thread'}::${i}`)}
 								{@const href = threadHref(thread)}
 								<li>
 									{#if href}
@@ -224,22 +240,22 @@
 							{sectionTitles.new_members}
 						</h2>
 						<ul class="flex flex-wrap gap-2">
-							{#each newMembers as member (member.id ?? member.username ?? member.name)}
+							{#each newMembers as member, i (`${member.username ?? memberName(member)}::${i}`)}
 								<li>
-									<UserHoverCard
-										id={member.id ?? ''}
-										slug={member.username ?? ''}
-										name={member.name ?? member.username ?? ''}
-										avatar={member.avatar_url}
-										class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-sm text-[var(--color-text)]"
-									>
-										{#snippet trigger()}
-											{#if member.avatar_url}
-												<img src={member.avatar_url} alt="" class="h-5 w-5 rounded-full object-cover" />
-											{/if}
+									{#if member.username}
+										<a
+											href="/u/{member.username}"
+											class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-sm text-[var(--color-text)] transition-colors hover:bg-[var(--color-border)]"
+										>
 											{memberName(member)}
-										{/snippet}
-									</UserHoverCard>
+										</a>
+									{:else}
+										<span
+											class="inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-subtle)] px-3 py-1 text-sm text-[var(--color-text)]"
+										>
+											{memberName(member)}
+										</span>
+									{/if}
 								</li>
 							{/each}
 						</ul>
@@ -253,7 +269,7 @@
 							{sectionTitles.events}
 						</h2>
 						<ul class="space-y-2">
-							{#each events as ev (ev.id ?? ev.title)}
+							{#each events as ev, i (`${ev.slug ?? ev.title ?? 'event'}::${i}`)}
 								{@const href = eventHref(ev)}
 								<li class="flex items-center gap-2 text-sm">
 									{#if ev.starts_at}
@@ -313,12 +329,14 @@
 
 				{#each extraSections as key (key)}
 					{@const value = content[key]}
-					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
-						<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
-							{sectionTitles[key] ?? key}
-						</h2>
-						<pre class="overflow-x-auto text-xs text-[var(--color-text-subtle)]">{JSON.stringify(value, null, 2)}</pre>
-					</section>
+					{#if value != null && !(Array.isArray(value) && value.length === 0)}
+						<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
+							<h2 class="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--color-text)]">
+								{sectionTitles[key] ?? key}
+							</h2>
+							<pre class="overflow-x-auto text-xs text-[var(--color-text-subtle)]">{JSON.stringify(value, null, 2)}</pre>
+						</section>
+					{/if}
 				{/each}
 			</div>
 		{/if}

@@ -161,7 +161,7 @@
 		load: async (params) => {
 			// Build query params for server-side pagination, sorting, and search.
 			const queryParts: string[] = [];
-			queryParts.push(`page=${params.page ?? 1}`);
+			queryParts.push(`page=${(params.page ?? 0) + 1}`);
 			queryParts.push(`limit=${params.pageSize ?? 25}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -97,9 +98,16 @@ type WikiRollupFieldDTO struct {
 	// CurrencyCode is the ISO 4217 code declared on the field's options
 	// ({currency_code}) for currency/price_range fields — lets the read
 	// surface render the currency name/symbol next to aggregated amounts.
-	CurrencyCode string              `json:"currency_code,omitempty"`
-	Metrics      WikiRollupMetricDTO `json:"metrics"`
-	Samples      int                 `json:"samples"`
+	CurrencyCode string `json:"currency_code,omitempty"`
+	// §80 Wiki Topic Pages — the part a price_parts field aggregates/
+	// displays (options.primary_part); lets row cells project the
+	// comparable member of the stored {parts:{...}} object.
+	PrimaryPart string `json:"primary_part,omitempty"`
+	// PrimaryKind is the primary part's declared kind (money|number) —
+	// row cells format money parts with the currency chain, number bare.
+	PrimaryKind string              `json:"primary_kind,omitempty"`
+	Metrics     WikiRollupMetricDTO `json:"metrics"`
+	Samples     int                 `json:"samples"`
 }
 
 // WikiRollupRowDTO is one contributing descendant space and its values —
@@ -424,9 +432,132 @@ func filterLinks(in []WikiParentLink, keep func(WikiParentLink) bool) []WikiPare
 	return out
 }
 
-// getSiblings returns a page's ordered sibling set with the current page
-// flagged — Prev/Next derives from neighbors in this list.
-func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, category, currentSlug string) []WikiSiblingDTO {
+// getSiblings returns a page's same-parentage sibling set with the current
+// page flagged — Prev/Next derives from neighbors in this list (§80 Wiki
+// Topic Pages §6).
+//
+//   - Nested topic page (parentTemplateID valid): its parent's child
+//     templates, ordered by position. Lazy templates are included — they
+//     resolve at the URL — so Prev/Next spans the full declared topic set.
+//   - Top-level page (managed category): the union of the category stub
+//     (position 0), top-level templates, and materialized ad-hoc pages —
+//     ordered position, created_at, slug.
+//   - Unmanaged category (cat nil): materialized pages only — the freeform
+//     behavior from before typed categories.
+//
+// templates is the category's full template set (nested included); nil is
+// fine — the union degrades to stub + materialized pages.
+func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, spaceName string, cat *WikiCategory, categoryToken, currentSlug string, parentTemplateID pgtype.UUID, templates []WikiPageTemplate) []WikiSiblingDTO {
+	if cat == nil {
+		return s.materializedSiblings(ctx, spaceID, categoryToken, currentSlug)
+	}
+
+	if parentTemplateID.Valid {
+		out := make([]WikiSiblingDTO, 0, 4)
+		for _, t := range templates {
+			if t.ParentTemplateID != parentTemplateID {
+				continue
+			}
+			out = append(out, WikiSiblingDTO{
+				Slug:     t.Slug,
+				Title:    substituteTemplateLabel(t.Label, spaceName),
+				Position: t.Position,
+				Current:  t.Slug == currentSlug,
+			})
+		}
+		// ListPageTemplates already orders position,slug — re-sort anyway
+		// so the Prev/Next set is correct for any caller's input order.
+		sort.SliceStable(out, func(i, j int) bool {
+			if out[i].Position != out[j].Position {
+				return out[i].Position < out[j].Position
+			}
+			return out[i].Slug < out[j].Slug
+		})
+
+		return out
+	}
+
+	// Top-level scope. The stub entry carries the category's page slug —
+	// the category page materializes under it — with position 0 so it
+	// leads the union ("Cost of Living" is the natural Prev of "Prices").
+	type siblingRef struct {
+		dto       WikiSiblingDTO
+		createdAt pgtype.Timestamptz
+	}
+
+	refs := []siblingRef{{
+		dto: WikiSiblingDTO{
+			Slug:    cat.Slug,
+			Title:   substituteTemplateLabel(cat.Label, spaceName),
+			Current: cat.Slug == currentSlug,
+		},
+	}}
+
+	templateSlugs := make(map[string]bool, len(templates))
+	for _, t := range templates {
+		templateSlugs[t.Slug] = true
+		if t.ParentTemplateID.Valid {
+			continue // nested topics sibling only within their parent scope
+		}
+		refs = append(refs, siblingRef{
+			dto: WikiSiblingDTO{
+				Slug:     t.Slug,
+				Title:    substituteTemplateLabel(t.Label, spaceName),
+				Position: t.Position,
+				Current:  t.Slug == currentSlug,
+			},
+			createdAt: t.CreatedAt,
+		})
+	}
+
+	// Materialized ad-hoc pages join the union — except slugs already
+	// represented by the stub or a template (a materialized template page
+	// IS the template's instance, not a separate sibling).
+	if rows, err := s.store.ListPageSiblings(ctx, spaceID, categoryToken); err == nil {
+		for _, r := range rows {
+			if r.Slug == cat.Slug || templateSlugs[r.Slug] {
+				continue
+			}
+			refs = append(refs, siblingRef{
+				dto: WikiSiblingDTO{
+					Slug:     r.Slug,
+					Title:    r.Title,
+					Position: r.Position,
+					Current:  r.Slug == currentSlug,
+				},
+				createdAt: r.CreatedAt,
+			})
+		}
+	} else {
+		slog.Warn("wiki: siblings: list failed",
+			"space_id", spaceID.String(), "category", categoryToken, "error", err)
+	}
+
+	sort.SliceStable(refs, func(i, j int) bool {
+		if refs[i].dto.Position != refs[j].dto.Position {
+			return refs[i].dto.Position < refs[j].dto.Position
+		}
+		if refs[i].createdAt.Valid != refs[j].createdAt.Valid {
+			return refs[j].createdAt.Valid // stub's null time sorts first
+		}
+		if refs[i].createdAt != refs[j].createdAt {
+			return refs[i].createdAt.Time.Before(refs[j].createdAt.Time)
+		}
+
+		return refs[i].dto.Slug < refs[j].dto.Slug
+	})
+
+	out := make([]WikiSiblingDTO, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, r.dto)
+	}
+
+	return out
+}
+
+// materializedSiblings is the pre-typed-category sibling set — the
+// materialized pages of one space+category in display order.
+func (s *Service) materializedSiblings(ctx context.Context, spaceID pgtype.UUID, category, currentSlug string) []WikiSiblingDTO {
 	rows, err := s.store.ListPageSiblings(ctx, spaceID, category)
 	if err != nil {
 		slog.Warn("wiki: siblings: list failed",
@@ -447,14 +578,166 @@ func (s *Service) getSiblings(ctx context.Context, spaceID pgtype.UUID, category
 	return out
 }
 
+// pageParents builds the page-level ancestor chain for the breadcrumb and
+// "Back to {parent}" (§80 Wiki Topic Pages §5): the category stub first,
+// then template ancestors root → immediate parent. tmpl is the page's
+// bound template (nil for the category stub page itself — it IS the first
+// segment — and for ad-hoc pages, which get the stub alone). Returns nil
+// when cat is nil (unmanaged category — no page ancestry to express).
+func (s *Service) pageParents(ctx context.Context, cat *WikiCategory, tmpl *WikiPageTemplate, spaceName string) []WikiPageParentDTO {
+	if cat == nil {
+		return nil
+	}
+
+	out := []WikiPageParentDTO{{
+		Slug:  cat.Slug,
+		Title: substituteTemplateLabel(cat.Label, spaceName),
+	}}
+
+	// Walk parent_template_id — v1 caps nesting at one level, but the loop
+	// is cycle-safe (visited set) so a deeper chain survives a data fix.
+	// The walk collects child→root, then reverses to root→immediate
+	// parent so the emitted chain matches its documented order.
+	if tmpl != nil {
+		var ancestors []WikiPageParentDTO
+		visited := map[pgtype.UUID]bool{tmpl.ID: true}
+		for pid := tmpl.ParentTemplateID; pid.Valid; {
+			if visited[pid] {
+				break
+			}
+			visited[pid] = true
+
+			p, err := s.store.GetPageTemplate(ctx, pid)
+			if err != nil {
+				break
+			}
+			ancestors = append(ancestors, WikiPageParentDTO{
+				Slug:  p.Slug,
+				Title: substituteTemplateLabel(p.Label, spaceName),
+			})
+			pid = p.ParentTemplateID
+		}
+		for i := len(ancestors) - 1; i >= 0; i-- {
+			out = append(out, ancestors[i])
+		}
+	}
+
+	return out
+}
+
+// childTemplates returns the templates nested under parentID (the full
+// category set ordered position,slug — callers pass the list already
+// fetched for page_templates). Nil parent → nil.
+func childTemplates(templates []WikiPageTemplate, parentID pgtype.UUID) []WikiPageTemplate {
+	if !parentID.Valid {
+		return nil
+	}
+
+	out := make([]WikiPageTemplate, 0, 4)
+	for _, t := range templates {
+		if t.ParentTemplateID == parentID {
+			out = append(out, t)
+		}
+	}
+
+	return out
+}
+
+// compositeSections synthesizes one preview section per child template of
+// the page's bound template (§80 Wiki Topic Pages §4): rows are the child
+// group's own visible fields with this space's stored cfv values, capped
+// at the child's preview_limit (0 = all). The section's key/page_slug is
+// the child template's slug; the label is section_label fallback the
+// {name}-substituted label.
+//
+// Fail closed: a child group the reader cannot see contributes an empty
+// section (fields without can_view grants are dropped entirely — the
+// preview must not leak member-restricted rows), never an error. The
+// section is emitted regardless so the drill-down link still renders.
+func (s *Service) compositeSections(ctx context.Context, userID, spaceID pgtype.UUID, spaceName string, children []WikiPageTemplate) []EntityFieldSectionDTO {
+	out := make([]EntityFieldSectionDTO, 0, len(children))
+
+	for _, child := range children {
+		label := child.Label
+		if child.SectionLabel != nil && strings.TrimSpace(*child.SectionLabel) != "" {
+			label = *child.SectionLabel
+		}
+
+		fields := []EntityFieldDTO{}
+		if grp, err := s.GetPageFields(ctx, userID, spaceID, child.FieldGroupID); err == nil && grp != nil {
+			for _, f := range grp.Fields {
+				if !f.Visible {
+					continue
+				}
+				fields = append(fields, f)
+			}
+			if child.PreviewLimit > 0 && int32(len(fields)) > child.PreviewLimit {
+				fields = fields[:child.PreviewLimit]
+			}
+		} else if err != nil {
+			slog.Warn("wiki: composite section fields load failed",
+				"space_id", spaceID.String(), "template", child.Slug, "error", err)
+		}
+
+		out = append(out, EntityFieldSectionDTO{
+			Key:      child.Slug,
+			Label:    substituteTemplateLabel(label, spaceName),
+			PageSlug: child.Slug,
+			Fields:   fields,
+		})
+	}
+
+	return out
+}
+
+// attachCompositeSections appends the child-template preview sections to
+// the page's fields block, materializing a minimal group DTO when the
+// page's own group carried no fields (composite-only parents).
+func (s *Service) attachCompositeSections(ctx context.Context, userID, spaceID pgtype.UUID, spaceName string, groupID pgtype.UUID, dto *WikiPageDetailDTO, children []WikiPageTemplate) {
+	if len(children) == 0 {
+		return
+	}
+
+	sections := s.compositeSections(ctx, userID, spaceID, spaceName, children)
+	if len(sections) == 0 {
+		return
+	}
+
+	if dto.Fields == nil {
+		grp := &EntityFieldGroupDTO{}
+		if groupID.Valid {
+			grp.ID = groupID.String()
+			grp.Slug = dto.FieldGroupSlug
+			if s.fields != nil {
+				if g, err := s.fields.GetFieldGroup(ctx, groupID); err == nil {
+					grp.Name = g.Name
+					grp.Slug = g.Slug
+				}
+			}
+		}
+		dto.Fields = grp
+	}
+
+	dto.Fields.Sections = append(dto.Fields.Sections, sections...)
+}
+
+// SectionQuickFacts is the reserved section token (§80 Wiki Topic Pages):
+// fields in it render in the Quick Facts rail card instead of a body table
+// and are excluded from rollup aggregation.
+const SectionQuickFacts = "quick_facts"
+
 // rollupFieldTypes are the field types a category rollup aggregates —
 // scalar numerics contribute their value directly; price_range contributes
-// its composite bounds.
+// its composite bounds; price_parts contributes the part named by
+// options.primary_part when declared (§80 Wiki Topic Pages) — a parts
+// field without a primary_part still lands in rows[].values but feeds no
+// aggregate.
 var rollupFieldTypes = map[string]bool{
 	customfields.FieldTypeNumber:     true,
 	customfields.FieldTypeCurrency:   true,
 	customfields.FieldTypePercentage: true,
 	customfields.FieldTypePriceRange: true,
+	customfields.FieldTypePriceParts: true,
 }
 
 // computeRollup aggregates descendant spaces' values for a rollup-enabled
@@ -549,6 +832,11 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 				if !rollupFieldTypes[f.FieldType] {
 					continue
 				}
+				// §80 Wiki Topic Pages — the reserved `quick_facts` section
+				// is rail metadata, not a comparable metric.
+				if f.Section != nil && *f.Section == SectionQuickFacts {
+					continue
+				}
 				if !fieldVisible(f.ID) {
 					continue
 				}
@@ -558,6 +846,17 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 					def.section = *f.Section
 				}
 				def.currency = customfields.CurrencyCodeFromOptions(f.Options)
+				if def.typ == customfields.FieldTypePriceParts {
+					def.primaryPart = customfields.PrimaryPartFromOptions(f.Options)
+					if pp := customfields.PricePartsOptionsFromJSON(f.Options); pp != nil {
+						def.primaryKind = pp.PricePartKind(def.primaryPart)
+						// The field-level currency_code is the schema's
+						// declared code — wins over an empty context code.
+						if pp.CurrencyCode != "" {
+							def.currency = pp.CurrencyCode
+						}
+					}
+				}
 				// Per-field aggregation keeps its own declared type so a
 				// mixed-type key (price_range on one type, number on
 				// another) never feeds incompatible values into one slice;
@@ -654,14 +953,20 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 }
 
 // rollupFieldDef is the schema member a rollup aggregates — one custom
-// field on a descendant type's same-category group.
+// field on a descendant type's same-category group. primaryPart is the
+// price_parts comparable member (§80 Wiki Topic Pages) — empty when the
+// field declares no primary_part (non-comparable; rows-only).
+// primaryKind is that part's declared kind (money|number) so row-cell
+// renderers format it correctly without the full options schema.
 type rollupFieldDef struct {
-	key      string
-	label    string
-	typ      string
-	section  string
-	currency string
-	pos      int32
+	key         string
+	label       string
+	typ         string
+	section     string
+	currency    string
+	primaryPart string
+	primaryKind string
+	pos         int32
 }
 
 // aggregateRollupValues folds raw cfv rows into per-key metric DTOs and
@@ -748,6 +1053,28 @@ func aggregateRollupValues(
 			if contributed {
 				a.priceN++
 			}
+		} else if def.typ == customfields.FieldTypePriceParts {
+			// §80 Wiki Topic Pages: project the declared primary part — a
+			// parts field without one is rows-only (non-comparable).
+			if def.primaryPart == "" {
+				continue
+			}
+			var pp struct {
+				Parts map[string]json.RawMessage `json:"parts"`
+			}
+			if json.Unmarshal(v.ValueJson, &pp) != nil {
+				continue
+			}
+			raw, ok := pp.Parts[def.primaryPart]
+			if !ok {
+				continue
+			}
+			var f float64
+			if json.Unmarshal(raw, &f) != nil || !finite(f) {
+				continue
+			}
+			a.scalars = append(a.scalars, f)
+			a.scalarN++
 		} else if f, ok := cfvNumeric(v.ValueNumber); ok && finite(f) {
 			// A stored NaN/Inf (pg numeric accepts 'NaN') would poison
 			// avgOf and fail json.Marshal downstream.
@@ -799,7 +1126,8 @@ func aggregateRollupValues(
 
 		fieldsOut = append(fieldsOut, WikiRollupFieldDTO{
 			Key: key, Label: def.label, FieldType: def.typ, Section: def.section,
-			CurrencyCode: def.currency, Metrics: m, Samples: samples,
+			CurrencyCode: def.currency, PrimaryPart: def.primaryPart, PrimaryKind: def.primaryKind,
+			Metrics: m, Samples: samples,
 		})
 	}
 

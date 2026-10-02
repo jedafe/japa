@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { Briefcase, Save, Loader2, AlertCircle } from 'lucide-svelte';
+	import { Briefcase, Save, Loader2, AlertCircle, Package, Trash2, Plus } from 'lucide-svelte';
 	import { serviceCategoryOptions } from '$lib/enumOptions';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
@@ -44,8 +44,85 @@
 	let bookingUrl = $state(untrack(() => svc.booking_url ?? ''));
 	let priceRange = $state(untrack(() => svc.price_range ?? ''));
 
+	// §111 package fields — listing_kind is immutable after creation and
+	// org_id is locked (package_org_immutable), so packages edit price,
+	// mode, capacity, availability, items and departures only.
+	const isPackage = $derived(svc.listing_kind === 'package');
+	let purchaseMode = $state<'inquiry' | 'external' | 'paid'>(
+		untrack(() => (svc.purchase_mode === 'external' || svc.purchase_mode === 'paid' ? svc.purchase_mode : 'inquiry'))
+	);
+	let priceAmount = $state(untrack(() => (svc.price_amount != null ? String(svc.price_amount / 100) : '')));
+	let priceCurrency = $state(untrack(() => svc.price_currency ?? ''));
+	let pricePer = $state<'person' | 'package' | 'group'>(
+		untrack(() => (svc.price_per === 'person' || svc.price_per === 'group' ? svc.price_per : 'package'))
+	);
+	let capacity = $state(untrack(() => (svc.capacity != null ? String(svc.capacity) : '')));
+	let availableFrom = $state(untrack(() => svc.available_from ?? ''));
+	let availableUntil = $state(untrack(() => svc.available_until ?? ''));
+	let pkgItems = $state(
+		untrack(() =>
+			(svc.items ?? []).map((i) => ({
+				title: i.title,
+				description: i.description ?? '',
+				included: i.included,
+				optional: i.optional
+			}))
+		)
+	);
+	// §111: data.departures is the editor-scoped list (ALL departures — the
+	// public detail hides past/full/cancelled rows). id/status/booked_count
+	// ride along so saves update existing rows in place instead of breaking
+	// their booking departure_id links via delete+reinsert.
+	let departures = $state(
+		untrack(() =>
+			(data.departures ?? []).map((d) => ({
+				id: d.id,
+				starts_on: d.starts_on,
+				ends_on: d.ends_on ?? '',
+				capacity: d.capacity != null ? String(d.capacity) : '',
+				status: d.status ?? 'open',
+				booked_count: d.booked_count ?? 0
+			}))
+		)
+	);
+
 	let submitting = $state(false);
 	let errorMsg = $state('');
+
+	const purchaseModeItems = $derived<AutocompleteItem[]>([
+		{ id: 'inquiry', label: t('services.pkg_mode_inquiry', 'Inquiry — travellers message you') },
+		{ id: 'external', label: t('services.pkg_mode_external', 'External — book on your site') },
+		{ id: 'paid', label: t('services.pkg_mode_paid', 'Paid — reserve with a platform fee') }
+	]);
+	const purchaseModeFetcher = $derived(staticAutocompleteFetcher(purchaseModeItems));
+	const pricePerItems = $derived<AutocompleteItem[]>([
+		{ id: 'person', label: t('services.pkg_per_person', 'per person') },
+		{ id: 'package', label: t('services.pkg_per_package', 'per package') },
+		{ id: 'group', label: t('services.pkg_per_group', 'per group') }
+	]);
+	const pricePerFetcher = $derived(staticAutocompleteFetcher(pricePerItems));
+	// Departure status — editors can open or cancel; 'full' is system-set
+	// (capacity exhausted) and only shown as the current value.
+	const depStatusItems = $derived<AutocompleteItem[]>([
+		{ id: 'open', label: t('services.pkg_dep_status_open', 'Open') },
+		{ id: 'cancelled', label: t('services.pkg_dep_status_cancelled', 'Cancelled') }
+	]);
+	const depStatusFetcher = $derived(staticAutocompleteFetcher(depStatusItems));
+	function depStatusLabel(status: string): string {
+		if (status === 'full') return t('services.pkg_dep_status_full', 'Full');
+		return depStatusItems.find((o) => o.id === status)?.label ?? status;
+	}
+	const currencyItems = $derived<AutocompleteItem[]>(
+		((page.data.currencies ?? []) as { code: string; name: string; symbol: string }[]).map((c) => ({
+			id: c.code,
+			label: `${c.code} — ${c.name}`,
+			sublabel: c.symbol
+		}))
+	);
+	const currencyFetcher = $derived(staticAutocompleteFetcher(currencyItems));
+	const selectedCurrencyLabel = $derived(
+		priceCurrency ? (currencyItems.find((o) => o.id === priceCurrency)?.label ?? priceCurrency) : null
+	);
 
 	const categoryOptions = $derived(serviceCategoryOptions(t, data.serviceCategories));
 	const categoryItems = $derived<AutocompleteItem[]>(
@@ -100,6 +177,24 @@
 			errorMsg = t('services.errors.dest_required', 'Destination country is required');
 			return false;
 		}
+		if (isPackage) {
+			if (purchaseMode === 'paid' && (!priceAmount.trim() || !priceCurrency)) {
+				errorMsg = t('services.errors.pkg_price_required', 'Paid packages require a price and currency');
+				return false;
+			}
+			if (purchaseMode === 'external' && !bookingUrl.trim()) {
+				errorMsg = t('services.errors.pkg_booking_url_required', 'External packages need a booking URL — that is the "book" link travellers follow');
+				return false;
+			}
+			if (pkgItems.some((i) => !i.title.trim())) {
+				errorMsg = t('services.errors.pkg_item_title_required', 'Every package item needs a title');
+				return false;
+			}
+			if (departures.some((d) => !d.starts_on)) {
+				errorMsg = t('services.errors.pkg_departure_start_required', 'Every departure needs a start date');
+				return false;
+			}
+		}
 		return true;
 	}
 
@@ -128,12 +223,47 @@
 			price_range: priceRange.trim()
 		};
 
+		// §111 packages — items[]/departures[] are replace-on-save: always
+		// send the arrays so removed rows actually delete. listing_kind and
+		// org_id are immutable after creation and never sent. Clear
+		// convention: price_amount/capacity take 0 to clear (null would
+		// merge-keep the stored value); '' clears currency/dates.
+		if (isPackage) {
+			payload.purchase_mode = purchaseMode;
+			payload.price_per = pricePer;
+			payload.price_amount = priceAmount.trim() ? Math.round(Number(priceAmount) * 100) : 0;
+			payload.price_currency = priceCurrency;
+			payload.capacity = capacity.trim() ? Number(capacity) : 0;
+			payload.available_from = availableFrom;
+			payload.available_until = availableUntil;
+			payload.items = pkgItems.map((i) => ({
+				title: i.title.trim(),
+				description: i.description.trim(),
+				included: i.included,
+				optional: i.optional
+			}));
+			payload.departures = departures.map((d) => ({
+				...(d.id ? { id: d.id } : {}),
+				starts_on: d.starts_on,
+				ends_on: d.ends_on || '',
+				capacity: d.capacity.trim() && Number(d.capacity) > 0 ? Number(d.capacity) : null,
+				status: d.status || 'open'
+			}));
+		}
+
 		submitting = true;
 		const res = await api.patch<ServiceListing>(`/services/${svc.id}`, payload);
 		submitting = false;
 
 		if (res.data) {
-			goto(`/services/${res.data.slug ?? svc.slug}`);
+			// §111: commercial package edits bounce the listing back to
+			// in_review, and the public detail URL only serves published
+			// rows — land on the directory banner instead of a 404.
+			if (res.data.status && res.data.status !== 'published') {
+				goto('/services?submitted=1');
+			} else {
+				goto(`/services/${res.data.slug ?? svc.slug}`);
+			}
 		} else {
 			errorMsg = res.error?.message ?? t('services.errors.edit_failed', 'Failed to update listing');
 		}
@@ -343,6 +473,173 @@
 					class={inputClass}
 				/>
 			</div>
+
+			<!-- §111 package fields — the selling org is immutable after
+				creation (package_org_immutable); shown read-only. -->
+			{#if isPackage}
+				<div class="space-y-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40 p-4">
+					<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+						<Package size={16} /> {t('services.pkg_section', 'Package details')}
+						{#if svc.org_name}
+							<span class="ml-auto text-xs font-normal text-[var(--color-muted)]">{svc.org_name}</span>
+						{/if}
+					</h2>
+
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="pkg-mode" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								{t('services.pkg_purchase_mode', 'Purchase mode')}
+							</label>
+							<Autocomplete
+								id="pkg-mode"
+								placeholder={t('services.pkg_purchase_mode', 'Purchase mode')}
+								emptyMessage={t('common.no_results', 'No results found')}
+								fetcher={purchaseModeFetcher}
+								initialFetcher={purchaseModeFetcher}
+								selectedId={purchaseMode}
+								selectedLabel={purchaseModeItems.find((o) => o.id === purchaseMode)?.label ?? null}
+								onSelect={(item) => (purchaseMode = item.id as typeof purchaseMode)}
+							/>
+						</div>
+						<div>
+							<label for="pkg-price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								{t('services.pkg_price', 'Price')}{#if purchaseMode === 'paid'} <span class="text-red-500">*</span>{/if}
+							</label>
+							<div class="flex gap-2">
+								<input id="pkg-price" type="number" min="0" step="0.01" bind:value={priceAmount} placeholder="0.00" class={inputClass} />
+								<div class="w-40 shrink-0">
+									<Autocomplete
+										placeholder={t('services.pkg_currency', 'Currency')}
+										ariaLabel={t('services.pkg_currency', 'Currency')}
+										emptyMessage={t('common.no_results', 'No results found')}
+										fetcher={currencyFetcher}
+										initialFetcher={currencyFetcher}
+										selectedId={priceCurrency || null}
+										selectedLabel={selectedCurrencyLabel}
+										onSelect={(item) => (priceCurrency = item.id)}
+										onClear={() => (priceCurrency = '')}
+									/>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="pkg-price-per" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								{t('services.pkg_price_per', 'Price is per')}
+							</label>
+							<Autocomplete
+								id="pkg-price-per"
+								placeholder={t('services.pkg_price_per', 'Price is per')}
+								emptyMessage={t('common.no_results', 'No results found')}
+								fetcher={pricePerFetcher}
+								initialFetcher={pricePerFetcher}
+								selectedId={pricePer}
+								selectedLabel={pricePerItems.find((o) => o.id === pricePer)?.label ?? null}
+								onSelect={(item) => (pricePer = item.id as typeof pricePer)}
+							/>
+						</div>
+						<div>
+							<label for="pkg-capacity" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								{t('services.pkg_capacity', 'Total capacity')}
+							</label>
+							<input id="pkg-capacity" type="number" min="1" bind:value={capacity} placeholder={t('services.pkg_capacity_ph', 'Leave empty for unlimited')} class={inputClass} />
+						</div>
+					</div>
+
+					<div class="grid gap-4 sm:grid-cols-2">
+						<div>
+							<label for="pkg-from" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								{t('services.pkg_available_from', 'Available from')}
+							</label>
+							<input id="pkg-from" type="date" bind:value={availableFrom} class={inputClass} />
+						</div>
+						<div>
+							<label for="pkg-until" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+								{t('services.pkg_available_until', 'Available until')}
+							</label>
+							<input id="pkg-until" type="date" bind:value={availableUntil} class={inputClass} />
+						</div>
+					</div>
+
+					<div>
+						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('services.pkg_items', 'Included items')}</span>
+						<div class="space-y-2">
+							{#each pkgItems as item, idx (idx)}
+								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+									<div class="flex items-start gap-2">
+										<div class="flex-1 space-y-2">
+											<input type="text" bind:value={item.title} placeholder={t('services.pkg_item_title_ph', 'Item title (e.g. Visa processing)')} class={inputClass} />
+											<input type="text" bind:value={item.description} placeholder={t('services.pkg_item_desc_ph', 'Short description (optional)')} class={inputClass} />
+											<div class="flex gap-4 text-xs text-[var(--color-muted)]">
+												<label class="flex items-center gap-1.5">
+													<input type="checkbox" checked={item.included} onchange={(e) => (item.included = e.currentTarget.checked)} class="h-3.5 w-3.5 rounded border-[var(--color-border)]" />
+													{t('services.pkg_item_included', 'Included')}
+												</label>
+												<label class="flex items-center gap-1.5">
+													<input type="checkbox" checked={item.optional} onchange={(e) => (item.optional = e.currentTarget.checked)} class="h-3.5 w-3.5 rounded border-[var(--color-border)]" />
+													{t('services.pkg_item_optional', 'Optional add-on')}
+												</label>
+											</div>
+										</div>
+										<button type="button" onclick={() => (pkgItems = pkgItems.filter((_, i) => i !== idx))} class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]" aria-label={t('common.remove', 'Remove')}>
+											<Trash2 size={16} />
+										</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+						<button type="button" onclick={() => (pkgItems = [...pkgItems, { title: '', description: '', included: true, optional: false }])} class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+							<Plus size={14} /> {t('services.pkg_add_item', 'Add item')}
+						</button>
+					</div>
+
+					<div>
+						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">{t('services.pkg_departures', 'Scheduled departures')}</span>
+						<p class="mb-2 text-xs text-[var(--color-muted)]">
+							{t('services.pkg_departures_hint', 'Optional fixed dates (tours, cohort intakes). Leave empty for request-based packages.')}
+						</p>
+						<div class="space-y-2">
+							{#each departures as dep, idx (dep.id ?? `new-${idx}`)}
+								<div class="flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+									<input type="date" bind:value={dep.starts_on} class="{inputClass} sm:w-auto" aria-label={t('services.pkg_dep_start', 'Start date')} />
+									<span class="text-xs text-[var(--color-muted)]">→</span>
+									<input type="date" bind:value={dep.ends_on} class="{inputClass} sm:w-auto" aria-label={t('services.pkg_dep_end', 'End date (optional)')} />
+									<input type="number" min={dep.booked_count > 0 ? dep.booked_count : 1} bind:value={dep.capacity} placeholder={t('services.pkg_dep_capacity_ph', 'Seats')} class="{inputClass} sm:w-24" aria-label={t('services.pkg_dep_capacity_ph', 'Seats')} />
+									<div class="w-32">
+										<Autocomplete
+											placeholder={t('services.pkg_dep_status', 'Status')}
+											ariaLabel={t('services.pkg_dep_status', 'Status')}
+											emptyMessage={t('common.no_results', 'No results')}
+											fetcher={depStatusFetcher}
+											initialFetcher={depStatusFetcher}
+											selectedId={dep.status}
+											selectedLabel={depStatusLabel(dep.status)}
+											onSelect={(item) => (dep.status = item.id)}
+										/>
+									</div>
+									{#if dep.booked_count > 0}
+										<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
+											{t('services.pkg_dep_booked', '{count} booked').replace('{count}', String(dep.booked_count))}
+										</span>
+									{/if}
+									{#if dep.booked_count === 0}
+										<button type="button" onclick={() => (departures = departures.filter((_, i) => i !== idx))} class="ml-auto text-[var(--color-muted)] hover:text-[var(--color-danger)]" aria-label={t('common.remove', 'Remove')}>
+											<Trash2 size={16} />
+										</button>
+									{:else}
+										<span class="ml-auto" title={t('services.pkg_dep_booked_hint', 'Departures with bookings cannot be removed')}></span>
+									{/if}
+								</div>
+							{/each}
+						</div>
+						<button type="button" onclick={() => (departures = [...departures, { id: '', starts_on: '', ends_on: '', capacity: '', status: 'open', booked_count: 0 }])} class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+							<Plus size={14} /> {t('services.pkg_add_departure', 'Add departure')}
+						</button>
+					</div>
+				</div>
+			{/if}
 
 			<!-- Error -->
 			{#if errorMsg}

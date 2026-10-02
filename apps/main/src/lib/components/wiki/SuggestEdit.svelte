@@ -117,8 +117,9 @@
 	}
 
 	// Choice-bearing types: select/multiselect require options at submit;
-	// suggest accepts an optional static list alongside its option sources.
-	const CHOICE_TYPES = new Set(['select', 'multiselect', 'suggest']);
+	// suggest accepts an optional static list alongside its option sources;
+	// price_parts collects its part columns as comma-separated labels.
+	const CHOICE_TYPES = new Set(['select', 'multiselect', 'suggest', 'price_parts']);
 
 	// §80: the proposal target group is implicit — the bound category group
 	// (proposeGroupSlug) when the page binds one, else the schema's sole
@@ -127,7 +128,9 @@
 		proposeGroupSlug ?? (schema && schema.groups.length === 1 ? schema.groups[0].slug : '')
 	);
 	const showGroupPicker = $derived(!resolvedProposeGroup && (schema?.groups.length ?? 0) > 1);
-	const pfOptionsRequired = $derived(pfType === 'select' || pfType === 'multiselect');
+	const pfOptionsRequired = $derived(
+		pfType === 'select' || pfType === 'multiselect' || pfType === 'price_parts'
+	);
 
 	// §80 Itemized Pricing: section tokens already used in the proposal's
 	// target group — offered as autocomplete suggestions so a new item slots
@@ -177,7 +180,16 @@
 			return;
 		}
 		const field: WikiFieldDefInput = { key, label, field_type: pfType };
-		if (options.length > 0) field.options = options;
+		// §80 Wiki Topic Pages — price_parts members propose the column
+		// list as comma-separated labels; parts default to money (admins
+		// refine kinds/primary_part in the Admin Panel).
+		if (pfType === 'price_parts') {
+			field.options = {
+				parts: options.map((o) => ({ key: o.value, label: o.label, kind: 'money' }))
+			};
+		} else if (options.length > 0) {
+			field.options = options;
+		}
 		// §80: a section token places the field in that item-table section;
 		// slugified to the ^[a-z0-9_]+$ token the backend validates.
 		const section = slugifyFieldKey(pfSection);
@@ -294,7 +306,7 @@
 	function formatValue(f: WikiEntityField): string {
 		const v = f.value;
 		if (v === null || v === undefined || v === '') return '—';
-		if (f.field_type === 'currency' || f.field_type === 'price_range') {
+		if (f.field_type === 'currency' || f.field_type === 'price_range' || f.field_type === 'price_parts') {
 			return formatWikiFieldValue(f, currencies, schema?.entity_currency_code ?? '');
 		}
 		if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');

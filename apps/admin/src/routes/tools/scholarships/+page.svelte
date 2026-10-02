@@ -269,7 +269,7 @@
 			if (q) params.set('q', q);
 			if (filter.verification_status) params.set('verification_status', filter.verification_status);
 			if (filter.dest) params.set('dest', filter.dest);
-			if (page) params.set('page', String(page));
+			params.set('page', String(page + 1));
 			if (pageSize) params.set('page_size', String(pageSize));
 			const result = await scholarshipAdminApi.list(params.toString());
 			if (result.ok) {

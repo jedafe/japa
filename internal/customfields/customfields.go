@@ -77,12 +77,85 @@ const (
 	// prices table, and the shared page-template group keeps the keys
 	// comparable across spaces for JCE.
 	FieldTypePriceRange = "price_range"
+	// FieldTypePriceParts is a multi-part composite price datum — one field
+	// carries {"parts": {"<part_key>": <number|string>, ...}} in value_json
+	// (§80 Wiki Topic Pages amendment): the field's options declare the
+	// column schema (options.parts) so one field renders as one row of a
+	// heterogeneously-columned item table (e.g. Taxis: Service | Base Fare
+	// | per km | per min | Minimum).
+	FieldTypePriceParts = "price_parts"
 )
 
 // FieldOption represents a single option in a select or multiselect field.
 type FieldOption struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
+}
+
+// PriceParts part kinds — how one column of a price_parts value coerces and
+// formats (§80 Wiki Topic Pages).
+const (
+	PricePartKindMoney  = "money"  // numeric, formatted via the currency chain
+	PricePartKindNumber = "number" // numeric, bare
+	PricePartKindText   = "text"   // free text column
+)
+
+// PricePartsPart is one column of a price_parts field's options.parts
+// schema: key is the part's key in value_json.parts, kind governs coercion
+// (money/number → numeric, text → string) and rendering. An empty kind
+// defaults to number.
+type PricePartsPart struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Kind  string `json:"kind,omitempty"`
+}
+
+// PricePartsOptions is the object-shaped options payload of a price_parts
+// field: parts declares the column schema, primary_part names the
+// comparable part for JCE/rollup projection, currency_code denominates
+// money parts (§58 fallback: host space's country currency), and emphasize
+// marks a total row (e.g. "Total Estimated Monthly Cost").
+type PricePartsOptions struct {
+	Parts        []PricePartsPart `json:"parts"`
+	PrimaryPart  string           `json:"primary_part,omitempty"`
+	CurrencyCode string           `json:"currency_code,omitempty"`
+	Emphasize    bool             `json:"emphasize,omitempty"`
+}
+
+// PricePartsOptionsFromJSON decodes a price_parts field's options column;
+// nil on absent/malformed options.
+func PricePartsOptionsFromJSON(options []byte) *PricePartsOptions {
+	if len(options) == 0 {
+		return nil
+	}
+	var o PricePartsOptions
+	if err := json.Unmarshal(options, &o); err != nil || len(o.Parts) == 0 {
+		return nil
+	}
+	return &o
+}
+
+// PrimaryPartFromOptions returns the field's declared comparable part key —
+// "" when the field declares none (non-comparable, §80 §7) or options are
+// malformed.
+func PrimaryPartFromOptions(options []byte) string {
+	if o := PricePartsOptionsFromJSON(options); o != nil {
+		return o.PrimaryPart
+	}
+	return ""
+}
+
+// PricePartKind returns the declared kind for a part key — "number" when
+// the part is undeclared or carries no kind (the default).
+func (o *PricePartsOptions) PricePartKind(key string) string {
+	if o != nil {
+		for _, p := range o.Parts {
+			if p.Key == key && p.Kind != "" {
+				return p.Kind
+			}
+		}
+	}
+	return PricePartKindNumber
 }
 
 // CurrencyCodeFromOptions extracts the ISO 4217 code from a field's options
@@ -114,7 +187,7 @@ var validFieldTypes = map[string]bool{
 	FieldTypeImageSingle: true, FieldTypeImageMulti: true, FieldTypeMedia: true,
 	FieldTypePlatformEmbed: true, FieldTypeReference: true,
 	FieldTypeRepeater: true, FieldTypeGroup: true,
-	FieldTypePriceRange: true,
+	FieldTypePriceRange: true, FieldTypePriceParts: true,
 }
 
 // IsValidFieldType returns true if the given string is a recognized field type.
@@ -149,7 +222,7 @@ func ProposableFieldTypes() []string {
 		FieldTypeColor, FieldTypeRating,
 		FieldTypeImageSingle, FieldTypeImageMulti, FieldTypeMedia,
 		FieldTypeRepeater, FieldTypeGroup,
-		FieldTypePriceRange,
+		FieldTypePriceRange, FieldTypePriceParts,
 	}
 }
 
@@ -163,7 +236,8 @@ func FieldTypeValueColumn(ft string) (column string, ok bool) {
 		return "value_text", true
 	case FieldTypeRichText, FieldTypeSelect, FieldTypeMultiselect,
 		FieldTypeMedia, FieldTypeImageSingle, FieldTypeImageMulti,
-		FieldTypeReference, FieldTypeRepeater, FieldTypePriceRange:
+		FieldTypeReference, FieldTypeRepeater, FieldTypePriceRange,
+		FieldTypePriceParts:
 		return "value_json", true
 	case FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage,
 		FieldTypeRating:
@@ -181,20 +255,35 @@ func FieldTypeValueColumn(ft string) (column string, ok bool) {
 }
 
 // ValidOptionsShape validates that the options JSONB matches the expected
-// shape for the given field_type. Returns a user-facing error message and
-// false when validation fails, or "" and true when it passes.
-func ValidOptionsShape(fieldType string, opts []FieldOption) (msg string, ok bool) {
+// shape for the given field_type. opts is the raw request/storage JSON:
+// select/multiselect carry a [{value,label}] array, price_parts carries the
+// object-shaped {parts, primary_part, currency_code} schema (§80 Wiki Topic
+// Pages), and other types carry free-form objects or nothing. Returns a
+// user-facing error message and false when validation fails, or "" and true
+// when it passes.
+func ValidOptionsShape(fieldType string, opts json.RawMessage) (msg string, ok bool) {
+	empty := len(opts) == 0 || string(opts) == "null"
+
 	switch fieldType {
 	case FieldTypeSelect, FieldTypeMultiselect:
-		if len(opts) == 0 {
+		if empty {
+			return "Select and multiselect fields require at least one option", false
+		}
+		var list []FieldOption
+		if err := json.Unmarshal(opts, &list); err != nil {
+			return "Options must be an array of {value, label}", false
+		}
+		if len(list) == 0 {
 			return "Select and multiselect fields require at least one option", false
 		}
 
-		for _, o := range opts {
+		for _, o := range list {
 			if o.Value == "" || o.Label == "" {
 				return "Each option must have both value and label", false
 			}
 		}
+	case FieldTypePriceParts:
+		return validPricePartsOptions(opts)
 	case FieldTypeNumber, FieldTypeCurrency, FieldTypePercentage:
 		// Options are optional for number types; if present they must be
 		// {min, max, is_decimal} or {currency_code}. We only validate that
@@ -210,6 +299,62 @@ func ValidOptionsShape(fieldType string, opts []FieldOption) (msg string, ok boo
 		// resolver enforces the reference type at render time.
 	case FieldTypeDuration:
 		// Options may include display_format.
+	}
+
+	return "", true
+}
+
+// validPricePartsOptions enforces the price_parts options contract
+// (§80 Wiki Topic Pages): a non-empty parts array of {key,label,kind}
+// columns — key matching ^[a-z0-9_]+$ and unique, kind ∈ money|number|text
+// — and an optional primary_part naming a declared numeric part (the JCE /
+// rollup projection point). price_parts without a parts schema cannot
+// coerce values, so options are required.
+func validPricePartsOptions(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "price_parts fields require options.parts — the column schema", false
+	}
+
+	var o PricePartsOptions
+	if err := json.Unmarshal(raw, &o); err != nil {
+		return "price_parts options must be an object with a parts array", false
+	}
+	if len(o.Parts) == 0 {
+		return "price_parts requires at least one part in options.parts", false
+	}
+
+	seen := make(map[string]bool, len(o.Parts))
+	kinds := make(map[string]string, len(o.Parts))
+	for _, p := range o.Parts {
+		if !SectionTokenPattern.MatchString(p.Key) {
+			return "Each part key must match ^[a-z0-9_]+$", false
+		}
+		if p.Label == "" {
+			return "Each part must have both key and label", false
+		}
+		if seen[p.Key] {
+			return "Part keys must be unique", false
+		}
+		seen[p.Key] = true
+
+		kind := p.Kind
+		if kind == "" {
+			kind = PricePartKindNumber
+		}
+		if kind != PricePartKindMoney && kind != PricePartKindNumber && kind != PricePartKindText {
+			return "Part kind must be money, number, or text", false
+		}
+		kinds[p.Key] = kind
+	}
+
+	if o.PrimaryPart != "" {
+		kind, declared := kinds[o.PrimaryPart]
+		if !declared {
+			return "primary_part must name a declared part", false
+		}
+		if kind == PricePartKindText {
+			return "primary_part must name a money or number part — text is not comparable", false
+		}
 	}
 
 	return "", true

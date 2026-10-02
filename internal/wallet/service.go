@@ -564,13 +564,19 @@ func (s *Service) SpendCredits(ctx context.Context, userID pgtype.UUID, input Sp
 		return 0, fmt.Errorf("acquiring wallet lock: %w", err)
 	}
 
-	// Get current credits balance within the transaction.
+	// Get current credits balance within the transaction. A user with no
+	// ledger rows has a zero balance — NoRows must not leak through as a
+	// generic 500/404 upstream.
 	currentCredits, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
 
 		UserID:     userID,
 		LedgerType: LedgerTypeCredits,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("%w: no credits ledger", errpkg.ErrInsufficientBalance)
+		}
+
 		return 0, fmt.Errorf("getting credits balance: %w", err)
 	}
 

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -178,7 +179,8 @@ WHERE status = 'published'
 type ListEditionsFilter struct {
 	SpaceID pgtype.UUID
 	Status  string
-	Sort    string // created_at|published_at|scheduled_for (default: created_at)
+	Query   string // free-text search over cadence/status/generated_by
+	Sort    string // cadence|status|email_sent|created_at|published_at|scheduled_for (default: created_at)
 	Order   string // asc|desc (default: desc)
 	Limit   int32
 	Offset  int32
@@ -187,6 +189,9 @@ type ListEditionsFilter struct {
 // allowedSortColumns maps sort keys to their qualified column names. Only
 // these columns may appear in the ORDER BY clause (SQLi guard).
 var allowedSortColumns = map[string]string{
+	"cadence":       "cadence",
+	"status":        "status",
+	"email_sent":    "email_sent",
 	"created_at":    "created_at",
 	"published_at":  "published_at",
 	"scheduled_for": "scheduled_for",
@@ -210,6 +215,14 @@ func (s *Store) ListEditions(ctx context.Context, f ListEditionsFilter) ([]Diges
 	if f.Status != "" {
 		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
 		args = append(args, f.Status)
+		argIdx++
+	}
+
+	if q := strings.TrimSpace(f.Query); q != "" {
+		conditions = append(conditions, fmt.Sprintf(
+			"(cadence ILIKE $%d OR status ILIKE $%d OR generated_by ILIKE $%d)",
+			argIdx, argIdx, argIdx))
+		args = append(args, "%"+q+"%")
 		argIdx++
 	}
 
@@ -526,12 +539,80 @@ WHERE id = $1 AND status = 'published'
 
 // DigestContent is the JSON shape stored in digest_editions.content. Each
 // section is assembled by AssembleDigestContent per §84 generation logic.
+// JSON keys follow the §84 schema comment: top_threads, new_members, events,
+// story, poll. UnmarshalJSON additionally accepts the legacy key spellings
+// (upcoming_events, featured_story) so editions stored before the contract
+// fix still render.
 // //nolint:revive // exported: stutter naming is intentional
 type DigestContent struct {
 	TopThreads     []DigestThread `json:"top_threads"`
 	NewMembers     []DigestMember `json:"new_members"`
-	UpcomingEvents []DigestEvent  `json:"upcoming_events"`
-	FeaturedStory  *DigestStory   `json:"featured_story,omitempty"`
+	UpcomingEvents []DigestEvent  `json:"events"`
+	FeaturedStory  *DigestStory   `json:"story,omitempty"`
+	Poll           *DigestPoll    `json:"poll,omitempty"`
+}
+
+// UnmarshalJSON decodes digest content, mapping the legacy
+// upcoming_events/featured_story keys onto the §84 events/story contract.
+func (c *DigestContent) UnmarshalJSON(data []byte) error {
+	type plain DigestContent
+	var aux struct {
+		plain
+		LegacyEvents []DigestEvent  `json:"upcoming_events"`
+		LegacyStory  *DigestStory   `json:"featured_story"`
+		Members      []DigestMember `json:"members"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*c = DigestContent(aux.plain)
+	if len(c.UpcomingEvents) == 0 && len(aux.LegacyEvents) > 0 {
+		c.UpcomingEvents = aux.LegacyEvents
+	}
+	if c.FeaturedStory == nil && aux.LegacyStory != nil {
+		c.FeaturedStory = aux.LegacyStory
+	}
+	if len(c.NewMembers) == 0 && len(aux.Members) > 0 {
+		c.NewMembers = aux.Members
+	}
+	return nil
+}
+
+// NormalizeContent rewrites a stored content blob so the API always emits the
+// §84 key spellings (events/story), even for rows persisted with the legacy
+// upcoming_events/featured_story keys. Unknown keys are preserved; unparseable
+// blobs are returned as-is.
+func NormalizeContent(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
+		return raw
+	}
+	moved := false
+	rename := func(from, to string) {
+		v, ok := m[from]
+		if !ok {
+			return
+		}
+		if _, exists := m[to]; !exists {
+			m[to] = v
+		}
+		delete(m, from)
+		moved = true
+	}
+	rename("upcoming_events", "events")
+	rename("featured_story", "story")
+	rename("members", "new_members")
+	if !moved {
+		return raw
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // DigestThread is a top forum thread summary.
@@ -553,8 +634,9 @@ type DigestMember struct {
 // DigestEvent is an upcoming event summary.
 // //nolint:revive // exported: stutter naming is intentional
 type DigestEvent struct {
-	Title string `json:"title"`
-	Slug  string `json:"slug"`
+	Title    string `json:"title"`
+	Slug     string `json:"slug"`
+	StartsAt string `json:"starts_at,omitempty"`
 }
 
 // DigestStory is the featured story summary.
@@ -562,6 +644,14 @@ type DigestEvent struct {
 type DigestStory struct {
 	Title string `json:"title"`
 	Slug  string `json:"slug"`
+}
+
+// DigestPoll is the community poll section (§84 item 5 — admin-seeded or
+// auto-suggested poll question; reserved for the poll generation phase).
+// //nolint:revive // exported: stutter naming is intentional
+type DigestPoll struct {
+	Question string `json:"question"`
+	URL      string `json:"url,omitempty"`
 }
 
 // AssembleDigestContent queries platform analytics and assembles the five
@@ -660,7 +750,7 @@ LIMIT 10
 	)
 
 	eventsQ.WriteString(`
-SELECT c.title, c.slug
+SELECT c.title, c.slug, c.publish_at
 FROM contents c
 WHERE c.content_type = 'event'
   AND c.status = 'published'
@@ -685,9 +775,13 @@ WHERE c.content_type = 'event'
 
 	for erows.Next() {
 		var e DigestEvent
-		if err := erows.Scan(&e.Title, &e.Slug); err != nil {
+		var startsAt pgtype.Timestamptz
+		if err := erows.Scan(&e.Title, &e.Slug, &startsAt); err != nil {
 			erows.Close()
 			return nil, fmt.Errorf("digest: assemble: scan event: %w", err)
+		}
+		if startsAt.Valid {
+			e.StartsAt = startsAt.Time.UTC().Format(time.RFC3339)
 		}
 
 		content.UpcomingEvents = append(content.UpcomingEvents, e)

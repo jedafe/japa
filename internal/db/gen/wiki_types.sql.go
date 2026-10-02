@@ -104,30 +104,60 @@ func (q *Queries) CountTemplateContentPages(ctx context.Context, id pgtype.UUID)
 }
 
 const createWikiPageTemplate = `-- name: CreateWikiPageTemplate :one
-INSERT INTO wiki_type_page_templates (category_id, slug, label, field_group_id, position, is_system)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, category_id, slug, label, field_group_id, position, is_system, created_at
+INSERT INTO wiki_type_page_templates
+    (category_id, slug, label, field_group_id, parent_template_id,
+     section_label, preview_limit, position, is_system)
+VALUES ($1, $2, $3, $4,
+        $5::uuid, $6,
+        COALESCE($7::int, 5), $8, $9)
+RETURNING id, category_id, slug, label, field_group_id, position,
+          parent_template_id, section_label, preview_limit,
+          is_system, created_at
 `
 
 type CreateWikiPageTemplateParams struct {
-	CategoryID   pgtype.UUID `json:"category_id"`
-	Slug         string      `json:"slug"`
-	Label        string      `json:"label"`
-	FieldGroupID pgtype.UUID `json:"field_group_id"`
-	Position     int32       `json:"position"`
-	IsSystem     bool        `json:"is_system"`
+	CategoryID       pgtype.UUID `json:"category_id"`
+	Slug             string      `json:"slug"`
+	Label            string      `json:"label"`
+	FieldGroupID     pgtype.UUID `json:"field_group_id"`
+	ParentTemplateID pgtype.UUID `json:"parent_template_id"`
+	SectionLabel     *string     `json:"section_label"`
+	PreviewLimit     *int32      `json:"preview_limit"`
+	Position         int32       `json:"position"`
+	IsSystem         bool        `json:"is_system"`
 }
 
-func (q *Queries) CreateWikiPageTemplate(ctx context.Context, arg CreateWikiPageTemplateParams) (WikiTypePageTemplate, error) {
+type CreateWikiPageTemplateRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+// parent_template_id nests the template under a same-category top-level
+// template (§80 Wiki Topic Pages); section_label is the label used when
+// the child renders as a composite preview section on the parent page;
+// preview_limit caps the preview rows (0 = all, default 5).
+func (q *Queries) CreateWikiPageTemplate(ctx context.Context, arg CreateWikiPageTemplateParams) (CreateWikiPageTemplateRow, error) {
 	row := q.db.QueryRow(ctx, createWikiPageTemplate,
 		arg.CategoryID,
 		arg.Slug,
 		arg.Label,
 		arg.FieldGroupID,
+		arg.ParentTemplateID,
+		arg.SectionLabel,
+		arg.PreviewLimit,
 		arg.Position,
 		arg.IsSystem,
 	)
-	var i WikiTypePageTemplate
+	var i CreateWikiPageTemplateRow
 	err := row.Scan(
 		&i.ID,
 		&i.CategoryID,
@@ -135,6 +165,9 @@ func (q *Queries) CreateWikiPageTemplate(ctx context.Context, arg CreateWikiPage
 		&i.Label,
 		&i.FieldGroupID,
 		&i.Position,
+		&i.ParentTemplateID,
+		&i.SectionLabel,
+		&i.PreviewLimit,
 		&i.IsSystem,
 		&i.CreatedAt,
 	)
@@ -339,14 +372,29 @@ func (q *Queries) GetWikiCategoryForSpace(ctx context.Context, arg GetWikiCatego
 
 const getWikiPageTemplate = `-- name: GetWikiPageTemplate :one
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at
 FROM wiki_type_page_templates t
 WHERE t.id = $1
 `
 
-func (q *Queries) GetWikiPageTemplate(ctx context.Context, id pgtype.UUID) (WikiTypePageTemplate, error) {
+type GetWikiPageTemplateRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+func (q *Queries) GetWikiPageTemplate(ctx context.Context, id pgtype.UUID) (GetWikiPageTemplateRow, error) {
 	row := q.db.QueryRow(ctx, getWikiPageTemplate, id)
-	var i WikiTypePageTemplate
+	var i GetWikiPageTemplateRow
 	err := row.Scan(
 		&i.ID,
 		&i.CategoryID,
@@ -354,6 +402,9 @@ func (q *Queries) GetWikiPageTemplate(ctx context.Context, id pgtype.UUID) (Wiki
 		&i.Label,
 		&i.FieldGroupID,
 		&i.Position,
+		&i.ParentTemplateID,
+		&i.SectionLabel,
+		&i.PreviewLimit,
 		&i.IsSystem,
 		&i.CreatedAt,
 	)
@@ -362,6 +413,7 @@ func (q *Queries) GetWikiPageTemplate(ctx context.Context, id pgtype.UUID) (Wiki
 
 const getWikiPageTemplateBySlug = `-- name: GetWikiPageTemplateBySlug :one
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at,
        c.category AS category_token,
        cfg.slug AS field_group_slug
@@ -380,16 +432,19 @@ type GetWikiPageTemplateBySlugParams struct {
 }
 
 type GetWikiPageTemplateBySlugRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	CategoryID     pgtype.UUID        `json:"category_id"`
-	Slug           string             `json:"slug"`
-	Label          string             `json:"label"`
-	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
-	Position       int32              `json:"position"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	CategoryToken  string             `json:"category_token"`
-	FieldGroupSlug *string            `json:"field_group_slug"`
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	CategoryToken    string             `json:"category_token"`
+	FieldGroupSlug   *string            `json:"field_group_slug"`
 }
 
 // Lazy-page resolution (§80): GET /wiki/{space}/{page} renders an
@@ -408,6 +463,9 @@ func (q *Queries) GetWikiPageTemplateBySlug(ctx context.Context, arg GetWikiPage
 		&i.Label,
 		&i.FieldGroupID,
 		&i.Position,
+		&i.ParentTemplateID,
+		&i.SectionLabel,
+		&i.PreviewLimit,
 		&i.IsSystem,
 		&i.CreatedAt,
 		&i.CategoryToken,
@@ -418,6 +476,7 @@ func (q *Queries) GetWikiPageTemplateBySlug(ctx context.Context, arg GetWikiPage
 
 const getWikiPageTemplateForSpace = `-- name: GetWikiPageTemplateForSpace :one
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at
 FROM wiki_type_page_templates t
 JOIN wiki_type_categories c ON c.id = t.category_id
@@ -434,6 +493,20 @@ type GetWikiPageTemplateForSpaceParams struct {
 	Category string      `json:"category"`
 }
 
+type GetWikiPageTemplateForSpaceRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
 // Resolve a page slug to the space type's page template: space →
 // space_type_id → the page's category row → template. The category match
 // uses the same token normalization as ResolveCategoryTokenWikiType
@@ -442,9 +515,9 @@ type GetWikiPageTemplateForSpaceParams struct {
 // the same template slug — the category scope keeps resolution
 // deterministic. Returns NULL row (ErrNoRows) when the category has no
 // template for the slug — the page is then a freeform page.
-func (q *Queries) GetWikiPageTemplateForSpace(ctx context.Context, arg GetWikiPageTemplateForSpaceParams) (WikiTypePageTemplate, error) {
+func (q *Queries) GetWikiPageTemplateForSpace(ctx context.Context, arg GetWikiPageTemplateForSpaceParams) (GetWikiPageTemplateForSpaceRow, error) {
 	row := q.db.QueryRow(ctx, getWikiPageTemplateForSpace, arg.SpaceID, arg.Slug, arg.Category)
-	var i WikiTypePageTemplate
+	var i GetWikiPageTemplateForSpaceRow
 	err := row.Scan(
 		&i.ID,
 		&i.CategoryID,
@@ -452,6 +525,9 @@ func (q *Queries) GetWikiPageTemplateForSpace(ctx context.Context, arg GetWikiPa
 		&i.Label,
 		&i.FieldGroupID,
 		&i.Position,
+		&i.ParentTemplateID,
+		&i.SectionLabel,
+		&i.PreviewLimit,
 		&i.IsSystem,
 		&i.CreatedAt,
 	)
@@ -921,6 +997,7 @@ func (q *Queries) ListWikiDirectoryChildren(ctx context.Context, arg ListWikiDir
 const listWikiPageTemplates = `-- name: ListWikiPageTemplates :many
 
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_page_templates t
@@ -930,21 +1007,27 @@ ORDER BY t.position, t.slug
 `
 
 type ListWikiPageTemplatesRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	CategoryID     pgtype.UUID        `json:"category_id"`
-	Slug           string             `json:"slug"`
-	Label          string             `json:"label"`
-	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
-	Position       int32              `json:"position"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	FieldGroupSlug *string            `json:"field_group_slug"`
-	FieldGroupName *string            `json:"field_group_name"`
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	FieldGroupSlug   *string            `json:"field_group_slug"`
+	FieldGroupName   *string            `json:"field_group_name"`
 }
 
 // =====================
 // Wiki page templates (§80 Hierarchical UX & Itemized Pricing amendment)
 // =====================
+// The category's FULL template set — nested topic templates (§80 Wiki
+// Topic Pages) included. Callers scope by parent_template_id: top-level
+// pages are parent IS NULL, a topic's siblings share its parent.
 func (q *Queries) ListWikiPageTemplates(ctx context.Context, categoryID pgtype.UUID) ([]ListWikiPageTemplatesRow, error) {
 	rows, err := q.db.Query(ctx, listWikiPageTemplates, categoryID)
 	if err != nil {
@@ -961,6 +1044,9 @@ func (q *Queries) ListWikiPageTemplates(ctx context.Context, categoryID pgtype.U
 			&i.Label,
 			&i.FieldGroupID,
 			&i.Position,
+			&i.ParentTemplateID,
+			&i.SectionLabel,
+			&i.PreviewLimit,
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.FieldGroupSlug,
@@ -978,6 +1064,7 @@ func (q *Queries) ListWikiPageTemplates(ctx context.Context, categoryID pgtype.U
 
 const listWikiPageTemplatesBySpaceType = `-- name: ListWikiPageTemplatesBySpaceType :many
 SELECT t.id, t.category_id, t.slug, t.label, t.field_group_id, t.position,
+       t.parent_template_id, t.section_label, t.preview_limit,
        t.is_system, t.created_at,
        cfg.slug AS field_group_slug, cfg.name AS field_group_name
 FROM wiki_type_page_templates t
@@ -988,16 +1075,19 @@ ORDER BY c.position, t.position, t.slug
 `
 
 type ListWikiPageTemplatesBySpaceTypeRow struct {
-	ID             pgtype.UUID        `json:"id"`
-	CategoryID     pgtype.UUID        `json:"category_id"`
-	Slug           string             `json:"slug"`
-	Label          string             `json:"label"`
-	FieldGroupID   pgtype.UUID        `json:"field_group_id"`
-	Position       int32              `json:"position"`
-	IsSystem       bool               `json:"is_system"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	FieldGroupSlug *string            `json:"field_group_slug"`
-	FieldGroupName *string            `json:"field_group_name"`
+	ID               pgtype.UUID        `json:"id"`
+	CategoryID       pgtype.UUID        `json:"category_id"`
+	Slug             string             `json:"slug"`
+	Label            string             `json:"label"`
+	FieldGroupID     pgtype.UUID        `json:"field_group_id"`
+	Position         int32              `json:"position"`
+	ParentTemplateID pgtype.UUID        `json:"parent_template_id"`
+	SectionLabel     *string            `json:"section_label"`
+	PreviewLimit     int32              `json:"preview_limit"`
+	IsSystem         bool               `json:"is_system"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	FieldGroupSlug   *string            `json:"field_group_slug"`
+	FieldGroupName   *string            `json:"field_group_name"`
 }
 
 // All page templates across a type's categories — admin editor needs the
@@ -1018,6 +1108,9 @@ func (q *Queries) ListWikiPageTemplatesBySpaceType(ctx context.Context, spaceTyp
 			&i.Label,
 			&i.FieldGroupID,
 			&i.Position,
+			&i.ParentTemplateID,
+			&i.SectionLabel,
+			&i.PreviewLimit,
 			&i.IsSystem,
 			&i.CreatedAt,
 			&i.FieldGroupSlug,
@@ -1335,26 +1428,46 @@ SET label = COALESCE($1, label),
     field_group_id = CASE WHEN $2::bool
                      THEN $3
                      ELSE field_group_id END,
-    position = COALESCE($4, position)
-WHERE id = $5
+    position = COALESCE($4, position),
+    parent_template_id = CASE WHEN $5::bool
+                     THEN $6::uuid
+                     ELSE parent_template_id END,
+    section_label = CASE WHEN $7::bool
+                     THEN $8
+                     ELSE section_label END,
+    preview_limit = COALESCE($9, preview_limit)
+WHERE id = $10
 `
 
 type UpdateWikiPageTemplateParams struct {
-	Label            *string     `json:"label"`
-	UpdateFieldGroup bool        `json:"update_field_group"`
-	FieldGroupID     pgtype.UUID `json:"field_group_id"`
-	Position         *int32      `json:"position"`
-	ID               pgtype.UUID `json:"id"`
+	Label              *string     `json:"label"`
+	UpdateFieldGroup   bool        `json:"update_field_group"`
+	FieldGroupID       pgtype.UUID `json:"field_group_id"`
+	Position           *int32      `json:"position"`
+	UpdateParent       bool        `json:"update_parent"`
+	ParentTemplateID   pgtype.UUID `json:"parent_template_id"`
+	UpdateSectionLabel bool        `json:"update_section_label"`
+	SectionLabel       *string     `json:"section_label"`
+	PreviewLimit       *int32      `json:"preview_limit"`
+	ID                 pgtype.UUID `json:"id"`
 }
 
-// Slug is immutable (page URLs); label, bound group, and position are
-// editable. update_field_group distinguishes "don't touch" from "rebind".
+// Slug is immutable (page URLs); label, bound group, position, parentage,
+// and preview config are editable. update_field_group distinguishes
+// "don't touch" from "rebind"; update_parent does the same for
+// parent_template_id (null clears → top-level); update_section_label does
+// the same for section_label (null clears → the child's label is used).
 func (q *Queries) UpdateWikiPageTemplate(ctx context.Context, arg UpdateWikiPageTemplateParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateWikiPageTemplate,
 		arg.Label,
 		arg.UpdateFieldGroup,
 		arg.FieldGroupID,
 		arg.Position,
+		arg.UpdateParent,
+		arg.ParentTemplateID,
+		arg.UpdateSectionLabel,
+		arg.SectionLabel,
+		arg.PreviewLimit,
 		arg.ID,
 	)
 	if err != nil {

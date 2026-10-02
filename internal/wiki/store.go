@@ -1401,10 +1401,11 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 
 // WikiSibling is one sibling page in a category's Prev/Next ordering.
 type WikiSibling struct {
-	ID       pgtype.UUID
-	Slug     string
-	Title    string
-	Position int32
+	ID        pgtype.UUID
+	Slug      string
+	Title     string
+	Position  int32
+	CreatedAt pgtype.Timestamptz
 }
 
 // ListPageSiblings returns a space's pages inside one category in display
@@ -1420,7 +1421,7 @@ func (s *Store) ListPageSiblings(ctx context.Context, spaceID pgtype.UUID, categ
 
 	out := make([]WikiSibling, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, WikiSibling{ID: r.ID, Slug: r.Slug, Title: r.Title, Position: r.Position})
+		out = append(out, WikiSibling{ID: r.ID, Slug: r.Slug, Title: r.Title, Position: r.Position, CreatedAt: r.CreatedAt})
 	}
 
 	return out, nil

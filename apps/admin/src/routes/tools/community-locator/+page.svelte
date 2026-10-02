@@ -290,7 +290,7 @@
 		load: async (params) => {
 			// Build query string with server-side pagination, search, and sort.
 			const qs = new URLSearchParams();
-			qs.set('page', String(params.page ?? 1));
+			qs.set('page', String((params.page ?? 0) + 1));
 			qs.set('limit', String(params.pageSize ?? 25));
 			if (params.q) qs.set('q', params.q);
 			if (params.sort) {

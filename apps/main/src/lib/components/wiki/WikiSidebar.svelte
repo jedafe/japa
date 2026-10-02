@@ -15,7 +15,9 @@
 		spaceId = '',
 		spaceLevel = '',
 		pages = [],
-		currentPageSlug = ''
+		currentPageSlug = '',
+		quickFactsGroup = '',
+		toc = []
 	}: {
 		spaceSlug: string;
 		spaceName: string;
@@ -24,6 +26,13 @@
 		pages?: WikiPageIndex[];
 		/** Exclude this page from the related list (detail view). */
 		currentPageSlug?: string;
+		/** §80 Wiki Topic Pages — the page's bound group slug; scopes Quick
+		 *  Facts to its `quick_facts` section when declared. */
+		quickFactsGroup?: string;
+		/** §80 Wiki Topic Pages — ON THIS PAGE anchors: the page's
+		 *  fields.sections[] plus rollup/directory panels. Rendered when
+		 *  the page has ≥2 sections. */
+		toc?: Array<{ id: string; label: string }>;
 	} = $props();
 
 	// Related articles: featured pages first, then the rest in index order.
@@ -92,8 +101,33 @@
 	);
 </script>
 
+{#if toc.length > 0}
+	<!-- §80 Wiki Topic Pages — ON THIS PAGE anchor list: the page's
+	     field-table sections plus rollup/directory panels. -->
+	<nav
+		class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+		aria-label={t('wiki.on_this_page', 'On this page')}
+	>
+		<h2 class="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+			{t('wiki.on_this_page', 'On this page')}
+		</h2>
+		<ul class="space-y-1.5">
+			{#each toc as item (item.id)}
+				<li>
+					<a
+						href="#{item.id}"
+						class="block truncate text-sm text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
+					>
+						{item.label}
+					</a>
+				</li>
+			{/each}
+		</ul>
+	</nav>
+{/if}
+
 {#if spaceId}
-	<WikiQuickFacts entityType="space" entityId={spaceId} />
+	<WikiQuickFacts entityType="space" entityId={spaceId} groupSlug={quickFactsGroup} />
 {/if}
 
 <!-- Need Help? — routes readers to the destination's community space. -->

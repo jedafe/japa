@@ -27,21 +27,23 @@ function parsePositiveInt(raw: string | null, fallback: number, max: number): nu
 }
 
 /**
- * Resolve a ?dest=/?city= param to a space id + display name. UUIDs pass
- * through untouched; anything else is treated as a space slug and resolved
- * via GET /spaces/{slug}. Returns null when the ref cannot be resolved.
+ * Resolve a ?dest=/?city= param to a space id + display name. GET
+ * /spaces/{slug} accepts either a slug or a space UUID, so both forms
+ * resolve to a name here — the backend falls back to id lookup when the
+ * param parses as a UUID. Returns null when the ref cannot be resolved.
  */
 async function resolveSpaceRef(
 	ctx: ReturnType<typeof apiContext>,
 	raw: string
 ): Promise<{ id: string; name: string } | null> {
 	if (!raw) return null;
-	if (UUID_RE.test(raw)) return { id: raw, name: '' };
 	try {
 		const res = await apiGet<{ space?: Space }>(ctx, `/spaces/${encodeURIComponent(raw)}`);
 		return res?.space ? { id: res.space.id, name: res.space.name } : null;
 	} catch {
-		return null;
+		// UUIDs may refer to spaces the endpoint can't serve — keep the
+		// filter working on the id even when the label can't be resolved.
+		return UUID_RE.test(raw) ? { id: raw, name: '' } : null;
 	}
 }
 
@@ -68,6 +70,13 @@ export const load: PageServerLoad = async (event) => {
 	// §111: kind tabs only exist while service_packages.enabled is on —
 	// kind=package against a disabled flag is a backend 404.
 	const kind = packagesEnabled && VALID_KINDS.has(kindRaw) ? kindRaw : '';
+	// §111 package filters — price_max is minor units on the API contract;
+	// date_from is an ISO availability-start filter. Both are pass-through
+	// and only meaningful when packages are enabled.
+	const priceMaxRaw = get('price_max');
+	const priceMax = packagesEnabled && /^\d+$/.test(priceMaxRaw) ? priceMaxRaw : '';
+	const dateFromRaw = get('date_from');
+	const dateFrom = packagesEnabled && /^\d{4}-\d{2}-\d{2}$/.test(dateFromRaw) ? dateFromRaw : '';
 	const page = parsePositiveInt(event.url.searchParams.get('page'), 1, Number.MAX_SAFE_INTEGER);
 	const limit = parsePositiveInt(event.url.searchParams.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
@@ -92,6 +101,10 @@ export const load: PageServerLoad = async (event) => {
 		verified,
 		sort,
 		kind,
+		// price_max echoes as minor units (contract); the UI input collects
+		// major units, so seed it pre-divided.
+		priceMaxMajor: priceMax ? String(Number(priceMax) / 100) : '',
+		date_from: dateFrom,
 		page,
 		limit
 	};
@@ -107,6 +120,8 @@ export const load: PageServerLoad = async (event) => {
 	if (verified === 'true' || verified === '1') params.set('verified', 'true');
 	if (sort !== 'latest') params.set('sort', sort);
 	if (kind) params.set('kind', kind);
+	if (priceMax) params.set('price_max', priceMax);
+	if (dateFrom) params.set('date_from', dateFrom);
 
 	// ?submitted=1 — set by /services/new after a successful create, since
 	// the new listing enters `in_review` and its detail URL is gated to

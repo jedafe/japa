@@ -626,6 +626,26 @@
 	// §80 page templates: sibling wiki pages under one category, each bound
 	// to a shared provisioned group so item keys stay JCE-comparable.
 
+	// §80 Wiki Topic Pages — the selected category's loaded templates feed
+	// the parent picker (top-level rows only) and the Parent column's
+	// label lookup.
+	let tplRows = $state<WikiPageTemplateItem[]>([]);
+
+	const topLevelTplOptions = $derived(
+		tplRows
+			.filter((r) => !r.parent_template_id)
+			.map((r) => ({ value: r.id, label: `${r.label} (${r.slug})` }))
+	);
+
+	async function parentTplFetcher(q: string): Promise<AutocompleteItem[]> {
+		return filterOptions(topLevelTplOptions, q);
+	}
+	function parentTplLabel(id: unknown): string {
+		const sid = String(id ?? '');
+		if (!sid) return '';
+		return tplRows.find((r) => r.id === sid)?.label ?? sid;
+	}
+
 	const tplFields: FieldDef[] = [
 		{
 			key: 'slug',
@@ -637,6 +657,33 @@
 			help: t('app.wiki.tpl_slug_help', 'URL segment — /wiki/{entity}/{slug}. Lowercase, hyphenated; immutable once created.')
 		},
 		{ key: 'label', label: t('app.wiki.tpl_label', 'Label'), type: 'text', required: true, placeholder: 'Prices' },
+		{
+			key: 'parent_template_id',
+			label: t('app.wiki.tpl_parent', 'Parent page'),
+			type: 'autocomplete',
+			placeholder: t('app.wiki.tpl_parent_ph', 'Search top-level pages…'),
+			emptyMessage: t('common.no_results', 'No results found'),
+			fetcher: parentTplFetcher,
+			initialFetcher: async () => filterOptions(topLevelTplOptions, ''),
+			getSelectedLabel: parentTplLabel,
+			// The row being edited can't be its own parent — the backend
+			// rejects self-parentage anyway, but hiding it stops the pick.
+			excludeSelf: true,
+			help: t('app.wiki.tpl_parent_help', 'Nest under a top-level page — the topic renders as a preview section on the parent and gets its own page. Top-level when empty.')
+		},
+		{
+			key: 'section_label',
+			label: t('app.wiki.tpl_section_label', 'Section label'),
+			type: 'text',
+			placeholder: 'Transportation',
+			help: t('app.wiki.tpl_section_label_help', 'Label for the preview section on the parent page — blank uses the page label.')
+		},
+		{
+			key: 'preview_limit',
+			label: t('app.wiki.tpl_preview_limit', 'Preview rows'),
+			type: 'number',
+			help: t('app.wiki.tpl_preview_limit_help', 'Rows shown in the parent page’s preview section. 0 = all rows.')
+		},
 		{
 			key: 'field_group_id',
 			label: t('app.wiki.cat_group', 'Field group'),
@@ -685,6 +732,14 @@
 				{ key: 'slug', label: t('app.wiki.tpl_slug', 'Slug'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
 				{ key: 'label', label: t('app.wiki.tpl_label', 'Label'), sortable: true },
 				{
+					key: 'parent_template_id',
+					label: t('app.wiki.tpl_parent', 'Parent'),
+					render: (v: string | null, row: WikiPageTemplateItem) =>
+						v
+							? `<span class="text-xs" style="color: var(--color-muted)">↳ ${parentTplLabel(v)}</span>`
+							: `<span class="text-xs" style="color: var(--color-muted)">—</span>`
+				},
+				{
 					key: 'field_group_name',
 					label: t('app.wiki.cat_group', 'Field group'),
 					sortable: true,
@@ -714,6 +769,7 @@
 				const res = await wikiAdminApi.listPageTemplates(sel.id);
 				if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load page templates'));
 				let rows = (res.data as WikiPageTemplateItem[]) ?? [];
+				tplRows = rows;
 				for (const r of rows) {
 					if (r.field_group_id && r.field_group_name) boundGroupNames.set(r.field_group_id, r.field_group_name);
 				}
@@ -740,17 +796,33 @@
 					slug: String(body.slug ?? '').trim(),
 					label: String(body.label ?? '').trim(),
 					field_group_id: String(body.field_group_id ?? '').trim() || undefined,
-					position: Number(body.position ?? 0)
+					position: Number(body.position ?? 0),
+					// §80 Wiki Topic Pages — optional nesting + preview config.
+					parent_template_id: String(body.parent_template_id ?? '').trim() || undefined,
+					section_label: String(body.section_label ?? '').trim() || undefined,
+					preview_limit:
+						body.preview_limit === undefined || body.preview_limit === ''
+							? undefined
+							: Math.max(0, Number(body.preview_limit))
 				});
 				return res.ok ? { ok: true } : { ok: false, error: res.error };
 			},
 			update: async (id, body) => {
 				// Slug immutable; group binding omitted when empty (the server
 				// keeps the current binding rather than rejecting "").
+				// parent_template_id/section_label are three-state — the form
+				// seeds the stored value, so an emptied picker clears (null)
+				// rather than silently leaving the old parent.
 				const res = await wikiAdminApi.updatePageTemplate(id, {
 					label: String(body.label ?? '').trim(),
 					position: Number(body.position ?? 0),
-					field_group_id: String(body.field_group_id ?? '').trim() || undefined
+					field_group_id: String(body.field_group_id ?? '').trim() || undefined,
+					parent_template_id: String(body.parent_template_id ?? '').trim() || null,
+					section_label: String(body.section_label ?? '').trim() || null,
+					preview_limit:
+						body.preview_limit === undefined || body.preview_limit === ''
+							? undefined
+							: Math.max(0, Number(body.preview_limit))
 				});
 				return res.ok ? { ok: true } : { ok: false, error: res.error };
 			},

@@ -128,7 +128,8 @@ LIMIT 1;
 -- "no filter". sort='top' orders by engagement; anything else is
 -- latest-first. kind filters listing_kind ('service'|'package');
 -- price_max is minor units; date_from filters packages with
--- available_from >= the given date.
+-- available_from >= the given date — a NULL available_from means the
+-- package is always available and matches any date_from.
 -- name: ListServiceListings :many
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
@@ -163,7 +164,7 @@ WHERE c.content_type = 'service_listing'
   AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
   AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
-  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
+  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
   AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%')
 ORDER BY
   CASE WHEN sqlc.narg(sort)::text = 'top' THEN c.view_count END DESC NULLS LAST,
@@ -185,7 +186,7 @@ WHERE c.content_type = 'service_listing'
   AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
   AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
-  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
+  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
   AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%');
 
 -- Admin moderation list — same join, any status when not filtered,
@@ -419,6 +420,19 @@ ORDER BY starts_on;
 SELECT * FROM service_package_departures
 WHERE id = @id;
 
+-- In-place departure update (§111 edit): keeps the row id so bookings
+-- holding departure_id stay attached — delete+insert would SET NULL them.
+-- Scoped to the owning package meta so a caller can't move rows between
+-- packages. Returns no rows when the id doesn't belong to the package.
+-- name: UpdateServicePackageDeparture :one
+UPDATE service_package_departures
+SET starts_on = @starts_on,
+    ends_on = sqlc.narg(ends_on),
+    capacity = sqlc.narg(capacity),
+    status = sqlc.narg(status)
+WHERE id = @id AND package_meta_id = @package_meta_id
+RETURNING *;
+
 -- Row lock for the capacity-guarded confirm path (§111).
 -- name: GetServicePackageDepartureForUpdate :one
 SELECT * FROM service_package_departures
@@ -489,7 +503,7 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title,
        c.slug AS listing_slug,
        sm.listing_kind, sm.capacity AS package_capacity,
        o.name AS org_name, o.slug AS org_slug,
-       p.status AS payment_status,
+       p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
@@ -518,11 +532,13 @@ RETURNING *;
 -- name: ListServiceBookingsByUser :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 WHERE sb.booker_user_id = @booker_user_id
   AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
@@ -580,12 +596,14 @@ WHERE sb.org_id = @org_id
 -- name: AdminListServiceBookings :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        u.username AS booker_username
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 LEFT JOIN users u ON u.id = sb.booker_user_id
 WHERE (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)

@@ -47,14 +47,17 @@ type FieldOp struct {
 // FieldDefInput is the field definition payload carried by propose_field,
 // upsert_field, and each entry of a propose_group's fields list.
 type FieldDefInput struct {
-	Key          string                     `json:"key"`
-	Label        string                     `json:"label"`
-	FieldType    string                     `json:"field_type"`
-	Options      []customfields.FieldOption `json:"options,omitempty"`
-	IsRequired   bool                       `json:"is_required,omitempty"`
-	Position     int32                      `json:"position,omitempty"`
-	Placeholder  string                     `json:"placeholder,omitempty"`
-	DefaultValue string                     `json:"default_value,omitempty"`
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	FieldType string `json:"field_type"`
+	// Options is the raw options payload — a [{value,label}] array for
+	// select/multiselect, the object-shaped {parts,primary_part} schema for
+	// price_parts (§80 Wiki Topic Pages), free-form objects for the rest.
+	Options      json.RawMessage `json:"options,omitempty"`
+	IsRequired   bool            `json:"is_required,omitempty"`
+	Position     int32           `json:"position,omitempty"`
+	Placeholder  string          `json:"placeholder,omitempty"`
+	DefaultValue string          `json:"default_value,omitempty"`
 	// Section is the §80 itemized-pricing sub-grouping token written to
 	// custom_fields.section — fields sharing a token render as one item
 	// table (e.g. 'transportation'). Empty = no section.

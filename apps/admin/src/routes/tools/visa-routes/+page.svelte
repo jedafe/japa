@@ -291,7 +291,7 @@
 			// Server-side pagination — pass page/limit/q/status to the backend.
 			// Ref: geo-aware-tool-pattern.md (admin list must filter+sort+paginate).
 			const queryParts: string[] = [];
-			queryParts.push(`page=${params.page ?? 1}`);
+			queryParts.push(`page=${(params.page ?? 0) + 1}`);
 			queryParts.push(`limit=${params.pageSize ?? 25}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {

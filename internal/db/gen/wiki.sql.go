@@ -1317,7 +1317,7 @@ func (q *Queries) ListWikiDestinations(ctx context.Context, arg ListWikiDestinat
 const listWikiPageSiblings = `-- name: ListWikiPageSiblings :many
 
 
-SELECT wp.id, wp.slug, wp.title, wp.position
+SELECT wp.id, wp.slug, wp.title, wp.position, wp.created_at
 FROM wiki_pages wp
 WHERE wp.space_id = $1 AND wp.category = $2
   AND wp.is_active = true AND wp.deleted_at IS NULL
@@ -1330,10 +1330,11 @@ type ListWikiPageSiblingsParams struct {
 }
 
 type ListWikiPageSiblingsRow struct {
-	ID       pgtype.UUID `json:"id"`
-	Slug     string      `json:"slug"`
-	Title    string      `json:"title"`
-	Position int32       `json:"position"`
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Title     string             `json:"title"`
+	Position  int32              `json:"position"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // Wiki (§80) queries — consolidated from internal/wiki/store.go.
@@ -1358,6 +1359,7 @@ func (q *Queries) ListWikiPageSiblings(ctx context.Context, arg ListWikiPageSibl
 			&i.Slug,
 			&i.Title,
 			&i.Position,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

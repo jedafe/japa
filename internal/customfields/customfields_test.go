@@ -137,72 +137,134 @@ func TestValidOptionsShape(t *testing.T) {
 	tests := []struct {
 		name      string
 		fieldType string
-		opts      []FieldOption
+		opts      string // raw JSON payload
 		wantOk    bool
 		wantMsg   string
 	}{
 		{
 			name:      "select with valid options",
 			fieldType: FieldTypeSelect,
-			opts:      []FieldOption{{Value: "opt1", Label: "Option 1"}, {Value: "opt2", Label: "Option 2"}},
+			opts:      `[{"value":"opt1","label":"Option 1"},{"value":"opt2","label":"Option 2"}]`,
 			wantOk:    true,
 		},
 		{
 			name:      "multiselect with valid options",
 			fieldType: FieldTypeMultiselect,
-			opts:      []FieldOption{{Value: "a", Label: "A"}},
+			opts:      `[{"value":"a","label":"A"}]`,
 			wantOk:    true,
 		},
 		{
 			name:      "select with empty options",
 			fieldType: FieldTypeSelect,
-			opts:      nil,
+			opts:      "",
 			wantOk:    false,
 			wantMsg:   "Select and multiselect fields require at least one option",
 		},
 		{
+			name:      "select with empty array",
+			fieldType: FieldTypeSelect,
+			opts:      `[]`,
+			wantOk:    false,
+			wantMsg:   "Select and multiselect fields require at least one option",
+		},
+		{
+			name:      "select with non-array options",
+			fieldType: FieldTypeSelect,
+			opts:      `{"a":1}`,
+			wantOk:    false,
+			wantMsg:   "Options must be an array of {value, label}",
+		},
+		{
 			name:      "select with missing value",
 			fieldType: FieldTypeSelect,
-			opts:      []FieldOption{{Value: "", Label: "Label"}},
+			opts:      `[{"value":"","label":"Label"}]`,
 			wantOk:    false,
 			wantMsg:   "Each option must have both value and label",
 		},
 		{
 			name:      "select with missing label",
 			fieldType: FieldTypeSelect,
-			opts:      []FieldOption{{Value: "v", Label: ""}},
+			opts:      `[{"value":"v","label":""}]`,
 			wantOk:    false,
 			wantMsg:   "Each option must have both value and label",
 		},
 		{
 			name:      "number with no options is ok",
 			fieldType: FieldTypeNumber,
-			opts:      nil,
+			opts:      "",
 			wantOk:    true,
 		},
 		{
 			name:      "text with no options is ok",
 			fieldType: FieldTypeText,
-			opts:      nil,
+			opts:      "",
 			wantOk:    true,
 		},
 		{
 			name:      "image_single with no options is ok",
 			fieldType: FieldTypeImageSingle,
-			opts:      nil,
+			opts:      "",
 			wantOk:    true,
 		},
 		{
 			name:      "reference with no options is ok",
 			fieldType: FieldTypeReference,
-			opts:      nil,
+			opts:      "",
 			wantOk:    true,
+		},
+		{
+			name:      "price_parts with no options fails",
+			fieldType: FieldTypePriceParts,
+			opts:      "",
+			wantOk:    false,
+			wantMsg:   "price_parts fields require options.parts — the column schema",
+		},
+		{
+			name:      "price_parts with valid schema",
+			fieldType: FieldTypePriceParts,
+			opts:      `{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"per km"}],"primary_part":"base_fare","currency_code":"CAD"}`,
+			wantOk:    true,
+		},
+		{
+			name:      "price_parts requires parts",
+			fieldType: FieldTypePriceParts,
+			opts:      `{"primary_part":"base_fare"}`,
+			wantOk:    false,
+			wantMsg:   "price_parts requires at least one part in options.parts",
+		},
+		{
+			name:      "price_parts rejects bad part kind",
+			fieldType: FieldTypePriceParts,
+			opts:      `{"parts":[{"key":"a","label":"A","kind":"blob"}]}`,
+			wantOk:    false,
+			wantMsg:   "Part kind must be money, number, or text",
+		},
+		{
+			name:      "price_parts rejects duplicate part keys",
+			fieldType: FieldTypePriceParts,
+			opts:      `{"parts":[{"key":"a","label":"A"},{"key":"a","label":"A2"}]}`,
+			wantOk:    false,
+			wantMsg:   "Part keys must be unique",
+		},
+		{
+			name:      "price_parts rejects undeclared primary_part",
+			fieldType: FieldTypePriceParts,
+			opts:      `{"parts":[{"key":"a","label":"A"}],"primary_part":"b"}`,
+			wantOk:    false,
+			wantMsg:   "primary_part must name a declared part",
+		},
+		{
+			name:      "price_parts rejects text primary_part",
+			fieldType: FieldTypePriceParts,
+			opts:      `{"parts":[{"key":"a","label":"A","kind":"text"}],"primary_part":"a"}`,
+			wantOk:    false,
+			wantMsg:   "primary_part must name a money or number part — text is not comparable",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			msg, ok := ValidOptionsShape(tc.fieldType, tc.opts)
+			msg, ok := ValidOptionsShape(tc.fieldType, json.RawMessage(tc.opts))
 			if ok != tc.wantOk {
 				t.Errorf("ValidOptionsShape() ok = %v, want %v", ok, tc.wantOk)
 			}

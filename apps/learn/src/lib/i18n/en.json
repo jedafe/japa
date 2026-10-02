@@ -95,6 +95,8 @@
 	"learn.bookmarks_folder_error": "Failed to update bookmark folders",
 	"learn.bookmarks_remove": "Remove bookmark",
 	"learn.bookmarks_remove_error": "Failed to remove bookmark",
+	"learn.bookmarks_show_empty_folders": "Show {count} empty folders",
+	"learn.bookmarks_hide_empty_folders": "Hide empty folders",
 	"learn.bookmark_save": "Save track",
 	"learn.bookmark_saved": "Saved to bookmarks",
 	"learn.no_certificates": "No certificates yet.",

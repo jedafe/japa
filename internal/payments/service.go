@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
@@ -130,6 +131,83 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 	}
 
 	return CreatePaymentResult{Payment: p, CheckoutURL: checkoutURL}, nil
+}
+
+// ErrPaymentNotPending — checkout resume only applies to a payment still
+// awaiting capture; a settled/failed/refunded payment has nothing to resume.
+var ErrPaymentNotPending = errors.New("payment is not pending")
+
+// ErrPaymentNotOwned — the caller is not the payer on the payment row.
+var ErrPaymentNotOwned = errors.New("payment not owned by caller")
+
+// ResumePayment re-initiates a hosted checkout for a pending payment —
+// §111 booking checkout resume (POST /me/service-bookings/:id/pay). Hosted
+// provider sessions can't be re-derived after abandonment, so a fresh
+// session is minted and the same payment row's provider_ref is swapped to
+// the new reference; webhook matching (payments.provider_ref) keeps working.
+// A stale pre-resume session that still captures funds produces a webhook
+// whose provider_ref no longer resolves — an ops-reconciliation edge, not a
+// settled booking. Non-hosted providers (credit, manual_transfer) have no
+// session to resume and return the row unchanged with an empty URL.
+func (s *Service) ResumePayment(ctx context.Context, paymentID, userID pgtype.UUID, email, returnURL string) (CreatePaymentResult, error) {
+	p, err := s.store.getPaymentByID(ctx, paymentID)
+	if err != nil {
+		return CreatePaymentResult{}, err
+	}
+
+	if p.UserID.Bytes != userID.Bytes {
+		return CreatePaymentResult{}, ErrPaymentNotOwned
+	}
+
+	if p.Status != PaymentStatusPending {
+		return CreatePaymentResult{}, ErrPaymentNotPending
+	}
+
+	provider := s.providers[p.Provider]
+
+	// Non-hosted providers (or an unconfigured provider) cannot mint a
+	// session — the pending row stays as-is and the caller gets no URL.
+	if provider == nil || p.Provider == ProviderCredit || p.Provider == ProviderManualTransfer {
+		return CreatePaymentResult{Payment: p}, nil
+	}
+
+	var metadata map[string]interface{}
+	if len(p.Metadata) > 0 {
+		if err := json.Unmarshal(p.Metadata, &metadata); err != nil {
+			return CreatePaymentResult{}, fmt.Errorf("unmarshaling payment metadata: %w", err)
+		}
+	}
+
+	resp, err := provider.InitiatePayment(ctx, PaymentRequest{
+		UserID:      userID.String(),
+		Email:       email,
+		Amount:      p.Amount - p.DiscountAmount, // net of the discount applied at create time
+		Currency:    p.Currency,
+		PurposeType: p.PurposeType,
+		PurposeID:   p.PurposeID.String(),
+		Metadata:    metadata,
+		ReturnURL:   returnURL,
+	})
+	if err != nil {
+		return CreatePaymentResult{}, fmt.Errorf("re-initiating payment with %s: %w", p.Provider, err)
+	}
+
+	// Swap provider_ref to the fresh session — the status='pending' guard
+	// makes the write atomic against a concurrent webhook settle.
+	if resp.Reference != "" {
+		p, err = s.store.write.UpdatePaymentProviderRef(ctx, gen.UpdatePaymentProviderRefParams{
+			ID:          p.ID,
+			ProviderRef: &resp.Reference,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return CreatePaymentResult{}, ErrPaymentNotPending
+			}
+			return CreatePaymentResult{}, fmt.Errorf("updating provider_ref: %w", err)
+		}
+	}
+
+	return CreatePaymentResult{Payment: p, CheckoutURL: resp.CheckoutURL}, nil
 }
 
 // resolveDiscount validates a discount code (if supplied) and returns the

@@ -240,7 +240,7 @@
 			const params = new URLSearchParams();
 			if (q) params.set('q', q);
 			if (filter.status) params.set('status', filter.status);
-			if (page) params.set('page', String(page));
+			params.set('page', String(page + 1));
 			if (pageSize) params.set('limit', String(pageSize));
 			const result = await jobsAdminApi.list(params.toString());
 			if (result.ok) {

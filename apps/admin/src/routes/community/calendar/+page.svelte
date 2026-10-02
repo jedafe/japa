@@ -301,7 +301,7 @@
 		load: async (params) => {
 			// BUG-020: pass pagination params to the API for server-side paging.
 			const queryParts: string[] = [];
-			if (params.page) queryParts.push(`page=${params.page}`);
+			queryParts.push(`page=${params.page + 1}`);
 			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {

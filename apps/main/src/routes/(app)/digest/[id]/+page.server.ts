@@ -7,6 +7,11 @@ import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import type { DigestEdition } from '$lib/types';
 
 export const load: PageServerLoad = async (event) => {
+	const { features } = await event.parent();
+	if (!features['digest.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Digest is not available' });
+	}
+
 	const ctx = apiContext(event);
 	const id = event.params.id;
 	let digest: DigestEdition | null = null;

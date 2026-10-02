@@ -2053,6 +2053,14 @@ export type WikiPageTemplateItem = {
 	field_group_id?: string;
 	field_group_slug?: string;
 	field_group_name?: string;
+	/** §80 Wiki Topic Pages — nesting edge to a same-category top-level
+	 *  template; the child renders as a composite preview section on the
+	 *  parent page and resolves as its own topic page. */
+	parent_template_id?: string | null;
+	/** Label for the synthesized composite section on the parent page. */
+	section_label?: string | null;
+	/** Rows shown in the parent's composite preview (0 = all). */
+	preview_limit?: number;
 	position: number;
 	is_system: boolean;
 };
@@ -2177,6 +2185,18 @@ export const serviceDirectoryAdminApi = {
 	unverify: (id: string) => api<unknown>(`/admin/services/${id}/unverify`, { method: 'PATCH', body: {} }),
 	resolveClaim: (serviceId: string, claimId: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/services/${serviceId}/claim/${claimId}`, { method: 'PATCH', body }),
+};
+
+// §111 — service bookings dispute-resolution queue. Requires
+// service.booking.admin at the route level.
+export const serviceBookingsAdminApi = {
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; meta: { page: number; limit: number; total: number } }>(
+			`/admin/service-bookings${params ? `?${params}` : ''}`
+		),
+	get: (id: string) => api<unknown>(`/admin/service-bookings/${id}`),
+	transition: (id: string, body: { status: string; resolution_note?: string }) =>
+		api<unknown>(`/admin/service-bookings/${id}`, { method: 'PATCH', body }),
 };
 
 // ── V2 Functional Tools (§§90–97, §§99–101) — admin HITL review queues ───
@@ -2401,6 +2421,7 @@ export const communityLocatorAdminApi = {
 
 export const digestAdminApi = {
 	list: (params?: string) => apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(`/admin/digest${params ? `?${params}` : ''}`),
+	get: (id: string) => api<Record<string, unknown>>(`/admin/digest/${id}`),
 	update: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/digest/${id}`, { method: 'PATCH', body }),
 	publish: (id: string) => api<unknown>(`/admin/digest/${id}/publish`, { method: 'POST', body: {} }),

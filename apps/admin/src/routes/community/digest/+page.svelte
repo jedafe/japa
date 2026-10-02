@@ -4,15 +4,18 @@
 	// Admin can publish drafts/reviews and trigger manual generation.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 	import { Button } from '$lib/components/ui/button';
 	import { digestAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, Sparkles } from 'lucide-svelte';
-	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
+	import { Eye, CheckCircle, Sparkles, Pencil } from 'lucide-svelte';
+	import type { ActionContext, ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
 	// DigestItem matches the backend DigestEditionDTO (§84 API contract).
+	// §84 is metrics-driven (no AI generation), so the digest_editions table
+	// carries no ai_generated/ai_model/hitl_reviewed_by columns.
 	type DigestItem = {
 		id: string;
 		space_id?: string;
@@ -24,11 +27,6 @@
 		generated_by?: string;
 		reviewed_by?: string;
 		created_at: string;
-		// ADR-088 AI generation columns
-		ai_generated?: boolean;
-		ai_model?: string;
-		hitl_reviewed_by?: string;
-		ai_generated_at?: string;
 	};
 
 	const canManage = $derived(hasPermission('digest.manage'));
@@ -60,14 +58,91 @@
 	let acting = $state(false);
 	let showGenerateModal = $state(false);
 
+	// ── View detail + edit (consume GET/PATCH /admin/digest/:id, §84) ─────────
+	let viewDetail = $state<(DigestItem & { content?: Record<string, unknown> }) | null>(null);
+	let viewDetailLoading = $state(false);
+	let showEditModal = $state(false);
+	let editTarget = $state<DigestItem | null>(null);
+	let editJson = $state('');
+	let editError = $state('');
 
+	async function viewDigest(row: DigestItem, ctx?: ActionContext) {
+		ctx?.openView(row);
+		viewDetail = null;
+		viewDetailLoading = true;
+		try {
+			const res = await digestAdminApi.get(row.id);
+			if (res.ok) viewDetail = res.data as DigestItem & { content?: Record<string, unknown> };
+		} finally {
+			viewDetailLoading = false;
+		}
+	}
 
-	async function publishDigest(item: DigestItem) {
-		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
-		if (item.ai_generated && !item.hitl_reviewed_by) {
-			pageError = t('app.digest.hitl_required', 'Cannot approve AI-generated content without HITL review');
+	// Content section labels per §84 (top_threads, new_members, events, story, poll).
+	const sectionLabels = $derived<Record<string, string>>({
+		top_threads: t('app.digest.section_top_threads', 'Top threads'),
+		new_members: t('app.digest.section_new_members', 'New members'),
+		events: t('app.digest.section_events', 'Events'),
+		story: t('app.digest.section_story', 'Featured story'),
+		poll: t('app.digest.section_poll', 'Poll')
+	});
+
+	function sectionSummary(value: unknown): string {
+		if (Array.isArray(value)) return t('app.digest.section_items', '{count} items').replace('{count}', String(value.length));
+		if (value && typeof value === 'object') {
+			const v = value as Record<string, unknown>;
+			return String(v.title ?? v.question ?? v.name ?? t('app.digest.section_set', 'Set'));
+		}
+		return '—';
+	}
+
+	async function openEditContent(row: DigestItem) {
+		editError = '';
+		acting = true;
+		try {
+			const res = await digestAdminApi.get(row.id);
+			if (!res.ok) {
+				pageError = res.error ?? t('common.error', 'An error occurred');
+				return;
+			}
+			const detail = res.data as { content?: Record<string, unknown> } | undefined;
+			editTarget = row;
+			editJson = JSON.stringify(detail?.content ?? {}, null, 2);
+			showEditModal = true;
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function saveEditContent() {
+		if (!editTarget) return;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(editJson);
+		} catch {
+			editError = t('app.digest.invalid_json', 'Content must be valid JSON');
 			return;
 		}
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			editError = t('app.digest.invalid_content', 'Content must be a JSON object');
+			return;
+		}
+		acting = true;
+		editError = '';
+		try {
+			const res = await digestAdminApi.update(editTarget.id, { content: parsed });
+			if (res.ok) {
+				showEditModal = false;
+				entityController?.reload();
+			} else {
+				editError = res.error ?? t('common.error', 'An error occurred');
+			}
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function publishDigest(item: DigestItem) {
 		acting = true;
 		pageError = '';
 		try {
@@ -109,9 +184,15 @@
 	// ── Row actions ─────────────────────────────────────────────────────────
 	const rowActions = $derived.by<ActionItem[]>(() => {
 		const acts: ActionItem[] = [
-			{ label: t('common.view', 'View'), icon: Eye, onclick: (_row: DigestItem, ctx) => ctx?.openView(_row) }
+			{ label: t('common.view', 'View'), icon: Eye, onclick: viewDigest }
 		];
 		if (canManage) {
+			acts.push({
+				label: t('app.digest.edit_content', 'Edit Content'),
+				icon: Pencil,
+				onclick: (row: DigestItem) => openEditContent(row),
+				show: (row: DigestItem) => row.status === 'draft' || row.status === 'review'
+			});
 			acts.push({
 				label: t('app.digest.publish', 'Publish'),
 				icon: CheckCircle,
@@ -184,7 +265,8 @@
 		actions: rowActions,
 		fields,
 		load: async (params) => {
-			const queryParts: string[] = [`page=${params.page}`, `limit=${params.pageSize}`];
+			// EntityPage passes a 0-based page; the backend expects 1-based.
+			const queryParts: string[] = [`page=${params.page + 1}`, `limit=${params.pageSize}`];
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			if (params.sort) {
 				// EntityPage passes sort as "key:dir" (e.g. "created_at:desc").
@@ -248,6 +330,32 @@
 	</div>
 </Modal>
 
+<!-- ── Edit content slide-over (draft/review only — PATCH /admin/digest/:id) ── -->
+<SlideOver bind:open={showEditModal} title={t('app.digest.modal_edit', 'Edit Digest Content')} size="lg">
+	<div class="space-y-4 p-4">
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('app.digest.edit_desc', 'Edit the digest content JSON (sections: top_threads, new_members, events, story, poll).')}
+		</p>
+		{#if editError}
+			<p class="text-sm" style="color: var(--color-danger)">{editError}</p>
+		{/if}
+		<textarea
+			bind:value={editJson}
+			rows="20"
+			class="w-full rounded-md border p-2 font-mono text-xs"
+			style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+		></textarea>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('app.digest.cancel', 'Cancel')}</Button>
+			<Button onclick={saveEditContent} disabled={acting}>
+				{acting ? t('app.digest.saving', 'Saving...') : t('app.digest.save', 'Save')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
+
 <!-- ── View slide-over body ──────────────────────────────────────────────── -->
 {#snippet DigestView({ row }: { row: DigestItem })}
 	<div class="space-y-4">
@@ -275,17 +383,38 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.digest.col_created', 'Created')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</p>
 		</div>
-		{#if row.ai_generated}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.digest.col_generated_by', 'Generated By')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.generated_by || '—'}</p>
+		</div>
+		{#if row.reviewed_by}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.ai_generated', 'AI Generated')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{t('common.yes', 'Yes')} ({row.ai_model ?? '—'})</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.digest.col_reviewed_by', 'Reviewed By')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.reviewed_by}</p>
 			</div>
 		{/if}
-		{#if row.hitl_reviewed_by}
+		{#if row.space_id}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.common.hitl_reviewed_by', 'HITL Reviewed By')}</p>
-				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.hitl_reviewed_by}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.digest.col_space_id', 'Space')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.space_id}</p>
 			</div>
 		{/if}
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.digest.col_content', 'Content')}</p>
+			{#if viewDetailLoading}
+				<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
+			{:else if viewDetail?.content && Object.keys(viewDetail.content).length}
+				<ul class="mt-1 space-y-1">
+					{#each Object.entries(viewDetail.content) as [key, value] (key)}
+						<li class="text-sm" style="color: var(--color-foreground)">
+							<span class="font-medium">{sectionLabels[key] ?? key}</span>
+							<span style="color: var(--color-muted)"> — {sectionSummary(value)}</span>
+						</li>
+					{/each}
+				</ul>
+			{:else if viewDetail}
+				<p class="mt-1 text-sm" style="color: var(--color-muted)">{t('app.digest.no_content', 'No content sections')}</p>
+			{/if}
+		</div>
 	</div>
 {/snippet}

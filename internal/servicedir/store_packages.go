@@ -84,6 +84,17 @@ func (s *Store) ReplacePackageDepartures(ctx context.Context, packageMetaID pgty
 	})
 }
 
+// UpdatePackageDeparture edits one departure in place — keeps the row id
+// so service_bookings.departure_id references stay attached (§111).
+func (s *Store) UpdatePackageDeparture(ctx context.Context, arg gen.UpdateServicePackageDepartureParams) (gen.ServicePackageDeparture, error) {
+	row, err := s.write.UpdateServicePackageDeparture(ctx, arg)
+	if err != nil {
+		return gen.ServicePackageDeparture{}, fmt.Errorf("servicedir: update package departure: %w", err)
+	}
+
+	return row, nil
+}
+
 // ListPackageDepartures returns all departures for a package (edit view).
 func (s *Store) ListPackageDepartures(ctx context.Context, packageMetaID pgtype.UUID) ([]gen.ServicePackageDeparture, error) {
 	rows, err := s.read.ListServicePackageDepartures(ctx, packageMetaID)
@@ -170,6 +181,7 @@ type BookingRow struct {
 	// capacity inherits (only populated by the detail query).
 	PackageCapacity   *int32
 	PaymentStatus     *string // joined payment row — nil when payment_id is unset
+	PaymentProvider   *string // joined payment row — nil when payment_id is unset
 	OrgName           *string
 	OrgSlug           *string
 	DepartureStartsOn pgtype.Date
@@ -202,8 +214,8 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
 		AgentBalanceDue: r.AgentBalanceDue, OrgResponseNote: r.OrgResponseNote,
-		DisputeReason:   r.DisputeReason,
-		ExpiresAt: r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
+		DisputeReason: r.DisputeReason,
+		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -213,6 +225,7 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 	row.ListingContentID = r.ListingContentID
 	row.PackageCapacity = r.PackageCapacity
 	row.PaymentStatus = r.PaymentStatus
+	row.PaymentProvider = r.PaymentProvider
 	row.OrgName = r.OrgName
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
@@ -229,8 +242,8 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
 		AgentBalanceDue: r.AgentBalanceDue, OrgResponseNote: r.OrgResponseNote,
-		DisputeReason:   r.DisputeReason,
-		ExpiresAt: r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
+		DisputeReason: r.DisputeReason,
+		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -238,6 +251,8 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
 	row.ListingContentID = r.ListingContentID
+	row.PaymentStatus = r.PaymentStatus
+	row.PaymentProvider = r.PaymentProvider
 	row.OrgName = r.OrgName
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
@@ -254,8 +269,8 @@ func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
 		AgentBalanceDue: r.AgentBalanceDue, OrgResponseNote: r.OrgResponseNote,
-		DisputeReason:   r.DisputeReason,
-		ExpiresAt: r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
+		DisputeReason: r.DisputeReason,
+		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -281,8 +296,8 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
 		AgentBalanceDue: r.AgentBalanceDue, OrgResponseNote: r.OrgResponseNote,
-		DisputeReason:   r.DisputeReason,
-		ExpiresAt: r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
+		DisputeReason: r.DisputeReason,
+		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 	})
@@ -290,6 +305,8 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
 	row.ListingContentID = r.ListingContentID
+	row.PaymentStatus = r.PaymentStatus
+	row.PaymentProvider = r.PaymentProvider
 	row.OrgName = r.OrgName
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn

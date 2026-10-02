@@ -18,7 +18,8 @@
 		ArrowRight,
 		X,
 		Wifi,
-		Check
+		Check,
+		Package
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
@@ -52,6 +53,8 @@
 	let sortInput = $state(untrack(() => data.filters.sort));
 	let kindInput = $state(untrack(() => data.filters.kind));
 	let limitInput = $state(untrack(() => data.filters.limit));
+	let priceMaxInput = $state(untrack(() => data.filters.priceMaxMajor));
+	let dateFromInput = $state(untrack(() => data.filters.date_from));
 
 	$effect(() => {
 		queryInput = data.filters.q;
@@ -64,6 +67,8 @@
 		sortInput = data.filters.sort;
 		kindInput = data.filters.kind;
 		limitInput = data.filters.limit;
+		priceMaxInput = data.filters.priceMaxMajor;
+		dateFromInput = data.filters.date_from;
 	});
 
 	const categoryOptions = $derived(serviceCategoryOptions(t, data.serviceCategories));
@@ -137,6 +142,15 @@
 		if (sortInput && sortInput !== 'latest') params.set('sort', sortInput);
 		if (kindInput && kindInput !== 'all') params.set('kind', kindInput);
 		if (limitInput !== 20) params.set('limit', String(limitInput));
+		// §111 package-only filters — the API takes price_max in minor
+		// units; the input collects major units like the create form.
+		if (kindInput === 'package') {
+			const major = Number(priceMaxInput);
+			if (priceMaxInput.trim() && Number.isFinite(major) && major >= 0) {
+				params.set('price_max', String(Math.round(major * 100)));
+			}
+			if (dateFromInput) params.set('date_from', dateFromInput);
+		}
 		return params;
 	}
 
@@ -172,6 +186,8 @@
 		sortInput = 'latest';
 		kindInput = '';
 		limitInput = 20;
+		priceMaxInput = '';
+		dateFromInput = '';
 		goto('/services');
 	}
 
@@ -183,6 +199,8 @@
 			!!data.filters.origin ||
 			!!data.filters.verified ||
 			!!data.filters.kind ||
+			!!data.filters.priceMaxMajor ||
+			!!data.filters.date_from ||
 			data.filters.limit !== 20
 	);
 
@@ -250,6 +268,13 @@
 		/>
 		{#snippet actions()}
 			<FilterToggle bind:show={showFilters} active={hasActiveFilters} controls="services-filter-panel" />
+			{#if data.authed && data.packagesEnabled}
+				<PageAction
+					href="/me/service-bookings"
+					icon={Package}
+					label={t('bookings.my_title', 'Service Bookings')}
+				/>
+			{/if}
 			<PageAction
 				href={data.authed ? '/services/new' : '/login?redirect=/services/new'}
 				icon={Plus}
@@ -358,6 +383,32 @@
 					onSelect={(item) => { kindInput = item.id; applyFilters(); }}
 					onClear={() => { kindInput = ''; applyFilters(); }}
 				/>
+			{/if}
+			{#if kindInput === 'package'}
+				<!-- §111 package filters — price_max (major-unit input, minor-unit
+					URL param) and date_from (availability start). -->
+				<div>
+					<label for="services-price-max" class="sr-only">{t('services.filter_price_max', 'Max price')}</label>
+					<input
+						id="services-price-max"
+						type="number"
+						min="0"
+						step="0.01"
+						bind:value={priceMaxInput}
+						placeholder={t('services.filter_price_max', 'Max price')}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
+				<div>
+					<label for="services-date-from" class="sr-only">{t('services.filter_date_from', 'Available from')}</label>
+					<input
+						id="services-date-from"
+						type="date"
+						bind:value={dateFromInput}
+						aria-label={t('services.filter_date_from', 'Available from')}
+						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+					/>
+				</div>
 			{/if}
 			<div class="flex items-center gap-2">
 				<label class="flex items-center gap-1.5 text-sm text-[var(--color-text)]">

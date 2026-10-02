@@ -39,6 +39,10 @@ export type FieldDef =
 			initialFetcher?: () => Promise<{ id: string; label: string; sublabel?: string }[]>;
 			/** Resolves the currently selected id to a display label (avoids re-fetch on render). */
 			getSelectedLabel: (id: string) => string;
+			/** Drops the option matching the editing row's id — for
+			 *  self-referential pickers (e.g. a parent select that must not
+			 *  offer the row itself). */
+			excludeSelf?: boolean;
 			required?: boolean;
 			help?: string;
 			class?: string;

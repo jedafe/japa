@@ -19,7 +19,7 @@
 	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { getEntityFields, type WikiEntityField } from '$lib/api/wiki';
+	import { getEntityFields, type WikiEntityField, type WikiEntityFieldGroup } from '$lib/api/wiki';
 	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 	import type { IconComponent } from '$lib/components/ui/icons';
@@ -27,11 +27,16 @@
 	let {
 		entityType = 'space',
 		entityId,
-		maxItems = 8
+		maxItems = 8,
+		groupSlug = ''
 	}: {
 		entityType?: string;
 		entityId: string;
 		maxItems?: number;
+		/** §80 Wiki Topic Pages — the page's bound group slug. When set, only
+		 *  that group's `quick_facts`-section fields render (topic facts on
+		 *  topic pages); empty when unset, preserving flatten-all. */
+		groupSlug?: string;
 	} = $props();
 
 	let fields = $state<WikiEntityField[] | null>(null);
@@ -43,17 +48,32 @@
 	// resolve symbols on currency/price_range field values.
 	const currencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
 
+	// §80 Wiki Topic Pages — reserved `quick_facts` section token: when the
+	// page has a bound group, only that group's `quick_facts` fields feed the
+	// card (a bound group with none renders no card — flattening every group
+	// would leak unrelated facts onto topic pages). Pages with no bound
+	// group keep the pre-topic flatten-all behavior. Read the flat field
+	// list — `fieldSections` omits `sections` when a group has a single
+	// section, which is exactly the all-quick-facts case.
+	function pickFacts(groups: WikiEntityFieldGroup[], boundSlug: string): WikiEntityField[] {
+		const bound = boundSlug ? groups.find((g) => g.slug === boundSlug) : undefined;
+		if (bound) return bound.fields.filter((f) => f.section === 'quick_facts');
+		return groups.flatMap((g) => g.fields);
+	}
+
 	$effect(() => {
 		void entityType;
 		void entityId;
+		void groupSlug;
 		let cancelled = false;
 		loading = true;
 		getEntityFields(entityType, entityId)
 			.then((data) => {
 				if (cancelled) return;
 				contextCurrency = data?.entity_currency_code ?? '';
-				const flat = (data?.groups ?? []).flatMap((g) => g.fields);
-				fields = flat.filter((f) => f.visible && hasValue(f));
+				fields = pickFacts(data?.groups ?? [], groupSlug).filter(
+					(f) => f.visible && hasValue(f)
+				);
 			})
 			.catch(() => {
 				if (!cancelled) fields = [];

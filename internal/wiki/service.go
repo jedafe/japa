@@ -115,8 +115,13 @@ type WikiPageDetailDTO struct {
 	// breadcrumb chain — undeclared junction parents and declared
 	// runners-up — rendered as "also under X" (§80 amendment §6).
 	AncestorsAlt []WikiSpaceRefDTO `json:"ancestors_alt,omitempty"`
-	Siblings     []WikiSiblingDTO  `json:"siblings,omitempty"`
-	Rollup       *WikiRollupDTO    `json:"rollup,omitempty"`
+	// §80 Wiki Topic Pages: Parents is the page-level ancestor chain
+	// (category stub → template ancestors, root-first) — the breadcrumb's
+	// in-page segments and the "Back to {parent}" link. Empty on the
+	// category stub page itself and on pages in unmanaged categories.
+	Parents  []WikiPageParentDTO `json:"parents,omitempty"`
+	Siblings []WikiSiblingDTO    `json:"siblings,omitempty"`
+	Rollup   *WikiRollupDTO      `json:"rollup,omitempty"`
 	// Directory is the read-time child-space listing when the category's
 	// rollup config sets mode:"directory" (§80) — nil otherwise.
 	Directory *WikiDirectoryDTO `json:"directory,omitempty"`
@@ -150,14 +155,29 @@ type WikiHelpfulDTO struct {
 	MyVote *string `json:"my_vote"`
 }
 
+// WikiPageParentDTO is one segment of a page's ancestor chain — the
+// category stub and any template ancestors, ordered root → immediate
+// parent (§80 Wiki Topic Pages).
+// //nolint:revive // exported: DTO naming follows package convention
+type WikiPageParentDTO struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+}
+
 // WikiPageTemplateItemDTO is the public shape for one page template link —
 // slug (the /wiki/{space}/{slug} target), label ({name} substituted), and
-// template ordering position.
+// template ordering position. ParentTemplateID is the nesting edge (§80
+// Wiki Topic Pages) — the frontend groups children under their parent in
+// "More in this section" nav.
 // //nolint:revive // exported: stutter naming is intentional
 type WikiPageTemplateItemDTO struct {
-	Slug     string `json:"slug"`
-	Label    string `json:"label"`
-	Position int32  `json:"position"`
+	Slug             string  `json:"slug"`
+	Label            string  `json:"label"`
+	Position         int32   `json:"position"`
+	ParentTemplateID *string `json:"parent_template_id,omitempty"`
+	// TemplateID identifies the row so parent_template_id references
+	// resolve without a slug join.
+	TemplateID string `json:"template_id,omitempty"`
 }
 
 // pageTemplateItems maps a category's stored templates to the public
@@ -169,11 +189,17 @@ func pageTemplateItems(templates []WikiPageTemplate, spaceName string) []WikiPag
 
 	out := make([]WikiPageTemplateItemDTO, 0, len(templates))
 	for _, tm := range templates {
-		out = append(out, WikiPageTemplateItemDTO{
-			Slug:     tm.Slug,
-			Label:    substituteTemplateLabel(tm.Label, spaceName),
-			Position: tm.Position,
-		})
+		item := WikiPageTemplateItemDTO{
+			Slug:       tm.Slug,
+			Label:      substituteTemplateLabel(tm.Label, spaceName),
+			Position:   tm.Position,
+			TemplateID: tm.ID.String(),
+		}
+		if tm.ParentTemplateID.Valid {
+			pid := tm.ParentTemplateID.String()
+			item.ParentTemplateID = &pid
+		}
+		out = append(out, item)
 	}
 
 	return out
@@ -790,13 +816,36 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	if cerr != nil && page.Category != pageSlug {
 		cat, cerr = s.store.GetCategoryForSpace(ctx, spaceID, pageSlug)
 	}
+	var catPtr *WikiCategory
+	var templates []WikiPageTemplate
+	var pageTmpl *WikiPageTemplate
 	if cerr == nil {
+		catPtr = &cat
 		dto.CategoryLabel = cat.Label
 
 		// §80 lazy template pages: the category's declared template pages —
 		// the discovery links for pages that render without a wiki_pages row.
 		if tmpls, terr := s.store.ListPageTemplates(ctx, cat.ID); terr == nil {
+			templates = tmpls
 			dto.PageTemplates = pageTemplateItems(tmpls, page.SpaceName)
+		}
+
+		// §80 Wiki Topic Pages: resolve the page's bound template once —
+		// its parent drives sibling scope and the ancestor chain. A
+		// template deleted since binding leaves PageTemplateID dangling or
+		// NULL'd; either way the page keeps the category stub alone.
+		if page.PageTemplateID.Valid && page.Slug != cat.Slug {
+			for i := range templates {
+				if templates[i].ID == page.PageTemplateID {
+					pageTmpl = &templates[i]
+					break
+				}
+			}
+			if pageTmpl == nil {
+				if t, terr := s.store.GetPageTemplate(ctx, page.PageTemplateID); terr == nil {
+					pageTmpl = &t
+				}
+			}
 		}
 
 		// Effective group: the page-level binding wins over the category's
@@ -833,6 +882,20 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 				}
 			}
 		}
+
+		// §80 Wiki Topic Pages: a template page with children renders one
+		// composite preview section per child — rows live in the child
+		// group's cfv values, never duplicated on the parent.
+		if pageTmpl != nil {
+			s.attachCompositeSections(ctx, userID, spaceID, page.SpaceName, groupID, &dto, childTemplates(templates, pageTmpl.ID))
+		}
+	}
+
+	// §80 Wiki Topic Pages: the page-level ancestor chain (category stub →
+	// template parents) — empty on the category stub page itself, where
+	// the stub IS the current segment.
+	if catPtr != nil && page.Slug != cat.Slug {
+		dto.Parents = s.pageParents(ctx, catPtr, pageTmpl, page.SpaceName)
 	}
 
 	// §80 Hierarchical UX: ancestors (breadcrumb chain) + siblings
@@ -841,7 +904,11 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
-	dto.Siblings = s.getSiblings(ctx, spaceID, page.Category, page.Slug)
+	var parentTemplateID pgtype.UUID
+	if pageTmpl != nil {
+		parentTemplateID = pageTmpl.ParentTemplateID
+	}
+	dto.Siblings = s.getSiblings(ctx, spaceID, page.SpaceName, catPtr, page.Category, page.Slug, parentTemplateID, templates)
 
 	return dto, nil
 }
@@ -895,13 +962,18 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 
 	// CategoryLabel mirrors the materialized path — the owning category's
 	// admin-set label, best-effort.
+	var catPtr *WikiCategory
 	if cat, cerr := s.store.GetWikiTypeCategory(ctx, tmpl.CategoryID); cerr == nil {
+		cat := cat
+		catPtr = &cat
 		dto.CategoryLabel = cat.Label
 	}
 
 	// The category's sibling template pages — discovery links, same as a
 	// materialized page's.
+	var templates []WikiPageTemplate
 	if tmpls, terr := s.store.ListPageTemplates(ctx, tmpl.CategoryID); terr == nil {
+		templates = tmpls
 		dto.PageTemplates = pageTemplateItems(tmpls, spaceName)
 	}
 
@@ -916,10 +988,19 @@ func (s *Service) getLazyTemplatePage(ctx context.Context, userID, spaceID pgtyp
 		}
 	}
 
+	// §80 Wiki Topic Pages: a parent template's page composes one preview
+	// section per child template; the topic page itself gains the
+	// category-stub→parent chain for breadcrumbs.
+	s.attachCompositeSections(ctx, userID, spaceID, spaceName, tmpl.FieldGroupID, &dto, childTemplates(templates, tmpl.ID))
+	if catPtr != nil {
+		wt := tmpl.WikiPageTemplate
+		dto.Parents = s.pageParents(ctx, catPtr, &wt, spaceName)
+	}
+
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
-	dto.Siblings = s.getSiblings(ctx, spaceID, tmpl.CategoryToken, pageSlug)
+	dto.Siblings = s.getSiblings(ctx, spaceID, spaceName, catPtr, tmpl.CategoryToken, pageSlug, tmpl.ParentTemplateID, templates)
 
 	return dto, nil
 }
@@ -992,7 +1073,9 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 		}
 	}
 
+	var templates []WikiPageTemplate
 	if tmpls, terr := s.store.ListPageTemplates(ctx, cat.ID); terr == nil {
+		templates = tmpls
 		dto.PageTemplates = pageTemplateItems(tmpls, spaceName)
 	}
 
@@ -1006,7 +1089,9 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 			}
 		}
 	}
-	dto.Siblings = s.getSiblings(ctx, spaceID, cat.Category, cat.Slug)
+	// The category stub page IS the top-level scope — no page parents, and
+	// siblings are the stub + top-level templates + ad-hoc pages union.
+	dto.Siblings = s.getSiblings(ctx, spaceID, spaceName, &cat, cat.Category, cat.Slug, pgtype.UUID{}, templates)
 
 	return dto, nil
 }

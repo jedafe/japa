@@ -9,8 +9,10 @@
 package customfields
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -685,33 +687,59 @@ func (h *Handlers) DeleteFieldGroup(w http.ResponseWriter, r *http.Request) {
 // fieldRequest is the shared body shape for create and update field handlers.
 // Key and GroupID are immutable after creation and are only read by CreateField.
 type fieldRequest struct {
-	Label          string        `json:"label"`
-	Key            string        `json:"key"`
-	FieldType      string        `json:"field_type"`
-	Options        []FieldOption `json:"options"`
-	EmbedPlatforms []string      `json:"embed_platforms"`
-	Placeholder    *string       `json:"placeholder"`
-	DefaultValue   *string       `json:"default_value"`
-	IsRequired     bool          `json:"is_required"`
-	ShowInFrontend bool          `json:"show_in_frontend"`
-	Filterable     bool          `json:"filterable"`
-	Sortable       bool          `json:"sortable"`
-	Searchable     bool          `json:"searchable"`
-	Position       int32         `json:"position"`
+	Label     string `json:"label"`
+	Key       string `json:"key"`
+	FieldType string `json:"field_type"`
+	// Options is the raw options payload — an array of {value,label} for
+	// select/multiselect, an object-shaped schema for price_parts
+	// ({parts, primary_part, currency_code}, §80 Wiki Topic Pages), free
+	// form objects for the rest.
+	Options        json.RawMessage `json:"options"`
+	EmbedPlatforms []string        `json:"embed_platforms"`
+	Placeholder    *string         `json:"placeholder"`
+	DefaultValue   *string         `json:"default_value"`
+	IsRequired     bool            `json:"is_required"`
+	ShowInFrontend bool            `json:"show_in_frontend"`
+	Filterable     bool            `json:"filterable"`
+	Sortable       bool            `json:"sortable"`
+	Searchable     bool            `json:"searchable"`
+	Position       int32           `json:"position"`
 	// Section groups fields sharing a token under one item table / sub-tab
 	// (§80 Itemized Pricing). Pointer so PATCH distinguishes an omitted key
 	// (leave untouched) from an explicit "" (clear the section).
 	Section *string `json:"section"`
 }
 
-// marshalOptions encodes select/multiselect options to the JSON bytes the
-// database column expects. Returns nil when no options are provided.
-func marshalOptions(opts []FieldOption) ([]byte, error) {
-	if len(opts) == 0 {
+// marshalOptions validates and compacts the raw options payload for the
+// custom_fields.options jsonb column. Empty or "null" payloads store NULL.
+func marshalOptions(opts json.RawMessage) ([]byte, error) {
+	trimmed := bytes.TrimSpace(opts)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return nil, nil
 	}
+	if !json.Valid(trimmed) {
+		return nil, errors.New("options are not valid JSON")
+	}
 
-	return json.Marshal(opts)
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, trimmed); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// optionsAbsent reports whether a request's raw options carry no usable
+// payload — empty, "null", or an empty []/{}.
+func optionsAbsent(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return true
+	}
+	if string(trimmed) == "[]" || string(trimmed) == "{}" {
+		return true
+	}
+	return false
 }
 
 // ListFieldsByGroup handles GET /api/v1/custom-field-groups/{id}/fields.
@@ -767,7 +795,7 @@ func (h *Handlers) CreateField(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && len(req.Options) == 0 {
+	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && optionsAbsent(req.Options) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
 	}
@@ -854,7 +882,7 @@ func (h *Handlers) updateFieldByParam(w http.ResponseWriter, r *http.Request, id
 		return
 	}
 
-	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && len(req.Options) == 0 {
+	if (req.FieldType == FieldTypeSelect || req.FieldType == FieldTypeMultiselect) && optionsAbsent(req.Options) {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_options", "Select and multiselect fields require options")
 		return
 	}

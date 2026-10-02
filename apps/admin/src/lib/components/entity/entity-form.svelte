@@ -18,7 +18,9 @@
 		value?: Record<string, any>;
 		errors?: Record<string, string>;
 		disabled?: boolean;
-		editing?: boolean;
+		/** The row being edited (null on create) — truthy drives
+		 *  readonlyInEdit and feeds autocomplete fetcher context. */
+		editing?: any | null;
 		onsubmit?: () => void;
 		class?: ClassValue;
 	} = $props();
@@ -31,6 +33,16 @@
 	function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		onsubmit?.();
+	}
+
+	// excludeSelf fields must not offer the editing row itself as an
+	// option (e.g. a parent template picker on the row's own edit form).
+	function filterSelf(
+		field: Extract<FieldDef, { type: 'autocomplete' }>,
+		items: { id: string; label: string; sublabel?: string }[]
+	) {
+		const selfId = field.excludeSelf && editing ? String(editing.id ?? '') : '';
+		return selfId ? items.filter((i) => i.id !== selfId) : items;
 	}
 </script>
 
@@ -82,8 +94,8 @@
 					id={field.key}
 					placeholder={field.placeholder}
 					emptyMessage={field.emptyMessage}
-					fetcher={field.fetcher}
-					initialFetcher={field.initialFetcher}
+					fetcher={async (q: string) => filterSelf(field, await field.fetcher(q))}
+					initialFetcher={field.initialFetcher ? async () => filterSelf(field, await field.initialFetcher!()) : undefined}
 					selectedId={acVal ?? null}
 					selectedLabel={acVal ? field.getSelectedLabel(acVal) : null}
 					onSelect={(item: AutocompleteItem) => { value[field.key] = item.id; }}

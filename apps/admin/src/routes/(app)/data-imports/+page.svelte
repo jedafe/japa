@@ -216,7 +216,7 @@
 		load: async ({ q, sort, filter, page, pageSize }) => {
 			const params = new URLSearchParams();
 			params.set('page_size', String(pageSize || 25));
-			params.set('page_offset', String(((page || 1) - 1) * (pageSize || 25)));
+			params.set('page_offset', String(page * (pageSize || 25)));
 			if (filter.status) params.set('status', filter.status);
 			if (filter.type) params.set('type', filter.type);
 			if (q) params.set('q', q);

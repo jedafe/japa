@@ -97,6 +97,21 @@
 		};
 		return map[url];
 	}
+
+	// Collapsed-rail label flyout — a fixed-position pill rendered outside
+	// the scrollable items list (whose overflow-y-auto would clip it) that
+	// slides in from the left on hover/focus of an icon-only control.
+	let flyout = $state<{ label: string; top: number } | null>(null);
+
+	function showFlyout(e: Event, label: string) {
+		if (!collapsed) return;
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		flyout = { label, top: rect.top + rect.height / 2 };
+	}
+
+	function hideFlyout() {
+		flyout = null;
+	}
 </script>
 
 {#snippet navIcon(item: MenuItem, active: boolean, badge: number)}
@@ -140,6 +155,10 @@
 		<button
 			type="button"
 			onclick={onToggle}
+			onmouseenter={(e) => showFlyout(e, t('nav.expand'))}
+			onmouseleave={hideFlyout}
+			onfocus={(e) => showFlyout(e, t('nav.expand'))}
+			onblur={hideFlyout}
 			class="mx-auto mb-1 grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
 			aria-label={t('nav.expand')}
 		>
@@ -148,19 +167,24 @@
 	{/if}
 
 	<!-- Nav items (from GET /menus/main_sidebar) -->
-	<ul class="flex-1 overflow-y-auto px-2 py-2" data-tour="primary-nav">
+	<ul class="flex-1 overflow-y-auto px-2 py-2" data-tour="primary-nav" onscroll={hideFlyout}>
 		{#each items as item (item.id)}
 			{@const active = isActive(item.url)}
 			{@const badge = item.url === '/notifications' ? realtime.unreadNotifications : 0}
 			{@const isNotifications = item.url === '/notifications' && !!user}
-			<li data-tour={navTourKey(item.url)}>
+			<li
+				data-tour={navTourKey(item.url)}
+				onmouseenter={(e) => showFlyout(e, item.label)}
+				onmouseleave={hideFlyout}
+				onfocusin={(e) => showFlyout(e, item.label)}
+				onfocusout={hideFlyout}
+			>
 				{#if isNotifications}
 					<!-- Phase 13.01 — Notifications nav item opens the dropdown -->
 					<NotificationCentre side="right" align="start" {collapsed} class={itemClass(active)}>
 						{#snippet children()}
 							<span
 								class={clsx('flex items-center gap-3', collapsed && 'justify-center')}
-								title={collapsed ? item.label : undefined}
 								aria-current={active ? 'page' : undefined}
 							>
 								{@render navIcon(item, active, badge)}
@@ -180,7 +204,7 @@
 						href={item.url}
 						target={item.target === '_blank' ? '_blank' : undefined}
 						rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
-						title={collapsed ? item.label : undefined}
+						aria-label={collapsed ? item.label : undefined}
 						aria-current={active ? 'page' : undefined}
 						class={itemClass(active)}
 					>
@@ -208,6 +232,10 @@
 				<button
 					type="button"
 					onclick={() => compose.openMenu()}
+					onmouseenter={(e) => showFlyout(e, t('nav.compose'))}
+					onmouseleave={hideFlyout}
+					onfocus={(e) => showFlyout(e, t('nav.compose'))}
+					onblur={hideFlyout}
 					class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
 					aria-label={t('nav.compose')}
 				>
@@ -216,6 +244,10 @@
 			{:else}
 				<a
 					href="/login?redirect=/create"
+					onmouseenter={(e) => showFlyout(e, t('nav.compose'))}
+					onmouseleave={hideFlyout}
+					onfocus={(e) => showFlyout(e, t('nav.compose'))}
+					onblur={hideFlyout}
 					class="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-sm transition-colors hover:bg-[var(--color-primary-hover)]"
 					aria-label={t('nav.compose')}
 				>
@@ -253,6 +285,10 @@
 					<button
 						type="button"
 						{...props}
+						onmouseenter={(e) => showFlyout(e, t('nav.space_switcher'))}
+						onmouseleave={hideFlyout}
+						onfocus={(e) => showFlyout(e, t('nav.space_switcher'))}
+						onblur={hideFlyout}
 						class={clsx(
 							'mb-1 flex w-full items-center gap-2 rounded-[var(--radius)] p-2 text-sm text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)]',
 							collapsed && 'justify-center'
@@ -284,7 +320,11 @@
 			<a
 				href="/u/{user.username}"
 				data-tour="account"
-				title={collapsed ? user.display_name : undefined}
+				aria-label={collapsed ? user.display_name || user.username : undefined}
+				onmouseenter={(e) => showFlyout(e, user.display_name || user.username)}
+				onmouseleave={hideFlyout}
+				onfocus={(e) => showFlyout(e, user.display_name || user.username)}
+				onblur={hideFlyout}
 				class={clsx('flex items-center gap-3 rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]', collapsed && 'justify-center')}
 			>
 				{#if user.avatar_url}
@@ -305,6 +345,11 @@
 		{:else}
 			<a
 				href="/login"
+				aria-label={collapsed ? t('nav.account') : undefined}
+				onmouseenter={(e) => showFlyout(e, t('nav.account'))}
+				onmouseleave={hideFlyout}
+				onfocus={(e) => showFlyout(e, t('nav.account'))}
+				onblur={hideFlyout}
 				class="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 			>
 				<LogIn size={18} />
@@ -312,6 +357,16 @@
 			</a>
 		{/if}
 	</div>
+
+	<!-- Collapsed-rail label flyout (fixed — escapes the items list's
+	     overflow-y-auto, which would clip an in-flow tooltip) -->
+	{#if collapsed && flyout}
+		<span
+			class="nav-label-flyout"
+			style="top: {flyout.top}px"
+			aria-hidden="true"
+		>{flyout.label}</span>
+	{/if}
 </nav>
 
 <style>
@@ -346,5 +401,41 @@
 	:global([data-theme='dark']) .nav-icon-chip--active {
 		background: hsl(var(--chip-hue) 55% 55% / 0.32);
 		color: hsl(var(--chip-hue) 90% 74%);
+	}
+
+	/* Collapsed-rail label flyout — a pill that slides in from the left on
+	 * hover/focus of an icon-only item. Position: fixed so it escapes the
+	 * items list's overflow-y-auto clipping; left tracks the rail width. */
+	.nav-label-flyout {
+		position: fixed;
+		left: calc(var(--nav-width-collapsed) + 10px);
+		z-index: 60;
+		max-width: 16rem;
+		overflow: hidden;
+		padding: 0.375rem 0.75rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		background: var(--color-surface);
+		box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+		color: var(--color-text);
+		font-size: 0.8125rem;
+		font-weight: 500;
+		line-height: 1.25rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		pointer-events: none;
+		transform: translateY(-50%);
+		animation: nav-flyout-in 0.16s ease-out 40ms backwards;
+	}
+
+	@keyframes nav-flyout-in {
+		from {
+			opacity: 0;
+			transform: translate(-10px, -50%);
+		}
+		to {
+			opacity: 1;
+			transform: translate(0, -50%);
+		}
 	}
 </style>

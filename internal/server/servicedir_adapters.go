@@ -12,6 +12,7 @@ package server
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -112,6 +113,29 @@ func (a *serviceDirPaymentAdapter) CreatePayment(ctx context.Context, userID pgt
 	})
 	if err != nil {
 		return servicedir.PaymentResult{}, err
+	}
+
+	return servicedir.PaymentResult{
+		PaymentID:   res.Payment.ID.String(),
+		CheckoutURL: res.CheckoutURL,
+		Status:      res.Payment.Status,
+	}, nil
+}
+
+// ResumePayment adapts payments.ResumePayment for the servicedir seam
+// (§111 checkout resume). Payments-layer sentinels are translated to
+// servicedir ones so the handler's error mapping stays self-contained.
+func (a *serviceDirPaymentAdapter) ResumePayment(ctx context.Context, paymentID, userID pgtype.UUID, email, returnURL string) (servicedir.PaymentResult, error) {
+	res, err := a.svc.ResumePayment(ctx, paymentID, userID, email, returnURL)
+	if err != nil {
+		switch {
+		case errors.Is(err, payments.ErrPaymentNotPending):
+			return servicedir.PaymentResult{}, servicedir.ErrInvalidBookingTransition
+		case errors.Is(err, payments.ErrPaymentNotOwned):
+			return servicedir.PaymentResult{}, servicedir.ErrNotOwner
+		default:
+			return servicedir.PaymentResult{}, err
+		}
 	}
 
 	return servicedir.PaymentResult{

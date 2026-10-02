@@ -11,7 +11,7 @@
 	import { loginUrl, MAIN_ORIGIN } from '$lib/appOrigins';
 	import { goto } from '$app/navigation';
 	import { EmptyState } from '$lib/components/ui';
-	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X } from 'lucide-svelte';
+	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X, ChevronRight, ChevronDown } from 'lucide-svelte';
 	import type { Bookmark, BookmarkFolder } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -25,6 +25,23 @@
 	let loading = $state(true);
 	let loadingMore = $state(false);
 	let activeFolder = $state<string | null>(null);
+
+	// Empty folders are hidden behind a toggle by default so a folder only
+	// appears in the sidebar once it holds at least one bookmark; emptying
+	// one slides it back under the toggle. A missing bookmark_count (e.g.
+	// the POST create response, which returns the raw row) counts as empty.
+	// The active folder always stays visible so a ?folder= deep link to an
+	// empty folder still shows the selection.
+	function isEmptyFolder(f: BookmarkFolder): boolean {
+		return (f.bookmark_count ?? 0) === 0;
+	}
+	let showEmptyFolders = $state(false);
+	const hiddenEmptyCount = $derived(
+		folders.filter((f) => isEmptyFolder(f) && f.id !== activeFolder).length
+	);
+	const visibleFolders = $derived(
+		folders.filter((f) => !isEmptyFolder(f) || f.id === activeFolder || showEmptyFolders)
+	);
 
 	// The list endpoint paginates (default 20, max 100) and returns no meta
 	// total — page at PAGE_SIZE and show Load-more while a full page comes back.
@@ -143,7 +160,10 @@
 		folderError = '';
 		const res = await api.post<BookmarkFolder>('/me/bookmark-folders', { name: newFolderName.trim() });
 		if (res.data) {
-			folders = [...folders, res.data];
+			// The create response returns the raw row (no join) — normalize the
+			// missing bookmark_count to 0 so the new folder is treated as
+			// empty and hidden under the toggle until it has content.
+			folders = [...folders, { ...res.data, bookmark_count: res.data.bookmark_count ?? 0 }];
 			newFolderName = '';
 		} else {
 			folderError = res.error?.message ?? t('learn.bookmarks_folder_error', 'Failed to create folder');
@@ -210,10 +230,20 @@
 		folderError = '';
 		const res = await api.delete(`/me/bookmarks/${id}`);
 		if (!res.error) {
+			const removed = bookmarks.find((b) => b.id === id);
 			bookmarks = bookmarks.filter((b) => b.id !== id);
 			// Every bookmark counts toward "All" — decrement regardless of the
 			// folder currently being viewed.
 			if (totalCount != null) totalCount = Math.max(0, totalCount - 1);
+			// Decrement the owning folder's count so a folder emptied by this
+			// removal drops under the empty-folders toggle without a reload.
+			if (removed?.folder_id) {
+				folders = folders.map((f) =>
+					f.id === removed.folder_id
+						? { ...f, bookmark_count: Math.max(0, (f.bookmark_count ?? 1) - 1) }
+						: f
+				);
+			}
 		} else {
 			folderError = res.error?.message ?? t('learn.bookmarks_remove_error', 'Failed to remove bookmark');
 		}
@@ -252,7 +282,7 @@
 				{/if}
 			</button>
 
-			{#each folders as folder (folder.id)}
+			{#each visibleFolders as folder (folder.id)}
 				<div class="group flex items-center gap-1">
 					{#if editingFolderId === folder.id}
 						<input
@@ -294,30 +324,49 @@
 								<span class="ml-auto text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>
 							{/if}
 						</button>
-						<button
-							type="button"
-							onclick={() => startRename(folder)}
-							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-primary)] group-hover:opacity-100"
-							aria-label={t('learn.bookmarks_rename_folder')}
-						>
-							<Pencil size={12} />
-						</button>
-						<button
-							type="button"
-							onclick={() => deleteFolder(folder.id)}
-							disabled={deletingFolderId === folder.id}
-							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
-							aria-label={t('learn.bookmarks_delete_folder')}
-						>
-							{#if deletingFolderId === folder.id}
-								<Loader2 size={12} class="animate-spin" />
-							{:else}
-								<Trash2 size={12} />
-							{/if}
-						</button>
+						{#if isEmptyFolder(folder)}
+							<button
+								type="button"
+								onclick={() => startRename(folder)}
+								class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-primary)] group-hover:opacity-100"
+								aria-label={t('learn.bookmarks_rename_folder')}
+							>
+								<Pencil size={12} />
+							</button>
+							<button
+								type="button"
+								onclick={() => deleteFolder(folder.id)}
+								disabled={deletingFolderId === folder.id}
+								class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
+								aria-label={t('learn.bookmarks_delete_folder')}
+							>
+								{#if deletingFolderId === folder.id}
+									<Loader2 size={12} class="animate-spin" />
+								{:else}
+									<Trash2 size={12} />
+								{/if}
+							</button>
+						{/if}
 					{/if}
 				</div>
 			{/each}
+
+			{#if hiddenEmptyCount > 0}
+				<button
+					type="button"
+					onclick={() => (showEmptyFolders = !showEmptyFolders)}
+					aria-expanded={showEmptyFolders}
+					class="flex w-full items-center gap-1.5 rounded-[var(--radius)] px-3 py-1.5 text-xs text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text-subtle)]"
+				>
+					{#if showEmptyFolders}
+						<ChevronDown size={12} />
+						{t('learn.bookmarks_hide_empty_folders')}
+					{:else}
+						<ChevronRight size={12} />
+						{t('learn.bookmarks_show_empty_folders').replace('{count}', String(hiddenEmptyCount))}
+					{/if}
+				</button>
+			{/if}
 
 			<!-- Create folder -->
 			<form class="flex items-center gap-1 pt-2" onsubmit={(e) => { e.preventDefault(); createFolder(); }}>

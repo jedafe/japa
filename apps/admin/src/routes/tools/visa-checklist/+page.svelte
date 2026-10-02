@@ -106,7 +106,7 @@
 		fields,
 		load: async (params) => {
 			const queryParts: string[] = [];
-			if (params.page) queryParts.push(`page=${params.page}`);
+			queryParts.push(`page=${params.page + 1}`);
 			if (params.pageSize) queryParts.push(`limit=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			const queryString = queryParts.join('&');

@@ -127,7 +127,7 @@
 
 	async function loadGuides(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
-		params.set('page', String(p.page));
+		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		if (p.filter?.status) params.set('status', p.filter.status);
 		if (p.filter?.dest) params.set('dest', p.filter.dest);
@@ -229,7 +229,7 @@
 
 	async function loadUpdates(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
-		params.set('page', String(p.page));
+		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		if (p.filter?.status) params.set('status', p.filter.status);
 		const res = await api<{ data?: CommunityUpdate[]; pagination?: { total: number } } | CommunityUpdate[]>(`/admin/eca-guides/updates?${params}`);

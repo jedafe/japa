@@ -145,12 +145,13 @@ func TestGetComparisonMatrix_HydratesFromEntityField(t *testing.T) {
 			{itemID, contentID, pgtype.UUID{}, "Uni A", (*string)(nil), pgtype.UUID{}, pgtype.UUID{}, int32(0), itemRef, ts, ts},
 		},
 		// id, content_id, type_id, label, dimension_type, position,
-		// source_field_id, source_field_key, created_at, deleted_at
+		// source_field_id, source_field_key, source_field_options,
+		// created_at, deleted_at
 		dimRows: [][]any{
-			{dimRatingID, contentID, pgtype.UUID{}, "QS Ranking", DimensionTypeRating, int32(0), fieldID, strPtr("qs_ranking"), ts, ts},
-			{dimTextID, contentID, pgtype.UUID{}, "Overview", DimensionTypeText, int32(1), fieldID, strPtr("overview_text"), ts, ts},
-			{dimBoolID, contentID, pgtype.UUID{}, "Scholarships", DimensionTypeBoolean, int32(2), fieldID, strPtr("scholarship_available"), ts, ts},
-			{dimMissingID, contentID, pgtype.UUID{}, "Missing", DimensionTypeText, int32(3), fieldID, strPtr("not_a_field"), ts, ts},
+			{dimRatingID, contentID, pgtype.UUID{}, "QS Ranking", DimensionTypeRating, int32(0), fieldID, strPtr("qs_ranking"), []byte(nil), ts, ts},
+			{dimTextID, contentID, pgtype.UUID{}, "Overview", DimensionTypeText, int32(1), fieldID, strPtr("overview_text"), []byte(nil), ts, ts},
+			{dimBoolID, contentID, pgtype.UUID{}, "Scholarships", DimensionTypeBoolean, int32(2), fieldID, strPtr("scholarship_available"), []byte(nil), ts, ts},
+			{dimMissingID, contentID, pgtype.UUID{}, "Missing", DimensionTypeText, int32(3), fieldID, strPtr("not_a_field"), []byte(nil), ts, ts},
 		},
 		// dimension_id, item_id, value, value_rating, value_boolean,
 		// created_at, metadata, updated_at, data_source_id
@@ -244,7 +245,7 @@ func TestGetComparisonMatrix_HydrationSkipsUnresolvableItem(t *testing.T) {
 			{itemID, contentID, pgtype.UUID{}, "Gone Uni", (*string)(nil), pgtype.UUID{}, pgtype.UUID{}, int32(0), itemRef, ts, ts},
 		},
 		dimRows: [][]any{
-			{dimID, contentID, pgtype.UUID{}, "QS Ranking", DimensionTypeRating, int32(0), fieldID, strPtr("qs_ranking"), ts, ts},
+			{dimID, contentID, pgtype.UUID{}, "QS Ranking", DimensionTypeRating, int32(0), fieldID, strPtr("qs_ranking"), []byte(nil), ts, ts},
 		},
 	}
 

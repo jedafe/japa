@@ -168,7 +168,7 @@
 		load: async (params) => {
 			const qs = new URLSearchParams();
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
-			qs.set('page', String(params.page ?? 1));
+			qs.set('page', String((params.page ?? 0) + 1));
 			qs.set('limit', String(params.pageSize ?? 25));
 			const queryString = qs.toString();
 			const result = await cvFormatterAdminApi.listStandardsRaw(`?${queryString}`);
