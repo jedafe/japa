@@ -172,6 +172,45 @@ func (h *Handlers) HandleMyBookingCancel(w http.ResponseWriter, r *http.Request)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": booking})
 }
 
+// HandleMyBookingDispute handles POST /me/service-bookings/:id/dispute —
+// the booker reports a problem on a confirmed|fulfilled booking. The row
+// lands in 'disputed' for admin resolution (§111).
+func (h *Handlers) HandleMyBookingDispute(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if !h.packagesAvailable(w, r) {
+		return
+	}
+
+	bookingID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body) // reason is optional but recommended
+
+	booking, err := h.service.DisputeMyBooking(r.Context(), bookingID, user.UserID, body.Reason)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "booking_not_found", "Booking not found")
+			return
+		}
+
+		slog.Error("servicedir: dispute booking failed", "booking_id", bookingID, "error", err)
+		writeServiceError(w, err, "dispute_failed", "Failed to dispute booking")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": booking})
+}
+
 // HandleOrgPackages handles GET /org/:org_id/packages — the org's package
 // listings (public when the org is public).
 func (h *Handlers) HandleOrgPackages(w http.ResponseWriter, r *http.Request) {

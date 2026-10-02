@@ -400,6 +400,9 @@ var (
 	// ErrCheckoutFieldsRequired — provider/email are required to open the
 	// platform-fee checkout on a paid booking (400 checkout_fields_required).
 	ErrCheckoutFieldsRequired = errors.New("checkout_fields_required")
+	// ErrInvalidProvider — the checkout provider is not in the §17 enum
+	// (400 invalid_provider). Checked before the booking row is written.
+	ErrInvalidProvider = errors.New("invalid_provider")
 	// ErrInvalidPreferredDates — the preferred_dates object failed shape
 	// or ordering validation (400 invalid_preferred_dates).
 	ErrInvalidPreferredDates = errors.New("invalid_preferred_dates")
@@ -793,6 +796,19 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 		}
 
 		return ServiceDTO{}, fmt.Errorf("servicedir: get by slug: %w", err)
+	}
+
+	// §111 review gate: an in_review/draft listing must not be reachable
+	// by direct URL — the public detail route serves published rows only.
+	if row.Status != content.StatusPublished {
+		return ServiceDTO{}, pgx.ErrNoRows
+	}
+
+	// Packages vanish with the feature flag — list, booking, and write
+	// routes all gate on service_packages.enabled; the detail route does
+	// the same so a disabled feature leaves no public surface.
+	if row.ListingKind == ListingKindPackage && !s.PackagesEnabled(ctx) {
+		return ServiceDTO{}, pgx.ErrNoRows
 	}
 
 	dto := rowToDTO(row)

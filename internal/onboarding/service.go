@@ -153,7 +153,8 @@ func parseTourDismissals(raw []byte) map[string]bool {
 }
 
 // totalSteps is the number of steps in the onboarding wizard per Section 09.
-const totalSteps = 5
+// Steps 4–6 are the per-type follow steps (users, spaces, sources).
+const totalSteps = 7
 
 // UpdateStep saves step data and advances the current step number.
 // When req.Skip is true, the step minimum is auto-fulfilled using the ranked
@@ -188,7 +189,7 @@ func (s *Service) UpdateStep(ctx context.Context, userID pgtype.UUID, req *Updat
 	}
 
 	// BUG-004 fix: validate the submitted step is in the valid range [1, totalSteps].
-	// Without this, a malicious client could send step: 999 to bypass the 5-step flow.
+	// Without this, a malicious client could send step: 999 to bypass the wizard flow.
 	if submitStep < 1 || submitStep > totalSteps {
 		return fmt.Errorf("%w: step %d out of range [1, %d]", errpkg.ErrInvalidStatusTransition, submitStep, totalSteps)
 	}
@@ -246,29 +247,31 @@ func (s *Service) persistStep(ctx context.Context, userID pgtype.UUID, submitSte
 	// currently ON (about to work on), not the last completed step. When
 	// the user submits step N data, they advance to step N+1. Storing
 	// submitStep (the step just completed) caused two bugs:
-	//   1. Complete() checks CurrentStep >= 5, but the last PUT stores 4,
-	//      so completion always failed.
+	//   1. Complete() checks CurrentStep >= totalSteps, but the last PUT
+	//      stores totalSteps-1, so completion always failed.
 	//   2. On refresh, GetState returned the step just completed, sending
 	//      the user backwards.
 	newStep := submitStep + 1
 
-	// Clamp to totalSteps — step 5 is the terminal step; advancing past it
-	// is handled by POST /onboarding/complete, not by advancing current_step.
+	// Clamp to totalSteps — the last step is the terminal step; advancing
+	// past it is handled by POST /onboarding/complete, not by advancing
+	// current_step.
 	if newStep > totalSteps {
 		newStep = totalSteps
 	}
 
-	if err := s.store.upsertState(ctx, userID, int32(newStep), completed, merged, tourDismissed, tourDismissals); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (5)
+	if err := s.store.upsertState(ctx, userID, int32(newStep), completed, merged, tourDismissed, tourDismissals); err != nil { //nolint:gosec // G115: newStep is bounded by totalSteps (7)
 		return fmt.Errorf("updating onboarding step: %w", err)
 	}
 
 	return nil
 }
 
-// persistFollows turns Step 3 tag slugs and Step 4 recommendation IDs into
-// actual follow rows using the follow-system service. It is best-effort and
-// never blocks onboarding. Recommendations are resolved to their entity type
-// from the same ranked list used by the wizard.
+// persistFollows turns Step 3 tag slugs, Step 4/5 recommendation IDs, and
+// Step 6 source IDs into actual follow rows using the follow-system service.
+// It is best-effort and never blocks onboarding. User/space recommendations
+// are resolved to their entity type from the same ranked list used by the
+// wizard; sources are followed directly by ID as the "source" entity type.
 func (s *Service) persistFollows(ctx context.Context, userID pgtype.UUID, fields stepDataFields) error {
 	if s.follower == nil {
 		return nil
@@ -294,7 +297,21 @@ func (s *Service) persistFollows(ctx context.Context, userID pgtype.UUID, fields
 		}
 	}
 
-	// Step 4: follow selected recommendations by ID. We resolve type from
+	// Step 6: follow selected sources by ID. Sources come from the public
+	// directory (GET /api/v1/sources), not the recommendation engine, so the
+	// entity type is known directly — no rec-list resolution needed.
+	for _, rawID := range fields.SourceFollows {
+		var id pgtype.UUID
+		if err := id.Scan(rawID); err != nil {
+			slog.Warn("onboarding: invalid source id in source_follows", "id", rawID, "error", err)
+			continue
+		}
+		if _, err := s.follower.EnsureFollow(ctx, userID, "source", id); err != nil {
+			slog.Warn("onboarding: failed to follow source", "entity_id", rawID, "error", err)
+		}
+	}
+
+	// Steps 4/5: follow selected recommendations by ID. We resolve type from
 	// the current recommendation list so we don't toggle-unfollow an entity
 	// the user already follows (e.g. an auto-joined geo space).
 	if len(fields.Follows) == 0 {
@@ -334,10 +351,10 @@ func (s *Service) persistFollows(ctx context.Context, userID pgtype.UUID, fields
 }
 
 // autoFulfillSkip returns auto-populated step_data for a skipped step that has
-// a minimum requirement (step 3 = tags, step 4 = follows). Returns nil if the
-// step has no minimum (no auto-fulfill needed). Per Section 09, the user always
-// ends up meeting the baseline density target — they just choose between manual
-// curation or accepting defaults.
+// a minimum requirement (step 3 = tags, step 4 = users, step 5 = spaces).
+// Returns nil if the step has no minimum (no auto-fulfill needed). Per
+// Section 09, the user always ends up meeting the baseline density target —
+// they just choose between manual curation or accepting defaults.
 func (s *Service) autoFulfillSkip(ctx context.Context, userID pgtype.UUID, step int) json.RawMessage {
 	switch step {
 	case 3:
@@ -349,79 +366,97 @@ func (s *Service) autoFulfillSkip(ctx context.Context, userID pgtype.UUID, step 
 
 		promotedTagsJSON, _ := s.settings.GetSetting(ctx, keyPromotedTags)
 
-		var promotedTags []string
+		var promoted []string
 
 		if promotedTagsJSON != "" {
-			_ = json.Unmarshal([]byte(promotedTagsJSON), &promotedTags)
+			_ = json.Unmarshal([]byte(promotedTagsJSON), &promoted)
 		}
 
-		if len(promotedTags) >= minTags {
-			promotedTags = promotedTags[:minTags]
+		if len(promoted) >= minTags {
+			promoted = promoted[:minTags]
 		}
 
-		if len(promotedTags) == 0 {
+		if len(promoted) == 0 {
 			return nil // no promoted tags to auto-fulfill with
 		}
 
+		// onboarding.promoted_tags stores tag UUIDs (per the settings
+		// catalog), but the tags/interests step_data fields carry slugs —
+		// persistFollows resolves them via GetTagBySlug. Resolve each UUID
+		// to its slug here; entries that fail to resolve (or legacy
+		// slug-valued entries that already parse as slugs) are kept as-is
+		// so the slug path still covers them.
+		promotedSlugs := make([]string, 0, len(promoted))
+		for _, entry := range promoted {
+			var id pgtype.UUID
+			if err := id.Scan(entry); err == nil && id.Valid {
+				if tag, terr := s.store.read.GetTagByID(ctx, id); terr == nil {
+					promotedSlugs = append(promotedSlugs, tag.Slug)
+					continue
+				}
+			}
+			promotedSlugs = append(promotedSlugs, entry)
+		}
+
 		data, _ := json.Marshal(map[string]any{
-			"tags":      promotedTags,
-			"interests": promotedTags,
+			"tags":      promotedSlugs,
+			"interests": promotedSlugs,
 			"skipped":   true,
 		})
 
 		return data
 
 	case 4:
-		// Step 4: Recommended Spaces & Connections — auto-follow min spaces
-		// and min users from the recommendation engine.
-		minSpaces := s.getMinSpacesJoin(ctx)
-		minUsers := s.getMinUsersFollow(ctx)
+		// Step 4: Recommended Users — auto-follow min_users_follow users
+		// from the recommendation engine.
+		return s.autoFulfillFollows(ctx, userID, "user", s.getMinUsersFollow(ctx))
 
-		if minSpaces <= 0 && minUsers <= 0 {
-			return nil
-		}
+	case 5:
+		// Step 5: Recommended Spaces — auto-follow min_spaces_join spaces
+		// from the recommendation engine.
+		return s.autoFulfillFollows(ctx, userID, "space", s.getMinSpacesJoin(ctx))
 
-		recs, err := s.GetRecommendations(ctx, userID)
-		if err != nil || len(recs) == 0 {
-			return nil
-		}
+	default:
+		// Steps 1, 2, 6, 7 have no minimum — skip is a no-op pass-through.
+		return nil
+	}
+}
 
-		var follows []string
+// autoFulfillFollows builds the auto-fulfilled step_data for a follow-type
+// step (4 = users, 5 = spaces): the first `min` recommendations of the given
+// entity type from the ranked list. Returns nil when the step has no minimum
+// or no recommendations are available.
+func (s *Service) autoFulfillFollows(ctx context.Context, userID pgtype.UUID, recType string, min int) json.RawMessage {
+	if min <= 0 {
+		return nil
+	}
 
-		spaceCount := 0
-		userCount := 0
+	recs, err := s.GetRecommendations(ctx, userID)
+	if err != nil || len(recs) == 0 {
+		return nil
+	}
 
-		for _, r := range recs {
-			if r.Type == "space" && spaceCount < minSpaces {
-				follows = append(follows, r.ID)
-				spaceCount++
-			}
+	follows := make([]string, 0, min)
 
-			if r.Type == "user" && userCount < minUsers {
-				follows = append(follows, r.ID)
-				userCount++
-			}
-
-			if spaceCount >= minSpaces && userCount >= minUsers {
+	for _, r := range recs {
+		if r.Type == recType {
+			follows = append(follows, r.ID)
+			if len(follows) >= min {
 				break
 			}
 		}
+	}
 
-		if len(follows) == 0 {
-			return nil
-		}
-
-		data, _ := json.Marshal(map[string]any{
-			"follows": follows,
-			"skipped": true,
-		})
-
-		return data
-
-	default:
-		// Steps 1, 2, 5 have no minimum — skip is a no-op pass-through.
+	if len(follows) == 0 {
 		return nil
 	}
+
+	data, _ := json.Marshal(map[string]any{
+		"follows": follows,
+		"skipped": true,
+	})
+
+	return data
 }
 
 // getMinTagsFollow reads the onboarding.min_tags_follow setting with the
@@ -458,10 +493,10 @@ func (s *Service) getMinSpacesJoin(ctx context.Context) int {
 }
 
 // Complete marks onboarding as completed for the given user.
-// Per Section 09, completion is the terminal action of the 5-step flow —
-// a user must have reached step 5 before they can complete. This prevents
-// a malicious client from calling POST /onboarding/complete immediately
-// after signup and bypassing the baseline density target.
+// Per Section 09, completion is the terminal action of the wizard —
+// a user must have reached the final step before they can complete. This
+// prevents a malicious client from calling POST /onboarding/complete
+// immediately after signup and bypassing the baseline density target.
 func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
 	state, err := s.store.getState(ctx, userID)
 	if err != nil {
@@ -477,9 +512,10 @@ func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
 	}
 
 	// Ref: japaconnect-engineering/sections/09-onboarding-flow.md
-	// The 5-step flow requires the user to reach step 5 before completing.
-	if state.CurrentStep < 5 {
-		return fmt.Errorf("%w: onboarding not complete (current step %d, need 5)", errpkg.ErrInvalidStatusTransition, state.CurrentStep)
+	// The wizard requires the user to reach the terminal step before
+	// completing.
+	if state.CurrentStep < totalSteps {
+		return fmt.Errorf("%w: onboarding not complete (current step %d, need %d)", errpkg.ErrInvalidStatusTransition, state.CurrentStep, totalSteps)
 	}
 
 	if err := s.store.completeOnboarding(ctx, userID); err != nil {
@@ -541,10 +577,11 @@ func normalizeTourSurface(surface string) string {
 //  1. Admin-pinned promotions first (onboarding.promoted_spaces/users)
 //  2. Exact geo match (user's country/state/city spaces)
 //  3. Interest-tag overlap
-//  4. Reputation-based fallback fill (popular spaces)
+//  4. Popular fill (spaces + users) — always appended beneath the
+//     personalized tiers so promoted/pinned entries get precedence without
+//     hiding the rest of the directory.
 //
-// Results are deduplicated by (type, id) and ordered by tier. Falls back to
-// popular items only when no personalized signals are available.
+// Results are deduplicated by (type, id) and ordered by tier.
 func (s *Service) GetRecommendations(ctx context.Context, userID pgtype.UUID) ([]OnboardingRecommendation, error) {
 	// Parse step_data to extract interests/tags and location for matching.
 	state, err := s.store.getState(ctx, userID)
@@ -552,7 +589,7 @@ func (s *Service) GetRecommendations(ctx context.Context, userID pgtype.UUID) ([
 		// BUG-008: only fall back to popular on "no state yet" (ErrNoRows);
 		// return real DB/infra errors instead of masking them.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return s.getPopularItems(ctx)
+			return s.getPopularItems(ctx, userID)
 		}
 
 		return nil, fmt.Errorf("getting onboarding state for recommendations: %w", err)
@@ -590,15 +627,23 @@ func (s *Service) GetRecommendations(ctx context.Context, userID pgtype.UUID) ([
 		tagRecs = nil
 	}
 
-	// Merge tiers in order, deduplicating by (type, id).
+	// Merge personalized tiers in order, deduplicating by (type, id).
 	merged := mergeRecommendations(promotedRecs, geoRecs, tagRecs)
 
-	// Tier 4: If no personalized recs at all, fall back to popular.
-	if len(merged) == 0 {
-		return s.getPopularItems(ctx)
+	// Tier 4: always append the popular fill (spaces + users). Earlier
+	// tiers keep precedence — dedup by (type, id) means a promoted or
+	// geo/tag-matched entity occupies its higher slot and is not repeated.
+	// Filling unconditionally matters because the geo/tag tiers only fire
+	// when step_data already holds location/interests, and a promoted-only
+	// list would otherwise leave the per-type follow steps nearly empty.
+	popular, err := s.getPopularItems(ctx, userID)
+	if err != nil {
+		slog.Warn("onboarding: popular fill failed", "error", err)
+
+		popular = nil
 	}
 
-	return merged, nil
+	return mergeRecommendations(merged, popular), nil
 }
 
 // mergeRecommendations concatenates recommendation tiers in order, skipping
@@ -700,7 +745,9 @@ func (s *Service) getPromotedRecommendations(ctx context.Context) ([]OnboardingR
 //	Step 1: name, japa_status, current_location
 //	Step 2: destination, destination_country_code, primary_goal
 //	Step 3: tags (array of tag slugs — used for interest-based recommendations)
-//	Step 4: follows (array of space/user IDs)
+//	Step 4: follows (array of user IDs)
+//	Step 5: follows (array of space IDs)
+//	Step 6: source_follows (array of source IDs from the public directory)
 type stepDataFields struct {
 	Name            string `json:"name"`
 	JapaStatus      string `json:"japa_status"`
@@ -720,6 +767,11 @@ type stepDataFields struct {
 	Tags                   []string `json:"tags"`
 	Interests              []string `json:"interests"` // legacy alias; Tags takes precedence
 	Follows                []string `json:"follows"`
+	// SourceFollows holds source IDs selected on the sources step. Sources
+	// are not part of the recommendation engine — the step lists the public
+	// directory — so they travel under their own key and persist as
+	// entity_type "source" follows.
+	SourceFollows []string `json:"source_follows"`
 }
 
 func parseStepData(data json.RawMessage) stepDataFields {
@@ -892,7 +944,7 @@ func (s *Service) recommendByGeo(ctx context.Context, _ pgtype.UUID, fields step
 }
 
 // getPopularItems returns popular spaces/users as a fallback.
-func (s *Service) getPopularItems(ctx context.Context) ([]OnboardingRecommendation, error) {
+func (s *Service) getPopularItems(ctx context.Context, userID pgtype.UUID) ([]OnboardingRecommendation, error) {
 	rows, err := s.db.Reader.Query(ctx, `
 		SELECT s.id, s.name, s.slug
 		FROM spaces s
@@ -920,6 +972,65 @@ func (s *Service) getPopularItems(ctx context.Context) ([]OnboardingRecommendati
 			Slug:   slug.String,
 			Reason: "reputation",
 			Score:  0.5,
+		})
+	}
+
+	users, err := s.recommendPopularUsers(ctx, userID)
+	if err != nil {
+		slog.Warn("onboarding: popular-users fallback failed", "error", err)
+	} else {
+		recs = append(recs, users...)
+	}
+
+	return recs, nil
+}
+
+// recommendPopularUsers returns prominent public profiles for the Recommended
+// Users step — the reputation tier for the "user" entity type. The filter set
+// mirrors ListPublicUsers (active, non-synthetic, search-indexable) so the
+// wizard only suggests accounts that also appear in the public directory; the
+// requesting user is excluded so they can never be offered to follow
+// themselves.
+func (s *Service) recommendPopularUsers(ctx context.Context, userID pgtype.UUID) ([]OnboardingRecommendation, error) {
+	rows, err := s.db.Reader.Query(ctx, `
+		SELECT u.id, u.username, up.display_name, up.avatar_url
+		FROM users u
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+		WHERE u.status = 'active'
+		  AND u.is_synthetic = false
+		  AND u.id <> $1
+		  AND COALESCE(ups.search_indexable, true) = true
+		ORDER BY u.follower_count DESC NULLS LAST, u.created_at DESC
+		LIMIT 8
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("querying popular users: %w", err)
+	}
+	defer rows.Close()
+
+	var recs []OnboardingRecommendation
+
+	for rows.Next() {
+		var id pgtype.UUID
+		var username, displayName, avatarURL pgtype.Text
+		if err := rows.Scan(&id, &username, &displayName, &avatarURL); err != nil {
+			continue
+		}
+
+		name := displayName.String
+		if name == "" {
+			name = username.String
+		}
+
+		recs = append(recs, OnboardingRecommendation{
+			Type:      "user",
+			ID:        id.String(),
+			Name:      name,
+			Slug:      username.String,
+			AvatarURL: avatarURL.String,
+			Reason:    "reputation",
+			Score:     0.45,
 		})
 	}
 
@@ -1091,7 +1202,7 @@ const (
 //
 // NOTE: Templates CRUD is wired (route catalog + admin API) but the wizard
 // flow does not yet consume the active template to drive step definitions —
-// the 5-step flow is hardcoded in GetState/the frontend. Template-driven
+// the 7-step flow is hardcoded in GetState/the frontend. Template-driven
 // onboarding is a future enhancement (§21); the CRUD surface is preserved
 // so admins can pre-configure templates ahead of the consumer-side wiring.
 func (s *Service) ListTemplates(ctx context.Context) ([]gen.OnboardingTemplate, error) {

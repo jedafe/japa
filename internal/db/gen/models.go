@@ -3379,6 +3379,7 @@ type ServiceBooking struct {
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	RemindedAt      pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason   *string            `json:"dispute_reason"`
 }
 
 type ServiceListingMetum struct {

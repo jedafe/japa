@@ -364,7 +364,18 @@ func (h *Handlers) InitiatePayment(w http.ResponseWriter, r *http.Request) {
 	// from the DB CHECK constraint (migration 000358).
 	if !IsValidPurposeType(input.PurposeType) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose_type",
-			fmt.Sprintf("purpose_type must be one of: pro_membership, org_boost, donation, course_access, credit_purchase, ad_slot, form_submission (got %q)", input.PurposeType))
+			fmt.Sprintf("purpose_type must be one of: pro_membership, org_boost, donation, course_access, credit_purchase, ad_slot, form_submission, service_booking_fee (got %q)", input.PurposeType))
+		return
+	}
+
+	// §111: booking-fee payments are minted only by the booking checkout
+	// (POST /services/:id/bookings) — its amount is the server-computed
+	// platform fee and its purpose_id the booking row. Letting callers
+	// create them directly with arbitrary amounts/purpose_ids would let a
+	// cheap self-made payment mark another user's booking as "paid".
+	if input.PurposeType == PurposeServiceBookingFee {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose_type",
+			"service_booking_fee payments are created by the booking checkout")
 		return
 	}
 

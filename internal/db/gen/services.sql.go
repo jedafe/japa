@@ -72,7 +72,7 @@ func (q *Queries) AdminCountServiceListings(ctx context.Context, arg AdminCountS
 }
 
 const adminListServiceBookings = `-- name: AdminListServiceBookings :many
-SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        u.username AS booker_username
@@ -124,6 +124,7 @@ type AdminListServiceBookingsRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	RemindedAt        pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason     *string            `json:"dispute_reason"`
 	ListingContentID  pgtype.UUID        `json:"listing_content_id"`
 	ListingTitle      string             `json:"listing_title"`
 	ListingSlug       string             `json:"listing_slug"`
@@ -178,6 +179,7 @@ func (q *Queries) AdminListServiceBookings(ctx context.Context, arg AdminListSer
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemindedAt,
+			&i.DisputeReason,
 			&i.ListingContentID,
 			&i.ListingTitle,
 			&i.ListingSlug,
@@ -384,7 +386,7 @@ SET status = $1,
     confirmed_at = CASE WHEN $1 = 'confirmed' AND confirmed_at IS NULL THEN now() ELSE confirmed_at END,
     updated_at = now()
 WHERE id = $3
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type AdminSetServiceBookingStatusParams struct {
@@ -424,6 +426,7 @@ func (q *Queries) AdminSetServiceBookingStatus(ctx context.Context, arg AdminSet
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -433,6 +436,7 @@ UPDATE service_bookings
 SET booker_user_id = NULL,
     note = NULL,
     preferred_dates = NULL,
+    dispute_reason = NULL,
     anonymized_at = now(),
     updated_at = now()
 WHERE booker_user_id = $1
@@ -472,7 +476,7 @@ const attachServiceBookingPayment = `-- name: AttachServiceBookingPayment :one
 UPDATE service_bookings
 SET payment_id = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type AttachServiceBookingPaymentParams struct {
@@ -510,6 +514,7 @@ func (q *Queries) AttachServiceBookingPayment(ctx context.Context, arg AttachSer
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -518,7 +523,7 @@ const backfillServiceBookingPayment = `-- name: BackfillServiceBookingPayment :o
 UPDATE service_bookings
 SET payment_id = $1, updated_at = now()
 WHERE id = $2 AND payment_id IS NULL
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type BackfillServiceBookingPaymentParams struct {
@@ -559,6 +564,7 @@ func (q *Queries) BackfillServiceBookingPayment(ctx context.Context, arg Backfil
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -570,7 +576,7 @@ SET status = 'cancelled',
     cancelled_at = now(),
     updated_at = now()
 WHERE id = $2 AND status IN ('pending','confirmed')
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type CancelServiceBookingParams struct {
@@ -609,6 +615,7 @@ func (q *Queries) CancelServiceBooking(ctx context.Context, arg CancelServiceBoo
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -659,7 +666,7 @@ SET status = 'confirmed',
     confirmed_at = now(),
     updated_at = now()
 WHERE id = $2 AND status = 'pending'
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type ConfirmServiceBookingParams struct {
@@ -704,6 +711,7 @@ func (q *Queries) ConfirmServiceBooking(ctx context.Context, arg ConfirmServiceB
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -712,7 +720,7 @@ const countServiceBookingsByOrg = `-- name: CountServiceBookingsByOrg :one
 SELECT COUNT(*) FROM service_bookings sb
 LEFT JOIN payments p ON p.id = sb.payment_id
 WHERE sb.org_id = $1
-  AND (sb.intent = 'inquiry' OR p.status IN ('succeeded','refunded'))
+  AND (sb.intent = 'inquiry' OR sb.fee_amount = 0 OR p.status IN ('succeeded','refunded'))
   AND ($2::text IS NULL OR sb.status = $2::text)
   AND ($3::text IS NULL OR sb.intent = $3::text)
   AND ($4::uuid IS NULL OR sb.listing_meta_id =
@@ -818,7 +826,7 @@ INSERT INTO service_bookings (
     $11, $12, $13,
     $14, $15,
     $16
-) RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+) RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type CreateServiceBookingParams struct {
@@ -890,6 +898,7 @@ func (q *Queries) CreateServiceBooking(ctx context.Context, arg CreateServiceBoo
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -1101,7 +1110,7 @@ SET status = 'declined',
     org_response_note = $1,
     updated_at = now()
 WHERE id = $2 AND status = 'pending'
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type DeclineServiceBookingParams struct {
@@ -1140,6 +1149,7 @@ func (q *Queries) DeclineServiceBooking(ctx context.Context, arg DeclineServiceB
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -1219,20 +1229,21 @@ func (q *Queries) DeleteServicePackageItems(ctx context.Context, packageMetaID p
 const disputeServiceBooking = `-- name: DisputeServiceBooking :one
 UPDATE service_bookings
 SET status = 'disputed',
-    org_response_note = COALESCE($1, org_response_note),
+    dispute_reason = $1,
     updated_at = now()
 WHERE id = $2 AND status IN ('confirmed','fulfilled')
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type DisputeServiceBookingParams struct {
-	OrgResponseNote *string     `json:"org_response_note"`
-	ID              pgtype.UUID `json:"id"`
+	DisputeReason *string     `json:"dispute_reason"`
+	ID            pgtype.UUID `json:"id"`
 }
 
-// booker or admin flags a booking as disputed.
+// Booker flags a confirmed|fulfilled booking as disputed — the booker's
+// reason lands in dispute_reason (org_response_note stays org/admin-only).
 func (q *Queries) DisputeServiceBooking(ctx context.Context, arg DisputeServiceBookingParams) (ServiceBooking, error) {
-	row := q.db.QueryRow(ctx, disputeServiceBooking, arg.OrgResponseNote, arg.ID)
+	row := q.db.QueryRow(ctx, disputeServiceBooking, arg.DisputeReason, arg.ID)
 	var i ServiceBooking
 	err := row.Scan(
 		&i.ID,
@@ -1261,6 +1272,7 @@ func (q *Queries) DisputeServiceBooking(ctx context.Context, arg DisputeServiceB
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -1271,7 +1283,7 @@ SET status = 'fulfilled',
     fulfilled_at = now(),
     updated_at = now()
 WHERE id = $1 AND status = 'confirmed'
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 // confirmed → fulfilled (org marks delivery complete; fee settles).
@@ -1305,12 +1317,13 @@ func (q *Queries) FulfillServiceBooking(ctx context.Context, id pgtype.UUID) (Se
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
 
 const getServiceBooking = `-- name: GetServiceBooking :one
-SELECT id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at FROM service_bookings
+SELECT id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason FROM service_bookings
 WHERE id = $1
 `
 
@@ -1344,12 +1357,58 @@ func (q *Queries) GetServiceBooking(ctx context.Context, id pgtype.UUID) (Servic
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
+	)
+	return i, err
+}
+
+const getServiceBookingByPaymentForUpdate = `-- name: GetServiceBookingByPaymentForUpdate :one
+SELECT id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason FROM service_bookings
+WHERE payment_id = $1
+FOR UPDATE
+`
+
+// Row lock + lookup for the provider-initiated refund path (§17
+// reversal arm for §111): a Stripe dashboard refund / chargeback webhook
+// flips payments.status to 'refunded' out-of-band, and the booking must
+// follow regardless of its current state.
+func (q *Queries) GetServiceBookingByPaymentForUpdate(ctx context.Context, paymentID pgtype.UUID) (ServiceBooking, error) {
+	row := q.db.QueryRow(ctx, getServiceBookingByPaymentForUpdate, paymentID)
+	var i ServiceBooking
+	err := row.Scan(
+		&i.ID,
+		&i.ListingMetaID,
+		&i.DepartureID,
+		&i.BookerUserID,
+		&i.OrgID,
+		&i.Intent,
+		&i.PartySize,
+		&i.PreferredDates,
+		&i.Note,
+		&i.Status,
+		&i.PurchaseMode,
+		&i.PaymentID,
+		&i.TotalPrice,
+		&i.FeeAmount,
+		&i.FeeCurrency,
+		&i.AgentBalanceDue,
+		&i.OrgResponseNote,
+		&i.ExpiresAt,
+		&i.ConfirmedAt,
+		&i.FulfilledAt,
+		&i.CancelledAt,
+		&i.CancelReason,
+		&i.AnonymizedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
 
 const getServiceBookingDetail = `-- name: GetServiceBookingDetail :one
-SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, c.id AS listing_content_id, c.title AS listing_title,
+SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, c.id AS listing_content_id, c.title AS listing_title,
        c.slug AS listing_slug,
        sm.listing_kind, sm.capacity AS package_capacity,
        o.name AS org_name, o.slug AS org_slug,
@@ -1391,6 +1450,7 @@ type GetServiceBookingDetailRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	RemindedAt        pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason     *string            `json:"dispute_reason"`
 	ListingContentID  pgtype.UUID        `json:"listing_content_id"`
 	ListingTitle      string             `json:"listing_title"`
 	ListingSlug       string             `json:"listing_slug"`
@@ -1436,6 +1496,7 @@ func (q *Queries) GetServiceBookingDetail(ctx context.Context, id pgtype.UUID) (
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 		&i.ListingContentID,
 		&i.ListingTitle,
 		&i.ListingSlug,
@@ -1981,7 +2042,7 @@ func (q *Queries) ListDeparturesWithBookings(ctx context.Context, packageMetaID 
 }
 
 const listExpiredPendingServiceBookings = `-- name: ListExpiredPendingServiceBookings :many
-SELECT id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at FROM service_bookings
+SELECT id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason FROM service_bookings
 WHERE status = 'pending'
   AND expires_at IS NOT NULL
   AND expires_at < now()
@@ -2026,6 +2087,7 @@ func (q *Queries) ListExpiredPendingServiceBookings(ctx context.Context, pageLim
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemindedAt,
+			&i.DisputeReason,
 		); err != nil {
 			return nil, err
 		}
@@ -2076,7 +2138,7 @@ func (q *Queries) ListOpenServicePackageDepartures(ctx context.Context, packageM
 }
 
 const listPendingBookingsDueReminder = `-- name: ListPendingBookingsDueReminder :many
-SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
@@ -2118,6 +2180,7 @@ type ListPendingBookingsDueReminderRow struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	RemindedAt       pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason    *string            `json:"dispute_reason"`
 	ListingContentID pgtype.UUID        `json:"listing_content_id"`
 	ListingTitle     string             `json:"listing_title"`
 	ListingSlug      string             `json:"listing_slug"`
@@ -2165,6 +2228,7 @@ func (q *Queries) ListPendingBookingsDueReminder(ctx context.Context, pageLimit 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemindedAt,
+			&i.DisputeReason,
 			&i.ListingContentID,
 			&i.ListingTitle,
 			&i.ListingSlug,
@@ -2183,7 +2247,7 @@ func (q *Queries) ListPendingBookingsDueReminder(ctx context.Context, pageLimit 
 }
 
 const listServiceBookingsByOrg = `-- name: ListServiceBookingsByOrg :many
-SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        u.username AS booker_username, up.avatar_url AS booker_avatar
@@ -2196,7 +2260,7 @@ LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN users u ON u.id = sb.booker_user_id
 LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
 WHERE sb.org_id = $1
-  AND (sb.intent = 'inquiry' OR p.status IN ('succeeded','refunded'))
+  AND (sb.intent = 'inquiry' OR sb.fee_amount = 0 OR p.status IN ('succeeded','refunded'))
   AND ($2::text IS NULL OR sb.status = $2::text)
   AND ($3::text IS NULL OR sb.intent = $3::text)
   AND ($4::uuid IS NULL OR sb.listing_meta_id =
@@ -2241,6 +2305,7 @@ type ListServiceBookingsByOrgRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	RemindedAt        pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason     *string            `json:"dispute_reason"`
 	ListingContentID  pgtype.UUID        `json:"listing_content_id"`
 	ListingTitle      string             `json:"listing_title"`
 	ListingSlug       string             `json:"listing_slug"`
@@ -2304,6 +2369,7 @@ func (q *Queries) ListServiceBookingsByOrg(ctx context.Context, arg ListServiceB
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemindedAt,
+			&i.DisputeReason,
 			&i.ListingContentID,
 			&i.ListingTitle,
 			&i.ListingSlug,
@@ -2326,7 +2392,7 @@ func (q *Queries) ListServiceBookingsByOrg(ctx context.Context, arg ListServiceB
 }
 
 const listServiceBookingsByUser = `-- name: ListServiceBookingsByUser :many
-SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id, sb.intent, sb.party_size, sb.preferred_dates, sb.note, sb.status, sb.purchase_mode, sb.payment_id, sb.total_price, sb.fee_amount, sb.fee_currency, sb.agent_balance_due, sb.org_response_note, sb.expires_at, sb.confirmed_at, sb.fulfilled_at, sb.cancelled_at, sb.cancel_reason, sb.anonymized_at, sb.created_at, sb.updated_at, sb.reminded_at, sb.dispute_reason, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
 FROM service_bookings sb
@@ -2376,6 +2442,7 @@ type ListServiceBookingsByUserRow struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	RemindedAt        pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason     *string            `json:"dispute_reason"`
 	ListingContentID  pgtype.UUID        `json:"listing_content_id"`
 	ListingTitle      string             `json:"listing_title"`
 	ListingSlug       string             `json:"listing_slug"`
@@ -2429,6 +2496,7 @@ func (q *Queries) ListServiceBookingsByUser(ctx context.Context, arg ListService
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.RemindedAt,
+			&i.DisputeReason,
 			&i.ListingContentID,
 			&i.ListingTitle,
 			&i.ListingSlug,
@@ -2879,7 +2947,7 @@ const markServiceBookingRefunded = `-- name: MarkServiceBookingRefunded :one
 UPDATE service_bookings
 SET status = 'refunded', updated_at = now()
 WHERE id = $1 AND status IN ('declined','cancelled','disputed')
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 // Mark fee refunded (set after a successful refund via §17).
@@ -2913,6 +2981,51 @@ func (q *Queries) MarkServiceBookingRefunded(ctx context.Context, id pgtype.UUID
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
+	)
+	return i, err
+}
+
+const markServiceBookingRefundedByProvider = `-- name: MarkServiceBookingRefundedByProvider :one
+UPDATE service_bookings
+SET status = 'refunded', updated_at = now()
+WHERE id = $1 AND status <> 'refunded'
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
+`
+
+// Provider-side refund: mark the booking refunded from any live status.
+// (Terminal 'refunded' is excluded so re-delivered webhooks no-op.)
+func (q *Queries) MarkServiceBookingRefundedByProvider(ctx context.Context, id pgtype.UUID) (ServiceBooking, error) {
+	row := q.db.QueryRow(ctx, markServiceBookingRefundedByProvider, id)
+	var i ServiceBooking
+	err := row.Scan(
+		&i.ID,
+		&i.ListingMetaID,
+		&i.DepartureID,
+		&i.BookerUserID,
+		&i.OrgID,
+		&i.Intent,
+		&i.PartySize,
+		&i.PreferredDates,
+		&i.Note,
+		&i.Status,
+		&i.PurchaseMode,
+		&i.PaymentID,
+		&i.TotalPrice,
+		&i.FeeAmount,
+		&i.FeeCurrency,
+		&i.AgentBalanceDue,
+		&i.OrgResponseNote,
+		&i.ExpiresAt,
+		&i.ConfirmedAt,
+		&i.FulfilledAt,
+		&i.CancelledAt,
+		&i.CancelReason,
+		&i.AnonymizedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }
@@ -2939,7 +3052,7 @@ SET status = 'cancelled',
     cancelled_at = now(),
     updated_at = now()
 WHERE id = $3 AND status IN ('pending','confirmed')
-RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at
+RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason
 `
 
 type OrgCancelServiceBookingParams struct {
@@ -2979,6 +3092,7 @@ func (q *Queries) OrgCancelServiceBooking(ctx context.Context, arg OrgCancelServ
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.RemindedAt,
+		&i.DisputeReason,
 	)
 	return i, err
 }

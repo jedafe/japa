@@ -6813,6 +6813,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
+				// §111 booker dispute — report a problem on a confirmed|fulfilled booking.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()),
+					rbac.RequirePermission(rbacResolver, "service.booking.create")).
+					Post("/me/service-bookings/{id}/dispute", serviceDirHandlers.HandleMyBookingDispute)
 				r.Get("/org/{org_id}/packages", serviceDirHandlers.HandleOrgPackages)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).
 					Get("/org/{org_id}/service-bookings", serviceDirHandlers.HandleOrgBookings)

@@ -1,8 +1,8 @@
 // Command seed-geo-cities bulk-seeds city-level geo spaces for every country.
 //
-// Source: GeoNames cities15000 dump — all cities with population > 15,000 or
-// seats of administrative divisions (~34k cities worldwide), committed as
-// db/seed/cities_15000.tsv alongside the admin1 code table
+// Source: GeoNames cities5000 dump — all cities with population > 5,000 or
+// seats of administrative divisions (~70k cities worldwide), committed as
+// db/seed/cities_5000.tsv alongside the admin1 code table
 // db/seed/admin1_codes.tsv used to resolve each city's parent state.
 //
 // Ref: japaconnect-engineering/adr/ADR-020-geo-seeding-country-state-auto-city-manual.md
@@ -66,7 +66,7 @@ const insertSpaceSQL = `INSERT INTO spaces (id, parent_id, space_type_id, name, 
 const insertParentSQL = `INSERT INTO space_parent_spaces (space_id, parent_space_id)
 	VALUES ($1,$2) ON CONFLICT DO NOTHING`
 
-// cityRow is one line of db/seed/cities_15000.tsv.
+// cityRow is one line of db/seed/cities_5000.tsv.
 type cityRow struct {
 	name       string
 	asciiName  string
@@ -86,15 +86,42 @@ type geoRow struct {
 
 var stripMarks = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
 
+// compatFold maps letters that have no NFD decomposition to an ASCII
+// equivalent (ı, đ, ø, ł, …) — the diacritic strip alone leaves them as
+// non-ASCII letters that then fail to match the GeoNames ASCII spellings
+// ("Balikesir" vs seeded "Balıkesir").
+var compatFold = strings.NewReplacer(
+	"ı", "i", "İ", "i",
+	"đ", "d", "Đ", "d",
+	"ø", "o", "Ø", "o",
+	"ð", "d", "Ð", "d",
+	"þ", "th", "Þ", "th",
+	"ł", "l", "Ł", "l",
+	"æ", "ae", "Æ", "ae",
+	"œ", "oe", "Œ", "oe",
+	"ß", "ss", "ẞ", "ss",
+	"ŋ", "n", "Ŋ", "n",
+	"ħ", "h", "Ħ", "h",
+	"ə", "e", "Ə", "e",
+	"ș", "s", "Ș", "s",
+	"ț", "t", "Ț", "t",
+	"ŭ", "u", "Ŭ", "u",
+)
+
+// asciiFold strips diacritics and folds non-decomposing letters to ASCII.
+func asciiFold(s string) string {
+	out, _, err := transform.String(stripMarks, compatFold.Replace(s))
+	if err != nil {
+		return compatFold.Replace(s)
+	}
+	return out
+}
+
 // normName lowercases, strips diacritics, and reduces a name to a single
 // space-joined token string so dataset and seeded names compare cleanly.
 func normName(s string) string {
-	out, _, err := transform.String(stripMarks, s)
-	if err != nil {
-		out = s
-	}
 	var b strings.Builder
-	for _, r := range strings.ToLower(out) {
+	for _, r := range strings.ToLower(asciiFold(s)) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(r)
 		} else {
@@ -144,10 +171,7 @@ func subset(a, b map[string]struct{}) bool {
 // slugify builds a URL slug from a city name: lowercase, diacritics stripped,
 // non-alphanumeric runs collapsed to single hyphens.
 func slugify(s string) string {
-	out, _, err := transform.String(stripMarks, s)
-	if err != nil {
-		out = s
-	}
+	out := asciiFold(s)
 	var b strings.Builder
 	b.Grow(len(out))
 	dash := false
@@ -168,7 +192,7 @@ func slugify(s string) string {
 
 func main() {
 	dryRun := flag.Bool("dry-run", false, "report proposed inserts without writing")
-	file := flag.String("file", "db/seed/cities_15000.tsv", "GeoNames cities TSV (geonameid, name, asciiname, country, admin1, population)")
+	file := flag.String("file", "db/seed/cities_5000.tsv", "GeoNames cities TSV (geonameid, name, asciiname, country, admin1, population)")
 	admin1File := flag.String("admin1", "db/seed/admin1_codes.tsv", "GeoNames admin1 codes TSV (country, admin1, name, asciiname)")
 	aliasFile := flag.String("alias", "db/seed/admin1_alias.tsv", "admin1 name overrides TSV (country, admin1, seeded-state-name) — wins over admin1_codes")
 	batchSize := flag.Int("batch", 500, "inserts per transaction")

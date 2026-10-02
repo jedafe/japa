@@ -151,6 +151,7 @@ type BookingRow struct {
 	FeeCurrency     *string
 	AgentBalanceDue *int64
 	OrgResponseNote *string
+	DisputeReason   *string
 	ExpiresAt       pgtype.Timestamptz
 	ConfirmedAt     pgtype.Timestamptz
 	FulfilledAt     pgtype.Timestamptz
@@ -186,7 +187,8 @@ func bookingFromGen(b gen.ServiceBooking) BookingRow {
 		Status: b.Status, PurchaseMode: b.PurchaseMode, PaymentID: b.PaymentID,
 		TotalPrice: b.TotalPrice, FeeAmount: b.FeeAmount, FeeCurrency: b.FeeCurrency,
 		AgentBalanceDue: b.AgentBalanceDue, OrgResponseNote: b.OrgResponseNote,
-		ExpiresAt: b.ExpiresAt, ConfirmedAt: b.ConfirmedAt, FulfilledAt: b.FulfilledAt,
+		DisputeReason: b.DisputeReason,
+		ExpiresAt:     b.ExpiresAt, ConfirmedAt: b.ConfirmedAt, FulfilledAt: b.FulfilledAt,
 		CancelledAt: b.CancelledAt, CancelReason: b.CancelReason,
 		AnonymizedAt: b.AnonymizedAt, CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt,
 	}
@@ -599,11 +601,16 @@ func (s *Store) AdminSetStatusAndRelease(ctx context.Context, id pgtype.UUID, st
 	})
 }
 
-// AdminConfirmBooking force-transitions a non-pending booking to
-// 'confirmed' while acquiring departure seats under the same capacity
-// guard as ConfirmBooking — the increment and the status write share one
-// transaction so a failed transition can't leak seats.
-func (s *Store) AdminConfirmBooking(ctx context.Context, bookingID, departureID pgtype.UUID, partySize int32, note *string) (gen.ServiceBooking, error) {
+// AdminSetStatusAcquire force-transitions a booking into a seat-holding
+// status (§111: confirmed|fulfilled hold seats) while acquiring departure
+// seats under the same capacity guard as ConfirmBooking — the increment
+// and the status write share one transaction so a failed transition
+// can't leak seats.
+func (s *Store) AdminSetStatusAcquire(ctx context.Context, bookingID, departureID pgtype.UUID, partySize int32, status string, note *string) (gen.ServiceBooking, error) {
+	if !departureID.Valid {
+		return s.AdminSetBookingStatus(ctx, bookingID, status, note)
+	}
+
 	return db.WithTxResult(ctx, s.pool.Writer, func(q *gen.Queries) (gen.ServiceBooking, error) {
 		if _, err := q.IncrementDepartureBookedCount(ctx, gen.IncrementDepartureBookedCountParams{
 			ID: departureID, PartySize: partySize,
@@ -612,7 +619,36 @@ func (s *Store) AdminConfirmBooking(ctx context.Context, bookingID, departureID 
 		}
 
 		return q.AdminSetServiceBookingStatus(ctx, gen.AdminSetServiceBookingStatusParams{
-			ID: bookingID, Status: BookingStatusConfirmed, OrgResponseNote: note,
+			ID: bookingID, Status: status, OrgResponseNote: note,
 		})
+	})
+}
+
+// DisputeBookingAndRelease transitions confirmed|fulfilled → disputed and
+// releases the departure seat in the same transaction — both source
+// statuses hold seats and 'disputed' holds none (§111 seat model). Pass
+// an invalid departureID to skip the decrement.
+func (s *Store) DisputeBookingAndRelease(ctx context.Context, id, departureID pgtype.UUID, partySize int32, reason *string) (gen.ServiceBooking, error) {
+	if !departureID.Valid {
+		return s.write.DisputeServiceBooking(ctx, gen.DisputeServiceBookingParams{
+			ID: id, DisputeReason: reason,
+		})
+	}
+
+	return db.WithTxResult(ctx, s.pool.Writer, func(q *gen.Queries) (gen.ServiceBooking, error) {
+		b, err := q.DisputeServiceBooking(ctx, gen.DisputeServiceBookingParams{
+			ID: id, DisputeReason: reason,
+		})
+		if err != nil {
+			return b, err
+		}
+
+		if _, err := q.DecrementDepartureBookedCount(ctx, gen.DecrementDepartureBookedCountParams{
+			ID: departureID, PartySize: partySize,
+		}); err != nil {
+			return gen.ServiceBooking{}, err
+		}
+
+		return b, nil
 	})
 }
