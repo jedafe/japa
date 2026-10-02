@@ -332,7 +332,7 @@
 
 <!-- ── Edit content slide-over (draft/review only — PATCH /admin/digest/:id) ── -->
 <SlideOver bind:open={showEditModal} title={t('app.digest.modal_edit', 'Edit Digest Content')} size="lg">
-	<div class="space-y-4 p-4">
+	<div class="space-y-4">
 		<p class="text-sm" style="color: var(--color-muted)">
 			{t('app.digest.edit_desc', 'Edit the digest content JSON (sections: top_threads, new_members, events, story, poll).')}
 		</p>
@@ -347,12 +347,10 @@
 		></textarea>
 	</div>
 	{#snippet footer()}
-		<div class="flex justify-end gap-2">
-			<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('app.digest.cancel', 'Cancel')}</Button>
-			<Button onclick={saveEditContent} disabled={acting}>
-				{acting ? t('app.digest.saving', 'Saving...') : t('app.digest.save', 'Save')}
-			</Button>
-		</div>
+		<Button variant="ghost" onclick={() => (showEditModal = false)}>{t('app.digest.cancel', 'Cancel')}</Button>
+		<Button onclick={saveEditContent} disabled={acting}>
+			{acting ? t('app.digest.saving', 'Saving...') : t('app.digest.save', 'Save')}
+		</Button>
 	{/snippet}
 </SlideOver>
 
