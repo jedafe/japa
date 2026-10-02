@@ -1,7 +1,9 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { t } from '$lib/i18n';
+	import { goto } from '$app/navigation';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight, Table2 } from 'lucide-svelte';
 	import type { WikiRevision, WikiRevisionStatus } from '$lib/types';
 	import type { PageData } from './$types';
@@ -43,6 +45,35 @@
 	const limit = $derived(Math.max(1, data.meta?.limit ?? 20));
 	const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
 	const currentPage = $derived(Math.min(totalPages, Math.max(1, page)));
+
+	// Backend default page size (parsePageParams) — the ?limit= param is
+	// only written to the URL when it differs from the default.
+	const DEFAULT_LIMIT = 20;
+	const basePath = $derived(
+		`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(data.pageSlug)}/history`
+	);
+	function pageHref(p: number): string {
+		const usp = new URLSearchParams();
+		if (p > 1) usp.set('page', String(p));
+		if (limit !== DEFAULT_LIMIT) usp.set('limit', String(limit));
+		const qs = usp.toString();
+		return qs ? `${basePath}?${qs}` : basePath;
+	}
+
+	const limitOptions = $derived(
+		['10', '20', '50', '100'].map((v) => ({
+			value: v,
+			label: t('studio.moderation.per_page', '{n} / page').replace('{n}', v)
+		}))
+	);
+	function onLimitChange(v: string) {
+		const n = parseInt(v, 10);
+		if (!Number.isFinite(n) || n < 1) return;
+		const usp = new URLSearchParams();
+		if (n !== DEFAULT_LIMIT) usp.set('limit', String(n));
+		const qs = usp.toString();
+		goto(qs ? `${basePath}?${qs}` : basePath);
+	}
 
 	const title = $derived(`${t('wiki.history_title', 'Revision history')} — JapaConnect`);
 	const description = $derived(t('wiki.history_description'));
@@ -179,32 +210,46 @@
 				{/each}
 			</ul>
 
-			{#if totalPages > 1}
-				<nav class="mx-auto mt-4 flex max-w-3xl items-center justify-between gap-2" aria-label={t('wiki.history_pagination', 'Revision history pagination')}>
-					<a
-						href="?page={currentPage - 1}"
-						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-						class:pointer-events-none={currentPage <= 1}
-						class:opacity-50={currentPage <= 1}
-						tabindex={currentPage <= 1 ? -1 : 0}
-					>
-						<ChevronLeft size={14} /> {t('common.previous', 'Previous')}
-					</a>
-					<span class="text-sm text-[var(--color-muted)]">
-						{t('wiki.page_x_of_y', 'Page {page} of {total}')
-							.replace('{page}', String(currentPage))
-							.replace('{total}', String(totalPages))}
-					</span>
-					<a
-						href="?page={currentPage + 1}"
-						class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
-						class:pointer-events-none={currentPage >= totalPages}
-						class:opacity-50={currentPage >= totalPages}
-						tabindex={currentPage >= totalPages ? -1 : 0}
-					>
-						{t('common.next', 'Next')} <ChevronRight size={14} />
-					</a>
-				</nav>
+			{#if totalPages > 1 || total > 10}
+				<div class="mx-auto mt-4 flex max-w-3xl flex-wrap items-center justify-between gap-2">
+					{#if totalPages > 1}
+						<nav class="flex flex-1 items-center justify-between gap-2" aria-label={t('wiki.history_pagination', 'Revision history pagination')}>
+							<a
+								href={pageHref(currentPage - 1)}
+								class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+								class:pointer-events-none={currentPage <= 1}
+								class:opacity-50={currentPage <= 1}
+								tabindex={currentPage <= 1 ? -1 : 0}
+							>
+								<ChevronLeft size={14} /> {t('common.previous', 'Previous')}
+							</a>
+							<span class="text-sm text-[var(--color-muted)]">
+								{t('wiki.page_x_of_y', 'Page {page} of {total}')
+									.replace('{page}', String(currentPage))
+									.replace('{total}', String(totalPages))}
+							</span>
+							<a
+								href={pageHref(currentPage + 1)}
+								class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+								class:pointer-events-none={currentPage >= totalPages}
+								class:opacity-50={currentPage >= totalPages}
+								tabindex={currentPage >= totalPages ? -1 : 0}
+							>
+								{t('common.next', 'Next')} <ChevronRight size={14} />
+							</a>
+						</nav>
+					{:else}
+						<span></span>
+					{/if}
+					<div class="w-28 shrink-0">
+						<AutocompleteSelect
+							value={String(limit)}
+							options={limitOptions}
+							onValueChange={onLimitChange}
+							ariaLabel={t('profile.pager.page_size', 'Per page')}
+						/>
+					</div>
+				</div>
 			{/if}
 		{/if}
 	</div>

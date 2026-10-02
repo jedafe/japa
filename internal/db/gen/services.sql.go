@@ -781,6 +781,7 @@ WHERE c.content_type = 'service_listing'
   AND ($7::text IS NULL OR sm.listing_kind = $7::text)
   AND ($8::bigint IS NULL OR sm.price_amount <= $8::bigint)
   AND ($9::date IS NULL OR sm.available_from >= $9::date)
+  AND ($10::text IS NULL OR c.title ILIKE '%' || $10::text || '%')
 `
 
 type CountServiceListingsParams struct {
@@ -793,6 +794,7 @@ type CountServiceListingsParams struct {
 	ListingKind     *string     `json:"listing_kind"`
 	PriceMax        *int64      `json:"price_max"`
 	DateFrom        pgtype.Date `json:"date_from"`
+	Q               *string     `json:"q"`
 }
 
 func (q *Queries) CountServiceListings(ctx context.Context, arg CountServiceListingsParams) (int64, error) {
@@ -806,6 +808,7 @@ func (q *Queries) CountServiceListings(ctx context.Context, arg CountServiceList
 		arg.ListingKind,
 		arg.PriceMax,
 		arg.DateFrom,
+		arg.Q,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -918,9 +921,9 @@ INSERT INTO service_listing_meta (
     $6, $7,
     $8, $9, $10,
     $11, $12,
-    $13, $14,
-    $15, $16, $17,
-    $18, $19, $20,
+    COALESCE($13, 'unclaimed'), $14,
+    COALESCE($15, 'service'), $16, $17,
+    $18, COALESCE($19, 'inquiry'), $20,
     $21, $22
 ) RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until
 `
@@ -938,13 +941,13 @@ type CreateServiceListingMetaParams struct {
 	PriceRange         *string     `json:"price_range"`
 	IsVerified         *bool       `json:"is_verified"`
 	VerificationType   *string     `json:"verification_type"`
-	ClaimStatus        *string     `json:"claim_status"`
+	ClaimStatus        interface{} `json:"claim_status"`
 	ClaimedByOrgID     pgtype.UUID `json:"claimed_by_org_id"`
-	ListingKind        *string     `json:"listing_kind"`
+	ListingKind        interface{} `json:"listing_kind"`
 	PriceAmount        *int64      `json:"price_amount"`
 	PriceCurrency      *string     `json:"price_currency"`
 	PricePer           *string     `json:"price_per"`
-	PurchaseMode       *string     `json:"purchase_mode"`
+	PurchaseMode       interface{} `json:"purchase_mode"`
 	Capacity           *int32      `json:"capacity"`
 	AvailableFrom      pgtype.Date `json:"available_from"`
 	AvailableUntil     pgtype.Date `json:"available_until"`
@@ -2551,11 +2554,12 @@ WHERE c.content_type = 'service_listing'
   AND ($7::text IS NULL OR sm.listing_kind = $7::text)
   AND ($8::bigint IS NULL OR sm.price_amount <= $8::bigint)
   AND ($9::date IS NULL OR sm.available_from >= $9::date)
+  AND ($10::text IS NULL OR c.title ILIKE '%' || $10::text || '%')
 ORDER BY
-  CASE WHEN $10::text = 'top' THEN c.view_count END DESC NULLS LAST,
-  CASE WHEN $10::text = 'top' THEN c.comment_count END DESC NULLS LAST,
+  CASE WHEN $11::text = 'top' THEN c.view_count END DESC NULLS LAST,
+  CASE WHEN $11::text = 'top' THEN c.comment_count END DESC NULLS LAST,
   c.published_at DESC NULLS LAST, c.created_at DESC
-LIMIT $12 OFFSET $11
+LIMIT $13 OFFSET $12
 `
 
 type ListServiceListingsParams struct {
@@ -2568,6 +2572,7 @@ type ListServiceListingsParams struct {
 	ListingKind     *string     `json:"listing_kind"`
 	PriceMax        *int64      `json:"price_max"`
 	DateFrom        pgtype.Date `json:"date_from"`
+	Q               *string     `json:"q"`
 	Sort            *string     `json:"sort"`
 	PageOffset      int32       `json:"page_offset"`
 	PageLimit       int32       `json:"page_limit"`
@@ -2638,6 +2643,7 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 		arg.ListingKind,
 		arg.PriceMax,
 		arg.DateFrom,
+		arg.Q,
 		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,

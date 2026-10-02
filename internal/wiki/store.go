@@ -86,6 +86,14 @@ type AdminWikiPageWithSpace struct {
 	LatestRevisionID     *pgtype.UUID
 	LatestRevisionStatus *string
 	Excerpt              *string
+	// LatestRevisionAI* mirror the latest revision's ADR-088 provenance so
+	// the admin queue can flag AI-drafted pages without a second query.
+	LatestRevisionAiGenerated bool
+	LatestRevisionAiModel     *string
+	// FieldGroupSlug/Name resolve the page's bound custom field group —
+	// the admin view links the reviewer to the group editor.
+	FieldGroupSlug string
+	FieldGroupName string
 	// DeletedAt is the soft-delete marker (§80) — non-nil rows can be
 	// force-deleted from the admin queue.
 	DeletedAt pgtype.Timestamptz
@@ -1285,12 +1293,17 @@ func (s *Store) CreatePageWithRevision(ctx context.Context, spaceID, userID pgty
 
 // AdminListPagesFilter holds filter parameters for the admin page list.
 type AdminListPagesFilter struct {
-	SpaceID  pgtype.UUID
-	DestSlug string // destination filter by space slug (admin UI sends ?dest=)
-	Category string
-	IsLocked *bool
-	Q        string
-	Sort     string // "<key>:<dir>" — whitelisted CASE keys in the query
+	SpaceID    pgtype.UUID
+	DestSlug   string // destination filter by space slug (admin UI sends ?dest=)
+	Category   string
+	IsLocked   *bool
+	IsFeatured *bool
+	IsActive   *bool
+	// Status filters the LATEST revision's status (pending|approved|
+	// rejected) — the review queue's "pages with pending work" filter.
+	Status string
+	Q      string
+	Sort   string // "<key>:<dir>" — whitelisted CASE keys in the query
 	// Deleted selects the soft-delete scope (§80): '' excludes deleted rows,
 	// 'only' returns just them, 'all' includes both.
 	Deleted string
@@ -1322,15 +1335,18 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 	}
 
 	rows, err := s.read.AdminListWikiPages(ctx, gen.AdminListWikiPagesParams{
-		SpaceID:   spaceID,
-		DestSlug:  f.DestSlug,
-		Category:  f.Category,
-		IsLocked:  f.IsLocked,
-		Q:         f.Q,
-		Sort:      f.Sort,
-		Deleted:   f.Deleted,
-		OffsetVal: offset,
-		LimitVal:  limit,
+		SpaceID:    spaceID,
+		DestSlug:   f.DestSlug,
+		Category:   f.Category,
+		IsLocked:   f.IsLocked,
+		IsFeatured: f.IsFeatured,
+		IsActive:   f.IsActive,
+		Status:     f.Status,
+		Q:          f.Q,
+		Sort:       f.Sort,
+		Deleted:    f.Deleted,
+		OffsetVal:  offset,
+		LimitVal:   limit,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin list pages: %w", err)
@@ -1352,18 +1368,25 @@ func (s *Store) AdminListPages(ctx context.Context, f AdminListPagesFilter) ([]A
 		}
 		p.LatestRevisionStatus = strPtrOrNil(r.LatestRevisionStatus)
 		p.Excerpt = strPtrOrNil(r.Excerpt)
+		p.LatestRevisionAiGenerated = r.LatestRevisionAiGenerated
+		p.LatestRevisionAiModel = r.LatestRevisionAiModel
+		p.FieldGroupSlug = r.FieldGroupSlug
+		p.FieldGroupName = r.FieldGroupName
 		p.DeletedAt = r.DeletedAt
 
 		out = append(out, p)
 	}
 
 	total, err := s.read.AdminCountWikiPages(ctx, gen.AdminCountWikiPagesParams{
-		SpaceID:  spaceID,
-		DestSlug: f.DestSlug,
-		Category: f.Category,
-		IsLocked: f.IsLocked,
-		Q:        f.Q,
-		Deleted:  f.Deleted,
+		SpaceID:    spaceID,
+		DestSlug:   f.DestSlug,
+		Category:   f.Category,
+		IsLocked:   f.IsLocked,
+		IsFeatured: f.IsFeatured,
+		IsActive:   f.IsActive,
+		Status:     f.Status,
+		Q:          f.Q,
+		Deleted:    f.Deleted,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin count pages: %w", err)

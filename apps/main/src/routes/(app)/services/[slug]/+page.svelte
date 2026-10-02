@@ -20,9 +20,11 @@
 		Star
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import { serviceCategoryLabel } from '$lib/enumOptions';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceListing, ServiceCategory, ServiceReview } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -30,7 +32,17 @@
 	let { data }: { data: PageData } = $props();
 
 	const service = $derived<ServiceListing | null>(data.service);
-	const canEdit = $derived(!!data.authed && !!service?.author_id && service.author_id === data.currentUserId);
+	// Edit link shows for the listing author, members of the owning org
+	// (service.edit_own), and admins (service.edit_any) — mirrors the PATCH
+	// /services/:id permission check.
+	const canEdit = $derived(
+		!!data.authed &&
+			!!service &&
+			(service.author_id === data.currentUserId ||
+				(service.org_id != null &&
+					(data.myOrgs ?? []).some((o) => o.id === service.org_id)) ||
+				(data.user?.permissions ?? []).includes('service.edit_any'))
+	);
 
 	// Reviews + aggregate from the §29 sidecar (BUG-014).
 	const reviews = $derived<ServiceReview[]>(data.reviews ?? []);
@@ -64,6 +76,19 @@
 		return serviceCategoryLabel(t, value as ServiceCategory);
 	}
 
+	function claimStatusLabel(status: string): string {
+		switch (status) {
+			case 'pending':
+				return t('services.claim_status_pending', 'Claim pending review');
+			case 'approved':
+				return t('services.claim_status_approved', 'Claimed');
+			case 'rejected':
+				return t('services.claim_status_rejected', 'Claim rejected');
+			default:
+				return status;
+		}
+	}
+
 	// Claim flow state (POST /services/{id}/claim). The backend requires
 	// { org_id } — the user must claim on behalf of one of their orgs
 	// (BUG-004). The org picker is populated from data.myOrgs (fetched
@@ -76,6 +101,14 @@
 		!!service &&
 			service.claim_status === 'unclaimed' &&
 			(data.myOrgs?.length ?? 0) > 0
+	);
+
+	const orgItems = $derived<AutocompleteItem[]>(
+		(data.myOrgs ?? []).map((o) => ({ id: o.id, label: o.name }))
+	);
+	const orgFetcher = $derived(staticAutocompleteFetcher(orgItems));
+	const selectedOrgLabel = $derived(
+		claimOrgId ? (orgItems.find((o) => o.id === claimOrgId)?.label ?? null) : null
 	);
 
 	async function claimListing() {
@@ -170,7 +203,7 @@
 				{/if}
 				{#if service.claim_status && service.claim_status !== 'unclaimed'}
 					<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-[var(--color-text-subtle)]">
-						{service.claim_status}
+						{claimStatusLabel(service.claim_status)}
 					</span>
 				{/if}
 			</div>
@@ -326,13 +359,16 @@
 							</div>
 						{:else if canClaim}
 							<div class="flex flex-wrap items-center gap-2">
-								<AutocompleteSelect
-									bind:value={claimOrgId}
-									options={[
-										{ value: '', label: t('services.claim_select_org', 'Select an organization') },
-										...(data.myOrgs ?? []).map((org) => ({ value: org.id, label: org.name }))
-									]}
+								<Autocomplete
+									placeholder={t('services.claim_select_org', 'Select an organization')}
 									ariaLabel={t('services.claim_select_org', 'Select organization')}
+									emptyMessage={t('common.no_results', 'No results found')}
+									fetcher={orgFetcher}
+									initialFetcher={orgFetcher}
+									selectedId={claimOrgId || null}
+									selectedLabel={selectedOrgLabel}
+									onSelect={(item) => (claimOrgId = item.id)}
+									onClear={() => (claimOrgId = '')}
 								/>
 								<button
 									type="button"

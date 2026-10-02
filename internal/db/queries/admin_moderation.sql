@@ -104,7 +104,11 @@ ON CONFLICT (user_id, group_id) DO NOTHING;
 
 -- name: VerifyOrganization :exec
 -- Platform-scoped to prevent cross-platform verification (BUG-002).
-UPDATE organizations SET verified = true, updated_at = now()
+-- §7: verification_type is set when supplied and preserved otherwise —
+-- §111 package publishing gates on it (business|professional_body).
+UPDATE organizations SET verified = true,
+  verification_type = COALESCE(sqlc.narg(verification_type)::text, verification_type),
+  updated_at = now()
 WHERE id = $1;
 
 -- name: UnverifyOrganization :exec

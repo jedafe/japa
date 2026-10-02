@@ -7,6 +7,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import IconPicker from '$lib/components/ui/icon-picker.svelte';
+	import { WIKI_ICONS } from './wiki-icons';
 	import {
 		wikiAdminApi,
 		fieldGroupsAdminApiExtended,
@@ -22,6 +24,9 @@
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	const canManage = $derived(hasPermission('wiki.manage'));
+
+	let pageError = $state('');
+	let bulkActing = $state(false);
 
 	// ── Lookup sources (loaded once) ────────────────────────────────────────
 	// Space types for the create form's type picker; field groups for the
@@ -44,15 +49,55 @@
 		}
 	}
 
+	// Field groups for the category/template binding pickers — the list
+	// endpoint caps page_size at 100, so page through every result and sort
+	// by name for a stable picker order. Failures surface in pageError —
+	// without them the picker silently degrades to "auto-create" only.
 	async function loadGroups() {
-		const res = await fieldGroupsAdminApiExtended.list('page_size=200');
-		if (res.ok) {
-			const rows = (res.data?.data as { id: string; name: string; slug: string }[]) ?? [];
-			groupOptions = [
-				{ value: '', label: t('app.wiki.group_auto', '— Auto-create dedicated group —') },
-				...rows.map((g) => ({ value: g.id, label: g.name }))
-			];
+		const all: { id: string; name: string; slug: string }[] = [];
+		for (let page = 1; ; page++) {
+			const res = await fieldGroupsAdminApiExtended.list(`page_size=100&sort=name:asc&page=${page}`);
+			if (!res.ok) {
+				if (page === 1) {
+					pageError = res.error ?? t('app.wiki.groups_load_failed', 'Failed to load field groups');
+				}
+				break;
+			}
+			all.push(...((res.data?.data as { id: string; name: string; slug: string }[]) ?? []));
+			if (page >= (res.data?.meta?.total_pages ?? 1)) break;
 		}
+		groupOptions = [
+			{ value: '', label: t('app.wiki.group_auto', '— Auto-create dedicated group —') },
+			...all.map((g) => ({ value: g.id, label: g.name }))
+		];
+	}
+
+	// field_group_id → name for groups bound to loaded categories/templates —
+	// the picker's getSelectedLabel falls back to this when the group isn't
+	// in groupOptions (e.g. a group created after this page loaded).
+	const boundGroupNames = new Map<string, string>();
+	function groupLabel(id: string): string {
+		return groupOptions.find((o) => o.value === id)?.label ?? boundGroupNames.get(id) ?? id;
+	}
+
+	// Client-side sort for the three full-list tables — EntityPage passes
+	// DataTable's "key:dir" in params.sort; unknown keys leave the stored
+	// order untouched.
+	function clientSort<T>(rows: T[], sort: string, getters: Record<string, (r: T) => unknown>): T[] {
+		if (!sort) return rows;
+		const [key, dir] = sort.split(':');
+		const get = getters[key];
+		if (!get) return rows;
+		const mul = dir === 'desc' ? -1 : 1;
+		return [...rows].sort((a, b) => {
+			const av = get(a);
+			const bv = get(b);
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1;
+			if (bv == null) return -1;
+			if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mul;
+			return String(av).localeCompare(String(bv)) * mul;
+		});
 	}
 
 	// ── Autocomplete adapters for the space-type / field-group pickers ─────
@@ -102,9 +147,6 @@
 		Array.from(ids)
 			.map((id) => typeRowMap.get(id))
 			.filter((r): r is WikiTypeItem => !!r);
-
-	let pageError = $state('');
-	let bulkActing = $state(false);
 
 	// Sequential per-row PATCHes — no bulk route; per-row failures are
 	// collected (same rule as EntityPage's built-in bulk delete) and the
@@ -188,25 +230,42 @@
 		),
 		createLabel: t('app.wiki.type_create', 'New wiki type'),
 		createPermission: 'wiki.manage',
-		// Nested under the page's tabs — keep table state out of the shared URL.
+		// Nested under the page's tabs and co-rendered with the categories/
+		// templates tables — three url-synced tables would fight over the
+		// same ?q/?page params, so all three keep list state internal.
 		urlSync: false,
 		pageSize: 25,
 		columns: [
 			{
 				key: 'space_type_slug',
 				label: t('app.wiki.type_slug', 'Type'),
+				sortable: true,
 				render: (v: string, row: WikiTypeItem) =>
 					`<span class="font-mono text-xs">${v}</span><span class="block text-xs" style="color: var(--color-muted)">${row.space_type_name ?? ''}</span>`
 			},
 			{
 				key: 'label',
 				label: t('app.wiki.type_label', 'Label'),
+				sortable: true,
 				render: (v: string, row: WikiTypeItem) => v || row.space_type_name || '—'
 			},
-			{ key: 'enabled', label: t('app.wiki.type_enabled', 'Enabled'), componentSnippet: BoolCell },
+			{ key: 'enabled', label: t('app.wiki.type_enabled', 'Enabled'), sortable: true, componentSnippet: BoolCell },
 			{ key: 'seed_stubs', label: t('app.wiki.type_seed_stubs', 'Seed stubs'), componentSnippet: BoolCell },
-			{ key: 'position', label: t('app.wiki.type_position', 'Pos'), width: 64 },
-			{ key: 'parents', label: t('app.wiki.type_parents', 'Parents') }
+			{ key: 'position', label: t('app.wiki.type_position', 'Pos'), sortable: true, width: 64 },
+			{ key: 'parents', label: t('app.wiki.type_parents', 'Parents'), sortable: true }
+		],
+		// These tables load the full list server-side then filter/sort/page
+		// client-side — filters are plain selects, no fetchers needed.
+		filters: [
+			{
+				key: 'enabled',
+				label: t('app.wiki.type_enabled', 'Enabled'),
+				type: 'select',
+				options: [
+					{ value: 'true', label: t('common.yes', 'Yes') },
+					{ value: 'false', label: t('common.no', 'No') }
+				]
+			}
 		],
 		actions: typeActions,
 		bulkActions: canManage
@@ -230,10 +289,14 @@
 			: [],
 		fields: typeFields,
 		formSnippet: TypeForm,
-		load: async ({ page, pageSize, q }) => {
+		load: async ({ page, pageSize, q, sort, filter }) => {
 			const res = await wikiAdminApi.listTypes();
 			if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load wiki types'));
 			let rows = ((res.data as WikiTypeItem[]) ?? []).map(mapType);
+			// listTypes returns the full set every load, so clear-then-fill is
+			// exact: a deleted type can't stay addressable via a stale bulk
+			// selection (unlike the server-paginated page/revision maps).
+			typeRowMap.clear();
 			for (const r of rows) typeRowMap.set(r.id, r);
 			knownTypes = res.data ?? [];
 			const query = (q ?? '').trim().toLowerCase();
@@ -245,6 +308,14 @@
 						(r.space_type_name ?? '').toLowerCase().includes(query)
 				);
 			}
+			if (filter?.enabled) rows = rows.filter((r) => String(r.enabled) === filter.enabled);
+			rows = clientSort(rows, sort ?? '', {
+				space_type_slug: (r) => r.space_type_slug,
+				label: (r) => r.label || r.space_type_name || '',
+				enabled: (r) => (r.enabled ? 1 : 0),
+				position: (r) => r.position,
+				parents: (r) => r.parents
+			});
 			const total = rows.length;
 			const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
 			const start = page * pageSize;
@@ -277,6 +348,12 @@
 		},
 		remove: async (id) => {
 			const res = await wikiAdminApi.deleteType(id);
+			// If the deleted type was open for category editing, close the
+			// nested panels — they would otherwise show a stale selection.
+			if (res.ok && selectedType?.space_type_id === id) {
+				selectedType = null;
+				selectedCategory = null;
+			}
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		}
 	}));
@@ -307,7 +384,7 @@
 			label: t('app.wiki.cat_icon', 'Icon'),
 			type: 'text',
 			placeholder: 'wallet',
-			help: t('app.wiki.cat_icon_help', 'Lucide icon name (kebab-case) shown on the category tab and card — e.g. wallet, globe, landmark. Blank falls back to the default category icon.')
+			help: t('app.wiki.cat_icon_help', 'Icon shown on the category tab and card — clear it to fall back to the default category icon.')
 		},
 		{
 			key: 'field_group_id',
@@ -319,8 +396,9 @@
 			initialFetcher: async () => filterOptions(groupOptions, ''),
 			// The '' auto-create sentinel isn't a selectable item — clearing the
 			// picker means "auto-create a dedicated group" (create) or "leave
-			// the binding unchanged" (edit).
-			getSelectedLabel: (id: string) => groupOptions.find((o) => o.value === id)?.label ?? id,
+			// the binding unchanged" (edit). The label falls back to the row's
+			// bound-group name when the group isn't among the loaded options.
+			getSelectedLabel: groupLabel,
 			help: t('app.wiki.cat_group_help', 'The bound group is the page’s shared structured schema — a dedicated group is created automatically when none is picked. Only pick an existing group to deliberately share a schema.')
 		},
 		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' },
@@ -430,12 +508,13 @@
 					createPermission: 'wiki.manage',
 					pageSize: 25,
 					columns: [
-						{ key: 'slug', label: t('app.wiki.cat_slug', 'Slug'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
-						{ key: 'category', label: t('app.wiki.cat_token', 'Token'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
-						{ key: 'label', label: t('app.wiki.cat_label', 'Label') },
+						{ key: 'slug', label: t('app.wiki.cat_slug', 'Slug'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+						{ key: 'category', label: t('app.wiki.cat_token', 'Token'), sortable: true, render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
+						{ key: 'label', label: t('app.wiki.cat_label', 'Label'), sortable: true },
 						{
 							key: 'field_group_name',
 							label: t('app.wiki.cat_group', 'Field group'),
+							sortable: true,
 							render: (v: string, row: WikiCategoryItem) =>
 								v
 									? `${v}<span class="block font-mono text-xs" style="color: var(--color-muted)">${row.field_group_slug ?? ''}</span>`
@@ -455,8 +534,19 @@
 								return `<span class="text-xs font-medium" style="color: var(--color-primary)">${label}</span>`;
 							}
 						},
-						{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), width: 64 },
-						{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), componentSnippet: BoolCell }
+						{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), sortable: true, width: 64 },
+						{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), sortable: true, componentSnippet: BoolCell }
+					],
+					filters: [
+						{
+							key: 'is_system',
+							label: t('app.wiki.cat_system', 'System'),
+							type: 'select',
+							options: [
+								{ value: 'true', label: t('app.wiki.filter_system_only', 'System only') },
+								{ value: 'false', label: t('app.wiki.filter_custom_only', 'Custom only') }
+							]
+						}
 					],
 					actions: catActions,
 					fields: catFields,
@@ -464,12 +554,15 @@
 					// Nested under the types table — keep its list state out of the
 					// URL so the two EntityPages don't fight over ?q/?page.
 					urlSync: false,
-					load: async ({ page, pageSize, q }) => {
+					load: async ({ page, pageSize, q, sort, filter }) => {
 						const res = await wikiAdminApi.listTypeCategories(sel.space_type_id);
 						if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load categories'));
 						// Flatten the rollup JSONB into the form's seed keys —
 						// CategoryForm renders it as structured controls.
 						let rows = ((res.data as WikiCategoryItem[]) ?? []).map(flattenRollup);
+						for (const r of rows) {
+							if (r.field_group_id && r.field_group_name) boundGroupNames.set(r.field_group_id, r.field_group_name);
+						}
 						const query = (q ?? '').trim().toLowerCase();
 						if (query)
 							rows = rows.filter(
@@ -477,6 +570,15 @@
 									r.slug.toLowerCase().includes(query) ||
 									r.label.toLowerCase().includes(query)
 							);
+						if (filter?.is_system) rows = rows.filter((r) => String(r.is_system) === filter.is_system);
+						rows = clientSort(rows, sort ?? '', {
+							slug: (r) => r.slug,
+							category: (r) => r.category,
+							label: (r) => r.label,
+							field_group_name: (r) => r.field_group_name ?? '',
+							position: (r) => r.position,
+							is_system: (r) => (r.is_system ? 1 : 0)
+						});
 						const total = rows.length;
 						const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
 						const start = page * pageSize;
@@ -513,6 +615,8 @@
 					},
 					remove: async (id) => {
 						const res = await wikiAdminApi.deleteCategory(id);
+						// Close the templates panel when its category is deleted.
+						if (res.ok && selectedCategory?.id === id) selectedCategory = null;
 						return res.ok ? { ok: true } : { ok: false, error: res.error };
 					}
 		};
@@ -541,7 +645,7 @@
 			emptyMessage: t('common.no_results', 'No results found'),
 			fetcher: groupFetcher,
 			initialFetcher: async () => filterOptions(groupOptions, ''),
-			getSelectedLabel: (id: string) => groupOptions.find((o) => o.value === id)?.label ?? id,
+			getSelectedLabel: groupLabel,
 			help: t('app.wiki.tpl_group_help', 'Blank = auto-provision a shared wiki_{type}_page_{slug} group — keep it shared so item keys stay comparable across spaces.')
 		},
 		{ key: 'position', label: t('app.wiki.cat_position', 'Position'), type: 'number' }
@@ -578,31 +682,54 @@
 			createPermission: 'wiki.manage',
 			pageSize: 25,
 			columns: [
-				{ key: 'slug', label: t('app.wiki.tpl_slug', 'Slug'), render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
-				{ key: 'label', label: t('app.wiki.tpl_label', 'Label') },
+				{ key: 'slug', label: t('app.wiki.tpl_slug', 'Slug'), sortable: true, render: (v: string) => `<span class="font-mono text-xs">${v}</span>` },
+				{ key: 'label', label: t('app.wiki.tpl_label', 'Label'), sortable: true },
 				{
 					key: 'field_group_name',
 					label: t('app.wiki.cat_group', 'Field group'),
+					sortable: true,
 					render: (v: string, row: WikiPageTemplateItem) =>
 						v
 							? `${v}<span class="block font-mono text-xs" style="color: var(--color-muted)">${row.field_group_slug ?? ''}</span>`
 							: `<span class="text-xs" style="color: var(--color-muted)">${t('app.wiki.unbound', 'unbound')}</span>`
 				},
-				{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), width: 64 },
-				{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), componentSnippet: BoolCell }
+				{ key: 'position', label: t('app.wiki.cat_position', 'Pos'), sortable: true, width: 64 },
+				{ key: 'is_system', label: t('app.wiki.cat_system', 'System'), sortable: true, componentSnippet: BoolCell }
+			],
+			filters: [
+				{
+					key: 'is_system',
+					label: t('app.wiki.cat_system', 'System'),
+					type: 'select',
+					options: [
+						{ value: 'true', label: t('app.wiki.filter_system_only', 'System only') },
+						{ value: 'false', label: t('app.wiki.filter_custom_only', 'Custom only') }
+					]
+				}
 			],
 			actions: tplActions,
 			fields: tplFields,
 			urlSync: false,
-			load: async ({ page, pageSize, q }) => {
+			load: async ({ page, pageSize, q, sort, filter }) => {
 				const res = await wikiAdminApi.listPageTemplates(sel.id);
 				if (!res.ok) throw new Error(res.error ?? t('common.error', 'Failed to load page templates'));
 				let rows = (res.data as WikiPageTemplateItem[]) ?? [];
+				for (const r of rows) {
+					if (r.field_group_id && r.field_group_name) boundGroupNames.set(r.field_group_id, r.field_group_name);
+				}
 				const query = (q ?? '').trim().toLowerCase();
 				if (query)
 					rows = rows.filter(
 						(r) => r.slug.toLowerCase().includes(query) || r.label.toLowerCase().includes(query)
 					);
+				if (filter?.is_system) rows = rows.filter((r) => String(r.is_system) === filter.is_system);
+				rows = clientSort(rows, sort ?? '', {
+					slug: (r) => r.slug,
+					label: (r) => r.label,
+					field_group_name: (r) => r.field_group_name ?? '',
+					position: (r) => r.position,
+					is_system: (r) => (r.is_system ? 1 : 0)
+				});
 				const total = rows.length;
 				const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
 				const start = page * pageSize;
@@ -652,7 +779,7 @@
 				<p class="text-xs" style="color: var(--color-muted)">
 					{t('app.wiki.categories_hint', 'Editing the category template for this wiki type.')}
 				</p>
-				<Button variant="ghost" onclick={() => (selectedType = null)}>
+				<Button variant="ghost" onclick={() => { selectedType = null; selectedCategory = null; }}>
 					<X size={14} class="mr-1" />{t('common.close', 'Close')}
 				</Button>
 			</div>
@@ -729,10 +856,13 @@
 		</div>
 		<div>
 			<label for="wt-icon" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('app.wiki.type_icon', 'Icon')}</label>
-			<input
-				id="wt-icon" type="text" class="w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				value={String(value.icon ?? '')} oninput={(e) => (value.icon = e.currentTarget.value)}
+			<!-- IconPicker constrained to WIKI_ICONS — names the main app's
+			     resolveIcon map can render. Stored '' keeps the type icon
+			     unset (the frontend falls back to its own defaults). -->
+			<IconPicker
+				value={String(value.icon ?? '')}
+				onchange={(v) => (value.icon = v)}
+				icons={WIKI_ICONS}
 			/>
 		</div>
 		<div>
@@ -833,14 +963,15 @@
 			<label for="wc-icon" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
 				{t('app.wiki.cat_icon', 'Icon')}
 			</label>
-			<input
-				id="wc-icon" type="text" placeholder="wallet"
-				class="w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				value={String(value.icon ?? '')} oninput={(e) => (value.icon = e.currentTarget.value)}
+			<!-- Same constrained set as the type form — every option resolves
+			     on the wiki frontend via categoryIconResolved. -->
+			<IconPicker
+				value={String(value.icon ?? '')}
+				onchange={(v) => (value.icon = v)}
+				icons={WIKI_ICONS}
 			/>
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				{t('app.wiki.cat_icon_help', 'Lucide icon name (kebab-case) shown on the category tab and card — e.g. wallet, globe, landmark. Blank falls back to the default category icon.')}
+				{t('app.wiki.cat_icon_help', 'Icon shown on the category tab and card — clear it to fall back to the default category icon.')}
 			</p>
 		</div>
 		<div>
@@ -854,7 +985,7 @@
 				fetcher={groupFetcher}
 				initialFetcher={async () => filterOptions(groupOptions, '')}
 				selectedId={String(value.field_group_id ?? '') || null}
-				selectedLabel={groupOptions.find((o) => o.value === value.field_group_id)?.label}
+				selectedLabel={value.field_group_id ? groupLabel(String(value.field_group_id)) : undefined}
 				onSelect={(item) => (value.field_group_id = item.id)}
 				onClear={() => (value.field_group_id = '')}
 			/>

@@ -61,6 +61,15 @@ type AdminWikiPageDTO struct {
 	LatestRevisionID     string `json:"latest_revision_id,omitempty"`
 	LatestRevisionStatus string `json:"status,omitempty"`
 	Excerpt              string `json:"excerpt,omitempty"`
+	// AiGenerated/AiModel carry the LATEST revision's ADR-088 provenance so
+	// the queue's AI column reflects what is actually pending review.
+	AiGenerated bool   `json:"ai_generated"`
+	AiModel     string `json:"ai_model,omitempty"`
+	// FieldGroup* identify the page's bound custom field group (§80) — the
+	// admin view links the reviewer to the group editor.
+	FieldGroupID   string `json:"field_group_id,omitempty"`
+	FieldGroupSlug string `json:"field_group_slug,omitempty"`
+	FieldGroupName string `json:"field_group_name,omitempty"`
 	// DeletedAt marks soft-deleted pages (§80) — the admin queue surfaces
 	// them via ?deleted=only|all for force delete.
 	DeletedAt string `json:"deleted_at,omitempty"`
@@ -207,6 +216,15 @@ type WikiRevisionDTO struct {
 	SubmittedBy string `json:"submitted_by,omitempty"`
 	ReviewedBy  string `json:"reviewed_by,omitempty"`
 	ReviewedAt  string `json:"reviewed_at,omitempty"`
+	// WikiPageID links a revision back to its host page — empty for
+	// page-less fields/mixed ops revisions (§80).
+	WikiPageID string `json:"wiki_page_id,omitempty"`
+	// ADR-088 provenance: the generating model and the HITL review record
+	// (who/when + notes — the rejection reason lands in HitlReviewNotes).
+	AiModel         string `json:"ai_model,omitempty"`
+	HitlReviewedBy  string `json:"hitl_reviewed_by,omitempty"`
+	HitlReviewedAt  string `json:"hitl_reviewed_at,omitempty"`
+	HitlReviewNotes string `json:"hitl_review_notes,omitempty"`
 	// ApplyError is the last ops-application failure recorded on a pending
 	// fields/mixed revision (§80) — surfaced in the admin queue so reviewers
 	// can see why an approve attempt rolled back.
@@ -1391,7 +1409,7 @@ func (s *Service) UpdatePage(ctx context.Context, pageID pgtype.UUID, input Upda
 
 // AdminListPages returns all wiki pages for admin management (paginated).
 // Each row includes the latest revision metadata for the review queue (B1).
-func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destSlug, category, q, sort string, isLocked *bool, deleted string, page, limit int32) ([]AdminWikiPageDTO, int64, error) {
+func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destSlug, category, q, sort, status string, isLocked, isFeatured, isActive *bool, deleted string, page, limit int32) ([]AdminWikiPageDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1404,15 +1422,18 @@ func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destS
 
 	pages, total, err := s.store.AdminListPages(ctx, AdminListPagesFilter{
 
-		SpaceID:  spaceID,
-		DestSlug: destSlug,
-		Category: category,
-		IsLocked: isLocked,
-		Q:        q,
-		Sort:     sort,
-		Deleted:  deleted,
-		Limit:    limit,
-		Offset:   offset,
+		SpaceID:    spaceID,
+		DestSlug:   destSlug,
+		Category:   category,
+		IsLocked:   isLocked,
+		IsFeatured: isFeatured,
+		IsActive:   isActive,
+		Status:     status,
+		Q:          q,
+		Sort:       sort,
+		Deleted:    deleted,
+		Limit:      limit,
+		Offset:     offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("wiki: admin list: %w", err)
@@ -1435,6 +1456,17 @@ func (s *Service) AdminListPages(ctx context.Context, spaceID pgtype.UUID, destS
 		if p.Excerpt != nil {
 			dto.Excerpt = *p.Excerpt
 		}
+
+		dto.AiGenerated = p.LatestRevisionAiGenerated
+		if p.LatestRevisionAiModel != nil {
+			dto.AiModel = *p.LatestRevisionAiModel
+		}
+
+		if p.FieldGroupID.Valid {
+			dto.FieldGroupID = p.FieldGroupID.String()
+		}
+		dto.FieldGroupSlug = p.FieldGroupSlug
+		dto.FieldGroupName = p.FieldGroupName
 
 		if p.DeletedAt.Valid {
 			dto.DeletedAt = formatTs(p.DeletedAt)
@@ -1606,6 +1638,22 @@ func revisionToDTO(r WikiRevision) WikiRevisionDTO {
 	}
 
 	dto.ReviewedAt = formatTs(r.ReviewedAt)
+
+	if r.WikiPageID.Valid {
+		dto.WikiPageID = r.WikiPageID.String()
+	}
+
+	if r.AiModel != nil {
+		dto.AiModel = *r.AiModel
+	}
+
+	if r.HitlReviewedBy.Valid {
+		dto.HitlReviewedBy = r.HitlReviewedBy.String()
+	}
+	dto.HitlReviewedAt = formatTs(r.HitlReviewedAt)
+	if r.HitlReviewNotes != nil {
+		dto.HitlReviewNotes = *r.HitlReviewNotes
+	}
 
 	if r.ApplyError != nil {
 		dto.ApplyError = *r.ApplyError

@@ -429,6 +429,7 @@ type ListServicesFilter struct {
 	DateFrom        pgtype.Date // optional, ?date_from= (§111)
 	Sort            string      // "top" | "latest" (default: latest)
 	Status          string      // filter by status (default: published)
+	Q               string      // optional, ?q= — title substring search
 	Limit           int32
 	Offset          int32
 }
@@ -466,6 +467,10 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 		params.Sort = &f.Sort
 	}
 
+	if f.Q != "" {
+		params.Q = &f.Q
+	}
+
 	rows, err := s.read.ListServiceListings(ctx, params)
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: list services: %w", err)
@@ -481,6 +486,7 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 		ListingKind:     params.ListingKind,
 		PriceMax:        params.PriceMax,
 		DateFrom:        params.DateFrom,
+		Q:               params.Q,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: count services: %w", err)

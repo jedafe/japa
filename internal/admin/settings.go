@@ -116,7 +116,7 @@ type GDPRService interface {
 // Local interface so admin does not import organizations (which would create
 // a cycle via server wiring).
 type OrgVerifier interface {
-	VerifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error
+	VerifyOrganization(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error
 	UnverifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error
 }
 

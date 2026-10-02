@@ -19,8 +19,20 @@ WHERE ($1::uuid IS NULL OR wp.space_id = $1::uuid)
   AND ($2::text = '' OR sp.slug = $2)
   AND ($3::text = '' OR wp.category = $3)
   AND ($4::bool IS NULL OR wp.is_locked = $4::bool)
-  AND ($5::text = '' OR wp.title ILIKE '%' || $5 || '%')
-  AND CASE $6::text
+  AND ($5::bool IS NULL OR wp.is_featured = $5::bool)
+  AND ($6::bool IS NULL OR wp.is_active = $6::bool)
+  -- Mirrors the list query's LATERAL "latest revision" semantics so the
+  -- status filter counts the same rows the list returns.
+  AND ($7::text = '' OR COALESCE((
+         SELECT wr.status FROM wiki_revisions wr
+         WHERE wr.wiki_page_id = wp.id AND wr.deleted_at IS NULL
+         ORDER BY wr.created_at DESC
+         LIMIT 1), '') = $7)
+  AND ($8::text = '' OR wp.title ILIKE '%' || $8 || '%'
+       OR wp.slug ILIKE '%' || $8 || '%'
+       OR sp.name ILIKE '%' || $8 || '%'
+       OR sp.slug ILIKE '%' || $8 || '%')
+  AND CASE $9::text
         WHEN 'only' THEN wp.deleted_at IS NOT NULL
         WHEN 'all'  THEN true
         ELSE wp.deleted_at IS NULL
@@ -28,12 +40,15 @@ WHERE ($1::uuid IS NULL OR wp.space_id = $1::uuid)
 `
 
 type AdminCountWikiPagesParams struct {
-	SpaceID  pgtype.UUID `json:"space_id"`
-	DestSlug string      `json:"dest_slug"`
-	Category string      `json:"category"`
-	IsLocked *bool       `json:"is_locked"`
-	Q        string      `json:"q"`
-	Deleted  string      `json:"deleted"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	DestSlug   string      `json:"dest_slug"`
+	Category   string      `json:"category"`
+	IsLocked   *bool       `json:"is_locked"`
+	IsFeatured *bool       `json:"is_featured"`
+	IsActive   *bool       `json:"is_active"`
+	Status     string      `json:"status"`
+	Q          string      `json:"q"`
+	Deleted    string      `json:"deleted"`
 }
 
 func (q *Queries) AdminCountWikiPages(ctx context.Context, arg AdminCountWikiPagesParams) (int64, error) {
@@ -42,6 +57,9 @@ func (q *Queries) AdminCountWikiPages(ctx context.Context, arg AdminCountWikiPag
 		arg.DestSlug,
 		arg.Category,
 		arg.IsLocked,
+		arg.IsFeatured,
+		arg.IsActive,
+		arg.Status,
 		arg.Q,
 		arg.Deleted,
 	)
@@ -56,7 +74,8 @@ LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE ($1::text = '' OR wr.kind = $1)
   AND ($2::text = '' OR wr.status = $2)
   AND ($3::text = '' OR wr.summary ILIKE '%' || $3 || '%'
-       OR u.username ILIKE '%' || $3 || '%')
+       OR u.username ILIKE '%' || $3 || '%'
+       OR wr.target_entity_type ILIKE '%' || $3 || '%')
   AND (CASE $4::text
          WHEN 'only' THEN wr.deleted_at IS NOT NULL
          WHEN 'all'  THEN TRUE
@@ -92,11 +111,16 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id,
        COALESCE(lr.status, '') AS latest_revision_status,
-       COALESCE(lr.excerpt, '') AS excerpt
+       COALESCE(lr.excerpt, '') AS excerpt,
+       COALESCE(lr.ai_generated, false) AS latest_revision_ai_generated,
+       lr.ai_model AS latest_revision_ai_model,
+       COALESCE(fg.slug, '') AS field_group_slug,
+       COALESCE(fg.name, '') AS field_group_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
+LEFT JOIN custom_field_groups fg ON fg.id = wp.field_group_id
 LEFT JOIN LATERAL (
-    SELECT wr.id, wr.status,
+    SELECT wr.id, wr.status, wr.ai_generated, wr.ai_model,
            -- content is TipTap JSONB; regexp_replace left raw JSON in the
            -- excerpt. Extract the text nodes instead (mirrors the admin
            -- UI's extractContentText walk).
@@ -114,68 +138,85 @@ WHERE ($1::uuid IS NULL OR wp.space_id = $1::uuid)
   AND ($2::text = '' OR sp.slug = $2)
   AND ($3::text = '' OR wp.category = $3)
   AND ($4::bool IS NULL OR wp.is_locked = $4::bool)
-  AND ($5::text = '' OR wp.title ILIKE '%' || $5 || '%')
+  AND ($5::bool IS NULL OR wp.is_featured = $5::bool)
+  AND ($6::bool IS NULL OR wp.is_active = $6::bool)
+  -- @status filters the LATEST revision's status (pending|approved|rejected)
+  -- — the review queue's primary workflow is "pages with pending revisions".
+  AND ($7::text = '' OR COALESCE(lr.status, '') = $7)
+  AND ($8::text = '' OR wp.title ILIKE '%' || $8 || '%'
+       OR wp.slug ILIKE '%' || $8 || '%'
+       OR sp.name ILIKE '%' || $8 || '%'
+       OR sp.slug ILIKE '%' || $8 || '%')
   -- Soft-deleted pages are excluded by default; ?deleted=only|all surfaces
   -- them so admins can force-delete (§80).
-  AND CASE $6::text
+  AND CASE $9::text
         WHEN 'only' THEN wp.deleted_at IS NOT NULL
         WHEN 'all'  THEN true
         ELSE wp.deleted_at IS NULL
       END
 ORDER BY
-  CASE WHEN $7 = 'title:asc'       THEN wp.title END ASC NULLS LAST,
-  CASE WHEN $7 = 'title:desc'      THEN wp.title END DESC NULLS LAST,
-  CASE WHEN $7 = 'space_slug:asc'  THEN sp.slug END ASC NULLS LAST,
-  CASE WHEN $7 = 'space_slug:desc' THEN sp.slug END DESC NULLS LAST,
-  CASE WHEN $7 = 'status:asc'      THEN lr.status END ASC NULLS LAST,
-  CASE WHEN $7 = 'status:desc'     THEN lr.status END DESC NULLS LAST,
-  CASE WHEN $7 = 'is_locked:asc'   THEN wp.is_locked::int END ASC NULLS LAST,
-  CASE WHEN $7 = 'is_locked:desc'  THEN wp.is_locked::int END DESC NULLS LAST,
-  CASE WHEN $7 = 'is_active:asc'   THEN wp.is_active::int END ASC NULLS LAST,
-  CASE WHEN $7 = 'is_active:desc'  THEN wp.is_active::int END DESC NULLS LAST,
-  CASE WHEN $7 = 'created_at:asc'  THEN wp.created_at END ASC NULLS LAST,
-  CASE WHEN $7 = 'created_at:desc' THEN wp.created_at END DESC NULLS LAST,
-  CASE WHEN $7 = 'updated_at:asc'  THEN wp.updated_at END ASC NULLS LAST,
-  CASE WHEN $7 = 'updated_at:desc' THEN wp.updated_at END DESC NULLS LAST,
+  CASE WHEN $10 = 'title:asc'        THEN wp.title END ASC NULLS LAST,
+  CASE WHEN $10 = 'title:desc'       THEN wp.title END DESC NULLS LAST,
+  CASE WHEN $10 = 'space_slug:asc'   THEN sp.slug END ASC NULLS LAST,
+  CASE WHEN $10 = 'space_slug:desc'  THEN sp.slug END DESC NULLS LAST,
+  CASE WHEN $10 = 'status:asc'       THEN lr.status END ASC NULLS LAST,
+  CASE WHEN $10 = 'status:desc'      THEN lr.status END DESC NULLS LAST,
+  CASE WHEN $10 = 'is_locked:asc'    THEN wp.is_locked::int END ASC NULLS LAST,
+  CASE WHEN $10 = 'is_locked:desc'   THEN wp.is_locked::int END DESC NULLS LAST,
+  CASE WHEN $10 = 'is_featured:asc'  THEN wp.is_featured::int END ASC NULLS LAST,
+  CASE WHEN $10 = 'is_featured:desc' THEN wp.is_featured::int END DESC NULLS LAST,
+  CASE WHEN $10 = 'is_active:asc'    THEN wp.is_active::int END ASC NULLS LAST,
+  CASE WHEN $10 = 'is_active:desc'   THEN wp.is_active::int END DESC NULLS LAST,
+  CASE WHEN $10 = 'created_at:asc'   THEN wp.created_at END ASC NULLS LAST,
+  CASE WHEN $10 = 'created_at:desc'  THEN wp.created_at END DESC NULLS LAST,
+  CASE WHEN $10 = 'updated_at:asc'   THEN wp.updated_at END ASC NULLS LAST,
+  CASE WHEN $10 = 'updated_at:desc'  THEN wp.updated_at END DESC NULLS LAST,
   wp.updated_at DESC
-LIMIT $9 OFFSET $8
+LIMIT $12 OFFSET $11
 `
 
 type AdminListWikiPagesParams struct {
-	SpaceID   pgtype.UUID `json:"space_id"`
-	DestSlug  string      `json:"dest_slug"`
-	Category  string      `json:"category"`
-	IsLocked  *bool       `json:"is_locked"`
-	Q         string      `json:"q"`
-	Deleted   string      `json:"deleted"`
-	Sort      interface{} `json:"sort"`
-	OffsetVal int32       `json:"offset_val"`
-	LimitVal  int32       `json:"limit_val"`
+	SpaceID    pgtype.UUID `json:"space_id"`
+	DestSlug   string      `json:"dest_slug"`
+	Category   string      `json:"category"`
+	IsLocked   *bool       `json:"is_locked"`
+	IsFeatured *bool       `json:"is_featured"`
+	IsActive   *bool       `json:"is_active"`
+	Status     string      `json:"status"`
+	Q          string      `json:"q"`
+	Deleted    string      `json:"deleted"`
+	Sort       interface{} `json:"sort"`
+	OffsetVal  int32       `json:"offset_val"`
+	LimitVal   int32       `json:"limit_val"`
 }
 
 type AdminListWikiPagesRow struct {
-	ID                   pgtype.UUID        `json:"id"`
-	SpaceID              pgtype.UUID        `json:"space_id"`
-	Slug                 string             `json:"slug"`
-	Title                string             `json:"title"`
-	Category             string             `json:"category"`
-	IsActive             bool               `json:"is_active"`
-	IsFeatured           bool               `json:"is_featured"`
-	IsLocked             bool               `json:"is_locked"`
-	CreatedBy            pgtype.UUID        `json:"created_by"`
-	CreatedAt            pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	IsJapabotIndexed     *bool              `json:"is_japabot_indexed"`
-	DataEntityType       *string            `json:"data_entity_type"`
-	DeletedAt            pgtype.Timestamptz `json:"deleted_at"`
-	PageTemplateID       pgtype.UUID        `json:"page_template_id"`
-	FieldGroupID         pgtype.UUID        `json:"field_group_id"`
-	Position             int32              `json:"position"`
-	SpaceSlug            string             `json:"space_slug"`
-	SpaceName            string             `json:"space_name"`
-	LatestRevisionID     pgtype.UUID        `json:"latest_revision_id"`
-	LatestRevisionStatus string             `json:"latest_revision_status"`
-	Excerpt              string             `json:"excerpt"`
+	ID                        pgtype.UUID        `json:"id"`
+	SpaceID                   pgtype.UUID        `json:"space_id"`
+	Slug                      string             `json:"slug"`
+	Title                     string             `json:"title"`
+	Category                  string             `json:"category"`
+	IsActive                  bool               `json:"is_active"`
+	IsFeatured                bool               `json:"is_featured"`
+	IsLocked                  bool               `json:"is_locked"`
+	CreatedBy                 pgtype.UUID        `json:"created_by"`
+	CreatedAt                 pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                 pgtype.Timestamptz `json:"updated_at"`
+	IsJapabotIndexed          *bool              `json:"is_japabot_indexed"`
+	DataEntityType            *string            `json:"data_entity_type"`
+	DeletedAt                 pgtype.Timestamptz `json:"deleted_at"`
+	PageTemplateID            pgtype.UUID        `json:"page_template_id"`
+	FieldGroupID              pgtype.UUID        `json:"field_group_id"`
+	Position                  int32              `json:"position"`
+	SpaceSlug                 string             `json:"space_slug"`
+	SpaceName                 string             `json:"space_name"`
+	LatestRevisionID          pgtype.UUID        `json:"latest_revision_id"`
+	LatestRevisionStatus      string             `json:"latest_revision_status"`
+	Excerpt                   string             `json:"excerpt"`
+	LatestRevisionAiGenerated bool               `json:"latest_revision_ai_generated"`
+	LatestRevisionAiModel     *string            `json:"latest_revision_ai_model"`
+	FieldGroupSlug            string             `json:"field_group_slug"`
+	FieldGroupName            string             `json:"field_group_name"`
 }
 
 // =====================
@@ -185,12 +226,17 @@ type AdminListWikiPagesRow struct {
 // and are applied via per-column CASE expressions (user input can never
 // reach ORDER BY). The latest revision's id/status/excerpt comes from a
 // LEFT JOIN LATERAL so pages without revisions still list.
+// The page's bound field group (§80) — the shared structured schema
+// surfaced in the admin view so reviewers can jump to the group editor.
 func (q *Queries) AdminListWikiPages(ctx context.Context, arg AdminListWikiPagesParams) ([]AdminListWikiPagesRow, error) {
 	rows, err := q.db.Query(ctx, adminListWikiPages,
 		arg.SpaceID,
 		arg.DestSlug,
 		arg.Category,
 		arg.IsLocked,
+		arg.IsFeatured,
+		arg.IsActive,
+		arg.Status,
 		arg.Q,
 		arg.Deleted,
 		arg.Sort,
@@ -227,6 +273,10 @@ func (q *Queries) AdminListWikiPages(ctx context.Context, arg AdminListWikiPages
 			&i.LatestRevisionID,
 			&i.LatestRevisionStatus,
 			&i.Excerpt,
+			&i.LatestRevisionAiGenerated,
+			&i.LatestRevisionAiModel,
+			&i.FieldGroupSlug,
+			&i.FieldGroupName,
 		); err != nil {
 			return nil, err
 		}
@@ -254,14 +304,21 @@ LEFT JOIN users ru ON ru.id = wr.reviewed_by
 WHERE ($1::text = '' OR wr.kind = $1)
   AND ($2::text = '' OR wr.status = $2)
   AND ($3::text = '' OR wr.summary ILIKE '%' || $3 || '%'
-       OR u.username ILIKE '%' || $3 || '%')
+       OR u.username ILIKE '%' || $3 || '%'
+       OR wr.target_entity_type ILIKE '%' || $3 || '%')
   AND (CASE $4::text
          WHEN 'only' THEN wr.deleted_at IS NOT NULL
          WHEN 'all'  THEN TRUE
          ELSE wr.deleted_at IS NULL END)
 ORDER BY
-  CASE WHEN $5 = 'created_at:asc'  THEN wr.created_at END ASC NULLS LAST,
-  CASE WHEN $5 = 'created_at:desc' THEN wr.created_at END DESC NULLS LAST,
+  CASE WHEN $5 = 'created_at:asc'    THEN wr.created_at END ASC NULLS LAST,
+  CASE WHEN $5 = 'created_at:desc'   THEN wr.created_at END DESC NULLS LAST,
+  CASE WHEN $5 = 'status:asc'        THEN wr.status END ASC NULLS LAST,
+  CASE WHEN $5 = 'status:desc'       THEN wr.status END DESC NULLS LAST,
+  CASE WHEN $5 = 'kind:asc'          THEN wr.kind END ASC NULLS LAST,
+  CASE WHEN $5 = 'kind:desc'         THEN wr.kind END DESC NULLS LAST,
+  CASE WHEN $5 = 'submitted_by:asc'  THEN u.username END ASC NULLS LAST,
+  CASE WHEN $5 = 'submitted_by:desc' THEN u.username END DESC NULLS LAST,
   wr.created_at DESC
 LIMIT $7 OFFSET $6
 `

@@ -603,6 +603,15 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		AvailableUntil:     availableUntil,
 	}
 
+	// §111: packages are org-authored only — they never enter the §98
+	// claim flow, so the row starts pre-claimed (approved) by the owning
+	// org rather than 'unclaimed'.
+	if isPackage {
+		approved := ClaimStatusApproved
+		params.ClaimStatus = &approved
+		params.ClaimedByOrgID = orgID
+	}
+
 	if input.WebsiteURL != "" {
 		params.WebsiteUrl = &input.WebsiteURL
 	}
@@ -630,6 +639,11 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 	metaRow, err := s.store.CreateMeta(ctx, params)
 	if err != nil {
 		slog.Error("servicedir: create service_listing_meta failed after content creation", "content_id", contentRow.ID, "error", err)
+		// Compensating cleanup: without a meta row the content is an
+		// orphaned 'service_listing' that no query can reach.
+		if delErr := s.content.DeleteContent(ctx, contentRow.ID); delErr != nil {
+			slog.Error("servicedir: failed to clean up orphaned content", "content_id", contentRow.ID, "error", delErr)
+		}
 		return ServiceDTO{}, fmt.Errorf("servicedir: create service_listing_meta: %w", err)
 	}
 
@@ -945,7 +959,7 @@ func (s *Service) attachPackageData(ctx context.Context, metaID pgtype.UUID, dto
 // List returns a paginated, filtered list of published service listings.
 // destSpaceID, citySpaceID, serviceCategory, originCommunity are optional
 // geo-aware filters (§98: ?dest=&city=&category=&origin=&verified=&sort=).
-func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, serviceCategory, originCommunity string, isVerified *bool, listingKind string, priceMax *int64, dateFrom pgtype.Date, sort string, page, limit int32) ([]ServiceDTO, int64, error) {
+func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID, serviceCategory, originCommunity string, isVerified *bool, listingKind string, priceMax *int64, dateFrom pgtype.Date, q, sort string, page, limit int32) ([]ServiceDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -956,10 +970,18 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 
 	offset := (page - 1) * limit
 
-	// §111: the kind=package filter is gated on the packages flag — off
-	// flag means only plain service rows list.
-	if listingKind == ListingKindPackage && !s.PackagesEnabled(ctx) {
-		return nil, 0, ErrPackagesDisabled
+	// §111: the kind=package filter is gated on the packages flag. With the
+	// flag off, an explicit kind=package is a 404 and an unfiltered list is
+	// pinned to kind=service so package rows can never leak into the
+	// directory while the feature is dark-launched.
+	if !s.PackagesEnabled(ctx) {
+		if listingKind == ListingKindPackage {
+			return nil, 0, ErrPackagesDisabled
+		}
+
+		if listingKind == "" {
+			listingKind = ListingKindService
+		}
 	}
 
 	rows, total, err := s.store.ListServices(ctx, ListServicesFilter{
@@ -972,6 +994,7 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 		ListingKind:     listingKind,
 		PriceMax:        priceMax,
 		DateFrom:        dateFrom,
+		Q:               q,
 		Sort:            sort,
 		Status:          content.StatusPublished,
 		Limit:           limit,
@@ -1098,8 +1121,12 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		}
 	}
 
-	if input.CitySpaceID != nil && *input.CitySpaceID != "" {
-		if err := params.CitySpaceID.Scan(*input.CitySpaceID); err != nil {
+	if input.CitySpaceID != nil {
+		// Present-but-empty clears the city (the column is nullable); only a
+		// non-empty value is validated as a UUID.
+		if *input.CitySpaceID == "" {
+			params.CitySpaceID = pgtype.UUID{}
+		} else if err := params.CitySpaceID.Scan(*input.CitySpaceID); err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: invalid city_space_id: %w", err)
 		}
 	}
@@ -1127,15 +1154,15 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	}
 
 	if input.WebsiteURL != nil {
-		params.WebsiteUrl = input.WebsiteURL
+		params.WebsiteUrl = nilIfEmpty(input.WebsiteURL)
 	}
 
 	if input.BookingURL != nil {
-		params.BookingUrl = input.BookingURL
+		params.BookingUrl = nilIfEmpty(input.BookingURL)
 	}
 
 	if input.PriceRange != nil {
-		params.PriceRange = input.PriceRange
+		params.PriceRange = nilIfEmpty(input.PriceRange)
 	}
 
 	// §111: listing_kind is immutable post-create.
@@ -1652,6 +1679,17 @@ func metaToDTO(c gen.GetContentByIDRow, m gen.ServiceListingMetum) ServiceDTO {
 	}
 
 	return dto
+}
+
+// nilIfEmpty collapses a present-but-empty optional text field to NULL so
+// PATCH callers can clear website_url / booking_url / price_range instead
+// of persisting ”.
+func nilIfEmpty(s *string) *string {
+	if s == nil || *s == "" {
+		return nil
+	}
+
+	return s
 }
 
 // normalizeOriginCommunities converts the input (any) into a []string for

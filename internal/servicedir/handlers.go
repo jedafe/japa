@@ -233,7 +233,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleList handles GET /services — list published service listings with
-// filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&page=&limit=.
+// filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&q=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil || !h.service.Enabled(r.Context()) {
@@ -260,6 +260,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	serviceCategory := r.URL.Query().Get("category")
 	originCommunity := r.URL.Query().Get("origin")
 	sort := r.URL.Query().Get("sort")
+	q := r.URL.Query().Get("q")
 
 	var verifiedPtr *bool
 
@@ -294,7 +295,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	page, limit := parsePageParams(r)
 
-	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, listingKind, priceMax, dateFrom, sort, page, limit)
+	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, listingKind, priceMax, dateFrom, q, sort, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrPackagesDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
