@@ -59,7 +59,7 @@ func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string) (gen.Org
 	return s.read.GetOrganizationBySlug(ctx, slug)
 }
 
-// ListOrganizations returns paginated organizations. deleted is '' (live
+// ListOrganizations returns paginated organizations. deleted is ” (live
 // only), 'only' (soft-deleted), or 'all'.
 func (s *Store) ListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, error) {
 	return s.read.ListOrganizations(ctx, gen.ListOrganizationsParams{Column1: orgType, Column2: countryCode, Column3: search, Column4: verified, Limit: clampLimit(limit),
@@ -341,8 +341,12 @@ func (s *Store) GetOrganizationAnalytics(ctx context.Context, orgID pgtype.UUID,
 
 // VerifyOrganization marks an organization as verified (admin action).
 // Platform-scoped to prevent cross-platform verification (BUG-002).
-func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
-	return s.write.VerifyOrganization(ctx, id)
+// vtype is the §7 verification badge type; nil preserves any existing value.
+func (s *Store) VerifyOrganization(ctx context.Context, id pgtype.UUID, vtype *string) error {
+	return s.write.VerifyOrganization(ctx, gen.VerifyOrganizationParams{
+		ID:               id,
+		VerificationType: vtype,
+	})
 }
 
 // UnverifyOrganization revokes an organization's verification (admin action).

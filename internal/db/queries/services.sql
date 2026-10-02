@@ -24,9 +24,9 @@ INSERT INTO service_listing_meta (
     sqlc.narg(origin_communities), sqlc.narg(is_remote),
     sqlc.narg(website_url), sqlc.narg(booking_url), sqlc.narg(price_range),
     sqlc.narg(is_verified), sqlc.narg(verification_type),
-    sqlc.narg(claim_status), sqlc.narg(claimed_by_org_id),
-    sqlc.narg(listing_kind), sqlc.narg(price_amount), sqlc.narg(price_currency),
-    sqlc.narg(price_per), sqlc.narg(purchase_mode), sqlc.narg(capacity),
+    COALESCE(sqlc.narg(claim_status), 'unclaimed'), sqlc.narg(claimed_by_org_id),
+    COALESCE(sqlc.narg(listing_kind), 'service'), sqlc.narg(price_amount), sqlc.narg(price_currency),
+    sqlc.narg(price_per), COALESCE(sqlc.narg(purchase_mode), 'inquiry'), sqlc.narg(capacity),
     sqlc.narg(available_from), sqlc.narg(available_until)
 ) RETURNING *;
 
@@ -164,6 +164,7 @@ WHERE c.content_type = 'service_listing'
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
   AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
   AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
+  AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%')
 ORDER BY
   CASE WHEN sqlc.narg(sort)::text = 'top' THEN c.view_count END DESC NULLS LAST,
   CASE WHEN sqlc.narg(sort)::text = 'top' THEN c.comment_count END DESC NULLS LAST,
@@ -184,7 +185,8 @@ WHERE c.content_type = 'service_listing'
   AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
   AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
-  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from >= sqlc.narg(date_from)::date);
+  AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
+  AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%');
 
 -- Admin moderation list — same join, any status when not filtered,
 -- supports q + claim_status + kind filters.

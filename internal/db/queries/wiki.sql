@@ -360,14 +360,21 @@ LEFT JOIN users ru ON ru.id = wr.reviewed_by
 WHERE (@kind::text = '' OR wr.kind = @kind)
   AND (@status::text = '' OR wr.status = @status)
   AND (@q::text = '' OR wr.summary ILIKE '%' || @q || '%'
-       OR u.username ILIKE '%' || @q || '%')
+       OR u.username ILIKE '%' || @q || '%'
+       OR wr.target_entity_type ILIKE '%' || @q || '%')
   AND (CASE @deleted::text
          WHEN 'only' THEN wr.deleted_at IS NOT NULL
          WHEN 'all'  THEN TRUE
          ELSE wr.deleted_at IS NULL END)
 ORDER BY
-  CASE WHEN @sort = 'created_at:asc'  THEN wr.created_at END ASC NULLS LAST,
-  CASE WHEN @sort = 'created_at:desc' THEN wr.created_at END DESC NULLS LAST,
+  CASE WHEN @sort = 'created_at:asc'    THEN wr.created_at END ASC NULLS LAST,
+  CASE WHEN @sort = 'created_at:desc'   THEN wr.created_at END DESC NULLS LAST,
+  CASE WHEN @sort = 'status:asc'        THEN wr.status END ASC NULLS LAST,
+  CASE WHEN @sort = 'status:desc'       THEN wr.status END DESC NULLS LAST,
+  CASE WHEN @sort = 'kind:asc'          THEN wr.kind END ASC NULLS LAST,
+  CASE WHEN @sort = 'kind:desc'         THEN wr.kind END DESC NULLS LAST,
+  CASE WHEN @sort = 'submitted_by:asc'  THEN u.username END ASC NULLS LAST,
+  CASE WHEN @sort = 'submitted_by:desc' THEN u.username END DESC NULLS LAST,
   wr.created_at DESC
 LIMIT @limit_val OFFSET @offset_val;
 
@@ -377,7 +384,8 @@ LEFT JOIN users u ON u.id = wr.submitted_by
 WHERE (@kind::text = '' OR wr.kind = @kind)
   AND (@status::text = '' OR wr.status = @status)
   AND (@q::text = '' OR wr.summary ILIKE '%' || @q || '%'
-       OR u.username ILIKE '%' || @q || '%')
+       OR u.username ILIKE '%' || @q || '%'
+       OR wr.target_entity_type ILIKE '%' || @q || '%')
   AND (CASE @deleted::text
          WHEN 'only' THEN wr.deleted_at IS NOT NULL
          WHEN 'all'  THEN TRUE
@@ -529,11 +537,18 @@ SELECT wp.id, wp.space_id, wp.slug, wp.title, wp.category,
        sp.slug AS space_slug, sp.name AS space_name,
        lr.id AS latest_revision_id,
        COALESCE(lr.status, '') AS latest_revision_status,
-       COALESCE(lr.excerpt, '') AS excerpt
+       COALESCE(lr.excerpt, '') AS excerpt,
+       COALESCE(lr.ai_generated, false) AS latest_revision_ai_generated,
+       lr.ai_model AS latest_revision_ai_model,
+       COALESCE(fg.slug, '') AS field_group_slug,
+       COALESCE(fg.name, '') AS field_group_name
 FROM wiki_pages wp
 JOIN spaces sp ON sp.id = wp.space_id
+-- The page's bound field group (§80) — the shared structured schema
+-- surfaced in the admin view so reviewers can jump to the group editor.
+LEFT JOIN custom_field_groups fg ON fg.id = wp.field_group_id
 LEFT JOIN LATERAL (
-    SELECT wr.id, wr.status,
+    SELECT wr.id, wr.status, wr.ai_generated, wr.ai_model,
            -- content is TipTap JSONB; regexp_replace left raw JSON in the
            -- excerpt. Extract the text nodes instead (mirrors the admin
            -- UI's extractContentText walk).
@@ -551,7 +566,15 @@ WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
   AND (@dest_slug::text = '' OR sp.slug = @dest_slug)
   AND (@category::text = '' OR wp.category = @category)
   AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
-  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%')
+  AND (sqlc.narg(is_featured)::bool IS NULL OR wp.is_featured = sqlc.narg(is_featured)::bool)
+  AND (sqlc.narg(is_active)::bool IS NULL OR wp.is_active = sqlc.narg(is_active)::bool)
+  -- @status filters the LATEST revision's status (pending|approved|rejected)
+  -- — the review queue's primary workflow is "pages with pending revisions".
+  AND (@status::text = '' OR COALESCE(lr.status, '') = @status)
+  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%'
+       OR wp.slug ILIKE '%' || @q || '%'
+       OR sp.name ILIKE '%' || @q || '%'
+       OR sp.slug ILIKE '%' || @q || '%')
   -- Soft-deleted pages are excluded by default; ?deleted=only|all surfaces
   -- them so admins can force-delete (§80).
   AND CASE @deleted::text
@@ -560,20 +583,22 @@ WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
         ELSE wp.deleted_at IS NULL
       END
 ORDER BY
-  CASE WHEN @sort = 'title:asc'       THEN wp.title END ASC NULLS LAST,
-  CASE WHEN @sort = 'title:desc'      THEN wp.title END DESC NULLS LAST,
-  CASE WHEN @sort = 'space_slug:asc'  THEN sp.slug END ASC NULLS LAST,
-  CASE WHEN @sort = 'space_slug:desc' THEN sp.slug END DESC NULLS LAST,
-  CASE WHEN @sort = 'status:asc'      THEN lr.status END ASC NULLS LAST,
-  CASE WHEN @sort = 'status:desc'     THEN lr.status END DESC NULLS LAST,
-  CASE WHEN @sort = 'is_locked:asc'   THEN wp.is_locked::int END ASC NULLS LAST,
-  CASE WHEN @sort = 'is_locked:desc'  THEN wp.is_locked::int END DESC NULLS LAST,
-  CASE WHEN @sort = 'is_active:asc'   THEN wp.is_active::int END ASC NULLS LAST,
-  CASE WHEN @sort = 'is_active:desc'  THEN wp.is_active::int END DESC NULLS LAST,
-  CASE WHEN @sort = 'created_at:asc'  THEN wp.created_at END ASC NULLS LAST,
-  CASE WHEN @sort = 'created_at:desc' THEN wp.created_at END DESC NULLS LAST,
-  CASE WHEN @sort = 'updated_at:asc'  THEN wp.updated_at END ASC NULLS LAST,
-  CASE WHEN @sort = 'updated_at:desc' THEN wp.updated_at END DESC NULLS LAST,
+  CASE WHEN @sort = 'title:asc'        THEN wp.title END ASC NULLS LAST,
+  CASE WHEN @sort = 'title:desc'       THEN wp.title END DESC NULLS LAST,
+  CASE WHEN @sort = 'space_slug:asc'   THEN sp.slug END ASC NULLS LAST,
+  CASE WHEN @sort = 'space_slug:desc'  THEN sp.slug END DESC NULLS LAST,
+  CASE WHEN @sort = 'status:asc'       THEN lr.status END ASC NULLS LAST,
+  CASE WHEN @sort = 'status:desc'      THEN lr.status END DESC NULLS LAST,
+  CASE WHEN @sort = 'is_locked:asc'    THEN wp.is_locked::int END ASC NULLS LAST,
+  CASE WHEN @sort = 'is_locked:desc'   THEN wp.is_locked::int END DESC NULLS LAST,
+  CASE WHEN @sort = 'is_featured:asc'  THEN wp.is_featured::int END ASC NULLS LAST,
+  CASE WHEN @sort = 'is_featured:desc' THEN wp.is_featured::int END DESC NULLS LAST,
+  CASE WHEN @sort = 'is_active:asc'    THEN wp.is_active::int END ASC NULLS LAST,
+  CASE WHEN @sort = 'is_active:desc'   THEN wp.is_active::int END DESC NULLS LAST,
+  CASE WHEN @sort = 'created_at:asc'   THEN wp.created_at END ASC NULLS LAST,
+  CASE WHEN @sort = 'created_at:desc'  THEN wp.created_at END DESC NULLS LAST,
+  CASE WHEN @sort = 'updated_at:asc'   THEN wp.updated_at END ASC NULLS LAST,
+  CASE WHEN @sort = 'updated_at:desc'  THEN wp.updated_at END DESC NULLS LAST,
   wp.updated_at DESC
 LIMIT @limit_val OFFSET @offset_val;
 
@@ -585,7 +610,19 @@ WHERE (@space_id::uuid IS NULL OR wp.space_id = @space_id::uuid)
   AND (@dest_slug::text = '' OR sp.slug = @dest_slug)
   AND (@category::text = '' OR wp.category = @category)
   AND (sqlc.narg(is_locked)::bool IS NULL OR wp.is_locked = sqlc.narg(is_locked)::bool)
-  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%')
+  AND (sqlc.narg(is_featured)::bool IS NULL OR wp.is_featured = sqlc.narg(is_featured)::bool)
+  AND (sqlc.narg(is_active)::bool IS NULL OR wp.is_active = sqlc.narg(is_active)::bool)
+  -- Mirrors the list query's LATERAL "latest revision" semantics so the
+  -- status filter counts the same rows the list returns.
+  AND (@status::text = '' OR COALESCE((
+         SELECT wr.status FROM wiki_revisions wr
+         WHERE wr.wiki_page_id = wp.id AND wr.deleted_at IS NULL
+         ORDER BY wr.created_at DESC
+         LIMIT 1), '') = @status)
+  AND (@q::text = '' OR wp.title ILIKE '%' || @q || '%'
+       OR wp.slug ILIKE '%' || @q || '%'
+       OR sp.name ILIKE '%' || @q || '%'
+       OR sp.slug ILIKE '%' || @q || '%')
   AND CASE @deleted::text
         WHEN 'only' THEN wp.deleted_at IS NOT NULL
         WHEN 'all'  THEN true

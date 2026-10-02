@@ -4,8 +4,10 @@
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { api } from '$lib/api/client';
 	import {
 		Briefcase,
 		Plus,
@@ -15,14 +17,15 @@
 		ExternalLink,
 		ArrowRight,
 		X,
-		Wifi
+		Wifi,
+		Check
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import { serviceCategoryOptions, serviceCategoryLabel } from '$lib/enumOptions';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
-	import type { ServiceListing, ServiceCategory } from '$lib/types';
+	import type { ServiceListing, ServiceCategory, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -37,28 +40,56 @@
 
 	const services = $derived<ServiceListing[]>(data.services);
 
-	// Local filter state seeded from URL params.
+	// Local filter state seeded from URL params (synced on navigation via the
+	// $effect below so back/forward and shared links repaint the controls).
+	let queryInput = $state(untrack(() => data.filters.q));
 	let destInput = $state(untrack(() => data.filters.dest));
+	let cityInput = $state(untrack(() => data.filters.city));
+	let cityLabelInput = $state(untrack(() => data.filters.cityLabel));
 	let categoryInput = $state(untrack(() => data.filters.category));
+	let originInput = $state(untrack(() => data.filters.origin));
 	let verifiedInput = $state(untrack(() => data.filters.verified === 'true'));
 	let sortInput = $state(untrack(() => data.filters.sort));
+	let kindInput = $state(untrack(() => data.filters.kind));
+	let limitInput = $state(untrack(() => data.filters.limit));
 
 	$effect(() => {
+		queryInput = data.filters.q;
 		destInput = data.filters.dest;
+		cityInput = data.filters.city;
+		cityLabelInput = data.filters.cityLabel;
 		categoryInput = data.filters.category;
+		originInput = data.filters.origin;
 		verifiedInput = data.filters.verified === 'true';
 		sortInput = data.filters.sort;
+		kindInput = data.filters.kind;
+		limitInput = data.filters.limit;
 	});
 
 	const categoryOptions = $derived(serviceCategoryOptions(t, data.serviceCategories));
 
-	const categoryItems = $derived<AutocompleteItem[]>(
-		categoryOptions.map((o) => ({ id: o.value, label: o.label }))
-	);
+	const categoryItems = $derived<AutocompleteItem[]>([
+		{ id: '', label: t('services.filter_category', 'All categories') },
+		...categoryOptions.map((o) => ({ id: o.value, label: o.label }))
+	]);
 	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
 	const selectedCategoryLabel = $derived(
 		categoryInput ? (categoryItems.find((o) => o.id === categoryInput)?.label ?? categoryInput) : null
 	);
+
+	// §111 kind axis — only rendered while service_packages.enabled is on.
+	const kindItems = $derived<AutocompleteItem[]>([
+		{ id: '', label: t('services.kind_all', 'All listings') },
+		{ id: 'service', label: t('services.kind_service', 'Services') },
+		{ id: 'package', label: t('services.kind_package', 'Packages') }
+	]);
+	const kindFetcher = $derived(staticAutocompleteFetcher(kindItems));
+	const selectedKindLabel = $derived(
+		kindInput ? (kindItems.find((o) => o.id === kindInput)?.label ?? null) : null
+	);
+
+	const limitItems: AutocompleteItem[] = ['10', '20', '50'].map((n) => ({ id: n, label: n }));
+	const limitFetcher = staticAutocompleteFetcher(limitItems);
 
 	function categoryLabel(value: string): string {
 		return serviceCategoryLabel(t, value as ServiceCategory);
@@ -71,12 +102,41 @@
 
 	const tabs = $derived<UrlTab[]>(sortOptions.map((o) => ({ value: o.value, label: o.label })));
 
+	// The selected destination's ISO geo code drives the city picker —
+	// /spaces?level=city&geo=<code> returns every city in the country,
+	// including ones nested under state spaces (unlike ?parent=, which only
+	// matches direct children — BUG-010 fix for e.g. Nigeria).
+	const destGeoCode = $derived(
+		destInput ? (data.countries ?? []).find((c) => c.id === destInput)?.geo_code ?? '' : ''
+	);
+
+	async function fetchCities(q: string): Promise<AutocompleteItem[]> {
+		if (!destGeoCode) return [];
+		const res = await api.get<Space[]>(
+			`/spaces?level=city&geo=${encodeURIComponent(destGeoCode)}&q=${encodeURIComponent(q.trim())}&page_size=25`
+		);
+		// The item id is the space *slug* — the ?city= URL param resolves
+		// slug→id server-side so shared links stay human-readable.
+		return (res.data ?? []).map((c) => ({ id: c.slug, label: c.name }));
+	}
+
+	function fetchCitiesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCities('');
+	}
+
+	const selectedCityLabel = $derived(cityInput ? cityLabelInput || cityInput : null);
+
 	function buildParams(): URLSearchParams {
 		const params = new URLSearchParams();
+		if (queryInput.trim()) params.set('q', queryInput.trim());
 		if (destInput) params.set('dest', destInput);
+		if (cityInput) params.set('city', cityInput);
 		if (categoryInput) params.set('category', categoryInput);
+		if (originInput.trim()) params.set('origin', originInput.trim());
 		if (verifiedInput) params.set('verified', 'true');
 		if (sortInput && sortInput !== 'latest') params.set('sort', sortInput);
+		if (kindInput && kindInput !== 'all') params.set('kind', kindInput);
+		if (limitInput !== 20) params.set('limit', String(limitInput));
 		return params;
 	}
 
@@ -92,27 +152,57 @@
 		if (hasActiveFilters) showFilters = true;
 	});
 
+	let submittedDismissed = $state(false);
+	const showSubmitted = $derived(data.submitted && !submittedDismissed);
+
 	function applyFilters(e?: SubmitEvent) {
 		e?.preventDefault();
-		goto(`/services?${buildParams().toString()}`, { keepFocus: true });
+		const params = buildParams().toString();
+		goto(`/services${params ? `?${params}` : ''}`, { keepFocus: true });
 	}
 
 	function clearFilters() {
+		queryInput = '';
 		destInput = '';
+		cityInput = '';
+		cityLabelInput = '';
 		categoryInput = '';
+		originInput = '';
 		verifiedInput = false;
 		sortInput = 'latest';
+		kindInput = '';
+		limitInput = 20;
 		goto('/services');
 	}
 
 	const hasActiveFilters = $derived(
-		!!data.filters.dest || !!data.filters.category || !!data.filters.verified
+		!!data.filters.q ||
+			!!data.filters.dest ||
+			!!data.filters.city ||
+			!!data.filters.category ||
+			!!data.filters.origin ||
+			!!data.filters.verified ||
+			!!data.filters.kind ||
+			data.filters.limit !== 20
 	);
 
 	const totalPages = $derived(
-		data.meta?.total ? Math.ceil(data.meta.total / data.pageSize) : 1
+		data.meta?.total ? Math.ceil(data.meta.total / data.filters.limit) : 1
 	);
 	const currentPage = $derived(data.filters.page || 1);
+
+	// Live suggestions for the search box — the backend title search (?q=).
+	async function fetchServiceSuggestions(q: string) {
+		const res = await api.get<ServiceListing[]>(
+			`/services?q=${encodeURIComponent(q.trim())}&limit=5`
+		);
+		return (res.data ?? []).map((s) => ({
+			id: s.id,
+			title: s.title,
+			url: `/services/${s.slug}`,
+			type: 'service'
+		}));
+	}
 
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('services.filter_dest', 'All countries');
@@ -132,7 +222,11 @@
 		return fetchDestinationCountries('');
 	}
 	const selectedDestinationLabel = $derived(
-		destInput ? (data.countries ?? []).find((c) => c.id === destInput)?.name ?? null : null
+		destInput
+			? (data.countries ?? []).find((c) => c.id === destInput)?.name ??
+					data.filters.destLabel ??
+					destInput
+			: null
 	);
 </script>
 
@@ -166,10 +260,38 @@
 
 	<!-- Service list -->
 	<div class="p-3">
+		{#if showSubmitted}
+			<div class="mb-4 rounded-[var(--radius)] border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700">
+				<div class="flex items-start gap-2">
+					<Check size={16} class="mt-0.5 shrink-0" />
+					<div class="flex-1">
+						<p class="font-medium">{t('services.submitted_title', 'Listing submitted')}</p>
+						<p class="opacity-90">{t('services.submitted_body', 'Your listing is under review and will appear once a moderator approves it.')}</p>
+					</div>
+					<button
+						type="button"
+						aria-label={t('common.dismiss', 'Dismiss')}
+						onclick={() => (submittedDismissed = true)}
+						class="shrink-0 text-emerald-700/70 hover:text-emerald-700"
+					>
+						<X size={14} />
+					</button>
+				</div>
+			</div>
+		{/if}
+
 		{#if showFilters}
 			<!-- Filter panel -->
 			<div id="services-filter-panel" class="mb-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+		<form onsubmit={applyFilters} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="search">
+			<div class="sm:col-span-2 lg:col-span-3">
+				<SearchInput
+					bind:value={queryInput}
+					placeholder={t('services.search_placeholder', 'Search services…')}
+					ariaLabel={t('services.search_placeholder', 'Search services…')}
+					fetcher={fetchServiceSuggestions}
+				/>
+			</div>
 			<Autocomplete
 				placeholder={t('services.filter_dest', 'All countries')}
 				ariaLabel={t('services.filter_dest', 'All countries')}
@@ -178,8 +300,40 @@
 				initialFetcher={fetchDestinationCountriesInitial}
 				selectedId={destInput || null}
 				selectedLabel={selectedDestinationLabel}
-				onSelect={(item) => { destInput = item.id; applyFilters(); }}
-				onClear={() => { destInput = ''; applyFilters(); }}
+				onSelect={(item) => {
+					destInput = item.id;
+					cityInput = '';
+					cityLabelInput = '';
+					applyFilters();
+				}}
+				onClear={() => {
+					destInput = '';
+					cityInput = '';
+					cityLabelInput = '';
+					applyFilters();
+				}}
+			/>
+			<Autocomplete
+				placeholder={destInput
+					? t('services.filter_city', 'All cities')
+					: t('services.city_select_dest_first', 'Select a country first')}
+				ariaLabel={t('services.filter_city', 'All cities')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={fetchCities}
+				initialFetcher={fetchCitiesInitial}
+				selectedId={cityInput || null}
+				selectedLabel={selectedCityLabel}
+				disabled={!destInput}
+				onSelect={(item) => {
+					cityInput = item.id;
+					cityLabelInput = item.label;
+					applyFilters();
+				}}
+				onClear={() => {
+					cityInput = '';
+					cityLabelInput = '';
+					applyFilters();
+				}}
 			/>
 			<Autocomplete
 				placeholder={t('services.filter_category', 'All categories')}
@@ -192,6 +346,19 @@
 				onSelect={(item) => { categoryInput = item.id; applyFilters(); }}
 				onClear={() => { categoryInput = ''; applyFilters(); }}
 			/>
+			{#if data.packagesEnabled}
+				<Autocomplete
+					placeholder={t('services.kind_all', 'All listings')}
+					ariaLabel={t('services.filter_kind', 'Listing type')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={kindFetcher}
+					initialFetcher={kindFetcher}
+					selectedId={kindInput || null}
+					selectedLabel={selectedKindLabel}
+					onSelect={(item) => { kindInput = item.id; applyFilters(); }}
+					onClear={() => { kindInput = ''; applyFilters(); }}
+				/>
+			{/if}
 			<div class="flex items-center gap-2">
 				<label class="flex items-center gap-1.5 text-sm text-[var(--color-text)]">
 					<input
@@ -202,6 +369,34 @@
 					/>
 					{t('services.filter_verified', 'Verified only')}
 				</label>
+			</div>
+			<div>
+				<label for="services-origin-filter" class="sr-only">{t('services.filter_origin', 'Origin community')}</label>
+				<input
+					id="services-origin-filter"
+					type="text"
+					bind:value={originInput}
+					placeholder={t('services.filter_origin', 'Origin community (e.g. Nigerian)')}
+					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+				/>
+			</div>
+			<div class="flex items-center gap-2">
+				<Autocomplete
+					placeholder={t('services.page_size', 'Per page')}
+					ariaLabel={t('services.page_size', 'Results per page')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={limitFetcher}
+					initialFetcher={limitFetcher}
+					selectedId={String(limitInput)}
+					selectedLabel={String(limitInput)}
+					onSelect={(item) => { limitInput = Number(item.id); applyFilters(); }}
+				/>
+				<button
+					type="submit"
+					class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('common.apply', 'Apply')}
+				</button>
 			</div>
 		</form>
 
@@ -236,8 +431,8 @@
 			{#if data.meta?.total}
 				<p class="mb-3 text-xs text-[var(--color-muted)]">
 					{t('common.showing', 'Showing {start}-{end} of {total}')
-						.replace('{start}', String((currentPage - 1) * data.pageSize + 1))
-						.replace('{end}', String(Math.min(currentPage * data.pageSize, data.meta.total)))
+						.replace('{start}', String((currentPage - 1) * data.filters.limit + 1))
+						.replace('{end}', String(Math.min(currentPage * data.filters.limit, data.meta.total)))
 						.replace('{total}', String(data.meta.total))}
 				</p>
 			{/if}

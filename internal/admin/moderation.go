@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -1251,6 +1252,22 @@ func (h *Handlers) UpdateUserGroup(w http.ResponseWriter, r *http.Request) {
 
 // ─── Organization Verify ─────────────────────────────────────────────────
 
+// validOrgVerificationTypes is the §7 verification badge enum for
+// organizations, extended with professional_body for the §111
+// package-publishing trust gate.
+var validOrgVerificationTypes = map[string]struct{}{
+	"business":           {},
+	"embassy":            {},
+	"notable":            {},
+	"immigration_lawyer": {},
+	"professional_body":  {},
+}
+
+func isValidOrgVerificationType(s string) bool {
+	_, ok := validOrgVerificationTypes[s]
+	return ok
+}
+
 // VerifyOrganization handles POST /admin/organizations/:id/verify.
 func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
@@ -1266,15 +1283,38 @@ func (h *Handlers) VerifyOrganization(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	// Optional §7 verification badge type — §111 package publishing gates
+	// on business|professional_body, so the type must be settable here.
+	var body struct {
+		VerificationType *string `json:"verification_type"`
+	}
+
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+			return
+		}
+	}
+
+	if body.VerificationType != nil && !isValidOrgVerificationType(*body.VerificationType) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_verification_type",
+			"verification_type must be one of business|embassy|notable|immigration_lawyer|professional_body")
+		return
+	}
+
 	// Route through the organizations service so the organization.verified
 	// webhook event is emitted (Section 12) and the org cache is invalidated.
 	if h.Orgs != nil {
-		if err := h.Orgs.VerifyOrganization(r.Context(), oid, user.UserID); err != nil {
+		if err := h.Orgs.VerifyOrganization(r.Context(), oid, user.UserID, body.VerificationType); err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 			return
 		}
 	} else {
-		err := h.Queries.VerifyOrganization(r.Context(), oid)
+		err := h.Queries.VerifyOrganization(r.Context(), gen.VerifyOrganizationParams{
+			ID:               oid,
+			VerificationType: body.VerificationType,
+		})
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization")
 			return

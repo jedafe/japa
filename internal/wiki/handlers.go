@@ -1601,6 +1601,34 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var featuredPtr *bool
+
+	if v := r.URL.Query().Get("featured"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err == nil {
+			featuredPtr = &b
+		}
+	}
+
+	var activePtr *bool
+
+	if v := r.URL.Query().Get("active"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err == nil {
+			activePtr = &b
+		}
+	}
+
+	// ?status= filters the latest revision's status — the queue's "show me
+	// pages with pending work" workflow.
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "", "pending", "approved", "rejected":
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "status must be one of pending, approved, rejected")
+		return
+	}
+
 	// §80 soft delete: ?deleted=only|all surfaces deleted pages for the
 	// force-delete flow; any other value behaves like the default (exclude).
 	deleted := r.URL.Query().Get("deleted")
@@ -1613,7 +1641,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		limit = 200
 	}
 
-	pages, total, err := h.service.AdminListPages(r.Context(), spaceID, destSlug, category, q, sort, lockedPtr, deleted, page, limit)
+	pages, total, err := h.service.AdminListPages(r.Context(), spaceID, destSlug, category, q, sort, status, lockedPtr, featuredPtr, activePtr, deleted, page, limit)
 	if err != nil {
 		slog.Error("wiki: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "admin_list_failed", "Failed to list wiki pages")

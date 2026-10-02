@@ -902,15 +902,24 @@ func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusPara
 
 const verifyOrganization = `-- name: VerifyOrganization :exec
 
-UPDATE organizations SET verified = true, updated_at = now()
+UPDATE organizations SET verified = true,
+  verification_type = COALESCE($2::text, verification_type),
+  updated_at = now()
 WHERE id = $1
 `
+
+type VerifyOrganizationParams struct {
+	ID               pgtype.UUID `json:"id"`
+	VerificationType *string     `json:"verification_type"`
+}
 
 // =====================
 // Organization Verification
 // =====================
 // Platform-scoped to prevent cross-platform verification (BUG-002).
-func (q *Queries) VerifyOrganization(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, verifyOrganization, id)
+// §7: verification_type is set when supplied and preserved otherwise —
+// §111 package publishing gates on it (business|professional_body).
+func (q *Queries) VerifyOrganization(ctx context.Context, arg VerifyOrganizationParams) error {
+	_, err := q.db.Exec(ctx, verifyOrganization, arg.ID, arg.VerificationType)
 	return err
 }

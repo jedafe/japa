@@ -1973,11 +1973,19 @@ export type WikiRevisionItem = {
 	content?: unknown;
 	summary?: string;
 	ai_generated?: boolean;
+	ai_model?: string;
 	target_entity_type?: string;
 	target_entity_id?: string;
+	// Host page — empty for page-less fields/mixed ops revisions (§80).
+	wiki_page_id?: string;
 	submitted_by?: string;
 	reviewed_by?: string;
 	reviewed_at?: string;
+	// ADR-088 HITL review record — hitl_review_notes carries the reviewer
+	// notes / rejection reason shown in the queue's view panel.
+	hitl_reviewed_by?: string;
+	hitl_reviewed_at?: string;
+	hitl_review_notes?: string;
 	// Last ops-application failure on a pending fields/mixed revision (§80) —
 	// shown in the queue so reviewers see why an approve attempt rolled back.
 	apply_error?: string;

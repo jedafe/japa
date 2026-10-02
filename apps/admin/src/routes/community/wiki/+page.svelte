@@ -16,10 +16,17 @@
 	import { Eye, CheckCircle, XCircle, Sparkles, Lock, LockOpen, Star, StarOff, FileDiff, Trash2 } from 'lucide-svelte';
 	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
 
+	// One row of GET /admin/wiki (AdminWikiPageDTO). status is the LATEST
+	// revision's status ('' when the page has no revisions); ai_generated /
+	// ai_model carry that revision's ADR-088 provenance. field_group_*
+	// identify the page's bound custom field group (§80).
 	type WikiItem = {
 		id: string;
+		slug: string;
 		title: string;
+		category: string;
 		space_slug: string;
+		space_name?: string;
 		status: string;
 		updated_at: string;
 		latest_revision_id?: string;
@@ -30,17 +37,24 @@
 		created_at?: string;
 		deleted_at?: string | null;
 		data_entity_type?: string | null;
-		// ADR-088 AI generation columns
+		page_template_id?: string;
+		field_group_id?: string;
+		field_group_slug?: string;
+		field_group_name?: string;
+		// ADR-088 AI provenance of the latest revision
 		ai_generated?: boolean;
 		ai_model?: string;
-		hitl_reviewed_by?: string;
-		ai_generated_at?: string;
 	};
 
 	const canReview = $derived(hasPermission('wiki.review'));
 	const canManage = $derived(hasPermission('wiki.manage'));
 	const canLock = $derived(hasPermission('wiki.lock'));
 	const canDelete = $derived(hasPermission('wiki.delete'));
+	// ?force=true hard deletes require BOTH the resource delete permission
+	// (RequirePermission runs first) and admin.hard_delete
+	// (RequireForceDelete) — mirror the media/calendar pages' gating so
+	// users without the hard-delete grant don't see actions that 403.
+	const canHardDelete = $derived(canDelete && hasPermission('admin.hard_delete'));
 
 	// ── Country selector (250 primary geo space countries) ───────────────────
 	const countryUtils = useCountries();
@@ -192,6 +206,7 @@
 
 	// ── Page management: lock/unlock/feature (wiki.manage / wiki.lock) ──────
 	async function toggleLock(item: WikiItem) {
+		if (acting) return;
 		acting = true;
 		pageError = '';
 		try {
@@ -209,6 +224,7 @@
 	}
 
 	async function toggleFeatured(item: WikiItem) {
+		if (acting) return;
 		acting = true;
 		pageError = '';
 		try {
@@ -226,6 +242,7 @@
 	}
 
 	async function toggleActive(item: WikiItem) {
+		if (acting) return;
 		acting = true;
 		pageError = '';
 		try {
@@ -483,9 +500,10 @@
 				}
 			);
 		}
-		if (canDelete) {
+		if (canHardDelete) {
 			// Permanent removal — only for already-soft-deleted rows (the
-			// built-in "Delete Selected" above covers the soft delete).
+			// built-in "Delete Selected" above covers the soft delete), and
+			// gated on admin.hard_delete (backend RequireForceDelete).
 			acts.push({
 				label: t('app.wiki.bulk_force_delete', 'Force Delete Selected'),
 				icon: Trash2,
@@ -672,24 +690,28 @@
 			acts.push({
 				label: t('app.wiki.toggle_lock', 'Toggle Lock'),
 				icon: Lock,
-				onclick: toggleLock
+				onclick: toggleLock,
+				show: (row: WikiItem) => !row.deleted_at
 			});
 		}
 		if (canManage) {
 			acts.push({
 				label: t('app.wiki.toggle_featured', 'Toggle Featured'),
 				icon: Star,
-				onclick: toggleFeatured
+				onclick: toggleFeatured,
+				show: (row: WikiItem) => !row.deleted_at
 			});
 			acts.push({
 				label: t('app.wiki.toggle_active', 'Toggle Active'),
 				icon: CheckCircle,
-				onclick: toggleActive
+				onclick: toggleActive,
+				show: (row: WikiItem) => !row.deleted_at
 			});
 		}
 		if (canDelete) {
 			// Delete → built-in confirm → config.remove (soft). Force Delete →
-			// page-local modal → hardDeletePage; only for soft-deleted rows.
+			// page-local modal → hardDeletePage; only for soft-deleted rows,
+			// and only for holders of admin.hard_delete (RequireForceDelete).
 			acts.push({
 				label: t('common.delete', 'Delete'),
 				icon: Trash2,
@@ -697,6 +719,8 @@
 				onclick: (row: WikiItem, ctx) => ctx?.openDelete(row),
 				show: (row: WikiItem) => !row.deleted_at
 			});
+		}
+		if (canHardDelete) {
 			acts.push({
 				label: t('app.wiki.force_delete', 'Force Delete'),
 				icon: Trash2,
@@ -730,6 +754,28 @@
 	const LOCKED_OPTIONS = $derived<AutocompleteItem[]>([
 		{ id: 'true', label: t('app.wiki.filter_locked_yes', 'Locked') },
 		{ id: 'false', label: t('app.wiki.filter_locked_no', 'Unlocked') }
+	]);
+	const FEATURED_OPTIONS = $derived<AutocompleteItem[]>([
+		{ id: 'true', label: t('app.wiki.filter_featured_yes', 'Featured') },
+		{ id: 'false', label: t('app.wiki.filter_featured_no', 'Not featured') }
+	]);
+	const ACTIVE_OPTIONS = $derived<AutocompleteItem[]>([
+		{ id: 'true', label: t('app.wiki.filter_active_yes', 'Active') },
+		{ id: 'false', label: t('app.wiki.filter_active_no', 'Inactive') }
+	]);
+
+	const KIND_OPTIONS = $derived<AutocompleteItem[]>([
+		{ id: 'content', label: t('app.wiki.kind_content', 'Content') },
+		{ id: 'fields', label: t('app.wiki.kind_fields', 'Fields') },
+		{ id: 'mixed', label: t('app.wiki.kind_mixed', 'Mixed') }
+	]);
+	// Latest-revision status — shared by the pages ?status= filter (the
+	// queue's "pages with pending work" workflow) and the revisions queue's
+	// own ?status= filter; the backend whitelists the same three values.
+	const STATUS_OPTIONS = $derived<AutocompleteItem[]>([
+		{ id: 'pending', label: t('app.wiki.status_pending', 'Pending') },
+		{ id: 'approved', label: t('app.wiki.status_approved', 'Approved') },
+		{ id: 'rejected', label: t('app.wiki.status_rejected', 'Rejected') }
 	]);
 
 	// Category filter options — the union of every enabled wiki type's
@@ -794,6 +840,38 @@
 				initialFetcher: enumInitial(LOCKED_OPTIONS),
 				getSelectedLabel: enumLabel(LOCKED_OPTIONS)
 			},
+			{
+				key: 'featured',
+				label: t('app.wiki.col_featured', 'Featured'),
+				type: 'autocomplete',
+				placeholder: t('app.wiki.col_featured', 'Featured'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: enumFetcher(FEATURED_OPTIONS),
+				initialFetcher: enumInitial(FEATURED_OPTIONS),
+				getSelectedLabel: enumLabel(FEATURED_OPTIONS)
+			},
+			{
+				key: 'active',
+				label: t('app.wiki.col_active', 'Active'),
+				type: 'autocomplete',
+				placeholder: t('app.wiki.col_active', 'Active'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: enumFetcher(ACTIVE_OPTIONS),
+				initialFetcher: enumInitial(ACTIVE_OPTIONS),
+				getSelectedLabel: enumLabel(ACTIVE_OPTIONS)
+			},
+			// Latest revision status — filters pages to pending/approved/
+			// rejected (the review queue's primary workflow).
+			{
+				key: 'status',
+				label: t('app.wiki.col_status', 'Status'),
+				type: 'autocomplete',
+				placeholder: t('app.wiki.col_status', 'Status'),
+				emptyMessage: t('common.no_results', 'No results found'),
+				fetcher: enumFetcher(STATUS_OPTIONS),
+				initialFetcher: enumInitial(STATUS_OPTIONS),
+				getSelectedLabel: enumLabel(STATUS_OPTIONS)
+			},
 			// Soft-deleted pages are hidden by default — this filter surfaces
 			// them so the Force Delete action has targets (§80).
 			{
@@ -813,18 +891,32 @@
 		title: t('app.wiki.review_queue_heading', 'Wiki Review Queue'),
 		description: t('app.wiki.review_queue_desc', 'Review and approve pending wiki page revisions'),
 		readonly: true,
-		// Tabbed page — keep table state out of the shared URL (admin AGENTS).
-		urlSync: false,
+		// One tab's table renders at a time, so both tabs can url-sync
+		// (q/sort/dir/page/pageSize/filters); 'tab' is a RESERVED_PARAM and
+		// tabPreserve=[] wipes the other tab's list state on switch.
+		urlSync: true,
 		pageSize: 25,
 		columns: [
 			{ key: 'title', label: t('app.wiki.col_title', 'Title'), sortable: true },
 			{ key: 'space_slug', label: t('app.wiki.col_space', 'Space'), sortable: true },
-			{ key: 'status', label: t('app.wiki.col_status', 'Status'), sortable: true },
+			{
+				key: 'status',
+				label: t('app.wiki.col_status', 'Status'),
+				sortable: true,
+				render: (value: string, row: WikiItem) =>
+					(row.deleted_at ? `${value || '—'} · ${t('app.wiki.filter_deleted', 'Deleted')}` : value || '—')
+			},
 			{
 				key: 'ai_generated',
 				label: t('app.wiki.col_ai', 'AI'),
 				sortable: false,
 				render: (value: boolean) => (value ? '🤖' : '—')
+			},
+			{
+				key: 'is_featured',
+				label: t('app.wiki.col_featured', 'Featured'),
+				sortable: true,
+				render: (value: boolean) => (value ? '★' : '—')
 			},
 			{
 				key: 'is_locked',
@@ -869,6 +961,9 @@
 			if (params.filter?.dest) qs.set('dest', params.filter.dest);
 			if (params.filter?.category) qs.set('category', params.filter.category);
 			if (params.filter?.locked) qs.set('locked', params.filter.locked);
+			if (params.filter?.featured) qs.set('featured', params.filter.featured);
+			if (params.filter?.active) qs.set('active', params.filter.active);
+			if (params.filter?.status) qs.set('status', params.filter.status);
 			if (params.filter?.deleted) qs.set('deleted', params.filter.deleted);
 			const result = await apiRaw<{ data: WikiItem[]; pagination: { total: number } }>(
 				`/admin/wiki${qs.toString() ? `?${qs.toString()}` : ''}`
@@ -876,9 +971,10 @@
 			if (result.ok) {
 				const body = result.data as { data: WikiItem[]; pagination: { total: number } };
 				const data = body.data ?? [];
-				// Clear before repopulating — deleted rows must not stay
-				// addressable via a stale selection after a reload.
-				pageRowMap.clear();
+				// Accumulate rather than clear — BulkBar's selectedIds persist
+				// across page changes, so a cross-page selection must still
+				// resolve its earlier rows. Fresh rows overwrite stale state
+				// on every load.
 				for (const row of data) pageRowMap.set(row.id, row);
 				const total = body.pagination?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
@@ -892,17 +988,7 @@
 	// ── Revisions queue (§80): flat list from GET /admin/wiki/revisions ─────
 	// Content revisions belong to a page; fields/mixed revisions carry an ops
 	// array and may be page-less. Approve/reject use the revision-keyed routes.
-
-	const KIND_OPTIONS = $derived<AutocompleteItem[]>([
-		{ id: 'content', label: t('app.wiki.kind_content', 'Content') },
-		{ id: 'fields', label: t('app.wiki.kind_fields', 'Fields') },
-		{ id: 'mixed', label: t('app.wiki.kind_mixed', 'Mixed') }
-	]);
-	const STATUS_OPTIONS = $derived<AutocompleteItem[]>([
-		{ id: 'pending', label: t('app.wiki.status_pending', 'Pending') },
-		{ id: 'approved', label: t('app.wiki.status_approved', 'Approved') },
-		{ id: 'rejected', label: t('app.wiki.status_rejected', 'Rejected') }
-	]);
+	// KIND_OPTIONS/STATUS_OPTIONS are declared up by the pages filters.
 
 	const revisionFilters = $derived.by<FilterDef[]>(() => [
 		{
@@ -968,8 +1054,6 @@
 		}
 		if (canDelete) {
 			// Delete → built-in confirm → revisionConfig.remove (soft).
-			// Force Delete → page-local modal → hardDeleteWikiRevision; only
-			// for soft-deleted rows (mirrors the Pages tab).
 			acts.push({
 				label: t('common.delete', 'Delete'),
 				icon: Trash2,
@@ -977,6 +1061,11 @@
 				onclick: (row: WikiRevisionItem, ctx) => ctx?.openDelete(row),
 				show: (row: WikiRevisionItem) => !row.deleted_at
 			});
+		}
+		if (canHardDelete) {
+			// Force Delete → page-local modal → hardDeleteWikiRevision; only
+			// for soft-deleted rows and holders of admin.hard_delete
+			// (backend RequireForceDelete on ?force=true).
 			acts.push({
 				label: t('app.wiki.force_delete', 'Force Delete'),
 				icon: Trash2,
@@ -1012,10 +1101,10 @@
 				}
 			);
 		}
-		if (canDelete) {
+		if (canHardDelete) {
 			// Bulk soft delete is EntityPage's built-in "Delete Selected"
 			// (config.remove); this adds the bulk hard-delete counterpart for
-			// soft-deleted rows.
+			// soft-deleted rows (admin.hard_delete, backend RequireForceDelete).
 			acts.push({
 				label: t('app.wiki.bulk_force_delete', 'Force Delete Selected'),
 				icon: Trash2,
@@ -1031,11 +1120,13 @@
 		title: t('app.wiki.revisions_heading', 'Revision Queue'),
 		description: t('app.wiki.revisions_desc', 'Review pending wiki revisions, including community field ops'),
 		readonly: true,
-		urlSync: false,
+		// Same as the pages tab — one tab's table renders at a time so
+		// url-synced list state can't collide ('tab' is a RESERVED_PARAM).
+		urlSync: true,
 		pageSize: 25,
 		filters: revisionFilters,
 		columns: [
-			{ key: 'kind', label: t('app.wiki.col_kind', 'Kind'), sortable: false },
+			{ key: 'kind', label: t('app.wiki.col_kind', 'Kind'), sortable: true },
 			{
 				key: 'summary',
 				label: t('app.wiki.col_summary', 'Summary'),
@@ -1054,13 +1145,13 @@
 			{
 				key: 'submitted_by',
 				label: t('app.wiki.col_submitted_by', 'Submitted By'),
-				sortable: false,
+				sortable: true,
 				render: (value: string) => value || '—'
 			},
 			{
 				key: 'status',
 				label: t('app.wiki.col_status', 'Status'),
-				sortable: false,
+				sortable: true,
 				render: (value: string, row: WikiRevisionItem) =>
 					row.deleted_at ? `${value} · ${t('app.wiki.filter_deleted', 'Deleted')}` : value
 			},
@@ -1094,7 +1185,6 @@
 			const result = await wikiAdminApi.listWikiRevisions(qs.toString());
 			if (result.ok) {
 				const data = result.data.data ?? [];
-				revisionRowMap.clear();
 				for (const row of data) revisionRowMap.set(row.id, row);
 				const total = result.data.pagination?.total ?? data.length;
 				const totalPages = Math.max(1, Math.ceil(total / (params.pageSize ?? 25)));
@@ -1345,7 +1435,17 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_space', 'Space')}</p>
-			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.space_slug || '—'}</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">
+				{row.space_name ? `${row.space_name} (${row.space_slug})` : row.space_slug || '—'}
+			</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.gen_page_slug', 'Page slug')}</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.slug || '—'}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.gen_category', 'Category')}</p>
+			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.category || '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_status', 'Status')}</p>
@@ -1365,6 +1465,19 @@
 				{row.ai_generated ? `${t('app.wiki.ai_yes', 'Yes')} (${row.ai_model ?? '—'})` : t('app.wiki.ai_no', 'No')}
 			</p>
 		</div>
+		{#if row.field_group_id}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.cat_group', 'Field group')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					<a href="/custom-fields/{row.field_group_id}" class="underline" style="color: var(--color-primary)">
+						{row.field_group_name || row.field_group_slug || row.field_group_id}
+					</a>
+					{#if row.field_group_slug}
+						<span class="block font-mono text-xs" style="color: var(--color-muted)">{row.field_group_slug}</span>
+					{/if}
+				</p>
+			</div>
+		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_locked', 'Locked')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_locked ? t('app.wiki.locked_yes', 'Yes') : t('app.wiki.locked_no', 'No')}</p>
@@ -1438,6 +1551,20 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_summary', 'Summary')}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.summary || '—'}</p>
 		</div>
+		{#if row.wiki_page_id}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_page', 'Page')}</p>
+				<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.wiki_page_id}</p>
+			</div>
+		{/if}
+		{#if row.ai_generated}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_ai', 'AI-generated')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
+					{t('app.wiki.ai_yes', 'Yes')}{row.ai_model ? ` (${row.ai_model})` : ''}
+				</p>
+			</div>
+		{/if}
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.col_submitted_by', 'Submitted By')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.submitted_by || '—'}</p>
@@ -1452,6 +1579,12 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
 					{row.reviewed_by || '—'}{row.reviewed_at ? ` · ${new Date(row.reviewed_at).toLocaleString()}` : ''}
 				</p>
+			</div>
+		{/if}
+		{#if row.hitl_review_notes}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('app.wiki.review_notes', 'Review notes')}</p>
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.hitl_review_notes}</p>
 			</div>
 		{/if}
 		{#if row.apply_error}

@@ -6,6 +6,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
+	import SuggestEdit from '$lib/components/wiki/SuggestEdit.svelte';
 	import WikiItemTables from '$lib/components/wiki/WikiItemTables.svelte';
 	import WikiHelpfulWidget from '$lib/components/wiki/WikiHelpfulWidget.svelte';
 	import WikiRollupPanel from '$lib/components/wiki/WikiRollupPanel.svelte';
@@ -137,8 +138,15 @@
 		data.page ? `${data.page.title} — JapaConnect` : t('wiki.page_title_suffix')
 	);
 	const description = $derived.by(() => {
-		if (!data.page?.current_content) return t('wiki.page_description');
-		const text = tiptapToText(data.page.current_content as unknown as TipTapDoc).trim();
+		const c = data.page?.current_content;
+		if (c == null) return t('wiki.page_description');
+		// Legacy pages store raw HTML strings; current pages store TipTap JSON.
+		const text = (typeof c === 'string'
+			? c.replace(/<[^>]*>/g, ' ')
+			: tiptapToText(c as unknown as TipTapDoc)
+		)
+			.replace(/\s+/g, ' ')
+			.trim();
 		if (!text) return t('wiki.page_description');
 		return text.length > 160 ? text.slice(0, 157).trimEnd() + '…' : text;
 	});
@@ -166,6 +174,10 @@
 
 	let childEntities = $state<ResolvedItem[]>([]);
 	let childEntitiesLoading = $state(false);
+	// Per-row "suggest an edit" — one keyed dialog instance, retargeted to
+	// the clicked entity (keyed so a new target refetches its schema).
+	let suggestTarget = $state<ResolvedItem | null>(null);
+	let suggestOpen = $state(false);
 
 	// §80 Hierarchical UX — Prev/Next derives from the page's ordered
 	// sibling set (position-ordered, current flagged by the backend).
@@ -600,11 +612,34 @@
 							{:else}
 								<ul class="divide-y divide-[var(--color-border)]">
 									{#each childEntities as item (item.id)}
-										<li class="py-2 text-sm text-[var(--color-text)]">
-											{item.title}
+										<li class="flex items-center justify-between gap-3 py-2 text-sm text-[var(--color-text)]">
+											<span class="min-w-0 truncate">{item.title}</span>
+											<button
+												type="button"
+												onclick={() => {
+													suggestTarget = item;
+													suggestOpen = true;
+												}}
+												class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+												aria-label={t('wiki.suggest_edit', 'Suggest an edit')}
+												title={t('wiki.suggest_edit', 'Suggest an edit')}
+											>
+												<Pencil size={13} />
+											</button>
 										</li>
 									{/each}
 								</ul>
+							{/if}
+							{#if suggestTarget}
+								{#key suggestTarget.id}
+									<SuggestEdit
+										entityType={dataEntityType}
+										entityId={suggestTarget.id}
+										label={suggestTarget.title}
+										showTrigger={false}
+										bind:open={suggestOpen}
+									/>
+								{/key}
 							{/if}
 						</section>
 					{/if}

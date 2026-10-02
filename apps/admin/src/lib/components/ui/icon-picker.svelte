@@ -22,17 +22,9 @@
 	} from 'lucide-svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 
-	let {
-		value = $bindable(''),
-		onchange = (_v: string) => {},
-	}: {
-		value?: string;
-		onchange?: (v: string) => void;
-	} = $props();
-
 	// Curated list of icons useful for navigation menus.
 	// Keys are kebab-case names matching the backend menu_items.icon column.
-	const icons: { name: string; component: typeof Home }[] = [
+	const defaultIcons: { name: string; component: typeof Home }[] = [
 		{ name: 'home', component: Home },
 		{ name: 'compass', component: Compass },
 		{ name: 'search', component: Search },
@@ -145,6 +137,19 @@
 		{ name: 'square', component: Square },
 	];
 
+	let {
+		value = $bindable(''),
+		onchange = (_v: string) => {},
+		icons = defaultIcons,
+	}: {
+		value?: string;
+		onchange?: (v: string) => void;
+		// Optional override for the pickable set — e.g. the wiki forms pass
+		// only icon names the main app's resolveIcon map can render, so a
+		// picked icon can never silently fall back on the frontend.
+		icons?: { name: string; component: typeof Home }[];
+	} = $props();
+
 	let search = $state('');
 	let open = $state(false);
 
@@ -195,7 +200,7 @@
 		class="absolute z-50 mt-1 w-full rounded-lg border shadow-lg"
 		style={open ? 'border-color: var(--color-border); background: var(--color-surface)' : 'display: none'}
 	>
-		<div class="p-2 border-b" style="border-color: var(--color-border)">
+		<div class="p-2 border-b flex items-center gap-2" style="border-color: var(--color-border)">
 			<input
 				type="text"
 				bind:value={search}
@@ -203,6 +208,14 @@
 				class="w-full rounded border px-2 py-1.5 text-sm bg-transparent outline-none"
 				style="border-color: var(--color-border); color: var(--color-foreground)"
 			/>
+			{#if value}
+				<button
+					type="button"
+					class="shrink-0 rounded border px-2 py-1 text-xs"
+					style="border-color: var(--color-border); color: var(--color-muted)"
+					onmousedown={(e) => { e.preventDefault(); e.stopPropagation(); selectIcon(''); }}
+				>{t('menus.clear_icon', 'Clear')}</button>
+			{/if}
 		</div>
 		<div class="max-h-48 overflow-auto p-2 grid grid-cols-6 gap-1">
 			{#each filtered as icon (icon.name)}

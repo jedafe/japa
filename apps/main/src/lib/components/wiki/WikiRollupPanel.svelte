@@ -153,6 +153,11 @@
 		return slug ? t(`wiki.${slug}_label`, slug) : t('wiki.rollup_col_space', 'Place');
 	});
 
+	// Section tokens render Title-Cased — same fallback as WikiItemTables.
+	function sectionLabel(key: string): string {
+		return t(`wiki.section_${key}`, key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
+	}
+
 	function toggleCompare(id: string) {
 		if (compareIds.includes(id)) {
 			compareIds = compareIds.filter((x) => x !== id);
@@ -191,7 +196,7 @@
 						</p>
 						{#if f.section}
 							<p class="mt-0.5 text-[11px] uppercase tracking-wide text-[var(--color-muted)]">
-								{t(`wiki.section_${f.section}`, f.section.replace(/_/g, ' '))}
+								{sectionLabel(f.section)}
 							</p>
 						{/if}
 					</div>

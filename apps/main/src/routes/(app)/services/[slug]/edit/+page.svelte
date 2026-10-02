@@ -3,13 +3,13 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { Briefcase, Save, Loader2, AlertCircle } from 'lucide-svelte';
 	import { serviceCategoryOptions } from '$lib/enumOptions';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
@@ -35,6 +35,9 @@
 	);
 	let destinationSpaceId = $state(untrack(() => svc.destination_space_id ?? ''));
 	let citySpaceId = $state(untrack(() => svc.city_space_id ?? ''));
+	// City chip label — seeded from the loaded listing (no id→name lookup
+	// endpoint exists for spaces), replaced on each picker selection.
+	let cityLabel = $state(untrack(() => svc.city_space_name ?? ''));
 	let originCommunities = $state(untrack(() => svc.origin_communities?.join(', ') ?? ''));
 	let isRemote = $state(untrack(() => svc.is_remote));
 	let websiteUrl = $state(untrack(() => svc.website_url ?? ''));
@@ -44,33 +47,47 @@
 	let submitting = $state(false);
 	let errorMsg = $state('');
 
-	// BUG-010: city is a dependent select populated from /spaces?level=city&parent=<dest>.
-	let cities = $state<Space[]>([]);
-	let loadingCities = $state(false);
-
 	const categoryOptions = $derived(serviceCategoryOptions(t, data.serviceCategories));
+	const categoryItems = $derived<AutocompleteItem[]>(
+		categoryOptions.map((o) => ({ id: o.value, label: o.label }))
+	);
+	const categoryFetcher = $derived(staticAutocompleteFetcher(categoryItems));
+	const selectedCategoryLabel = $derived(
+		serviceCategory ? (categoryItems.find((o) => o.id === serviceCategory)?.label ?? null) : null
+	);
 
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 
-	// Fetch cities when the destination country changes (BUG-010).
-	let lastFetchedDest = $state('');
+	// BUG-010: the city picker searches /spaces?level=city&geo=<country code>
+	// — geo covers cities nested under state spaces (e.g. Nigeria), which
+	// ?parent=<country_id> misses because it only matches direct children.
+	const destGeoCode = $derived(
+		destinationSpaceId
+			? (data.countries ?? []).find((c) => c.id === destinationSpaceId)?.geo_code ?? ''
+			: ''
+	);
+
+	async function fetchCities(q: string): Promise<AutocompleteItem[]> {
+		if (!destGeoCode) return [];
+		const res = await api.get<Space[]>(
+			`/spaces?level=city&geo=${encodeURIComponent(destGeoCode)}&q=${encodeURIComponent(q.trim())}&page_size=25`
+		);
+		return (res.data ?? []).map((c) => ({ id: c.id, label: c.name }));
+	}
+
+	function fetchCitiesInitial(): Promise<AutocompleteItem[]> {
+		return fetchCities('');
+	}
+
+	// Reset the city when the destination country changes.
+	let prevDest = $state(untrack(() => destinationSpaceId));
 	$effect(() => {
-		if (!destinationSpaceId || destinationSpaceId === lastFetchedDest) return;
-		lastFetchedDest = destinationSpaceId;
-		citySpaceId = '';
-		cities = [];
-		loadingCities = true;
-		(async () => {
-			try {
-				const res = await api.get<Space[]>(`/spaces?level=city&parent=${destinationSpaceId}`);
-				cities = Array.isArray(res.data) ? res.data : [];
-			} catch {
-				cities = [];
-			} finally {
-				loadingCities = false;
-			}
-		})();
+		if (destinationSpaceId !== prevDest) {
+			prevDest = destinationSpaceId;
+			citySpaceId = '';
+			cityLabel = '';
+		}
 	});
 
 	function validate(): boolean {
@@ -95,18 +112,21 @@
 			.map((s) => s.trim())
 			.filter((s) => s.length > 0);
 
+		// Clearable fields are always sent — the backend treats a present-but-
+		// empty value as "clear the column" (PATCH semantics), so omitting them
+		// would silently keep the old values.
 		const payload: Record<string, unknown> = {
 			title: title.trim(),
 			body: body.trim(),
 			service_category: serviceCategory,
 			destination_space_id: destinationSpaceId,
-			is_remote: isRemote
+			city_space_id: citySpaceId,
+			origin_communities: origins,
+			is_remote: isRemote,
+			website_url: websiteUrl.trim(),
+			booking_url: bookingUrl.trim(),
+			price_range: priceRange.trim()
 		};
-		if (citySpaceId) payload.city_space_id = citySpaceId;
-		if (origins.length > 0) payload.origin_communities = origins;
-		if (websiteUrl.trim()) payload.website_url = websiteUrl.trim();
-		if (bookingUrl.trim()) payload.booking_url = bookingUrl.trim();
-		if (priceRange.trim()) payload.price_range = priceRange.trim();
 
 		submitting = true;
 		const res = await api.patch<ServiceListing>(`/services/${svc.id}`, payload);
@@ -195,11 +215,15 @@
 				<label for="category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('services.field_category', 'Service category')}
 				</label>
-				<AutocompleteSelect
+				<Autocomplete
 					id="category"
-					value={serviceCategory}
-					options={categoryOptions}
-					onValueChange={(v) => (serviceCategory = v as ServiceCategory)}
+					placeholder={t('services.field_category', 'Service category')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={categoryFetcher}
+					initialFetcher={categoryFetcher}
+					selectedId={serviceCategory || null}
+					selectedLabel={selectedCategoryLabel}
+					onSelect={(item) => (serviceCategory = item.id as ServiceCategory)}
 				/>
 			</div>
 
@@ -224,21 +248,26 @@
 					<label for="city" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 						{t('services.field_city', 'City')}
 					</label>
-					<AutocompleteSelect
+					<Autocomplete
 						id="city"
-						bind:value={citySpaceId}
-						disabled={!destinationSpaceId || loadingCities}
-						options={[
-							{
-								value: '',
-								label: loadingCities
-									? t('services.city_loading', 'Loading cities…')
-									: destinationSpaceId
-										? t('services.city_select', 'Select a city (optional)')
-										: t('services.city_select_dest_first', 'Select a country first')
-							},
-							...cities.map((c) => ({ value: c.id, label: c.name }))
-						]}
+						placeholder={destinationSpaceId
+							? t('services.city_select', 'Select a city (optional)')
+							: t('services.city_select_dest_first', 'Select a country first')}
+						ariaLabel={t('services.field_city', 'City')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCities}
+						initialFetcher={fetchCitiesInitial}
+						selectedId={citySpaceId || null}
+						selectedLabel={citySpaceId ? cityLabel || null : null}
+						disabled={!destinationSpaceId}
+						onSelect={(item) => {
+							citySpaceId = item.id;
+							cityLabel = item.label;
+						}}
+						onClear={() => {
+							citySpaceId = '';
+							cityLabel = '';
+						}}
 					/>
 				</div>
 			</div>

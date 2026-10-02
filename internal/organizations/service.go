@@ -913,14 +913,17 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, reviewedBy 
 // VerifyOrganization marks an organization as verified and emits the
 // organization.verified webhook event (Section 12). adminID is the
 // administrator who performed the verification (for the webhook payload).
-func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUID) error {
+// vtype is the §7 verification badge type (business|embassy|notable|
+// immigration_lawyer|professional_body); nil preserves any existing value.
+// §111 package publishing requires business or professional_body.
+func (s *Service) VerifyOrganization(ctx context.Context, id, adminID pgtype.UUID, vtype *string) error {
 	// Fetch the org name for the webhook payload (best-effort).
 	org, err := s.store.GetOrganizationByID(ctx, id)
 	if err != nil {
 		slog.Warn("organizations: fetch org for verify webhook payload", "org_id", id.String(), "error", err)
 	}
 
-	if err := s.store.VerifyOrganization(ctx, id); err != nil {
+	if err := s.store.VerifyOrganization(ctx, id, vtype); err != nil {
 		return fmt.Errorf("verifying organization: %w", err)
 	}
 
@@ -1026,7 +1029,7 @@ func (s *Service) GetOrganizationAnalytics(ctx context.Context, orgID pgtype.UUI
 // ─── Admin methods (bypass ownership checks) ─────────────────────────────
 
 // AdminListOrganizations lists all organisations for admin view (no
-// ownership filter). deleted is '' (live only), 'only', or 'all'.
+// ownership filter). deleted is ” (live only), 'only', or 'all'.
 func (s *Service) AdminListOrganizations(ctx context.Context, orgType, countryCode, search, verified, deleted string, limit, offset int32) ([]gen.ListOrganizationsRow, int64, error) {
 	items, err := s.store.ListOrganizations(ctx, orgType, countryCode, search, verified, deleted, limit, offset)
 	if err != nil {

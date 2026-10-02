@@ -298,6 +298,26 @@ func (s *Service) getAncestors(ctx context.Context, spaceID, spaceTypeID pgtype.
 		curID, curTypeID = pick.ID, pick.SpaceTypeID
 	}
 
+	// A parent unpicked at one hop can still enter the chain via a deeper
+	// path (e.g. a university linked to both its state and its country —
+	// the state wins arbitration, then the country is picked again as the
+	// state's parent). That placement is already in the breadcrumb, so it
+	// is not an "also under X" alternate; drop it, and dedupe the rest.
+	if len(alternates) > 0 {
+		seen := make(map[string]bool, len(chain)+len(alternates))
+		for _, a := range chain {
+			seen[a.ID] = true
+		}
+		out := make([]WikiSpaceRefDTO, 0, len(alternates))
+		for _, a := range alternates {
+			if !seen[a.ID] {
+				seen[a.ID] = true
+				out = append(out, a)
+			}
+		}
+		alternates = out
+	}
+
 	return chain, alternates
 }
 

@@ -7,7 +7,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
 	import { BookOpen, Plus, Send } from 'lucide-svelte';
-	import SelectField from '$lib/components/ui/SelectField.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { PageData } from './$types';
 	import type { WikiCategory } from '$lib/types';
 
@@ -23,10 +23,21 @@
 		id?: string;
 		slug: WikiCategory;
 		label: string;
+		/** i18n key from the API — resolved through t() like the wiki tabs. */
+		label_key?: string;
 		/** §80 page templates — the category's admin-defined lazy pages
 		 *  ({name} substituted server-side). Picking one binds the created
 		 *  page to the template via matching (category, slug). */
 		page_templates?: { slug: string; label: string; position: number }[];
+		/** Directory categories ("States", "Universities", …) are child-space
+		 *  listings, not page buckets — excluded from the create options. */
+		directory?: boolean;
+	}
+
+	// §80: only page categories are selectable — directory categories
+	// back tabs/listings, so a new page can never be filed under them.
+	function pageCategories(items: CatItem[]): CatItem[] {
+		return items.filter((c) => !c.directory);
 	}
 
 	const CUSTOM_PAGE = '__custom';
@@ -39,7 +50,12 @@
 	let bodyHtml = $state('');
 	let bodyJson = $state<unknown>(null);
 	let categories = $state<CatItem[]>([]);
-	const categoryOptions = $derived(categories.map((c) => ({ value: c.slug, label: c.label })));
+	const categoryOptions = $derived(
+		categories.map((c) => ({
+			value: c.slug,
+			label: t(c.label_key ?? `wiki.category_${c.slug}`, c.label)
+		}))
+	);
 	let catLoading = $state(false);
 	let loading = $state(false);
 	let errorKey = $state<string | null>(null);
@@ -110,7 +126,7 @@
 			// server-side — the raw label would render the token literally.
 			const catRes = await api.get<CatItem[]>(`/wiki/categories?space=${encodeURIComponent(data.spaceSlug)}`);
 			if (catRes.data) {
-				categories = catRes.data;
+				categories = pageCategories(catRes.data);
 			} else {
 				// Fallback: the lazy page stub's title carries the resolved
 				// {name} — push it so the locked title never stores the token.
@@ -172,7 +188,7 @@
 		(async () => {
 			try {
 				const catRes = await api.get<CatItem[]>(`/wiki/categories?space=${encodeURIComponent(data.spaceSlug)}`);
-				categories = catRes.data ?? [];
+				categories = pageCategories(catRes.data ?? []);
 				if (categories.length > 0 && category === '') {
 					onCategoryChange(categories[0].slug);
 				}
@@ -294,7 +310,7 @@
 				<label for="wiki-create-category" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 					{t('wiki.create_category_label', 'Category')}
 				</label>
-				<SelectField
+				<AutocompleteSelect
 					id="wiki-create-category"
 					value={category}
 					options={categoryOptions}
@@ -327,7 +343,7 @@
 							</button>
 						{/if}
 					</div>
-					<SelectField
+					<AutocompleteSelect
 						id="wiki-create-page"
 						value={pageChoice}
 						options={pageOptions}

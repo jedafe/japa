@@ -1,5 +1,5 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { GeoCountry, ServiceCategory } from '$lib/types';
@@ -11,9 +11,17 @@ import type { GeoCountry, ServiceCategory } from '$lib/types';
  * (POST /services), which is org-linked on the backend.
  */
 export const load: PageServerLoad = async (event) => {
+	// Feature gate before the auth redirect — a disabled feature must 404
+	// for guests too, matching /services and the backend route Gate.
+	const { features } = await event.parent();
+	if (!features['service_directory.enabled']) {
+		throw error(404, { code: 'feature_disabled', message: 'Service directory is not available' });
+	}
+
 	if (!event.locals.user) {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
+
 	const ctx = apiContext(event);
 
 	let countries: GeoCountry[] = [];

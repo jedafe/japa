@@ -9,13 +9,15 @@ import type { ServiceListing, GeoCountry, ServiceCategory } from '$lib/types';
  * Loads the listing by slug and the country/category lists for the form.
  */
 export const load: PageServerLoad = async (event) => {
-	if (!event.locals.user) {
-		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
-	}
-
+	// Feature gate before the auth redirect — a disabled feature must 404
+	// for guests too, matching /services and the backend route Gate.
 	const { features } = await event.parent();
 	if (!features['service_directory.enabled']) {
 		throw error(404, { code: 'feature_disabled', message: 'Service directory is not available' });
+	}
+
+	if (!event.locals.user) {
+		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 
 	const ctx = apiContext(event);

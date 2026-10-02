@@ -46,7 +46,7 @@ ON CONFLICT DO NOTHING;
 -- via GetIntOr/GetBoolOr per the settings catalog convention).
 INSERT INTO system_settings (key, value) VALUES
     ('service_packages.fee_enabled',           to_jsonb(true)),
-    ('service_packages.fee_type',              to_jsonb('percent')),
+    ('service_packages.fee_type',              to_jsonb('percent'::text)),
     ('service_packages.fee_pct',               to_jsonb(10)),
     ('service_packages.fee_fixed',             to_jsonb(0)),
     ('service_packages.max_items',             to_jsonb(25)),

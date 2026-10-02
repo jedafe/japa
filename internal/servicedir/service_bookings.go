@@ -472,6 +472,13 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 
 	result := BookingResult{Booking: bookingToDTO(bookingFromGen(booking))}
 
+	// bookingToDTO reads joined listing columns that only exist on the
+	// list/detail queries — the create path must stamp them itself.
+	result.Booking.ListingID = listingContentID.String()
+	result.Booking.ListingTitle = listing.Title
+	result.Booking.ListingSlug = listing.Slug
+	result.Booking.ListingKind = listing.ListingKind
+
 	if paidCheckout {
 		// Open the §17 fee checkout. The booking row stays 'pending' — the
 		// payment-success path (worker onPaymentSucceeded) attaches nothing

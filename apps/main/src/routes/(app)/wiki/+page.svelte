@@ -14,7 +14,7 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import SelectField from '$lib/components/ui/SelectField.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { WikiDestination, WikiTypeItem } from '$lib/types';
 	import { page } from '$app/state';
@@ -177,12 +177,13 @@
 							{destinationsCountLabel(total)}
 						</span>
 					</h2>
-					<div class="w-36 shrink-0">
-						<SelectField
+					<div class="w-40 shrink-0">
+						<AutocompleteSelect
 							value={sort}
 							options={sortOptions}
 							onValueChange={onSortChange}
 							id="wiki-destination-sort"
+							ariaLabel={t('wiki.sort_label', 'Sort destinations')}
 						/>
 					</div>
 				</div>

@@ -9,7 +9,9 @@
 	import { Pencil, X, Send, Loader2, Plus, Trash2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import CustomFieldGroup from '$lib/components/create/panel/CustomFieldGroup.svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import {
 		getEntityFields,
 		getFieldTypes,
@@ -128,8 +130,8 @@
 	const pfOptionsRequired = $derived(pfType === 'select' || pfType === 'multiselect');
 
 	// §80 Itemized Pricing: section tokens already used in the proposal's
-	// target group — offered as a datalist so a new item slots into an
-	// existing item table instead of fragmenting sections.
+	// target group — offered as autocomplete suggestions so a new item slots
+	// into an existing item table instead of fragmenting sections.
 	const existingSections = $derived.by(() => {
 		const target = resolvedProposeGroup || pfGroupSlug;
 		const seen = new Set<string>();
@@ -141,6 +143,17 @@
 		}
 		return [...seen].sort();
 	});
+
+	const sectionItems = $derived<AutocompleteItem[]>(
+		existingSections.map((s) => ({ id: s, label: s }))
+	);
+	async function sectionFetcher(q: string): Promise<AutocompleteItem[]> {
+		const query = q.trim().toLowerCase();
+		return sectionItems.filter((i) => i.id.toLowerCase().includes(query));
+	}
+	async function sectionInitial(): Promise<AutocompleteItem[]> {
+		return sectionItems;
+	}
 
 	function addProposedField() {
 		pfError = '';
@@ -546,21 +559,18 @@
 												<label for="pf-section" class="text-xs font-medium text-[var(--color-text)]">
 													{t('wiki.field_section', 'Section')}
 												</label>
-												<input
+												<Autocomplete
 													id="pf-section"
-													type="text"
-													list="pf-section-list"
-													bind:value={pfSection}
+													freeText
 													placeholder={t('wiki.field_section_hint', 'Optional — groups the field into an item table')}
-													class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+													emptyMessage={t('common.no_results', 'No results found')}
+													fetcher={sectionFetcher}
+													initialFetcher={sectionInitial}
+													selectedId={null}
+													selectedLabel={pfSection}
+													onSelect={(i) => (pfSection = i.id)}
+													onFreeTextBlur={(q) => (pfSection = q)}
 												/>
-												{#if existingSections.length > 0}
-													<datalist id="pf-section-list">
-														{#each existingSections as s (s)}
-															<option value={s}></option>
-														{/each}
-													</datalist>
-												{/if}
 											</div>
 											{#if showGroupPicker}
 												<div class="flex flex-col gap-1">
