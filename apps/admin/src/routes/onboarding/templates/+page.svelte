@@ -29,7 +29,7 @@
 	// is rendered by `formSnippet` below (a JSON textarea), but it MUST appear
 	// here so EntityPage seeds value.steps from the selected row.
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('onboarding.templates.name', 'Name'), type: 'text', required: true, placeholder: 'Default 5-step flow' },
+		{ key: 'name', label: t('onboarding.templates.name', 'Name'), type: 'text', required: true, placeholder: 'Default 7-step flow' },
 		{ key: 'description', label: t('onboarding.templates.description', 'Description'), type: 'textarea', placeholder: 'Describe what this template configures…' },
 		{ key: 'steps', label: t('onboarding.templates.steps', 'Steps (JSON)'), type: 'textarea' },
 		{ key: 'is_active', label: t('onboarding.templates.active', 'Active'), type: 'checkbox' }
@@ -245,7 +245,7 @@
 				class="w-full rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.name}
-				placeholder="Default 5-step flow"
+				placeholder="Default 7-step flow"
 				required
 			/>
 		</div>

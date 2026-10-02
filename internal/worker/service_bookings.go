@@ -59,41 +59,55 @@ func bookingNotificationType(status string) string {
 		return "service_booking_declined"
 	case "fulfilled":
 		return "service_booking_fulfilled"
-	case "cancelled", "refunded", "disputed":
+	case "cancelled", "refunded":
 		return "service_booking_cancelled"
+	case "disputed":
+		return "service_booking_disputed"
 	}
 
 	return ""
 }
 
-// bookingPayload extracts the booking_id (+ optional status/action/
-// payment_id) from a task payload. Permanent decode failures are
-// skipped, not retried.
-func bookingPayload(t *asynq.Task) (bookingID pgtype.UUID, status, action string, paymentID pgtype.UUID, err error) {
+// bookingTaskPayload is the decoded payload shared by the §111 booking
+// tasks. audience selects the notification target for status_changed:
+// "" → booker (default), "org" → org members (booker-raised disputes).
+type bookingTaskPayload struct {
+	BookingID pgtype.UUID
+	Status    string
+	Action    string
+	PaymentID pgtype.UUID
+	Audience  string
+}
+
+// bookingPayload extracts the booking fields from a task payload.
+// Permanent decode failures are skipped, not retried.
+func bookingPayload(t *asynq.Task) (bookingTaskPayload, error) {
 	var p struct {
 		BookingID string `json:"booking_id"`
 		Status    string `json:"status"`
 		Action    string `json:"action"`
 		PaymentID string `json:"payment_id"`
+		Audience  string `json:"audience"`
 	}
 	if err := json.Unmarshal(t.Payload(), &p); err != nil {
-		return pgtype.UUID{}, "", "", pgtype.UUID{}, fmt.Errorf("decode payload: %w", err)
+		return bookingTaskPayload{}, fmt.Errorf("decode payload: %w", err)
 	}
 	if p.BookingID == "" {
-		return pgtype.UUID{}, "", "", pgtype.UUID{}, errors.New("missing booking_id")
+		return bookingTaskPayload{}, errors.New("missing booking_id")
 	}
 
-	if err := bookingID.Scan(p.BookingID); err != nil {
-		return pgtype.UUID{}, "", "", pgtype.UUID{}, fmt.Errorf("invalid booking_id: %w", err)
+	out := bookingTaskPayload{Status: p.Status, Action: p.Action, Audience: p.Audience}
+	if err := out.BookingID.Scan(p.BookingID); err != nil {
+		return bookingTaskPayload{}, fmt.Errorf("invalid booking_id: %w", err)
 	}
 
 	if p.PaymentID != "" {
-		if err := paymentID.Scan(p.PaymentID); err != nil {
-			return pgtype.UUID{}, "", "", pgtype.UUID{}, fmt.Errorf("invalid payment_id: %w", err)
+		if err := out.PaymentID.Scan(p.PaymentID); err != nil {
+			return bookingTaskPayload{}, fmt.Errorf("invalid payment_id: %w", err)
 		}
 	}
 
-	return bookingID, p.Status, p.Action, paymentID, nil
+	return out, nil
 }
 
 // HandleServiceBookingCreated fans out a "new booking" notification to
@@ -101,11 +115,12 @@ func bookingPayload(t *asynq.Task) (bookingID pgtype.UUID, status, action string
 // bookings at creation time and for paid bookings only after the fee
 // payment succeeds — the enqueue sites enforce that ordering.
 func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
-	bookingID, _, _, paymentID, err := bookingPayload(t)
+	p, err := bookingPayload(t)
 	if err != nil {
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 
+	bookingID := p.BookingID
 	q := gen.New(dbPool.Writer)
 
 	bk, err := q.GetServiceBookingDetail(ctx, bookingID)
@@ -120,15 +135,23 @@ func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
 	// Backfill payment_id when the intent-time attach raced or failed —
 	// the org-inbox query joins payments on this FK, so a missing link
 	// hides a paid booking forever.
-	if paymentID.Valid && !bk.PaymentID.Valid {
+	if p.PaymentID.Valid && !bk.PaymentID.Valid {
 		if _, err := q.BackfillServiceBookingPayment(ctx, gen.BackfillServiceBookingPaymentParams{
-			ID: bookingID, PaymentID: paymentID,
+			ID: bookingID, PaymentID: p.PaymentID,
 		}); err != nil {
 			slog.Error("task:service:booking_created: payment backfill failed",
-				"booking_id", bookingID, "payment_id", paymentID, "error", err)
+				"booking_id", bookingID, "payment_id", p.PaymentID, "error", err)
 		} else {
-			bk.PaymentID = paymentID
+			bk.PaymentID = p.PaymentID
 		}
+	}
+
+	// The succeeded payment must be the booking's own linked payment —
+	// a success event naming this booking via purpose_id but carrying a
+	// different payment must not notify the org of a "paid" booking whose
+	// fee never actually landed.
+	if p.PaymentID.Valid && bk.PaymentID.Valid && bk.PaymentID != p.PaymentID {
+		return nil
 	}
 
 	switch bk.Status {
@@ -156,15 +179,23 @@ func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
 		return nil
 	}
 
+	actorType := "user"
+	title := fmt.Sprintf("New %s: %s", map[bool]string{true: "booking", false: "inquiry"}[bk.Intent == "booking"], bk.ListingTitle)
+	body := fmt.Sprintf("A %s was submitted for %s. Respond before the SLA expires.", bk.Intent, bk.ListingTitle)
+
+	return notifyOrgMembers(ctx, q, bk, "service_booking_new", &actorType, bk.BookerUserID, title, body)
+}
+
+// notifyOrgMembers fans out a notification to every member of the
+// booking's selling org. Used by booking_created (new booking) and the
+// status_changed audience=org path (booker-raised dispute).
+func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBookingDetailRow, ntype string, actorType *string, actorID pgtype.UUID, title, body string) error {
 	members, err := q.ListOrganizationMembers(ctx, bk.OrgID)
 	if err != nil {
 		return fmt.Errorf("list org members: %w", err)
 	}
 
-	actorType := "user"
 	subjectType := "service_booking"
-	title := fmt.Sprintf("New %s: %s", map[bool]string{true: "booking", false: "inquiry"}[bk.Intent == "booking"], bk.ListingTitle)
-	body := fmt.Sprintf("A %s was submitted for %s. Respond before the SLA expires.", bk.Intent, bk.ListingTitle)
 
 	orgRef := bk.OrgID.String()
 	if bk.OrgSlug != nil && *bk.OrgSlug != "" {
@@ -176,17 +207,17 @@ func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
 	for _, m := range members {
 		if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
 			RecipientID:      m.UserID,
-			NotificationType: "service_booking_new",
-			ActorType:        &actorType,
-			ActorID:          bk.BookerUserID,
+			NotificationType: ntype,
+			ActorType:        actorType,
+			ActorID:          actorID,
 			SubjectType:      &subjectType,
-			SubjectID:        bookingID,
+			SubjectID:        bk.ID,
 			Title:            title,
 			Body:             &body,
 			ActionUrl:        &actionURL,
 		}); err != nil {
-			slog.Error("task:service:booking_created: notify member failed",
-				"booking_id", bookingID, "member", m.UserID, "error", err)
+			slog.Error("servicedir worker: notify org member failed",
+				"booking_id", bk.ID, "type", ntype, "member", m.UserID, "error", err)
 		}
 	}
 
@@ -194,18 +225,16 @@ func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
 }
 
 // HandleServiceBookingStatusChanged notifies the booker of an org/admin
-// status transition (confirmed/declined/fulfilled/cancelled).
+// status transition (confirmed/declined/fulfilled/cancelled). Payload
+// audience="org" inverts the direction — the booker raised a dispute, so
+// org members get service_booking_disputed instead.
 func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error {
-	bookingID, status, _, _, err := bookingPayload(t)
+	p, err := bookingPayload(t)
 	if err != nil {
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 
-	ntype := bookingNotificationType(status)
-	if ntype == "" {
-		return fmt.Errorf("%w: unknown status %q", asynq.SkipRetry, status)
-	}
-
+	bookingID := p.BookingID
 	q := gen.New(dbPool.Writer)
 
 	bk, err := q.GetServiceBookingDetail(ctx, bookingID)
@@ -215,6 +244,28 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 		}
 
 		return fmt.Errorf("get booking: %w", err)
+	}
+
+	if p.Audience == "org" {
+		// Booker-raised dispute — org-facing notification. Guard on the
+		// row's actual state so a stale task can't misreport.
+		if bk.Status != "disputed" {
+			return nil
+		}
+
+		title := fmt.Sprintf("Dispute raised: %s", bk.ListingTitle)
+		body := fmt.Sprintf("The booker reported a problem with their %s on %s. An admin will review the dispute.", bk.Intent, bk.ListingTitle)
+		if bk.DisputeReason != nil && *bk.DisputeReason != "" {
+			body += " Reason: " + *bk.DisputeReason
+		}
+
+		return notifyOrgMembers(ctx, q, bk, "service_booking_disputed", strPtrWorker("user"), bk.BookerUserID, title, body)
+	}
+
+	status := p.Status
+	ntype := bookingNotificationType(status)
+	if ntype == "" {
+		return fmt.Errorf("%w: unknown status %q", asynq.SkipRetry, status)
 	}
 
 	// GDPR-erased booker — no notification target.
@@ -260,10 +311,13 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 // 'fulfilled'; 'retain' is a forfeited booker-cancel. Idempotent —
 // re-runs check the booking/payment state and no-op.
 func HandleServiceBookingFeeSettle(ctx context.Context, t *asynq.Task) error {
-	bookingID, _, action, _, err := bookingPayload(t)
+	p, err := bookingPayload(t)
 	if err != nil {
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
+
+	bookingID := p.BookingID
+	action := p.Action
 
 	q := gen.New(dbPool.Writer)
 
@@ -288,17 +342,16 @@ func HandleServiceBookingFeeSettle(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("%w: unknown fee action %q", asynq.SkipRetry, action)
 	}
 
-	// Idempotent: already-refunded bookings are terminal.
-	if bk.Status == "refunded" {
-		return nil
-	}
-
 	// Refunds only fire from refund-eligible statuses — a stale 'refund'
 	// task must not claw back the fee from a booking that has since been
 	// fulfilled, re-confirmed, or is still pending an org response
-	// (mirrors MarkServiceBookingRefunded's source-status guard).
+	// (mirrors MarkServiceBookingRefunded's source-status guard). The
+	// 'refunded' status is included: the admin path stamps it *before*
+	// this task runs, so the payment may still be 'succeeded' — the real
+	// idempotency signal is payment.Status below (a second run sees
+	// 'refunded' and no-ops).
 	switch bk.Status {
-	case "declined", "cancelled", "disputed":
+	case "declined", "cancelled", "disputed", "refunded":
 	default:
 		return nil
 	}

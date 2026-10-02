@@ -106,7 +106,8 @@ func (s *Service) PayWithCredit(
 	}
 
 	// Step 3: Mark the payment as succeeded — the debit committed successfully.
-	if _, err := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded); err != nil {
+	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded)
+	if err != nil {
 		// The debit succeeded but the status update failed. This is a
 		// recoverable state — the payment row exists with status="pending"
 		// and the ledger entry exists. A background reconciliation task
@@ -114,6 +115,8 @@ func (s *Service) PayWithCredit(
 		// success since the user's credits were correctly debited.
 		slog.Error("payments: failed to mark credit payment as succeeded",
 			"payment_id", payment.ID, "error", err)
+	} else {
+		s.enqueueServiceBookingCreated(succeeded)
 	}
 
 	return newBalance, nil

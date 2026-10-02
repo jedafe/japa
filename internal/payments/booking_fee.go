@@ -10,10 +10,15 @@ package payments
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // BookingFeeRefunder adapts *Service to the worker's
@@ -63,4 +68,28 @@ func (r *BookingFeeRefunder) RefundBookingFee(ctx context.Context, paymentID pgt
 	})
 
 	return err
+}
+
+// enqueueServiceBookingCreated fires service:booking_created for a
+// service_booking_fee payment that reached 'succeeded' synchronously —
+// credit-wallet debits and zero-amount (fully discounted / zero-fee)
+// payments never pass through a provider webhook, so the worker's
+// onPaymentSucceeded dispatch would never see them and the org would
+// never be notified. PurposeID carries the booking UUID. The task is
+// idempotent-keyed on (type, payload) so a later provider webhook for
+// the same payment dedupes.
+func (s *Service) enqueueServiceBookingCreated(p gen.Payment) {
+	if s == nil || s.enqueuer == nil ||
+		p.PurposeType != PurposeServiceBookingFee || !p.PurposeID.Valid {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"booking_id": p.PurposeID.String(),
+		"payment_id": p.ID.String(),
+	})
+	if err := s.enqueuer.Enqueue(worker.TypeServiceBookingCreated, payload); err != nil {
+		slog.Error("payments: enqueue booking_created for sync payment failed",
+			"payment_id", p.ID, "booking_id", p.PurposeID, "error", err)
+	}
 }

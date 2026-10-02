@@ -65,6 +65,7 @@ type BookingDTO struct {
 	FeeCurrency     string               `json:"fee_currency,omitempty"`
 	AgentBalanceDue *int64               `json:"agent_balance_due,omitempty"`
 	OrgResponseNote string               `json:"org_response_note,omitempty"`
+	DisputeReason   string               `json:"dispute_reason,omitempty"`
 	ExpiresAt       string               `json:"expires_at,omitempty"`
 	ConfirmedAt     string               `json:"confirmed_at,omitempty"`
 	FulfilledAt     string               `json:"fulfilled_at,omitempty"`
@@ -202,6 +203,10 @@ func bookingToDTO(r BookingRow) BookingDTO {
 		dto.OrgResponseNote = *r.OrgResponseNote
 	}
 
+	if r.DisputeReason != nil {
+		dto.DisputeReason = *r.DisputeReason
+	}
+
 	if r.CancelReason != nil {
 		dto.CancelReason = *r.CancelReason
 	}
@@ -242,6 +247,20 @@ func validatePreferredDates(d *PreferredDatesInput) error {
 	}
 
 	return nil
+}
+
+// validBookingProviders mirrors the §17 provider enum
+// (payments.IsValidProvider) so CreateBooking can reject an unknown
+// provider with a structured 400 before any row is written — servicedir
+// reaches payments only through the PaymentCreator seam, so the enum is
+// duplicated at the boundary. Keep in sync with validProviders in
+// internal/payments/payments.go.
+var validBookingProviders = map[string]bool{
+	"paystack":        true,
+	"stripe":          true,
+	"nowpayments":     true,
+	"manual_transfer": true,
+	"credit":          true,
 }
 
 // computeFee calculates the §111 platform fee for a package price (both
@@ -343,10 +362,24 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 		}
 	}
 
+	// §111 monetary snapshot for paid bookings — computed up front so the
+	// checkout-field checks below can skip a zero configured fee
+	// (fee_pct=0 / fee_fixed=0 means no charge and no checkout).
+	var total, fee int64
+	if intent == BookingIntentBooking {
+		if listing.PriceAmount == nil || listing.PriceCurrency == nil {
+			return BookingResult{}, ErrMissingPackagePrice
+		}
+
+		total = *listing.PriceAmount
+		fee = s.computeFee(ctx, total)
+	}
+
 	// Rule 9 — fee checkout is a financial transaction: Idempotency-Key is
 	// required when the resolved intent initiates a payment. Checked before
 	// the booking row exists so a rejected request writes nothing.
-	if intent == BookingIntentBooking && mw.IdempotencyKeyFromContext(ctx) == "" {
+	paidCheckout := intent == BookingIntentBooking && fee > 0
+	if paidCheckout && mw.IdempotencyKeyFromContext(ctx) == "" {
 		return BookingResult{}, ErrIdempotencyRequired
 	}
 
@@ -369,6 +402,11 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 		if dep.PackageMetaID != listing.MetaID || dep.Status != DepartureStatusOpen {
 			return BookingResult{}, ErrInvalidDeparture
 		}
+
+		// A departure that already started can't take new bookings.
+		if dep.StartsOn.Valid && dep.StartsOn.Time.Before(today) {
+			return BookingResult{}, ErrInvalidDeparture
+		}
 	}
 
 	var preferredDates []byte
@@ -385,8 +423,18 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 
 	// Checkout fields are validated before the booking row is written —
 	// a rejected paid booking must not leave an orphaned pending row.
-	if intent == BookingIntentBooking && (input.Provider == "" || input.Email == "") {
-		return BookingResult{}, ErrCheckoutFieldsRequired
+	if paidCheckout {
+		if input.Provider == "" || input.Email == "" {
+			return BookingResult{}, ErrCheckoutFieldsRequired
+		}
+
+		// The provider enum lives in §17 (internal/payments); mirrored here
+		// because servicedir is decoupled through the PaymentCreator seam —
+		// a bad provider would otherwise surface as a 500 after the row
+		// committed (and the compensating cancel).
+		if !validBookingProviders[input.Provider] {
+			return BookingResult{}, ErrInvalidProvider
+		}
 	}
 
 	params := gen.CreateServiceBookingParams{
@@ -409,12 +457,6 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 	// §111 monetary snapshot for paid bookings — values frozen at booking
 	// time so later price/fee-setting changes don't mutate open bookings.
 	if intent == BookingIntentBooking {
-		if listing.PriceAmount == nil || listing.PriceCurrency == nil {
-			return BookingResult{}, ErrMissingPackagePrice
-		}
-
-		total := *listing.PriceAmount
-		fee := s.computeFee(ctx, total)
 		balance := total - fee
 
 		params.TotalPrice = &total
@@ -430,7 +472,7 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 
 	result := BookingResult{Booking: bookingToDTO(bookingFromGen(booking))}
 
-	if intent == BookingIntentBooking {
+	if paidCheckout {
 		// Open the §17 fee checkout. The booking row stays 'pending' — the
 		// payment-success path (worker onPaymentSucceeded) attaches nothing
 		// further; the org-side visibility + notification gate on the
@@ -505,9 +547,10 @@ func (s *Service) GetBooking(ctx context.Context, bookingID, viewerID pgtype.UUI
 		}
 
 		// Org-side visibility gates paid bookings on money moved — same
-		// rule as the inbox query (succeeded|refunded). A pending/failed
-		// fee payment means the booking never landed in the org's queue.
-		if row.Intent == BookingIntentBooking && !paymentSettled(row.PaymentStatus) {
+		// rule as the inbox query (succeeded|refunded, or a zero fee).
+		// A pending/failed fee payment means the booking never landed
+		// in the org's queue.
+		if row.Intent == BookingIntentBooking && !feeSettled(row) {
 			return BookingDTO{}, pgx.ErrNoRows
 		}
 	}
@@ -650,7 +693,7 @@ func (s *Service) OrgTransition(ctx context.Context, orgID, bookingID, userID pg
 	// Paid bookings only become actionable once money moved — the inbox
 	// hides them before then, but a PATCH by ID would otherwise let the
 	// org confirm a booking whose fee was never captured.
-	if row.Intent == BookingIntentBooking && !paymentSettled(row.PaymentStatus) {
+	if row.Intent == BookingIntentBooking && !feeSettled(row) {
 		return BookingDTO{}, pgx.ErrNoRows
 	}
 
@@ -768,6 +811,50 @@ func (s *Service) CancelMyBooking(ctx context.Context, bookingID, userID pgtype.
 	return s.GetBooking(ctx, bookingID, userID, false)
 }
 
+// DisputeMyBooking lets the booker report a problem on a confirmed or
+// fulfilled booking (POST /me/service-bookings/:id/dispute). The reason
+// lands in dispute_reason and the row moves to 'disputed' — the admin
+// dispute queue owns resolution. Any held departure seat releases in the
+// same transaction; no fee action fires here (admin resolution decides
+// refund vs. uphold).
+func (s *Service) DisputeMyBooking(ctx context.Context, bookingID, userID pgtype.UUID, reason string) (BookingDTO, error) {
+	row, err := s.store.GetBookingDetail(ctx, bookingID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return BookingDTO{}, pgx.ErrNoRows
+		}
+
+		return BookingDTO{}, fmt.Errorf("servicedir: dispute: get booking: %w", err)
+	}
+
+	if row.BookerUserID != userID {
+		return BookingDTO{}, ErrNotOwner
+	}
+
+	var reasonPtr *string
+	if reason != "" {
+		reasonPtr = &reason
+	}
+
+	if _, err := s.store.DisputeBookingAndRelease(ctx, bookingID, row.DepartureID, row.PartySize, reasonPtr); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return BookingDTO{}, ErrInvalidBookingTransition
+		}
+
+		return BookingDTO{}, fmt.Errorf("servicedir: dispute booking: %w", err)
+	}
+
+	if row.DepartureID.Valid {
+		s.invalidatePackageCache(row.ListingContentID)
+	}
+
+	// Notify the org — the booker raised the dispute, so the alert is
+	// org-facing (audience=org → service_booking_disputed).
+	s.enqueueStatusChangedAudience(row.ID, BookingStatusDisputed, "org")
+
+	return s.GetBooking(ctx, bookingID, userID, false)
+}
+
 // AdminListBookings returns all bookings for the admin view.
 func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDStr string, page, limit int32) ([]BookingDTO, int64, error) {
 	if limit <= 0 {
@@ -824,21 +911,26 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 		note = &input.ResolutionNote
 	}
 
-	// Transitioning into 'confirmed' acquires departure seats — seats are
-	// counted iff status='confirmed' (released on the way out, above and
-	// in the org/booker paths). A bare status write would overbook, so
-	// route the transition through the capacity-guarded increment.
-	if input.Status == BookingStatusConfirmed &&
-		row.Status != BookingStatusConfirmed && row.DepartureID.Valid {
+	// §111 seat model: seats are held iff status ∈ {confirmed, fulfilled}
+	// (a fulfilled booking consumed its seat). Acquire on entering a
+	// seat-holding status, release on leaving one — always inside the
+	// same transaction as the status write.
+	holdsSeat := func(st string) bool {
+		return st == BookingStatusConfirmed || st == BookingStatusFulfilled
+	}
+	acquire := holdsSeat(input.Status) && !holdsSeat(row.Status)
+	release := !holdsSeat(input.Status) && holdsSeat(row.Status)
 
+	switch {
+	case acquire && row.DepartureID.Valid:
 		var cerr error
-		if row.Status == BookingStatusPending {
+		if input.Status == BookingStatusConfirmed && row.Status == BookingStatusPending {
 			// pending → confirmed: the standard atomic confirm path.
 			_, cerr = s.store.ConfirmBooking(ctx, bookingID, row.DepartureID, row.PartySize, note)
 		} else {
-			// e.g. disputed → confirmed: seats were released on the way
-			// into 'disputed', so re-acquire in one tx with the status.
-			_, cerr = s.store.AdminConfirmBooking(ctx, bookingID, row.DepartureID, row.PartySize, note)
+			// e.g. disputed → confirmed/fulfilled or pending → fulfilled:
+			// re-acquire seats in one tx with the status write.
+			_, cerr = s.store.AdminSetStatusAcquire(ctx, bookingID, row.DepartureID, row.PartySize, input.Status, note)
 		}
 
 		if cerr != nil {
@@ -857,20 +949,19 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 		s.enqueueStatusChanged(row.ID, input.Status)
 
 		return s.GetBooking(ctx, bookingID, pgtype.UUID{}, true)
-	}
+	default:
+		releaseDep := pgtype.UUID{}
+		if release {
+			releaseDep = row.DepartureID
+		}
 
-	// Leaving 'confirmed' frees departure seats in the same transaction.
-	releaseDep := pgtype.UUID{}
-	if row.Status == BookingStatusConfirmed && input.Status != BookingStatusConfirmed {
-		releaseDep = row.DepartureID
-	}
+		if _, err := s.store.AdminSetStatusAndRelease(ctx, bookingID, input.Status, note, releaseDep, row.PartySize); err != nil {
+			return BookingDTO{}, fmt.Errorf("servicedir: admin set status: %w", err)
+		}
 
-	if _, err := s.store.AdminSetStatusAndRelease(ctx, bookingID, input.Status, note, releaseDep, row.PartySize); err != nil {
-		return BookingDTO{}, fmt.Errorf("servicedir: admin set status: %w", err)
-	}
-
-	if releaseDep.Valid {
-		s.invalidatePackageCache(row.ListingContentID)
+		if releaseDep.Valid {
+			s.invalidatePackageCache(row.ListingContentID)
+		}
 	}
 
 	s.enqueueStatusChanged(row.ID, input.Status)
@@ -892,6 +983,18 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 // Both states justify org-side visibility as an audit record.
 func paymentSettled(status *string) bool {
 	return status != nil && (*status == "succeeded" || *status == "refunded")
+}
+
+// feeSettled is the org-visibility gate for paid bookings: money must
+// have moved (paymentSettled) — or the fee was configured at zero, in
+// which case no checkout exists and the booking lands in the inbox
+// directly (mirrors the inbox query's `sb.fee_amount = 0` arm).
+func feeSettled(row BookingRow) bool {
+	if row.FeeAmount != nil && *row.FeeAmount == 0 {
+		return true
+	}
+
+	return paymentSettled(row.PaymentStatus)
 }
 
 // departureFull reports whether the booking's departure rejected the
@@ -973,6 +1076,13 @@ func (s *Service) enqueueBookingCreated(bookingID pgtype.UUID) {
 }
 
 func (s *Service) enqueueStatusChanged(bookingID pgtype.UUID, status string) {
+	s.enqueueStatusChangedAudience(bookingID, status, "")
+}
+
+// enqueueStatusChangedAudience enqueues the status_changed task with an
+// audience hint — "org" notifies org members (booker-raised disputes);
+// empty notifies the booker (the default).
+func (s *Service) enqueueStatusChangedAudience(bookingID pgtype.UUID, status, audience string) {
 	if s.enqueuer == nil {
 		return
 	}
@@ -980,6 +1090,7 @@ func (s *Service) enqueueStatusChanged(bookingID pgtype.UUID, status string) {
 	payload, _ := json.Marshal(map[string]string{
 		"booking_id": bookingID.String(),
 		"status":     status,
+		"audience":   audience,
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeServiceBookingStatusChanged, payload); err != nil {
 		slog.Error("servicedir: enqueue status_changed failed", "booking_id", bookingID, "error", err)

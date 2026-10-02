@@ -556,7 +556,7 @@ LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
 -- already wiped by AnonymizeServiceBookings, and the user join just
 -- yields NULL names).
 WHERE sb.org_id = @org_id
-  AND (sb.intent = 'inquiry' OR p.status IN ('succeeded','refunded'))
+  AND (sb.intent = 'inquiry' OR sb.fee_amount = 0 OR p.status IN ('succeeded','refunded'))
   AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
   AND (sqlc.narg(listing_content_id)::uuid IS NULL OR sb.listing_meta_id =
@@ -568,7 +568,7 @@ LIMIT @page_limit OFFSET @page_offset;
 SELECT COUNT(*) FROM service_bookings sb
 LEFT JOIN payments p ON p.id = sb.payment_id
 WHERE sb.org_id = @org_id
-  AND (sb.intent = 'inquiry' OR p.status IN ('succeeded','refunded'))
+  AND (sb.intent = 'inquiry' OR sb.fee_amount = 0 OR p.status IN ('succeeded','refunded'))
   AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
   AND (sqlc.narg(listing_content_id)::uuid IS NULL OR sb.listing_meta_id =
@@ -654,11 +654,12 @@ SET status = 'cancelled',
 WHERE id = @id AND status IN ('pending','confirmed')
 RETURNING *;
 
--- booker or admin flags a booking as disputed.
+-- Booker flags a confirmed|fulfilled booking as disputed — the booker's
+-- reason lands in dispute_reason (org_response_note stays org/admin-only).
 -- name: DisputeServiceBooking :one
 UPDATE service_bookings
 SET status = 'disputed',
-    org_response_note = COALESCE(sqlc.narg(org_response_note), org_response_note),
+    dispute_reason = sqlc.narg(dispute_reason),
     updated_at = now()
 WHERE id = @id AND status IN ('confirmed','fulfilled')
 RETURNING *;
@@ -680,6 +681,23 @@ RETURNING *;
 UPDATE service_bookings
 SET status = 'refunded', updated_at = now()
 WHERE id = @id AND status IN ('declined','cancelled','disputed')
+RETURNING *;
+
+-- Row lock + lookup for the provider-initiated refund path (§17
+-- reversal arm for §111): a Stripe dashboard refund / chargeback webhook
+-- flips payments.status to 'refunded' out-of-band, and the booking must
+-- follow regardless of its current state.
+-- name: GetServiceBookingByPaymentForUpdate :one
+SELECT * FROM service_bookings
+WHERE payment_id = @payment_id
+FOR UPDATE;
+
+-- Provider-side refund: mark the booking refunded from any live status.
+-- (Terminal 'refunded' is excluded so re-delivered webhooks no-op.)
+-- name: MarkServiceBookingRefundedByProvider :one
+UPDATE service_bookings
+SET status = 'refunded', updated_at = now()
+WHERE id = @id AND status <> 'refunded'
 RETURNING *;
 
 -- SLA sweep source rows (service:booking_expire_pending).
@@ -722,6 +740,7 @@ UPDATE service_bookings
 SET booker_user_id = NULL,
     note = NULL,
     preferred_dates = NULL,
+    dispute_reason = NULL,
     anonymized_at = now(),
     updated_at = now()
 WHERE booker_user_id = @booker_user_id

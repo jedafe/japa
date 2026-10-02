@@ -32,8 +32,9 @@ type DismissTourRequest struct {
 
 // UpdateStepRequest is the JSON body for PUT /api/v1/onboarding/step.
 // When Skip is true, the backend auto-fulfills any step minimum (tags for
-// step 3, follows for step 4) using the ranked recommendation algorithm
-// per Section 09 skip semantics, rather than bypassing the requirement.
+// step 3, user follows for step 4, space follows for step 5) using the
+// ranked recommendation algorithm per Section 09 skip semantics, rather
+// than bypassing the requirement.
 type UpdateStepRequest struct {
 	Step     int             `json:"step"`
 	StepData json.RawMessage `json:"step_data"`

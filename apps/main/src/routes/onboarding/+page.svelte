@@ -3,13 +3,13 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { Check, ChevronRight, Sparkles, MapPin, Trophy, Heart, ShieldCheck, Plane, Globe, Landmark, Luggage, Lightbulb } from 'lucide-svelte';
+	import { Check, ChevronLeft, ChevronRight, Sparkles, MapPin, Trophy, Heart, ShieldCheck, Plane, Globe, Landmark, Luggage, Lightbulb } from 'lucide-svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { PageData } from './$types';
-	import type { GeoCity, GeoState, OnboardingRecommendation, TagSuggestion, AchievementMilestoneType } from '$lib/types';
+	import type { GeoCity, GeoState } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -23,7 +23,6 @@
 	const minTags = $derived(Number(data.siteSettings?.['onboarding.min_tags_follow'] ?? 3));
 	const minUsers = $derived(Number(data.siteSettings?.['onboarding.min_users_follow'] ?? 2));
 	const minSpaces = $derived(Number(data.siteSettings?.['onboarding.min_spaces_join'] ?? 2));
-	const minRecs = $derived(minSpaces + minUsers);
 
 	// Step 1: Core Identity — pre-fill location from GeoIP (ADR-037).
 	let name = $state('');
@@ -103,11 +102,17 @@
 	// Step 3: Interests/Tags
 	let selectedTags = $state<string[]>([]);
 
-	// Step 4: Recommended Spaces & Connections
-	let selectedRecs = $state<string[]>([]);
+	// Steps 4–6: per-type follow steps — users, spaces, sources (Section 09).
+	let selectedUsers = $state<string[]>([]);
+	let selectedSpaces = $state<string[]>([]);
+	let selectedSources = $state<string[]>([]);
 
-	// Section 09: per-step gating. Step 1 and 2 are mandatory; Step 3/4 must
-	// meet admin-configurable minimums; Step 5 is the terminal finish screen.
+	const userRecs = $derived(data.recommendations.filter((r) => r.type === 'user'));
+	const spaceRecs = $derived(data.recommendations.filter((r) => r.type === 'space'));
+
+	// Section 09: per-step gating. Steps 1 and 2 are mandatory; steps 3–5 must
+	// meet their admin-configurable minimums; step 6 (sources) has no minimum;
+	// step 7 is the terminal finish screen.
 	const canAdvance = $derived(
 		currentStep === 1
 			? name.trim() !== '' && japaStatus !== '' && currentLocation.trim() !== ''
@@ -116,17 +121,21 @@
 				: currentStep === 3
 					? selectedTags.length >= minTags
 					: currentStep === 4
-						? selectedRecs.length >= minRecs
-						: true
+						? selectedUsers.length >= minUsers
+						: currentStep === 5
+							? selectedSpaces.length >= minSpaces
+							: true
 	);
 
-	const totalSteps = 5;
+	const totalSteps = 7;
 	const stepLabels = $derived([
 		t('onboarding.step1', 'Welcome'),
 		t('onboarding.step2', 'Destination'),
 		t('onboarding.step3', 'Interests'),
-		t('onboarding.step4', 'Connect'),
-		t('onboarding.step5', 'Get Started')
+		t('onboarding.step4', 'People'),
+		t('onboarding.step5', 'Spaces'),
+		t('onboarding.step6', 'Sources'),
+		t('onboarding.step7', 'Get Started')
 	]);
 
 	function toggleTag(tagSlug: string) {
@@ -135,10 +144,8 @@
 			: [...selectedTags, tagSlug];
 	}
 
-	function toggleRec(id: string) {
-		selectedRecs = selectedRecs.includes(id)
-			? selectedRecs.filter((s) => s !== id)
-			: [...selectedRecs, id];
+	function toggleIn(list: string[], id: string): string[] {
+		return list.includes(id) ? list.filter((s) => s !== id) : [...list, id];
 	}
 
 	// Cascade: fetch states when country changes.
@@ -203,7 +210,11 @@
 			stepData.tags = selectedTags;
 			stepData.interests = selectedTags;
 		} else if (currentStep === 4) {
-			stepData.follows = selectedRecs;
+			stepData.follows = selectedUsers;
+		} else if (currentStep === 5) {
+			stepData.follows = selectedSpaces;
+		} else if (currentStep === 6) {
+			stepData.source_follows = selectedSources;
 		}
 
 		try {
@@ -253,8 +264,9 @@
 				}
 				currentStep++;
 			} else {
-				// Step 5 "skip" is the same as finishing: complete onboarding
-				// and redirect to the home feed with the product tour.
+				// Terminal-step "skip" is the same as finishing: complete
+				// onboarding and redirect to the home feed with the product
+				// tour.
 				await saveStep();
 			}
 		} catch {
@@ -263,7 +275,7 @@
 		saving = false;
 	}
 
-	// §89 Achievement Feed preview — milestone label helper for Step 5.
+	// §89 Achievement Feed preview — milestone label helper for the final step.
 	function milestoneLabel(m?: string) {
 		if (!m) return '';
 		return t(`achievements.type_${m}`, m.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
@@ -479,45 +491,107 @@
 				<p class="mt-4 text-xs text-[var(--color-muted)]">{t('onboarding.selected_count', '{n} selected').replace('{n}', String(selectedTags.length))}</p>
 			{/if}
 
-			<!-- Step 4: Recommended Spaces & Connections -->
+			<!-- Step 4: Recommended Users -->
 			{#if currentStep === 4}
-				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step4_title', 'Connect with your community')}</h1>
-				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step4_subtitle', 'Follow at least {n} spaces and people to start your journey.').replace('{n}', String(minRecs))}</p>
-				<div class="space-y-2">
-					{#each data.recommendations as rec (rec.id)}
+				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step4_title', 'People to follow')}</h1>
+				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step4_subtitle', 'Follow at least {n} people to start your journey.').replace('{n}', String(minUsers))}</p>
+				<div class="grid gap-3 sm:grid-cols-2">
+					{#each userRecs as rec (rec.id)}
 						<button
 							type="button"
-							onclick={() => toggleRec(rec.id)}
-							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-left transition-colors {selectedRecs.includes(rec.id)
+							onclick={() => (selectedUsers = toggleIn(selectedUsers, rec.id))}
+							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-left transition-colors {selectedUsers.includes(rec.id)
 								? 'border-[var(--color-primary)] bg-[var(--color-surface-subtle)]'
 								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
 						>
 							{#if rec.avatar_url}
 								<img src={rec.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
 							{:else}
-								<span class="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{rec.name.charAt(0)}</span>
+								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{rec.name.charAt(0)}</span>
 							{/if}
 							<span class="min-w-0 flex-1">
 								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{rec.name}</span>
-								<span class="block text-xs text-[var(--color-muted)]">{rec.type === 'space' ? t('onboarding.rec_space', 'Space') : t('onboarding.rec_user', 'User')} · {t('onboarding.reason_' + rec.reason, rec.reason.replace(/_/g, ' '))}</span>
+								<span class="block text-xs text-[var(--color-muted)]">{t('onboarding.reason_' + rec.reason, rec.reason.replace(/_/g, ' '))}</span>
 							</span>
-							{#if selectedRecs.includes(rec.id)}
-								<Check size={18} class="text-[var(--color-primary)]" />
+							{#if selectedUsers.includes(rec.id)}
+								<Check size={18} class="shrink-0 text-[var(--color-primary)]" />
 							{/if}
 						</button>
 					{/each}
 				</div>
-				<p class="mt-4 text-xs text-[var(--color-muted)]">{t('onboarding.selected_count', '{n} selected').replace('{n}', String(selectedRecs.length))}</p>
+				<p class="mt-4 text-xs text-[var(--color-muted)]">{t('onboarding.selected_count', '{n} selected').replace('{n}', String(selectedUsers.length))}</p>
 			{/if}
 
-			<!-- Step 5: First Action Nudge -->
+			<!-- Step 5: Recommended Spaces -->
 			{#if currentStep === 5}
+				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step5_title', 'Spaces to join')}</h1>
+				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step5_subtitle', 'Join at least {n} spaces to start your journey.').replace('{n}', String(minSpaces))}</p>
+				<div class="grid gap-3 sm:grid-cols-2">
+					{#each spaceRecs as rec (rec.id)}
+						<button
+							type="button"
+							onclick={() => (selectedSpaces = toggleIn(selectedSpaces, rec.id))}
+							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-left transition-colors {selectedSpaces.includes(rec.id)
+								? 'border-[var(--color-primary)] bg-[var(--color-surface-subtle)]'
+								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
+						>
+							{#if rec.avatar_url}
+								<img src={rec.avatar_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{rec.name.charAt(0)}</span>
+							{/if}
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{rec.name}</span>
+								<span class="block text-xs text-[var(--color-muted)]">{t('onboarding.reason_' + rec.reason, rec.reason.replace(/_/g, ' '))}</span>
+							</span>
+							{#if selectedSpaces.includes(rec.id)}
+								<Check size={18} class="shrink-0 text-[var(--color-primary)]" />
+							{/if}
+						</button>
+					{/each}
+				</div>
+				<p class="mt-4 text-xs text-[var(--color-muted)]">{t('onboarding.selected_count', '{n} selected').replace('{n}', String(selectedSpaces.length))}</p>
+			{/if}
+
+			<!-- Step 6: Sources (optional — no minimum) -->
+			{#if currentStep === 6}
+				<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step6_title', 'Sources to follow')}</h1>
+				<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step6_subtitle', 'Follow publications and channels to fill your feed. This step is optional.')}</p>
+				<div class="grid gap-3 sm:grid-cols-2">
+					{#each data.sources as source (source.id)}
+						<button
+							type="button"
+							onclick={() => (selectedSources = toggleIn(selectedSources, source.id))}
+							class="flex w-full items-center gap-3 rounded-[var(--radius)] border p-3 text-left transition-colors {selectedSources.includes(source.id)
+								? 'border-[var(--color-primary)] bg-[var(--color-surface-subtle)]'
+								: 'border-[var(--color-border)] hover:bg-[var(--color-surface-subtle)]'}"
+						>
+							{#if source.logo_url}
+								<img src={source.logo_url} alt="" class="h-10 w-10 rounded-full object-cover" />
+							{:else}
+								<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">{source.name.charAt(0)}</span>
+							{/if}
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-sm font-medium text-[var(--color-text)]">{source.name}</span>
+								<span class="block truncate text-xs text-[var(--color-muted)]">{source.domain}{source.category ? ' · ' + t('sources.category_' + source.category, source.category.replace(/_/g, ' ')) : ''}</span>
+							</span>
+							{#if selectedSources.includes(source.id)}
+								<Check size={18} class="shrink-0 text-[var(--color-primary)]" />
+							{/if}
+						</button>
+					{/each}
+				</div>
+				<p class="mt-4 text-xs text-[var(--color-muted)]">{t('onboarding.selected_count', '{n} selected').replace('{n}', String(selectedSources.length))}</p>
+			{/if}
+
+			<!-- Step 7: First Action Nudge -->
+			{#if currentStep === 7}
 				<div class="text-center">
 					<div class="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-[var(--color-primary)]">
 						<Check size={32} class="text-[var(--color-primary-contrast)]" />
 					</div>
-					<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step5_title', "You're all set!")}</h1>
-					<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step5_body', 'Your feed is ready. Explore stories, join discussions, and connect with the diaspora community.')}</p>
+					<h1 class="mb-2 text-2xl font-bold text-[var(--color-text)]">{t('onboarding.step7_title', "You're all set!")}</h1>
+					<p class="mb-6 text-sm text-[var(--color-text-subtle)]">{t('onboarding.step7_body', 'Your feed is ready. Explore stories, join discussions, and connect with the diaspora community.')}</p>
 				</div>
 
 				<!-- §89 Community Achievement Feed — social proof preview.
@@ -577,18 +651,31 @@
 
 			<!-- Actions -->
 			<div class="mt-8 flex items-center justify-between">
-				{#if currentStep === 5 || currentStep > 2}
-					<button
-						type="button"
-						onclick={skipStep}
-						disabled={saving}
-						class="text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:opacity-50"
-					>
-						{t('onboarding.skip', 'Skip')}
-					</button>
-				{:else}
-					<span></span>
-				{/if}
+				<div class="flex items-center gap-4">
+					{#if currentStep > 1}
+						<!-- Back is client-side only — earlier step_data is already
+						     persisted, and resubmitting a step merges/overwrites it. -->
+						<button
+							type="button"
+							onclick={() => { if (!saving && currentStep > 1) currentStep--; }}
+							disabled={saving}
+							class="flex items-center gap-1 text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:opacity-50"
+						>
+							<ChevronLeft size={16} />
+							{t('onboarding.back', 'Back')}
+						</button>
+					{/if}
+					{#if currentStep > 2}
+						<button
+							type="button"
+							onclick={skipStep}
+							disabled={saving}
+							class="text-sm text-[var(--color-muted)] transition-colors hover:text-[var(--color-text)] disabled:opacity-50"
+						>
+							{t('onboarding.skip', 'Skip')}
+						</button>
+					{/if}
+				</div>
 				<button
 					type="button"
 					onclick={saveStep}

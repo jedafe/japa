@@ -82,6 +82,10 @@ func (s *Service) CreatePayment(ctx context.Context, userID pgtype.UUID, input C
 			slog.Error("payments: failed to emit succeeded webhook for zero-amount payment", "payment_id", p.ID, "error", uErr)
 		}
 
+		// Zero-amount payments never traverse the provider webhook —
+		// dispatch §111 booking fan-out directly.
+		s.enqueueServiceBookingCreated(p)
+
 		return CreatePaymentResult{Payment: p}, nil
 	}
 
@@ -281,6 +285,9 @@ func (s *Service) payWithCreditInternal(ctx context.Context, userID pgtype.UUID,
 		slog.Error("payments: failed to mark credit payment as succeeded", "payment_id", payment.ID, "error", err)
 	} else {
 		s.emitPaymentStatusWebhook(ctx, succeeded)
+		// Credit debits settle synchronously — no provider webhook will
+		// arrive, so dispatch §111 booking fan-out directly.
+		s.enqueueServiceBookingCreated(succeeded)
 		return succeeded, nil
 	}
 

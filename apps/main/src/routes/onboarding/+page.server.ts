@@ -2,10 +2,12 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import type { OnboardingStatus, TagSuggestion, OnboardingRecommendation, GeoContext, GeoCountry, Achievement, OnboardingOptions } from '$lib/types';
+import type { Source } from '$lib/types/sources';
 
 /**
- * Onboarding wizard (Section 09). Five-step post-login flow that collects
- * core identity, destination, interests, and recommended connections.
+ * Onboarding wizard (Section 09). Seven-step post-login flow that collects
+ * core identity, destination, interests, recommended connections, and
+ * followed sources.
  * Redirects to / if already completed; to /login if unauthenticated.
  */
 export const load: PageServerLoad = async (event) => {
@@ -27,19 +29,32 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Preload tags for step 3 (interests) — Rule 16: from API, not hardcoded.
+	// NOTE: /suggestions/tags is intentionally NOT used here — it only
+	// returns tags attached to the caller's own published content, which is
+	// always empty for a new user. The public tag directory is the correct
+	// source for topic selection.
 	let tags: TagSuggestion[] = [];
 	try {
-		tags = (await apiList<TagSuggestion>(ctx, '/suggestions/tags?limit=30')).items;
+		tags = (await apiList<TagSuggestion>(ctx, '/tags?sort=popular&page_size=30')).items;
 	} catch {
 		tags = [];
 	}
 
-	// Preload recommendations for step 4 (spaces & connections).
+	// Preload recommendations for steps 4 (users) and 5 (spaces).
 	let recommendations: OnboardingRecommendation[] = [];
 	try {
 		recommendations = (await apiGet<OnboardingRecommendation[]>(ctx, '/onboarding/recommendations')) ?? [];
 	} catch {
 		recommendations = [];
+	}
+
+	// Preload popular sources for step 6 — the public directory, not the
+	// recommendation engine (Rule 16: from API, not hardcoded).
+	let sources: Source[] = [];
+	try {
+		sources = (await apiList<Source>(ctx, '/sources?sort=popular&page_size=12')).items;
+	} catch {
+		sources = [];
 	}
 
 	// Geo detection (ADR-037): pre-fill the Step 1 "Current location" field
@@ -70,7 +85,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// §89 Community Achievement Feed — preload latest achievements for the
-	// Step 5 social-proof preview. Best-effort: the feature may be disabled
+	// final-step social-proof preview. Best-effort: the feature may be disabled
 	// (returns 404), in which case the preview section is hidden.
 	let achievements: Achievement[] = [];
 	try {
@@ -84,6 +99,7 @@ export const load: PageServerLoad = async (event) => {
 		status,
 		tags,
 		recommendations,
+		sources,
 		geoContext,
 		countries,
 		onboardingOptions,

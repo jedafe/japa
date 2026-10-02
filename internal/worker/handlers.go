@@ -949,12 +949,58 @@ func reversePaymentSideEffects(ctx context.Context, p gen.Payment) error {
 				}
 			}
 		}
+	case "service_booking_fee":
+		// §111: a provider-initiated refund (dashboard refund/chargeback
+		// webhook) clawed the platform fee back out-of-band — flip the
+		// booking to 'refunded' and release any departure seat it held.
+		if p.PurposeID.Valid {
+			if err := refundServiceBookingByPayment(ctx, p.ID); err != nil {
+				return fmt.Errorf("refund service booking: %w", err)
+			}
+		}
 	// No reversal needed — pro membership refunds affect future
 	// renewal only; donations are non-reversible.
 	case "pro_membership", "donation":
 	}
 
 	return nil
+}
+
+// refundServiceBookingByPayment is the §17 reversal arm for §111 booking
+// fees: the booking attached to a provider-refunded payment flips to
+// 'refunded' and — if it was holding a departure seat (confirmed or
+// fulfilled) — the seat is released in the same transaction. Idempotent:
+// an already-refunded booking (e.g. the fee-settle task already ran for
+// an admin-initiated refund) is a no-op.
+func refundServiceBookingByPayment(ctx context.Context, paymentID pgtype.UUID) error {
+	return db.WithTx(ctx, dbPool.Writer, func(q *gen.Queries) error {
+		bk, err := q.GetServiceBookingByPaymentForUpdate(ctx, paymentID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil // unattached/orphaned payment — nothing to flip
+			}
+
+			return fmt.Errorf("get booking by payment: %w", err)
+		}
+
+		if bk.Status == "refunded" {
+			return nil
+		}
+
+		if _, err := q.MarkServiceBookingRefundedByProvider(ctx, bk.ID); err != nil {
+			return fmt.Errorf("mark booking refunded: %w", err)
+		}
+
+		if (bk.Status == "confirmed" || bk.Status == "fulfilled") && bk.DepartureID.Valid && bk.PartySize > 0 {
+			if _, err := q.DecrementDepartureBookedCount(ctx, gen.DecrementDepartureBookedCountParams{
+				ID: bk.DepartureID, PartySize: bk.PartySize,
+			}); err != nil {
+				return fmt.Errorf("release departure seats: %w", err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // HandleGdprRetentionSweep performs two sweeps:

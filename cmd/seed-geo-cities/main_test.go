@@ -30,6 +30,27 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
+func TestAsciiFoldNonDecomposing(t *testing.T) {
+	// Letters with no NFD decomposition must still fold to ASCII so GeoNames
+	// ASCII spellings match seeded names ("Balikesir" vs "Balıkesir").
+	cases := map[string]string{
+		"Balıkesir":  "balikesir",
+		"Đồng Nai":   "dong nai",
+		"Østfold":    "ostfold",
+		"Łódź":       "lodz",
+		"Kırklareli": "kirklareli",
+		"Şanlıurfa":  "sanliurfa",
+		"Diyarbakır": "diyarbakir",
+		"Međimurje":  "medimurje",
+		"İzmir":      "izmir",
+	}
+	for in, want := range cases {
+		if got := normName(in); got != want {
+			t.Errorf("normName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // fixture for a country whose seeded states use ISO-style geo_codes that
 // numerically collide with GeoNames admin1 codes (GeoNames PT.09 = Faro,
 // but the seeded state with geo_code '09' is Guarda).

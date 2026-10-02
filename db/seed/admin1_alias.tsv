@@ -1,7 +1,8 @@
 # Admin1 name overrides: GeoNames admin1 code -> seeded state space name.
 # Used when the GeoNames admin1 name differs from the seeded state name
-# (language variants, abbreviations). Loaded over admin1_codes.tsv, so the
-# GeoNames name never reaches name-matching for these codes.
+# (language variants, abbreviations, transliterations). Loaded over
+# admin1_codes.tsv, so the GeoNames name never reaches name-matching for
+# these codes.
 #
 # Format: <country ISO2>\t<geonames admin1 code>\t<seeded state name>
 #
@@ -38,3 +39,345 @@ ID	PD	Papua Barat Daya
 ID	PT	Papua Tengah
 ID	PE	Papua Pegunungan
 ID	PS	Papua Selatan
+#
+# Ukraine — seeded states use transliterated adjectival forms ("Donetska")
+# vs GeoNames "Donetsk". UA.13 pinned to Kyivska explicitly: its GeoNames
+# name "Kyiv Oblast" would otherwise token-match the 'Kyiv' city state.
+UA	01	Cherkaska
+UA	02	Chernihivska
+UA	03	Chernivetska
+UA	04	Dnipropetrovska
+UA	05	Donetska
+UA	06	Ivano-Frankivska
+UA	07	Kharkivska
+UA	08	Khersonska
+UA	09	Khmelnytska
+UA	10	Kirovohradska
+UA	11	Autonomous Republic of Crimea
+UA	12	Kyiv
+UA	13	Kyivska
+UA	14	Luhanska
+UA	15	Lvivska
+UA	16	Mykolaivska
+UA	17	Odeska
+UA	18	Poltavska
+UA	19	Rivnenska
+UA	20	Sevastopol
+UA	21	Sumska
+UA	22	Ternopilska
+UA	23	Vinnytska
+UA	24	Volynska
+UA	25	Zakarpatska
+UA	26	Zaporizka
+UA	27	Zhytomyrska
+#
+# Russia — GeoNames uses anglicised/transliterated names that differ from
+# seeded spellings.
+RU	01	Adygea
+RU	06	Arkhangelsk
+RU	11	Buryatia
+RU	12	Chechen
+RU	19	Ingushetia
+RU	22	Kabardino-Balkar
+RU	24	Kalmykia
+RU	27	Karachay-Cherkess
+RU	29	Kemerovo
+RU	31	Khakassia
+RU	32	Khanty-Mansi
+RU	42	Leningrad
+RU	45	Mari El
+RU	46	Mordovia
+RU	51	Nizhny Novgorod
+RU	52	Novgorod
+RU	59	Primorsky
+RU	66	Saint Petersburg
+RU	79	Tuva
+RU	80	Udmurt
+RU	93	Zabaykalsky
+#
+# Ethiopia — regional-state naming differs. (ET.55 Central Ethiopia and
+# ET.56 South Ethiopia are 2023-era regions with no seeded counterpart —
+# they stay country-parented.)
+ET	51	Oromia
+ET	47	Benishangul-Gumuz
+#
+# Mexico — GeoNames "Mexico" is the STATE (Estado de México), "Mexico City"
+# is Ciudad de México.
+MX	15	Estado de México
+MX	09	Ciudad de México
+#
+# Madagascar — seeded states are the six former provinces; GeoNames admin1
+# uses the 23 regions. Regions map cleanly into their containing province.
+MG	11	Antananarivo
+MG	12	Antananarivo
+MG	13	Antananarivo
+MG	14	Antananarivo
+MG	21	Fianarantsoa
+MG	22	Fianarantsoa
+MG	24	Fianarantsoa
+MG	26	Fianarantsoa
+MG	27	Fianarantsoa
+MG	25	Fianarantsoa
+MG	52	Toliara
+MG	53	Toliara
+MG	54	Toliara
+MG	51	Toliara
+MG	71	Antsiranana
+MG	72	Antsiranana
+MG	42	Mahajanga
+MG	41	Mahajanga
+MG	43	Mahajanga
+MG	44	Mahajanga
+MG	31	Toamasina
+MG	32	Toamasina
+MG	33	Toamasina
+#
+# France — GeoNames uses anglicised region names.
+FR	75	Nouvelle-Aquitaine
+FR	28	Normandie
+FR	53	Bretagne
+FR	94	Corse
+#
+# Czechia — GeoNames regions vs seeded kraj names.
+CZ	52	Praha, Hlavní město
+CZ	88	Středočeský kraj
+CZ	79	Jihočeský kraj
+CZ	87	Plzeňský kraj
+CZ	81	Karlovarský kraj
+CZ	78	Jihomoravský kraj
+CZ	85	Moravskoslezský kraj
+#
+# South Korea — GeoNames "-do" suffixed Korean names vs seeded English.
+KR	16	South Jeolla
+KR	03	North Jeolla
+KR	14	North Gyeongsang
+KR	20	South Gyeongsang
+KR	17	South Chungcheong
+#
+# Taiwan — GeoNames "Takao" is the historic name for Kaohsiung.
+TW	02	Kaohsiung
+#
+# Colombia — "Department" suffix collisions with a same-rooted sibling
+# (e.g. 'Cauca' state vs 'Valle del Cauca').
+CO	29	Valle del Cauca
+CO	26	Santander
+CO	09	Cauca
+CO	21	Norte de Santander
+#
+# Sweden — GeoNames uses ae/oe digraph transliterations for å/ä/ö.
+SE	28	Västra Götaland
+SE	08	Jönköping
+SE	03	Gävleborg
+SE	16	Östergötland
+SE	18	Södermanland
+SE	15	Örebro
+SE	24	Västernorrland
+SE	22	Värmland
+SE	25	Västmanland
+SE	23	Västerbotten
+SE	07	Jämtland
+#
+# Poland — GeoNames voivodeship names vs seeded English forms
+# ("Upper Silesia" is the seeded name for Opolskie).
+PL	74	Łódź
+PL	73	Kuyavia-Pomerania
+PL	81	Podlaskie
+PL	79	Upper Silesia
+PL	84	Holy Cross
+#
+# Denmark / Germany / Brazil — name-form variants.
+DK	18	Central Denmark
+DE	08	Rhineland-Palatinate
+BR	07	Distrito Federal
+#
+# Libya — transliteration variants.
+LY	68	Zawiya
+LY	81	Jafara
+LY	82	Murqub
+LY	72	Misrata
+LY	84	Wadi al Hayaa
+LY	65	Kufra
+LY	76	Sirte
+LY	69	Benghazi
+LY	70	Derna
+LY	78	Wadi al Shatii
+LY	64	Jufra
+#
+# Azerbaijan — transliteration variants.
+AZ	09	Baku
+AZ	01	Absheron
+AZ	45	Saatly
+AZ	22	Goychay
+AZ	68	Yevlakh
+AZ	50	Shamakhi
+AZ	36	Neftchala
+AZ	12	Beylagan
+AZ	60	Khachmaz
+AZ	33	Mingachevir
+AZ	59	Ujar
+AZ	04	Agdash
+AZ	40	Qazakh
+AZ	25	Ismailli
+AZ	24	Imishli
+AZ	23	Hajigabul
+#
+# Sri Lanka — GeoNames "... Province" names are ambiguous token subsets of
+# the seeded short names ("Western" ⊆ "North Western" etc.) — pin exactly.
+LK	36	Western
+LK	29	Central
+LK	32	North Western
+LK	30	North Central
+#
+# Spain / Iraq / Peru / DRC / Finland / Saudi Arabia / Qatar / Belarus —
+# name-form variants.
+ES	54	Castilla-La Mancha
+ES	57	Estremadura
+IQ	08	Dohuk
+IQ	18	Saladin
+IQ	06	Babylon
+IQ	04	Al-Qādisiyyah
+PE	15	Lima
+PE	08	Cusco
+CD	11	Nord-Kivu
+CD	12	Sud-Kivu
+CD	08	Kongo Central
+FI	02	Finland Proper
+FI	07	Päijänne Tavastia
+FI	05	Tavastia Proper
+FI	11	Northern Savonia
+FI	10	Southern Savonia
+SA	14	Makkah
+SA	17	Jizan
+SA	05	Al Madinah
+QA	01	Doha
+QA	06	Al Rayyan
+BY	03	Grodno
+BY	02	Gomel
+#
+# Italy / Kazakhstan / Malaysia / Bosnia / Egypt / Iran / Gambia.
+IT	10	Marche
+IT	02	Basilicata
+KZ	17	Jambyl
+KZ	03	Akmola
+KZ	12510144	Jetisu
+MY	04	Malacca
+BA	01	Federation of Bosnia and Herzegovina
+EG	18	Beni Suef
+EG	22	Matrouh
+IR	01	West Azarbaijan
+GM	05	West Coast
+#
+# North Macedonia — GeoNames municipality codes vs seeded spellings.
+MK	98	Štip
+MK	84	Radoviš
+MK	46	Kočani
+MK	43	Kičevo
+MK	22	Delčevo
+MK	A2	Studeničani
+MK	B7	Vrapčište
+MK	C3	Želino
+#
+# Mongolia — transliteration variants.
+MN	15	Övörkhangai
+MN	17	Sükhbaatar
+MN	12	Khovd
+MN	09	Zavkhan
+MN	23	Darkhan-Uul
+MN	11	Khentii
+MN	14	Ömnögovi
+MN	03	Bayan-Ölgii
+MN	25	Orkhon
+MN	13	Khövsgöl
+MN	18	Töv
+MN	06	Dornod
+MN	07	Dornogovi
+#
+# Sudan / Somalia / Mauritania / Yemen / Algeria / Guatemala / Cameroon /
+# Laos / Kosovo / Afghanistan — name-form variants.
+SD	49	South Darfur
+SD	50	South Kordofan
+SD	47	West Darfur
+SD	60	East Darfur
+SO	14	Lower Shebelle
+SO	18	Nugal
+SO	07	Hiran
+SO	13	Middle Shebelle
+MR	01	Hodh Ech Chargui
+MR	13	Nouakchott-Ouest
+MR	14	Nouakchott-Nord
+YE	16	Sana'a
+YE	04	Hadhramaut
+YE	15	Saada
+YE	19	Amran
+YE	02	Adan
+DZ	55	Tipasa
+DZ	53	Tamanghasset
+GT	20	Suchitepéquez
+CM	10	Adamawa
+LA	03	Houaphanh
+LA	16	Luang Namtha
+LA	14	Xiangkhouang
+LA	07	Oudomxay
+LA	26	Sekong
+XK	10096859	Gjakove
+XK	10097359	Peja
+AF	19	Nimruz
+AF	37	Khost
+AF	09	Ghōr
+#
+# Estonia — GeoNames "-maa" county names vs seeded short forms.
+EE	01	Harju
+EE	03	Ida-Viru
+EE	20	Viljandi
+EE	11	Pärnu
+#
+# Miscellaneous single-code countries.
+JO	12	Tafilah
+KW	09	Mubarak Al-Kabeer
+LB	08	Beqaa
+MT	52	St. Paul's Bay
+PR	097	Mayagüez
+PT	23	Açores
+SY	04	Al-Raqqah
+TD	12	Ouaddaï
+TD	22	Bahr el Gazel
+KH	27	Oddar Meanchey
+KH	28	Sihanoukville
+MM	18	Naypyidaw
+NZ	F3	Manawatu-Whanganui
+PA	13	Panamá Oeste
+HR	18	Vukovar-Syrmia
+HR	09	Međimurje
+TR	43	Kütahya
+TR	12	Bingöl
+TR	89	Karabük
+TR	69	Gümüşhane
+SL	04	Western
+SL	05	North Western
+SS	09	Western Bahr el Ghazal
+SS	05	Northern Bahr el Ghazal
+VE	26	La Guaira
+AR	07	Autonomous City of Buenos Aires
+KP	11	North Pyongan
+KP	13	Ryanggang
+KP	14	Nampho
+HU	20	Jász-Nagykun-Szolnok County
+HU	09	Győr-Moson-Sopron County
+VN	14	Sơn La
+VN	20	Lạng Sơn
+VN	11	Điện Biên
+PG	20	Port Moresby
+PG	16	Western Highlands
+PG	06	Western
+BG	42	Sofia City
+GA	04	Ngounié
+CY	01	Famagusta (Mağusa)
+BH	16	Capital
+OM	12	Ash Sharqiyah North
+OM	04	Ash Sharqiyah South
+AO	06	Cuanza
+BW	10	Southern
+CL	02	Aisén del General Carlos Ibañez del Campo
+IS	40	Northeastern
+TJ	RR	Nohiyahoi Tobei Jumhurí
+PF	01	Windward Islands

@@ -8,7 +8,7 @@
 	import { t } from '$lib/i18n';
 
 	const SNOOZE_KEY = 'jc:onboarding_banner_snoozed';
-	const TOTAL_STEPS = 5; // mirrors internal/onboarding/service.go totalSteps
+	const TOTAL_STEPS = 7; // mirrors internal/onboarding/service.go totalSteps
 
 	let snoozed = $state(browser && sessionStorage.getItem(SNOOZE_KEY) === '1');
 
