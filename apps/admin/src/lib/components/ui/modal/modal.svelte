@@ -40,14 +40,14 @@
     <Dialog.Overlay class="fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
     <Dialog.Content
       class={clsx(
-        "fixed left-[50%] top-[50%] z-50 grid w-full translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] sm:rounded-xl",
+        "fixed left-[50%] top-[50%] z-50 flex max-h-[85dvh] w-full translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden border p-6 shadow-xl duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] sm:rounded-xl",
         sizes[size],
         className
       )}
       style="border-color: var(--color-border); background-color: var(--color-surface)"
     >
       {#if title || description}
-        <div class="flex flex-col space-y-1.5 text-center sm:text-left">
+        <div class="flex shrink-0 flex-col space-y-1.5 text-center sm:text-left">
           {#if title}
             <Dialog.Title class="text-lg font-semibold leading-none tracking-tight" style="color: var(--color-foreground)">
               {title}
@@ -61,7 +61,9 @@
         </div>
       {/if}
       
-      {@render children?.()}
+      <div class="min-h-0 overflow-y-auto overscroll-contain">
+        {@render children?.()}
+      </div>
       
       <Dialog.Close
         class="absolute right-4 top-4 rounded-lg p-1 opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none"

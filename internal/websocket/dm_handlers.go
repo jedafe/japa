@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -69,7 +70,73 @@ func requireUserFromContext(r *http.Request) (*auth.AuthenticatedUser, bool) {
 	return user, true
 }
 
+// dmSortWhitelist is the set of accepted ?sort= values for DM list endpoints.
+var dmSortWhitelist = map[string]bool{
+	"recent": true,
+	"oldest": true,
+	"unread": true,
+	"name":   true,
+}
+
+// dmRequestSortWhitelist is the set of accepted ?sort= values for GET /dm/requests.
+var dmRequestSortWhitelist = map[string]bool{
+	"recent": true,
+	"oldest": true,
+	"name":   true,
+}
+
+// parseDMQuery extracts the optional q/filter/sort query params accepted by
+// GET /dm/conversations. Unknown sort/filter values are dropped rather than
+// erroring — the list still returns its canonical order.
+func parseDMQuery(r *http.Request) (q, filter, sort string) {
+	q = strings.TrimSpace(r.URL.Query().Get("q"))
+	filter = strings.TrimSpace(r.URL.Query().Get("filter"))
+	if filter != "unread" {
+		filter = ""
+	}
+	sort = strings.TrimSpace(r.URL.Query().Get("sort"))
+	if !dmSortWhitelist[sort] {
+		sort = ""
+	}
+	return q, filter, sort
+}
+
+// parseDMCursor decodes the ?cursor= keyset param (Section 48). A malformed
+// cursor is treated as absent — it is opaque client state, not user input
+// worth a 400.
+func parseDMCursor(r *http.Request) *dmCursor {
+	return decodeDMCursor(r.URL.Query().Get("cursor"))
+}
+
+// nextCursorJSON renders an empty next_cursor as JSON null so clients can
+// distinguish "no further page" from an opaque resume token.
+func nextCursorJSON(next string) any {
+	if next == "" {
+		return nil
+	}
+	return next
+}
+
+// handleMessageRequestError maps HandleMessageRequest sentinel errors to the
+// correct HTTP status instead of a blanket 500 (Rule 5).
+func handleMessageRequestError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrDMRequestNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "request_not_found", "Message request not found")
+	case errors.Is(err, ErrDMRequestNotRecipient):
+		errpkg.WriteError(w, http.StatusForbidden, "not_recipient", "Only the recipient can act on this request")
+	case errors.Is(err, ErrDMRequestAlreadyResolved):
+		errpkg.WriteError(w, http.StatusConflict, "request_resolved", "Message request is no longer pending")
+	default:
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update message request")
+	}
+}
+
 // ListConversations handles GET /api/v1/dm/conversations.
+// Query params: q (search), filter ('unread'), sort
+// ('recent'|'oldest'|'unread'|'name'), page_size, cursor (keyset; when
+// absent, page_offset applies for legacy callers). Response includes
+// next_cursor and has_more per Section 48.
 func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -79,8 +146,10 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+	q, filter, sort := parseDMQuery(r)
+	cursor := parseDMCursor(r)
 
-	conversations, err := h.dmService.GetConversations(r.Context(), user.UserID, limit, offset)
+	conversations, nextCursor, err := h.dmService.GetConversations(r.Context(), user.UserID, q, filter, sort, limit, offset, cursor)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get conversations")
 		return
@@ -88,7 +157,11 @@ func (h *Handlers) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &conversations)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conversations})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":        conversations,
+		"next_cursor": nextCursorJSON(nextCursor),
+		"has_more":    nextCursor != "",
+	})
 }
 
 // InitiateConversation handles POST /api/v1/dm/conversations.
@@ -141,6 +214,9 @@ func (h *Handlers) InitiateConversation(w http.ResponseWriter, r *http.Request) 
 		case errors.Is(err, ErrDMNotMutualFollower):
 			errpkg.WriteError(w, http.StatusForbidden, "dm_not_mutual_follower", "Recipient only accepts DMs from mutual followers")
 			return
+		case errors.Is(err, ErrDMSelfConversation):
+			errpkg.WriteError(w, http.StatusBadRequest, "self_conversation", "Cannot start a conversation with yourself")
+			return
 		}
 
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to initiate conversation")
@@ -182,8 +258,9 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+	cursor := parseDMCursor(r)
 
-	messages, err := h.dmService.GetMessages(r.Context(), conversationID, user.UserID, limit, offset)
+	messages, nextCursor, err := h.dmService.GetMessages(r.Context(), conversationID, user.UserID, limit, offset, cursor)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to get messages")
 		return
@@ -191,7 +268,11 @@ func (h *Handlers) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &messages)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": messages})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":        messages,
+		"next_cursor": nextCursorJSON(nextCursor),
+		"has_more":    nextCursor != "",
+	})
 }
 
 // SendMessage handles POST /api/v1/dm/conversations/{id}/messages.
@@ -292,21 +373,25 @@ func (h *Handlers) AcceptMessageRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	conversationIDStr := chi.URLParam(r, "id")
+	requestIDStr := chi.URLParam(r, "id")
 
-	var conversationID pgtype.UUID
+	var requestID pgtype.UUID
 
-	if err := conversationID.Scan(conversationIDStr); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+	if err := requestID.Scan(requestIDStr); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request_id", "Invalid request ID format")
 		return
 	}
 
-	if err := h.dmService.HandleMessageRequest(r.Context(), conversationID, user.UserID, MessageRequestAccepted); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to accept message request")
+	conversationID, err := h.dmService.HandleMessageRequest(r.Context(), requestID, user.UserID, MessageRequestAccepted)
+	if err != nil {
+		handleMessageRequestError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "ok"}})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{
+		"status":          "ok",
+		"conversation_id": conversationID,
+	}})
 }
 
 // DeclineMessageRequest handles POST /api/v1/dm/requests/{id}/decline.
@@ -317,17 +402,17 @@ func (h *Handlers) DeclineMessageRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	conversationIDStr := chi.URLParam(r, "id")
+	requestIDStr := chi.URLParam(r, "id")
 
-	var conversationID pgtype.UUID
+	var requestID pgtype.UUID
 
-	if err := conversationID.Scan(conversationIDStr); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+	if err := requestID.Scan(requestIDStr); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request_id", "Invalid request ID format")
 		return
 	}
 
-	if err := h.dmService.HandleMessageRequest(r.Context(), conversationID, user.UserID, MessageRequestDeclined); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decline message request")
+	if _, err := h.dmService.HandleMessageRequest(r.Context(), requestID, user.UserID, MessageRequestDeclined); err != nil {
+		handleMessageRequestError(w, err)
 		return
 	}
 
@@ -342,17 +427,17 @@ func (h *Handlers) BlockMessageRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conversationIDStr := chi.URLParam(r, "id")
+	requestIDStr := chi.URLParam(r, "id")
 
-	var conversationID pgtype.UUID
+	var requestID pgtype.UUID
 
-	if err := conversationID.Scan(conversationIDStr); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_conversation_id", "Invalid conversation ID format")
+	if err := requestID.Scan(requestIDStr); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request_id", "Invalid request ID format")
 		return
 	}
 
-	if err := h.dmService.HandleMessageRequest(r.Context(), conversationID, user.UserID, MessageRequestBlocked); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to block message request")
+	if _, err := h.dmService.HandleMessageRequest(r.Context(), requestID, user.UserID, MessageRequestBlocked); err != nil {
+		handleMessageRequestError(w, err)
 		return
 	}
 
@@ -503,6 +588,9 @@ func (h *Handlers) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 // ListMessageRequests handles GET /dm/requests (P5.6).
 // Lists pending DM requests for the current user, filtering by recipient_id
 // and status = 'pending' so only actionable requests are returned (BUG-003).
+// Query params: q (search), sort ('recent'|'oldest'|'name'),
+// page_size, cursor (keyset; when absent, page_offset applies for legacy
+// callers). Response includes next_cursor and has_more.
 func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUserFromContext(r)
 	if !ok {
@@ -512,8 +600,15 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 
 	limit := parsePageSize(r)
 	offset := parsePageOffset(r)
+	cursor := parseDMCursor(r)
 
-	requests, err := h.dmService.GetPendingMessageRequests(r.Context(), user.UserID, limit, offset)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	if !dmRequestSortWhitelist[sort] {
+		sort = ""
+	}
+
+	requests, nextCursor, err := h.dmService.GetPendingMessageRequests(r.Context(), user.UserID, q, sort, limit, offset, cursor)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list message requests")
 		return
@@ -521,5 +616,9 @@ func (h *Handlers) ListMessageRequests(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &requests)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": requests})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":        requests,
+		"next_cursor": nextCursorJSON(nextCursor),
+		"has_more":    nextCursor != "",
+	})
 }

@@ -14,6 +14,10 @@
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { untrack } from 'svelte';
 	import SearchAutocomplete from './SearchAutocomplete.svelte';
+	// Self-import enables configured_widget delegation: a sidebar-typed
+	// widget_configuration re-renders this component with its native
+	// widget_type and the echoed config as props.
+	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import NotificationCentre from './NotificationCentre.svelte';
 	import { AdSlot } from '$lib/components/ui';
@@ -196,6 +200,117 @@
 	// --- Learning widgets state ---
 	let featuredTrack = $state<CatalogTrack | null>(null);
 	let featuredTrackLoading = $state(false);
+
+	// --- configured_widget: Section 59 bridge to Section 16 ---
+	// Embeds a widget_configurations row by ID — fetches the public
+	// GET /widgets/{id} render endpoint (Valkey-cached server-side per the
+	// widget's cache_ttl_secs). `data` is an items array for data-source
+	// widgets and {html} for custom_html.
+	interface RenderedWidgetPayload {
+		widget_id: string;
+		widget_type: string;
+		card_type?: string;
+		data: unknown;
+	}
+	let configuredWidget = $state<RenderedWidgetPayload | null>(null);
+
+	// Sidebar-native types a configured_widget can delegate to — every
+	// registry type except configured_widget itself (a configuration cannot
+	// self-nest; the backend rejects creating one anyway). When the resolved
+	// widget_type is in this set AND the render data is a config echo (a
+	// non-array object), this component re-renders itself with props=data so
+	// the type's native UI — including its own fetches — runs unchanged.
+	const SIDEBAR_NATIVE_TYPES = new Set([
+		'search', 'search_launcher', 'theme_toggle', 'language_toggle',
+		'user_dropdown', 'notification_centre', 'trending_tags',
+		'suggested_spaces', 'suggested_content', 'ad_slot', 'rich_text',
+		'custom_html', 'recent_content', 'space_list', 'continue_learning',
+		'learning_enrollments', 'progress_ring', 'track_card',
+		'related_discussions', 'leaderboard', 'helpful_widget', 'tag_cloud',
+		'metric_card', 'featured_content', 'bookmark_folders',
+		'upcoming_events', 'user_card', 'space_categories',
+		'newsletter_signup', 'social_links', 'cta_button'
+	]);
+
+	// delegatedProps returns the echoed config normalized for the target
+	// sidebar type, or null when the referenced widget is a Section 16
+	// data-source type (array data → rendered as the compact item list).
+	const delegatedProps = $derived.by((): Record<string, unknown> | null => {
+		const wt = configuredWidget?.widget_type;
+		if (!wt || !SIDEBAR_NATIVE_TYPES.has(wt)) return null;
+		const d = configuredWidget?.data;
+		if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
+		const obj = d as Record<string, unknown>;
+		// Section 16 newsletter_signup uses heading/subtext config keys; the
+		// sidebar variant's props are title/description.
+		if (wt === 'newsletter_signup') {
+			return {
+				...obj,
+				title: obj.title ?? obj.heading,
+				description: obj.description ?? obj.subtext
+			};
+		}
+		// social_links stores [{platform,url}] — the /widgets config form
+		// edits it as a JSON textarea, so tolerate a JSON string here.
+		if (wt === 'social_links' && typeof obj.links === 'string') {
+			try {
+				return { ...obj, links: JSON.parse(obj.links) };
+			} catch {
+				return obj;
+			}
+		}
+		return obj;
+	});
+
+	const configuredItems = $derived.by((): Record<string, unknown>[] => {
+		const d = configuredWidget?.data;
+		if (Array.isArray(d)) return d as Record<string, unknown>[];
+		if (d && typeof d === 'object' && Array.isArray((d as Record<string, unknown>).items)) {
+			return (d as Record<string, unknown>).items as Record<string, unknown>[];
+		}
+		return [];
+	});
+	const configuredHtml = $derived(
+		configuredWidget?.data && typeof configuredWidget.data === 'object' && !Array.isArray(configuredWidget.data)
+			? (((configuredWidget.data as Record<string, unknown>).html as string | undefined) ?? '')
+			: ''
+	);
+
+	// Deep-link resolution for rendered widget items — mirrors the page
+	// builder's WidgetBlock.itemHref: content_type wins for mixed-content
+	// widgets, otherwise the resolved widget_type picks the route.
+	function configuredItemHref(item: Record<string, unknown>): string {
+		const slug = item.slug as string | undefined;
+		const id = item.id as string | undefined;
+		const username = item.username as string | undefined;
+		const ct = item.content_type as string | undefined;
+		if (ct) {
+			switch (ct) {
+				case 'blog_post': return slug ? `/blog/${slug}` : '#';
+				case 'discussion': return slug ? `/forum/${slug}` : '#';
+				case 'comparison': return slug ? `/compare/${slug}` : '#';
+				case 'guide': return slug ? `/content/${slug}` : '#';
+				default: return slug ? `/content/${slug}` : '#';
+			}
+		}
+		switch (configuredWidget?.widget_type) {
+			case 'blog_posts': return slug ? `/blog/${slug}` : '#';
+			case 'forum_threads': return slug ? `/forum/${slug}` : '#';
+			case 'job_listings': return slug ? `/jobs/${slug}` : '#';
+			case 'achievements': return slug ? `/achievements/${slug}` : '#';
+			case 'learning_tracks': return slug ? safeLearnUrl(`/tracks/${encodeURIComponent(slug)}`) || '#' : '#';
+			case 'featured_spaces': return slug ? `/spaces/${slug}` : '#';
+			case 'professional_profiles': return slug ? `/profiles/${slug}` : '#';
+			case 'community_organisations': return slug ? `/org/${slug}` : '#';
+			case 'trending_tags': return slug ? `/tags/${slug}` : '#';
+			case 'upcoming_events': return id ? `/calendar/${id}` : '#';
+			case 'user_leaderboard': return username ? `/u/${username}` : '#';
+			case 'mentor_spotlight': return username ? `/mentors/${username}` : '#';
+			case 'community_digest': return id ? `/digest/${id}` : '#';
+			case 'space_members': return username ? `/u/${username}` : '#';
+			default: return slug ? `/content/${slug}` : '#';
+		}
+	}
 
 	// --- Context widgets (user_card, related_discussions on /org/* and /u/* pages) ---
 	interface UserCardData { id: string; username: string; display_name?: string; avatar_url?: string; bio?: string; }
@@ -570,6 +685,20 @@
 			spaceTypes = res.data ?? [];
 			dataLoaded = { ...dataLoaded, space_categories: true };
 		}
+		// fetchConfiguredWidget resolves the Section 16 widget referenced by
+		// props.widget_id via the public render endpoint. An empty widget_id
+		// means the admin hasn't picked one — mark loaded and render nothing.
+		async function fetchConfiguredWidget() {
+			const widgetId = typeof widgetProps.widget_id === 'string' ? widgetProps.widget_id.trim() : '';
+			if (!widgetId) {
+				configuredWidget = null;
+				dataLoaded = { ...dataLoaded, configured_widget: true };
+				return;
+			}
+			const res = await api.get<RenderedWidgetPayload>(`/widgets/${encodeURIComponent(widgetId)}`);
+			configuredWidget = res.data ?? null;
+			dataLoaded = { ...dataLoaded, configured_widget: true };
+		}
 		// fetchUserCard resolves the user to display in the user_card widget.
 		// Two contexts:
 		//   1. source=org_owner on /org/[slug] — reads the owner from the org API.
@@ -731,6 +860,7 @@
 		else if (wt === 'user_card') void fetchUserCard().finally(settled);
 		else if (wt === 'related_discussions') void fetchRelatedDiscussions().finally(settled);
 		else if (wt === 'space_categories') void fetchSpaceCategories().finally(settled);
+		else if (wt === 'configured_widget') void fetchConfiguredWidget().finally(settled);
 		else settled();
 	});
 </script>
@@ -1291,6 +1421,53 @@
 			<p class="text-xs text-[var(--color-muted)]">{t('learn.empty', 'No learning tracks yet.')}</p>
 		{/if}
 	</section>
+{:else if widget.widget_type === 'configured_widget'}
+	<!-- Configured Widget — Section 59 bridge to Section 16
+	     widget_configurations. Fetches GET /api/v1/widgets/{widget_id}
+	     (Valkey-cached) and renders the item list as compact sidebar links;
+	     custom_html widgets render their sanitized HTML instead. Renders
+	     nothing until the admin picks a widget. -->
+	{@const cwWidgetId = typeof widgetProps.widget_id === 'string' ? widgetProps.widget_id.trim() : ''}
+	{#if cwWidgetId}
+		{#if delegatedProps && configuredWidget}
+			<!-- Referenced configuration is a sidebar-typed preset — delegate to
+			     the type's native branch (recursive self-render) with the echoed
+			     config as props. Data fetching runs inside the delegated render. -->
+			<SidebarWidgetRenderer
+				widget={{ ...widget, widget_type: configuredWidget.widget_type, props: delegatedProps }}
+				{user}
+				{trendingTags}
+				{suggestedSpaces}
+				{enabledLanguages}
+				{isDashboard}
+			/>
+		{:else}
+		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.widget', 'Widget')}</h2>
+			{#if !dataLoaded['configured_widget']}
+				<div class="space-y-2">
+					<div class="jc-skeleton h-4 w-full rounded"></div>
+					<div class="jc-skeleton h-4 w-3/4 rounded"></div>
+					<div class="jc-skeleton h-4 w-1/2 rounded"></div>
+				</div>
+			{:else if configuredHtml.trim()}
+				<div class="prose prose-sm max-w-none text-[var(--color-text)]">{@html sanitizeSidebarHtml(configuredHtml)}</div>
+			{:else if configuredItems.length === 0}
+				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_content', 'No content to display')}</p>
+			{:else}
+				<ul class="space-y-2">
+					{#each configuredItems as item, i (String(item.id ?? item.slug ?? item.username ?? i))}
+						<li>
+							<a href={configuredItemHref(item)} class="block truncate text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+								{(item.title ?? item.name ?? item.tag ?? item.username) as string}
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+		{/if}
+	{/if}
 {:else if widget.widget_type === 'search_launcher'}
 	<!-- Search launcher — Docs/Learn variant; Main app uses 'search' widget. -->
 {:else if widget.widget_type === 'helpful_widget'}

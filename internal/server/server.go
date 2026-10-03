@@ -992,6 +992,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// and space responses (Section 34 / ADR-039 — audit finding H5).
 	universitiesHandlers.SetMediaResolver(mediaService)
 	spaceHandlers.SetMediaResolver(mediaService)
+	// §05 Auto-Population: lets space:auto_populate ingest remote images
+	// (flagcdn flags, Wikimedia Commons emblems, Wikipedia article photos)
+	// into platform media storage and attach them as space logo/header —
+	// surfaces then serve them from our own store, not external hotlinks.
+	spaceAutoPopulateAdapter.SetMediaUploader(mediaService)
 
 	// Stock photo service — provider search and import (Unsplash, Pexels,
 	// Pixabay, Openverse). ReloadProviders seeds provider rows from env vars
@@ -1251,6 +1256,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	travelService.SetCache(vkClient.Redis()) // VALKEY-006: jc:travel:search:{hash} result cache (§67)
 	travelHandlers := travel.NewHandlers(travelService, settingsService)
 	travelHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in travel responses
+	worker.RegisterHotelDirectorySyncer(travelService) // §67, ADR-124: travel:sync_hotel_directory
 
 	// Ref: japaconnect-engineering/sections/68-ai-personas.md (ADR-068)
 	personasStore := personas.NewStore(database)
@@ -6378,6 +6384,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/travel/search/flights", travelHandlers.HandleSearchFlights)
 				r.Get("/travel/search/hotels", travelHandlers.HandleSearchHotels)
 				r.Get("/travel/locations", travelHandlers.HandleSearchLocations)
+				r.Get("/travel/hotels", travelHandlers.HandleHotelDirectory)
+				r.Get("/travel/airlines", travelHandlers.HandleAirlineDirectory)
 				r.Get("/travel/providers", travelHandlers.HandlePublicListProviders)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
 					Get("/admin/travel/providers", travelHandlers.HandleAdminListProviders)

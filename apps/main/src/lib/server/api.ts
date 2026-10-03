@@ -171,12 +171,14 @@ export async function apiList<T>(
 		page?: number;
 		limit?: number;
 		total_pages?: number;
+		next_cursor?: string | null;
+		has_more?: boolean;
 	};
 	// A `pagination` sidecar (e.g. GET /stories, GET /wiki/.../history) maps
 	// into the same ListMeta shape so callers can read meta.total/page/limit
 	// uniformly. The wiki endpoints emit {page, limit, total}; older ones emit
 	// {page_size, page_offset} — cover both spellings.
-	const meta =
+	let meta =
 		raw.meta ??
 		(raw.pagination?.total !== undefined
 			? {
@@ -187,6 +189,11 @@ export async function apiList<T>(
 			: raw.total !== undefined
 				? { total: raw.total, page: raw.page, limit: raw.limit, total_pages: raw.total_pages }
 				: undefined);
+	// Cursor-paginated endpoints (§48 DM lists) emit next_cursor/has_more as
+	// top-level sidecars — surface them through meta so callers can resume.
+	if (raw.next_cursor !== undefined || raw.has_more !== undefined) {
+		meta = { ...(meta ?? {}), next_cursor: raw.next_cursor ?? meta?.next_cursor, has_more: raw.has_more };
+	}
 	return { items: raw.data ?? [], meta };
 }
 

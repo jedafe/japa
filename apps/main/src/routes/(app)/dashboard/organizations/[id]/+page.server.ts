@@ -28,9 +28,11 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Members + invitations + content + analytics + media + meta load best-effort.
+	// page_size=100 on members/invitations: the endpoints default to 20 and
+	// return no meta, so without it larger orgs would silently lose rows.
 	const [membersRes, invitationsRes, contentRes, analyticsRes, mediaRes, orgMetaRes, countriesRes] = await Promise.all([
-		apiList<OrgMember>(ctx, `/organizations/${id}/members`).catch(() => ({ items: [] as OrgMember[] })),
-		apiList<OrgInvitation>(ctx, `/organizations/${id}/invitations`).catch(() => ({ items: [] as OrgInvitation[] })),
+		apiList<OrgMember>(ctx, `/organizations/${id}/members?page_size=100`).catch(() => ({ items: [] as OrgMember[] })),
+		apiList<OrgInvitation>(ctx, `/organizations/${id}/invitations?page_size=100`).catch(() => ({ items: [] as OrgInvitation[] })),
 		apiList<ProfilePost>(ctx, `/organizations/${id}/content?page_size=20`).catch(() => ({ items: [] as ProfilePost[] })),
 		apiGet<unknown>(ctx, `/organizations/${id}/analytics?period=${period}`).catch(() => null),
 		apiList<OrgMedia>(ctx, `/organizations/${id}/media?page_size=40`).catch(() => ({ items: [] as OrgMedia[] })),

@@ -157,8 +157,12 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 	},
 	relationships: async (ctx, params = {}) => {
 		const page = Math.max(1, parseInt(params.page ?? '1', 10) || 1);
-		const pageSize = 25;
-		const fetchSize = pageSize + 1;
+		// ?page_size= is user-controllable via the view's page-size selector;
+		// clamp to the backend's accepted range (MaxPageSize = 100).
+		const pageSize = Math.min(100, Math.max(1, parseInt(params.page_size ?? '25', 10) || 25));
+		// +1 lookahead drives hasMore without a meta total; capped at the
+		// backend's MaxPageSize — at pageSize=100 a full page means "maybe more".
+		const fetchSize = Math.min(100, pageSize + 1);
 		const offset = (page - 1) * pageSize;
 		const type = params.type ?? '';
 		const q = (params.q ?? '').trim();
@@ -206,7 +210,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 		]);
 
 		function paginated(items: unknown[]) {
-			const hasMore = items.length > pageSize;
+			const hasMore = items.length >= fetchSize;
 			return { items: items.slice(0, pageSize), hasMore };
 		}
 
@@ -250,8 +254,10 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 	learning: async (ctx) => (await apiList<LearnEnrollment>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
 	certificates: async (ctx) => (await apiList<Certificate>(ctx, '/me/certificates').catch(() => ({ items: [] }))).items,
 	'knowledge-base': async (ctx) =>
+		// page_size=100 — the endpoint default is 20 and it returns no meta total,
+		// so without this the view silently truncates the doc-page bookmarks.
 		(
-			await apiList<unknown>(ctx, '/me/bookmarks?entity_type=doc_page').catch(() => ({
+			await apiList<unknown>(ctx, '/me/bookmarks?entity_type=doc_page&page_size=100').catch(() => ({
 				items: []
 			}))
 		).items

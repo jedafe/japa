@@ -35,6 +35,24 @@
 	});
 
 	const campaigns = $derived(localCampaigns);
+	const statusFilter = $derived(data.status ?? '');
+
+	const statusFilterOptions = $derived([
+		{ value: '', label: t('org_ads.all_statuses', 'All statuses') },
+		{ value: 'draft', label: t('org_ads.status_draft', 'Draft') },
+		{ value: 'pending_review', label: t('org_ads.status_pending_review', 'Pending Review') },
+		{ value: 'active', label: t('org_ads.status_active', 'Active') },
+		{ value: 'paused', label: t('org_ads.status_paused', 'Paused') },
+		{ value: 'rejected', label: t('org_ads.status_rejected', 'Rejected') },
+		{ value: 'ended', label: t('org_ads.status_ended', 'Ended') }
+	]);
+
+	function changeStatus(v: string) {
+		const url = new URL(window.location.href);
+		if (v) url.searchParams.set('status', v);
+		else url.searchParams.delete('status');
+		goto(url.pathname + url.search);
+	}
 
 	// ── Create-campaign form state ───────────────────────────────────────────
 	let showCreateForm = $state(false);
@@ -100,8 +118,9 @@
 		loadingMore = true;
 		try {
 			const next = currentPage + 1;
+			const statusParam = statusFilter ? `&status=${encodeURIComponent(statusFilter)}` : '';
 			const res = await api.getEnvelope<AdCampaign[]>(
-				`/org/${org.id}/ads/campaigns?page=${next}&limit=${pageSize}`
+				`/org/${org.id}/ads/campaigns?page=${next}&limit=${pageSize}${statusParam}`
 			);
 			if (res.data && res.data.length > 0) {
 				localCampaigns = [...localCampaigns, ...res.data];
@@ -355,6 +374,15 @@
 	{/if}
 
 	<!-- Campaigns list -->
+	<div class="flex justify-end">
+		<AutocompleteSelect
+			class="w-48"
+			value={statusFilter}
+			options={statusFilterOptions}
+			ariaLabel={t('org_ads.filter_status', 'Filter by status')}
+			onValueChange={changeStatus}
+		/>
+	</div>
 	{#if campaigns.length === 0}
 		<EmptyState
 			icon={Megaphone}

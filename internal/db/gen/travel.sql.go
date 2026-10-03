@@ -20,6 +20,54 @@ func (q *Queries) BumpTravelSearchResultHit(ctx context.Context, id pgtype.UUID)
 	return err
 }
 
+const countTravelAirlines = `-- name: CountTravelAirlines :one
+SELECT count(*) FROM travel_airlines a
+WHERE ($1::text = ''
+    OR a.name ILIKE '%' || $1 || '%' ESCAPE '\'
+    OR a.iata_code ILIKE $1 ESCAPE '\'
+    OR a.icao_code ILIKE $1 ESCAPE '\'
+    OR a.country ILIKE '%' || $1 || '%' ESCAPE '\')
+  AND ($2::text = '' OR a.country ILIKE $2 ESCAPE '\')
+  AND ($3::text = '' OR EXISTS (
+        SELECT 1 FROM travel_provider_airlines pa2
+        JOIN travel_providers p2 ON p2.id = pa2.provider_id
+        WHERE pa2.airline_key = a.airline_key AND p2.slug = $3
+          AND p2.is_active))
+`
+
+type CountTravelAirlinesParams struct {
+	Q            string `json:"q"`
+	Country      string `json:"country"`
+	ProviderSlug string `json:"provider_slug"`
+}
+
+func (q *Queries) CountTravelAirlines(ctx context.Context, arg CountTravelAirlinesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTravelAirlines, arg.Q, arg.Country, arg.ProviderSlug)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTravelHotels = `-- name: CountTravelHotels :one
+SELECT count(*) FROM travel_hotels
+WHERE ($1::text = '' OR city_key = $1)
+ AND ($2::text = '' OR name ILIKE '%' || $2 || '%' ESCAPE '\')
+ AND ($3::int = 0 OR star_rating >= $3)
+`
+
+type CountTravelHotelsParams struct {
+	CityKey  string `json:"city_key"`
+	NameQ    string `json:"name_q"`
+	MinStars int32  `json:"min_stars"`
+}
+
+func (q *Queries) CountTravelHotels(ctx context.Context, arg CountTravelHotelsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTravelHotels, arg.CityKey, arg.NameQ, arg.MinStars)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTravelProvider = `-- name: CreateTravelProvider :one
 
 
@@ -65,6 +113,61 @@ func (q *Queries) CreateTravelProvider(ctx context.Context, arg CreateTravelProv
 		&i.AffiliateConfig,
 		&i.IsActive,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const findTravelAirlineByIATA = `-- name: FindTravelAirlineByIATA :one
+
+SELECT airline_key, iata_code, icao_code, name, country, source, first_seen_at, last_seen_at FROM travel_airlines
+WHERE iata_code = $1
+ORDER BY (airline_key LIKE 'iata:%') DESC, last_seen_at DESC NULLS LAST, airline_key
+LIMIT 1
+`
+
+// =====================================================================
+// Airline directory (ADR-124 extension) — travel_airlines global catalog
+// + travel_provider_airlines coverage join.
+// =====================================================================
+// Resolve an offer's airline value to a catalog row. Two lookups only —
+// exact IATA code (preferring the 'iata:'-keyed row on real-world code
+// reuse) then case-insensitive name; misses upsert an 'observed' row
+// keyed by code or name slug in the service layer.
+func (q *Queries) FindTravelAirlineByIATA(ctx context.Context, iataCode *string) (TravelAirline, error) {
+	row := q.db.QueryRow(ctx, findTravelAirlineByIATA, iataCode)
+	var i TravelAirline
+	err := row.Scan(
+		&i.AirlineKey,
+		&i.IataCode,
+		&i.IcaoCode,
+		&i.Name,
+		&i.Country,
+		&i.Source,
+		&i.FirstSeenAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
+const findTravelAirlineByName = `-- name: FindTravelAirlineByName :one
+SELECT airline_key, iata_code, icao_code, name, country, source, first_seen_at, last_seen_at FROM travel_airlines
+WHERE lower(name) = lower($1)
+ORDER BY (airline_key LIKE 'iata:%') DESC, airline_key
+LIMIT 1
+`
+
+func (q *Queries) FindTravelAirlineByName(ctx context.Context, name string) (TravelAirline, error) {
+	row := q.db.QueryRow(ctx, findTravelAirlineByName, name)
+	var i TravelAirline
+	err := row.Scan(
+		&i.AirlineKey,
+		&i.IataCode,
+		&i.IcaoCode,
+		&i.Name,
+		&i.Country,
+		&i.Source,
+		&i.FirstSeenAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
@@ -188,7 +291,7 @@ func (q *Queries) GetTravelSearchResult(ctx context.Context, arg GetTravelSearch
 }
 
 const listFlightOffersByCoverage = `-- name: ListFlightOffersByCoverage :many
-SELECT id, provider_id, route_key, depart_date, return_date, adults, children, cabin_class, offer_key, price, currency, airline, flight_number, stops, depart_ts, arrive_ts, duration, booking_url, raw, fetched_at, expires_at FROM travel_flight_offers
+SELECT id, provider_id, route_key, depart_date, return_date, adults, children, cabin_class, offer_key, price, currency, airline, flight_number, stops, depart_ts, arrive_ts, duration, booking_url, raw, fetched_at, expires_at, airline_key FROM travel_flight_offers
 WHERE provider_id = $1
  AND route_key = $2
  AND depart_date = $3
@@ -254,6 +357,7 @@ func (q *Queries) ListFlightOffersByCoverage(ctx context.Context, arg ListFlight
 			&i.Raw,
 			&i.FetchedAt,
 			&i.ExpiresAt,
+			&i.AirlineKey,
 		); err != nil {
 			return nil, err
 		}
@@ -323,6 +427,152 @@ func (q *Queries) ListHotelOffersByCoverage(ctx context.Context, arg ListHotelOf
 			&i.Raw,
 			&i.FetchedAt,
 			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTravelAirlines = `-- name: ListTravelAirlines :many
+SELECT
+ a.airline_key, a.iata_code, a.icao_code, a.name, a.country, a.source,
+ (count(p.id) > 0) AS observed,
+ COALESCE(array_agg(p.slug ORDER BY p.slug) FILTER (WHERE p.slug IS NOT NULL), '{}')::text[] AS provider_slugs,
+ COALESCE(array_agg(p.name ORDER BY p.slug) FILTER (WHERE p.name IS NOT NULL), '{}')::text[] AS provider_names,
+ max(pa.last_seen_at) FILTER (WHERE p.id IS NOT NULL)::timestamptz AS coverage_last_seen_at
+FROM travel_airlines a
+LEFT JOIN travel_provider_airlines pa ON pa.airline_key = a.airline_key
+LEFT JOIN travel_providers p ON p.id = pa.provider_id AND p.is_active
+WHERE ($1::text = ''
+    OR a.name ILIKE '%' || $1 || '%' ESCAPE '\'
+    OR a.iata_code ILIKE $1 ESCAPE '\'
+    OR a.icao_code ILIKE $1 ESCAPE '\'
+    OR a.country ILIKE '%' || $1 || '%' ESCAPE '\')
+  AND ($2::text = '' OR a.country ILIKE $2 ESCAPE '\')
+  AND ($3::text = '' OR EXISTS (
+        SELECT 1 FROM travel_provider_airlines pa2
+        JOIN travel_providers p2 ON p2.id = pa2.provider_id
+        WHERE pa2.airline_key = a.airline_key AND p2.slug = $3
+          AND p2.is_active))
+GROUP BY a.airline_key
+ORDER BY observed DESC, lower(a.name), a.airline_key
+LIMIT $5 OFFSET $4
+`
+
+type ListTravelAirlinesParams struct {
+	Q            string `json:"q"`
+	Country      string `json:"country"`
+	ProviderSlug string `json:"provider_slug"`
+	Off          int32  `json:"off"`
+	Lim          int32  `json:"lim"`
+}
+
+type ListTravelAirlinesRow struct {
+	AirlineKey         string             `json:"airline_key"`
+	IataCode           *string            `json:"iata_code"`
+	IcaoCode           *string            `json:"icao_code"`
+	Name               string             `json:"name"`
+	Country            string             `json:"country"`
+	Source             string             `json:"source"`
+	Observed           bool               `json:"observed"`
+	ProviderSlugs      []string           `json:"provider_slugs"`
+	ProviderNames      []string           `json:"provider_names"`
+	CoverageLastSeenAt pgtype.Timestamptz `json:"coverage_last_seen_at"`
+}
+
+// Directory browse: q matches name / IATA / ICAO / country; provider
+// filters to airlines that provider's offers have been observed carrying.
+// Coverage joins are restricted to ACTIVE providers — a deactivated
+// integration can't sell seats, so its historical coverage is hidden.
+func (q *Queries) ListTravelAirlines(ctx context.Context, arg ListTravelAirlinesParams) ([]ListTravelAirlinesRow, error) {
+	rows, err := q.db.Query(ctx, listTravelAirlines,
+		arg.Q,
+		arg.Country,
+		arg.ProviderSlug,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTravelAirlinesRow
+	for rows.Next() {
+		var i ListTravelAirlinesRow
+		if err := rows.Scan(
+			&i.AirlineKey,
+			&i.IataCode,
+			&i.IcaoCode,
+			&i.Name,
+			&i.Country,
+			&i.Source,
+			&i.Observed,
+			&i.ProviderSlugs,
+			&i.ProviderNames,
+			&i.CoverageLastSeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTravelHotels = `-- name: ListTravelHotels :many
+SELECT id, provider_id, hotel_key, city_key, name, star_rating, address, image_url, last_price, last_currency, first_seen_at, last_seen_at FROM travel_hotels
+WHERE ($1::text = '' OR city_key = $1)
+ AND ($2::text = '' OR name ILIKE '%' || $2 || '%' ESCAPE '\')
+ AND ($3::int = 0 OR star_rating >= $3)
+ORDER BY star_rating DESC NULLS LAST, name ASC, id
+LIMIT $5 OFFSET $4
+`
+
+type ListTravelHotelsParams struct {
+	CityKey  string `json:"city_key"`
+	NameQ    string `json:"name_q"`
+	MinStars int32  `json:"min_stars"`
+	Off      int32  `json:"off"`
+	Lim      int32  `json:"lim"`
+}
+
+// Directory browse: optional city filter, optional name substring,
+// optional min star rating. Count + page in one round trip.
+func (q *Queries) ListTravelHotels(ctx context.Context, arg ListTravelHotelsParams) ([]TravelHotel, error) {
+	rows, err := q.db.Query(ctx, listTravelHotels,
+		arg.CityKey,
+		arg.NameQ,
+		arg.MinStars,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TravelHotel
+	for rows.Next() {
+		var i TravelHotel
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProviderID,
+			&i.HotelKey,
+			&i.CityKey,
+			&i.Name,
+			&i.StarRating,
+			&i.Address,
+			&i.ImageUrl,
+			&i.LastPrice,
+			&i.LastCurrency,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -577,18 +827,19 @@ const upsertFlightOffer = `-- name: UpsertFlightOffer :exec
 INSERT INTO travel_flight_offers (
  provider_id, route_key, depart_date, return_date, adults, children,
  cabin_class, offer_key, price, currency, airline, flight_number, stops,
- depart_ts, arrive_ts, duration, booking_url, raw, expires_at
+ depart_ts, arrive_ts, duration, booking_url, raw, expires_at, airline_key
 ) VALUES (
  $1, $2, $3, $4, $5,
  $6, $7, $8, $9, $10,
  $11, $12, $13,
  $14, $15, $16,
- $17, $18, $19
+ $17, $18, $19, $20
 )
 ON CONFLICT (provider_id, offer_key) DO UPDATE SET
  price = EXCLUDED.price,
  currency = EXCLUDED.currency,
  airline = EXCLUDED.airline,
+ airline_key = EXCLUDED.airline_key,
  flight_number = EXCLUDED.flight_number,
  stops = EXCLUDED.stops,
  depart_ts = EXCLUDED.depart_ts,
@@ -620,6 +871,7 @@ type UpsertFlightOfferParams struct {
 	BookingUrl   string             `json:"booking_url"`
 	Raw          []byte             `json:"raw"`
 	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+	AirlineKey   *string            `json:"airline_key"`
 }
 
 // =====================================================================
@@ -648,6 +900,7 @@ func (q *Queries) UpsertFlightOffer(ctx context.Context, arg UpsertFlightOfferPa
 		arg.BookingUrl,
 		arg.Raw,
 		arg.ExpiresAt,
+		arg.AirlineKey,
 	)
 	return err
 }
@@ -713,6 +966,112 @@ func (q *Queries) UpsertHotelOffer(ctx context.Context, arg UpsertHotelOfferPara
 		arg.Raw,
 		arg.ExpiresAt,
 	)
+	return err
+}
+
+const upsertTravelAirline = `-- name: UpsertTravelAirline :exec
+INSERT INTO travel_airlines (
+ airline_key, iata_code, icao_code, name, country, source, last_seen_at
+) VALUES (
+ $1, $2, $3, $4,
+ $5, $6, now()
+)
+ON CONFLICT (airline_key) DO UPDATE SET
+ last_seen_at = now(),
+ iata_code = COALESCE(travel_airlines.iata_code, EXCLUDED.iata_code),
+ icao_code = COALESCE(travel_airlines.icao_code, EXCLUDED.icao_code)
+`
+
+type UpsertTravelAirlineParams struct {
+	AirlineKey string  `json:"airline_key"`
+	IataCode   *string `json:"iata_code"`
+	IcaoCode   *string `json:"icao_code"`
+	Name       string  `json:"name"`
+	Country    string  `json:"country"`
+	Source     string  `json:"source"`
+}
+
+func (q *Queries) UpsertTravelAirline(ctx context.Context, arg UpsertTravelAirlineParams) error {
+	_, err := q.db.Exec(ctx, upsertTravelAirline,
+		arg.AirlineKey,
+		arg.IataCode,
+		arg.IcaoCode,
+		arg.Name,
+		arg.Country,
+		arg.Source,
+	)
+	return err
+}
+
+const upsertTravelHotel = `-- name: UpsertTravelHotel :exec
+
+INSERT INTO travel_hotels (
+ provider_id, hotel_key, city_key, name, star_rating, address, image_url,
+ last_price, last_currency
+) VALUES (
+ $1, $2, $3, $4, $5,
+ $6, $7, $8,
+ $9
+)
+ON CONFLICT (provider_id, hotel_key) DO UPDATE SET
+ name = EXCLUDED.name,
+ city_key = EXCLUDED.city_key,
+ star_rating = COALESCE(EXCLUDED.star_rating, travel_hotels.star_rating),
+ address = COALESCE(EXCLUDED.address, travel_hotels.address),
+ image_url = COALESCE(EXCLUDED.image_url, travel_hotels.image_url),
+ last_price = COALESCE(EXCLUDED.last_price, travel_hotels.last_price),
+ last_currency = COALESCE(EXCLUDED.last_currency, travel_hotels.last_currency),
+ last_seen_at = now()
+`
+
+type UpsertTravelHotelParams struct {
+	ProviderID   pgtype.UUID    `json:"provider_id"`
+	HotelKey     string         `json:"hotel_key"`
+	CityKey      string         `json:"city_key"`
+	Name         string         `json:"name"`
+	StarRating   *int16         `json:"star_rating"`
+	Address      *string        `json:"address"`
+	ImageUrl     *string        `json:"image_url"`
+	LastPrice    pgtype.Numeric `json:"last_price"`
+	LastCurrency *string        `json:"last_currency"`
+}
+
+// =====================================================================
+// Hotel directory (ADR-124 extension) — travel_hotels reference table.
+// =====================================================================
+// Upsert a directory property. Identity is (provider_id, hotel_key) where
+// hotel_key is the provider's hotel/offer id or a content hash — NOT
+// coverage-scoped: a hotel is the same entity across dates.
+// last_price tracks the cheapest price seen so far for directory display.
+func (q *Queries) UpsertTravelHotel(ctx context.Context, arg UpsertTravelHotelParams) error {
+	_, err := q.db.Exec(ctx, upsertTravelHotel,
+		arg.ProviderID,
+		arg.HotelKey,
+		arg.CityKey,
+		arg.Name,
+		arg.StarRating,
+		arg.Address,
+		arg.ImageUrl,
+		arg.LastPrice,
+		arg.LastCurrency,
+	)
+	return err
+}
+
+const upsertTravelProviderAirline = `-- name: UpsertTravelProviderAirline :exec
+INSERT INTO travel_provider_airlines (provider_id, airline_key)
+VALUES ($1, $2)
+ON CONFLICT (provider_id, airline_key) DO UPDATE SET
+ last_seen_at = now()
+`
+
+type UpsertTravelProviderAirlineParams struct {
+	ProviderID pgtype.UUID `json:"provider_id"`
+	AirlineKey string      `json:"airline_key"`
+}
+
+func (q *Queries) UpsertTravelProviderAirline(ctx context.Context, arg UpsertTravelProviderAirlineParams) error {
+	_, err := q.db.Exec(ctx, upsertTravelProviderAirline, arg.ProviderID, arg.AirlineKey)
 	return err
 }
 

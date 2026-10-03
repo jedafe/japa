@@ -16,7 +16,10 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`);
 	}
 	const ctx = apiContext(event);
-	const organizations = (await apiList<MyOrganizationRow>(ctx, '/me/organizations')).items;
+	// page_size=100: the handler's parsePageSize default is 20 and the
+	// response carries no meta, so without it a user in >20 orgs would
+	// silently lose the tail of the list.
+	const organizations = (await apiList<MyOrganizationRow>(ctx, '/me/organizations?page_size=100')).items;
 
 	// BUG-022: Fetch org type options from the API (Rule 16).
 	let orgMeta: OrgMeta | null = null;

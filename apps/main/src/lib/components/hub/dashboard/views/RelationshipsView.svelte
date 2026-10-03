@@ -156,7 +156,25 @@
 		{ value: 'user', label: t('dashboard.relationships.type_user', 'People') },
 		{ value: 'space', label: t('dashboard.relationships.type_space', 'Spaces') },
 		{ value: 'tag', label: t('dashboard.relationships.type_tag', 'Tags') },
-		{ value: 'organization', label: t('dashboard.relationships.type_organization', 'Organizations') }
+		{ value: 'organization', label: t('dashboard.relationships.type_organization', 'Organizations') },
+		// /me/following?type=source is supported by the backend (mapTypeFilter)
+		// and sources are followable via /sources/{slug}/follow.
+		{ value: 'source', label: t('dashboard.relationships.type_source', 'Sources') }
+	];
+
+	const spaceLevelOptions = [
+		{ value: '', label: t('dashboard.relationships.all_levels', 'All levels') },
+		{ value: 'country', label: t('dashboard.relationships.level_country', 'Country') },
+		{ value: 'state', label: t('dashboard.relationships.level_state', 'State') },
+		{ value: 'city', label: t('dashboard.relationships.level_city', 'City') },
+		{ value: 'custom', label: t('dashboard.relationships.level_custom', 'Community') },
+		{ value: 'global', label: t('dashboard.relationships.level_global', 'Global') }
+	];
+
+	const pageSizeOptions = [
+		{ value: '10', label: '10' },
+		{ value: '25', label: '25' },
+		{ value: '50', label: '50' }
 	];
 
 	function removedKey(tab: string, id: string) {
@@ -206,7 +224,7 @@
 	);
 
 	function switchTab(key: string) {
-		setSearchParams({ tab: key, page: '1' });
+		setSearchParams({ tab: key, page: null });
 	}
 
 	function goPage(delta: number) {
@@ -255,6 +273,8 @@
 				return `/spaces/${slug}`;
 			case 'tag':
 				return `/tags/${slug}`;
+			case 'source':
+				return `/sources/${slug}`;
 			default:
 				return `/${slug}`;
 		}
@@ -357,7 +377,7 @@
 
 	async function doUnfollow(item: FollowedEntity) {
 		const type = followableType(item.entity_type);
-		if ((type === 'space' || type === 'tag') && !item.entity_slug) return;
+		if ((type === 'space' || type === 'tag' || type === 'source') && !item.entity_slug) return;
 		const key = removedKey('following', item.entity_id);
 		const slug = item.entity_slug ? item.entity_slug : undefined;
 		const { ok } = await optimisticAction({
@@ -492,7 +512,7 @@
 					/>
 				{/if}
 
-				{#if activeTab === 'spaces'}
+				{#if activeTab === 'spaces' || activeTab === 'muted-spaces'}
 					<AutocompleteSelect
 						class="w-48"
 						value={spaceTypeFilter}
@@ -502,7 +522,21 @@
 						]}
 						onValueChange={(v) => setSearchParams({ space_type: v })}
 					/>
+					<AutocompleteSelect
+						class="w-40"
+						value={levelFilter}
+						options={spaceLevelOptions}
+						onValueChange={(v) => setSearchParams({ level: v })}
+					/>
 				{/if}
+
+				<AutocompleteSelect
+					class="w-24"
+					value={String(pageSize)}
+					options={pageSizeOptions}
+					ariaLabel={t('dashboard.relationships.page_size', 'Rows per page')}
+					onValueChange={(v) => setSearchParams({ page_size: v })}
+				/>
 			</div>
 		</div>
 	</div>

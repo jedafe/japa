@@ -64,8 +64,10 @@ type PropField struct {
 	// Label is the human-readable field label.
 	Label string `json:"label"`
 	// Type is the input kind rendered by the admin form:
-	// text | textarea | number | boolean | select | url | links.
-	// "links" is the platform+url repeater used by social_links.
+	// text | textarea | number | boolean | select | url | links | widget_ref.
+	// "links" is the platform+url repeater used by social_links. "widget_ref"
+	// renders a picker over GET /admin/widgets — the stored value is a
+	// widget_configurations UUID (used by configured_widget.widget_id).
 	Type string `json:"type"`
 	// Options are the allowed values for Type=select.
 	Options []PropOption `json:"options,omitempty"`
@@ -593,6 +595,27 @@ var widgetRegistry = []WidgetType{
 				PropOption{Value: "secondary", Label: "Secondary"},
 				PropOption{Value: "outline", Label: "Outline"},
 			),
+		},
+	},
+	{
+		// Bridge to Section 16: embeds a widget_configurations row by ID.
+		// The frontend resolves it client-side via GET /widgets/{id}
+		// (Valkey-cached per the widget's cache_ttl_secs) — the reference is
+		// resolved at render time, never embedded at write time (Section 59).
+		Type:        "configured_widget",
+		Name:        "Configured Widget",
+		Description: "Embeds a Widget from the Widgets manager (/widgets, Section 16) — rendered data fetched from /widgets/{widget_id}",
+		Icon:        "boxes",
+		Slot:        WidgetSlotContent,
+		Category:    WidgetCategoryContent,
+		Apps:        appMainOnly,
+		DefaultProps: map[string]any{
+			"widget_id": "",
+			"title":     "",
+		},
+		PropSchema: []PropField{
+			{Key: "widget_id", Label: "Widget", Type: "widget_ref", Help: "Pick a widget from the Widgets manager (/widgets) or paste its UUID"},
+			titleProp(),
 		},
 	},
 }

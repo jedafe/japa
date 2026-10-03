@@ -29,6 +29,12 @@
 		posts_last_30d?: number;
 	} | null);
 	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'settings'));
+	// Keep the bound tab in sync with ?tab= on back/forward navigation —
+	// UrlTabs only writes the URL on click, it doesn't re-read it.
+	$effect(() => {
+		const tabParam = page.url.searchParams.get('tab');
+		untrack(() => { activeTab = tabParam ?? 'settings'; });
+	});
 
 	// Country autocomplete — filters the SSR-loaded country spaces
 	// (data.countries from /geo/countries) client-side (Rule 16).
@@ -70,11 +76,29 @@
 	let countryCode = $state(untrack(() => data.org?.country_code ?? ''));
 	let orgType = $state(untrack(() => data.org?.org_type ?? 'business'));
 
+	// Reseed the settings form only when a *different* org is loaded
+	// (cross-org navigation) — keyed on org id so invalidateAll() after a
+	// save or member mutation doesn't clobber edits in progress.
+	$effect(() => {
+		void data.org?.id;
+		untrack(() => {
+			name = data.org?.name ?? '';
+			tagline = data.org?.tagline ?? '';
+			description = data.org?.description ?? '';
+			websiteUrl = data.org?.website_url ?? '';
+			countryCode = data.org?.country_code ?? '';
+			orgType = data.org?.org_type ?? 'business';
+		});
+	});
+
 	let saving = $state(false);
 	let savedKey = $state('');
 	let errorKey = $state('');
 
-	let members = $state<OrgMember[]>(untrack(() => data.members ?? []));
+	// Derived, not seeded: member mutations (add/remove/change-role) end with
+	// invalidateAll() which re-runs the load — a one-time seed would keep
+	// showing the pre-mutation list.
+	const members = $derived<OrgMember[]>(data.members ?? []);
 
 	// Invite-member form state
 	let inviteEmail = $state('');

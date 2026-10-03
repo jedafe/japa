@@ -1,27 +1,20 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-
-/** DM message request item from GET /dm/requests. */
-export interface DMRequest {
-	id: string;
-	conversation_id?: string;
-	requester_id: string;
-	requester_username: string;
-	requester_display_name: string;
-	requester_avatar_url?: string;
-	preview_message: string;
-	status: string;
-	created_at: string;
-}
+import type { DMRequest } from '$lib/types';
 
 /**
  * Message requests at /messages/requests — auth-gated DM requests surface
  * (feature.dm). Lists pending requests with accept/decline/block actions.
  *
+ * URL params forwarded to GET /dm/requests: q, sort=recent|oldest|name,
+ * page_size.
+ *
  * Ref: japaconnect-engineering/sections/48-direct-messages.md
  */
-const PAGE_SIZE = 30;
+const REQUEST_SORTS = new Set(['recent', 'oldest', 'name']);
+const PAGE_SIZES = new Set([10, 20, 30, 50]);
+const DEFAULT_PAGE_SIZE = 30;
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -34,14 +27,34 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const ctx = apiContext(event);
+	const params = event.url.searchParams;
+
+	const q = params.get('q')?.trim() ?? '';
+	const sortParam = params.get('sort') ?? 'recent';
+	const sort = REQUEST_SORTS.has(sortParam) ? sortParam : 'recent';
+	const sizeParam = Number(params.get('page_size'));
+	const pageSize = PAGE_SIZES.has(sizeParam) ? sizeParam : DEFAULT_PAGE_SIZE;
+
+	const reqQuery = new URLSearchParams();
+	reqQuery.set('page_size', String(pageSize));
+	if (q) reqQuery.set('q', q);
+	if (sort !== 'recent') reqQuery.set('sort', sort);
 
 	let requests: DMRequest[] = [];
-
+	let requestsCursor: string | null = null;
+	let loadError = false;
 	try {
-		requests = (await apiList<DMRequest>(ctx, `/dm/requests?page_size=${PAGE_SIZE}`)).items;
+		const res = await apiList<DMRequest>(ctx, `/dm/requests?${reqQuery}`);
+		requests = res.items;
+		requestsCursor = res.meta?.next_cursor ?? null;
 	} catch {
-		requests = [];
+		loadError = true;
 	}
 
-	return { requests, pageSize: PAGE_SIZE };
+	return {
+		requests,
+		requestsCursor,
+		loadError,
+		query: { q, sort, pageSize }
+	};
 };

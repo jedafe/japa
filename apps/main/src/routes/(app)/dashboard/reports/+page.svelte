@@ -6,8 +6,10 @@
 	// Ref: japaconnect-engineering/sections/51-content-reports-flagging.md
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { Flag, FileText } from 'lucide-svelte';
-	import { EmptyState, RelativeTime } from '$lib/components/ui';
+	import { EmptyState, RelativeTime, PaginationControls } from '$lib/components/ui';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { MyReport } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -15,6 +17,24 @@
 
 	const title = $derived(t('my_reports.title', 'My Reports — JapaConnect'));
 	const reports = $derived<MyReport[]>(data.reports);
+	const pageNum = $derived(data.page);
+	const pageSize = $derived(data.pageSize);
+	const showPagination = $derived(pageNum > 1 || data.hasMore);
+
+	const pageSizeOptions = [
+		{ value: '10', label: '10' },
+		{ value: '20', label: '20' },
+		{ value: '50', label: '50' }
+	];
+
+	function buildURL(overrides: Record<string, string | null>) {
+		const url = new URL(page.url);
+		for (const [key, value] of Object.entries(overrides)) {
+			if (value === null || value === '') url.searchParams.delete(key);
+			else url.searchParams.set(key, value);
+		}
+		return url.toString();
+	}
 
 	function statusBadgeClass(status: string): string {
 		switch (status) {
@@ -80,7 +100,20 @@
 	</div>
 
 	<div class="p-4">
-		{#if reports.length === 0}
+		<div class="mb-3 flex items-center justify-end gap-2">
+			<AutocompleteSelect
+				class="w-20"
+				value={String(pageSize)}
+				options={pageSizeOptions}
+				ariaLabel={t('my_reports.page_size', 'Rows per page')}
+				onValueChange={(v) => goto(buildURL({ page_size: v, page: null }))}
+			/>
+		</div>
+		{#if data.loadError}
+			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+				{t('my_reports.load_error', 'Failed to load your reports. Please try again later.')}
+			</p>
+		{:else if reports.length === 0}
 			<EmptyState
 				icon={FileText}
 				title={t('my_reports.empty', 'No reports submitted')}
@@ -128,6 +161,15 @@
 					</div>
 				{/each}
 			</div>
+			{#if showPagination}
+				<div class="mt-4 flex justify-center">
+					<PaginationControls
+						page={pageNum}
+						hasMore={data.hasMore}
+						onPageChange={(p) => goto(buildURL({ page: String(p) }))}
+					/>
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>

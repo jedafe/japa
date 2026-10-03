@@ -19,6 +19,9 @@ export interface ApiOk<T> {
 	/** Optional offset pagination totals for list endpoints (e.g. /me/media). */
 	total?: number;
 	total_pages?: number;
+	/** Keyset pagination sidecars emitted by cursor-paginated endpoints (§48 DM lists). */
+	next_cursor?: string | null;
+	has_more?: boolean;
 	/** Optional JSON-LD structured data emitted by some GET endpoints (e.g. forum thread detail). */
 	json_ld?: unknown;
 	/** Optional capability flag emitted by some GET endpoints (e.g. forum can_solve). */
@@ -55,6 +58,7 @@ export interface ListMeta {
 	limit?: number;
 	total_pages?: number;
 	next_cursor?: string | null;
+	has_more?: boolean;
 	sort_options?: string[];
 	page_size_options?: number[];
 }
@@ -467,6 +471,8 @@ export interface Bookmark {
 	created_at: string;
 	title?: string | null;
 	slug?: string | null;
+	/** doc_page bookmarks only — the doc's audience slug (users, api, …). */
+	audience?: string | null;
 }
 
 /** GET /me/bookmark-folders — a user's bookmark folder. */
@@ -1604,6 +1610,19 @@ export interface DMMessage {
 	body: string;
 	created_at: string;
 	read_at: string | null;
+}
+
+/** GET /dm/requests item — MessageRequestInfo. */
+export interface DMRequest {
+	id: string;
+	conversation_id?: string;
+	requester_id: string;
+	requester_username: string;
+	requester_display_name: string;
+	requester_avatar_url?: string;
+	preview_message: string;
+	status: string;
+	created_at: string;
 }
 
 /* ------------------------------------------------------------------ *
@@ -3012,10 +3031,14 @@ export interface TravelFlightResult {
 	departure_time: string;
 	arrival_time: string;
 	airline: string;
+	/** Canonical travel_airlines key (e.g. "iata:BA") resolved at
+	 *  persistence — present on inventory-backed results. */
+	airline_key?: string;
 	flight_number: string;
 	stops: number;
 	duration: string;
 	booking_url: string;
+	offer_id?: string;
 }
 
 export interface TravelHotelResult {
@@ -3029,23 +3052,64 @@ export interface TravelHotelResult {
 	address: string;
 	image_url: string;
 	booking_url: string;
+	offer_id?: string;
+}
+
+/** GET /travel/hotels — one property row in the hotel directory (ADR-124
+ *  extension). Rows accumulate from hotel searches and the provider content
+ *  feed sync — last_price is the last-seen offer price, not live pricing. */
+export interface TravelHotelDirectoryItem {
+	hotel_id?: string;
+	name: string;
+	city: string;
+	star_rating?: number;
+	address?: string;
+	image_url?: string;
+	last_price?: number;
+	last_currency?: string;
+}
+
+export interface TravelHotelDirectoryResponse {
+	results: TravelHotelDirectoryItem[];
+	total: number;
+	page: number;
+	page_size: number;
+}
+
+/** GET /travel/airlines — catalog row joined to observed provider coverage
+ *  (ADR-124 extension). `providers` holds the display names of configured
+ *  integrations whose offers have carried this airline. */
+export interface TravelAirlineItem {
+	airline_key: string;
+	iata_code?: string;
+	icao_code?: string;
+	name: string;
+	country?: string;
+	observed: boolean;
+	providers: string[];
+	last_seen_at?: string;
+}
+
+export interface TravelAirlineDirectoryResponse {
+	results: TravelAirlineItem[];
+	total: number;
+	page: number;
+	page_size: number;
 }
 
 export interface TravelSearchResponse {
 	results: TravelFlightResult[] | TravelHotelResult[];
 	cache_hit: boolean;
+	/** Which result layer served the query (§67, ADR-124): Valkey cache,
+	 *  offer inventory, a fresh or stale travel_search_results row, or a
+	 *  live provider call. */
+	source?: 'cache' | 'inventory' | 'stored' | 'stale' | 'provider';
 	search_time_ms: number;
-}
-
-/** GET /travel/providers — public-safe provider row (mirrors the backend
- *  PublicProviderInfo DTO: api/affiliate config never leaves the server). */
-export interface TravelProvider {
-	id: string;
-	name: string;
-	slug: string;
-	provider_type: string;
-	is_active: boolean;
-	created_at: string;
+	/** Filtered-set size before pagination (ADR-124 presentation params). */
+	total?: number;
+	page?: number;
+	/** 0 = full set returned (client-side pagination contract). */
+	page_size?: number;
 }
 
 /* ================================================================== *

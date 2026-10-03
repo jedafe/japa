@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/sidebars"
 )
 
 // CatalogOption is a single value/label pair returned by the admin catalog
@@ -564,7 +565,70 @@ func (h *Handlers) GetWidgetConfigOptions(w http.ResponseWriter, r *http.Request
 		out.ConfigSchemas[typ] = outFields
 	}
 
+	// Sidebar widget types (Section 59 registry) merge into the type list so
+	// /widgets is the single management surface for Section 16 data-source
+	// widgets and sidebar widget presets (Section 16 "Unified widget type
+	// space"). A name already catalogued keeps its Section 16 schema — the
+	// overlapping types are the same concept. configured_widget is excluded:
+	// a configuration cannot self-nest.
+	seen := make(map[string]bool, len(out.WidgetTypes))
+	for _, opt := range out.WidgetTypes {
+		seen[opt.Value] = true
+	}
+	for _, wt := range sidebars.GetWidgetTypes() {
+		if wt.Type == "configured_widget" || seen[wt.Type] {
+			continue
+		}
+		seen[wt.Type] = true
+		out.WidgetTypes = append(out.WidgetTypes, CatalogOption{
+			Value: wt.Type,
+			Label: wt.Name + " (Sidebar)",
+		})
+		fields := make([]WidgetConfigField, 0, len(wt.PropSchema))
+		for _, pf := range wt.PropSchema {
+			fields = append(fields, propFieldToConfigField(pf, wt.DefaultProps))
+		}
+		out.ConfigSchemas[wt.Type] = fields
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
+// propFieldToConfigField converts a Section 59 sidebar prop_schema field into
+// the widget config field shape the /widgets form renders. The sidebar prop
+// type union maps onto the config field union: boolean→checkbox, url→text,
+// links→textarea (JSON array of {platform,url} — parsed client-side on
+// render), widget_ref→text.
+func propFieldToConfigField(pf sidebars.PropField, defaults map[string]any) WidgetConfigField {
+	fieldType := pf.Type
+	help := pf.Help
+	switch fieldType {
+	case "boolean":
+		fieldType = "checkbox"
+	case "url":
+		fieldType = "text"
+	case "links":
+		fieldType = "textarea"
+		if help == "" {
+			help = "JSON array of {platform, url} objects"
+		}
+	case "widget_ref":
+		fieldType = "text"
+	}
+
+	var opts []CatalogOption
+	for _, o := range pf.Options {
+		opts = append(opts, CatalogOption{Value: o.Value, Label: o.Label})
+	}
+
+	return WidgetConfigField{
+		Key:     pf.Key,
+		Label:   pf.Label,
+		Type:    fieldType,
+		Options: opts,
+		Default: defaults[pf.Key],
+		Help:    help,
+	}
 }
 
 // GetCatalog handles GET /api/v1/admin/catalogs/{name}.

@@ -45,6 +45,12 @@
 		return `/tracks/${trackSlug}`;
 	}
 
+	// learnUrl throws when PUBLIC_JC_LEARN_ORIGIN is unset — guard so a
+	// missing env doesn't crash the render (falls back to '#').
+	function safeLearnUrl(path: string): string {
+		try { return learnUrl(path); } catch { return '#'; }
+	}
+
 	/** Label for the resume CTA: "Start" for untouched first lessons,
 	 *  "Resume" when in progress, "View track" when there is no next lesson. */
 	function resumeLabel(en: LearnEnrollment): string {
@@ -179,7 +185,7 @@
 							</div>
 						</div>
 						<a
-							href={learnUrl(resumePath(en))}
+							href={safeLearnUrl(resumePath(en))}
 							class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)]"
 						>
 							{resumeLabel(en)}

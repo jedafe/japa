@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/sidebars"
 )
 
 // Renderer executes the data-source query for a widget type.
@@ -81,8 +82,45 @@ func (r *Renderer) Render(ctx context.Context, w Widget) (json.RawMessage, error
 	case "newsletter_signup":
 		return r.renderNewsletterSignup(ctx, w)
 	default:
+		// Sidebar widget types (Section 59): the config IS the props — echo it
+		// back (HTML-bearing keys sanitized) so a sidebar configured_widget
+		// renders the type's native UI client-side. configured_widget itself
+		// never validates via IsValidWidgetType, so no self-nesting is possible.
+		if sidebars.IsValidWidgetType(w.WidgetType) {
+			return configEcho(w.Config), nil
+		}
 		return nil, fmt.Errorf("unsupported widget type: %s", w.WidgetType)
 	}
+}
+
+// configEcho returns a sidebar-typed widget's config as the render data —
+// for chrome/data sidebar types the configuration IS the props object, and the
+// client-side SidebarWidgetRenderer performs any data fetching. HTML-bearing
+// keys are sanitized server-side, mirroring sidebars.sanitizeWidgetProps
+// (defense in depth on top of the client-side sanitizeSidebarHtml).
+func configEcho(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return json.RawMessage("{}")
+	}
+
+	var props map[string]any
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return json.RawMessage("{}")
+	}
+
+	if v, ok := props["content"].(string); ok {
+		props["content"] = content.SanitizeHTML(v)
+	}
+	if v, ok := props["html"].(string); ok {
+		props["html"] = content.SanitizeHTML(v)
+	}
+
+	out, err := json.Marshal(props)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+
+	return out
 }
 
 // widgetConfigLimit extracts the "limit" from the widget config JSON,
