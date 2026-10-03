@@ -38,7 +38,7 @@ Adding a mid-market feed carelessly would pollute the provider leaderboard — a
 
 The adapter is engine-pluggable: `api_config.engine` selects the upstream (`oxr` implemented now). A future source is a new engine branch, not a new module.
 
-## 5. Data model — migration `000777_fx_rates`
+## 5. Data model — migration `000780_fx_rates`
 
 ```sql
 CREATE TABLE fx_rates (
