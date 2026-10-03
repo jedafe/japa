@@ -17,6 +17,7 @@
 		website_url: string;
 		data_source: string;
 		is_active: boolean;
+		is_benchmark: boolean;
 		display_order: number;
 		created_at: string;
 	};
@@ -40,6 +41,7 @@
 		website_url: '',
 		data_source: 'manual',
 		is_active: true,
+		is_benchmark: false,
 		display_order: 0
 	});
 
@@ -69,7 +71,7 @@
 				messageType = 'success';
 				message = t('remittance.create_success', 'Remittance provider created.');
 				createSlideOverOpen = false;
-				newProvider = { name: '', slug: '', website_url: '', data_source: 'manual', is_active: true, display_order: 0 };
+				newProvider = { name: '', slug: '', website_url: '', data_source: 'manual', is_active: true, is_benchmark: false, display_order: 0 };
 				load();
 			} else {
 				messageType = 'error';
@@ -94,6 +96,7 @@
 					name: editingProvider.name,
 					website_url: editingProvider.website_url,
 					is_active: editingProvider.is_active,
+					is_benchmark: editingProvider.is_benchmark,
 					display_order: editingProvider.display_order
 				}
 			});
@@ -171,6 +174,14 @@
 			render: (value: boolean) => value
 				? `<span class="inline-flex items-center rounded-md border border-success bg-success/15 px-2 py-0.5 text-xs font-medium text-success">Active</span>`
 				: `<span class="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Inactive</span>`
+		},
+		{
+			key: 'is_benchmark',
+			label: t('remittance.benchmark', 'Benchmark'),
+			sortable: true,
+			render: (value: boolean) => value
+				? `<span class="inline-flex items-center rounded-md border border-info bg-info/15 px-2 py-0.5 text-xs font-medium text-info">${t('remittance.mid_market', 'Mid-market')}</span>`
+				: `<span class="inline-flex items-center rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">—</span>`
 		},
 		{
 			key: 'display_order',
@@ -268,6 +279,10 @@
 			<input type="checkbox" id="remittance-active" bind:checked={newProvider.is_active} />
 			<label for="remittance-active" class="text-sm" style="color: var(--color-foreground)">{t('remittance.active', 'Active')}</label>
 		</div>
+		<div class="flex items-center gap-2">
+			<input type="checkbox" id="remittance-benchmark" bind:checked={newProvider.is_benchmark} />
+			<label for="remittance-benchmark" class="text-sm" style="color: var(--color-foreground)">{t('remittance.is_benchmark', 'Benchmark (mid-market reference)')}</label>
+		</div>
 	</div>
 	{#snippet footer()}
 		<div class="mt-6 flex justify-end gap-2">
@@ -298,6 +313,10 @@
 			<div class="flex items-center gap-2">
 				<input type="checkbox" id="remittance-edit-active" bind:checked={editingProvider.is_active} />
 				<label for="remittance-edit-active" class="text-sm" style="color: var(--color-foreground)">{t('remittance.active', 'Active')}</label>
+			</div>
+			<div class="flex items-center gap-2">
+				<input type="checkbox" id="remittance-edit-benchmark" bind:checked={editingProvider.is_benchmark} />
+				<label for="remittance-edit-benchmark" class="text-sm" style="color: var(--color-foreground)">{t('remittance.is_benchmark', 'Benchmark (mid-market reference)')}</label>
 			</div>
 		</div>
 	{/if}
