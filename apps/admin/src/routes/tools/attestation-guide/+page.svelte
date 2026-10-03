@@ -5,6 +5,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { attestationGuideAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -75,7 +76,28 @@
 	let updatesPage = $state(1);
 	let updatesTotal = $state(0);
 	let updatesPageSize = $state(25);
+	let updateStatusFilter = $state('pending');
 	const updatesTotalPages = $derived(Math.max(1, Math.ceil(updatesTotal / updatesPageSize)));
+
+	const UPDATE_STATUS_OPTIONS = [
+		{ value: 'pending', label: 'Pending' },
+		{ value: 'approved', label: 'Approved' },
+		{ value: 'rejected', label: 'Rejected' },
+		{ value: 'all', label: 'All' }
+	];
+	const PAGE_SIZE_OPTIONS = [10, 25, 50, 100].map((n) => ({ value: String(n), label: `${n} / page` }));
+
+	function optionFetcher(options: { value: string; label: string }[]) {
+		return (q?: string): Promise<AutocompleteItem[]> => {
+			const query = (q ?? '').toLowerCase();
+			const filtered = query === '' ? options : options.filter((o) => o.label.toLowerCase().includes(query));
+			return Promise.resolve(filtered.map((o) => ({ id: o.value, label: o.label })));
+		};
+	}
+
+	function optionLabel(options: { value: string; label: string }[], value: string): string {
+		return options.find((o) => o.value === value)?.label ?? value;
+	}
 
 	async function approvePathway(item: PathwayItem) {
 		// ADR-088 HITL gate: AI-generated content cannot be approved without HITL review.
@@ -135,8 +157,10 @@
 		loadingUpdates = true;
 		updatesPage = page;
 		try {
+			// api helpers prepend '?' themselves — pass a bare query string.
+			const statusParam = updateStatusFilter === 'all' ? '' : `status=${updateStatusFilter}&`;
 			const result = await attestationGuideAdminApi.listUpdates(
-				`?status=pending&page_offset=${page}&page_size=${updatesPageSize}`
+				`${statusParam}page_offset=${(page - 1) * updatesPageSize}&page_size=${updatesPageSize}`
 			);
 			if (result.ok) {
 				const resp = result.data as { data?: CommunityUpdateItem[]; pagination?: { total?: number } } | undefined;
@@ -160,7 +184,9 @@
 		try {
 			const result = await attestationGuideAdminApi.reviewUpdate(id, approve);
 			if (result.ok) {
-				updates = updates.filter((u) => u.id !== id);
+				// Refetch the current page — a local filter would leave the page
+				// short one row and stale vs. the server-side total.
+				await loadUpdates(updatesPage);
 			} else {
 				pageError = result.error ?? t('common.error', 'An error occurred');
 			}
@@ -225,6 +251,38 @@
 				fetcher: countryUtils.fetcher,
 				initialFetcher: countryUtils.initialFetcher,
 				getSelectedLabel: countryUtils.getSelectedLabel
+			},
+			{
+				key: 'status',
+				label: t('common.status', 'Status'),
+				options: [
+					{ value: 'draft', label: t('common.status_draft', 'Draft') },
+					{ value: 'ai_draft', label: t('common.status_ai_draft', 'AI Draft') },
+					{ value: 'pending', label: t('common.status_pending', 'Pending') },
+					{ value: 'published', label: t('common.status_published', 'Published') },
+					{ value: 'rejected', label: t('common.status_rejected', 'Rejected') }
+				]
+			},
+			{
+				// §97 document_type enum — mirrored from the backend's canonical values.
+				key: 'doc_type',
+				label: t('common.doc_type', 'Document Type'),
+				options: [
+					{ value: 'birth_certificate', label: t('app.tools.doc_birth_certificate', 'Birth certificate') },
+					{ value: 'degree', label: t('app.tools.doc_degree', 'Degree') },
+					{ value: 'marriage', label: t('app.tools.doc_marriage', 'Marriage certificate') },
+					{ value: 'police_clearance', label: t('app.tools.doc_police_clearance', 'Police clearance') },
+					{ value: 'professional_licence', label: t('app.tools.doc_professional_licence', 'Professional licence') },
+					{ value: 'other', label: t('common.other', 'Other') }
+				]
+			},
+			{
+				key: 'active',
+				label: t('common.active', 'Active'),
+				options: [
+					{ value: 'true', label: t('common.yes', 'Yes') },
+					{ value: 'false', label: t('common.no', 'No') }
+				]
 			}
 		];
 	});
@@ -271,7 +329,8 @@
 		fields,
 		load: async (params) => {
 			const queryParts: string[] = [];
-			queryParts.push(`page_offset=${params.page + 1}`);
+			// Convention: page_offset is a row offset (api-response-format.md).
+			queryParts.push(`page_offset=${params.page * (params.pageSize || 25)}`);
 			if (params.pageSize) queryParts.push(`page_size=${params.pageSize}`);
 			if (params.q) queryParts.push(`q=${encodeURIComponent(params.q)}`);
 			// EntityPage passes sort as "key:dir" (e.g. "document_type:asc").
@@ -281,8 +340,14 @@
 				if (sortDir) queryParts.push(`dir=${encodeURIComponent(sortDir)}`);
 			}
 			if (params.filter?.dest) queryParts.push(`dest=${encodeURIComponent(params.filter.dest)}`);
-			const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
-			const result = await attestationGuideAdminApi.list(queryString);
+			if (params.filter?.status)
+				queryParts.push(`status=${encodeURIComponent(params.filter.status)}`);
+			if (params.filter?.doc_type)
+				queryParts.push(`doc_type=${encodeURIComponent(params.filter.doc_type)}`);
+			if (params.filter?.active)
+				queryParts.push(`active=${encodeURIComponent(params.filter.active)}`);
+			// api helpers prepend '?' themselves — pass a bare query string.
+			const result = await attestationGuideAdminApi.list(queryParts.join('&'));
 			if (result.ok) {
 				const resp = result.data as { data: PathwayItem[]; pagination?: { total?: number } };
 				const data = resp.data ?? [];
@@ -343,11 +408,49 @@
 	<EntityPage {config} bind:controller={entityController} />
 {:else}
 	<div class="space-y-3">
+		<!-- Status filter + page size — server-side filters on /admin/attestation/updates -->
+		<div class="mb-2 flex flex-wrap items-center gap-4">
+			<div class="flex items-center gap-2">
+				<span class="text-sm font-medium" style="color: var(--color-foreground)">
+					{t('common.status', 'Status')}:
+				</span>
+				<Autocomplete
+					id="update-status-filter"
+					placeholder={t('common.status', 'Status')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={optionFetcher(UPDATE_STATUS_OPTIONS)}
+					initialFetcher={optionFetcher(UPDATE_STATUS_OPTIONS)}
+					selectedId={updateStatusFilter}
+					selectedLabel={optionLabel(UPDATE_STATUS_OPTIONS, updateStatusFilter)}
+					onSelect={(item) => { updateStatusFilter = item.id; loadUpdates(1); }}
+					onClear={() => { updateStatusFilter = 'all'; loadUpdates(1); }}
+				/>
+			</div>
+			<div class="flex items-center gap-2">
+				<span class="text-sm font-medium" style="color: var(--color-foreground)">
+					{t('common.page_size', 'Page size')}:
+				</span>
+				<Autocomplete
+					id="update-page-size"
+					placeholder={t('common.page_size', 'Page size')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={optionFetcher(PAGE_SIZE_OPTIONS)}
+					initialFetcher={optionFetcher(PAGE_SIZE_OPTIONS)}
+					selectedId={String(updatesPageSize)}
+					selectedLabel={optionLabel(PAGE_SIZE_OPTIONS, String(updatesPageSize))}
+					onSelect={(item) => { updatesPageSize = parseInt(item.id, 10) || 25; loadUpdates(1); }}
+				/>
+			</div>
+		</div>
 		{#if loadingUpdates}
 			<p class="text-sm" style="color: var(--color-muted)">{t('common.loading', 'Loading...')}</p>
 		{:else if updates.length === 0}
 			<p class="text-sm" style="color: var(--color-muted)">
-				{t('app.tools.no_pending_updates', 'No pending community updates.')}
+				{updateStatusFilter === 'pending'
+					? t('app.tools.no_pending_updates', 'No pending community updates.')
+					: updateStatusFilter === 'all'
+						? t('app.tools.no_updates', 'No community updates.')
+						: t('app.tools.no_status_updates', 'No {status} community updates.').replace('{status}', optionLabel(UPDATE_STATUS_OPTIONS, updateStatusFilter).toLowerCase())}
 			</p>
 		{:else}
 			{#each updates as update (update.id)}
@@ -359,27 +462,30 @@
 						<div>
 							<p class="text-sm font-medium" style="color: var(--color-foreground)">
 								{t('common.update', 'Update')} #{update.step_index ?? '—'}
+								<span class="ml-2 text-xs font-normal" style="color: var(--color-muted)">({update.status})</span>
 							</p>
 							<p class="text-xs" style="color: var(--color-muted)">
 								{update.fee_estimate ?? '—'} · {update.turnaround_days ?? '—'} days
 							</p>
 						</div>
-						<div class="flex gap-2">
-							<Button
-								variant="ghost"
-								onclick={() => reviewUpdate(update.id, true)}
-								disabled={acting}
-							>
-								{t('common.approve', 'Approve')}
-							</Button>
-							<Button
-								variant="ghost"
-								onclick={() => reviewUpdate(update.id, false)}
-								disabled={acting}
-							>
-								{t('common.reject', 'Reject')}
-							</Button>
-						</div>
+						{#if update.status === 'pending'}
+							<div class="flex gap-2">
+								<Button
+									variant="ghost"
+									onclick={() => reviewUpdate(update.id, true)}
+									disabled={acting}
+								>
+									{t('common.approve', 'Approve')}
+								</Button>
+								<Button
+									variant="ghost"
+									onclick={() => reviewUpdate(update.id, false)}
+									disabled={acting}
+								>
+									{t('common.reject', 'Reject')}
+								</Button>
+							</div>
+						{/if}
 					</div>
 					{#if update.note}
 						<p class="mt-2 text-sm" style="color: var(--color-foreground)">{update.note}</p>

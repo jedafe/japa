@@ -269,7 +269,9 @@
 			if (q) params.set('q', q);
 			if (filter.verification_status) params.set('verification_status', filter.verification_status);
 			if (filter.dest) params.set('dest', filter.dest);
-			params.set('page', String(page + 1));
+			// Backend derives the offset from page_offset (row offset);
+			// `page` alone is ignored (page_offset defaults to 0).
+			params.set('page_offset', String(page * (pageSize || 25)));
 			if (pageSize) params.set('page_size', String(pageSize));
 			const result = await scholarshipAdminApi.list(params.toString());
 			if (result.ok) {

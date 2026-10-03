@@ -100,18 +100,8 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
-	// Convention: page_size + page_offset (api-response-format.md).
-	// Backward compat: also accept page + limit.
-	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	} else if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	}
 
+	// Limit first — page_offset is a row offset and needs it to derive the page.
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
@@ -119,6 +109,18 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
+		}
+	}
+
+	// Convention: page_offset is a row offset (api-response-format.md).
+	// Backward compat: page is a 1-based page-number alias.
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			page = int32(n)/limit + 1 // #nosec
+		}
+	} else if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
 		}
 	}
 

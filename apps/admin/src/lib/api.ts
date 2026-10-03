@@ -2359,9 +2359,15 @@ export const housingGuideAdminApi = {
 };
 
 export const attestationGuideAdminApi = {
-	list: (params?: string) => api<unknown>(`/admin/attestation${params ? `?${params}` : ''}`),
+	// apiRaw — callers need the pagination sidecar alongside `data`.
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; pagination?: { page: number; limit: number; total: number } }>(
+			`/admin/attestation${params ? `?${params.replace(/^\?/, '')}` : ''}`
+		),
 	listUpdates: (params?: string) =>
-		api<unknown>(`/admin/attestation/updates${params ? `?${params}` : ''}`),
+		apiRaw<{ data: unknown[]; pagination?: { page: number; limit: number; total: number } }>(
+			`/admin/attestation/updates${params ? `?${params.replace(/^\?/, '')}` : ''}`
+		),
 	create: (body: Record<string, unknown>) => api<unknown>(`/admin/attestation`, { method: 'POST', body }),
 	approve: (id: string) =>
 		api<unknown>(`/admin/attestation/${id}/approve`, { method: 'PATCH', body: {} }),
@@ -2458,6 +2464,7 @@ export const travelAdminApi = {
 		affiliate_config?: unknown;
 		is_active?: boolean;
 	}) => api<TravelProvider>(`/admin/travel/providers/${id}`, { method: 'PATCH', body }),
+	remove: (id: string) => api<null>(`/admin/travel/providers/${id}`, { method: 'DELETE' }),
 };
 
 export interface CatalogOption {

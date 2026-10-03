@@ -29,6 +29,10 @@ import (
 // review window).
 const digestDraftKeyTTL = 2 * time.Hour
 
+// ErrInvalidContent is returned when a content payload is not a JSON object
+// of §84 section keys. Handlers map it to 400.
+var ErrInvalidContent = errors.New("digest: content must be a JSON object")
+
 // TaskEnqueuer is the interface for enqueuing Asynq background tasks
 // (structural typing — *worker.Enqueuer satisfies this).
 type TaskEnqueuer interface {
@@ -270,6 +274,13 @@ func (s *Service) AdminGet(ctx context.Context, id pgtype.UUID) (DigestEditionDe
 func (s *Service) AdminUpdate(ctx context.Context, id pgtype.UUID, content json.RawMessage) error {
 	if len(content) == 0 {
 		return errors.New("content is required")
+	}
+
+	// §84: content is a JSON object of section keys — reject scalars/arrays
+	// before they hit storage and break renderDigestEmail.
+	var shape map[string]json.RawMessage
+	if err := json.Unmarshal(content, &shape); err != nil || shape == nil {
+		return ErrInvalidContent
 	}
 
 	e, err := s.store.GetEdition(ctx, id)

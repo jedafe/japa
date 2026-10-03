@@ -190,6 +190,10 @@
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
+		remove: async (id) => {
+			const res = await travelAdminApi.remove(id);
+			return res.ok ? { ok: true } : { ok: false, error: res.error ?? t('travel.delete_error', 'Failed to delete provider') };
+		},
 		viewSnippet: ProviderView,
 		formSnippet: ConfigForm
 	});

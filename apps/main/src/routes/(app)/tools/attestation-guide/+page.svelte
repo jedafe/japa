@@ -16,7 +16,7 @@
 		MessageSquarePlus,
 		Lock
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, AutocompleteSelect } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import type { AttestationPathwayWithAi, AttestationCommunityUpdate, GeoCountry } from '$lib/types';
 	import type { PageData } from './$types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
@@ -44,12 +44,17 @@
 
 	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let pathways = $state<AttestationPathwayWithAi[]>(untrack(() => data.pathways));
+	let pathwaysTotal = $state<number>(untrack(() => data.pathwaysTotal));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
-	let selectedIssuingId = $state<string>('');
-	let docTypeFilter = $state<string>('');
+	let selectedIssuingId = $state<string>(untrack(() => data.initialIssuingId ?? ''));
+	let docTypeFilter = $state<string>(untrack(() => data.initialDocType ?? ''));
 	let loading = $state(false);
+	let loadingMore = $state(false);
+	let currentPage = $state(1); // 1-based UI page; API takes a row offset via page_offset
 	let expandedId = $state<string | null>(null);
+	const PAGE_SIZE = 25;
+	const hasMore = $derived(pathways.length < pathwaysTotal);
 
 	// Community update form state
 	let showRegisterPrompt = $state(false);
@@ -61,22 +66,56 @@
 	let submittingUpdate = $state(false);
 	let updateError = $state<string | null>(null);
 
+	function pathwaysQuery(pageNum: number): string {
+		const params = new URLSearchParams();
+		params.set('dest', selectedDestId);
+		params.set('page_offset', String((pageNum - 1) * PAGE_SIZE));
+		params.set('page_size', String(PAGE_SIZE));
+		if (selectedIssuingId) params.set('issuing', selectedIssuingId);
+		if (docTypeFilter.trim()) params.set('doc_type', docTypeFilter.trim());
+		return params.toString();
+	}
+
 	async function loadPathways() {
 		if (!selectedDestId) {
 			pathways = [];
+			pathwaysTotal = 0;
+			currentPage = 1;
 			return;
 		}
 		loading = true;
-		const params = new URLSearchParams();
-		params.set('dest', selectedDestId);
-		if (selectedIssuingId) params.set('issuing', selectedIssuingId);
-		if (docTypeFilter) params.set('doc_type', docTypeFilter);
-		const res = await api.get<AttestationPathwayWithAi[]>(
-			`/attestation?${params.toString()}`
+		const res = await api.getEnvelope<AttestationPathwayWithAi[]>(
+			`/attestation?${pathwaysQuery(1)}`
 		);
 		loading = false;
-		if (!res.error) pathways = res.data ?? [];
-		else pathways = [];
+		if (!res.error) {
+			pathways = res.data ?? [];
+			currentPage = 1;
+			pathwaysTotal = readTotal(res.envelope) ?? pathways.length;
+		} else {
+			pathways = [];
+			pathwaysTotal = 0;
+		}
+	}
+
+	async function loadMorePathways() {
+		if (!selectedDestId || loadingMore || !hasMore) return;
+		loadingMore = true;
+		const nextPage = currentPage + 1;
+		const res = await api.getEnvelope<AttestationPathwayWithAi[]>(
+			`/attestation?${pathwaysQuery(nextPage)}`
+		);
+		loadingMore = false;
+		if (!res.error) {
+			pathways = [...pathways, ...(res.data ?? [])];
+			currentPage = nextPage;
+			pathwaysTotal = readTotal(res.envelope) ?? pathwaysTotal;
+		}
+	}
+
+	function readTotal(envelope: Record<string, unknown> | null): number | null {
+		const p = envelope?.pagination as { total?: number } | undefined;
+		return typeof p?.total === 'number' ? p.total : null;
 	}
 
 	function onDestChange(id: string) {
@@ -101,6 +140,7 @@
 		if (docTypeDebounce) clearTimeout(docTypeDebounce);
 		docTypeDebounce = setTimeout(() => {
 			loadPathways();
+			updateUrl();
 			docTypeDebounce = null;
 		}, 300);
 	}
@@ -109,6 +149,10 @@
 		const url = new URL(page.url);
 		if (selectedDestId) url.searchParams.set('dest', selectedDestId);
 		else url.searchParams.delete('dest');
+		if (selectedIssuingId) url.searchParams.set('issuing', selectedIssuingId);
+		else url.searchParams.delete('issuing');
+		if (docTypeFilter.trim()) url.searchParams.set('doc_type', docTypeFilter.trim());
+		else url.searchParams.delete('doc_type');
 		replaceState(url, {});
 	}
 
@@ -125,6 +169,13 @@
 
 	function isStepObject(step: unknown): step is Record<string, unknown> {
 		return step !== null && typeof step === 'object' && !Array.isArray(step);
+	}
+
+	/** Render a step field value — objects/arrays would print as "[object Object]". */
+	function stepValueText(val: unknown): string {
+		if (val === null || val === undefined) return '';
+		if (typeof val === 'object') return JSON.stringify(val);
+		return String(val);
 	}
 
 	/** Format an ISO date string as a readable date. */
@@ -207,6 +258,9 @@
 	}
 	const selectedDestLabel = $derived(
 		selectedDestId ? destinations.find((d) => d.id === selectedDestId)?.name ?? null : null
+	);
+	const selectedIssuingLabel = $derived(
+		selectedIssuingId ? destinations.find((d) => d.id === selectedIssuingId)?.name ?? null : null
 	);
 </script>
 
@@ -298,14 +352,16 @@
 					<label for="issuing-selector" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 						{t('attestation_guide.issuing_country', 'Issuing country:')}
 					</label>
-					<AutocompleteSelect
+					<Autocomplete
 						id="issuing-selector"
-						value={selectedIssuingId}
-						options={[
-							{ value: '', label: t('attestation_guide.any_issuing', 'Any') },
-							...destinations.map((d) => ({ value: d.id, label: d.name }))
-						]}
-						onValueChange={onIssuingChange}
+						placeholder={t('attestation_guide.any_issuing', 'Any')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchDestinations}
+						initialFetcher={fetchDestinationsInitial}
+						selectedId={selectedIssuingId || null}
+						selectedLabel={selectedIssuingLabel}
+						onSelect={(item) => onIssuingChange(item.id)}
+						onClear={() => onIssuingChange('')}
 					/>
 				</div>
 				<div class="flex items-center gap-3">
@@ -416,12 +472,12 @@
 																				{val}
 																			</a>
 																		{:else}
-																			<span class="text-[var(--color-text-subtle)]">{String(val)}</span>
+																			<span class="text-[var(--color-text-subtle)]">{stepValueText(val)}</span>
 																		{/if}
 																	</div>
 																{/each}
 															{:else}
-																<span class="text-[var(--color-text-subtle)]">{String(step)}</span>
+																<span class="text-[var(--color-text-subtle)]">{stepValueText(step)}</span>
 															{/if}
 														</div>
 													</li>
@@ -562,6 +618,25 @@
 							{/if}
 						</div>
 					{/each}
+
+					<!-- Pagination — consumes the endpoint's page/page_size contract -->
+					<div class="flex items-center justify-between pt-2">
+						<p class="text-xs text-[var(--color-muted)]">
+							{t('common.showing_of', 'Showing {n} of {total}')
+								.replace('{n}', String(pathways.length))
+								.replace('{total}', String(pathwaysTotal))}
+						</p>
+						{#if hasMore}
+							<button
+								type="button"
+								onclick={loadMorePathways}
+								disabled={loadingMore}
+								class="px-4 py-2 text-sm font-medium text-[var(--color-text)] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors disabled:opacity-50"
+							>
+								{loadingMore ? t('common.loading', 'Loading...') : t('common.load_more', 'Load more')}
+							</button>
+						{/if}
+					</div>
 				</div>
 			{/if}
 		</div>

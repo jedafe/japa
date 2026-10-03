@@ -466,7 +466,7 @@ func (s *Store) PublishEdition(ctx context.Context, id, reviewerID pgtype.UUID) 
 	cmd, err := s.pool.Writer.Exec(ctx, `
 UPDATE digest_editions
 SET status = 'published', published_at = now(), reviewed_by = $2
-WHERE id = $1 AND status IN ('draft', 'review', 'scheduled')
+WHERE id = $1 AND status IN ('draft', 'review')
 `, id, reviewerID)
 	if err != nil {
 		return fmt.Errorf("digest: publish edition: %w", err)

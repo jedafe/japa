@@ -12,6 +12,7 @@
 //	GET    /api/v1/admin/travel/providers       — list configured providers
 //	POST   /api/v1/admin/travel/providers       — add provider
 //	PATCH  /api/v1/admin/travel/providers/:id   — update provider config
+//	DELETE /api/v1/admin/travel/providers/:id   — remove provider
 //
 // Ref: japaconnect-engineering/sections/67-travel-search.md
 //
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
@@ -173,9 +175,16 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 	}
 
 	returnDate := r.URL.Query().Get("return_date")
-	if returnDate != "" && !validateDate(returnDate) {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_date", "return_date must be in YYYY-MM-DD format")
-		return
+	if returnDate != "" {
+		if !validateDate(returnDate) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_date", "return_date must be in YYYY-MM-DD format")
+			return
+		}
+
+		if returnDate < date {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_date", "return_date must be on or after date")
+			return
+		}
 	}
 
 	params := FlightSearchParams{
@@ -197,6 +206,11 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+			return
+		}
+
+		if errors.Is(err, ErrNoProvider) {
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "provider_not_configured", "No flight provider is configured yet")
 			return
 		}
 
@@ -235,6 +249,11 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if checkout <= checkin {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_checkout", "checkout must be after checkin")
+		return
+	}
+
 	params := HotelSearchParams{
 		Destination: dest,
 		CheckIn:     checkin,
@@ -252,6 +271,11 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+			return
+		}
+
+		if errors.Is(err, ErrNoProvider) {
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "provider_not_configured", "No hotel provider is configured yet")
 			return
 		}
 
@@ -484,4 +508,38 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": provider,
 	})
+}
+
+// HandleAdminDeleteProvider handles DELETE /api/v1/admin/travel/providers/:id
+// — permanently remove a travel provider. Provider rows are admin-managed
+// configuration, not user content, so a hard delete is correct here (Rule 11
+// only covers user content).
+func (h *Handlers) HandleAdminDeleteProvider(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	providerID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		return
+	}
+
+	if err := h.service.DeleteProvider(r.Context(), providerID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Travel provider not found")
+			return
+		}
+
+		slog.Error("travel: admin delete provider failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "delete_provider_failed", "Failed to delete provider")
+
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

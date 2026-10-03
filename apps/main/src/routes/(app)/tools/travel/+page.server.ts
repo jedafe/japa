@@ -3,16 +3,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiGet, apiPost, apiPut, ApiError } from '$lib/server/api';
-import type { JCEComparison, ComparisonCreated, ComparisonItem, ComparisonDimension } from '$lib/types';
-
-interface TravelProvider {
-	id: string;
-	name: string;
-	slug: string;
-	provider_type: string;
-	is_active: boolean;
-	created_at: string;
-}
+import type { CatalogOption, JCEComparison, ComparisonCreated, ComparisonItem, ComparisonDimension, TravelProvider } from '$lib/types';
 
 /**
  * Travel Search at /tools/travel (Section 67, ADR-085).
@@ -32,15 +23,31 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
-	let providers: TravelProvider[] = [];
-	try {
-		providers = await apiGet<TravelProvider[]>(ctx, '/travel/providers');
-	} catch (e) {
-		// Non-fatal: the search UI still works if the provider list fails.
-		console.error('failed to load travel providers:', e);
-	}
+	// Providers + option catalogs (Rule 16 — option lists come from the
+	// backend catalog endpoint, never hardcoded frontend arrays). All
+	// independent calls run in parallel and degrade non-fatally.
+	const [providersRes, cabinRes, providerTypeRes] = await Promise.all([
+		apiGet<TravelProvider[]>(ctx, '/travel/providers')
+			.then((v) => ({ ok: true as const, value: v ?? [] }))
+			.catch((e) => {
+				console.error('failed to load travel providers:', e);
+				return { ok: false as const, value: [] as TravelProvider[] };
+			}),
+		apiGet<CatalogOption[]>(ctx, '/catalogs/travel.cabin_class')
+			.then((v) => ({ ok: true as const, value: v ?? [] }))
+			.catch(() => ({ ok: false as const, value: [] as CatalogOption[] })),
+		apiGet<CatalogOption[]>(ctx, '/catalogs/travel.provider_type')
+			.then((v) => ({ ok: true as const, value: v ?? [] }))
+			.catch(() => ({ ok: false as const, value: [] as CatalogOption[] }))
+	]);
 
-	return { authed, providers };
+	return {
+		authed,
+		providers: providersRes.value,
+		providersError: !providersRes.ok,
+		cabinClasses: cabinRes.value,
+		providerTypes: providerTypeRes.value
+	};
 };
 
 /**
@@ -112,9 +119,11 @@ export const actions: Actions = {
 			return fail(500, { error: 'detail_failed', message });
 		}
 
+		// Match items back to the selected providers by position (the API
+		// echoes the position sent at create time), not array order.
 		const itemByPosition = new Map<number, ComparisonItem>();
-		for (const [i, item] of jce.items.entries()) {
-			itemByPosition.set(i, item);
+		for (const item of jce.items) {
+			itemByPosition.set(item.position, item);
 		}
 		const dimByLabel = new Map<string, ComparisonDimension>(
 			jce.dimensions.map((d) => [d.label, d])
@@ -125,7 +134,7 @@ export const actions: Actions = {
 				case 'Provider Type':
 					return p.provider_type;
 				case 'Active Since':
-					return p.created_at ? new Date(p.created_at).toLocaleDateString() : '';
+					return p.created_at ? p.created_at.slice(0, 10) : '';
 				case 'Slug':
 					return p.slug;
 				default:
