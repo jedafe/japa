@@ -105,7 +105,7 @@ func (s *Service) GetMatrix(ctx context.Context, base string) (*Matrix, error)
 func (s *Service) Convert(ctx context.Context, amount float64, from, to string) (*ConvertResult, error)
 ```
 
-- `GetMatrix`: Valkey `jc:fx:matrix:{platform}:{base}` (TTL `fx.cache_ttl_minutes`, default 120) → on miss, `DISTINCT ON (quote_currency) ... ORDER BY fetched_at DESC` over `fx_rates`, then cache.
+- `GetMatrix`: Valkey `jc:fx:matrix:{base}` (TTL `fx.cache_ttl_minutes`, default 120) → on miss, `DISTINCT ON (quote_currency) ... ORDER BY fetched_at DESC` over `fx_rates`, then cache.
 - `Convert`: `rate = matrix[to] / matrix[from]`; result `{amount, from, to, rate, converted, fetched_at, stale}` where `stale` = matrix age > `fx.stale_hours` (default 48).
 - Both honor `fx.enabled` via the injected `FeatureChecker`.
 
@@ -157,7 +157,7 @@ remittanceService.SetProviders(map[string]remittance.RateProvider{
 | system_settings | `fx.stale_hours` | `48` |
 | system_settings | `fx.history_retention_days` | `90` |
 | system_settings | `fx.default_base_currency` | `USD` |
-| Valkey | `jc:fx:matrix:{platform}:{base}` | TTL per `fx.cache_ttl_minutes` |
+| Valkey | `jc:fx:matrix:{base}` | TTL per `fx.cache_ttl_minutes` |
 
 No new `JC_*` env vars — the API key lives in encrypted `api_config`. No new RBAC nodes — reads are public; provider configuration rides `remittance.manage`/`remittance.fetch`.
 
