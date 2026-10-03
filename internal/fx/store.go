@@ -59,7 +59,8 @@ func (s *Store) ListCurrencies(ctx context.Context) ([]gen.ListFxCurrenciesRow, 
 
 // PruneRates deletes rows older than cutoff, keeping one snapshot per
 // base/quote/day for older data (same downsampling as remittance §74).
-func (s *Store) PruneRates(ctx context.Context, cutoff time.Time) error {
+// Returns the number of rows deleted.
+func (s *Store) PruneRates(ctx context.Context, cutoff time.Time) (int64, error) {
 	return s.queries.PruneFxRates(ctx,
 		pgtype.Timestamptz{Time: cutoff, Valid: true},
 	)

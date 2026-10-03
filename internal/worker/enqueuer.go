@@ -292,6 +292,8 @@ var taskTier = func() map[string]string {
 		// V2 low-tier tasks (§§60-76)
 		TypeStudioRetryFailed,
 		TypeRemittancePruneOldRates,
+		// §112 FX Currency Converter (ADR-125) — weekly matrix prune, low tier.
+		TypeFxPruneRates,
 		TypeReferralReviewFlagged,
 		TypeScholarshipCheckDeadlines,
 		TypeJobsExpireListings,
@@ -541,6 +543,7 @@ var taskTypeCatalog = []struct {
 	// V2 low-tier tasks (§§60-76, ADRs 078-085)
 	{TypeStudioRetryFailed, "low", "Retry all failed jobs in a studio batch (§75)"},
 	{TypeRemittancePruneOldRates, "low", "Weekly — daily-downsample + delete rate rows past retention (§74)"},
+	{TypeFxPruneRates, "low", "Weekly — delete fx_rates matrix rows past fx.history_retention_days (§112)"},
 	{TypeReferralReviewFlagged, "low", "Daily sweep — surface flagged referrals in admin queue (§60)"},
 	{TypeScholarshipCheckDeadlines, "low", "Daily — check saved scholarship deadlines, send reminders (§73, ADR-073)"},
 	{TypeJobsExpireListings, "low", "Daily — archive job listings past application_deadline (§63)"},

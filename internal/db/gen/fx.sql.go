@@ -136,7 +136,7 @@ func (q *Queries) ListFxCurrencies(ctx context.Context) ([]ListFxCurrenciesRow, 
 	return items, nil
 }
 
-const pruneFxRates = `-- name: PruneFxRates :exec
+const pruneFxRates = `-- name: PruneFxRates :execrows
 DELETE FROM fx_rates
 WHERE fx_rates.fetched_at < $1
   AND fx_rates.id NOT IN (
@@ -146,7 +146,10 @@ WHERE fx_rates.fetched_at < $1
   )
 `
 
-func (q *Queries) PruneFxRates(ctx context.Context, cutoffDate pgtype.Timestamptz) error {
-	_, err := q.db.Exec(ctx, pruneFxRates, cutoffDate)
-	return err
+func (q *Queries) PruneFxRates(ctx context.Context, cutoffDate pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneFxRates, cutoffDate)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/devices"
+	"github.com/jedafe/japa/internal/fx"
 	"github.com/jedafe/japa/internal/gamification"
 	"github.com/jedafe/japa/internal/jobs"
 	"github.com/jedafe/japa/internal/notifications"
@@ -408,6 +409,25 @@ func (a *RemittanceAdapter) PruneOldRates(ctx context.Context) (int, error) {
 }
 
 // ---------------------------------------------------------------------------
+// FxAdapter — wraps fx.Service (§112, ADR-125).
+// ---------------------------------------------------------------------------
+
+// FxAdapter adapts fx.Service to the worker.FxProcessor interface.
+type FxAdapter struct {
+	svc *fx.Service
+}
+
+// NewFxAdapter creates an FxAdapter.
+func NewFxAdapter(svc *fx.Service) *FxAdapter {
+	return &FxAdapter{svc: svc}
+}
+
+// PruneRates deletes fx_rates rows past fx.history_retention_days (§112).
+func (a *FxAdapter) PruneRates(ctx context.Context) (int, error) {
+	return a.svc.PruneRates(ctx)
+}
+
+// ---------------------------------------------------------------------------
 // ReferralAdapter — wraps referral.Service (§60, ADR-078).
 // ---------------------------------------------------------------------------
 
@@ -556,6 +576,7 @@ func RegisterV2Processors(
 	assSvc *assessment.Service,
 	schSvc *scholarships.Service,
 	remSvc *remittance.Service,
+	fxSvc *fx.Service,
 	refSvc *referral.Service,
 	adsSvc *adsselfserve.Service,
 	devSvc *devices.Service,
@@ -567,9 +588,10 @@ func RegisterV2Processors(
 	worker.RegisterAssessmentProcessor(NewAssessmentAdapter(assSvc, database, notifSvc))
 	worker.RegisterScholarshipProcessor(NewScholarshipAdapter(schSvc, database, notifSvc))
 	worker.RegisterRemittanceProcessor(NewRemittanceAdapter(remSvc, database))
+	worker.RegisterFxProcessor(NewFxAdapter(fxSvc))
 	worker.RegisterReferralProcessor(NewReferralAdapter(refSvc, database))
 	worker.RegisterAdsSelfServeProcessor(NewAdsSelfServeAdapter(adsSvc, database))
 	worker.RegisterPushProcessor(NewPushAdapter(devSvc, database))
 
-	slog.Info("v2 processors registered", "jobs", true, "gamification", true, "import", true, "assessment", true, "scholarship", true, "remittance", true, "referral", true, "ads_self_serve", true, "push", true, "persona", false, "studio", false)
+	slog.Info("v2 processors registered", "jobs", true, "gamification", true, "import", true, "assessment", true, "scholarship", true, "remittance", true, "fx", true, "referral", true, "ads_self_serve", true, "push", true, "persona", false, "studio", false)
 }

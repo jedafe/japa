@@ -33,7 +33,7 @@ WHERE c.is_active = true
   AND EXISTS (SELECT 1 FROM fx_rates fr WHERE fr.quote_currency = c.code)
 ORDER BY c.position ASC, c.code ASC;
 
--- name: PruneFxRates :exec
+-- name: PruneFxRates :execrows
 DELETE FROM fx_rates
 WHERE fx_rates.fetched_at < @cutoff_date
   AND fx_rates.id NOT IN (

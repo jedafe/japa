@@ -289,6 +289,11 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Low queue.
 	schedule("0 3 * * 0", TypeRemittancePruneOldRates, 7*24*time.Hour)
 
+	// Weekly FX matrix pruning — Sunday 03:30 UTC (§112, ADR-125).
+	// Deletes fx_rates rows older than fx.history_retention_days (default 90).
+	// Low queue.
+	schedule("30 3 * * 0", TypeFxPruneRates, 7*24*time.Hour)
+
 	// §60 Referral — daily sweep to surface flagged referrals for admin review.
 	// The handler is a no-op placeholder (the flagged queue is exposed via
 	// GET /admin/referrals/flagged); the cron exists so the task catalog entry

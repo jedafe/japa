@@ -284,6 +284,7 @@ var handlerRegistry = []struct {
 	{TypeRemittanceFetchRates, HandleRemittanceFetchRates},
 	{TypeRemittanceCheckAlerts, HandleRemittanceCheckAlerts},
 	{TypeRemittancePruneOldRates, HandleRemittancePruneOldRates},
+	{TypeFxPruneRates, HandleFxPruneRates},
 	{TypeReferralRecordClick, HandleReferralRecordClick},
 	{TypeReferralCheckConversion, HandleReferralCheckConversion},
 	{TypeReferralReviewFlagged, HandleReferralReviewFlagged},

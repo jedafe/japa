@@ -387,9 +387,10 @@ func (s *Service) InsertMatrix(ctx context.Context, base, source string, rates m
 // snapshot per base/quote/day for older data (fx:prune_rates task, §112).
 func (s *Service) PruneRates(ctx context.Context) (int, error) {
 	cutoff := time.Now().AddDate(0, 0, -s.HistoryRetentionDays(ctx))
-	if err := s.store.PruneRates(ctx, cutoff); err != nil {
+	n, err := s.store.PruneRates(ctx, cutoff)
+	if err != nil {
 		return 0, fmt.Errorf("fx: prune rates: %w", err)
 	}
 
-	return 1, nil
+	return int(n), nil
 }
