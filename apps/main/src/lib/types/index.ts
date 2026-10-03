@@ -2704,6 +2704,9 @@ export interface RemittanceRate {
 	transfer_time?: string;
 	fetched_at: string;
 	is_manual: boolean;
+	/** §112 — mid-market benchmark row (seeded 'mid-market' provider). Not a
+	 *  bookable provider quote — display with a badge, exclude from best-rate. */
+	is_benchmark?: boolean;
 	source_url?: string;
 }
 
@@ -2714,8 +2717,29 @@ export interface RemittanceBestRate {
 	receive_amount: number;
 }
 
+/**
+ * GET /remittance/calculate response — ranked provider results plus an
+ * optional mid-market benchmark reference (§112, ADR-125). The backend
+ * serializes the rows under `results`, not `providers`.
+ */
 export interface RemittanceCalculation {
-	providers: RemittanceProviderCalc[];
+	send_amount: number;
+	send_currency: string;
+	receive_currency: string;
+	results: RemittanceProviderCalc[];
+	best_provider_id?: string;
+	best_receive_amount?: number;
+	/** §112 — mid-market benchmark reference; carries no fees and is never
+	 *  ranked against the provider results. */
+	benchmark?: RemittanceBenchmark | null;
+}
+
+/** §112 — mid-market benchmark reference row in the calculator response. */
+export interface RemittanceBenchmark {
+	provider_id: string;
+	provider_name: string;
+	rate: number;
+	receive_amount: number;
 }
 
 export interface RemittanceProviderCalc {
@@ -2724,7 +2748,13 @@ export interface RemittanceProviderCalc {
 	rate: number;
 	receive_amount: number;
 	fee_flat: number;
-	total_cost: number;
+	fee_pct?: number;
+	total_fees: number;
+	effective_rate?: number;
+	transfer_time?: string;
+	/** §112 — defensive flag; benchmark rows are normally split into
+	 *  `RemittanceCalculation.benchmark` by the backend. */
+	is_benchmark?: boolean;
 }
 
 export interface RemittanceHistoryPoint {
@@ -2748,6 +2778,31 @@ export interface RemittanceAlert {
 	is_active: boolean;
 	last_triggered_at?: string;
 	created_at: string;
+}
+
+/* --- §112 FX Currency Converter (ADR-125) --- */
+// GET /fx/currencies, GET /fx/convert?amount=&from=&to=
+
+/** GET /fx/currencies — picker currency row (matrix-covered codes). */
+export interface FxCurrency {
+	code: string;
+	name: string;
+	symbol: string;
+}
+
+/** GET /fx/convert?amount=&from=&to= — mid-market conversion result. */
+export interface FxConvertResult {
+	amount: number;
+	from: string;
+	to: string;
+	/** Quote units per 1 unit of `from`. */
+	rate: number;
+	converted: number;
+	/** When the underlying matrix row was fetched. */
+	fetched_at: string;
+	/** True when the serving matrix row is older than the freshness window —
+	 *  render a staleness warning (§112). */
+	stale: boolean;
 }
 
 // --- Section 63: Jobs Board ---

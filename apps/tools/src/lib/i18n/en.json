@@ -230,6 +230,8 @@
 	"remittance.activate_alert": "Activate alert",
 	"remittance.edit_alert": "Edit alert",
 	"remittance.delete_alert": "Delete alert",
+	"remittance.mid_market": "Mid-market",
+	"remittance.mid_market_would_give": "Mid-market would give",
 
 	"fx.title": "Currency Converter",
 	"fx.subtitle": "Live mid-market rates across 160+ currencies.",

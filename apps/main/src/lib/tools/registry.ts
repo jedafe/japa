@@ -161,6 +161,13 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		sections: ['finance', 'settlement']
 	},
 	{
+		href: '/tools/currency-converter',
+		labelKey: 'tools.currency_converter',
+		descKey: 'tools.currency_converter_desc',
+		enabledSetting: 'fx.enabled',
+		sections: ['finance', 'settlement']
+	},
+	{
 		href: '/tools/tax-calculator',
 		labelKey: 'tools.tax_calculator',
 		descKey: 'tools.tax_calculator_desc',

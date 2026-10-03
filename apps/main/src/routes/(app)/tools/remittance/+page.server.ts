@@ -113,7 +113,8 @@ export const actions: Actions = {
 					ctx,
 					`/remittance/calculate?send=${encodeURIComponent(sendCurrency)}&receive=${encodeURIComponent(receiveCurrency)}&amount=${encodeURIComponent(sendAmount)}`
 				);
-				calcProviders = calc.providers ?? [];
+				// Backend serializes the ranked rows under `results` (§112).
+				calcProviders = calc.results ?? [];
 			} catch {
 				// Calculation seeding is non-fatal; we fall back to corridor rates below.
 				calcProviders = [];
@@ -201,7 +202,7 @@ export const actions: Actions = {
 					}
 					return '';
 				case 'Total cost':
-					return calc ? calc.total_cost.toFixed(2) : '';
+					return calc ? calc.total_fees.toFixed(2) : '';
 				case 'Rate':
 					if (calc) return calc.rate.toFixed(2);
 					return rate ? rate.rate.toFixed(2) : '';
