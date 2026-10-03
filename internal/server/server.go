@@ -71,6 +71,7 @@ import (
 	"github.com/jedafe/japa/internal/feed"
 	"github.com/jedafe/japa/internal/follows"
 	"github.com/jedafe/japa/internal/forum"
+	"github.com/jedafe/japa/internal/fx"
 	"github.com/jedafe/japa/internal/gamification"
 	"github.com/jedafe/japa/internal/gdpr"
 	"github.com/jedafe/japa/internal/geoip"
@@ -1562,6 +1563,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	remittanceService.SetNotifier(notificationService) // rate-alert notification dispatch (ADR-075 §4)
 	remittanceHandlers := remittance.NewHandlers(remittanceService, settingsService)
 	remittanceHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in remittance responses
+
+	// Ref: japaconnect-engineering/sections/112-fx-converter.md (ADR-125)
+	// FX converter — matrix service + the rate-provider adapter that feeds
+	// the seeded 'mid-market' benchmark provider on remittance:fetch_rates.
+	fxService := fx.NewService(fx.NewStore(database), settingsService)
+	fxService.SetFeatureChecker(featureChecker)
+	fxService.SetCache(vkClient.Redis()) // jc:fx:matrix:* base-matrix cache
+	fxHandlers := fx.NewHandlers(fxService)
+	remittanceService.SetProviders(map[string]remittance.RateProvider{
+		"mid-market": fx.NewAdapter(fxService, nil),
+	})
 
 	pofCalculatorStore := pofcalculator.NewStore(database)
 	pofCalculatorService := pofcalculator.NewService(pofCalculatorStore, settingsService)
@@ -6364,6 +6376,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(features.Gate(featureChecker, "travel.enabled")).Group(func(r chi.Router) {
 				r.Get("/travel/search/flights", travelHandlers.HandleSearchFlights)
 				r.Get("/travel/search/hotels", travelHandlers.HandleSearchHotels)
+				r.Get("/travel/locations", travelHandlers.HandleSearchLocations)
 				r.Get("/travel/providers", travelHandlers.HandlePublicListProviders)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
 					Get("/admin/travel/providers", travelHandlers.HandleAdminListProviders)
@@ -7114,6 +7127,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/remittance/providers/{id}/rates", remittanceHandlers.HandleAdminInsertManualRate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "remittance.fetch")).
 					Post("/admin/remittance/providers/{id}/fetch", remittanceHandlers.HandleAdminTriggerFetch)
+			})
+
+			// Section 112 — FX Currency Converter (ADR-125)
+			// Feature-flagged via features.Gate (returns 404 when disabled, ADR-042).
+			r.With(features.Gate(featureChecker, "fx.enabled")).Group(func(r chi.Router) {
+				r.Get("/fx/convert", fxHandlers.HandleConvert)
+				r.Get("/fx/rates", fxHandlers.HandleGetRates)
+				r.Get("/fx/currencies", fxHandlers.HandleListCurrencies)
 			})
 
 			// Phase 49 — V2 Functional Tools (§90–§97, §99–§101)
