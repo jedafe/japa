@@ -89,6 +89,7 @@ var Registry = []Feature{
 	{Key: "col_calculator.enabled", Label: "Cost of Living Calculator", Default: true},
 	{Key: "scholarship_finder.enabled", Label: "Scholarship Finder", Default: true},
 	{Key: "remittance.enabled", Label: "Remittance Rate Tracker", Default: true},
+	{Key: "fx.enabled", Label: "Currency Converter", Default: true},
 	{Key: "travel.enabled", Label: "Travel Search", Default: true},
 	{Key: "jobs.enabled", Label: "Jobs Board", Default: true},
 	{Key: "gamification.enabled", Label: "Gamification", Default: true},
