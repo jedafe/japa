@@ -405,6 +405,24 @@ export const TOOLS: ToolMeta[] = [
 		settingsKey: 'sop_generator',
 		enabledSetting: 'sop_generator.enabled',
 		keywords: ['SOP generator', 'statement of purpose', 'SOP sample', 'study permit SOP']
+	},
+	// --- §112 FX Currency Converter (ADR-125) ---
+	{
+		slug: 'currency-converter',
+		route: '/currency-converter',
+		icon: 'coins',
+		name: 'Currency Converter',
+		nameKey: 'tool.fx_converter.name',
+		tagline: 'Mid-market rates for 160+ currencies',
+		taglineKey: 'tool.fx_converter.tagline',
+		description:
+			'Convert between 160+ currencies at live mid-market rates — including NGN, GHS, KES — powered by Open Exchange Rates.',
+		descriptionKey: 'tool.fx_converter.description',
+		accent: '#14b8a6',
+		accentHover: '#0d9488',
+		settingsKey: 'fx',
+		enabledSetting: 'fx.enabled',
+		keywords: ['currency converter', 'exchange rate', 'fx', 'NGN', 'mid-market']
 	}
 ];
 

@@ -45,7 +45,9 @@ const TOOL_SETTINGS_KEYS: Array<{ key: string; surface: ToolSurface }> = [
 	{ key: 'crs_calculator', surface: 'crs-calculator' },
 	{ key: 'pof_calculator', surface: 'pof-calculator' },
 	{ key: 'eca_guide', surface: 'eca-guide' },
-	{ key: 'sop_generator', surface: 'sop-generator' }
+	{ key: 'sop_generator', surface: 'sop-generator' },
+	// §112 FX Currency Converter (ADR-125).
+	{ key: 'fx', surface: 'currency-converter' }
 ];
 
 /** Default subdomains per tool (from system-settings-catalog.md). */
@@ -72,7 +74,9 @@ const DEFAULT_SUBDOMAINS: Record<string, string> = {
 	crs_calculator: 'crs-calculator',
 	pof_calculator: 'pof-calculator',
 	eca_guide: 'eca-guide',
-	sop_generator: 'sop-generator'
+	sop_generator: 'sop-generator',
+	// §112 — fx.japaconnect.com → currency-converter surface.
+	fx: 'currency-converter'
 };
 
 /**

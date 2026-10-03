@@ -41,7 +41,8 @@ export type ToolSurface =
 	| 'crs-calculator'
 	| 'pof-calculator'
 	| 'eca-guide'
-	| 'sop-generator';
+	| 'sop-generator'
+	| 'currency-converter';
 
 /* ------------------------------------------------------------------ *
  * Transport envelope
@@ -395,6 +396,9 @@ export interface RemittanceRate {
 	transfer_time?: string | null;
 	fetched_at: string;
 	is_manual: boolean;
+	/** §112 — mid-market benchmark row (seeded 'mid-market' provider). Not a
+	 *  bookable provider quote — display with a badge, exclude from best-rate. */
+	is_benchmark?: boolean;
 	source?: SourceAttribution;
 }
 
@@ -1272,4 +1276,29 @@ export interface SopQuota {
 	limit: number;
 	used: number;
 	remaining: number;
+}
+
+/* --- §112 FX Currency Converter (ADR-125) --- */
+// GET /fx/currencies, GET /fx/convert?amount=&from=&to=
+
+/** GET /fx/currencies — picker currency row (matrix-covered codes). */
+export interface FxCurrency {
+	code: string;
+	name: string;
+	symbol: string;
+}
+
+/** GET /fx/convert?amount=&from=&to= — mid-market conversion result. */
+export interface FxConvertResult {
+	amount: number;
+	from: string;
+	to: string;
+	/** Quote units per 1 unit of `from`. */
+	rate: number;
+	converted: number;
+	/** When the underlying matrix row was fetched. */
+	fetched_at: string;
+	/** True when the serving matrix row is older than the freshness window —
+	 *  render a staleness warning (§112). */
+	stale: boolean;
 }
