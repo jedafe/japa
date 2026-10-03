@@ -76,6 +76,11 @@ type RemittanceProcessor interface {
 	PruneOldRates(ctx context.Context) (int, error)
 }
 
+// FxProcessor handles FX converter background tasks (§112, ADR-125).
+type FxProcessor interface {
+	PruneRates(ctx context.Context) (int, error)
+}
+
 // ReferralProcessor handles referral background tasks (§60, ADR-078).
 type ReferralProcessor interface {
 	RecordClick(ctx context.Context, code, sessionID, ip, userAgent string) error
@@ -277,6 +282,7 @@ var (
 	assessmentProcessor     AssessmentProcessor
 	scholarshipProcessor    ScholarshipProcessor
 	remittanceProcessor     RemittanceProcessor
+	fxProcessor             FxProcessor
 	referralProcessor       ReferralProcessor
 	adsSelfServeProcessor   AdsSelfServeProcessor
 	pushProcessor           PushProcessor
@@ -316,6 +322,9 @@ func RegisterScholarshipProcessor(p ScholarshipProcessor) { scholarshipProcessor
 
 // RegisterRemittanceProcessor is an exported function.
 func RegisterRemittanceProcessor(p RemittanceProcessor) { remittanceProcessor = p }
+
+// RegisterFxProcessor is an exported function.
+func RegisterFxProcessor(p FxProcessor) { fxProcessor = p }
 
 // RegisterReferralProcessor is an exported function.
 func RegisterReferralProcessor(p ReferralProcessor) { referralProcessor = p }
@@ -389,16 +398,20 @@ const (
 	TypeRemittanceFetchRates         = "remittance:fetch_rates"
 	TypeRemittanceCheckAlerts        = "remittance:check_alerts"
 	TypeRemittancePruneOldRates      = "remittance:prune_old_rates"
-	TypeReferralRecordClick          = "referral:record_click"
-	TypeReferralCheckConversion      = "referral:check_conversion"
-	TypeReferralReviewFlagged        = "referral:review_flagged"
-	TypeAdsRefundCampaignCredits     = "ads:refund_campaign_credits" // #nosec
-	TypeAdsNotifyCampaignStatus      = "ads:notify_campaign_status"
-	TypeNotificationSendPush         = "notification:send_push"
-	TypePersonaRunActivity           = "persona:run_activity"
-	TypePersonaDispatchAction        = "persona:dispatch_action"
-	TypeStudioRunBatch               = "studio:run_batch"
-	TypeStudioRetryFailed            = "studio:retry_failed"
+	// TypeFxPruneRates — §112 FX Currency Converter (ADR-125).
+	// fx:prune_rates runs weekly on the low queue, deleting fx_rates matrix
+	// rows past fx.history_retention_days (default 90) with daily downsampling.
+	TypeFxPruneRates             = "fx:prune_rates"
+	TypeReferralRecordClick      = "referral:record_click"
+	TypeReferralCheckConversion  = "referral:check_conversion"
+	TypeReferralReviewFlagged    = "referral:review_flagged"
+	TypeAdsRefundCampaignCredits = "ads:refund_campaign_credits" // #nosec
+	TypeAdsNotifyCampaignStatus  = "ads:notify_campaign_status"
+	TypeNotificationSendPush     = "notification:send_push"
+	TypePersonaRunActivity       = "persona:run_activity"
+	TypePersonaDispatchAction    = "persona:dispatch_action"
+	TypeStudioRunBatch           = "studio:run_batch"
+	TypeStudioRetryFailed        = "studio:retry_failed"
 
 	// TypeMentorGenerateEmbedding — §102 Mentorship Matching (ADR-110).
 	TypeMentorGenerateEmbedding = "mentor:generate_embedding"
@@ -707,6 +720,12 @@ func HandleRemittanceCheckAlerts(ctx context.Context, _ *asynq.Task) error {
 func HandleRemittancePruneOldRates(ctx context.Context, _ *asynq.Task) error {
 	return countTask(ctx, "remittance:prune_old_rates", "pruned rates", remittanceProcessor != nil,
 		func(ctx context.Context) (int, error) { return remittanceProcessor.PruneOldRates(ctx) })
+}
+
+// HandleFxPruneRates removes fx_rates rows beyond retention (§112).
+func HandleFxPruneRates(ctx context.Context, _ *asynq.Task) error {
+	return countTask(ctx, "fx:prune_rates", "pruned fx matrix rows", fxProcessor != nil,
+		func(ctx context.Context) (int, error) { return fxProcessor.PruneRates(ctx) })
 }
 
 // HandleReferralRecordClick records a referral click (§60).

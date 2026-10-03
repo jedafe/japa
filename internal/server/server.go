@@ -1624,6 +1624,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		assessmentService,
 		scholarshipsService,
 		remittanceService,
+		fxService,
 		referralService,
 		adsSelfServeService,
 		devicesService,
