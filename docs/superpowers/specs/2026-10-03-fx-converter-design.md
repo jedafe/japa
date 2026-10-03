@@ -3,7 +3,7 @@
 **Date:** 2026-10-03
 **Status:** Design
 **Builds on:** §74 (Remittance Rate Tracker), ADR-075 (hybrid provider model, `RateProvider` interface), §58 (`currencies` table — read-only reuse for picker labels), §03 (RBAC), §11 (Asynq), §35 (Notifications — via remittance alerts)
-**Scope:** `internal/fx` (new), `internal/remittance`, `internal/server`, `internal/worker`, `internal/db/queries`, `migrations`, `apps/tools`, `apps/main`, `.jeos` (new §110, ADR-124, catalog updates)
+**Scope:** `internal/fx` (new), `internal/remittance`, `internal/server`, `internal/worker`, `internal/db/queries`, `migrations`, `apps/tools`, `apps/main`, `.jeos` (new §112, ADR-125, catalog updates)
 
 ## 1. Problem
 
@@ -174,7 +174,7 @@ No new `JC_*` env vars — the API key lives in encrypted `api_config`. No new R
 
 ## 11. JEOS updates (before code — AGENTS.md)
 
-- New `sections/110-fx-converter.md`, `adr/ADR-124-fx-converter.md`; `JEOS.md` index entries.
+- New `sections/112-fx-converter.md`, `adr/ADR-125-fx-converter.md`; `JEOS.md` index entries.
 - Catalogs: `api-routes-catalog` (+3), `valkey-keys-catalog` (+1), `asynq-tasks` (+1 `fx:prune_rates`), `system-settings-catalog` (+4), feature-flag seed.
 - §74 amendment note: benchmark providers exist, `is_benchmark` semantics, exclusion from ranking.
 
