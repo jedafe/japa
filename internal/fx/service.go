@@ -35,6 +35,11 @@ var ErrUnsupportedCurrency = errors.New("fx: unsupported currency")
 // Handlers map it to 503 fx_unavailable.
 var ErrEmptyMatrix = errors.New("fx: no rate matrix available")
 
+// ErrDisabled is returned when the fx.enabled flag is off. The route-level
+// features.Gate normally 404s first; this is the service-level backstop.
+// Handlers map it to 404 feature_disabled.
+var ErrDisabled = errors.New("fx: converter disabled")
+
 // FeatureChecker resolves feature flag state from the feature_flags table —
 // the single source of truth for reachability (Ref: internal/features/features.go).
 // system_settings is consulted only as a fallback when no checker is injected.
@@ -167,7 +172,6 @@ func matrixFromRows(base string, rows []gen.GetLatestFxMatrixRow) (*Matrix, erro
 	}
 
 	m := &Matrix{Base: base, Rates: make(map[string]float64, len(rows)+1)}
-	m.Rates[base] = 1
 
 	for _, r := range rows {
 		m.Rates[r.QuoteCurrency] = numericToFloat64(r.Rate)
@@ -175,6 +179,10 @@ func matrixFromRows(base string, rows []gen.GetLatestFxMatrixRow) (*Matrix, erro
 			m.FetchedAt = r.FetchedAt.Time
 		}
 	}
+
+	// Canonical base→base cell — set last so a corrupt stored row can never
+	// displace it.
+	m.Rates[base] = 1
 
 	return m, nil
 }
@@ -271,7 +279,7 @@ func computeConvert(m *Matrix, amount float64, from, to string) (rate, converted
 // `from`/`to` are normalised to uppercase ISO codes by the caller (handler).
 func (s *Service) Convert(ctx context.Context, amount float64, from, to string) (*ConvertResult, error) {
 	if !s.IsEnabled(ctx) {
-		return nil, errors.New("fx: converter disabled")
+		return nil, ErrDisabled
 	}
 
 	m, err := s.GetMatrix(ctx, s.DefaultBaseCurrency(ctx))
@@ -300,7 +308,7 @@ func (s *Service) Convert(ctx context.Context, amount float64, from, to string) 
 // Matrix plus the stale flag.
 func (s *Service) GetRates(ctx context.Context, base string) (*Matrix, bool, error) {
 	if !s.IsEnabled(ctx) {
-		return nil, false, errors.New("fx: converter disabled")
+		return nil, false, ErrDisabled
 	}
 
 	m, err := s.GetMatrix(ctx, s.DefaultBaseCurrency(ctx))
@@ -331,7 +339,7 @@ func (s *Service) GetRates(ctx context.Context, base string) (*Matrix, bool, err
 // have matrix coverage.
 func (s *Service) ListCurrencies(ctx context.Context) ([]gen.ListFxCurrenciesRow, error) {
 	if !s.IsEnabled(ctx) {
-		return nil, errors.New("fx: converter disabled")
+		return nil, ErrDisabled
 	}
 
 	return s.store.ListCurrencies(ctx)
