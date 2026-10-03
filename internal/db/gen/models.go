@@ -1864,6 +1864,15 @@ type ForumVote struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type FxRate struct {
+	ID            pgtype.UUID        `json:"id"`
+	BaseCurrency  string             `json:"base_currency"`
+	QuoteCurrency string             `json:"quote_currency"`
+	Rate          pgtype.Numeric     `json:"rate"`
+	Source        string             `json:"source"`
+	FetchedAt     pgtype.Timestamptz `json:"fetched_at"`
+}
+
 type GroupRole struct {
 	GroupID   pgtype.UUID        `json:"group_id"`
 	RoleID    pgtype.UUID        `json:"role_id"`
@@ -3169,6 +3178,7 @@ type RemittanceProvider struct {
 	IsActive     bool               `json:"is_active"`
 	DisplayOrder int32              `json:"display_order"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	IsBenchmark  bool               `json:"is_benchmark"`
 }
 
 type RemittanceRate struct {
@@ -3951,6 +3961,61 @@ type Translation struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type TravelAirport struct {
+	IataCode    string   `json:"iata_code"`
+	Name        string   `json:"name"`
+	City        string   `json:"city"`
+	CountryCode string   `json:"country_code"`
+	Latitude    *float64 `json:"latitude"`
+	Longitude   *float64 `json:"longitude"`
+	AirportType string   `json:"airport_type"`
+}
+
+type TravelFlightOffer struct {
+	ID           pgtype.UUID        `json:"id"`
+	ProviderID   pgtype.UUID        `json:"provider_id"`
+	RouteKey     string             `json:"route_key"`
+	DepartDate   pgtype.Date        `json:"depart_date"`
+	ReturnDate   pgtype.Date        `json:"return_date"`
+	Adults       int16              `json:"adults"`
+	Children     int16              `json:"children"`
+	CabinClass   string             `json:"cabin_class"`
+	OfferKey     string             `json:"offer_key"`
+	Price        pgtype.Numeric     `json:"price"`
+	Currency     string             `json:"currency"`
+	Airline      *string            `json:"airline"`
+	FlightNumber *string            `json:"flight_number"`
+	Stops        *int16             `json:"stops"`
+	DepartTs     pgtype.Timestamptz `json:"depart_ts"`
+	ArriveTs     pgtype.Timestamptz `json:"arrive_ts"`
+	Duration     *string            `json:"duration"`
+	BookingUrl   string             `json:"booking_url"`
+	Raw          []byte             `json:"raw"`
+	FetchedAt    pgtype.Timestamptz `json:"fetched_at"`
+	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+}
+
+type TravelHotelOffer struct {
+	ID         pgtype.UUID        `json:"id"`
+	ProviderID pgtype.UUID        `json:"provider_id"`
+	CityKey    string             `json:"city_key"`
+	Checkin    pgtype.Date        `json:"checkin"`
+	Checkout   pgtype.Date        `json:"checkout"`
+	Guests     int16              `json:"guests"`
+	Rooms      int16              `json:"rooms"`
+	OfferKey   string             `json:"offer_key"`
+	Name       string             `json:"name"`
+	Price      pgtype.Numeric     `json:"price"`
+	Currency   string             `json:"currency"`
+	StarRating *int16             `json:"star_rating"`
+	Address    *string            `json:"address"`
+	ImageUrl   *string            `json:"image_url"`
+	BookingUrl string             `json:"booking_url"`
+	Raw        []byte             `json:"raw"`
+	FetchedAt  pgtype.Timestamptz `json:"fetched_at"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
 type TravelProvider struct {
 	ID              pgtype.UUID        `json:"id"`
 	Name            string             `json:"name"`
@@ -3960,6 +4025,27 @@ type TravelProvider struct {
 	AffiliateConfig []byte             `json:"affiliate_config"`
 	IsActive        bool               `json:"is_active"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type TravelSearchCoverage struct {
+	SearchType  string             `json:"search_type"`
+	CoverageKey string             `json:"coverage_key"`
+	ProviderID  pgtype.UUID        `json:"provider_id"`
+	FetchedAt   pgtype.Timestamptz `json:"fetched_at"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	OfferCount  int32              `json:"offer_count"`
+}
+
+type TravelSearchResult struct {
+	ID         pgtype.UUID        `json:"id"`
+	SearchType string             `json:"search_type"`
+	QueryHash  string             `json:"query_hash"`
+	Params     []byte             `json:"params"`
+	Results    []byte             `json:"results"`
+	ProviderID pgtype.UUID        `json:"provider_id"`
+	FetchedAt  pgtype.Timestamptz `json:"fetched_at"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	HitCount   int32              `json:"hit_count"`
 }
 
 type TrendingSnapshot struct {
