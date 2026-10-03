@@ -478,7 +478,7 @@ func (h *Handlers) HandleAdminListProviders(w http.ResponseWriter, r *http.Reque
 
 // HandleAdminCreateProvider handles POST /api/v1/admin/remittance/providers —
 // create provider.
-// Body: {name, slug, website_url?, data_source, api_config?, is_active, display_order}.
+// Body: {name, slug, website_url?, data_source, api_config?, is_active, is_benchmark?, display_order}.
 func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -491,6 +491,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		DataSource   string          `json:"data_source"`
 		APIConfig    json.RawMessage `json:"api_config"`
 		IsActive     bool            `json:"is_active"`
+		IsBenchmark  bool            `json:"is_benchmark"`
 		DisplayOrder int32           `json:"display_order"`
 	}
 
@@ -531,6 +532,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 		DataSource:   body.DataSource,
 		ApiConfig:    apiConfig,
 		IsActive:     body.IsActive,
+		IsBenchmark:  &body.IsBenchmark,
 		DisplayOrder: body.DisplayOrder,
 	})
 	if err != nil {
@@ -547,7 +549,7 @@ func (h *Handlers) HandleAdminCreateProvider(w http.ResponseWriter, r *http.Requ
 
 // HandleAdminUpdateProvider handles PATCH /api/v1/admin/remittance/providers/:id
 // — update provider config.
-// Body: {name?, website_url?, api_config?, is_active?, display_order?}.
+// Body: {name?, website_url?, api_config?, is_active?, is_benchmark?, display_order?}.
 func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -563,6 +565,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		WebsiteURL   *string         `json:"website_url"`
 		APIConfig    json.RawMessage `json:"api_config"`
 		IsActive     *bool           `json:"is_active"`
+		IsBenchmark  *bool           `json:"is_benchmark"`
 		DisplayOrder *int32          `json:"display_order"`
 	}
 
@@ -597,6 +600,7 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 		WebsiteUrl:   body.WebsiteURL,
 		ApiConfig:    apiConfig,
 		IsActive:     body.IsActive,
+		IsBenchmark:  body.IsBenchmark,
 		DisplayOrder: body.DisplayOrder,
 	})
 	if err != nil {

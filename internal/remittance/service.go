@@ -142,6 +142,7 @@ type RateInfo struct {
 	TransferTime    string            `json:"transfer_time,omitempty"`
 	FetchedAt       string            `json:"fetched_at"`
 	IsManual        bool              `json:"is_manual"`
+	IsBenchmark     bool              `json:"is_benchmark"`
 	SourceURL       string            `json:"source_url,omitempty"`
 	Source          SourceAttribution `json:"source"`
 }
@@ -177,6 +178,7 @@ type ProviderInfo struct {
 	WebsiteURL   string `json:"website_url,omitempty"`
 	DataSource   string `json:"data_source"`
 	IsActive     bool   `json:"is_active"`
+	IsBenchmark  bool   `json:"is_benchmark"`
 	DisplayOrder int32  `json:"display_order"`
 	CreatedAt    string `json:"created_at"`
 }
@@ -206,6 +208,16 @@ type ProviderCalculation struct {
 	TransferTime  string  `json:"transfer_time,omitempty"`
 }
 
+// BenchmarkResult is the mid-market reference shown alongside the ranked
+// provider results. Benchmark rates are not sellable quotes — they carry no
+// fees and are never ranked (§112, ADR-125).
+type BenchmarkResult struct {
+	ProviderID    string  `json:"provider_id"`
+	ProviderName  string  `json:"provider_name"`
+	Rate          float64 `json:"rate"`
+	ReceiveAmount float64 `json:"receive_amount"`
+}
+
 // CalculateResult is the output of the send-amount calculator: ranked
 // providers with the best provider highlighted. The DTO includes the input
 // parameters (send_amount, send_currency, receive_currency) so the frontend
@@ -217,6 +229,7 @@ type CalculateResult struct {
 	Results           []ProviderCalculation `json:"results"`
 	BestProviderID    string                `json:"best_provider_id,omitempty"`
 	BestReceiveAmount float64               `json:"best_receive_amount,omitempty"`
+	Benchmark         *BenchmarkResult      `json:"benchmark,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -431,6 +444,7 @@ func (s *Service) GetRates(ctx context.Context, sendCurrency, receiveCurrency st
 			TransferTime:    ptrString(r.TransferTime),
 			FetchedAt:       rfc3339(r.FetchedAt),
 			IsManual:        r.IsManual,
+			IsBenchmark:     r.ProviderIsBenchmark,
 			SourceURL:       ptrString(r.SourceUrl),
 		}
 
@@ -475,12 +489,16 @@ func (s *Service) GetBestRate(ctx context.Context, sendCurrency, receiveCurrency
 		return nil, err
 	}
 
-	if len(rates) == 0 {
+	// Benchmark rows are a mid-market reference, never a sellable quote —
+	// exclude them from the best-provider pick (§112, ADR-125).
+	providers, _ := splitBenchmark(rates)
+
+	if len(providers) == 0 {
 		return nil, nil
 	}
 
-	best := rates[0]
-	for _, r := range rates[1:] {
+	best := providers[0]
+	for _, r := range providers[1:] {
 		if r.Rate > best.Rate {
 			best = r
 		}
@@ -521,7 +539,12 @@ func (s *Service) Calculate(ctx context.Context, sendAmount float64, sendCurrenc
 		return nil, err
 	}
 
-	if len(rates) == 0 {
+	// Benchmark rows are a mid-market reference, never ranked against
+	// provider quotes (§112, ADR-125). The benchmark receive amount is
+	// computed from its raw rate — no fees — before it is filtered out.
+	rateRows, bench := splitBenchmark(rates)
+
+	if len(rateRows) == 0 && bench == nil {
 		return &CalculateResult{
 			SendAmount:      sendAmount,
 			SendCurrency:    sendCurrency,
@@ -530,9 +553,9 @@ func (s *Service) Calculate(ctx context.Context, sendAmount float64, sendCurrenc
 		}, nil
 	}
 
-	providers := make([]ProviderCalculation, 0, len(rates))
+	providers := make([]ProviderCalculation, 0, len(rateRows))
 
-	for _, r := range rates {
+	for _, r := range rateRows {
 		pc := computeProviderCalculation(r, sendAmount)
 		providers = append(providers, pc)
 	}
@@ -553,7 +576,44 @@ func (s *Service) Calculate(ctx context.Context, sendAmount float64, sendCurrenc
 		result.BestReceiveAmount = providers[0].ReceiveAmount
 	}
 
+	if bench != nil {
+		// The mid-market reference carries no fees — compute the receive
+		// amount from the raw rate regardless of any fee fields on the row.
+		benchRow := *bench
+		benchRow.FeeFlat = 0
+		benchRow.FeePct = 0
+
+		bc := computeProviderCalculation(benchRow, sendAmount)
+		result.Benchmark = &BenchmarkResult{
+			ProviderID:    bc.ProviderID,
+			ProviderName:  bc.ProviderName,
+			Rate:          bc.Rate,
+			ReceiveAmount: bc.ReceiveAmount,
+		}
+	}
+
 	return result, nil
+}
+
+// splitBenchmark partitions corridor rates into sellable provider rows and
+// the (at most one) benchmark row (§112, ADR-125). Benchmark rates are a
+// mid-market reference — never ranked against provider quotes. When multiple
+// benchmark rows exist, the highest rate is kept as the reference.
+func splitBenchmark(rates []RateInfo) (providers []RateInfo, benchmark *RateInfo) {
+	for i := range rates {
+		if rates[i].IsBenchmark {
+			if benchmark == nil || rates[i].Rate > benchmark.Rate {
+				cp := rates[i]
+				benchmark = &cp
+			}
+
+			continue
+		}
+
+		providers = append(providers, rates[i])
+	}
+
+	return providers, benchmark
 }
 
 // computeProviderCalculation computes the receive amount, fees, and effective
@@ -674,16 +734,7 @@ func (s *Service) GetProviders(ctx context.Context, activeOnly bool) ([]Provider
 
 	providers := make([]ProviderInfo, 0, len(rows))
 	for _, p := range rows {
-		providers = append(providers, ProviderInfo{
-			ID:           p.ID.String(),
-			Name:         p.Name,
-			Slug:         p.Slug,
-			WebsiteURL:   ptrString(p.WebsiteUrl),
-			DataSource:   p.DataSource,
-			IsActive:     p.IsActive,
-			DisplayOrder: p.DisplayOrder,
-			CreatedAt:    rfc3339(p.CreatedAt),
-		})
+		providers = append(providers, providerToInfo(p))
 	}
 
 	return providers, nil
@@ -1048,6 +1099,7 @@ func providerToInfo(p gen.RemittanceProvider) ProviderInfo {
 		WebsiteURL:   ptrString(p.WebsiteUrl),
 		DataSource:   p.DataSource,
 		IsActive:     p.IsActive,
+		IsBenchmark:  p.IsBenchmark,
 		DisplayOrder: p.DisplayOrder,
 		CreatedAt:    rfc3339(p.CreatedAt),
 	}
