@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/sidebars"
 )
 
 // Widget is a widget_configurations row.
@@ -84,7 +85,12 @@ var ValidWidgetTypes = []string{
 	"newsletter_signup", // email capture widget (returns config, no DB query)
 }
 
-// IsValidWidgetType reports whether t is a recognized widget type.
+// IsValidWidgetType reports whether t is a recognized widget type. In addition
+// to the Section 16 data-source types above, sidebar widget types from the
+// Section 59 registry are valid — a widget_configuration can act as a reusable
+// sidebar widget preset whose config holds the type's props (Section 16,
+// "Unified widget type space"). configured_widget itself is excluded: a
+// configuration cannot self-nest.
 func IsValidWidgetType(t string) bool {
 	for _, v := range ValidWidgetTypes {
 		if v == t {
@@ -92,5 +98,5 @@ func IsValidWidgetType(t string) bool {
 		}
 	}
 
-	return false
+	return t != "configured_widget" && sidebars.IsValidWidgetType(t)
 }

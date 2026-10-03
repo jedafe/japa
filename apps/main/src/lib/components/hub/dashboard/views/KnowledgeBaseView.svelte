@@ -9,6 +9,12 @@
 	let { data }: { data: unknown } = $props();
 	const bookmarks = $derived((data as Bookmark[] | null) ?? []);
 
+	// learnUrl/docsUrl throw when the cross-app origin env var is unset — guard
+	// so a missing env doesn't crash the render.
+	function safeCrossUrl(builder: (p: string) => string, path: string): string {
+		try { return builder(path); } catch { return '#'; }
+	}
+
 	/** Build the canonical main-app or cross-app URL for a bookmarked entity. */
 	function bookmarkUrl(bm: Bookmark): string {
 		const idOrSlug = bm.slug || bm.entity_id;
@@ -22,8 +28,12 @@
 				return `/spaces/${idOrSlug}`;
 			case 'tag':
 				return `/tags/${idOrSlug}`;
+			// Doc pages live on the Docs app under /docs/{audience}/{slug}; the
+			// bookmark row carries the page's audience slug.
+			case 'doc_page':
+				return safeCrossUrl(docsUrl, `/docs/${bm.audience ?? 'users'}/${idOrSlug}`);
 			case 'learning_track':
-				return learnUrl(`/tracks/${idOrSlug}`);
+				return safeCrossUrl(learnUrl, `/tracks/${idOrSlug}`);
 			default:
 				return `/${idOrSlug}`;
 		}

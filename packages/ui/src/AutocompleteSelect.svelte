@@ -42,6 +42,8 @@
 		clearLabel?: string;
 		/** Accessible label for the loading spinner (forwarded to Autocomplete). */
 		loadingLabel?: string;
+		/** Open the dropdown above the field instead of below (forwarded to Autocomplete). */
+		openUp?: boolean;
 	}
 
 	let {
@@ -59,7 +61,8 @@
 		ariaLabel,
 		noResultsLabel = 'No results found',
 		clearLabel,
-		loadingLabel
+		loadingLabel,
+		openUp = false
 	}: Props = $props();
 
 	// '' is not a usable Autocomplete item id (falsy = "no selection"), so
@@ -106,6 +109,7 @@
 	{inputClass}
 	{clearLabel}
 	{loadingLabel}
+	{openUp}
 />
 {#if name}
 	<input type="hidden" {name} value={value ?? ''} />

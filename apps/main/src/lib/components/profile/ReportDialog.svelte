@@ -7,7 +7,7 @@
 	 */
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { reportContent, reportComment, reportSpace, reportUser, reportSource } from '$lib/api/hub';
+	import { reportContent, reportComment, reportSpace, reportUser, reportSource, reportDMMessage } from '$lib/api/hub';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { Flag, Loader2, AlertCircle } from 'lucide-svelte';
 	import { AutocompleteSelect, Modal } from '$lib/components/ui';
@@ -15,18 +15,21 @@
 	interface Props {
 		open?: boolean;
 		/** Entity type must match the backend report route. */
-		entityType?: 'user' | 'content' | 'comment' | 'space' | 'source';
+		entityType?: 'user' | 'content' | 'comment' | 'space' | 'source' | 'dm_message';
 		/** Backend ID (or slug for sources) for the entity being reported. */
 		entityId: string;
 		/** Human-readable name shown in the dialog title. */
 		entityName?: string;
+		/** Required for dm_message — the conversation that owns the message. */
+		dmConversationId?: string;
 	}
 
 	let {
 		open = $bindable(false),
 		entityType = 'user',
 		entityId,
-		entityName
+		entityName,
+		dmConversationId
 	}: Props = $props();
 
 	/** Reason codes are admin-configurable via system_settings (public). */
@@ -86,6 +89,13 @@
 				break;
 			case 'user':
 				res = await reportUser(entityId, body);
+				break;
+			case 'dm_message':
+				if (!dmConversationId) {
+					res = { error: { message: t('report.unsupported_entity', 'Reporting is not yet supported for this type') } } as any;
+				} else {
+					res = await reportDMMessage(dmConversationId, entityId, body);
+				}
 				break;
 			default:
 				res = { error: { message: t('report.unsupported_entity', 'Reporting is not yet supported for this type') } } as any;

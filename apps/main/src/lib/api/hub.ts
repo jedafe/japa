@@ -261,6 +261,9 @@ export const reportSpace = (id: string, body: { reason: string; notes?: string; 
 	api.post<{ id: string }>(`/spaces/${id}/report`, body);
 export const reportSource = (slug: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
 	api.post<{ id: string }>(`/sources/${slug}/report`, body);
+/** Section 48 — POST /dm/conversations/{id}/messages/{mid}/report */
+export const reportDMMessage = (conversationId: string, messageId: string, body: { reason: string; notes?: string; evidence_urls?: string[] }) =>
+	api.post<{ id: string }>(`/dm/conversations/${conversationId}/messages/${messageId}/report`, body);
 
 /* ---- newsletter preferences (Section 62, ADR-080) ---- */
 export const patchNewsletterPreferences = (v: { digest_enabled?: boolean; campaign_enabled?: boolean }) =>

@@ -1,51 +1,68 @@
 <script lang="ts">
 	// /travel — Travel Search providers (Section 67, ADR-085).
-	// Migrated to the EntityPage scaffold. Uses `formSnippet` for the JSON
-	// config textareas (api_config + affiliate_config) because EntityForm's
-	// textarea does not round-trip JSON objects — the snippet stringifies on
-	// edit-seed and the create/update handlers JSON.parse before sending.
+	// Migrated to the EntityPage scaffold. Uses `formSnippet` for structured
+	// config editing — api_config renders as endpoint/key inputs plus an
+	// `extra` key-value editor, affiliate_config as a key-value editor —
+	// because EntityForm has no map-editor field type. Serialization helpers
+	// (buildApiConfig/pairsToObject) translate rows back into the API's flat
+	// object contract; api_config is write-only, so credential fields start
+	// blank on edit (blank = keep existing; extra-only merges server-side).
 	//
 	// Ref: japaconnect-engineering/sections/67-travel-search.md
 	//      japaconnect-engineering/adr/ADR-085-travel-search.md
 	import { EntityPage, type EntityPageConfig, type FieldDef } from '$lib/components/entity';
 	import { travelAdminApi, adminCatalogApi, type TravelProvider, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+
+	// Key/value rows edited by the config form (api_config.extra and
+	// affiliate_config are flat string maps in the API contract).
+	type ConfigPair = { key: string; value: string };
+
+	function objectToPairs(obj: Record<string, unknown> | null | undefined): ConfigPair[] {
+		return Object.entries(obj ?? {}).map(([key, v]) => ({
+			key,
+			value: typeof v === 'string' ? v : JSON.stringify(v)
+		}));
+	}
+
+	function pairsToObject(pairs: ConfigPair[] | undefined): Record<string, string> | undefined {
+		const out: Record<string, string> = {};
+		for (const p of pairs ?? []) {
+			const key = p.key.trim();
+			if (key) out[key] = p.value;
+		}
+		return Object.keys(out).length > 0 ? out : undefined;
+	}
+
+	// api_config payload: {endpoint, api_key, extra?} (ADR-085). All fields
+	// blank → undefined, which means "leave existing credentials unchanged"
+	// on PATCH (api_config is write-only and never returned by the API).
+	function buildApiConfig(body: Record<string, any>): Record<string, unknown> | undefined {
+		const endpoint = String(body.api_endpoint ?? '').trim();
+		const apiKey = String(body.api_key ?? '').trim();
+		const extra = pairsToObject(body.api_extra_pairs as ConfigPair[] | undefined);
+		if (!endpoint && !apiKey && !extra) return undefined;
+		return { endpoint, api_key: apiKey, ...(extra ? { extra } : {}) };
+	}
 
 	// Normalize an API row for the scaffold. affiliate_config arrives as a
-	// JSON object (or null); stringify it so the textarea shows valid JSON.
+	// JSON object (or null) → convert to key/value rows for the editor.
 	// api_config is never returned by the backend (write-only) — leave blank.
 	function mapProvider(raw: TravelProvider): TravelProvider & {
-		affiliate_config_text: string;
-		api_config_text: string;
+		affiliate_pairs: ConfigPair[];
+		api_endpoint: string;
+		api_key: string;
+		api_extra_pairs: ConfigPair[];
 	} {
 		return {
 			...raw,
-			affiliate_config_text: raw.affiliate_config
-				? JSON.stringify(raw.affiliate_config, null, 2)
-				: '{}',
-			api_config_text: ''
+			affiliate_pairs: objectToPairs(raw.affiliate_config),
+			api_endpoint: '',
+			api_key: '',
+			api_extra_pairs: []
 		};
-	}
-
-	// Parse a JSON config textarea. Returns { ok, value?, error? }.
-	function parseJSONConfig(
-		text: string,
-		fieldLabel: string
-	): { ok: true; value: unknown } | { ok: false; error: string } {
-		const trimmed = (text ?? '').trim();
-		if (trimmed === '') return { ok: true, value: undefined };
-		try {
-			return { ok: true, value: JSON.parse(trimmed) };
-		} catch {
-			return {
-				ok: false,
-				error: t('travel.config_invalid', '{field} is not valid JSON.').replace(
-					'{field}',
-					fieldLabel
-				)
-			};
-		}
 	}
 
 	let travelProviderTypeOptions = $state<CatalogOption[]>([
@@ -61,6 +78,9 @@
 		})();
 	});
 
+	const providerTypeLabel = (v: string) =>
+		travelProviderTypeOptions.find((o) => o.value === v)?.label ?? v;
+
 	// `fields` drives EntityForm rendering + edit-form value seeding. The
 	// JSON config fields use `textarea`; the snippet below overrides their
 	// rendering but the fields array is still required for seeding.
@@ -74,8 +94,10 @@
 			required: true,
 			options: travelProviderTypeOptions
 		},
-		{ key: 'api_config_text', label: t('travel.api_config', 'API Config (JSON)'), type: 'textarea' },
-		{ key: 'affiliate_config_text', label: t('travel.affiliate_config', 'Affiliate Config (JSON)'), type: 'textarea' },
+		{ key: 'api_endpoint', label: t('travel.api_endpoint', 'API Endpoint'), type: 'text' },
+		{ key: 'api_key', label: t('travel.api_key', 'API Key'), type: 'text' },
+		{ key: 'api_extra_pairs', label: t('travel.api_extra', 'Extra Settings'), type: 'textarea' },
+		{ key: 'affiliate_pairs', label: t('travel.affiliate_config', 'Affiliate Params'), type: 'textarea' },
 		{ key: 'is_active', label: t('travel.active', 'Active'), type: 'checkbox' }
 	]);
 
@@ -94,7 +116,12 @@
 				sortable: true,
 				render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>`
 			},
-			{ key: 'provider_type', label: t('travel.type', 'Type'), sortable: true },
+			{
+				key: 'provider_type',
+				label: t('travel.type', 'Type'),
+				sortable: true,
+				render: (v: string) => providerTypeLabel(v)
+			},
 			{ key: 'is_active', label: t('travel.active', 'Active'), sortable: true, componentSnippet: StatusCell },
 			{
 				key: 'created_at',
@@ -120,23 +147,34 @@
 			}
 		],
 		fields,
-		load: async ({ page, pageSize, q, filter }) => {
-			const result = await travelAdminApi.list('?page_size=1000');
+		load: async ({ page, pageSize, q, sort, filter }) => {
+			// The list contract (§67) accepts is_active/provider_type/q only —
+			// no page/page_size/sort params — so the API filters the list and
+			// sorting + pagination are applied client-side on the result.
+			const params = new URLSearchParams();
+			if (q) params.set('q', q);
+			if (filter?.is_active) params.set('is_active', filter.is_active);
+			if (filter?.provider_type) params.set('provider_type', filter.provider_type);
+			const result = await travelAdminApi.list(params.toString());
 			if (result.ok) {
 				let data = (result.data as TravelProvider[]) ?? [];
-				if (filter?.is_active) {
-					data = data.filter((row) => String(row.is_active) === filter.is_active);
-				}
-				if (filter?.provider_type) {
-					data = data.filter((row) => row.provider_type === filter.provider_type);
-				}
-				const query = (q ?? '').toLowerCase();
-				if (query) {
-					data = data.filter((row) =>
-						[row.name, row.slug, row.provider_type].some((v) =>
-							String(v ?? '').toLowerCase().includes(query)
-						)
-					);
+				// EntityPage emits sort as "key:dir" — apply it here because the
+				// backend list query is fixed `ORDER BY name ASC`.
+				const [sortKey, sortDir] = (sort || '').split(':');
+				if (sortKey) {
+					const dirMul = sortDir === 'desc' ? -1 : 1;
+					data = [...data].sort((a, b) => {
+						const av = a[sortKey as keyof TravelProvider] as unknown;
+						const bv = b[sortKey as keyof TravelProvider] as unknown;
+						if (av == null && bv == null) return 0;
+						if (av == null) return 1;
+						if (bv == null) return -1;
+						if (typeof av === 'boolean' || typeof bv === 'boolean') {
+							return (Number(av) - Number(bv)) * dirMul;
+						}
+						if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dirMul;
+						return String(av).localeCompare(String(bv)) * dirMul;
+					});
 				}
 				const mapped = data.map(mapProvider);
 				const size = pageSize || 25;
@@ -152,41 +190,43 @@
 			throw new Error(result.error ?? t('travel.load_error', 'Failed to load travel providers'));
 		},
 		create: async (body) => {
-			const apiCfg = parseJSONConfig(String(body.api_config_text ?? ''), t('travel.api_config', 'API Config'));
-			if (!apiCfg.ok) return { ok: false, error: apiCfg.error };
-			const affCfg = parseJSONConfig(
-				String(body.affiliate_config_text ?? ''),
-				t('travel.affiliate_config', 'Affiliate Config')
-			);
-			if (!affCfg.ok) return { ok: false, error: affCfg.error };
+			const name = String(body.name ?? '').trim();
+			const slug = String(body.slug ?? '').trim();
+			const providerType = String(body.provider_type ?? '');
+			if (!name || !slug || !providerType) {
+				return {
+					ok: false,
+					error: t('travel.required_fields', 'Name, slug and provider type are required.')
+				};
+			}
 			const res = await travelAdminApi.create({
-				name: String(body.name ?? '').trim(),
-				slug: String(body.slug ?? '').trim(),
-				provider_type: String(body.provider_type ?? 'flight'),
-				api_config: apiCfg.value,
-				affiliate_config: affCfg.value,
+				name,
+				slug,
+				provider_type: providerType,
+				api_config: buildApiConfig(body),
+				affiliate_config: pairsToObject(body.affiliate_pairs as ConfigPair[] | undefined),
 				is_active: body.is_active === undefined ? true : !!body.is_active
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		update: async (_id, body) => {
-			// api_config is write-only and never returned by the backend, so
-			// an empty textarea on edit means "leave unchanged". A non-empty
-			// value replaces the stored config.
-			const apiText = String(body.api_config_text ?? '').trim();
-			const apiCfg = apiText ? parseJSONConfig(apiText, t('travel.api_config', 'API Config')) : { ok: true as const, value: undefined };
-			if (!apiCfg.ok) return { ok: false, error: apiCfg.error };
-			const affCfg = parseJSONConfig(
-				String(body.affiliate_config_text ?? ''),
-				t('travel.affiliate_config', 'Affiliate Config')
-			);
-			if (!affCfg.ok) return { ok: false, error: affCfg.error };
+			const name = String(body.name ?? '').trim();
+			const providerType = String(body.provider_type ?? '');
+			if (!name || !providerType) {
+				return {
+					ok: false,
+					error: t('travel.required_fields_short', 'Name and provider type are required.')
+				};
+			}
 			const res = await travelAdminApi.update(_id, {
-				name: String(body.name ?? '').trim(),
-				provider_type: String(body.provider_type ?? 'flight'),
-				api_config: apiCfg.value,
-				affiliate_config: affCfg.value,
-				is_active: body.is_active === undefined ? true : !!body.is_active
+				name,
+				provider_type: providerType,
+				api_config: buildApiConfig(body),
+				// Send the editor state verbatim — removing every row clears
+				// the stored affiliate params (empty object on PATCH).
+				affiliate_config:
+					pairsToObject(body.affiliate_pairs as ConfigPair[] | undefined) ?? {},
+				is_active: body.is_active === undefined ? undefined : !!body.is_active
 			});
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
@@ -217,9 +257,9 @@
 	</span>
 {/snippet}
 
-<!-- Config form — overrides the api_config_text + affiliate_config_text
-     textareas with monospace-styled JSON editors. Binds to value[fieldKey]. -->
-{#snippet ConfigForm({ value, editing }: { value: Record<string, any>; editing: boolean })}
+<!-- Config form — api_config edits as endpoint/key/extra rows and
+     affiliate_config as key/value parameter rows (no raw JSON). -->
+{#snippet ConfigForm({ value, editing }: { value: Record<string, any>; editing: TravelProvider | null })}
 	<div class="space-y-3">
 		<div>
 			<label for="travel-name" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
@@ -245,54 +285,112 @@
 				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
 				bind:value={value.slug}
 				placeholder="skyscanner"
-				readonly={editing}
-				disabled={editing}
+				readonly={!!editing}
+				disabled={!!editing}
 			/>
 		</div>
 		<div>
 			<label for="travel-type" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
 				{t('travel.type', 'Provider Type')}
 			</label>
-			<AutocompleteSelect
+			<Autocomplete
 				id="travel-type"
-				bind:value={value.provider_type}
-				options={travelProviderTypeOptions}
 				class="w-full"
+				placeholder={t('travel.select_type', 'Select provider type')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={async (query: string) => {
+					const needle = query.trim().toLowerCase();
+					return travelProviderTypeOptions
+						.filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.value.toLowerCase().includes(needle))
+						.map((o) => ({ id: o.value, label: o.label }));
+				}}
+				initialFetcher={async () =>
+					travelProviderTypeOptions.map((o) => ({ id: o.value, label: o.label }))}
+				selectedId={value.provider_type || null}
+				selectedLabel={value.provider_type ? providerTypeLabel(value.provider_type) : null}
+				onSelect={(item: AutocompleteItem) => {
+					value.provider_type = item.id;
+				}}
+				onClear={() => {
+					value.provider_type = '';
+				}}
 			/>
 		</div>
-		<div>
-			<label for="travel-api-config" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
-				{t('travel.api_config', 'API Config (JSON)')}
-			</label>
-			<textarea
-				id="travel-api-config"
-				class="w-full rounded-md border px-3 py-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				rows="4"
-				bind:value={value.api_config_text}
-				placeholder={'{"endpoint":"https://api.example.com/search","api_key":"..."}'}
-			></textarea>
+		<div class="space-y-2">
+			<p class="text-sm font-medium" style="color: var(--color-muted)">
+				{t('travel.api_config', 'API Config')}
+			</p>
+			<div>
+				<label for="travel-api-endpoint" class="mb-1 block text-xs" style="color: var(--color-muted)">
+					{t('travel.api_endpoint', 'Endpoint URL')}
+				</label>
+				<input
+					id="travel-api-endpoint"
+					type="url"
+					class="w-full rounded-md border px-3 py-2 text-sm"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={value.api_endpoint}
+					placeholder="https://api.example.com/search"
+				/>
+			</div>
+			<div>
+				<label for="travel-api-key" class="mb-1 block text-xs" style="color: var(--color-muted)">
+					{t('travel.api_key', 'API Key')}
+				</label>
+				<input
+					id="travel-api-key"
+					type="text"
+					class="w-full rounded-md border px-3 py-2 text-sm font-mono"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={value.api_key}
+					placeholder={t('travel.api_key_placeholder', 'Sent as a Bearer token')}
+				/>
+			</div>
+			<div>
+				<p class="mb-1 text-xs" style="color: var(--color-muted)">
+					{t('travel.api_extra', 'Extra settings')}
+				</p>
+				{@render PairEditor({
+					pairs: (value.api_extra_pairs ?? []) as ConfigPair[],
+					add: () =>
+						((value.api_extra_pairs ??= []) as ConfigPair[]).push({ key: '', value: '' }),
+					remove: (i: number) =>
+						(value.api_extra_pairs as ConfigPair[] | undefined)?.splice(i, 1),
+					addLabel: t('travel.add_setting', 'Add setting')
+				})}
+			</div>
 			{#if editing}
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">
-					{t('travel.api_config_hint', 'Leave blank to keep existing credentials. Enter new JSON to replace.')}
+				<p class="text-xs" style="color: var(--color-muted)">
+					{t('travel.api_config_hint', 'Leave blank to keep existing credentials. Any value entered here replaces them.')}
 				</p>
 			{/if}
 		</div>
 		<div>
-			<label for="travel-affiliate-config" class="mb-1 block text-sm font-medium" style="color: var(--color-muted)">
-				{t('travel.affiliate_config', 'Affiliate Config (JSON)')}
-			</label>
-			<textarea
-				id="travel-affiliate-config"
-				class="w-full rounded-md border px-3 py-2 text-sm font-mono"
-				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
-				rows="3"
-				bind:value={value.affiliate_config_text}
-				placeholder={'{"aff_id":"your-affiliate-id","aff_sub":"japaconnect"}'}
-			></textarea>
+			<p class="mb-1 text-sm font-medium" style="color: var(--color-muted)">
+				{t('travel.affiliate_config', 'Affiliate Params')}
+			</p>
+			{@render PairEditor({
+				pairs: (value.affiliate_pairs ?? []) as ConfigPair[],
+				add: () =>
+					((value.affiliate_pairs ??= []) as ConfigPair[]).push({ key: '', value: '' }),
+				remove: (i: number) =>
+					(value.affiliate_pairs as ConfigPair[] | undefined)?.splice(i, 1),
+				addLabel: t('travel.add_param', 'Add parameter')
+			})}
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('travel.affiliate_hint', 'Appended to booking links as URL parameters (e.g. aff_id, aff_sub).')}
+			</p>
 		</div>
 		<div class="flex items-center gap-2">
-			<input type="checkbox" id="travel-active" bind:checked={value.is_active} />
+			<!-- New providers default to active (the create handler treats an
+			     unset is_active as true) — mirror that default in the checkbox
+			     so the visible state matches what will be submitted. -->
+			<input
+				type="checkbox"
+				id="travel-active"
+				checked={value.is_active ?? !editing}
+				onchange={(e) => (value.is_active = e.currentTarget.checked)}
+			/>
 			<label for="travel-active" class="text-sm" style="color: var(--color-foreground)">
 				{t('travel.active', 'Active')}
 			</label>
@@ -300,8 +398,58 @@
 	</div>
 {/snippet}
 
+<!-- Key/value row editor for flat config maps (extra settings, affiliate
+     params). Mutations go through the add/remove callbacks so state writes
+     stay inside event handlers (mutating in {@const}/render is illegal). -->
+{#snippet PairEditor({ pairs, add, remove, addLabel }: {
+	pairs: ConfigPair[];
+	add: () => void;
+	remove: (i: number) => void;
+	addLabel: string;
+})}
+	<div class="space-y-2">
+		{#each pairs as pair, i (i)}
+			<div class="flex items-center gap-2">
+				<input
+					type="text"
+					class="w-2/5 rounded-md border px-3 py-1.5 text-sm font-mono"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={pair.key}
+					placeholder={t('travel.param_name', 'Parameter')}
+					aria-label={t('travel.param_name', 'Parameter')}
+				/>
+				<input
+					type="text"
+					class="flex-1 rounded-md border px-3 py-1.5 text-sm font-mono"
+					style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+					bind:value={pair.value}
+					placeholder={t('travel.param_value', 'Value')}
+					aria-label={t('travel.param_value', 'Value')}
+				/>
+				<button
+					type="button"
+					class="rounded-md px-2 py-1 text-sm"
+					style="color: var(--color-muted)"
+					onclick={() => remove(i)}
+					aria-label={t('common.remove', 'Remove')}
+				>
+					✕
+				</button>
+			</div>
+		{/each}
+		<button
+			type="button"
+			class="rounded-md border px-3 py-1.5 text-xs font-medium"
+			style="border-color: var(--color-border); color: var(--color-primary)"
+			onclick={add}
+		>
+			+ {addLabel}
+		</button>
+	</div>
+{/snippet}
+
 <!-- View slide-over body -->
-{#snippet ProviderView({ row }: { row: TravelProvider & { affiliate_config_text: string } })}
+{#snippet ProviderView({ row }: { row: TravelProvider & { affiliate_pairs: ConfigPair[] } })}
 	<div class="space-y-4">
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('travel.name', 'Name')}</p>
@@ -313,7 +461,7 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('travel.type', 'Type')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.provider_type}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{providerTypeLabel(row.provider_type)}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('travel.active', 'Active')}</p>
@@ -322,8 +470,19 @@
 			</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('travel.affiliate_config', 'Affiliate Config')}</p>
-			<pre class="mt-1 break-all rounded-md border p-2 text-xs font-mono" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)">{row.affiliate_config_text}</pre>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('travel.affiliate_config', 'Affiliate Params')}</p>
+			{#if row.affiliate_pairs?.length}
+				<div class="mt-1 space-y-1">
+					{#each row.affiliate_pairs as pair (pair.key)}
+						<div class="flex items-center gap-2 text-sm">
+							<span class="font-mono text-xs" style="color: var(--color-muted)">{pair.key}</span>
+							<span style="color: var(--color-foreground)">{pair.value}</span>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<p class="mt-1 text-sm" style="color: var(--color-foreground)">—</p>
+			{/if}
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('travel.created', 'Created')}</p>

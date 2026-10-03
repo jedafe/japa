@@ -8,7 +8,7 @@
 	import { untrack } from 'svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
-	import SelectField from '$lib/components/ui/SelectField.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import { Modal } from '$lib/components/ui';
 	import {
@@ -43,6 +43,15 @@
 	let items = $state<MediaAsset[]>(untrack(() => data.media?.items ?? []));
 	let total = $state<number>(untrack(() => data.media?.total ?? 0));
 	let totalPages = $state<number>(untrack(() => data.media?.total_pages ?? 1));
+
+	// Re-sync the first page when the server load re-runs (invalidateAll or
+	// a fresh SSR navigation). Client-side paging/filtering owns the state
+	// between load runs, so this only fires on a new `data` payload.
+	$effect(() => {
+		items = data.media?.items ?? [];
+		total = data.media?.total ?? 0;
+		totalPages = data.media?.total_pages ?? 1;
+	});
 	let page = $state(1);
 	let typeFilter = $state<TypeFilter>('');
 	let statusFilter = $state<StatusFilter>('');
@@ -396,18 +405,18 @@
 			/>
 		</div>
 		<div class="w-40">
-			<SelectField
+			<AutocompleteSelect
 				value={typeFilter}
 				options={typeOptions}
-				placeholder={t('media.library.filter_type')}
+				ariaLabel={t('media.library.filter_type')}
 				onValueChange={onTypeChange}
 			/>
 		</div>
 		<div class="w-44">
-			<SelectField
+			<AutocompleteSelect
 				value={statusFilter}
 				options={statusOptions}
-				placeholder={t('media.library.status', 'Status')}
+				ariaLabel={t('media.library.status', 'Status')}
 				onValueChange={onStatusChange}
 			/>
 		</div>

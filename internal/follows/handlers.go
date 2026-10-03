@@ -274,7 +274,7 @@ func (h *Handlers) ListMyFollowing(w http.ResponseWriter, r *http.Request) {
 	if typeFilter != "" {
 		et, valid := mapTypeFilter(typeFilter)
 		if !valid {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "type must be one of: user, space, tag, organization")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_type", "type must be one of: user, space, tag, organization, source")
 			return
 		}
 

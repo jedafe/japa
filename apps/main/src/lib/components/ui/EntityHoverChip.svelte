@@ -13,6 +13,7 @@
 	import { remoteImageUrl } from '$lib/utils/remoteImage';
 	import { safeHttpUrl } from '$lib/utils/safeUrl';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import type { FollowableType } from '$lib/api/hub';
 
@@ -73,6 +74,19 @@
 	let detailFollowingCount = $state<number | undefined>(undefined);
 	let detailPostsCount = $state<number | undefined>(undefined);
 	let detailUsername = $state<string | undefined>(undefined);
+	// Viewer-scoped follow state. Hydrated from the entity detail payload
+	// (spaces/sources expose is_following) or the follow-status endpoint
+	// (users/orgs detail payloads omit it). Lives on the chip — which stays
+	// mounted — so the state survives the LinkPreview content unmount that
+	// happens every time the card closes.
+	let followingState = $state<boolean | undefined>(undefined);
+	const authed = $derived(!!page.data.isAuthed);
+	// The logged-in viewer's user id (root layout key — page.data.user can be
+	// overridden by page loads, viewerId cannot). User chips for the viewer
+	// themselves get no Follow button.
+	const isSelf = $derived(
+		type === 'user' && !!page.data.viewerId && id === page.data.viewerId
+	);
 
 	const joinedDate = $derived(
 		detailCreatedAt
@@ -162,6 +176,8 @@
 		return typeof v === 'boolean' ? v : undefined;
 	}
 
+	const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 	async function loadDetail() {
 		if (fetched || loading) return;
 		if (!slug) return;
@@ -233,6 +249,28 @@
 				pickNumber(entity, 'post_count', 'posts_count', 'content_count', 'posts') ??
 				pickNumber(profile, 'post_count', 'posts_count', 'content_count', 'posts');
 			if (posts != null) detailPostsCount = posts;
+
+			// Viewer-scoped follow flag. Spaces return it at the data level
+			// (d.is_following alongside d.space); sources embed it in the
+			// source object itself.
+			const isFol =
+				pickBool(d, 'is_following', 'following', 'viewer_following') ??
+				pickBool(entity, 'is_following', 'following', 'viewer_following') ??
+				pickBool(profile, 'is_following', 'following', 'viewer_following');
+			if (isFol != null) followingState = isFol;
+		}
+
+		// Users and orgs don't embed a viewer-scoped flag in the detail
+		// payload — resolve it via the authenticated follow-status endpoint
+		// (GET /users/{id}/follow-status?entity_type=). Guests can't follow,
+		// so the request is skipped for them.
+		if (followingState == null && authed && !isSelf && UUID_RE.test(id)) {
+			const status = await api.get<{ following?: boolean }>(
+				`/users/${id}/follow-status?entity_type=${followType}`
+			);
+			if (!status.error && status.data && typeof status.data.following === 'boolean') {
+				followingState = status.data.following;
+			}
 		}
 		fetched = true;
 		loading = false;
@@ -323,13 +361,23 @@
 						<p class="truncate text-xs text-[var(--color-muted)]">{handle ? (type === 'user' ? `@${handle}` : handle) : ''}</p>
 					</div>
 				</div>
-				<FollowButton
-					entityType={followType}
-					entityId={id}
-					entitySlug={followType === 'space' || followType === 'source' ? slug : undefined}
-					initiallyFollowing={isFollowing}
-					compact
-				/>
+				<!-- Keyed on the resolved state: FollowButton only reads
+				     initiallyFollowing at mount, so re-keying re-initializes it
+				     once the detail/follow-status fetch resolves or the parent
+				     prop updates, and keeps the state across LinkPreview content
+				     unmounts between opens. -->
+				{#if !isSelf}
+					{#key followingState ?? isFollowing}
+						<FollowButton
+							entityType={followType}
+							entityId={id}
+							entitySlug={followType === 'space' || followType === 'source' ? slug : undefined}
+							initiallyFollowing={followingState ?? isFollowing}
+							onChange={(v) => (followingState = v)}
+							compact
+						/>
+					{/key}
+				{/if}
 			</div>
 
 			{#if detailDescription}

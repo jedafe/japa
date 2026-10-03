@@ -4791,6 +4791,76 @@ func HandleMaintenancePruneAuditLogs(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
+// HandleMaintenancePruneTravelResults deletes travel_search_results rows,
+// inventory offer rows, and coverage rows whose expiry is more than
+// 'travel.results_retention_days' in the past (default 30) — expired rows
+// exist only for stale-fallback, and month-old offers are useless even as a
+// fallback (§67, ADR-124).
+func HandleMaintenancePruneTravelResults(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("maintenance:prune_travel_results — pruning expired travel search results")
+
+	if dbPool == nil {
+		return errors.New("maintenance:prune_travel_results: database pool not registered")
+	}
+
+	q := gen.New(dbPool.Writer)
+
+	if err := q.PruneTravelSearchResults(ctx); err != nil {
+		slog.Error("maintenance:prune_travel_results failed", "error", err)
+		return err
+	}
+
+	for _, prune := range []struct {
+		name string
+		fn   func(context.Context) error
+	}{
+		{"flight_offers", q.PruneTravelFlightOffers},
+		{"hotel_offers", q.PruneTravelHotelOffers},
+		{"coverage", q.PruneTravelSearchCoverage},
+	} {
+		if err := prune.fn(ctx); err != nil {
+			slog.Error("maintenance:prune_travel_results failed", "table", prune.name, "error", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+// HotelDirectorySyncer pulls active hotel providers' content feeds into
+// travel_hotels (§67, ADR-124). Local interface so worker does not import the
+// travel package's service surface.
+type HotelDirectorySyncer interface {
+	SyncHotelDirectory(ctx context.Context) error
+}
+
+// hotelDirectorySyncer is the registered implementation. Nil until wired by
+// server.go.
+var hotelDirectorySyncer HotelDirectorySyncer
+
+// RegisterHotelDirectorySyncer injects the adapter for the
+// travel:sync_hotel_directory task.
+func RegisterHotelDirectorySyncer(s HotelDirectorySyncer) {
+	hotelDirectorySyncer = s
+}
+
+// HandleTravelSyncHotelDirectory runs the daily hotel-directory feed sync —
+// providers without extra.hotels_endpoint are skipped inside the service.
+func HandleTravelSyncHotelDirectory(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("travel:sync_hotel_directory — syncing provider hotel feeds")
+
+	if hotelDirectorySyncer == nil {
+		return errors.New("travel:sync_hotel_directory: service not registered")
+	}
+
+	if err := hotelDirectorySyncer.SyncHotelDirectory(ctx); err != nil {
+		slog.Error("travel:sync_hotel_directory failed", "error", err)
+		return err
+	}
+
+	return nil
+}
+
 // HandleMaintenancePrunePushTokens deletes stale/unresponsive push tokens older than 90 days.
 func HandleMaintenancePrunePushTokens(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_push_tokens — pruning stale push tokens")

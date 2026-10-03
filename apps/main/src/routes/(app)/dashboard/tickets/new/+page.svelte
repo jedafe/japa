@@ -5,17 +5,16 @@
 	// Bits UI Select populated from GET /ticket-types?is_public=true.
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
-	import { Select } from 'bits-ui';
 	import { api } from '$lib/api/client';
 	import type { TicketPriority, TicketType } from '$lib/types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	let { data } = $props();
 	const types = $derived(data.types as TicketType[]);
 
 	let typeId = $state('');
-	let typeName = $state('');
 	let subject = $state('');
 	let description = $state('');
 	let priority = $state<TicketPriority>('normal');
@@ -109,12 +108,10 @@
 					onSelect={(item) => {
 						typeId = item.id;
 						const found = types.find((tp) => tp.id === item.id);
-						typeName = found?.name ?? '';
 						if (found?.default_priority) priority = found.default_priority;
 					}}
 					onClear={() => {
 						typeId = '';
-						typeName = '';
 					}}
 				/>
 			</div>
@@ -151,36 +148,13 @@
 			<label for="ticket-priority" class="text-sm font-medium text-[var(--color-text)]">
 				{t('tickets.field_priority')}
 			</label>
-			<Select.Root
-				type="single"
+			<AutocompleteSelect
+				id="ticket-priority"
 				value={priority}
-				onValueChange={(v) => (priority = (v as TicketPriority) ?? 'normal')}
-			>
-				<Select.Trigger
-					id="ticket-priority"
-					class="inline-flex w-full items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"
-					aria-label={t('tickets.field_priority')}
-				>
-					{t(`tickets.priority.${priority}`)}
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content class="z-50 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow">
-						<Select.Viewport>
-							{#each priorities as p (p.value)}
-								<Select.Item
-									value={p.value}
-									label={t(p.key)}
-									class="cursor-pointer rounded px-2 py-1.5 text-sm text-[var(--color-text)] data-[highlighted]:bg-[var(--color-surface-subtle)]"
-								>
-									{#snippet children({ selected })}
-										{selected ? '✓ ' : ''}{t(p.key)}
-									{/snippet}
-								</Select.Item>
-							{/each}
-						</Select.Viewport>
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+				options={priorities.map((p) => ({ value: p.value, label: t(p.key) }))}
+				ariaLabel={t('tickets.field_priority')}
+				onValueChange={(v) => (priority = (v as TicketPriority) || 'normal')}
+			/>
 		</div>
 
 		<div class="flex flex-col gap-1.5">

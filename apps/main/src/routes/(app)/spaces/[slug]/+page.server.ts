@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
 import type {
 	SpaceDetail,
 	Space,
@@ -27,6 +27,21 @@ import type {
  */
 const DEFAULT_HUB_PAGE_SIZE = 20;
 const DEFAULT_FORUM_PAGE_SIZE = 50;
+
+/** §80 canonical category set scoped to the space type — the same shape
+ *  /wiki/{space_slug} uses to order its section cards; the About tab
+ *  groups the space's wiki pages under these categories in this order. */
+type WikiApiCategory = {
+	slug: string;
+	label_key: string;
+	label: string;
+	/** Stub page slug for /wiki/{space}/{page_slug} links. */
+	page_slug?: string;
+	/** §80 directories — the stub page is the child-space listing. */
+	directory?: boolean;
+	/** §80 directories — true when the space has no matching descendants. */
+	empty?: boolean;
+};
 
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
@@ -190,14 +205,25 @@ export const load: PageServerLoad = async (event) => {
 	// §80 University Spaces amendment). A 404 from the wiki index simply means
 	// the space has no wiki or is not a wiki-capable level.
 	let wikiPages: WikiPageIndex[] | null = null;
+	let wikiCategories: WikiApiCategory[] = [];
 	const wikiEnabled = !!features['wiki.enabled'];
 	// University spaces are typed via space_types.slug = 'university' (most
 	// carry level = 'custom'), so include isUniversity alongside the level set.
 	const isDestination = ['country', 'state', 'city', 'university'].includes(space.level) || isUniversity;
 	if (wikiEnabled && isDestination) {
-		wikiPages = await apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
-			.then((r) => r.items)
-			.catch(() => null);
+		[wikiPages, wikiCategories] = await Promise.all([
+			apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
+				.then((r) => r.items)
+				.catch(() => null),
+			// Scoped canonical categories — the About tab orders its grouped
+			// wiki list by this set, matching /wiki/{space_slug}.
+			apiGetEnvelope<WikiApiCategory[]>(
+				ctx,
+				`/wiki/categories?space=${encodeURIComponent(slug)}`
+			)
+				.then((r) => r.data ?? [])
+				.catch(() => [] as WikiApiCategory[])
+		]);
 	}
 
 	return {
@@ -228,6 +254,7 @@ export const load: PageServerLoad = async (event) => {
 		achievements,
 		digest,
 		wikiEnabled,
-		wikiPages
+		wikiPages,
+		wikiCategories
 	};
 };

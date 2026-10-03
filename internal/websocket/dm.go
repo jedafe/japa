@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,57 @@ import (
 type DMStore struct {
 	read  *gen.Queries
 	write *gen.Queries
+}
+
+// dmCursor is the decoded keyset position carried in the ?cursor= param of
+// the DM list endpoints (Section 48). Which key field is populated depends
+// on the active sort: T for timestamp sorts (recent/oldest), N for the
+// unread_count sort, K for name sorts. ID is the row-id tiebreaker.
+type dmCursor struct {
+	S  string `json:"s"`
+	T  int64  `json:"t,omitempty"`
+	N  int64  `json:"n,omitempty"`
+	K  string `json:"k,omitempty"`
+	ID string `json:"id"`
+}
+
+func encodeDMCursor(c dmCursor) string {
+	b, err := json.Marshal(c)
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeDMCursor(raw string) *dmCursor {
+	if raw == "" {
+		return nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil
+	}
+	var c dmCursor
+	if err := json.Unmarshal(b, &c); err != nil || c.ID == "" {
+		return nil
+	}
+	return &c
+}
+
+// dmCursorArgs converts a decoded cursor into the typed keyset params the
+// queries expect. A cursor whose embedded sort doesn't match the requested
+// sort is ignored — resuming across sorts would silently skip rows.
+func dmCursorArgs(sort string, c *dmCursor) (has bool, ts pgtype.Timestamptz, i int64, txt string, id pgtype.UUID) {
+	if c == nil || (c.S != "" && c.S != sort) {
+		return false, ts, 0, "", id
+	}
+	if err := id.Scan(c.ID); err != nil {
+		return false, ts, 0, "", id
+	}
+	if c.T != 0 {
+		ts = pgtype.Timestamptz{Time: time.Unix(0, c.T).UTC(), Valid: true}
+	}
+	return true, ts, c.N, c.K, id
 }
 
 // NewDMStore creates a DMStore backed by the given gen.Queries instances.
@@ -94,8 +146,12 @@ func (s *DMStore) GetConversationByID(ctx context.Context, id pgtype.UUID) (gen.
 	)
 }
 
-// GetUserConversations returns paginated conversations for a user.
-func (s *DMStore) GetUserConversations(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.GetUserConversationsRow, error) {
+// GetUserConversations returns paginated conversations for a user. The
+// optional q (ILIKE on username/display_name/last preview), filter
+// ('unread'), and sort ('recent'|'oldest'|'unread'|'name') params mirror the
+// query-string contract of GET /dm/conversations; empty values are no-ops.
+// When a keyset cursor is present it takes precedence over page_offset.
+func (s *DMStore) GetUserConversations(ctx context.Context, userID pgtype.UUID, q, filter, sort string, limit, offset int32, cursor *dmCursor) ([]gen.GetUserConversationsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -104,8 +160,29 @@ func (s *DMStore) GetUserConversations(ctx context.Context, userID pgtype.UUID, 
 		offset = 0
 	}
 
+	// An empty sort must resolve to the 'recent' arm explicitly — the
+	// ORDER BY / keyset arms match on the literal 'recent' string.
+	if sort == "" {
+		sort = "recent"
+	}
+
+	has, ts, ci, ct, cid := dmCursorArgs(sort, cursor)
+	if has {
+		// Keyset and offset semantics never mix — the cursor wins.
+		offset = 0
+	}
+
 	return s.read.GetUserConversations(ctx, gen.GetUserConversationsParams{
 		UserID: userID,
+		Q:      q,
+		Filter: filter,
+		Sort:   sort,
+
+		HasCursor:  has,
+		CursorTs:   ts,
+		CursorInt:  ci,
+		CursorText: ct,
+		CursorID:   cid,
 
 		PageLimit:  limit,
 		PageOffset: offset,
@@ -123,7 +200,9 @@ func (s *DMStore) InsertDMMessage(ctx context.Context, conversationID, senderID 
 }
 
 // GetConversationMessages returns paginated messages for a conversation.
-func (s *DMStore) GetConversationMessages(ctx context.Context, conversationID pgtype.UUID, limit, offset int32) ([]gen.GetConversationMessagesRow, error) {
+// Keyset-paginated by (created_at, id) DESC — when a cursor is present it
+// takes precedence over page_offset (Section 48).
+func (s *DMStore) GetConversationMessages(ctx context.Context, conversationID pgtype.UUID, limit, offset int32, cursor *dmCursor) ([]gen.GetConversationMessagesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -132,9 +211,17 @@ func (s *DMStore) GetConversationMessages(ctx context.Context, conversationID pg
 		offset = 0
 	}
 
+	has, ts, _, _, cid := dmCursorArgs("", cursor)
+	if has {
+		offset = 0
+	}
+
 	return s.read.GetConversationMessages(ctx, gen.GetConversationMessagesParams{
 
 		ConversationID: conversationID,
+		HasCursor:      has,
+		CursorTs:       ts,
+		CursorID:       cid,
 		PageLimit:      limit,
 		PageOffset:     offset,
 	})
@@ -176,11 +263,11 @@ func (s *DMStore) ResetUnreadCount(ctx context.Context, conversationID, userID p
 	})
 }
 
-// GetMessageRequest returns a message request for a conversation, scoped
-// to the platform (Rule 4).
-func (s *DMStore) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (gen.DmRequest, error) {
+// GetMessageRequest returns a message request by its dm_requests.id (the id
+// carried by the /dm/requests/{id} routes and the list DTO).
+func (s *DMStore) GetMessageRequest(ctx context.Context, requestID pgtype.UUID) (gen.DmRequest, error) {
 	return s.read.GetMessageRequest(ctx,
-		conversationID,
+		requestID,
 	)
 }
 
@@ -197,18 +284,20 @@ func (s *DMStore) CreateMessageRequest(ctx context.Context, requesterID, recipie
 	})
 }
 
-// UpdateMessageRequestStatus updates the status of a message request,
-// scoped to the platform (Rule 4).
-func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, conversationID pgtype.UUID, status string) error {
+// UpdateMessageRequestStatus updates the status of a message request by its
+// dm_requests.id.
+func (s *DMStore) UpdateMessageRequestStatus(ctx context.Context, requestID pgtype.UUID, status string) error {
 	return s.write.UpdateMessageRequestStatus(ctx, gen.UpdateMessageRequestStatusParams{
-		ConversationID: conversationID,
+		ID: requestID,
 
 		Status: status,
 	})
 }
 
 // GetPendingMessageRequests returns pending DM requests for a recipient.
-func (s *DMStore) GetPendingMessageRequests(ctx context.Context, recipientID pgtype.UUID, limit, offset int32) ([]gen.GetPendingMessageRequestsRow, error) {
+// Optional q (ILIKE on requester username/display_name/preview) and sort
+// ('recent'|'oldest'|'name') params mirror the GET /dm/requests contract.
+func (s *DMStore) GetPendingMessageRequests(ctx context.Context, recipientID pgtype.UUID, q, sort string, limit, offset int32, cursor *dmCursor) ([]gen.GetPendingMessageRequestsRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -217,11 +306,36 @@ func (s *DMStore) GetPendingMessageRequests(ctx context.Context, recipientID pgt
 		offset = 0
 	}
 
+	if sort == "" {
+		sort = "recent"
+	}
+
+	has, ts, _, ct, cid := dmCursorArgs(sort, cursor)
+	if has {
+		offset = 0
+	}
+
 	return s.read.GetPendingMessageRequests(ctx, gen.GetPendingMessageRequestsParams{
 
 		RecipientID: recipientID,
+		Q:           q,
+		Sort:        sort,
+		HasCursor:   has,
+		CursorTs:    ts,
+		CursorText:  ct,
+		CursorID:    cid,
 		PageLimit:   limit,
 		PageOffset:  offset,
+	})
+}
+
+// CreateUserBlock inserts a user_blocks row (blocker → blocked), used by the
+// DM request "block" action per Section 48 ("decline + add sender to
+// user_blocks"). ON CONFLICT DO NOTHING makes repeat calls idempotent.
+func (s *DMStore) CreateUserBlock(ctx context.Context, blockerID, blockedID pgtype.UUID) error {
+	return s.write.CreateUserBlock(ctx, gen.CreateUserBlockParams{
+		BlockerID: blockerID,
+		BlockedID: blockedID,
 	})
 }
 
@@ -385,10 +499,14 @@ func (s *DMService) SetValkeyClient(vk *valkey.Client) {
 
 // DM privacy / block sentinel errors per Section 48.
 var (
-	ErrDMBlocked           = errors.New("dm blocked by user_blocks")
-	ErrDMPrivacyNobody     = errors.New("recipient does not accept new DM conversations")
-	ErrDMNotMutualFollower = errors.New("recipient only accepts DMs from mutual followers")
-	ErrDMNotSender         = errors.New("user is not the sender of this message")
+	ErrDMBlocked                = errors.New("dm blocked by user_blocks")
+	ErrDMPrivacyNobody          = errors.New("recipient does not accept new DM conversations")
+	ErrDMNotMutualFollower      = errors.New("recipient only accepts DMs from mutual followers")
+	ErrDMNotSender              = errors.New("user is not the sender of this message")
+	ErrDMRequestNotFound        = errors.New("message request not found")
+	ErrDMRequestNotRecipient    = errors.New("only the recipient can act on a message request")
+	ErrDMRequestAlreadyResolved = errors.New("message request is no longer pending")
+	ErrDMSelfConversation       = errors.New("cannot create conversation with yourself")
 )
 
 // GetOrCreateConversation gets existing or creates new DM conversation.
@@ -404,7 +522,7 @@ var (
 func (s *DMService) GetOrCreateConversation(ctx context.Context, senderID, recipientID pgtype.UUID, previewMessage string) (ConversationResult, error) {
 	// Ensure sender != recipient
 	if senderID == recipientID {
-		return ConversationResult{}, errors.New("cannot create conversation with yourself")
+		return ConversationResult{}, ErrDMSelfConversation
 	}
 
 	// If a conversation already exists, return it — privacy settings do not
@@ -565,11 +683,16 @@ func (s *DMService) SendMessage(ctx context.Context, conversationID, senderID pg
 	return nil
 }
 
-// GetConversations returns user's conversations with unread counts.
-func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]ConversationInfo, error) {
-	rows, err := s.store.GetUserConversations(ctx, userID, limit, offset)
+// GetConversations returns user's conversations with unread counts plus the
+// opaque next_cursor for the following page (empty when the page was not
+// full — no further rows exist).
+func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, q, filter, sort string, limit, offset int32, cursor *dmCursor) ([]ConversationInfo, string, error) {
+	if sort == "" {
+		sort = "recent"
+	}
+	rows, err := s.store.GetUserConversations(ctx, userID, q, filter, sort, limit, offset, cursor)
 	if err != nil {
-		return nil, fmt.Errorf("getting user conversations: %w", err)
+		return nil, "", fmt.Errorf("getting user conversations: %w", err)
 	}
 
 	infos := make([]ConversationInfo, len(rows))
@@ -590,11 +713,11 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, li
 			OtherDisplayName: r.OtherDisplayName,
 			OtherAvatarURL:   r.OtherAvatarUrl,
 			UnreadCount:      r.UnreadCount,
-			CreatedAt:        r.CreatedAt.Time.String(),
+			CreatedAt:        r.CreatedAt.Time.Format(time.RFC3339),
 		}
 
 		if r.LastMessageAt.Valid {
-			s := r.LastMessageAt.Time.String()
+			s := r.LastMessageAt.Time.Format(time.RFC3339)
 			infos[i].LastMessageAt = &s
 		}
 
@@ -603,24 +726,63 @@ func (s *DMService) GetConversations(ctx context.Context, userID pgtype.UUID, li
 		}
 	}
 
-	return infos, nil
+	return infos, nextConversationCursor(rows, sort, limit), nil
 }
 
-// GetMessages returns messages in a conversation.
-func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgtype.UUID, limit, offset int32) ([]MessageInfo, error) {
+// nextConversationCursor encodes the keyset resume position for
+// GET /dm/conversations from the last row of the page (Section 48). The key
+// mirrors the ORDER BY arm of the active sort: COALESCE(last_message_at,
+// created_at) for recent/oldest, unread_count for 'unread', the coalesced
+// other-name for 'name' — all tiebroken by conversation id. An empty string
+// means no further page.
+func nextConversationCursor(rows []gen.GetUserConversationsRow, sort string, limit int32) string {
+	if len(rows) == 0 || int32(len(rows)) < effectivePageLimit(limit) {
+		return ""
+	}
+
+	last := rows[len(rows)-1]
+	c := dmCursor{S: sort, ID: last.ID.String()}
+
+	switch sort {
+	case "unread":
+		c.N = int64(last.UnreadCount)
+	case "name":
+		c.K = last.OtherDisplayName
+	default: // recent | oldest — the COALESCE(last_message_at, created_at) key
+		ts := last.CreatedAt
+		if last.LastMessageAt.Valid {
+			ts = last.LastMessageAt
+		}
+		c.T = ts.Time.UnixNano()
+	}
+
+	return encodeDMCursor(c)
+}
+
+func effectivePageLimit(limit int32) int32 {
+	if limit <= 0 || limit > MaxPageSize {
+		return DefaultPageSize
+	}
+	return limit
+}
+
+// GetMessages returns messages in a conversation (newest-first) plus the
+// opaque next_cursor to resume with — the (created_at, id) keyset of the
+// last row, per Section 48. Empty next_cursor means no older messages.
+func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgtype.UUID, limit, offset int32, cursor *dmCursor) ([]MessageInfo, string, error) {
 	// Verify the user is a participant.
 	conv, err := s.store.GetConversationByID(ctx, conversationID)
 	if err != nil {
-		return nil, fmt.Errorf("verifying conversation access: %w", err)
+		return nil, "", fmt.Errorf("verifying conversation access: %w", err)
 	}
 
 	if conv.Participant1ID != userID && conv.Participant2ID != userID {
-		return nil, errors.New("user is not a participant in this conversation")
+		return nil, "", errors.New("user is not a participant in this conversation")
 	}
 
-	rows, err := s.store.GetConversationMessages(ctx, conversationID, limit, offset)
+	rows, err := s.store.GetConversationMessages(ctx, conversationID, limit, offset, cursor)
 	if err != nil {
-		return nil, fmt.Errorf("getting conversation messages: %w", err)
+		return nil, "", fmt.Errorf("getting conversation messages: %w", err)
 	}
 
 	msgs := make([]MessageInfo, len(rows))
@@ -640,16 +802,22 @@ func (s *DMService) GetMessages(ctx context.Context, conversationID, userID pgty
 			SenderUsername:    r.SenderUsername,
 			SenderDisplayName: displayName,
 			Body:              r.Body,
-			CreatedAt:         r.CreatedAt.Time.String(),
+			CreatedAt:         r.CreatedAt.Time.Format(time.RFC3339),
 		}
 
 		if r.ReadAt.Valid {
-			s := r.ReadAt.Time.String()
+			s := r.ReadAt.Time.Format(time.RFC3339)
 			msgs[i].ReadAt = &s
 		}
 	}
 
-	return msgs, nil
+	var nextCursor string
+	if int32(len(rows)) == effectivePageLimit(limit) && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		nextCursor = encodeDMCursor(dmCursor{T: last.CreatedAt.Time.UnixNano(), ID: last.ID.String()})
+	}
+
+	return msgs, nextCursor, nil
 }
 
 // MarkAsRead marks messages as read and resets unread count. The ID
@@ -672,30 +840,52 @@ func (s *DMService) MarkAsRead(ctx context.Context, conversationID, userID pgtyp
 	return nil
 }
 
-// HandleMessageRequest accepts, declines, or blocks a message request.
-// Only the RECIPIENT of the request may take action — the requester cannot
-// accept their own outgoing request (BUG-005).
-func (s *DMService) HandleMessageRequest(ctx context.Context, conversationID, userID pgtype.UUID, action string) error {
-	// Look up the message request, scoped to the platform (Rule 4).
-	dmReq, err := s.store.GetMessageRequest(ctx, conversationID)
+// HandleMessageRequest accepts, declines, or blocks a message request,
+// looked up by its dm_requests.id (the id in the /dm/requests/{id} routes
+// and the list DTO — BUG-025). Only the RECIPIENT may act — the requester
+// cannot resolve their own outgoing request (BUG-005). Only pending
+// requests are actionable. The "block" action additionally inserts a
+// user_blocks row so the requester can no longer interact (Section 48).
+// Returns the request's conversation_id so the recipient can be taken to
+// the thread on accept (Section 48 response contract: {"conv_id": ...}).
+func (s *DMService) HandleMessageRequest(ctx context.Context, requestID, userID pgtype.UUID, action string) (string, error) {
+	dmReq, err := s.store.GetMessageRequest(ctx, requestID)
 	if err != nil {
-		return fmt.Errorf("looking up message request: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrDMRequestNotFound
+		}
+		return "", fmt.Errorf("looking up message request: %w", err)
 	}
 
 	// Only the recipient may accept/decline/block — not the requester.
 	if dmReq.RecipientID != userID {
-		return errors.New("only the recipient can act on a message request")
+		return "", ErrDMRequestNotRecipient
+	}
+
+	if dmReq.Status != MessageRequestPending {
+		return "", ErrDMRequestAlreadyResolved
 	}
 
 	switch action {
 	case MessageRequestAccepted:
-		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestAccepted)
+		if err := s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestAccepted); err != nil {
+			return "", err
+		}
+		return dmReq.ConversationID.String(), nil
 	case MessageRequestDeclined:
-		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestDeclined)
+		return "", s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestDeclined)
 	case MessageRequestBlocked:
-		return s.store.UpdateMessageRequestStatus(ctx, conversationID, MessageRequestBlocked)
+		if err := s.store.UpdateMessageRequestStatus(ctx, requestID, MessageRequestBlocked); err != nil {
+			return "", err
+		}
+		// Section 48: block = decline + add requester to user_blocks so they
+		// can no longer DM or see the recipient's content (Section 41).
+		if err := s.store.CreateUserBlock(ctx, userID, dmReq.RequesterID); err != nil {
+			return "", fmt.Errorf("creating user block: %w", err)
+		}
+		return "", nil
 	default:
-		return fmt.Errorf("invalid action: %s", action)
+		return "", fmt.Errorf("invalid action: %s", action)
 	}
 }
 
@@ -716,10 +906,13 @@ type MessageRequestInfo struct {
 // (BUG-003). Filters by recipient_id and status = 'pending' so only
 // actionable requests are returned. Wraps the raw sqlc rows in an API
 // response struct (BUG-014: previously leaked internal gen struct names).
-func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID pgtype.UUID, limit, offset int32) ([]MessageRequestInfo, error) {
-	rows, err := s.store.GetPendingMessageRequests(ctx, recipientID, limit, offset)
+func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID pgtype.UUID, q, sort string, limit, offset int32, cursor *dmCursor) ([]MessageRequestInfo, string, error) {
+	if sort == "" {
+		sort = "recent"
+	}
+	rows, err := s.store.GetPendingMessageRequests(ctx, recipientID, q, sort, limit, offset, cursor)
 	if err != nil {
-		return nil, fmt.Errorf("getting pending message requests: %w", err)
+		return nil, "", fmt.Errorf("getting pending message requests: %w", err)
 	}
 
 	infos := make([]MessageRequestInfo, len(rows))
@@ -730,7 +923,7 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID p
 			RequesterUsername: r.RequesterUsername,
 			PreviewMessage:    r.PreviewMessage,
 			Status:            r.Status,
-			CreatedAt:         r.CreatedAt.Time.String(),
+			CreatedAt:         r.CreatedAt.Time.Format(time.RFC3339),
 		}
 		if r.RequesterDisplayName != nil {
 			infos[i].RequesterDisplayName = *r.RequesterDisplayName
@@ -746,7 +939,30 @@ func (s *DMService) GetPendingMessageRequests(ctx context.Context, recipientID p
 		}
 	}
 
-	return infos, nil
+	return infos, nextRequestCursor(rows, sort, limit), nil
+}
+
+// nextRequestCursor encodes the keyset resume position for GET /dm/requests
+// from the last row — created_at for recent/oldest, the COALESCEd
+// requester name for 'name' — tiebroken by request id. Empty = no more.
+func nextRequestCursor(rows []gen.GetPendingMessageRequestsRow, sort string, limit int32) string {
+	if len(rows) == 0 || int32(len(rows)) < effectivePageLimit(limit) {
+		return ""
+	}
+
+	last := rows[len(rows)-1]
+	c := dmCursor{S: sort, ID: last.ID.String()}
+
+	if sort == "name" {
+		c.K = last.RequesterUsername
+		if last.RequesterDisplayName != nil {
+			c.K = *last.RequesterDisplayName
+		}
+	} else { // recent | oldest — created_at key
+		c.T = last.CreatedAt.Time.UnixNano()
+	}
+
+	return encodeDMCursor(c)
 }
 
 // UpdateDMPrivacy updates user's DM privacy setting.
@@ -974,7 +1190,7 @@ func (s *DMService) recalcTotalUnread(ctx context.Context, userID pgtype.UUID) {
 		return
 	}
 
-	convs, err := s.store.GetUserConversations(ctx, userID, MaxPageSize, 0)
+	convs, err := s.store.GetUserConversations(ctx, userID, "", "", "", MaxPageSize, 0, nil)
 	if err != nil {
 		slog.Warn("dm: failed to fetch conversations for unread recalc", "error", err)
 		return

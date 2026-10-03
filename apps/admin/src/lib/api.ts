@@ -2435,8 +2435,9 @@ export const digestAdminApi = {
 		api<unknown>(`/admin/digest/generate`, { method: 'POST', body: {} }),
 };
 
-// Section 67 — Travel Search providers (ADR-085). No DELETE route in the spec;
-// deactivation is via PATCH is_active. api_config is write-only (never returned).
+// Section 67 — Travel Search providers (ADR-085). DELETE removes the row
+// outright (provider config is admin data, not user content). api_config is
+// write-only (never returned).
 export interface TravelProvider {
 	id: string;
 	name: string;

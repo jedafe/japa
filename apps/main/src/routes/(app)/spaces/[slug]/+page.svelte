@@ -46,6 +46,59 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		return category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 	}
 
+	// §80: the About tab lists wiki pages grouped by category in the same
+	// canonical order /wiki/{space_slug} uses for its section cards — the
+	// scoped set comes from GET /wiki/categories?space={slug}; featured
+	// pages lead each group. Directory categories with no descendants are
+	// hidden, and stub-only categories keep a link to their stub page.
+	type WikiApiCategory = {
+		slug: string;
+		label_key: string;
+		label: string;
+		page_slug?: string;
+		directory?: boolean;
+		empty?: boolean;
+	};
+	const apiCategories = $derived<WikiApiCategory[]>(data.wikiCategories ?? []);
+	const wikiGroups = $derived.by(() => {
+		const hiddenDirCats = new Set(
+			apiCategories.filter((c) => c.directory && c.empty).map((c) => c.slug)
+		);
+		const order = new Map(apiCategories.map((c, i) => [c.slug, i]));
+		const groups = new Map<string, WikiPageIndex[]>();
+		for (const p of wikiPages) {
+			if (hiddenDirCats.has(p.category)) continue;
+			const arr = groups.get(p.category);
+			if (arr) arr.push(p);
+			else groups.set(p.category, [p]);
+		}
+		const cats = new Set(groups.keys());
+		for (const c of apiCategories) {
+			if (c.page_slug && !hiddenDirCats.has(c.slug)) cats.add(c.slug);
+		}
+		return [...cats]
+			.map((category) => {
+				const pages = [...(groups.get(category) ?? [])].sort(
+					(a, b) => Number(b.is_featured) - Number(a.is_featured)
+				);
+				const apiCat = apiCategories.find((c) => c.slug === category);
+				return {
+					category,
+					label: t(
+						apiCat?.label_key ?? `wiki.category_${category}`,
+						apiCat?.label ?? formatWikiCategory(category)
+					),
+					pages,
+					pageSlug: apiCat?.page_slug
+				};
+			})
+			.sort((a, b) => {
+				const ca = order.get(a.category) ?? Number.MAX_SAFE_INTEGER;
+				const cb = order.get(b.category) ?? Number.MAX_SAFE_INTEGER;
+				return ca !== cb ? ca - cb : a.label.localeCompare(b.label);
+			});
+	});
+
 	// Map SpaceContentItem → FeedItem so space feed renders through FeedCard.
 	function toFeedItem(item: SpaceContentItem): FeedItem {
 		return {
@@ -812,20 +865,39 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{#if isDestinationWiki && wikiEnabled}
 					<div class="mt-4 border-t border-[var(--color-border)] pt-4">
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.community_wiki', 'Community Wiki')}</h2>
-						{#if wikiPages.length > 0}
-							<ul class="mb-3 space-y-2">
-								{#each wikiPages as page (page.id)}
-									<li>
-										<a
-											href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(page.slug)}"
-											class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)]"
-										>
-											<span class="font-medium text-[var(--color-text)]">{page.title}</span>
-											<span class="text-xs uppercase tracking-wide text-[var(--color-muted)]">{formatWikiCategory(page.category)}</span>
-										</a>
-									</li>
+						{#if wikiGroups.length > 0}
+							<div class="mb-3 space-y-3">
+								{#each wikiGroups as group (group.category)}
+									<div>
+										<h3 class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{group.label}</h3>
+										{#if group.pages.length > 0}
+											<ul class="mt-1.5 space-y-2">
+												{#each group.pages as wikiPage (wikiPage.id)}
+													<li>
+														<a
+															href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(wikiPage.slug)}"
+															class="flex items-center justify-between rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-sm transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface)]"
+														>
+															<span class="font-medium text-[var(--color-text)]">{wikiPage.title}</span>
+															{#if wikiPage.is_featured}
+																<Star size={12} class="shrink-0 text-[var(--color-warning)]" role="img" aria-label={t('wiki.featured', 'Featured')} />
+															{/if}
+														</a>
+													</li>
+												{/each}
+											</ul>
+										{:else if group.pageSlug}
+											<a
+												href="/wiki/{encodeURIComponent(space.slug)}/{encodeURIComponent(group.pageSlug)}"
+												class="mt-1.5 inline-flex items-center gap-1 text-sm text-[var(--color-primary)] hover:underline"
+											>
+												{t('space.view_wiki_category', 'Browse {label}', { label: group.label })}
+												<span aria-hidden="true">→</span>
+											</a>
+										{/if}
+									</div>
 								{/each}
-							</ul>
+							</div>
 						{:else}
 							<p class="mb-3 text-sm text-[var(--color-text-subtle)]">{t('space.no_wiki_pages', 'No community wiki pages yet.')}</p>
 						{/if}
@@ -842,8 +914,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{#if wikiData}
 					<div class="mt-4 border-t border-[var(--color-border)] pt-4" use:imgLightbox>
 						<h2 class="mb-2 text-sm font-medium text-[var(--color-text)]">{t('space.wiki_summary', 'From Wikipedia')}</h2>
-						{#if wikiData.thumbnail}
-							<img src={wikiData.thumbnail} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
+						{#if space.logo_url}
+							<img src={space.logo_url} alt={wikiData.title ?? space.name} class="float-right mb-3 ml-3 h-24 w-24 rounded-[var(--radius)] object-cover" />
 						{/if}
 						{#if wikiData.description}
 							<p class="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">{wikiData.description}</p>

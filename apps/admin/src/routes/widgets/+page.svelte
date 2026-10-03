@@ -486,6 +486,24 @@
 									options={field.options ?? []}
 									class="w-full"
 								/>
+							{:else if field.type === 'textarea'}
+								<textarea
+									rows="4"
+									class="w-full rounded border px-2 py-1 text-sm"
+									style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)"
+									value={String(existingConfig[field.key] ?? field.default ?? '')}
+									onchange={(e) => { value._config = { ...(value._config ?? existingConfig), [field.key]: e.currentTarget.value }; }}
+								></textarea>
+							{:else}
+								<!-- Fallback for field types not listed above (e.g. url) — render
+								     a text input rather than nothing. -->
+								<input
+									type="text"
+									class="w-full rounded border px-2 py-1 text-sm"
+									style="border-color: var(--color-border-input); background: var(--color-background); color: var(--color-foreground)"
+									value={String(existingConfig[field.key] ?? field.default ?? '')}
+									onchange={(e) => { value._config = { ...(value._config ?? existingConfig), [field.key]: e.currentTarget.value }; }}
+								/>
 							{/if}
 							{#if field.help}
 								<p class="mt-1 text-[10px]" style="color: var(--color-muted)">{field.help}</p>

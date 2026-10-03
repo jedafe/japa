@@ -97,6 +97,14 @@
 		<Dialog.Content
 			class="fixed left-1/2 top-1/2 flex max-h-[85vh] w-full -translate-x-1/2 -translate-y-1/2 flex-col overflow-y-auto rounded-[var(--radius-card,var(--radius-md,12px))] border border-[var(--color-border)] bg-[var(--color-surface,var(--background))] {padded ? 'p-5' : ''} shadow-xl {sizes[size] ?? size} data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 {className}"
 			style="z-index: {zIndex}"
+			onInteractOutside={(e) => {
+				// Autocomplete dropdowns portal to document.body to escape the
+				// content's overflow-y-auto clipping, so option clicks land
+				// outside this element — don't let them dismiss the dialog.
+				if ((e.target as HTMLElement | null)?.closest?.('.autocomplete-dropdown')) {
+					e.preventDefault();
+				}
+			}}
 		>
 			{#if !hideHeader}
 				{#if header}

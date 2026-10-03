@@ -231,6 +231,9 @@ export const load: LayoutServerLoad = async (event) => {
 		// root layout and never overridden, so client-side auth guards can rely
 		// on it regardless of which page is loaded.
 		isAuthed: !!user,
+		// Same override risk as isAuthed — the authenticated viewer's user id
+		// for self-detection (e.g. hiding the follow button on own entities).
+		viewerId: user?.id ?? null,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
 		isUniversityHost: event.locals.isUniversityHost,

@@ -88,12 +88,32 @@
 		}
 	}
 
-	function formatDate(dateString: string): string {
-		return new Date(dateString).toLocaleDateString(i18n.locale, {
+	function formatDate(dateString: string | undefined): string {
+		if (!dateString) return '';
+		const d = new Date(dateString);
+		if (Number.isNaN(d.getTime())) return '';
+		return d.toLocaleDateString(i18n.locale, {
 			month: 'short',
 			day: 'numeric'
 		});
 	}
+
+	// Label for the active period — used by chart captions so the summary text
+	// reflects the selected window instead of a hardcoded "Last 30 days".
+	const periodLabel = $derived(
+		period === 'custom' && start && end
+			? `${formatDate(start)} – ${formatDate(end)}`
+			: period === '7d'
+				? t('dashboard.analytics.last_7_days', 'Last 7 days')
+				: period === '90d'
+					? t('dashboard.analytics.last_90_days', 'Last 90 days')
+					: t('dashboard.analytics.last_30_days', 'Last 30 days')
+	);
+
+	// Custom range validation — a start after the end produces a silently
+	// empty window server-side; block Apply and tell the user instead.
+	const customRangeInverted = $derived(!!customStart && !!customEnd && customStart > customEnd);
+	const customRangeInvalid = $derived(!customStart || !customEnd || customRangeInverted);
 
 	// Tick generator that forces the last tick to reach at least 95% of the
 	// data maximum, preventing charts from showing empty space past the largest
@@ -292,9 +312,15 @@
 				/>
 				<button
 					type="button"
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm text-[var(--color-primary-contrast)]"
-					onclick={applyPeriod}>Apply</button
+					disabled={customRangeInvalid}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm text-[var(--color-primary-contrast)] disabled:opacity-50"
+					onclick={applyPeriod}>{t('common.apply', 'Apply')}</button
 				>
+				{#if customRangeInverted}
+					<span class="text-xs text-[var(--color-danger)]">
+						{t('dashboard.analytics.invalid_range', 'Start must be before end.')}
+					</span>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -593,7 +619,7 @@
 							/>
 						</div>
 						<p class="mt-2 text-sm font-medium text-[var(--color-text)]">
-							{t('dashboard.analytics.last_30_days', 'Last 30 days')} ·
+							{periodLabel} ·
 							{formatMetric(followerSeries.reduce((sum, d) => sum + d.new_followers, 0))}
 							{t('dashboard.analytics.new_followers', 'new followers')}
 							·

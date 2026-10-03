@@ -8,7 +8,8 @@
 	// Filtering is done server-side via ?folder_id=uuid (BL-002/BL-007).
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { learnUrl } from '$lib/appOrigins';
+	import { learnUrl, docsUrl } from '$lib/appOrigins';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X, ChevronRight, ChevronDown } from 'lucide-svelte';
 	import type { Bookmark, BookmarkFolder } from '$lib/types';
@@ -19,6 +20,7 @@
 	let bookmarks = $state<Bookmark[]>(untrack(() => data.bookmarks ?? []));
 	let folders = $state<BookmarkFolder[]>(untrack(() => data.folders ?? []));
 	let activeFolder = $state<string | null>(untrack(() => data.activeFolderId ?? null));
+	let activeType = $state<string>(untrack(() => data.activeType ?? ''));
 
 	// Empty folders are hidden behind a toggle by default so a folder only
 	// appears in the sidebar once it holds at least one bookmark; emptying
@@ -54,23 +56,45 @@
 	let hasMore = $state(false);
 	// Total across ALL folders — shown on the "All" badge. The list endpoint
 	// returns no meta total, so on a ?folder= deep link the count is fetched
-	// in the background by paging the unfiltered list (loadTotalCount).
+	// in the background by paging the list (loadTotalCount). countType tracks
+	// which entity_type the cached total describes so a type change recounts.
 	let totalCount = $state<number | null>(null);
-	// Seed pagination state from the SSR-loaded first page (initial value only).
-	untrack(() => {
+	let countType = $state<string>('__init__');
+
+	// Re-sync list state whenever the server load re-runs (?folder= navigation,
+	// back/forward history, invalidation). Client-appended pages and optimistic
+	// removals live in `bookmarks`; data.bookmarks is always the first server
+	// page for the active folder. The "All" badge uses totalCount — only
+	// seed it when the unfiltered list fit in a single page (exact count);
+	// otherwise loadTotalCount pages the full list for a real number.
+	$effect(() => {
+		bookmarks = data.bookmarks ?? [];
+		folders = data.folders ?? [];
+		activeFolder = data.activeFolderId ?? null;
+		const type = data.activeType ?? '';
+		activeType = type;
+		if (type !== countType) {
+			countType = type;
+			totalCount = null;
+		}
 		nextOffset = data.bookmarks?.length ?? 0;
 		hasMore = (data.bookmarks?.length ?? 0) === PAGE_SIZE;
-		if (!data.activeFolderId) totalCount = nextOffset;
+		if (!data.activeFolderId && !hasMore) totalCount = nextOffset;
+		loadingBookmarks = false;
 	});
 
 	// Fetch the total bookmark count across all folders (capped at 10 pages =
 	// 1000 rows) so the "All" badge is correct even when the SSR load was
-	// folder-scoped. Runs client-side only, only when the total is unknown.
+	// folder-scoped. Honours the active entity_type filter so the badge
+	// counts the same set the list would show. Runs client-side only, only
+	// when the total is unknown.
 	async function loadTotalCount() {
 		let offset = 0;
 		let total = 0;
 		for (let i = 0; i < 10; i++) {
-			const r = await api.get<Bookmark[]>(`/me/bookmarks?page_size=${PAGE_SIZE}&page_offset=${offset}`);
+			const params = new URLSearchParams({ page_size: String(PAGE_SIZE), page_offset: String(offset) });
+			if (activeType) params.set('entity_type', activeType);
+			const r = await api.get<Bookmark[]>(`/me/bookmarks?${params.toString()}`);
 			if (!r.data) return;
 			total += r.data.length;
 			if (r.data.length < PAGE_SIZE) break;
@@ -101,6 +125,7 @@
 			page_offset: String(append ? nextOffset : 0)
 		});
 		if (folderId) params.set('folder_id', folderId);
+		if (activeType) params.set('entity_type', activeType);
 		const res = await api.get<Bookmark[]>(`/me/bookmarks?${params.toString()}`);
 		if (append) loadingMore = false;
 		else loadingBookmarks = false;
@@ -116,11 +141,10 @@
 
 	function selectFolder(id: string | null) {
 		activeFolder = id;
-		// Re-fetch the filtered list immediately so the UI updates.
-		loadBookmarks(id);
-		// Sync the URL via goto so a reload preserves the selected folder.
-		// goto to the same path with a changed query re-runs load(), but the
-		// local bookmarks state is already updated by loadBookmarks above.
+		loadingBookmarks = true;
+		// Changing ?folder re-runs the server load, which returns the
+		// folder-filtered first page — the $effect above syncs it. A direct
+		// client fetch here would double-fetch the same endpoint.
 		const url = new URL(window.location.href);
 		if (id) {
 			url.searchParams.set('folder', id);
@@ -130,10 +154,25 @@
 		goto(url.pathname + url.search, { keepFocus: true, noScroll: true, replaceState: false });
 	}
 
-	// learnUrl throws when the cross-app origin env var is unset — a throwing
-	// href expression would crash the render, so guard it (falls back to '#').
+	function selectType(type: string) {
+		activeType = type;
+		loadingBookmarks = true;
+		const url = new URL(window.location.href);
+		if (type) {
+			url.searchParams.set('type', type);
+		} else {
+			url.searchParams.delete('type');
+		}
+		goto(url.pathname + url.search, { keepFocus: true, noScroll: true });
+	}
+
+	// learnUrl/docsUrl throw when the cross-app origin env var is unset — a
+	// throwing href expression would crash the render, so guard them.
 	function safeLearnUrl(path: string): string {
 		try { return learnUrl(path); } catch { return '#'; }
+	}
+	function safeDocsUrl(path: string): string {
+		try { return docsUrl(path); } catch { return '#'; }
 	}
 
 	function entityUrl(b: Bookmark): string {
@@ -149,8 +188,14 @@
 				return `/forum/${idOrSlug}#reply-${b.entity_id}`;
 			case 'space':
 				return `/spaces/${idOrSlug}`;
+			case 'tag':
+				return `/tags/${idOrSlug}`;
 			case 'comment':
 				return `/content/${b.entity_id}`;
+			// Doc pages live on the Docs app under /docs/{audience}/{slug} —
+			// the bookmark row carries the page's audience slug.
+			case 'doc_page':
+				return safeDocsUrl(`/docs/${b.audience ?? 'users'}/${idOrSlug}`);
 			// Learning tracks live on the Learn app (:3003 in dev) — a relative
 			// /tracks/… link would 404 here. ADR-060 cross-app deep links.
 			case 'learning_track':
@@ -319,29 +364,30 @@
 								<span class="ml-auto text-xs text-[var(--color-muted)]">{folder.bookmark_count}</span>
 							{/if}
 						</button>
-						{#if isEmptyFolder(folder)}
-							<button
-								type="button"
-								onclick={() => startRename(folder)}
-								class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-primary)] group-hover:opacity-100"
-								aria-label={t('bookmarks.rename_folder', 'Rename folder')}
-							>
-								<Pencil size={12} />
-							</button>
-							<button
-								type="button"
-								onclick={() => deleteFolder(folder.id)}
-								disabled={deletingFolderId === folder.id}
-								class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
-								aria-label={t('bookmarks.delete_folder', 'Delete folder')}
-							>
-								{#if deletingFolderId === folder.id}
-									<Loader2 size={12} class="animate-spin" />
-								{:else}
-									<Trash2 size={12} />
-								{/if}
-							</button>
-						{/if}
+						<!-- Rename/delete apply to all folders: DeleteBookmarkFolder
+							has ON DELETE SET NULL on bookmarks.folder_id — deleting a
+							non-empty folder unfiles its bookmarks rather than failing. -->
+						<button
+							type="button"
+							onclick={() => startRename(folder)}
+							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-primary)] group-hover:opacity-100"
+							aria-label={t('bookmarks.rename_folder', 'Rename folder')}
+						>
+							<Pencil size={12} />
+						</button>
+						<button
+							type="button"
+							onclick={() => deleteFolder(folder.id)}
+							disabled={deletingFolderId === folder.id}
+							class="shrink-0 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] group-hover:opacity-100 disabled:opacity-50"
+							aria-label={t('bookmarks.delete_folder', 'Delete folder')}
+						>
+							{#if deletingFolderId === folder.id}
+								<Loader2 size={12} class="animate-spin" />
+							{:else}
+								<Trash2 size={12} />
+							{/if}
+						</button>
 					{/if}
 				</div>
 			{/each}
@@ -388,6 +434,27 @@
 
 		<!-- Bookmark list -->
 		<div>
+			<!-- entity_type filter (backend ?entity_type= supports these joined types) -->
+			<div class="mb-3 flex justify-end">
+				<AutocompleteSelect
+					class="w-44"
+					value={activeType}
+					options={[
+						{ value: '', label: t('bookmarks.filter_all_types', 'All types') },
+						{ value: 'content', label: t('bookmarks.type.content', 'Content') },
+						{ value: 'blog_post', label: t('bookmarks.type.blog_post', 'Blog post') },
+						{ value: 'forum_thread', label: t('bookmarks.type.forum_thread', 'Forum thread') },
+						{ value: 'forum_reply', label: t('bookmarks.type.forum_reply', 'Forum reply') },
+						{ value: 'space', label: t('bookmarks.type.space', 'Space') },
+						{ value: 'tag', label: t('bookmarks.type.tag', 'Tag') },
+						{ value: 'comment', label: t('bookmarks.type.comment', 'Comment') },
+						{ value: 'learning_track', label: t('bookmarks.type.learning_track', 'Learning track') },
+						{ value: 'doc_page', label: t('bookmarks.type.doc_page', 'Doc page') }
+					]}
+					ariaLabel={t('bookmarks.filter_type', 'Bookmark type')}
+					onValueChange={(v) => selectType(v)}
+				/>
+			</div>
 			{#if loadingBookmarks}
 				<div class="space-y-2">
 					{#each Array(3) as _}

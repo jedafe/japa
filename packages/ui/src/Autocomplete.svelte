@@ -84,6 +84,9 @@
 		clearLabel?: string;
 		/** Accessible/text label shown while loading. */
 		loadingLabel?: string;
+		/** Open the dropdown above the field instead of below — for controls
+		 * sitting near the bottom edge of a fixed-height pane. */
+		openUp?: boolean;
 	}
 
 	let {
@@ -110,7 +113,8 @@
 		disabled = false,
 		class: wrapperClass = '',
 		clearLabel = 'Clear',
-		loadingLabel = 'Loading...'
+		loadingLabel = 'Loading...',
+		openUp = false
 	}: Props = $props();
 
 	let open = $state(false);
@@ -138,21 +142,19 @@
 	let requestToken = 0;
 
 	// portal action — moves the element to document.body so it escapes
-	// any ancestor overflow:hidden containers. On destroy, just remove
-	// the node from the DOM entirely (Svelte is destroying the {#if}
-	// block that contained it, so moving it back to a dying parent is
-	// pointless and can orphan the element in document.body).
+	// any ancestor overflow:hidden containers (including bits-ui Dialog
+	// content, which has overflow-y-auto and would clip the dropdown).
+	// On destroy, just remove the node from the DOM entirely (Svelte is
+	// destroying the {#if} block that contained it, so moving it back to
+	// a dying parent is pointless and can orphan the element in body).
 	//
-	// When the Autocomplete is inside a bits-ui Dialog (aria-modal="true"),
-	// the dialog's overlay intercepts pointer events on elements outside
-	// the dialog content. Teleporting to document.body would place the
-	// dropdown outside the dialog, making options unclickable. To fix
-	// this, we portal into the closest [role=dialog] ancestor if one
-	// exists, falling back to document.body otherwise.
+	// bits-ui modal dialogs set pointer-events:none on document.body and
+	// treat interactions outside Dialog.Content as dismissals. The
+	// dropdown sets pointer-events:auto on itself to stay clickable, and
+	// Modal.svelte ignores outside-interactions targeting
+	// .autocomplete-dropdown so the dialog stays open.
 	function portal(node: HTMLElement) {
-		const dialog = fieldEl?.closest('[role="dialog"][aria-modal="true"]');
-		const target = dialog ?? document.body;
-		target.appendChild(node);
+		document.body.appendChild(node);
 		return {
 			destroy() {
 				node.remove();
@@ -189,26 +191,17 @@
 	});
 
 	// updateDropdownPosition calculates the position for the dropdown
-	// based on the input wrapper's bounding rect. When inside a dialog
-	// (which uses CSS transform), position:fixed behaves like absolute
-	// relative to the dialog, so we compute offsets relative to the
-	// portal target (the dialog element) instead of the viewport.
+	// based on the input wrapper's bounding rect. The dropdown is always
+	// portaled to document.body with position:absolute, so convert the
+	// viewport-relative rect to document coordinates.
 	function updateDropdownPosition() {
 		if (!fieldEl) return;
 		const rect = fieldEl.getBoundingClientRect();
 		dropdownWidth = rect.width;
-		const portalParent = dropdownEl?.parentElement;
-		if (portalParent && portalParent !== document.body) {
-			// Inside a dialog — compute position relative to the dialog.
-			const parentRect = portalParent.getBoundingClientRect();
-			dropdownTop = rect.bottom - parentRect.top + 4;
-			dropdownLeft = rect.left - parentRect.left;
-		} else {
-			// Portaled to document.body with position:absolute — convert the
-			// viewport-relative rect to document coordinates.
-			dropdownTop = rect.bottom + window.scrollY + 4;
-			dropdownLeft = rect.left + window.scrollX;
-		}
+		dropdownTop = openUp
+			? rect.top + window.scrollY - 4
+			: rect.bottom + window.scrollY + 4;
+		dropdownLeft = rect.left + window.scrollX;
 	}
 
 	// Reposition the dropdown on scroll/resize while open.
@@ -493,14 +486,16 @@
 
 {#if showDropdown}
 	<!-- The dropdown is teleported via the `portal` action so it is not
-	     clipped by ancestor overflow:hidden containers. When inside a
-	     bits-ui Dialog, it is portaled into the dialog content to avoid
-	     the dialog overlay intercepting pointer events. -->
+	     clipped by ancestor overflow:hidden containers (e.g. bits-ui
+	     Dialog content). pointer-events:auto re-enables it because
+	     modal dialogs set pointer-events:none on document.body. -->
 	<div
 		bind:this={dropdownEl}
 		use:portal
 		class="autocomplete-dropdown"
-		style="position: absolute; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999;"
+		style="position: absolute; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999; pointer-events: auto;{openUp
+			? ' transform: translateY(-100%);'
+			: ''}"
 		role="listbox"
 	>
 		<div class="autocomplete-options" id={listId}>

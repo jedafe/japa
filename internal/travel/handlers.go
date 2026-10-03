@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -114,6 +115,24 @@ func atoiDefault(s string, fallback int) int {
 	return v
 }
 
+// floatDefault parses a query param as float64, returning fallback on
+// error/empty.
+func floatDefault(s string, fallback float64) float64 {
+	if s == "" {
+		return fallback
+	}
+
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fallback
+	}
+
+	return v
+}
+
+// maxPageSize caps page_size so a client can't request unbounded pages.
+const maxPageSize = 100
+
 // validateDate checks that a date string is in YYYY-MM-DD format and is a
 // valid calendar date. Returns true when valid.
 func validateDate(s string) bool {
@@ -197,12 +216,24 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 		CabinClass:  r.URL.Query().Get("cabin_class"),
 	}
 
+	opts := SearchOptions{
+		Sort:     r.URL.Query().Get("sort"),
+		Airline:  r.URL.Query().Get("airline"),
+		MaxStops: atoiDefault(r.URL.Query().Get("max_stops"), -1),
+		PriceMax: floatDefault(r.URL.Query().Get("price_max"), 0),
+		Page:     validatePositiveInt(atoiDefault(r.URL.Query().Get("page"), 1), 1, 1),
+		PageSize: validatePositiveInt(atoiDefault(r.URL.Query().Get("page_size"), 0), 0, 0),
+	}
+	if opts.PageSize > maxPageSize {
+		opts.PageSize = maxPageSize
+	}
+
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
-	resp, err := h.service.SearchFlights(r.Context(), params)
+	resp, err := h.service.SearchFlights(r.Context(), params, opts)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
@@ -211,6 +242,11 @@ func (h *Handlers) HandleSearchFlights(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, ErrNoProvider) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "provider_not_configured", "No flight provider is configured yet")
+			return
+		}
+
+		if errors.Is(err, ErrQuotaExceeded) {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "travel_quota_exceeded", "Travel search is temporarily rate limited")
 			return
 		}
 
@@ -262,12 +298,23 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 		Rooms:       validatePositiveInt(atoiDefault(r.URL.Query().Get("rooms"), 1), 1, 1),
 	}
 
+	opts := SearchOptions{
+		Sort:     r.URL.Query().Get("sort"),
+		PriceMax: floatDefault(r.URL.Query().Get("price_max"), 0),
+		MinStars: atoiDefault(r.URL.Query().Get("min_stars"), 0),
+		Page:     validatePositiveInt(atoiDefault(r.URL.Query().Get("page"), 1), 1, 1),
+		PageSize: validatePositiveInt(atoiDefault(r.URL.Query().Get("page_size"), 0), 0, 0),
+	}
+	if opts.PageSize > maxPageSize {
+		opts.PageSize = maxPageSize
+	}
+
 	if h.service == nil {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
 		return
 	}
 
-	resp, err := h.service.SearchHotels(r.Context(), params)
+	resp, err := h.service.SearchHotels(r.Context(), params, opts)
 	if err != nil {
 		if errors.Is(err, ErrTravelDisabled) {
 			errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
@@ -279,6 +326,11 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, ErrQuotaExceeded) {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "travel_quota_exceeded", "Travel search is temporarily rate limited")
+			return
+		}
+
 		slog.Error("travel: hotel search failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "search_failed", "Failed to search hotels")
 
@@ -287,6 +339,106 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": resp,
+	})
+}
+
+// HandleSearchLocations handles GET /api/v1/travel/locations — airport
+// autocomplete backed by the seeded IATA catalog, merged with the provider's
+// locations API when configured (§67 amendment).
+// Query: q (required), limit (default 15, max 50).
+func (h *Handlers) HandleSearchLocations(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	if q == "" {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		return
+	}
+
+	locs, err := h.service.SearchLocations(r.Context(), q, int32(atoiDefault(r.URL.Query().Get("limit"), 15)))
+	if err != nil {
+		slog.Error("travel: locations search failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "locations_failed", "Failed to search locations")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": locs,
+	})
+}
+
+// HandleHotelDirectory handles GET /api/v1/travel/hotels — browse the hotel
+// directory (travel_hotels). Pure local read; rows accumulate from hotel
+// searches and the travel:sync_hotel_directory feed task (§67, ADR-124).
+// Query: city, q (name substring), min_stars, page, page_size (default 50).
+func (h *Handlers) HandleHotelDirectory(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		return
+	}
+
+	q := r.URL.Query()
+
+	items, total, err := h.service.HotelDirectory(
+		r.Context(),
+		q.Get("city"),
+		q.Get("q"),
+		atoiDefault(q.Get("min_stars"), 0),
+		atoiDefault(q.Get("page"), 1),
+		atoiDefault(q.Get("page_size"), 50),
+	)
+	if err != nil {
+		slog.Error("travel: hotel directory failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "directory_failed", "Failed to load hotel directory")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"results":   items,
+			"total":     total,
+			"page":      atoiDefault(q.Get("page"), 1),
+			"page_size": min(max(atoiDefault(q.Get("page_size"), 50), 1), 200),
+		},
+	})
+}
+
+// HandleAirlineDirectory handles GET /api/v1/travel/airlines — browse the
+// airline catalog joined to observed provider coverage. Pure local read.
+func (h *Handlers) HandleAirlineDirectory(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		return
+	}
+
+	q := r.URL.Query()
+
+	items, total, err := h.service.AirlineDirectory(
+		r.Context(),
+		q.Get("q"),
+		q.Get("country"),
+		q.Get("provider"),
+		atoiDefault(q.Get("page"), 1),
+		atoiDefault(q.Get("page_size"), 50),
+	)
+	if err != nil {
+		slog.Error("travel: airline directory failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "directory_failed", "Failed to load airline directory")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"results":   items,
+			"total":     total,
+			"page":      atoiDefault(q.Get("page"), 1),
+			"page_size": min(max(atoiDefault(q.Get("page_size"), 50), 1), 200),
+		},
 	})
 }
 
@@ -469,7 +621,22 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	var apiConfig []byte
 
 	if len(body.APIConfig) > 0 {
-		enc, err := crypto.EncryptJSON(body.APIConfig)
+		// Extra-only configs merge into the stored credentials rather than
+		// replacing them (§67 admin api_config PATCH semantics).
+		merged, err := h.service.MergeAPIConfigPatch(r.Context(), providerID, body.APIConfig)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Travel provider not found")
+				return
+			}
+
+			slog.Error("travel: failed to merge api_config", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_provider_failed", "Failed to update provider")
+
+			return
+		}
+
+		enc, err := crypto.EncryptJSON(merged)
 		if err != nil {
 			slog.Error("travel: failed to encrypt api_config", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "encryption_failed", "Failed to encrypt provider credentials")
@@ -496,6 +663,11 @@ func (h *Handlers) HandleAdminUpdateProvider(w http.ResponseWriter, r *http.Requ
 	})
 	if err != nil {
 		if writeConflictIfDuplicate(w, err, "duplicate_provider", "A travel provider with this slug already exists") {
+			return
+		}
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "provider_not_found", "Travel provider not found")
 			return
 		}
 

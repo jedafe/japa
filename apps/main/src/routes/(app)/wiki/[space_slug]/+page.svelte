@@ -88,11 +88,9 @@
 		}
 	});
 
-	const heroUrl = $derived(
-		data.spaceDetail?.header_url ||
-			(typeof wikiData?.thumbnail === 'string' ? wikiData.thumbnail : '') ||
-			''
-	);
+	// Only the platform-stored header is rendered here — the auto-populated
+	// thumbnail URL points at Wikimedia and would hotlink on every view.
+	const heroUrl = $derived(data.spaceDetail?.header_url || '');
 	const intro = $derived.by(() => {
 		const desc = space?.description?.trim();
 		if (desc) return desc;

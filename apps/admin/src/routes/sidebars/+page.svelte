@@ -13,7 +13,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import { Select } from "$lib/components/ui/select";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
-	import { sidebarsAdminApi, userManagementApi, permissionsApi, type UserGroup, type SidebarOptions } from "$lib/api";
+	import { sidebarsAdminApi, userManagementApi, permissionsApi, apiRaw, type UserGroup, type SidebarOptions } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 	import Autocomplete, { type AutocompleteItem } from "$lib/components/ui/Autocomplete.svelte";
@@ -26,7 +26,7 @@
 	type PropField = {
 		key: string;
 		label: string;
-		type: 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'url' | 'links';
+		type: 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'url' | 'links' | 'widget_ref';
 		options?: PropOption[];
 		help?: string;
 	};
@@ -279,6 +279,43 @@
 		return filterPermissionNodes("");
 	}
 
+	// ── Widget-configurations picker (widget_ref prop fields) ─────────────
+	// Section 59: `configured_widget` embeds a Section 16
+	// widget_configurations row by ID. The picker searches GET /admin/widgets
+	// so the admin picks a widget by name instead of pasting a UUID.
+	type WidgetConfigRef = { id: string; name: string; widget_type: string };
+	let configuredWidgets = $state<WidgetConfigRef[]>([]);
+	let configuredWidgetsLoaded = false;
+
+	async function ensureConfiguredWidgets() {
+		if (configuredWidgetsLoaded) return;
+		configuredWidgetsLoaded = true;
+		const res = await apiRaw<{ data?: WidgetConfigRef[] }>("/admin/widgets?page_size=100");
+		if (res.ok) configuredWidgets = res.data?.data ?? [];
+	}
+
+	function widgetRefLabel(id: unknown): string {
+		const key = String(id ?? "");
+		return configuredWidgets.find((w) => w.id === key)?.name ?? key;
+	}
+
+	async function fetchConfiguredWidgets(q: string): Promise<AutocompleteItem[]> {
+		const params = new URLSearchParams({ page_size: "50" });
+		if (q.trim()) params.set("q", q.trim());
+		const res = await apiRaw<{ data?: WidgetConfigRef[] }>(`/admin/widgets?${params.toString()}`);
+		if (!res.ok) return [];
+		const items = res.data?.data ?? [];
+		configuredWidgets = [
+			...items.filter((w) => !configuredWidgets.some((c) => c.id === w.id)),
+			...configuredWidgets,
+		];
+		return items.map((w) => ({ id: w.id, label: w.name, sublabel: w.widget_type.replace(/_/g, " ") }));
+	}
+
+	async function initialConfiguredWidgets(): Promise<AutocompleteItem[]> {
+		return fetchConfiguredWidgets("");
+	}
+
 	// User groups: client-side filter over the cached list, excluding already-
 	// selected groups so they can't be picked twice.
 	function filterGroups(q: string): AutocompleteItem[] {
@@ -349,6 +386,7 @@
 
 	function openCreateWidget() {
 		if (!widgetsSidebar) return;
+		void ensureConfiguredWidgets();
 		editingWidget = null;
 		widgetLabel = "";
 		widgetType = "";
@@ -362,6 +400,7 @@
 	}
 
 	function openEditWidget(widget: SidebarWidget) {
+		void ensureConfiguredWidgets();
 		editingWidget = widget;
 		widgetLabel = widget.label;
 		widgetType = widget.widget_type;
@@ -812,6 +851,27 @@
 						<div>
 							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
 							<input id="prop-{field.key}" type="number" min="0" value={Number(widgetPropsObj[field.key] ?? 0)} oninput={(e) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: e.currentTarget.valueAsNumber || 0 }; }} class="mt-1 w-full rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
+							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
+						</div>
+					{:else if field.type === 'widget_ref'}
+						<div>
+							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
+							<div class="mt-1">
+								<Autocomplete
+									id="prop-{field.key}"
+									placeholder={t('sidebars.search_widgets', 'Search widgets...')}
+									emptyMessage={t('sidebars.no_widgets_found', 'No matching widgets')}
+									fetcher={fetchConfiguredWidgets}
+									initialFetcher={initialConfiguredWidgets}
+									selectedId={String(widgetPropsObj[field.key] ?? '') || null}
+									selectedLabel={widgetRefLabel(widgetPropsObj[field.key])}
+									onSelect={(item) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: item.id }; }}
+									onClear={() => { widgetPropsObj = { ...widgetPropsObj, [field.key]: '' }; }}
+									onInput={(q) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: q }; }}
+									freeText
+									inputClass="font-mono"
+								/>
+							</div>
 							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
 						</div>
 					{:else if field.type === 'links'}

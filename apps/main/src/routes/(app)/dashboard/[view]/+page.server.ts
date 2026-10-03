@@ -28,6 +28,22 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, { code: 'not_found', message: 'Unknown dashboard view' });
 	}
 
+	// apiGet/apiList go through ctx.fetch with an absolute backend URL, so a
+	// client-side invalidate('/api/v1/me/...') can never match a registered
+	// fetch dependency. Declaring the keys here lets the relationships view's
+	// unfollow/leave/unblock/unmute actions actually re-run this load.
+	// Ref: routes/(app)/u/[username]/+page.server.ts (same pattern).
+	for (const dep of [
+		'/api/v1/me/following',
+		'/api/v1/me/followed-tags',
+		'/api/v1/me/spaces',
+		'/api/v1/me/blocked-users',
+		'/api/v1/me/muted-users',
+		'/api/v1/me/muted-spaces'
+	]) {
+		event.depends(dep);
+	}
+
 	const loader = DASHBOARD_LOADERS[slug];
 	// Pass URL search params to the loader so views can read filters
 	// server-side (e.g. analytics' ?period=/start/end).

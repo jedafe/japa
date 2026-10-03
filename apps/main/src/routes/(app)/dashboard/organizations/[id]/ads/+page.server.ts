@@ -26,9 +26,15 @@ export const load: PageServerLoad = async (event) => {
 	// Load ad slots and campaigns best-effort. The self-serve ads endpoints
 	// are /org/{org_id}/ads/* — they require the org_id UUID.
 	const PAGE_SIZE = 20;
+	// ?status= maps to the backend's campaign-status filter; unknown values
+	// are dropped rather than forwarded.
+	const VALID_STATUSES = new Set(['draft', 'pending_review', 'active', 'paused', 'rejected', 'ended']);
+	const rawStatus = event.url.searchParams.get('status')?.trim() ?? '';
+	const status = VALID_STATUSES.has(rawStatus) ? rawStatus : '';
+	const campaignsQuery = status ? `?page=1&limit=${PAGE_SIZE}&status=${status}` : `?page=1&limit=${PAGE_SIZE}`;
 	const [slotsRes, campaignsRes] = await Promise.all([
 		apiList<AdSlotType>(ctx, `/org/${id}/ads/slots`).catch(() => ({ items: [] as AdSlotType[] })),
-		apiList<AdCampaign>(ctx, `/org/${id}/ads/campaigns?page=1&limit=${PAGE_SIZE}`).catch(() => ({
+		apiList<AdCampaign>(ctx, `/org/${id}/ads/campaigns${campaignsQuery}`).catch(() => ({
 			items: [] as AdCampaign[],
 			meta: { total: 0, page: 1, limit: PAGE_SIZE }
 		}))
@@ -38,6 +44,7 @@ export const load: PageServerLoad = async (event) => {
 		org,
 		slots: slotsRes.items,
 		campaigns: campaignsRes.items,
+		status,
 		total: campaignsRes.meta?.total ?? campaignsRes.items.length,
 		page: campaignsRes.meta?.page ?? 1,
 		limit: campaignsRes.meta?.limit ?? PAGE_SIZE

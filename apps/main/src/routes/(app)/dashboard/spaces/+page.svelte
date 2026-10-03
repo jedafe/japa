@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { EmptyState, UrlTabs, type UrlTab, PaginationControls } from '$lib/components/ui';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { UsersRound, Plus, Search, Volume2 } from 'lucide-svelte';
 	import type { MeSpace } from '$lib/types';
 
@@ -14,6 +15,26 @@
 	const tab = $derived(data.tab);
 	const pageNum = $derived(data.page);
 	const pageSize = $derived(data.pageSize);
+	const spaceTypes = $derived(data.spaceTypes ?? []);
+	const levelFilter = $derived(data.level ?? '');
+	const spaceTypeFilter = $derived(data.spaceType ?? '');
+	// level + space_type filters only apply to the joined/muted endpoints.
+	const showSpaceFilters = $derived(tab === 'joined' || tab === 'muted');
+
+	const spaceLevelOptions = $derived([
+		{ value: '', label: t('spaces.all_levels', 'All levels') },
+		{ value: 'country', label: t('spaces.level_country', 'Country') },
+		{ value: 'state', label: t('spaces.level_state', 'State') },
+		{ value: 'city', label: t('spaces.level_city', 'City') },
+		{ value: 'custom', label: t('spaces.level_custom', 'Community') },
+		{ value: 'global', label: t('spaces.level_global', 'Global') }
+	]);
+
+	const pageSizeOptions = [
+		{ value: '10', label: '10' },
+		{ value: '25', label: '25' },
+		{ value: '50', label: '50' }
+	];
 
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'joined', label: t('spaces.tab_joined', 'Joined') },
@@ -91,7 +112,7 @@
 		await invalidate('/api/v1/me/muted-spaces');
 	}
 
-	const hasMore = $derived(spaces.length === pageSize);
+	const hasMore = $derived(data.hasMore ?? false);
 	const showPagination = $derived(pageNum > 1 || hasMore);
 </script>
 
@@ -100,7 +121,7 @@
 </svelte:head>
 
 <section class="space-y-4">
-	<header class="space-y-4">
+	<header class="space-y-3">
 		<div class="flex items-center justify-between">
 			<h1 class="text-lg font-medium text-[var(--color-text)]">{t('dashboard.nav.spaces')}</h1>
 			<a
@@ -111,9 +132,38 @@
 				{t('spaces.browse')}
 			</a>
 		</div>
-		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-			<UrlTabs {tabs} value={tab} onValueChange={(v) => changeTab(v)} />
-			<div class="relative max-w-xs flex-1">
+		<UrlTabs {tabs} value={tab} onValueChange={(v) => changeTab(v)} />
+		<div class="flex flex-wrap items-center gap-2">
+			{#if showSpaceFilters}
+				<AutocompleteSelect
+					class="w-44"
+					value={spaceTypeFilter}
+					options={[
+						{
+							value: '',
+							label: t('spaces.all_types', 'All types')
+						},
+						...spaceTypes.map((st) => ({ value: st.id, label: st.name }))
+					]}
+					ariaLabel={t('spaces.filter_type', 'Space type')}
+					onValueChange={(v) => goto(buildURL({ space_type: v || null, page: null }))}
+				/>
+				<AutocompleteSelect
+					class="w-36"
+					value={levelFilter}
+					options={spaceLevelOptions}
+					ariaLabel={t('spaces.filter_level', 'Space level')}
+					onValueChange={(v) => goto(buildURL({ level: v || null, page: null }))}
+				/>
+			{/if}
+			<AutocompleteSelect
+				class="w-20"
+				value={String(pageSize)}
+				options={pageSizeOptions}
+				ariaLabel={t('spaces.page_size', 'Rows per page')}
+				onValueChange={(v) => goto(buildURL({ page_size: v, page: null }))}
+			/>
+			<div class="relative min-w-40 flex-1 sm:ml-auto sm:max-w-xs">
 				<Search
 					size={16}
 					class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"

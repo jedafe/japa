@@ -20,6 +20,16 @@
 	let posting = $state(false);
 	let errorKey = $state('');
 
+	// SvelteKit reuses this component when navigating ticket→ticket, so a
+	// one-time seed would show the previous ticket's thread. Re-sync whenever
+	// the load delivers a new detail payload; locally-posted replies only
+	// touch `comments` and don't retrigger this.
+	$effect(() => {
+		comments = data.detail.comments ?? [];
+		replyBody = '';
+		errorKey = '';
+	});
+
 	const STATUS_KEY: Record<TicketStatus, string> = {
 		open: 'tickets.status.open',
 		in_progress: 'tickets.status.in_progress',

@@ -2,15 +2,11 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
-	import { enhance } from '$app/forms';
 	import {
 		Plane,
 		Lock,
 		Hotel,
 		ExternalLink,
-		Loader2,
-		GitCompare,
-		Building2,
 		Search
 	} from 'lucide-svelte';
 	import {
@@ -20,32 +16,36 @@
 		PaginationControls,
 		AutocompleteSelect
 	} from '$lib/components/ui';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
+	import type { Space } from '$lib/types';
 	import { api } from '$lib/api/client';
 	import { formatMoney } from '$lib/utils/currency';
 	import type {
 		TravelFlightResult,
 		TravelHotelResult,
 		TravelSearchResponse,
-		TravelProvider
+		TravelHotelDirectoryItem,
+		TravelHotelDirectoryResponse,
+		TravelAirlineItem,
+		TravelAirlineDirectoryResponse
 	} from '$lib/types';
-	import type { PageData, ActionData } from './$types';
+	import type { PageData } from './$types';
 
-	let { data, form }: { data: PageData; form?: ActionData } = $props();
+	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('tools.travel', 'Travel Search — JapaConnect'));
 	const description = $derived(t('tools.travel_desc', 'Search flights and hotels for your move.'));
 
-	const authed = $derived(data.authed);
-	const providers = $derived<TravelProvider[]>(data.providers ?? []);
-	const providersError = $derived(data.providersError ?? false);
 	let disabled = $state(false);
 
-	type Tab = 'flights' | 'hotels' | 'providers';
-	const TAB_VALUES: Tab[] = ['flights', 'hotels', 'providers'];
+	type Tab = 'flights' | 'hotels' | 'directory' | 'airlines';
+	const TAB_VALUES: Tab[] = ['flights', 'hotels', 'directory', 'airlines'];
 	const TABS = $derived<Array<{ value: Tab; label: string }>>([
 		{ value: 'flights', label: t('travel.flights', 'Flights') },
 		{ value: 'hotels', label: t('travel.hotels', 'Hotels') },
-		{ value: 'providers', label: t('travel.providers', 'Providers') }
+		{ value: 'directory', label: t('travel.directory', 'Hotel directory') },
+		{ value: 'airlines', label: t('travel.airlines', 'Airlines') }
 	]);
 	const initialTabParam = page.url.searchParams.get('tab') as Tab;
 	let tab = $state<Tab>(
@@ -74,20 +74,10 @@
 			return { value: String(n), label: String(n) };
 		});
 
-	const MAX_COMPARE = 4;
-
 	const cabinOptions = $derived([
 		{ value: '', label: t('travel.any_cabin', 'Any cabin') },
 		...(data.cabinClasses ?? []).map((o) => ({ value: o.value, label: o.label }))
 	]);
-
-	const providerTypeOptions = $derived([
-		{ value: '', label: t('travel.all_types', 'All types') },
-		...(data.providerTypes ?? []).map((o) => ({ value: o.value, label: o.label }))
-	]);
-	const providerTypeLabel = $derived(
-		new Map((data.providerTypes ?? []).map((o) => [o.value, o.label]))
-	);
 
 	const flightSortOptions = $derived([
 		{ value: '', label: t('travel.sort_relevance', 'Best match') },
@@ -103,12 +93,6 @@
 		{ value: 'price_desc', label: t('travel.sort_price_desc', 'Price: high to low') },
 		{ value: 'rating', label: t('travel.sort_rating', 'Highest rated') }
 	]);
-	const providerSortOptions = $derived([
-		{ value: 'name_asc', label: t('travel.sort_name', 'Name (A–Z)') },
-		{ value: 'name_desc', label: t('travel.sort_name_desc', 'Name (Z–A)') },
-		{ value: 'newest', label: t('travel.sort_newest', 'Newest first') },
-		{ value: 'oldest', label: t('travel.sort_oldest', 'Oldest first') }
-	]);
 
 	// Today's date (local) for the date-input min attributes.
 	const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
@@ -116,6 +100,41 @@
 		.slice(0, 10);
 
 	// ── Flight form ─────────────────────────────────────────────────────────
+	// Origin/destination autocomplete over the IATA airport catalog
+	// (GET /travel/locations, §67) — real flight locations, not geo spaces.
+	// Selecting an item commits its IATA code; freeText keeps raw code entry
+	// working — the value is forwarded verbatim to the provider either way.
+	interface TravelLocation {
+		iata: string;
+		name: string;
+		city: string;
+		country_code: string;
+	}
+
+	async function fetchAirportOptions(q: string): Promise<AutocompleteItem[]> {
+		const res = await api.get<TravelLocation[]>(
+			`/travel/locations?q=${encodeURIComponent(q.trim())}&limit=15`
+		);
+		return (res.data ?? []).map((a) => ({
+			id: a.iata,
+			label: `${a.city} (${a.iata})`,
+			sublabel: a.name
+		}));
+	}
+
+	// Hotel destination autocomplete over city-level geo spaces (Rule 16) —
+	// hotel provider searches take city names, not airport codes.
+	async function fetchCityOptions(q: string): Promise<AutocompleteItem[]> {
+		const res = await api.get<Space[]>(
+			`/spaces?level=city&q=${encodeURIComponent(q.trim())}&page_size=15`
+		);
+		return (res.data ?? []).map((c) => ({
+			id: c.id,
+			label: c.name,
+			sublabel: c.geo_code ?? undefined
+		}));
+	}
+
 	let flightOrigin = $state('');
 	let flightDest = $state('');
 	let flightDate = $state('');
@@ -140,8 +159,8 @@
 	let hotelProviderMissing = $state(false);
 	let flightsSearched = $state(false);
 	let hotelsSearched = $state(false);
-	let flightMeta = $state<{ cache_hit: boolean; search_time_ms: number } | null>(null);
-	let hotelMeta = $state<{ cache_hit: boolean; search_time_ms: number } | null>(null);
+	let flightMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number } | null>(null);
+	let hotelMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number } | null>(null);
 	let flights = $state<TravelFlightResult[]>([]);
 	let hotels = $state<TravelHotelResult[]>([]);
 
@@ -151,17 +170,33 @@
 	let flightPageSize = $state('10');
 	let flightPage = $state(1);
 
-	const airlineOptions = $derived([
-		{ value: '', label: t('travel.all_airlines', 'All airlines') },
-		...[
-			...new Set(flights.map((f) => f.airline).filter((a) => !!a))
-		]
-			.sort((a, b) => a.localeCompare(b))
-			.map((a) => ({ value: a, label: a }))
-	]);
+	// Airline filter groups by the canonical airline_key so "P4" and
+	// "Air Peace" collapse into one option; the label prefers whichever raw
+	// provider string reads as a name over a bare code. Offers without a
+	// resolved key fall back to their raw value so filtering still works.
+	const airlineIdentity = (f: TravelFlightResult) => f.airline_key || f.airline;
+
+	const airlineOptions = $derived.by(() => {
+		const labels = new Map<string, string>();
+		for (const f of flights) {
+			const key = airlineIdentity(f);
+			const raw = f.airline || '';
+			if (!key || !raw) continue;
+			const prev = labels.get(key);
+			if (prev === undefined || (isBareCode(prev) && !isBareCode(raw))) {
+				labels.set(key, raw);
+			}
+		}
+		return [
+			{ value: '', label: t('travel.all_airlines', 'All airlines') },
+			...[...labels.entries()]
+				.sort((a, b) => a[1].localeCompare(b[1]))
+				.map(([value, label]) => ({ value, label }))
+		];
+	});
 
 	const filteredFlights = $derived(
-		flightAirline ? flights.filter((f) => f.airline === flightAirline) : flights
+		flightAirline ? flights.filter((f) => airlineIdentity(f) === flightAirline) : flights
 	);
 
 	const sortedFlights = $derived.by(() => {
@@ -218,64 +253,6 @@
 		sortedHotels.slice((hotelPage - 1) * hotelPageSizeNum, hotelPage * hotelPageSizeNum)
 	);
 
-	// ── Providers tab state (search / filter / sort / page / selection) ─────
-	let providerQuery = $state('');
-	let providerType = $state('');
-	let providerSort = $state('name_asc');
-	let providerPageSize = $state('10');
-	let providerPage = $state(1);
-	let savingJCE = $state(false);
-	let selectedProviderIds = $state<Set<string>>(new Set());
-
-	const canCompareProviders = $derived(
-		selectedProviderIds.size >= 2 && selectedProviderIds.size <= MAX_COMPARE
-	);
-
-	const filteredProviders = $derived.by(() => {
-		const q = providerQuery.trim().toLowerCase();
-		let list = providers;
-		if (providerType) list = list.filter((p) => p.provider_type === providerType);
-		if (q) {
-			list = list.filter((p) =>
-				[p.name, p.slug, p.provider_type].some((v) => v.toLowerCase().includes(q))
-			);
-		}
-		return [...list].sort((a, b) => {
-			switch (providerSort) {
-				case 'name_desc':
-					return b.name.localeCompare(a.name);
-				case 'newest':
-					return b.created_at.localeCompare(a.created_at);
-				case 'oldest':
-					return a.created_at.localeCompare(b.created_at);
-				default:
-					return a.name.localeCompare(b.name);
-			}
-		});
-	});
-
-	const providerPageSizeNum = $derived(Number(providerPageSize) || 10);
-	const providerTotalPages = $derived(
-		Math.max(1, Math.ceil(filteredProviders.length / providerPageSizeNum))
-	);
-	const pagedProviders = $derived(
-		filteredProviders.slice(
-			(providerPage - 1) * providerPageSizeNum,
-			providerPage * providerPageSizeNum
-		)
-	);
-
-	function toggleProviderSelection(id: string) {
-		const next = new Set(selectedProviderIds);
-		if (next.has(id)) {
-			next.delete(id);
-		} else {
-			if (next.size >= MAX_COMPARE) return;
-			next.add(id);
-		}
-		selectedProviderIds = next;
-	}
-
 	// ── Search actions ──────────────────────────────────────────────────────
 	async function searchFlights() {
 		const origin = flightOrigin.trim().toUpperCase();
@@ -319,7 +296,10 @@
 		flightLoading = false;
 		flightsSearched = true;
 		if (res.error) {
-			if (res.error.code === 'travel_disabled') {
+			// feature_disabled is what the route gate returns when
+			// travel.enabled is off; travel_disabled is the service-level
+			// variant — both mean the whole surface is unavailable.
+			if (res.error.code === 'travel_disabled' || res.error.code === 'feature_disabled') {
 				disabled = true;
 				return;
 			}
@@ -332,7 +312,7 @@
 		}
 		flights = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
 		flightMeta = res.data
-			? { cache_hit: res.data.cache_hit, search_time_ms: res.data.search_time_ms }
+			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms }
 			: null;
 		flightPage = 1;
 		flightAirline = '';
@@ -370,7 +350,7 @@
 		hotelLoading = false;
 		hotelsSearched = true;
 		if (res.error) {
-			if (res.error.code === 'travel_disabled') {
+			if (res.error.code === 'travel_disabled' || res.error.code === 'feature_disabled') {
 				disabled = true;
 				return;
 			}
@@ -383,11 +363,126 @@
 		}
 		hotels = (res.data?.results as TravelHotelResult[] | undefined) ?? [];
 		hotelMeta = res.data
-			? { cache_hit: res.data.cache_hit, search_time_ms: res.data.search_time_ms }
+			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms }
 			: null;
 		hotelPage = 1;
 		hotelSort = '';
 	}
+
+	// ── Hotel directory (ADR-124) — server-paginated browse over
+	// /travel/hotels; rows accumulate from searches and the provider feed
+	// sync, so results are always local and free to browse.
+	let dirCity = $state('');
+	let dirQuery = $state('');
+	let dirMinStars = $state('');
+	let dirPageSize = $state('10');
+	let dirPage = $state(1);
+	let dirLoading = $state(false);
+	let dirError = $state<string | null>(null);
+	let dirLoaded = $state(false);
+	let dirItems = $state<TravelHotelDirectoryItem[]>([]);
+	let dirTotal = $state(0);
+
+	const dirStarOptions = $derived([
+		{ value: '', label: t('travel.any_stars', 'Any rating') },
+		{ value: '3', label: t('travel.stars_3plus', '3+ stars') },
+		{ value: '4', label: t('travel.stars_4plus', '4+ stars') },
+		{ value: '5', label: t('travel.stars_5', '5 stars') }
+	]);
+
+	const dirTotalPages = $derived(Math.max(1, Math.ceil(dirTotal / (Number(dirPageSize) || 10))));
+
+	async function loadDirectory(nextPage = dirPage) {
+		dirLoading = true;
+		dirError = null;
+
+		const params = new URLSearchParams({
+			page: String(nextPage),
+			page_size: dirPageSize
+		});
+		if (dirCity.trim()) params.set('city', dirCity.trim());
+		if (dirQuery.trim()) params.set('q', dirQuery.trim());
+		if (dirMinStars) params.set('min_stars', dirMinStars);
+
+		const res = await api.get<TravelHotelDirectoryResponse>(`/travel/hotels?${params.toString()}`);
+		dirLoading = false;
+		dirLoaded = true;
+
+		if (res.error || !res.data) {
+			if (res.error?.code === 'feature_disabled' || res.error?.code === 'travel_disabled') {
+				disabled = true;
+				return;
+			}
+			dirError = res.error?.message ?? t('travel.directory_error', 'Could not load the hotel directory.');
+			return;
+		}
+
+		dirItems = res.data.results ?? [];
+		dirTotal = res.data.total ?? 0;
+		dirPage = res.data.page ?? nextPage;
+	}
+
+	function dirSearch() {
+		dirPage = 1;
+		loadDirectory(1);
+	}
+
+	// First visit to the directory tab loads the first page; filters re-query.
+	$effect(() => {
+		if (tab === 'directory' && !dirLoaded && !dirLoading) loadDirectory(1);
+	});
+
+	// ── Airline directory (ADR-124) — server-paginated browse over
+	// /travel/airlines; q matches name, IATA/ICAO code and country. The
+	// providers shown per row come from observed offer coverage, not
+	// integration config.
+	let alQuery = $state('');
+	let alPageSize = $state('25');
+	let alPage = $state(1);
+	let alLoading = $state(false);
+	let alError = $state<string | null>(null);
+	let alLoaded = $state(false);
+	let alItems = $state<TravelAirlineItem[]>([]);
+	let alTotal = $state(0);
+
+	const alTotalPages = $derived(Math.max(1, Math.ceil(alTotal / (Number(alPageSize) || 25))));
+
+	async function loadAirlines(nextPage = alPage) {
+		alLoading = true;
+		alError = null;
+
+		const params = new URLSearchParams({
+			page: String(nextPage),
+			page_size: alPageSize
+		});
+		if (alQuery.trim()) params.set('q', alQuery.trim());
+
+		const res = await api.get<TravelAirlineDirectoryResponse>(`/travel/airlines?${params.toString()}`);
+		alLoading = false;
+		alLoaded = true;
+
+		if (res.error || !res.data) {
+			if (res.error?.code === 'feature_disabled' || res.error?.code === 'travel_disabled') {
+				disabled = true;
+				return;
+			}
+			alError = res.error?.message ?? t('travel.airlines_error', 'Could not load the airline directory.');
+			return;
+		}
+
+		alItems = res.data.results ?? [];
+		alTotal = res.data.total ?? 0;
+		alPage = res.data.page ?? nextPage;
+	}
+
+	function alSearch() {
+		alPage = 1;
+		loadAirlines(1);
+	}
+
+	$effect(() => {
+		if (tab === 'airlines' && !alLoaded && !alLoading) loadAirlines(1);
+	});
 
 	// ── Formatting helpers ──────────────────────────────────────────────────
 	function durationMinutes(s: string): number {
@@ -403,12 +498,14 @@
 		return Number.MAX_SAFE_INTEGER;
 	}
 
-	function formatProviderType(type: string): string {
-		return providerTypeLabel.get(type) ?? type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-	}
-
 	function formatDate(iso: string): string {
 		return iso ? iso.slice(0, 10) : '';
+	}
+
+	// A 2–3 char all-caps code reads as an identifier, not a carrier name —
+	// used to prefer "Air Peace" over "P4" as an airline-option label.
+	function isBareCode(s: string): boolean {
+		return /^[A-Z0-9]{2,3}$/.test(s);
 	}
 
 	// Provider names falling back to raw endpoint URLs are a debug aid from
@@ -450,21 +547,35 @@
 		</div>
 
 		<div class="p-4">
-			{#if form?.error}
-				<div class="mb-4 rounded-[var(--radius)] bg-red-500/10 p-3 text-sm text-red-500" role="alert">
-					{form.message || t('travel.jce_error', 'Could not create comparison')}
-				</div>
-			{/if}
-
 			{#if tab === 'flights'}
 				<form onsubmit={(e) => { e.preventDefault(); searchFlights(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 					<div>
 						<label for="flight-origin" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.origin', 'Origin (IATA)')}</label>
-						<input id="flight-origin" type="text" required maxlength="5" placeholder="LOS" bind:value={flightOrigin} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm uppercase text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+						<Autocomplete
+							id="flight-origin"
+							freeText
+							placeholder={t('travel.origin_hint', 'City or airport code')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchAirportOptions}
+							selectedId={null}
+							selectedLabel={flightOrigin}
+							onSelect={(item) => (flightOrigin = item.id)}
+							onFreeTextBlur={(q) => (flightOrigin = q)}
+						/>
 					</div>
 					<div>
 						<label for="flight-dest" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.destination', 'Destination (IATA)')}</label>
-						<input id="flight-dest" type="text" required maxlength="5" placeholder="LHR" bind:value={flightDest} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm uppercase text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+						<Autocomplete
+							id="flight-dest"
+							freeText
+							placeholder={t('travel.destination_hint_flight', 'City or airport code')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchAirportOptions}
+							selectedId={null}
+							selectedLabel={flightDest}
+							onSelect={(item) => (flightDest = item.id)}
+							onFreeTextBlur={(q) => (flightDest = q)}
+						/>
 					</div>
 					<div>
 						<label for="flight-date" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.departure_date', 'Departure date')}</label>
@@ -513,7 +624,7 @@
 					<div class="mb-3 flex flex-wrap items-center gap-2">
 						<p class="mr-auto text-xs text-[var(--color-muted)]">
 							{t('travel.results', '{count} results', { count: sortedFlights.length })}
-							{#if flightMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
+							{#if flightMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if flightMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
 						<div class="w-36"><AutocompleteSelect options={airlineOptions} bind:value={flightAirline} onValueChange={() => (flightPage = 1)} ariaLabel={t('travel.filter_airline', 'Filter by airline')} placeholder={t('travel.filter_airline', 'Filter by airline')} /></div>
 						<div class="w-44"><AutocompleteSelect options={flightSortOptions} bind:value={flightSort} onValueChange={() => (flightPage = 1)} ariaLabel={t('travel.sort_by', 'Sort results')} /></div>
@@ -557,7 +668,17 @@
 				<form onsubmit={(e) => { e.preventDefault(); searchHotels(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
 					<div class="sm:col-span-2 lg:col-span-1">
 						<label for="hotel-dest" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.destination', 'Destination')}</label>
-						<input id="hotel-dest" type="text" required placeholder={t('travel.destination_hint', 'City or area')} bind:value={hotelDest} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+						<Autocomplete
+							id="hotel-dest"
+							freeText
+							placeholder={t('travel.destination_hint', 'City or area')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchCityOptions}
+							selectedId={null}
+							selectedLabel={hotelDest}
+							onSelect={(item) => (hotelDest = item.label)}
+							onFreeTextBlur={(q) => (hotelDest = q)}
+						/>
 					</div>
 					<div>
 						<label for="hotel-checkin" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.check_in', 'Check-in date')}</label>
@@ -600,7 +721,7 @@
 					<div class="mb-3 flex flex-wrap items-center gap-2">
 						<p class="mr-auto text-xs text-[var(--color-muted)]">
 							{t('travel.results', '{count} results', { count: sortedHotels.length })}
-							{#if hotelMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
+							{#if hotelMeta?.source === 'stale'}· {t('travel.stale_results', 'results may be outdated')}{:else if hotelMeta?.cache_hit}· {t('travel.cached', 'cached')}{/if}
 						</p>
 						<div class="w-44"><AutocompleteSelect options={hotelSortOptions} bind:value={hotelSort} onValueChange={() => (hotelPage = 1)} ariaLabel={t('travel.sort_by', 'Sort results')} /></div>
 						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={hotelPageSize} onValueChange={() => (hotelPage = 1)} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
@@ -642,116 +763,154 @@
 						body={t('travel.no_hotels_body', 'Try different dates or a nearby destination.')}
 					/>
 				{/if}
-			{:else}
-				{#if providersError}
-					<EmptyState
-						icon={Building2}
-						title={t('travel.providers_error', 'Could not load providers')}
-						body={t('travel.providers_error_body', 'Refresh the page to try again.')}
-					/>
-				{:else if providers.length === 0}
-					<EmptyState
-						icon={Building2}
-						title={t('travel.no_providers', 'No travel providers')}
-						body={t('travel.no_providers_body', 'Providers will appear here once an admin configures them.')}
-					/>
-				{:else}
-					<!-- Providers toolbar: client-side search, type filter, sort, page size -->
-					<div class="mb-3 flex flex-wrap items-center gap-2">
-						<div class="relative min-w-40 flex-1">
-							<Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
-							<input
-								type="search"
-								bind:value={providerQuery}
-								oninput={() => (providerPage = 1)}
-								placeholder={t('travel.search_providers', 'Search providers…')}
-								aria-label={t('travel.search_providers', 'Search providers…')}
-								class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-9 pr-3 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-							/>
-						</div>
-						{#if providerTypeOptions.length > 1}
-							<div class="w-40"><AutocompleteSelect options={providerTypeOptions} bind:value={providerType} onValueChange={() => (providerPage = 1)} ariaLabel={t('travel.filter_type', 'Filter by type')} /></div>
-						{/if}
-						<div class="w-40"><AutocompleteSelect options={providerSortOptions} bind:value={providerSort} onValueChange={() => (providerPage = 1)} ariaLabel={t('travel.sort_by', 'Sort results')} /></div>
-						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={providerPageSize} onValueChange={() => (providerPage = 1)} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
-					</div>
-
-					{#if filteredProviders.length === 0}
-						<EmptyState
-							icon={Building2}
-							title={t('travel.no_providers_filtered', 'No providers match your filters')}
-							body={t('travel.no_providers_filtered_body', 'Clear the search or pick another type.')}
+			{:else if tab === 'directory'}
+				<!-- Ref: .jeos/sections/67-travel-search.md (hotel directory, ADR-124) -->
+				<form onsubmit={(e) => { e.preventDefault(); dirSearch(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+					<div class="sm:col-span-2 lg:col-span-1">
+						<label for="dir-city" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.destination', 'Destination')}</label>
+						<Autocomplete
+							id="dir-city"
+							freeText
+							placeholder={t('travel.directory_city_hint', 'City (optional)')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchCityOptions}
+							selectedId={null}
+							selectedLabel={dirCity}
+							onSelect={(item) => { dirCity = item.label; dirSearch(); }}
+							onFreeTextBlur={(q) => (dirCity = q)}
 						/>
-					{:else}
-						<form
-							method="POST"
-							use:enhance={() => {
-								savingJCE = true;
-								return async ({ update }) => {
-									savingJCE = false;
-									await update();
-								};
-							}}
-							class="space-y-3"
-						>
-							<div class="mb-4 flex items-center justify-between flex-wrap gap-3">
-								<p class="text-sm text-[var(--color-muted)]">
-									{t('travel.selected', 'Selected')}: {selectedProviderIds.size} / {MAX_COMPARE}
-									{#if selectedProviderIds.size > 0}
-										<button type="button" onclick={() => (selectedProviderIds = new Set())} class="ml-2 text-xs text-[var(--color-primary)] underline hover:opacity-80">
-											{t('travel.clear', 'Clear')}
-										</button>
-									{/if}
-								</p>
-								<button
-									type="submit"
-									disabled={!canCompareProviders || !authed || savingJCE}
-									title={authed
-										? t('travel.compare_in_jce_hint', 'Open in JCE comparison')
-										: t('travel.sign_in_to_compare', 'Sign in to compare')}
-									class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									{#if savingJCE}
-										<Loader2 size={16} class="animate-spin" />
-									{:else}
-										<GitCompare size={16} />
-									{/if}
-									{t('travel.compare_in_jce', 'Compare in JCE')}
-								</button>
+					</div>
+					<div>
+						<label for="dir-q" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.hotel_name', 'Hotel name')}</label>
+						<input id="dir-q" type="search" bind:value={dirQuery} placeholder={t('travel.directory_name_hint', 'Search names…')} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+					</div>
+					<div>
+						<label for="dir-stars" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.min_stars', 'Minimum rating')}</label>
+						<AutocompleteSelect id="dir-stars" options={dirStarOptions} bind:value={dirMinStars} onValueChange={() => dirSearch()} />
+					</div>
+					<div class="flex items-end">
+						<button type="submit" disabled={dirLoading} class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-60">
+							{dirLoading ? t('common.searching', 'Searching…') : t('travel.browse', 'Browse')}
+						</button>
+					</div>
+				</form>
+
+				{#if dirError}
+					<div class="mb-4 rounded-[var(--radius)] bg-red-500/10 p-3 text-sm text-red-500" role="alert">
+						{dirError}
+					</div>
+				{/if}
+
+				{#if dirLoading && dirItems.length === 0}
+					<LoadingSkeleton variant="lines" />
+				{:else if dirItems.length > 0}
+					<div class="mb-3 flex flex-wrap items-center gap-2">
+						<p class="mr-auto text-xs text-[var(--color-muted)]">
+							{t('travel.directory_count', '{count} hotels in the directory', { count: dirTotal })}
+						</p>
+						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={dirPageSize} onValueChange={() => dirSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
+					</div>
+					<div class="space-y-2">
+						{#each dirItems as h, i (i)}
+							<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+								{#if h.image_url}
+									<img src={h.image_url} alt="" loading="lazy" class="hidden h-14 w-20 shrink-0 rounded-[var(--radius)] object-cover sm:block" />
+								{/if}
+								<div class="min-w-0 flex-1">
+									<span class="block text-sm font-medium text-[var(--color-text)]">{h.name}</span>
+									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
+										{#if (h.star_rating ?? 0) > 0}{'★'.repeat(Math.min(5, Math.floor(h.star_rating ?? 0)))} · {/if}
+										{#if h.address}{h.address} · {/if}
+										{h.city}
+									</span>
+								</div>
+								{#if h.last_price}
+									<span class="text-xs text-[var(--color-muted)]">
+										{t('travel.last_seen', 'recent')} · <span class="font-medium text-[var(--color-text)]">{formatMoney(h.last_price, h.last_currency ?? 'USD', data.currencies)}</span>
+									</span>
+								{/if}
 							</div>
-
-							<!-- Hidden inputs for every selected provider (not just the
-							     current page's rows) so filtering/paging can't drop ids. -->
-							{#each [...selectedProviderIds] as id (id)}
-								<input type="hidden" name="provider_id" value={id} />
-							{/each}
-
-							{#each pagedProviders as p (p.id)}
-								<label class="flex cursor-pointer items-start gap-3 rounded-[var(--radius-card)] border bg-[var(--color-surface)] p-4 transition-colors {selectedProviderIds.has(p.id) ? 'border-[var(--color-primary)]' : 'border-[var(--color-border)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]'}">
-									<input
-										type="checkbox"
-										checked={selectedProviderIds.has(p.id)}
-										onchange={() => toggleProviderSelection(p.id)}
-										disabled={selectedProviderIds.size >= MAX_COMPARE && !selectedProviderIds.has(p.id)}
-										aria-label={p.name}
-										class="mt-1 accent-[var(--color-primary)]"
-									/>
-									<div class="min-w-0 flex-1">
-										<span class="block text-sm font-medium text-[var(--color-text)]">{p.name}</span>
-										<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-											{formatProviderType(p.provider_type)} · {p.slug}{#if p.created_at} · {t('travel.since', 'since')} {formatDate(p.created_at)}{/if}
-										</span>
-									</div>
-								</label>
-							{/each}
-						</form>
-
-						{#if providerTotalPages > 1}
-							<div class="mt-4 flex justify-center">
-								<PaginationControls page={providerPage} totalPages={providerTotalPages} onPageChange={(p) => (providerPage = p)} />
-							</div>
-						{/if}
+						{/each}
+					</div>
+					{#if dirTotalPages > 1}
+						<div class="mt-4 flex justify-center">
+							<PaginationControls page={dirPage} totalPages={dirTotalPages} onPageChange={(p) => loadDirectory(p)} />
+						</div>
 					{/if}
+				{:else if dirLoaded && !dirError}
+					<EmptyState
+						icon={Hotel}
+						title={t('travel.no_directory', 'No hotels in the directory yet')}
+						body={t('travel.no_directory_body', 'The directory grows as hotel searches run — try a hotel search for your destination first.')}
+					/>
+				{/if}
+			{:else if tab === 'airlines'}
+				<!-- Ref: .jeos/sections/67-travel-search.md (airline directory, ADR-124) -->
+				<form onsubmit={(e) => { e.preventDefault(); alSearch(); }} class="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+					<div class="sm:col-span-2 lg:col-span-3">
+						<label for="al-q" class="mb-1 block text-xs font-medium text-[var(--color-muted)]">{t('travel.airline_name', 'Airline')}</label>
+						<input id="al-q" type="search" bind:value={alQuery} placeholder={t('travel.airline_hint', 'Name, IATA code or country…')} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+					</div>
+					<div class="flex items-end">
+						<button type="submit" disabled={alLoading} class="w-full rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-60">
+							{alLoading ? t('common.searching', 'Searching…') : t('travel.browse', 'Browse')}
+						</button>
+					</div>
+				</form>
+
+				{#if alError}
+					<div class="mb-4 rounded-[var(--radius)] bg-red-500/10 p-3 text-sm text-red-500" role="alert">
+						{alError}
+					</div>
+				{/if}
+
+				{#if alLoading && alItems.length === 0}
+					<LoadingSkeleton variant="lines" />
+				{:else if alItems.length > 0}
+					<div class="mb-3 flex flex-wrap items-center gap-2">
+						<p class="mr-auto text-xs text-[var(--color-muted)]">
+							{t('travel.airlines_count', '{count} airlines in the directory', { count: alTotal })}
+						</p>
+						<div class="w-24"><AutocompleteSelect options={PAGE_SIZE_OPTIONS} bind:value={alPageSize} onValueChange={() => alSearch()} ariaLabel={t('travel.per_page', 'Results per page')} /></div>
+					</div>
+					<div class="space-y-2">
+						{#each alItems as a (a.airline_key)}
+							<div class="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+								<div class="min-w-0 flex-1">
+									<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+										{#if a.iata_code}
+											<span class="rounded-[var(--radius)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 font-mono text-xs font-semibold text-[var(--color-primary)]">{a.iata_code}</span>
+										{/if}
+										{a.name}
+									</span>
+									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
+										{a.country}
+										{#if a.providers.length > 0}
+											· {t('travel.bookable_via', 'via')} {a.providers.join(', ')}
+										{:else}
+											· {t('travel.catalog_only', 'catalog only')}
+										{/if}
+									</span>
+								</div>
+								{#if a.observed}
+									<span class="shrink-0 rounded-[var(--radius)] bg-green-500/10 px-2 py-1 text-xs font-medium text-green-600 dark:text-green-400">
+										{t('travel.bookable', 'bookable')}
+									</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+					{#if alTotalPages > 1}
+						<div class="mt-4 flex justify-center">
+							<PaginationControls page={alPage} totalPages={alTotalPages} onPageChange={(p) => loadAirlines(p)} />
+						</div>
+					{/if}
+				{:else if alLoaded && !alError}
+					<EmptyState
+						icon={Plane}
+						title={t('travel.no_airlines', 'No airlines match')}
+						body={t('travel.no_airlines_body', 'Try a different name, code or country.')}
+					/>
 				{/if}
 			{/if}
 		</div>

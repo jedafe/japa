@@ -3961,6 +3961,17 @@ type Translation struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+type TravelAirline struct {
+	AirlineKey  string             `json:"airline_key"`
+	IataCode    *string            `json:"iata_code"`
+	IcaoCode    *string            `json:"icao_code"`
+	Name        string             `json:"name"`
+	Country     string             `json:"country"`
+	Source      string             `json:"source"`
+	FirstSeenAt pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
+}
+
 type TravelAirport struct {
 	IataCode    string   `json:"iata_code"`
 	Name        string   `json:"name"`
@@ -3993,6 +4004,22 @@ type TravelFlightOffer struct {
 	Raw          []byte             `json:"raw"`
 	FetchedAt    pgtype.Timestamptz `json:"fetched_at"`
 	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+	AirlineKey   *string            `json:"airline_key"`
+}
+
+type TravelHotel struct {
+	ID           pgtype.UUID        `json:"id"`
+	ProviderID   pgtype.UUID        `json:"provider_id"`
+	HotelKey     string             `json:"hotel_key"`
+	CityKey      string             `json:"city_key"`
+	Name         string             `json:"name"`
+	StarRating   *int16             `json:"star_rating"`
+	Address      *string            `json:"address"`
+	ImageUrl     *string            `json:"image_url"`
+	LastPrice    pgtype.Numeric     `json:"last_price"`
+	LastCurrency *string            `json:"last_currency"`
+	FirstSeenAt  pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt   pgtype.Timestamptz `json:"last_seen_at"`
 }
 
 type TravelHotelOffer struct {
@@ -4025,6 +4052,13 @@ type TravelProvider struct {
 	AffiliateConfig []byte             `json:"affiliate_config"`
 	IsActive        bool               `json:"is_active"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+}
+
+type TravelProviderAirline struct {
+	ProviderID  pgtype.UUID        `json:"provider_id"`
+	AirlineKey  string             `json:"airline_key"`
+	FirstSeenAt pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt  pgtype.Timestamptz `json:"last_seen_at"`
 }
 
 type TravelSearchCoverage struct {

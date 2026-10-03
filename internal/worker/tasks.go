@@ -110,6 +110,8 @@ const (
 	TypeMaintenancePruneOldFeeds        = "maintenance:prune_old_feeds"
 	TypeMaintenancePruneAuditLogs       = "maintenance:prune_audit_logs"
 	TypeMaintenancePrunePushTokens      = "maintenance:prune_push_tokens"
+	TypeMaintenancePruneTravelResults   = "maintenance:prune_travel_results"
+	TypeTravelSyncHotelDirectory        = "travel:sync_hotel_directory"
 	TypeModerationAutoHide              = "moderation:auto_hide"
 	TypeReportNotifyAdmin               = "report:notify_admin"
 	TypeDMCleanupDeclinedRequests       = "dm:cleanup_declined_requests"
@@ -252,6 +254,8 @@ var handlerRegistry = []struct {
 	{TypeMaintenancePruneOldFeeds, HandleMaintenancePruneOldFeeds},
 	{TypeMaintenancePruneAuditLogs, HandleMaintenancePruneAuditLogs},
 	{TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens},
+	{TypeMaintenancePruneTravelResults, HandleMaintenancePruneTravelResults},
+	{TypeTravelSyncHotelDirectory, HandleTravelSyncHotelDirectory},
 	{TypeModerationAutoHide, HandleModerationAutoHide},
 	{TypeReportNotifyAdmin, HandleReportNotifyAdmin},
 	{TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests},

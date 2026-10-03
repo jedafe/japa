@@ -98,13 +98,23 @@ type UniversityLogoEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// MediaUploader is the subset of media.Service the ProcessorAdapter needs to
+// ingest remote images (flagcdn flags, Wikimedia Commons files, Wikipedia
+// article images) into platform media storage — spaces then serve their
+// logo/header from our own store instead of hotlinking external sources at
+// render time (Section 05 Auto-Population).
+type MediaUploader interface {
+	StoreFromURL(ctx context.Context, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error)
+}
+
 // ProcessorAdapter implements worker.SpaceAutoPopulateProcessor by delegating
 // to the spaces service's auto-population logic.
 type ProcessorAdapter struct {
-	svc          *Service
-	customFields CustomFieldsEnricher   // nil = skip custom field enrichment
-	uniEnqueuer  UniversityLogoEnqueuer // nil = skip logo fetch enqueue
-	systemUserID pgtype.UUID            // for media attribution in university:fetch_logo
+	svc           *Service
+	customFields  CustomFieldsEnricher   // nil = skip custom field enrichment
+	uniEnqueuer   UniversityLogoEnqueuer // nil = skip logo fetch enqueue
+	mediaUploader MediaUploader          // nil = skip geo logo/header ingest
+	systemUserID  pgtype.UUID            // for media attribution in university:fetch_logo
 }
 
 // NewProcessorAdapter creates a ProcessorAdapter backed by the given spaces service.
@@ -132,6 +142,57 @@ func (a *ProcessorAdapter) SetUniversityLogoEnqueuer(e UniversityLogoEnqueuer) {
 // super admin). If unset, logo fetch tasks will be skipped by the processor.
 func (a *ProcessorAdapter) SetSystemUserID(id pgtype.UUID) {
 	a.systemUserID = id
+}
+
+// SetMediaUploader wires the media service used to download remote images
+// (flags, coats of arms, article photos) into platform storage and attach
+// them to the space's logo_media_id/header_image_id. Optional — if not
+// called, auto-populate stores wiki_content only.
+func (a *ProcessorAdapter) SetMediaUploader(m MediaUploader) {
+	a.mediaUploader = m
+}
+
+// storeSpaceImage downloads a remote image into the media store and attaches
+// it to the space — kind "logo" sets logo_media_id, "header" sets
+// header_image_id. Best-effort: failures are logged, never returned (the
+// wiki_content enrichment is already stored and a missing image falls back
+// to the letter avatar/gradient in the UI).
+func (a *ProcessorAdapter) storeSpaceImage(ctx context.Context, space *gen.GetSpaceByIDRow, imageURL, kind string) {
+	if imageURL == "" {
+		return
+	}
+	if a.mediaUploader == nil {
+		slog.Warn("space:auto_populate — skipping image store, no media uploader wired", "space_id", space.ID.String(), "kind", kind)
+		return
+	}
+	if !a.systemUserID.Valid {
+		slog.Warn("space:auto_populate — skipping image store, no system user ID", "space_id", space.ID.String(), "kind", kind)
+		return
+	}
+
+	mediaID, err := a.mediaUploader.StoreFromURL(ctx, a.systemUserID, imageURL, "space-"+kind+"-"+space.ID.String())
+	if err != nil {
+		slog.Warn("space:auto_populate — image download/store failed", "space_id", space.ID.String(), "kind", kind, "url", imageURL, "error", err)
+		return
+	}
+
+	if kind == "header" {
+		_, err = a.svc.UpdateSpaceHeaderImageID(ctx, gen.UpdateSpaceHeaderImageIDParams{
+			ID:            space.ID,
+			HeaderImageID: mediaID,
+		})
+	} else {
+		_, err = a.svc.UpdateSpaceLogoMediaID(ctx, gen.UpdateSpaceLogoMediaIDParams{
+			ID:          space.ID,
+			LogoMediaID: mediaID,
+		})
+	}
+	if err != nil {
+		slog.Warn("space:auto_populate — attaching image to space failed", "space_id", space.ID.String(), "kind", kind, "media_id", mediaID.String(), "error", err)
+		return
+	}
+
+	slog.Info("space:auto_populate — stored space image", "space_id", space.ID.String(), "kind", kind, "media_id", mediaID.String())
 }
 
 // AutoPopulateSpace seeds a newly created space with default content based
@@ -178,43 +239,161 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID string
 
 // populateGeoSpace fetches a Wikipedia summary for the space and stores it
 // as WikiContent. For countries, the geo_code (ISO 3166-1 alpha-2) is used
-// to construct the Wikipedia article title.
+// to construct the Wikipedia article title. It also persists the space's
+// logo and header images into platform media storage (Section 05
+// Auto-Population): flagcdn flags for countries, Wikidata flag/coat-of-arms
+// emblems for states and cities, and the Wikipedia article image as the
+// header. Images are stored once — only when the space has none — so
+// surfaces serve them from our own store rather than hotlinking.
 func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetSpaceByIDRow, spaceType string) error {
-	// Build the Wikipedia article title from the space name.
-	// For countries, use the country name directly (e.g. "Nigeria").
-	// For states/cities, use "{name}, {parent}" pattern if available.
+	// Build the Wikipedia article title from the space name. For states,
+	// prefer "{name} State" — the bare name often resolves to a same-named
+	// city or an unrelated topic ("Ogun" → the deity, "Lagos" → the city).
+	var wikiSummary *wikipediaSummary
+	var wikiErr error
 	title := space.Name
 
-	wikiSummary, err := fetchWikipediaSummary(ctx, title)
-	if err != nil {
-		// Non-retryable errors (404 — no Wikipedia article exists): don't
-		// fail the task, there's nothing to populate.
-		if errors.Is(err, ErrWikiNotFound) {
-			slog.Warn("space:auto_populate — no Wikipedia article found, skipping", "space_id", space.ID.String(), "title", title)
+	titles := []string{space.Name}
+	if spaceType == "state" {
+		titles = []string{space.Name + " State", space.Name}
+	}
 
+	var headerURL string
+
+	for _, t := range titles {
+		s, err := fetchWikipediaSummary(ctx, t)
+		if err == nil {
+			wikiSummary, title = s, t
+
+			break
+		}
+		// Non-retryable 404: try the next title candidate. Retryable errors
+		// (429 rate limit, network errors) are kept so Asynq retries the
+		// task for wiki_content — but image enrichment still runs below, so
+		// each retry makes progress instead of aborting empty-handed.
+		if !errors.Is(err, ErrWikiNotFound) {
+			slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry", "space_id", space.ID.String(), "title", t, "error", err)
+			wikiErr = fmt.Errorf("fetching Wikipedia summary for %q: %w", t, err)
+
+			break
+		}
+	}
+
+	if wikiSummary == nil {
+		if wikiErr == nil {
+			slog.Warn("space:auto_populate — no Wikipedia article found", "space_id", space.ID.String(), "title", title)
+		}
+	} else {
+		// Update the space's WikiContent with the fetched summary.
+		wikiJSON, err := json.Marshal(wikiSummary)
+		if err != nil {
+			slog.Warn("space:auto_populate — failed to marshal wiki summary", "error", err)
 			return nil
 		}
-		// Retryable errors (429 rate limit, network errors): return the
-		// error so Asynq retries the task with backoff.
-		slog.Warn("space:auto_populate — Wikipedia fetch failed, will retry", "space_id", space.ID.String(), "title", title, "error", err)
 
-		return fmt.Errorf("fetching Wikipedia summary for %q: %w", title, err)
+		if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); err != nil {
+			slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
+			return nil
+		}
+
+		headerURL = firstNonEmpty(wikiSummary.OriginalImage, wikiSummary.Thumbnail)
+		slog.Info("space:auto_populate — populated wiki content", "space_id", space.ID.String(), "type", spaceType, "name", space.Name)
 	}
 
-	// Update the space's WikiContent with the fetched summary.
-	wikiJSON, err := json.Marshal(wikiSummary)
+	// §05 Auto-Population: persist the space logo and header as platform
+	// media. Guarded by .Valid so task re-runs don't re-download. One
+	// Wikidata entity resolves both the emblem and the P18 image — the
+	// P18 photo is preferred over the Wikipedia original for the header
+	// because Wikipedia's lead image is often the flag/map itself.
+	ent := a.geoWikidataEntity(ctx, space, spaceType)
+
+	if !space.LogoMediaID.Valid {
+		switch {
+		case spaceType == "country" && space.GeoCode != nil && *space.GeoCode != "":
+			// flagcdn.com serves the ISO 3166-1 alpha-2 flag as PNG (§05).
+			// PNG, not SVG — active-content types are excluded from media
+			// storage (media.safeMediaExts) and would land as undisplayable
+			// .bin blobs.
+			a.storeSpaceImage(ctx, space, "https://flagcdn.com/w640/"+strings.ToLower(*space.GeoCode)+".png", "logo")
+		case spaceType == "state" || spaceType == "city":
+			logoURL := ""
+			if ent != nil {
+				logoURL = firstNonEmpty(ent.Flag, ent.CoatOfArms)
+			}
+			a.storeSpaceImage(ctx, space, logoURL, "logo")
+		}
+	}
+	if !space.HeaderImageID.Valid {
+		if ent != nil {
+			headerURL = firstNonEmpty(ent.Image, headerURL)
+		}
+		a.storeSpaceImage(ctx, space, headerURL, "header")
+	}
+
+	return wikiErr
+}
+
+// geoTypeKeywords disambiguates Wikidata search hits by level — "Georgia"
+// alone would otherwise resolve to the U.S. state when enriching the
+// country. A hit scores a point per match; higher-scored hits probe first.
+var geoTypeKeywords = map[string][]string{
+	"country": {"country", "sovereign"},
+	"state":   {"state", "region", "province", "oblast", "prefecture", "territory", "republic"},
+	"city":    {"city", "town", "village", "municipality", "commune", "capital"},
+}
+
+// geoWikidataEntity resolves the best-matching Wikidata entity for a geo
+// space — hits are ranked by mentions of the parent space name (e.g.
+// "Nigeria") and the level keyword (e.g. "state"), then probed until one
+// carries usable imagery. Returns nil when no match or fetch fails (image
+// enrichment is best-effort).
+func (a *ProcessorAdapter) geoWikidataEntity(ctx context.Context, space *gen.GetSpaceByIDRow, spaceType string) *wikidataUniversity {
+	parentName := ""
+	if space.ParentID.Valid {
+		if parent, err := a.svc.GetSpace(ctx, space.ParentID); err == nil {
+			parentName = strings.ToLower(parent.Name)
+		}
+	}
+
+	// The bare name outranks "Name, Parent" queries — comma phrases match
+	// poorly in wbsearchentities ("Lagos, Nigeria" → "Lagosians").
+	results, err := searchWikidataEntities(ctx, space.Name, 5)
 	if err != nil {
-		slog.Warn("space:auto_populate — failed to marshal wiki summary", "error", err)
 		return nil
 	}
 
-	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); err != nil {
-		slog.Warn("space:auto_populate — failed to update wiki content", "space_id", space.ID.String(), "error", err)
-
-		return nil
+	keywords := geoTypeKeywords[spaceType]
+	score := func(r wikidataSearchResult) int {
+		desc := strings.ToLower(r.Description)
+		s := 0
+		if parentName != "" && strings.Contains(desc, parentName) {
+			s += 2
+		}
+		for _, kw := range keywords {
+			if strings.Contains(desc, kw) {
+				s++
+				break
+			}
+		}
+		return s
 	}
 
-	slog.Info("space:auto_populate — populated wiki content", "space_id", space.ID.String(), "type", spaceType, "name", space.Name)
+	probed := 0
+	for want := 3; want >= 0 && probed < 2; want-- {
+		for _, r := range results {
+			if score(r) != want || probed >= 2 {
+				continue
+			}
+			probed++
+			ent, err := fetchWikidataEntity(ctx, r.ID)
+			if err != nil {
+				continue
+			}
+			if ent.Flag != "" || ent.CoatOfArms != "" || ent.Image != "" {
+				return ent
+			}
+		}
+	}
 
 	return nil
 }
@@ -261,7 +440,17 @@ func (a *ProcessorAdapter) populateUniversitySpace(ctx context.Context, space *g
 	a.enrichUniversityFields(ctx, space, uniData)
 
 	// Enqueue logo fetch if a logo URL was found and the enqueuer is wired.
-	a.enqueueUniversityLogo(ctx, space, uniData.Logo)
+	// P154 logo image first, P94 coat of arms as fallback — many
+	// universities have only a crest on Wikidata. Guarded by .Valid so task
+	// re-runs don't re-download.
+	if !space.LogoMediaID.Valid {
+		a.enqueueUniversityLogo(ctx, space, firstNonEmpty(uniData.Logo, uniData.CoatOfArms))
+	}
+	// The P18 image doubles as the space header so the wiki guide hero is
+	// served from our own media store.
+	if !space.HeaderImageID.Valid {
+		a.storeSpaceImage(ctx, space, uniData.Image, "header")
+	}
 
 	slog.Info("space:auto_populate — populated university data from Wikidata", "space_id", space.ID.String(), "name", space.Name)
 
@@ -314,8 +503,12 @@ func (a *ProcessorAdapter) populateUniversityFromWikipedia(ctx context.Context, 
 	}
 
 	// Enqueue logo fetch from the Wikipedia thumbnail if available.
-	if wikiSummary.Thumbnail != "" {
+	if wikiSummary.Thumbnail != "" && !space.LogoMediaID.Valid {
 		a.enqueueUniversityLogo(ctx, space, wikiSummary.Thumbnail)
+	}
+	// The full-resolution article image doubles as the space header.
+	if !space.HeaderImageID.Valid {
+		a.storeSpaceImage(ctx, space, firstNonEmpty(wikiSummary.OriginalImage, wikiSummary.Thumbnail), "header")
 	}
 
 	slog.Info("space:auto_populate — populated wiki content from Wikipedia fallback", "space_id", space.ID.String(), "type", "university", "name", space.Name)
@@ -531,7 +724,7 @@ func parseStudentCount(s string) (int, bool) {
 	return n, true
 }
 
-// wikidataUniversity holds structured data fetched from Wikidata SPARQL.
+// wikidataUniversity holds structured data fetched from Wikidata.
 type wikidataUniversity struct {
 	Name         string `json:"name"`
 	ShortName    string `json:"short_name,omitempty"`
@@ -541,6 +734,8 @@ type wikidataUniversity struct {
 	Students     string `json:"students,omitempty"`
 	Website      string `json:"website,omitempty"`
 	Logo         string `json:"logo,omitempty"`
+	CoatOfArms   string `json:"coat_of_arms,omitempty"`
+	Flag         string `json:"flag,omitempty"`
 	Image        string `json:"image,omitempty"`
 	WikidataID   string `json:"wikidata_id,omitempty"`
 	WikipediaURL string `json:"wikipedia_url,omitempty"`
@@ -564,18 +759,40 @@ func fetchWikidataUniversity(ctx context.Context, name string) (*wikidataUnivers
 	return fetchWikidataEntity(ctx, qid)
 }
 
+// wikidataSearchResult is a single wbsearchentities hit — the QID plus the
+// English description used for geo disambiguation.
+type wikidataSearchResult struct {
+	ID          string
+	Description string
+}
+
 // searchWikidataEntity uses the wbsearchentities API to find the best
 // matching Wikidata QID for a university name. Returns "" if no match.
 func searchWikidataEntity(ctx context.Context, name string) (string, error) {
+	results, err := searchWikidataEntities(ctx, name, 1)
+	if err != nil {
+		return "", err
+	}
+
+	if len(results) == 0 {
+		return "", nil
+	}
+
+	return results[0].ID, nil
+}
+
+// searchWikidataEntities is searchWikidataEntity's plural form — returns
+// the top `limit` hits so callers can disambiguate by description.
+func searchWikidataEntities(ctx context.Context, name string, limit int) ([]wikidataSearchResult, error) {
 	if err := wikiRateLimiter.wait(ctx); err != nil {
-		return "", fmt.Errorf("rate limiter: %w", err)
+		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
 	apiURL := "https://www.wikidata.org/w/api.php"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("creating search request: %w", err)
+		return nil, fmt.Errorf("creating search request: %w", err)
 	}
 
 	q := req.URL.Query()
@@ -583,7 +800,7 @@ func searchWikidataEntity(ctx context.Context, name string) (string, error) {
 	q.Set("search", name)
 	q.Set("language", "en")
 	q.Set("format", "json")
-	q.Set("limit", "1")
+	q.Set("limit", strconv.Itoa(limit))
 	q.Set("type", "item")
 	req.URL.RawQuery = q.Encode()
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (space:auto_populate)")
@@ -592,37 +809,38 @@ func searchWikidataEntity(ctx context.Context, name string) (string, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("executing wbsearchentities: %w", err)
+		return nil, fmt.Errorf("executing wbsearchentities: %w", err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusTooManyRequests {
-			return "", fmt.Errorf("wbsearchentities returned 429: %w", ErrWikiRateLimited)
+			return nil, fmt.Errorf("wbsearchentities returned 429: %w", ErrWikiRateLimited)
 		}
 
 		body, _ := io.ReadAll(resp.Body)
 
-		return "", fmt.Errorf("wbsearchentities returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("wbsearchentities returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
 		Search []struct {
-			ID      string `json:"id"`
-			Concept string `json:"concepturi"`
+			ID          string `json:"id"`
+			Description string `json:"description"`
 		} `json:"search"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decoding wbsearchentities response: %w", err)
+		return nil, fmt.Errorf("decoding wbsearchentities response: %w", err)
 	}
 
-	if len(result.Search) == 0 {
-		return "", nil
+	hits := make([]wikidataSearchResult, 0, len(result.Search))
+	for _, r := range result.Search {
+		hits = append(hits, wikidataSearchResult{ID: r.ID, Description: r.Description})
 	}
 
-	return result.Search[0].ID, nil
+	return hits, nil
 }
 
 // fetchWikidataEntity fetches full entity data for a given QID via the
@@ -771,11 +989,23 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	}
 	// P154 = logo image (string value — Wikimedia Commons filename)
 	if claims, ok := entity.Claims["P154"]; ok && len(claims) > 0 {
-		uni.Logo = commonsFileURL(extractString(claims[0].Mainsnak.Datavalue.Value))
+		uni.Logo = commonsFileURL(extractString(claims[0].Mainsnak.Datavalue.Value), 512)
 	}
-	// P18 = image (string value — Wikimedia Commons filename)
+	// P94 = coat of arms / crest (string value — Wikimedia Commons
+	// filename); logo fallback for entities with no P154, and the emblem
+	// source for state/city spaces.
+	if claims, ok := entity.Claims["P94"]; ok && len(claims) > 0 {
+		uni.CoatOfArms = commonsFileURL(extractString(claims[0].Mainsnak.Datavalue.Value), 512)
+	}
+	// P41 = flag image (string value — Wikimedia Commons filename); the
+	// emblem source for state/city spaces.
+	if claims, ok := entity.Claims["P41"]; ok && len(claims) > 0 {
+		uni.Flag = commonsFileURL(extractString(claims[0].Mainsnak.Datavalue.Value), 512)
+	}
+	// P18 = image (string value — Wikimedia Commons filename); the space
+	// header image source.
 	if claims, ok := entity.Claims["P18"]; ok && len(claims) > 0 {
-		uni.Image = commonsFileURL(extractString(claims[0].Mainsnak.Datavalue.Value))
+		uni.Image = commonsFileURL(extractString(claims[0].Mainsnak.Datavalue.Value), 1600)
 	}
 	// P1813 = short name (monolingual text; e.g. "UNILAG", "UoPeople", "MIT").
 	if claims, ok := entity.Claims["P1813"]; ok && len(claims) > 0 {
@@ -785,14 +1015,34 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	return uni, nil
 }
 
-// commonsFileURL converts a Wikimedia Commons filename like "Foo.png" to
-// a direct URL via the Special:FilePath redirect endpoint.
-func commonsFileURL(filename string) string {
+// commonsFileURL converts a Wikimedia Commons filename like "Foo.png" to a
+// direct URL via the Special:FilePath redirect endpoint. The width parameter
+// asks MediaWiki to render a thumbnail — essential for SVG sources (flags,
+// coats of arms, most logos), which would otherwise store as undisplayable
+// .bin blobs: SVG is active content and intentionally excluded from
+// media.safeMediaExts.
+func commonsFileURL(filename string, width int) string {
 	if filename == "" {
 		return ""
 	}
 
-	return "http://commons.wikimedia.org/wiki/Special:FilePath/" + url.PathEscape(filename)
+	u := "https://commons.wikimedia.org/wiki/Special:FilePath/" + url.PathEscape(filename)
+	if width > 0 {
+		u += "?width=" + strconv.Itoa(width)
+	}
+
+	return u
+}
+
+// firstNonEmpty returns the first non-empty string from its arguments.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+
+	return ""
 }
 
 // wikipediaSummary is the subset of the Wikipedia REST API response we store.
@@ -801,7 +1051,10 @@ type wikipediaSummary struct {
 	Extract     string `json:"extract"`
 	Description string `json:"description"`
 	Thumbnail   string `json:"thumbnail,omitempty"`
-	ContentURL  string `json:"content_url,omitempty"`
+	// OriginalImage is the full-resolution article image URL — stored as the
+	// space header (the thumbnail is too small for a cover).
+	OriginalImage string `json:"original_image,omitempty"`
+	ContentURL    string `json:"content_url,omitempty"`
 }
 
 // fetchWikipediaSummary calls the Wikipedia REST API to get a page summary.
@@ -853,6 +1106,9 @@ func fetchWikipediaSummary(ctx context.Context, title string) (*wikipediaSummary
 		Thumbnail   struct {
 			Source string `json:"source"`
 		} `json:"thumbnail"`
+		OriginalImage struct {
+			Source string `json:"source"`
+		} `json:"originalimage"`
 		ContentURLs struct {
 			Desktop struct {
 				Page string `json:"page"`
@@ -872,6 +1128,10 @@ func fetchWikipediaSummary(ctx context.Context, title string) (*wikipediaSummary
 
 	if result.Thumbnail.Source != "" {
 		summary.Thumbnail = result.Thumbnail.Source
+	}
+
+	if result.OriginalImage.Source != "" {
+		summary.OriginalImage = result.OriginalImage.Source
 	}
 
 	if result.ContentURLs.Desktop.Page != "" {

@@ -134,6 +134,14 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	schedule("0 2 * * 0", TypeDMCleanupDeclinedRequests, 7*24*time.Hour)
 	schedule("0 2 * * 0", TypeMaintenancePrunePushTokens, 7*24*time.Hour)
 
+	// Weekly: delete travel_search_results rows expired > results_retention_days
+	// (§67 — stale-fallback retention is bounded, default 30 days).
+	schedule("0 2 * * 0", TypeMaintenancePruneTravelResults, 7*24*time.Hour)
+
+	// Daily: pull configured provider hotel-content feeds into travel_hotels
+	// (§67, ADR-124 hotel directory).
+	schedule("0 3 * * *", TypeTravelSyncHotelDirectory, 24*time.Hour)
+
 	// Coupon expiry check + event flush — hourly.
 	schedule("0 * * * *", TypeCouponExpireCheck, 1*time.Hour)
 	schedule("5 * * * *", TypeCouponTrackEvents, 1*time.Hour)
