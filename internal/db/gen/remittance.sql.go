@@ -69,9 +69,9 @@ func (q *Queries) CreateRateAlert(ctx context.Context, arg CreateRateAlertParams
 const createRemittanceProvider = `-- name: CreateRemittanceProvider :one
 
 
-INSERT INTO remittance_providers (name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO remittance_providers (name, slug, logo_media_id, website_url, data_source, api_config, is_active, is_benchmark, display_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
-RETURNING id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
+RETURNING id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at, is_benchmark
 `
 
 type CreateRemittanceProviderParams struct {
@@ -82,6 +82,7 @@ type CreateRemittanceProviderParams struct {
 	DataSource   string      `json:"data_source"`
 	ApiConfig    []byte      `json:"api_config"`
 	IsActive     bool        `json:"is_active"`
+	IsBenchmark  *bool       `json:"is_benchmark"`
 	DisplayOrder int32       `json:"display_order"`
 }
 
@@ -104,6 +105,7 @@ func (q *Queries) CreateRemittanceProvider(ctx context.Context, arg CreateRemitt
 		arg.DataSource,
 		arg.ApiConfig,
 		arg.IsActive,
+		arg.IsBenchmark,
 		arg.DisplayOrder,
 	)
 	var i RemittanceProvider
@@ -118,6 +120,7 @@ func (q *Queries) CreateRemittanceProvider(ctx context.Context, arg CreateRemitt
 		&i.IsActive,
 		&i.DisplayOrder,
 		&i.CreatedAt,
+		&i.IsBenchmark,
 	)
 	return i, err
 }
@@ -176,7 +179,8 @@ SELECT DISTINCT ON (rr.provider_id)
  rr.id, rr.provider_id, rr.send_currency, rr.receive_currency, rr.rate, rr.fee_flat, rr.fee_pct, rr.transfer_time, rr.fetched_at, rr.is_manual, rr.source_url, rr.intel_record_id, rr.confidence_overall, rr.verification_status, rr.freshness_score, rr.override_source, rr.editorial_overrides,
  rp.name AS provider_name,
  rp.slug AS provider_slug,
- rp.website_url AS provider_website
+ rp.website_url AS provider_website,
+ rp.is_benchmark AS provider_is_benchmark
 FROM remittance_rates rr
 JOIN remittance_providers rp ON rp.id = rr.provider_id
 WHERE rr.send_currency = $1
@@ -191,26 +195,27 @@ type GetLatestRatesForCorridorParams struct {
 }
 
 type GetLatestRatesForCorridorRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	ProviderID         pgtype.UUID        `json:"provider_id"`
-	SendCurrency       string             `json:"send_currency"`
-	ReceiveCurrency    string             `json:"receive_currency"`
-	Rate               pgtype.Numeric     `json:"rate"`
-	FeeFlat            pgtype.Numeric     `json:"fee_flat"`
-	FeePct             pgtype.Numeric     `json:"fee_pct"`
-	TransferTime       *string            `json:"transfer_time"`
-	FetchedAt          pgtype.Timestamptz `json:"fetched_at"`
-	IsManual           bool               `json:"is_manual"`
-	SourceUrl          *string            `json:"source_url"`
-	IntelRecordID      pgtype.UUID        `json:"intel_record_id"`
-	ConfidenceOverall  float32            `json:"confidence_overall"`
-	VerificationStatus string             `json:"verification_status"`
-	FreshnessScore     int32              `json:"freshness_score"`
-	OverrideSource     string             `json:"override_source"`
-	EditorialOverrides []byte             `json:"editorial_overrides"`
-	ProviderName       string             `json:"provider_name"`
-	ProviderSlug       string             `json:"provider_slug"`
-	ProviderWebsite    *string            `json:"provider_website"`
+	ID                  pgtype.UUID        `json:"id"`
+	ProviderID          pgtype.UUID        `json:"provider_id"`
+	SendCurrency        string             `json:"send_currency"`
+	ReceiveCurrency     string             `json:"receive_currency"`
+	Rate                pgtype.Numeric     `json:"rate"`
+	FeeFlat             pgtype.Numeric     `json:"fee_flat"`
+	FeePct              pgtype.Numeric     `json:"fee_pct"`
+	TransferTime        *string            `json:"transfer_time"`
+	FetchedAt           pgtype.Timestamptz `json:"fetched_at"`
+	IsManual            bool               `json:"is_manual"`
+	SourceUrl           *string            `json:"source_url"`
+	IntelRecordID       pgtype.UUID        `json:"intel_record_id"`
+	ConfidenceOverall   float32            `json:"confidence_overall"`
+	VerificationStatus  string             `json:"verification_status"`
+	FreshnessScore      int32              `json:"freshness_score"`
+	OverrideSource      string             `json:"override_source"`
+	EditorialOverrides  []byte             `json:"editorial_overrides"`
+	ProviderName        string             `json:"provider_name"`
+	ProviderSlug        string             `json:"provider_slug"`
+	ProviderWebsite     *string            `json:"provider_website"`
+	ProviderIsBenchmark bool               `json:"provider_is_benchmark"`
 }
 
 func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRatesForCorridorParams) ([]GetLatestRatesForCorridorRow, error) {
@@ -243,6 +248,7 @@ func (q *Queries) GetLatestRatesForCorridor(ctx context.Context, arg GetLatestRa
 			&i.ProviderName,
 			&i.ProviderSlug,
 			&i.ProviderWebsite,
+			&i.ProviderIsBenchmark,
 		); err != nil {
 			return nil, err
 		}
@@ -334,7 +340,7 @@ func (q *Queries) GetRateHistory(ctx context.Context, arg GetRateHistoryParams) 
 }
 
 const getRemittanceProviderByID = `-- name: GetRemittanceProviderByID :one
-SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
+SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at, is_benchmark FROM remittance_providers
 WHERE id = $1
 `
 
@@ -352,6 +358,7 @@ func (q *Queries) GetRemittanceProviderByID(ctx context.Context, id pgtype.UUID)
 		&i.IsActive,
 		&i.DisplayOrder,
 		&i.CreatedAt,
+		&i.IsBenchmark,
 	)
 	return i, err
 }
@@ -494,7 +501,7 @@ func (q *Queries) ListAllActiveAlerts(ctx context.Context) ([]RemittanceRateAler
 }
 
 const listRemittanceProviders = `-- name: ListRemittanceProviders :many
-SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
+SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at, is_benchmark FROM remittance_providers
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 `
@@ -519,6 +526,7 @@ func (q *Queries) ListRemittanceProviders(ctx context.Context, activeOnly bool) 
 			&i.IsActive,
 			&i.DisplayOrder,
 			&i.CreatedAt,
+			&i.IsBenchmark,
 		); err != nil {
 			return nil, err
 		}
@@ -531,7 +539,7 @@ func (q *Queries) ListRemittanceProviders(ctx context.Context, activeOnly bool) 
 }
 
 const listRemittanceProvidersPaginated = `-- name: ListRemittanceProvidersPaginated :many
-SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at FROM remittance_providers
+SELECT id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at, is_benchmark FROM remittance_providers
 WHERE ($1::boolean = false OR is_active = true)
 ORDER BY display_order ASC, name ASC
 LIMIT $3 OFFSET $2
@@ -563,6 +571,7 @@ func (q *Queries) ListRemittanceProvidersPaginated(ctx context.Context, arg List
 			&i.IsActive,
 			&i.DisplayOrder,
 			&i.CreatedAt,
+			&i.IsBenchmark,
 		); err != nil {
 			return nil, err
 		}
@@ -693,9 +702,10 @@ SET
  website_url = COALESCE($2, website_url),
  api_config = COALESCE($3, api_config),
  is_active = COALESCE($4, is_active),
- display_order = COALESCE($5, display_order)
-WHERE id = $6
-RETURNING id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at
+ is_benchmark = COALESCE($5, is_benchmark),
+ display_order = COALESCE($6, display_order)
+WHERE id = $7
+RETURNING id, name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order, created_at, is_benchmark
 `
 
 type UpdateRemittanceProviderParams struct {
@@ -703,6 +713,7 @@ type UpdateRemittanceProviderParams struct {
 	WebsiteUrl   *string     `json:"website_url"`
 	ApiConfig    []byte      `json:"api_config"`
 	IsActive     *bool       `json:"is_active"`
+	IsBenchmark  *bool       `json:"is_benchmark"`
 	DisplayOrder *int32      `json:"display_order"`
 	ID           pgtype.UUID `json:"id"`
 }
@@ -713,6 +724,7 @@ func (q *Queries) UpdateRemittanceProvider(ctx context.Context, arg UpdateRemitt
 		arg.WebsiteUrl,
 		arg.ApiConfig,
 		arg.IsActive,
+		arg.IsBenchmark,
 		arg.DisplayOrder,
 		arg.ID,
 	)
@@ -728,6 +740,7 @@ func (q *Queries) UpdateRemittanceProvider(ctx context.Context, arg UpdateRemitt
 		&i.IsActive,
 		&i.DisplayOrder,
 		&i.CreatedAt,
+		&i.IsBenchmark,
 	)
 	return i, err
 }

@@ -159,14 +159,19 @@ JOIN users u ON u.id = dm.sender_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE dm.conversation_id = $1
  AND dm.deleted_at IS NULL
-ORDER BY dm.created_at DESC
-LIMIT $3 OFFSET $2
+ AND (NOT $2::bool OR
+      (dm.created_at, dm.id) < ($3::timestamptz, $4::uuid))
+ORDER BY dm.created_at DESC, dm.id DESC
+LIMIT $6 OFFSET $5
 `
 
 type GetConversationMessagesParams struct {
-	ConversationID pgtype.UUID `json:"conversation_id"`
-	PageOffset     int32       `json:"page_offset"`
-	PageLimit      int32       `json:"page_limit"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	HasCursor      bool               `json:"has_cursor"`
+	CursorTs       pgtype.Timestamptz `json:"cursor_ts"`
+	CursorID       pgtype.UUID        `json:"cursor_id"`
+	PageOffset     int32              `json:"page_offset"`
+	PageLimit      int32              `json:"page_limit"`
 }
 
 type GetConversationMessagesRow struct {
@@ -182,8 +187,19 @@ type GetConversationMessagesRow struct {
 	SenderDisplayName *string            `json:"sender_display_name"`
 }
 
+// Keyset-paginated by (created_at, id) DESC per Section 48 ("cursor-
+// paginated, keyset by created_at, newest first"). The cursor carries the
+// (created_at, id) of the previous page's last row; @page_offset only
+// applies to cursor-less (legacy) calls.
 func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversationMessagesParams) ([]GetConversationMessagesRow, error) {
-	rows, err := q.db.Query(ctx, getConversationMessages, arg.ConversationID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, getConversationMessages,
+		arg.ConversationID,
+		arg.HasCursor,
+		arg.CursorTs,
+		arg.CursorID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -239,11 +255,14 @@ func (q *Queries) GetDMMessageByID(ctx context.Context, arg GetDMMessageByIDPara
 }
 
 const getMessageRequest = `-- name: GetMessageRequest :one
-SELECT id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE conversation_id = $1
+SELECT id, requester_id, recipient_id, conversation_id, preview_message, status, created_at, updated_at, resolved_at FROM dm_requests WHERE id = $1
 `
 
-func (q *Queries) GetMessageRequest(ctx context.Context, conversationID pgtype.UUID) (DmRequest, error) {
-	row := q.db.QueryRow(ctx, getMessageRequest, conversationID)
+// Looked up by the request's own id — the /dm/requests/{id}/* routes carry
+// the dm_requests.id, matching the id field in the list DTO (BUG-025:
+// previously keyed on conversation_id, so every action 500d).
+func (q *Queries) GetMessageRequest(ctx context.Context, id pgtype.UUID) (DmRequest, error) {
+	row := q.db.QueryRow(ctx, getMessageRequest, id)
 	var i DmRequest
 	err := row.Scan(
 		&i.ID,
@@ -296,14 +315,36 @@ FROM dm_requests dr
 JOIN users u ON u.id = dr.requester_id
 LEFT JOIN user_profiles p ON p.user_id = u.id
 WHERE dr.recipient_id = $1 AND dr.status = 'pending'
-ORDER BY dr.created_at DESC
-LIMIT $3 OFFSET $2
+ AND ($2::text = '' OR u.username ILIKE '%' || $2 || '%' OR
+      COALESCE(p.display_name, '') ILIKE '%' || $2 || '%' OR
+      dr.preview_message ILIKE '%' || $2 || '%')
+ AND (NOT $3::bool OR
+      ($4::text = 'recent' AND
+        (dr.created_at, dr.id) < ($5::timestamptz, $6::uuid)) OR
+      ($4::text = 'oldest' AND
+        (dr.created_at, dr.id) > ($5::timestamptz, $6::uuid)) OR
+      ($4::text = 'name' AND
+        (COALESCE(p.display_name, u.username), dr.id) > ($7::text, $6::uuid)))
+ORDER BY
+ (CASE WHEN $4::text = 'name' THEN COALESCE(p.display_name, u.username) END) ASC NULLS LAST,
+ (CASE WHEN $4::text = 'name' THEN dr.id END) ASC NULLS LAST,
+ (CASE WHEN $4::text = 'oldest' THEN dr.created_at END) ASC NULLS LAST,
+ (CASE WHEN $4::text = 'oldest' THEN dr.id END) ASC NULLS LAST,
+ (CASE WHEN $4::text = 'recent' THEN dr.created_at END) DESC NULLS LAST,
+ (CASE WHEN $4::text = 'recent' THEN dr.id END) DESC NULLS LAST
+LIMIT $9 OFFSET $8
 `
 
 type GetPendingMessageRequestsParams struct {
-	RecipientID pgtype.UUID `json:"recipient_id"`
-	PageOffset  int32       `json:"page_offset"`
-	PageLimit   int32       `json:"page_limit"`
+	RecipientID pgtype.UUID        `json:"recipient_id"`
+	Q           string             `json:"q"`
+	HasCursor   bool               `json:"has_cursor"`
+	Sort        string             `json:"sort"`
+	CursorTs    pgtype.Timestamptz `json:"cursor_ts"`
+	CursorID    pgtype.UUID        `json:"cursor_id"`
+	CursorText  string             `json:"cursor_text"`
+	PageOffset  int32              `json:"page_offset"`
+	PageLimit   int32              `json:"page_limit"`
 }
 
 type GetPendingMessageRequestsRow struct {
@@ -325,7 +366,17 @@ type GetPendingMessageRequestsRow struct {
 // recipient_id and status = 'pending' so the handler returns only
 // actionable requests, not all conversations.
 func (q *Queries) GetPendingMessageRequests(ctx context.Context, arg GetPendingMessageRequestsParams) ([]GetPendingMessageRequestsRow, error) {
-	rows, err := q.db.Query(ctx, getPendingMessageRequests, arg.RecipientID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, getPendingMessageRequests,
+		arg.RecipientID,
+		arg.Q,
+		arg.HasCursor,
+		arg.Sort,
+		arg.CursorTs,
+		arg.CursorID,
+		arg.CursorText,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -362,8 +413,9 @@ SELECT dc.id, dc.participant_1_id, dc.participant_2_id,
  dc.last_message_at, dc.last_message_preview,
  dc.p1_unread_count, dc.p2_unread_count, dc.created_at, dc.updated_at,
  (CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END)::text AS other_username,
- (CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END)::text AS other_display_name,
- (CASE WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END)::text AS other_avatar_url,
+ COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
+          CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END)::text AS other_display_name,
+ COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.avatar_url ELSE p1.avatar_url END, '')::text AS other_avatar_url,
  (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END)::int AS unread_count
 FROM dm_conversations dc
 JOIN users u1 ON u1.id = dc.participant_1_id
@@ -371,14 +423,60 @@ JOIN users u2 ON u2.id = dc.participant_2_id
 LEFT JOIN user_profiles p1 ON p1.user_id = u1.id
 LEFT JOIN user_profiles p2 ON p2.user_id = u2.id
 WHERE (dc.participant_1_id = $1 OR dc.participant_2_id = $1)
-ORDER BY dc.last_message_at DESC NULLS LAST
-LIMIT $3 OFFSET $2
+ -- Section 48: a conversation backed by a PENDING dm_request stays out of
+ -- the recipient's main inbox until they accept — it lives under Requests.
+ AND NOT EXISTS (
+   SELECT 1 FROM dm_requests dr
+   WHERE dr.conversation_id = dc.id
+    AND dr.recipient_id = $1
+    AND dr.status = 'pending')
+ AND ($2::text <> 'unread' OR
+      (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END) > 0)
+ AND ($3::text = '' OR
+      (CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END) ILIKE '%' || $3 || '%' OR
+      COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END, '') ILIKE '%' || $3 || '%' OR
+      COALESCE(dc.last_message_preview, '') ILIKE '%' || $3 || '%')
+ AND (NOT $4::bool OR
+      ($5::text = 'recent' AND
+        (COALESCE(dc.last_message_at, dc.created_at), dc.id) <
+        ($6::timestamptz, $7::uuid)) OR
+      ($5::text = 'oldest' AND
+        (COALESCE(dc.last_message_at, dc.created_at), dc.id) >
+        ($6::timestamptz, $7::uuid)) OR
+      ($5::text = 'unread' AND
+        ((CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END), dc.id) <
+        ($8::bigint, $7::uuid)) OR
+      ($5::text = 'name' AND
+        (COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
+                  CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END), dc.id) >
+        ($9::text, $7::uuid)))
+ORDER BY
+ (CASE WHEN $5::text = 'unread' THEN
+   (CASE WHEN dc.participant_1_id = $1 THEN dc.p1_unread_count ELSE dc.p2_unread_count END) END) DESC NULLS LAST,
+ (CASE WHEN $5::text = 'unread' THEN dc.id END) DESC NULLS LAST,
+ (CASE WHEN $5::text = 'name' THEN
+   COALESCE(CASE WHEN dc.participant_1_id = $1 THEN p2.display_name ELSE p1.display_name END,
+            CASE WHEN dc.participant_1_id = $1 THEN u2.username ELSE u1.username END) END) ASC NULLS LAST,
+ (CASE WHEN $5::text = 'name' THEN dc.id END) ASC NULLS LAST,
+ (CASE WHEN $5::text = 'oldest' THEN COALESCE(dc.last_message_at, dc.created_at) END) ASC NULLS LAST,
+ (CASE WHEN $5::text = 'oldest' THEN dc.id END) ASC NULLS LAST,
+ (CASE WHEN $5::text = 'recent' THEN COALESCE(dc.last_message_at, dc.created_at) END) DESC NULLS LAST,
+ (CASE WHEN $5::text = 'recent' THEN dc.id END) DESC NULLS LAST
+LIMIT $11 OFFSET $10
 `
 
 type GetUserConversationsParams struct {
-	UserID     pgtype.UUID `json:"user_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Filter     string             `json:"filter"`
+	Q          string             `json:"q"`
+	HasCursor  bool               `json:"has_cursor"`
+	Sort       string             `json:"sort"`
+	CursorTs   pgtype.Timestamptz `json:"cursor_ts"`
+	CursorID   pgtype.UUID        `json:"cursor_id"`
+	CursorInt  int64              `json:"cursor_int"`
+	CursorText string             `json:"cursor_text"`
+	PageOffset int32              `json:"page_offset"`
+	PageLimit  int32              `json:"page_limit"`
 }
 
 type GetUserConversationsRow struct {
@@ -397,8 +495,32 @@ type GetUserConversationsRow struct {
 	UnreadCount        int32              `json:"unread_count"`
 }
 
+// other_display_name / other_avatar_url are COALESCEd — the LEFT JOIN to
+// user_profiles yields NULL for users without a profile row, and scanning
+// NULL into a non-nullable string column 500s the whole list (BUG-024).
+// Optional params: @q searches username/display_name/last preview (ILIKE),
+// @filter 'unread' restricts to conversations with unread messages,
+// @sort 'recent'|'oldest'|'unread'|'name' picks the ORDER BY arm (the
+// CASE keys are all NULL for the unselected sorts, so they fall through).
+// Keyset cursor (Section 48): when @has_cursor is set, rows continue
+// strictly after the cursor position for the active sort — timestamp key
+// for recent/oldest, unread_count for 'unread', other-name for 'name' —
+// always tiebroken by dc.id. @page_offset only applies to cursor-less
+// (legacy) calls.
 func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversationsParams) ([]GetUserConversationsRow, error) {
-	rows, err := q.db.Query(ctx, getUserConversations, arg.UserID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, getUserConversations,
+		arg.UserID,
+		arg.Filter,
+		arg.Q,
+		arg.HasCursor,
+		arg.Sort,
+		arg.CursorTs,
+		arg.CursorID,
+		arg.CursorInt,
+		arg.CursorText,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -432,10 +554,15 @@ func (q *Queries) GetUserConversations(ctx context.Context, arg GetUserConversat
 }
 
 const getUserDMPrivacy = `-- name: GetUserDMPrivacy :one
-SELECT COALESCE(dm_privacy, 'everyone') AS dm_privacy FROM user_dm_settings
-WHERE user_id = $1
+SELECT COALESCE(
+ (SELECT dm_privacy FROM user_dm_settings WHERE user_id = $1),
+ 'everyone'
+)::text AS dm_privacy
 `
 
+// Scalar-subquery COALESCE always returns exactly one row — users without a
+// user_dm_settings row get 'everyone' instead of an ErrNoRows that used to
+// bubble up as a 500 on DM initiation (BUG-026).
 func (q *Queries) GetUserDMPrivacy(ctx context.Context, userID pgtype.UUID) (string, error) {
 	row := q.db.QueryRow(ctx, getUserDMPrivacy, userID)
 	var dm_privacy string
@@ -576,16 +703,16 @@ func (q *Queries) UpdateConversationLastMessage(ctx context.Context, arg UpdateC
 
 const updateMessageRequestStatus = `-- name: UpdateMessageRequestStatus :exec
 UPDATE dm_requests SET status = $1, resolved_at = now()
-WHERE conversation_id = $2
+WHERE id = $2
 `
 
 type UpdateMessageRequestStatusParams struct {
-	Status         string      `json:"status"`
-	ConversationID pgtype.UUID `json:"conversation_id"`
+	Status string      `json:"status"`
+	ID     pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateMessageRequestStatus(ctx context.Context, arg UpdateMessageRequestStatusParams) error {
-	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ConversationID)
+	_, err := q.db.Exec(ctx, updateMessageRequestStatus, arg.Status, arg.ID)
 	return err
 }
 

@@ -11,6 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bumpTravelSearchResultHit = `-- name: BumpTravelSearchResultHit :exec
+UPDATE travel_search_results SET hit_count = hit_count + 1 WHERE id = $1
+`
+
+func (q *Queries) BumpTravelSearchResultHit(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, bumpTravelSearchResultHit, id)
+	return err
+}
+
 const createTravelProvider = `-- name: CreateTravelProvider :one
 
 
@@ -116,6 +125,215 @@ func (q *Queries) GetTravelProviderByID(ctx context.Context, id pgtype.UUID) (Tr
 	return i, err
 }
 
+const getTravelSearchCoverage = `-- name: GetTravelSearchCoverage :one
+
+SELECT search_type, coverage_key, provider_id, fetched_at, expires_at, offer_count FROM travel_search_coverage
+WHERE search_type = $1 AND coverage_key = $2 AND provider_id = $3
+`
+
+type GetTravelSearchCoverageParams struct {
+	SearchType  string      `json:"search_type"`
+	CoverageKey string      `json:"coverage_key"`
+	ProviderID  pgtype.UUID `json:"provider_id"`
+}
+
+// =====================================================================
+// Coverage bookkeeping — one row per (search_type, coverage_key,
+// provider). Fresh coverage = inventory may serve the query shape.
+// =====================================================================
+func (q *Queries) GetTravelSearchCoverage(ctx context.Context, arg GetTravelSearchCoverageParams) (TravelSearchCoverage, error) {
+	row := q.db.QueryRow(ctx, getTravelSearchCoverage, arg.SearchType, arg.CoverageKey, arg.ProviderID)
+	var i TravelSearchCoverage
+	err := row.Scan(
+		&i.SearchType,
+		&i.CoverageKey,
+		&i.ProviderID,
+		&i.FetchedAt,
+		&i.ExpiresAt,
+		&i.OfferCount,
+	)
+	return i, err
+}
+
+const getTravelSearchResult = `-- name: GetTravelSearchResult :one
+
+SELECT id, search_type, query_hash, params, results, provider_id, fetched_at, expires_at, hit_count FROM travel_search_results
+WHERE search_type = $1 AND query_hash = $2
+`
+
+type GetTravelSearchResultParams struct {
+	SearchType string `json:"search_type"`
+	QueryHash  string `json:"query_hash"`
+}
+
+// =====================================================================
+// Persisted search results — one row per unique canonical query,
+// refreshed from the provider once expires_at passes (§67).
+// =====================================================================
+func (q *Queries) GetTravelSearchResult(ctx context.Context, arg GetTravelSearchResultParams) (TravelSearchResult, error) {
+	row := q.db.QueryRow(ctx, getTravelSearchResult, arg.SearchType, arg.QueryHash)
+	var i TravelSearchResult
+	err := row.Scan(
+		&i.ID,
+		&i.SearchType,
+		&i.QueryHash,
+		&i.Params,
+		&i.Results,
+		&i.ProviderID,
+		&i.FetchedAt,
+		&i.ExpiresAt,
+		&i.HitCount,
+	)
+	return i, err
+}
+
+const listFlightOffersByCoverage = `-- name: ListFlightOffersByCoverage :many
+SELECT id, provider_id, route_key, depart_date, return_date, adults, children, cabin_class, offer_key, price, currency, airline, flight_number, stops, depart_ts, arrive_ts, duration, booking_url, raw, fetched_at, expires_at FROM travel_flight_offers
+WHERE provider_id = $1
+ AND route_key = $2
+ AND depart_date = $3
+ AND return_date IS NOT DISTINCT FROM $4
+ AND adults = $5
+ AND children = $6
+ AND cabin_class = $7
+ AND ($8::bool OR expires_at > now())
+ORDER BY depart_ts ASC NULLS LAST, price ASC
+`
+
+type ListFlightOffersByCoverageParams struct {
+	ProviderID     pgtype.UUID `json:"provider_id"`
+	RouteKey       string      `json:"route_key"`
+	DepartDate     pgtype.Date `json:"depart_date"`
+	ReturnDate     pgtype.Date `json:"return_date"`
+	Adults         int16       `json:"adults"`
+	Children       int16       `json:"children"`
+	CabinClass     string      `json:"cabin_class"`
+	IncludeExpired bool        `json:"include_expired"`
+}
+
+// Offers for a flight coverage (provider + route/date/pax/cabin).
+// include_expired=false → fresh-only serving path; true → stale fallback.
+// Presentation (sort/filter/page) happens in the service — see §67.
+func (q *Queries) ListFlightOffersByCoverage(ctx context.Context, arg ListFlightOffersByCoverageParams) ([]TravelFlightOffer, error) {
+	rows, err := q.db.Query(ctx, listFlightOffersByCoverage,
+		arg.ProviderID,
+		arg.RouteKey,
+		arg.DepartDate,
+		arg.ReturnDate,
+		arg.Adults,
+		arg.Children,
+		arg.CabinClass,
+		arg.IncludeExpired,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TravelFlightOffer
+	for rows.Next() {
+		var i TravelFlightOffer
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProviderID,
+			&i.RouteKey,
+			&i.DepartDate,
+			&i.ReturnDate,
+			&i.Adults,
+			&i.Children,
+			&i.CabinClass,
+			&i.OfferKey,
+			&i.Price,
+			&i.Currency,
+			&i.Airline,
+			&i.FlightNumber,
+			&i.Stops,
+			&i.DepartTs,
+			&i.ArriveTs,
+			&i.Duration,
+			&i.BookingUrl,
+			&i.Raw,
+			&i.FetchedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listHotelOffersByCoverage = `-- name: ListHotelOffersByCoverage :many
+SELECT id, provider_id, city_key, checkin, checkout, guests, rooms, offer_key, name, price, currency, star_rating, address, image_url, booking_url, raw, fetched_at, expires_at FROM travel_hotel_offers
+WHERE provider_id = $1
+ AND city_key = $2
+ AND checkin = $3
+ AND checkout = $4
+ AND guests = $5
+ AND rooms = $6
+ AND ($7::bool OR expires_at > now())
+ORDER BY price ASC
+`
+
+type ListHotelOffersByCoverageParams struct {
+	ProviderID     pgtype.UUID `json:"provider_id"`
+	CityKey        string      `json:"city_key"`
+	Checkin        pgtype.Date `json:"checkin"`
+	Checkout       pgtype.Date `json:"checkout"`
+	Guests         int16       `json:"guests"`
+	Rooms          int16       `json:"rooms"`
+	IncludeExpired bool        `json:"include_expired"`
+}
+
+func (q *Queries) ListHotelOffersByCoverage(ctx context.Context, arg ListHotelOffersByCoverageParams) ([]TravelHotelOffer, error) {
+	rows, err := q.db.Query(ctx, listHotelOffersByCoverage,
+		arg.ProviderID,
+		arg.CityKey,
+		arg.Checkin,
+		arg.Checkout,
+		arg.Guests,
+		arg.Rooms,
+		arg.IncludeExpired,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TravelHotelOffer
+	for rows.Next() {
+		var i TravelHotelOffer
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProviderID,
+			&i.CityKey,
+			&i.Checkin,
+			&i.Checkout,
+			&i.Guests,
+			&i.Rooms,
+			&i.OfferKey,
+			&i.Name,
+			&i.Price,
+			&i.Currency,
+			&i.StarRating,
+			&i.Address,
+			&i.ImageUrl,
+			&i.BookingUrl,
+			&i.Raw,
+			&i.FetchedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTravelProviders = `-- name: ListTravelProviders :many
 
 SELECT id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers
@@ -158,6 +376,143 @@ func (q *Queries) ListTravelProviders(ctx context.Context, arg ListTravelProvide
 			&i.AffiliateConfig,
 			&i.IsActive,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneTravelFlightOffers = `-- name: PruneTravelFlightOffers :exec
+
+DELETE FROM travel_flight_offers o
+USING (
+ SELECT (COALESCE((SELECT s.value->>0
+ FROM system_settings s
+ WHERE s.key = 'travel.results_retention_days'),
+ '30')::int || ' days')::interval AS retention
+) cfg
+WHERE o.expires_at < now() - cfg.retention
+`
+
+// =====================================================================
+// Inventory retention — same window as replay rows (ADR-124 §9).
+// =====================================================================
+func (q *Queries) PruneTravelFlightOffers(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, pruneTravelFlightOffers)
+	return err
+}
+
+const pruneTravelHotelOffers = `-- name: PruneTravelHotelOffers :exec
+DELETE FROM travel_hotel_offers o
+USING (
+ SELECT (COALESCE((SELECT s.value->>0
+ FROM system_settings s
+ WHERE s.key = 'travel.results_retention_days'),
+ '30')::int || ' days')::interval AS retention
+) cfg
+WHERE o.expires_at < now() - cfg.retention
+`
+
+func (q *Queries) PruneTravelHotelOffers(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, pruneTravelHotelOffers)
+	return err
+}
+
+const pruneTravelSearchCoverage = `-- name: PruneTravelSearchCoverage :exec
+DELETE FROM travel_search_coverage c
+USING (
+ SELECT (COALESCE((SELECT s.value->>0
+ FROM system_settings s
+ WHERE s.key = 'travel.results_retention_days'),
+ '30')::int || ' days')::interval AS retention
+) cfg
+WHERE c.expires_at < now() - cfg.retention
+`
+
+// Coverage rows that outlive their offers cause no harm — an empty offer
+// list falls through to a provider fetch which re-upserts the row. Prune on
+// the same expiry-plus-retention window.
+func (q *Queries) PruneTravelSearchCoverage(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, pruneTravelSearchCoverage)
+	return err
+}
+
+const pruneTravelSearchResults = `-- name: PruneTravelSearchResults :exec
+
+DELETE FROM travel_search_results r
+USING (
+ SELECT (COALESCE((SELECT s.value->>0
+ FROM system_settings s
+ WHERE s.key = 'travel.results_retention_days'),
+ '30')::int || ' days')::interval AS retention
+) cfg
+WHERE r.expires_at < now() - cfg.retention
+`
+
+// =====================================================================
+// Weekly retention sweep for stored search results (maintenance:prune_travel_results).
+// Expired rows are kept solely for stale-fallback; once they are older than
+// travel.results_retention_days (default 30) they are useless and deleted.
+// =====================================================================
+// Retention via system_settings 'travel.results_retention_days' (default 30).
+func (q *Queries) PruneTravelSearchResults(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, pruneTravelSearchResults)
+	return err
+}
+
+const searchTravelAirports = `-- name: SearchTravelAirports :many
+
+SELECT iata_code, name, city, country_code FROM travel_airports
+WHERE iata_code ILIKE $1::text || '%' ESCAPE '\'
+ OR city ILIKE '%' || $1::text || '%' ESCAPE '\'
+ OR name ILIKE '%' || $1::text || '%' ESCAPE '\'
+ORDER BY
+ CASE
+  WHEN iata_code = upper($1) THEN 0
+  WHEN iata_code ILIKE $1::text || '%' ESCAPE '\' THEN 1
+  WHEN city ILIKE $1::text || '%' ESCAPE '\' THEN 2
+  ELSE 3
+ END,
+ CASE airport_type WHEN 'large' THEN 0 ELSE 1 END,
+ city ASC
+LIMIT $2
+`
+
+type SearchTravelAirportsParams struct {
+	Q        string `json:"q"`
+	RowLimit int32  `json:"row_limit"`
+}
+
+type SearchTravelAirportsRow struct {
+	IataCode    string `json:"iata_code"`
+	Name        string `json:"name"`
+	City        string `json:"city"`
+	CountryCode string `json:"country_code"`
+}
+
+// =====================================================================
+// Search the airport catalog for the /travel/locations autocomplete.
+// Exact IATA match ranks first, then IATA prefix, city prefix, contains.
+// =====================================================================
+func (q *Queries) SearchTravelAirports(ctx context.Context, arg SearchTravelAirportsParams) ([]SearchTravelAirportsRow, error) {
+	rows, err := q.db.Query(ctx, searchTravelAirports, arg.Q, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchTravelAirportsRow
+	for rows.Next() {
+		var i SearchTravelAirportsRow
+		if err := rows.Scan(
+			&i.IataCode,
+			&i.Name,
+			&i.City,
+			&i.CountryCode,
 		); err != nil {
 			return nil, err
 		}
@@ -213,6 +568,224 @@ func (q *Queries) UpdateTravelProvider(ctx context.Context, arg UpdateTravelProv
 		&i.AffiliateConfig,
 		&i.IsActive,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertFlightOffer = `-- name: UpsertFlightOffer :exec
+
+INSERT INTO travel_flight_offers (
+ provider_id, route_key, depart_date, return_date, adults, children,
+ cabin_class, offer_key, price, currency, airline, flight_number, stops,
+ depart_ts, arrive_ts, duration, booking_url, raw, expires_at
+) VALUES (
+ $1, $2, $3, $4, $5,
+ $6, $7, $8, $9, $10,
+ $11, $12, $13,
+ $14, $15, $16,
+ $17, $18, $19
+)
+ON CONFLICT (provider_id, offer_key) DO UPDATE SET
+ price = EXCLUDED.price,
+ currency = EXCLUDED.currency,
+ airline = EXCLUDED.airline,
+ flight_number = EXCLUDED.flight_number,
+ stops = EXCLUDED.stops,
+ depart_ts = EXCLUDED.depart_ts,
+ arrive_ts = EXCLUDED.arrive_ts,
+ duration = EXCLUDED.duration,
+ booking_url = EXCLUDED.booking_url,
+ raw = EXCLUDED.raw,
+ fetched_at = now(),
+ expires_at = EXCLUDED.expires_at
+`
+
+type UpsertFlightOfferParams struct {
+	ProviderID   pgtype.UUID        `json:"provider_id"`
+	RouteKey     string             `json:"route_key"`
+	DepartDate   pgtype.Date        `json:"depart_date"`
+	ReturnDate   pgtype.Date        `json:"return_date"`
+	Adults       int16              `json:"adults"`
+	Children     int16              `json:"children"`
+	CabinClass   string             `json:"cabin_class"`
+	OfferKey     string             `json:"offer_key"`
+	Price        pgtype.Numeric     `json:"price"`
+	Currency     string             `json:"currency"`
+	Airline      *string            `json:"airline"`
+	FlightNumber *string            `json:"flight_number"`
+	Stops        *int16             `json:"stops"`
+	DepartTs     pgtype.Timestamptz `json:"depart_ts"`
+	ArriveTs     pgtype.Timestamptz `json:"arrive_ts"`
+	Duration     *string            `json:"duration"`
+	BookingUrl   string             `json:"booking_url"`
+	Raw          []byte             `json:"raw"`
+	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+}
+
+// =====================================================================
+// Offer inventory (ADR-124) — per-offer upserts keyed on
+// (provider_id, offer_key), coverage-scoped reads for the serving path,
+// and coverage bookkeeping.
+// =====================================================================
+func (q *Queries) UpsertFlightOffer(ctx context.Context, arg UpsertFlightOfferParams) error {
+	_, err := q.db.Exec(ctx, upsertFlightOffer,
+		arg.ProviderID,
+		arg.RouteKey,
+		arg.DepartDate,
+		arg.ReturnDate,
+		arg.Adults,
+		arg.Children,
+		arg.CabinClass,
+		arg.OfferKey,
+		arg.Price,
+		arg.Currency,
+		arg.Airline,
+		arg.FlightNumber,
+		arg.Stops,
+		arg.DepartTs,
+		arg.ArriveTs,
+		arg.Duration,
+		arg.BookingUrl,
+		arg.Raw,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const upsertHotelOffer = `-- name: UpsertHotelOffer :exec
+INSERT INTO travel_hotel_offers (
+ provider_id, city_key, checkin, checkout, guests, rooms, offer_key,
+ name, price, currency, star_rating, address, image_url, booking_url,
+ raw, expires_at
+) VALUES (
+ $1, $2, $3, $4, $5, $6, $7,
+ $8, $9, $10, $11, $12,
+ $13, $14, $15, $16
+)
+ON CONFLICT (provider_id, offer_key) DO UPDATE SET
+ name = EXCLUDED.name,
+ price = EXCLUDED.price,
+ currency = EXCLUDED.currency,
+ star_rating = EXCLUDED.star_rating,
+ address = EXCLUDED.address,
+ image_url = EXCLUDED.image_url,
+ booking_url = EXCLUDED.booking_url,
+ raw = EXCLUDED.raw,
+ fetched_at = now(),
+ expires_at = EXCLUDED.expires_at
+`
+
+type UpsertHotelOfferParams struct {
+	ProviderID pgtype.UUID        `json:"provider_id"`
+	CityKey    string             `json:"city_key"`
+	Checkin    pgtype.Date        `json:"checkin"`
+	Checkout   pgtype.Date        `json:"checkout"`
+	Guests     int16              `json:"guests"`
+	Rooms      int16              `json:"rooms"`
+	OfferKey   string             `json:"offer_key"`
+	Name       string             `json:"name"`
+	Price      pgtype.Numeric     `json:"price"`
+	Currency   string             `json:"currency"`
+	StarRating *int16             `json:"star_rating"`
+	Address    *string            `json:"address"`
+	ImageUrl   *string            `json:"image_url"`
+	BookingUrl string             `json:"booking_url"`
+	Raw        []byte             `json:"raw"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) UpsertHotelOffer(ctx context.Context, arg UpsertHotelOfferParams) error {
+	_, err := q.db.Exec(ctx, upsertHotelOffer,
+		arg.ProviderID,
+		arg.CityKey,
+		arg.Checkin,
+		arg.Checkout,
+		arg.Guests,
+		arg.Rooms,
+		arg.OfferKey,
+		arg.Name,
+		arg.Price,
+		arg.Currency,
+		arg.StarRating,
+		arg.Address,
+		arg.ImageUrl,
+		arg.BookingUrl,
+		arg.Raw,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const upsertTravelSearchCoverage = `-- name: UpsertTravelSearchCoverage :exec
+INSERT INTO travel_search_coverage (search_type, coverage_key, provider_id, expires_at, offer_count)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (search_type, coverage_key, provider_id) DO UPDATE SET
+ fetched_at = now(),
+ expires_at = EXCLUDED.expires_at,
+ offer_count = EXCLUDED.offer_count
+`
+
+type UpsertTravelSearchCoverageParams struct {
+	SearchType  string             `json:"search_type"`
+	CoverageKey string             `json:"coverage_key"`
+	ProviderID  pgtype.UUID        `json:"provider_id"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	OfferCount  int32              `json:"offer_count"`
+}
+
+func (q *Queries) UpsertTravelSearchCoverage(ctx context.Context, arg UpsertTravelSearchCoverageParams) error {
+	_, err := q.db.Exec(ctx, upsertTravelSearchCoverage,
+		arg.SearchType,
+		arg.CoverageKey,
+		arg.ProviderID,
+		arg.ExpiresAt,
+		arg.OfferCount,
+	)
+	return err
+}
+
+const upsertTravelSearchResult = `-- name: UpsertTravelSearchResult :one
+INSERT INTO travel_search_results (search_type, query_hash, params, results, provider_id, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (search_type, query_hash) DO UPDATE SET
+ results = EXCLUDED.results,
+ params = EXCLUDED.params,
+ provider_id = EXCLUDED.provider_id,
+ fetched_at = now(),
+ expires_at = EXCLUDED.expires_at,
+ hit_count = 0
+RETURNING id, search_type, query_hash, params, results, provider_id, fetched_at, expires_at, hit_count
+`
+
+type UpsertTravelSearchResultParams struct {
+	SearchType string             `json:"search_type"`
+	QueryHash  string             `json:"query_hash"`
+	Params     []byte             `json:"params"`
+	Results    []byte             `json:"results"`
+	ProviderID pgtype.UUID        `json:"provider_id"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) UpsertTravelSearchResult(ctx context.Context, arg UpsertTravelSearchResultParams) (TravelSearchResult, error) {
+	row := q.db.QueryRow(ctx, upsertTravelSearchResult,
+		arg.SearchType,
+		arg.QueryHash,
+		arg.Params,
+		arg.Results,
+		arg.ProviderID,
+		arg.ExpiresAt,
+	)
+	var i TravelSearchResult
+	err := row.Scan(
+		&i.ID,
+		&i.SearchType,
+		&i.QueryHash,
+		&i.Params,
+		&i.Results,
+		&i.ProviderID,
+		&i.FetchedAt,
+		&i.ExpiresAt,
+		&i.HitCount,
 	)
 	return i, err
 }

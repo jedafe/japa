@@ -9,7 +9,7 @@
 -- =====================================================================
 
 -- name: CreateRemittanceProvider :one
-INSERT INTO remittance_providers (name, slug, logo_media_id, website_url, data_source, api_config, is_active, display_order) VALUES (@name, @slug, sqlc.narg(logo_media_id), sqlc.narg(website_url), @data_source, sqlc.narg(api_config), @is_active, @display_order)
+INSERT INTO remittance_providers (name, slug, logo_media_id, website_url, data_source, api_config, is_active, is_benchmark, display_order) VALUES (@name, @slug, sqlc.narg(logo_media_id), sqlc.narg(website_url), @data_source, sqlc.narg(api_config), @is_active, sqlc.narg(is_benchmark), @display_order)
 
 RETURNING *;
 
@@ -20,6 +20,7 @@ SET
  website_url = COALESCE(sqlc.narg(website_url), website_url),
  api_config = COALESCE(sqlc.narg(api_config), api_config),
  is_active = COALESCE(sqlc.narg(is_active), is_active),
+ is_benchmark = COALESCE(sqlc.narg(is_benchmark), is_benchmark),
  display_order = COALESCE(sqlc.narg(display_order), display_order)
 WHERE id = @id
 RETURNING *;
@@ -58,7 +59,8 @@ SELECT DISTINCT ON (rr.provider_id)
  rr.*,
  rp.name AS provider_name,
  rp.slug AS provider_slug,
- rp.website_url AS provider_website
+ rp.website_url AS provider_website,
+ rp.is_benchmark AS provider_is_benchmark
 FROM remittance_rates rr
 JOIN remittance_providers rp ON rp.id = rr.provider_id
 WHERE rr.send_currency = @send_currency

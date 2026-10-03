@@ -483,6 +483,18 @@ var settingsCatalog = map[string]settingMeta{
 	"remittance.subdomain":              {Type: "string", DefaultValue: "remittance", Description: "Standalone subdomain (ADR-086).", Panel: "control"},
 	"remittance.custom_domain":          {Type: "string", DefaultValue: "", Description: "Optional custom domain (ADR-086).", Panel: "control"},
 
+	// FX Currency Converter (§112, ADR-125)
+	// Public: true on the two host keys is load-bearing: IsPublicSetting feeds
+	// is_public on admin upserts, and apps/tools host detection reads only
+	// public settings.
+	"fx.enabled":                {Type: "bool", DefaultValue: "true", Description: "Global FX converter toggle.", Panel: "control"},
+	"fx.cache_ttl_minutes":      {Type: "int", DefaultValue: "120", Min: 5, Description: "Valkey TTL for the mid-market rate matrix (minutes).", Panel: "control"},
+	"fx.stale_hours":            {Type: "int", DefaultValue: "48", Min: 1, Description: "Hours before a served FX matrix is flagged stale.", Panel: "control"},
+	"fx.history_retention_days": {Type: "int", DefaultValue: "90", Min: 7, Description: "Days of fx_rates matrix history to retain.", Panel: "control"},
+	"fx.default_base_currency":  {Type: "string", DefaultValue: "USD", Description: "Default base currency for /fx/rates.", Panel: "control"},
+	"fx.subdomain":              {Type: "string", DefaultValue: "currency-converter", Public: true, Description: "Standalone subdomain (ADR-086).", Panel: "control"},
+	"fx.custom_domain":          {Type: "string", DefaultValue: "", Public: true, Description: "Optional custom domain (ADR-086).", Panel: "control"},
+
 	// Referral System (§60, ADR-078)
 	"referral.enabled":                 {Type: "bool", DefaultValue: "true", Description: "Global toggle.", Panel: "control"},
 	"referral.reward_credits":          {Type: "int", DefaultValue: "500", Description: "Credits awarded to referrer on qualification.", Panel: "control"},
