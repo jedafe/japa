@@ -135,6 +135,7 @@ func TestHandleConvert_ServiceErrors(t *testing.T) {
 		wantCode   string
 	}{
 		{"empty matrix", ErrEmptyMatrix, http.StatusServiceUnavailable, "fx_unavailable"},
+		{"disabled", ErrDisabled, http.StatusNotFound, "feature_disabled"},
 		{"unsupported currency", ErrUnsupportedCurrency, http.StatusBadRequest, "unsupported_currency"},
 		{"wrapped sentinel", errors.Join(errors.New("db down"), ErrEmptyMatrix), http.StatusServiceUnavailable, "fx_unavailable"},
 		{"unexpected", errors.New("boom"), http.StatusInternalServerError, "internal_error"},
