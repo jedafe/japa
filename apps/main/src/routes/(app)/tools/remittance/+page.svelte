@@ -94,7 +94,13 @@
 	let editAlertDirection = $state('above');
 	let savingEdit = $state(false);
 
-	const bestRate = $derived(rates.length > 0 ? rates.reduce((best, r) => (r.rate > best.rate ? r : best), rates[0]) : null);
+	// §112 — benchmark rows are a mid-market reference, never a sellable
+	// quote: exclude them from the best-rate highlight (ADR-125).
+	const bestRate = $derived.by(() => {
+		const sellable = rates.filter((r) => !r.is_benchmark);
+		if (sellable.length === 0) return null;
+		return sellable.reduce((best, r) => (r.rate > best.rate ? r : best), sellable[0]);
+	});
 
 	const chartData = $derived(
 		history.map((h) => ({ date: new Date(h.day), avg: h.avg_rate, min: h.min_rate, max: h.max_rate }))
@@ -246,8 +252,10 @@
 	}
 
 	function bestCalcProvider(calc: RemittanceCalculation | null): RemittanceProviderCalc | null {
-		if (!calc || !calc.providers || calc.providers.length === 0) return null;
-		return calc.providers.reduce((best, p) => (p.receive_amount > best.receive_amount ? p : best), calc.providers[0]);
+		if (!calc || !calc.results || calc.results.length === 0) return null;
+		const sellable = calc.results.filter((p) => !p.is_benchmark);
+		if (sellable.length === 0) return null;
+		return sellable.reduce((best, p) => (p.receive_amount > best.receive_amount ? p : best), sellable[0]);
 	}
 
 	// Autocomplete fetchers — filter the already-loaded corridors client-side.
@@ -380,6 +388,9 @@
 										<tr class="border-b border-[var(--color-border)] last:border-0">
 											<td class="px-3 py-2 text-[var(--color-text)]">
 												{r.provider_name}
+												{#if r.is_benchmark}
+													<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
+												{/if}
 												{#if bestRate && r.id === bestRate.id}
 													<span class="ml-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-white">{t('remittance.best', 'Best')}</span>
 												{/if}
@@ -437,42 +448,58 @@
 
 						{#if calcLoading}
 							<p class="mt-2 text-sm text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
-						{:else if calculation && calculation.providers && calculation.providers.length > 0}
-							{@const best = bestCalcProvider(calculation)}
-							<p class="mt-2 text-sm text-[var(--color-text)]">
-								{t('remittance.best_rate_label', 'Best value')}:
-								<strong class="font-semibold">{formatMoney(best?.receive_amount, receiveCurrency, data.currencies)}</strong>
-								<span class="text-[var(--color-muted)]">({t('remittance.via', 'via')} {best?.provider_name})</span>
-							</p>
-							<div class="mt-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--color-border)]">
-								<table class="w-full text-sm">
-									<thead>
-										<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
-											<th class="px-3 py-2 font-medium">{t('remittance.provider', 'Provider')}</th>
-											<th class="px-3 py-2 text-right font-medium">{t('remittance.rate', 'Rate')}</th>
-											<th class="px-3 py-2 text-right font-medium">{t('remittance.fee', 'Fee')}</th>
-											<th class="px-3 py-2 text-right font-medium">{t('remittance.receive_amount', 'Receive')}</th>
-											<th class="px-3 py-2 text-right font-medium">{t('remittance.total_cost', 'Total cost')}</th>
-										</tr>
-									</thead>
-									<tbody>
-										{#each calculation.providers as p (p.provider_id)}
-											<tr class="border-b border-[var(--color-border)] last:border-0">
-												<td class="px-3 py-2 text-[var(--color-text)]">{p.provider_name}</td>
-												<td class="px-3 py-2 text-right">{p.rate.toFixed(2)}</td>
-												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.fee_flat ? formatMoney(p.fee_flat, sendCurrency, data.currencies) : '—'}</td>
-												<td class="px-3 py-2 text-right font-medium">{formatMoney(p.receive_amount, receiveCurrency, data.currencies)}</td>
-												<td class="px-3 py-2 text-right text-[var(--color-muted)]">{formatMoney(p.total_cost, sendCurrency, data.currencies)}</td>
+						{:else}
+							<!-- §112 — mid-market benchmark reference (ADR-125). Shown
+							     above the ranked provider results; never ranked itself. -->
+							{#if calculation?.benchmark}
+								<p class="mt-2 text-sm text-[var(--color-muted)]">
+									{t('remittance.mid_market_would_give', 'Mid-market would give')}
+									<strong class="font-medium text-[var(--color-text)]">{formatMoney(calculation.benchmark.receive_amount, receiveCurrency, data.currencies)}</strong>
+									<span>({t('remittance.rate', 'Rate')}: {calculation.benchmark.rate.toFixed(2)})</span>
+								</p>
+							{/if}
+							{#if calculation && calculation.results.length > 0}
+								{@const best = bestCalcProvider(calculation)}
+								<p class="mt-2 text-sm text-[var(--color-text)]">
+									{t('remittance.best_rate_label', 'Best value')}:
+									<strong class="font-semibold">{formatMoney(best?.receive_amount, receiveCurrency, data.currencies)}</strong>
+									<span class="text-[var(--color-muted)]">({t('remittance.via', 'via')} {best?.provider_name})</span>
+								</p>
+								<div class="mt-3 overflow-x-auto rounded-[var(--radius)] border border-[var(--color-border)]">
+									<table class="w-full text-sm">
+										<thead>
+											<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
+												<th class="px-3 py-2 font-medium">{t('remittance.provider', 'Provider')}</th>
+												<th class="px-3 py-2 text-right font-medium">{t('remittance.rate', 'Rate')}</th>
+												<th class="px-3 py-2 text-right font-medium">{t('remittance.fee', 'Fee')}</th>
+												<th class="px-3 py-2 text-right font-medium">{t('remittance.receive_amount', 'Receive')}</th>
+												<th class="px-3 py-2 text-right font-medium">{t('remittance.total_cost', 'Total cost')}</th>
 											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
-						{:else if bestRate}
-							<p class="mt-2 text-sm text-[var(--color-text)]">
-								≈ {formatMoney(parseFloat(sendAmount || '0') * bestRate.rate, receiveCurrency, data.currencies)}
-								<span class="text-[var(--color-muted)]"> ({t('remittance.via', 'via')} {bestRate.provider_name})</span>
-							</p>
+										</thead>
+										<tbody>
+											{#each calculation.results as p (p.provider_id)}
+												<tr class="border-b border-[var(--color-border)] last:border-0">
+													<td class="px-3 py-2 text-[var(--color-text)]">
+														{p.provider_name}
+														{#if p.is_benchmark}
+															<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
+														{/if}
+													</td>
+													<td class="px-3 py-2 text-right">{p.rate.toFixed(2)}</td>
+													<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.fee_flat ? formatMoney(p.fee_flat, sendCurrency, data.currencies) : '—'}</td>
+													<td class="px-3 py-2 text-right font-medium">{formatMoney(p.receive_amount, receiveCurrency, data.currencies)}</td>
+													<td class="px-3 py-2 text-right text-[var(--color-muted)]">{formatMoney(p.total_fees, sendCurrency, data.currencies)}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{:else if bestRate}
+								<p class="mt-2 text-sm text-[var(--color-text)]">
+									≈ {formatMoney(parseFloat(sendAmount || '0') * bestRate.rate, receiveCurrency, data.currencies)}
+									<span class="text-[var(--color-muted)]"> ({t('remittance.via', 'via')} {bestRate.provider_name})</span>
+								</p>
+							{/if}
 						{/if}
 					</div>
 

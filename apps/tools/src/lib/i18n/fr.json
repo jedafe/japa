@@ -230,6 +230,8 @@
 	"remittance.activate_alert": "Activer l'alerte",
 	"remittance.edit_alert": "Modifier l'alerte",
 	"remittance.delete_alert": "Supprimer l'alerte",
+	"remittance.mid_market": "Taux moyen",
+	"remittance.mid_market_would_give": "Le taux moyen du marché donnerait",
 
 	"fx.title": "Convertisseur de devises",
 	"fx.subtitle": "Taux moyens du marché en direct sur plus de 160 devises.",

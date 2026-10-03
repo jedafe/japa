@@ -70,10 +70,12 @@
 		})
 	);
 
-	// Best rate
+	// Best rate — §112: benchmark rows are a mid-market reference, never a
+	// sellable quote, so they can't win the best-rate highlight (ADR-125).
 	const bestRate = $derived.by(() => {
-		if (rates.length === 0) return null;
-		return rates.reduce((best, r) => (r.rate > best.rate ? r : best));
+		const sellable = rates.filter((r) => !r.is_benchmark);
+		if (sellable.length === 0) return null;
+		return sellable.reduce((best, r) => (r.rate > best.rate ? r : best));
 	});
 
 	async function loadRates() {
@@ -374,6 +376,9 @@
 									<div class="min-w-0">
 										<div class="flex items-center gap-1.5">
 											<p class="text-sm font-medium text-text truncate">{rate.provider_name}</p>
+											{#if rate.is_benchmark}
+												<span class="rounded-full border border-border px-1.5 py-0.5 text-xs text-muted flex-shrink-0">{t('remittance.mid_market', 'Mid-market')}</span>
+											{/if}
 											{#if provider?.website_url}
 												<a
 													href={provider.website_url}
@@ -438,6 +443,15 @@
 					{#if calcLoading}
 						<LoadingSkeleton height="40px" />
 					{:else if calcResult?.results?.length}
+						<!-- §112 — mid-market benchmark reference (ADR-125). Shown
+						     above the ranked provider results; never ranked itself. -->
+						{#if calcResult.benchmark}
+							<p class="mb-2 text-xs text-muted">
+								{t('remittance.mid_market_would_give', 'Mid-market would give')}
+								<span class="font-medium text-text">{fmtMoney(calcResult.benchmark.receive_amount, calcResult.receive_currency)}</span>
+								(1 {calcResult.send_currency} = {calcResult.benchmark.rate.toFixed(2)} {calcResult.receive_currency})
+							</p>
+						{/if}
 						<div class="space-y-2">
 							{#each calcResult.results as row (row.provider_id)}
 								<div class="flex items-center justify-between text-sm">

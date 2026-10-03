@@ -415,6 +415,17 @@ export interface RemittanceCalculation {
 	receive_currency: string;
 	/** Per-provider calculation results. */
 	results: RemittanceCalculationRow[];
+	/** §112 — mid-market benchmark reference; carries no fees and is never
+	 *  ranked against the provider results. */
+	benchmark?: RemittanceBenchmark | null;
+}
+
+/** §112 — mid-market benchmark reference row in the calculator response. */
+export interface RemittanceBenchmark {
+	provider_id: string;
+	provider_name: string;
+	rate: number;
+	receive_amount: number;
 }
 
 export interface RemittanceCalculationRow {
