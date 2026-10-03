@@ -13,7 +13,7 @@ import (
 func testMatrix() *Matrix {
 	return &Matrix{
 		Base:      "USD",
-		Rates:     map[string]float64{"USD": 1, "NGN": 1600, "GBP": 0.8, "EUR": 0.9},
+		Rates:     map[string]float64{"USD": 1, "NGN": 1600, "GBP": 0.8, "EUR": 0.9, "ZZZ": 0},
 		FetchedAt: time.Now(),
 	}
 }
@@ -38,6 +38,8 @@ func TestComputeConvert_CrossRate(t *testing.T) {
 		{"unsupported to", 1, "USD", "XXX", 0, 0, true},
 		{"zero amount", 0, "USD", "NGN", 0, 0, true},
 		{"negative amount", -5, "USD", "NGN", 0, 0, true},
+		{"zero from rate", 1, "ZZZ", "NGN", 0, 0, true},
+		{"zero to rate", 1, "USD", "ZZZ", 0, 0, true},
 	}
 
 	for _, tc := range tests {
