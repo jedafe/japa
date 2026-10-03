@@ -31,9 +31,9 @@
 `.jeos` is a git submodule (`github.com/jedafe/japaconnect-engineering`). Commit inside `.jeos/` on `main`.
 
 **Files:**
-- Create: `.jeos/sections/110-fx-converter.md`
-- Create: `.jeos/adr/ADR-124-fx-converter.md`
-- Modify: `.jeos/JEOS.md` (index entries for §110 + ADR-124)
+- Create: `.jeos/sections/112-fx-converter.md`
+- Create: `.jeos/adr/ADR-125-fx-converter.md`
+- Modify: `.jeos/JEOS.md` (index entries for §112 + ADR-125)
 - Modify: `.jeos/conventions/feature-flag-naming.md` (+1 row)
 - Modify: `.jeos/conventions/system-settings-catalog.md` (+6 rows)
 - Modify: `.jeos/conventions/valkey-keys-catalog.md` (+1 row)
@@ -42,16 +42,16 @@
 - Modify: `.jeos/sections/74-remittance-tracker.md` (short amendment note re benchmark providers)
 
 **Interfaces:**
-- Produces: the JEOS identifiers every later task references — section `§110`, ADR `ADR-124`, flag `fx.enabled`, settings `fx.*`, task `fx:prune_rates`, Valkey `jc:fx:matrix:*`, routes `/api/v1/fx/*`.
+- Produces: the JEOS identifiers every later task references — section `§112`, ADR `ADR-125`, flag `fx.enabled`, settings `fx.*`, task `fx:prune_rates`, Valkey `jc:fx:matrix:*`, routes `/api/v1/fx/*`.
 
-- [ ] **Step 1: Write `.jeos/sections/110-fx-converter.md`**
+- [ ] **Step 1: Write `.jeos/sections/112-fx-converter.md`**
 
 Copy the spec sections verbatim from `docs/superpowers/specs/2026-10-03-fx-converter-design.md` (sections 1–14), re-titled `# Section 110 — FX Currency Converter`, prefixed with the standard section header style used in `sections/74-remittance-tracker.md` (read that file's first ~30 lines and mirror its front matter/heading conventions).
 
-- [ ] **Step 2: Write `.jeos/adr/ADR-124-fx-converter.md`**
+- [ ] **Step 2: Write `.jeos/adr/ADR-125-fx-converter.md`**
 
 ```markdown
-# ADR-124 — FX Currency Converter (Mid-Market Feed + Any-to-Any Converter)
+# ADR-125 — FX Currency Converter (Mid-Market Feed + Any-to-Any Converter)
 
 **Status:** Accepted
 **Date:** 2026-10-03
@@ -96,10 +96,10 @@ math and staleness flag absorb both; OXR free tier requires attribution
 `.jeos/conventions/feature-flag-naming.md` — add row to the same table that holds `remittance.enabled` (~line 13):
 
 ```markdown
-| `fx.enabled` | `true` | §110 |
+| `fx.enabled` | `true` | §112 |
 ```
 
-`.jeos/conventions/system-settings-catalog.md` — add a `## FX Converter (§110)` table next to the remittance one (~line 529):
+`.jeos/conventions/system-settings-catalog.md` — add a `## FX Converter (§112)` table next to the remittance one (~line 529):
 
 ```markdown
 | `fx.cache_ttl_minutes` | `120` | int | Valkey TTL for the mid-market matrix cache |
@@ -113,13 +113,13 @@ math and staleness flag absorb both; OXR free tier requires attribution
 `.jeos/conventions/valkey-keys-catalog.md` — add next to the `jc:remit:*` rows (~line 238):
 
 ```markdown
-| `jc:fx:matrix:{base}` | Latest mid-market FX matrix for a base currency | fx.cache_ttl_minutes (default 120 min) | §110 |
+| `jc:fx:matrix:{base}` | Latest mid-market FX matrix for a base currency | fx.cache_ttl_minutes (default 120 min) | §112 |
 ```
 
 `.jeos/conventions/asynq-tasks.md` — add to the task table AND the schedule table (mirror the `remittance:prune_old_rates` rows ~lines 150/168):
 
 ```markdown
-| `fx:prune_rates` | Weekly — delete fx_rates matrix rows past fx.history_retention_days (§110) | Yes (sweep) |
+| `fx:prune_rates` | Weekly — delete fx_rates matrix rows past fx.history_retention_days (§112) | Yes (sweep) |
 ```
 
 ```markdown
@@ -129,19 +129,19 @@ math and staleness flag absorb both; OXR free tier requires attribution
 `.jeos/conventions/api-routes-catalog.md` — add directly after the remittance route block (~line 1967):
 
 ```markdown
-GET    /api/v1/fx/convert                           — ?amount=&from=&to= — mid-market conversion (§110)
-GET    /api/v1/fx/rates                             — ?base=USD — latest mid-market matrix (§110)
-GET    /api/v1/fx/currencies                        — picker list: currencies ∩ matrix coverage (§110)
+GET    /api/v1/fx/convert                           — ?amount=&from=&to= — mid-market conversion (§112)
+GET    /api/v1/fx/rates                             — ?base=USD — latest mid-market matrix (§112)
+GET    /api/v1/fx/currencies                        — picker list: currencies ∩ matrix coverage (§112)
 ```
 
-`.jeos/JEOS.md` — add §110 + ADR-124 index entries wherever the §74/ADR-075 entries live (search for `74-remittance` and `ADR-075` in that file and mirror the format).
+`.jeos/JEOS.md` — add §112 + ADR-125 index entries wherever the §74/ADR-075 entries live (search for `74-remittance` and `ADR-075` in that file and mirror the format).
 
 `.jeos/sections/74-remittance-tracker.md` — append:
 
 ```markdown
 ### Amendment (2026-10-03): benchmark providers
 
-`remittance_providers.is_benchmark` (added by migration 000777, §110/ADR-124)
+`remittance_providers.is_benchmark` (added by migration 000777, §112/ADR-125)
 marks a provider whose rates are a mid-market reference, not a sellable
 quote. Benchmark providers are excluded from `GetBestRate` and the
 `Calculate` ranking and are exposed separately as `CalculateResult.benchmark`.
@@ -154,7 +154,7 @@ the standard `RateProvider` contract.
 ```bash
 cd .jeos
 git add -A
-git commit -m "docs: §110 FX currency converter + ADR-124 + catalog entries (fx flag/settings/keys/tasks/routes)"
+git commit -m "docs: §112 FX currency converter + ADR-125 + catalog entries (fx flag/settings/keys/tasks/routes)"
 cd ..
 ```
 
@@ -181,7 +181,7 @@ cd ..
 
 ```sql
 -- 000777_fx_rates.up.sql
--- §110 / ADR-124: mid-market FX matrix + remittance benchmark provider flag.
+-- §112 / ADR-125: mid-market FX matrix + remittance benchmark provider flag.
 BEGIN;
 
 CREATE TABLE fx_rates (
@@ -209,7 +209,7 @@ VALUES
      'api', NULL, false, true, 0)
 ON CONFLICT (slug) DO NOTHING;
 
--- §110 system_settings (catalog: conventions/system-settings-catalog.md).
+-- §112 system_settings (catalog: conventions/system-settings-catalog.md).
 INSERT INTO system_settings (key, value, is_public) VALUES
     ('fx.cache_ttl_minutes', '120', false),
     ('fx.stale_hours', '48', false),
@@ -243,11 +243,11 @@ COMMIT;
 - [ ] **Step 3: Write `internal/db/queries/fx.sql`**
 
 ```sql
--- fx.sql — FX Currency Converter queries (Section 110, ADR-124).
+-- fx.sql — FX Currency Converter queries (Section 110, ADR-125).
 -- Mid-market base→quote matrix: insert, latest-per-quote reads, fetch-time
 -- probe (adapter throttle), picker currency list, retention prune.
--- Ref: japaconnect-engineering/sections/110-fx-converter.md
---      japaconnect-engineering/adr/ADR-124-fx-converter.md
+-- Ref: japaconnect-engineering/sections/112-fx-converter.md
+--      japaconnect-engineering/adr/ADR-125-fx-converter.md
 
 -- name: InsertFxRate :one
 INSERT INTO fx_rates (base_currency, quote_currency, rate, source)
@@ -308,10 +308,10 @@ c) `GetLatestRatesForCorridor` — add `rp.is_benchmark AS provider_is_benchmark
 
 - [ ] **Step 5: Register `fx.*` keys in the Control settings catalog**
 
-In `internal/control/settings_catalog.go`, add a §110 block next to the other V2 entries (after the `remittance.*` block ~line 484), matching the existing entry shape `{Type, DefaultValue, Description, Panel, Public, Min/Max}`:
+In `internal/control/settings_catalog.go`, add a §112 block next to the other V2 entries (after the `remittance.*` block ~line 484), matching the existing entry shape `{Type, DefaultValue, Description, Panel, Public, Min/Max}`:
 
 ```go
-// FX Currency Converter (§110, ADR-124)
+// FX Currency Converter (§112, ADR-125)
 "fx.enabled":                {Type: "bool", DefaultValue: "true", Description: "Global FX converter toggle.", Panel: "control"},
 "fx.cache_ttl_minutes":      {Type: "int", DefaultValue: "120", Min: 5, Description: "Valkey TTL for the mid-market rate matrix (minutes).", Panel: "control"},
 "fx.stale_hours":            {Type: "int", DefaultValue: "48", Min: 1, Description: "Hours before a served FX matrix is flagged stale.", Panel: "control"},
@@ -337,7 +337,7 @@ Expected: build passes; `gen.RemittanceProvider` has `IsBenchmark bool`; `gen.Ge
 
 ```bash
 git add migrations/000777_fx_rates.*.sql internal/db/queries/fx.sql internal/db/queries/remittance.sql internal/db/gen/ internal/control/settings_catalog.go
-git commit -m "feat(db): fx_rates matrix + remittance_providers.is_benchmark + fx settings (§110, ADR-124)"
+git commit -m "feat(db): fx_rates matrix + remittance_providers.is_benchmark + fx settings (§112, ADR-125)"
 ```
 
 ---
@@ -439,13 +439,13 @@ Expected: FAIL — package/function undefined.
 Mirror `internal/remittance/store.go` structure (thin wrapper, no business logic):
 
 ```go
-// Package fx implements the FX Currency Converter (Section 110, ADR-124):
+// Package fx implements the FX Currency Converter (Section 110, ADR-125):
 // a mid-market base→quote matrix fed by pluggable rate engines, powering the
 // any-to-any converter and the remittance benchmark provider.
 //
-// Ref: japaconnect-engineering/sections/110-fx-converter.md
+// Ref: japaconnect-engineering/sections/112-fx-converter.md
 //
-//	japaconnect-engineering/adr/ADR-124-fx-converter.md
+//	japaconnect-engineering/adr/ADR-125-fx-converter.md
 package fx
 
 import (
@@ -792,7 +792,7 @@ func (s *Service) InsertMatrix(ctx context.Context, base, source string, rates m
 	return nil
 }
 
-// PruneRates deletes matrix rows past retention (fx:prune_rates task, §110).
+// PruneRates deletes matrix rows past retention (fx:prune_rates task, §112).
 func (s *Service) PruneRates(ctx context.Context) (int, error) {
 	cutoff := time.Now().AddDate(0, 0, -s.HistoryRetentionDays(ctx))
 	if err := s.store.PruneRates(ctx, cutoff); err != nil {
@@ -817,7 +817,7 @@ go vet ./internal/fx/
 
 ```bash
 git add internal/fx/
-git commit -m "feat(fx): matrix store + convert/getrates service (§110, ADR-124)"
+git commit -m "feat(fx): matrix store + convert/getrates service (§112, ADR-125)"
 ```
 
 ---
@@ -953,14 +953,14 @@ import (
 )
 
 // defaultOXREndpoint is the compiled-in endpoint for the oxr engine;
-// overridable per-provider via api_config.endpoint (§110).
+// overridable per-provider via api_config.endpoint (§112).
 const defaultOXREndpoint = "https://openexchangerates.org/api/latest.json"
 
 // attributionURL is rendered on benchmark rows and in the UI (OXR free tier
 // terms require attribution).
 const attributionURL = "https://openexchangerates.org"
 
-// providerConfig is the decrypted api_config shape for fx engines (§110).
+// providerConfig is the decrypted api_config shape for fx engines (§112).
 type providerConfig struct {
 	Engine             string   `json:"engine"`
 	AppID              string   `json:"app_id"`
@@ -1170,7 +1170,7 @@ go test ./internal/fx/ -v
 
 ```bash
 git add internal/fx/adapter.go internal/fx/adapter_test.go
-git commit -m "feat(fx): OXR engine adapter — throttled matrix fetch + corridor snapshots (§110, ADR-124)"
+git commit -m "feat(fx): OXR engine adapter — throttled matrix fetch + corridor snapshots (§112, ADR-125)"
 ```
 
 ---
@@ -1200,7 +1200,7 @@ Mirror `internal/remittance/handlers.go` style:
 
 ```go
 // Package fx — handlers.go provides the HTTP handlers for the FX Currency
-// Converter routes (Section 110, ADR-124).
+// Converter routes (Section 110, ADR-125).
 //
 // Public routes (no auth):
 //
@@ -1208,9 +1208,9 @@ Mirror `internal/remittance/handlers.go` style:
 //	GET /api/v1/fx/rates       — ?base=USD
 //	GET /api/v1/fx/currencies  — picker list
 //
-// Ref: japaconnect-engineering/sections/110-fx-converter.md
+// Ref: japaconnect-engineering/sections/112-fx-converter.md
 //
-//	japaconnect-engineering/adr/ADR-124-fx-converter.md
+//	japaconnect-engineering/adr/ADR-125-fx-converter.md
 package fx
 
 import (
@@ -1326,7 +1326,7 @@ func (h *Handlers) HandleCurrencies(w http.ResponseWriter, r *http.Request) {
 a) After the remittance wiring block (~line 1556–1568), add — need `import "github.com/jedafe/japa/internal/fx"` in the import block too:
 
 ```go
-	// §110 / ADR-124: FX converter — matrix service + the rate-provider
+	// §112 / ADR-125: FX converter — matrix service + the rate-provider
 	// adapter that feeds the seeded 'mid-market' benchmark provider.
 	fxService := fx.NewService(fx.NewStore(database), settingsService)
 	fxService.SetFeatureChecker(featureChecker)
@@ -1360,7 +1360,7 @@ grep -n "fx/convert" internal/server/server.go
 
 ```bash
 git add internal/fx/handlers.go internal/features/registry.go internal/server/server.go
-git commit -m "feat(fx): public convert/rates/currencies routes + mid-market provider wiring (§110, ADR-124)"
+git commit -m "feat(fx): public convert/rates/currencies routes + mid-market provider wiring (§112, ADR-125)"
 ```
 
 ---
@@ -1454,7 +1454,7 @@ d) Add `splitBenchmark` helper and use it in `GetBestRate` + `Calculate`:
 
 ```go
 // splitBenchmark partitions corridor rates into sellable provider rows and
-// the (at most one) benchmark row (§110/ADR-124). Benchmark rates are a
+// the (at most one) benchmark row (§112/ADR-125). Benchmark rates are a
 // mid-market reference — never ranked against provider quotes.
 func splitBenchmark(rates []RateInfo) (providers []RateInfo, benchmark *RateInfo) {
 	for i := range rates {
@@ -1493,7 +1493,7 @@ go build ./...
 
 ```bash
 git add internal/remittance/
-git commit -m "feat(remittance): benchmark providers excluded from ranking, exposed as reference (§110, ADR-124)"
+git commit -m "feat(remittance): benchmark providers excluded from ranking, exposed as reference (§112, ADR-125)"
 ```
 
 ---
@@ -1517,7 +1517,7 @@ git commit -m "feat(remittance): benchmark providers excluded from ranking, expo
 In the const block near `TypeRemittancePruneOldRates` (~line 391):
 
 ```go
-	// TypeFxPruneRates — §110 FX Currency Converter (ADR-124).
+	// TypeFxPruneRates — §112 FX Currency Converter (ADR-125).
 	// fx:prune_rates runs weekly on the low queue, deleting fx_rates matrix
 	// rows past fx.history_retention_days (default 90) with daily downsampling.
 	TypeFxPruneRates = "fx:prune_rates"
@@ -1526,7 +1526,7 @@ In the const block near `TypeRemittancePruneOldRates` (~line 391):
 In the processor interfaces block (~line 66, after `RemittanceProcessor`):
 
 ```go
-// FxProcessor handles FX converter background tasks (§110, ADR-124).
+// FxProcessor handles FX converter background tasks (§112, ADR-125).
 type FxProcessor interface {
 	PruneRates(ctx context.Context) (int, error)
 }
@@ -1548,7 +1548,7 @@ func RegisterFxProcessor(p FxProcessor) { fxProcessor = p }
 Add the handler after `HandleRemittancePruneOldRates` (~line 710):
 
 ```go
-// HandleFxPruneRates removes fx_rates rows beyond retention (§110).
+// HandleFxPruneRates removes fx_rates rows beyond retention (§112).
 func HandleFxPruneRates(ctx context.Context, _ *asynq.Task) error {
 	return countTask(ctx, "fx:prune_rates", "pruned fx matrices", fxProcessor != nil,
 		func(ctx context.Context) (int, error) { return fxProcessor.PruneRates(ctx) })
@@ -1572,13 +1572,13 @@ b) `internal/worker/enqueuer.go` — in the `taskTier` low-queue list (next to `
 and in `taskTypeCatalog` (next to the remittance prune row ~line 543):
 
 ```go
-	{TypeFxPruneRates, "low", "Weekly — delete fx_rates matrix rows past fx.history_retention_days (§110)"},
+	{TypeFxPruneRates, "low", "Weekly — delete fx_rates matrix rows past fx.history_retention_days (§112)"},
 ```
 
 c) `internal/worker/server.go` — after the remittance prune schedule (~line 294):
 
 ```go
-	// Weekly FX matrix pruning — Sunday 03:30 UTC (§110, ADR-124).
+	// Weekly FX matrix pruning — Sunday 03:30 UTC (§112, ADR-125).
 	// Deletes fx_rates rows older than fx.history_retention_days (default 90).
 	// Low queue.
 	schedule("30 3 * * 0", TypeFxPruneRates, 7*24*time.Hour)
@@ -1588,7 +1588,7 @@ c) `internal/worker/server.go` — after the remittance prune schedule (~line 29
 
 ```go
 // ---------------------------------------------------------------------------
-// FxAdapter — wraps fx.Service (§110, ADR-124).
+// FxAdapter — wraps fx.Service (§112, ADR-125).
 // ---------------------------------------------------------------------------
 
 // FxAdapter adapts fx.Service to the worker.FxProcessor interface.
@@ -1601,7 +1601,7 @@ func NewFxAdapter(svc *fx.Service) *FxAdapter {
 	return &FxAdapter{svc: svc}
 }
 
-// PruneRates deletes fx_rates rows past fx.history_retention_days (§110).
+// PruneRates deletes fx_rates rows past fx.history_retention_days (§112).
 func (a *FxAdapter) PruneRates(ctx context.Context) (int, error) {
 	return a.svc.PruneRates(ctx)
 }
@@ -1624,7 +1624,7 @@ Find `workerv2.RegisterV2Processors(` — add `fxService` at the matching positi
 ```bash
 go build ./...
 git add internal/worker/ internal/workerv2/ internal/server/server.go
-git commit -m "feat(worker): fx:prune_rates weekly retention sweep, low queue (§110, ADR-124)"
+git commit -m "feat(worker): fx:prune_rates weekly retention sweep, low queue (§112, ADR-125)"
 ```
 
 ---
@@ -1659,7 +1659,7 @@ Add to `apps/admin/src/lib/locales/en.json` (near `"app.remittance.*"` keys): `"
 ```bash
 cd apps/admin && bun run check
 git add apps/admin/
-git commit -m "feat(admin): is_benchmark flag on remittance provider forms/list (§110)"
+git commit -m "feat(admin): is_benchmark flag on remittance provider forms/list (§112)"
 ```
 
 ---
@@ -1692,14 +1692,14 @@ In `apps/tools/src/lib/types/index.ts`:
 Append new interfaces:
 
 ```ts
-/** §110 FX Currency Converter — picker currency row. */
+/** §112 FX Currency Converter — picker currency row. */
 export interface FxCurrency {
 	code: string;
 	name: string;
 	symbol: string;
 }
 
-/** §110 FX Currency Converter — /fx/convert response. */
+/** §112 FX Currency Converter — /fx/convert response. */
 export interface FxConvertResult {
 	amount: number;
 	from: string;
@@ -1755,13 +1755,13 @@ import { getTool, isToolEnabled } from '$lib/tools/registry';
 import type { FxCurrency } from '$lib/types';
 
 /**
- * FX Currency Converter — §110, ADR-124.
+ * FX Currency Converter — §112, ADR-125.
  * SSR loads the picker currency list; conversion happens client-side.
  *
  * API: GET /fx/currencies — active currencies with matrix coverage.
  *      GET /fx/convert?amount=&from=&to= — mid-market conversion.
  *
- * Ref: §110 (FX Currency Converter).
+ * Ref: §112 (FX Currency Converter).
  */
 export const load: PageServerLoad = async (event) => {
 	const tool = getTool('currency-converter')!;
@@ -1800,7 +1800,7 @@ Complete page, following the remittance page's conventions (untrack + `$state`, 
 	import type { FxCurrency, FxConvertResult } from '$lib/types';
 
 	/**
-	 * FX Currency Converter — §110, ADR-124.
+	 * FX Currency Converter — §112, ADR-125.
 	 * Any-to-any mid-market conversion: amount + from/to pickers → result card.
 	 * Data: /fx/currencies (SSR) + /fx/convert (client, debounced).
 	 */
@@ -2024,7 +2024,7 @@ Complete page, following the remittance page's conventions (untrack + `$state`, 
 ```bash
 cd apps/tools && bun run check
 git add apps/tools/
-git commit -m "feat(tools): currency converter tool page + surface wiring (§110)"
+git commit -m "feat(tools): currency converter tool page + surface wiring (§112)"
 ```
 
 ---
@@ -2073,10 +2073,10 @@ import { apiContext, apiList } from '$lib/server/api';
 import type { FxCurrency } from '$lib/types';
 
 /**
- * FX Currency Converter at /tools/currency-converter (§110, ADR-124).
+ * FX Currency Converter at /tools/currency-converter (§112, ADR-125).
  * SSR-fetches the picker currency list; conversion is client-side.
  *
- * Ref: japaconnect-engineering/sections/110-fx-converter.md
+ * Ref: japaconnect-engineering/sections/112-fx-converter.md
  */
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -2125,7 +2125,7 @@ benchmark?: { rate: number; receive_amount: number } | null;
 cd apps/main && bun run check
 cd ../tools && bun run check
 git add apps/main/ apps/tools/
-git commit -m "feat(main,tools): currency converter page + mid-market benchmark display on remittance (§110)"
+git commit -m "feat(main,tools): currency converter page + mid-market benchmark display on remittance (§112)"
 ```
 
 ---
@@ -2183,4 +2183,4 @@ git log --oneline -12   # sanity: all task commits on main
 - **Throttle edge**: `FetchRates` returning `nil, nil` while throttled is correct — `FetchProviderRates` logs "no snapshots" and continues; remittance rows from prior fetches stay fresh within the 15-min corridor cache TTL anyway.
 - **Cross-matrix ordering**: the `remittance:fetch_rates` sweep and `fx` matrix write happen inside one adapter call — no inter-task ordering issue.
 - **`is_public` on fx.subdomain/custom_domain**: verified — `GetPublicSettings` filters `is_public = true`; `remittance.subdomain` is non-public and only works via the `DEFAULT_SUBDOMAINS` fallback in tools `hooks.server.ts`. We seed both fx host keys public AND mark them `Public: true` in `internal/control/settings_catalog.go` so Control Panel upserts preserve the flag.
-- **Admin `is_benchmark` seed row**: the seeded `mid-market` row is inactive — admin must PATCH `api_config` + `is_active:true` to activate; document this in the §110 section file ops notes.
+- **Admin `is_benchmark` seed row**: the seeded `mid-market` row is inactive — admin must PATCH `api_config` + `is_active:true` to activate; document this in the §112 section file ops notes.
