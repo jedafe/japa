@@ -22,7 +22,7 @@
 - Feature flags: any `features.Gate`/`IsEnabled` key MUST be in `internal/features/registry.go` (`features_test.go` enforces).
 - Go numeric columns use `pgtype.Numeric` with `numericFromFloat`/`numericToFloat64` helpers.
 - Migration naming: `migrations/NNNNNN_<name>.up.sql` + `.down.sql`; next free number is **000777**.
-- Spec values: `fx.cache_ttl_minutes=120`, `fx.stale_hours=48`, `fx.history_retention_days=90`, `fx.default_base_currency='USD'`, `fx.subdomain='currency-converter'`, `fx.custom_domain=''`; task `fx:prune_rates` low queue weekly; Valkey `jc:fx:matrix:{platform}:{base}` TTL per `fx.cache_ttl_minutes`; OXR attribution URL `https://openexchangerates.org`.
+- Spec values: `fx.cache_ttl_minutes=120`, `fx.stale_hours=48`, `fx.history_retention_days=90`, `fx.default_base_currency='USD'`, `fx.subdomain='currency-converter'`, `fx.custom_domain=''`; task `fx:prune_rates` low queue weekly; Valkey `jc:fx:matrix:{base}` TTL per `fx.cache_ttl_minutes`; OXR attribution URL `https://openexchangerates.org`.
 
 ---
 
@@ -167,6 +167,7 @@ cd ..
 - Create: `migrations/000777_fx_rates.down.sql`
 - Create: `internal/db/queries/fx.sql`
 - Modify: `internal/db/queries/remittance.sql` (provider + corridor-rate queries)
+- Modify: `internal/control/settings_catalog.go` (`fx.*` catalog entries — reviewed: every V2 setting key is registered here; missing entries show up untyped/unclassified in the Control Panel and `IsPublicSetting` returns false, which would silently break `fx.subdomain` host detection on any admin upsert)
 - Generated (do NOT hand-edit): `internal/db/gen/fx.sql.go`, `internal/db/gen/remittance.sql.go`, `internal/db/gen/models.go`
 
 **Interfaces:**
@@ -200,11 +201,13 @@ ALTER TABLE remittance_providers
 -- Seeded benchmark provider. Inactive until an admin pastes an OXR App ID
 -- into api_config via PATCH /api/v1/admin/remittance/providers/:id — the
 -- handler encrypts api_config on write (ADR-075 §1).
+-- remittance_providers_slug_key is a UNIQUE index — conflict-safe insert.
 INSERT INTO remittance_providers
     (name, slug, website_url, data_source, api_config, is_active, is_benchmark, display_order)
 VALUES
     ('Mid-market (Open Exchange Rates)', 'mid-market', 'https://openexchangerates.org',
-     'api', NULL, false, true, 0);
+     'api', NULL, false, true, 0)
+ON CONFLICT (slug) DO NOTHING;
 
 -- §110 system_settings (catalog: conventions/system-settings-catalog.md).
 INSERT INTO system_settings (key, value, is_public) VALUES
@@ -219,7 +222,7 @@ ON CONFLICT (key) DO NOTHING;
 COMMIT;
 ```
 
-Note: `system_settings.value` is `jsonb` — numbers are bare JSON, strings are double-quoted. `subdomain`/`custom_domain` are `is_public=true` because `apps/tools` host detection reads them via `/site/settings/public` (same treatment as `remittance.subdomain` — verify that precedent in `migrations/000735_baseline_seed.up.sql` and match its `is_public` value; if remittance's is not public, match whatever makes host detection work — the tools app fetches only public settings).
+Note: `system_settings.value` is `jsonb` — numbers are bare JSON, strings are double-quoted. **Verified:** `GetPublicSettings` (`internal/db/gen/settings.sql.go`) filters `WHERE is_public = true`; `remittance.subdomain` is seeded `is_public=false` and resolves only via the hardcoded `DEFAULT_SUBDOMAINS` fallback in `apps/tools/src/hooks.server.ts`. We seed `fx.subdomain`/`fx.custom_domain` with `is_public=true` so admin-set custom domains actually reach `/site/settings/public`, AND mark them `Public: true` in `internal/control/settings_catalog.go` (next step) so admin upserts don't silently flip the flag back to false.
 
 - [ ] **Step 2: Write the down migration**
 
@@ -303,20 +306,37 @@ b) `UpdateRemittanceProvider` — add to the SET list:
 
 c) `GetLatestRatesForCorridor` — add `rp.is_benchmark AS provider_is_benchmark` to the SELECT list (after `rp.website_url AS provider_website`).
 
-- [ ] **Step 5: Apply migration + regenerate sqlc**
+- [ ] **Step 5: Register `fx.*` keys in the Control settings catalog**
+
+In `internal/control/settings_catalog.go`, add a §110 block next to the other V2 entries (after the `remittance.*` block ~line 484), matching the existing entry shape `{Type, DefaultValue, Description, Panel, Public, Min/Max}`:
+
+```go
+// FX Currency Converter (§110, ADR-124)
+"fx.enabled":                {Type: "bool", DefaultValue: "true", Description: "Global FX converter toggle.", Panel: "control"},
+"fx.cache_ttl_minutes":      {Type: "int", DefaultValue: "120", Min: 5, Description: "Valkey TTL for the mid-market rate matrix (minutes).", Panel: "control"},
+"fx.stale_hours":            {Type: "int", DefaultValue: "48", Min: 1, Description: "Hours before a served FX matrix is flagged stale.", Panel: "control"},
+"fx.history_retention_days": {Type: "int", DefaultValue: "90", Min: 7, Description: "Days of fx_rates matrix history to retain.", Panel: "control"},
+"fx.default_base_currency":  {Type: "string", DefaultValue: "USD", Description: "Default base currency for /fx/rates.", Panel: "control"},
+"fx.subdomain":              {Type: "string", DefaultValue: "currency-converter", Public: true, Description: "Standalone subdomain (ADR-086).", Panel: "control"},
+"fx.custom_domain":          {Type: "string", DefaultValue: "", Public: true, Description: "Optional custom domain (ADR-086).", Panel: "control"},
+```
+
+`Public: true` on the two host keys is load-bearing: `IsPublicSetting` feeds `is_public` on admin upserts, and `apps/tools` host detection reads only public settings.
+
+- [ ] **Step 6: Apply migration + regenerate sqlc**
 
 ```bash
-make migrate-up    # or the repo's migrate command for a single migration — check Makefile
+make migrate    # runs `go run ./cmd/migrate/` — applies pending migrations incl. 000777
 make sqlc-gen
 go build ./internal/db/gen/
 ```
 
 Expected: build passes; `gen.RemittanceProvider` has `IsBenchmark bool`; `gen.GetLatestRatesForCorridorRow` has `ProviderIsBenchmark bool`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add migrations/000777_fx_rates.*.sql internal/db/queries/fx.sql internal/db/queries/remittance.sql internal/db/gen/
+git add migrations/000777_fx_rates.*.sql internal/db/queries/fx.sql internal/db/queries/remittance.sql internal/db/gen/ internal/control/settings_catalog.go
 git commit -m "feat(db): fx_rates matrix + remittance_providers.is_benchmark + fx settings (§110, ADR-124)"
 ```
 
@@ -2014,16 +2034,35 @@ git commit -m "feat(tools): currency converter tool page + surface wiring (§110
 **Files:**
 - Create: `apps/main/src/routes/(app)/tools/currency-converter/+page.server.ts`
 - Create: `apps/main/src/routes/(app)/tools/currency-converter/+page.svelte`
-- Modify: `apps/main/src/lib/types.ts` (or wherever `RemittanceRate` lives — add `is_benchmark?: boolean` + `FxCurrency`/`FxConvertResult`)
-- Modify: `apps/main/src/routes/(app)/tools/remittance/+page.svelte` (benchmark badge + exclude from best-rate display + benchmark reference line)
+- Modify: `apps/main/src/lib/tools/registry.ts` (tools-hub entry — reviewed: main app has its OWN registry driving the `/tools` card grid; without an entry the tool is invisible and ungated there)
+- Modify: `apps/main/src/lib/i18n/en.json` + `fr.json` (`tools.currency_converter` / `tools.currency_converter_desc` label keys used by the registry entry)
+- Modify: `apps/main/src/lib/types.ts` (or wherever `RemittanceRate` lives — add `is_benchmark?: boolean` + `FxCurrency`/`FxConvertResult`; **fix `RemittanceCalculation.providers` → `results`** — reviewed: backend `CalculateResult` serializes `json:"results"`, so `calc.providers` is always empty and the whole calculator block silently falls back to corridor rates — pre-existing bug, fix while adding `benchmark`)
+- Modify: `apps/main/src/routes/(app)/tools/remittance/+page.svelte` AND `+page.server.ts` (update `calc.providers` reads to `calc.results`; benchmark badge + exclude from best-rate display + benchmark reference line)
 - Modify: `apps/tools/src/routes/remittance/+page.svelte` (same badge treatment — the tools page computes `bestRate` by `reduce` at line ~74; filter `!r.is_benchmark` first and render benchmark row with badge)
 
 **Interfaces:**
 - Consumes: `RateInfo.is_benchmark` + `CalculateResult.benchmark` (Task 6); `/fx/currencies`, `/fx/convert` (Task 5); main-app helpers `apiContext`, `apiGet`, `apiList`, `event.parent().features`.
 
-- [ ] **Step 1: Main app types + page.server.ts**
+- [ ] **Step 1: Main app types + tools-hub registry + i18n**
 
-Add to the main app's types file (find `RemittanceRate` in `apps/main/src/lib/types*`): `is_benchmark?: boolean` on `RemittanceRate`; add `FxCurrency`/`FxConvertResult` (same shapes as Task 9).
+In the main app's types file (`apps/main/src/lib/types/index.ts`, `RemittanceCalculation` ~line 2734):
+- `is_benchmark?: boolean` on `RemittanceRate` and on `RemittanceProviderCalc` rows.
+- Add `FxCurrency`/`FxConvertResult` (same shapes as Task 9).
+- Fix `RemittanceCalculation`: rename `providers: RemittanceProviderCalc[]` → `results: RemittanceProviderCalc[]` (matches backend `json:"results"`) and add `benchmark?: RemittanceProviderCalc | null`. Then update `+page.server.ts`/`+page.svelte` reads of `calc.providers` → `calc.results` (lines ~116, ~249-250, ~440 reference `calc.providers`/`calculation.providers` — all currently dead code).
+
+In `apps/main/src/lib/tools/registry.ts`, add after the remittance entry (~line 161, finance section):
+
+```ts
+{
+	href: '/tools/currency-converter',
+	labelKey: 'tools.currency_converter',
+	descKey: 'tools.currency_converter_desc',
+	enabledSetting: 'fx.enabled',
+	sections: ['finance', 'settlement']
+},
+```
+
+In `apps/main/src/lib/i18n/en.json` (near `"tools.remittance"` ~line 4100): `"tools.currency_converter": "Currency Converter"`, `"tools.currency_converter_desc": "Convert between currencies at live mid-market rates."` — and `fr.json` equivalents near `"tools.remittance"` (~line 4050): `"Convertisseur de devises"`, `"Convertissez entre devises aux taux moyens du marché en direct."`.
 
 `apps/main/src/routes/(app)/tools/currency-converter/+page.server.ts`:
 
@@ -2063,9 +2102,10 @@ Port the Task 9 page into the main app's component conventions — look at `(app
 
 - [ ] **Step 3: Benchmark badge + reference line on remittance pages**
 
-`apps/main/src/routes/(app)/tools/remittance/+page.svelte`:
+`apps/main/src/routes/(app)/tools/remittance/+page.svelte` (and `+page.server.ts` where `calc.providers` is read):
+- Rename `calc.providers`/`calculation.providers` reads to `calc.results`/`calculation.results` (part of the Step 1 fix — the calculator block has been dead code since the field never existed).
 - Where the provider rate table renders rows, add a "Mid-market" badge when `rate.is_benchmark` (find the row render — search `provider_name` in the file).
-- Where best rate is highlighted, skip `is_benchmark` rows.
+- Where best rate is highlighted (`bestRate` reduce ~line 249), skip `is_benchmark` rows — filter `!p.is_benchmark` before the reduce.
 - Where `RemittanceCalculation` result renders, render `calc.benchmark` as a reference line above the ranked results: `Mid-market would give X` using `formatMoney` (find the calculation render block — search `receive_amount`).
 
 `apps/tools/src/routes/remittance/+page.svelte`:
@@ -2105,7 +2145,7 @@ Expected: all pass; `features` tests confirm `fx.enabled` registry entry.
 
 - [ ] **Step 2: Route smoke check**
 
-With a local DB migrated (`make migrate-up` already applied 000777): start `cmd/api`, then:
+With a local DB migrated (`make migrate` already applied 000777): start `cmd/api`, then:
 
 ```bash
 curl -s "http://localhost:8080/api/v1/fx/currencies" | head -c 300     # expect {"data":[]} or list once rates exist
@@ -2142,5 +2182,5 @@ git log --oneline -12   # sanity: all task commits on main
 
 - **Throttle edge**: `FetchRates` returning `nil, nil` while throttled is correct — `FetchProviderRates` logs "no snapshots" and continues; remittance rows from prior fetches stay fresh within the 15-min corridor cache TTL anyway.
 - **Cross-matrix ordering**: the `remittance:fetch_rates` sweep and `fx` matrix write happen inside one adapter call — no inter-task ordering issue.
-- **`is_public` on fx.subdomain/custom_domain**: host detection in `apps/tools` reads `/site/settings/public` — these two keys MUST be public or single-tool domains won't resolve. Verify against how `remittance.subdomain` is seeded (it may be public via a different mechanism — check `site/settings/public` handler's key filter if in doubt).
+- **`is_public` on fx.subdomain/custom_domain**: verified — `GetPublicSettings` filters `is_public = true`; `remittance.subdomain` is non-public and only works via the `DEFAULT_SUBDOMAINS` fallback in tools `hooks.server.ts`. We seed both fx host keys public AND mark them `Public: true` in `internal/control/settings_catalog.go` so Control Panel upserts preserve the flag.
 - **Admin `is_benchmark` seed row**: the seeded `mid-market` row is inactive — admin must PATCH `api_config` + `is_active:true` to activate; document this in the §110 section file ops notes.
