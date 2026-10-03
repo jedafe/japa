@@ -21,7 +21,7 @@
 - **Rule 18** — JS/TS tooling via `bun`/`bunx`/`bun run` only.
 - Feature flags: any `features.Gate`/`IsEnabled` key MUST be in `internal/features/registry.go` (`features_test.go` enforces).
 - Go numeric columns use `pgtype.Numeric` with `numericFromFloat`/`numericToFloat64` helpers.
-- Migration naming: `migrations/NNNNNN_<name>.up.sql` + `.down.sql`; next free number is **000777**.
+- Migration naming: `migrations/NNNNNN_<name>.up.sql` + `.down.sql`; number used was **000780** (777–779 taken by in-flight travel WIP).
 - Spec values: `fx.cache_ttl_minutes=120`, `fx.stale_hours=48`, `fx.history_retention_days=90`, `fx.default_base_currency='USD'`, `fx.subdomain='currency-converter'`, `fx.custom_domain=''`; task `fx:prune_rates` low queue weekly; Valkey `jc:fx:matrix:{base}` TTL per `fx.cache_ttl_minutes`; OXR attribution URL `https://openexchangerates.org`.
 
 ---
@@ -141,7 +141,7 @@ GET    /api/v1/fx/currencies                        — picker list: currencies 
 ```markdown
 ### Amendment (2026-10-03): benchmark providers
 
-`remittance_providers.is_benchmark` (added by migration 000777, §112/ADR-125)
+`remittance_providers.is_benchmark` (added by migration 000780, §112/ADR-125)
 marks a provider whose rates are a mid-market reference, not a sellable
 quote. Benchmark providers are excluded from `GetBestRate` and the
 `Calculate` ranking and are exposed separately as `CalculateResult.benchmark`.
@@ -160,11 +160,11 @@ cd ..
 
 ---
 
-### Task 2: Migration 000777 + sqlc queries + regen
+### Task 2: Migration 000780 + sqlc queries + regen
 
 **Files:**
-- Create: `migrations/000777_fx_rates.up.sql`
-- Create: `migrations/000777_fx_rates.down.sql`
+- Create: `migrations/000780_fx_rates.up.sql`
+- Create: `migrations/000780_fx_rates.down.sql`
 - Create: `internal/db/queries/fx.sql`
 - Modify: `internal/db/queries/remittance.sql` (provider + corridor-rate queries)
 - Modify: `internal/control/settings_catalog.go` (`fx.*` catalog entries — reviewed: every V2 setting key is registered here; missing entries show up untyped/unclassified in the Control Panel and `IsPublicSetting` returns false, which would silently break `fx.subdomain` host detection on any admin upsert)
@@ -177,10 +177,10 @@ cd ..
 
 - [ ] **Step 1: Write the up migration**
 
-`migrations/000777_fx_rates.up.sql` (match the `BEGIN;...COMMIT;` wrapping style of 000776):
+`migrations/000780_fx_rates.up.sql` (match the `BEGIN;...COMMIT;` wrapping style of 000776):
 
 ```sql
--- 000777_fx_rates.up.sql
+-- 000780_fx_rates.up.sql
 -- §112 / ADR-125: mid-market FX matrix + remittance benchmark provider flag.
 BEGIN;
 
@@ -226,10 +226,10 @@ Note: `system_settings.value` is `jsonb` — numbers are bare JSON, strings are 
 
 - [ ] **Step 2: Write the down migration**
 
-`migrations/000777_fx_rates.down.sql`:
+`migrations/000780_fx_rates.down.sql`:
 
 ```sql
--- 000777_fx_rates.down.sql
+-- 000780_fx_rates.down.sql
 BEGIN;
 DELETE FROM system_settings WHERE key IN (
     'fx.cache_ttl_minutes', 'fx.stale_hours', 'fx.history_retention_days',
@@ -326,7 +326,7 @@ In `internal/control/settings_catalog.go`, add a §112 block next to the other V
 - [ ] **Step 6: Apply migration + regenerate sqlc**
 
 ```bash
-make migrate    # runs `go run ./cmd/migrate/` — applies pending migrations incl. 000777
+make migrate    # runs `go run ./cmd/migrate/` — applies pending migrations incl. 000780
 make sqlc-gen
 go build ./internal/db/gen/
 ```
@@ -336,7 +336,7 @@ Expected: build passes; `gen.RemittanceProvider` has `IsBenchmark bool`; `gen.Ge
 - [ ] **Step 7: Commit**
 
 ```bash
-git add migrations/000777_fx_rates.*.sql internal/db/queries/fx.sql internal/db/queries/remittance.sql internal/db/gen/ internal/control/settings_catalog.go
+git add migrations/000780_fx_rates.*.sql internal/db/queries/fx.sql internal/db/queries/remittance.sql internal/db/gen/ internal/control/settings_catalog.go
 git commit -m "feat(db): fx_rates matrix + remittance_providers.is_benchmark + fx settings (§112, ADR-125)"
 ```
 
@@ -2145,7 +2145,7 @@ Expected: all pass; `features` tests confirm `fx.enabled` registry entry.
 
 - [ ] **Step 2: Route smoke check**
 
-With a local DB migrated (`make migrate` already applied 000777): start `cmd/api`, then:
+With a local DB migrated (`make migrate` already applied 000780): start `cmd/api`, then:
 
 ```bash
 curl -s "http://localhost:8080/api/v1/fx/currencies" | head -c 300     # expect {"data":[]} or list once rates exist
