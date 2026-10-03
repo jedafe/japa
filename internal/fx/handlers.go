@@ -52,6 +52,8 @@ func NewHandlers(service *Service) *Handlers {
 // writeServiceErr maps service errors to the standard error envelope (Rule 5).
 func writeServiceErr(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrDisabled):
+		errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "Currency converter is not available")
 	case errors.Is(err, ErrUnsupportedCurrency):
 		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_currency", "Currency not supported")
 	case errors.Is(err, ErrEmptyMatrix):

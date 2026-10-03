@@ -13,9 +13,12 @@ import (
 
 func TestParseOXRResponse(t *testing.T) {
 	body := `{"disclaimer":"x","license":"x","timestamp":1,"base":"USD","rates":{"NGN":1600.5,"GBP":0.79,"EUR":0.91}}`
-	rates, err := parseOXRResponse([]byte(body))
+	base, rates, err := parseOXRResponse([]byte(body))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if base != "USD" {
+		t.Fatalf("unexpected base: %q", base)
 	}
 	if rates["NGN"] != 1600.5 || rates["GBP"] != 0.79 {
 		t.Fatalf("unexpected rates: %v", rates)
@@ -83,5 +86,24 @@ func TestFetchRates_EndToEnd(t *testing.T) {
 	}
 	if rates["USD"] != 1 || rates["NGN"] != 1600 {
 		t.Fatalf("matrix missing entries: %v", rates)
+	}
+}
+
+// A response base that disagrees with api_config.base_currency must fail —
+// persisting a mislabeled matrix silently corrupts every downstream rate.
+func TestFetchMatrix_BaseMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"base":  "EUR",
+			"rates": map[string]float64{"USD": 1.1},
+		})
+	}))
+	defer srv.Close()
+
+	a := &Adapter{svc: nil, http: srv.Client()}
+	cfg := providerConfig{AppID: "k", Endpoint: srv.URL, BaseCurrency: "USD", Engine: "oxr"}
+
+	if _, err := a.fetchMatrix(context.Background(), cfg); err == nil {
+		t.Fatal("expected base-mismatch error")
 	}
 }

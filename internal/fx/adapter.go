@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -25,6 +26,11 @@ import (
 // overridable per-provider via api_config.endpoint (§112 — the field exists
 // so a self-hosted/proxy feed or paid-tier base override needs config only).
 const defaultOXREndpoint = "https://openexchangerates.org/api/latest.json"
+
+// defaultHTTPTimeout bounds the upstream engine call when the caller passes a
+// nil http.Client — http.DefaultClient has no timeout and a hung upstream
+// would stall the remittance:fetch_rates sweep until the Asynq deadline.
+const defaultHTTPTimeout = 30 * time.Second
 
 // attributionURL is rendered on benchmark rows and in the UI — the OXR free
 // tier terms require attribution.
@@ -46,10 +52,11 @@ type Adapter struct {
 	http *http.Client
 }
 
-// NewAdapter creates the adapter. httpClient may be nil → http.DefaultClient.
+// NewAdapter creates the adapter. httpClient may be nil → a client with the
+// default upstream timeout.
 func NewAdapter(svc *Service, httpClient *http.Client) *Adapter {
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 	return &Adapter{svc: svc, http: httpClient}
 }
@@ -122,17 +129,24 @@ func throttled(lastFetch time.Time, minIntervalMinutes int) bool {
 // The base→base = 1.0 cell is injected when the engine omits it so every
 // matrix uniformly contains its own base.
 func (a *Adapter) fetchMatrix(ctx context.Context, cfg providerConfig) (map[string]float64, error) {
+	var base string
 	var rates map[string]float64
 	var err error
 
 	switch cfg.Engine {
 	case "oxr":
-		rates, err = a.fetchOXR(ctx, cfg)
+		base, rates, err = a.fetchOXR(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("fx: unsupported engine %q", cfg.Engine)
 	}
 	if err != nil {
 		return nil, err
+	}
+	// A configured base that disagrees with the engine's response base means
+	// the matrix would be labelled wrong — every downstream rate off by a
+	// ratio. Fail loudly rather than persist mislabeled data.
+	if base != "" && base != cfg.BaseCurrency {
+		return nil, fmt.Errorf("fx: engine %q returned base %q, api_config expects %q", cfg.Engine, base, cfg.BaseCurrency)
 	}
 	if _, ok := rates[cfg.BaseCurrency]; !ok {
 		rates[cfg.BaseCurrency] = 1
@@ -141,49 +155,57 @@ func (a *Adapter) fetchMatrix(ctx context.Context, cfg providerConfig) (map[stri
 	return rates, nil
 }
 
-func (a *Adapter) fetchOXR(ctx context.Context, cfg providerConfig) (map[string]float64, error) {
+func (a *Adapter) fetchOXR(ctx context.Context, cfg providerConfig) (string, map[string]float64, error) {
 	endpoint := cfg.Endpoint
 	if endpoint == "" {
 		endpoint = defaultOXREndpoint
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		endpoint+"?app_id="+cfg.AppID, nil)
+	u, err := url.Parse(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("fx: build oxr request: %w", err)
+		return "", nil, fmt.Errorf("fx: parse oxr endpoint: %w", err)
+	}
+	q := u.Query()
+	q.Set("app_id", cfg.AppID)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("fx: build oxr request: %w", err)
 	}
 
 	resp, err := a.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fx: oxr request: %w", err)
+		return "", nil, fmt.Errorf("fx: oxr request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fx: oxr status %d", resp.StatusCode)
+		return "", nil, fmt.Errorf("fx: oxr status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("fx: read oxr body: %w", err)
+		return "", nil, fmt.Errorf("fx: read oxr body: %w", err)
 	}
 
 	return parseOXRResponse(body)
 }
 
-// parseOXRResponse extracts the rates map from a latest.json payload.
-func parseOXRResponse(body []byte) (map[string]float64, error) {
+// parseOXRResponse extracts the base currency and rates map from a
+// latest.json payload.
+func parseOXRResponse(body []byte) (string, map[string]float64, error) {
 	var parsed struct {
 		Base  string             `json:"base"`
 		Rates map[string]float64 `json:"rates"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("fx: parse oxr response: %w", err)
+		return "", nil, fmt.Errorf("fx: parse oxr response: %w", err)
 	}
 	if parsed.Rates == nil {
-		return nil, fmt.Errorf("fx: oxr response has no rates")
+		return "", nil, fmt.Errorf("fx: oxr response has no rates")
 	}
-	return parsed.Rates, nil
+	return parsed.Base, parsed.Rates, nil
 }
 
 // emitSnapshots converts a matrix into per-corridor RateSnapshots for the
