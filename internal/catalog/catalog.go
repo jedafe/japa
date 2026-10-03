@@ -72,6 +72,21 @@ var publicCatalogs = map[string][]CatalogOption{
 		{Value: "in_person", Label: "In person"},
 		{Value: "agent", Label: "Via agent"},
 	},
+	// §67 — cabin_class values forwarded to the configured flight provider's
+	// search API (travel_providers api_config contract, ADR-085).
+	"travel.cabin_class": {
+		{Value: "economy", Label: "Economy"},
+		{Value: "premium_economy", Label: "Premium Economy"},
+		{Value: "business", Label: "Business"},
+		{Value: "first", Label: "First"},
+	},
+	// §67 — travel_providers.provider_type CHECK constraint values; used by
+	// the public Providers tab type filter (mirrors the admin catalog).
+	"travel.provider_type": {
+		{Value: "flight", Label: "Flights"},
+		{Value: "hotel", Label: "Hotels"},
+		{Value: "both", Label: "Flights & Hotels"},
+	},
 }
 
 // Handlers exposes the public option catalog endpoints.

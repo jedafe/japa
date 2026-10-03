@@ -2982,6 +2982,17 @@ export interface TravelSearchResponse {
 	search_time_ms: number;
 }
 
+/** GET /travel/providers — public-safe provider row (mirrors the backend
+ *  PublicProviderInfo DTO: api/affiliate config never leaves the server). */
+export interface TravelProvider {
+	id: string;
+	name: string;
+	slug: string;
+	provider_type: string;
+	is_active: boolean;
+	created_at: string;
+}
+
 /* ================================================================== *
  * V2 Community Features (§79–§89, §98) + §102 Mentorship Matching
  *

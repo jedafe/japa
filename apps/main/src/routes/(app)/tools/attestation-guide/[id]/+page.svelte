@@ -63,7 +63,9 @@
 <div class="mx-auto w-full max-w-3xl">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<a
-			href="/tools/attestation-guide"
+			href={pathway.destination_space_id
+				? `/tools/attestation-guide?dest=${pathway.destination_space_id}`
+				: '/tools/attestation-guide'}
 			class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
 		>
 			<ArrowLeft size={16} />

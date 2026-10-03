@@ -32,10 +32,15 @@
 	let user = $state(untrack(() => data.user));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
-	let selectedIssuingId = $state<string>('');
-	let docTypeFilter = $state<string>('');
+	let selectedIssuingId = $state<string>(untrack(() => data.initialIssuingId ?? ''));
+	let docTypeFilter = $state<string>(untrack(() => data.initialDocType ?? ''));
 	let loading = $state(false);
+	let loadingMore = $state(false);
+	let pathwaysTotal = $state<number>(untrack(() => data.pathwaysTotal ?? 0));
+	let currentPage = $state(1); // 1-based UI page; API takes a row offset via page_offset
 	let expandedId = $state<string | null>(null);
+	const PAGE_SIZE = 25;
+	const hasMore = $derived(pathways.length < pathwaysTotal);
 
 	// Community update form state
 	let showRegisterPrompt = $state(false);
@@ -59,25 +64,55 @@
 		})
 	);
 
+	function pathwaysQuery(pageNum: number): string {
+		const params = new URLSearchParams();
+		params.set('dest', selectedDestId);
+		params.set('page_offset', String((pageNum - 1) * PAGE_SIZE));
+		params.set('page_size', String(PAGE_SIZE));
+		if (selectedIssuingId) params.set('issuing', selectedIssuingId);
+		if (docTypeFilter.trim()) params.set('doc_type', docTypeFilter.trim());
+		return params.toString();
+	}
+
 	async function loadPathways() {
 		if (!selectedDestId) {
 			pathways = [];
+			pathwaysTotal = 0;
+			currentPage = 1;
 			return;
 		}
 		loading = true;
-		const params = new URLSearchParams();
-		params.set('dest', selectedDestId);
-		if (selectedIssuingId) params.set('issuing', selectedIssuingId);
-		if (docTypeFilter) params.set('doc_type', docTypeFilter);
 		const res = await api.get<AttestationPathwayWithAi[]>(
-			`/attestation?${params.toString()}`
+			`/attestation?${pathwaysQuery(1)}`
 		);
 		loading = false;
-		if (!res.error) pathways = res.data ?? [];
-		else pathways = [];
+		if (!res.error) {
+			pathways = res.data ?? [];
+			currentPage = 1;
+			pathwaysTotal = res.meta?.total ?? pathways.length;
+		} else {
+			pathways = [];
+			pathwaysTotal = 0;
+		}
 	}
 
-	function onDestChange(id: string) {
+	async function loadMorePathways() {
+		if (!selectedDestId || loadingMore || !hasMore) return;
+		loadingMore = true;
+		const nextPage = currentPage + 1;
+		const res = await api.get<AttestationPathwayWithAi[]>(
+			`/attestation?${pathwaysQuery(nextPage)}`
+		);
+		loadingMore = false;
+		if (!res.error) {
+			pathways = [...pathways, ...(res.data ?? [])];
+			currentPage = nextPage;
+			pathwaysTotal = res.meta?.total ?? pathwaysTotal;
+		}
+	}
+
+	function onDestChange() {
+		// selectedDestId is already updated via bind:selectedId.
 		expandedId = null;
 		selectedIssuingId = '';
 		loadPathways();
@@ -85,6 +120,7 @@
 	}
 
 	function onIssuingChange(id: string) {
+		selectedIssuingId = id;
 		expandedId = null;
 		loadPathways();
 		updateUrl();
@@ -97,6 +133,7 @@
 		if (docTypeDebounce) clearTimeout(docTypeDebounce);
 		docTypeDebounce = setTimeout(() => {
 			loadPathways();
+			updateUrl();
 			docTypeDebounce = null;
 		}, 300);
 	}
@@ -105,6 +142,10 @@
 		const url = new URL(page.url);
 		if (selectedDestId) url.searchParams.set('dest', selectedDestId);
 		else url.searchParams.delete('dest');
+		if (selectedIssuingId) url.searchParams.set('issuing', selectedIssuingId);
+		else url.searchParams.delete('issuing');
+		if (docTypeFilter.trim()) url.searchParams.set('doc_type', docTypeFilter.trim());
+		else url.searchParams.delete('doc_type');
 		replaceState(url, {});
 	}
 
@@ -121,6 +162,13 @@
 
 	function isStepObject(step: unknown): step is Record<string, unknown> {
 		return step !== null && typeof step === 'object' && !Array.isArray(step);
+	}
+
+	/** Pathway step values may be nested objects — render them as readable text. */
+	function stepValueText(val: unknown): string {
+		if (val === null || val === undefined) return '';
+		if (typeof val === 'object') return JSON.stringify(val);
+		return String(val);
 	}
 
 	/** Format an ISO date string as a readable date. */
@@ -334,11 +382,11 @@
 										{pathway.document_type}
 									</span>
 									{#if pathway.apostille_required}
-										<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary">
+										<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary)">
 											{t('attestation_guide.apostille_required', 'Apostille required')}
 										</span>
 									{:else}
-										<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted">
+										<span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">
 											{t('attestation_guide.no_apostille', 'No apostille')}
 										</span>
 									{/if}
@@ -386,12 +434,12 @@
 																			{val}
 																		</a>
 																	{:else}
-																		<span class="text-text-subtle">{String(val)}</span>
+																		<span class="text-text-subtle">{stepValueText(val)}</span>
 																	{/if}
 																</div>
 															{/each}
 														{:else}
-															<span class="text-text-subtle">{String(step)}</span>
+															<span class="text-text-subtle">{stepValueText(step)}</span>
 														{/if}
 													</div>
 												</li>
@@ -453,7 +501,7 @@
 											{t('attestation_guide.update_title', 'Submit a community update')}
 										</h4>
 										{#if updateError}
-											<p class="text-sm" style="color: var(--color-danger">{updateError}</p>
+											<p class="text-sm" style="color: var(--color-danger)">{updateError}</p>
 										{/if}
 										<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 											<div>
@@ -528,6 +576,25 @@
 						{/if}
 					</div>
 				{/each}
+
+				<!-- Pagination — consumes the endpoint's page/page_size contract -->
+				<div class="flex items-center justify-between pt-2">
+					<p class="text-xs text-muted">
+						{t('common.showing_of', 'Showing {n} of {total}')
+							.replace('{n}', String(pathways.length))
+							.replace('{total}', String(pathwaysTotal))}
+					</p>
+					{#if hasMore}
+						<button
+							type="button"
+							onclick={loadMorePathways}
+							disabled={loadingMore}
+							class="px-4 py-2 text-sm font-medium text-text bg-surface border border-border rounded-lg hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+						>
+							{loadingMore ? t('common.loading', 'Loading...') : t('common.load_more', 'Load more')}
+						</button>
+					{/if}
+				</div>
 			</div>
 		{/if}
 	{/if}

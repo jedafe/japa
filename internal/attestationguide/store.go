@@ -186,8 +186,11 @@ func (s *Store) ListPathways(ctx context.Context, f ListPathwaysFilter) ([]Pathw
 	}
 
 	if f.DocumentType != "" {
-		conditions = append(conditions, fmt.Sprintf("p.document_type = $%d", argIdx))
-		args = append(args, f.DocumentType)
+		// Match document_type case-insensitively, treating '_' and ' ' as
+		// equivalent — the public UI accepts free text like "birth certificate"
+		// while stored values use the canonical "birth_certificate" form (§97).
+		conditions = append(conditions, fmt.Sprintf("lower(replace(p.document_type, '_', ' ')) = lower(replace($%d, '_', ' '))", argIdx))
+		args = append(args, strings.TrimSpace(f.DocumentType))
 		argIdx++
 	}
 
@@ -371,7 +374,7 @@ INSERT INTO attestation_pathways (
     apostille_required, pathway_steps, community_last_verified, status,
     is_active, ai_generated, ai_model, ai_prompt_hash,
     hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, document_type, issuing_space_id, destination_space_id,
           apostille_required, pathway_steps, community_last_verified, status,
           is_active, ai_generated, ai_model, ai_prompt_hash,
@@ -392,8 +395,7 @@ RETURNING id, document_type, issuing_space_id, destination_space_id,
 	var out Pathway
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		p.DocumentType, p.IssuingSpaceID, p.DestinationSpaceID,
 		p.ApostilleRequired, steps, p.CommunityLastVerified, status,
 		p.IsActive, p.AIGenerated, p.AIModel, p.AIPromptHash,
@@ -759,8 +761,8 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]PathwayRow,
 	}
 
 	if f.DocumentType != "" {
-		conditions = append(conditions, fmt.Sprintf("p.document_type = $%d", argIdx))
-		args = append(args, f.DocumentType)
+		conditions = append(conditions, fmt.Sprintf("lower(replace(p.document_type, '_', ' ')) = lower(replace($%d, '_', ' '))", argIdx))
+		args = append(args, strings.TrimSpace(f.DocumentType))
 		argIdx++
 	}
 

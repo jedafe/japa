@@ -76,12 +76,13 @@ func parsePagination(r *http.Request) (int, int) {
 		limit = 100
 	}
 
-	// page_offset is the standard (1-based); page is the legacy alias.
+	// page_offset is the standard — a row offset, not a page number
+	// (api-response-format.md); page is the legacy 1-based alias.
 	page := 1
 
 	if v := q.Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = n
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			page = n/limit + 1
 		}
 	} else if v := q.Get("page"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -172,7 +173,7 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 		"data": serializeExports(exports),
 		"pagination": map[string]any{
 			"page_size":   limit,
-			"page_offset": page,
+			"page_offset": (page - 1) * limit,
 			"total":       total,
 			"status":      status,
 		},

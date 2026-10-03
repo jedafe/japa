@@ -92,13 +92,27 @@ export async function apiGet<T>(ctx: ApiContext, path: string): Promise<T> {
 /**
  * GET a list endpoint. The backend returns `{ data: T[] }` (bare array, no
  * wrapper object) and may include `meta`; a null/absent data becomes `[]`.
+ * Some endpoints return pagination totals under a top-level `pagination` key
+ * rather than under `meta` (e.g. GET /attestation). Map them so callers can
+ * use `meta` uniformly.
  */
 export async function apiList<T>(
 	ctx: ApiContext,
 	path: string
 ): Promise<{ items: T[]; meta?: ListMeta }> {
-	const { data, meta } = await request<T[] | null>(ctx, 'GET', path);
-	return { items: data ?? [], meta };
+	const raw = (await request<T[] | null>(ctx, 'GET', path)) as ApiOk<T[] | null> & {
+		pagination?: { total?: number; page?: number; limit?: number; page_size?: number };
+	};
+	const meta =
+		raw.meta ??
+		(raw.pagination?.total !== undefined
+			? {
+					total: raw.pagination.total,
+					page: raw.pagination.page,
+					limit: raw.pagination.limit ?? raw.pagination.page_size
+				}
+			: undefined);
+	return { items: raw.data ?? [], meta };
 }
 
 export async function apiPost<T>(ctx: ApiContext, path: string, body?: unknown): Promise<T> {

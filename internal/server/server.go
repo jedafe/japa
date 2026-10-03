@@ -6371,6 +6371,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/admin/travel/providers", travelHandlers.HandleAdminCreateProvider)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
 					Patch("/admin/travel/providers/{id}", travelHandlers.HandleAdminUpdateProvider)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "travel.manage")).
+					Delete("/admin/travel/providers/{id}", travelHandlers.HandleAdminDeleteProvider)
 			})
 
 			// Section 68 — AI Persona System (ADR-068)

@@ -94,8 +94,21 @@ async function clientFetch<T>(path: string, init: RequestInit = {}): Promise<Cli
 			};
 		}
 
-		const ok = body as ApiOk<T>;
-		return { data: ok.data ?? (body as T), meta: ok.meta as ListMeta | undefined, error: null, status: res.status };
+		const ok = body as ApiOk<T> & {
+			pagination?: { total?: number; page?: number; limit?: number; page_size?: number };
+		};
+		// Some endpoints return pagination totals under a top-level `pagination`
+		// key rather than `meta` (e.g. GET /attestation) — normalize to `meta`.
+		const meta: ListMeta | undefined =
+			ok.meta ??
+			(ok.pagination?.total !== undefined
+				? {
+						total: ok.pagination.total,
+						page: ok.pagination.page,
+						limit: ok.pagination.limit ?? ok.pagination.page_size
+					}
+				: undefined);
+		return { data: ok.data ?? (body as T), meta, error: null, status: res.status };
 	} catch (err) {
 		return {
 			data: null,

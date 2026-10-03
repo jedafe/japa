@@ -81,7 +81,9 @@
 
 <div class="mx-auto max-w-3xl px-4 py-8">
 	<a
-		href="/attestation-guide"
+		href={pathway.destination_space_id
+			? `/attestation-guide?dest=${pathway.destination_space_id}`
+			: '/attestation-guide'}
 		class="inline-flex items-center gap-1.5 text-sm text-muted hover:text-text transition-colors mb-6"
 	>
 		<Icon name="arrow-left" size={16} />

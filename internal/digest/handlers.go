@@ -250,6 +250,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.AdminUpdate(r.Context(), id, *input.Content); err != nil {
+		if errors.Is(err, ErrInvalidContent) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_content", "Content must be a JSON object")
+			return
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "digest_not_found", "Digest edition not found or not editable")
 			return

@@ -43,16 +43,29 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// If ?dest= is present, fetch attestation pathways for that destination.
+	// ?issuing= and ?doc_type= are honoured too so filtered URLs are shareable.
 	const destParam = event.url.searchParams.get('dest');
 	const initialDestId =
 		destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
+	const issuingParam = event.url.searchParams.get('issuing');
+	const initialIssuingId =
+		issuingParam && destinations.some((d) => d.id === issuingParam) ? issuingParam : null;
+	const initialDocType = event.url.searchParams.get('doc_type') ?? '';
 
 	let pathways: AttestationPathwayWithAi[] = [];
+	let pathwaysTotal = 0;
 	if (initialDestId) {
 		try {
-			pathways = (
-				await apiList<AttestationPathwayWithAi>(ctx, `/attestation?dest=${initialDestId}`)
-			).items;
+			const qs = new URLSearchParams({
+				dest: initialDestId,
+				page_offset: '0',
+				page_size: '25'
+			});
+			if (initialIssuingId) qs.set('issuing', initialIssuingId);
+			if (initialDocType) qs.set('doc_type', initialDocType);
+			const res = await apiList<AttestationPathwayWithAi>(ctx, `/attestation?${qs}`);
+			pathways = res.items;
+			pathwaysTotal = res.meta?.total ?? res.items.length;
 		} catch {
 			pathways = [];
 		}
@@ -61,7 +74,10 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		destinations,
 		pathways,
+		pathwaysTotal,
 		initialDestId,
+		initialIssuingId,
+		initialDocType,
 		disabled,
 		authed
 	};

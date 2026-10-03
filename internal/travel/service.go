@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -45,6 +46,12 @@ const (
 // via the travel.enabled system_setting (default false until a provider is
 // configured).
 var ErrTravelDisabled = errors.New("travel: feature disabled")
+
+// ErrNoProvider is returned when a search is attempted but no active provider
+// exists for the requested type (flight or hotel). The handler maps this to a
+// 503 provider_not_configured so the UI can show a friendly "not configured
+// yet" state instead of a generic failure.
+var ErrNoProvider = errors.New("travel: no provider configured")
 
 // defaultCacheTTL is the fallback TTL for jc:travel:search:{hash} when the
 // travel.cache_ttl_seconds system_setting is unset (ADR-085: 5 min).
@@ -582,6 +589,10 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams) 
 	// (2) Get the active provider.
 	provider, err := s.store.GetActiveProvider(ctx, ProviderTypeFlight)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNoProvider
+		}
+
 		return nil, fmt.Errorf("travel: get active flight provider: %w", err)
 	}
 
@@ -654,6 +665,10 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams) (*
 	// (2) Get the active provider.
 	provider, err := s.store.GetActiveProvider(ctx, ProviderTypeHotel)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNoProvider
+		}
+
 		return nil, fmt.Errorf("travel: get active hotel provider: %w", err)
 	}
 
