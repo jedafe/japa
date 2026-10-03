@@ -261,12 +261,12 @@ func computeConvert(m *Matrix, amount float64, from, to string) (rate, converted
 	}
 
 	fromRate, ok := m.Rates[from]
-	if !ok {
+	if !ok || fromRate <= 0 {
 		return 0, 0, fmt.Errorf("%w: %s", ErrUnsupportedCurrency, from)
 	}
 
 	toRate, ok := m.Rates[to]
-	if !ok {
+	if !ok || toRate <= 0 {
 		return 0, 0, fmt.Errorf("%w: %s", ErrUnsupportedCurrency, to)
 	}
 
@@ -323,7 +323,7 @@ func (s *Service) GetRates(ctx context.Context, base string) (*Matrix, bool, err
 	}
 
 	pivot, ok := m.Rates[base]
-	if !ok {
+	if !ok || pivot <= 0 {
 		return nil, false, fmt.Errorf("%w: %s", ErrUnsupportedCurrency, base)
 	}
 

@@ -148,7 +148,9 @@ func (a *Adapter) fetchMatrix(ctx context.Context, cfg providerConfig) (map[stri
 	if base != "" && base != cfg.BaseCurrency {
 		return nil, fmt.Errorf("fx: engine %q returned base %q, api_config expects %q", cfg.Engine, base, cfg.BaseCurrency)
 	}
-	if _, ok := rates[cfg.BaseCurrency]; !ok {
+	// Canonical base→base cell — refill on missing OR corrupt (≤0) values so
+	// cross-rate math can never divide by a zero base.
+	if rates[cfg.BaseCurrency] <= 0 {
 		rates[cfg.BaseCurrency] = 1
 	}
 
@@ -222,8 +224,8 @@ func emitSnapshots(m *Matrix, configCorridors []string, requested []remittance.C
 			continue
 		}
 		pairs = append(pairs, remittance.Corridor{
-			SendCurrency:    strings.TrimSpace(parts[0]),
-			ReceiveCurrency: strings.TrimSpace(parts[1]),
+			SendCurrency:    strings.ToUpper(strings.TrimSpace(parts[0])),
+			ReceiveCurrency: strings.ToUpper(strings.TrimSpace(parts[1])),
 		})
 	}
 	pairs = append(pairs, requested...)
@@ -238,7 +240,7 @@ func emitSnapshots(m *Matrix, configCorridors []string, requested []remittance.C
 
 		fromRate, ok1 := m.Rates[p.SendCurrency]
 		toRate, ok2 := m.Rates[p.ReceiveCurrency]
-		if !ok1 || !ok2 || fromRate == 0 {
+		if !ok1 || !ok2 || fromRate <= 0 || toRate <= 0 {
 			continue
 		}
 
