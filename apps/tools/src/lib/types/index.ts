@@ -379,9 +379,13 @@ export interface RemittanceProvider {
 	id: string;
 	name: string;
 	slug: string;
-	logo_url?: string | null;
 	website_url?: string | null;
+	data_source?: string;
 	is_active: boolean;
+	/** §112 — mid-market benchmark provider. Reference only — never bookable. */
+	is_benchmark?: boolean;
+	display_order?: number;
+	created_at?: string;
 }
 
 export interface RemittanceRate {
@@ -405,8 +409,6 @@ export interface RemittanceRate {
 export interface RemittanceCorridor {
 	send_currency: string;
 	receive_currency: string;
-	/** Label for display, e.g. "GBP → NGN". */
-	label: string;
 }
 
 export interface RemittanceCalculation {

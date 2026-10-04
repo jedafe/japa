@@ -64,7 +64,9 @@
 			filter: Record<string, string>;
 		}) => Promise<{ data: any[]; total: number; totalPages: number } | any[]>;
 		create?: (body: Record<string, any>) => Promise<{ ok: boolean; error?: string; id?: string }>;
-		update?: (id: string, body: Record<string, any>) => Promise<{ ok: boolean; error?: string }>;
+		/** `row` is the row being edited — lets update callbacks recover values
+		 *  the form doesn't seed (e.g. nested objects only edited via formSnippet). */
+		update?: (id: string, body: Record<string, any>, row?: any) => Promise<{ ok: boolean; error?: string }>;
 		remove?: (id: string) => Promise<{ ok: boolean; error?: string; inUse?: boolean }>;
 		/** Second-chance delete when `remove` reports the row is still referenced
 		 *  (returns `{ ok: false, inUse: true }`). The confirm modal then offers a
@@ -489,7 +491,7 @@
 		try {
 			const body = { ...formValue };
 			const res = editing
-				? await config.update?.(editing.id, body)
+				? await config.update?.(editing.id, body, editing)
 				: await config.create?.(body);
 			if (res?.ok) {
 				formOpen = false;

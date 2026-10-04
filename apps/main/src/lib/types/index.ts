@@ -2705,8 +2705,21 @@ export interface RemittanceProvider {
 	website_url?: string;
 	data_source: string;
 	is_active: boolean;
+	/** §112 — mid-market benchmark provider (seeded 'mid-market'). Reference
+	 *  only — not a bookable provider, excluded from comparison pickers. */
+	is_benchmark?: boolean;
 	display_order: number;
 	created_at: string;
+}
+
+/** §74 — lightweight attribution on a rate; links back to /sources/[slug]. */
+export interface RemittanceRateSource {
+	id: string;
+	name: string;
+	slug: string;
+	logo_url?: string;
+	source_url?: string;
+	trust_level?: number;
 }
 
 export interface RemittanceRate {
@@ -2727,6 +2740,7 @@ export interface RemittanceRate {
 	 *  bookable provider quote — display with a badge, exclude from best-rate. */
 	is_benchmark?: boolean;
 	source_url?: string;
+	source?: RemittanceRateSource;
 }
 
 export interface RemittanceBestRate {
@@ -4435,6 +4449,8 @@ export interface CommunityOrg {
 	meeting_frequency?: string | null;
 	contact_info?: string | null;
 	japaconnect_space_id?: string | null;
+	/** Slug of the linked space — public space URLs are /spaces/{slug}. */
+	japaconnect_space_slug?: string | null;
 	japaconnect_org_id?: string | null;
 	claim_status: string;
 	is_verified: boolean;

@@ -5,6 +5,7 @@ class RemittanceProvider {
   final String? websiteUrl;
   final String? dataSource;
   final bool isActive;
+  final bool isBenchmark;
   final int? displayOrder;
   final DateTime? createdAt;
 
@@ -15,6 +16,7 @@ class RemittanceProvider {
     this.websiteUrl,
     this.dataSource,
     this.isActive = true,
+    this.isBenchmark = false,
     this.displayOrder,
     this.createdAt,
   });
@@ -27,6 +29,7 @@ class RemittanceProvider {
       websiteUrl: json['website_url'] as String?,
       dataSource: json['data_source'] as String?,
       isActive: json['is_active'] as bool? ?? true,
+      isBenchmark: json['is_benchmark'] as bool? ?? false,
       displayOrder: json['display_order'] as int?,
       createdAt: _parseDateTime(json['created_at']),
     );
@@ -46,6 +49,7 @@ class RemittanceProvider {
         if (websiteUrl != null) 'website_url': websiteUrl,
         if (dataSource != null) 'data_source': dataSource,
         'is_active': isActive,
+        'is_benchmark': isBenchmark,
         if (displayOrder != null) 'display_order': displayOrder,
         if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
       };

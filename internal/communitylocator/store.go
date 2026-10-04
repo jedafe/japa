@@ -616,7 +616,10 @@ WHERE %s
 	return out, total, nil
 }
 
-// GetBySlug returns a single community organisation by its slug.
+// GetBySlug returns a single community organisation by its slug for the
+// public detail endpoint. Only published, active orgs are returned —
+// pending submissions, AI drafts (ADR-088), and archived rows must never
+// be reachable via the public slug URL.
 func (s *Store) GetBySlug(ctx context.Context, slug string) (OrgRow, error) {
 	const q = `
 SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
@@ -638,6 +641,7 @@ LEFT JOIN spaces cs ON cs.id = co.city_space_id
 LEFT JOIN spaces js ON js.id = co.japaconnect_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
 WHERE co.slug = $1 AND co.deleted_at IS NULL
+  AND co.status = 'published' AND co.is_active = true
 LIMIT 1
 `
 
@@ -818,9 +822,14 @@ func (s *Store) AdminList(ctx context.Context, f AdminListFilter) ([]OrgRow, int
 	}
 
 	if f.Q != "" {
-		conditions = append(conditions, fmt.Sprintf("co.name ILIKE $%d", argIdx))
-		args = append(args, "%"+f.Q+"%")
-		argIdx++
+		// Search across the fields a moderator is most likely to query:
+		// organisation name, slug, and origin community.
+		conditions = append(conditions, fmt.Sprintf(
+			"(co.name ILIKE $%d OR co.slug ILIKE $%d OR co.origin_community ILIKE $%d)",
+			argIdx, argIdx+1, argIdx+2,
+		))
+		args = append(args, "%"+f.Q+"%", "%"+f.Q+"%", "%"+f.Q+"%")
+		argIdx += 3
 	}
 
 	whereClause := strings.Join(conditions, " AND ")

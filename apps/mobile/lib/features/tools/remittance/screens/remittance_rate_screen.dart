@@ -97,6 +97,23 @@ class _RemittanceRateScreenState extends ConsumerState<RemittanceRateScreen> {
       return sym != null && sym.isNotEmpty ? '$sym $code' : code;
     }
 
+    // Adaptive precision: small rates need decimals, large FX rates don't.
+    String formatRate(double rate) {
+      if (rate >= 100) return rate.toStringAsFixed(2);
+      if (rate >= 1) return rate.toStringAsFixed(4);
+      return rate.toStringAsFixed(6);
+    }
+
+    // Sellable quotes sorted best-first; benchmark (mid-market) reference
+    // rows pinned at the bottom — §74/ADR-075.
+    List<RemittanceRate> sortedRates(List<RemittanceRate> items) {
+      final sellable = items.where((r) => !r.isBenchmark).toList()
+        ..sort((a, b) => b.rate.compareTo(a.rate));
+      final benchmark = items.where((r) => r.isBenchmark).toList()
+        ..sort((a, b) => b.rate.compareTo(a.rate));
+      return [...sellable, ...benchmark];
+    }
+
     return Scaffold(
       appBar: AppBar(title: Text(t('tools.remittance_rates'))),
       body: Column(
@@ -137,13 +154,27 @@ class _RemittanceRateScreenState extends ConsumerState<RemittanceRateScreen> {
               data: (items) => items.isEmpty
                   ? Center(child: Text(t('tools.no_rates')))
                   : ListView.builder(
-                      itemCount: items.length,
-                      itemBuilder: (_, i) => ListTile(
-                        title: Text(items[i].providerName ?? t('tools.unknown_provider')),
-                        subtitle: Text(
-                            '${currencyChip(items[i].sendCurrency)} → ${currencyChip(items[i].receiveCurrency)}'),
-                        trailing: Text('${items[i].rate}'),
-                      ),
+                      itemCount: sortedRates(items).length,
+                      itemBuilder: (_, i) {
+                        final r = sortedRates(items)[i];
+                        return ListTile(
+                          title: Text(r.providerName ?? t('tools.unknown_provider')),
+                          subtitle: Text(
+                              '${currencyChip(r.sendCurrency)} → ${currencyChip(r.receiveCurrency)}'),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(formatRate(r.rate)),
+                              if (r.isBenchmark)
+                                Text(
+                                  t('tools.mid_market'),
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
               loading: () => const LoadingShimmer(),
               error: (e, _) => JcErrorWidget(

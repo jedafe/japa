@@ -43,7 +43,19 @@
       <div class="flex flex-wrap gap-3">
         {#each filters as filter (filter.key)}
           <div class={filter.type === 'autocomplete' ? 'w-64' : 'w-44'}>
-            {#if filter.type === 'autocomplete' && filter.fetcher}
+            {#if filter.type === 'text'}
+              <label for={`filter-${filter.key}`} class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">
+                {filter.label}
+              </label>
+              <input
+                id={`filter-${filter.key}`}
+                type="text"
+                bind:value={value[filter.key]}
+                placeholder={filter.placeholder ?? filter.label}
+                class="w-full rounded-md border px-3 py-2 text-sm"
+                style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+              />
+            {:else if filter.type === 'autocomplete' && filter.fetcher}
               <Autocomplete
                 id={`filter-${filter.key}`}
                 placeholder={filter.placeholder ?? filter.label}

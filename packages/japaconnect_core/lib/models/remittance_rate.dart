@@ -12,6 +12,7 @@ class RemittanceRate {
   final String? transferTime;
   final DateTime? fetchedAt;
   final bool? isManual;
+  final bool isBenchmark;
   final String? sourceUrl;
 
   RemittanceRate({
@@ -28,6 +29,7 @@ class RemittanceRate {
     this.transferTime,
     this.fetchedAt,
     this.isManual,
+    this.isBenchmark = false,
     this.sourceUrl,
   });
 
@@ -46,6 +48,7 @@ class RemittanceRate {
       transferTime: json['transfer_time'] as String?,
       fetchedAt: _parseDateTime(json['fetched_at']),
       isManual: json['is_manual'] as bool?,
+      isBenchmark: json['is_benchmark'] as bool? ?? false,
       sourceUrl: json['source_url'] as String?,
     );
   }
@@ -71,6 +74,7 @@ class RemittanceRate {
         if (transferTime != null) 'transfer_time': transferTime,
         if (fetchedAt != null) 'fetched_at': fetchedAt!.toIso8601String(),
         if (isManual != null) 'is_manual': isManual,
+        'is_benchmark': isBenchmark,
         if (sourceUrl != null) 'source_url': sourceUrl,
       };
 }

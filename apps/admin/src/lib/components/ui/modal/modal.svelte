@@ -45,6 +45,13 @@
         className
       )}
       style="border-color: var(--color-border); background-color: var(--color-surface)"
+      onInteractOutside={(e) => {
+        // Autocomplete dropdowns are portaled to <body>, outside this
+        // Dialog.Content — don't let an option click dismiss the dialog.
+        if ((e.target as HTMLElement | null)?.closest?.('.autocomplete-dropdown')) {
+          e.preventDefault();
+        }
+      }}
     >
       {#if title || description}
         <div class="flex shrink-0 flex-col space-y-1.5 text-center sm:text-left">

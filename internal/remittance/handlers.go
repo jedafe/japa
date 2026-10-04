@@ -32,12 +32,14 @@ package remittance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -306,7 +308,8 @@ func (h *Handlers) HandleListAlerts(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleCreateAlert handles POST /api/v1/remittance/alerts — create alert.
-// Body: {send, receive, target_rate, direction}.
+// Body: {send_currency, receive_currency, target_rate, direction}. The
+// short-form {send, receive} keys are accepted as aliases for older clients.
 func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -314,10 +317,12 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Send       string  `json:"send"`
-		Receive    string  `json:"receive"`
-		TargetRate float64 `json:"target_rate"`
-		Direction  string  `json:"direction"`
+		SendCurrency    string  `json:"send_currency"`
+		ReceiveCurrency string  `json:"receive_currency"`
+		Send            string  `json:"send"`
+		Receive         string  `json:"receive"`
+		TargetRate      float64 `json:"target_rate"`
+		Direction       string  `json:"direction"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -325,8 +330,22 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Send == "" || body.Receive == "" || body.TargetRate <= 0 || body.Direction == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send, receive, target_rate, and direction are required")
+	send := body.SendCurrency
+	if send == "" {
+		send = body.Send
+	}
+
+	receive := body.ReceiveCurrency
+	if receive == "" {
+		receive = body.Receive
+	}
+
+	if send == "" || receive == "" || body.TargetRate == 0 || body.Direction == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_params", "send_currency, receive_currency, target_rate, and direction are required")
+		return
+	}
+	if body.TargetRate < 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_rate", "target_rate must be positive")
 		return
 	}
 
@@ -335,10 +354,21 @@ func (h *Handlers) HandleCreateAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	alert, err := h.service.CreateAlert(r.Context(), user.UserID, body.Send, body.Receive, body.Direction, body.TargetRate)
+	alert, err := h.service.CreateAlert(r.Context(), user.UserID, send, receive, body.Direction, body.TargetRate)
 	if err != nil {
-		slog.Error("remittance: create alert failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "create_alert_failed", "Failed to create alert")
+		switch {
+		case errors.Is(err, ErrInvalidDirection):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_direction", "direction must be 'above' or 'below'")
+		case errors.Is(err, ErrInvalidTargetRate):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_rate", "target_rate must be positive")
+		case errors.Is(err, pgx.ErrNoRows):
+			// CreateRateAlert uses ON CONFLICT DO NOTHING — ErrNoRows means
+			// the (user, corridor, direction) unique constraint matched.
+			errpkg.WriteError(w, http.StatusConflict, "alert_exists", "An alert already exists for this corridor and direction")
+		default:
+			slog.Error("remittance: create alert failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "create_alert_failed", "Failed to create alert")
+		}
 
 		return
 	}
@@ -379,8 +409,17 @@ func (h *Handlers) HandleUpdateAlert(w http.ResponseWriter, r *http.Request) {
 
 	alert, err := h.service.UpdateAlert(r.Context(), user.UserID, alertID, body.TargetRate, body.Direction, body.IsActive)
 	if err != nil {
-		slog.Error("remittance: update alert failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "update_alert_failed", "Failed to update alert")
+		switch {
+		case errors.Is(err, ErrInvalidDirection):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_direction", "direction must be 'above' or 'below'")
+		case errors.Is(err, ErrInvalidTargetRate):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_target_rate", "target_rate must be positive")
+		case errors.Is(err, ErrAlertNotFound), errors.Is(err, pgx.ErrNoRows):
+			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
+		default:
+			slog.Error("remittance: update alert failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "update_alert_failed", "Failed to update alert")
+		}
 
 		return
 	}
@@ -408,6 +447,11 @@ func (h *Handlers) HandleDeleteAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.DeleteAlert(r.Context(), user.UserID, alertID); err != nil {
+		if errors.Is(err, ErrAlertNotFound) {
+			errpkg.WriteError(w, http.StatusNotFound, "alert_not_found", "Alert not found")
+			return
+		}
+
 		slog.Error("remittance: delete alert failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_alert_failed", "Failed to delete alert")
 

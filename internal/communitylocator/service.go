@@ -463,9 +463,11 @@ func (s *Service) Generate(ctx context.Context, generatedBy pgtype.UUID, input G
 		orgType = OrgTypeOther
 	}
 
+	// origin_community is NOT NULL — when the admin does not supply one,
+	// record it as unspecified rather than silently writing a wrong origin.
 	originCommunity := input.OriginCommunity
 	if originCommunity == "" {
-		originCommunity = "African"
+		originCommunity = "Unspecified"
 	}
 
 	// Use AI-generated text to fill contact_info when the admin did not

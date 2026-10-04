@@ -30,5 +30,5 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, { code: 'org_not_found', message: 'Organisation not found' });
 	}
 
-	return { org };
+	return { org, authed: !!event.locals.user };
 };

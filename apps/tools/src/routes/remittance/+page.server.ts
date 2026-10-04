@@ -36,7 +36,7 @@ export const load: PageServerLoad = async (event) => {
 			rates: [],
 			alerts: [],
 			directionOptions: [],
-			defaultCorridor: { send_currency: 'GBP', receive_currency: 'NGN', label: 'GBP → NGN' },
+			defaultCorridor: { send_currency: 'GBP', receive_currency: 'NGN' },
 			manualStaleHours: 24,
 			user: event.locals.user
 		};
@@ -70,8 +70,7 @@ export const load: PageServerLoad = async (event) => {
 	const defaultCorridor =
 		corridors.find((c) => c.send_currency === defaultSendCurrency) ?? corridors[0] ?? {
 			send_currency: defaultSendCurrency,
-			receive_currency: 'NGN',
-			label: `${defaultSendCurrency} → NGN`
+			receive_currency: 'NGN'
 		};
 
 	let rates: RemittanceRate[] = [];

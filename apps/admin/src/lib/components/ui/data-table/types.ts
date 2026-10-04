@@ -46,8 +46,10 @@ export interface FilterDef {
   key: string;
   label: string;
   options?: Array<{ value: string; label: string }>;
-  /** Use 'autocomplete' to render the country/space live-debounced Autocomplete instead of a Select. */
-  type?: 'select' | 'autocomplete';
+  /** 'select' renders static options via Autocomplete; 'autocomplete' renders
+   *  the live-debounced fetcher dropdown; 'text' renders a free-text input
+   *  (applied via the Apply button — for exact-match API filters). */
+  type?: 'select' | 'autocomplete' | 'text';
   placeholder?: string;
   emptyMessage?: string;
   /** Required when type is 'autocomplete'. */

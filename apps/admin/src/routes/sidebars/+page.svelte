@@ -11,7 +11,7 @@
 	import { SlideOver } from "$lib/components/ui/slide-over";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
-	import { Select } from "$lib/components/ui/select";
+	import AutocompleteSelect from "$lib/components/ui/AutocompleteSelect.svelte";
 	import { TableSkeleton } from "$lib/components/ui/skeleton";
 	import { sidebarsAdminApi, userManagementApi, permissionsApi, apiRaw, type UserGroup, type SidebarOptions } from "$lib/api";
 	import { t } from "$lib/stores/i18n.svelte";
@@ -807,10 +807,12 @@
 		</div>
 		<div>
 			<label for="widget-type" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.widget_type", "Widget Type")}</label>
-			<Select
-				options={availableWidgetTypes.map((wt) => ({ value: wt.type, label: wt.name }))}
+			<AutocompleteSelect
+				id="widget-type"
+				options={availableWidgetTypes.map((wt) => ({ value: wt.type, label: wt.name, sublabel: wt.description }))}
 				value={widgetType}
-				onchange={onWidgetTypeChange}
+				onValueChange={onWidgetTypeChange}
+				placeholder={t('common.select', 'Select...')}
 			/>
 			{#if widgetType}
 				<p class="mt-1 text-xs" style="color: var(--color-muted)">
@@ -834,10 +836,11 @@
 					{:else if field.type === 'select'}
 						<div>
 							<label for="prop-{field.key}" class="block text-sm font-medium" style="color: var(--color-foreground)">{field.label}</label>
-							<Select
+							<AutocompleteSelect
+								id="prop-{field.key}"
 								options={field.options ?? []}
 								value={String(widgetPropsObj[field.key] ?? '')}
-								onchange={(val) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: val }; }}
+								onValueChange={(val) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: val }; }}
 							/>
 							{#if field.help}<p class="mt-1 text-xs" style="color: var(--color-muted)">{field.help}</p>{/if}
 						</div>
@@ -867,8 +870,8 @@
 									selectedLabel={widgetRefLabel(widgetPropsObj[field.key])}
 									onSelect={(item) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: item.id }; }}
 									onClear={() => { widgetPropsObj = { ...widgetPropsObj, [field.key]: '' }; }}
-									onInput={(q) => { widgetPropsObj = { ...widgetPropsObj, [field.key]: q }; }}
 									freeText
+									allowFreeText
 									inputClass="font-mono"
 								/>
 							</div>
@@ -881,10 +884,11 @@
 								{#each widgetLinks() as link, i (i)}
 									<div class="flex items-center gap-2">
 										<div class="w-36 shrink-0">
-											<Select
+											<AutocompleteSelect
 												options={socialPlatforms}
 												value={link.platform || 'website'}
-												onchange={(val) => updateWidgetLink(i, 'platform', val)}
+												onValueChange={(val) => updateWidgetLink(i, 'platform', val)}
+												ariaLabel={t('sidebars.link_platform', 'Link platform')}
 											/>
 										</div>
 										<input type="url" value={link.url} oninput={(e) => updateWidgetLink(i, 'url', e.currentTarget.value)} placeholder="https://…" class="min-w-0 flex-1 rounded-lg border p-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" />
@@ -917,18 +921,20 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label for="widget-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}</label>
-				<Select
+				<AutocompleteSelect
+					id="widget-visibility"
 					options={visibilityOptions}
 					value={widgetVisibility}
-					onchange={(val) => (widgetVisibility = val)}
+					onValueChange={(val) => (widgetVisibility = val)}
 				/>
 			</div>
 			<div>
 				<label for="widget-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
-				<Select
+				<AutocompleteSelect
+					id="widget-status"
 					options={statusOptions}
 					value={widgetStatus}
-					onchange={(val) => (widgetStatus = val)}
+					onValueChange={(val) => (widgetStatus = val)}
 				/>
 			</div>
 		</div>
@@ -1111,18 +1117,20 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label for="sidebar-app" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.app", "App")}</label>
-				<Select
+				<AutocompleteSelect
+					id="sidebar-app"
 					options={appOptions}
 					value={value.app}
-					onchange={(val) => (value.app = val)}
+					onValueChange={(val) => (value.app = val)}
 				/>
 			</div>
 			<div>
 				<label for="sidebar-position" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.position", "Position")}</label>
-				<Select
+				<AutocompleteSelect
+					id="sidebar-position"
 					options={positionOptions}
 					value={value.position}
-					onchange={(val) => (value.position = val)}
+					onValueChange={(val) => (value.position = val)}
 				/>
 			</div>
 		</div>
@@ -1134,18 +1142,20 @@
 		<div class="grid grid-cols-2 gap-4">
 			<div>
 				<label for="sidebar-visibility" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("sidebars.visibility", "Visibility")}</label>
-				<Select
+				<AutocompleteSelect
+					id="sidebar-visibility"
 					options={visibilityOptions}
 					value={value.visibility}
-					onchange={(val) => (value.visibility = val)}
+					onValueChange={(val) => (value.visibility = val)}
 				/>
 			</div>
 			<div>
 				<label for="sidebar-status" class="block text-sm font-medium" style="color: var(--color-foreground)">{t("common.status", "Status")}</label>
-				<Select
+				<AutocompleteSelect
+					id="sidebar-status"
 					options={statusOptions}
 					value={value.status}
-					onchange={(val) => (value.status = val)}
+					onValueChange={(val) => (value.status = val)}
 				/>
 			</div>
 		</div>

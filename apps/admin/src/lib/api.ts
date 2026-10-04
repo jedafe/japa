@@ -1668,7 +1668,7 @@ export const searchAdminApiExtended = {
 export interface WidgetConfigField {
 	key: string;
 	label: string;
-	type: 'text' | 'number' | 'checkbox' | 'select';
+	type: 'text' | 'textarea' | 'number' | 'checkbox' | 'select';
 	options?: CatalogOption[];
 	default?: unknown;
 	help?: string;
@@ -2411,6 +2411,9 @@ export const communityLocatorAdminApi = {
 		apiRaw<{ data: unknown[]; pagination: { page: number; limit: number; total: number } }>(
 			`/admin/community-locator${params ? `?${params}` : ''}`
 		),
+	// GET /community-locator/org-types — public catalog endpoint (Rule 16);
+	// drives the org-type filter dropdown and the generate-draft form.
+	orgTypes: () => api<CatalogOption[]>('/community-locator/org-types'),
 	approve: (id: string) =>
 		api<unknown>(`/admin/community-locator/${id}/approve`, { method: 'PATCH', body: {} }),
 	verify: (id: string) =>

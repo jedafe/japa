@@ -3,17 +3,52 @@
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { api } from '$lib/api/client';
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import type { CommunityOrgWithAi } from '$lib/types';
 
 	/**
 	 * Community organisation detail page — §101, ADR-109.
 	 * Renders name, type, origin, address, website, meeting frequency, contact,
-	 * map link, and AI/HITL metadata.
+	 * map link, claim action, and AI/HITL metadata.
 	 */
 	let { data } = $props();
 
 	let org = $state<CommunityOrgWithAi>(untrack(() => data.org));
+	let user = $state(untrack(() => data.user));
+
+	// Claim state — mirrors the list page (claim only while unclaimed).
+	let claiming = $state(false);
+	let claimError = $state<string | null>(null);
+	let claimSubmitted = $state(false);
+	let showRegisterPrompt = $state(false);
+
+	function prettifyEnum(value: string): string {
+		return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	}
+	function orgTypeLabel(value: string): string {
+		return t(`community_locator.type_${value}`, prettifyEnum(value));
+	}
+	function claimStatusLabel(value: string): string {
+		return t(`community_locator.claim_status_${value}`, prettifyEnum(value));
+	}
+
+	async function claimOrg() {
+		if (!user) {
+			showRegisterPrompt = true;
+			return;
+		}
+		claiming = true;
+		claimError = null;
+		const res = await api.post<{ claim_status: string }>(`/community-locator/${org.id}/claim`);
+		claiming = false;
+		if (res.error) {
+			claimError = res.error.message;
+			return;
+		}
+		claimSubmitted = true;
+	}
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -69,7 +104,7 @@
 		<div>
 			<h1 class="text-2xl font-bold text-text">{org.name}</h1>
 			<p class="text-sm text-text-subtle mt-1">
-				{org.org_type}
+				{orgTypeLabel(org.org_type)}
 				{#if org.origin_community}
 					· {org.origin_community}
 				{/if}
@@ -90,7 +125,7 @@
 			{/if}
 			<span class="text-xs px-2 py-0.5 bg-surface-subtle text-muted rounded">
 				{t('community_locator.claim_status', 'Claim status')}:
-				{org.claim_status}
+				{claimStatusLabel(org.claim_status)}
 			</span>
 		</div>
 	</div>
@@ -167,6 +202,51 @@
 				</a>
 			</div>
 		{/if}
+
+		<!-- Claim action — only meaningful while unclaimed -->
+		<div class="pt-2 border-t border-border">
+			{#if claimSubmitted}
+				<span class="inline-flex items-center gap-1.5 text-sm text-[var(--tool-accent)]">
+					<Icon name="check-circle" size={16} />
+					{t('community_locator.claim_submitted', 'Claim submitted')}
+				</span>
+			{:else if org.claim_status === 'claimed'}
+				<span class="inline-flex items-center gap-1.5 text-sm text-muted">
+					<Icon name="check-circle" size={16} />
+					{t('community_locator.claim_status_claimed', 'Claimed')}
+				</span>
+			{:else if org.claim_status === 'pending'}
+				<span class="inline-flex items-center gap-1.5 text-sm text-muted">
+					<Icon name="check-circle" size={16} />
+					{t('community_locator.claim_status_pending', 'Claim pending review')}
+				</span>
+			{:else if user}
+				<button
+					onclick={claimOrg}
+					disabled={claiming}
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm font-medium text-text hover:border-[var(--tool-accent)] hover:text-[var(--tool-accent)] transition-colors disabled:opacity-50"
+				>
+					{#if claiming}
+						<Icon name="loader-2" size={14} class="animate-spin" />
+						{t('community_locator.claiming', 'Claiming...')}
+					{:else}
+						<Icon name="hand" size={14} />
+						{t('community_locator.claim', 'Claim this organisation')}
+					{/if}
+				</button>
+				{#if claimError}
+					<span class="text-xs text-red-500 ml-2">{claimError}</span>
+				{/if}
+			{:else}
+				<button
+					onclick={() => (showRegisterPrompt = true)}
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm font-medium text-text hover:border-[var(--tool-accent)] hover:text-[var(--tool-accent)] transition-colors"
+				>
+					<Icon name="hand" size={14} />
+					{t('community_locator.claim', 'Claim this organisation')}
+				</button>
+			{/if}
+		</div>
 	</div>
 
 	{#if org.ai_generated}
@@ -194,5 +274,18 @@
 				{/if}
 			</div>
 		</div>
+	{/if}
+
+	{#if showRegisterPrompt}
+		<RegistrationPrompt
+			open={showRegisterPrompt}
+			onClose={() => (showRegisterPrompt = false)}
+			icon="users"
+			title={t('register.community_locator', 'Join the community')}
+			description={t(
+				'register.community_locator_desc',
+				'Create a free account to submit new diaspora organisations and claim existing ones.'
+			)}
+		/>
 	{/if}
 </div>

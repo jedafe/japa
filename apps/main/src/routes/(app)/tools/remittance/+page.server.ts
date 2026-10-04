@@ -4,6 +4,7 @@ import { apiContext, apiList, apiGet, apiPost, apiPut, ApiError } from '$lib/ser
 import type {
 	RemittanceCorridor,
 	RemittanceProvider,
+	RemittanceAlert,
 	RemittanceRate,
 	RemittanceCalculation,
 	RemittanceProviderCalc,
@@ -23,7 +24,7 @@ import type {
  * Ref: japaconnect-engineering/sections/74-remittance-tracker.md
  */
 export const load: PageServerLoad = async (event) => {
-	const { features } = await event.parent();
+	const { features, siteSettings } = await event.parent();
 	if (!features['remittance.enabled']) {
 		throw error(404, { code: 'feature_disabled', message: 'Remittance Rate Tracker is not available' });
 	}
@@ -41,6 +42,29 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
+	// Providers are public data — SSR-load them so the page doesn't
+	// double-fetch on mount (and so the JCE compare picker renders on
+	// first paint).
+	let providers: RemittanceProvider[] = [];
+	if (!disabled) {
+		try {
+			providers = await apiGet<RemittanceProvider[]>(ctx, '/remittance/providers');
+		} catch (e) {
+			console.error('failed to load remittance providers:', e);
+		}
+	}
+
+	// Rate alerts are user-scoped — SSR-load them when signed in so the
+	// alerts panel renders on first paint, independent of corridor selection.
+	let alerts: RemittanceAlert[] = [];
+	if (authed && !disabled) {
+		try {
+			alerts = await apiGet<RemittanceAlert[]>(ctx, '/remittance/alerts');
+		} catch (e) {
+			console.error('failed to load remittance alerts:', e);
+		}
+	}
+
 	let directionOptions: CatalogOption[] = [];
 	try {
 		directionOptions = await apiGet<CatalogOption[]>(ctx, '/catalogs/remittance.alert_direction');
@@ -48,7 +72,17 @@ export const load: PageServerLoad = async (event) => {
 		console.error('failed to load remittance alert direction catalog:', e);
 	}
 
-	return { corridors, disabled, authed, directionOptions };
+	// §74 settings — exposed via /site/settings/public (migration 000783).
+	const defaultSendCurrency =
+		typeof siteSettings?.['remittance.default_send_currency'] === 'string'
+			? (siteSettings['remittance.default_send_currency'] as string)
+			: null;
+	const manualStaleHours =
+		typeof siteSettings?.['remittance.manual_stale_hours'] === 'number'
+			? (siteSettings['remittance.manual_stale_hours'] as number)
+			: 24;
+
+	return { corridors, providers, alerts, disabled, authed, directionOptions, defaultSendCurrency, manualStaleHours };
 };
 
 /**
@@ -94,7 +128,7 @@ export const actions: Actions = {
 			.filter((p): p is RemittanceProvider => !!p);
 
 		if (orderedProviders.length !== providerIds.length) {
-			return fail(500, { error: 'provider_not_found', message: 'One or more selected providers could not be resolved' });
+			return fail(400, { error: 'invalid_provider', message: 'One or more selected providers could not be resolved' });
 		}
 
 		// Try to load a calculation for the user's amount. The calc result is
@@ -111,7 +145,7 @@ export const actions: Actions = {
 			try {
 				const calc = await apiGet<RemittanceCalculation>(
 					ctx,
-					`/remittance/calculate?send=${encodeURIComponent(sendCurrency)}&receive=${encodeURIComponent(receiveCurrency)}&amount=${encodeURIComponent(sendAmount)}`
+					`/remittance/calculate?send=${encodeURIComponent(sendCurrency)}&receive=${encodeURIComponent(receiveCurrency)}&send_amount=${encodeURIComponent(sendAmount)}`
 				);
 				// Backend serializes the ranked rows under `results` (§112).
 				calcProviders = calc.results ?? [];
