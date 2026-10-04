@@ -161,8 +161,8 @@ INSERT INTO community_organisations (
     ai_generated, ai_model, ai_prompt_hash
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, 'unclaimed',
-    $19, $20, $21
+    $11, $12, $13, $14, $15, $16, $17, 'unclaimed',
+    $18, $19, $20
 )
 RETURNING id
 `
@@ -170,8 +170,7 @@ RETURNING id
 	var id pgtype.UUID
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		in.Name, in.Slug, in.OrgType, in.OriginCommunity,
 		in.DestinationSpaceID, in.CitySpaceID, in.Address, in.Latitude, in.Longitude,
 		in.WebsiteURL, in.MeetingFrequency, in.ContactInfo,

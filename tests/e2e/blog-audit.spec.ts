@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Blog surface audit — /blog, /blog?tab=..., /blog/[slug], /blog/series.
+ * Blog surface audit — /blog, /blog?tab=..., /blog/[slug], /series.
  * Captures console errors and failing API/network responses.
  */
 test.describe('Blog surface audit', () => {
@@ -9,8 +9,8 @@ test.describe('Blog surface audit', () => {
 		{ path: '/blog', label: 'blog latest' },
 		{ path: '/blog?tab=featured', label: 'blog featured' },
 		{ path: '/blog?tab=series', label: 'blog series tab' },
-		{ path: '/blog/series', label: 'blog series list' },
-		{ path: '/blog/series/another-series', label: 'blog series detail' },
+		{ path: '/series', label: 'series directory' },
+		{ path: '/series/another-series', label: 'series detail' },
 		{ path: '/blog/starting-a-business-in-canada-as-a-nigerian', label: 'blog single' }
 	];
 

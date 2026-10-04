@@ -78,7 +78,7 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 	// is the author (no self-follow) or the author is unknown.
 	const isOwnArticle = !!currentUserId && article.author_id === currentUserId;
 	const initiallyFollowing =
-		article.author_id && !isOwnArticle
+		!!event.locals.user && article.author_id && !isOwnArticle
 			? apiGet<{ following: boolean }>(ctx, `/users/${article.author_id}/follow-status`)
 					.then((r) => r.following)
 					.catch(() => false)
@@ -151,7 +151,7 @@ export async function loadContentArticle(event: ServerLoadEvent) {
 	if (article.series_id) {
 		try {
 			seriesPosts =
-				(await apiGet<SeriesPost[]>(ctx, `/blog/series/${article.series_id}/posts`)) ?? [];
+				(await apiGet<SeriesPost[]>(ctx, `/series/${article.series_id}/posts`)) ?? [];
 		} catch {
 			// series posts endpoint not available — keep empty
 		}

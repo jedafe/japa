@@ -25,6 +25,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
@@ -1254,6 +1255,12 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, jobID pgt
 			msg := "AI generation failed: " + gerr.Error()
 			_ = a.studio.MarkJobFailed(ctx, jobID, msg)
 			a.syncCampaignItem(ctx, jobID, "failed", pgtype.UUID{}, pgtype.UUID{}, &msg)
+
+			if errors.Is(gerr, ai.ErrNoProviders) {
+				// Permanent configuration gap — the job is already marked
+				// failed, so the task archives instead of burning retries.
+				return fmt.Errorf("studio: generate: body: %w: %w", gerr, asynq.SkipRetry)
+			}
 
 			return fmt.Errorf("studio: generate: body: %w", gerr)
 		}

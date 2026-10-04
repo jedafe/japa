@@ -60,8 +60,9 @@ func (s *Service) GetSeriesBySlug(ctx context.Context, slug string) (Series, err
 
 // ListSeriesByPlatform returns paginated public series DTOs for a platform,
 // optionally filtered by the autocomplete query `q` (L2 — filter now in SQL).
-func (s *Service) ListSeriesByPlatform(ctx context.Context, q, contentType string, limit, offset int32) ([]Series, error) {
-	rows, err := s.store.listBlogSeriesByPlatform(ctx, q, contentType, limit, offset)
+// sort: "latest" (default), "oldest", or "title".
+func (s *Service) ListSeriesByPlatform(ctx context.Context, q, contentType, sort string, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByPlatform(ctx, q, contentType, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +82,10 @@ func (s *Service) CountSeriesByPlatform(ctx context.Context, q, contentType stri
 }
 
 // ListSeriesByAuthor returns paginated public series DTOs for an author.
-func (s *Service) ListSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, limit, offset int32) ([]Series, error) {
-	rows, err := s.store.listBlogSeriesByAuthor(ctx, authorUserID, limit, offset)
+// Shares the q / content_type / sort filters with ListSeriesByPlatform so
+// the "My series" tab offers the same toolbar as the directory.
+func (s *Service) ListSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, q, contentType, sort string, limit, offset int32) ([]Series, error) {
+	rows, err := s.store.listBlogSeriesByAuthor(ctx, authorUserID, q, contentType, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -95,9 +98,10 @@ func (s *Service) ListSeriesByAuthor(ctx context.Context, authorUserID pgtype.UU
 	return out, nil
 }
 
-// CountSeriesByAuthor returns the total number of blog series for an author.
-func (s *Service) CountSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
-	return s.store.countBlogSeriesByAuthor(ctx, authorUserID)
+// CountSeriesByAuthor returns the total number of blog series for an author,
+// respecting the same q / content_type filters as ListSeriesByAuthor.
+func (s *Service) CountSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, q, contentType string) (int64, error) {
+	return s.store.countBlogSeriesByAuthor(ctx, authorUserID, q, contentType)
 }
 
 // UpdateSeries updates a blog series. M2: slug is now updatable.

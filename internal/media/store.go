@@ -46,6 +46,20 @@ func (s *Store) GetMediaByID(ctx context.Context, id pgtype.UUID) (gen.Medium, e
 	return m, nil
 }
 
+// GetMediaByIDAny returns a media item by ID including soft-deleted rows —
+// needed by hard-delete and GC paths that must locate the storage object
+// for a row GetMediaByID would filter out.
+func (s *Store) GetMediaByIDAny(ctx context.Context, id pgtype.UUID) (gen.Medium, error) {
+	m, err := s.read.GetMediaByIDAny(ctx,
+		id,
+	)
+	if err != nil {
+		return gen.Medium{}, fmt.Errorf("getting media by ID: %w", err)
+	}
+
+	return m, nil
+}
+
 // GetMediaByStoragePath returns a media item by its storage path.
 func (s *Store) GetMediaByStoragePath(ctx context.Context, storagePath string) (gen.Medium, error) {
 	m, err := s.read.GetMediaByStoragePath(ctx,
@@ -448,6 +462,39 @@ func (s *Store) UpdateMediaStoragePath(ctx context.Context, id pgtype.UUID, stor
 	}
 
 	return nil
+}
+
+// UpdateMediaStorage records a storage rewrite — used by image
+// optimization (content:process_image) to store the re-encoded MIME,
+// size, and storage path atomically.
+func (s *Store) UpdateMediaStorage(ctx context.Context, params gen.UpdateMediaStorageParams) error {
+	if err := s.write.UpdateMediaStorage(ctx, params); err != nil {
+		return fmt.Errorf("updating media storage: %w", err)
+	}
+
+	return nil
+}
+
+// ListMediaDeletedForCleanup returns soft-deleted media rows past the
+// retention window for the media:cleanup_deleted sweep.
+func (s *Store) ListMediaDeletedForCleanup(ctx context.Context, params gen.ListMediaDeletedForCleanupParams) ([]gen.ListMediaDeletedForCleanupRow, error) {
+	rows, err := s.read.ListMediaDeletedForCleanup(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("listing media deleted for cleanup: %w", err)
+	}
+
+	return rows, nil
+}
+
+// ListMediaForOptimization returns media rows holding optimizable raster
+// content above the given size threshold.
+func (s *Store) ListMediaForOptimization(ctx context.Context, params gen.ListMediaForOptimizationParams) ([]gen.ListMediaForOptimizationRow, error) {
+	rows, err := s.read.ListMediaForOptimization(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("listing media for optimization: %w", err)
+	}
+
+	return rows, nil
 }
 
 // GetMediaForScan retrieves a media item by ID for the background virus

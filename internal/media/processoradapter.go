@@ -2,7 +2,10 @@ package media
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ProcessorAdapter implements worker.ImageProcessor by delegating to the
@@ -16,12 +19,22 @@ func NewProcessorAdapter(svc *Service) *ProcessorAdapter {
 	return &ProcessorAdapter{svc: svc}
 }
 
-// ProcessImage generates imgproxy signed URLs for the given media item.
-// The operation parameter controls the resize type: "thumbnail" generates
-// a 400x300 fill, "og" generates a 1200x630 fill, and "original" returns
-// the unscaled URL.
-func (a *ProcessorAdapter) ProcessImage(_ context.Context, mediaID, operation string, width, height int) error {
+// ProcessImage handles the content:process_image task. The "optimize"
+// operation re-encodes the stored object (downscale + WebP via
+// Service.OptimizeMedia) so two-step uploads that bypassed the frontend
+// converter are still compressed. "thumbnail"/"og"/custom operations
+// generate URLs on read via imgproxy — nothing to store — so they only
+// compute and log the opts.
+func (a *ProcessorAdapter) ProcessImage(ctx context.Context, mediaID, operation string, width, height int) error {
 	slog.Info("media:process_image", "media_id", mediaID, "operation", operation, "width", width, "height", height)
+
+	if operation == "optimize" {
+		var id pgtype.UUID
+		if err := id.Scan(mediaID); err != nil {
+			return fmt.Errorf("invalid media_id %q: %w", mediaID, err)
+		}
+		return a.svc.OptimizeMedia(ctx, id)
+	}
 
 	opts := ImageProxyOpts{}
 

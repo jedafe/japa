@@ -4,9 +4,11 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/hibiken/asynq"
 	"github.com/jedafe/japa/internal/config"
 )
 
@@ -68,6 +70,12 @@ func (a *WorkerAdapter) ProcessAITask(ctx context.Context, taskType, prompt, mod
 		Payload:  payload,
 	})
 	if err != nil {
+		if errors.Is(err, ErrNoProviders) {
+			// Permanent configuration gap — no provider can be conjured by
+			// a retry, so the task archives after this attempt.
+			return fmt.Errorf("ai: dispatch failed for request %s: %w: %w", requestID, err, asynq.SkipRetry)
+		}
+
 		return fmt.Errorf("ai: dispatch failed for request %s: %w", requestID, err)
 	}
 

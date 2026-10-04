@@ -19,21 +19,23 @@ import (
 
 // Store wraps the sqlc-generated Queries for device token management.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a devices store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
 // UpsertToken is an exported method.
 func (s *Store) UpsertToken(ctx context.Context, arg gen.UpsertDeviceTokenParams) (gen.DeviceToken, error) {
-	row, err := s.queries.UpsertDeviceToken(ctx, arg)
+	row, err := s.writeQueries.UpsertDeviceToken(ctx, arg)
 	if err != nil {
 		return gen.DeviceToken{}, fmt.Errorf("devices: upsert token: %w", err)
 	}
@@ -43,7 +45,7 @@ func (s *Store) UpsertToken(ctx context.Context, arg gen.UpsertDeviceTokenParams
 
 // DeregisterToken is an exported method.
 func (s *Store) DeregisterToken(ctx context.Context, arg gen.DeregisterDeviceTokenParams) error {
-	if err := s.queries.DeregisterDeviceToken(ctx, arg); err != nil {
+	if err := s.writeQueries.DeregisterDeviceToken(ctx, arg); err != nil {
 		return fmt.Errorf("devices: deregister token: %w", err)
 	}
 
@@ -72,7 +74,7 @@ func (s *Store) GetActiveTokensForUser(ctx context.Context, userID pgtype.UUID) 
 
 // MarkTokenInactive is an exported method.
 func (s *Store) MarkTokenInactive(ctx context.Context, token string) error {
-	if err := s.queries.MarkDeviceTokenInactive(ctx, token); err != nil {
+	if err := s.writeQueries.MarkDeviceTokenInactive(ctx, token); err != nil {
 		return fmt.Errorf("devices: mark token inactive: %w", err)
 	}
 
@@ -81,7 +83,7 @@ func (s *Store) MarkTokenInactive(ctx context.Context, token string) error {
 
 // TouchToken is an exported method.
 func (s *Store) TouchToken(ctx context.Context, arg gen.TouchDeviceTokenParams) error {
-	if err := s.queries.TouchDeviceToken(ctx, arg); err != nil {
+	if err := s.writeQueries.TouchDeviceToken(ctx, arg); err != nil {
 		return fmt.Errorf("devices: touch token: %w", err)
 	}
 

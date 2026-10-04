@@ -1429,7 +1429,7 @@
 											<input
 												type="file"
 												class="hidden"
-												accept="image/*,.svg"
+												accept="image/*,.heic,.heif,.svg"
 												onchange={(e) => {
 													const input = e.currentTarget;
 													const file = input.files?.[0];
@@ -1788,7 +1788,7 @@
 												onclick={(e) => { (e.currentTarget as HTMLButtonElement).querySelector<HTMLInputElement>('input[type=file]')?.click(); }}
 												disabled={uploadingKey === setting.key}
 											>
-												<input type="file" class="hidden" accept="image/*,.svg" onchange={(e) => { const input = e.currentTarget; const file = input.files?.[0]; if (file) handleFileUpload(setting, file, input); }} />
+												<input type="file" class="hidden" accept="image/*,.heic,.heif,.svg" onchange={(e) => { const input = e.currentTarget; const file = input.files?.[0]; if (file) handleFileUpload(setting, file, input); }} />
 												{#if uploadingKey === setting.key}
 													<Loader2 class="size-3 animate-spin" />
 												{:else}

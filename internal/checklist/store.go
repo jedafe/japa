@@ -23,15 +23,17 @@ import (
 // the visa-guide selector and item extraction. It is the data-access layer —
 // no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a checklist store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
@@ -229,12 +231,12 @@ func (s *Store) GetSingleProgress(ctx context.Context, userID, guideID pgtype.UU
 
 // UpsertChecklistProgress marks a single item complete/incomplete + note.
 func (s *Store) UpsertChecklistProgress(ctx context.Context, arg gen.UpsertChecklistProgressParams) (gen.ChecklistProgress, error) {
-	return s.queries.UpsertChecklistProgress(ctx, arg)
+	return s.writeQueries.UpsertChecklistProgress(ctx, arg)
 }
 
 // DeleteChecklistProgress resets all progress for a user + guide.
 func (s *Store) DeleteChecklistProgress(ctx context.Context, userID, guideID pgtype.UUID) error {
-	return s.queries.DeleteChecklistProgressByUserGuide(ctx, gen.DeleteChecklistProgressByUserGuideParams{
+	return s.writeQueries.DeleteChecklistProgressByUserGuide(ctx, gen.DeleteChecklistProgressByUserGuideParams{
 
 		UserID:  userID,
 		GuideID: guideID,

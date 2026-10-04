@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Modal dialog for creating a new blog series (POST /blog/series).
+	// Modal dialog for creating a new blog series (POST /series).
 	// Mirrors SpaceCreationModal — uses bits-ui Dialog, auto-generates slug
 	// from title, and calls onCreated on success instead of navigating.
 	import { Modal } from '$lib/components/ui';

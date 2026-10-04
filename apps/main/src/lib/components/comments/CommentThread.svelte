@@ -63,7 +63,7 @@
 		sort = value;
 		sortLoading = true;
 		sortError = null;
-		const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?sort=${encodeURIComponent(value)}`);
+		const res = await api.getEnvelope<Comment[]>(`/content/${contentId}/comments?sort=${encodeURIComponent(value)}&page_size=50`);
 		sortLoading = false;
 		if (res.error || !res.data) {
 			sortError = res.error?.message ?? t('comments.load_error');
@@ -123,7 +123,9 @@
 					]}
 					onValueChange={(v) => changeSort(v as 'top' | 'new' | 'oldest')}
 					disabled={sortLoading}
-					inputClass="px-2 py-1 text-sm"
+					compact
+					class="w-28 shrink-0"
+					ariaLabel={t('comments.sort_by', 'Sort by')}
 				/>
 			</div>
 		{/if}

@@ -34,10 +34,16 @@ WHERE bs.deleted_at IS NULL
  JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
  WHERE bsp2.series_id = bs.id AND pc.content_type = @content_type::text
  ))
-ORDER BY bs.created_at DESC
+ORDER BY
+ CASE WHEN @sort::text = 'title' THEN lower(bs.title) END ASC,
+ CASE WHEN @sort::text = 'oldest' THEN bs.created_at END ASC,
+ bs.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListBlogSeriesByAuthor :many
+-- Powers the "My series" tab (author_id = caller). Shares the q /
+-- content_type / sort filters with ListBlogSeries so the directory toolbar
+-- works identically on both tabs.
 SELECT bs.id, bs.title, bs.slug, bs.description, bs.cover_image_id,
  bs.author_user_id, bs.status, bs.created_at, bs.updated_at, bs.deleted_at,
  m.storage_bucket AS cover_storage_bucket,
@@ -46,7 +52,16 @@ FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
 WHERE bs.author_user_id = @author_user_id
  AND bs.deleted_at IS NULL
-ORDER BY bs.created_at DESC
+ AND (@q::text IS NULL OR bs.title ILIKE '%' || @q || '%' OR bs.slug ILIKE '%' || @q || '%')
+ AND (@content_type::text = '' OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp2
+ JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+ WHERE bsp2.series_id = bs.id AND pc.content_type = @content_type::text
+ ))
+ORDER BY
+ CASE WHEN @sort::text = 'title' THEN lower(bs.title) END ASC,
+ CASE WHEN @sort::text = 'oldest' THEN bs.created_at END ASC,
+ bs.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountBlogSeries :one
@@ -64,11 +79,19 @@ WHERE bs.deleted_at IS NULL
  ));
 
 -- name: CountBlogSeriesByAuthor :one
--- Returns the total number of blog series for a given author.
+-- Returns the total number of blog series for a given author, mirroring
+-- the q / content_type filters of ListBlogSeriesByAuthor so meta.total
+-- reflects the active filters.
 SELECT COUNT(*)
 FROM blog_series bs
 WHERE bs.author_user_id = @author_user_id
- AND bs.deleted_at IS NULL;
+ AND bs.deleted_at IS NULL
+ AND (@q::text IS NULL OR bs.title ILIKE '%' || @q || '%' OR bs.slug ILIKE '%' || @q || '%')
+ AND (@content_type::text = '' OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp2
+ JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+ WHERE bsp2.series_id = bs.id AND pc.content_type = @content_type::text
+ ));
 
 -- name: UpdateBlogSeries :one
 UPDATE blog_series
@@ -127,7 +150,7 @@ ON CONFLICT (series_id, content_id) DO UPDATE
 -- H5: filter deleted_at + published-only so public series detail pages do
 -- not leak drafts.
 SELECT bsp.series_id, bsp.content_id, bsp.position,
- c.id AS content_id, c.title, c.slug, c.status, c.created_at
+ c.id AS content_id, c.title, c.slug, c.status, c.created_at, c.content_type
 FROM blog_series_posts bsp
 JOIN contents c ON c.id = bsp.content_id
 JOIN blog_series bs ON bs.id = bsp.series_id

@@ -8,8 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db/gen"
-	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/intelligence/sources"
+	intel_stores "github.com/jedafe/japa/internal/intelligence/stores"
 	"github.com/jedafe/japa/internal/publicapi"
 )
 

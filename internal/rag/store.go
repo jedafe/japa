@@ -154,15 +154,17 @@ func interfaceString(v interface{}) string {
 // Store wraps the sqlc-generated Queries for content_embeddings operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a RAG store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
@@ -172,7 +174,7 @@ func NewStore(database *db.DB) *Store {
 func (s *Store) UpsertChunk(ctx context.Context, ref EntityRef, chunk Chunk, language string) error {
 	vec := pgvector.NewVector(chunk.Vector)
 
-	_, err := s.queries.UpsertContentEmbedding(ctx, gen.UpsertContentEmbeddingParams{
+	_, err := s.writeQueries.UpsertContentEmbedding(ctx, gen.UpsertContentEmbeddingParams{
 
 		EntityType: ref.Type,
 		EntityID:   ref.ID,
@@ -194,7 +196,7 @@ func (s *Store) UpsertChunk(ctx context.Context, ref EntityRef, chunk Chunk, lan
 // DeleteEntityEmbeddings removes all chunks for a specific entity.
 // Used on unpublish/delete and by the admin DELETE route.
 func (s *Store) DeleteEntityEmbeddings(ctx context.Context, entityType string, entityID pgtype.UUID) error {
-	return s.queries.DeleteContentEmbeddingsByEntity(ctx, gen.DeleteContentEmbeddingsByEntityParams{
+	return s.writeQueries.DeleteContentEmbeddingsByEntity(ctx, gen.DeleteContentEmbeddingsByEntityParams{
 
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -204,7 +206,7 @@ func (s *Store) DeleteEntityEmbeddings(ctx context.Context, entityType string, e
 // DeleteEmbeddingsByType removes all chunks for every entity of the given
 // type within a platform. Used by the admin by-type aggregate purge.
 func (s *Store) DeleteEmbeddingsByType(ctx context.Context, entityType string) error {
-	return s.queries.DeleteContentEmbeddingsByType(ctx,
+	return s.writeQueries.DeleteContentEmbeddingsByType(ctx,
 
 		entityType,
 	)
@@ -213,7 +215,7 @@ func (s *Store) DeleteEmbeddingsByType(ctx context.Context, entityType string) e
 // DeleteStaleTail removes chunks with chunk_index >= maxIndex for an entity.
 // Called after a re-index that produced fewer chunks than the previous index.
 func (s *Store) DeleteStaleTail(ctx context.Context, entityType string, entityID pgtype.UUID, maxIndex int32) error {
-	return s.queries.DeleteContentEmbeddingsAboveIndex(ctx, gen.DeleteContentEmbeddingsAboveIndexParams{
+	return s.writeQueries.DeleteContentEmbeddingsAboveIndex(ctx, gen.DeleteContentEmbeddingsAboveIndexParams{
 
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -422,7 +424,7 @@ func (s *Store) ListMemberSpaceIDs(ctx context.Context, userID pgtype.UUID) ([]p
 // UpdateEntityScope refreshes scope metadata on an entity's chunk rows —
 // used on visibility/status transitions that keep the entity indexable.
 func (s *Store) UpdateEntityScope(ctx context.Context, ref EntityRef) error {
-	return s.queries.UpdateEmbeddingScope(ctx, gen.UpdateEmbeddingScopeParams{
+	return s.writeQueries.UpdateEmbeddingScope(ctx, gen.UpdateEmbeddingScopeParams{
 		Visibility: ref.Visibility,
 		SpaceID:    ref.SpaceID,
 		AuthorID:   ref.AuthorID,
@@ -435,7 +437,7 @@ func (s *Store) UpdateEntityScope(ctx context.Context, ref EntityRef) error {
 // source thread lost its space — runs at the start of every reindex sweep so
 // a missed pre-delete reconcile cannot leak stale visibility (§69 amendment).
 func (s *Store) ReconcileOrphanThreadScopes(ctx context.Context) error {
-	return s.queries.ReconcileOrphanThreadEmbeddings(ctx)
+	return s.writeQueries.ReconcileOrphanThreadEmbeddings(ctx)
 }
 
 // OrphanThreadScopesBySpace fail-closes forum_thread chunk rows whose parent
@@ -443,14 +445,14 @@ func (s *Store) ReconcileOrphanThreadScopes(ctx context.Context) error {
 // §69 amendment). Must run BEFORE the space delete commits: the FK nulls
 // thread.space_id, after which these rows are unmatchable by space.
 func (s *Store) OrphanThreadScopesBySpace(ctx context.Context, spaceID pgtype.UUID) error {
-	return s.queries.OrphanThreadEmbeddingsBySpace(ctx, spaceID)
+	return s.writeQueries.OrphanThreadEmbeddingsBySpace(ctx, spaceID)
 }
 
 // UpdateThreadScopesBySpace bulk-updates all forum_thread chunk rows in a
 // space — threads inherit the space's visibility, so a space visibility
 // flip reconciles every thread row.
 func (s *Store) UpdateThreadScopesBySpace(ctx context.Context, spaceID pgtype.UUID, visibility string) error {
-	return s.queries.UpdateThreadEmbeddingsBySpace(ctx, gen.UpdateThreadEmbeddingsBySpaceParams{
+	return s.writeQueries.UpdateThreadEmbeddingsBySpace(ctx, gen.UpdateThreadEmbeddingsBySpaceParams{
 		Visibility: visibility,
 		SpaceID:    spaceID,
 	})

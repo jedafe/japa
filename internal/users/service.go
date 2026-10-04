@@ -43,6 +43,10 @@ type Service struct {
 	// SetAuthSettings during server setup. When nil, compiled-in defaults
 	// are used (BUG-005, Rule 3).
 	authSettings auth.SettingsReader
+	// settings provides general string system settings (e.g.
+	// users.allowed_avatar_types). Wired via SetSettings during server
+	// setup. When nil, the associated toggles are unenforced.
+	settings stringSettingsReader
 	// folderResolver resolves default bookmark folders when a /me/bookmarks
 	// call omits folder. Optional — when nil, "default" is used.
 	folderResolver folderResolver
@@ -86,6 +90,20 @@ func (s *Service) SetAuthSettings(r auth.SettingsReader) {
 	s.authSettings = r
 }
 
+// stringSettingsReader is the minimal string-valued settings reader the
+// service needs beyond auth.SettingsReader (which has no string getter).
+// Implemented by *config.Settings.
+type stringSettingsReader interface {
+	GetStringOr(ctx context.Context, key, fallback string) string
+}
+
+// SetSettings wires the general settings reader used for user-level string
+// toggles such as users.allowed_avatar_types (Rule 3). Called once during
+// server setup. When not wired, those toggles are unenforced.
+func (s *Service) SetSettings(r stringSettingsReader) {
+	s.settings = r
+}
+
 // SetFolderResolver injects the default bookmark folder resolver. Optional
 // — when not set, /me/bookmarks falls back to the "default" folder.
 func (s *Service) SetFolderResolver(r folderResolver) { s.folderResolver = r }
@@ -107,6 +125,10 @@ func (s *Service) SetSiteURL(u string) { s.siteURL = strings.TrimRight(u, "/") }
 // Implemented by the media package; injected at server wiring time.
 type MediaResolver interface {
 	ResolveMediaURL(ctx context.Context, mediaID pgtype.UUID) (string, error)
+	// ResolveMediaMIME returns the media row's stored MIME type. Used to
+	// enforce users.allowed_avatar_types when an avatar media is assigned
+	// (upload-time context checks alone cannot cover pre-existing media).
+	ResolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) (string, error)
 }
 
 // PointsProvider returns a user's Points balance. Implemented by wallet.Service.
@@ -364,6 +386,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 				if err := mid.Scan(*req.AvatarMediaID); err != nil {
 					return fmt.Errorf("invalid avatar_media_id: %w", err)
 				}
+				if err := s.checkAvatarMIMEAllowed(ctx, mid); err != nil {
+					return err
+				}
 				avatarMediaID = mid
 				// Resolve to URL if a MediaResolver is wired.
 				if s.MediaResolver != nil {
@@ -383,6 +408,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 				var mid pgtype.UUID
 				if err := mid.Scan(*req.HeaderMediaID); err != nil {
 					return fmt.Errorf("invalid header_media_id: %w", err)
+				}
+				if err := s.checkImageMedia(ctx, mid, "header_media_id"); err != nil {
+					return err
 				}
 				headerMediaID = mid
 				// Resolve to URL if a MediaResolver is wired.
@@ -433,6 +461,86 @@ func (s *Service) UpdateProfile(ctx context.Context, userID pgtype.UUID, req *Up
 	// so we don't index a row that might roll back.
 	if req.DisplayName != nil {
 		s.enqueueUserSearchIndex(userID)
+	}
+
+	return nil
+}
+
+// avatarExtMIME maps the extension tokens allowed by
+// users.allowed_avatar_types to the canonical media MIME type they permit.
+var avatarExtMIME = map[string]string{
+	"jpg":  "image/jpeg",
+	"jpeg": "image/jpeg",
+	"png":  "image/png",
+	"gif":  "image/gif",
+	"webp": "image/webp",
+	"svg":  "image/svg+xml",
+}
+
+// resolveMediaMIME fetches and normalizes a media row's MIME type via the
+// MediaResolver. Returns "" when the resolver is unwired, the row cannot be
+// loaded, or the stored type is empty — callers treat "" as "cannot
+// determine" and fail open, since a dangling ID still fails on the FK
+// constraint downstream.
+func (s *Service) resolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) string {
+	if s.MediaResolver == nil {
+		return ""
+	}
+
+	mimeType, err := s.MediaResolver.ResolveMediaMIME(ctx, mediaID)
+	if err != nil || mimeType == "" {
+		return ""
+	}
+
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	if mimeType == "image/jpg" || mimeType == "image/pjpeg" {
+		mimeType = "image/jpeg"
+	}
+
+	return mimeType
+}
+
+// checkAvatarMIMEAllowed enforces users.allowed_avatar_types (Rule 3) when a
+// media item is assigned as a profile avatar. Avatars must always be images
+// — regardless of the setting; when the CSV is configured the media type must
+// additionally map to an extension in it.
+func (s *Service) checkAvatarMIMEAllowed(ctx context.Context, mediaID pgtype.UUID) error {
+	mimeType := s.resolveMediaMIME(ctx, mediaID)
+	if mimeType == "" {
+		return nil
+	}
+
+	if !strings.HasPrefix(mimeType, "image/") {
+		return fmt.Errorf("%w: avatar media must be an image, got %q", errpkg.ErrInvalid, mimeType)
+	}
+
+	if s.settings == nil {
+		return nil
+	}
+
+	csv := strings.TrimSpace(s.settings.GetStringOr(ctx, "users.allowed_avatar_types", ""))
+	if csv == "" {
+		return nil
+	}
+
+	for _, ext := range strings.Split(csv, ",") {
+		ext = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(ext)), ".")
+		if m, ok := avatarExtMIME[ext]; ok && m == mimeType {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: media type %q is not allowed for avatars", errpkg.ErrInvalid, mimeType)
+}
+
+// checkImageMedia verifies the referenced media row stores an image — used
+// for header_media_id, which has no dedicated allowed-types setting but can
+// never legitimately point at a video, audio file, or PDF. Fail-open when the
+// MIME cannot be determined.
+func (s *Service) checkImageMedia(ctx context.Context, mediaID pgtype.UUID, field string) error {
+	mimeType := s.resolveMediaMIME(ctx, mediaID)
+	if mimeType != "" && !strings.HasPrefix(mimeType, "image/") {
+		return fmt.Errorf("%w: %s must reference an image, got %q", errpkg.ErrInvalid, field, mimeType)
 	}
 
 	return nil

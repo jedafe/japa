@@ -84,6 +84,12 @@ var validLedgerTypes = map[string]bool{
 	"points": true, "credits": true,
 }
 
+// validProfileTypes are the allowed profile_type values for users per the
+// users_profile_type_check CHECK constraint.
+var validProfileTypes = map[string]bool{
+	"regular": true, "pro": true, "business": true,
+}
+
 // whitespaceRe matches runs of whitespace for content_hash normalization.
 var whitespaceRe = regexp.MustCompile(`\s+`)
 
@@ -535,13 +541,19 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 			return "", nil, errors.New("password_hash is required (cannot import users without a password hash)")
 		}
 
-		conflict := "ON CONFLICT (the id, username) DO NOTHING"
+		// Validate profile_type against users_profile_type_check (empty →
+		// 'regular' default in SQL).
+		if pt := strings.TrimSpace(row["profile_type"]); pt != "" && !validProfileTypes[pt] {
+			return "", nil, fmt.Errorf("users: invalid profile_type %q (must be one of: regular, pro, business)", pt)
+		}
+
+		conflict := "ON CONFLICT DO NOTHING"
 		if mode == ModeUpsert {
 			conflict = "ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email, profile_type = EXCLUDED.profile_type, status = EXCLUDED.status, password_hash = EXCLUDED.password_hash, updated_at = now()"
 		}
 
-		return "\n\t\t\tINSERT INTO users (username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'personal'), COALESCE(NULLIF($5, ''), 'active'), $6)\n\t\t\t" + conflict,
-			[]any{pgtype.UUID{}, username, email, row["profile_type"], row["status"], passwordHash},
+		return "\n\t\t\tINSERT INTO users (username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, COALESCE(NULLIF($3, ''), 'regular'), COALESCE(NULLIF($4, ''), 'active'), $5)\n\t\t\t" + conflict,
+			[]any{username, email, row["profile_type"], row["status"], passwordHash},
 			nil
 
 	case TypePosts:
@@ -552,22 +564,39 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 
 		return `
 			INSERT INTO contents (author_id, content_type, title, body, status, visibility, slug, canonical_url, content_hash)
-			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'blog_post'), $4, $5, COALESCE(NULLIF($6, ''), 'draft'), COALESCE(NULLIF($7, ''), 'public'), $8, $9, $10
-			FROM users u WHERE u.username = $2
+			SELECT u.id, COALESCE(NULLIF($2, ''), 'blog_post'), $3, $4, COALESCE(NULLIF($5, ''), 'draft'), COALESCE(NULLIF($6, ''), 'public'), $7, $8, $9
+			FROM users u WHERE u.username = $1
 			ON CONFLICT DO NOTHING`,
-			[]any{pgtype.UUID{}, row["author"], row["content_type"], row["title"], body, row["status"], row["visibility"], row["slug"], row["canonical_url"], contentHash},
+			[]any{row["author"], row["content_type"], row["title"], body, row["status"], row["visibility"], row["slug"], row["canonical_url"], contentHash},
 			nil
 
 	case TypeComments:
 		// Comments: insert into comments table, resolving content by title.
 		// comments uses author_user_id (not user_id) and has no status column.
+		// body is jsonb (TipTap doc) — wrap plain text in a paragraph doc,
+		// matching public_comment_adapter.go.
+		bodyDoc, err := json.Marshal(map[string]any{
+			"type": "doc",
+			"content": []any{
+				map[string]any{
+					"type": "paragraph",
+					"content": []any{
+						map[string]any{"type": "text", "text": row["body"]},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return "", nil, fmt.Errorf("comments: marshal body doc: %w", err)
+		}
+
 		return `
 			INSERT INTO comments (content_id, author_user_id, body)
-			SELECT $1, c.id, u.id, $4
+			SELECT c.id, u.id, $3::jsonb
 			FROM contents c, users u
-			WHERE c.title = $2 AND u.username = $3
+			WHERE c.title = $1 AND u.username = $2
 			ON CONFLICT DO NOTHING`,
-			[]any{pgtype.UUID{}, row["content_title"], row["author"], row["body"]},
+			[]any{row["content_title"], row["author"], string(bodyDoc)},
 			nil
 
 	case TypeOrders:
@@ -580,10 +609,10 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 
 		return `
 			INSERT INTO payments (user_id, provider, purpose_type, amount, currency, status)
-			SELECT $1, u.id, COALESCE(NULLIF($3, ''), 'manual_transfer'), COALESCE(NULLIF($4, ''), 'donation'), $5, COALESCE(NULLIF($6, ''), 'NGN'), COALESCE(NULLIF($7, ''), 'pending')
-			FROM users u WHERE u.username = $2
+			SELECT u.id, COALESCE(NULLIF($2, ''), 'manual_transfer'), COALESCE(NULLIF($3, ''), 'donation'), $4, COALESCE(NULLIF($5, ''), 'NGN'), COALESCE(NULLIF($6, ''), 'pending')
+			FROM users u WHERE u.username = $1
 			ON CONFLICT DO NOTHING`,
-			[]any{pgtype.UUID{}, row["buyer"], row["provider"], row["purpose_type"], amount, row["currency"], row["status"]},
+			[]any{row["buyer"], row["provider"], row["purpose_type"], amount, row["currency"], row["status"]},
 			nil
 
 	case TypeTransactions:
@@ -624,10 +653,10 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 
 		return `
 			INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, reason)
-			SELECT $1, u.id, $3, $4, $5, $6, $7, $8
-			FROM users u WHERE u.username = $2
+			SELECT u.id, $2, $3, $4, $5, $6, $7
+			FROM users u WHERE u.username = $1
 			ON CONFLICT DO NOTHING`,
-			[]any{pgtype.UUID{}, row["user"], ledgerType, operation, amount, resultingBalance, source, row["reason"]},
+			[]any{row["user"], ledgerType, operation, amount, resultingBalance, source, row["reason"]},
 			nil
 
 	case TypeAnalytics:
@@ -650,9 +679,9 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 
 		return `
 			INSERT INTO platform_events (event_type, entity_type, entity_id)
-			VALUES ($1, $2, $3, $4)
+			VALUES ($1, $2, $3)
 			ON CONFLICT DO NOTHING`,
-			[]any{pgtype.UUID{}, row["event_type"], row["entity_type"], entityIDArg},
+			[]any{row["event_type"], row["entity_type"], entityIDArg},
 			nil
 
 	case TypeModeration:
@@ -683,10 +712,10 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 
 		return `
 			INSERT INTO content_reports (reporter_user_id, entity_type, entity_id, reason, status)
-			SELECT $1, u.id, $3, $4, $5, COALESCE(NULLIF($6, ''), 'pending')
-			FROM users u WHERE u.username = $2
+			SELECT u.id, $2, $3, $4, COALESCE(NULLIF($5, ''), 'pending')
+			FROM users u WHERE u.username = $1
 			ON CONFLICT DO NOTHING`,
-			[]any{pgtype.UUID{}, row["reporter"], entityType, entityID, reason, row["status"]},
+			[]any{row["reporter"], entityType, entityID, reason, row["status"]},
 			nil
 	}
 

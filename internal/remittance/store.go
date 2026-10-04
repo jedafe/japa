@@ -25,26 +25,28 @@ import (
 // Store wraps the sqlc-generated Queries for remittance operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a remittance store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
 // CreateProvider inserts a new remittance provider.
 func (s *Store) CreateProvider(ctx context.Context, arg gen.CreateRemittanceProviderParams) (gen.RemittanceProvider, error) {
-	return s.queries.CreateRemittanceProvider(ctx, arg)
+	return s.writeQueries.CreateRemittanceProvider(ctx, arg)
 }
 
 // UpdateProvider updates a remittance provider's mutable fields.
 func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateRemittanceProviderParams) (gen.RemittanceProvider, error) {
-	return s.queries.UpdateRemittanceProvider(ctx, arg)
+	return s.writeQueries.UpdateRemittanceProvider(ctx, arg)
 }
 
 // GetProviderByID fetches a single provider by ID within a platform.
@@ -146,7 +148,7 @@ func (s *Store) ListProvidersPaginated(ctx context.Context, activeOnly bool, lim
 
 // InsertRate inserts a new rate snapshot row.
 func (s *Store) InsertRate(ctx context.Context, arg gen.InsertRemittanceRateParams) (gen.RemittanceRate, error) {
-	return s.queries.InsertRemittanceRate(ctx, arg)
+	return s.writeQueries.InsertRemittanceRate(ctx, arg)
 }
 
 // GetLatestRates returns the latest rate per active provider for a corridor.
@@ -175,17 +177,17 @@ func (s *Store) GetCorridors(ctx context.Context) ([]gen.GetCorridorsRow, error)
 
 // CreateAlert inserts a new rate alert for a user.
 func (s *Store) CreateAlert(ctx context.Context, arg gen.CreateRateAlertParams) (gen.RemittanceRateAlert, error) {
-	return s.queries.CreateRateAlert(ctx, arg)
+	return s.writeQueries.CreateRateAlert(ctx, arg)
 }
 
 // UpdateAlert updates a rate alert's mutable fields.
 func (s *Store) UpdateAlert(ctx context.Context, arg gen.UpdateRateAlertParams) (gen.RemittanceRateAlert, error) {
-	return s.queries.UpdateRateAlert(ctx, arg)
+	return s.writeQueries.UpdateRateAlert(ctx, arg)
 }
 
 // DeleteAlert deletes a rate alert owned by the given user.
 func (s *Store) DeleteAlert(ctx context.Context, id, userID pgtype.UUID) error {
-	return s.queries.DeleteRateAlert(ctx, gen.DeleteRateAlertParams{
+	return s.writeQueries.DeleteRateAlert(ctx, gen.DeleteRateAlertParams{
 		ID:     id,
 		UserID: userID,
 	})
@@ -227,13 +229,13 @@ func (s *Store) ListAllActiveAlerts(ctx context.Context) ([]gen.RemittanceRateAl
 
 // MarkAlertTriggered sets last_triggered_at to now() for the given alert.
 func (s *Store) MarkAlertTriggered(ctx context.Context, id pgtype.UUID) error {
-	return s.queries.MarkAlertTriggered(ctx, id)
+	return s.writeQueries.MarkAlertTriggered(ctx, id)
 }
 
 // PruneOldRates deletes rate rows older than the cutoff, keeping one snapshot
 // per provider per corridor per day for older data (daily downsampling).
 func (s *Store) PruneOldRates(ctx context.Context, cutoffDate time.Time) error {
-	return s.queries.PruneOldRates(ctx,
+	return s.writeQueries.PruneOldRates(ctx,
 
 		pgtype.Timestamptz{Time: cutoffDate, Valid: true},
 	)
@@ -241,7 +243,7 @@ func (s *Store) PruneOldRates(ctx context.Context, cutoffDate time.Time) error {
 
 // CreateRate inserts a new remittance rate snapshot and returns the row.
 func (s *Store) CreateRate(ctx context.Context, arg gen.InsertRemittanceRateParams) (gen.RemittanceRate, error) {
-	return s.queries.InsertRemittanceRate(ctx, arg)
+	return s.writeQueries.InsertRemittanceRate(ctx, arg)
 }
 
 // UpdateRateStoreInput is the data-access input for updating a remittance rate.

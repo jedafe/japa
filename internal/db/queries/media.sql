@@ -323,3 +323,30 @@ SELECT id, storage_path FROM media
 WHERE confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL AND rejected_at IS NULL
 ORDER BY created_at ASC
 LIMIT 50;
+
+-- name: UpdateMediaStorage :exec
+-- Storage-rewrite update — used by image optimization (content:process_image)
+-- to record the re-encoded bytes under a possibly different storage path.
+UPDATE media SET storage_path = @storage_path, mime_type = @mime_type, file_size_bytes = @file_size_bytes WHERE id = @id AND deleted_at IS NULL;
+
+-- name: ListMediaForOptimization :many
+-- Media rows holding optimizable raster content above the compression
+-- threshold — scanned by POST /admin/media/reoptimize to enqueue
+-- content:process_image tasks for existing (pre-optimization) originals.
+SELECT id, storage_path, storage_bucket, mime_type, file_size_bytes FROM media
+WHERE mime_type IN ('image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/avif')
+  AND file_size_bytes > @min_size_bytes
+  AND quarantined_at IS NULL
+  AND rejected_at IS NULL
+  AND deleted_at IS NULL
+ORDER BY created_at ASC
+LIMIT @row_limit;
+
+-- name: ListMediaDeletedForCleanup :many
+-- Soft-deleted media rows past the retention window — the
+-- media:cleanup_deleted sweep removes their storage objects then
+-- hard-deletes the rows (Section 34, Rule 11 approved hard-delete path).
+SELECT id, storage_bucket, storage_path FROM media
+WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(days => @retention_days)
+ORDER BY deleted_at ASC
+LIMIT @row_limit;

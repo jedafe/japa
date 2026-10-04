@@ -68,18 +68,20 @@ type Program struct {
 // Service coordinates referral program configuration, referral tracking,
 // referral codes, attribution, and fraud-controlled credit awards.
 type Service struct {
-	db       *db.DB
-	queries  *gen.Queries
-	settings *config.Settings
-	valkey   valkeycompat.Cmdable
-	enqueuer TaskEnqueuer
+	db           *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	settings     *config.Settings
+	valkey       valkeycompat.Cmdable
+	enqueuer     TaskEnqueuer
 }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
 	return &Service{
-		db:      database,
-		queries: gen.New(database.Reader),
+		db:           database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
 	}
 }
 
@@ -269,7 +271,7 @@ func (s *Service) GetOrCreateCode(ctx context.Context, userID pgtype.UUID) (gen.
 		return gen.ReferralCode{}, err
 	}
 
-	code, err = s.queries.CreateReferralCode(ctx, gen.CreateReferralCodeParams{
+	code, err = s.writeQueries.CreateReferralCode(ctx, gen.CreateReferralCodeParams{
 
 		UserID: userID,
 		Code:   newCode,
@@ -327,7 +329,7 @@ func (s *Service) GetReferralStats(ctx context.Context, userID pgtype.UUID) (map
 // RecordClick increments the click count for a referral code and sets the
 // Valkey attribution key. Called by the referral:record_click task.
 func (s *Service) RecordClick(ctx context.Context, code, sessionID string) error {
-	if err := s.queries.IncrementReferralClickCount(ctx, code); err != nil {
+	if err := s.writeQueries.IncrementReferralClickCount(ctx, code); err != nil {
 		return fmt.Errorf("referral: increment click: %w", err)
 	}
 
@@ -388,7 +390,7 @@ func (s *Service) GetAttribution(ctx context.Context, sessionID string) (string,
 
 // CreateReferral creates a pending referral record linking referrer to referee.
 func (s *Service) CreateReferral(ctx context.Context, referrerID, refereeID pgtype.UUID, code string) (gen.Referral, error) {
-	referral, err := s.queries.CreateReferral(ctx, gen.CreateReferralParams{
+	referral, err := s.writeQueries.CreateReferral(ctx, gen.CreateReferralParams{
 
 		ReferrerID:   referrerID,
 		RefereeID:    refereeID,
@@ -545,7 +547,7 @@ func (s *Service) flagReferral(ctx context.Context, refereeID pgtype.UUID, reaso
 }
 
 func (s *Service) flagReferralByID(ctx context.Context, referralID pgtype.UUID, reason string) error {
-	_, err := s.queries.FlagReferral(ctx, gen.FlagReferralParams{
+	_, err := s.writeQueries.FlagReferral(ctx, gen.FlagReferralParams{
 
 		ID:            referralID,
 		FlaggedReason: &reason,
@@ -634,7 +636,7 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, referralID pgtype.UUI
 			rewardCredits = s.settings.GetIntOr(ctx, "referral.reward_credits", 500)
 		}
 
-		_, err := s.queries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{
+		_, err := s.writeQueries.CreditFlaggedReferral(ctx, gen.CreditFlaggedReferralParams{
 
 			ID:           referralID,
 			RewardAmount: pgtype.Numeric{Int: big.NewInt(int64(rewardCredits)), Exp: 0, Valid: true},
@@ -642,7 +644,7 @@ func (s *Service) AdminResolveFlagged(ctx context.Context, referralID pgtype.UUI
 
 		return err
 	case "reject":
-		return s.queries.RejectReferral(ctx,
+		return s.writeQueries.RejectReferral(ctx,
 
 			referralID,
 		)

@@ -673,6 +673,13 @@
 	);
 </script>
 
+<svelte:head>
+	<title>{t('jce.compare.heading')} — JapaConnect</title>
+	<meta property="og:title" content="{t('jce.compare.heading')} — JapaConnect" />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.href} />
+</svelte:head>
+
 <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6" style="--page-gutter: 0px">
 	<h1 class="sr-only">{t('jce.compare.heading')}</h1>
 

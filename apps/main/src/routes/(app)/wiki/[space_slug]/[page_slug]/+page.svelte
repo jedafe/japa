@@ -16,7 +16,7 @@
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { searchEntities } from '$lib/api/jce';
 	import type { ResolvedItem } from '$lib/types/jce';
-	import { BookOpen, ChevronLeft, ChevronRight, Lock, Pencil, History, Send } from 'lucide-svelte';
+	import { BookOpen, Calculator, ChevronLeft, ChevronRight, Lock, Pencil, History, Send } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
@@ -486,6 +486,16 @@
 					>
 						<History size={14} /> {t('wiki.history', 'History')}
 					</a>
+					<!-- §72 ↔ §80 cross-link: city cost-of-living wiki pages feed the
+					     calculator via source_field_id bindings; surface the tool. -->
+					{#if data.page.category === 'cost_of_living' && spaceLevel === 'city'}
+						<a
+							href="/tools/cost-of-living"
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Calculator size={14} /> {t('wiki.open_calculator', 'Compare in calculator')}
+						</a>
+					{/if}
 				</div>
 
 				{#if editing}

@@ -202,8 +202,8 @@ type UpdateProviderInput struct {
 func (s *ProviderStore) UpdateProvider(ctx context.Context, input UpdateProviderInput) (ProviderConfig, error) {
 	// Build the SET clause dynamically based on which fields are provided.
 	setParts := []string{"updated_at = now()"}
-	args := []any{input.ID, (pgtype.UUID{})}
-	argIdx := 3 // $1=id, $2=the id, $3+
+	args := []any{input.ID}
+	argIdx := 2 // $1=id, $2+
 
 	if input.Name != nil {
 		setParts = append(setParts, fmt.Sprintf("name = $%d", argIdx))

@@ -17,6 +17,8 @@
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
+	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
+	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { imgLightbox, openLightbox } from '$lib/lightbox.svelte';
 	import { parseMostUsefulResource } from '$lib/utils/storyResources';
@@ -172,7 +174,7 @@
 		<div class="flex flex-col gap-4">
 			<CreatorCard
 				authorName={story.author_display_name ?? story.author_name}
-				authorUsername={story.author_username ?? story.author_name}
+				authorUsername={story.author_username}
 				authorAvatarUrl={story.author_avatar}
 				spaceName={story.destination_space_name}
 				authorId={story.author_id}
@@ -207,7 +209,7 @@
 				{#if isAuthor || data.canEdit}
 					<div class="flex shrink-0 items-center gap-1">
 						<a
-							href="/create?draft={story.id}&type=story"
+							href="/studio/create?draft={story.id}&type=story"
 							class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
 						>
 							<Pencil size={14} /> {t('stories.edit', 'Edit')}
@@ -295,7 +297,7 @@
 
 			<!-- Body: sanitized TipTap HTML with prose styling -->
 			{#if sanitizedBody}
-				<div class="prose mt-8" use:hydrateVideoEmbeds use:imgLightbox>
+				<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:imgLightbox>
 					{@html sanitizedBody}
 				</div>
 			{/if}

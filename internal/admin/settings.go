@@ -289,7 +289,7 @@ var defaultSettings = map[string]SettingCategory{
 			{Key: "allow_anonymous_posts", Label: "Allow Anonymous Posts", Type: "toggle"},
 			{Key: "require_content_review", Label: "Require Content Review", Type: "toggle"},
 			{Key: "max_upload_size_mb", Label: "Max Upload Size (MB)", Type: "number"},
-			{Key: "allowed_upload_types", Label: "Allowed Upload Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg", "pdf", "mp4", "webm"}},
+			{Key: "allowed_upload_types", Label: "Allowed Upload Types", Type: "multiselect", Options: []string{"jpeg", "jpg", "png", "gif", "webp", "svg", "pdf", "mp4", "webm", "mov", "mp3", "ogg", "wav"}},
 			{Key: "link_preview.blacklist", Label: "Link Preview Blacklist", Type: "textarea", Placeholder: `["example.com", "spam.com"]`},
 			{Key: "edit_lock_ttl_seconds", Label: "Edit Lock TTL (seconds)", Type: "number", Description: "Editor lock TTL in seconds"},
 			{Key: "edit_window_minutes", Label: "Edit Window (minutes)", Type: "number", Description: "Content edit window (24hr default)"},

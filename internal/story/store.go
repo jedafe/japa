@@ -122,7 +122,7 @@ INSERT INTO story_meta (
     most_useful_resource, best_advice, verified,
     ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
     hitl_reviewed_at, is_japabot_indexed
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 ON CONFLICT (content_id) DO UPDATE SET
     origin_space_id = EXCLUDED.origin_space_id,
     destination_space_id = EXCLUDED.destination_space_id,
@@ -143,8 +143,7 @@ ON CONFLICT (content_id) DO UPDATE SET
 `
 
 	_, err := s.pool.Writer.Exec(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		meta.ContentID, meta.OriginSpaceID, meta.DestinationSpaceID,
 		meta.RelocationYear, meta.VisaCategory, meta.Profession, meta.BiggestChallenge,
 		meta.MostUsefulResource, meta.BestAdvice, meta.Verified,

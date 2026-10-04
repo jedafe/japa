@@ -214,6 +214,29 @@ func (h *Handlers) resolveHeaderURL(ctx context.Context, headerMediaID pgtype.UU
 	return h.media.GetMediaURL(&m, media.ImageProxyOpts{Width: 1280, Height: 320, Format: "webp"})
 }
 
+// ensureImageMedia verifies the referenced media row stores an image before
+// it is assigned to logo_media_id/header_image_id — without this check any
+// confirmed media (PDF, video) could be set as a space logo and resolve to
+// a broken render. Fail-open when the media resolver is unwired or the row
+// cannot be loaded; a dangling ID already resolves to an empty URL at read
+// time.
+func (h *Handlers) ensureImageMedia(ctx context.Context, mediaID pgtype.UUID, field string) error {
+	if h.media == nil {
+		return nil
+	}
+
+	m, err := h.media.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil
+	}
+
+	if !strings.HasPrefix(strings.ToLower(m.MimeType), "image/") {
+		return fmt.Errorf("%s must reference an image, got %s", field, m.MimeType)
+	}
+
+	return nil
+}
+
 // invalidateTargetPermCache flushes the target user's permission cache after
 // a moderator assignment/removal. It is a no-op when no invalidator is wired
 // (graceful degradation). Errors are logged but never fail the request — the

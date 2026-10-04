@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/content"
@@ -208,7 +209,9 @@ func (s *Service) ProcessBulkImport(ctx context.Context, payload BulkImportPaylo
 	apiKey, err := s.getYouTubeAPIKey(ctx)
 	if err != nil {
 		_ = s.failJob(ctx, job, "no YouTube Data API key configured")
-		return fmt.Errorf("video import %s: %w", job.ID.String(), ErrYouTubeAPIKeyMissing)
+		// Permanent configuration gap — the job row is already marked
+		// failed, so the task archives instead of burning retries.
+		return fmt.Errorf("video import %s: %w: %w", job.ID.String(), ErrYouTubeAPIKeyMissing, asynq.SkipRetry)
 	}
 
 	provider := s.bulkYouTubeProvider(apiKey)

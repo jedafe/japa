@@ -329,14 +329,13 @@ INSERT INTO tax_obligation_guides (
     origin_space_id, destination_space_id, employment_status,
     residency_trigger, worldwide_income_taxed, first_year_obligations,
     action_checklist, status, is_active, ai_generated, ai_model, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING id
 `
 
 	var id pgtype.UUID
 	if err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		in.OriginSpaceID, in.DestinationSpaceID, in.EmploymentStatus,
 		in.ResidencyTrigger, in.WorldwideIncomeTaxed, in.FirstYearObligations,
 		checklist, status, in.IsActive, in.AIGenerated, in.AIModel, in.AIPromptHash,
@@ -505,7 +504,7 @@ func (s *Store) CreateOrUpdateTreaty(ctx context.Context, in TreatyUpsertInput) 
 INSERT INTO tax_treaty_pairs (
     origin_space_id, destination_space_id,
     treaty_exists, treaty_summary, treaty_source_url
-) VALUES ($1, $2, $3, $4, $5, $6)
+) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (origin_space_id, destination_space_id)
 DO UPDATE SET
     treaty_exists     = EXCLUDED.treaty_exists,
@@ -517,8 +516,7 @@ RETURNING id
 
 	var id pgtype.UUID
 	if err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		in.OriginSpaceID, in.DestinationSpaceID,
 		in.TreatyExists, in.TreatySummary, in.TreatySourceURL,
 	).Scan(&id); err != nil {

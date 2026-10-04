@@ -22,15 +22,17 @@ import (
 // Store wraps the sqlc-generated Queries for the self-serve ads surface.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a self-serve ads store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
@@ -75,7 +77,7 @@ func (s *Store) IsOrgMember(ctx context.Context, orgID, userID pgtype.UUID) (boo
 // 'pending_review'. The caller is responsible for eligibility checks and
 // cost calculation before calling this.
 func (s *Store) CreateCampaign(ctx context.Context, arg gen.CreateSelfServeAdCampaignParams) (gen.AdCampaign, error) {
-	campaign, err := s.queries.CreateSelfServeAdCampaign(ctx, arg)
+	campaign, err := s.writeQueries.CreateSelfServeAdCampaign(ctx, arg)
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: create campaign: %w", err)
 	}
@@ -133,7 +135,7 @@ func (s *Store) CountCampaigns(ctx context.Context, orgID pgtype.UUID, status st
 // that is in 'pending_review' or 'paused' status. Pass nil for content or
 // target_url to leave that field unchanged.
 func (s *Store) UpdateCampaignCreative(ctx context.Context, arg gen.UpdateSelfServeAdCampaignCreativeParams) (gen.AdCampaign, error) {
-	campaign, err := s.queries.UpdateSelfServeAdCampaignCreative(ctx, arg)
+	campaign, err := s.writeQueries.UpdateSelfServeAdCampaignCreative(ctx, arg)
 	if err != nil {
 		return gen.AdCampaign{}, fmt.Errorf("adsselfserve: update campaign creative: %w", err)
 	}
@@ -143,7 +145,7 @@ func (s *Store) UpdateCampaignCreative(ctx context.Context, arg gen.UpdateSelfSe
 
 // PauseCampaign transitions an active campaign to 'paused'.
 func (s *Store) PauseCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
-	campaign, err := s.queries.PauseAdCampaign(ctx, gen.PauseAdCampaignParams{
+	campaign, err := s.writeQueries.PauseAdCampaign(ctx, gen.PauseAdCampaignParams{
 
 		ID:             campaignID,
 		OrganizationID: orgID,
@@ -157,7 +159,7 @@ func (s *Store) PauseCampaign(ctx context.Context, orgID, campaignID pgtype.UUID
 
 // ResumeCampaign transitions a paused campaign to 'active'.
 func (s *Store) ResumeCampaign(ctx context.Context, orgID, campaignID pgtype.UUID) (gen.AdCampaign, error) {
-	campaign, err := s.queries.ResumeAdCampaign(ctx, gen.ResumeAdCampaignParams{
+	campaign, err := s.writeQueries.ResumeAdCampaign(ctx, gen.ResumeAdCampaignParams{
 
 		ID:             campaignID,
 		OrganizationID: orgID,
@@ -203,7 +205,7 @@ func (s *Store) GetCampaignForRefund(ctx context.Context, campaignID pgtype.UUID
 // MarkCampaignRefunded zeroes the budget_credits and sets status to 'rejected'.
 // Called after the refund task has returned the unused credits to the org wallet.
 func (s *Store) MarkCampaignRefunded(ctx context.Context, campaignID pgtype.UUID) error {
-	if err := s.queries.MarkCampaignRefunded(ctx,
+	if err := s.writeQueries.MarkCampaignRefunded(ctx,
 
 		campaignID,
 	); err != nil {

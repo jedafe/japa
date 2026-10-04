@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { BookOpen, FileText, ArrowLeft } from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
+	import { contentHref } from '$lib/utils/contentLink';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -10,11 +11,11 @@
 	const series = $derived(data.series);
 
 	const title = $derived(
-		t('blog_series_detail.title', '{name} — JapaConnect').replace('{name}', series.title)
+		t('series_detail.title', '{name} — JapaConnect').replace('{name}', series.title)
 	);
 	const description = $derived(
 		series.description ??
-			t('blog_series_detail.description', 'Posts in the {name} series.').replace(
+			t('series_detail.description', 'Posts in the {name} series.').replace(
 				'{name}',
 				series.title
 			)
@@ -34,10 +35,10 @@
 	<!-- Series header -->
 	<div class="mx-3 border-b border-[var(--color-border)] px-4 py-4">
 		<a
-			href="/blog/series"
+			href="/series"
 			class="mb-2 inline-flex items-center gap-1.5 text-sm text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 		>
-			<ArrowLeft size={16} /> {t('blog_series_detail.back', 'All series')}
+			<ArrowLeft size={16} /> {t('series_detail.back', 'All series')}
 		</a>
 		<div class="flex items-center gap-3">
 			{#if series.cover_image_url}
@@ -67,13 +68,13 @@
 
 	<div class="p-3">
 		{#if data.posts.length === 0}
-			<EmptyState icon={FileText} title={t('blog_series_detail.empty', 'No posts in this series yet')} />
+			<EmptyState icon={FileText} title={t('series_detail.empty', 'No posts in this series yet')} />
 		{:else}
 			<ol class="space-y-2">
 				{#each data.posts as post (post.content_id)}
 					<li>
 						<a
-							href="/blog/{post.slug}"
+							href={contentHref(post)}
 							class="flex items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<span
@@ -87,7 +88,7 @@
 									<span class="truncate">{post.title}</span>
 								</span>
 								<span class="mt-0.5 block text-xs capitalize text-[var(--color-muted)]">
-									{post.status}
+									{post.content_type ? post.content_type.replace(/_/g, ' ') : post.status}
 								</span>
 							</span>
 						</a>

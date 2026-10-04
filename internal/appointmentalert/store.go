@@ -252,7 +252,7 @@ func (s *Store) CreateEmbassy(ctx context.Context, r EmbassyRow) (EmbassyRow, er
 INSERT INTO monitored_embassies (
     destination_space_id, slug, name, booking_url,
     poll_interval_seconds, is_active
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, destination_space_id, slug, name, booking_url,
           poll_interval_seconds, is_active, last_polled_at, created_at, updated_at
 `
@@ -260,8 +260,7 @@ RETURNING id, destination_space_id, slug, name, booking_url,
 	var out EmbassyRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		r.DestinationSpaceID, r.Slug, r.Name, r.BookingURL,
 		r.PollIntervalSeconds, r.IsActive,
 	).Scan(
@@ -286,7 +285,7 @@ func (s *Store) UpdateEmbassy(ctx context.Context, id pgtype.UUID, name, booking
 	)
 
 	args = append(args, id)
-	idx = 3
+	idx = 2
 
 	if name != nil {
 		sets = append(sets, fmt.Sprintf("name = $%d", idx))
@@ -548,7 +547,7 @@ func (s *Store) CreateAlert(ctx context.Context, r AlertRow) (AlertRow, error) {
 INSERT INTO appointment_alerts (
     user_id, destination_space_id, embassy_slug, visa_category,
     date_range_start, date_range_end, status, expires_at, notification_channels
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
           date_range_start, date_range_end, status, last_checked_at, fired_at,
           expires_at, notification_channels, created_at, updated_at, deleted_at
@@ -557,8 +556,7 @@ RETURNING id, user_id, destination_space_id, embassy_slug, visa_category,
 	var out AlertRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		r.UserID, r.DestinationSpaceID, r.EmbassySlug, r.VisaCategory,
 		r.DateRangeStart, r.DateRangeEnd, status, r.ExpiresAt, channels,
 	).Scan(
@@ -584,7 +582,7 @@ func (s *Store) UpdateAlert(ctx context.Context, id pgtype.UUID, status, visaCat
 	)
 
 	args = append(args, id)
-	idx = 3
+	idx = 2
 
 	if status != nil {
 		sets = append(sets, fmt.Sprintf("status = $%d", idx))

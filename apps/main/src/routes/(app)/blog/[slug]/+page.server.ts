@@ -122,7 +122,7 @@ export const load: PageServerLoad = async (event) => {
 	let seriesPosts: SeriesPost[] = [];
 	if (article.series_id) {
 		try {
-			seriesPosts = await apiGet<SeriesPost[]>(ctx, `/blog/series/${article.series_id}/posts`);
+			seriesPosts = await apiGet<SeriesPost[]>(ctx, `/series/${article.series_id}/posts`);
 			seriesPosts = seriesPosts ?? [];
 		} catch {
 			// series posts endpoint not available — keep empty

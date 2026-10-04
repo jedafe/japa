@@ -326,7 +326,7 @@ export interface CustomFieldGroup {
 	fields: CustomFieldDef[];
 }
 
-/** GET /blog/series item. */
+/** GET /series item. */
 export interface BlogSeries {
 	id: string;
 
@@ -537,6 +537,10 @@ export interface MeProfile {
 	timezone?: string | null;
 	avatar_url?: string | null;
 	cover_url?: string | null;
+	/** Media-system IDs — PATCH /me/profile accepts these and resolves the
+	 * stored avatar_url/cover_url server-side (BUG-004). */
+	avatar_media_id?: string | null;
+	header_media_id?: string | null;
 	primary_space?: SpaceRef | null;
 	ui?: { nav_collapsed?: boolean; theme?: string } & Record<string, unknown>;
 	/** ADR-064a: ISO 3166-1 alpha-2 origin country code (custom field). */
@@ -2630,6 +2634,7 @@ export interface ColCityData {
 	id: string;
 	title: string;
 	geo_space_name: string;
+	geo_space_slug: string;
 	is_baseline: boolean;
 	last_updated: string;
 	values: Record<string, string>;
@@ -4646,6 +4651,8 @@ export interface CrsCalculateInput {
 	marital_status: 'single' | 'married';
 	age: number;
 	education: string;
+	/** Which official language the clb_first test was taken in. */
+	first_language?: 'english' | 'french';
 	clb_first: { listening: number; reading: number; writing: number; speaking: number };
 	clb_second?: { listening: number; reading: number; writing: number; speaking: number };
 	canadian_experience_years: number;

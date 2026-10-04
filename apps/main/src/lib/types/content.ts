@@ -67,7 +67,7 @@ export interface ContentArticle {
 	series_next_slug?: string | null;
 }
 
-/** A single part in a blog series (returned by /blog/series/{id}/posts). */
+/** A single part in a series (returned by /series/{id}/posts). */
 export interface SeriesPost {
 	content_id: string;
 	position: number;
@@ -75,6 +75,9 @@ export interface SeriesPost {
 	slug: string;
 	status: string;
 	created_at: string;
+	/** Series are cross-type (§14) — needed to link each part to its own
+	 *  route family via contentHref(). */
+	content_type?: string;
 }
 
 /**

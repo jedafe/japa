@@ -8,7 +8,7 @@ import type { GuideListItem } from '$lib/types/content';
  * Guides hub — GET /content?type=guide with guide_category + cursor
  * pagination, plus tabs: Popular (sort=popular → view_count order, offset
  * pagination), Featured (generic content_featured junction), Series
- * (GET /blog/series?content_type=guide), and Roadmap (guides grouped by
+ * (GET /series?content_type=guide), and Roadmap (guides grouped by
  * journey_stage in canonical §87 order, fetched with page_size=100).
  * Category options come from GET /content-types (single source of truth).
  * Ref: japaconnect-engineering/sections/14-content-type-system.md
@@ -31,7 +31,7 @@ export const load: PageServerLoad = async (event) => {
 	if (tab === 'series') {
 		const { items, meta } = await apiList<BlogSeries>(
 			ctx,
-			`/blog/series?content_type=guide&page_size=${PAGE_SIZE}`
+			`/series?content_type=guide&page_size=${PAGE_SIZE}`
 		).catch(() => ({ items: [] as BlogSeries[], meta: null }));
 		return {
 			items: [] as GuideListItem[],

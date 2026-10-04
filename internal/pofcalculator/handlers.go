@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -200,9 +201,20 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The admin EntityPage sends sort as "col:dir"; accept the split
+	// order/dir params too.
+	sortKey, sortDir, _ := strings.Cut(r.URL.Query().Get("sort"), ":")
+	if v := r.URL.Query().Get("order"); v != "" {
+		sortDir = v
+	}
+	if v := r.URL.Query().Get("dir"); v != "" {
+		sortDir = v
+	}
+
 	page, limit := parsePageParams(r)
 	reqs, total, err := h.service.AdminListRequirements(r.Context(), destSpaceID,
-		r.URL.Query().Get("visa_type"), r.URL.Query().Get("status"), page, limit)
+		r.URL.Query().Get("visa_type"), r.URL.Query().Get("status"), r.URL.Query().Get("q"),
+		sortKey, sortDir, page, limit)
 	if err != nil {
 		slog.Error("pofcalculator: admin list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list requirements")
@@ -289,6 +301,10 @@ func (h *Handlers) HandleAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := h.service.UpdateRequirement(r.Context(), id, input); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "requirement_not_found", "Requirement not found")
+			return
+		}
+		if errors.Is(err, errInvalidInput) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
 			return
 		}
 		slog.Error("pofcalculator: update failed", "id", id, "error", err)

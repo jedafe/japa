@@ -7,10 +7,16 @@ package media
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
 	"os"
+	"strings"
 
+	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -58,11 +64,12 @@ type MediaAttribution struct {
 
 // Service provides media operations with reader/writer pool separation.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	s3       *S3Client
-	settings SettingsProvider
-	vk       valkeycompat.Cmdable
+	store       *Store
+	db          *db.DB
+	s3          *S3Client
+	settings    SettingsProvider
+	vk          valkeycompat.Cmdable
+	asynqClient *asynq.Client
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -93,6 +100,47 @@ func NewServiceWithConfig(database *db.DB, s3cfg S3Config) *Service {
 // (media.max_upload_mb, media.allowed_video_types, media.cdn.base_url).
 func (s *Service) SetSettings(sp SettingsProvider) {
 	s.settings = sp
+}
+
+// SetAsynqClient injects the task client used to enqueue virus scans for
+// media ingested server-side (StoreFromBytes) — the same scan enqueue
+// user uploads get via enqueueMediaTasks. Nil disables enqueuing; the
+// nightly security:scan sweep over ListMediaForScanning remains the
+// backstop.
+func (s *Service) SetAsynqClient(c *asynq.Client) {
+	s.asynqClient = c
+}
+
+// enqueueScanTask enqueues a content:scan_media task for a media row —
+// fire-and-forget, errors are logged only.
+func (s *Service) enqueueScanTask(mediaID pgtype.UUID) {
+	if s.asynqClient == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]string{"media_id": mediaID.String()})
+	if _, err := s.asynqClient.Enqueue(
+		asynq.NewTask(worker.TypeMediaScan, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeMediaScan)),
+	); err != nil {
+		slog.Warn("media: failed to enqueue scan task", "media_id", mediaID.String(), "error", err)
+	}
+}
+
+// storageBucket returns the bucket uploads are stored under: the configured
+// S3/SeaweedFS bucket when a client is set (it already resolved
+// media.storage.bucket), otherwise the media.storage.bucket system setting,
+// otherwise DefaultBucket. Media rows and local fallback paths must use this
+// so generated URLs always agree with where objects actually live.
+func (s *Service) storageBucket(ctx context.Context) string {
+	if s.s3 != nil {
+		return s.s3.bucket
+	}
+	if s.settings != nil {
+		if b := strings.TrimSpace(s.settings.GetStringOr(ctx, "media.storage.bucket", "")); b != "" {
+			return b
+		}
+	}
+	return DefaultBucket
 }
 
 // ReconfigureS3FromSettings rebuilds the S3 client from the admin-configurable

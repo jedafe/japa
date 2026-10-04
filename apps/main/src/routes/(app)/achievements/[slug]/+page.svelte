@@ -94,6 +94,13 @@
 		}
 	}
 
+	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
+	// on mount; the backend deduplicates per user/session per day.
+	$effect(() => {
+		if (!achievement.id) return;
+		api.post(`/content/${achievement.id}/view`, {});
+	});
+
 	async function deleteAchievement() {
 		if (deleting || !data.canEdit) return;
 		if (!confirm(t('achievements.confirm_delete', 'Delete this achievement? This cannot be undone.'))) return;

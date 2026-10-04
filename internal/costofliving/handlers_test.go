@@ -112,7 +112,7 @@ func TestMaxCitiesEnforcement(t *testing.T) {
 		ids[i] = toPgUUID(uuid.New())
 	}
 
-	_, err := svc.CompareCities(t.Context(), ids)
+	_, err := svc.CompareCities(t.Context(), ids, pgtype.UUID{})
 	if err == nil {
 		t.Fatal("CompareCities with 5 cities (> max 3) did not return an error")
 	}
@@ -147,7 +147,7 @@ func TestCompareCities_AtMaxAccepts(t *testing.T) {
 			}
 		}()
 
-		_, err = svc.CompareCities(t.Context(), ids)
+		_, err = svc.CompareCities(t.Context(), ids, pgtype.UUID{})
 	}()
 
 	if err != nil && containsStr(err.Error(), "too many cities") {
@@ -371,7 +371,7 @@ func TestCompareCities_Dedup(t *testing.T) {
 			}
 		}()
 
-		_, err = svc.CompareCities(t.Context(), ids)
+		_, err = svc.CompareCities(t.Context(), ids, pgtype.UUID{})
 	}()
 
 	if err != nil && containsStr(err.Error(), "too many cities") {
@@ -390,12 +390,40 @@ func TestCompareCities_TooManyUnique(t *testing.T) {
 		ids[i] = toPgUUID(uuid.New())
 	}
 
-	_, err := svc.CompareCities(t.Context(), ids)
+	_, err := svc.CompareCities(t.Context(), ids, pgtype.UUID{})
 	if err == nil {
 		t.Fatal("CompareCities with 4 unique cities (> max 3) did not return an error")
 	}
 
 	if !containsStr(err.Error(), "too many cities") {
 		t.Errorf("error = %q, want it to contain \"too many cities\"", err.Error())
+	}
+}
+
+// TestCompareCities_BaselineExemptFromMax verifies that the requested
+// baseline_id does not consume a destination slot: 3 destinations + the
+// baseline inside city_ids (4 unique total) must pass the max=3 check.
+// This is the shape the JCE export form posts.
+func TestCompareCities_BaselineExemptFromMax(t *testing.T) {
+	svc := &Service{store: nil, settings: nil}
+
+	baseline := toPgUUID(uuid.New())
+	ids := []pgtype.UUID{baseline, toPgUUID(uuid.New()), toPgUUID(uuid.New()), toPgUUID(uuid.New())}
+
+	var err error
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Nil store dereference — expected; the max check passed.
+				err = errNotNilStore
+			}
+		}()
+
+		_, err = svc.CompareCities(t.Context(), ids, baseline)
+	}()
+
+	if err != nil && containsStr(err.Error(), "too many cities") {
+		t.Errorf("CompareCities with baseline + 3 destinations should not be rejected as too many cities, got: %v", err)
 	}
 }

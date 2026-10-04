@@ -55,6 +55,7 @@
 		"bits-ui": "^2.18.1",
 		"clsx": "^2.1.1",
 		"driver.js": "^1.8.0",
+		"heic2any": "0.0.4",
 		"isomorphic-dompurify": "^2",
 		"js-yaml": "^4.1.0",
 		"layerchart": "2.0.1",

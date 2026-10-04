@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -58,6 +59,9 @@ type RequirementDTO struct {
 	IsActive             bool            `json:"is_active"`
 	AIGenerated          bool            `json:"ai_generated"`
 	IsJapabotIndexed     bool            `json:"is_japabot_indexed"`
+	HITLReviewedAt       string          `json:"hitl_reviewed_at,omitempty"`
+	CreatedAt            string          `json:"created_at,omitempty"`
+	UpdatedAt            string          `json:"updated_at,omitempty"`
 }
 
 // CalculateResultDTO is one resolved requirement for a household.
@@ -96,6 +100,10 @@ type RequirementRequest struct {
 type ApproveRequest struct {
 	ReviewNotes string `json:"review_notes"`
 }
+
+// errInvalidInput marks request-validation failures so the handler can
+// map them to 400 instead of 500.
+var errInvalidInput = errors.New("invalid input")
 
 // Service orchestrates POF lookups and calculation.
 type Service struct {
@@ -204,8 +212,8 @@ func (s *Service) convert(ctx context.Context, dto *CalculateResultDTO) {
 }
 
 // AdminListRequirements returns requirements in any status (admin).
-func (s *Service) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaType, status string, page, limit int32) ([]RequirementDTO, int64, error) {
-	rows, total, err := s.store.AdminListRequirements(ctx, destSpaceID, visaType, status, page, limit)
+func (s *Service) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaType, status, q, sort, order string, page, limit int32) ([]RequirementDTO, int64, error) {
+	rows, total, err := s.store.AdminListRequirements(ctx, destSpaceID, visaType, status, q, sort, order, page, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -239,6 +247,12 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 	if status == "" {
 		status = StatusDraft
 	}
+	// HITL gate (ADR-088): only draft/pending may be set directly.
+	// published comes from the approve endpoint, ai_draft from the
+	// Content Agent, rejected from the reject endpoint.
+	if status != StatusDraft && status != StatusPending {
+		return nil, errors.New("status must be draft or pending; review transitions use the approve/reject endpoints")
+	}
 	row := RequirementRow{
 		DestinationSpaceID: dest,
 		VisaType:           in.VisaType,
@@ -270,6 +284,23 @@ func (s *Service) CreateRequirement(ctx context.Context, in RequirementRequest) 
 
 // UpdateRequirement applies a partial update (admin).
 func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, in RequirementRequest) error {
+	// HITL gate (ADR-088): status transitions to published/ai_draft/
+	// rejected are only allowed through the approve/reject/generate
+	// endpoints — direct PATCH may only set draft or pending.
+	if in.Status != "" && in.Status != StatusDraft && in.Status != StatusPending {
+		return fmt.Errorf("%w: status must be draft or pending; review transitions use the approve/reject endpoints", errInvalidInput)
+	}
+	// A published row may not be demoted through PATCH — withdraw it via
+	// is_active instead so live data cannot leave the review flow silently.
+	if in.Status != "" {
+		cur, err := s.store.GetRequirement(ctx, id)
+		if err != nil {
+			return err
+		}
+		if cur.Status == StatusPublished {
+			return fmt.Errorf("%w: published requirements cannot change status via PATCH; deactivate instead", errInvalidInput)
+		}
+	}
 	row := RequirementRow{
 		VisaType:     in.VisaType,
 		ProgramLabel: in.ProgramLabel,
@@ -278,9 +309,16 @@ func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, in Requ
 		SourceURL:    in.SourceURL,
 		Status:       in.Status,
 	}
+	if in.DestinationSpaceID != "" {
+		var dest pgtype.UUID
+		if err := dest.Scan(in.DestinationSpaceID); err != nil {
+			return fmt.Errorf("%w: invalid destination_space_id", errInvalidInput)
+		}
+		row.DestinationSpaceID = dest
+	}
 	if in.AmountSchedule != nil {
 		if _, err := resolveSchedule(*in.AmountSchedule, 1); err != nil {
-			return fmt.Errorf("invalid amount_schedule: %w", err)
+			return fmt.Errorf("%w: invalid amount_schedule: %w", errInvalidInput, err)
 		}
 		row.AmountSchedule = *in.AmountSchedule
 	}
@@ -296,7 +334,7 @@ func (s *Service) UpdateRequirement(ctx context.Context, id pgtype.UUID, in Requ
 	if in.EffectiveDate != "" {
 		var eff pgtype.Date
 		if err := eff.Scan(in.EffectiveDate); err != nil {
-			return fmt.Errorf("invalid effective_date")
+			return fmt.Errorf("%w: invalid effective_date", errInvalidInput)
 		}
 		row.EffectiveDate = eff
 	}
@@ -414,6 +452,15 @@ func requirementDTO(r RequirementRow) RequirementDTO {
 	if r.SourceURLLastChecked.Valid {
 		d.SourceURLLastChecked = r.SourceURLLastChecked.Time.Format("2006-01-02")
 	}
+	if r.HITLReviewedAt.Valid {
+		d.HITLReviewedAt = r.HITLReviewedAt.Time.Format(time.RFC3339)
+	}
+	if r.CreatedAt.Valid {
+		d.CreatedAt = r.CreatedAt.Time.Format(time.RFC3339)
+	}
+	if r.UpdatedAt.Valid {
+		d.UpdatedAt = r.UpdatedAt.Time.Format(time.RFC3339)
+	}
 	return d
 }
 
@@ -488,6 +535,9 @@ func (s *Service) EnqueueGenerate(ctx context.Context, params map[string]string)
 	}
 	if params["destination_space_id"] == "" {
 		return errors.New("destination_space_id is required")
+	}
+	if _, err := uuidParam(params, "destination_space_id"); err != nil {
+		return err
 	}
 	payload := map[string]string{"entity_type": "pof_requirement"}
 	for k, v := range params {

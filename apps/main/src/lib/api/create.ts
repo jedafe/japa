@@ -69,9 +69,9 @@ export const detachTag = (id: string, tagSlug: string) =>
 	api.delete(`/content/${id}/tags/${encodeURIComponent(tagSlug)}`);
 
 /* ---- series (deferred linkage; standard form only) ---- */
-export const listSeries = () => api.get<BlogSeries[]>('/blog/series');
+export const listSeries = () => api.get<BlogSeries[]>('/series');
 export const searchSeries = (q: string) =>
-	api.get<BlogSeries[]>(`/blog/series?q=${encodeURIComponent(q)}`);
+	api.get<BlogSeries[]>(`/series?q=${encodeURIComponent(q)}`);
 
 /* ---- spaces (debounced autocomplete search) ---- */
 export const searchSpaces = (q: string, limit = 50) =>
@@ -93,11 +93,11 @@ export const createSeries = (input: {
 	slug: string;
 	description?: string;
 	cover_image_id?: string;
-}) => api.post<BlogSeries>('/blog/series', input);
+}) => api.post<BlogSeries>('/series', input);
 export const linkSeries = (seriesId: string, contentId: string, position: number) =>
-	api.post(`/blog/series/${seriesId}/posts`, { content_id: contentId, position });
+	api.post(`/series/${seriesId}/posts`, { content_id: contentId, position });
 export const unlinkSeries = (seriesId: string, contentId: string) =>
-	api.delete(`/blog/series/${seriesId}/posts/${contentId}`);
+	api.delete(`/series/${seriesId}/posts/${contentId}`);
 
 /* ---- media (2-step presigned-URL upload) ----
  * The backend's POST /media/upload takes a JSON body {filename, mime_type,

@@ -27,6 +27,14 @@
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
+	import { page } from '$app/state';
+	import { api } from '$lib/api/client';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
+	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
+	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
+	import { hydrateContentEmbeds } from '$lib/tiptap/hydrateContentEmbeds';
+	import { imgLightbox } from '$lib/lightbox.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -65,6 +73,13 @@
 		}
 	});
 
+	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
+	// on mount; the backend deduplicates per user/session per day.
+	$effect(() => {
+		if (!comparison?.content?.id) return;
+		api.post(`/content/${comparison.content.id}/view`, {});
+	});
+
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
 	}
@@ -82,7 +97,28 @@
 			return cell.value_boolean ? t('jce.common.yes') : t('jce.common.no');
 		return '—';
 	}
+
+	const headTitle = $derived(`${comparison.content.title} — ${t('jce.comparisons.title', 'Comparisons')}`);
+	const headDescription = $derived(
+		(comparison.content.body ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)
+	);
+	const sanitizedBody = $derived(
+		sanitizeContentHtml(comparison.content.body_html ?? comparison.content.body ?? '')
+	);
 </script>
+
+<svelte:head>
+	<title>{headTitle}</title>
+	{#if headDescription}<meta name="description" content={headDescription} />{/if}
+	<meta property="og:title" content={comparison.content.title} />
+	{#if headDescription}<meta property="og:description" content={headDescription} />{/if}
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content={page.url.href} />
+	{#if comparison.content.featured_image_url}<meta property="og:image" content={comparison.content.featured_image_url} />{/if}
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={comparison.content.title} />
+	{#if headDescription}<meta name="twitter:description" content={headDescription} />{/if}
+</svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout. Left nav auto-collapses;
      right sidebar is CreatorCard + widgets; on mobile it is stacked below the body. -->
@@ -90,7 +126,7 @@
 	<div class="flex flex-col gap-4">
 		<CreatorCard
 			{authorName}
-			authorUsername={comparison.content.author_username ?? comparison.content.author_name}
+			authorUsername={comparison.content.author_username}
 			authorAvatarUrl={comparison.content.author_avatar_url}
 			spaceName={comparison.content.space_name}
 			spaceSlug={comparison.content.space_slug}
@@ -182,10 +218,11 @@
 			<span class="ml-auto capitalize">{comparison.metadata.depth} · {comparison.content.status} · {comparison.content.visibility}</span>
 		</div>
 
-	{#if comparison.content.body_html || comparison.content.body}
-		<!-- body_html is sanitized by the content service (SanitizeHTML) before storage. Ref: Rule 12, Section 30. -->
-		<div class="prose mt-8">
-			{@html comparison.content.body_html ?? comparison.content.body}
+	{#if sanitizedBody}
+		<!-- body_html is sanitized by the content service (SanitizeHTML) before storage;
+		     re-sanitized client-side for parity with the other content singles. -->
+		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:hydrateContentEmbeds use:imgLightbox>
+			{@html sanitizedBody}
 		</div>
 	{/if}
 
@@ -284,7 +321,6 @@
 		<ReactionRail
 			contentId={comparison.content.id}
 			commentCount={comparison.content.comment_count}
-			voteScore={comparison.content.reshare_count}
 			authed={data.authed}
 			horizontal
 		/>

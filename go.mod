@@ -6,6 +6,7 @@ require (
 	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/alicebob/miniredis/v2 v2.38.0
+	github.com/gen2brain/webp v0.6.4
 	github.com/getsentry/sentry-go v0.47.0
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-git/go-billy/v5 v5.9.1
@@ -21,7 +22,6 @@ require (
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/pgvector/pgvector-go v0.4.0
 	github.com/pquerna/otp v1.5.0
-	github.com/redis/go-redis/v9 v9.14.1
 	github.com/stretchr/testify v1.11.1
 	github.com/valkey-io/valkey-go v1.0.76
 	github.com/valkey-io/valkey-go/valkeycompat v1.0.76
@@ -40,6 +40,7 @@ require (
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
@@ -48,6 +49,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/redis/go-redis/v9 v9.14.1 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect

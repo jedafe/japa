@@ -38,7 +38,7 @@ export const load: PageServerLoad = async (event) => {
 			if (q) params.set('q', q);
 			params.set('page_size', String(pageSize));
 			params.set('page_offset', String(pageOffset));
-			const { items, meta } = await apiList<BlogSeries>(ctx, `/blog/series?${params.toString()}`);
+			const { items, meta } = await apiList<BlogSeries>(ctx, `/series?${params.toString()}`);
 			return { items: [] as ContentArticle[], meta: null, series: items, page, pageSize, tab, tag, spaceId, authorId, seriesId, sort, q, loadError: false };
 		}
 		const pageOffset = (page - 1) * pageSize;

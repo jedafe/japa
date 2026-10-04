@@ -55,7 +55,7 @@ func (s *Store) getBlogSeriesBySlug(ctx context.Context, slug string) (gen.GetBl
 	return row, nil
 }
 
-func (s *Store) listBlogSeriesByPlatform(ctx context.Context, q, contentType string, limit, offset int32) ([]gen.ListBlogSeriesRow, error) {
+func (s *Store) listBlogSeriesByPlatform(ctx context.Context, q, contentType, sort string, limit, offset int32) ([]gen.ListBlogSeriesRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -64,6 +64,7 @@ func (s *Store) listBlogSeriesByPlatform(ctx context.Context, q, contentType str
 
 		Q:           q,
 		ContentType: contentType,
+		Sort:        sort,
 		PageLimit:   limit,
 		PageOffset:  offset,
 	})
@@ -74,7 +75,7 @@ func (s *Store) listBlogSeriesByPlatform(ctx context.Context, q, contentType str
 	return rows, nil
 }
 
-func (s *Store) listBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, limit, offset int32) ([]gen.ListBlogSeriesByAuthorRow, error) {
+func (s *Store) listBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, q, contentType, sort string, limit, offset int32) ([]gen.ListBlogSeriesByAuthorRow, error) {
 	if limit <= 0 || limit > MaxPageSize {
 		limit = DefaultPageSize
 	}
@@ -82,6 +83,9 @@ func (s *Store) listBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.
 	rows, err := s.read.ListBlogSeriesByAuthor(ctx, gen.ListBlogSeriesByAuthorParams{
 
 		AuthorUserID: authorUserID,
+		Q:            q,
+		ContentType:  contentType,
+		Sort:         sort,
 		PageLimit:    limit,
 		PageOffset:   offset,
 	})
@@ -105,11 +109,13 @@ func (s *Store) countBlogSeriesByPlatform(ctx context.Context, q, contentType st
 	return count, nil
 }
 
-func (s *Store) countBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
-	count, err := s.read.CountBlogSeriesByAuthor(ctx,
+func (s *Store) countBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID, q, contentType string) (int64, error) {
+	count, err := s.read.CountBlogSeriesByAuthor(ctx, gen.CountBlogSeriesByAuthorParams{
 
-		authorUserID,
-	)
+		AuthorUserID: authorUserID,
+		Q:            q,
+		ContentType:  contentType,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("counting blog series by author: %w", err)
 	}

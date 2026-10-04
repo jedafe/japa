@@ -1,6 +1,7 @@
 package media
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -47,16 +48,24 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 		return fmt.Errorf("media:scan: fetch media %s: %w", mediaID, err)
 	}
 
-	// Open the file from object storage.
-	file, err := openLocalFile(m.StorageBucket, m.StoragePath)
+	// Fetch the object — S3 when configured, local disk otherwise. This
+	// must NOT use openLocalFile alone: presigned uploads and ingestion
+	// writes land in S3 on production deployments, so a local-only read
+	// fails every scan and post-hoc quarantine never fires.
+	data, err := p.svc.fetchObjectBytes(ctx, m.StorageBucket, m.StoragePath, MaxMediaUploadBody)
 	if err != nil {
+		if errors.Is(err, errObjectMissing) {
+			// Pending upload whose object never arrived, or an already
+			// removed object — nothing to scan; skip without retrying.
+			slog.Warn("media:scan: stored object missing, skipping",
+				"media_id", mediaID)
+			return nil
+		}
 		return fmt.Errorf("media:scan: open file %s/%s: %w", m.StorageBucket, m.StoragePath, err)
 	}
 
-	defer func() { _ = file.Close() }()
-
 	// Send to ClamAV.
-	result, err := p.scanner.Scan(file)
+	result, err := p.scanner.Scan(bytes.NewReader(data))
 	if err != nil {
 		// ClamAV unreachable — log and confirm the media item rather
 		// than blocking uploads. This matches the graceful-degradation

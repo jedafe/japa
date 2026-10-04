@@ -8,6 +8,7 @@
 	// ad campaign content supports an image_media_id + image_url pair.
 	// Ref: AGENTS.md Rule 16 — media comes from the API, never hardcoded.
 	import { apiFetch, apiRaw, mediaAdminApi, stockAdminApi, type StockPhoto } from '$lib/api';
+	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
@@ -28,7 +29,7 @@
 	let {
 		open = $bindable(false),
 		onselect,
-		accept = 'image/*'
+		accept = 'image/*,.heic,.heif'
 	}: {
 		open?: boolean;
 		onselect: (media: { id: string; url: string; filename: string }) => void;
@@ -187,8 +188,9 @@
 		uploadProgress = t('common.uploading', 'Uploading...');
 		errorMessage = '';
 		try {
+			const convertedFile = await convertImageToModernFormat(uploadFile);
 			const formData = new FormData();
-			formData.append('file', uploadFile);
+			formData.append('file', convertedFile);
 			const result = await apiFetch<{ media_id: string; url: string }>(
 				'/admin/media/upload',
 				{ method: 'POST', body: formData }
@@ -199,7 +201,7 @@
 				onselect({
 					id: result.data.media_id,
 					url: fixMediaUrl(result.data.url),
-					filename: uploadFile.name
+					filename: convertedFile.name
 				});
 				open = false;
 				uploadFile = null;

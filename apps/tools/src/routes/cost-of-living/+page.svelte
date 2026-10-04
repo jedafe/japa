@@ -2,13 +2,15 @@
 	import { untrack } from 'svelte';
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { buildSeoMeta } from '$lib/seo';
+	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import type { ColCity, ColComparisonMatrix } from '$lib/types';
 
 	/**
@@ -20,7 +22,6 @@
 
 	let cities = $state<ColCity[]>(untrack(() => data.cities));
 	let matrix = $state<ColComparisonMatrix | null>(untrack(() => data.matrix));
-	let selectedIds = $state<string[]>(untrack(() => data.preselected ?? []));
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
@@ -30,37 +31,46 @@
 	const maxCities = untrack(() => data.maxCities) ?? 3;
 	const staleDays = untrack(() => data.staleDays) ?? 180;
 
+	// The city ratios are computed against — user-selectable (§72 amendment),
+	// defaulting to the seeded is_baseline city (Lagos).
+	const seededBaselineId = $derived(cities.find((c) => c.is_baseline)?.id ?? null);
+	let baselineId = $state<string | null>(untrack(() => data.preselectedBaseline ?? null));
+	// Destination cities compared against the baseline. The baseline is
+	// excluded in case an old-style share URL carries it inside city_ids.
+	let selectedIds = $state<string[]>(
+		untrack(() => {
+			const base =
+				data.preselectedBaseline ?? data.cities.find((c) => c.is_baseline)?.id ?? null;
+			return (data.preselected ?? []).filter((id) => id !== base).slice(0, maxCities);
+		})
+	);
+
 	const seo = $derived(
 		buildSeoMeta({
 			title: t('col.seo_title', 'Cost of Living Calculator — JapaConnect Tools'),
 			description: t(
 				'col.seo_description',
-				'Compare cost of living between your destination cities and the Lagos baseline. Rent, groceries, transport, utilities, and more.'
+				'Compare cost of living between your destination cities and a baseline city. Rent, groceries, transport, utilities, and more.'
 			),
 			path: '/cost-of-living',
 			origin: page.url.origin
 		})
 	);
 
-	const baselineCity = $derived(cities.find((c) => c.is_baseline));
-
-	// Ensure baseline is always in the selection.
-	$effect(() => {
-		if (baselineCity && !selectedIds.includes(baselineCity.id)) {
-			selectedIds = [baselineCity.id, ...selectedIds.filter((id) => id !== baselineCity.id)].slice(0, maxCities);
-		}
-	});
+	const effectiveBaselineId = $derived(baselineId ?? seededBaselineId);
+	const baselineCity = $derived(cities.find((c) => c.id === effectiveBaselineId) ?? null);
 
 	async function runComparison() {
-		if (selectedIds.length < 2) {
+		if (selectedIds.length < 1) {
 			matrix = null;
 			return;
 		}
 		loading = true;
 		error = null;
-		const idsParam = selectedIds.join(',');
+		const params = new URLSearchParams({ city_ids: selectedIds.join(',') });
+		if (effectiveBaselineId) params.set('baseline_id', effectiveBaselineId);
 		const res = await api.get<ColComparisonMatrix>(
-			`/calculator/cost-of-living/compare?city_ids=${encodeURIComponent(idsParam)}`
+			`/calculator/cost-of-living/compare?${params.toString()}`
 		);
 		loading = false;
 		if (res.error) {
@@ -69,19 +79,79 @@
 			return;
 		}
 		matrix = res.data;
+		// If the requested baseline didn't resolve, the API falls back to the
+		// seeded baseline — mirror the effective one.
+		if (res.data?.baseline_city_id && res.data.baseline_city_id !== baselineId) {
+			baselineId = res.data.baseline_city_id;
+		}
 		// Update URL for shareability (SvelteKit replaceState, not window.history)
 		const url = new URL(page.url);
-		url.searchParams.set('city_ids', idsParam);
+		url.searchParams.set('city_ids', selectedIds.join(','));
+		if (effectiveBaselineId) url.searchParams.set('baseline_id', effectiveBaselineId);
+		else url.searchParams.delete('baseline_id');
 		replaceState(url, {});
 	}
 
-	function toggleCity(cityId: string) {
-		if (selectedIds.includes(cityId)) {
-			if (baselineCity && cityId === baselineCity.id) return; // can't remove baseline
-			selectedIds = selectedIds.filter((id) => id !== cityId);
-		} else if (selectedIds.length < maxCities) {
-			selectedIds = [...selectedIds, cityId];
-		}
+	function setBaseline(cityId: string) {
+		if (cityId === effectiveBaselineId) return;
+		baselineId = cityId;
+		// A city can't be both the reference and a destination.
+		selectedIds = selectedIds.filter((id) => id !== cityId);
+	}
+
+	function addCity(cityId: string) {
+		if (cityId === effectiveBaselineId || selectedIds.includes(cityId) || selectedIds.length >= maxCities) return;
+		selectedIds = [...selectedIds, cityId];
+	}
+
+	function removeCity(cityId: string) {
+		selectedIds = selectedIds.filter((id) => id !== cityId);
+	}
+
+	// Autocomplete fetchers — filter the SSR-loaded city list client-side
+	// (Rule 16: the list comes from the API). The destination picker excludes
+	// already-selected cities and the baseline; the baseline picker lists all.
+	function cityItem(c: ColCity): AutocompleteItem {
+		return {
+			id: c.id,
+			label: cityLabel(c),
+			sublabel: c.is_baseline
+				? t('col.baseline_label', 'Baseline')
+				: c.geo_space_name || undefined
+		};
+	}
+
+	function matchesCity(c: ColCity, query: string): boolean {
+		return (
+			query === '' ||
+			cityLabel(c).toLowerCase().includes(query) ||
+			c.geo_space_name.toLowerCase().includes(query) ||
+			c.description.toLowerCase().includes(query)
+		);
+	}
+
+	function fetchCityItems(q: string): Promise<AutocompleteItem[]> {
+		const query = q.trim().toLowerCase();
+		const items = cities
+			.filter((c) => !selectedIds.includes(c.id) && c.id !== effectiveBaselineId)
+			.filter((c) => matchesCity(c, query))
+			.map(cityItem);
+		return Promise.resolve(items);
+	}
+
+	function fetchBaselineItems(q: string): Promise<AutocompleteItem[]> {
+		const query = q.trim().toLowerCase();
+		return Promise.resolve(cities.filter((c) => matchesCity(c, query)).map(cityItem));
+	}
+
+	const selectedCities = $derived(
+		selectedIds.map((id) => cities.find((c) => c.id === id)).filter(Boolean) as ColCity[]
+	);
+
+	// City wiki pages live on the main app — the tools surface has no /wiki
+	// routes, so links must go through mainAppUrl (cross-app).
+	function wikiUrl(slug: string): string {
+		return mainAppUrl(`/wiki/${slug}/cost-of-living`);
 	}
 
 	function cityLabel(c: { title?: string; geo_space_name?: string }): string {
@@ -132,7 +202,7 @@
 	<div class="mb-8">
 		<h1 class="text-2xl sm:text-3xl font-bold text-text">{t('col.title', 'Cost of Living Calculator')}</h1>
 		<p class="mt-2 text-text-subtle">
-			{t('col.subtitle', 'Compare cities against the Lagos baseline. Select up to {max} cities.').replace('{max}', String(maxCities))}
+			{t('col.subtitle', 'Compare cities against a baseline city. Select up to {max} cities.').replace('{max}', String(maxCities))}
 		</p>
 	</div>
 
@@ -153,28 +223,81 @@
 					{t('col.selected_count', '{count}/{max} selected').replace('{count}', String(selectedIds.length)).replace('{max}', String(maxCities))}
 				</span>
 			</div>
-			<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-				{#each cities as city (city.id)}
-					<button
-						onclick={() => toggleCity(city.id)}
-						disabled={!selectedIds.includes(city.id) && selectedIds.length >= maxCities}
-						class="p-3 text-left border rounded-lg transition-colors disabled:opacity-50 {selectedIds.includes(city.id) ? 'border-[var(--tool-accent)] bg-[var(--tool-accent)]/5' : 'border-border hover:border-[var(--tool-accent)]'}"
-					>
-						<div class="flex items-center justify-between">
-							<span class="text-sm font-medium text-text">{cityLabel(city)}</span>
-							{#if city.is_baseline}
-								<span class="text-xs px-1.5 py-0.5 bg-surface-subtle text-muted rounded">{t('col.baseline_label', 'Baseline')}</span>
+			<!-- Baseline picker — the city all ratios are computed against
+			     (§72 amendment: user-selectable, defaults to the seeded
+			     is_baseline city). No onClear: a baseline is required. -->
+			<div class="mb-3">
+				<label for="col-baseline-search" class="mb-1 block text-xs text-muted">
+					{t('col.baseline_compare_against', 'Compare against (baseline)')}
+				</label>
+				<div class="max-w-md">
+					<Autocomplete
+						id="col-baseline-search"
+						placeholder={t('col.search_baseline', 'Search baseline city…')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchBaselineItems}
+						initialFetcher={() => fetchBaselineItems('')}
+						selectedId={effectiveBaselineId}
+						selectedLabel={baselineCity ? cityLabel(baselineCity) : null}
+						selectedBadge={baselineCity?.id === seededBaselineId
+							? t('col.baseline_label', 'Baseline')
+							: t('col.baseline_custom', 'custom')}
+						onSelect={(item) => setBaseline(item.id)}
+						ariaLabel={t('col.baseline_compare_against', 'Compare against (baseline)')}
+					/>
+				</div>
+			</div>
+
+			<!-- Selected destination chips -->
+			{#if selectedCities.length > 0}
+				<div class="mb-3 flex flex-wrap gap-2">
+					{#each selectedCities as city (city.id)}
+						<span
+							class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-subtle px-2.5 py-1 text-xs text-text"
+						>
+							{#if city.geo_space_slug}
+								<a
+									href={wikiUrl(city.geo_space_slug)}
+									class="hover:underline"
+									title={t('col.view_wiki', 'View {city} cost of living wiki').replace('{city}', cityLabel(city))}
+								>
+									{cityLabel(city)}
+								</a>
+							{:else}
+								{cityLabel(city)}
 							{/if}
-						</div>
-						{#if city.geo_space_name}
-							<p class="text-xs text-muted mt-0.5">{city.geo_space_name}</p>
-						{/if}
-					</button>
-				{/each}
+							<button
+								type="button"
+								onclick={() => removeCity(city.id)}
+								class="text-muted hover:text-text"
+								aria-label="{t('common.remove', 'Remove')} {cityLabel(city)}"
+							>
+								<Icon name="x" size={12} />
+							</button>
+						</span>
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Destination picker (Autocomplete dropdown — searchable, scales
+			     to the full city list; selected cities and the baseline are
+			     filtered out). -->
+			<div class="max-w-md">
+				<Autocomplete
+					id="col-city-search"
+					placeholder={t('col.search_cities', 'Search cities to compare…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchCityItems}
+					initialFetcher={() => fetchCityItems('')}
+					selectedId={null}
+					onSelect={(item) => addCity(item.id)}
+					disabled={selectedIds.length >= maxCities}
+					ariaLabel={t('col.search_cities', 'Search cities to compare')}
+				/>
 			</div>
 			<button
 				onclick={runComparison}
-				disabled={selectedIds.length < 2 || loading}
+				disabled={selectedIds.length < 1 || loading}
 				class="mt-4 inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors disabled:opacity-50"
 			>
 				{#if loading}
@@ -219,7 +342,17 @@
 						{#each matrix.cities as city (city.id)}
 							<div class="flex items-center justify-between text-sm">
 								<span class="text-text">
-									{cityLabel(city)}
+									{#if city.geo_space_slug}
+										<a
+											href={wikiUrl(city.geo_space_slug)}
+											class="hover:underline"
+											title={t('col.view_wiki', 'View {city} cost of living wiki').replace('{city}', cityLabel(city))}
+										>
+											{cityLabel(city)}
+										</a>
+									{:else}
+										{cityLabel(city)}
+									{/if}
 									{#if city.is_baseline}
 										<span class="text-muted">({t('col.baseline_label', 'Baseline')})</span>
 									{/if}
@@ -238,7 +371,19 @@
 						<tr class="border-b border-border text-left text-xs text-muted">
 							<th class="px-3 py-2 font-medium">{t('col.attribute_header', 'Attribute')}</th>
 							{#each matrix.cities as city (city.id)}
-								<th class="px-3 py-2 text-right font-medium">{cityLabel(city)}</th>
+								<th class="px-3 py-2 text-right font-medium">
+									{#if city.geo_space_slug}
+										<a
+											href={wikiUrl(city.geo_space_slug)}
+											class="hover:underline"
+											title={t('col.view_wiki', 'View {city} cost of living wiki').replace('{city}', cityLabel(city))}
+										>
+											{cityLabel(city)}
+										</a>
+									{:else}
+										{cityLabel(city)}
+									{/if}
+								</th>
 							{/each}
 						</tr>
 					</thead>
@@ -259,10 +404,10 @@
 					</tbody>
 				</table>
 			</div>
-		{:else if selectedIds.length < 2}
+		{:else if selectedIds.length < 1}
 			<EmptyState
 				icon="git-compare"
-				title={t('col.select_more', 'Select at least 2 cities to compare')}
+				title={t('col.select_more', 'Select at least 1 city to compare')}
 			/>
 		{/if}
 	{/if}

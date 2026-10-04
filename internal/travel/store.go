@@ -24,26 +24,28 @@ import (
 // Store wraps the sqlc-generated Queries for travel_providers operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a travel store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
 // CreateProvider inserts a new travel provider.
 func (s *Store) CreateProvider(ctx context.Context, arg gen.CreateTravelProviderParams) (gen.TravelProvider, error) {
-	return s.queries.CreateTravelProvider(ctx, arg)
+	return s.writeQueries.CreateTravelProvider(ctx, arg)
 }
 
 // UpdateProvider updates a travel provider's mutable fields.
 func (s *Store) UpdateProvider(ctx context.Context, arg gen.UpdateTravelProviderParams) (gen.TravelProvider, error) {
-	return s.queries.UpdateTravelProvider(ctx, arg)
+	return s.writeQueries.UpdateTravelProvider(ctx, arg)
 }
 
 // DeleteProvider deletes a travel provider row by id and platform.
@@ -126,14 +128,14 @@ func (s *Store) GetSearchResult(ctx context.Context, searchType, queryHash strin
 // UpsertSearchResult inserts or refreshes the persisted result row for a
 // canonical query (§67 stored-results layer).
 func (s *Store) UpsertSearchResult(ctx context.Context, arg gen.UpsertTravelSearchResultParams) (gen.TravelSearchResult, error) {
-	return s.queries.UpsertTravelSearchResult(ctx, arg)
+	return s.writeQueries.UpsertTravelSearchResult(ctx, arg)
 }
 
 // BumpSearchResultHit increments the served-from-store counter on a result
 // row — observability for how often the stored layer satisfies a search.
 func (s *Store) BumpSearchResultHit(ctx context.Context, id pgtype.UUID) {
 	// Best-effort counter — a failed UPDATE must not fail the request.
-	_ = s.queries.BumpTravelSearchResultHit(ctx, id)
+	_ = s.writeQueries.BumpTravelSearchResultHit(ctx, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -142,12 +144,12 @@ func (s *Store) BumpSearchResultHit(ctx context.Context, id pgtype.UUID) {
 
 // UpsertFlightOffer inserts or refreshes a single provider offer row.
 func (s *Store) UpsertFlightOffer(ctx context.Context, arg gen.UpsertFlightOfferParams) error {
-	return s.queries.UpsertFlightOffer(ctx, arg)
+	return s.writeQueries.UpsertFlightOffer(ctx, arg)
 }
 
 // UpsertHotelOffer inserts or refreshes a single provider offer row.
 func (s *Store) UpsertHotelOffer(ctx context.Context, arg gen.UpsertHotelOfferParams) error {
-	return s.queries.UpsertHotelOffer(ctx, arg)
+	return s.writeQueries.UpsertHotelOffer(ctx, arg)
 }
 
 // ListFlightOffersByCoverage returns offer rows for a flight coverage —
@@ -174,13 +176,13 @@ func (s *Store) GetCoverage(ctx context.Context, searchType, coverageKey string,
 
 // UpsertCoverage records that a coverage space was fetched from a provider.
 func (s *Store) UpsertCoverage(ctx context.Context, arg gen.UpsertTravelSearchCoverageParams) error {
-	return s.queries.UpsertTravelSearchCoverage(ctx, arg)
+	return s.writeQueries.UpsertTravelSearchCoverage(ctx, arg)
 }
 
 // UpsertTravelHotel inserts or refreshes a hotel-directory property row.
 // Identity is (provider_id, hotel_key) — entity-scoped, not coverage-scoped.
 func (s *Store) UpsertTravelHotel(ctx context.Context, arg gen.UpsertTravelHotelParams) error {
-	return s.queries.UpsertTravelHotel(ctx, arg)
+	return s.writeQueries.UpsertTravelHotel(ctx, arg)
 }
 
 // ListTravelHotels pages the hotel directory with optional city, name and
@@ -199,15 +201,15 @@ func (s *Store) CountTravelHotels(ctx context.Context, arg gen.CountTravelHotels
 // PruneInventory deletes expired offers and coverage rows past the retention
 // window — runs alongside PruneTravelSearchResults in the weekly task.
 func (s *Store) PruneInventory(ctx context.Context) error {
-	if err := s.queries.PruneTravelFlightOffers(ctx); err != nil {
+	if err := s.writeQueries.PruneTravelFlightOffers(ctx); err != nil {
 		return fmt.Errorf("travel: prune flight offers: %w", err)
 	}
 
-	if err := s.queries.PruneTravelHotelOffers(ctx); err != nil {
+	if err := s.writeQueries.PruneTravelHotelOffers(ctx); err != nil {
 		return fmt.Errorf("travel: prune hotel offers: %w", err)
 	}
 
-	if err := s.queries.PruneTravelSearchCoverage(ctx); err != nil {
+	if err := s.writeQueries.PruneTravelSearchCoverage(ctx); err != nil {
 		return fmt.Errorf("travel: prune coverage: %w", err)
 	}
 
@@ -229,13 +231,13 @@ func (s *Store) FindTravelAirlineByName(ctx context.Context, name string) (gen.T
 // UpsertTravelAirline inserts an observed airline or refreshes
 // last_seen_at on an existing catalog row.
 func (s *Store) UpsertTravelAirline(ctx context.Context, arg gen.UpsertTravelAirlineParams) error {
-	return s.queries.UpsertTravelAirline(ctx, arg)
+	return s.writeQueries.UpsertTravelAirline(ctx, arg)
 }
 
 // UpsertTravelProviderAirline records that a provider's offers carried an
 // airline (the catalog ↔ travel_providers coverage join).
 func (s *Store) UpsertTravelProviderAirline(ctx context.Context, arg gen.UpsertTravelProviderAirlineParams) error {
-	return s.queries.UpsertTravelProviderAirline(ctx, arg)
+	return s.writeQueries.UpsertTravelProviderAirline(ctx, arg)
 }
 
 // ListTravelAirlines pages the airline directory with optional q (name /

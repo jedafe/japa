@@ -29,15 +29,17 @@ import (
 // Store wraps the sqlc-generated Queries for assessment operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates an assessment store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
@@ -70,7 +72,7 @@ func (s *Store) GetAssessmentFormFields(ctx context.Context, formID pgtype.UUID)
 // CreateAssessmentSubmission inserts a form_submissions row for an assessment.
 // userID may be invalid (zero) for anonymous submissions.
 func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, userID pgtype.UUID, fieldValues []byte) (gen.FormSubmission, error) {
-	sub, err := s.queries.CreateAssessmentSubmission(ctx, gen.CreateAssessmentSubmissionParams{
+	sub, err := s.writeQueries.CreateAssessmentSubmission(ctx, gen.CreateAssessmentSubmissionParams{
 		FormID: formID,
 
 		UserID:      userID,
@@ -85,7 +87,7 @@ func (s *Store) CreateAssessmentSubmission(ctx context.Context, formID, userID p
 
 // CreateAssessmentResult stores a scored assessment result.
 func (s *Store) CreateAssessmentResult(ctx context.Context, userID, submissionID pgtype.UUID, totalScore int32, dimensionScores []byte, thresholdLabel string, roadmapContent []byte) (gen.AssessmentResult, error) {
-	result, err := s.queries.CreateAssessmentResult(ctx, gen.CreateAssessmentResultParams{
+	result, err := s.writeQueries.CreateAssessmentResult(ctx, gen.CreateAssessmentResultParams{
 
 		UserID:          userID,
 		SubmissionID:    submissionID,
@@ -177,7 +179,7 @@ func (s *Store) CountAssessmentResultsByUserAndForm(ctx context.Context, userID,
 // UpdateAssessmentFormScoring updates the scoring_config JSONB on an
 // assessment form. Admin-only.
 func (s *Store) UpdateAssessmentFormScoring(ctx context.Context, id pgtype.UUID, scoringConfig []byte) (gen.Form, error) {
-	form, err := s.queries.UpdateAssessmentFormScoring(ctx, gen.UpdateAssessmentFormScoringParams{
+	form, err := s.writeQueries.UpdateAssessmentFormScoring(ctx, gen.UpdateAssessmentFormScoringParams{
 		ScoringConfig: scoringConfig,
 
 		ID: id,
@@ -416,7 +418,7 @@ func (s *Store) AdminCompletionStats(ctx context.Context) (AdminCompletionStatsR
 // NULL) older than the given retention window in hours. Called by the
 // assessment:cleanup_anonymous Asynq task (ADR-071 §5).
 func (s *Store) CleanupAnonymousResults(ctx context.Context, retentionHours int32) (int64, error) {
-	n, err := s.queries.CleanupAnonymousAssessmentResults(ctx, retentionHours)
+	n, err := s.writeQueries.CleanupAnonymousAssessmentResults(ctx, retentionHours)
 	if err != nil {
 		return 0, fmt.Errorf("assessment: cleanup anonymous results: %w", err)
 	}
@@ -472,7 +474,7 @@ func (s *Store) CreateAssessmentForm(ctx context.Context, in CreateAssessmentInp
 		submitLabel = "Submit"
 	}
 
-	created, err := s.queries.CreateForm(ctx, gen.CreateFormParams{
+	created, err := s.writeQueries.CreateForm(ctx, gen.CreateFormParams{
 
 		SpaceID:              in.SpaceID,
 		Name:                 in.Name,
@@ -554,7 +556,7 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, id pgtype.UUID, in Upd
 		submissionFeeCredits = *in.SubmissionFeeCredits
 	}
 
-	updated, err := s.queries.UpdateForm(ctx, gen.UpdateFormParams{
+	updated, err := s.writeQueries.UpdateForm(ctx, gen.UpdateFormParams{
 		Name:                 name,
 		Description:          description,
 		IsMultiStep:          isMultiStep,
@@ -598,7 +600,7 @@ func (s *Store) UpdateAssessmentForm(ctx context.Context, id pgtype.UUID, in Upd
 
 // DeleteAssessmentForm soft-deletes a non-system assessment form by id.
 func (s *Store) DeleteAssessmentForm(ctx context.Context, id pgtype.UUID) error {
-	if err := s.queries.DeleteForm(ctx, id); err != nil {
+	if err := s.writeQueries.DeleteForm(ctx, id); err != nil {
 		return fmt.Errorf("assessment: delete form: %w", err)
 	}
 

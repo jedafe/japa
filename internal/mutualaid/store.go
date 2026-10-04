@@ -150,7 +150,7 @@ func (s *Store) CreatePost(ctx context.Context, input CreatePostInput) (Post, er
 INSERT INTO mutual_aid_posts (
     user_id, post_type, category, title, description,
     destination_space_id, city_space_id, expires_at, is_fulfilled, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, 'active')
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, 'active')
 RETURNING id, user_id, post_type, category, title, description,
           destination_space_id, city_space_id, expires_at, is_fulfilled,
           status, created_at, updated_at, deleted_at
@@ -159,8 +159,7 @@ RETURNING id, user_id, post_type, category, title, description,
 	var p Post
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		input.UserID, input.PostType, input.Category,
 		input.Title, input.Description, input.DestinationSpaceID,
 		input.CitySpaceID, input.ExpiresAt,

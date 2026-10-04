@@ -241,8 +241,8 @@ func (r *Renderer) renderLatestContent(ctx context.Context, w Widget) (json.RawM
 	            AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published'`
-	args := []any{(pgtype.UUID{})}
-	argIdx := 2
+	args := []any{}
+	argIdx := 1
 
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
@@ -322,9 +322,7 @@ func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMe
 		GROUP BY t.id, t.name, t.slug
 		ORDER BY usage_count DESC, t.name ASC
 		LIMIT $1
-	`, (pgtype.UUID{}),
-
-		limit)
+	`,		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering trending_tags: %w", err)
 	}
@@ -365,11 +363,11 @@ func (r *Renderer) renderSpaceMembers(ctx context.Context, w Widget) (json.RawMe
 
 	rows, err := r.reader.Query(ctx, `
 		SELECT sm.user_id, sm.joined_at,
-		       u.username, u.display_name
+		       u.username, COALESCE(up.display_name, '') AS display_name
 		FROM space_members sm
-		JOIN users u ON u.id = sm.user_id
+		JOIN users u ON u.id = sm.user_id AND u.status = 'active'
+		LEFT JOIN user_profiles up ON up.user_id = u.id
 		WHERE sm.space_id = $1 AND sm.status = 'active'
-		  AND u.deleted_at IS NULL
 		ORDER BY sm.joined_at DESC
 		LIMIT $2
 	`, *spaceID, limit)
@@ -424,9 +422,7 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 		GROUP BY u.id, u.username, up.display_name, up.avatar_url
 		ORDER BY points DESC
 		LIMIT $1
-	`, (pgtype.UUID{}),
-
-		limit)
+	`,		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering user_leaderboard: %w", err)
 	}
@@ -512,9 +508,7 @@ func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.Raw
 		WHERE s.deleted_at IS NULL
 		ORDER BY s.created_at DESC
 		LIMIT $1
-	`, (pgtype.UUID{}),
-
-		limit)
+	`,		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering featured_spaces: %w", err)
 	}
@@ -610,8 +604,8 @@ func (r *Renderer) renderFeaturedContent(ctx context.Context, w Widget) (json.Ra
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published'
 	            AND (cf.featured_until IS NULL OR cf.featured_until > now())`
-	args := []any{(pgtype.UUID{})}
-	argIdx := 2
+	args := []any{}
+	argIdx := 1
 
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
@@ -706,13 +700,13 @@ func (r *Renderer) renderBlogPosts(ctx context.Context, w Widget) (json.RawMessa
 	                 m.storage_bucket AS featured_storage_bucket,
 	                 m.storage_path AS featured_storage_path
 	          FROM contents c
-	          LEFT JOIN users u ON u.id = c.author_id AND u.deleted_at IS NULL
+	          LEFT JOIN users u ON u.id = c.author_id
 	          LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'blog_post'`
-	args := []any{(pgtype.UUID{})}
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
 
@@ -798,9 +792,9 @@ func (r *Renderer) renderForumThreads(ctx context.Context, w Widget) (json.RawMe
 		query += " AND ft.solved = false AND ft.reply_count = 0"
 	}
 
-	args := []any{(pgtype.UUID{})}
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND ft.space_id = $%d", argIdx)
 
@@ -867,9 +861,9 @@ func (r *Renderer) renderJobListings(ctx context.Context, w Widget) (json.RawMes
 	            AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'job_listing'`
-	args := []any{(pgtype.UUID{})}
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND c.space_id = $%d", argIdx)
 
@@ -945,9 +939,9 @@ func (r *Renderer) renderAchievements(ctx context.Context, w Widget) (json.RawMe
 	            AND m.deleted_at IS NULL
 	          WHERE c.deleted_at IS NULL
 	            AND c.status = 'published' AND c.content_type = 'achievement'`
-	args := []any{(pgtype.UUID{})}
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if milestoneType != "" {
 		query += fmt.Sprintf(" AND am.milestone_type = $%d", argIdx)
 
@@ -1017,9 +1011,9 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 	          FROM learning_tracks lt
 	          LEFT JOIN media m ON m.id = lt.cover_media_id AND m.deleted_at IS NULL
 	          WHERE lt.is_published = true`
-	args := []any{(pgtype.UUID{})}
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if difficulty != "" {
 		query += fmt.Sprintf(" AND lt.difficulty = $%d", argIdx)
 
@@ -1085,9 +1079,9 @@ func (r *Renderer) renderCommunityDigest(ctx context.Context, w Widget) (json.Ra
 	                 content, email_sent
 	          FROM digest_editions
 	          WHERE status = 'published'`
-	args := []any{(pgtype.UUID{})}
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if spaceID != nil {
 		query += fmt.Sprintf(" AND space_id = $%d", argIdx)
 
@@ -1154,11 +1148,11 @@ func (r *Renderer) renderReviews(ctx context.Context, w Widget) (json.RawMessage
 	                 r.rating, r.title, r.body, r.created_at,
 	                 u.username AS reviewer_username
 	          FROM reviews r
-	          LEFT JOIN users u ON u.id = r.reviewer_user_id AND u.deleted_at IS NULL
+	          LEFT JOIN users u ON u.id = r.reviewer_user_id
 	          WHERE r.status = 'published'`
-	args := []any{(pgtype.UUID{})}
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if entityType != "" {
 		query += fmt.Sprintf(" AND r.entity_type = $%d", argIdx)
 
@@ -1221,12 +1215,10 @@ func (r *Renderer) renderComparisons(ctx context.Context, w Widget) (json.RawMes
 		       m.storage_path AS image_storage_path
 		FROM comparison_items ci
 		LEFT JOIN media m ON m.id = ci.image_id AND m.deleted_at IS NULL
-		
+		WHERE ci.deleted_at IS NULL
 		ORDER BY ci.created_at DESC
 		LIMIT $1
-	`, (pgtype.UUID{}),
-
-		limit)
+	`,		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering comparisons: %w", err)
 	}
@@ -1284,10 +1276,10 @@ func (r *Renderer) renderCommunityOrganisations(ctx context.Context, w Widget) (
 	                 destination_space_id, city_space_id, address,
 	                 website_url, is_verified, is_active
 	          FROM community_organisations
-	          WHERE is_active = true`
-	args := []any{(pgtype.UUID{})}
+	          WHERE is_active = true AND deleted_at IS NULL`
+	args := []any{}
 
-	argIdx := 2
+	argIdx := 1
 	if orgType != "" {
 		query += fmt.Sprintf(" AND org_type = $%d", argIdx)
 
@@ -1354,16 +1346,15 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 	rows, err := r.reader.Query(ctx, `
 		SELECT mp.id, mp.user_id, mp.bio, mp.skills, mp.goals,
 		       mp.rating_avg, mp.session_count,
-		       u.username, u.display_name
+		       u.username, COALESCE(up.display_name, '') AS display_name
 		FROM mentorship_profiles mp
-		JOIN users u ON u.id = mp.user_id AND u.deleted_at IS NULL
+		JOIN users u ON u.id = mp.user_id AND u.status = 'active'
+		LEFT JOIN user_profiles up ON up.user_id = u.id
 		WHERE mp.is_mentor = true
 		  AND mp.is_available = true
 		ORDER BY mp.rating_avg DESC, mp.session_count DESC
 		LIMIT $1
-	`, (pgtype.UUID{}),
-
-		limit)
+	`,		limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering mentor_spotlight: %w", err)
 	}

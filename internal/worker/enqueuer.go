@@ -86,6 +86,7 @@ var idempotentTasks = map[string]bool{
 	TypeServiceBookingFeeSettle:         true, // §111 — refund/settle is money-moving; dedupe by task+payload
 	TypeServiceBookingCreated:           true, // §111 — one org notification fan-out per booking
 	TypeServiceBookingStatusChanged:     true, // §111 — dedupe same-status transitions
+	TypeSpaceAutoPopulate:               true, // enrichment fan-out — collapse repeat enqueues for the same space_id
 }
 
 func taskDefaults(taskType string) []asynq.Option {
@@ -153,6 +154,11 @@ func taskDefaults(taskType string) []asynq.Option {
 	// all local DB work, short timeout.
 	case TypeIntelHarvestOutbound:
 		opts = append(opts, asynq.Timeout(1*time.Minute), asynq.MaxRetry(3))
+	// Space auto-population: external Wikidata/Wikipedia calls with a
+	// process-wide 2s pacing limiter — bounded retries so a sustained
+	// upstream rate limit does not keep one task cycling forever.
+	case TypeSpaceAutoPopulate:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(10))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 
@@ -280,6 +286,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenanceCheckExpiredBans, TypeMaintenanceCheckExpiredBoosts,
 		TypeMaintenancePruneOldFeeds, TypeMaintenancePruneAuditLogs,
 		TypeMaintenancePrunePushTokens, TypeModerationAutoHide,
+		TypeMediaCleanupDeleted,
 		TypeDMCleanupDeclinedRequests, TypeCouponTrackEvents,
 		TypeCouponExpireCheck,
 		TypeSubscriptionExpirySweep, // §17 — webhook-miss safety net
@@ -395,6 +402,7 @@ var taskTypeCatalog = []struct {
 	{TypeLinkPreviewFetch, "default", "Fetch link preview metadata"},
 	{TypeLanguagePackAITranslate, "default", "AI-translate language pack"},
 	{TypeMediaScan, "default", "Scan uploaded media for policy violations"},
+	{TypeMediaCleanupDeleted, "low", "Purge soft-deleted media objects and rows past retention"},
 	{TypeContentFanOutToFeeds, "default", "Fan out content to follower feeds"},
 	{TypeAIGenerateContentEmbedding, "default", "Generate vector embedding for content"},
 	{TypeAgentCreateDraftRequest, "default", "Create draft content from external sources for admin review (Section 103, Phase 8)"},
