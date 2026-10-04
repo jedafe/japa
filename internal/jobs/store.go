@@ -23,15 +23,17 @@ import (
 // Store wraps the sqlc-generated Queries for job_applications operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a Jobs store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
@@ -53,7 +55,7 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UU
 // CreateJobApplication inserts a job_applications row. The ON CONFLICT clause
 // in the generated query ensures a user can only apply once per job.
 func (s *Store) CreateJobApplication(ctx context.Context, jobID, applicantID, submissionID pgtype.UUID) (gen.JobApplication, error) {
-	app, err := s.queries.CreateJobApplication(ctx, gen.CreateJobApplicationParams{
+	app, err := s.writeQueries.CreateJobApplication(ctx, gen.CreateJobApplicationParams{
 
 		JobID:        jobID,
 		ApplicantID:  applicantID,
@@ -82,7 +84,7 @@ func (s *Store) GetJobApplicationByID(ctx context.Context, appID pgtype.UUID) (g
 // UpdateJobApplicationStatus updates the status and employer notes of an
 // application.
 func (s *Store) UpdateJobApplicationStatus(ctx context.Context, appID pgtype.UUID, status string, employerNotes *string) (gen.JobApplication, error) {
-	app, err := s.queries.UpdateJobApplicationStatus(ctx, gen.UpdateJobApplicationStatusParams{
+	app, err := s.writeQueries.UpdateJobApplicationStatus(ctx, gen.UpdateJobApplicationStatusParams{
 		Status:        status,
 		EmployerNotes: employerNotes,
 
@@ -186,7 +188,7 @@ func (s *Store) AdminApplicationStatusDistribution(ctx context.Context) ([]gen.A
 // application_deadline custom field value is in the past. Returns the number
 // of rows affected.
 func (s *Store) ExpireListingsPastDeadline(ctx context.Context) (int64, error) {
-	n, err := s.queries.ExpireJobListingsPastDeadline(ctx)
+	n, err := s.writeQueries.ExpireJobListingsPastDeadline(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: expire listings: %w", err)
 	}

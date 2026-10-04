@@ -871,4 +871,4 @@
 </Modal>
 
 <!-- Shared media picker for logo/favicon/og_image settings -->
-<MediaPickerModal bind:open={mediaPickerOpen} onselect={handleMediaSelect} accept="image/*" />
+<MediaPickerModal bind:open={mediaPickerOpen} onselect={handleMediaSelect} accept="image/*,.heic,.heif" />

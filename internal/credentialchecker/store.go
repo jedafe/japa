@@ -530,15 +530,14 @@ INSERT INTO credential_pathways (
     timeline_estimate, cost_estimate_usd, pathway_description,
     official_application_url, source_url_last_checked,
     status, is_active, ai_generated, ai_model, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id
 `
 
 	var id pgtype.UUID
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		input.ProfessionID, input.IssuingSpaceID, input.DestinationSpaceID,
 		input.RegulatoryBody, input.RegulatoryBodyURL, input.PathwayType,
 		input.TimelineEstimate, input.CostEstimateUSD, input.PathwayDescription,

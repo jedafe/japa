@@ -10,7 +10,7 @@
 const mainRoutes: string[] = [
 	'/',
 	'/blog',
-	'/blog/series',
+	'/series',
 	'/bookmarks',
 	'/certificates',
 	'/claim-ownership',

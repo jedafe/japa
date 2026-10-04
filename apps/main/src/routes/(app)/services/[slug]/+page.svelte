@@ -83,6 +83,13 @@
 		}
 	}
 
+	// View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
+	// on mount; the backend deduplicates per user/session per day.
+	$effect(() => {
+		if (!service?.id) return;
+		api.post(`/content/${service.id}/view`, {});
+	});
+
 	const title = $derived(
 		service
 			? `${service.title} — ${t('services.heading', 'Service Directory')}`

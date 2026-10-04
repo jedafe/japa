@@ -75,7 +75,7 @@ export const load: PageServerLoad = async (event) => {
 	// is the author (no self-follow) or the author is unknown.
 	const isOwnStory = !!currentUserId && story.author_id === currentUserId;
 	const initiallyFollowing =
-		story.author_id && !isOwnStory
+		authed && story.author_id && !isOwnStory
 			? apiGet<{ following: boolean }>(ctx, `/users/${story.author_id}/follow-status`)
 					.then((r) => r.following)
 					.catch(() => false)
@@ -134,7 +134,7 @@ export const load: PageServerLoad = async (event) => {
 	if (story.series_id) {
 		try {
 			seriesPosts =
-				(await apiGet<SeriesPost[]>(ctx, `/blog/series/${story.series_id}/posts`)) ?? [];
+				(await apiGet<SeriesPost[]>(ctx, `/series/${story.series_id}/posts`)) ?? [];
 		} catch {
 			seriesPosts = [];
 		}

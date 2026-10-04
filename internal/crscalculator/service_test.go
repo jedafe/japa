@@ -38,6 +38,7 @@ func testFactors() []FactorRow {
 		factor(GroupCore, "language_first", `{"clb":10}`, "CLB 10", 34, sp(32)),
 		// second official language
 		factor(GroupCore, "language_second", `{"clb":7}`, "2nd lang CLB 7", 3, nil),
+		factor(GroupCore, "language_second", `{"clb":10}`, "2nd lang CLB 10", 6, nil),
 		// Canadian experience band
 		factor(GroupCore, "canadian_experience", `{"min_years":1,"max_years":1}`, "1yr Canadian exp", 40, sp(35)),
 		factor(GroupCore, "canadian_experience", `{"min_years":2,"max_years":2}`, "2yr Canadian exp", 53, sp(46)),
@@ -53,6 +54,7 @@ func testFactors() []FactorRow {
 		factor(GroupAdditional, "provincial_nomination", `{"flag":true}`, "PNP nomination", 600, nil),
 		factor(GroupAdditional, "sibling", `{"flag":true}`, "Sibling in Canada", 15, nil),
 		factor(GroupAdditional, "french", `{"clb_min":7}`, "French CLB 7+", 30, nil),
+		factor(GroupAdditional, "french", `{"clb_min":7,"english_min":5}`, "French 7+ & English 5+", 50, nil),
 		factor(GroupAdditional, "canadian_education", `{"edu":"three_plus_years"}`, "3+yr Canadian study", 30, nil),
 	}
 }
@@ -88,7 +90,14 @@ func TestScoreProfile_SingleProfile(t *testing.T) {
 	if got := findPoints(breakdown, GroupCore, "language_first"); got != 124 {
 		t.Fatalf("language_first points = %d, want 124 (4×31)", got)
 	}
-	// transferability: edu_lang 50 + foreign_lang 25+50=75→ capped at 50/combo = 100 total cap
+	// transferability: edu_lang 50 + foreign_lang best tier 50 = 100.
+	// The 25-point foreign row also matches but only the best tier awards.
+	if got := findPoints(breakdown, GroupTransferability, "foreign_language"); got != 0 {
+		t.Fatalf("foreign_language = %d, want 0 (superseded by higher tier)", got)
+	}
+	if got := findPoints(breakdown, GroupTransferability, "foreign_language_hi"); got != 50 {
+		t.Fatalf("foreign_language_hi = %d, want 50 (best tier)", got)
+	}
 	if got := transferabilityTotal(breakdown); got != 100 {
 		t.Fatalf("transferability total = %d, want 100 (capped)", got)
 	}
@@ -154,11 +163,79 @@ func TestScoreProfile_PNPAndAdditional(t *testing.T) {
 	if got := findPoints(breakdown, GroupAdditional, "provincial_nomination"); got != 600 {
 		t.Fatalf("PNP = %d, want 600", got)
 	}
-	if got := findPoints(breakdown, GroupAdditional, "french"); got != 30 {
-		t.Fatalf("french = %d, want 30", got)
+	// French 7+ base (30) + bilingual tier (50): non-French set is CLBFirst{9s} ≥ 5
+	if got := findPoints(breakdown, GroupAdditional, "french"); got != 80 {
+		t.Fatalf("french = %d, want 80", got)
 	}
 	if got := findPoints(breakdown, GroupAdditional, "canadian_education"); got != 30 {
 		t.Fatalf("canadian_education = %d, want 30", got)
+	}
+}
+
+func TestScoreProfile_FrenchEnglishTier(t *testing.T) {
+	base := CalculateRequest{
+		MaritalStatus: "single",
+		Age:           30,
+		Education:     "bachelors",
+		CLBFirst:      CLBScores{Listening: 7, Reading: 7, Writing: 7, Speaking: 7},
+		CLBSecond:     &CLBScores{Listening: 8, Reading: 8, Writing: 8, Speaking: 8},
+	}
+
+	// English first, French second: french_clb echoes clb_second and the
+	// bilingual tier needs English (clb_first) >= 5 — met here.
+	in := base
+	in.FirstLanguage = "english"
+	french := *in.CLBSecond
+	in.FrenchCLB = &french
+	_, breakdown := scoreProfile(testFactors(), in)
+	if got := findPoints(breakdown, GroupAdditional, "french"); got != 80 {
+		t.Fatalf("french = %d, want 80 (30 base tier + 50 bilingual tier)", got)
+	}
+
+	// French is the first language and there is no second test: the
+	// English-min condition cannot be satisfied → bilingual tier skipped.
+	in = base
+	in.FirstLanguage = "french"
+	in.FrenchCLB = &in.CLBFirst
+	in.CLBSecond = nil
+	_, breakdown = scoreProfile(testFactors(), in)
+	if got := findPoints(breakdown, GroupAdditional, "french"); got != 30 {
+		t.Fatalf("french = %d, want 30 (base tier only — no English scores)", got)
+	}
+
+	// Same profile, but French-first WITH an English second test at CLB 5+:
+	// the explicit first_language field (not score equality) decides which
+	// set is English — both tiers award even though both sets are identical.
+	in = base
+	in.FirstLanguage = "french"
+	in.FrenchCLB = &in.CLBFirst
+	in.CLBSecond = &CLBScores{Listening: 5, Reading: 5, Writing: 5, Speaking: 5}
+	_, breakdown = scoreProfile(testFactors(), in)
+	if got := findPoints(breakdown, GroupAdditional, "french"); got != 80 {
+		t.Fatalf("french = %d, want 80 (French-first + English second test)", got)
+	}
+}
+
+func TestScoreProfile_SecondLanguageCap(t *testing.T) {
+	// CLB 10 in all four skills earns 6+6+6+6 = 24 raw; the combined cap is
+	// 24 single / 22 with an accompanying spouse.
+	in := CalculateRequest{
+		MaritalStatus: "single",
+		Age:           30,
+		Education:     "bachelors",
+		CLBFirst:      CLBScores{Listening: 9, Reading: 9, Writing: 9, Speaking: 9},
+		CLBSecond:     &CLBScores{Listening: 10, Reading: 10, Writing: 10, Speaking: 10},
+	}
+	_, breakdown := scoreProfile(testFactors(), in)
+	if got := findPoints(breakdown, GroupCore, "language_second"); got != 24 {
+		t.Fatalf("single second language = %d, want 24 (cap)", got)
+	}
+
+	in.MaritalStatus = "married"
+	in.Spouse = &SpouseInput{Education: "bachelors"}
+	_, breakdown = scoreProfile(testFactors(), in)
+	if got := findPoints(breakdown, GroupCore, "language_second"); got != 22 {
+		t.Fatalf("married second language = %d, want 22 (cap)", got)
 	}
 }
 
@@ -188,6 +265,13 @@ func TestValidateProfile(t *testing.T) {
 		{"bad clb", CalculateRequest{MaritalStatus: "single", Age: 30, Education: "bachelors", CLBFirst: CLBScores{Listening: 11}}, true},
 		{"married no spouse", CalculateRequest{MaritalStatus: "married", Age: 30, Education: "bachelors"}, true},
 		{"married ok", CalculateRequest{MaritalStatus: "married", Age: 30, Education: "bachelors", Spouse: &SpouseInput{Education: "bachelors"}}, false},
+		{"bad spouse edu", CalculateRequest{MaritalStatus: "married", Age: 30, Education: "bachelors", Spouse: &SpouseInput{Education: "wizard"}}, true},
+		{"bad second clb", CalculateRequest{MaritalStatus: "single", Age: 30, Education: "bachelors", CLBSecond: &CLBScores{Listening: -1}}, true},
+		{"bad french clb", CalculateRequest{MaritalStatus: "single", Age: 30, Education: "bachelors", FrenchCLB: &CLBScores{Speaking: 12}}, true},
+		{"negative exp", CalculateRequest{MaritalStatus: "single", Age: 30, Education: "bachelors", CanadianExpYears: -2}, true},
+		{"bad canadian edu", CalculateRequest{MaritalStatus: "single", Age: 30, Education: "bachelors", CanadianEducation: "diploma"}, true},
+		{"bad first lang", CalculateRequest{MaritalStatus: "single", Age: 30, Education: "bachelors", FirstLanguage: "german"}, true},
+		{"first lang ok", CalculateRequest{MaritalStatus: "single", Age: 30, Education: "bachelors", FirstLanguage: "french"}, false},
 	}
 	for _, tc := range cases {
 		if err := validateProfile(tc.in); (err != nil) != tc.wantErr {

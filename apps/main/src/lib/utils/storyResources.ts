@@ -17,7 +17,10 @@ const ITEM_SEPARATOR = '; ';
 const NAME_LINK_SEPARATOR = ' — ';
 
 function looksLikeUrl(value: string): boolean {
-	return /^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('/') || value.startsWith('//');
+	// Only safe schemes render as links — `javascript:`/`data:`/`vbscript:` URIs
+	// must fall through to plain-text treatment (XSS via resource links).
+	if (/^(https?|mailto|tel):/i.test(value)) return true;
+	return value.startsWith('/') || value.startsWith('//');
 }
 
 function looksLikeBareHost(value: string): boolean {

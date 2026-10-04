@@ -341,6 +341,14 @@ func (s *Service) UploadVideo(ctx context.Context, uploaderID pgtype.UUID, filen
 		return ResolveResult{}, errpkg.ErrFeatureDisabled
 	}
 
+	// Only real video may become a video source — StoreFromBytes accepts the
+	// whole media family (images, audio, PDF), but a video node wrapping a
+	// PDF would just render a broken player.
+	ct := media.DetectStorageMIME(data, filename)
+	if !strings.HasPrefix(ct, "video/") {
+		return ResolveResult{}, fmt.Errorf("%w: uploaded file is not a video (detected %s)", errpkg.ErrInvalid, ct)
+	}
+
 	mediaID, err := s.media.StoreFromBytes(ctx, uploaderID, data, filename, nil)
 	if err != nil {
 		return ResolveResult{}, fmt.Errorf("storing uploaded video: %w", err)

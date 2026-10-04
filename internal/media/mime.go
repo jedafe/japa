@@ -62,15 +62,23 @@ var AllowedMIMETypesByContext = map[UploadContext][]string{
 		"image/svg+xml",
 		"video/mp4",
 		"video/webm",
+		"video/quicktime",
 		"audio/mpeg",
 		"audio/ogg",
 		"audio/wav",
 		"application/pdf",
 	},
+	// Avatar allowlist must cover every option exposed by the
+	// users.allowed_avatar_types setting (jpeg, jpg, png, gif, webp, svg) so
+	// the configured choices are actually reachable — the setting gate can
+	// only narrow this list. SVG is already hardened on serve (nosniff+CSP)
+	// and permitted in the media context.
 	UploadContextAvatar: {
 		"image/jpeg",
 		"image/png",
 		"image/webp",
+		"image/gif",
+		"image/svg+xml",
 	},
 	// UploadContextDocument permits CV/letter-style attachments (e.g. job
 	// application CVs per §63) alongside PDFs and the image fallbacks used
@@ -100,6 +108,7 @@ var ExtensionToMIME = map[string]string{
 	".svg":  "image/svg+xml",
 	".mp4":  "video/mp4",
 	".webm": "video/webm",
+	".mov":  "video/quicktime",
 	".mp3":  "audio/mpeg",
 	".ogg":  "audio/ogg",
 	".wav":  "audio/wav",
@@ -143,6 +152,95 @@ var textCompat = map[string]bool{
 	"text/xml":        true,
 	"application/rtf": true,
 	"image/svg+xml":   true,
+}
+
+// bmffBrandMIME maps ISO base-media file format (ISO-BMFF) ftyp major
+// brands to the MIME type the file actually carries. http.DetectContentType
+// fingerprints only the literal "mp4 " brand — every other brand (isom,
+// heic, avif…) reports application/octet-stream even though the container
+// is identified by the 4-byte major brand at offset 8. isom is the ffmpeg
+// default and the most common MP4 brand in the wild.
+var bmffBrandMIME = map[string]string{
+	// Still-image brands: HEIC/HEIF/AVIF/JXL/JP2 photos. None of these
+	// types are in the upload allowlists — they exist here so mislabeled
+	// declarations (e.g. HEIC uploaded as video/mp4) are caught instead of
+	// slipping through the octet-stream free-pass.
+	"heic": "image/heic",
+	"heix": "image/heic",
+	"mif1": "image/heif",
+	"msf1": "image/heif",
+	"avif": "image/avif",
+	"avis": "image/avif",
+	"jxl ": "image/jxl",
+	"jp2 ": "image/jp2",
+	// Audio-only MP4 brands (m4a/m4b/m4p).
+	"M4A ": "audio/mp4",
+	"M4B ": "audio/mp4",
+	"M4P ": "audio/mp4",
+	// Video brands with their own registered types.
+	"qt  ": "video/quicktime",
+	"M4V ": "video/x-m4v",
+	"3gp4": "video/3gpp",
+	"3gp5": "video/3gpp",
+	"3gp6": "video/3gpp",
+	"3g2a": "video/3gpp2",
+	"3g2b": "video/3gpp2",
+	"3g2c": "video/3gpp2",
+	// The remaining registered video brands all resolve to video/mp4.
+	"isom": "video/mp4",
+	"iso2": "video/mp4",
+	"iso4": "video/mp4",
+	"iso5": "video/mp4",
+	"iso6": "video/mp4",
+	"iso8": "video/mp4",
+	"avc1": "video/mp4",
+	"mp41": "video/mp4",
+	"mp42": "video/mp4",
+	"mp71": "video/mp4",
+	"mmp4": "video/mp4",
+	"dash": "video/mp4",
+	"msdh": "video/mp4",
+	"msix": "video/mp4",
+	"cmfc": "video/mp4",
+	"cmfs": "video/mp4",
+	"hevc": "video/mp4",
+	"hevx": "video/mp4",
+	"hevm": "video/mp4",
+	"hevs": "video/mp4",
+	"f4v ": "video/mp4",
+}
+
+// isoBMFFBrandMIME returns the MIME type implied by the ISO-BMFF ftyp major
+// brand — the 4-byte brand at offset 8, after the box size and "ftyp"
+// signature at offset 4. Returns "" when the data isn't an ISO-BMFF file or
+// the brand isn't registered here (unknown brands keep the octet-stream
+// free-pass so newer formats aren't rejected on sight).
+func isoBMFFBrandMIME(data []byte) string {
+	if len(data) < 12 || string(data[4:8]) != "ftyp" {
+		return ""
+	}
+	return bmffBrandMIME[string(data[8:12])]
+}
+
+// declaredMatchesBMFF checks a declared MIME against an ftyp-identified
+// ISO-BMFF type. Still-image brands (HEIC/HEIF/AVIF/JXL/JP2) match only an
+// honest declaration of that same type — HEIC labeled video/mp4 or
+// image/jpeg is caught. Video and audio brands accept any declared type in
+// the same family, consistent with the container-compat rules in
+// VerifyMIMEType.
+func declaredMatchesBMFF(declared, brandMIME string) bool {
+	switch {
+	case strings.HasPrefix(brandMIME, "image/"):
+		// heic and heif are the same HEIF still-image family; tools tag
+		// either way.
+		return declared == brandMIME ||
+			(declared == "image/heic" && brandMIME == "image/heif") ||
+			(declared == "image/heif" && brandMIME == "image/heic")
+	case strings.HasPrefix(brandMIME, "audio/"):
+		return strings.HasPrefix(declared, "audio/")
+	default:
+		return strings.HasPrefix(declared, "video/")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -191,13 +289,28 @@ func VerifyMIMEType(fileBytes []byte, declaredMimeType string) (detectedType str
 	declared := CanonicalMIMEType(declaredMimeType)
 
 	// "application/octet-stream" means the content is binary but not
-	// identifiable from the header alone. Allow through — it's valid
-	// content that simply can't be fingerprinted.
+	// identifiable from the header alone — unless the ISO-BMFF ftyp brand
+	// identifies it, in which case the brand's real type governs: a HEIC
+	// mislabeled video/mp4 is rejected here, while an isom-branded MP4
+	// (ffmpeg's default) verifies correctly instead of relying on the
+	// free-pass. Truly unidentified binary keeps the free-pass — it may
+	// be valid content that can't be fingerprinted (e.g. encrypted).
 	if canonical == "application/octet-stream" {
+		if brandMIME := isoBMFFBrandMIME(fileBytes); brandMIME != "" {
+			return detected, declaredMatchesBMFF(declared, brandMIME), nil
+		}
 		return detected, true, nil
 	}
 
 	if canonical == declared {
+		return detected, true, nil
+	}
+
+	// ISO base-media family: MP4 and QuickTime share the same container and
+	// DetectContentType reports whichever ftyp brand it sees, so a
+	// quicktime-declared .mov may sniff as video/mp4 (and vice versa).
+	if (canonical == "video/mp4" && declared == "video/quicktime") ||
+		(canonical == "video/quicktime" && declared == "video/mp4") {
 		return detected, true, nil
 	}
 
@@ -245,6 +358,34 @@ func MIMETypeForContext(ctx UploadContext) []string {
 func MIMETypeFromExtension(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 	return ExtensionToMIME[ext]
+}
+
+// contextUploadTypeSetting maps an upload context to the system_settings key
+// holding its admin-configured allowed extension list (CSV). Only contexts
+// whose setting is declared in the control settings catalog are gated here;
+// document uploads (§63 job-application CVs) intentionally are not — an admin
+// trimming media-library types must not silently break applications.
+var contextUploadTypeSetting = map[UploadContext]string{
+	UploadContextMedia:  "content.allowed_upload_types",
+	UploadContextAvatar: "users.allowed_avatar_types",
+}
+
+// isExtAllowed reports whether canonicalMIME is permitted by a CSV of allowed
+// extensions (e.g. "jpg,jpeg,png,webp"). Extension tokens resolve through
+// ExtensionToMIME, so "jpg"/"jpeg" both match image/jpeg. Unknown tokens in
+// the CSV simply never match anything.
+func isExtAllowed(canonicalMIME, allowedCSV string) bool {
+	for _, ext := range strings.Split(allowedCSV, ",") {
+		ext = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(ext)), ".")
+		if ext == "" {
+			continue
+		}
+		if m, ok := ExtensionToMIME["."+ext]; ok && CanonicalMIMEType(m) == canonicalMIME {
+			return true
+		}
+	}
+
+	return false
 }
 
 // IsAllowedMIMETypeForContext checks if a declared MIME type (possibly

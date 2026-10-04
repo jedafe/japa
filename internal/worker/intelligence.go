@@ -937,6 +937,8 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 		err = intelPreflight.CheckChannel(ctx, src, ch)
 	}
 	if err != nil {
+		licenseBlocked := errors.Is(err, fetcher.ErrLicenseRepublish)
+
 		if !errors.Is(err, fetcher.ErrCrawlLocked) && opts.URLOverride == "" {
 			// Derived-child preflight failures (robots, rate limit) are the
 			// child URL's problem — recording them on the channel row would
@@ -946,6 +948,26 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 				Success:          false,
 				LastErrorMessage: strPtr(err.Error()),
 			})
+
+			if licenseBlocked {
+				// The source's republish license is a legal fact — it
+				// cannot change mid-retry, so the channel can never crawl.
+				// Disable immediately instead of waiting out the
+				// consecutive-failure threshold.
+				if disableErr := intelSourcesStore.UpdateChannelEnabled(ctx, ch.ID, false); disableErr != nil {
+					slog.Warn("task:intel:fetch_channel: failed to disable license-blocked channel", "channel_id", ch.ID.String(), "error", disableErr)
+				} else {
+					slog.Warn("task:intel:fetch_channel: disabled license-blocked channel", "channel_id", ch.ID.String())
+				}
+			} else {
+				maybeAutoDisableChannel(ctx, ch)
+			}
+		}
+
+		if licenseBlocked || errors.Is(err, fetcher.ErrRobotsDisallowed) {
+			// Permanent gating failures — the crawl schedule, not asynq
+			// retries, is the right re-check cadence.
+			return fmt.Errorf("task:intel:fetch_channel: preflight: %w: %w", err, asynq.SkipRetry)
 		}
 
 		return fmt.Errorf("task:intel:fetch_channel: preflight: %w", err)
@@ -985,7 +1007,14 @@ func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, f
 		LastErrorMessage: strPtr(fetchErr.Error()),
 	})
 
-	// Auto-disable channels that fail repeatedly (spec §4 failure modes).
+	maybeAutoDisableChannel(ctx, ch)
+}
+
+// maybeAutoDisableChannel auto-disables a channel once consecutive_failures
+// crosses the intel.consecutive_failure_disable_threshold (default 5).
+// Called after the failure has been recorded on the channel row — the row
+// value stashed on `ch` is the pre-increment count, hence the +1.
+func maybeAutoDisableChannel(ctx context.Context, ch gen.IntelSourceChannel) {
 	threshold := 5
 	if appSettings != nil {
 		threshold = appSettings.GetIntOr(ctx, "intel.consecutive_failure_disable_threshold", 5)
@@ -995,10 +1024,10 @@ func handleChannelFetchFailure(ctx context.Context, ch gen.IntelSourceChannel, f
 		return
 	}
 
-	slog.Warn("task:intel:fetch_channel: disabling channel after consecutive failures", "channel_id", channelIDStr, "consecutive_failures", ch.ConsecutiveFailures+1, "threshold", threshold)
+	slog.Warn("task:intel:fetch_channel: disabling channel after consecutive failures", "channel_id", ch.ID.String(), "consecutive_failures", ch.ConsecutiveFailures+1, "threshold", threshold)
 
 	if disableErr := intelSourcesStore.UpdateChannelEnabled(ctx, ch.ID, false); disableErr != nil {
-		slog.Warn("task:intel:fetch_channel: failed to disable channel", "channel_id", channelIDStr, "error", disableErr)
+		slog.Warn("task:intel:fetch_channel: failed to disable channel", "channel_id", ch.ID.String(), "error", disableErr)
 	}
 }
 

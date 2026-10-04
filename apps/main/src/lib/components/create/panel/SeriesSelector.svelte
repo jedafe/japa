@@ -19,7 +19,7 @@
 	// The selected series object — used to display the label without a re-fetch.
 	const selectedSeries = $derived(series.find((s) => s.id === seriesId) ?? null);
 
-	// Debounced fetcher — calls GET /blog/series?q=… via the API client.
+	// Debounced fetcher — calls GET /series?q=… via the API client.
 	async function fetcher(q: string): Promise<AutocompleteItem[]> {
 		const res = await searchSeries(q);
 		return (res.data ?? [])

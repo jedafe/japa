@@ -1045,6 +1045,10 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", "Invalid logo_media_id format")
 			return
 		}
+		if err := h.ensureImageMedia(r.Context(), logoUUID, "logo_media_id"); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_logo_media_id", err.Error())
+			return
+		}
 
 		logoSpace, lErr := h.Service.UpdateSpaceLogoMediaID(r.Context(), gen.UpdateSpaceLogoMediaIDParams{
 			LogoMediaID: logoUUID,
@@ -1066,6 +1070,10 @@ func (h *Handlers) UpdateSpace(w http.ResponseWriter, r *http.Request) {
 		if *req.HeaderImageID != "" {
 			if err := headerUUID.Scan(*req.HeaderImageID); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
+				return
+			}
+			if err := h.ensureImageMedia(r.Context(), headerUUID, "header_image_id"); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", err.Error())
 				return
 			}
 		}

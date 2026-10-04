@@ -1,7 +1,9 @@
 package users
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -497,5 +499,129 @@ func TestTsPtr(t *testing.T) {
 
 	if _, err := time.Parse(time.RFC3339, *got); err != nil {
 		t.Errorf("valid ts → %q is not RFC3339: %v", *got, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// checkAvatarMIMEAllowed — users.allowed_avatar_types enforcement (Rule 3)
+// ---------------------------------------------------------------------------
+
+type fakeMediaResolver struct {
+	mime string
+	err  error
+}
+
+func (f fakeMediaResolver) ResolveMediaURL(context.Context, pgtype.UUID) (string, error) {
+	return "", f.err
+}
+
+func (f fakeMediaResolver) ResolveMediaMIME(context.Context, pgtype.UUID) (string, error) {
+	return f.mime, f.err
+}
+
+type fakeStringSettings map[string]string
+
+func (f fakeStringSettings) GetStringOr(_ context.Context, key, fallback string) string {
+	if v, ok := f[key]; ok {
+		return v
+	}
+	return fallback
+}
+
+func TestCheckAvatarMIMEAllowed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var mid pgtype.UUID
+	if err := mid.Scan("11111111-1111-1111-1111-111111111111"); err != nil {
+		t.Fatalf("scan uuid: %v", err)
+	}
+
+	// Unwired settings or resolver — the toggle is unenforced.
+	if err := (&Service{}).checkAvatarMIMEAllowed(ctx, mid); err != nil {
+		t.Errorf("unwired service returned %v, want nil", err)
+	}
+	svc := &Service{MediaResolver: fakeMediaResolver{mime: "image/png"}}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); err != nil {
+		t.Errorf("image avatar with no settings reader returned %v, want nil", err)
+	}
+
+	// Non-image media is rejected regardless of settings — an avatar can
+	// never be a PDF or video.
+	svc = &Service{MediaResolver: fakeMediaResolver{mime: "application/pdf"}}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("pdf avatar with no settings: err = %v, want ErrInvalid", err)
+	}
+
+	// Setting unset/empty — any image type passes.
+	svc = &Service{
+		settings:      fakeStringSettings{},
+		MediaResolver: fakeMediaResolver{mime: "image/gif"},
+	}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); err != nil {
+		t.Errorf("unset setting returned %v, want nil", err)
+	}
+
+	// Configured: allowed types pass (including the image/jpg alias), others
+	// fail with ErrInvalid so the handler maps it to a 400.
+	svc = &Service{
+		settings:      fakeStringSettings{"users.allowed_avatar_types": "png,jpg,webp"},
+		MediaResolver: fakeMediaResolver{mime: "image/png"},
+	}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); err != nil {
+		t.Errorf("png with png allowed: %v, want nil", err)
+	}
+
+	svc.MediaResolver = fakeMediaResolver{mime: "image/jpg"}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); err != nil {
+		t.Errorf("image/jpg with jpg allowed: %v, want nil", err)
+	}
+
+	svc.MediaResolver = fakeMediaResolver{mime: "image/gif"}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("gif not in CSV: err = %v, want ErrInvalid", err)
+	}
+
+	svc.MediaResolver = fakeMediaResolver{mime: "video/mp4"}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("video avatar: err = %v, want ErrInvalid", err)
+	}
+
+	// Fail-open when the media row cannot be resolved — a missing row still
+	// fails on the FK constraint downstream.
+	svc.MediaResolver = fakeMediaResolver{err: errors.New("not found")}
+	if err := svc.checkAvatarMIMEAllowed(ctx, mid); err != nil {
+		t.Errorf("resolver error returned %v, want nil (fail-open)", err)
+	}
+}
+
+func TestCheckImageMedia(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	var mid pgtype.UUID
+	if err := mid.Scan("22222222-2222-2222-2222-222222222222"); err != nil {
+		t.Fatalf("scan uuid: %v", err)
+	}
+
+	// Unwired resolver — unenforced.
+	if err := (&Service{}).checkImageMedia(ctx, mid, "header_media_id"); err != nil {
+		t.Errorf("unwired service returned %v, want nil", err)
+	}
+
+	svc := &Service{MediaResolver: fakeMediaResolver{mime: "image/webp"}}
+	if err := svc.checkImageMedia(ctx, mid, "header_media_id"); err != nil {
+		t.Errorf("webp header returned %v, want nil", err)
+	}
+
+	svc.MediaResolver = fakeMediaResolver{mime: "video/mp4"}
+	if err := svc.checkImageMedia(ctx, mid, "header_media_id"); !errors.Is(err, errpkg.ErrInvalid) {
+		t.Errorf("video header: err = %v, want ErrInvalid", err)
+	}
+
+	// Unresolvable media — fail-open (dangling ID fails on FK downstream).
+	svc.MediaResolver = fakeMediaResolver{err: errors.New("not found")}
+	if err := svc.checkImageMedia(ctx, mid, "header_media_id"); err != nil {
+		t.Errorf("resolver error returned %v, want nil (fail-open)", err)
 	}
 }

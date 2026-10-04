@@ -40,6 +40,7 @@ const (
 	TypeLinkPreviewFetch              = "content:fetch_link_preview"
 	TypeLanguagePackAITranslate       = "i18n:translate_language_pack"
 	TypeMediaScan                     = "content:scan_media"
+	TypeMediaCleanupDeleted           = "media:cleanup_deleted"
 	TypeContentFanOutToFeeds          = "content:fan_out_to_feeds"
 	TypeAIGenerateContentEmbedding    = "content:generate_embedding"
 	TypeContentGenerateDraft          = "content:generate_draft"
@@ -193,6 +194,7 @@ var handlerRegistry = []struct {
 	{TypeLinkPreviewFetch, HandleLinkPreviewFetch},
 	{TypeLanguagePackAITranslate, HandleLanguagePackAITranslate},
 	{TypeMediaScan, HandleMediaScan},
+	{TypeMediaCleanupDeleted, HandleMediaCleanupDeleted},
 	{TypeContentFanOutToFeeds, HandleContentFanOutToFeeds},
 	{TypeAIGenerateContentEmbedding, HandleAIGenerateContentEmbedding},
 	{TypeContentGenerateDraft, HandleContentGenerateDraft},

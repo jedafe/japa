@@ -520,7 +520,7 @@ INSERT INTO language_test_requirements (
     destination_space_id, visa_category, test_id, minimum_score,
     score_breakdown, notes, source_url, status, is_active,
     ai_generated, ai_model, ai_prompt_hash
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING id, destination_space_id, visa_category, test_id,
           minimum_score, score_breakdown, notes, source_url, status,
           is_active, ai_generated, ai_model, ai_prompt_hash,
@@ -531,8 +531,7 @@ RETURNING id, destination_space_id, visa_category, test_id,
 	var r RequirementRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		in.DestinationSpaceID, in.VisaCategory, in.TestID,
 		in.MinimumScore, scoreBreakdown, in.Notes, in.SourceURL, status,
 		in.IsActive, in.AIGenerated, in.AIModel, in.AIPromptHash,
@@ -959,7 +958,7 @@ func (s *Store) CreateStory(ctx context.Context, in CreateStoryInput) (ScoreStor
 INSERT INTO language_score_stories (
     user_id, test_id, starting_level, final_score,
     destination_space_id, prep_duration_weeks, resources_used, advice, status
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, user_id, test_id, starting_level, final_score,
           destination_space_id, prep_duration_weeks, resources_used, advice,
           status, created_at
@@ -968,8 +967,7 @@ RETURNING id, user_id, test_id, starting_level, final_score,
 	var r ScoreStoryRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		in.UserID, in.TestID, in.StartingLevel, in.FinalScore,
 		in.DestinationSpaceID, in.PrepDurationWeeks, in.ResourcesUsed,
 		in.Advice, status,

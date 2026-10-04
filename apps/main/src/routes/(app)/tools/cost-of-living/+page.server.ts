@@ -55,22 +55,35 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	// Pre-select from shareable URL ?city_ids=a,b,c and SSR the matrix if present.
+	// Pre-select from shareable URL ?city_ids=a,b,c&baseline_id=x and SSR the
+	// matrix if present. baseline_id names the ratio reference city (§72
+	// amendment: user-selectable baseline).
 	const cityIdsParam = event.url.searchParams.get('city_ids');
-	const preselected = cityIdsParam ? cityIdsParam.split(',').filter(Boolean) : [];
+	const baselineParam = event.url.searchParams.get('baseline_id');
+	// Dedupe + keep only UUID-shaped values so crafted URLs
+	// (?city_ids=a,a or ?city_ids=not-a-uuid) can't produce duplicate keyed
+	// rows client-side or trip the compare endpoint's 400s.
+	const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+	const preselected = cityIdsParam
+		? [...new Set(cityIdsParam.split(',').filter((id) => UUID_RE.test(id.trim())))]
+		: [];
+	const preselectedBaseline =
+		baselineParam && UUID_RE.test(baselineParam.trim()) ? baselineParam.trim() : null;
 	let matrix: ColComparisonMatrix | null = null;
-	if (cityIdsParam) {
+	if (preselected.length > 0) {
 		try {
+			const params = new URLSearchParams({ city_ids: preselected.join(',') });
+			if (preselectedBaseline) params.set('baseline_id', preselectedBaseline);
 			matrix = await apiGet<ColComparisonMatrix>(
 				ctx,
-				`/calculator/cost-of-living/compare?city_ids=${encodeURIComponent(cityIdsParam)}`
+				`/calculator/cost-of-living/compare?${params.toString()}`
 			);
 		} catch {
 			matrix = null;
 		}
 	}
 
-	return { cities, disabled, authed, preselected, maxCities, staleDays, matrix };
+	return { cities, disabled, authed, preselected, preselectedBaseline, maxCities, staleDays, matrix };
 };
 
 /**
@@ -92,6 +105,7 @@ export const actions: Actions = {
 			? []
 			: form.getAll('city_id').filter((v): v is string => typeof v === 'string');
 		const cityIds = bracketed.length ? bracketed : plain;
+		const baselineId = String(form.get('baseline_id') ?? '').trim();
 
 		if (cityIds.length < 2) {
 			return fail(400, { error: 'invalid_selection', message: 'Select at least 2 cities' });
@@ -101,9 +115,11 @@ export const actions: Actions = {
 
 		let matrix: ColComparisonMatrix;
 		try {
+			const params = new URLSearchParams({ city_ids: cityIds.join(',') });
+			if (baselineId) params.set('baseline_id', baselineId);
 			matrix = await apiGet<ColComparisonMatrix>(
 				ctx,
-				`/calculator/cost-of-living/compare?city_ids=${encodeURIComponent(cityIds.join(','))}`
+				`/calculator/cost-of-living/compare?${params.toString()}`
 			);
 		} catch (e) {
 			const message = e instanceof ApiError ? e.message : 'Could not load cost-of-living comparison';

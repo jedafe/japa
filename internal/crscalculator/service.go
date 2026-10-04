@@ -25,10 +25,12 @@ import (
 	"github.com/jedafe/japa/internal/config"
 )
 
-// Transferability structural caps (IRCC fixed rules).
+// Structural caps (IRCC fixed rules).
 const (
-	transferabilityCapPerCombo = 50
-	transferabilityCapTotal    = 100
+	transferabilityCapPerSection = 50
+	transferabilityCapTotal      = 100
+	secondLanguageCapSingle      = 24
+	secondLanguageCapMarried     = 22
 )
 
 // educationRank orders education levels so `edu_min` conditions can be
@@ -81,6 +83,7 @@ type CalculateRequest struct {
 	MaritalStatus              string       `json:"marital_status"` // single|married
 	Age                        int          `json:"age"`
 	Education                  string       `json:"education"`
+	FirstLanguage              string       `json:"first_language,omitempty"` // english|french — which official language clb_first was taken in
 	CLBFirst                   CLBScores    `json:"clb_first"`
 	CLBSecond                  *CLBScores   `json:"clb_second,omitempty"`
 	CanadianExpYears           int          `json:"canadian_experience_years"`
@@ -548,13 +551,54 @@ func validateProfile(in CalculateRequest) error {
 	if _, ok := educationRank[in.Education]; !ok {
 		return fmt.Errorf("unknown education level")
 	}
+	if in.FirstLanguage != "" && in.FirstLanguage != "english" && in.FirstLanguage != "french" {
+		return fmt.Errorf("first_language must be english or french")
+	}
 	for _, v := range in.CLBFirst.Each() {
 		if v < 0 || v > 10 {
 			return fmt.Errorf("clb_first scores must be 0–10")
 		}
 	}
-	if in.MaritalStatus == "married" && in.Spouse == nil {
-		return fmt.Errorf("spouse details required when married")
+	if in.CLBSecond != nil {
+		for _, v := range in.CLBSecond.Each() {
+			if v < 0 || v > 10 {
+				return fmt.Errorf("clb_second scores must be 0–10")
+			}
+		}
+	}
+	if in.FrenchCLB != nil {
+		for _, v := range in.FrenchCLB.Each() {
+			if v < 0 || v > 10 {
+				return fmt.Errorf("french_clb scores must be 0–10")
+			}
+		}
+	}
+	if in.CanadianExpYears < 0 || in.CanadianExpYears > 60 {
+		return fmt.Errorf("canadian_experience_years out of range")
+	}
+	if in.ForeignExpYears < 0 || in.ForeignExpYears > 60 {
+		return fmt.Errorf("foreign_experience_years out of range")
+	}
+	switch in.CanadianEducation {
+	case "", "none", "one_or_two_years", "three_plus_years":
+	default:
+		return fmt.Errorf("unknown canadian_education value")
+	}
+	if in.MaritalStatus == "married" {
+		if in.Spouse == nil {
+			return fmt.Errorf("spouse details required when married")
+		}
+		if _, ok := educationRank[in.Spouse.Education]; !ok {
+			return fmt.Errorf("unknown spouse education level")
+		}
+		for _, v := range in.Spouse.CLBFirst.Each() {
+			if v < 0 || v > 10 {
+				return fmt.Errorf("spouse clb scores must be 0–10")
+			}
+		}
+		if in.Spouse.CanadianExpYears < 0 || in.Spouse.CanadianExpYears > 60 {
+			return fmt.Errorf("spouse canadian_experience_years out of range")
+		}
 	}
 	return nil
 }
@@ -631,9 +675,30 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 	}
 
 	// --- core + spouse + additional: row-level matching ---
-	comboScores := map[string]int32{} // transferability combo name → awarded points
+	comboScores := map[string]int32{} // transferability section → awarded points
 
-	for _, f := range factors {
+	// Pre-pass: within each transferability combo only the highest matching
+	// tier is awarded — IRCC grants the best qualifying tier, not the sum
+	// of every tier whose conditions happen to pass.
+	bestTier := map[string]int{} // combo → factors index of best match
+	for i, f := range factors {
+		if f.FactorGroup != GroupTransferability {
+			continue
+		}
+		d := decodeDescriptor(f.InputDescriptor)
+		combo, _ := d.str("combo")
+		if combo == "" {
+			combo = f.FactorKey
+		}
+		if !transferabilityMatch(d, in) {
+			continue
+		}
+		if bi, ok := bestTier[combo]; !ok || f.PointsSingle > factors[bi].PointsSingle {
+			bestTier[combo] = i
+		}
+	}
+
+	for i, f := range factors {
 		d := decodeDescriptor(f.InputDescriptor)
 
 		switch f.FactorKey {
@@ -703,9 +768,23 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if in.FrenchCLB == nil {
 				continue
 			}
+			matched := false
 			if min, ok := d.num("clb_min"); ok && float64(in.FrenchCLB.Min()) >= min {
-				award(f.FactorGroup, f.FactorKey, f.Label, f.PointsSingle)
+				matched = true
 			}
+			if !matched {
+				continue
+			}
+			// Optional english_min — the IRCC +50 French tier requires English
+			// CLB 5+ alongside NCLC 7+. Evaluated against the declared language
+			// set that is not the French one.
+			if emin, ok := d.num("english_min"); ok {
+				eng := englishScores(in)
+				if eng == nil || float64(eng.Min()) < emin {
+					continue
+				}
+			}
+			award(f.FactorGroup, f.FactorKey, f.Label, f.PointsSingle)
 		case "canadian_education":
 			if edu, ok := d.str("edu"); ok && edu == in.CanadianEducation {
 				award(f.FactorGroup, f.FactorKey, f.Label, f.PointsSingle)
@@ -720,13 +799,49 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 			if combo == "" {
 				combo = f.FactorKey
 			}
-			if transferabilityMatch(d, in) {
-				if comboScores[combo]+f.PointsSingle > transferabilityCapPerCombo {
-					f.PointsSingle = transferabilityCapPerCombo - comboScores[combo]
-				}
-				comboScores[combo] += f.PointsSingle
-				award(f.FactorGroup, f.FactorKey, f.Label, f.PointsSingle)
+			// Only the combo's best-matching tier may award.
+			if bi, ok := bestTier[combo]; !ok || bi != i {
+				continue
 			}
+			// The 50-point cap applies per transferability *section*
+			// (education, foreign work, certificate) — combos sharing a
+			// section prefix (edu_*, foreign_*, cert_*) cap together.
+			section := combo
+			if i := strings.IndexByte(combo, '_'); i > 0 {
+				section = combo[:i]
+			}
+			awarded := f.PointsSingle
+			if comboScores[section]+awarded > transferabilityCapPerSection {
+				awarded = transferabilityCapPerSection - comboScores[section]
+			}
+			comboScores[section] += awarded
+			award(f.FactorGroup, f.FactorKey, f.Label, awarded)
+		}
+	}
+
+	// Second official language is capped at 24 points combined (22 with an
+	// accompanying spouse) — a structural rule, like the transferability
+	// caps. Trim awarded language_second items from the back on overflow.
+	secondCap := int32(secondLanguageCapSingle)
+	if married {
+		secondCap = secondLanguageCapMarried
+	}
+	var secondTotal int32
+	for _, it := range breakdown {
+		if it.Key == "language_second" {
+			secondTotal += it.Points
+		}
+	}
+	if secondTotal > secondCap {
+		excess := secondTotal - secondCap
+		for i := len(breakdown) - 1; i >= 0 && excess > 0; i-- {
+			if breakdown[i].Key != "language_second" {
+				continue
+			}
+			trim := min32(excess, breakdown[i].Points)
+			breakdown[i].Points -= trim
+			total -= trim
+			excess -= trim
 		}
 	}
 
@@ -745,7 +860,35 @@ func scoreProfile(factors []FactorRow, in CalculateRequest) (int32, []BreakdownI
 		}
 	}
 
-	return total, breakdown
+	// Drop items the caps trimmed to zero so they don't render as
+	// meaningless 0-point rows in the breakdown.
+	kept := breakdown[:0]
+	for _, it := range breakdown {
+		if it.Points > 0 {
+			kept = append(kept, it)
+		}
+	}
+
+	return total, kept
+}
+
+// englishScores returns the English test scores for `english_min`
+// conditions on french descriptors. The request's first_language field
+// declares which CLB set was taken in French — when it is "french" the
+// English test is the second set (nil when none was taken). When the
+// field is absent the French set is inferred: the set whose scores equal
+// french_clb.
+func englishScores(in CalculateRequest) *CLBScores {
+	if in.FirstLanguage == "french" {
+		return in.CLBSecond
+	}
+	if in.FirstLanguage == "english" {
+		return &in.CLBFirst
+	}
+	if in.FrenchCLB != nil && *in.FrenchCLB == in.CLBFirst {
+		return in.CLBSecond
+	}
+	return &in.CLBFirst
 }
 
 // inBand checks min <= v <= max using the descriptor's min_/max_ fields.

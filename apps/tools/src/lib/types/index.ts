@@ -289,6 +289,7 @@ export interface ColCityData {
 	id: string;
 	title: string;
 	geo_space_name: string;
+	geo_space_slug: string;
 	is_baseline: boolean;
 	last_updated: string;
 	values: Record<string, string>;

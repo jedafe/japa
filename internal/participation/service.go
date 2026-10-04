@@ -227,8 +227,6 @@ func (s *Service) RunActivity(ctx context.Context, personaID pgtype.UUID) error 
 	today := time.Now().UTC().Format("2006-01-02")
 	totalToday := s.getDailyCounter(ctx, personaID, today, "total")
 
-	var platformUUID pgtype.UUID
-	_ = platformUUID.Scan("")
 	globalCap := s.getGlobalDailyCap(ctx)
 	globalToday := s.getGlobalDailyCounter(ctx, today)
 

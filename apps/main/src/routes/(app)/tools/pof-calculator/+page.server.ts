@@ -22,7 +22,6 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const ctx = apiContext(event);
-	const authed = !!event.locals.user;
 
 	let destinations: GeoSpaceOption[] = [];
 	try {
@@ -34,19 +33,29 @@ export const load: PageServerLoad = async (event) => {
 
 	let requirements: PofRequirement[] = [];
 	let visaTypes: string[] = [];
-	const destParam = event.url.searchParams.get('dest');
+	const destParam = event.url.searchParams.get('dest') ?? '';
+	const visaTypeParam = event.url.searchParams.get('visa_type') ?? '';
 	if (destParam) {
+		const enc = encodeURIComponent(destParam);
 		try {
-			requirements = (await apiList<PofRequirement>(ctx, `/pof/requirements?dest=${destParam}`)).items;
+			requirements = (await apiList<PofRequirement>(ctx, `/pof/requirements?dest=${enc}`)).items;
 		} catch {
 			requirements = [];
 		}
 		try {
-			visaTypes = (await apiList<string>(ctx, `/pof/visa-types?dest=${destParam}`)).items;
+			visaTypes = (await apiList<string>(ctx, `/pof/visa-types?dest=${enc}`)).items;
 		} catch {
 			visaTypes = [];
 		}
 	}
 
-	return { destinations, requirements, visaTypes, authed };
+	// initialDestId/initialVisaType restore the shareable-URL selection so
+	// the hydrated page matches what the link author saw.
+	return {
+		destinations,
+		requirements,
+		visaTypes,
+		initialDestId: destParam,
+		initialVisaType: visaTypes.includes(visaTypeParam) ? visaTypeParam : ''
+	};
 };

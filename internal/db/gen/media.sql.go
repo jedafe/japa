@@ -656,6 +656,47 @@ func (q *Queries) ListMediaByUploader(ctx context.Context, arg ListMediaByUpload
 	return items, nil
 }
 
+const listMediaDeletedForCleanup = `-- name: ListMediaDeletedForCleanup :many
+SELECT id, storage_bucket, storage_path FROM media
+WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(days => $1)
+ORDER BY deleted_at ASC
+LIMIT $2
+`
+
+type ListMediaDeletedForCleanupParams struct {
+	RetentionDays int32 `json:"retention_days"`
+	RowLimit      int32 `json:"row_limit"`
+}
+
+type ListMediaDeletedForCleanupRow struct {
+	ID            pgtype.UUID `json:"id"`
+	StorageBucket string      `json:"storage_bucket"`
+	StoragePath   string      `json:"storage_path"`
+}
+
+// Soft-deleted media rows past the retention window — the
+// media:cleanup_deleted sweep removes their storage objects then
+// hard-deletes the rows (Section 34, Rule 11 approved hard-delete path).
+func (q *Queries) ListMediaDeletedForCleanup(ctx context.Context, arg ListMediaDeletedForCleanupParams) ([]ListMediaDeletedForCleanupRow, error) {
+	rows, err := q.db.Query(ctx, listMediaDeletedForCleanup, arg.RetentionDays, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMediaDeletedForCleanupRow
+	for rows.Next() {
+		var i ListMediaDeletedForCleanupRow
+		if err := rows.Scan(&i.ID, &i.StorageBucket, &i.StoragePath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMediaFiltered = `-- name: ListMediaFiltered :many
 
 SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media
@@ -747,6 +788,59 @@ func (q *Queries) ListMediaFiltered(ctx context.Context, arg ListMediaFilteredPa
 			&i.SourcePhotoID,
 			&i.RejectedAt,
 			&i.Flagged,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMediaForOptimization = `-- name: ListMediaForOptimization :many
+SELECT id, storage_path, storage_bucket, mime_type, file_size_bytes FROM media
+WHERE mime_type IN ('image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/avif')
+  AND file_size_bytes > $1
+  AND quarantined_at IS NULL
+  AND rejected_at IS NULL
+  AND deleted_at IS NULL
+ORDER BY created_at ASC
+LIMIT $2
+`
+
+type ListMediaForOptimizationParams struct {
+	MinSizeBytes int64 `json:"min_size_bytes"`
+	RowLimit     int32 `json:"row_limit"`
+}
+
+type ListMediaForOptimizationRow struct {
+	ID            pgtype.UUID `json:"id"`
+	StoragePath   string      `json:"storage_path"`
+	StorageBucket string      `json:"storage_bucket"`
+	MimeType      string      `json:"mime_type"`
+	FileSizeBytes int64       `json:"file_size_bytes"`
+}
+
+// Media rows holding optimizable raster content above the compression
+// threshold — scanned by POST /admin/media/reoptimize to enqueue
+// content:process_image tasks for existing (pre-optimization) originals.
+func (q *Queries) ListMediaForOptimization(ctx context.Context, arg ListMediaForOptimizationParams) ([]ListMediaForOptimizationRow, error) {
+	rows, err := q.db.Query(ctx, listMediaForOptimization, arg.MinSizeBytes, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMediaForOptimizationRow
+	for rows.Next() {
+		var i ListMediaForOptimizationRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoragePath,
+			&i.StorageBucket,
+			&i.MimeType,
+			&i.FileSizeBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -1240,6 +1334,29 @@ func (q *Queries) UpdateMediaMetadataOwn(ctx context.Context, arg UpdateMediaMet
 		arg.UserGroupID,
 		arg.ID,
 		arg.UploaderUserID,
+	)
+	return err
+}
+
+const updateMediaStorage = `-- name: UpdateMediaStorage :exec
+UPDATE media SET storage_path = $1, mime_type = $2, file_size_bytes = $3 WHERE id = $4 AND deleted_at IS NULL
+`
+
+type UpdateMediaStorageParams struct {
+	StoragePath   string      `json:"storage_path"`
+	MimeType      string      `json:"mime_type"`
+	FileSizeBytes int64       `json:"file_size_bytes"`
+	ID            pgtype.UUID `json:"id"`
+}
+
+// Storage-rewrite update — used by image optimization (content:process_image)
+// to record the re-encoded bytes under a possibly different storage path.
+func (q *Queries) UpdateMediaStorage(ctx context.Context, arg UpdateMediaStorageParams) error {
+	_, err := q.db.Exec(ctx, updateMediaStorage,
+		arg.StoragePath,
+		arg.MimeType,
+		arg.FileSizeBytes,
+		arg.ID,
 	)
 	return err
 }

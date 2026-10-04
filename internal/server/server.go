@@ -1018,6 +1018,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	clamavClient := media.NewClamAVClient(cfg.ClamAVAddr)
 	mediaScanProcessor := media.NewScanProcessor(mediaService, clamavClient)
 	worker.RegisterMediaScanProcessor(mediaScanProcessor)
+	worker.RegisterMediaCleaner(mediaService)
 
 	// Video processor — ffmpeg-based transcoding, thumbnail generation,
 	// and compression for video uploads. Registered with the worker so
@@ -2534,6 +2535,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// (users.username_cooldown_days) from system_settings instead of a
 	// hardcoded constant (BUG-005, Rule 3).
 	usersService.SetAuthSettings(settingsService)
+	// Wire general settings so UpdateProfile enforces
+	// users.allowed_avatar_types on avatar_media_id assignments (Rule 3).
+	usersService.SetSettings(settingsService)
 	// Phase 3: API-key-scoped bookmark surface — the adapter composes the
 	// users/content bookmark services and the shared engagement enqueuer.
 	publicAPIHandlers.SetBookmarkService(&publicBookmarkAdapter{
@@ -3726,6 +3730,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Media routes (Section 34 — Media System)
 			mediaHandlers.AsynqClient = asynqClient
+			mediaService.SetAsynqClient(asynqClient)
 
 			// Media serving endpoint (no auth required for serving files)
 			r.Get("/media/serve/{bucket}/*", mediaHandlers.ServeMedia)
@@ -3761,6 +3766,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/media/{id}/status", mediaHandlers.AdminUpdateMediaStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).
 				Post("/admin/media/upload", mediaHandlers.AdminUpload)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.edit_any")).
+				Post("/admin/media/reoptimize", mediaHandlers.AdminReoptimize)
 
 			// Stock photo routes (Section 34 — Stock Photo Integration).
 			// Openverse is available with media.stock.search; the other three
@@ -3961,25 +3968,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.feature")).
 					Post("/blog/{id}/feature", blogHandlers.FeaturePostByID)
 
-				// Series routes
+				// Series routes — top-level namespace: a series is cross-type
+				// (any content_type may belong, §14), so it lives at /series,
+				// not under /blog. RBAC nodes stay blog.series.*.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.create")).
-					Post("/blog/series", blogHandlers.CreateSeries)
-				r.Get("/blog/series", blogHandlers.ListSeries)
-				r.Get("/blog/series/{slug}", blogHandlers.GetSeries)
+					Post("/series", blogHandlers.CreateSeries)
+				r.Get("/series", blogHandlers.ListSeries)
+				r.Get("/series/{slug}", blogHandlers.GetSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-					Patch("/blog/series/{id}", blogHandlers.UpdateSeries)
+					Patch("/series/{id}", blogHandlers.UpdateSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.delete"), rbac.RequireForceDelete(rbacResolver)).
-					Delete("/blog/series/{id}", blogHandlers.DeleteSeries)
+					Delete("/series/{id}", blogHandlers.DeleteSeries)
 
 				// Series post routes
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-					Post("/blog/series/{id}/posts", blogHandlers.AddPostToSeries)
+					Post("/series/{id}/posts", blogHandlers.AddPostToSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-					Delete("/blog/series/{id}/posts/{postId}", blogHandlers.RemovePostFromSeries)
+					Delete("/series/{id}/posts/{postId}", blogHandlers.RemovePostFromSeries)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.series.edit")).
-					Patch("/blog/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
+					Patch("/series/{id}/posts/reorder", blogHandlers.ReorderSeriesPosts)
 				// List posts in a series (public — server-side fetched by frontend)
-				r.Get("/blog/series/{id}/posts", blogHandlers.ListSeriesPosts)
+				r.Get("/series/{id}/posts", blogHandlers.ListSeriesPosts)
 
 				// Review routes (admin workflow — keep auth-required)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "blog.review.create")).
@@ -8095,6 +8104,17 @@ func (r *mediaURLResolver) ResolveMediaURL(ctx context.Context, mediaID pgtype.U
 	}
 
 	return r.media.GetMediaURL(&m, media.ImageProxyOpts{}), nil
+}
+
+// ResolveMediaMIME returns the media row's stored MIME type so users.Service
+// can enforce users.allowed_avatar_types on avatar_media_id assignments.
+func (r *mediaURLResolver) ResolveMediaMIME(ctx context.Context, mediaID pgtype.UUID) (string, error) {
+	m, err := r.media.GetMedia(ctx, mediaID)
+	if err != nil {
+		return "", err
+	}
+
+	return m.MimeType, nil
 }
 
 // walletCacheInvalidator adapts the Valkey client to the wallet.Service's

@@ -23,22 +23,24 @@ import (
 // Store wraps the sqlc-generated Queries for content_imports operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a content-import store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
 // Create inserts a new content_imports row with status='pending' and
 // returns the full record. The source_url may be nil for ZIP uploads.
 func (s *Store) Create(ctx context.Context, userID pgtype.UUID, sourceType string, sourceURL *string) (gen.ContentImport, error) {
-	imp, err := s.queries.CreateContentImport(ctx, gen.CreateContentImportParams{
+	imp, err := s.writeQueries.CreateContentImport(ctx, gen.CreateContentImportParams{
 
 		UserID:     userID,
 		SourceType: sourceType,
@@ -126,7 +128,7 @@ func (s *Store) AdminCountImports(ctx context.Context, status string) (int64, er
 // zeroing the counts and clearing the error log. Only imports with status
 // 'failed' or 'partial' can be retried.
 func (s *Store) ResetForRetry(ctx context.Context, importID pgtype.UUID) (gen.ContentImport, error) {
-	imp, err := s.queries.ResetContentImportForRetry(ctx,
+	imp, err := s.writeQueries.ResetContentImportForRetry(ctx,
 
 		importID,
 	)
@@ -140,7 +142,7 @@ func (s *Store) ResetForRetry(ctx context.Context, importID pgtype.UUID) (gen.Co
 // UpdateStatus updates the status, counts, error log, and completed_at
 // timestamp for an import. Called by the import:process_source task handler.
 func (s *Store) UpdateStatus(ctx context.Context, importID pgtype.UUID, status string, totalItems, importedCount, failedCount *int32, errorLog []byte, completedAt pgtype.Timestamptz) (gen.ContentImport, error) {
-	imp, err := s.queries.UpdateContentImportStatus(ctx, gen.UpdateContentImportStatusParams{
+	imp, err := s.writeQueries.UpdateContentImportStatus(ctx, gen.UpdateContentImportStatusParams{
 		Status:        status,
 		TotalItems:    totalItems,
 		ImportedCount: importedCount,

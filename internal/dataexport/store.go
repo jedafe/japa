@@ -18,21 +18,23 @@ import (
 
 // Store wraps the sqlc-generated Queries for platform_data_exports.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a data-export store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
 // Create inserts a new platform_data_exports row with status='pending'.
 func (s *Store) Create(ctx context.Context, params gen.CreatePlatformDataExportParams) (gen.PlatformDataExport, error) {
-	return s.queries.CreatePlatformDataExport(ctx, params)
+	return s.writeQueries.CreatePlatformDataExport(ctx, params)
 }
 
 // Get retrieves a single export by ID within a platform.
@@ -68,12 +70,12 @@ func (s *Store) Count(ctx context.Context, status string) (int64, error) {
 
 // UpdateStatus updates an export's status, file URL, size, and error message.
 func (s *Store) UpdateStatus(ctx context.Context, params gen.UpdatePlatformDataExportStatusParams) (gen.PlatformDataExport, error) {
-	return s.queries.UpdatePlatformDataExportStatus(ctx, params)
+	return s.writeQueries.UpdatePlatformDataExportStatus(ctx, params)
 }
 
 // Delete removes an export row.
 func (s *Store) Delete(ctx context.Context, id pgtype.UUID) error {
-	return s.queries.DeletePlatformDataExport(ctx,
+	return s.writeQueries.DeletePlatformDataExport(ctx,
 		id,
 	)
 }

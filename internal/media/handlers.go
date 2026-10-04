@@ -111,7 +111,10 @@ func toMediaResponses(items []gen.Medium, svc *Service) []MediaResponse {
 
 	cfg := loadMediaURLConfig()
 	for i := range items {
-		url := mediaURLWithConfig(items[i].StorageBucket, items[i].StoragePath, ImageProxyOpts{}, cfg)
+		url := ServeURL(items[i].StorageBucket, items[i].StoragePath)
+		if isImageMIME(CanonicalMIMEType(items[i].MimeType)) {
+			url = mediaURLWithConfig(items[i].StorageBucket, items[i].StoragePath, ImageProxyOpts{}, cfg)
+		}
 		result[i] = toMediaResponse(&items[i], url)
 	}
 
@@ -150,6 +153,7 @@ func toQuarantinedMediaResponses(items []QuarantinedMedia, svc *Service) []Media
 			ID:            items[i].ID,
 			StoragePath:   items[i].StoragePath,
 			StorageBucket: items[i].StorageBucket,
+			MimeType:      items[i].MimeType,
 		}, ImageProxyOpts{}))
 	}
 
@@ -390,7 +394,18 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	// BUG-004: pass the uploader ID so ConfirmUpload can verify only the
 	// user who initiated the upload can confirm it (§34 two-step upload).
 	if err := h.service.ConfirmUpload(r.Context(), mediaID, user.UserID); err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
+		switch {
+		case errors.Is(err, ErrMediaNotFound):
+			// Covers wrong-owner too — same response either way so media
+			// existence never leaks across ownership boundaries.
+			errpkg.WriteError(w, http.StatusNotFound, "media_not_found", "Media not found")
+		case errors.Is(err, errObjectMissing):
+			errpkg.WriteError(w, http.StatusBadRequest, "upload_incomplete", "Upload did not complete — no stored object found")
+		case errors.Is(err, errUploadInvalid):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_upload", "Uploaded object failed validation")
+		default:
+			errpkg.WriteError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
+		}
 		return
 	}
 
@@ -431,7 +446,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, mediaID pgtype.UUID) {
 	mimeType := m.MimeType
 
 	switch {
-	case isImageMIME(mimeType):
+	case strings.HasPrefix(mimeType, "image/"):
 		processPayload, _ := json.Marshal(map[string]string{
 			"media_id": mediaIDStr,
 
@@ -970,31 +985,50 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sniff MIME from content, not from client-supplied Content-Type header
-	// (SEC-008). http.DetectContentType reads up to 512 bytes of the file
-	// content and determines the canonical MIME type — consistent with
-	// ConfirmUpload which already does this.
+	// (SEC-008). DetectStorageMIME reads the file's first bytes and falls
+	// back to the filename extension only for formats the sniffer cannot
+	// fingerprint (svg, containers) — consistent with ConfirmUpload and
+	// StoreFromBytes. The media-context allowlist applies to admin uploads
+	// exactly as it does to user uploads: an admin trimming
+	// content.allowed_upload_types restricts this endpoint too.
 	sniffBuf := make([]byte, 512)
 	n, _ := io.ReadFull(file, sniffBuf)
-	contentType := http.DetectContentType(sniffBuf[:n])
-	// Rewind so the full file is copied below.
+	contentType := DetectStorageMIME(sniffBuf[:n], header.Filename)
+	if !h.service.isAllowedMIME(r.Context(), contentType, UploadContextMedia) {
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_media_type", "File type is not allowed for upload")
+		return
+	}
+	// Rewind and buffer the full file (bounded by MaxBytesReader above) so
+	// oversized raster images can be compressed before storage.
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "seek_error", "Failed to read file")
 		return
 	}
+	body, err := io.ReadAll(file)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "read_error", "Failed to read file")
+		return
+	}
+	body, contentType = optimizeImage(body, contentType)
 
-	ext := strings.ToLower(filepath.Ext(header.Filename))
-	// Sanitize ext to prevent path traversal in the storage path (SEC-012).
-	ext = strings.TrimPrefix(ext, ".")
-	ext = strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			return r
+	ext := extensionFromMIME(contentType)
+	if ext == ".bin" {
+		// Sanitized filename extension fallback for formats the sniffer
+		// cannot fingerprint (svg, containers) — same as StoreFromBytes.
+		ext = strings.ToLower(filepath.Ext(header.Filename))
+		// Sanitize ext to prevent path traversal in the storage path (SEC-012).
+		ext = strings.TrimPrefix(ext, ".")
+		ext = strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+				return r
+			}
+
+			return -1 // drop dots, slashes, backslashes, etc.
+		}, ext)
+
+		if ext != "" {
+			ext = "." + ext
 		}
-
-		return -1 // drop dots, slashes, backslashes, etc.
-	}, ext)
-
-	if ext != "" {
-		ext = "." + ext
 	}
 
 	storagePath := fmt.Sprintf("%s/%s%s", StoragePathTemp,
@@ -1002,8 +1036,10 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 		uuid.New().String(),
 		ext)
 
-	localPath := filepath.Join("data", "media", DefaultBucket, storagePath)
-	// #nosec G703 // path is scoped to data/media/DefaultBucket; file extension is sanitized elsewhere.
+	bucket := h.service.storageBucket(r.Context())
+
+	localPath := filepath.Join(mediaRoot, bucket, storagePath)
+	// #nosec G703 // path is scoped to mediaRoot/{bucket}; file extension is sanitized elsewhere.
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
 		return
@@ -1016,13 +1052,12 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer dst.Close()
 
-	written, err := io.Copy(dst, file)
-	if err != nil {
+	if _, err := dst.Write(body); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "write_error", "Failed to write file")
 		return
 	}
 
-	mediaID, err := h.service.DirectUpload(r.Context(), user.UserID, header.Filename, contentType, written, localPath, storagePath)
+	mediaID, err := h.service.DirectUpload(r.Context(), user.UserID, header.Filename, contentType, int64(len(body)), localPath, storagePath)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save media record")
 		return
@@ -1033,7 +1068,74 @@ func (h *Handlers) AdminUpload(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"media_id": mediaID.String(),
-			"url":      "/api/v1/media/serve/" + DefaultBucket + "/" + storagePath,
+			"url":      "/api/v1/media/serve/" + bucket + "/" + storagePath,
+		},
+	})
+}
+
+// AdminReoptimize handles POST /admin/media/reoptimize — scans media rows
+// holding optimizable raster content above OptimizeSkipBytes and enqueues
+// content:process_image (operation "optimize") for each, so originals stored
+// before storage optimization existed get re-encoded to WebP. Optional body:
+// {"limit": N} (default 500, max 1000). Idempotent — already-optimized rows
+// are skipped by the worker.
+func (h *Handlers) AdminReoptimize(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxStandardBody)
+
+	if _, ok := h.requireUser(w, r); !ok {
+		return
+	}
+	if h.AsynqClient == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "queue_unavailable", "Background task queue is not configured")
+		return
+	}
+
+	limit := int32(500)
+	if r.ContentLength > 0 {
+		var input struct {
+			Limit int32 `json:"limit"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+			return
+		}
+		if input.Limit > 0 {
+			limit = input.Limit
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	rows, err := h.service.store.ListMediaForOptimization(r.Context(), gen.ListMediaForOptimizationParams{
+		MinSizeBytes: OptimizeSkipBytes,
+		RowLimit:     limit,
+	})
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to list media for optimization")
+		return
+	}
+
+	enqueued := 0
+	for _, row := range rows {
+		payload, _ := json.Marshal(map[string]string{
+			"media_id":  row.ID.String(),
+			"operation": "optimize",
+		})
+		if _, err := h.AsynqClient.Enqueue(
+			asynq.NewTask(worker.TypeImageProcessing, payload),
+			asynq.Queue(worker.QueueForTask(worker.TypeImageProcessing)),
+		); err != nil {
+			slog.Warn("media: failed to enqueue reoptimize task", "media_id", row.ID.String(), "error", err)
+			continue
+		}
+		enqueued++
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"candidates": len(rows),
+			"enqueued":   enqueued,
 		},
 	})
 }

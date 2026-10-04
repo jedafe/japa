@@ -98,11 +98,25 @@ SELECT COUNT(*)
 FROM blog_series bs
 WHERE bs.author_user_id = $1
  AND bs.deleted_at IS NULL
+ AND ($2::text IS NULL OR bs.title ILIKE '%' || $2 || '%' OR bs.slug ILIKE '%' || $2 || '%')
+ AND ($3::text = '' OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp2
+ JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+ WHERE bsp2.series_id = bs.id AND pc.content_type = $3::text
+ ))
 `
 
-// Returns the total number of blog series for a given author.
-func (q *Queries) CountBlogSeriesByAuthor(ctx context.Context, authorUserID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countBlogSeriesByAuthor, authorUserID)
+type CountBlogSeriesByAuthorParams struct {
+	AuthorUserID pgtype.UUID `json:"author_user_id"`
+	Q            string      `json:"q"`
+	ContentType  string      `json:"content_type"`
+}
+
+// Returns the total number of blog series for a given author, mirroring
+// the q / content_type filters of ListBlogSeriesByAuthor so meta.total
+// reflects the active filters.
+func (q *Queries) CountBlogSeriesByAuthor(ctx context.Context, arg CountBlogSeriesByAuthorParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countBlogSeriesByAuthor, arg.AuthorUserID, arg.Q, arg.ContentType)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -821,13 +835,17 @@ WHERE bs.deleted_at IS NULL
  JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
  WHERE bsp2.series_id = bs.id AND pc.content_type = $2::text
  ))
-ORDER BY bs.created_at DESC
-LIMIT $4 OFFSET $3
+ORDER BY
+ CASE WHEN $3::text = 'title' THEN lower(bs.title) END ASC,
+ CASE WHEN $3::text = 'oldest' THEN bs.created_at END ASC,
+ bs.created_at DESC
+LIMIT $5 OFFSET $4
 `
 
 type ListBlogSeriesParams struct {
 	Q           string `json:"q"`
 	ContentType string `json:"content_type"`
+	Sort        string `json:"sort"`
 	PageOffset  int32  `json:"page_offset"`
 	PageLimit   int32  `json:"page_limit"`
 }
@@ -851,6 +869,7 @@ func (q *Queries) ListBlogSeries(ctx context.Context, arg ListBlogSeriesParams) 
 	rows, err := q.db.Query(ctx, listBlogSeries,
 		arg.Q,
 		arg.ContentType,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -894,12 +913,24 @@ FROM blog_series bs
 LEFT JOIN media m ON m.id = bs.cover_image_id AND m.deleted_at IS NULL
 WHERE bs.author_user_id = $1
  AND bs.deleted_at IS NULL
-ORDER BY bs.created_at DESC
-LIMIT $3 OFFSET $2
+ AND ($2::text IS NULL OR bs.title ILIKE '%' || $2 || '%' OR bs.slug ILIKE '%' || $2 || '%')
+ AND ($3::text = '' OR EXISTS (
+ SELECT 1 FROM blog_series_posts bsp2
+ JOIN contents pc ON pc.id = bsp2.content_id AND pc.deleted_at IS NULL AND pc.status = 'published'
+ WHERE bsp2.series_id = bs.id AND pc.content_type = $3::text
+ ))
+ORDER BY
+ CASE WHEN $4::text = 'title' THEN lower(bs.title) END ASC,
+ CASE WHEN $4::text = 'oldest' THEN bs.created_at END ASC,
+ bs.created_at DESC
+LIMIT $6 OFFSET $5
 `
 
 type ListBlogSeriesByAuthorParams struct {
 	AuthorUserID pgtype.UUID `json:"author_user_id"`
+	Q            string      `json:"q"`
+	ContentType  string      `json:"content_type"`
+	Sort         string      `json:"sort"`
 	PageOffset   int32       `json:"page_offset"`
 	PageLimit    int32       `json:"page_limit"`
 }
@@ -919,8 +950,18 @@ type ListBlogSeriesByAuthorRow struct {
 	CoverStoragePath   *string            `json:"cover_storage_path"`
 }
 
+// Powers the "My series" tab (author_id = caller). Shares the q /
+// content_type / sort filters with ListBlogSeries so the directory toolbar
+// works identically on both tabs.
 func (q *Queries) ListBlogSeriesByAuthor(ctx context.Context, arg ListBlogSeriesByAuthorParams) ([]ListBlogSeriesByAuthorRow, error) {
-	rows, err := q.db.Query(ctx, listBlogSeriesByAuthor, arg.AuthorUserID, arg.PageOffset, arg.PageLimit)
+	rows, err := q.db.Query(ctx, listBlogSeriesByAuthor,
+		arg.AuthorUserID,
+		arg.Q,
+		arg.ContentType,
+		arg.Sort,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1281,7 +1322,7 @@ func (q *Queries) ListPendingReviewSummaries(ctx context.Context, arg ListPendin
 
 const listPostsInSeries = `-- name: ListPostsInSeries :many
 SELECT bsp.series_id, bsp.content_id, bsp.position,
- c.id AS content_id, c.title, c.slug, c.status, c.created_at
+ c.id AS content_id, c.title, c.slug, c.status, c.created_at, c.content_type
 FROM blog_series_posts bsp
 JOIN contents c ON c.id = bsp.content_id
 JOIN blog_series bs ON bs.id = bsp.series_id
@@ -1300,6 +1341,7 @@ type ListPostsInSeriesRow struct {
 	Slug        string             `json:"slug"`
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ContentType string             `json:"content_type"`
 }
 
 // H5: filter deleted_at + published-only so public series detail pages do
@@ -1322,6 +1364,7 @@ func (q *Queries) ListPostsInSeries(ctx context.Context, seriesID pgtype.UUID) (
 			&i.Slug,
 			&i.Status,
 			&i.CreatedAt,
+			&i.ContentType,
 		); err != nil {
 			return nil, err
 		}

@@ -12,6 +12,7 @@
 	import { Eye, CheckCircle, XCircle, Shield, Trash2, Upload, Image as ImageIcon, FileText, Film, Music, Search, Download, Loader2, Check, RefreshCw, ZoomIn, ZoomOut, Maximize, Pencil, Save, X } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
+	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type MediaItem = {
@@ -850,7 +851,7 @@
 		let failed = 0;
 		try {
 			for (let i = 0; i < total; i++) {
-				const file = uploadFiles[i];
+				const file = await convertImageToModernFormat(uploadFiles[i]);
 				uploadProgress = { current: i + 1, total, filename: file.name };
 
 				const formData = new FormData();
@@ -1152,7 +1153,7 @@
 					id="media-upload-files"
 					type="file"
 					multiple
-					accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
+					accept="image/*,.heic,.heif,video/*,audio/*,application/pdf,.doc,.docx"
 					onchange={(e) => {
 						const files = e.currentTarget.files;
 						if (files) uploadFiles = [...uploadFiles, ...Array.from(files)];

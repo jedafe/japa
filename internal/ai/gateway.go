@@ -5,10 +5,18 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 )
+
+// ErrNoProviders marks dispatch failures caused by no provider being
+// registered for a category. It is a permanent configuration error —
+// retrying the same dispatch cannot conjure a provider — so background
+// task handlers should treat errors matching errors.Is(err,
+// ErrNoProviders) as non-retryable.
+var ErrNoProviders = errors.New("ai: no providers registered")
 
 // Dispatcher holds a priority-ordered list of providers per category and
 // implements circuit-breaker fallback: on failure, try the next provider
@@ -196,7 +204,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, category string, req Request)
 	providers := d.providersForModel(category, model)
 
 	if len(providers) == 0 {
-		return Response{}, fmt.Errorf("ai: no providers registered for category %q", category)
+		return Response{}, fmt.Errorf("%w for category %q", ErrNoProviders, category)
 	}
 
 	var lastErr error
@@ -235,7 +243,7 @@ func (d *Dispatcher) ChatWithTools(ctx context.Context, category string, req Cha
 	providers := d.providersForModel(category, req.Model)
 
 	if len(providers) == 0 {
-		return ChatWithToolsResponse{}, fmt.Errorf("ai: no providers registered for category %q", category)
+		return ChatWithToolsResponse{}, fmt.Errorf("%w for category %q", ErrNoProviders, category)
 	}
 
 	var lastErr error

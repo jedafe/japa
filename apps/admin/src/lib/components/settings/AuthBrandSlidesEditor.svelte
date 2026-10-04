@@ -225,4 +225,4 @@
 </div>
 
 <!-- Full media picker: Browse Library / Upload New / Stock Photos -->
-<MediaPickerModal bind:open={pickerOpen} onselect={onMediaSelect} accept="image/*" />
+<MediaPickerModal bind:open={pickerOpen} onselect={onMediaSelect} accept="image/*,.heic,.heif" />

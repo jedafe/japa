@@ -38,7 +38,7 @@ export const load: PageServerLoad = async (event) => {
 			// Rule 16 — the status list comes from the backend, not a
 			// hardcoded constant (includes 'archived').
 			apiGet<{ value: string; label: string }[]>(ctx, '/content/status-options'),
-			apiList<BlogSeries>(ctx, '/blog/series'),
+			apiList<BlogSeries>(ctx, '/series'),
 			// §71 — active assessment form; its dimensions populate the
 			// Journey panel's roadmap-dimension picker.
 			apiGet<AssessmentForm>(ctx, '/assessment')
@@ -244,7 +244,7 @@ export const actions: Actions = {
 			// same contract the composer uses (§14).
 			const seriesId = getStr(fm, 'series_id');
 			if (seriesId && content.id) {
-				await apiPost(ctx, `/blog/series/${seriesId}/posts`, {
+				await apiPost(ctx, `/series/${seriesId}/posts`, {
 					content_id: content.id,
 					position: 0
 				}).catch(() => ({}));

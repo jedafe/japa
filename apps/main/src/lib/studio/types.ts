@@ -116,7 +116,7 @@ export interface PromptFormValues {
 	header_image_id: string;
 	featured_image_id: string;
 	/** Blog series the generated content should be linked into (linked via
-	 * POST /blog/series/{id}/posts on save, matching the composer). */
+	 * POST /series/{id}/posts on save, matching the composer). */
 	series_id: string;
 	field_values: Record<string, string>;
 }

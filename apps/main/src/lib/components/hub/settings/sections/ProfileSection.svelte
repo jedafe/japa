@@ -31,7 +31,7 @@
 		avatarPickerOpen = false;
 		profileSaving = true;
 		profileError = null;
-		const res = await api.patch<MeProfile>('/me/profile', { avatar_url: asset.url });
+		const res = await api.patch<MeProfile>('/me/profile', { avatar_media_id: asset.id });
 		profileSaving = false;
 		if (res.error) {
 			profileError = res.error.message;
@@ -45,7 +45,7 @@
 		coverPickerOpen = false;
 		profileSaving = true;
 		profileError = null;
-		const res = await api.patch<MeProfile>('/me/profile', { cover_url: asset.url });
+		const res = await api.patch<MeProfile>('/me/profile', { header_media_id: asset.id });
 		profileSaving = false;
 		if (res.error) {
 			profileError = res.error.message;
@@ -130,7 +130,7 @@
 </SettingsSection>
 
 {#if avatarPickerOpen}
-	<MediaLibraryModal onSelect={handleAvatarSelect} onClose={() => (avatarPickerOpen = false)} allowedType="image" />
+	<MediaLibraryModal onSelect={handleAvatarSelect} onClose={() => (avatarPickerOpen = false)} allowedType="image" uploadContext="avatar" />
 {/if}
 {#if coverPickerOpen}
 	<MediaLibraryModal onSelect={handleCoverSelect} onClose={() => (coverPickerOpen = false)} allowedType="image" />

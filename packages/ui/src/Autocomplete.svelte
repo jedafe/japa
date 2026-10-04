@@ -87,6 +87,9 @@
 		/** Open the dropdown above the field instead of below — for controls
 		 * sitting near the bottom edge of a fixed-height pane. */
 		openUp?: boolean;
+		/** Compact density — smaller height/padding for tight inline controls
+		 * (e.g. a comment-sort dropdown inside a section header row). */
+		compact?: boolean;
 	}
 
 	let {
@@ -114,7 +117,8 @@
 		class: wrapperClass = '',
 		clearLabel = 'Clear',
 		loadingLabel = 'Loading...',
-		openUp = false
+		openUp = false,
+		compact = false
 	}: Props = $props();
 
 	let open = $state(false);
@@ -435,6 +439,7 @@
 		class:focused
 		class:has-value={!!selectedId}
 		class:disabled
+		class:compact
 		onclick={(e) => {
 			if (disabled) return;
 			// The selection chip is pointer-events:none — a click landing on it
@@ -603,6 +608,12 @@
 	.autocomplete-input-wrapper.disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+	.autocomplete-input-wrapper.compact {
+		height: auto;
+		gap: 6px;
+		padding: 4px 10px;
+		font-size: 0.8125rem;
 	}
 	.autocomplete-input-wrapper.disabled .autocomplete-input {
 		cursor: not-allowed;

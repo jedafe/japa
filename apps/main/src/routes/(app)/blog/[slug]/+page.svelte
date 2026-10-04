@@ -17,6 +17,7 @@
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
+	import { contentHref } from '$lib/utils/contentLink';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -163,7 +164,7 @@
 			<div class="flex flex-wrap items-center gap-2">
 				{#if data.canEdit}
 					<a
-						href={`/create?draft=${article.id}`}
+						href={`/studio/create?draft=${article.id}`}
 						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
 					>
 						<Pencil size={14} /> {t('content.edit', 'Edit')}
@@ -278,7 +279,7 @@
 		<div class="mt-8">
 			<ReactionRail
 				contentId={article.id}
-				voteScore={article.reshare_count}
+				voteScore={article.reaction_count}
 				commentCount={article.comment_count}
 				authed={data.authed}
 				horizontal
@@ -315,7 +316,7 @@
 				<div class="grid gap-4 sm:grid-cols-2">
 					{#each data.relatedContent as rel (rel.id)}
 						<a
-							href={rel.content_type === 'blog_post' ? `/blog/${rel.slug}` : `/content/${rel.slug}`}
+							href={contentHref(rel)}
 							class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/30"
 						>
 							{#if rel.featured_image_url}

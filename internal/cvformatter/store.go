@@ -309,7 +309,7 @@ INSERT INTO cv_format_sessions (
     input_text, output_format, status, ai_model,
     ai_generated, ai_prompt_hash,
     original_filename, file_storage_path, file_mime_type, file_size_bytes
-) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, true, $8, $9, $10, $11, $12)
+) VALUES ($1, $2, $3, $4, $5, 'pending', $6, true, $7, $8, $9, $10, $11)
 RETURNING id, user_id, origin_space_id, destination_space_id,
           input_text, output_text, output_format, status, ai_model,
           tokens_used, created_at, expires_at,
@@ -320,8 +320,7 @@ RETURNING id, user_id, origin_space_id, destination_space_id,
 	var r SessionRow
 
 	err := s.pool.Writer.QueryRow(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		input.UserID, input.OriginSpaceID,
 		input.DestinationSpaceID, input.InputText, outputFormat,
 		input.AIModel, input.AIPromptHash,

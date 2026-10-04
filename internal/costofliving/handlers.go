@@ -188,7 +188,9 @@ func (h *Handlers) HandleListCities(w http.ResponseWriter, r *http.Request) {
 
 // HandleCompare handles GET /api/v1/calculator/cost-of-living/compare —
 // returns the comparison matrix with raw values + ratios vs the baseline.
-// Public route. Query param: city_ids (comma-separated UUIDs).
+// Public route. Query params: city_ids (comma-separated UUIDs, required),
+// baseline_id (optional UUID — picks the ratio reference city; falls back
+// to the seeded is_baseline city when absent or not a cost_of_living item).
 func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 
 	if h.service == nil {
@@ -201,7 +203,15 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matrix, err := h.service.CompareCities(r.Context(), cityIDs)
+	var baselineID pgtype.UUID
+	if raw := strings.TrimSpace(r.URL.Query().Get("baseline_id")); raw != "" {
+		if err := baselineID.Scan(raw); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_baseline_id", "Invalid baseline_id")
+			return
+		}
+	}
+
+	matrix, err := h.service.CompareCities(r.Context(), cityIDs, baselineID)
 	if err != nil {
 		if errors.Is(err, ErrCalculatorDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "col_calculator_disabled", "Cost of Living Calculator is not available")

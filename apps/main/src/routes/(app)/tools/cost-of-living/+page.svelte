@@ -3,12 +3,15 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { enhance } from '$app/forms';
+	import { replaceState } from '$app/navigation';
 	import { Calculator, GitCompare, Loader2, Lock, Share2, X } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import type { ColCity, ColComparisonMatrix } from '$lib/types';
 	import type { PageData, ActionData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -23,35 +26,84 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const maxCities = $derived(data.maxCities ?? 3);
 	const staleDays = $derived(data.staleDays ?? 180);
 
-	// Up to maxCities selected city IDs (baseline always included).
-	let selectedIds = $state<string[]>(untrack(() => data.preselected.slice(0, maxCities)));
-	let matrix = $state<ColComparisonMatrix | null>(null);
+	// The city ratios are computed against — user-selectable (§72 amendment),
+	// defaulting to the seeded is_baseline city (Lagos).
+	const seededBaselineId = $derived(cities.find((c) => c.is_baseline)?.id ?? null);
+	let baselineId = $state<string | null>(untrack(() => data.preselectedBaseline));
+	// Up to maxCities destination cities compared against the baseline. The
+	// baseline is excluded in case an old-style share URL carries it inside
+	// city_ids.
+	let selectedIds = $state<string[]>(
+		untrack(() => {
+			const base =
+				data.preselectedBaseline ?? data.cities.find((c) => c.is_baseline)?.id ?? null;
+			return data.preselected.filter((id) => id !== base).slice(0, maxCities);
+		})
+	);
+	let matrix = $state<ColComparisonMatrix | null>(untrack(() => data.matrix));
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let copied = $state(false);
 	let savingJCE = $state(false);
+	// Race guard — a stale response must never overwrite a newer selection.
+	let fetchSeq = 0;
 
-	const baselineCity = $derived(cities.find((c) => c.is_baseline));
+	const effectiveBaselineId = $derived(baselineId ?? seededBaselineId);
+	const baselineCity = $derived(cities.find((c) => c.id === effectiveBaselineId) ?? null);
 	const selectedCities = $derived(
 		selectedIds.map((id) => cities.find((c) => c.id === id)).filter(Boolean) as ColCity[]
 	);
+	const idsKey = $derived(selectedIds.join(','));
 
-	// Ensure baseline is always in the selection.
+	// Single source of truth for the comparison fetch. Runs once per selection
+	// or baseline change; the SSR-seeded matrix is used when both still match
+	// the URL the server rendered for (avoids a duplicate request).
 	$effect(() => {
-		if (baselineCity && !selectedIds.includes(baselineCity.id)) {
-			selectedIds = [baselineCity.id, ...selectedIds.filter((id) => id !== baselineCity.id)].slice(0, maxCities);
+		const ids = idsKey;
+		const base = effectiveBaselineId;
+		if (
+			data.matrix &&
+			ids === data.preselected.join(',') &&
+			base === (data.preselectedBaseline ?? seededBaselineId)
+		) {
+			matrix = data.matrix;
+			error = null;
+			return;
 		}
+		fetchComparison();
 	});
 
+	// Keep ?city_ids= + ?baseline_id= in sync so the share URL and reloads
+	// restore the same comparison. Called only from user actions —
+	// replaceState throws during hydration before the router is initialized.
+	function syncUrl() {
+		const url = new URL(page.url);
+		if (selectedIds.length >= 1) url.searchParams.set('city_ids', idsKey);
+		else url.searchParams.delete('city_ids');
+		if (effectiveBaselineId) url.searchParams.set('baseline_id', effectiveBaselineId);
+		else url.searchParams.delete('baseline_id');
+		if (url.href !== page.url.href) replaceState(url, page.state);
+	}
+
 	async function fetchComparison() {
-		if (selectedIds.length < 2) {
+		// Invalidate any in-flight request before the early return so a stale
+		// response can't re-render a comparison the user just cleared (and so
+		// `loading` never gets stuck).
+		const seq = ++fetchSeq;
+		if (selectedIds.length < 1) {
 			matrix = null;
+			error = null;
+			loading = false;
 			return;
 		}
 		loading = true;
 		error = null;
-		const ids = selectedIds.join(',');
-		const res = await api.get<ColComparisonMatrix>(`/calculator/cost-of-living/compare?city_ids=${ids}`);
+		const params = new URLSearchParams({ city_ids: idsKey });
+		if (effectiveBaselineId) params.set('baseline_id', effectiveBaselineId);
+		const res = await api.get<ColComparisonMatrix>(
+			`/calculator/cost-of-living/compare?${params.toString()}`
+		);
+		if (seq !== fetchSeq) return; // superseded by a newer selection
 		loading = false;
 		if (res.error) {
 			error = res.error.message;
@@ -59,36 +111,70 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			return;
 		}
 		matrix = res.data;
+		// If the requested baseline didn't resolve (deleted city, stale link),
+		// the API falls back to the seeded baseline — mirror the effective one.
+		if (res.data?.baseline_city_id && res.data.baseline_city_id !== baselineId) {
+			baselineId = res.data.baseline_city_id;
+		}
 	}
 
-	function toggleCity(id: string) {
-		if (selectedIds.includes(id)) {
-			if (baselineCity && id === baselineCity.id) return; // can't remove baseline
-			selectedIds = selectedIds.filter((sid) => sid !== id);
-		} else {
-			if (selectedIds.length >= maxCities) return;
-			selectedIds = [...selectedIds, id];
-		}
-		fetchComparison();
+	function setBaseline(id: string) {
+		if (id === effectiveBaselineId) return;
+		baselineId = id;
+		// A city can't be both the reference and a destination.
+		selectedIds = selectedIds.filter((sid) => sid !== id);
+		syncUrl();
 	}
 
-	// Seed matrix from SSR data when available.
-	$effect(() => {
-		if (data.matrix && selectedIds.join(',') === data.preselected.join(',')) {
-			matrix = data.matrix;
-		}
-	});
+	function addCity(id: string) {
+		if (id === effectiveBaselineId || selectedIds.includes(id) || selectedIds.length >= maxCities) return;
+		selectedIds = [...selectedIds, id];
+		syncUrl();
+	}
 
-	// Fetch comparison on initial client load when a shareable URL preloaded
-	// the selected IDs but no matrix was returned from the server.
-	$effect(() => {
-		const ids = selectedIds.join(',');
-		const initialIds = untrack(() => data.preselected.join(','));
-		if (ids !== initialIds || !data.matrix) fetchComparison();
-	});
+	function removeCity(id: string) {
+		selectedIds = selectedIds.filter((sid) => sid !== id);
+		syncUrl();
+	}
+
+	// Autocomplete fetchers — filter the SSR-loaded city list client-side
+	// (Rule 16: the list comes from the API). The destination picker excludes
+	// already-selected cities and the baseline; the baseline picker lists all.
+	function cityItem(c: ColCity): AutocompleteItem {
+		return {
+			id: c.id,
+			label: cityLabel(c),
+			sublabel: c.is_baseline ? t('col.baseline', 'baseline') : c.geo_space_name || undefined
+		};
+	}
+
+	function matchesCity(c: ColCity, query: string): boolean {
+		return (
+			query === '' ||
+			cityLabel(c).toLowerCase().includes(query) ||
+			c.geo_space_name.toLowerCase().includes(query) ||
+			c.description.toLowerCase().includes(query)
+		);
+	}
+
+	function fetchCityItems(q: string): Promise<AutocompleteItem[]> {
+		const query = q.trim().toLowerCase();
+		const items = cities
+			.filter((c) => !selectedIds.includes(c.id) && c.id !== effectiveBaselineId)
+			.filter((c) => matchesCity(c, query))
+			.map(cityItem);
+		return Promise.resolve(items);
+	}
+
+	function fetchBaselineItems(q: string): Promise<AutocompleteItem[]> {
+		const query = q.trim().toLowerCase();
+		return Promise.resolve(cities.filter((c) => matchesCity(c, query)).map(cityItem));
+	}
 
 	async function shareUrl() {
-		const url = `${page.url.origin}${page.url.pathname}?city_ids=${selectedIds.join(',')}`;
+		const params = new URLSearchParams({ city_ids: idsKey });
+		if (effectiveBaselineId) params.set('baseline_id', effectiveBaselineId);
+		const url = `${page.url.origin}${page.url.pathname}?${params.toString()}`;
 		try {
 			await navigator.clipboard.writeText(url);
 			copied = true;
@@ -97,13 +183,6 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			// Clipboard may be blocked; ignore.
 		}
 	}
-
-	// Fetch comparison on mount if preselected.
-	$effect(() => {
-		if (data.preselected.length >= 2 && !matrix && !loading) {
-			fetchComparison();
-		}
-	});
 
 	function formatRatio(r: number): string {
 		return r.toFixed(2) + '×';
@@ -139,7 +218,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					'@context': 'https://schema.org',
 					'@type': 'Dataset',
 					name: t('tools.cost_of_living', 'Cost of Living Comparison'),
-					description: `Cost of living comparison between ${selectedCities
+					description: `Cost of living comparison between ${matrix.cities
 						.map((c) => c.title || c.geo_space_name)
 						.join(', ')}`,
 					url: page.url.href,
@@ -183,6 +262,17 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				body={t('tools.disabled_body', 'Check back soon or contact support.')}
 			/>
 		</div>
+	{:else if cities.length === 0}
+		<div class="p-4">
+			<EmptyState
+				icon={Calculator}
+				title={t('col.no_cities', 'No cities available')}
+				body={t(
+					'col.no_cities_desc',
+					"City data hasn't been configured yet. Please check back later."
+				)}
+			/>
+		</div>
 	{:else}
 		<!-- City selector -->
 		<div class="border-b border-[var(--color-border)] px-4 py-3">
@@ -190,7 +280,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<span class="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
 					{t('col.select_cities', 'Select up to {max} cities').replace('{max}', String(maxCities))}
 				</span>
-				{#if selectedIds.length >= 2}
+				{#if selectedIds.length >= 1}
 					<div class="flex items-center gap-3">
 						<form
 							method="POST"
@@ -203,6 +293,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							}}
 							class="contents"
 						>
+							{#if effectiveBaselineId}
+								<input type="hidden" name="city_id" value={effectiveBaselineId} />
+								<input type="hidden" name="baseline_id" value={effectiveBaselineId} />
+							{/if}
 							{#each selectedIds as cityId}
 								<input type="hidden" name="city_id" value={cityId} />
 							{/each}
@@ -240,54 +334,86 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				</div>
 			{/if}
 
-			<!-- Selected chips -->
+			<!-- Baseline picker — the city all ratios are computed against
+			     (§72 amendment: user-selectable, defaults to the seeded
+			     is_baseline city). No onClear: a baseline is required. -->
+			<div class="mb-2">
+				<label for="col-baseline-search" class="mb-1 block text-xs text-[var(--color-muted)]">
+					{t('col.baseline_label', 'Compare against (baseline)')}
+				</label>
+				<div class="max-w-md">
+					<Autocomplete
+						id="col-baseline-search"
+						placeholder={t('col.search_baseline', 'Search baseline city…')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchBaselineItems}
+						initialFetcher={() => fetchBaselineItems('')}
+						selectedId={effectiveBaselineId}
+						selectedLabel={baselineCity ? cityLabel(baselineCity) : null}
+						selectedBadge={baselineCity?.id === seededBaselineId
+							? t('col.baseline', 'baseline')
+							: t('col.baseline_custom', 'custom')}
+						onSelect={(item) => setBaseline(item.id)}
+						ariaLabel={t('col.baseline_label', 'Compare against (baseline)')}
+					/>
+				</div>
+			</div>
+
+			<!-- Selected destination chips -->
 			{#if selectedCities.length > 0}
 				<div class="mb-2 flex flex-wrap gap-2">
 					{#each selectedCities as city (city.id)}
 						<span
 							class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)]"
 						>
-							{cityLabel(city)}
-							{#if city.is_baseline}
-								<span class="text-[var(--color-muted)]">({t('col.baseline', 'baseline')})</span>
-							{:else}
-								<button
-									type="button"
-									onclick={() => toggleCity(city.id)}
-									class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
-									aria-label={t('common.remove', 'Remove')}
+							{#if city.geo_space_slug}
+								<a
+									href="/wiki/{city.geo_space_slug}/cost-of-living"
+									class="hover:underline"
+									title={t('col.view_wiki', 'View {city} cost of living wiki').replace('{city}', cityLabel(city))}
 								>
-									<X size={12} />
-								</button>
+									{cityLabel(city)}
+								</a>
+							{:else}
+								{cityLabel(city)}
 							{/if}
+							<button
+								type="button"
+								onclick={() => removeCity(city.id)}
+								class="text-[var(--color-muted)] hover:text-[var(--color-text)]"
+								aria-label="{t('common.remove', 'Remove')} {cityLabel(city)}"
+							>
+								<X size={12} />
+							</button>
 						</span>
 					{/each}
 				</div>
 			{/if}
 
-			<!-- Available cities -->
-			<div class="flex flex-wrap gap-2">
-				{#each cities as city (city.id)}
-					{#if !selectedIds.includes(city.id)}
-						<button
-							type="button"
-							onclick={() => toggleCity(city.id)}
-							disabled={selectedIds.length >= maxCities}
-							class="rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-40"
-						>
-							{cityLabel(city)}
-						</button>
-					{/if}
-				{/each}
+			<!-- Destination picker (Autocomplete dropdown — searchable, scales
+			     to the full city list; selected cities and the baseline are
+			     filtered out). -->
+			<div class="max-w-md">
+				<Autocomplete
+					id="col-city-search"
+					placeholder={t('col.search_cities', 'Search cities to compare…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={fetchCityItems}
+					initialFetcher={() => fetchCityItems('')}
+					selectedId={null}
+					onSelect={(item) => addCity(item.id)}
+					disabled={selectedIds.length >= maxCities}
+					ariaLabel={t('col.search_cities', 'Search cities to compare')}
+				/>
 			</div>
 		</div>
 
 		<!-- Comparison matrix -->
 		<div class="p-4">
-			{#if selectedIds.length < 2}
+			{#if selectedIds.length < 1}
 				<EmptyState
 					icon={Calculator}
-					title={t('col.select_more', 'Select at least 2 cities to compare')}
+					title={t('col.select_more', 'Select at least 1 city to compare')}
 				/>
 			{:else if loading}
 				<LoadingSkeleton variant="lines" />
@@ -311,7 +437,17 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						{#each matrix.cities as city (city.id)}
 							<div class="flex items-center justify-between text-sm">
 								<span class="text-[var(--color-text)]">
-									{cityLabel(city)}
+									{#if city.geo_space_slug}
+										<a
+											href="/wiki/{city.geo_space_slug}/cost-of-living"
+											class="hover:underline"
+											title={t('col.view_wiki', 'View {city} cost of living wiki').replace('{city}', cityLabel(city))}
+										>
+											{cityLabel(city)}
+										</a>
+									{:else}
+										{cityLabel(city)}
+									{/if}
 									{#if city.is_baseline}
 										<span class="text-[var(--color-muted)]">({t('col.baseline', 'baseline')})</span>
 									{/if}
@@ -331,7 +467,19 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 							<tr class="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
 								<th class="px-3 py-2 font-medium">{t('col.category', 'Category')}</th>
 								{#each matrix.cities as city (city.id)}
-									<th class="px-3 py-2 text-right font-medium">{cityLabel(city)}</th>
+									<th class="px-3 py-2 text-right font-medium">
+										{#if city.geo_space_slug}
+											<a
+												href="/wiki/{city.geo_space_slug}/cost-of-living"
+												class="hover:underline"
+												title={t('col.view_wiki', 'View {city} cost of living wiki').replace('{city}', cityLabel(city))}
+											>
+												{cityLabel(city)}
+											</a>
+										{:else}
+											{cityLabel(city)}
+										{/if}
+									</th>
 								{/each}
 							</tr>
 						</thead>

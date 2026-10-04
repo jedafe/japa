@@ -12,7 +12,7 @@ import type { GuideListItem } from '$lib/types/content';
  * (top|latest) and filter query params (origin, dest, visa, profession).
  * ?tab=featured consumes the generic featured junction
  * (GET /content?type=story&featured=1 — §14) and ?tab=series lists series
- * containing stories (GET /blog/series?content_type=story).
+ * containing stories (GET /series?content_type=story).
  * On error, degrades to an empty list with loadError: true.
  */
 const PAGE_SIZE = 20;
@@ -64,7 +64,7 @@ export const load: PageServerLoad = async (event) => {
 	if (tab === 'series') {
 		const { items } = await apiList<BlogSeries>(
 			ctx,
-			`/blog/series?content_type=story&page_size=${PAGE_SIZE}`
+			`/series?content_type=story&page_size=${PAGE_SIZE}`
 		).catch(() => ({ items: [] as BlogSeries[], meta: null }));
 		return { ...base, series: items };
 	}

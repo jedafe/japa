@@ -407,9 +407,11 @@ SELECT
  cv.value_boolean,
  cd.label AS dimension_label,
  cd.slug AS dimension_slug,
- cd.dimension_type
+ cd.dimension_type,
+ cf.key AS source_field_key
 FROM comparison_values cv
 JOIN comparison_dimensions cd ON cd.id = cv.dimension_id AND cd.deleted_at IS NULL
+LEFT JOIN custom_fields cf ON cf.id = cd.source_field_id
 WHERE cv.item_id = ANY($1::uuid[])
 ORDER BY cd.position, cv.item_id
 `
@@ -423,6 +425,7 @@ type GetCOLValuesForCitiesRow struct {
 	DimensionLabel string         `json:"dimension_label"`
 	DimensionSlug  *string        `json:"dimension_slug"`
 	DimensionType  string         `json:"dimension_type"`
+	SourceFieldKey *string        `json:"source_field_key"`
 }
 
 // =====================================================================
@@ -448,6 +451,7 @@ func (q *Queries) GetCOLValuesForCities(ctx context.Context, itemIds []pgtype.UU
 			&i.DimensionLabel,
 			&i.DimensionSlug,
 			&i.DimensionType,
+			&i.SourceFieldKey,
 		); err != nil {
 			return nil, err
 		}

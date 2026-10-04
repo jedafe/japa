@@ -594,10 +594,6 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 		slog.Error("task:payment:process_webhook: invalid payload", "error", err)
 		return err
 	}
-	_, err = scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:payment:process_webhook: %w", err)
-	}
 
 	// Match the payment by provider_ref (BUG-002/BUG-019).
 	p, proceed, err := resolveWebhookPayment(ctx, queries, payload.ProviderRef, payload.EventID, payload.Status)
@@ -1837,10 +1833,6 @@ func HandleScheduledPublish(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:content:publish_scheduled: %w", err)
 	}
-	_, err = scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:content:publish_scheduled: %w", err)
-	}
 
 	// Re-validate: only publish if still scheduled and publish_at has passed.
 	// Prevents force-publishing canceled or already-published content.
@@ -2007,6 +1999,34 @@ func HandleMediaScan(ctx context.Context, t *asynq.Task) error {
 	return mediaScanProcessor.ProcessMediaScan(ctx, payload.MediaID)
 }
 
+// HandleMediaCleanupDeleted is the media:cleanup_deleted sweep — removes
+// storage objects and hard-deletes soft-deleted media rows older than
+// media.deleted_retention_days (default 30). Soft-deleted rows keep their
+// objects for the retention window so restores stay possible; after that
+// both are purged (Rule 11 approved hard-delete path).
+func HandleMediaCleanupDeleted(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("task:media:cleanup_deleted")
+
+	if mediaCleaner == nil {
+		slog.Warn("task:media:cleanup_deleted: no media cleaner registered, skipping")
+		return nil
+	}
+
+	retentionDays := 30
+	if appSettings != nil {
+		retentionDays = appSettings.GetIntOr(ctx, "media.deleted_retention_days", 30)
+	}
+
+	purged, err := mediaCleaner.PurgeDeletedMedia(ctx, retentionDays, 500)
+	if err != nil {
+		slog.Error("task:media:cleanup_deleted: failed", "error", err)
+		return err
+	}
+
+	slog.Info("task:media:cleanup_deleted: complete", "purged", purged, "retention_days", retentionDays)
+	return nil
+}
+
 // defaultScore returns a valid pgtype.Numeric with value 0, suitable for
 // feed inserts where the score column is NOT NULL with DEFAULT 0. An
 // uninitialized pgtype.Numeric{} sends SQL NULL which violates the constraint.
@@ -2039,10 +2059,6 @@ func HandleContentFanOutToFeeds(ctx context.Context, t *asynq.Task) error {
 	}
 
 	contentID, err := scanUUID(payload.ContentID)
-	if err != nil {
-		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
-	}
-	_, err = scanUUID("")
 	if err != nil {
 		return fmt.Errorf("task:content:fan_out_to_feeds: %w", err)
 	}
@@ -2550,6 +2566,13 @@ func ragIndexAfterEmbed(ctx context.Context, contentID [16]byte, text string) {
 	}
 
 	if err := ragIndexer.IndexEntity(ctx, entityTypeContent, contentUUID, meta.Visibility, meta.SpaceID, meta.AuthorID, text, language); err != nil {
+		if strings.Contains(err.Error(), "no providers registered") {
+			// Permanent configuration gap — no embedding provider can be
+			// conjured, so don't warn per content (same message check as
+			// jce/advisor.go and permanentTaskError).
+			slog.Info("task:content:generate_embedding: RAG index skipped, no embedding provider", "content_id", contentUUID.String())
+			return
+		}
 		slog.Warn("task:content:generate_embedding: RAG index failed", "content_id", contentUUID.String(), "error", err)
 	}
 }
@@ -2751,10 +2774,6 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:content:process_video: %w", err)
 	}
-	_, err = scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:content:process_video: %w", err)
-	}
 
 	// Look up the media record to get the current storage path.
 	media, err := queries.GetMediaByID(ctx,
@@ -2905,10 +2924,6 @@ func HandleNewsletterSend(ctx context.Context, t *asynq.Task) error {
 	if err != nil {
 		return fmt.Errorf("task:newsletter:send: %w", err)
 	}
-	_, err = scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:newsletter:send: %w", err)
-	}
 
 	reader := gen.New(dbPool.Reader)
 	writer := gen.New(dbPool.Writer)
@@ -2999,10 +3014,6 @@ func HandleScholarshipSyncFromGuide(ctx context.Context, t *asynq.Task) error {
 	}
 
 	contentID, err := scanUUID(payload.ContentID)
-	if err != nil {
-		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
-	}
-	_, err = scanUUID("")
 	if err != nil {
 		return fmt.Errorf("task:scholarship:sync_from_guide: %w", err)
 	}
@@ -3808,7 +3819,7 @@ func HandleSpaceAutoPopulate(ctx context.Context, t *asynq.Task) error {
 		SpaceID string `json:"space_id"`
 	}
 
-	if err := parsePayload(t, &payload); err != nil {
+	if err := parsePayloadOrSkip(t, &payload); err != nil {
 		slog.Error("task:space:auto_populate: invalid payload", "error", err)
 		return err
 	}
@@ -3985,10 +3996,6 @@ func HandleNewsletterDigest(ctx context.Context, t *asynq.Task) error {
 	if err := parsePayload(t, &payload); err != nil {
 		slog.Error("task:newsletter:digest: invalid payload", "error", err)
 		return err
-	}
-	_, err := scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:newsletter:digest: %w", err)
 	}
 
 	// Fetch recent published content for the digest.
@@ -4895,10 +4902,6 @@ func HandleModerationAutoHide(ctx context.Context, t *asynq.Task) error {
 	if err := parsePayload(t, &payload); err != nil {
 		slog.Error("task:moderation:auto_hide: invalid payload", "error", err)
 		return err
-	}
-	_, err := scanUUID("")
-	if err != nil {
-		return fmt.Errorf("task:moderation:auto_hide: %w", err)
 	}
 
 	entityID, err := scanUUID(payload.EntityID)

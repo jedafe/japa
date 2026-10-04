@@ -209,6 +209,24 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "closed", Label: "Closed"},
 		{Value: "spam", Label: "Spam"},
 	},
+	// Ref: §108 — POF requirement HITL workflow states.
+	"tools.pof_calculator.status": {
+		{Value: "draft", Label: "Draft"},
+		{Value: "ai_draft", Label: "AI Draft"},
+		{Value: "pending", Label: "Pending"},
+		{Value: "published", Label: "Published"},
+		{Value: "rejected", Label: "Rejected"},
+	},
+	// Ref: §108 — canonical visa/program types for POF requirements.
+	"tools.pof_calculator.visa_type": {
+		{Value: "express_entry", Label: "Express Entry"},
+		{Value: "study_permit", Label: "Study Permit"},
+		{Value: "work_visa", Label: "Work Visa"},
+		{Value: "family", Label: "Family"},
+		{Value: "visitor", Label: "Visitor"},
+		{Value: "job_seeker", Label: "Job Seeker"},
+		{Value: "other", Label: "Other"},
+	},
 	"travel.provider_type": {
 		{Value: "flight", Label: "Flights"},
 		{Value: "hotel", Label: "Hotels"},

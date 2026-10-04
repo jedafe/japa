@@ -104,6 +104,8 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 		uuid.New().String(),
 		ext)
 
+	bucket := s.storageBucket(ctx)
+
 	m, err := s.store.InsertMedia(ctx, gen.InsertMediaParams{
 
 		UploaderUserID:   uploaderID,
@@ -111,7 +113,7 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 		MimeType:         mimeType,
 		FileSizeBytes:    fileSize,
 		StoragePath:      storagePath,
-		StorageBucket:    DefaultBucket,
+		StorageBucket:    bucket,
 	})
 	if err != nil {
 		return UploadResult{}, fmt.Errorf("initiating upload: %w", err)
@@ -120,7 +122,7 @@ func (s *Service) InitiateUpload(ctx context.Context, uploaderID pgtype.UUID, fi
 	// Generate presigned URL for client upload.
 	// Uses S3 client if configured, otherwise falls back to local path.
 	expiresAt := time.Now().Add(15 * time.Minute)
-	presignedURL := "/seaweedfs/upload/" + DefaultBucket + "/" + storagePath // fallback
+	presignedURL := "/seaweedfs/upload/" + bucket + "/" + storagePath // fallback
 
 	if s.s3 != nil {
 		url, err := s.s3.PresignPut(ctx, storagePath, 15*time.Minute)
@@ -164,6 +166,36 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 		return ErrMediaNotFound
 	}
 
+	// Verify the stored object exists and its real size BEFORE confirming —
+	// the presigned PUT is unauthenticated, so a client can confirm without
+	// ever uploading, or declare a small file at initiate and write a much
+	// larger object. A definitively-missing object is a failed upload, not
+	// a degradation: reject it. Oversize objects are deleted rather than
+	// confirmed. The row's file_size_bytes recorded the claimed size at
+	// initiate — persist the real byte count so listings stay accurate.
+	size, serr := s.objectSizeBytes(ctx, m.StorageBucket, m.StoragePath)
+	switch {
+	case errors.Is(serr, errObjectMissing):
+		return fmt.Errorf("%w: upload did not complete — object not found in storage", errObjectMissing)
+	case serr != nil:
+		// Storage unreachable — degrade to the sniff-only path below.
+		slog.Warn("confirm: could not stat object, continuing with header check",
+			"media_id", mediaID.String(), "error", serr)
+	case size <= 0:
+		return fmt.Errorf("%w: uploaded object is empty", errUploadInvalid)
+	case size > s.MaxUploadBytes(ctx):
+		s.deleteObject(ctx, m.StorageBucket, m.StoragePath)
+		return fmt.Errorf("%w: uploaded object is %d bytes, exceeding the %d byte upload limit",
+			errUploadInvalid, size, s.MaxUploadBytes(ctx))
+	case size != m.FileSizeBytes:
+		_ = s.store.UpdateMediaStorage(ctx, gen.UpdateMediaStorageParams{
+			ID:            mediaID,
+			StoragePath:   m.StoragePath,
+			MimeType:      m.MimeType,
+			FileSizeBytes: size,
+		})
+	}
+
 	// Fetch the first 512 bytes from object storage for content inspection.
 	header, err := s.fetchFileHeader(ctx, m.StorageBucket, m.StoragePath)
 	if err != nil {
@@ -190,6 +222,17 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 
 	return s.store.ConfirmMedia(ctx, mediaID)
 }
+
+// errObjectMissing marks a definitively-missing storage object — S3 404 or
+// absent local file — as opposed to storage being unreachable. ConfirmUpload
+// treats missing objects as a failed upload (reject) while unreachable
+// storage keeps the graceful-degradation confirm.
+var errObjectMissing = errors.New("media: stored object not found")
+
+// errUploadInvalid marks a stored upload object that failed confirmation
+// validation (empty, or over the configured size limit) — a 400-class
+// client error, distinct from storage failures.
+var errUploadInvalid = errors.New("media: uploaded object failed validation")
 
 // fetchFileHeader reads up to n bytes from the beginning of an object in
 // the storage bucket. This is used for content-based MIME type detection
@@ -240,6 +283,60 @@ func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64)
 	}
 
 	return buf[:read], nil
+}
+
+// objectSizeBytes returns the stored object's real size — S3 HEAD when the
+// client is configured, local stat otherwise. Returns errObjectMissing when
+// the object definitively does not exist; other errors mean the size could
+// not be determined (storage unreachable — callers degrade gracefully).
+func (s *Service) objectSizeBytes(ctx context.Context, bucket, path string) (int64, error) {
+	var upstreamErr error
+	notFound := s.s3 == nil // local-only storage: stat decides missing
+
+	if s.s3 != nil {
+		objectURL := fmt.Sprintf("%s/%s/%s", s.s3.endpoint, bucket, path)
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, objectURL, nil)
+		if err == nil {
+			resp, err := s.s3.httpClient.Do(req)
+			if err == nil {
+				_ = resp.Body.Close()
+				switch {
+				case resp.StatusCode == http.StatusOK && resp.ContentLength >= 0:
+					return resp.ContentLength, nil
+				case resp.StatusCode == http.StatusNotFound:
+					notFound = true // may still exist via local write fallback
+				default:
+					upstreamErr = fmt.Errorf("s3 head returned %d", resp.StatusCode)
+				}
+			} else {
+				upstreamErr = err
+			}
+		} else {
+			upstreamErr = err
+		}
+	}
+
+	// Always check local too — objects may have been written through the
+	// local fallback even when S3 is configured.
+	localPath, err := resolveMediaPath(bucket, path)
+	if err != nil {
+		if upstreamErr != nil {
+			return 0, upstreamErr
+		}
+		return 0, err
+	}
+
+	fi, statErr := os.Stat(localPath)
+	switch {
+	case statErr == nil:
+		return fi.Size(), nil
+	case os.IsNotExist(statErr) && notFound:
+		return 0, errObjectMissing
+	case os.IsNotExist(statErr) && upstreamErr != nil:
+		return 0, upstreamErr // indeterminate — storage unreachable
+	default:
+		return 0, statErr
+	}
 }
 
 // fetchFromLocal reads the first n bytes from local filesystem (development).
@@ -396,10 +493,47 @@ func (s *Service) DeleteMedia(ctx context.Context, mediaID pgtype.UUID) error {
 
 // HardDeleteMedia permanently removes a media item that is already
 // soft-deleted (admin force-delete path — gated by admin.hard_delete).
+// The storage object is removed alongside the row — best-effort, so a
+// storage failure still allows the row removal (the media:cleanup_deleted
+// sweep would have orphaned objects otherwise).
 // Returns errpkg.ErrNotFound when the media does not exist and
 // errpkg.ErrNotDeleted when it is not soft-deleted.
 func (s *Service) HardDeleteMedia(ctx context.Context, mediaID pgtype.UUID) error {
+	if m, err := s.store.GetMediaByIDAny(ctx, mediaID); err == nil {
+		_ = s.deleteObject(ctx, m.StorageBucket, m.StoragePath)
+	}
 	return s.store.HardDeleteMedia(ctx, mediaID)
+}
+
+// PurgeDeletedMedia hard-deletes soft-deleted media rows (and their storage
+// objects) older than retentionDays — the media:cleanup_deleted worker
+// sweep. The object is removed before the row so a storage failure leaves
+// the row in place for the next sweep instead of orphaning the object.
+// Returns the number of rows purged.
+func (s *Service) PurgeDeletedMedia(ctx context.Context, retentionDays, limit int) (int, error) {
+	rows, err := s.store.ListMediaDeletedForCleanup(ctx, gen.ListMediaDeletedForCleanupParams{
+		RetentionDays: int32(retentionDays),
+		RowLimit:      int32(limit),
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	purged := 0
+	for _, row := range rows {
+		if err := s.deleteObject(ctx, row.StorageBucket, row.StoragePath); err != nil {
+			slog.Warn("media gc: object delete failed, keeping row for next sweep",
+				"media_id", row.ID.String(), "error", err)
+			continue
+		}
+		if err := s.store.HardDeleteMedia(ctx, row.ID); err != nil {
+			slog.Warn("media gc: row delete failed", "media_id", row.ID.String(), "error", err)
+			continue
+		}
+		purged++
+	}
+
+	return purged, nil
 }
 
 // DeleteMediaOwn soft-deletes a media item scoped to the uploader (gated by media.delete_own).
@@ -508,11 +642,18 @@ func (s *Service) ListByOrganization(ctx context.Context, orgID pgtype.UUID, lim
 	return items, total, nil
 }
 
-// GetMediaURL generates an imgproxy signed URL for the media item.
-// NEVER cached in DB — generated on every serialization.
+// GetMediaURL generates a displayable URL for the media item.
+// Images get an imgproxy signed URL (NEVER cached in DB — generated on
+// every serialization); binaries imgproxy cannot transform — videos,
+// audio, PDFs — get the same-origin ServeURL instead so the returned URL
+// always resolves.
 func (s *Service) GetMediaURL(m *gen.Medium, opts ImageProxyOpts) string {
 	if m == nil {
 		return ""
+	}
+
+	if !isImageMIME(CanonicalMIMEType(m.MimeType)) {
+		return ServeURL(m.StorageBucket, m.StoragePath)
 	}
 
 	return MediaURL(m.StorageBucket, m.StoragePath, opts)
@@ -561,7 +702,22 @@ func (s *Service) isAllowedMIME(ctx context.Context, mimeType string, uploadCtx 
 	// system-settings-catalog.
 	if strings.HasPrefix(canonical, "video/") && s.settings != nil {
 		allowedCSV := s.settings.GetStringOr(ctx, "media.allowed_video_types", "mp4,webm,mov")
-		return isVideoTypeAllowed(canonical, allowedCSV)
+		if !isVideoTypeAllowed(canonical, allowedCSV) {
+			return false
+		}
+	}
+
+	// Per-context extension allowlist (Rule 3): media uploads consult
+	// content.allowed_upload_types, avatar uploads consult
+	// users.allowed_avatar_types. Unset/empty means no admin restriction —
+	// the base context allowlist alone applies, so behaviour is unchanged
+	// until the setting is configured.
+	if s.settings != nil {
+		if key := contextUploadTypeSetting[uploadCtx]; key != "" {
+			if csv := s.settings.GetStringOr(ctx, key, ""); strings.TrimSpace(csv) != "" && !isExtAllowed(canonical, csv) {
+				return false
+			}
+		}
 	}
 
 	return true
@@ -603,7 +759,7 @@ func (s *Service) DirectUpload(ctx context.Context, uploaderID pgtype.UUID, file
 		MimeType:         mimeType,
 		FileSizeBytes:    fileSize,
 		StoragePath:      storagePath,
-		StorageBucket:    DefaultBucket,
+		StorageBucket:    s.storageBucket(ctx),
 	})
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("inserting media record: %w", err)
@@ -628,17 +784,21 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 		return pgtype.UUID{}, fmt.Errorf("data too large: %d bytes exceeds limit of %d bytes", len(data), maxBytes)
 	}
 
-	// Sniff MIME type from content.
-	mimeType := http.DetectContentType(data)
-	if mimeType == "application/octet-stream" {
-		// DetectContentType knows a small fixed set — many valid uploads
-		// (mkv, avi, docx…) sniff as octet-stream. Fall back to the
-		// filename extension so the media row and storage path carry a
-		// real type instead of a generic blob.
-		if fm := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))); fm != "" {
-			mimeType = fm
-		}
+	// Sniff MIME type from content (never the client-supplied header).
+	mimeType := DetectStorageMIME(data, filename)
+
+	// Ingestion gate: only media-family types may become media rows. Remote
+	// fetches that return HTML error pages, archives, or executables are
+	// rejected rather than stored as undetectable .bin blobs.
+	if !isStorableMediaMIME(mimeType) {
+		return pgtype.UUID{}, fmt.Errorf("unsupported content type %q for media storage", mimeType)
 	}
+
+	// Compress oversized raster images before storage — curated/ingested
+	// originals (Wikidata logos, stock photos, video thumbnails) routinely
+	// arrive at multi-megabyte sizes. GIF animation and SVG vectors pass
+	// through byte-identical.
+	data, mimeType = optimizeImage(data, mimeType)
 
 	// Generate unique storage path.
 	ext := extensionFromMIME(mimeType)
@@ -657,6 +817,8 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 		ext,
 	)
 
+	bucket := s.storageBucket(ctx)
+
 	// Upload to S3/SeaweedFS with local fallback.
 	stored := false
 
@@ -670,7 +832,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 	}
 
 	if !stored {
-		if err := storeLocalMediaFile(DefaultBucket, storagePath, data); err != nil {
+		if err := storeLocalMediaFile(bucket, storagePath, data); err != nil {
 			return pgtype.UUID{}, fmt.Errorf("storing to local fallback: %w", err)
 		}
 	}
@@ -683,7 +845,7 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 		MimeType:         mimeType,
 		FileSizeBytes:    int64(len(data)),
 		StoragePath:      storagePath,
-		StorageBucket:    DefaultBucket,
+		StorageBucket:    bucket,
 	}
 	if attribution != nil && attribution.SourcePlatform != "" {
 		params.SourcePlatform = &attribution.SourcePlatform
@@ -702,6 +864,12 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 	if err := s.store.ConfirmMedia(ctx, m.ID); err != nil {
 		return pgtype.UUID{}, fmt.Errorf("confirming media: %w", err)
 	}
+
+	// Enqueue a virus scan — the same content:scan_media task user uploads
+	// get via enqueueMediaTasks. Confirmation is not deferred on it: the
+	// scan runs post-confirmation exactly like user uploads, and can still
+	// quarantine the row (QuarantineMediaByID has no confirmed filter).
+	s.enqueueScanTask(m.ID)
 
 	return m.ID, nil
 }
@@ -746,6 +914,54 @@ func (s *Service) StoreFromURL(ctx context.Context, uploaderID pgtype.UUID, sour
 	return s.StoreFromBytes(ctx, uploaderID, body, filename, nil)
 }
 
+// DetectStorageMIME determines the content type of raw bytes by content
+// inspection (http.DetectContentType — never a client-supplied header),
+// falling back to the filename extension when the sniffer returns
+// application/octet-stream for container formats it cannot fingerprint
+// (mkv, avi, docx…). Shared by StoreFromBytes and callers that need to
+// validate a payload before storing it.
+func DetectStorageMIME(data []byte, filename string) string {
+	mimeType := http.DetectContentType(data)
+	if mimeType == "application/octet-stream" {
+		// ISO-BMFF container: the ftyp major brand identifies the real
+		// type — isom MP4s, m4a audio, HEIC/AVIF stills — that the sniffer
+		// cannot fingerprint.
+		if brand := isoBMFFBrandMIME(data); brand != "" {
+			return brand
+		}
+	}
+	if mimeType == "application/octet-stream" ||
+		strings.HasPrefix(mimeType, "text/plain") ||
+		strings.HasPrefix(mimeType, "text/xml") {
+		// octet-stream: container formats (mkv, avi, docx…) the sniffer
+		// cannot fingerprint. text/plain|text/xml: magic-byte-free formats
+		// — notably SVG, which sniffs as generic text but is a valid
+		// image type when the filename says .svg. Callers re-validate the
+		// resolved type, so a misleading extension cannot widen what is
+		// accepted.
+		if fm := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))); fm != "" {
+			mimeType = fm
+		}
+	}
+
+	return mimeType
+}
+
+// isStorableMediaMIME reports whether a sniffed MIME type belongs to the
+// media family (image/*, video/*, audio/*, or application/pdf). Server-side
+// ingestion (StoreFromBytes/StoreFromURL — curated logos, thumbnails, stock
+// photos, imported body images) uses this to reject remote content that is
+// not media at all, such as HTML error pages or executables. Deliberately
+// broader than the upload-context allowlists: admin upload-type restrictions
+// govern user uploads, not system ingestion.
+func isStorableMediaMIME(mimeType string) bool {
+	c := CanonicalMIMEType(mimeType)
+	return strings.HasPrefix(c, "image/") ||
+		strings.HasPrefix(c, "video/") ||
+		strings.HasPrefix(c, "audio/") ||
+		c == "application/pdf"
+}
+
 // storeLocalMediaFile writes body to disk at data/media/{bucket}/{storagePath}
 // (mediaRoot, defined in handlers.go). This is the local-storage fallback
 // used when S3/SeaweedFS is not configured or unreachable, so ServeMedia
@@ -782,6 +998,12 @@ func extensionFromMIME(mimeType string) string {
 		return ".gif"
 	case strings.HasPrefix(mimeType, "image/svg"):
 		return ".svg"
+	case strings.HasPrefix(mimeType, "image/avif"):
+		return ".avif"
+	case strings.HasPrefix(mimeType, "image/bmp"):
+		return ".bmp"
+	case strings.HasPrefix(mimeType, "image/tiff"):
+		return ".tiff"
 	// Video/audio — without these every upload lands as ".bin" and
 	// ServeMedia returns application/octet-stream, so browsers download
 	// the file instead of playing it.

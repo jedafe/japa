@@ -241,6 +241,7 @@ func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID pgtype.UUID) 
 	}
 
 	payload, _ := json.Marshal(map[string]string{
+		"version":  "1",
 		"space_id": spaceID.String(),
 	})
 	if err := s.enqueuer.Enqueue(worker.TypeSpaceAutoPopulate, payload); err != nil {

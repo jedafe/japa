@@ -40,10 +40,14 @@ var ErrCalculatorDisabled = errors.New("costofliving: calculator disabled")
 
 // CityData is a single city row in the comparison matrix. Values maps
 // dimension key (dimension_id string) → raw value as stored (text).
+// IsBaseline marks the city that ratios in this matrix were computed
+// against — the user-selected baseline when baseline_id was passed, else
+// the seeded is_baseline item (§72 amendment: user-selectable baseline).
 type CityData struct {
 	ID           string            `json:"id"`
 	Title        string            `json:"title"`
 	GeoSpaceName string            `json:"geo_space_name"`
+	GeoSpaceSlug string            `json:"geo_space_slug"`
 	IsBaseline   bool              `json:"is_baseline"`
 	LastUpdated  string            `json:"last_updated"`
 	Values       map[string]string `json:"values"`
@@ -227,17 +231,70 @@ func (s *Service) ListCities(ctx context.Context, search, countryCode string, pa
 	}, nil
 }
 
+// baselineRef normalizes the city row that serves as the comparison
+// reference — either a user-selected city (baseline_id param) or the seeded
+// is_baseline item — so the matrix builder treats both sources uniformly.
+type baselineRef struct {
+	ID            pgtype.UUID
+	Title         string
+	GeoSpaceID    pgtype.UUID
+	GeoSpaceName  *string
+	GeoSpaceSlug  *string
+	LastUpdatedAt pgtype.Timestamptz
+}
+
+// resolveBaseline returns the effective comparison baseline. When the
+// caller passes baseline_id naming a live cost_of_living item it wins
+// (§72 amendment: user-selectable baseline); anything else — absent,
+// unresolved, or an item from another comparison type — falls back to the
+// seeded is_baseline city.
+func (s *Service) resolveBaseline(ctx context.Context, typeID, requested pgtype.UUID) (baselineRef, error) {
+	if requested.Valid {
+		row, err := s.store.GetCityByID(ctx, requested)
+		if err == nil && row.TypeID == typeID {
+			return baselineRef{
+				ID:            row.ID,
+				Title:         row.Title,
+				GeoSpaceID:    row.GeoSpaceID,
+				GeoSpaceName:  row.GeoSpaceName,
+				GeoSpaceSlug:  row.GeoSpaceSlug,
+				LastUpdatedAt: row.LastUpdatedAt,
+			}, nil
+		}
+
+		if err != nil {
+			slog.Warn("costofliving: baseline_id lookup failed, using seeded baseline", "baseline_id", requested.String(), "error", err)
+		} else {
+			slog.Warn("costofliving: baseline_id is not a cost_of_living item, using seeded baseline", "baseline_id", requested.String())
+		}
+	}
+
+	row, err := s.store.GetBaselineCity(ctx, typeID)
+	if err != nil {
+		return baselineRef{}, fmt.Errorf("costofliving: compare: get baseline: %w", err)
+	}
+
+	return baselineRef{
+		ID:            row.ID,
+		Title:         row.Title,
+		GeoSpaceID:    row.GeoSpaceID,
+		GeoSpaceName:  row.GeoSpaceName,
+		GeoSpaceSlug:  row.GeoSpaceSlug,
+		LastUpdatedAt: row.LastUpdatedAt,
+	}, nil
+}
+
 // CompareCities returns a comparison matrix with raw values + ratios vs the
 // baseline city and a weighted Overall Cost Index. Steps per ADR-072 §2:
 //  1. Get the cost_of_living type definition (for config weights).
-//  2. Get the baseline city.
+//  2. Resolve the baseline city (baseline_id param or seeded is_baseline).
 //  3. Get values for all requested cities + the baseline.
 //  4. Pivot values into a matrix.
 //  5. Compute ratios vs baseline for each category.
 //  6. Compute weighted Overall Cost Index using config weights.
 //
 // The baseline city is always included in the result even if not in cityIDs.
-func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (ComparisonMatrix, error) {
+func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, baselineID pgtype.UUID) (ComparisonMatrix, error) {
 	if s.settings != nil {
 		if enabled := s.settings.GetBoolOr(ctx, "col_calculator.enabled", defaultEnabled); !enabled {
 			return ComparisonMatrix{}, ErrCalculatorDisabled
@@ -260,8 +317,20 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 		}
 	}
 
-	if len(uniqueIDs) > maxCities {
-		return ComparisonMatrix{}, fmt.Errorf("costofliving: too many cities: %d > max %d", len(uniqueIDs), maxCities)
+	// max_cities counts destination cities only (ADR-072: "1–N destination
+	// cities plus the baseline"). A caller may include the baseline inside
+	// city_ids — the JCE export form does — so exclude the requested
+	// baseline_id from the count.
+	destCount := 0
+	for _, id := range uniqueIDs {
+		if baselineID.Valid && id == baselineID {
+			continue
+		}
+		destCount++
+	}
+
+	if destCount > maxCities {
+		return ComparisonMatrix{}, fmt.Errorf("costofliving: too many cities: %d > max %d", destCount, maxCities)
 	}
 
 	cityIDs = uniqueIDs
@@ -274,13 +343,14 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 
 	weights := parseWeights(typeDef.Config)
 
-	// Step 2: get the baseline city.
-	baseline, err := s.store.GetBaselineCity(ctx, typeDef.ID)
+	// Step 2: resolve the baseline city — a caller-supplied baseline_id that
+	// names a live cost_of_living item wins; otherwise the seeded baseline.
+	baseline, err := s.resolveBaseline(ctx, typeDef.ID, baselineID)
 	if err != nil {
-		return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get baseline: %w", err)
+		return ComparisonMatrix{}, err
 	}
 
-	baselineID := baseline.ID
+	baselineID = baseline.ID
 
 	// Step 3: collect the set of city IDs to fetch values for (requested +
 	// baseline, deduplicated). The baseline is always included.
@@ -305,11 +375,14 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 
 	// Step 4: pivot values into a matrix.
 	// dimValues[dimensionID][cityID] = float64 value (parsed from text).
-	// dimMeta[dimensionID] = {label, key, slug}.
+	// dimMeta[dimensionID] = {label, key, slug, sourceKey}.
+	// sourceKey is the bound custom_fields.key (source_field_id) that
+	// community wiki values are keyed under (§80 Tool Surface Hydration).
 	type dimMeta struct {
-		Label string
-		Key   string
-		Slug  string
+		Label     string
+		Key       string
+		Slug      string
+		SourceKey string
 	}
 
 	dimValues := make(map[string]map[string]float64)
@@ -327,7 +400,12 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 				slug = *v.DimensionSlug
 			}
 
-			dimMetaMap[dimKey] = dimMeta{Label: v.DimensionLabel, Key: dimKey, Slug: slug}
+			sourceKey := ""
+			if v.SourceFieldKey != nil {
+				sourceKey = *v.SourceFieldKey
+			}
+
+			dimMetaMap[dimKey] = dimMeta{Label: v.DimensionLabel, Key: dimKey, Slug: slug, SourceKey: sourceKey}
 			dimOrder = append(dimOrder, dimKey)
 		}
 
@@ -386,8 +464,12 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 	// Overlay community field values from each city's linked geo space
 	// (entity_type='space') — cfv keys matched by dimension slug shadow the
 	// stored comparison_values so approved wiki edits reach the calculator
-	// (§80 Tool Surface Hydration). comparison_values rows themselves are
-	// never community-edited. One batched cfv read per comparison.
+	// (§80 Tool Surface Hydration). A dimension bound to a wiki field via
+	// source_field_id resolves its cfv by that field's key instead — the
+	// wiki city's Cost of Living page stores community values under the
+	// field group's keys, not the dimension slugs. comparison_values rows
+	// themselves are never community-edited. One batched cfv read per
+	// comparison.
 	geoSpaceByCity := make(map[pgtype.UUID]pgtype.UUID, len(cityOrder))
 	if baseline.GeoSpaceID.Valid {
 		geoSpaceByCity[baselineID] = baseline.GeoSpaceID
@@ -416,6 +498,12 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 
 		for dimKey, meta := range dimMetaMap {
 			v, ok := cfv[meta.Slug]
+			if meta.SourceKey != "" {
+				if sv, sok := cfv[meta.SourceKey]; sok {
+					v, ok = sv, true
+				}
+			}
+
 			if !ok {
 				continue
 			}
@@ -439,9 +527,7 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 	cities := make([]CityData, 0, len(cityOrder))
 
 	for _, id := range cityOrder {
-		var title, geoName string
-
-		var isBaseline bool
+		var title, geoName, geoSlug string
 
 		var lastUpdated time.Time
 
@@ -452,7 +538,9 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 				geoName = *baseline.GeoSpaceName
 			}
 
-			isBaseline = true
+			if baseline.GeoSpaceSlug != nil {
+				geoSlug = *baseline.GeoSpaceSlug
+			}
 
 			if baseline.LastUpdatedAt.Valid {
 				lastUpdated = baseline.LastUpdatedAt.Time
@@ -470,7 +558,9 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 				geoName = *c.GeoSpaceName
 			}
 
-			isBaseline = c.IsBaseline
+			if c.GeoSpaceSlug != nil {
+				geoSlug = *c.GeoSpaceSlug
+			}
 
 			if c.LastUpdatedAt.Valid {
 				lastUpdated = c.LastUpdatedAt.Time
@@ -491,7 +581,8 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID) (Com
 			ID:           id.String(),
 			Title:        title,
 			GeoSpaceName: geoName,
-			IsBaseline:   isBaseline,
+			GeoSpaceSlug: geoSlug,
+			IsBaseline:   id == baselineID,
 			LastUpdated:  lastUpdatedStr,
 			Values:       rawVals,
 		})
@@ -652,7 +743,8 @@ func parseWeights(config []byte) map[string]float64 {
 
 // anyToFloat coerces a display-ready custom-field value (float64/string/etc.)
 // into a float for the comparison matrix, applying the same currency-prefix
-// cleanup as parseFloatValue for string values.
+// cleanup as parseFloatValue for string values. price_range values arrive as
+// {"avg","min","max"} maps — the avg part wins, then the min/max midpoint.
 func anyToFloat(v any) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
@@ -667,6 +759,56 @@ func anyToFloat(v any) (float64, bool) {
 		return float64(n), true
 	case string:
 		return parseFloatValue(&n, pgtype.Numeric{})
+	case map[string]any:
+		return priceRangeToFloat(n)
+	}
+
+	return 0, false
+}
+
+// priceRangeToFloat reduces a price_range {"avg","min","max"} value to a
+// single number: "avg" when present, else the midpoint of min and max,
+// else whichever bound exists (§80 Hierarchical UX — price_range carries
+// its comparable value in the avg part).
+func priceRangeToFloat(m map[string]any) (float64, bool) {
+	num := func(key string) (float64, bool) {
+		raw, ok := m[key]
+		if !ok {
+			return 0, false
+		}
+
+		switch n := raw.(type) {
+		case float64:
+			return n, true
+		case float32:
+			return float64(n), true
+		case int:
+			return float64(n), true
+		case int32:
+			return float64(n), true
+		case int64:
+			return float64(n), true
+		case string:
+			return parseFloatValue(&n, pgtype.Numeric{})
+		}
+
+		return 0, false
+	}
+
+	if avg, ok := num("avg"); ok {
+		return avg, true
+	}
+
+	min, hasMin := num("min")
+	max, hasMax := num("max")
+
+	switch {
+	case hasMin && hasMax:
+		return (min + max) / 2, true
+	case hasMin:
+		return min, true
+	case hasMax:
+		return max, true
 	}
 
 	return 0, false
@@ -691,6 +833,9 @@ func cfvDisplayString(v any) string {
 		return strconv.FormatInt(int64(t), 10)
 	case int64:
 		return strconv.FormatInt(t, 10)
+	case map[string]any:
+		// price_range {"avg","min","max"} — render as a compact range.
+		return priceRangeDisplayString(t, v)
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {
@@ -699,6 +844,35 @@ func cfvDisplayString(v any) string {
 
 		return string(b)
 	}
+}
+
+// priceRangeDisplayString renders a price_range map for the raw-value
+// surface: "avg" alone when present, else "min–max".
+func priceRangeDisplayString(m map[string]any, fallback any) string {
+	render := func(key string) string {
+		if raw, ok := m[key]; ok {
+			return cfvDisplayString(raw)
+		}
+
+		return ""
+	}
+
+	avg, min, max := render("avg"), render("min"), render("max")
+
+	switch {
+	case avg != "" && (min != "" || max != ""):
+		return fmt.Sprintf("%s (%s–%s)", avg, min, max)
+	case avg != "":
+		return avg
+	case min != "" && max != "":
+		return min + "–" + max
+	case min != "":
+		return min
+	case max != "":
+		return max
+	}
+
+	return fmt.Sprint(fallback)
 }
 
 // parseFloatValue parses a numeric cost value from the comparison_values row.

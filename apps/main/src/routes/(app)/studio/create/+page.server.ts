@@ -59,7 +59,7 @@ export const load: PageServerLoad = async (event) => {
 		apiList<ContentTypeMeta>(ctx, '/content-types'),
 		apiList<MeSpace>(ctx, '/me/spaces'),
 		apiList<CustomFieldGroup>(ctx, '/custom-field-groups'),
-		apiList<BlogSeries>(ctx, '/blog/series'),
+		apiList<BlogSeries>(ctx, '/series'),
 		// Post-as-org (ADR-062): the caller's org memberships, used by the
 		// "post on behalf of" selector. Empty list = personal posts only.
 		apiList<ComposerOrganization>(ctx, '/me/organizations'),

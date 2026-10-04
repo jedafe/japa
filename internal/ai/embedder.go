@@ -46,6 +46,14 @@ func (ce *ContentEmbedder) EmbedContent(ctx context.Context, contentID [16]byte,
 
 	embedding, err := GenerateContentEmbedding(ctx, ce.dispatcher, text, DefaultEmbeddingModel)
 	if err != nil {
+		if errors.Is(err, ErrNoProviders) {
+			// No embedding provider is configured — same semantics as a
+			// nil dispatcher: skip rather than burn task retries on a
+			// permanent configuration gap.
+			slog.Warn("ai:embedder: no embedding provider registered, skipping")
+			return nil
+		}
+
 		return fmt.Errorf("ai:embedder: generating embedding: %w", err)
 	}
 

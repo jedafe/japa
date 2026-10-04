@@ -375,7 +375,7 @@
 		<div class="mt-8">
 			<ReactionRail
 				contentId={article.id}
-				voteScore={article.reshare_count}
+				voteScore={article.reaction_count}
 				commentCount={article.comment_count}
 				authed={data.authed}
 				horizontal

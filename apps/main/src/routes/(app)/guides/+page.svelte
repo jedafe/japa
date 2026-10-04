@@ -271,7 +271,7 @@
 				<div class="grid gap-3 sm:grid-cols-2">
 					{#each data.series as series (series.id)}
 						<a
-							href="/blog/series/{series.slug}"
+							href="/series/{series.slug}"
 							class="group flex flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<div class="flex items-start gap-3">

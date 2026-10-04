@@ -169,11 +169,17 @@ func (c *S3Client) GetObjectURL(storagePath string) string {
 // download content from remote URLs and store it without a client-side
 // presigned URL upload. Returns nil on success.
 func (c *S3Client) PutObject(ctx context.Context, storagePath, mimeType string, body []byte) error {
+	return c.putObject(ctx, c.bucket, storagePath, mimeType, body)
+}
+
+// putObject is the bucket-parameterized form of PutObject — used when the
+// media row's storage_bucket may differ from the client default.
+func (c *S3Client) putObject(ctx context.Context, bucket, storagePath, mimeType string, body []byte) error {
 	if c == nil {
 		return errors.New("s3 client not configured")
 	}
 
-	objectURL := fmt.Sprintf("%s/%s/%s", c.endpoint, c.bucket, storagePath)
+	objectURL := fmt.Sprintf("%s/%s/%s", c.endpoint, bucket, storagePath)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, objectURL, bytes.NewReader(body))
 	if err != nil {
@@ -195,6 +201,33 @@ func (c *S3Client) PutObject(ctx context.Context, storagePath, mimeType string, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("s3 put returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// DeleteObject removes an object from the given bucket. A 404 is treated
+// as success — the object is already gone.
+func (c *S3Client) DeleteObject(ctx context.Context, bucket, storagePath string) error {
+	if c == nil {
+		return errors.New("s3 client not configured")
+	}
+
+	objectURL := fmt.Sprintf("%s/%s/%s", c.endpoint, bucket, storagePath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, objectURL, nil)
+	if err != nil {
+		return fmt.Errorf("creating s3 delete request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing s3 delete: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		return fmt.Errorf("s3 delete returned %d", resp.StatusCode)
 	}
 
 	return nil

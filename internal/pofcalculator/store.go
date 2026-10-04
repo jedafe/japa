@@ -11,6 +11,7 @@ package pofcalculator
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -138,7 +139,9 @@ func (s *Store) DistinctVisaTypes(ctx context.Context, destSpaceID pgtype.UUID) 
 }
 
 // AdminListRequirements returns requirements in any status (admin).
-func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaType, status string, page, limit int32) ([]RequirementRow, int64, error) {
+// q matches program_label/visa_type (ILIKE); sort+order select a
+// whitelisted column — unknown keys fall back to updated_at DESC.
+func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UUID, visaType, status, q, sort, order string, page, limit int32) ([]RequirementRow, int64, error) {
 	where := ` WHERE true`
 	args := []any{}
 	add := func(cond string, v any) {
@@ -154,6 +157,10 @@ func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UU
 	if status != "" {
 		add(`p.status`, status)
 	}
+	if q != "" {
+		args = append(args, q)
+		where += ` AND (p.program_label ILIKE '%' || $` + n(len(args)) + ` || '%' OR p.visa_type ILIKE '%' || $` + n(len(args)) + ` || '%')`
+	}
 
 	var total int64
 	if err := s.pool.Reader.QueryRow(ctx,
@@ -161,9 +168,20 @@ func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UU
 		return nil, 0, err
 	}
 
+	// Sort: whitelist of allowed columns to prevent SQL injection via
+	// user-supplied sort param (geo-aware-tool-pattern.md admin list).
+	orderClause := "p.updated_at DESC"
+	if col, ok := adminSortColumn(sort); ok {
+		dir := "DESC"
+		if strings.EqualFold(order, "asc") {
+			dir = "ASC"
+		}
+		orderClause = col + " " + dir
+	}
+
 	args = append(args, limit, (page-1)*limit)
 	rows, err := s.pool.Reader.Query(ctx,
-		reqSelect+where+` ORDER BY p.updated_at DESC LIMIT $`+n(len(args)-1)+` OFFSET $`+n(len(args)), args...)
+		reqSelect+where+` ORDER BY `+orderClause+` LIMIT $`+n(len(args)-1)+` OFFSET $`+n(len(args)), args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -171,6 +189,31 @@ func (s *Store) AdminListRequirements(ctx context.Context, destSpaceID pgtype.UU
 
 	reqs, err := scanRequirements(rows)
 	return reqs, total, err
+}
+
+// adminSortColumn maps a user-supplied sort key to a qualified column
+// expression. Returns false for unknown columns to prevent SQL injection
+// via the sort query param (geo-aware-tool-pattern.md admin list pattern).
+func adminSortColumn(key string) (string, bool) {
+	switch strings.ToLower(key) {
+	case "destination", "destination_space_name":
+		return "s.name", true
+	case "visa_type":
+		return "p.visa_type", true
+	case "program_label":
+		return "p.program_label", true
+	case "currency":
+		return "p.currency", true
+	case "effective_date":
+		return "p.effective_date", true
+	case "status":
+		return "p.status", true
+	case "created_at":
+		return "p.created_at", true
+	case "updated_at":
+		return "p.updated_at", true
+	}
+	return "", false
 }
 
 // CreateRequirement inserts a requirement (admin).
@@ -194,6 +237,7 @@ func (s *Store) CreateRequirement(ctx context.Context, r RequirementRow) (pgtype
 func (s *Store) UpdateRequirement(ctx context.Context, id pgtype.UUID, r RequirementRow) error {
 	res, err := s.pool.Writer.Exec(ctx, `
 		UPDATE pof_requirements SET
+		  destination_space_id = COALESCE($13, destination_space_id),
 		  visa_type = COALESCE(NULLIF($2,''), visa_type),
 		  program_label = COALESCE(NULLIF($3,''), program_label),
 		  amount_schedule = COALESCE($4, amount_schedule),
@@ -209,7 +253,8 @@ func (s *Store) UpdateRequirement(ctx context.Context, id pgtype.UUID, r Require
 		WHERE id = $1`,
 		id, r.VisaType, r.ProgramLabel, nullBytes(r.AmountSchedule),
 		r.Currency, r.FundsMustBeLiquid, nullBytes(r.AcceptedProof),
-		r.Notes, nullDate(r.EffectiveDate), r.SourceURL, r.Status, r.IsActive)
+		r.Notes, nullDate(r.EffectiveDate), r.SourceURL, r.Status, r.IsActive,
+		nullUUID(r.DestinationSpaceID))
 	if err != nil {
 		return err
 	}
@@ -219,13 +264,15 @@ func (s *Store) UpdateRequirement(ctx context.Context, id pgtype.UUID, r Require
 	return nil
 }
 
-// ApproveRequirement publishes a requirement (HITL).
+// ApproveRequirement publishes a requirement (HITL). Only rows awaiting
+// review may be approved — re-approving published rows or resurrecting
+// rejected ones is rejected by the status guard.
 func (s *Store) ApproveRequirement(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	res, err := s.pool.Writer.Exec(ctx, `
 		UPDATE pof_requirements
 		SET status = 'published', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
 		    hitl_review_notes = NULLIF($3,''), updated_at = now()
-		WHERE id = $1`, id, reviewerID, notes)
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending')`, id, reviewerID, notes)
 	if err != nil {
 		return err
 	}
@@ -273,6 +320,13 @@ func nullDate(d pgtype.Date) any {
 	return d
 }
 
+func nullUUID(u pgtype.UUID) any {
+	if !u.Valid {
+		return nil
+	}
+	return u
+}
+
 // GetRequirement returns a requirement by ID regardless of status
 // (admin detail view).
 func (s *Store) GetRequirement(ctx context.Context, id pgtype.UUID) (RequirementRow, error) {
@@ -307,12 +361,14 @@ func (s *Store) DeleteRequirement(ctx context.Context, id pgtype.UUID) error {
 }
 
 // RejectRequirement marks a pending/draft requirement rejected (HITL).
+// Published rows are protected — a live requirement is withdrawn via
+// is_active, not rejected back into the review queue.
 func (s *Store) RejectRequirement(ctx context.Context, id, reviewerID pgtype.UUID, notes string) error {
 	res, err := s.pool.Writer.Exec(ctx, `
 		UPDATE pof_requirements
 		SET status = 'rejected', hitl_reviewed_by = $2, hitl_reviewed_at = now(),
 		    hitl_review_notes = NULLIF($3,''), updated_at = now()
-		WHERE id = $1`, id, reviewerID, notes)
+		WHERE id = $1 AND status IN ('draft','ai_draft','pending')`, id, reviewerID, notes)
 	if err != nil {
 		return err
 	}

@@ -101,7 +101,7 @@ export const load: PageServerLoad = async (event) => {
 			related = (
 				await apiList<{ id: string; title: string; slug: string; content_type: string }>(
 					ctx,
-					`/content/${thread.content_id}/related?limit=5`
+					`/content/${thread.content_id}/related?page_size=5`
 				)
 			).items;
 		}

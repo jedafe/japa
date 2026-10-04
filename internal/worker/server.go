@@ -2,15 +2,58 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
 	errtracking "github.com/jedafe/japa/internal/errors"
 )
+
+// ErrUpstreamRateLimited marks task failures caused by an upstream API
+// rate-limiting us (e.g. Wikipedia 429 during space:auto_populate).
+// Packages that cannot be imported here wrap their own rate-limit
+// sentinels with this one so the server RetryDelayFunc can back off hard
+// instead of letting exponential retries keep the rate limit hot.
+var ErrUpstreamRateLimited = errors.New("worker: upstream rate limited")
+
+// retryDelay backs off hard on upstream rate-limit errors — default
+// exponential retries restart within seconds and keep the provider's
+// rate limit saturated (a 76k-task enrichment backlog can otherwise
+// re-ban the egress IP indefinitely). Other errors keep the standard
+// exponential backoff.
+func retryDelay(n int, e error, t *asynq.Task) time.Duration {
+	if errors.Is(e, ErrUpstreamRateLimited) {
+		return 10 * time.Minute
+	}
+
+	return asynq.DefaultRetryDelayFunc(n, e, t)
+}
+
+// permanentTaskError is a ServeMux middleware that downgrades
+// cannot-ever-succeed configuration errors to asynq.SkipRetry so the task
+// archives after the first attempt instead of burning the retry budget.
+// errors.Is cannot reach the ai.ErrNoProviders sentinel from this package
+// (internal/ai imports worker — the reverse would cycle), so the stable
+// message substring is matched, the same check internal/jce/advisor.go
+// already uses. Covers the AI gateway and the email gateway.
+func permanentTaskError(next asynq.Handler) asynq.Handler {
+	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+		err := next.ProcessTask(ctx, t)
+		switch {
+		case err == nil || errors.Is(err, asynq.SkipRetry):
+			return err
+		case strings.Contains(err.Error(), "no providers registered"):
+			return fmt.Errorf("%w: %w", err, asynq.SkipRetry)
+		default:
+			return err
+		}
+	})
+}
 
 // NewServer creates a new Asynq server configured with all three task tiers.
 // The returned server is ready to have handlers registered via NewMux and then
@@ -31,8 +74,9 @@ func NewServer(cfg *Config) *asynq.Server {
 				QueueDefault:  cfg.DefaultConcurrency,
 				QueueLow:      cfg.LowConcurrency,
 			},
-			// DefaultRetryDelayFunc implements exponential backoff.
-			RetryDelayFunc: asynq.DefaultRetryDelayFunc,
+			// retryDelay wraps DefaultRetryDelayFunc (exponential backoff)
+			// with a hard 10-minute backoff for upstream rate limits.
+			RetryDelayFunc: retryDelay,
 			// Forward every task processing error to GlitchTip (AUDIT-BE-002).
 			// This fires on each failed attempt, including the final one before
 			// a task moves to the DLQ. No-op when no DSN is configured.
@@ -47,6 +91,7 @@ func NewServer(cfg *Config) *asynq.Server {
 // NewMux creates a new Asynq ServeMux and registers all task handlers.
 func NewMux() *asynq.ServeMux {
 	mux := asynq.NewServeMux()
+	mux.Use(permanentTaskError)
 	RegisterHandlers(mux)
 
 	return mux
@@ -127,6 +172,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 
 	// Daily 03:00 UTC: security scan.
 	schedule("0 3 * * *", TypeSecurityScan, 24*time.Hour)
+
+	// Nightly 02:30 UTC: purge soft-deleted media objects+rows past
+	// media.deleted_retention_days (Section 34, Rule 11 approved path).
+	schedule("30 2 * * *", TypeMediaCleanupDeleted, 24*time.Hour)
 
 	// Weekly: prune old feeds, prune audit logs, DM cleanup, prune push tokens.
 	schedule("0 2 * * 0", TypeMaintenancePruneOldFeeds, 7*24*time.Hour)

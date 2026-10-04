@@ -307,6 +307,13 @@
 		reportSubmitting = false;
 	}
 
+	// ---- View tracking (Section 14 — POST /content/{id}/view). Fire-and-forget
+	// on mount; the backend deduplicates per user/session per day. ----
+	$effect(() => {
+		if (!job?.id) return;
+		api.post(`/content/${job.id}/view`, {});
+	});
+
 	// ---- Tabs — anchor scroll with an IntersectionObserver scroll-spy. ----
 	const tabs = $derived(() => {
 		const list: { id: string; label: string }[] = [

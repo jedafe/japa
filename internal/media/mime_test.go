@@ -38,8 +38,18 @@ var elfBytes = []byte{0x7F, 0x45, 0x4C, 0x46, 0x02, 0x01, 0x01, 0x00}
 // We include it for completeness but note it falls through to the octet-stream path.
 var tiffBytes = []byte{0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00}
 
-// MP4 ftyp box (typical): 00 00 00 xx 66 74 79 70.
+// MP4 ftyp box (typical): 00 00 00 xx 66 74 79 70 with major brand "isom"
+// (ffmpeg's default). http.DetectContentType only fingerprints the literal
+// "mp4 " brand, so this reports application/octet-stream and resolves via
+// the ISO-BMFF brand table.
 var mp4Bytes = []byte{0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6F, 0x6D}
+
+// ISO-BMFF ftyp boxes for brands the sniffer cannot fingerprint.
+var heicBytes = []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'h', 'e', 'i', 'c'}
+var heifBytes = []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'i', 'f', '1'}
+var avifBytes = []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'a', 'v', 'i', 'f'}
+var m4aBytes = []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'M', '4', 'A', ' '}
+var movBytes = []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'q', 't', ' ', ' '}
 
 // WebP header: RIFF....WEBP.
 var webPBytes = []byte{0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50}
@@ -232,6 +242,82 @@ func TestVerifyMIMEType_OctetStreamNotRejected(t *testing.T) {
 	}
 }
 
+func TestVerifyMIMEType_BMFFBrands(t *testing.T) {
+	t.Parallel()
+
+	// http.DetectContentType fingerprints only the literal "mp4 " brand —
+	// all of these sniff as application/octet-stream, so verification is
+	// governed by the ftyp major-brand table:
+	//   - video brands accept any declared video/* (isom MP4 is the ffmpeg
+	//     default and must verify, not just free-pass)
+	//   - audio brands accept declared audio/*
+	//   - still-image brands (HEIC/HEIF/AVIF…) match only their own honest
+	//     declaration — HEIC labeled video/mp4 or image/jpeg is rejected
+	//   - unknown brands keep the octet-stream free-pass
+	tests := []struct {
+		name     string
+		fileData []byte
+		declared string
+		wantOK   bool
+	}{
+		{"isom MP4 as video/mp4", mp4Bytes, "video/mp4", true},
+		{"isom MP4 as video/quicktime", mp4Bytes, "video/quicktime", true},
+		{"QuickTime qt brand as video/quicktime", movBytes, "video/quicktime", true},
+		{"QuickTime qt brand as video/mp4", movBytes, "video/mp4", true},
+		{"M4A as audio/mpeg", m4aBytes, "audio/mpeg", true},
+		{"M4A as video/mp4", m4aBytes, "video/mp4", false},
+		{"HEIC mislabeled video/mp4", heicBytes, "video/mp4", false},
+		{"HEIC mislabeled image/jpeg", heicBytes, "image/jpeg", false},
+		{"HEIC honestly declared", heicBytes, "image/heic", true},
+		{"HEIF honestly declared", heifBytes, "image/heif", true},
+		{"HEIF declared as heic (same family)", heifBytes, "image/heic", true},
+		{"AVIF mislabeled image/webp", avifBytes, "image/webp", false},
+		{"AVIF honestly declared", avifBytes, "image/avif", true},
+		{"unbranded binary as video/mp4 (free-pass)", exeBytes, "video/mp4", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			detected, ok, err := VerifyMIMEType(tt.fileData, tt.declared)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if ok != tt.wantOK {
+				t.Errorf("matchesExpected = %v, want %v (detected=%s, declared=%s)",
+					ok, tt.wantOK, detected, tt.declared)
+			}
+		})
+	}
+}
+
+func TestDetectStorageMIME_BMFFBrands(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		fileData []byte
+		want     string
+	}{
+		{"isom MP4 resolves video/mp4", mp4Bytes, "video/mp4"},
+		{"QuickTime resolves video/quicktime", movBytes, "video/quicktime"},
+		{"M4A resolves audio/mp4", m4aBytes, "audio/mp4"},
+		{"HEIC resolves image/heic", heicBytes, "image/heic"},
+		{"HEIF resolves image/heif", heifBytes, "image/heif"},
+		{"AVIF resolves image/avif", avifBytes, "image/avif"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := DetectStorageMIME(tt.fileData, "upload.bin"); got != tt.want {
+				t.Errorf("DetectStorageMIME = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestVerifyMIMEType_EmptyBytes(t *testing.T) {
 	t.Parallel()
 
@@ -318,7 +404,7 @@ func TestValidateFileType(t *testing.T) {
 		{"JPEG in avatar types (allowed)", "image/jpeg", avatarTypes, true},
 		{"PNG in avatar types (allowed)", "image/png", avatarTypes, true},
 		{"WebP in avatar types (allowed)", "image/webp", avatarTypes, true},
-		{"GIF in avatar types (denied)", "image/gif", avatarTypes, false},
+		{"GIF in avatar types (allowed)", "image/gif", avatarTypes, true},
 		{"PDF in avatar types (denied)", "application/pdf", avatarTypes, false},
 
 		// Alias acceptance in ValidateFileType.
@@ -395,7 +481,8 @@ func TestIsAllowedMIMETypeForContext(t *testing.T) {
 		{"image/jpg alias allowed for media", "image/jpg", UploadContextMedia, true},
 		{"EXE denied for media", "application/x-msdownload", UploadContextMedia, false},
 		{"JPEG allowed for avatar", "image/jpeg", UploadContextAvatar, true},
-		{"GIF denied for avatar", "image/gif", UploadContextAvatar, false},
+		{"GIF allowed for avatar", "image/gif", UploadContextAvatar, true},
+		{"PDF denied for avatar", "application/pdf", UploadContextAvatar, false},
 		{"PDF allowed for document", "application/pdf", UploadContextDocument, true},
 		{"DOC allowed for document", "application/msword", UploadContextDocument, true},
 		{"DOCX allowed for document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", UploadContextDocument, true},

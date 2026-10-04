@@ -3,10 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/crscalculator"
 	"github.com/jedafe/japa/internal/ecaguide"
 	"github.com/jedafe/japa/internal/pofcalculator"
@@ -135,16 +138,26 @@ type toolDraftAdapter struct {
 }
 
 func (a *toolDraftAdapter) GenerateDraft(ctx context.Context, entityType string, params map[string]string) error {
+	var err error
+
 	switch entityType {
 	case "crs_ruleset":
-		return a.crs.GenerateRulesetDraft(ctx, params)
+		err = a.crs.GenerateRulesetDraft(ctx, params)
 	case "pof_requirement":
-		return a.pof.GenerateRequirementDraft(ctx, params)
+		err = a.pof.GenerateRequirementDraft(ctx, params)
 	case "eca_guide":
-		return a.eca.GenerateGuideDraft(ctx, params)
+		err = a.eca.GenerateGuideDraft(ctx, params)
 	case "sop_template":
-		return a.sop.GenerateTemplateDraft(ctx, params)
+		err = a.sop.GenerateTemplateDraft(ctx, params)
 	default:
 		return errors.New("toolreview: unknown entity_type " + entityType)
 	}
+
+	if errors.Is(err, ai.ErrNoProviders) {
+		// No AI provider is configured — a permanent gap, not a transient
+		// failure, so the task archives instead of burning retries.
+		return fmt.Errorf("%w: %w", err, asynq.SkipRetry)
+	}
+
+	return err
 }

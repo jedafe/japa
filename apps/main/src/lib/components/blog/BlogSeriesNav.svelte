@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import { contentHref } from '$lib/utils/contentLink';
 	import type { SeriesPost } from '$lib/types/content';
 
 	interface Props {
@@ -12,11 +13,11 @@
 		/** Route family prefix for part links (ADR-058): '/blog' by default;
 		 *  '/guide', '/stories', '/content' on other content-type singles. */
 		basePath?: string;
-		/** Series landing page link for the title — only /blog/series exists. */
+		/** Series landing page link for the title — only /series exists. */
 		seriesBasePath?: string;
 	}
 
-	let { title, slug, total, posts, currentSlug, currentPart, basePath = '/blog', seriesBasePath = '/blog/series' }: Props = $props();
+	let { title, slug, total, posts, currentSlug, currentPart, basePath = '/blog', seriesBasePath = '/series' }: Props = $props();
 
 	// Keep the series card narrow and collapsed by default. Visible parts: 3 — the
 	// first two plus the currently selected part when it isn't among them.
@@ -70,7 +71,7 @@
 			{@const isCurrent = post.slug === currentSlug}
 			<li>
 				<a
-					href={`${basePath}/${post.slug}`}
+					href={post.content_type ? contentHref(post) : `${basePath}/${post.slug}`}
 					class="group flex items-center gap-3 rounded-[var(--radius)] px-2 py-1.5 text-sm transition-colors {isCurrent ? 'bg-[var(--color-surface-subtle)] text-[var(--color-text)]' : 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]'}"
 					aria-current={isCurrent ? 'page' : undefined}
 				>

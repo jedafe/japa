@@ -12,13 +12,15 @@ import (
 // Store provides low-level database access for advertising operations.
 // Uses sqlc-generated queries for all operations.
 type Store struct {
-	queries *gen.Queries
+	queries      *gen.Queries
+	writeQueries *gen.Queries
 }
 
 // NewStore creates a Store backed by the given database pool.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
 	}
 }
 
@@ -54,7 +56,7 @@ func (s *Store) listAdSlotTypes(ctx context.Context, limit, offset int32) ([]AdS
 }
 
 func (s *Store) updateAdSlotType(ctx context.Context, id pgtype.UUID, name, description string) (AdSlotType, error) {
-	return s.queries.UpdateAdSlotTypeDetails(ctx, gen.UpdateAdSlotTypeDetailsParams{
+	return s.writeQueries.UpdateAdSlotTypeDetails(ctx, gen.UpdateAdSlotTypeDetailsParams{
 		ID: id,
 
 		SlotName:    name,
@@ -63,13 +65,13 @@ func (s *Store) updateAdSlotType(ctx context.Context, id pgtype.UUID, name, desc
 }
 
 func (s *Store) deleteAdSlotType(ctx context.Context, id pgtype.UUID) error {
-	return s.queries.DeleteAdSlotType(ctx,
+	return s.writeQueries.DeleteAdSlotType(ctx,
 		id,
 	)
 }
 
 func (s *Store) deleteAdCampaign(ctx context.Context, id pgtype.UUID) error {
-	return s.queries.DeleteAdCampaign(ctx,
+	return s.writeQueries.DeleteAdCampaign(ctx,
 		id,
 	)
 }
@@ -160,7 +162,7 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, slotTypeID pgtype
 type AdNetwork = gen.AdNetwork
 
 func (s *Store) createAdNetwork(ctx context.Context, input gen.CreateAdNetworkParams) (AdNetwork, error) {
-	return s.queries.CreateAdNetwork(ctx, input)
+	return s.writeQueries.CreateAdNetwork(ctx, input)
 }
 
 func (s *Store) getAdNetworkByID(ctx context.Context, id pgtype.UUID) (AdNetwork, error) {
@@ -188,11 +190,11 @@ func (s *Store) listActiveAdNetworks(ctx context.Context) ([]AdNetwork, error) {
 }
 
 func (s *Store) updateAdNetwork(ctx context.Context, id pgtype.UUID, input gen.UpdateAdNetworkParams) (AdNetwork, error) {
-	return s.queries.UpdateAdNetwork(ctx, input)
+	return s.writeQueries.UpdateAdNetwork(ctx, input)
 }
 
 func (s *Store) deleteAdNetwork(ctx context.Context, id pgtype.UUID) error {
-	return s.queries.DeleteAdNetwork(ctx, id)
+	return s.writeQueries.DeleteAdNetwork(ctx, id)
 }
 
 func (s *Store) countAdNetworks(ctx context.Context) (int32, error) {

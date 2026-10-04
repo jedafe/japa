@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // ErrWikiRateLimited indicates the Wikipedia/Wikidata API returned 429.
@@ -225,16 +226,24 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID string
 		spaceType = st.Slug
 	}
 
+	var populateErr error
+
 	switch spaceType {
 	case "country", "state", "city":
-		return a.populateGeoSpace(ctx, &space, spaceType)
+		populateErr = a.populateGeoSpace(ctx, &space, spaceType)
 	case "university":
-		return a.populateUniversitySpace(ctx, &space)
+		populateErr = a.populateUniversitySpace(ctx, &space)
 	default:
 		slog.Info("space:auto_populate — custom space, no auto-population needed", "space_id", spaceID, "type", spaceType)
 	}
 
-	return nil
+	if errors.Is(populateErr, ErrWikiRateLimited) {
+		// Tag the failure for the server's RetryDelayFunc — upstream
+		// rate limits get a hard backoff, not exponential seconds.
+		return fmt.Errorf("%w: %w", populateErr, worker.ErrUpstreamRateLimited)
+	}
+
+	return populateErr
 }
 
 // populateGeoSpace fetches a Wikipedia summary for the space and stores it

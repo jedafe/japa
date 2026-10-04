@@ -64,7 +64,7 @@
 				api.get<SpaceOption[]>('/spaces?page_size=20&sort=name'),
 				api.get<TagOption[]>('/tags?page_size=20&sort=name'),
 				api.get<UserOption[]>('/users?page_size=20'),
-				api.get<BlogSeries[]>('/blog/series?page_size=20&sort=title')
+				api.get<BlogSeries[]>('/series?page_size=20&sort=title')
 			]);
 			if (sRes.data) spaces = sRes.data;
 			if (tRes.data) tags = tRes.data;
@@ -119,7 +119,7 @@
 		return toUserItems(data);
 	};
 	const seriesFetcher = async (q: string) => {
-		const res = await api.get<BlogSeries[]>(`/blog/series?q=${encodeURIComponent(q)}&page_size=20&sort=title`);
+		const res = await api.get<BlogSeries[]>(`/series?q=${encodeURIComponent(q)}&page_size=20&sort=title`);
 		const data = res.data ?? [];
 		series = uniqueBy([...series, ...data], (s) => s.id);
 		return toSeriesItems(data);
@@ -362,7 +362,7 @@
 				<div class="grid gap-3 sm:grid-cols-2">
 					{#each data.series as series (series.id)}
 						<a
-							href="/blog/series/{series.slug}"
+							href="/series/{series.slug}"
 							class="group flex flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<div class="flex items-start gap-3">

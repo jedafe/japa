@@ -4,7 +4,6 @@
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
-	import { Select } from 'bits-ui';
 	import {
 		Flame,
 		Hash,
@@ -14,9 +13,10 @@
 		ArrowUp,
 		Building2
 	} from 'lucide-svelte';
-	import { EmptyState, ListPageBar, UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { EmptyState, ListPageBar, UrlTabs, AutocompleteSelect, type UrlTab } from '$lib/components/ui';
 	import { trendingWindowOptions, trendingTabs } from '$lib/enumOptions';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { contentHref } from '$lib/utils/contentLink';
 	import type { PageData } from './$types';
 	import type { TrendingWindow } from '$lib/types';
 
@@ -56,13 +56,12 @@
 	// Round the trending score for display (Rule: round every displayed number).
 	const score = (n: number) => Math.round(n);
 
-	// Build the canonical URL for a trending content item — blog posts use
-	// /blog/{slug}, forum threads use /forum/{slug}, everything else uses
-	// /content/{slug}. Matches FeedCard.href and backend contentURL.
+	// Build the canonical URL for a trending content item via the shared
+	// contentHref mapping — every content type lands directly on its own
+	// route family (blog posts /blog/{slug}, threads /forum/{slug}, guides
+	// /guide/{slug}, …) instead of bouncing through /content's 301.
 	function contentUrl(item: { content_type: string; slug: string }): string {
-		if (item.content_type === 'blog_post') return `/blog/${item.slug}`;
-		if (item.content_type === 'forum_thread') return `/forum/${item.slug}`;
-		return `/content/${item.slug}`;
+		return contentHref(item);
 	}
 
 	function windowHref(w: TrendingWindow): string {
@@ -102,38 +101,16 @@
 	<ListPageBar>
 		<UrlTabs tabs={urlTabs} bind:value={activeTab} class="!border-b-0 !bg-transparent" />
 		{#snippet actions()}
-			<!-- Window selector (24h / 7d / 30d) -->
-			<Select.Root
-				type="single"
+			<!-- Window selector (24h / 7d / 30d) — shared Autocomplete control -->
+			<AutocompleteSelect
 				value={data.window}
+				options={windows}
+				ariaLabel={t('trending.window_label', 'Time window')}
+				class="shrink-0 w-32"
 				onValueChange={(v) => {
-					const w = v as TrendingWindow;
-					if (w) goto(windowHref(w));
+					if (v && v !== data.window) goto(windowHref(v as TrendingWindow));
 				}}
-			>
-				<Select.Trigger
-					aria-label={t('trending.window_label', 'Time window')}
-					class="flex shrink-0 items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				>
-					{windows.find((w) => w.value === data.window)?.label ?? data.window}
-				</Select.Trigger>
-				<Select.Portal>
-					<Select.Content
-						class="z-50 max-h-60 overflow-y-auto rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
-					>
-						{#each windows as w (w.value)}
-							<Select.Item
-								value={w.value}
-								class="flex cursor-pointer items-center rounded-[6px] px-3 py-2 text-sm text-[var(--color-text)] outline-none data-[highlighted]:bg-[var(--color-surface-subtle)]"
-							>
-								{#snippet child({ props })}
-									<div {...props}>{w.label}</div>
-								{/snippet}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Portal>
-			</Select.Root>
+			/>
 		{/snippet}
 	</ListPageBar>
 

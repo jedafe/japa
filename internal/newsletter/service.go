@@ -105,17 +105,19 @@ type Campaign struct {
 // Service coordinates newsletter subscriber and campaign management,
 // unsubscribe tokens, subscriber preferences, and weekly digest support.
 type Service struct {
-	db       *db.DB
-	queries  *gen.Queries
-	client   *asynq.Client
-	settings *config.Settings
+	db           *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	client       *asynq.Client
+	settings     *config.Settings
 }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
 	return &Service{
-		db:      database,
-		queries: gen.New(database.Reader),
+		db:           database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
 	}
 }
 
@@ -227,7 +229,7 @@ func (s *Service) DeleteSubscriber(ctx context.Context, id pgtype.UUID) error {
 
 // UpdateSubscriberStatus updates a subscriber's status (admin PATCH endpoint).
 func (s *Service) UpdateSubscriberStatus(ctx context.Context, id pgtype.UUID, status string) (gen.NewsletterSubscriber, error) {
-	return s.queries.UpdateSubscriberStatus(ctx, gen.UpdateSubscriberStatusParams{
+	return s.writeQueries.UpdateSubscriberStatus(ctx, gen.UpdateSubscriberStatusParams{
 
 		ID:     id,
 		Status: status,
@@ -251,7 +253,7 @@ func (s *Service) CreateSubscriber(ctx context.Context, email string, userID *pg
 		userIDArg = *userID
 	}
 
-	subscriber, err := s.queries.Subscribe(ctx, gen.SubscribeParams{
+	subscriber, err := s.writeQueries.Subscribe(ctx, gen.SubscribeParams{
 
 		Email:  email,
 		UserID: userIDArg,
@@ -311,7 +313,7 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, par
 		}
 	}
 
-	campaign, err := s.queries.CreateCampaign(ctx, gen.CreateCampaignParams{
+	campaign, err := s.writeQueries.CreateCampaign(ctx, gen.CreateCampaignParams{
 
 		Name:        params.Name,
 		Subject:     params.Subject,
@@ -380,7 +382,7 @@ func (s *Service) UpdateCampaign(ctx context.Context, id pgtype.UUID, input Upda
 		body = input.Body
 	}
 
-	campaign, err := s.queries.UpdateCampaign(ctx, gen.UpdateCampaignParams{
+	campaign, err := s.writeQueries.UpdateCampaign(ctx, gen.UpdateCampaignParams{
 
 		ID:          id,
 		Name:        input.Name,
@@ -406,7 +408,7 @@ func (s *Service) UpdateCampaign(ctx context.Context, id pgtype.UUID, input Upda
 
 // Unsubscribe unsubscribes an email from the newsletter.
 func (s *Service) Unsubscribe(ctx context.Context, email string) error {
-	return s.queries.Unsubscribe(ctx,
+	return s.writeQueries.Unsubscribe(ctx,
 
 		email,
 	)
@@ -423,7 +425,7 @@ func (s *Service) UnsubscribeByToken(ctx context.Context, token string) error {
 		return fmt.Errorf("newsletter: get unsubscribe token: %w", err)
 	}
 
-	if _, err := s.queries.UnsubscribeByID(ctx,
+	if _, err := s.writeQueries.UnsubscribeByID(ctx,
 
 		tokenRow.SubscriberID,
 	); err != nil {
@@ -433,7 +435,7 @@ func (s *Service) UnsubscribeByToken(ctx context.Context, token string) error {
 	// Delete the token to enforce single-use semantics. A failure here means
 	// the token could be reused — return the error so the caller can retry
 	// or alert, rather than silently leaving the token valid.
-	if err := s.queries.DeleteUnsubscribeToken(ctx, token); err != nil {
+	if err := s.writeQueries.DeleteUnsubscribeToken(ctx, token); err != nil {
 		return fmt.Errorf("newsletter: delete unsubscribe token (single-use): %w", err)
 	}
 
@@ -458,7 +460,7 @@ func (s *Service) GetPreferencesByUserID(ctx context.Context, userID pgtype.UUID
 
 // UpdatePreferences updates a subscriber's digest/campaign toggles.
 func (s *Service) UpdatePreferences(ctx context.Context, subscriberID pgtype.UUID, digestEnabled, campaignEnabled *bool) (gen.NewsletterSubscriber, error) {
-	return s.queries.UpdatePreferences(ctx, gen.UpdatePreferencesParams{
+	return s.writeQueries.UpdatePreferences(ctx, gen.UpdatePreferencesParams{
 
 		ID:              subscriberID,
 		DigestEnabled:   digestEnabled,
@@ -483,7 +485,7 @@ func (s *Service) CreateUnsubscribeToken(ctx context.Context, subscriberID pgtyp
 		return "", err
 	}
 
-	_, err = s.queries.CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
+	_, err = s.writeQueries.CreateUnsubscribeToken(ctx, gen.CreateUnsubscribeTokenParams{
 		Token:        token,
 		SubscriberID: subscriberID,
 	})
@@ -584,7 +586,7 @@ func (s *Service) AdminListCampaigns(ctx context.Context, status string, page, l
 
 // MarkBounced marks a subscriber as bounced (from email provider webhook).
 func (s *Service) MarkBounced(ctx context.Context, email string) error {
-	return s.queries.MarkBounced(ctx,
+	return s.writeQueries.MarkBounced(ctx,
 
 		email,
 	)
@@ -592,7 +594,7 @@ func (s *Service) MarkBounced(ctx context.Context, email string) error {
 
 // MarkComplained marks a subscriber as complained (from email provider webhook).
 func (s *Service) MarkComplained(ctx context.Context, email string) error {
-	return s.queries.MarkComplained(ctx,
+	return s.writeQueries.MarkComplained(ctx,
 
 		email,
 	)
@@ -607,7 +609,7 @@ func (s *Service) IncrementCampaignOpens(ctx context.Context, campaignID string)
 		return fmt.Errorf("newsletter: invalid campaign_id: %w", err)
 	}
 
-	return s.queries.IncrementCampaignOpens(ctx,
+	return s.writeQueries.IncrementCampaignOpens(ctx,
 
 		id,
 	)
@@ -622,7 +624,7 @@ func (s *Service) IncrementCampaignClicks(ctx context.Context, campaignID string
 		return fmt.Errorf("newsletter: invalid campaign_id: %w", err)
 	}
 
-	return s.queries.IncrementCampaignClicks(ctx,
+	return s.writeQueries.IncrementCampaignClicks(ctx,
 
 		id,
 	)

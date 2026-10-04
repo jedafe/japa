@@ -101,12 +101,11 @@ func (s *Store) CreateMeta(ctx context.Context, meta AchievementMeta) error {
 INSERT INTO achievement_meta (
     content_id, milestone_type, destination_space_id,
     origin_space_id, is_anonymous
-) VALUES ($1, $2, $3, $4, $5, $6)
+) VALUES ($1, $2, $3, $4, $5)
 `
 
 	_, err := s.pool.Writer.Exec(
-		ctx, q, (pgtype.UUID{}),
-
+		ctx, q,
 		meta.ContentID, meta.MilestoneType,
 		meta.DestinationSpaceID, meta.OriginSpaceID, meta.IsAnonymous,
 	)
@@ -368,10 +367,10 @@ func (s *Store) GetBySlug(ctx context.Context, slug string, viewerID pgtype.UUID
 WHERE c.slug = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
-	args := []any{pgtype.UUID{}, slug}
+	args := []any{slug}
 
 	if viewerID.Valid {
-		q += ` OR c.author_id = $1`
+		q += ` OR c.author_id = $2::uuid`
 
 		args = append(args, viewerID)
 	}
@@ -396,10 +395,10 @@ func (s *Store) GetByID(ctx context.Context, contentID, viewerID pgtype.UUID) (A
 WHERE c.id = $1 AND c.content_type = 'achievement'
   AND c.deleted_at IS NULL
   AND (c.status = 'published'`
-	args := []any{pgtype.UUID{}, contentID}
+	args := []any{contentID}
 
 	if viewerID.Valid {
-		q += ` OR c.author_id = $1`
+		q += ` OR c.author_id = $2::uuid`
 
 		args = append(args, viewerID)
 	}

@@ -482,7 +482,7 @@ func stripHTMLTags(s string) string {
 // Series Handlers
 // ---------------------------------------------------------------------------
 
-// CreateSeries handles POST /api/v1/blog/series.
+// CreateSeries handles POST /api/v1/series.
 func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -533,7 +533,7 @@ func (h *Handlers) CreateSeries(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": series})
 }
 
-// ListSeries handles GET /api/v1/blog/series.
+// ListSeries handles GET /api/v1/series.
 // Supports ?author_id=, ?q=, ?page_size=, ?page_offset=.
 // L2: the q filter is now applied in SQL (ListBlogSeries) rather than
 // in Go memory after fetching all rows.
@@ -544,6 +544,21 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 	limit := parsePageSize(r)
 	offset := parsePageSizeOffset(r)
 
+	// L2: q filter is now applied in SQL via ListBlogSeries.
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	// §14: optional content_type filter — limits the series directory to
+	// series containing a published item of that type (Featured/Series tabs
+	// on /guides, /stories, and the /series directory filter).
+	contentType := strings.TrimSpace(r.URL.Query().Get("content_type"))
+	// Sort is whitelisted — anything else falls back to the default
+	// "latest" ordering (created_at DESC) in SQL.
+	sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+	switch sort {
+	case "latest", "oldest", "title":
+	default:
+		sort = ""
+	}
+
 	authorIDStr := r.URL.Query().Get("author_id")
 	if authorIDStr != "" {
 		var authorID pgtype.UUID
@@ -552,13 +567,13 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		series, err := h.Service.ListSeriesByAuthor(r.Context(), authorID, limit, offset)
+		series, err := h.Service.ListSeriesByAuthor(r.Context(), authorID, q, contentType, sort, limit, offset)
 		if err != nil {
 			handleServiceError(w, err)
 			return
 		}
 
-		total, err := h.Service.CountSeriesByAuthor(r.Context(), authorID)
+		total, err := h.Service.CountSeriesByAuthor(r.Context(), authorID, q, contentType)
 		if err != nil {
 			handleServiceError(w, err)
 			return
@@ -576,14 +591,7 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// L2: q filter is now applied in SQL via ListBlogSeries.
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	// §14: optional content_type filter — limits the series directory to
-	// series containing a published item of that type (Featured/Series tabs
-	// on /guides, /stories).
-	contentType := strings.TrimSpace(r.URL.Query().Get("content_type"))
-
-	series, err := h.Service.ListSeriesByPlatform(r.Context(), q, contentType, limit, offset)
+	series, err := h.Service.ListSeriesByPlatform(r.Context(), q, contentType, sort, limit, offset)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -605,7 +613,7 @@ func (h *Handlers) ListSeries(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetSeries handles GET /api/v1/blog/series/{slug}.
+// GetSeries handles GET /api/v1/series/{slug}.
 // Returns the public Series DTO with a computed cover_image_url.
 func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 
@@ -624,7 +632,7 @@ func (h *Handlers) GetSeries(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
-// ListSeriesPosts handles GET /api/v1/blog/series/{id}/posts — lists all posts in a series.
+// ListSeriesPosts handles GET /api/v1/series/{id}/posts — lists all posts in a series.
 func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
 
 	id, err := parseUUIDParam(r, "id")
@@ -649,7 +657,7 @@ func (h *Handlers) ListSeriesPosts(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": posts})
 }
 
-// UpdateSeries handles PATCH /api/v1/blog/series/{id}.
+// UpdateSeries handles PATCH /api/v1/series/{id}.
 func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
@@ -697,7 +705,7 @@ func (h *Handlers) UpdateSeries(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": series})
 }
 
-// DeleteSeries handles DELETE /api/v1/blog/series/{id} — soft delete;
+// DeleteSeries handles DELETE /api/v1/series/{id} — soft delete;
 // ?force=true permanently removes an already-soft-deleted row.
 func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("force") == "true"
@@ -710,7 +718,7 @@ func (h *Handlers) DeleteSeries(w http.ResponseWriter, r *http.Request) {
 // Series Posts Handlers
 // ---------------------------------------------------------------------------
 
-// AddPostToSeries handles POST /api/v1/blog/series/{id}/posts.
+// AddPostToSeries handles POST /api/v1/series/{id}/posts.
 // H7: verifies the content belongs to the same platform before linking.
 func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 	_, ok := h.requireUser(w, r)
@@ -753,7 +761,7 @@ func (h *Handlers) AddPostToSeries(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "added"}})
 }
 
-// RemovePostFromSeries handles DELETE /api/v1/blog/series/{id}/posts/{postId}.
+// RemovePostFromSeries handles DELETE /api/v1/series/{id}/posts/{postId}.
 // BUG-003: now requires platform context and the service verifies the series
 // belongs to the caller's platform before deleting, preventing cross-platform
 // post removal by an attacker who knows the series_id.
@@ -821,7 +829,7 @@ func (h *Handlers) GetContentSeries(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"series_id": seriesID.String()}})
 }
 
-// ReorderSeriesPosts handles PATCH /api/v1/blog/series/{id}/posts/reorder.
+// ReorderSeriesPosts handles PATCH /api/v1/series/{id}/posts/reorder.
 // BUG-004: now requires platform context and the service verifies the series
 // belongs to the caller's platform before mutating, preventing cross-platform
 // post reorder by an attacker who knows the series_id.

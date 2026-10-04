@@ -23,18 +23,30 @@
 		allowedType?: string;
 		/** Initial active tab when opening the modal. */
 		initialTab?: 'library' | 'upload' | 'stock';
+		/** Backend upload context — 'avatar' applies the avatar allowlist
+		 * (users.allowed_avatar_types) instead of the general media one. */
+		uploadContext?: 'media' | 'avatar' | 'document';
 	}
 
-	let { onSelect, onClose, allowedType = 'image', initialTab = 'library' }: Props = $props();
+	let { onSelect, onClose, allowedType = 'image', initialTab = 'library', uploadContext = 'media' }: Props = $props();
 
 	type Tab = 'library' | 'upload' | 'stock';
 	// svelte-ignore state_referenced_locally
 	let tab = $state<Tab>(initialTab);
 	let items = $state<MediaAsset[]>([]);
 	let loading = $state(false);
-	// For upload: 'image' -> 'image/*', '' -> '*/*' so the dashboard can
+	// For upload: 'image' -> 'image/*,.heic,.heif', '' -> '*/*' so the dashboard can
 	// accept all media types while editor pickers can remain image-centric.
-	let uploadAccept = $derived(allowedType ? (allowedType.includes('/') ? allowedType : `${allowedType}/*`) : '*/*');
+	// The explicit HEIC extensions cover pickers where image/* excludes them.
+	let uploadAccept = $derived(
+		allowedType
+			? allowedType.includes('/')
+				? allowedType
+				: allowedType === 'image'
+					? 'image/*,.heic,.heif'
+					: `${allowedType}/*`
+			: '*/*'
+	);
 	let error = $state<string | null>(null);
 	let search = $state('');
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -111,7 +123,8 @@
 			const init = await initiateUpload({
 				filename: convertedFile.name,
 				mime_type: convertedFile.type,
-				file_size: convertedFile.size
+				file_size: convertedFile.size,
+				context: uploadContext
 			});
 			if (init.error || !init.data) throw new Error(init.error?.message ?? 'initiate failed');
 			const up = await uploadToPresigned(init.data.presigned_url, convertedFile);

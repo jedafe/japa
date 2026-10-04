@@ -22,15 +22,17 @@ import (
 // Store wraps the sqlc-generated Queries for gamification operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates a gamification store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
@@ -81,18 +83,18 @@ func (s *Store) GetBadgeDefinitionByID(ctx context.Context, id pgtype.UUID) (gen
 
 // CreateBadgeDefinition inserts a new badge definition.
 func (s *Store) CreateBadgeDefinition(ctx context.Context, arg gen.CreateBadgeDefinitionParams) (gen.BadgeDefinition, error) {
-	return s.queries.CreateBadgeDefinition(ctx, arg)
+	return s.writeQueries.CreateBadgeDefinition(ctx, arg)
 }
 
 // UpdateBadgeDefinition updates a badge definition's mutable fields.
 func (s *Store) UpdateBadgeDefinition(ctx context.Context, arg gen.UpdateBadgeDefinitionParams) (gen.BadgeDefinition, error) {
-	return s.queries.UpdateBadgeDefinition(ctx, arg)
+	return s.writeQueries.UpdateBadgeDefinition(ctx, arg)
 }
 
 // DeleteBadgeDefinition deletes a non-system badge definition. Returns the
 // number of rows affected (0 if the badge was not found or is a system badge).
 func (s *Store) DeleteBadgeDefinition(ctx context.Context, id pgtype.UUID) (int64, error) {
-	return s.queries.DeleteBadgeDefinition(ctx,
+	return s.writeQueries.DeleteBadgeDefinition(ctx,
 
 		id,
 	)
@@ -104,7 +106,7 @@ func (s *Store) DeleteBadgeDefinition(ctx context.Context, id pgtype.UUID) (int6
 
 // AwardBadge inserts a user_badge row, ignoring duplicates via ON CONFLICT.
 func (s *Store) AwardBadge(ctx context.Context, arg gen.AwardBadgeParams) (gen.UserBadge, error) {
-	return s.queries.AwardBadge(ctx, arg)
+	return s.writeQueries.AwardBadge(ctx, arg)
 }
 
 // GetUserBadge fetches a single user_badge row, if it exists.
@@ -171,18 +173,18 @@ func (s *Store) GetChallengeByID(ctx context.Context, id pgtype.UUID) (gen.Chall
 
 // CreateChallenge inserts a new challenge definition.
 func (s *Store) CreateChallenge(ctx context.Context, arg gen.CreateChallengeParams) (gen.ChallengeDefinition, error) {
-	return s.queries.CreateChallenge(ctx, arg)
+	return s.writeQueries.CreateChallenge(ctx, arg)
 }
 
 // UpdateChallenge updates a challenge definition's mutable fields.
 func (s *Store) UpdateChallenge(ctx context.Context, arg gen.UpdateChallengeParams) (gen.ChallengeDefinition, error) {
-	return s.queries.UpdateChallenge(ctx, arg)
+	return s.writeQueries.UpdateChallenge(ctx, arg)
 }
 
 // DeleteChallenge deletes a challenge definition. Returns the number of rows
 // affected (0 if the challenge was not found).
 func (s *Store) DeleteChallenge(ctx context.Context, id pgtype.UUID) (int64, error) {
-	return s.queries.DeleteChallenge(ctx,
+	return s.writeQueries.DeleteChallenge(ctx,
 
 		id,
 	)
@@ -191,7 +193,7 @@ func (s *Store) DeleteChallenge(ctx context.Context, id pgtype.UUID) (int64, err
 // ExpireChallengesPastEndDate deactivates challenges whose ends_at is in the
 // past. Returns the number of rows affected.
 func (s *Store) ExpireChallengesPastEndDate(ctx context.Context) (int64, error) {
-	return s.queries.ExpireChallengesPastEndDate(ctx)
+	return s.writeQueries.ExpireChallengesPastEndDate(ctx)
 }
 
 // =====================================================================
@@ -201,7 +203,7 @@ func (s *Store) ExpireChallengesPastEndDate(ctx context.Context) (int64, error) 
 // UpsertChallengeProgress increments a user's progress on a challenge,
 // marking it completed if the target_count is reached.
 func (s *Store) UpsertChallengeProgress(ctx context.Context, arg gen.UpsertChallengeProgressParams) (gen.UserChallengeProgress, error) {
-	return s.queries.UpsertChallengeProgress(ctx, arg)
+	return s.writeQueries.UpsertChallengeProgress(ctx, arg)
 }
 
 // GetChallengeProgress fetches a user's progress on a specific challenge.
@@ -224,7 +226,7 @@ func (s *Store) ListUserChallengeProgress(ctx context.Context, userID pgtype.UUI
 
 // MarkChallengeRewardClaimed marks a challenge reward as claimed.
 func (s *Store) MarkChallengeRewardClaimed(ctx context.Context, id pgtype.UUID) error {
-	return s.queries.MarkChallengeRewardClaimed(ctx, id)
+	return s.writeQueries.MarkChallengeRewardClaimed(ctx, id)
 }
 
 // =====================================================================

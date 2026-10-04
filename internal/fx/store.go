@@ -20,21 +20,23 @@ import (
 // Store wraps the sqlc-generated Queries for fx operations.
 // It is the data-access layer — no business logic here.
 type Store struct {
-	queries *gen.Queries
-	pool    *db.DB
+	queries      *gen.Queries
+	writeQueries *gen.Queries
+	pool         *db.DB
 }
 
 // NewStore creates an fx store backed by the given database.
 func NewStore(database *db.DB) *Store {
 	return &Store{
-		queries: gen.New(database.Reader),
-		pool:    database,
+		queries:      gen.New(database.Reader),
+		writeQueries: gen.New(database.Writer),
+		pool:         database,
 	}
 }
 
 // InsertRate inserts a single matrix cell row.
 func (s *Store) InsertRate(ctx context.Context, arg gen.InsertFxRateParams) (gen.FxRate, error) {
-	return s.queries.InsertFxRate(ctx, arg)
+	return s.writeQueries.InsertFxRate(ctx, arg)
 }
 
 // GetLatestMatrix returns the latest rate per quote for a base currency.
@@ -61,7 +63,7 @@ func (s *Store) ListCurrencies(ctx context.Context) ([]gen.ListFxCurrenciesRow, 
 // base/quote/day for older data (same downsampling as remittance §74).
 // Returns the number of rows deleted.
 func (s *Store) PruneRates(ctx context.Context, cutoff time.Time) (int64, error) {
-	return s.queries.PruneFxRates(ctx,
+	return s.writeQueries.PruneFxRates(ctx,
 		pgtype.Timestamptz{Time: cutoff, Valid: true},
 	)
 }

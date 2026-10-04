@@ -44,6 +44,8 @@
 		loadingLabel?: string;
 		/** Open the dropdown above the field instead of below (forwarded to Autocomplete). */
 		openUp?: boolean;
+		/** Compact density for tight inline controls (forwarded to Autocomplete). */
+		compact?: boolean;
 	}
 
 	let {
@@ -62,7 +64,8 @@
 		noResultsLabel = 'No results found',
 		clearLabel,
 		loadingLabel,
-		openUp = false
+		openUp = false,
+		compact = false
 	}: Props = $props();
 
 	// '' is not a usable Autocomplete item id (falsy = "no selection"), so
@@ -110,6 +113,7 @@
 	{clearLabel}
 	{loadingLabel}
 	{openUp}
+	{compact}
 />
 {#if name}
 	<input type="hidden" {name} value={value ?? ''} />

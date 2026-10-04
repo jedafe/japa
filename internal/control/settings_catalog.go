@@ -160,19 +160,21 @@ var settingsCatalog = map[string]settingMeta{
 	"agent.bulk_create_max_items":      {Type: "int", DefaultValue: "50", Min: 1, Max: 1000, Description: "Maximum number of content items a single content.bulk_create tool call may process.", Panel: "control"},
 	"agent.bulk_publish_max_items":     {Type: "int", DefaultValue: "50", Min: 1, Max: 1000, Description: "Maximum number of content IDs a single content.bulk_publish tool call may process.", Panel: "control"},
 	"agent.temperature":                {Type: "float", DefaultValue: "0.3", Min: 0, Max: 2, Description: "LLM sampling temperature passed to the gateway ChatWithTools call.", Panel: "control"},
-	// Media — storage.* keys are env-only (read from JC_S3_* env vars in
-	// internal/media/s3.go). They are kept in the catalog for control-panel
-	// display but are NOT read from system_settings at runtime. Changing
-	// them requires updating the JC_S3_* environment variables and restarting.
-	"media.storage.provider":    {Type: "string", DefaultValue: "seaweedfs", Description: "Storage backend provider (env-only: JC_S3_ENDPOINT).", Options: `[{"value":"seaweedfs","label":"SeaweedFS"},{"value":"s3","label":"Amazon S3"},{"value":"r2","label":"Cloudflare R2"},{"value":"b2","label":"Backblaze B2"}]`, Panel: "control"},
-	"media.storage.endpoint":    {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL (env-only: JC_S3_ENDPOINT).", Panel: "control"},
-	"media.storage.bucket":      {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name (env-only: JC_S3_BUCKET).", Panel: "control"},
-	"media.storage.region":      {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (env-only: JC_S3_REGION; SeaweedFS ignores this).", Panel: "control"},
-	"media.storage.access_key":  {Type: "string", DefaultValue: "", Description: "S3 access key (env-only: JC_S3_ACCESS_KEY).", Sensitive: true, Panel: "control"},
-	"media.storage.secret_key":  {Type: "string", DefaultValue: "", Description: "S3 secret key (env-only: JC_S3_SECRET_KEY).", Sensitive: true, Panel: "control"},
-	"media.cdn.base_url":        {Type: "string", DefaultValue: "", Description: "CDN base URL (empty = use imgproxy directly).", Panel: "control"},
-	"media.max_upload_mb":       {Type: "int", DefaultValue: "50", Description: "Max file size in MB.", Panel: "admin"},
-	"media.allowed_video_types": {Type: "csv", DefaultValue: "mp4,webm,mov", Description: "Allowed video MIME extensions.", Panel: "admin"},
+	// Media — storage.* keys are read at boot by ReconfigureS3FromSettings:
+	// when endpoint+access_key+secret_key are all set here they override the
+	// JC_S3_* env vars; otherwise the env-based client is retained. The
+	// effective bucket also determines the StorageBucket recorded on media
+	// rows and the bucket in generated serve/imgproxy URLs.
+	"media.storage.provider":       {Type: "string", DefaultValue: "seaweedfs", Description: "Storage backend provider (env-only: JC_S3_ENDPOINT).", Options: `[{"value":"seaweedfs","label":"SeaweedFS"},{"value":"s3","label":"Amazon S3"},{"value":"r2","label":"Cloudflare R2"},{"value":"b2","label":"Backblaze B2"}]`, Panel: "control"},
+	"media.storage.endpoint":       {Type: "string", DefaultValue: "", Description: "S3-compatible endpoint URL (env-only: JC_S3_ENDPOINT).", Panel: "control"},
+	"media.storage.bucket":         {Type: "string", DefaultValue: "japaconnect", Description: "Default bucket name (env-only: JC_S3_BUCKET).", Panel: "control"},
+	"media.storage.region":         {Type: "string", DefaultValue: "us-east-1", Description: "S3 region (env-only: JC_S3_REGION; SeaweedFS ignores this).", Panel: "control"},
+	"media.storage.access_key":     {Type: "string", DefaultValue: "", Description: "S3 access key (env-only: JC_S3_ACCESS_KEY).", Sensitive: true, Panel: "control"},
+	"media.storage.secret_key":     {Type: "string", DefaultValue: "", Description: "S3 secret key (env-only: JC_S3_SECRET_KEY).", Sensitive: true, Panel: "control"},
+	"media.cdn.base_url":           {Type: "string", DefaultValue: "", Description: "CDN base URL (empty = use imgproxy directly).", Panel: "control"},
+	"media.max_upload_mb":          {Type: "int", DefaultValue: "50", Description: "Max file size in MB.", Panel: "admin"},
+	"media.allowed_video_types":    {Type: "csv", DefaultValue: "mp4,webm,mov", Description: "Allowed video MIME extensions.", Panel: "admin"},
+	"media.deleted_retention_days": {Type: "int", DefaultValue: "30", Description: "Days a soft-deleted media row and its storage object are retained before the media:cleanup_deleted sweep purges them.", Panel: "control"},
 	// Notifications
 	"notifications.max_delivery_attempts": {Type: "int", DefaultValue: "5", Description: "Max retry attempts for notification delivery.", Panel: "admin"},
 	"notifications.batch_window_minutes":  {Type: "int", DefaultValue: "5", Description: "Notification dedup batch window.", Panel: "admin"},
@@ -293,8 +295,12 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.primary_color":     {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true, Panel: "admin"},
 	"appearance.auth_brand_slides": {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true, Panel: "admin"},
 	// Content settings (§14, content type system).
-	"content.allow_anonymous_posts":  {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts.", Panel: "admin"},
-	"content.allowed_upload_types":   {Type: "csv", DefaultValue: "jpeg,png,jpg", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"doc","label":"DOC"},{"value":"docx","label":"DOCX"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"}]`, Panel: "admin"},
+	"content.allow_anonymous_posts": {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts.", Panel: "admin"},
+	// Default mirrors the media upload-context allowlist so a materialized
+	// default is a no-op; the runtime gate only narrows the base allowlist.
+	// Options are limited to extensions the media context can actually
+	// permit (document types belong to the document upload context).
+	"content.allowed_upload_types":   {Type: "csv", DefaultValue: "jpeg,jpg,png,gif,webp,svg,pdf,mp4,webm,mov,mp3,ogg,wav", Description: "Comma-separated allowed file extensions for content uploads.", Options: `[{"value":"jpeg","label":"JPEG"},{"value":"jpg","label":"JPG"},{"value":"png","label":"PNG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"},{"value":"pdf","label":"PDF"},{"value":"mp4","label":"MP4"},{"value":"webm","label":"WebM"},{"value":"mov","label":"MOV"},{"value":"mp3","label":"MP3"},{"value":"ogg","label":"OGG"},{"value":"wav","label":"WAV"}]`, Panel: "admin"},
 	"content.max_upload_size_mb":     {Type: "int", DefaultValue: "5", Description: "Maximum upload file size in MB for content attachments.", Panel: "admin"},
 	"content.posts_per_page":         {Type: "int", DefaultValue: "12", Description: "Number of posts per page in feed/list views.", Panel: "admin"},
 	"content.require_content_review": {Type: "bool", DefaultValue: "true", Description: "Whether new content requires admin review before publishing.", Panel: "admin"},
@@ -329,7 +335,7 @@ var settingsCatalog = map[string]settingMeta{
 	"seo.sitemap.question_min_answers":    {Type: "int", DefaultValue: "1", Min: 0, Description: "Minimum answer count for questions (solved forum threads) — set to 0 to include unsolved questions.", Panel: "admin"},
 	"seo.sitemap.discussion_min_comments": {Type: "int", DefaultValue: "0", Min: 0, Description: "Minimum comment count for discussions to be included in the sitemap.", Panel: "admin"},
 	// User profile settings.
-	"users.allowed_avatar_types":       {Type: "csv", DefaultValue: "png,jpg,gif,webp", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`, Panel: "admin"},
+	"users.allowed_avatar_types":       {Type: "csv", DefaultValue: "png,jpg,jpeg,gif,webp,svg", Description: "Comma-separated allowed file extensions for user avatars.", Options: `[{"value":"png","label":"PNG"},{"value":"jpg","label":"JPG"},{"value":"jpeg","label":"JPEG"},{"value":"gif","label":"GIF"},{"value":"webp","label":"WebP"},{"value":"svg","label":"SVG"}]`, Panel: "admin"},
 	"users.allow_social_login":         {Type: "bool", DefaultValue: "false", Description: "Whether OAuth social login providers are enabled.", Panel: "admin"},
 	"users.require_profile_completion": {Type: "bool", DefaultValue: "false", Description: "Whether users must complete their profile before posting.", Panel: "admin"},
 	"users.max_avatar_size_mb":         {Type: "int", DefaultValue: "5", Description: "Max user avatar file size in MB.", Panel: "admin"},
