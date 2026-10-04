@@ -10,13 +10,16 @@ import type { CommunityOrgWithAi, GeoCountry, OrgTypeOption } from '$lib/types';
  * param is present, the community orgs for that destination are fetched
  * server-side so the page renders with content immediately.
  *
+ * List filters (?type=, ?origin=, ?city=) and ?page= are forwarded to the
+ * backend so the public list is fully server-filtered and paginated.
+ *
  * The feature flag (community_locator.enabled) is read from the root
  * layout's features map (data.features). Disabled tools are hidden from the
  * /tools hub and direct navigation to this route returns a 404.
  *
  * API: GET /geo/countries — the full 250 primary geo space countries (geo selector).
  *      GET /community-locator/org-types — org-type allow-list (Rule 16).
- *      GET /community-locator?dest={space_id} — community orgs for a dest.
+ *      GET /community-locator?dest={space_id}&type=&origin=&city=&page=&limit= — community orgs.
  *      GET /community-locator/{slug} — single org (client-side, on demand).
  *      POST /community-locator — submit a new org (auth, client-side).
  *      POST /community-locator/{id}/claim — claim an org (auth, client-side).
@@ -24,6 +27,9 @@ import type { CommunityOrgWithAi, GeoCountry, OrgTypeOption } from '$lib/types';
  * Ref: §101 (Diaspora Community Locator), ROADMAP-TOOLS 02.06, ADR-088.
  * Route: /tools/community-locator
  */
+
+const ORG_PAGE_SIZE = 20;
+
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
@@ -61,21 +67,49 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// If ?dest= is present, fetch community orgs for that destination so the
-	// page renders with content on first paint (SSR). Otherwise the user picks
-	// a destination client-side.
+	// page renders with content on first paint (SSR). Filters (?type=,
+	// ?origin=, ?city=) and ?page= are forwarded to the backend.
 	const destParam = event.url.searchParams.get('dest');
 	const initialDestId =
 		destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
 
+	const initialType = event.url.searchParams.get('type') ?? '';
+	const initialOrigin = event.url.searchParams.get('origin') ?? '';
+	const initialCity = event.url.searchParams.get('city') ?? '';
+	const pageParam = Number.parseInt(event.url.searchParams.get('page') ?? '1', 10);
+	const initialPage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+
 	let orgs: CommunityOrgWithAi[] = [];
+	let orgsTotal = 0;
 	if (initialDestId) {
 		try {
-			orgs = (await apiList<CommunityOrgWithAi>(ctx, `/community-locator?dest=${initialDestId}`))
-				.items;
+			const qs = new URLSearchParams({
+				dest: initialDestId,
+				limit: String(ORG_PAGE_SIZE),
+				page: String(initialPage)
+			});
+			if (initialType) qs.set('type', initialType);
+			if (initialOrigin) qs.set('origin', initialOrigin);
+			if (initialCity) qs.set('city', initialCity);
+			const res = await apiList<CommunityOrgWithAi>(ctx, `/community-locator?${qs}`);
+			orgs = res.items;
+			orgsTotal = res.meta?.total ?? res.items.length;
 		} catch {
 			orgs = [];
 		}
 	}
 
-	return { destinations, orgTypes, orgs, initialDestId, disabled, authed };
+	return {
+		destinations,
+		orgTypes,
+		orgs,
+		orgsTotal,
+		initialDestId,
+		initialType,
+		initialOrigin,
+		initialCity,
+		initialPage,
+		disabled,
+		authed
+	};
 };

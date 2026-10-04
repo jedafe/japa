@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { Users, ArrowLeft, MapPin, Globe, Mail, Navigation, BadgeCheck, Hand, Map as MapIcon } from 'lucide-svelte';
+	import { Users, ArrowLeft, MapPin, Globe, Mail, Navigation, BadgeCheck, Hand, CheckCircle2, Loader2 } from 'lucide-svelte';
+	import { Modal } from '$lib/components/ui';
+	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 
 	/**
@@ -12,12 +14,45 @@
 	let { data }: { data: PageData } = $props();
 
 	const org = $derived(data.org!);
+	const authed = $derived(data.authed);
 
 	const title = $derived(`${org.name} — ${t('community_locator.title', 'Diaspora Community Locator')}`);
 	const description = $derived(org.meeting_frequency ? `${t('community_locator.title', 'Diaspora community')} — ${org.meeting_frequency}` : t('community_locator.subtitle', 'Find diaspora organisations near your destination.'));
 
+	// Claim state — mirrors the list page (claim only while unclaimed).
+	let claiming = $state(false);
+	let claimError = $state<string | null>(null);
+	let claimSubmitted = $state(false);
+	let showRegisterPrompt = $state(false);
+
+	function prettifyEnum(value: string): string {
+		return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	}
+	function orgTypeLabel(value: string): string {
+		return t(`community_locator.type_${value}`, prettifyEnum(value));
+	}
+	function claimStatusLabel(value: string): string {
+		return t(`community_locator.claim_status_${value}`, prettifyEnum(value));
+	}
+
 	function mapsUrl(lat: number, lng: number): string {
 		return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
+	}
+
+	async function claimOrg() {
+		if (!authed) {
+			showRegisterPrompt = true;
+			return;
+		}
+		claiming = true;
+		claimError = null;
+		const res = await api.post<{ claim_status: string }>(`/community-locator/${org.id}/claim`);
+		claiming = false;
+		if (res.error) {
+			claimError = res.error.message;
+			return;
+		}
+		claimSubmitted = true;
 	}
 </script>
 
@@ -59,8 +94,11 @@
 						{/if}
 					</div>
 					<div class="mt-1 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
-						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 capitalize">{org.org_type}</span>
+						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 capitalize">{orgTypeLabel(org.org_type)}</span>
 						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">{org.origin_community}</span>
+						<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5">
+							{t('community_locator.claim_status', 'Claim status:')} {claimStatusLabel(org.claim_status)}
+						</span>
 					</div>
 					{#if org.destination_space_name}
 						<p class="mt-2 flex items-center gap-1 text-sm text-[var(--color-text-subtle)]">
@@ -119,6 +157,59 @@
 			</div>
 		{/if}
 
+		{#if org.claim_status === 'claimed' && (org.japaconnect_space_slug || org.japaconnect_space_id)}
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">
+					{t('community_locator.space_integration', 'JapaConnect Space')}
+				</h2>
+				<a
+					href={`/spaces/${org.japaconnect_space_slug || org.japaconnect_space_id}`}
+					class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)] hover:underline"
+				>
+					<Users size={14} />
+					{t('community_locator.view_space', 'View Space — posts, members & events')}
+				</a>
+			</div>
+		{/if}
+
+		<!-- Claim action — only meaningful while unclaimed -->
+		<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+			{#if claimSubmitted}
+				<span class="inline-flex items-center gap-1.5 text-sm text-[var(--color-primary)]">
+					<CheckCircle2 size={16} />
+					{t('community_locator.claimed_locally', 'Claim submitted — pending review')}
+				</span>
+			{:else if org.claim_status === 'claimed'}
+				<span class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
+					<CheckCircle2 size={16} />
+					{t('community_locator.claim_status_claimed', 'Claimed')}
+				</span>
+			{:else if org.claim_status === 'pending'}
+				<span class="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)]">
+					<CheckCircle2 size={16} />
+					{t('community_locator.claim_status_pending', 'Claim pending review')}
+				</span>
+			{:else}
+				<button
+					type="button"
+					onclick={claimOrg}
+					disabled={claiming}
+					class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[var(--color-border)] rounded-[var(--radius)] text-sm font-medium text-[var(--color-text)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors disabled:opacity-50"
+				>
+					{#if claiming}
+						<Loader2 size={14} class="animate-spin" />
+						{t('community_locator.claiming', 'Claiming...')}
+					{:else}
+						<Hand size={14} />
+						{t('community_locator.claim', 'Claim this organisation')}
+					{/if}
+				</button>
+				{#if claimError}
+					<p class="text-xs text-red-500 mt-2">{claimError}</p>
+				{/if}
+			{/if}
+		</div>
+
 		{#if org.is_community_submitted}
 			<p class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
 				<Hand size={12} />
@@ -127,3 +218,27 @@
 		{/if}
 	</div>
 </div>
+
+<!-- Register prompt for unauthenticated claim attempts -->
+<Modal bind:open={showRegisterPrompt} title={t('community_locator.register_prompt_title', 'Create a free account')}>
+	<p class="text-sm text-[var(--color-muted)]">
+		{t(
+			'community_locator.register_prompt_body',
+			'You need an account to submit or claim organisations.'
+		)}
+	</p>
+	<div class="mt-4 flex items-center justify-end gap-2">
+		<a
+			href="/login"
+			class="px-4 py-2 text-sm font-medium border border-[var(--color-border)] text-[var(--color-text)] rounded-[var(--radius)] hover:bg-[var(--color-surface-subtle)]"
+		>
+			{t('nav.login', 'Log in')}
+		</a>
+		<a
+			href="/register"
+			class="px-4 py-2 text-sm font-medium bg-[var(--color-primary)] text-white rounded-[var(--radius)] hover:bg-[var(--color-primary-hover)]"
+		>
+			{t('nav.register', 'Register')}
+		</a>
+	</div>
+</Modal>

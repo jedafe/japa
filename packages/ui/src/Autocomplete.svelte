@@ -309,7 +309,10 @@
 
 		// Notify parent of every keystroke so free-text fields (e.g.
 		// permission_node) can sync the typed value to their own state.
-		if (onInputFn) onInputFn(query);
+		// Invoked untracked: a callback that reads state it also writes
+		// (e.g. `obj = {...obj, key: q}`) would otherwise make this effect
+		// depend on that state and re-trigger itself forever.
+		if (onInputFn) untrack(() => onInputFn(query));
 
 		if (timer) clearTimeout(timer);
 		if (q.length === 0) {
@@ -319,7 +322,7 @@
 			if (open && initialFetcherFn) {
 				loadingInitial = true;
 				const token = ++requestToken;
-				initialFetcherFn().then((items) => {
+				untrack(() => initialFetcherFn()).then((items) => {
 					if (token === requestToken) {
 						initialResults = items;
 						activeIndex = 0;

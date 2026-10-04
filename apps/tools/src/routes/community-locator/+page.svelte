@@ -10,7 +10,6 @@
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import OrgMap from '$lib/components/tools/OrgMap.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
@@ -20,10 +19,13 @@
 
 	/**
 	 * Diaspora Community Locator tool — §101, ADR-088.
-	 * Destination selector → optional org_type filter → list of community org
-	 * cards. Authed users can submit a new org or claim an existing one.
+	 * Destination selector → server-side org filters (type / origin / city)
+	 * → paginated list of community org cards. Authed users can submit a
+	 * new org or claim an existing one.
 	 */
 	let { data } = $props();
+
+	const ORG_PAGE_SIZE = 20;
 
 	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
 	let orgs = $state<CommunityOrgWithAi[]>(untrack(() => data.orgs));
@@ -32,18 +34,27 @@
 	let user = $state(untrack(() => data.user));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
-	let orgTypeFilter = $state('');
+	// Server-side list filters — forwarded as ?type=&origin=&city= (§101).
+	let typeFilter = $state<string>(untrack(() => data.initialType ?? ''));
+	let originFilter = $state<string>(untrack(() => data.initialOrigin ?? ''));
+	let cityFilter = $state<string>(untrack(() => data.initialCity ?? ''));
+	let currentPage = $state<number>(untrack(() => data.initialPage ?? 1));
+	let orgsTotal = $state<number>(untrack(() => data.orgsTotal ?? 0));
+	let listError = $state<string | null>(null);
 	let loading = $state(false);
 	let expandedId = $state<string | null>(null);
 
-	// City list for the submit form — loaded from the API when a
-	// destination is selected (Rule 16: data from API, not hardcoded).
+	const totalPages = $derived(Math.max(1, Math.ceil(orgsTotal / ORG_PAGE_SIZE)));
+
+	// City list for the submit form + city filter — loaded from the API when
+	// a destination is selected (Rule 16: data from API, not hardcoded).
 	let cities = $state<GeoSpaceOption[]>([]);
 
 	// Submit-new-org form state (toggle section)
 	let showSubmitForm = $state(false);
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
+	let submitSuccess = $state(false);
 	let form = $state({
 		name: '',
 		org_type: '',
@@ -55,8 +66,9 @@
 		contact_info: ''
 	});
 
-	// Claim state
+	// Claim state — claimErrorId scopes the error to the org it came from.
 	let claimingId = $state<string | null>(null);
+	let claimErrorId = $state<string | null>(null);
 	let claimError = $state<string | null>(null);
 	let claimedIds = $state<Set<string>>(new Set());
 
@@ -78,58 +90,94 @@
 		})
 	);
 
-	// Filtered orgs by the optional org_type text filter (client-side).
-	const filteredOrgs = $derived.by(() => {
-		const q = orgTypeFilter.trim().toLowerCase();
-		if (!q) return orgs;
-		return orgs.filter(
-			(o) =>
-				o.org_type.toLowerCase().includes(q) ||
-				o.origin_community.toLowerCase().includes(q)
-		);
-	});
-
-	async function loadOrgs() {
+	async function loadOrgs(pageNum = currentPage) {
 		if (!selectedDestId) {
 			orgs = [];
+			orgsTotal = 0;
 			return;
 		}
 		loading = true;
-		const res = await api.get<CommunityOrgWithAi[]>(
-			`/community-locator?dest=${selectedDestId}`
-		);
+		listError = null;
+		const qs = new URLSearchParams({
+			dest: selectedDestId,
+			limit: String(ORG_PAGE_SIZE),
+			page: String(pageNum)
+		});
+		if (typeFilter) qs.set('type', typeFilter);
+		if (originFilter.trim()) qs.set('origin', originFilter.trim());
+		if (cityFilter) qs.set('city', cityFilter);
+		const res = await api.get<CommunityOrgWithAi[]>(`/community-locator?${qs}`);
 		loading = false;
-		if (!res.error) orgs = res.data ?? [];
-		else orgs = [];
+		if (res.error) {
+			orgs = [];
+			orgsTotal = 0;
+			listError = res.error.message;
+			return;
+		}
+		orgs = res.data ?? [];
+		orgsTotal = res.meta?.total ?? orgs.length;
+		currentPage = pageNum;
 	}
 
-	// BUG-B20: Load cities from the API when a destination is selected,
-	// so the submit form's city field is a select populated from
-	// /spaces?level=city&parent={destId} instead of a raw UUID text input.
+	// BUG-B20: Load cities from the API when a destination is selected.
+	// page_size=100 — the default (20) silently truncated larger cities lists.
 	async function loadCities(destId: string) {
 		if (!destId) {
 			cities = [];
 			return;
 		}
 		try {
-			const res = await api.get<GeoSpaceOption[]>(`/spaces?level=city&parent=${destId}`);
+			const res = await api.get<GeoSpaceOption[]>(`/spaces?level=city&parent=${destId}&page_size=100`);
 			cities = res.data ?? [];
 		} catch {
 			cities = [];
 		}
 	}
 
+	// Keep the URL in sync so filtered/paginated views are shareable.
+	function syncUrl() {
+		const url = new URL(page.url);
+		const set = (k: string, v: string) => (v ? url.searchParams.set(k, v) : url.searchParams.delete(k));
+		set('dest', selectedDestId);
+		set('type', typeFilter);
+		set('origin', originFilter.trim());
+		set('city', cityFilter);
+		set('page', currentPage > 1 ? String(currentPage) : '');
+		replaceState(url, {});
+	}
+
 	function onDestChange(id: string) {
 		selectedDestId = id;
 		expandedId = null;
 		form.city_space_id = '';
-		// Update URL for shareability (SvelteKit replaceState, not window.history)
-		const url = new URL(page.url);
-		if (id) url.searchParams.set('dest', id);
-		else url.searchParams.delete('dest');
-		replaceState(url, {});
-		loadOrgs();
+		// New destination — reset filters and pagination.
+		typeFilter = '';
+		originFilter = '';
+		cityFilter = '';
+		currentPage = 1;
+		loadOrgs(1);
 		loadCities(id);
+		syncUrl();
+	}
+
+	function applyFilters() {
+		currentPage = 1;
+		expandedId = null;
+		loadOrgs(1);
+		syncUrl();
+	}
+
+	// Debounce the free-text origin filter so each keystroke does not fire
+	// a request.
+	let originTimer: ReturnType<typeof setTimeout> | null = null;
+	function onOriginInput() {
+		if (originTimer) clearTimeout(originTimer);
+		originTimer = setTimeout(applyFilters, 350);
+	}
+
+	function onPageChange(p: number) {
+		loadOrgs(p);
+		syncUrl();
 	}
 
 	function toggleExpand(id: string) {
@@ -160,10 +208,9 @@
 			submitError = res.error.message;
 			return;
 		}
-		if (res.data) {
-			orgs = [...orgs, res.data];
-		}
-		// Reset form
+		// The submission lands in the moderation queue as status='pending' —
+		// do NOT append it to the published list (it would vanish on reload).
+		submitSuccess = true;
 		form = {
 			name: '',
 			org_type: '',
@@ -183,12 +230,14 @@
 			return;
 		}
 		claimingId = id;
+		claimErrorId = null;
 		claimError = null;
 		const res = await api.post<{ claim_status: string }>(
 			`/community-locator/${id}/claim`
 		);
 		claimingId = null;
 		if (res.error) {
+			claimErrorId = id;
 			claimError = res.error.message;
 			return;
 		}
@@ -202,17 +251,35 @@
 		return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`;
 	}
 
-	// On mount: if an initial dest was loaded server-side, no client fetch is
-	// needed. If there's no initial dest but one is present in state (e.g. from
-	// a shared URL without SSR match), load it. Uses onMount so it runs once.
+	function prettifyEnum(value: string): string {
+		return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+	}
+	function orgTypeLabel(value: string): string {
+		return t(`community_locator.type_${value}`, prettifyEnum(value));
+	}
+	function claimStatusLabel(value: string): string {
+		return t(`community_locator.claim_status_${value}`, prettifyEnum(value));
+	}
+
+	// On mount: hydrate the cities list for the SSR-selected destination.
+	// The org list itself was fetched server-side.
 	onMount(() => {
-		if (selectedDestId && orgs.length === 0) {
-			loadOrgs();
-		}
 		if (selectedDestId) {
 			loadCities(selectedDestId);
 		}
 	});
+
+	// Org-type dropdown items — sourced from the backend allow-list (Rule 16).
+	function fetchOrgTypes(q: string): Promise<AutocompleteItem[]> {
+		const needle = q.trim().toLowerCase();
+		const filtered = needle === ''
+			? orgTypes
+			: orgTypes.filter((o) => o.value.includes(needle) || orgTypeLabel(o.value).toLowerCase().includes(needle));
+		return Promise.resolve(filtered.map((o) => ({ id: o.value, label: orgTypeLabel(o.value) })));
+	}
+	function fetchOrgTypesInitial(): Promise<AutocompleteItem[]> {
+		return fetchOrgTypes('');
+	}
 
 	function fetchCities(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase();
@@ -285,23 +352,65 @@
 					)}
 				/>
 			{:else}
-				<!-- Optional org_type / origin filter -->
-				<div class="mb-6 flex items-center gap-3">
-					<label for="org-type-filter" class="text-sm font-medium text-text whitespace-nowrap">
-						{t('community_locator.filter', 'Filter:')}
-					</label>
-					<input
-						id="org-type-filter"
-						type="text"
-						bind:value={orgTypeFilter}
-						placeholder={t('community_locator.filter_placeholder', 'Organisation type or community…')}
-						class="flex-1 px-4 py-2 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
-					/>
+				<!-- Server-side filters — ?type=&origin=&city= per §101 -->
+				<div class="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+					<div>
+						<label for="cl-type-filter" class="block text-xs font-medium uppercase tracking-wide text-muted mb-1">
+							{t('community_locator.field_org_type', 'Organisation type')}
+						</label>
+						<Autocomplete
+							id="cl-type-filter"
+							placeholder={t('community_locator.filter_type', 'All types…')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={fetchOrgTypes}
+							initialFetcher={fetchOrgTypesInitial}
+							selectedId={typeFilter || null}
+							selectedLabel={typeFilter ? orgTypeLabel(typeFilter) : null}
+							onSelect={(item) => { typeFilter = item.id; applyFilters(); }}
+							onClear={() => { typeFilter = ''; applyFilters(); }}
+						/>
+					</div>
+					<div>
+						<label for="cl-origin-filter" class="block text-xs font-medium uppercase tracking-wide text-muted mb-1">
+							{t('community_locator.field_origin_community', 'Origin community')}
+						</label>
+						<input
+							id="cl-origin-filter"
+							type="text"
+							bind:value={originFilter}
+							oninput={onOriginInput}
+							placeholder={t('community_locator.filter_origin', 'e.g. Nigerian')}
+							class="w-full h-10 px-3 bg-surface border border-border rounded-lg text-text focus:border-primary focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="cl-city-filter" class="block text-xs font-medium uppercase tracking-wide text-muted mb-1">
+							{t('community_locator.field_city', 'City')}
+						</label>
+						<Autocomplete
+							id="cl-city-filter"
+							placeholder={t('community_locator.filter_city', 'All cities…')}
+							emptyMessage={t('community_locator.no_cities', 'No cities configured for this destination.')}
+							fetcher={fetchCities}
+							initialFetcher={fetchCitiesInitial}
+							selectedId={cityFilter || null}
+							selectedLabel={cityFilter ? getCityLabel(cityFilter) : null}
+							onSelect={(item) => { cityFilter = item.id; applyFilters(); }}
+							onClear={() => { cityFilter = ''; applyFilters(); }}
+						/>
+					</div>
 				</div>
 
-				{#if filteredOrgs.some((o) => o.latitude != null && o.longitude != null)}
+				{#if submitSuccess}
+					<div class="mb-6 rounded-lg border border-border bg-surface-subtle px-4 py-3 text-sm text-text flex items-center gap-2">
+						<Icon name="check-circle" size={16} class="text-[var(--tool-accent)]" />
+						{t('community_locator.submit_success', 'Organisation submitted — it will appear here once reviewed by our moderators.')}
+					</div>
+				{/if}
+
+				{#if orgs.some((o) => o.latitude != null && o.longitude != null)}
 					<div class="mb-6">
-						<OrgMap orgs={filteredOrgs} />
+						<OrgMap {orgs} />
 					</div>
 				{/if}
 
@@ -356,17 +465,16 @@
 								<label for="form-org-type" class="block text-sm font-medium text-text mb-1">
 									{t('community_locator.field_org_type', 'Organisation type')} *
 								</label>
-								<AutocompleteSelect
+								<Autocomplete
 									id="form-org-type"
-									bind:value={form.org_type}
-									options={[
-										{ value: '', label: t('common.select', 'Select…') },
-										...orgTypes.map((ot) => ({
-											value: ot.value,
-											label: t(`community_locator.type_${ot.value}`, ot.label)
-										}))
-									]}
-									class="w-full"
+									placeholder={t('common.select', 'Select…')}
+									emptyMessage={t('common.no_results', 'No results found')}
+									fetcher={fetchOrgTypes}
+									initialFetcher={fetchOrgTypesInitial}
+									selectedId={form.org_type || null}
+									selectedLabel={form.org_type ? orgTypeLabel(form.org_type) : null}
+									onSelect={(item) => (form.org_type = item.id)}
+									onClear={() => (form.org_type = '')}
 								/>
 							</div>
 							<div>
@@ -471,7 +579,13 @@
 						<LoadingSkeleton height="80px" />
 						<LoadingSkeleton height="80px" />
 					</div>
-				{:else if filteredOrgs.length === 0}
+				{:else if listError}
+					<EmptyState
+						icon="map-pin-off"
+						title={t('common.error', 'Something went wrong')}
+						description={listError}
+					/>
+				{:else if orgs.length === 0}
 					<EmptyState
 						icon="users"
 						title={t('community_locator.no_orgs', 'No organisations')}
@@ -482,7 +596,7 @@
 					/>
 				{:else}
 					<div class="space-y-3">
-						{#each filteredOrgs as org (org.id)}
+						{#each orgs as org (org.id)}
 							<div class="bg-surface border border-border rounded-lg overflow-hidden">
 								<!-- Card header (click to expand) -->
 								<button
@@ -511,7 +625,7 @@
 											{/if}
 										</div>
 										<p class="text-sm text-muted mt-1">
-											{org.org_type}
+											{orgTypeLabel(org.org_type)}
 											{#if org.origin_community}
 												· {org.origin_community}
 											{/if}
@@ -575,7 +689,7 @@
 										{/if}
 										<div class="flex items-center gap-2 text-xs text-muted pt-1">
 											<span>
-												{t('community_locator.claim_status', 'Claim status:')} {org.claim_status}
+												{t('community_locator.claim_status', 'Claim status:')} {claimStatusLabel(org.claim_status)}
 											</span>
 										</div>
 
@@ -594,12 +708,22 @@
 										</div>
 									{/if}
 
-										<!-- Claim button -->
+										<!-- Claim action — only meaningful while unclaimed -->
 										<div class="pt-2">
 											{#if claimedIds.has(org.id)}
 												<span class="inline-flex items-center gap-1.5 text-sm text-[var(--tool-accent)]">
 													<Icon name="check-circle" size={16} />
 													{t('community_locator.claim_submitted', 'Claim submitted')}
+												</span>
+											{:else if org.claim_status === 'claimed'}
+												<span class="inline-flex items-center gap-1.5 text-sm text-muted">
+													<Icon name="check-circle" size={16} />
+													{t('community_locator.claim_status_claimed', 'Claimed')}
+												</span>
+											{:else if org.claim_status === 'pending'}
+												<span class="inline-flex items-center gap-1.5 text-sm text-muted">
+													<Icon name="check-circle" size={16} />
+													{t('community_locator.claim_status_pending', 'Claim pending review')}
 												</span>
 											{:else if user}
 												<button
@@ -615,7 +739,7 @@
 														{t('community_locator.claim', 'Claim this organisation')}
 													{/if}
 												</button>
-												{#if claimError && claimingId === null}
+												{#if claimError && claimErrorId === org.id}
 													<span class="text-xs text-red-500 ml-2">{claimError}</span>
 												{/if}
 											{:else}
@@ -633,6 +757,40 @@
 							</div>
 						{/each}
 					</div>
+
+					{#if totalPages > 1}
+						<div class="mt-6 flex items-center justify-between gap-4 border-t border-border pt-4">
+							<div class="text-sm text-muted">
+								{t('community_locator.showing', 'Showing {start}–{end} of {total}')
+									.replace('{start}', String((currentPage - 1) * ORG_PAGE_SIZE + 1))
+									.replace('{end}', String(Math.min(currentPage * ORG_PAGE_SIZE, orgsTotal)))
+									.replace('{total}', String(orgsTotal))}
+							</div>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									disabled={currentPage <= 1}
+									onclick={() => onPageChange(currentPage - 1)}
+									class="px-3 py-1.5 text-sm rounded-lg border border-border bg-surface text-text hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{t('common.previous', 'Previous')}
+								</button>
+								<span class="text-sm text-muted">
+									{t('community_locator.page_of', 'Page {page} of {totalPages}')
+										.replace('{page}', String(currentPage))
+										.replace('{totalPages}', String(totalPages))}
+								</span>
+								<button
+									type="button"
+									disabled={currentPage >= totalPages}
+									onclick={() => onPageChange(currentPage + 1)}
+									class="px-3 py-1.5 text-sm rounded-lg border border-border bg-surface text-text hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{t('common.next', 'Next')}
+								</button>
+							</div>
+						</div>
+					{/if}
 				{/if}
 			{/if}
 		{/if}

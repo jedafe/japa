@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -30,6 +31,20 @@ import (
 const (
 	DirectionAbove = "above"
 	DirectionBelow = "below"
+)
+
+// Sentinel errors mapped to structured HTTP responses in handlers.go
+// (conventions/api-response-format.md).
+var (
+	// ErrAlertNotFound is returned when an alert id does not exist or does
+	// not belong to the requesting user → 404 alert_not_found.
+	ErrAlertNotFound = errors.New("remittance: alert not found")
+	// ErrInvalidDirection is returned for any direction outside
+	// {'above','below'} → 400 invalid_direction.
+	ErrInvalidDirection = errors.New("remittance: direction must be 'above' or 'below'")
+	// ErrInvalidTargetRate is returned for a non-positive target_rate →
+	// 400 invalid_target_rate.
+	ErrInvalidTargetRate = errors.New("remittance: target rate must be positive")
 )
 
 // DataSource constants for remittance providers.
@@ -765,11 +780,11 @@ func (s *Service) GetCorridors(ctx context.Context) ([]Corridor, error) {
 // CreateAlert creates a new rate alert for a user.
 func (s *Service) CreateAlert(ctx context.Context, userID pgtype.UUID, sendCurrency, receiveCurrency, direction string, targetRate float64) (AlertInfo, error) {
 	if direction != DirectionAbove && direction != DirectionBelow {
-		return AlertInfo{}, fmt.Errorf("remittance: invalid direction %q", direction)
+		return AlertInfo{}, ErrInvalidDirection
 	}
 
 	if targetRate <= 0 {
-		return AlertInfo{}, errors.New("remittance: target rate must be positive")
+		return AlertInfo{}, ErrInvalidTargetRate
 	}
 
 	alert, err := s.store.CreateAlert(ctx, gen.CreateRateAlertParams{
@@ -791,7 +806,11 @@ func (s *Service) CreateAlert(ctx context.Context, userID pgtype.UUID, sendCurre
 // updated (COALESCE in the SQL).
 func (s *Service) UpdateAlert(ctx context.Context, userID, alertID pgtype.UUID, targetRate *float64, direction *string, isActive *bool) (AlertInfo, error) {
 	if direction != nil && *direction != DirectionAbove && *direction != DirectionBelow {
-		return AlertInfo{}, fmt.Errorf("remittance: invalid direction %q", *direction)
+		return AlertInfo{}, ErrInvalidDirection
+	}
+
+	if targetRate != nil && *targetRate <= 0 {
+		return AlertInfo{}, ErrInvalidTargetRate
 	}
 
 	arg := gen.UpdateRateAlertParams{
@@ -821,6 +840,16 @@ func (s *Service) UpdateAlert(ctx context.Context, userID, alertID pgtype.UUID, 
 
 // DeleteAlert deletes a rate alert owned by the given user.
 func (s *Service) DeleteAlert(ctx context.Context, userID, alertID pgtype.UUID) error {
+	// DeleteRateAlert is an :exec that silently succeeds on no-match —
+	// resolve existence first so missing alerts surface 404 (Rule 5).
+	if _, err := s.store.GetAlertByID(ctx, alertID, userID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAlertNotFound
+		}
+
+		return fmt.Errorf("remittance: delete alert: %w", err)
+	}
+
 	if err := s.store.DeleteAlert(ctx, alertID, userID); err != nil {
 		return fmt.Errorf("remittance: delete alert: %w", err)
 	}

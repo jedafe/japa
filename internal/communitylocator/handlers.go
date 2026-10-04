@@ -96,7 +96,10 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 	return id, true
 }
 
-func parsePageParams(r *http.Request) (page, limit int32) {
+// parsePageParams reads ?page=&limit= from the query. limit is clamped to
+// maxLimit (values above it return maxLimit, not the default — an explicit
+// oversized page size should not silently shrink the result set).
+func parsePageParams(r *http.Request, maxLimit int32) (page, limit int32) {
 	page = 1
 	limit = 20
 
@@ -107,8 +110,11 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	}
 
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = int32(n) // #nosec
+			if limit > maxLimit {
+				limit = maxLimit
+			}
 		}
 	}
 
@@ -168,7 +174,7 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	page, limit := parsePageParams(r)
+	page, limit := parsePageParams(r, 100)
 
 	orgs, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, originCommunity, orgType, lat, lng, radiusKm, page, limit)
 	if err != nil {
@@ -380,10 +386,7 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 	dir := r.URL.Query().Get("dir")
 
-	page, limit := parsePageParams(r)
-	if limit > 200 {
-		limit = 200
-	}
+	page, limit := parsePageParams(r, 200)
 
 	orgs, total, err := h.service.AdminList(r.Context(), destSpaceID, originCommunity, orgType, status, q, sort, dir, page, limit)
 	if err != nil {
@@ -478,8 +481,10 @@ func (h *Handlers) HandleAdminVerify(w http.ResponseWriter, r *http.Request) {
 // HandleAdminResolveClaim handles PATCH
 // /admin/community-locator/:id/claim/:claim_id — resolve a pending claim
 // on a community organisation. Admin-only (community_locator.manage
-// permission checked at route registration). The :claim_id URL param
-// identifies the claim. Body: {"approve": true|false}.
+// permission checked at route registration). Claims are 1:1 with an org
+// (a single pending claim_status per row — there is no separate claims
+// table), so :claim_id is the org's own claim identifier and must match
+// :id. Body: {"approve": true|false}.
 func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -490,7 +495,13 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if _, ok := scanUUIDParam(w, r, "claim_id"); !ok {
+	claimID, ok := scanUUIDParam(w, r, "claim_id")
+	if !ok {
+		return
+	}
+
+	if claimID != id {
+		errpkg.WriteError(w, http.StatusBadRequest, "claim_org_mismatch", "claim_id does not belong to this organisation")
 		return
 	}
 

@@ -299,10 +299,17 @@
 				});
 				return res.ok ? { ok: true } : { ok: false, error: res.error };
 			},
-			update: async (id, body) => {
+			update: async (id, body, row) => {
 				const ttl = Number(body.cache_ttl_secs ?? 300);
 				const widgetType = String(body.widget_type ?? '').trim();
-				const cfg = (body._config as Record<string, unknown>) ?? defaultConfig(widgetType);
+				// `_config` wins when the form snippet touched config (including a
+				// widget_type change, which re-seeds defaults); otherwise preserve
+				// the stored config so a save that only edits base fields is not
+				// destructive.
+				const cfg =
+					(body._config as Record<string, unknown>) ??
+					(row?.config as Record<string, unknown>) ??
+					defaultConfig(widgetType);
 				const res = await widgetsAdminApiExtended.update(id, {
 					name: String(body.name ?? '').trim(),
 					widget_type: widgetType,

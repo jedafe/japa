@@ -9,7 +9,6 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
-	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
@@ -55,8 +54,10 @@
 
 	// Alert creation state
 	let alertTargetRate = $state('');
-	let alertDirection = $state('above');
+	let alertDirection = $state(untrack(() => data.directionOptions[0]?.value ?? 'above'));
 	let showRegisterPrompt = $state(false);
+	let alertError = $state<string | null>(null);
+	let ratesError = $state<string | null>(null);
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -78,13 +79,27 @@
 		return sellable.reduce((best, r) => (r.rate > best.rate ? r : best));
 	});
 
+	// Rates render sorted: sellable quotes best-rate-first, mid-market
+	// benchmark rows pinned last as a reference (§112, ADR-125).
+	const sortedRates = $derived.by(() => {
+		const sellable = rates.filter((r) => !r.is_benchmark).sort((a, b) => b.rate - a.rate);
+		const benchmark = rates.filter((r) => r.is_benchmark).sort((a, b) => b.rate - a.rate);
+		return [...sellable, ...benchmark];
+	});
+
 	async function loadRates() {
 		loadingRates = true;
+		ratesError = null;
 		const res = await api.get<RemittanceRate[]>(
 			`/remittance/rates?send=${selectedCorridor.send_currency}&receive=${selectedCorridor.receive_currency}`
 		);
 		loadingRates = false;
-		if (!res.error) rates = res.data ?? [];
+		if (res.error) {
+			rates = [];
+			ratesError = res.error.message;
+		} else {
+			rates = res.data ?? [];
+		}
 		loadHistory();
 		calculate();
 	}
@@ -99,6 +114,10 @@
 	}
 
 	async function calculate() {
+		if (!Number.isFinite(calcSendAmount) || calcSendAmount <= 0) {
+			calcResult = null;
+			return;
+		}
 		calcLoading = true;
 		const res = await api.get<RemittanceCalculation>(
 			`/remittance/calculate?send_amount=${calcSendAmount}&send=${selectedCorridor.send_currency}&receive=${selectedCorridor.receive_currency}`
@@ -119,13 +138,18 @@
 			showRegisterPrompt = true;
 			return;
 		}
+		const targetRate = parseFloat(alertTargetRate);
+		if (!(targetRate > 0)) return;
+		alertError = null;
 		const res = await api.post<RemittanceAlert>('/remittance/alerts', {
 			send_currency: selectedCorridor.send_currency,
 			receive_currency: selectedCorridor.receive_currency,
-			target_rate: parseFloat(alertTargetRate),
+			target_rate: targetRate,
 			direction: alertDirection as 'above' | 'below'
 		});
-		if (!res.error && res.data) {
+		if (res.error) {
+			alertError = res.error.message;
+		} else if (res.data) {
 			alerts = [...alerts, res.data];
 			alertTargetRate = '';
 		}
@@ -136,8 +160,13 @@
 			showRegisterPrompt = true;
 			return;
 		}
+		alertError = null;
 		const res = await api.delete(`/remittance/alerts/${id}`);
-		if (!res.error) alerts = alerts.filter((a) => a.id !== id);
+		if (res.error) {
+			alertError = res.error.message;
+		} else {
+			alerts = alerts.filter((a) => a.id !== id);
+		}
 	}
 
 	/** Toggle an alert's active state via PATCH (§74). */
@@ -146,10 +175,13 @@
 			showRegisterPrompt = true;
 			return;
 		}
+		alertError = null;
 		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${id}`, {
 			is_active: !currentActive
 		});
-		if (!res.error) {
+		if (res.error) {
+			alertError = res.error.message;
+		} else {
 			alerts = alerts.map((a) => (a.id === id ? { ...a, is_active: !currentActive } : a));
 		}
 	}
@@ -170,22 +202,50 @@
 			showRegisterPrompt = true;
 			return;
 		}
+		const targetRate = parseFloat(editTargetRate);
+		if (!(targetRate > 0)) return;
+		alertError = null;
 		const res = await api.patch<RemittanceAlert>(`/remittance/alerts/${id}`, {
-			target_rate: parseFloat(editTargetRate),
+			target_rate: targetRate,
 			direction: editDirection as 'above' | 'below'
 		});
-		editingAlertId = null;
-		if (!res.error) {
-			alerts = alerts.map((a) =>
-				a.id === id
-					? { ...a, target_rate: parseFloat(editTargetRate), direction: editDirection as 'above' | 'below' }
-					: a
-			);
+		if (res.error) {
+			alertError = res.error.message;
+			return;
 		}
+		editingAlertId = null;
+		alerts = alerts.map((a) =>
+			a.id === id
+				? { ...a, target_rate: targetRate, direction: editDirection as 'above' | 'below' }
+				: a
+		);
 	}
 
+	// Corridor rates span orders of magnitude (GBP→NGN ~1500 vs inverse
+	// corridors below 1) — a fixed toFixed(2) renders small rates as "0.00".
 	function formatRate(rate: number): string {
-		return rate.toFixed(2);
+		if (!Number.isFinite(rate)) return '—';
+		if (rate >= 100) return rate.toFixed(2);
+		if (rate >= 1) return rate.toFixed(4);
+		return rate.toPrecision(4);
+	}
+
+	function directionLabel(v: string): string {
+		const opt = directionOptions.find((o) => o.value === v);
+		return t(`remittance.direction_${v}`, opt?.label ?? v);
+	}
+
+	// Alert direction picker — every dropdown on this page uses Autocomplete.
+	function fetchDirectionOptions(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return Promise.resolve(
+			directionOptions
+				.filter((o) => query === '' || directionLabel(o.value).toLowerCase().includes(query))
+				.map((o) => ({ id: o.value, label: directionLabel(o.value) }))
+		);
+	}
+	function fetchDirectionOptionsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDirectionOptions('');
 	}
 
 	// §58 — managed currency symbols via the shared util (page.data.currencies
@@ -230,7 +290,7 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? corridors
-			: corridors.filter((c) => c.label.toLowerCase().includes(query));
+			: corridors.filter((c) => getCorridorLabel(corridorId(c)).toLowerCase().includes(query));
 		return Promise.resolve(
 			filtered.map((c) => ({
 				id: corridorId(c),
@@ -343,6 +403,12 @@
 						<LoadingSkeleton height="60px" />
 						<LoadingSkeleton height="60px" />
 					</div>
+				{:else if ratesError}
+					<EmptyState
+						icon="trending-down"
+						title={t('remittance.load_error', 'Could not load rates')}
+						description={ratesError}
+					/>
 				{:else if rates.length === 0}
 					<EmptyState
 						icon="trending-down"
@@ -362,17 +428,10 @@
 								</span>
 							</div>
 						{/if}
-						{#each rates as rate (rate.id)}
+						{#each sortedRates as rate (rate.id)}
 							{@const provider = getProvider(rate.provider_id)}
 							<div class="p-3 bg-surface border border-border rounded-lg flex items-center justify-between">
 								<div class="flex items-center gap-3 min-w-0">
-									{#if provider?.logo_url}
-										<img
-											src={provider.logo_url}
-											alt={rate.provider_name}
-											class="w-8 h-8 rounded object-contain flex-shrink-0"
-										/>
-									{/if}
 									<div class="min-w-0">
 										<div class="flex items-center gap-1.5">
 											<p class="text-sm font-medium text-text truncate">{rate.provider_name}</p>
@@ -392,8 +451,12 @@
 											{/if}
 										</div>
 										<div class="flex items-center gap-2 text-xs text-muted mt-0.5">
-											{#if rate.fee_flat}
-												<span>{t('remittance.fee', 'Fee:')} {fmtMoney(rate.fee_flat, rate.send_currency)}</span>
+											{#if rate.fee_flat || rate.fee_pct}
+												<span>
+													{t('remittance.fee', 'Fee:')}
+													{#if rate.fee_flat}{fmtMoney(rate.fee_flat, rate.send_currency)}{/if}
+													{#if rate.fee_pct}{rate.fee_flat ? ' ' : ''}+{rate.fee_pct}%{/if}
+												</span>
 											{/if}
 											{#if rate.transfer_time}
 												<span>· {rate.transfer_time}</span>
@@ -449,7 +512,7 @@
 							<p class="mb-2 text-xs text-muted">
 								{t('remittance.mid_market_would_give', 'Mid-market would give')}
 								<span class="font-medium text-text">{fmtMoney(calcResult.benchmark.receive_amount, calcResult.receive_currency)}</span>
-								(1 {calcResult.send_currency} = {calcResult.benchmark.rate.toFixed(2)} {calcResult.receive_currency})
+								(1 {calcResult.send_currency} = {formatRate(calcResult.benchmark.rate)} {calcResult.receive_currency})
 							</p>
 						{/if}
 						<div class="space-y-2">
@@ -517,21 +580,29 @@
 			{:else}
 				<div class="space-y-4">
 					<!-- Create alert -->
+					{#if alertError}
+						<div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+							{alertError}
+						</div>
+					{/if}
 					<div class="p-4 bg-surface border border-border rounded-lg flex flex-wrap items-center gap-3">
 						<span class="text-sm text-text">{t('remittance.notify_when', 'Notify me when')}</span>
-						<AutocompleteSelect
-							bind:value={alertDirection}
-							options={directionOptions.map((opt) => ({
-								value: opt.value,
-								label: t(`remittance.direction_${opt.value}`, opt.label)
-							}))}
-							class="w-40"
-						/>
+						<div class="w-40">
+							<Autocomplete
+								placeholder={t('remittance.direction', 'Direction')}
+								emptyMessage={t('common.no_results', 'No results found')}
+								fetcher={fetchDirectionOptions}
+								initialFetcher={fetchDirectionOptionsInitial}
+								selectedId={alertDirection}
+								selectedLabel={directionLabel(alertDirection)}
+								onSelect={(item) => (alertDirection = item.id)}
+							/>
+						</div>
 						<input
 							type="number"
 							bind:value={alertTargetRate}
 							placeholder={t('remittance.target_rate', 'target rate')}
-							step="0.01"
+							step="any"
 							class="w-28 px-3 py-1.5 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 						/>
 						<span class="text-sm text-muted">
@@ -539,7 +610,7 @@
 						</span>
 						<button
 							onclick={createAlert}
-							disabled={!alertTargetRate}
+							disabled={!(parseFloat(alertTargetRate) > 0)}
 							class="px-4 py-1.5 bg-[var(--tool-accent)] text-white rounded-lg text-sm font-medium hover:bg-[var(--tool-accent-hover)] transition-colors disabled:opacity-50"
 						>
 							{t('remittance.create_alert', 'Create alert')}
@@ -554,18 +625,21 @@
 									{#if editingAlertId === alert.id}
 										<!-- Edit mode (PATCH /remittance/alerts/:id — §74) -->
 										<div class="flex flex-wrap items-center gap-2">
-											<AutocompleteSelect
-												bind:value={editDirection}
-												options={directionOptions.map((opt) => ({
-													value: opt.value,
-													label: t(`remittance.direction_${opt.value}`, opt.label)
-												}))}
-												class="w-40"
-											/>
+											<div class="w-40">
+												<Autocomplete
+													placeholder={t('remittance.direction', 'Direction')}
+													emptyMessage={t('common.no_results', 'No results found')}
+													fetcher={fetchDirectionOptions}
+													initialFetcher={fetchDirectionOptionsInitial}
+													selectedId={editDirection}
+													selectedLabel={directionLabel(editDirection)}
+													onSelect={(item) => (editDirection = item.id)}
+												/>
+											</div>
 											<input
 												type="number"
 												bind:value={editTargetRate}
-												step="0.01"
+												step="any"
 												class="w-24 px-2 py-1 text-sm bg-surface border border-border rounded focus:border-primary focus:outline-none"
 											/>
 											<button

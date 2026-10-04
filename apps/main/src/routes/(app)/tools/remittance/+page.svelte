@@ -18,7 +18,7 @@
 		Loader2,
 		GitCompare
 	} from 'lucide-svelte';
-	import { EmptyState, LoadingSkeleton, SelectField } from '$lib/components/ui';
+	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import { LineChart } from 'layerchart';
 	import type {
@@ -44,20 +44,31 @@
 	);
 
 	const corridors = $derived<RemittanceCorridor[]>(data.corridors);
+	const providers = $derived<RemittanceProvider[]>(data.providers ?? []);
+	// §112 — benchmark providers are a mid-market reference, not bookable
+	// providers: exclude them from the JCE compare picker (ADR-125).
+	const sellableProviders = $derived(providers.filter((p) => !p.is_benchmark));
 	const disabled = $derived(data.disabled);
 	const authed = $derived(data.authed);
 
-	let sendCurrency = $state('');
+	// Pre-select the configured default send currency when it participates
+	// in a corridor (remittance.default_send_currency, §74).
+	let sendCurrency = $state(
+		untrack(() =>
+			data.defaultSendCurrency && corridors.some((c) => c.send_currency === data.defaultSendCurrency)
+				? data.defaultSendCurrency
+				: ''
+		)
+	);
 	let receiveCurrency = $state('');
 	let rates = $state<RemittanceRate[]>([]);
 	let history = $state<RemittanceHistoryPoint[]>([]);
-	let alerts = $state<RemittanceAlert[]>([]);
+	let alerts = $state<RemittanceAlert[]>(untrack(() => data.alerts ?? []));
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let actionError = $state<string | null>(null);
 
 	// Providers and calculator.
-	let providers = $state<RemittanceProvider[]>([]);
 	let showProviders = $state(false);
 	let calculation = $state<RemittanceCalculation | null>(null);
 	let calcLoading = $state(false);
@@ -106,16 +117,55 @@
 		history.map((h) => ({ date: new Date(h.day), avg: h.avg_rate, min: h.min_rate, max: h.max_rate }))
 	);
 
-	async function loadProviders() {
-		const res = await api.get<RemittanceProvider[]>('/remittance/providers');
-		if (res.error) {
-			actionError = res.error.message;
-		} else {
-			providers = res.data ?? [];
-		}
+	// Rates are rendered sorted: sellable quotes best-rate-first, then any
+	// mid-market benchmark rows pinned at the bottom as a reference (§112).
+	const sortedRates = $derived.by(() => {
+		const sellable = rates.filter((r) => !r.is_benchmark).sort((a, b) => b.rate - a.rate);
+		const benchmark = rates.filter((r) => r.is_benchmark).sort((a, b) => b.rate - a.rate);
+		return [...sellable, ...benchmark];
+	});
+
+	// A manual rate is stale once fetched_at is older than the configured
+	// threshold (remittance.manual_stale_hours, §74).
+	function isStale(r: RemittanceRate): boolean {
+		if (!r.is_manual || !r.fetched_at) return false;
+		return Date.now() - new Date(r.fetched_at).getTime() > data.manualStaleHours * 3600_000;
 	}
 
-	loadProviders();
+	// Corridor rates span orders of magnitude (GBP→NGN ~1500 vs inverse
+	// corridors below 1) — a fixed toFixed(2) renders small rates as "0.00".
+	function formatRate(rate: number): string {
+		if (!Number.isFinite(rate)) return '—';
+		if (rate >= 100) return rate.toFixed(2);
+		if (rate >= 1) return rate.toFixed(4);
+		return rate.toPrecision(4);
+	}
+
+	// Fee cell — flat fees render in send currency; a percentage fee renders
+	// as "+x%" alongside any flat amount (fee_pct was previously invisible).
+	function feeLabel(feeFlat: number | undefined, feePct: number | undefined, currency: string): string {
+		const parts: string[] = [];
+		if (feeFlat && feeFlat > 0) parts.push(formatMoney(feeFlat, currency, data.currencies));
+		if (feePct && feePct > 0) parts.push(`+${feePct}%`);
+		return parts.length > 0 ? parts.join(' ') : '—';
+	}
+
+	function directionLabel(v: string): string {
+		return directionOptions.find((o) => o.value === v)?.label ?? v;
+	}
+
+	// Alert direction picker — every dropdown on this page uses Autocomplete.
+	function fetchDirectionOptions(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return Promise.resolve(
+			directionOptions
+				.filter((o) => query === '' || o.label.toLowerCase().includes(query))
+				.map((o) => ({ id: o.value, label: o.label }))
+		);
+	}
+	function fetchDirectionOptionsInitial(): Promise<AutocompleteItem[]> {
+		return fetchDirectionOptions('');
+	}
 
 	async function loadCalculation() {
 		if (!sendCurrency || !receiveCurrency) return;
@@ -139,14 +189,13 @@
 	}
 
 	async function loadCorridor() {
-		if (!sendCurrency || !receiveCurrency) return;
+		if (!sendCurrency || !receiveCurrency || sendCurrency === receiveCurrency) return;
 		loading = true;
 		error = null;
 		actionError = null;
-		const [ratesRes, histRes, alertsRes] = await Promise.all([
+		const [ratesRes, histRes] = await Promise.all([
 			api.get<RemittanceRate[]>(`/remittance/rates?send=${sendCurrency}&receive=${receiveCurrency}`),
-			api.get<RemittanceHistoryPoint[]>(`/remittance/history?send=${sendCurrency}&receive=${receiveCurrency}&days=30`),
-			authed ? api.get<RemittanceAlert[]>(`/remittance/alerts`) : Promise.resolve({ data: null, error: null, status: 0 })
+			api.get<RemittanceHistoryPoint[]>(`/remittance/history?send=${sendCurrency}&receive=${receiveCurrency}&days=30`)
 		]);
 		loading = false;
 		if (ratesRes.error) {
@@ -158,18 +207,19 @@
 		if (histRes.error) {
 			actionError = histRes.error.message;
 		}
-		if (alertsRes.error) {
-			actionError = alertsRes.error.message;
-			alerts = [];
-		} else {
-			alerts = alertsRes.data ?? [];
-		}
 		loadCalculation();
 	}
 
-	function onSelectCorridor() {
-		const parts = `${sendCurrency}/${receiveCurrency}`.split('/');
-		if (parts.length === 2) loadCorridor();
+	// Corridor selection changed — reload data when a valid pair is chosen,
+	// otherwise clear corridor-scoped state so stale results don't linger.
+	function onCorridorChange() {
+		rates = [];
+		history = [];
+		calculation = null;
+		error = null;
+		if (sendCurrency && receiveCurrency && sendCurrency !== receiveCurrency) {
+			loadCorridor();
+		}
 	}
 
 	async function createAlert() {
@@ -224,7 +274,7 @@
 	function cancelEditAlert() {
 		editingAlert = null;
 		editAlertRate = '';
-		editAlertDirection = 'above';
+		editAlertDirection = directionOptions[0]?.value ?? 'above';
 	}
 
 	async function saveEditAlert() {
@@ -329,8 +379,8 @@
 							initialFetcher={fetchSendCurrenciesInitial}
 							selectedId={sendCurrency || null}
 							selectedLabel={sendCurrency || null}
-							onSelect={(item) => { sendCurrency = item.id; onSelectCorridor(); }}
-							onClear={() => { sendCurrency = ''; onSelectCorridor(); }}
+							onSelect={(item) => { sendCurrency = item.id; onCorridorChange(); }}
+							onClear={() => { sendCurrency = ''; onCorridorChange(); }}
 						/>
 					</div>
 				</div>
@@ -347,8 +397,8 @@
 							initialFetcher={fetchReceiveCurrenciesInitial}
 							selectedId={receiveCurrency || null}
 							selectedLabel={receiveCurrency || null}
-							onSelect={(item) => { receiveCurrency = item.id; onSelectCorridor(); }}
-							onClear={() => { receiveCurrency = ''; onSelectCorridor(); }}
+							onSelect={(item) => { receiveCurrency = item.id; onCorridorChange(); }}
+							onClear={() => { receiveCurrency = ''; onCorridorChange(); }}
 						/>
 					</div>
 				</div>
@@ -363,7 +413,15 @@
 			</div>
 		{/if}
 
-		{#if sendCurrency && receiveCurrency}
+		{#if sendCurrency && receiveCurrency && sendCurrency === receiveCurrency}
+			<div class="p-4">
+				<EmptyState
+					icon={ArrowRight}
+					title={t('remittance.same_currency', 'Choose two different currencies')}
+					body={t('remittance.same_currency_hint', 'Send and receive currencies must differ.')}
+				/>
+			</div>
+		{:else if sendCurrency && receiveCurrency}
 			<div class="p-4">
 				{#if loading}
 					<LoadingSkeleton variant="lines" />
@@ -384,19 +442,37 @@
 									</tr>
 								</thead>
 								<tbody>
-									{#each rates as r (r.id)}
+									{#each sortedRates as r (r.id)}
 										<tr class="border-b border-[var(--color-border)] last:border-0">
 											<td class="px-3 py-2 text-[var(--color-text)]">
-												{r.provider_name}
+												{#if r.provider_website}
+													<a href={r.provider_website} target="_blank" rel="noopener noreferrer" class="hover:underline">{r.provider_name}</a>
+												{:else}
+													{r.provider_name}
+												{/if}
 												{#if r.is_benchmark}
 													<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
+												{/if}
+												{#if r.is_manual}
+													<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.manual', 'Manual')}</span>
+												{/if}
+												{#if isStale(r)}
+													<span class="ml-1 rounded-full border border-amber-300 px-1.5 py-0.5 text-xs text-amber-600 dark:border-amber-800 dark:text-amber-400">{t('remittance.stale', 'Stale')}</span>
 												{/if}
 												{#if bestRate && r.id === bestRate.id}
 													<span class="ml-1 rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-xs text-white">{t('remittance.best', 'Best')}</span>
 												{/if}
+												{#if r.source?.name}
+													<a
+														href={r.source.slug ? `/sources/${r.source.slug}` : r.source.source_url || r.source_url || '#'}
+														target={r.source.slug ? '_self' : '_blank'}
+														rel="noopener noreferrer"
+														class="block text-xs text-[var(--color-muted)] hover:underline"
+													>{t('remittance.via', 'via')} {r.source.name}</a>
+												{/if}
 											</td>
-											<td class="px-3 py-2 text-right font-medium text-[var(--color-text)]">{r.rate.toFixed(2)}</td>
-											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{r.fee_flat ? formatMoney(r.fee_flat, sendCurrency, data.currencies) : '—'}</td>
+											<td class="px-3 py-2 text-right font-medium text-[var(--color-text)]">{formatRate(r.rate)}</td>
+											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{feeLabel(r.fee_flat, r.fee_pct, sendCurrency)}</td>
 											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{r.transfer_time || '—'}</td>
 											<td class="px-3 py-2 text-right text-[var(--color-muted)]">{ratioVsBest(r)}</td>
 										</tr>
@@ -455,7 +531,7 @@
 								<p class="mt-2 text-sm text-[var(--color-muted)]">
 									{t('remittance.mid_market_would_give', 'Mid-market would give')}
 									<strong class="font-medium text-[var(--color-text)]">{formatMoney(calculation.benchmark.receive_amount, receiveCurrency, data.currencies)}</strong>
-									<span>({t('remittance.rate', 'Rate')}: {calculation.benchmark.rate.toFixed(2)})</span>
+									<span>({t('remittance.rate', 'Rate')}: {formatRate(calculation.benchmark.rate)})</span>
 								</p>
 							{/if}
 							{#if calculation && calculation.results.length > 0}
@@ -485,8 +561,8 @@
 															<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.mid_market', 'Mid-market')}</span>
 														{/if}
 													</td>
-													<td class="px-3 py-2 text-right">{p.rate.toFixed(2)}</td>
-													<td class="px-3 py-2 text-right text-[var(--color-muted)]">{p.fee_flat ? formatMoney(p.fee_flat, sendCurrency, data.currencies) : '—'}</td>
+													<td class="px-3 py-2 text-right">{formatRate(p.rate)}</td>
+													<td class="px-3 py-2 text-right text-[var(--color-muted)]">{feeLabel(p.fee_flat, p.fee_pct, sendCurrency)}</td>
 													<td class="px-3 py-2 text-right font-medium">{formatMoney(p.receive_amount, receiveCurrency, data.currencies)}</td>
 													<td class="px-3 py-2 text-right text-[var(--color-muted)]">{formatMoney(p.total_fees, sendCurrency, data.currencies)}</td>
 												</tr>
@@ -521,7 +597,7 @@
 							{/if}
 						</button>
 						{#if showProviders}
-							{#if providers.length === 0}
+							{#if sellableProviders.length === 0}
 								<p class="text-sm text-[var(--color-muted)]">{t('remittance.no_providers', 'No providers configured.')}</p>
 							{:else}
 								{#if form?.error}
@@ -544,7 +620,7 @@
 									<input type="hidden" name="send_currency" value={sendCurrency} />
 									<input type="hidden" name="receive_currency" value={receiveCurrency} />
 									<input type="hidden" name="send_amount" value={sendAmount} />
-									{#each providers as p (p.id)}
+									{#each sellableProviders as p (p.id)}
 										{#if selectedProviderIds.has(p.id)}
 											<input type="hidden" name="provider_id" value={p.id} />
 										{/if}
@@ -572,7 +648,7 @@
 									</div>
 
 									<ul class="space-y-2">
-										{#each providers as p (p.id)}
+										{#each sellableProviders as p (p.id)}
 											<li class="flex items-start gap-3 text-sm text-[var(--color-text)]">
 												<input
 													type="checkbox"
@@ -603,121 +679,144 @@
 						{/if}
 					</div>
 
-					<!-- Rate alerts -->
-					{#if authed}
-						<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-							<h2 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
-								<Bell size={16} /> {t('remittance.alerts', 'Rate alerts')}
-							</h2>
-							<form onsubmit={(e) => { e.preventDefault(); createAlert(); }} class="mb-3 flex flex-wrap items-end gap-2">
-								<div>
-									<label for="alert-rate" class="block text-xs text-[var(--color-muted)]">{t('remittance.target_rate', 'Target rate')}</label>
-									<input
-										id="alert-rate"
-										type="number"
-										bind:value={alertRate}
-										step="0.01"
-										class="mt-1 w-28 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Rate alerts — user-scoped, so the list renders regardless of
+		     corridor selection; creating an alert targets the selected
+		     corridor. -->
+		{#if authed}
+			<div class="px-4 pb-4">
+				<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<h2 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
+						<Bell size={16} /> {t('remittance.alerts', 'Rate alerts')}
+					</h2>
+					{#if sendCurrency && receiveCurrency && sendCurrency !== receiveCurrency}
+						<form onsubmit={(e) => { e.preventDefault(); createAlert(); }} class="mb-3 flex flex-wrap items-end gap-2">
+							<div>
+								<label for="alert-rate" class="block text-xs text-[var(--color-muted)]">
+									{t('remittance.target_rate', 'Target rate')} ({sendCurrency}→{receiveCurrency})
+								</label>
+								<input
+									id="alert-rate"
+									type="number"
+									bind:value={alertRate}
+									step="any"
+									class="mt-1 w-28 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+								/>
+							</div>
+							<div>
+								<label for="alert-direction" class="block text-xs text-[var(--color-muted)]">{t('remittance.direction', 'Direction')}</label>
+								<div class="mt-1 w-40">
+									<Autocomplete
+										placeholder={t('remittance.direction', 'Direction')}
+										emptyMessage={t('common.no_results', 'No results found')}
+										fetcher={fetchDirectionOptions}
+										initialFetcher={fetchDirectionOptionsInitial}
+										selectedId={alertDirection}
+										selectedLabel={directionLabel(alertDirection)}
+										onSelect={(item) => (alertDirection = item.id)}
 									/>
 								</div>
-								<div>
-									<label for="alert-direction" class="block text-xs text-[var(--color-muted)]">{t('remittance.direction', 'Direction')}</label>
-									<div class="mt-1">
-										<SelectField
-											id="alert-direction"
-											value={alertDirection}
-											options={directionOptions}
-											placeholder={t('remittance.direction', 'Direction')}
-											onValueChange={(v) => (alertDirection = v)}
-										/>
-									</div>
-								</div>
-								<button
-									type="submit"
-									disabled={creatingAlert || !alertRate}
-									class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
-								>
-									{t('remittance.create_alert', 'Create alert')}
-								</button>
-							</form>
-							{#if alerts.length > 0}
-								<ul class="space-y-2">
-									{#each alerts as a (a.id)}
-										<li class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
-											{#if editingAlert?.id === a.id}
-												<form onsubmit={(e) => { e.preventDefault(); saveEditAlert(); }} class="flex flex-wrap items-end gap-2">
-													<input
-														type="number"
-														bind:value={editAlertRate}
-														step="0.01"
-														class="w-28 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-													/>
-													<SelectField
-														value={editAlertDirection}
-														options={directionOptions}
-														placeholder={t('remittance.direction', 'Direction')}
-														onValueChange={(v) => (editAlertDirection = v)}
-													/>
-													<button
-														type="submit"
-														disabled={savingEdit}
-														class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-													>
-														{t('common.save', 'Save')}
-													</button>
-													<button
-														type="button"
-														onclick={cancelEditAlert}
-														class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
-													>
-														{t('common.cancel', 'Cancel')}
-													</button>
-												</form>
-											{:else}
-												<div class="flex items-center justify-between gap-3">
-													<span class="text-[var(--color-text)]">
-														{a.send_currency}→{a.receive_currency} @ {a.target_rate}
-														<span class="text-[var(--color-muted)]">({a.direction})</span>
-													</span>
-													<div class="flex items-center gap-2">
-														<button
-															type="button"
-															onclick={() => toggleAlertActive(a)}
-															class="text-xs {a.is_active ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'} hover:text-[var(--color-text)]"
-															aria-label={a.is_active ? t('remittance.pause_alert', 'Pause alert') : t('remittance.activate_alert', 'Activate alert')}
-														>
-															{#if a.is_active}
-																<ToggleRight size={16} />
-															{:else}
-																<ToggleLeft size={16} />
-															{/if}
-														</button>
-														<button
-																type="button"
-																onclick={() => startEditAlert(a)}
-																class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-															>
-																<Pencil size={14} />
-															</button>
-														<button
-															type="button"
-															onclick={() => deleteAlert(a.id)}
-															class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-														>
-															{t('common.remove', 'Remove')}
-														</button>
-													</div>
-												</div>
-											{/if}
-										</li>
-									{/each}
-								</ul>
-							{:else}
-								<p class="text-xs text-[var(--color-muted)]">{t('remittance.no_alerts', 'No alerts set.')}</p>
-							{/if}
-						</div>
+							</div>
+							<button
+								type="submit"
+								disabled={creatingAlert || !(parseFloat(alertRate) > 0)}
+								class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+							>
+								{t('remittance.create_alert', 'Create alert')}
+							</button>
+						</form>
+					{:else}
+						<p class="mb-3 text-xs text-[var(--color-muted)]">
+							{t('remittance.alert_select_corridor', 'Select a corridor above to create an alert.')}
+						</p>
 					{/if}
-				{/if}
+					{#if alerts.length > 0}
+						<ul class="space-y-2">
+							{#each alerts as a (a.id)}
+								<li class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm">
+									{#if editingAlert?.id === a.id}
+										<form onsubmit={(e) => { e.preventDefault(); saveEditAlert(); }} class="flex flex-wrap items-end gap-2">
+											<input
+												type="number"
+												bind:value={editAlertRate}
+												step="any"
+												class="w-28 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+											/>
+											<div class="w-40">
+												<Autocomplete
+													placeholder={t('remittance.direction', 'Direction')}
+													emptyMessage={t('common.no_results', 'No results found')}
+													fetcher={fetchDirectionOptions}
+													initialFetcher={fetchDirectionOptionsInitial}
+													selectedId={editAlertDirection}
+													selectedLabel={directionLabel(editAlertDirection)}
+													onSelect={(item) => (editAlertDirection = item.id)}
+												/>
+											</div>
+											<button
+												type="submit"
+												disabled={savingEdit || !(parseFloat(editAlertRate) > 0)}
+												class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+											>
+												{t('common.save', 'Save')}
+											</button>
+											<button
+												type="button"
+												onclick={cancelEditAlert}
+												class="text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
+											>
+												{t('common.cancel', 'Cancel')}
+											</button>
+										</form>
+									{:else}
+										<div class="flex items-center justify-between gap-3">
+											<span class="text-[var(--color-text)]">
+												{a.send_currency}→{a.receive_currency} @ {formatRate(a.target_rate)}
+												<span class="text-[var(--color-muted)]">({directionLabel(a.direction)})</span>
+												{#if !a.is_active}
+													<span class="ml-1 rounded-full border border-[var(--color-border)] px-1.5 py-0.5 text-xs text-[var(--color-muted)]">{t('remittance.paused', 'Paused')}</span>
+												{/if}
+											</span>
+											<div class="flex items-center gap-2">
+												<button
+													type="button"
+													onclick={() => toggleAlertActive(a)}
+													class="text-xs {a.is_active ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]'} hover:text-[var(--color-text)]"
+													aria-label={a.is_active ? t('remittance.pause_alert', 'Pause alert') : t('remittance.activate_alert', 'Activate alert')}
+												>
+													{#if a.is_active}
+														<ToggleRight size={16} />
+													{:else}
+														<ToggleLeft size={16} />
+													{/if}
+												</button>
+												<button
+														type="button"
+														onclick={() => startEditAlert(a)}
+														class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+													>
+														<Pencil size={14} />
+													</button>
+												<button
+													type="button"
+													onclick={() => deleteAlert(a.id)}
+													class="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+												>
+													{t('common.remove', 'Remove')}
+												</button>
+											</div>
+										</div>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="text-xs text-[var(--color-muted)]">{t('remittance.no_alerts', 'No alerts set.')}</p>
+					{/if}
+				</div>
 			</div>
 		{/if}
 	{/if}
