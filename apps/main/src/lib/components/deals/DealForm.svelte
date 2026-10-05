@@ -7,7 +7,7 @@
 	import { api } from '$lib/api/client';
 	import { slugify } from '$lib/studio/prompt';
 	import { Plus, Loader2, AlertCircle, Trash2 } from 'lucide-svelte';
-	import type { Coupon } from '$lib/types';
+	import type { Coupon, DealPartnerRef } from '$lib/types';
 	import {
 		buildCouponPayload,
 		buildProviderPayload,
@@ -49,6 +49,29 @@
 	const inputClass =
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 	const labelClass = 'mb-1 block text-sm font-medium text-[var(--color-text)]';
+
+	// Org-linked providers stay inactive until their first deal is approved
+	// (§55 — see providerForOrg in internal/coupons/service.go), and
+	// ListActiveDealPartners only returns active rows. A staff edit of such a
+	// deal would otherwise render the provider select blank and a save would
+	// NULL provider_id — prepend a sentinel option so the select keeps it.
+	const providerOptions = $derived.by((): DealPartnerRef[] => {
+		const currentId = coupon?.provider_id;
+		if (currentId && !providers.some((p) => p.id === currentId)) {
+			const label =
+				coupon?.provider_name ?? t('deal.form.provider_current', 'Current provider');
+			return [
+				{
+					id: currentId,
+					slug: '',
+					is_featured: false,
+					name: `${label} (${t('deal.form.provider_inactive', 'inactive')})`
+				},
+				...providers
+			];
+		}
+		return providers;
+	});
 
 	// Rule 16: provider options come from the providers prop; the category
 	// datalist derives from those providers — no hardcoded option lists.
@@ -177,7 +200,7 @@
 			<div class="flex items-center gap-2">
 				<select id="deal-provider" bind:value={v.provider_id} class={inputClass}>
 					<option value="">{t('deal.form.provider_none', 'No provider (internal deal)')}</option>
-					{#each providers as p (p.id)}
+					{#each providerOptions as p (p.id)}
 						<option value={p.id}>{p.name}{p.category ? ` — ${p.category}` : ''}</option>
 					{/each}
 				</select>

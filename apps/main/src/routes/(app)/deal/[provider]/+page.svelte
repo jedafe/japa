@@ -69,7 +69,6 @@
 	let editing = $state(false);
 	let pf = $state({
 		name: '',
-		slug: '',
 		description: '',
 		category: '',
 		base_url: '',
@@ -91,7 +90,6 @@
 		// Seed the form from the loaded provider on open.
 		pf = {
 			name: provider.name ?? '',
-			slug: provider.slug ?? '',
 			description: provider.description ?? '',
 			category: provider.category ?? '',
 			base_url: provider.base_url ?? '',
@@ -117,7 +115,6 @@
 			// save can't null them out.
 			const res = await api.patch(`/admin/affiliate-providers/${provider.id}`, {
 				name: pf.name.trim(),
-				slug: pf.slug.trim() || provider.slug,
 				provider_type: provider.provider_type,
 				description: pf.description.trim() || null,
 				category: pf.category.trim() || null,
@@ -243,10 +240,6 @@
 							<span class="text-red-500">*</span>
 						</label>
 						<input id="pf-name" type="text" bind:value={pf.name} class={inputClass} />
-					</div>
-					<div>
-						<label for="pf-slug" class={labelClass}>{t('deal.form.slug', 'Slug')}</label>
-						<input id="pf-slug" type="text" bind:value={pf.slug} class={inputClass} />
 					</div>
 					<div>
 						<label for="pf-category" class={labelClass}>
