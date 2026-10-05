@@ -91,6 +91,10 @@
 	function statusLabel(status: string): string {
 		if (status === 'active') return t('deal.form.status_active', 'Active');
 		if (status === 'suspended') return t('deal.form.status_suspended', 'Suspended');
+		// pending/expired are server-managed lifecycle states surfaced read-only
+		// when editing a coupon already in them.
+		if (status === 'pending') return t('deals.status.pending', 'Pending');
+		if (status === 'expired') return t('deals.status.expired', 'Expired');
 		return status;
 	}
 
@@ -144,6 +148,11 @@
 				errorMsg =
 					res.error?.message ?? t('deal.form.errors.save_failed', 'Failed to save deal');
 			}
+		} catch (err) {
+			errorMsg =
+				err instanceof Error
+					? err.message
+					: t('deal.form.errors.save_failed', 'Failed to save deal');
 		} finally {
 			submitting = false;
 		}

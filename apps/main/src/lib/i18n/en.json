@@ -1282,6 +1282,8 @@
 	"deals.load_error": "Failed to load deals. Please try again later.",
 	"deals.new_deal": "New deal",
 	"deals.partners": "Deal partners",
+	"deals.status.expired": "Expired",
+	"deals.status.pending": "Pending",
 	"deals.table.category": "Category",
 	"deals.table.claim": "Claim",
 	"deals.table.deal": "Deal",

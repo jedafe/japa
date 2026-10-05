@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
 	buildCouponPayload,
+	buildProviderPayload,
 	emptyDealFormValues,
 	emptyDetails,
+	emptyNewProviderValues,
 	detailsFromCoupon,
 	couponToFormValues,
 	toDateTimeLocal,
@@ -122,6 +124,18 @@ describe('buildCouponPayload', () => {
 		expect('discount_value' in payload).toBe(false);
 	});
 
+	// Svelte 5 coerces <input type="number"> bindings to number|null — the
+	// builder must not assume a string (calling .trim() on null throws).
+	it('accepts a number discount_value (number input binding)', () => {
+		const payload = buildCouponPayload(baseValues({ discount_value: 12.5 }), 'staff');
+		expect(payload.discount_value).toBe(12.5);
+	});
+
+	it('omits discount_value when the number input binding yields null', () => {
+		const payload = buildCouponPayload(baseValues({ discount_value: null }), 'staff');
+		expect('discount_value' in payload).toBe(false);
+	});
+
 	it('strips staff-only keys for the org audience', () => {
 		const payload = buildCouponPayload(
 			baseValues({
@@ -136,6 +150,32 @@ describe('buildCouponPayload', () => {
 		expect('status' in payload).toBe(false);
 		expect('is_verified' in payload).toBe(false);
 		expect(payload.code).toBe('X');
+	});
+});
+
+describe('buildProviderPayload', () => {
+	it('emits snake_case keys matching CreateProviderInput json tags', () => {
+		const payload = buildProviderPayload({
+			...emptyNewProviderValues(),
+			name: 'Acme Travel',
+			slug: 'acme-travel',
+			category: 'Flights',
+			base_url: 'https://acme.example',
+			description: 'Partner'
+		});
+		expect(payload).toEqual({
+			name: 'Acme Travel',
+			slug: 'acme-travel',
+			provider_type: 'coupon',
+			category: 'Flights',
+			base_url: 'https://acme.example',
+			description: 'Partner'
+		});
+	});
+
+	it('omits empty optional fields', () => {
+		const payload = buildProviderPayload({ ...emptyNewProviderValues(), name: 'X', slug: 'x' });
+		expect(payload).toEqual({ name: 'X', slug: 'x', provider_type: 'coupon' });
 	});
 });
 
