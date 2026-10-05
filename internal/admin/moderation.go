@@ -1689,28 +1689,40 @@ func (h *Handlers) handlePersonaActionReview(ctx context.Context, id, reviewerID
 	return true
 }
 
-// handleStudioReview handles a content_reviews row with source='studio'
-// (§75, ADR-076 §3). It returns (true, nil) if the ID matched a studio HITL
-// review (so the caller can log it). On approve, it delegates to the injected
-// StudioReviewHook which publishes the draft content, transitions
-// studio_jobs to 'published', and transitions the linked intel_records row
-// to 'published'. On reject, it transitions studio_jobs to 'rejected'.
-// The hook runs BEFORE the review status is committed — a hook failure is
+// handleStudioReview handles an ai_hitl_reviews row (current path,
+// ADR-088) or a content_reviews row with source='studio' (legacy, §75,
+// ADR-076 §3). It returns (true, nil) if the ID matched (so the caller can
+// log it).
+//   - source='studio': the StudioReviewHook publishes the draft, transitions
+//     studio_jobs to 'published'/'rejected', and transitions the linked
+//     intel_records row.
+//   - other sources (agent_draft_request, agent_tool, manual): the review
+//     status is committed directly; on approve the DraftPublishHook takes the
+//     review's content_id target live first (§103 "Approve → publish").
+//
+// Hooks run BEFORE the review status is committed — a hook failure is
 // returned as (true, err) so the caller can fail closed and leave the
 // review pending (BUG-004, matching the ai HITL approve/reject handlers).
 func (h *Handlers) handleStudioReview(ctx context.Context, id, reviewerID pgtype.UUID, action, reason string) (bool, error) {
 	// Try the current ai_hitl_reviews queue first (ADR-088 HITL queue).
-	var hitlSource, hitlStatus string
+	var hitlSource, hitlStatus, hitlTargetTable string
 
-	err := h.DB.Reader.QueryRow(ctx, `SELECT source, status FROM ai_hitl_reviews
-		 WHERE id = $1`, id).Scan(&hitlSource, &hitlStatus)
-	if err == nil && hitlSource == "studio" {
+	var hitlContentID pgtype.UUID
+
+	err := h.DB.Reader.QueryRow(ctx, `SELECT source, status, content_id, target_table FROM ai_hitl_reviews
+		 WHERE id = $1`, id).Scan(&hitlSource, &hitlStatus, &hitlContentID, &hitlTargetTable)
+	if err == nil {
 		if hitlStatus != "pending" {
-			slog.Warn("moderation: studio ai_hitl_review is not pending, skipping", "review_id", id, "status", hitlStatus)
+			slog.Warn("moderation: ai_hitl_review is not pending, skipping", "review_id", id, "status", hitlStatus)
 			return true, nil
 		}
 
-		return h.updateAIHITLStudioReview(ctx, id, reviewerID, action, reason)
+		if hitlSource == "studio" {
+			return h.updateAIHITLStudioReview(ctx, id, reviewerID, action, reason)
+		}
+
+		// Non-studio ai_hitl_reviews row — generic approve/reject.
+		return h.updateAIHITLReview(ctx, id, reviewerID, action, reason, hitlTargetTable, hitlContentID)
 	}
 
 	// Fallback to the legacy content_reviews path.
@@ -1796,6 +1808,52 @@ func (h *Handlers) updateAIHITLStudioReview(ctx context.Context, id, reviewerID 
 
 	if reason != "" {
 		slog.Info("moderation: studio ai_hitl review reason", "id", id.String(), "action", action, "reason", reason)
+	}
+
+	return true, nil
+}
+
+// updateAIHITLReview updates a non-studio ai_hitl_reviews row
+// (agent_draft_request, agent_tool, manual). On approve the DraftPublishHook
+// publishes the review's content_id target BEFORE the status commits — a
+// publish failure fails closed and leaves the review pending (BUG-004,
+// §103 "Approve → publish"). On reject the draft simply stays unpublished.
+// Returns (handled, hookError).
+func (h *Handlers) updateAIHITLReview(ctx context.Context, id, reviewerID pgtype.UUID, action, reason, targetTable string, contentID pgtype.UUID) (bool, error) {
+	var newHITLStatus string
+
+	switch action {
+	case "approve":
+		newHITLStatus = "approved"
+	case "reject", "delete":
+		newHITLStatus = "rejected"
+	default:
+		return true, nil
+	}
+
+	if action == "approve" && contentID.Valid && h.DraftPublishHook != nil {
+		if hookErr := h.DraftPublishHook.PublishHITLTarget(ctx, reviewerID, targetTable, contentID); hookErr != nil {
+			slog.Error("moderation: ai_hitl publish hook failed", "review_id", id, "content_id", contentID, "target_table", targetTable, "error", hookErr)
+
+			return true, hookErr
+		}
+	}
+
+	var reasonPtr *string
+	if reason != "" {
+		reasonPtr = &reason
+	}
+
+	_, err := h.DB.Writer.Exec(ctx, `UPDATE ai_hitl_reviews
+		 SET status = $1, reviewer_id = $2, reviewed_at = now(), reason = $3
+		 WHERE id = $4 AND status = 'pending'`, newHITLStatus, reviewerID, reasonPtr, id)
+	if err != nil {
+		slog.Error("moderation: ai_hitl_reviews update failed", "id", id, "error", err)
+		return true, nil
+	}
+
+	if reason != "" {
+		slog.Info("moderation: ai_hitl review reason", "id", id.String(), "action", action, "reason", reason)
 	}
 
 	return true, nil

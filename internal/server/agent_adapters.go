@@ -1384,6 +1384,15 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, jobID pgt
 	if skipHITL || a.studio.ShouldAutoPublish(ctx, job.ContentType, derefStr(job.GuideCategory)) {
 		if _, perr := a.contentSvc.UpdateContentStatus(ctx, row.ID, "published"); perr != nil {
 			slog.Warn("studio: generate: auto-publish failed, routing to review", "job_id", jobID, "content_id", row.ID, "error", perr)
+
+			// Mark generated (draft_ready) before routing so the job
+			// carries draft_content_id into review — the same contract
+			// the normal path follows.
+			if err := a.studio.MarkJobGenerated(ctx, jobID, row.ID, aiModel); err != nil {
+				return fmt.Errorf("studio: generate: mark generated: %w", err)
+			}
+
+			a.syncCampaignItem(ctx, jobID, "draft_ready", row.ID, pgtype.UUID{}, nil)
 			a.routeToHITL(ctx, jobID, row.ID, "contents", job.ContentType, aiModel, fvJSON)
 
 			return nil
@@ -2026,6 +2035,10 @@ func (a *studioDraftProcessorAdapter) studioGenerateBody(ctx context.Context, jo
 
 // createStudioReview is a best-effort HITL review creation helper.
 func (a *studioDraftProcessorAdapter) createStudioReview(ctx context.Context, contentID pgtype.UUID, contentType string, fvJSON []byte) {
+	if a.aiStore == nil {
+		return
+	}
+
 	_, err := a.aiStore.CreateHITLReview(ctx, ai.HITLReview{
 
 		ContentID:   contentID,
