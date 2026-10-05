@@ -1764,3 +1764,36 @@ func TestCreatePageWithRevision_Canonicalizes(t *testing.T) {
 		t.Fatalf("invalid slug: want ErrInvalidInput, got %v", err)
 	}
 }
+
+// TestParseMediaFieldRefs — image/media field values may store bare ids,
+// the {"value": …} envelope (select convention), id arrays, or
+// {id,alt} objects; every accepted shape must yield ordered IDs + alts.
+func TestParseMediaFieldRefs(t *testing.T) {
+	id1 := "11111111-1111-1111-1111-111111111111"
+	id2 := "22222222-2222-2222-2222-222222222222"
+
+	cases := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{"bare id", `"` + id1 + `"`, 1},
+		{"wrapped single", `{"value":"` + id1 + `"}`, 1},
+		{"id array", `["` + id1 + `","` + id2 + `"]`, 2},
+		{"wrapped array", `{"value":["` + id1 + `","` + id2 + `"]}`, 2},
+		{"object array", `[{"id":"` + id1 + `","alt":"falls"},{"id":"` + id2 + `"}]`, 2},
+		{"garbage", `{"foo":1}`, 0},
+		{"not json", `nope`, 0},
+	}
+	for _, tc := range cases {
+		ids, _ := parseMediaFieldRefs([]byte(tc.raw))
+		if len(ids) != tc.want {
+			t.Fatalf("%s: got %d ids want %d", tc.name, len(ids), tc.want)
+		}
+	}
+
+	ids, alts := parseMediaFieldRefs([]byte(`[{"id":"` + id1 + `","alt":"falls"}]`))
+	if len(ids) != 1 || ids[0].String() != id1 || alts[id1] != "falls" {
+		t.Fatalf("object shape: ids=%v alts=%v", ids, alts)
+	}
+}
