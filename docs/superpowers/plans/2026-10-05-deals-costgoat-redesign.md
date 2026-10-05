@@ -4,38 +4,82 @@
 
 **Goal:** Rebuild `/deals` and `/deal/{provider}/{slug}` as CostGoat-style rich deal pages, add staff inline create/edit plus organization deal submissions with a `pending` moderation queue, provider categories, and update the admin panel's coupon page to "Deals".
 
-**Architecture:** Backend: migration adds `affiliate_providers.category` + `organization_id`, `coupons.details` JSONB, and `pending` coupon status; sqlc queries regenerated; new public `GET /deals/partners` and org-scoped `POST/GET /organizations/{id}/deals`. Frontend main app: redesigned deals index (table + category pills + New deal), rich deal detail page driven by `details` with generated fallbacks, shared `DealForm` component powering `/deals/new` and inline edit. Admin app: `/coupons` → `/deals` rename, new fields, approve/reject moderation actions.
+**Architecture:** Backend: migration adds `affiliate_providers.category` + `organization_id`, `coupons.details` JSONB (sqlc column override → `json.RawMessage`), and `pending` coupon status; sqlc queries regenerated; new public `GET /deals/partners` and org-scoped `POST/GET /organizations/{id}/deals`. Frontend main app: redesigned deals index (table + category pills + New deal), rich deal detail page driven by `details` with generated fallbacks, shared `DealForm` component powering `/deals/new` and inline edit. Admin app: `/coupons` → `/deals` rename, new fields, approve/reject moderation actions.
 
-**Tech Stack:** Go 1.x + chi + sqlc/pgx + Valkey (backend); SvelteKit 2 + Svelte 5 runes + Tailwind v4 (apps/main, apps/admin); golang-migrate for migrations.
+**Tech Stack:** Go + chi + sqlc/pgx + Valkey (backend); SvelteKit 2 + Svelte 5 runes + Tailwind v4 (apps/main, apps/admin); golang-migrate for migrations; vitest for frontend unit tests.
 
 **Spec:** `docs/superpowers/specs/2026-10-05-deals-costgoat-redesign-design.md`
 
 ## Global Constraints
 
 - **Rule 18:** use `bun`, `bunx`, `bun run` for ALL JS tooling. Never `npm`/`npx`/`pnpm`/`yarn`.
-- **Rule 2:** never hand-edit `internal/db/gen/*` — edit `internal/db/queries/*.sql`, run `make sqlc-gen`.
-- **Rule 16:** no hardcoded option lists in frontend code. Category suggestions come from `GET /deals/partners`; currencies from `data.currencies`.
+- **Rule 2:** never hand-edit `internal/db/gen/*` — edit `internal/db/queries/*.sql` (and `sqlc.yaml` overrides), run `make sqlc-gen`.
+- **Rule 16:** no hardcoded option lists in frontend code. Category suggestions come from `GET /deals/partners`; currencies from `data.currencies`. Backend-enum `<select>` options (discount_type, status) mirror DB CHECK constraints and are acceptable as static options.
 - **Rule 17:** no AI attribution anywhere — plain commit messages, no "Generated with" trailers, no agent comments.
 - **Rule 5:** API errors via `errpkg.WriteError(w, status, "snake_case_code", "Message")`.
-- **JEOS-first:** update `.jeos/sections/55-coupons-external-affiliates.md` + `.jeos/conventions/api-routes-catalog.md` in the same change as the code (Task 5).
 - JEOS reference comments: `// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md` on new Go handlers and Svelte pages.
 - All work commits to `main` (JEOS rule 6).
-- sqlc conventions in this repo: `sqlc.narg()` for nullable params; `gen.Queries` rows are converted via `rowToProvider` in `internal/coupons/store.go`.
+- sqlc conventions in this repo: `sqlc.narg()` for nullable params; provider rows are converted to `gen.AffiliateProvider` via `rowToProvider` in `internal/coupons/store.go`; `emit_json_tags` is on; **jsonb columns generate `[]byte` unless overridden** — `[]byte` marshals to base64 in `encoding/json`, which is why `coupons.details` gets a `json.RawMessage` column override (the `FeedSourceView.Stats json.RawMessage` remap in `internal/coupons/feed.go` exists for the same reason).
 - Frontend `t()` signature: `t('key', 'English fallback')` from `$lib/i18n`. Add keys to `apps/main/src/lib/i18n/en.json` and `fr.json`.
-- Frontend API: server-side via `apiContext(event)` + `apiGet<T>(ctx, path)` / `apiList<T>(ctx, path)` from `$lib/server/api`; client-side mutations via `api.post/patch` from `$lib/api/client` (CSRF handled automatically).
+- Frontend API: server-side via `apiContext(event)` + `apiGet<T>(ctx, path)` / `apiList<T>(ctx, path)` (returns `{items, meta?}`; works on non-paginated `{data:[]}` responses) from `$lib/server/api`; client-side via `api.get/post/patch` from `$lib/api/client` (CSRF handled automatically).
+- `affiliate_providers.slug` has a unique index (`affiliate_providers_slug_key`) — provider slug collisions must suffix `-2`, `-3`, …
 
 ---
 
-### Task 1: Migration + sqlc schema/query updates
+### Task 1: JEOS spec updates (JEOS-first rule — before any code)
+
+**Files:**
+- Modify: `.jeos/sections/55-coupons-external-affiliates.md`
+- Modify: `.jeos/conventions/api-routes-catalog.md`
+- Modify: `.jeos/sections/03-rbac.md`
+
+- [ ] **Step 1: Section 55 edits**
+
+- Schema block: `affiliate_providers` gains `category text` and
+  `organization_id uuid REFERENCES organizations(id)` (+ partial unique index —
+  one provider per org); `coupons` gains `details jsonb` (shape
+  `{summary, trial, sections, faq}`) and status CHECK gains `'pending'`.
+- API Routes block — under the deal-pages group add:
+
+```
+GET    /api/v1/deals/partners                  — public index of active providers
+                                                 (id, name, slug, category, base_url)
+                                                 [public; powers /deals filters + deal form]
+
+-- Organization deal submissions
+POST   /api/v1/organizations/:id/deals         — submit a deal; lands status='pending'
+                                                 [auth; org role owner|admin|editor]
+GET    /api/v1/organizations/:id/deals         — the org's own submissions, all statuses
+                                                 [auth; org role owner|admin|editor]
+```
+
+- Deal Pages subsection: document `details` JSONB shape + `provider_category` on
+  coupon payloads, the "Other ways to save on {provider}" sibling-deals section,
+  `pending` invisibility on public endpoints, staff inline edit + `/deals/new`
+  (staff vs org modes), moderation via `GET /admin/coupons?status=pending` +
+  `PATCH /admin/coupons/:id {status}`.
+
+- [ ] **Step 2: `api-routes-catalog.md`** — add the three routes under the coupons/deals section in the existing entry format.
+
+- [ ] **Step 3: `03-rbac.md`** — one line: org deal submission/list is gated by `organization_members.role` (owner/admin/editor), not a new RBAC node.
+
+- [ ] **Step 4: Commit** `docs(§55): deal details JSONB, provider category, org submissions, partners index`
+
+---
+
+### Task 2: Migration + sqlc override + query updates
 
 **Files:**
 - Create: `migrations/000794_coupon_details_provider_category.up.sql`
 - Create: `migrations/000794_coupon_details_provider_category.down.sql`
+- Modify: `sqlc.yaml` (one column override)
 - Modify: `internal/db/queries/coupons.sql`
+- Regenerate: `internal/db/gen/*` via `make sqlc-gen`
 
 **Interfaces:**
 - Produces (new columns): `affiliate_providers.category text`, `affiliate_providers.organization_id uuid`, `coupons.details jsonb`, coupon status `'pending'` allowed.
-- Produces (new queries): `ListActiveDealPartners`, `ListCouponsByOrganization`, `GetAffiliateProviderByOrgID` — consumed by Tasks 3–4.
+- Produces (new gen types): `gen.ListActiveDealPartnersRow` (fields: `ID, Name, Slug string; Description, Category, BaseUrl *string; LogoMediaID, OrganizationID pgtype.UUID; IsFeatured bool`), `gen.ListCouponsByOrganizationRow`, `gen.GetAffiliateProviderByOrgIDRow` — consumed by Task 4.
+- Produces (type): coupon rows' `Details` field is `json.RawMessage` (column override), so it marshals as raw JSON in API responses (`null` when absent), not base64.
 
 - [ ] **Step 1: Write the up migration**
 
@@ -90,9 +134,25 @@ ALTER TABLE affiliate_providers DROP COLUMN category;
 COMMIT;
 ```
 
-- [ ] **Step 3: Update `internal/db/queries/coupons.sql`**
+- [ ] **Step 3: Add the `coupons.details` column override to `sqlc.yaml`**
 
-Add `category` and `organization_id` to every affiliate provider column list (SELECT and RETURNING in `CreateAffiliateProvider`, `GetAffiliateProviderByID`, `GetAffiliateProviderBySlug`, `ListAffiliateProviders`, `UpdateAffiliateProvider`). Example for `CreateAffiliateProvider`:
+In `sql.gen.go.overrides` (after the pgvector overrides):
+
+```yaml
+          # coupons.details is editorial JSON for the deal page; RawMessage so
+          # API responses embed the object instead of base64 (§55).
+          - column: "coupons.details"
+            go_type:
+              type: "RawMessage"
+              import: "encoding/json"
+              pointer: false
+```
+
+(If `column: "coupons.details"` doesn't match, sqlc accepts `public.coupons.details` — try the qualified form.)
+
+- [ ] **Step 4: Update `internal/db/queries/coupons.sql`**
+
+Add `category` and `organization_id` to every affiliate provider column list (SELECT lists and RETURNING in `CreateAffiliateProvider`, `GetAffiliateProviderByID`, `GetAffiliateProviderBySlug`, `ListAffiliateProviders`, `UpdateAffiliateProvider`). `CreateAffiliateProvider` gains `sqlc.narg(category), sqlc.narg(organization_id)` params; `UpdateAffiliateProvider` gains `category = sqlc.narg(category)` in SET (`organization_id` is never updated). Example:
 
 ```sql
 -- name: CreateAffiliateProvider :one
@@ -103,9 +163,7 @@ RETURNING id, name, slug, description, provider_type, logo_media_id,
  created_at, updated_at;
 ```
 
-`UpdateAffiliateProvider` gains `category = sqlc.narg(category)` in SET (and the expanded RETURNING). `organization_id` is not settable via update.
-
-Coupon queries: add `c.details` to the SELECT lists of `GetCouponByID`, `GetCouponByCode`, `ListCoupons`, `ListActiveCoupons`; add `ap.category AS provider_category` to those plus `GetCouponBySlug`. Add `details` to `CreateCoupon`/`UpdateCoupon` (param `sqlc.narg(details)`, expanded RETURNING).
+Coupon queries: add `c.details` to the SELECT lists of `GetCouponByID`, `GetCouponByCode`, `ListCoupons`, `ListActiveCoupons`, `GetCouponBySlug`; add `ap.category AS provider_category` to all five. `CreateCoupon`/`UpdateCoupon` gain the `details` column/param (`sqlc.narg(details)`) and `details` in RETURNING.
 
 `GetCouponBySlug` gains the pending guard:
 
@@ -149,30 +207,31 @@ ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 ```
 
-- [ ] **Step 4: Regenerate + build**
+- [ ] **Step 5: Regenerate + build**
 
 ```bash
-make sqlc-gen && go build ./internal/... 
+make sqlc-gen && go build ./internal/...
 ```
 
-Expected: compiles (new params are optional struct fields; `rowToProvider` in `internal/coupons/store.go` still compiles — it must be extended in Task 3 to carry `Category`/`OrganizationID`).
+Expected: compiles. Verify `gen.AffiliateProvider` now has `Category *string` and `OrganizationID pgtype.UUID`, and coupon rows have `Details json.RawMessage` — if `Details` came out `[]byte`, the override didn't take; fix the column key before proceeding.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add migrations/000794_coupon_details_provider_category.*.sql internal/db/queries/coupons.sql internal/db/gen
+git add migrations/000794_coupon_details_provider_category.*.sql internal/db/queries/coupons.sql sqlc.yaml internal/db/gen
 git commit -m "feat(coupons): provider category + org link, coupon details JSONB, pending status (§55)"
 ```
 
 ---
 
-### Task 2: Export `MemberRole` on organizations.Service
+### Task 3: Export `MemberRole` on organizations.Service
 
 **Files:**
 - Modify: `internal/organizations/service.go` (after `IsMember`, ~line 250)
 
 **Interfaces:**
-- Produces: `func (s *Service) MemberRole(ctx context.Context, orgID, userID pgtype.UUID) (string, error)` — returns `""` + `pgx.ErrNoRows`-wrapped error for non-members; consumed by the coupons `orgResolver` in Task 4.
+- Produces: `func (s *Service) MemberRole(ctx context.Context, orgID, userID pgtype.UUID) (string, error)` — returns the org-membership role; non-members get an error wrapping `pgx.ErrNoRows`. Consumed by the coupons `OrgResolver` in Task 5.
+- Existing: `organizations.Service.GetOrganization(ctx, id pgtype.UUID) (gen.Organization, error)` (line ~245) — also consumed by Task 5.
 
 - [ ] **Step 1: Add the method**
 
@@ -195,7 +254,7 @@ go build ./internal/organizations && git add internal/organizations/service.go &
 
 ---
 
-### Task 3: Coupons service layer — details, category, org submissions
+### Task 4: Coupons service layer — details, category, org submissions
 
 **Files:**
 - Modify: `internal/coupons/types.go`
@@ -204,21 +263,22 @@ go build ./internal/organizations && git add internal/organizations/service.go &
 - Modify: `internal/coupons/service_test.go`
 
 **Interfaces:**
-- Consumes: `gen.ListActiveDealPartnersRow`, `gen.ListCouponsByOrganizationRow`, `gen.GetAffiliateProviderByOrgID` (Task 1); `organizations.Service.MemberRole` shape (Task 2 — but consumed via an interface defined here, so no import needed).
-- Produces for Task 4:
-  - `CouponStatusPending CouponStatus = "pending"` (const)
-  - `type DealPartnerRef struct { ID, Name, Slug string; Description, Category, BaseURL *string; LogoMediaID pgtype.UUID; IsFeatured bool; OrganizationID pgtype.UUID }` (JSON-tagged)
-  - `func (s *Service) ListDealPartners(ctx) ([]DealPartnerRef, error)`
-  - `type SubmitDealInput = CreateCouponInput` (alias — org submissions reuse it)
-  - `func (s *Service) SubmitOrgDeal(ctx, orgID, userID pgtype.UUID, input SubmitDealInput) (gen.CreateCouponRow, error)` — auto-creates the org's provider, status forced `pending`
+- Consumes: Task 2 gen types; `gen.Organization` (fields used: `ID pgtype.UUID`, `Name`, `Slug`, `Description *string`, `WebsiteUrl *string`, `LogoMediaID pgtype.UUID`).
+- Produces for Task 5:
+  - `CouponStatusPending CouponStatus = "pending"` (const, types.go)
+  - `ErrInvalidDetails = errors.New("invalid deal details")` (sentinel, types.go)
+  - `type DealPartnerRef` JSON DTO (below) — returned by `Service.ListDealPartners`
+  - `type SubmitDealInput = CreateCouponInput` (alias — org submissions reuse it; `ProviderID`/`Status`/`IsVerified` from the body are ignored — server controls them)
+  - `func (s *Service) SubmitOrgDeal(ctx, org gen.Organization, userID pgtype.UUID, input SubmitDealInput) (gen.CreateCouponRow, error)`
   - `func (s *Service) ListOrgDeals(ctx, orgID pgtype.UUID, page, pageSize int32) ([]gen.ListCouponsByOrganizationRow, error)`
-  - `ErrOrgProviderSlug` not needed — slug collisions auto-suffix.
-  - `validateCouponDetails(raw json.RawMessage) error` (unexported, tested)
+  - `func (s *Service) ListDealPartners(ctx context.Context) ([]DealPartnerRef, error)`
+  - `validateCouponDetails(raw json.RawMessage) error` (unexported, unit-tested)
 
-- [ ] **Step 1: Write the failing tests** (append to `service_test.go`)
+- [ ] **Step 1: Write the failing tests** (append to `service_test.go`; add `"encoding/json"` import)
 
 ```go
 func TestValidateCouponDetails(t *testing.T) {
+	oversize := json.RawMessage(`{"s":"` + string(make([]byte, 40*1024)) + `"}`)
 	cases := []struct {
 		name    string
 		raw     json.RawMessage
@@ -230,7 +290,7 @@ func TestValidateCouponDetails(t *testing.T) {
 		{"array rejected", json.RawMessage(`[1,2]`), true},
 		{"scalar rejected", json.RawMessage(`"x"`), true},
 		{"invalid json", json.RawMessage(`{bad`), true},
-		{"oversize rejected", json.RawMessage(`{"s":"` + string(make([]byte, 40*1024)) + `"}`), true},
+		{"oversize rejected", oversize, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,19 +312,20 @@ func TestPendingConstant(t *testing.T) {
 }
 ```
 
-(`import "encoding/json"` at top of test file.)
-
 - [ ] **Step 2: Run tests — expect FAIL** (`validateCouponDetails` / `CouponStatusPending` undefined)
 
 ```bash
 go test ./internal/coupons -run 'TestValidateCouponDetails|TestPendingConstant' -v
 ```
 
-- [ ] **Step 3: Implement in `types.go` and `service.go`**
+- [ ] **Step 3: Implement**
 
-`types.go` — add the const and the partner ref:
+`types.go` — add:
 
 ```go
+// ErrInvalidDetails is a sentinel error: coupons.details failed validation.
+ErrInvalidDetails = errors.New("invalid deal details")
+
 // CouponStatusPending marks organization-submitted deals awaiting staff
 // review. Pending coupons are never exposed by public endpoints (§55).
 CouponStatusPending CouponStatus = "pending"
@@ -284,65 +345,48 @@ type DealPartnerRef struct {
 }
 ```
 
-`service.go`:
+`service.go` — details validation + input field:
 
 ```go
 // maxCouponDetailsBytes caps the coupons.details JSONB payload (§55).
 const maxCouponDetailsBytes = 32 * 1024
 
 // validateCouponDetails accepts nil/empty and JSON objects up to
-// maxCouponDetailsBytes; anything else is a validation error.
+// maxCouponDetailsBytes; anything else is ErrInvalidDetails.
 func validateCouponDetails(raw json.RawMessage) error {
 	if len(raw) == 0 {
 		return nil
 	}
 	if len(raw) > maxCouponDetailsBytes {
-		return fmt.Errorf("details exceeds %d bytes", maxCouponDetailsBytes)
+		return ErrInvalidDetails
 	}
 	var v map[string]any
 	if err := json.Unmarshal(raw, &v); err != nil || v == nil {
-		return fmt.Errorf("details must be a JSON object")
+		return ErrInvalidDetails
 	}
 	return nil
 }
 ```
 
-Add `Details json.RawMessage `json:"details,omitempty"`` to `CreateCouponInput` (`UpdateCouponInput` is already `type UpdateCouponInput = CreateCouponInput` — the alias covers it). In `CreateCoupon`/`UpdateCoupon`: call `validateCouponDetails(input.Details)` → on failure return the sentinel `ErrInvalidDetails = errors.New("invalid deal details")` (declare in types.go) and map it in `handleServiceError` to `400 validation_error`. **sqlc emits `[]byte` for jsonb** (see `Stats []byte` in the generated code) — the gen params field will be `Details []byte`, so pass `Details: []byte(input.Details)`; nil input → nil.
+Add `Details json.RawMessage `json:"details,omitempty"`` to `CreateCouponInput` (`UpdateCouponInput` is already `type UpdateCouponInput = CreateCouponInput`). In `CreateCoupon` and `UpdateCoupon`: `if err := validateCouponDetails(input.Details); err != nil { return <row>{}, err }` before the store call, and pass `Details: input.Details` (gen params emit `json.RawMessage` per the Task 2 override; if the param comes out `[]byte`, use `[]byte(input.Details)`).
 
-Add `Category *string` to `CreateProviderInput`; wire `Category: input.Category` in `CreateProvider`/`UpdateProvider` params.
+Add `Category *string` to `CreateProviderInput`; wire `Category: input.Category` into `CreateProvider`/`UpdateProvider` params (gen field is `*string` — assign directly, no `toNullableUUID`-style helper needed).
 
-`rowToProvider` in `store.go`: add `Category: r.Category, OrganizationID: r.OrganizationID` to every case.
+`store.go` — `rowToProvider`: add `Category: r.Category, OrganizationID: r.OrganizationID` to **every** case, and add a `gen.GetAffiliateProviderByOrgIDRow` case with the same field list.
 
-**Cache invalidation for provider mutations:** extract the SCAN-delete of `jc:coupon_list:*`/`jc:coupon_slug:*` from `invalidateCouponCaches` into `flushDealCaches(ctx)` (keep the per-id/slug deletes in `invalidateCouponCaches`, which calls the shared helper). Call `s.flushDealCaches(ctx)` at the end of `CreateProvider`, `UpdateProvider`, `DeleteProvider` — provider name/category render inside coupon payloads.
+**Provider-mutation cache invalidation** — provider name/category render inside coupon payloads, so provider writes must flush list/slug caches. Reuse the existing `deleteKeysByPattern` helper (do NOT write a new Scan loop — `s.vk.Scan(ctx, cursor, pattern, n).Result()` is the codebase idiom). At the end of `CreateProvider`, `UpdateProvider`, `DeleteProvider` (after the successful write):
 
 ```go
-// flushDealCaches SCAN-deletes the coupon list and slug caches — provider
-// mutations change fields embedded in coupon payloads (§55). Best-effort.
-func (s *Service) flushDealCaches(ctx context.Context) {
-	if s.vk == nil {
-		return
-	}
-	for _, pattern := range []string{
-		valkey.MustKey("coupon_list:*"),
-		valkey.MustKey("coupon_slug:*"),
-	} {
-		iter := s.vk.Scan(ctx, 0, pattern, 100).Iterator()
-		for iter.Next(ctx) {
-			if err := s.vk.Del(ctx, iter.Val()).Err(); err != nil {
-				slog.Warn("coupons: cache flush failed", "key", iter.Val(), "error", err)
-			}
-		}
-	}
-}
+// Provider fields render inside coupon payloads — flush list/slug caches.
+s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
+s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
 ```
 
-(Match the existing `invalidateCouponCaches` SCAN idiom — read its tail before writing; reuse its exact client calls.)
-
-**Org submission:**
+**Org submission + partners index** (append to service.go):
 
 ```go
-// SubmitDealInput is the payload for POST /organizations/{id}/deals — a
-// subset of CreateCouponInput; provider/status/verified are server-controlled.
+// SubmitDealInput is the payload for POST /organizations/{id}/deals —
+// provider_id/status/is_verified are server-controlled for org submissions.
 type SubmitDealInput = CreateCouponInput
 
 // SubmitOrgDeal creates a pending coupon under the organization's own
@@ -350,7 +394,7 @@ type SubmitDealInput = CreateCouponInput
 // Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userID pgtype.UUID, input SubmitDealInput) (gen.CreateCouponRow, error) {
 	if err := validateCouponDetails(input.Details); err != nil {
-		return gen.CreateCouponRow{}, ErrInvalidDetails
+		return gen.CreateCouponRow{}, err
 	}
 	provider, err := s.providerForOrg(ctx, org)
 	if err != nil {
@@ -368,7 +412,7 @@ func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userI
 		TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: false, Status: string(CouponStatusPending),
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
-		Details: []byte(input.Details), CreatedBy: userID,
+		Details: input.Details, CreatedBy: userID,
 	})
 	if err != nil {
 		return gen.CreateCouponRow{}, err
@@ -378,7 +422,8 @@ func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userI
 }
 
 // providerForOrg returns the org's affiliate provider, creating it from the
-// org's public profile on first use. Provider slug collisions suffix -2/-3…
+// org's public profile on first use. affiliate_providers.slug is unique, so
+// collisions suffix -2/-3… like resolveCouponSlug.
 func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen.AffiliateProvider, error) {
 	p, err := s.store.getProviderByOrgID(ctx, org.ID)
 	if err == nil {
@@ -397,7 +442,7 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 			candidate = fmt.Sprintf("%s-%d", base, i+1)
 		}
 		if _, err := s.store.getProviderBySlug(ctx, candidate); err == nil {
-			continue // slug taken
+			continue
 		} else if !isNoRows(err) {
 			return gen.AffiliateProvider{}, fmt.Errorf("checking provider slug: %w", err)
 		}
@@ -457,36 +502,29 @@ func (s *Store) listCouponsByOrganization(ctx context.Context, orgID pgtype.UUID
 }
 ```
 
-(`rowToProvider` gains a `gen.GetAffiliateProviderByOrgIDRow` case — same field list as the others.)
-
-Also update `CreateProvider`/`UpdateProvider`/`DeleteProvider` to call `s.flushDealCaches(ctx)` after a successful write, and `GetProvider`-by-slug resolution already exists for reuse.
-
 - [ ] **Step 4: Run tests + build**
 
 ```bash
 go test ./internal/coupons -v && go build ./...
 ```
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add internal/coupons internal/organizations && git commit -m "feat(coupons): deal details validation, provider category, org deal submissions (§55)"
-```
+- [ ] **Step 5: Commit** `feat(coupons): deal details validation, provider category, org submissions (§55)`
 
 ---
 
-### Task 4: Handlers + routes (partners index, org submit/list, pending guard)
+### Task 5: Handlers + routes (partners index, org submit/list, pending guard)
 
 **Files:**
 - Modify: `internal/coupons/handlers.go`
 - Modify: `internal/server/server.go`
 
 **Interfaces:**
-- Consumes: `Service.ListDealPartners`, `Service.SubmitOrgDeal`, `Service.ListOrgDeals`, `CouponStatusPending`, `DealPartnerRef` (Task 3); `organizations.Service.MemberRole`, `.GetOrganization` (Task 2).
+- Consumes: everything Task 4 produces; `organizations.Service.MemberRole`/`GetOrganization` (Task 3) via the `OrgResolver` interface below — wired in server.go, no import of `internal/organizations` needed in coupons.
 - Produces (public API):
   - `GET /api/v1/deals/partners` → `{data: DealPartnerRef[]}`
   - `POST /api/v1/organizations/{id}/deals` → `{data: coupon}` (201)
   - `GET /api/v1/organizations/{id}/deals` → `{data: coupon[], page, page_size}`
+  - `GET /api/v1/coupons/{id}` → 404 for `status='pending'`
 
 - [ ] **Step 1: Org resolver interface + setter on `coupons.Handlers`**
 
@@ -500,9 +538,9 @@ type OrgResolver interface {
 }
 ```
 
-Add field `orgs OrgResolver` + `func (h *Handlers) SetOrgResolver(o OrgResolver) { h.orgs = o }`. Roles allowed to submit: `owner`, `admin`, `editor` (org `member` read-only). Missing resolver → 503 `feature_unavailable`.
+Add field `orgs OrgResolver` to `Handlers` + `func (h *Handlers) SetOrgResolver(o OrgResolver) { h.orgs = o }`.
 
-- [ ] **Step 2: Handlers**
+- [ ] **Step 2: Handlers** (append to handlers.go)
 
 ```go
 // ListDealPartners handles GET /api/v1/deals/partners — the public index of
@@ -519,8 +557,9 @@ func (h *Handlers) ListDealPartners(w http.ResponseWriter, r *http.Request) {
 ```
 
 ```go
-// requireOrgEditor resolves the org and verifies the caller holds an
-// owner/admin/editor role. Returns (org, user, ok); writes the error response.
+// requireOrgEditor resolves the org from {id} and verifies the caller holds an
+// owner/admin/editor role. Returns (org, user, ok); writes the error response
+// on failure. Plain 'member' cannot submit deals.
 func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen.Organization, *auth.AuthenticatedUser, bool) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
@@ -598,44 +637,33 @@ func (h *Handlers) ListOrgDeals(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-In `handleServiceError`, add `ErrInvalidDetails` → `400 validation_error` (match how `ErrRequired` is mapped).
-
-**Pending guard on the public coupon-by-id route** — in `GetCoupon` (public `GET /coupons/{id}`), after `h.Service.GetCoupon(...)`, 404 when pending:
-
-```go
-if coupon.Status == string(CouponStatusPending) {
-	errpkg.WriteError(w, http.StatusNotFound, "not_found", ErrCouponNotFound.Error())
-	return
-}
-```
-
-(`GetCouponBySlug` already excludes pending in SQL — Task 1.)
+Two small additions:
+- `handleServiceError`: map `ErrInvalidDetails` → `errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())`.
+- Pending guard on the public `GetCoupon` (`GET /coupons/{id}`): after `h.Service.GetCoupon(...)`, add `if coupon.Status == string(CouponStatusPending) { errpkg.WriteError(w, http.StatusNotFound, "not_found", ErrCouponNotFound.Error()); return }`. (Admin reads go through `GetCouponAdmin`, unaffected. `GetCouponBySlug` is already guarded in SQL.)
 
 - [ ] **Step 3: Wire routes in `server.go`**
 
-After `couponHandlers.SetLiteralResolver(literalsCatalog)` (line ~883):
+After `couponHandlers.SetLiteralResolver(literalsCatalog)` (~line 883):
 
 ```go
 couponHandlers.SetOrgResolver(orgService) // §55 org deal submissions
 ```
 
-In the coupons route block (after the `/deals/{slug}/go` line, ~5442):
+In the deals route block (after the `/deals/{slug}/go` line, ~5442):
 
 ```go
 r.Get("/deals/partners", couponHandlers.ListDealPartners)
 ```
 
-In the organizations route group (near line 4263, alongside `/organizations/{id}/members`):
+In the organizations route group (~line 4263, alongside `/organizations/{id}/members`):
 
 ```go
-// Organization deal submissions (§55) — member-role gated inside the handler.
+// Organization deal submissions (§55) — org member-role gated inside the handler.
 r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 	Post("/organizations/{id}/deals", couponHandlers.SubmitOrgDeal)
 r.With(auth.RequireAuth(kr, vkClient.Redis())).
 	Get("/organizations/{id}/deals", couponHandlers.ListOrgDeals)
 ```
-
-(`couponHandlers` is constructed at line ~882, before routes — ordering is fine.)
 
 - [ ] **Step 4: Build + test**
 
@@ -643,45 +671,7 @@ r.With(auth.RequireAuth(kr, vkClient.Redis())).
 go build ./... && go test ./internal/coupons ./internal/organizations
 ```
 
-- [ ] **Step 5: Commit**
-
-```bash
-git add internal/coupons internal/server && git commit -m "feat(deals): GET /deals/partners + org deal submission/moderation routes (§55)"
-```
-
----
-
-### Task 5: JEOS spec updates
-
-**Files:**
-- Modify: `.jeos/sections/55-coupons-external-affiliates.md`
-- Modify: `.jeos/conventions/api-routes-catalog.md`
-- Modify: `.jeos/sections/03-rbac.md` (one line — org-role gate note)
-
-- [ ] **Step 1: Section 55 edits**
-
-- Schema block: add `category text` + `organization_id uuid REFERENCES organizations(id)` (+ partial unique index note) to `affiliate_providers`; add `details jsonb` to `coupons`; extend the status CHECK comment to include `'pending'`.
-- API Routes block, add under the deal-pages group:
-
-```
-GET    /api/v1/deals/partners                  — public index of active providers
-                                                 (id, name, slug, category, base_url)
-                                                 [public; powers /deals filters + deal form]
-
--- Organization deal submissions
-POST   /api/v1/organizations/:id/deals         — submit a deal; lands status='pending'
-                                                 [auth; org role owner|admin|editor]
-GET    /api/v1/organizations/:id/deals         — the org's own submissions, all statuses
-                                                 [auth; org role owner|admin|editor]
-```
-
-- Deal Pages subsection: document `details` JSONB shape `{summary, trial, sections, faq}`, `provider_category` on coupon payloads, the "Other ways to save" sibling-deals section, `pending` invisibility on public endpoints, staff inline edit + `/deals/new` (staff vs org modes), moderation via `GET /admin/coupons?status=pending` + PATCH.
-
-- [ ] **Step 2: `api-routes-catalog.md`** — add the three routes under the coupons/deals section in the same format as existing entries.
-
-- [ ] **Step 3: `03-rbac.md`** — one line noting org deal submission/list is gated by `organization_members.role` (owner/admin/editor), not an RBAC node.
-
-- [ ] **Step 4: Commit** `docs: section 55 — deal details, categories, org submissions, partners index`
+- [ ] **Step 5: Commit** `feat(deals): GET /deals/partners + org deal submission routes (§55)`
 
 ---
 
@@ -694,10 +684,10 @@ GET    /api/v1/organizations/:id/deals         — the org's own submissions, al
 - Modify: `apps/main/src/lib/i18n/en.json`, `fr.json`
 
 **Interfaces:**
-- Produces: `CouponDetails`, `Coupon.details`, `Coupon.provider_category`, `DealPartnerProvider.category`, `DealPartnerRef`, `MyOrganization` (check whether `SessionUser`-adjacent org type already exists — grep `member_role` in types/index.ts first; reuse if present).
-- `/deals` PageData: `{ coupons: Coupon[], canSubmit: boolean, loadError: boolean, currencies }` (currencies already provided — check what the existing load returns; `data.currencies` is used so it comes from a parent layout or is added).
+- Produces (consumed by Tasks 7–9): `CouponDetails`, `Coupon.details`, `Coupon.provider_category`, `DealPartnerProvider.category`, `DealPartnerRef`, `MyOrganization`.
+- `/deals` PageData gains `canSubmit: boolean`.
 
-- [ ] **Step 1: Types** (in `types/index.ts`)
+- [ ] **Step 1: Types** (`types/index.ts`)
 
 ```ts
 /** coupons.details JSONB — editorial sections for the /deal page (§55). */
@@ -712,7 +702,7 @@ export interface CouponDetails {
 Add to `Coupon`: `details?: CouponDetails | null;` and `provider_category?: string | null;`. Add to `DealPartnerProvider`: `category?: string | null;`. Add:
 
 ```ts
-/** GET /deals/partners item — slim provider for selects/filter pills. */
+/** GET /deals/partners item — slim provider for selects/filter pills (§55). */
 export interface DealPartnerRef {
 	id: string;
 	name: string;
@@ -725,7 +715,7 @@ export interface DealPartnerRef {
 	organization_id?: string | null;
 }
 
-/** GET /me/organizations item (embedded org fields + member_role). */
+/** GET /me/organizations item — embedded org fields + caller's member_role. */
 export interface MyOrganization {
 	id: string;
 	name: string;
@@ -735,7 +725,9 @@ export interface MyOrganization {
 }
 ```
 
-- [ ] **Step 2: `/deals/+page.server.ts`** — keep existing coupon fetch; add `canSubmit` for auth'd users:
+(First `grep "member_role" apps/main/src/lib/types/index.ts` — if an org-membership type already exists, reuse it instead of adding `MyOrganization`.)
+
+- [ ] **Step 2: `/deals/+page.server.ts`** — keep the coupon fetch; add `canSubmit`:
 
 ```ts
 let canSubmit = !!event.locals.user?.permissions?.includes('coupons.manage');
@@ -752,64 +744,56 @@ return { coupons, pageSize: PAGE_SIZE, loadError, canSubmit };
 
 - [ ] **Step 3: `/deals/+page.svelte` — costgoat layout**
 
-Replace the card grid + partner strip with:
+- `ListPageBar` gets an `actions` snippet: "Last updated {date}" text (`max(coupons[].updated_at)` → `toLocaleDateString()`) + a primary link-button `New deal` → `/deals/new` rendered when `data.canSubmit`.
+- Category pills under the bar: `['All', ...distinct provider_category]` derived from `data.coupons` (skip nulls). `selectedCategory` `$state` seeded from `page.url.searchParams.get('category')`; on select, `history.replaceState` the `?category=` param (no navigation) and `filteredCoupons` `$derived` filters. Uncategorized deals show only under "All". Replaces the partner-strip nav block entirely.
+- Desktop (`hidden sm:block`): a real `<table>` — Provider / Category / Deal / Details / Claim columns. Whole row `onclick={() => goto(dealPath(coupon))}` + `onkeydown` Enter + `role="link"` + `cursor-pointer` (a11y). Cells: provider_name (or `t('deals.internal','JapaConnect')` when null); `provider_category` pill or `—`; `title` + `discountLabel` + `BadgeCheck` when verified; `description` with `line-clamp-1`; `ExternalLink` icon + `t('coupons.visit','Claim')`.
+- Mobile (`sm:hidden`): compact stacked rows, same click-through.
+- Drop the now-unused `copyCode`/`recordEvent`/`partners` helpers and unused imports (`Ticket`/`Store`/`Copy` if unused). Keep `EmptyState`, `loadError`, `<svelte:head>`/JSON-LD as-is.
+- i18n (en + fr): `deals.last_updated` ("Last updated {date}"), `deals.new_deal` ("New deal" / "Nouvelle offre"), `deals.categories.all`, `deals.table.provider|category|deal|details|claim`, `deals.internal`.
 
-- Header row under `ListPageBar`: "Last updated {date}" (`max(coupons[].updated_at)` → `toLocaleDateString()`) and, when `data.canSubmit`, a primary link-button `New deal` → `/deals/new`.
-- Category pills: `['All', ...distinct provider_category]` from `data.coupons`; `$state` selectedCategory seeded from `page.url.searchParams.get('category')`; selecting sets `?category=` via `goto('?category=…', { replaceState: true, noScroll: true })` (or `history.replaceState`) and filters `filteredCoupons` derived.
-- Desktop table (`hidden sm:block`): columns Provider / Category / Deal / Details / Claim →
-  - Provider: `provider_name` (or `t('deals.internal','JapaConnect')` when null), linked whole-row
-  - Category: small pill `provider_category` or `—`
-  - Deal: `title` + `discountLabel(coupon)`
-  - Details: `description` truncated (`line-clamp-1`)
-  - Claim: `ExternalLink` icon + `t('coupons.visit','Claim')` — cell content links to `dealPath(coupon)` (not `/go` — keep users on-site; row click handler `onclick={() => goto(dealPath(coupon))}` with `cursor-pointer`, plus `role="link"`/keyboard Enter for a11y)
-- Mobile (`sm:hidden`): keep stacked rows — same info, compact flex rows.
-- Keep `BadgeCheck` verified chip inline in the Deal cell; keep `recordEvent`/`copyCode` helpers removed if unused (code copy now lives on detail page — keep `copyCode` only if a code chip stays; simplest: drop code/copy from the row, show title+discount).
-- Keep `EmptyState`, `loadError`, head/JSON-LD blocks.
-
-i18n keys (en + fr): `deals.last_updated` ("Last updated {date}"), `deals.new_deal` ("New deal"), `deals.categories.all` ("All"), `deals.table.provider`/`category`/`deal`/`details`/`claim`, `deals.internal` ("JapaConnect").
-
-- [ ] **Step 4: `bun run check`** in `apps/main` — fix type errors; commit.
+- [ ] **Step 4: `bun run check`** in `apps/main`; commit `feat(main): costgoat-style /deals index — table, category pills, new-deal button (§55)`.
 
 ---
 
 ### Task 7: Shared `DealForm` component
 
 **Files:**
+- Create: `apps/main/src/lib/components/deals/dealForm.ts`
 - Create: `apps/main/src/lib/components/deals/DealForm.svelte`
-- Create: `apps/main/src/lib/components/deals/dealForm.ts` (types + payload builder — pure, testable)
-- Test: `apps/main/src/lib/components/deals/dealForm.test.ts` (vitest — see `contentTypeRegistry.test.ts` for conventions)
+- Test: `apps/main/src/lib/components/deals/dealForm.test.ts` (vitest — follow `src/lib/components/create/contentTypeRegistry.test.ts` conventions)
 
 **Interfaces:**
-- Consumes: `Coupon`, `CouponDetails`, `DealPartnerRef`, `dealPath`, `api` client, `slugify` (import from `$lib/studio/prompt` — it exports `slugify`; acceptable reuse for a client-side hint since the server re-slugifies).
+- Consumes: `Coupon`, `CouponDetails`, `DealPartnerRef`, `dealPath` (Task 6); `slugify` from `$lib/studio/prompt`; `api` from `$lib/api/client`; `t` from `$lib/i18n`.
 - Produces for Tasks 8–10:
 
 ```ts
 export interface DealFormProps {
 	mode: 'create' | 'edit';
 	audience: 'staff' | 'org';
-	coupon?: Coupon;                 // edit mode seed
-	providers?: DealPartnerRef[];    // staff: provider select options
-	canManageProviders?: boolean;    // staff: show "+ New provider" toggle
-	orgId?: string;                  // org audience: target org id
+	coupon?: Coupon;                  // edit-mode seed
+	providers?: DealPartnerRef[];     // staff: provider select options
+	canManageProviders?: boolean;     // staff: shows the "+ New provider" toggle
+	orgId?: string;                   // org audience: target org id
 	onsaved?: (coupon: Coupon) => void;
 	oncancel?: () => void;
 }
 ```
 
-`buildCouponPayload(v: DealFormValues, audience): Record<string, unknown>` — pure builder (details omitted when all fields empty; `valid_until` key for expires, matching `CreateCouponInput`).
+`buildCouponPayload(v: DealFormValues, audience: 'staff' | 'org'): Record<string, unknown>` — pure builder: omits `details` when all detail fields are empty; `expires_at` → `valid_until` (matches `CreateCouponInput`); empty `code`/`slug`/optional strings omitted; org audience omits `provider_id`/`status`/`is_verified`.
 
-- [ ] **Step 1: Write `dealForm.test.ts`** — payload builder tests: empty details omitted; populated details nested; `expires_at` → `valid_until` ISO; empty code → absent.
+- [ ] **Step 1: Write `dealForm.test.ts`** — payload builder: details omitted when empty; populated details nested as `{summary, sections, faq, trial}`; `expires_at` datetime-local → `valid_until` ISO string; empty code omitted; org audience strips staff-only keys.
 
-- [ ] **Step 2: `dealForm.ts`** — `DealFormValues` interface, `buildCouponPayload`, `emptyDetails()`, `detailsFromCoupon(c)`.
+- [ ] **Step 2: `dealForm.ts`** — `DealFormValues` interface, `emptyDetails()`, `detailsFromCoupon(c: Coupon)` (maps `coupon.details` back into form values), `buildCouponPayload`. Run the test → green.
 
-- [ ] **Step 3: `DealForm.svelte`** — sections:
-  - Provider block (staff only): `SelectField`/native `<select>` bound to `provider_id` from `providers`; when `canManageProviders`, a "New provider" disclosure with name/slug/category(datalist from `providers.map(p=>p.category)` deduped)/base_url/description — on submit-first flows, create provider via `api.post('/admin/affiliate-providers', …)` before the coupon POST, then use its id. Org audience: locked display of the org provider (name from a `providerName` prop or first org deal's provider) — actually simplest: hide provider UI entirely in org mode (server resolves it).
-  - Coupon fields: title (required), slug (input; `slugTouched` flag — auto-fill `slugify(title)` until user edits), code (optional), discount_type select (`percent|fixed|free_shipping` options via i18n — these are backend enums, acceptable as static options since they mirror `coupons_discount_type_check`), discount_value number, currency (`data.currencies` via prop or plain text input fallback), referral_url, terms_url, description textarea, valid_from/expires_at `datetime-local`, staff-only `is_verified` checkbox + status select (active/suspended — pending/expired not settable in the form).
-  - Details editor: summary textarea; `sections` and `faq` repeaters — `{#each}` rows with title/body (or q/a) inputs + remove button + "Add section"/"Add question" buttons; trial group (title/body/url).
-  - Submit/Cancel buttons; `submitting` state; error line on failure (`res.error.message`).
-  - Submit: create-staff → `api.post('/admin/coupons', payload)`; edit → `api.patch(\`/admin/coupons/${coupon.id}\`, payload)`; create-org → `api.post(\`/organizations/${orgId}/deals\`, payload)`.
+- [ ] **Step 3: `DealForm.svelte`** — Svelte 5 runes (`$props`, `$state`, `$derived`), Tailwind `var(--color-*)` conventions from the existing pages:
 
-- [ ] **Step 4: `bunx vitest run src/lib/components/deals` + `bun run check`**; commit.
+  - **Provider block** (staff audience only): `<select>` bound to `provider_id` listing `providers` (option label `name`, plus `category` suffix when set). When `canManageProviders`, a "+ New provider" toggle reveals name/slug/category/base_url/description inputs; category uses `<input list="deal-categories">` + `<datalist>` fed by deduped `providers.map(p => p.category)` (Rule 16 — not a hardcoded list). On submit, if the new-provider block is filled, POST `/admin/affiliate-providers` first and use the returned `id`.
+  - **Coupon fields:** title (required), slug (auto-fills `slugify(title)` until the user edits it — `slugTouched` flag), code (optional), discount_type select (percent/fixed/free_shipping), discount_value number, currency (`data.currencies` prop threaded from page data — accept optional `currencies` prop, plain text input fallback), referral_url, terms_url, description textarea, valid_from/expires_at (`datetime-local`), staff-only `is_verified` checkbox + status select (active/suspended only — pending/expired are lifecycle states, not form options).
+  - **Details editor:** summary textarea; `sections` repeater (title + body rows, remove button, "Add section"); `faq` repeater (q + a rows, "Add question"); trial group (title/body/url inputs).
+  - **Submit:** `submitting` flag + error line from `res.error.message`. Create-staff → `api.post('/admin/coupons', payload)`; edit → `api.patch(`/admin/coupons/${coupon.id}`, payload)` (response row is `{data: coupon}` — unwrap `res.data.data` per the client's envelope shape: `api.patch<T>` returns `{data: T}` where T is the inner payload — check `ClientResult` and existing callers like `services/new` for the unwrap pattern); create-org → `api.post(`/organizations/${orgId}/deals`, payload)`. On success call `onsaved?.(createdCoupon)`.
+  - i18n: namespace under `deal.form.*` (labels, add/remove buttons, new_provider, validation errors).
+
+- [ ] **Step 4: `bunx vitest run src/lib/components/deals && bun run check`**; commit `feat(main): shared DealForm component for deal create/edit/submit (§55)`.
 
 ---
 
@@ -819,32 +803,57 @@ export interface DealFormProps {
 - Create: `apps/main/src/routes/(app)/deals/new/+page.server.ts`
 - Create: `apps/main/src/routes/(app)/deals/new/+page.svelte`
 
-- [ ] **Step 1: `+page.server.ts`** — `/ama/new` gating pattern:
+- [ ] **Step 1: `+page.server.ts`** — the `/ama/new` gating pattern:
 
 ```ts
 // Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
-if (!event.locals.user) throw redirect(307, `/login?redirect=${encodeURIComponent('/deals/new')}`);
-const isStaff = !!event.locals.user.permissions?.includes('coupons.manage');
-const ctx = apiContext(event);
-let providers: DealPartnerRef[] = [];
-let orgs: MyOrganization[] = [];
-try { providers = (await apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')).items; } catch {}
-if (!isStaff) {
+import type { PageServerLoad } from './$types';
+import { redirect } from '@sveltejs/kit';
+import { apiContext, apiList } from '$lib/server/api';
+import type { DealPartnerRef, MyOrganization } from '$lib/types';
+
+export const load: PageServerLoad = async (event) => {
+	if (!event.locals.user) {
+		throw redirect(307, `/login?redirect=${encodeURIComponent('/deals/new')}`);
+	}
+	const perms = event.locals.user.permissions ?? [];
+	const isStaff = perms.includes('coupons.manage');
+	const ctx = apiContext(event);
+	let providers: DealPartnerRef[] = [];
+	let orgs: MyOrganization[] = [];
 	try {
-		orgs = (await apiList<MyOrganization>(ctx, '/me/organizations?page_size=50')).items
-			.filter((o) => ['owner', 'admin', 'editor'].includes(o.member_role));
-	} catch { orgs = []; }
-}
-return { isStaff, providers, orgs, canManageProviders: !!event.locals.user.permissions?.includes('affiliate.providers.manage') };
+		providers = (await apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')).items;
+	} catch {
+		providers = [];
+	}
+	if (!isStaff) {
+		try {
+			orgs = (await apiList<MyOrganization>(ctx, '/me/organizations?page_size=50')).items.filter(
+				(o) => ['owner', 'admin', 'editor'].includes(o.member_role)
+			);
+		} catch {
+			orgs = [];
+		}
+	}
+	return {
+		isStaff,
+		providers,
+		orgs,
+		canManageProviders: perms.includes('affiliate.providers.manage')
+	};
+};
 ```
 
-- [ ] **Step 2: `+page.svelte`**
-  - `isStaff` → `<DealForm mode="create" audience="staff" {providers} canManageProviders={data.canManageProviders} onsaved={(c) => goto(dealPath(c))} />`
-  - else `orgs.length > 0` → org picker (select when >1, auto-selected single org otherwise) → `<DealForm mode="create" audience="org" orgId={selectedOrg.id} onsaved={…} />`; on save show pending-review panel and fetch `api.get(\`/organizations/${org.id}/deals\`)` listing existing submissions with status chips (`active`/`pending`/`suspended`/`expired`).
-  - else → `EmptyState` "Deals are submitted by organizations" + link to the org creation page (find the route — grep `routes/(app)` for `org`; fallback `/organizations`).
-  - i18n keys: `deals.new_title`, `deals.org_picker`, `deals.submitted_pending`, `deals.no_org`, `deals.your_submissions`, `deals.status.*`.
+(Verify `/deals/partners` actually accepts/ignores `page_size` — the handler returns the full list; `apiList` reads `data` regardless.)
 
-- [ ] **Step 3: `bun run check`**; commit.
+- [ ] **Step 2: `+page.svelte`**
+
+- `data.isStaff` → `<DealForm mode="create" audience="staff" providers={data.providers} canManageProviders={data.canManageProviders} onsaved={(c) => goto(dealPath(c))} />`
+- else `data.orgs.length > 0` → org picker (`<select>` when >1 org, auto-select single) → `<DealForm mode="create" audience="org" orgId={selectedOrg.id} onsaved={…} />`; after save, show a "submitted for review" panel + fetch `api.get(`/organizations/${org.id}/deals`)` and render the org's submissions with status chips (reuse for the initial list too — load it when an org is selected).
+- else → `EmptyState` "Deals are submitted by organizations" — find the org create route first (`grep -rn "organizations/new\|/org" apps/main/src/routes` — fallback `/organizations`).
+- i18n: `deals.new_title`, `deals.org_picker`, `deals.submitted_pending`, `deals.no_org`, `deals.your_submissions`, `deals.status.pending|active|suspended|expired`.
+
+- [ ] **Step 3: `bun run check`**; commit `feat(main): /deals/new — staff create + org submission modes (§55)`.
 
 ---
 
@@ -854,45 +863,50 @@ return { isStaff, providers, orgs, canManageProviders: !!event.locals.user.permi
 - Modify: `apps/main/src/routes/(app)/deal/[provider]/[slug]/+page.server.ts`
 - Modify: `apps/main/src/routes/(app)/deal/[provider]/[slug]/+page.svelte`
 
-- [ ] **Step 1: `+page.server.ts`** — after resolving the coupon, fetch siblings for "Other ways to save" when `provider_id` is set:
+- [ ] **Step 1: `+page.server.ts`** — after the coupon resolves (keep the canonical redirect), add:
 
 ```ts
+const canManage = !!event.locals.user?.permissions?.includes('coupons.manage');
 let related: Coupon[] = [];
 if (coupon.provider_id) {
 	try {
-		related = (await apiList<Coupon>(ctx, `/coupons?provider_id=${coupon.provider_id}&page_size=12`)).items
-			.filter((c) => c.id !== coupon.id);
+		related = (await apiList<Coupon>(ctx, `/coupons?provider_id=${coupon.provider_id}&page_size=12`)).items.filter(
+			(c) => c.id !== coupon.id
+		);
 	} catch { related = []; }
 }
-return { coupon, related, canManage: !!event.locals.user?.permissions?.includes('coupons.manage'), providers: canManage ? (await apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')).items : [] };
+let providers: DealPartnerRef[] = [];
+if (canManage) {
+	try {
+		providers = (await apiList<DealPartnerRef>(ctx, '/deals/partners')).items;
+	} catch { providers = []; }
+}
+return { coupon, related, canManage, providers, canManageProviders: !!event.locals.user?.permissions?.includes('affiliate.providers.manage') };
 ```
 
-(Fetch providers only for staff so inline edit can switch provider.)
-
-- [ ] **Step 2: `+page.svelte`** — rebuild the body (keep `<svelte:head>` + Offer JSON-LD; add FAQPage JSON-LD when `details.faq?.length`):
+- [ ] **Step 2: `+page.svelte`** — keep `<svelte:head>` + Offer JSON-LD; add a `FAQPage` JSON-LD object (via a second `safeJsonLdScript` call or `@graph`) when `coupon.details?.faq?.length`:
 
 ```jsonc
-// append to the jsonLd object graph (separate script tag or @graph):
-{ "@type": "FAQPage", "mainEntity": faq.map(f => ({
-    "@type": "Question", "name": f.q,
+{ "@context": "https://schema.org", "@type": "FAQPage",
+  "mainEntity": faq.map(f => ({ "@type": "Question", "name": f.q,
     "acceptedAnswer": { "@type": "Answer", "text": f.a } })) }
 ```
 
-Layout (all Tailwind var(--color-*) conventions from the existing page):
-1. Header block: breadcrumb `Deals › {provider_name}`; "Last updated {coupon.updated_at → toLocaleDateString}"; when `data.canManage`, an Edit button toggling `editing = true`.
-2. `{#if editing}` → `<DealForm mode="edit" audience="staff" coupon={data.coupon} providers={data.providers} canManageProviders={…includes('affiliate.providers.manage')} onsaved={() => { editing = false; invalidateAll(); }} oncancel={() => (editing = false)} />` — wrap form submission invalidate: call `await invalidateAll()` then set editing false (import `invalidateAll` from `$app/navigation`).
-3. `{:else}` view:
-   - H1 `coupon.title` + `details.summary ?? coupon.description` lede paragraph.
-   - **Active offer** card: provider name + verified badge; `code` block + copy (`copyCode`/`copied` already in file); discountLabel; CTA → existing `goUrl`.
-   - **Trial card** when `details.trial?.url || details.trial?.body`.
-   - **"Why {provider_name ?? 'this deal'}"** — `{#each details.sections}` numbered list; when absent render a generated "How to redeem" ol (3 steps: follow link/copy code → apply at checkout → verify discount) behind `t('deal.how_to_redeem', …)`.
-   - **"Other ways to save on {provider_name}"** — `{#each data.related}` compact cards (title + discountLabel + chevron) linking to `dealPath(c)`; skip when empty.
+Body (reuse the existing color/radius vars):
+
+1. Header: breadcrumb `All deals › {provider_name}`; "Last updated {coupon.updated_at → toLocaleDateString()}"; when `data.canManage`, an **Edit** button → `editing = true`.
+2. `{#if editing}` → `<DealForm mode="edit" audience="staff" coupon={data.coupon} providers={data.providers} canManageProviders={data.canManageProviders} onsaved={async () => { await invalidateAll(); editing = false; }} oncancel={() => (editing = false)} />` (`import { invalidateAll } from '$app/navigation'`).
+3. `{:else}` view, in order (each block skipped when its data is absent):
+   - H1 `coupon.title` + lede (`details.summary ?? coupon.description`).
+   - **Active offer** card: provider name + verified badge; `code` block + Copy (existing `copyCode`/`copied`); `discountLabel`; primary CTA → existing `goUrl`.
+   - **Secondary offer** card from `details.trial` (title/body/CTA → `trial.url`, external + nofollow).
+   - **"Why {provider_name ?? t('deal.this_deal','this deal')}"** — `{#each details.sections}` as an ordered list; when absent render a generated "How to redeem" `<ol>` (follow the deal link / copy the code if present / discount applies at checkout) — 3 i18n-backed steps.
+   - **"Other ways to save on {provider_name}"** — `{#each data.related}` compact cards (title + discountLabel + chevron) linking `dealPath(c)`; skip when empty.
    - **FAQ** — `{#each details.faq}` `<details>/<summary>` accordion.
-   - Terms link + expiry line kept from current page.
+   - Keep terms link + expiry line.
+4. i18n: `deal.last_updated`, `deal.active_offer`, `deal.trial_cta`, `deal.why`, `deal.how_to_redeem`, `deal.redeem_step_1..3`, `deal.other_ways`, `deal.faq`, `deal.edit` (en + fr).
 
-- [ ] **Step 3: i18n keys** — `deal.last_updated`, `deal.active_offer`, `deal.trial_cta`, `deal.why`, `deal.how_to_redeem`, `deal.redeem_step_*`, `deal.other_ways`, `deal.faq`, `deal.edit`, `common.cancel`/`common.save` (reuse if present).
-
-- [ ] **Step 4: `bun run check`**; commit.
+- [ ] **Step 3: `bun run check`**; commit `feat(main): rich /deal detail page — summary, offers, sections, sibling deals, FAQ + inline edit (§55)`.
 
 ---
 
@@ -905,48 +919,50 @@ Layout (all Tailwind var(--color-*) conventions from the existing page):
 - [ ] **Step 1:** `+page.server.ts` — add `canManageProviders: !!event.locals.user?.permissions?.includes('affiliate.providers.manage')` to the return.
 
 - [ ] **Step 2:** `+page.svelte` —
-  - Show `provider.category` as a pill next to the provider name.
-  - When `canManageProviders`: **Edit provider** button toggling an inline form (name, slug, description, category — datalist options optional since this is the source, base_url, is_featured, is_active checkboxes) → `api.patch(\`/admin/affiliate-providers/${provider.id}\`, body)` → `invalidateAll()`; Cancel closes. Plain inline `<form>` block under the header — no shared component needed (single use).
+  - Show `provider.category` as a small pill next to the name (when set).
+  - When `canManageProviders`: **Edit provider** button toggles `editing` → inline `<form>` under the header (name, slug, description textarea, category text, base_url url, is_featured + is_active checkboxes) → `api.patch(`/admin/affiliate-providers/${provider.id}`, { name, slug, description, category, base_url, is_featured, is_active, provider_type: provider.provider_type })` — `UpdateProvider` requires `name`; send the full field set — → `await invalidateAll()`; Cancel closes. Plain page-local form (single use, no shared component).
   - Keep the existing coupons grid.
+- i18n: `deal.edit_provider`, `deal.category`, `deal.form.*` provider labels.
 
-- [ ] **Step 3: `bun run check`**; commit. i18n: `deal.edit_provider`, `deal.category`, form labels.
+- [ ] **Step 3: `bun run check`**; commit `feat(main): /deal/{provider} category pill + staff provider inline edit (§55)`.
 
 ---
 
 ### Task 11: Admin panel — `/coupons` → `/deals` + new fields + moderation
 
 **Files:**
-- Rename: `apps/admin/src/routes/(app)/coupons/+page.svelte` → `apps/admin/src/routes/(app)/deals/+page.svelte`
-- Modify: `apps/admin/src/lib/data/routes.ts` (`'/coupons'` → `'/deals'` — both occurrences)
-- Modify: `apps/admin/src/lib/components/layout/sidebar.svelte` (line ~211: `path: "/coupons"` → `"/deals"`, label `nav.deals` "Deals")
-- Modify: `apps/admin/src/routes/(app)/affiliate/+page.svelte` (provider form + table: add `category`)
+- Rename: `apps/admin/src/routes/(app)/coupons/+page.svelte` → `apps/admin/src/routes/(app)/deals/+page.svelte` (`git mv`)
+- Modify: `apps/admin/src/lib/data/routes.ts` — line ~99 `adminRoutes`: `'/coupons'` → `'/deals'`; line ~20 `mainRoutes`: `'/coupons'` → `'/deals'` (it lists main-site paths; the old path still 301s but keep it current)
+- Modify: `apps/admin/src/lib/components/layout/sidebar.svelte` (line ~211: `path: "/coupons"` → `"/deals"`, label `t("nav.deals", "Deals")`)
+- Modify: `apps/admin/src/routes/(app)/affiliate/+page.svelte` (provider form + columns: add `category`)
 - Modify: `apps/admin/src/lib/locales/en.json`, `fr.json`
-- Redirect: grep for other `'/coupons'` links in `apps/admin/src` and update; add `apps/admin/src/routes/(app)/coupons/+page.server.ts` with `redirect(308, '/deals')` if any hard links remain — otherwise delete the dir.
+- `apps/admin/src/lib/api.ts` — **unchanged** (backend API stays `/admin/coupons`)
+- Grep `apps/admin/src` for other `'/coupons'` links and update them to `/deals`.
 
-- [ ] **Step 1: Route rename** — `git mv` the directory; update `routes.ts` (both the `adminRoutes` list and the earlier `'/coupons'` occurrence — check context: line 20 is probably a permissions/map list, keep semantics) and sidebar label.
+- [ ] **Step 1: Route rename** — `git mv` the coupons dir to `deals`; update `routes.ts` + sidebar.
 
-- [ ] **Step 2: Page updates** (former coupons page):
-  - `title: t('deals.title', 'Deals')`, `createLabel: 'New deal'`; keep `createPermission: 'coupons.manage'`.
-  - Extend `Coupon` type: `details?: Record<string, unknown> | null; provider_category?: string | null;`.
-  - `statusFilterOptions` += `{ value: 'pending', label: t('deals.pending','Pending review') }`.
-  - Replace the `is_active` checkbox field with a `status` select (options: active/suspended/pending/expired — expired kept read-mostly but allowed for corrections); create/update payloads send `status: body.status ?? 'active'` (drop the `is_active` derivation); `load` mapping drops `is_active`.
-  - Add `details` field: `{ key: 'details', label: t('deals.details_json','Deal page content (JSON)'), type: 'textarea', placeholder: '{"summary":"…","sections":[…],"faq":[…],"trial":{…}}' }`. In `load` map: `details: c.details ? JSON.stringify(c.details, null, 2) : ''`. In create/update: parse non-empty with `JSON.parse` inside try/catch → `{ ok:false, error: 'details must be valid JSON object' }`; send parsed object as `details`.
-  - Columns: add `provider_category` (label "Category") between code and discount; `status` column stays (pending rows are now visible).
-  - Custom `actions` (replaces defaults — include View/Edit/Delete explicitly per AGENTS.md): `View` → `ctx.openView(row)`, `Edit` → `ctx.openEdit(row)`, `Approve` (show: `row.status === 'pending'`) → `couponsAdminApiExtended.update(row.id, { status: 'active', title: row.title })` — wait, `UpdateCouponAdmin` requires `title` in body; send `title: row.title` plus `status`. Then `ctx.reload()`. `Reject` (same show predicate; variant destructive) → PATCH `{ status: 'suspended', title: row.title }` → reload. `Delete` → `ctx.openDelete(row)`.
-  - View snippet: add `provider_category` and a `details` `<pre>` block when present.
+- [ ] **Step 2: Deals page updates** (the renamed file):
+  - `title: t('deals.title', 'Deals')`, `createLabel: t('deals.create', 'New deal')`; `createPermission: 'coupons.manage'` unchanged.
+  - Extend the local `Coupon` type: `details?: Record<string, unknown> | null; provider_category?: string | null;`.
+  - `statusFilterOptions` += `{ value: 'pending', label: t('deals.pending', 'Pending review') }`.
+  - Replace the `is_active` checkbox field with `{ key: 'status', label: t('common.status','Status'), type: 'select', options: [active, suspended, pending, expired] }`; drop the `is_active` derivation in `load` and send `status: body.status ?? 'active'` in create/update payloads.
+  - Add field `{ key: 'details', label: t('deals.details_json', 'Deal page content (JSON)'), type: 'textarea' }` with a JSON-shape placeholder. In `load` map rows: `details: c.details ? JSON.stringify(c.details, null, 2) : ''`. In create/update: if `body.details` non-empty, `JSON.parse` it (try/catch → `{ ok:false, error: t('deals.details_invalid','details must be a JSON object') }`) and send the parsed object.
+  - Columns: add `provider_category` ("Category") after `code`.
+  - Custom `actions` array (replaces defaults — include View/Edit/Delete per AGENTS.md): `View` → `ctx.openView(row)`; `Edit` → `ctx.openEdit(row)`; `Approve` (`show: row => row.status === 'pending'`) → `couponsAdminApiExtended.update(row.id, { title: row.title, status: 'active' })` then `ctx.reload()` — `UpdateCouponAdmin` requires `title`, so include it; `Reject` (same predicate, `variant: 'destructive'`) → `{ title: row.title, status: 'suspended' }` then reload; `Delete` → `ctx.openDelete(row)`.
+  - View snippet: add `provider_category` line + `details` `<pre>` block when present.
 
-- [ ] **Step 3: `/affiliate` page** — add `category` to the provider `FieldDef[]` (`type: 'text'` with placeholder e.g. "Cloud, AI, SaaS, Dev…") and a `category` column. Read the file first to match its structure.
+- [ ] **Step 3: `/affiliate` page** — read it first; add `category` to the provider `FieldDef[]` (`type: 'text'`, placeholder e.g. "Cloud, AI, SaaS, Dev…") and a `category` column on the providers table.
 
-- [ ] **Step 4: locales** — `nav.deals` ("Deals"/"Offres"), `deals.*` keys used above.
+- [ ] **Step 4: Locales** — `nav.deals`, `deals.*` keys above (en + fr).
 
-- [ ] **Step 5: `bun run check`** in `apps/admin`; commit.
+- [ ] **Step 5: `bun run check`** in `apps/admin`; commit `feat(admin): rename coupons→deals, details/category fields, pending moderation actions (§55)`.
 
 ---
 
 ### Task 12: End-to-end verification
 
-- [ ] `make sqlc-gen` clean (no diff after regen), `go build ./...`, `go vet ./internal/coupons ./internal/organizations`, `go test ./internal/coupons ./internal/organizations`
-- [ ] `bun run check` in `apps/main` and `apps/admin`
-- [ ] Migration smoke: `make migrate` (or the project's migrate command — check Makefile) up+down on a dev DB if available; otherwise `psql` syntax-check the .up.sql
-- [ ] Manual pass (backend + main app running): create deal as staff via `/deals/new` → lands on `/deal/{provider}/{slug}`; `/deals` table + category pills filter; detail page sections render (details populated vs fallback); staff inline edit round-trips; org member submits → pending → not visible on public `/deals`/`/deal/*` → appears in admin `/deals` → Approve → visible; provider inline edit sets category → pill appears.
+- [ ] `make sqlc-gen` produces no diff; `go build ./...`; `go vet ./internal/coupons ./internal/organizations`; `go test ./internal/coupons ./internal/organizations`
+- [ ] `bun run check` clean in `apps/main` and `apps/admin`
+- [ ] Migration smoke: `make migrate` up + down on the dev DB if running (check Makefile target name), else `psql` dry-run the up file
+- [ ] Manual pass (backend + main app running): staff creates a deal via `/deals/new` → lands on `/deal/{provider}/{slug}`; `/deals` table + category pills; detail page sections render (populated details vs fallbacks); staff inline edit round-trips; org member submits → pending → invisible on public pages → appears in admin `/deals` queue → Approve → visible; provider inline edit sets category → pill shows on `/deals`.
 - [ ] Final commit with any fixes.
