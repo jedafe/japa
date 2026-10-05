@@ -1,6 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
+import { sanitizePostLoginTarget } from '$lib/server/auth';
 import type { OnboardingStatus, TagSuggestion, OnboardingRecommendation, GeoContext, GeoCountry, Achievement, OnboardingOptions } from '$lib/types';
 import type { Source } from '$lib/types/sources';
 
@@ -17,6 +18,11 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(302, '/login');
 	}
 
+	// §120: a ?redirect= target carries the post-onboarding destination (the
+	// MCP OAuth authorize URL for agent connect flows). Sanitized with the
+	// same allowlist as post-login redirects — never an open redirect.
+	const postOnboardingRedirect = sanitizePostLoginTarget(event.url.searchParams.get('redirect'));
+
 	// Fetch onboarding status — redirect to / if already completed.
 	let status: OnboardingStatus | null = null;
 	try {
@@ -25,7 +31,7 @@ export const load: PageServerLoad = async (event) => {
 		// If the endpoint fails, let the user through to the wizard.
 	}
 	if (status?.completed) {
-		throw redirect(302, '/');
+		throw redirect(302, postOnboardingRedirect);
 	}
 
 	// Preload tags for step 3 (interests) — Rule 16: from API, not hardcoded.
@@ -97,6 +103,7 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		user: event.locals.user,
 		status,
+		postOnboardingRedirect,
 		tags,
 		recommendations,
 		sources,
