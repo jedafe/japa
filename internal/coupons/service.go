@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -13,6 +14,7 @@ import (
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -104,9 +106,7 @@ func (s *Service) CreateProvider(ctx context.Context, input CreateProviderInput)
 		return gen.AffiliateProvider{}, err
 	}
 
-	// Provider fields render inside coupon payloads — flush list/slug caches.
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
+	s.flushProviderCouponCaches(ctx)
 
 	return p, nil
 }
@@ -125,10 +125,12 @@ func (s *Service) GetProvider(ctx context.Context, id pgtype.UUID) (gen.Affiliat
 	return p, nil
 }
 
-// ListProviders is an exported method.
-func (s *Service) ListProviders(ctx context.Context, page, pageSize int32) ([]gen.AffiliateProvider, error) {
+// ListProviders is an exported method. isActive nil returns all providers
+// (including inactive org providers awaiting vetting); non-nil filters on
+// affiliate_providers.is_active (§55).
+func (s *Service) ListProviders(ctx context.Context, isActive *bool, page, pageSize int32) ([]gen.AffiliateProvider, error) {
 	limit, offset := paginate(page, pageSize)
-	return s.store.listProviders(ctx, true, limit, offset)
+	return s.store.listProviders(ctx, isActive, limit, offset)
 }
 
 // UpdateProviderInput is an exported type.
@@ -156,9 +158,7 @@ func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, input Upda
 		return gen.AffiliateProvider{}, err
 	}
 
-	// Provider fields render inside coupon payloads — flush list/slug caches.
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
+	s.flushProviderCouponCaches(ctx)
 
 	return p, nil
 }
@@ -187,11 +187,20 @@ func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 		return err
 	}
 
-	// Provider fields render inside coupon payloads — flush list/slug caches.
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
+	s.flushProviderCouponCaches(ctx)
 
 	return nil
+}
+
+// flushProviderCouponCaches clears every coupon cache after a provider
+// mutation — provider fields render inside coupon payloads, and the
+// provider-active filters in the deal queries change which coupons are
+// public (§55). jc:coupon:{id} is covered by the coupon:* glob; the
+// list/slug namespaces have their own patterns.
+func (s *Service) flushProviderCouponCaches(ctx context.Context) {
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon:*"))
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
 }
 
 // ── Coupon Operations ───────────────────────────────────────────────
@@ -232,6 +241,12 @@ func validateCouponDetails(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &v); err != nil || v == nil {
 		return ErrInvalidDetails
 	}
+	// Round-trip the decoded value: inputs like 1e999 decode to +Inf, which
+	// re-marshal rejects — Postgres jsonb would reject it too, so surface it
+	// here as a 400 instead of an INSERT-time 500 (§55).
+	if _, err := json.Marshal(v); err != nil {
+		return ErrInvalidDetails
+	}
 	return nil
 }
 
@@ -245,8 +260,41 @@ func detailsParam(raw json.RawMessage) *json.RawMessage {
 	return &raw
 }
 
+// validateCouponWrite guards the full-column INSERT/UPDATE paths: a thin
+// PATCH or whitespace-only title would otherwise surface as a CHECK/NOT
+// NULL violation 500 instead of a 400 (§55). Status must be one of the
+// lifecycle constants — never empty.
+func validateCouponWrite(input CreateCouponInput) error {
+	if strings.TrimSpace(input.Title) == "" {
+		return fmt.Errorf("%w: title", errpkg.ErrRequired)
+	}
+	switch CouponStatus(input.Status) {
+	case CouponStatusActive, CouponStatusExpired, CouponStatusSuspended, CouponStatusPending:
+		return nil
+	default:
+		return fmt.Errorf("%w: %q", ErrInvalidStatus, input.Status)
+	}
+}
+
+// mapCouponWriteErr translates unique-violation insert/update errors on
+// coupons into ErrCouponAlreadyExists (409) instead of a raw 500. Slug
+// collisions should be pre-resolved by resolveCouponSlug; reaching 23505
+// means a concurrent claim or a duplicate code (§55).
+func mapCouponWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+		(pgErr.ConstraintName == "idx_coupons_slug" || pgErr.ConstraintName == "coupons_code_key") {
+		return ErrCouponAlreadyExists
+	}
+	return err
+}
+
 // CreateCoupon is an exported method.
 func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input CreateCouponInput) (gen.CreateCouponRow, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	if err := validateCouponWrite(input); err != nil {
+		return gen.CreateCouponRow{}, err
+	}
 	if err := validateCouponDetails(input.Details); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
@@ -266,7 +314,7 @@ func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input Cr
 		Details: detailsParam(input.Details), CreatedBy: userID,
 	})
 	if err != nil {
-		return gen.CreateCouponRow{}, err
+		return gen.CreateCouponRow{}, mapCouponWriteErr(err)
 	}
 
 	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
@@ -306,7 +354,7 @@ func (s *Service) resolveCouponSlug(ctx context.Context, input *string, title st
 			continue
 		}
 
-		existing, err := s.store.getCouponBySlug(ctx, candidate)
+		existingID, err := s.store.couponSlugExists(ctx, candidate)
 		if err != nil {
 			if isNoRows(err) {
 				return candidate, nil
@@ -314,7 +362,7 @@ func (s *Service) resolveCouponSlug(ctx context.Context, input *string, title st
 
 			return "", fmt.Errorf("checking coupon slug: %w", err)
 		}
-		if excludeID.Valid && existing.ID == excludeID {
+		if excludeID.Valid && existingID == excludeID {
 			return candidate, nil
 		}
 	}
@@ -356,10 +404,32 @@ func (s *Service) GetCoupon(ctx context.Context, id pgtype.UUID) (gen.GetCouponB
 	return c, nil
 }
 
+// GetCouponAdmin returns a coupon for the staff read path — no cache and no
+// provider-active filter, so deals parked under inactive org providers stay
+// reachable for moderation (§55). Pending visibility is the caller's choice.
+func (s *Service) GetCouponAdmin(ctx context.Context, id pgtype.UUID) (gen.GetCouponByIDInternalRow, error) {
+	c, err := s.store.getCouponByIDInternal(ctx, id)
+	if err != nil {
+		if isNoRows(err) {
+			return gen.GetCouponByIDInternalRow{}, ErrCouponNotFound
+		}
+
+		return gen.GetCouponByIDInternalRow{}, fmt.Errorf("getting coupon: %w", err)
+	}
+
+	return c, nil
+}
+
 // ListCoupons is an exported method.
 func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *string, page, pageSize int32) ([]gen.ListCouponsRow, error) {
 	limit, offset := paginate(page, pageSize)
 	return s.store.listCoupons(ctx, status, couponType, search, pgtype.UUID{}, limit, offset)
+}
+
+// CountCoupons mirrors ListCoupons's filters for the admin list's pagination
+// total (§55).
+func (s *Service) CountCoupons(ctx context.Context, status, couponType, search *string) (int64, error) {
+	return s.store.countCouponsFiltered(ctx, status, couponType, search, pgtype.UUID{})
 }
 
 func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsRow, error) {
@@ -405,11 +475,17 @@ type UpdateCouponInput = CreateCouponInput
 
 // UpdateCoupon is an exported method.
 func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input UpdateCouponInput) (gen.UpdateCouponRow, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	if err := validateCouponWrite(input); err != nil {
+		return gen.UpdateCouponRow{}, err
+	}
 	if err := validateCouponDetails(input.Details); err != nil {
 		return gen.UpdateCouponRow{}, err
 	}
 
-	current, err := s.store.getCouponByID(ctx, id)
+	// Internal lookup — deals under inactive org providers must stay
+	// updatable or staff could never moderate them (§55).
+	current, err := s.store.getCouponByIDInternal(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.UpdateCouponRow{}, ErrCouponNotFound
@@ -435,7 +511,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 		Details: detailsParam(input.Details),
 	})
 	if err != nil {
-		return gen.UpdateCouponRow{}, err
+		return gen.UpdateCouponRow{}, mapCouponWriteErr(err)
 	}
 
 	// Record a slug redirect so old /deal/{provider}/{slug} URLs keep
@@ -462,7 +538,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 
 // DeleteCoupon is an exported method.
 func (s *Service) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
-	current, err := s.store.getCouponByID(ctx, id)
+	current, err := s.store.getCouponByIDInternal(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return ErrCouponNotFound
@@ -580,10 +656,26 @@ func (s *Service) ResolveCouponBySlug(ctx context.Context, slug string) (gen.Get
 	return c, nil
 }
 
+// DealPartnerProviderView is the public provider projection for
+// GET /deals/partners/{slug}. Commercial and ownership fields
+// (commission_rate, author_commission_pct, tracking_param/tracking_value,
+// organization_id, provider_type) are intentionally omitted — the public
+// partner page only renders the profile fields below (§55).
+type DealPartnerProviderView struct {
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Slug        string      `json:"slug"`
+	Description *string     `json:"description,omitempty"`
+	Category    *string     `json:"category,omitempty"`
+	LogoMediaID pgtype.UUID `json:"logo_media_id"`
+	BaseURL     *string     `json:"base_url,omitempty"`
+	IsFeatured  bool        `json:"is_featured"`
+}
+
 // DealPartner is the public payload for GET /deals/partners/{slug} — the
 // provider profile plus its active coupons.
 type DealPartner struct {
-	Provider gen.AffiliateProvider      `json:"provider"`
+	Provider DealPartnerProviderView    `json:"provider"`
 	Coupons  []gen.ListActiveCouponsRow `json:"coupons"`
 }
 
@@ -612,7 +704,14 @@ func (s *Service) GetDealPartner(ctx context.Context, slug string) (*DealPartner
 		coupons = []gen.ListActiveCouponsRow{}
 	}
 
-	return &DealPartner{Provider: p, Coupons: coupons}, nil
+	return &DealPartner{
+		Provider: DealPartnerProviderView{
+			ID: p.ID, Name: p.Name, Slug: p.Slug, Description: p.Description,
+			Category: p.Category, LogoMediaID: p.LogoMediaID, BaseURL: p.BaseUrl,
+			IsFeatured: p.IsFeatured,
+		},
+		Coupons: coupons,
+	}, nil
 }
 
 // ResolveDealClick returns the click-through target for /deals/{slug}/go:
@@ -953,6 +1052,7 @@ type SubmitDealInput = CreateCouponInput
 // affiliate provider (auto-created from the org on first submission).
 // Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userID pgtype.UUID, input SubmitDealInput) (gen.CreateCouponRow, error) {
+	input.Title = strings.TrimSpace(input.Title)
 	if err := validateCouponDetails(input.Details); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
@@ -975,7 +1075,7 @@ func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userI
 		Details: detailsParam(input.Details), CreatedBy: userID,
 	})
 	if err != nil {
-		return gen.CreateCouponRow{}, err
+		return gen.CreateCouponRow{}, mapCouponWriteErr(err)
 	}
 	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
 	return c, nil
@@ -1024,9 +1124,18 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-				// Slug claimed between the check and the insert (TOCTOU) —
-				// retry the next suffix instead of failing the submission.
-				continue
+				// idx_affiliate_providers_org means a concurrent submission
+				// already created this org's provider — re-check on the
+				// writer pool (the winner committed on the primary; a read
+				// replica could lag) and return it (§55).
+				if existing, ferr := s.store.getProviderByOrgIDForWrite(ctx, org.ID); ferr == nil {
+					return existing, nil
+				}
+				// Only a slug-key race retries the next suffix; any other
+				// unique constraint is a real failure.
+				if pgErr.ConstraintName == "affiliate_providers_slug_key" {
+					continue
+				}
 			}
 			return gen.AffiliateProvider{}, fmt.Errorf("creating org provider: %w", err)
 		}
@@ -1062,9 +1171,8 @@ func (s *Service) activateOrgProvider(ctx context.Context, providerID pgtype.UUI
 		return
 	}
 
-	// The provider now renders in /deals/partners — flush list/slug caches.
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
-	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
+	// The provider now renders in /deals/partners — flush coupon caches.
+	s.flushProviderCouponCaches(ctx)
 }
 
 // ListOrgDeals lists an org's coupons in all statuses (submissions view).

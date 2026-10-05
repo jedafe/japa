@@ -634,90 +634,18 @@ func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, id pgtype.U
 const getAffiliateProviderIDBySlug = `-- name: GetAffiliateProviderIDBySlug :one
 SELECT id
 FROM affiliate_providers
-WHERE slug = $1
+WHERE slug = $1 AND organization_id IS NULL
 `
 
+// Feed-import provider match: org-linked providers are excluded — a feed
+// must never silently attach offers to (or activate) an organization's
+// unvetted provider; the caller treats the slug as taken and suffixes
+// like any other collision (§55).
 func (q *Queries) GetAffiliateProviderIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getAffiliateProviderIDBySlug, slug)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
-}
-
-const getCouponByCode = `-- name: GetCouponByCode :one
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
- c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
- c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
- c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
- c.details,
- ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
- ap.category AS provider_category
-FROM coupons c
-LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.code = $1
-`
-
-type GetCouponByCodeRow struct {
-	ID                  pgtype.UUID        `json:"id"`
-	ProviderID          pgtype.UUID        `json:"provider_id"`
-	CouponType          string             `json:"coupon_type"`
-	Title               string             `json:"title"`
-	Slug                string             `json:"slug"`
-	Description         *string            `json:"description"`
-	Code                *string            `json:"code"`
-	DiscountType        *string            `json:"discount_type"`
-	DiscountValue       pgtype.Numeric     `json:"discount_value"`
-	Currency            *string            `json:"currency"`
-	TermsUrl            *string            `json:"terms_url"`
-	ReferralUrl         *string            `json:"referral_url"`
-	IsVerified          bool               `json:"is_verified"`
-	Status              string             `json:"status"`
-	ValidFrom           pgtype.Timestamptz `json:"valid_from"`
-	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
-	TotalClicks         int32              `json:"total_clicks"`
-	TotalCopies         int32              `json:"total_copies"`
-	CreatedBy           pgtype.UUID        `json:"created_by"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	Details             *json.RawMessage   `json:"details"`
-	ProviderName        *string            `json:"provider_name"`
-	ProviderSlug        *string            `json:"provider_slug"`
-	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
-	ProviderCategory    *string            `json:"provider_category"`
-}
-
-func (q *Queries) GetCouponByCode(ctx context.Context, code *string) (GetCouponByCodeRow, error) {
-	row := q.db.QueryRow(ctx, getCouponByCode, code)
-	var i GetCouponByCodeRow
-	err := row.Scan(
-		&i.ID,
-		&i.ProviderID,
-		&i.CouponType,
-		&i.Title,
-		&i.Slug,
-		&i.Description,
-		&i.Code,
-		&i.DiscountType,
-		&i.DiscountValue,
-		&i.Currency,
-		&i.TermsUrl,
-		&i.ReferralUrl,
-		&i.IsVerified,
-		&i.Status,
-		&i.ValidFrom,
-		&i.ExpiresAt,
-		&i.TotalClicks,
-		&i.TotalCopies,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Details,
-		&i.ProviderName,
-		&i.ProviderSlug,
-		&i.ProviderLogoMediaID,
-		&i.ProviderCategory,
-	)
-	return i, err
 }
 
 const getCouponByFeedExternal = `-- name: GetCouponByFeedExternal :one
@@ -754,6 +682,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.id = $1
+ AND (ap.id IS NULL OR ap.is_active = true)
 `
 
 type GetCouponByIDRow struct {
@@ -819,6 +748,85 @@ func (q *Queries) GetCouponByID(ctx context.Context, id pgtype.UUID) (GetCouponB
 	return i, err
 }
 
+const getCouponByIDInternal = `-- name: GetCouponByIDInternal :one
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ c.details,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.category AS provider_category
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.id = $1
+`
+
+type GetCouponByIDInternalRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	ProviderID          pgtype.UUID        `json:"provider_id"`
+	CouponType          string             `json:"coupon_type"`
+	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
+	Description         *string            `json:"description"`
+	Code                *string            `json:"code"`
+	DiscountType        *string            `json:"discount_type"`
+	DiscountValue       pgtype.Numeric     `json:"discount_value"`
+	Currency            *string            `json:"currency"`
+	TermsUrl            *string            `json:"terms_url"`
+	ReferralUrl         *string            `json:"referral_url"`
+	IsVerified          bool               `json:"is_verified"`
+	Status              string             `json:"status"`
+	ValidFrom           pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	TotalClicks         int32              `json:"total_clicks"`
+	TotalCopies         int32              `json:"total_copies"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	Details             *json.RawMessage   `json:"details"`
+	ProviderName        *string            `json:"provider_name"`
+	ProviderSlug        *string            `json:"provider_slug"`
+	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
+	ProviderCategory    *string            `json:"provider_category"`
+}
+
+// Admin/write-path lookup with no provider-active filter — staff must still
+// read, moderate, and update deals parked under inactive (unvetted org)
+// providers (§55). Public callers use GetCouponByID.
+func (q *Queries) GetCouponByIDInternal(ctx context.Context, id pgtype.UUID) (GetCouponByIDInternalRow, error) {
+	row := q.db.QueryRow(ctx, getCouponByIDInternal, id)
+	var i GetCouponByIDInternalRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProviderID,
+		&i.CouponType,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.TermsUrl,
+		&i.ReferralUrl,
+		&i.IsVerified,
+		&i.Status,
+		&i.ValidFrom,
+		&i.ExpiresAt,
+		&i.TotalClicks,
+		&i.TotalCopies,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Details,
+		&i.ProviderName,
+		&i.ProviderSlug,
+		&i.ProviderLogoMediaID,
+		&i.ProviderCategory,
+	)
+	return i, err
+}
+
 const getCouponBySlug = `-- name: GetCouponBySlug :one
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
@@ -831,6 +839,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.slug = $1 AND c.status <> 'pending'
+ AND (ap.id IS NULL OR ap.is_active = true)
 `
 
 type GetCouponBySlugRow struct {
@@ -979,6 +988,23 @@ func (q *Queries) GetCouponForRender(ctx context.Context, id pgtype.UUID) (GetCo
 	return i, err
 }
 
+const getCouponSlugExists = `-- name: GetCouponSlugExists :one
+SELECT id
+FROM coupons
+WHERE slug = $1
+`
+
+// Write-path slug ownership check: intentionally NO status or provider
+// filter — pending and inactive-provider deals still own their slug, so
+// resolveCouponSlug must see them or idx_coupons_slug raises 23505 at
+// INSERT time (§55).
+func (q *Queries) GetCouponSlugExists(ctx context.Context, slug string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getCouponSlugExists, slug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const invalidateCouponCache = `-- name: InvalidateCouponCache :exec
 SELECT 1
 `
@@ -1000,6 +1026,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.status = 'active'
+ AND (ap.id IS NULL OR ap.is_active = true)
  AND (c.expires_at IS NULL OR c.expires_at > now())
  AND ($1::uuid IS NULL OR c.provider_id = $1)
  AND ($2::text IS NULL OR c.coupon_type = $2)
@@ -1167,7 +1194,7 @@ LIMIT $3 OFFSET $2
 `
 
 type ListAffiliateProvidersParams struct {
-	IsActive   bool  `json:"is_active"`
+	IsActive   *bool `json:"is_active"`
 	PageOffset int32 `json:"page_offset"`
 	PageLimit  int32 `json:"page_limit"`
 }
@@ -1544,6 +1571,36 @@ func (q *Queries) ListCouponsByOrganization(ctx context.Context, arg ListCoupons
 		return nil, err
 	}
 	return items, nil
+}
+
+const listCouponsCount = `-- name: ListCouponsCount :one
+SELECT COUNT(*) AS count
+FROM coupons c
+WHERE ($1::text IS NULL OR c.status = $1)
+ AND ($2::text IS NULL OR c.coupon_type = $2)
+ AND ($3::uuid IS NULL OR c.provider_id = $3)
+ AND ($4::text IS NULL OR c.title ILIKE '%' || $4 || '%' OR c.code ILIKE '%' || $4 || '%')
+`
+
+type ListCouponsCountParams struct {
+	Status     *string     `json:"status"`
+	CouponType *string     `json:"coupon_type"`
+	ProviderID pgtype.UUID `json:"provider_id"`
+	Search     *string     `json:"search"`
+}
+
+// Mirrors ListCoupons's WHERE clause — powers the admin deals list's
+// pagination total (§55). No JOIN needed: the filters touch coupons only.
+func (q *Queries) ListCouponsCount(ctx context.Context, arg ListCouponsCountParams) (int64, error) {
+	row := q.db.QueryRow(ctx, listCouponsCount,
+		arg.Status,
+		arg.CouponType,
+		arg.ProviderID,
+		arg.Search,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const listEnabledCouponFeedSources = `-- name: ListEnabledCouponFeedSources :many

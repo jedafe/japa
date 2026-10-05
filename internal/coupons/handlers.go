@@ -113,6 +113,24 @@ func parseQueryString(r *http.Request, key string) *string {
 	return &v
 }
 
+// parseQueryBool parses an optional "true"/"false" (or 1/0) query flag.
+// Absent → (nil, nil) so callers can pass the value straight to a sqlc narg.
+func parseQueryBool(r *http.Request, key string) (*bool, error) {
+	raw := parseQueryString(r, key)
+	if raw == nil {
+		return nil, nil
+	}
+	switch *raw {
+	case "true", "1":
+		t := true
+		return &t, nil
+	case "false", "0":
+		f := false
+		return &f, nil
+	}
+	return nil, errors.New("must be 'true' or 'false'")
+}
+
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrCouponNotFound), errors.Is(err, ErrProviderNotFound),
@@ -120,7 +138,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrInvalidFeedSource):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_feed_source", err.Error())
-	case errors.Is(err, ErrInvalidDetails):
+	case errors.Is(err, ErrInvalidDetails), errors.Is(err, ErrInvalidStatus):
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrFeedSyncLocked):
 		errpkg.WriteError(w, http.StatusConflict, "feed_sync_locked", err.Error())
@@ -201,8 +219,15 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 	}
 	// Verify the coupon exists (platform-scoped) before recording the event so
 	// a missing coupon returns 404 instead of an FK-violation 500 (BUG-013).
-	if _, err := h.Service.GetCoupon(r.Context(), id); err != nil {
+	coupon, err := h.Service.GetCoupon(r.Context(), id)
+	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+	// Same guard as GetCoupon: pending org submissions are invisible to the
+	// public API — recording events on them would be an existence oracle (§55).
+	if coupon.Status == string(CouponStatusPending) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", ErrCouponNotFound.Error())
 		return
 	}
 
@@ -315,13 +340,21 @@ func (h *Handlers) DealGo(w http.ResponseWriter, r *http.Request) {
 
 // ── Admin Affiliate Provider Routes ─────────────────────────────────
 
-// ListProviders handles GET /api/v1/admin/affiliate-providers.
+// ListProviders handles GET /api/v1/admin/affiliate-providers. ?is_active=
+// filters on affiliate_providers.is_active; absent lists all providers —
+// inactive org providers must stay visible for moderation (§55).
 func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 
 	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
 	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
 
-	providers, err := h.Service.ListProviders(r.Context(), page, pageSize)
+	isActive, err := parseQueryBool(r, "is_active")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_filter", "is_active must be 'true' or 'false'")
+		return
+	}
+
+	providers, err := h.Service.ListProviders(r.Context(), isActive, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -452,9 +485,19 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Same filters, no pagination — the admin deals table needs total for
+	// server-side pagination (§55).
+	total, err := h.Service.CountCoupons(r.Context(), status, couponType, search)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
 	h.resolveLiterals(r, &coupons)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": coupons, "total": total, "page": page, "page_size": pageSize,
+	})
 }
 
 // CreateCouponAdmin handles POST /api/v1/admin/coupons.
@@ -471,6 +514,7 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
 		return
@@ -502,7 +546,9 @@ func (h *Handlers) GetCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	coupon, err := h.Service.GetCoupon(r.Context(), id)
+	// Staff read path: deals under inactive org providers must stay visible
+	// for moderation — the public Service.GetCoupon filters them out (§55).
+	coupon, err := h.Service.GetCouponAdmin(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -526,6 +572,7 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
 		return
@@ -1030,7 +1077,13 @@ func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen
 	}
 	org, err := h.orgs.GetOrganization(r.Context(), orgID)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
+		// Only a genuinely missing row is a 404 — a degraded DB must not
+		// masquerade as "not found" (§55 error mapping).
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
+		} else {
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load organization")
+		}
 		return gen.Organization{}, nil, false
 	}
 	role, err := h.orgs.MemberRole(r.Context(), orgID, user.UserID)
@@ -1063,6 +1116,7 @@ func (h *Handlers) SubmitOrgDeal(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
 	}
+	input.Title = strings.TrimSpace(input.Title)
 	if input.Title == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
 		return
