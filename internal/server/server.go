@@ -881,6 +881,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{platform} caching (§55)
 	couponHandlers := coupons.NewHandlers(couponService)
 	couponHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in coupons responses
+	worker.RegisterCouponFeedSyncer(couponService)     // §55: coupon:sync_feeds / coupon:import_feed
 
 	// Wire the coupon service into the renderer for render-time coupon_embed
 	// resolution and affiliate link href rewriting (Section 55 P4, BUG-004/005).
@@ -5455,6 +5456,20 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/admin/coupons/{id}", couponHandlers.UpdateCouponAdmin)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "coupons.manage")).
 				Delete("/admin/coupons/{id}", couponHandlers.DeleteCouponAdmin)
+
+			// Admin: deal feed sources CRUD + sync-now (§55 Deal Feed Import)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "coupons.manage")).
+				Get("/admin/coupon-feeds", couponHandlers.ListCouponFeeds)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "coupons.manage")).
+				Post("/admin/coupon-feeds", couponHandlers.CreateCouponFeed)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "coupons.manage")).
+				Get("/admin/coupon-feeds/{id}", couponHandlers.GetCouponFeed)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "coupons.manage")).
+				Patch("/admin/coupon-feeds/{id}", couponHandlers.UpdateCouponFeed)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "coupons.manage")).
+				Delete("/admin/coupon-feeds/{id}", couponHandlers.DeleteCouponFeed)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "coupons.manage")).
+				Post("/admin/coupon-feeds/{id}/sync", couponHandlers.SyncCouponFeedNow)
 
 			// ── User Affiliate Program (Section 56) ────────────────────
 

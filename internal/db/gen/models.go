@@ -1179,7 +1179,7 @@ type Coupon struct {
 	CouponType    string             `json:"coupon_type"`
 	Title         string             `json:"title"`
 	Description   *string            `json:"description"`
-	Code          string             `json:"code"`
+	Code          *string            `json:"code"`
 	DiscountType  *string            `json:"discount_type"`
 	DiscountValue pgtype.Numeric     `json:"discount_value"`
 	Currency      *string            `json:"currency"`
@@ -1195,6 +1195,8 @@ type Coupon struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Slug          string             `json:"slug"`
+	FeedID        pgtype.UUID        `json:"feed_id"`
+	ExternalID    *string            `json:"external_id"`
 }
 
 type CouponEvent struct {
@@ -1204,6 +1206,22 @@ type CouponEvent struct {
 	UserID    pgtype.UUID        `json:"user_id"`
 	ContentID pgtype.UUID        `json:"content_id"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type CouponFeedSource struct {
+	ID                pgtype.UUID        `json:"id"`
+	Name              string             `json:"name"`
+	SourceType        string             `json:"source_type"`
+	EndpointUrl       string             `json:"endpoint_url"`
+	ApiKeyEncrypted   *string            `json:"api_key_encrypted"`
+	DefaultProviderID pgtype.UUID        `json:"default_provider_id"`
+	Enabled           bool               `json:"enabled"`
+	LastSyncedAt      pgtype.Timestamptz `json:"last_synced_at"`
+	LastStatus        *string            `json:"last_status"`
+	LastError         *string            `json:"last_error"`
+	Stats             []byte             `json:"stats"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 type CourseAccessGrant struct {

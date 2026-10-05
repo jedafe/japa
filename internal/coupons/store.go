@@ -90,7 +90,7 @@ func (s *Store) countCouponsByProvider(ctx context.Context, providerID pgtype.UU
 
 // ── Coupons ─────────────────────────────────────────────────────────
 
-func (s *Store) createCoupon(ctx context.Context, c gen.CreateCouponParams) (gen.Coupon, error) {
+func (s *Store) createCoupon(ctx context.Context, c gen.CreateCouponParams) (gen.CreateCouponRow, error) {
 	return s.write.CreateCoupon(ctx, c)
 }
 
@@ -98,7 +98,7 @@ func (s *Store) getCouponByID(ctx context.Context, id pgtype.UUID) (gen.GetCoupo
 	return s.read.GetCouponByID(ctx, id)
 }
 
-func (s *Store) getCouponByCode(ctx context.Context, code string) (gen.GetCouponByCodeRow, error) {
+func (s *Store) getCouponByCode(ctx context.Context, code *string) (gen.GetCouponByCodeRow, error) {
 	return s.read.GetCouponByCode(ctx, code)
 }
 
@@ -129,7 +129,7 @@ func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, c
 	})
 }
 
-func (s *Store) updateCoupon(ctx context.Context, c gen.UpdateCouponParams) (gen.Coupon, error) {
+func (s *Store) updateCoupon(ctx context.Context, c gen.UpdateCouponParams) (gen.UpdateCouponRow, error) {
 	return s.write.UpdateCoupon(ctx, c)
 }
 
@@ -200,6 +200,61 @@ func (s *Store) listAffiliateCommissions(ctx context.Context, arg gen.ListAffili
 
 func (s *Store) updateProviderAuthorCommission(ctx context.Context, arg gen.UpdateProviderAuthorCommissionParams) (int64, error) {
 	return s.write.UpdateProviderAuthorCommission(ctx, arg)
+}
+
+// ── Deal Feed Sources (Section 55 Deal Feed Import) ─────────────────
+
+func (s *Store) createFeedSource(ctx context.Context, p gen.CreateCouponFeedSourceParams) (gen.CouponFeedSource, error) {
+	return s.write.CreateCouponFeedSource(ctx, p)
+}
+
+func (s *Store) getFeedSourceByID(ctx context.Context, id pgtype.UUID) (gen.CouponFeedSource, error) {
+	return s.read.GetCouponFeedSourceByID(ctx, id)
+}
+
+func (s *Store) listFeedSources(ctx context.Context) ([]gen.ListCouponFeedSourcesRow, error) {
+	return s.read.ListCouponFeedSources(ctx)
+}
+
+func (s *Store) listEnabledFeedSources(ctx context.Context) ([]gen.CouponFeedSource, error) {
+	return s.read.ListEnabledCouponFeedSources(ctx)
+}
+
+func (s *Store) updateFeedSource(ctx context.Context, p gen.UpdateCouponFeedSourceParams) (gen.CouponFeedSource, error) {
+	return s.write.UpdateCouponFeedSource(ctx, p)
+}
+
+func (s *Store) deleteFeedSource(ctx context.Context, id pgtype.UUID) error {
+	return s.write.DeleteCouponFeedSource(ctx, id)
+}
+
+func (s *Store) updateFeedSourceSyncStatus(ctx context.Context, p gen.UpdateCouponFeedSourceSyncStatusParams) error {
+	return s.write.UpdateCouponFeedSourceSyncStatus(ctx, p)
+}
+
+func (s *Store) upsertFeedCoupon(ctx context.Context, p gen.UpsertFeedCouponParams) (gen.UpsertFeedCouponRow, error) {
+	return s.write.UpsertFeedCoupon(ctx, p)
+}
+
+func (s *Store) getCouponByFeedExternal(ctx context.Context, feedID pgtype.UUID, externalID string) (gen.GetCouponByFeedExternalRow, error) {
+	return s.read.GetCouponByFeedExternal(ctx, gen.GetCouponByFeedExternalParams{
+		FeedID: feedID, ExternalID: &externalID,
+	})
+}
+
+func (s *Store) expireFeedCouponsNotSeen(ctx context.Context, feedID pgtype.UUID, seenIDs []string) (int64, error) {
+	rows, err := s.write.ExpireFeedCouponsNotSeen(ctx, gen.ExpireFeedCouponsNotSeenParams{
+		FeedID: feedID, SeenIds: seenIDs,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return int64(len(rows)), nil
+}
+
+func (s *Store) getProviderIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	return s.read.GetAffiliateProviderIDBySlug(ctx, slug)
 }
 
 // ── Error helpers ───────────────────────────────────────────────────

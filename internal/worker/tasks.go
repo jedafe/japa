@@ -119,6 +119,8 @@ const (
 	TypeDMCleanupDeclinedRequests       = "dm:cleanup_declined_requests"
 	TypeCouponTrackEvents               = "coupon:track_events"
 	TypeCouponExpireCheck               = "coupon:expire_check"
+	TypeCouponSyncFeeds                 = "coupon:sync_feeds"
+	TypeCouponImportFeed                = "coupon:import_feed"
 	TypeAffiliateRecordClick            = "affiliate:record_click"
 	TypeAffiliateCreditCommission       = "affiliate:credit_commission"
 	TypeAffiliateExpireCheck            = "affiliate:expire_check"
@@ -265,6 +267,8 @@ var handlerRegistry = []struct {
 	{TypeDMCleanupDeclinedRequests, HandleDMCleanupDeclinedRequests},
 	{TypeCouponTrackEvents, HandleCouponTrackEvents},
 	{TypeCouponExpireCheck, HandleCouponExpireCheck},
+	{TypeCouponSyncFeeds, HandleCouponSyncFeeds},
+	{TypeCouponImportFeed, HandleCouponImportFeed},
 	{TypeSubscriptionExpirySweep, HandleSubscriptionExpirySweep},
 	{TypeAffiliateRecordClick, HandleAffiliateRecordClick},
 	{TypeAffiliateCreditCommission, HandleAffiliateCreditCommission},

@@ -178,22 +178,22 @@ type CreateCouponInput struct {
 }
 
 // CreateCoupon is an exported method.
-func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
+func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input CreateCouponInput) (gen.CreateCouponRow, error) {
 	slug, err := s.resolveCouponSlug(ctx, input.Slug, input.Title, pgtype.UUID{})
 	if err != nil {
-		return gen.Coupon{}, err
+		return gen.CreateCouponRow{}, err
 	}
 
 	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
 		ProviderID: toNullableUUID(input.ProviderID), CouponType: input.CouponType,
-		Title: input.Title, Slug: slug, Description: input.Description, Code: input.Code,
+		Title: input.Title, Slug: slug, Description: input.Description, Code: strPtrOrNil(input.Code),
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt), CreatedBy: userID,
 	})
 	if err != nil {
-		return gen.Coupon{}, err
+		return gen.CreateCouponRow{}, err
 	}
 
 	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
@@ -324,25 +324,25 @@ func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID
 type UpdateCouponInput = CreateCouponInput
 
 // UpdateCoupon is an exported method.
-func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input UpdateCouponInput) (gen.Coupon, error) {
+func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input UpdateCouponInput) (gen.UpdateCouponRow, error) {
 	current, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
-			return gen.Coupon{}, ErrCouponNotFound
+			return gen.UpdateCouponRow{}, ErrCouponNotFound
 		}
 
-		return gen.Coupon{}, fmt.Errorf("checking coupon: %w", err)
+		return gen.UpdateCouponRow{}, fmt.Errorf("checking coupon: %w", err)
 	}
 
 	slug := current.Slug
 	if input.Slug != nil && *input.Slug != "" && content.Slugify(*input.Slug) != current.Slug {
 		if slug, err = s.resolveCouponSlug(ctx, input.Slug, input.Title, id); err != nil {
-			return gen.Coupon{}, err
+			return gen.UpdateCouponRow{}, err
 		}
 	}
 
 	c, err := s.store.updateCoupon(ctx, gen.UpdateCouponParams{
-		ID: id, Title: input.Title, Slug: slug, Description: input.Description, Code: input.Code,
+		ID: id, Title: input.Title, Slug: slug, Description: input.Description, Code: strPtrOrNil(input.Code),
 		ProviderID:   toNullableUUID(input.ProviderID),
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
@@ -350,7 +350,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
 	})
 	if err != nil {
-		return gen.Coupon{}, err
+		return gen.UpdateCouponRow{}, err
 	}
 
 	// Record a slug redirect so old /deal/{provider}/{slug} URLs keep
@@ -585,7 +585,7 @@ func (s *Service) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*
 	}
 
 	return &RenderedCoupon{
-		ID: r.ID.String(), Title: r.Title, Code: r.Code,
+		ID: r.ID.String(), Title: r.Title, Code: derefStr(r.Code),
 		DiscountType: r.DiscountType, DiscountValue: ptrNumeric(r.DiscountValue),
 		ProviderName: r.ProviderName, ProviderSlug: r.ProviderSlug,
 		ProviderLogoID: ptrUUID(r.ProviderLogoMediaID), ExpiresAt: ptrTimestamptz(r.ExpiresAt),
@@ -679,6 +679,16 @@ func derefStr(s *string) string {
 	}
 
 	return *s
+}
+
+// strPtrOrNil maps an empty string to nil — coupons.code is nullable (§55
+// Deal Feed Import: "deal" offers may carry no code).
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+
+	return &s
 }
 
 func ptrNumeric(n pgtype.Numeric) *string {

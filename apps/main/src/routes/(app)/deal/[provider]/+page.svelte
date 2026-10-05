@@ -61,6 +61,7 @@
 	}
 
 	async function copyCode(coupon: Coupon) {
+		if (!coupon.code) return;
 		try {
 			await navigator.clipboard.writeText(coupon.code);
 			recordEvent(coupon.id, 'copy');
@@ -150,11 +151,13 @@
 						</div>
 
 						<div class="flex items-center gap-2">
-							<code
-								class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1 font-mono text-xs text-[var(--color-text)]"
-							>
-								{coupon.code}
-							</code>
+							{#if coupon.code}
+								<code
+									class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1 font-mono text-xs text-[var(--color-text)]"
+								>
+									{coupon.code}
+								</code>
+							{/if}
 							{#if discountLabel(coupon)}
 								<span class="text-xs font-medium text-[var(--color-primary)]">
 									{discountLabel(coupon)}
@@ -163,18 +166,20 @@
 						</div>
 
 						<div class="flex items-center gap-2">
-							<button
-								type="button"
-								onclick={(e) => {
-									e.preventDefault();
-									e.stopPropagation();
-									copyCode(coupon);
-								}}
-								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-							>
-								<Copy size={12} />
-								{t('coupons.copy', 'Copy code')}
-							</button>
+							{#if coupon.code}
+								<button
+									type="button"
+									onclick={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
+										copyCode(coupon);
+									}}
+									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+								>
+									<Copy size={12} />
+									{t('coupons.copy', 'Copy code')}
+								</button>
+							{/if}
 							{#if coupon.referral_url}
 								<span
 									class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)]"

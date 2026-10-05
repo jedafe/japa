@@ -1483,6 +1483,16 @@ export const couponsAdminApiExtended = {
 	delete: (id: string) => api<{ deleted: boolean }>(`/admin/coupons/${id}`, { method: 'DELETE' }),
 };
 
+export const couponFeedsAdminApi = {
+	list: () => api<unknown>('/admin/coupon-feeds'),
+	get: (id: string) => api<unknown>(`/admin/coupon-feeds/${id}`),
+	create: (body: Record<string, unknown>) => api<unknown>('/admin/coupon-feeds', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api<unknown>(`/admin/coupon-feeds/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) => api<{ deleted: boolean }>(`/admin/coupon-feeds/${id}`, { method: 'DELETE' }),
+	sync: (id: string) => api<unknown>(`/admin/coupon-feeds/${id}/sync`, { method: 'POST', body: {} }),
+};
+
 export const discountCodesAdminApi = {
 	list: (params?: string) => api<unknown>(`/admin/discount-codes${params ? `?${params}` : ''}`),
 	getUsage: (id: string) => api<unknown>(`/admin/discount-codes/${id}/usage`),
