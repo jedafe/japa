@@ -223,3 +223,37 @@ export function roadmapStatusOptions(
 		label: roadmapStatusLabel(t, value)
 	}));
 }
+
+/**
+ * Maps a roadmap API error code (§113 — the codes emitted by
+ * internal/roadmap handlers plus the shared errpkg/service sentinels) to a
+ * `roadmap.errors.*` i18n key. Unknown/unmapped codes fall back to the
+ * caller-provided generic key.
+ */
+export function roadmapErrorKey(
+	code: string | undefined,
+	fallback = 'roadmap.errors.submit_failed'
+): string {
+	switch (code) {
+		case 'missing_title':
+			return 'roadmap.errors.title_required';
+		case 'invalid_category_id':
+			return 'roadmap.errors.invalid_category_id';
+		case 'already_voted':
+			return 'roadmap.errors.already_voted';
+		case 'not_voted':
+			return 'roadmap.errors.not_voted';
+		case 'invalid_status_transition':
+			return 'roadmap.errors.invalid_status_transition';
+		case 'feature_disabled':
+			return 'roadmap.errors.feature_disabled';
+		case 'rate_limit_exceeded':
+			return 'roadmap.errors.rate_limit_exceeded';
+		case 'unauthorized':
+			return 'roadmap.errors.unauthorized';
+		case 'not_found':
+			return 'roadmap.errors.not_found';
+		default:
+			return fallback;
+	}
+}

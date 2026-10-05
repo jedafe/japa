@@ -8,6 +8,7 @@
 	// the §49 comments convention so the detail page renders it rich.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { roadmapErrorKey } from '$lib/enumOptions';
 	import { encodeReplyBody } from '$lib/tiptap/serialize';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { CheckCircle, Lightbulb, Send } from 'lucide-svelte';
@@ -55,7 +56,10 @@
 				summary = '';
 				body = '';
 			} else {
-				errorKey = 'roadmap.errors.submit_failed';
+				// Map backend codes (missing_title, feature_disabled,
+				// rate_limit_exceeded, …) to a translated message; unknown
+				// codes get the generic failure text.
+				errorKey = roadmapErrorKey(res.error?.code);
 			}
 		} catch {
 			errorKey = 'roadmap.errors.submit_failed';
@@ -71,6 +75,9 @@
 		name="description"
 		content={t('roadmap.submit.subtitle', 'Tell us what you would like to see on JapaConnect.')}
 	/>
+	<!-- Auth-required form — excluded from /sitemap-roadmap.xml, so mark it
+	     noindex to match. -->
+	<meta name="robots" content="noindex" />
 </svelte:head>
 
 <section class="mx-auto max-w-2xl space-y-6 px-4 py-8">

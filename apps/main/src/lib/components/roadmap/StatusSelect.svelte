@@ -9,7 +9,7 @@
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { api } from '$lib/api/client';
 	import { t } from '$lib/i18n';
-	import { roadmapStatusOptions } from '$lib/enumOptions';
+	import { roadmapErrorKey, roadmapStatusOptions } from '$lib/enumOptions';
 	import type { RoadmapStatus } from '$lib/types';
 
 	interface Props {
@@ -29,7 +29,9 @@
 		const res = await api.patch(`/admin/roadmap/items/${itemId}/status`, { status: value });
 		pending = false;
 		if (res.error) {
-			errorKey = 'roadmap.status_update_failed';
+			// Map backend codes (invalid_status_transition, unauthorized, …) to
+			// a translated message; unknown codes get the generic failure text.
+			errorKey = roadmapErrorKey(res.error.code, 'roadmap.status_update_failed');
 			return;
 		}
 		await invalidateAll();
