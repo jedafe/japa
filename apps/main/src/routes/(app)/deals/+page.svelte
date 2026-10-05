@@ -1,29 +1,44 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
-	import { Ticket, BadgeCheck, Copy, ExternalLink } from 'lucide-svelte';
+	import { Ticket, BadgeCheck, Copy, ExternalLink, Store } from 'lucide-svelte';
 	import { EmptyState, ListPageBar } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { dealPath, type Coupon } from '$lib/types';
 	import { currencySymbol } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
 
-	const title = $derived(t('coupons.title', 'Coupons — JapaConnect'));
+	const title = $derived(t('deals.title', 'Deals — JapaConnect'));
 	const description = $derived(
-		t('coupons.description', 'Browse active coupons and discount codes from JapaConnect partners.')
+		t('deals.description', 'Browse active deals and discount codes from JapaConnect partners.')
 	);
 
 	const jsonLd = $derived(
 		JSON.stringify({
 			'@context': 'https://schema.org',
 			'@type': 'CollectionPage',
-			name: 'Coupons',
+			name: 'Deals',
 			description,
 			url: page.url.href
 		})
+	);
+
+	// Partner directory strip — unique providers among the listed deals,
+	// deduplicated by provider_slug (coupon rows embed provider_* fields).
+	const partners = $derived(
+		[
+			...new Map(
+				data.coupons
+					.filter((c) => c.provider_slug && c.provider_name)
+					.map((c) => [
+						c.provider_slug as string,
+						{ slug: c.provider_slug as string, name: c.provider_name as string }
+					])
+			).values()
+		].sort((a, b) => a.name.localeCompare(b.name))
 	);
 
 	function discountLabel(c: Coupon): string {
@@ -69,6 +84,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href="{page.url.origin}/deals" />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
@@ -76,16 +92,39 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
-	<ListPageBar title={t('coupons.heading', 'Coupons')} />
+	<ListPageBar title={t('deals.heading', 'Deals')} />
 
 	<div class="p-4">
 		{#if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">
-				{t('coupons.load_error', 'Failed to load coupons. Please try again later.')}
+				{t('deals.load_error', 'Failed to load deals. Please try again later.')}
 			</p>
 		{:else if data.coupons.length === 0}
-			<EmptyState icon={Ticket} title={t('coupons.empty', 'No coupons available right now.')} />
+			<EmptyState icon={Ticket} title={t('deals.empty', 'No deals available right now.')} />
 		{:else}
+			{#if partners.length > 0}
+				<nav aria-label={t('deals.partners', 'Deal partners')} class="mb-4">
+					<h2
+						class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+					>
+						<Store size={14} />
+						{t('deals.partners', 'Deal partners')}
+					</h2>
+					<ul class="flex flex-wrap gap-2">
+						{#each partners as partner (partner.slug)}
+							<li>
+								<a
+									href="/deal/{partner.slug}"
+									class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]"
+								>
+									{partner.name}
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</nav>
+			{/if}
+
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each data.coupons as coupon (coupon.id)}
 					<a

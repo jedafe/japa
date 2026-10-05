@@ -90,10 +90,10 @@
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
 		<div class="mb-2 flex items-center gap-1.5 text-sm">
 			<a
-				href="/coupons"
+				href="/deals"
 				class="inline-flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 			>
-				{t('coupon.back', 'All coupons')}
+				{t('deals.back', 'All deals')}
 			</a>
 			{#if coupon.provider_slug}
 				<span class="text-[var(--color-text-subtle)]">/</span>
