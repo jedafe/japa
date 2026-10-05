@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -87,6 +88,9 @@ type CreateProviderInput struct {
 
 // CreateProvider is an exported method.
 func (s *Service) CreateProvider(ctx context.Context, input CreateProviderInput) (gen.AffiliateProvider, error) {
+	if err := validateOutboundURL("base_url", input.BaseURL); err != nil {
+		return gen.AffiliateProvider{}, err
+	}
 	p, err := s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 
 		Name:           input.Name,
@@ -145,6 +149,9 @@ func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, input Upda
 		}
 
 		return gen.AffiliateProvider{}, fmt.Errorf("checking provider: %w", err)
+	}
+	if err := validateOutboundURL("base_url", input.BaseURL); err != nil {
+		return gen.AffiliateProvider{}, err
 	}
 
 	p, err := s.store.updateProvider(ctx, gen.UpdateAffiliateProviderParams{
@@ -250,6 +257,36 @@ func validateCouponDetails(raw json.RawMessage) error {
 	return nil
 }
 
+// validateOutboundURL returns ErrInvalidURL when a non-empty URL field is not
+// an absolute http(s) URL. These values are later rendered as href targets
+// and emitted as the /deals/{slug}/go Location header, so exotic schemes
+// (javascript:, data:, file:) and malformed input are rejected at write time
+// (§55).
+func validateOutboundURL(field string, u *string) error {
+	if u == nil || strings.TrimSpace(*u) == "" {
+		return nil
+	}
+	parsed, err := url.Parse(strings.TrimSpace(*u))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidURL, field)
+	}
+	return nil
+}
+
+// httpURLOrNil returns u when it holds a non-empty absolute http(s) URL and
+// nil otherwise — for propagating caller-controlled URLs (e.g. an org's
+// website_url) into fields that become public redirect targets without also
+// propagating unsafe or malformed values (§55).
+func httpURLOrNil(u *string) *string {
+	if u == nil || strings.TrimSpace(*u) == "" {
+		return nil
+	}
+	if validateOutboundURL("url", u) != nil {
+		return nil
+	}
+	return u
+}
+
 // detailsParam maps the input details to the nullable sqlc param: empty/nil
 // → SQL NULL (a non-pointer nil RawMessage would store the JSON literal
 // 'null' instead of a NULL — §55).
@@ -270,10 +307,13 @@ func validateCouponWrite(input CreateCouponInput) error {
 	}
 	switch CouponStatus(input.Status) {
 	case CouponStatusActive, CouponStatusExpired, CouponStatusSuspended, CouponStatusPending:
-		return nil
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidStatus, input.Status)
 	}
+	if err := validateOutboundURL("terms_url", input.TermsURL); err != nil {
+		return err
+	}
+	return validateOutboundURL("referral_url", input.ReferralURL)
 }
 
 // mapCouponWriteErr translates unique-violation insert/update errors on
@@ -343,6 +383,13 @@ func (s *Service) resolveCouponSlug(ctx context.Context, input *string, title st
 	base := content.Slugify(title)
 	if input != nil && *input != "" {
 		base = content.Slugify(*input)
+	}
+	if base == "" {
+		// A title made entirely of non-ASCII/punctuation slugifies to "" —
+		// fall back to a generic base (mirrors providerForOrg's empty-slug
+		// guard) rather than storing a coupon with slug '' that no
+		// /deal/{provider}/{slug} URL can address (§55).
+		base = "deal"
 	}
 
 	for i := 0; i < maxCouponSlugAttempts; i++ {
@@ -729,11 +776,16 @@ func (s *Service) ResolveDealClick(ctx context.Context, slug string) (target str
 		live = false
 	}
 
-	if live && coupon.ReferralUrl != nil && *coupon.ReferralUrl != "" {
+	// Write paths validate URL schemes, but rows predating that validation (or
+	// written by other paths) may hold non-http(s) targets — re-check at read
+	// time so /deals/{slug}/go never emits an exotic-scheme Location (§55).
+	if live && coupon.ReferralUrl != nil && *coupon.ReferralUrl != "" &&
+		validateOutboundURL("referral_url", coupon.ReferralUrl) == nil {
 		return *coupon.ReferralUrl, coupon, nil
 	}
 
-	if coupon.ProviderBaseUrl != nil && *coupon.ProviderBaseUrl != "" {
+	if coupon.ProviderBaseUrl != nil && *coupon.ProviderBaseUrl != "" &&
+		validateOutboundURL("base_url", coupon.ProviderBaseUrl) == nil {
 		return *coupon.ProviderBaseUrl, coupon, nil
 	}
 
@@ -1056,6 +1108,12 @@ func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userI
 	if err := validateCouponDetails(input.Details); err != nil {
 		return gen.CreateCouponRow{}, err
 	}
+	if err := validateOutboundURL("terms_url", input.TermsURL); err != nil {
+		return gen.CreateCouponRow{}, err
+	}
+	if err := validateOutboundURL("referral_url", input.ReferralURL); err != nil {
+		return gen.CreateCouponRow{}, err
+	}
 	provider, err := s.providerForOrg(ctx, org)
 	if err != nil {
 		return gen.CreateCouponRow{}, err
@@ -1117,7 +1175,7 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 		// UpdateCoupon via activateOrgProvider.
 		p, err := s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 			Name: org.Name, Slug: candidate, Description: org.Description,
-			ProviderType: string(ProviderTypeBoth), BaseUrl: org.WebsiteUrl,
+			ProviderType: string(ProviderTypeBoth), BaseUrl: httpURLOrNil(org.WebsiteUrl),
 			LogoMediaID: org.LogoMediaID, IsActive: false,
 			OrganizationID: org.ID,
 		})

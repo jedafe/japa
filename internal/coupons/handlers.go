@@ -138,7 +138,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrInvalidFeedSource):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_feed_source", err.Error())
-	case errors.Is(err, ErrInvalidDetails), errors.Is(err, ErrInvalidStatus):
+	case errors.Is(err, ErrInvalidDetails), errors.Is(err, ErrInvalidStatus),
+		errors.Is(err, ErrInvalidURL):
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrFeedSyncLocked):
 		errpkg.WriteError(w, http.StatusConflict, "feed_sync_locked", err.Error())
