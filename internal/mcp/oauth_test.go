@@ -38,6 +38,10 @@ func (f *fakeOAuthStore) CreateClient(_ context.Context, c OAuthClient) error {
 	return nil
 }
 
+func (f *fakeOAuthStore) CountClients(_ context.Context) (int64, error) {
+	return int64(len(f.clients)), nil
+}
+
 func (f *fakeOAuthStore) GetClientByClientID(_ context.Context, clientID string) (*OAuthClient, error) {
 	if c, ok := f.clients[clientID]; ok {
 		return c, nil
@@ -179,6 +183,29 @@ func TestRegisterClient(t *testing.T) {
 	}
 	if store.clients[cid] == nil {
 		t.Fatal("client not persisted")
+	}
+}
+
+// §120: oauth_clients is hard-capped at mcp.oauth_max_clients (default 500)
+// so distributed DCR spam cannot grow the table between sweeps.
+func TestRegisterClientCap(t *testing.T) {
+	h, _, store := newTestOAuth()
+
+	for i := 0; i < 500; i++ {
+		cid := "jcmc_spam_" + strconv.Itoa(i)
+		store.clients[cid] = &OAuthClient{ClientID: cid}
+	}
+
+	body := `{"client_name":"Spammer","redirect_uris":["https://evil.example.com/cb"]}`
+	req := httptest.NewRequest(http.MethodPost, "/oauth/register", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.HandleRegister(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_client_metadata") {
+		t.Fatalf("expected invalid_client_metadata, got: %s", rec.Body.String())
 	}
 }
 

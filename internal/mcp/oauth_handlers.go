@@ -205,6 +205,21 @@ func (h *OAuthHandlers) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		name = name[:maxClientNameLen]
 	}
 
+	// §120: hard cap on registered clients — DCR is public, so per-IP rate
+	// limits alone cannot bound a distributed burst between sweeps.
+	if max := h.svc.maxClients(r.Context()); max > 0 {
+		n, cerr := h.svc.store.CountClients(r.Context())
+		if cerr != nil {
+			slog.Error("oauth: count clients", "error", cerr)
+			writeOAuthError(w, http.StatusInternalServerError, "server_error", "registration unavailable")
+			return
+		}
+		if n >= max {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "client registration limit reached")
+			return
+		}
+	}
+
 	clientID, err := newRandomToken(oauthClientIDPrefix, 12)
 	if err != nil {
 		writeOAuthError(w, http.StatusInternalServerError, "server_error", "failed to generate client id")
