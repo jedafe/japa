@@ -788,7 +788,7 @@ func (q *Queries) CreateSpaceRule(ctx context.Context, arg CreateSpaceRuleParams
 const createSpaceType = `-- name: CreateSpaceType :one
 INSERT INTO space_types (name, slug, description, icon, field_group_id, category, is_system) VALUES ($1, $2, $3, $4, $5, $6, $7)
 
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 `
 
 type CreateSpaceTypeParams struct {
@@ -823,6 +823,7 @@ func (q *Queries) CreateSpaceType(ctx context.Context, arg CreateSpaceTypeParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Category,
+		&i.WikiOnly,
 	)
 	return i, err
 }
@@ -1890,7 +1891,7 @@ func (q *Queries) GetSpaceRegionByGeoCode(ctx context.Context, geoCode *string) 
 }
 
 const getSpaceTypeByID = `-- name: GetSpaceTypeByID :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 WHERE id = $1
 `
@@ -1909,12 +1910,13 @@ func (q *Queries) GetSpaceTypeByID(ctx context.Context, id pgtype.UUID) (SpaceTy
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Category,
+		&i.WikiOnly,
 	)
 	return i, err
 }
 
 const getSpaceTypeBySlug = `-- name: GetSpaceTypeBySlug :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 WHERE slug = $1
 `
@@ -1933,6 +1935,7 @@ func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, slug string) (SpaceTyp
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Category,
+		&i.WikiOnly,
 	)
 	return i, err
 }
@@ -2762,7 +2765,7 @@ func (q *Queries) ListSpaceRulesBySpace(ctx context.Context, spaceID pgtype.UUID
 
 const listSpaceTypes = `-- name: ListSpaceTypes :many
 
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 
 ORDER BY created_at ASC, id ASC
@@ -2791,6 +2794,7 @@ func (q *Queries) ListSpaceTypes(ctx context.Context) ([]SpaceType, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Category,
+			&i.WikiOnly,
 		); err != nil {
 			return nil, err
 		}
@@ -2803,7 +2807,7 @@ func (q *Queries) ListSpaceTypes(ctx context.Context) ([]SpaceType, error) {
 }
 
 const listSpaceTypesFiltered = `-- name: ListSpaceTypesFiltered :many
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%' OR slug ILIKE '%' || $1 || '%')
  AND ($2::text = '' OR category = $2)
@@ -2840,6 +2844,7 @@ func (q *Queries) ListSpaceTypesFiltered(ctx context.Context, arg ListSpaceTypes
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Category,
+			&i.WikiOnly,
 		); err != nil {
 			return nil, err
 		}
@@ -4811,9 +4816,10 @@ func (q *Queries) UpdateSpaceStatus(ctx context.Context, arg UpdateSpaceStatusPa
 const updateSpaceType = `-- name: UpdateSpaceType :one
 UPDATE space_types
 SET name = $1, description = $2, icon = $3,
- field_group_id = $4, category = $5
-WHERE id = $6 AND is_system = false
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+ field_group_id = $4, category = $5,
+ wiki_only = $6
+WHERE id = $7 AND is_system = false
+RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 `
 
 type UpdateSpaceTypeParams struct {
@@ -4822,6 +4828,7 @@ type UpdateSpaceTypeParams struct {
 	Icon         *string     `json:"icon"`
 	FieldGroupID pgtype.UUID `json:"field_group_id"`
 	Category     *string     `json:"category"`
+	WikiOnly     *bool       `json:"wiki_only"`
 	ID           pgtype.UUID `json:"id"`
 }
 
@@ -4832,6 +4839,7 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		arg.Icon,
 		arg.FieldGroupID,
 		arg.Category,
+		arg.WikiOnly,
 		arg.ID,
 	)
 	var i SpaceType
@@ -4846,6 +4854,7 @@ func (q *Queries) UpdateSpaceType(ctx context.Context, arg UpdateSpaceTypeParams
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Category,
+		&i.WikiOnly,
 	)
 	return i, err
 }

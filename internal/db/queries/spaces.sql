@@ -21,7 +21,7 @@ RETURNING id, name, visibility, posting_perm, replying_perm, commenting_perm, jo
 -- =====================
 
 -- name: ListSpaceTypes :many
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 
 ORDER BY created_at ASC, id ASC;
@@ -30,7 +30,7 @@ ORDER BY created_at ASC, id ASC;
 -- Supports optional search (q), category filter, and a selectable-only flag
 -- for the admin panel and the member space-creation flow. Pass empty strings
 -- and false booleans to skip filters.
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 WHERE (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' || @search || '%')
  AND (@category_filter::text = '' OR category = @category_filter)
@@ -38,26 +38,27 @@ WHERE (@search::text = '' OR name ILIKE '%' || @search || '%' OR slug ILIKE '%' 
 ORDER BY created_at ASC, id ASC;
 
 -- name: GetSpaceTypeByID :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 WHERE id = @id;
 
 -- name: GetSpaceTypeBySlug :one
-SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
 FROM space_types
 WHERE slug = @slug;
 
 -- name: CreateSpaceType :one
 INSERT INTO space_types (name, slug, description, icon, field_group_id, category, is_system) VALUES (@name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(field_group_id), sqlc.narg(category), @is_system)
 
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
+RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only;
 
 -- name: UpdateSpaceType :one
 UPDATE space_types
 SET name = @name, description = sqlc.narg(description), icon = sqlc.narg(icon),
- field_group_id = sqlc.narg(field_group_id), category = sqlc.narg(category)
+ field_group_id = sqlc.narg(field_group_id), category = sqlc.narg(category),
+ wiki_only = sqlc.narg(wiki_only)
 WHERE id = @id AND is_system = false
-RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category;
+RETURNING id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only;
 
 -- name: DeleteSpaceType :exec
 DELETE FROM space_types
