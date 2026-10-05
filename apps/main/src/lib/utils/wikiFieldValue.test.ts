@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fieldCurrencyCode, formatPriceRange, formatWikiFieldValue, priceRangeParts } from './wikiFieldValue';
+import { fieldCurrencyCode, formatPriceRange, formatWikiFieldValue, mediaFieldItems, priceRangeParts } from './wikiFieldValue';
 import type { CurrencyInfo } from './currency';
 
 // §80 Itemized Pricing — the composite {avg?,min?,max?} value must survive
@@ -136,5 +136,30 @@ describe('formatWikiFieldValue', () => {
 				'NGN'
 			)
 		).toBe('₦800 – ₦1,600');
+	});
+});
+
+// §80 attractions — resolved media field values.
+describe('mediaFieldItems', () => {
+	it('unwraps the single-object shape (image_single)', () => {
+		expect(mediaFieldItems({ id: 'm1', url: 'https://x/img.webp', alt: 'Falls' })).toEqual([
+			{ id: 'm1', url: 'https://x/img.webp', alt: 'Falls' }
+		]);
+	});
+
+	it('unwraps the array shape (image_multi/media)', () => {
+		const items = mediaFieldItems([
+			{ id: 'm1', url: 'https://x/a.webp' },
+			{ id: 'm2', url: 'https://x/b.webp', alt: 'B' }
+		]);
+		expect(items).toHaveLength(2);
+		expect(items[1].alt).toBe('B');
+	});
+
+	it('returns [] for unresolved/raw values', () => {
+		expect(mediaFieldItems('d9c9…')).toEqual([]);
+		expect(mediaFieldItems(['d9c9…'])).toEqual([]);
+		expect(mediaFieldItems({ value: 'd9c9…' })).toEqual([]);
+		expect(mediaFieldItems(null)).toEqual([]);
 	});
 });

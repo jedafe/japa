@@ -17,7 +17,8 @@
 		pages = [],
 		currentPageSlug = '',
 		quickFactsGroup = '',
-		toc = []
+		toc = [],
+		wikiOnly = false
 	}: {
 		spaceSlug: string;
 		spaceName: string;
@@ -33,6 +34,10 @@
 		 *  fields.sections[] plus rollup/directory panels. Rendered when
 		 *  the page has ≥2 sections. */
 		toc?: Array<{ id: string; label: string }>;
+		/** §80 attractions: wiki-only spaces have no community surface —
+		 *  hides the "Need Help? / Join Community" block (the /spaces
+		 *  route redirects to the wiki anyway). */
+		wikiOnly?: boolean;
 	} = $props();
 
 	// Related articles: featured pages first, then the rest in index order.
@@ -130,22 +135,25 @@
 	<WikiQuickFacts entityType="space" entityId={spaceId} groupSlug={quickFactsGroup} />
 {/if}
 
-<!-- Need Help? — routes readers to the destination's community space. -->
-<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-	<h2 class="mb-1.5 text-sm font-semibold text-[var(--color-text)]">
-		{t('wiki.need_help', 'Need Help?')}
-	</h2>
-	<p class="mb-3 text-xs leading-relaxed text-[var(--color-muted)]">
-		{t('wiki.need_help_body', 'Ask questions, get advice, and connect with people already in {name}.', { name: spaceName })}
-	</p>
-	<a
-		href="/spaces/{encodeURIComponent(spaceSlug)}"
-		class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-success)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-	>
-		{t('wiki.join_community', 'Join Community')}
-		<ArrowRight size={14} aria-hidden="true" />
-	</a>
-</section>
+<!-- Need Help? — routes readers to the destination's community space.
+     Hidden for wiki-only spaces (§80 attractions) — they have no community. -->
+{#if !wikiOnly}
+	<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+		<h2 class="mb-1.5 text-sm font-semibold text-[var(--color-text)]">
+			{t('wiki.need_help', 'Need Help?')}
+		</h2>
+		<p class="mb-3 text-xs leading-relaxed text-[var(--color-muted)]">
+			{t('wiki.need_help_body', 'Ask questions, get advice, and connect with people already in {name}.', { name: spaceName })}
+		</p>
+		<a
+			href="/spaces/{encodeURIComponent(spaceSlug)}"
+			class="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-success)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+		>
+			{t('wiki.join_community', 'Join Community')}
+			<ArrowRight size={14} aria-hidden="true" />
+		</a>
+	</section>
+{/if}
 
 {#if related.length > 0}
 	<section class="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

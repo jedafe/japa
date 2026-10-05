@@ -259,6 +259,7 @@
 		{spaceId}
 		{spaceLevel}
 		pages={data.index}
+		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
 </SetSidebar>
 

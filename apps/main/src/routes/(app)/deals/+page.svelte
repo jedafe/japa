@@ -49,7 +49,9 @@
 
 	function selectCategory(cat: string) {
 		selectedCategory = cat;
-		const url = new URL(page.url);
+		// page.url is the load-time snapshot — build from the live location so
+		// consecutive pill clicks don't drop params set since the last nav.
+		const url = new URL(window.location.href);
 		if (cat) {
 			url.searchParams.set('category', cat);
 		} else {
@@ -90,14 +92,19 @@
 		return c.provider_name ?? t('deals.internal', 'JapaConnect');
 	}
 
-	function openDeal(coupon: Coupon) {
+	function onRowClick(e: MouseEvent, coupon: Coupon) {
+		// The deal title is a real anchor — let its native navigation handle
+		// clicks (incl. middle-click / open-in-new-tab) instead of goto().
+		if ((e.target as HTMLElement).closest('a')) return;
 		goto(dealPath(coupon));
 	}
 
 	function onRowKeydown(e: KeyboardEvent, coupon: Coupon) {
-		if (e.key === 'Enter') {
+		// role="link" rows activate on Enter AND Space per APG.
+		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault();
-			openDeal(coupon);
+			if ((e.target as HTMLElement).closest('a')) return;
+			goto(dealPath(coupon));
 		}
 	}
 </script>
@@ -195,7 +202,7 @@
 								<tr
 									role="link"
 									tabindex="0"
-									onclick={() => openDeal(coupon)}
+									onclick={(e) => onRowClick(e, coupon)}
 									onkeydown={(e) => onRowKeydown(e, coupon)}
 									class="cursor-pointer border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 								>
@@ -215,7 +222,12 @@
 									</td>
 									<td class="px-3 py-3">
 										<div class="flex items-center gap-1.5">
-											<span class="font-medium text-[var(--color-text)]">{coupon.title}</span>
+											<a
+												href={dealPath(coupon)}
+												class="font-medium text-[var(--color-text)] hover:text-[var(--color-primary)] hover:underline"
+											>
+												{coupon.title}
+											</a>
 											{#if coupon.is_verified}
 												<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
 											{/if}
@@ -240,7 +252,7 @@
 											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
 										>
 											<ExternalLink size={12} />
-											{t('coupons.visit', 'Claim')}
+											{t('coupons.claim', 'Claim')}
 										</span>
 									</td>
 								</tr>

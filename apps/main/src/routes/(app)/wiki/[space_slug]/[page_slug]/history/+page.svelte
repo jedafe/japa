@@ -113,6 +113,7 @@
 		{spaceLevel}
 		pages={data.index ?? []}
 		currentPageSlug={data.pageSlug}
+		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
 </SetSidebar>
 

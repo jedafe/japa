@@ -16,7 +16,7 @@
 	} from '$lib/api/wiki';
 	import LoadingSkeleton from '$lib/components/ui/LoadingSkeleton.svelte';
 	import SuggestEdit from './SuggestEdit.svelte';
-	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
+	import { formatWikiFieldValue, isMediaFieldType, mediaFieldItems } from '$lib/utils/wikiFieldValue';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 
 	let {
@@ -194,6 +194,39 @@
 						</h3>
 						<dl class="divide-y divide-[var(--color-border)]">
 							{#each group.fields as f (f.id)}
+								{#if isMediaFieldType(f.field_type)}
+									<!-- §80 attractions: image fields render as a thumbnail
+									     grid (the attraction gallery), not text. -->
+									{@const media = mediaFieldItems(f.value)}
+									{#if media.length > 0}
+										<div class="py-1.5">
+											<div class="flex items-baseline justify-between gap-3 text-sm">
+												<dt class="text-[var(--color-muted)]">{f.label}</dt>
+												{#if f.can_edit}
+													<button
+														type="button"
+														onclick={() => (editOpen = true)}
+														class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]"
+														aria-label={t('wiki.suggest_edit', 'Suggest an edit')}
+														title={t('wiki.suggest_edit', 'Suggest an edit')}
+													>
+														<Pencil size={12} />
+													</button>
+												{/if}
+											</div>
+											<dd class="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+												{#each media as m (m.id || m.url)}
+													<img
+														src={m.url}
+														alt={m.alt ?? ''}
+														loading="lazy"
+														class="aspect-[4/3] w-full rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+													/>
+												{/each}
+											</dd>
+										</div>
+									{/if}
+								{:else}
 								<div class="flex items-baseline justify-between gap-3 py-1.5 text-sm">
 									<dt class="shrink-0 text-[var(--color-muted)]">{f.label}</dt>
 									<dd class="flex min-w-0 items-baseline gap-2 text-right">
@@ -211,6 +244,7 @@
 										{/if}
 									</dd>
 								</div>
+								{/if}
 							{/each}
 						</dl>
 					</section>

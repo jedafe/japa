@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList } from '$lib/server/api';
 import type {
@@ -83,6 +83,12 @@ export const load: PageServerLoad = async (event) => {
 
 	const space = detail.space;
 	const spaceId = space.id;
+
+	// §80 attractions: wiki-only spaces have no community surface — redirect
+	// to the wiki index before the tab fan-out below runs.
+	if (detail.wiki_only) {
+		throw redirect(302, `/wiki/${encodeURIComponent(slug)}`);
+	}
 
 	// Determine whether this space is a university type so the Reviews tab is
 	// only shown for spaces that can have reviews. Section 39: universities
