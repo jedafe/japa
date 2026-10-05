@@ -25,6 +25,7 @@
 		providers = [],
 		canManageProviders = false,
 		orgId,
+		providerName,
 		currencies,
 		onsaved,
 		oncancel
@@ -286,6 +287,17 @@
 				</div>
 			</div>
 		{/if}
+	{:else if providerName}
+		<!-- Org audience: the provider is server-derived from the organization
+		     (§55 providerForOrg) — shown read-only in place of the select. -->
+		<div>
+			<span class={labelClass}>{t('deal.form.provider', 'Provider')}</span>
+			<p class="text-sm text-[var(--color-text-subtle)]">
+				{t('deal.form.org_provider_note', 'This deal will be submitted as {name}.', {
+					name: providerName
+				})}
+			</p>
+		</div>
 	{/if}
 
 	<!-- Title + slug -->

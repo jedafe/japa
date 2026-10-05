@@ -604,6 +604,14 @@ func (s *Service) upsertOffer(ctx context.Context, src gen.CouponFeedSource, o f
 
 	// The upsert leaves slug fixed on update; invalidate whichever slug the row has.
 	s.invalidateCouponCaches(ctx, row.ID, row.Slug)
+
+	// A feed's default_provider_id can point at an org-linked provider still
+	// inactive (providerForOrg). Importing a live offer under it is equivalent
+	// to approval — same activation hook as UpdateCoupon/CreateCoupon (§55).
+	if status == string(CouponStatusActive) && providerID.Valid {
+		s.activateOrgProvider(ctx, providerID)
+	}
+
 	return row.Inserted, nil
 }
 

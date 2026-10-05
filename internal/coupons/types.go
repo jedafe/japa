@@ -55,16 +55,19 @@ const (
 
 // DealPartnerRef is the slim provider row returned by GET /deals/partners —
 // powers the /deals filter pills and the deal form's provider select.
+// pgtype.UUID fields marshal null when invalid; omitempty on them would be a
+// no-op (it only applies to empty values, and a struct is never "empty"), so
+// they serialize as `null` explicitly.
 type DealPartnerRef struct {
 	ID             pgtype.UUID `json:"id"`
 	Name           string      `json:"name"`
 	Slug           string      `json:"slug"`
 	Description    *string     `json:"description,omitempty"`
 	Category       *string     `json:"category,omitempty"`
-	LogoMediaID    pgtype.UUID `json:"logo_media_id,omitempty"`
+	LogoMediaID    pgtype.UUID `json:"logo_media_id"`
 	BaseURL        *string     `json:"base_url,omitempty"`
 	IsFeatured     bool        `json:"is_featured"`
-	OrganizationID pgtype.UUID `json:"organization_id,omitempty"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
 }
 
 // CouponType distinguishes external partner coupons from internal platform coupons.

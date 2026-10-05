@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -36,6 +37,9 @@ type literalResolver interface {
 type OrgResolver interface {
 	MemberRole(ctx context.Context, orgID, userID pgtype.UUID) (string, error)
 	GetOrganization(ctx context.Context, id pgtype.UUID) (gen.Organization, error)
+	// ActiveOrgExists mirrors requireActiveOrgByID (internal/server/org_gate.go):
+	// reports whether an ACTIVE, non-deleted org exists in the platform.
+	ActiveOrgExists(ctx context.Context, orgID pgtype.UUID) (bool, error)
 }
 
 // SetLiteralResolver injects the template-literal catalog so user-facing
@@ -233,9 +237,11 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 // ── Public Deal Routes (Section 55 — Deal Pages) ────────────────────
 
 // ListDealPartners handles GET /api/v1/deals/partners — the public index of
-// active deal providers (§55).
+// active deal providers (§55). Bounded by ?page_size= (default/cap
+// MaxPageSize) — the query applies LIMIT directly.
 func (h *Handlers) ListDealPartners(w http.ResponseWriter, r *http.Request) {
-	partners, err := h.Service.ListDealPartners(r.Context())
+	pageSize := int32(parseQueryInt(r, "page_size", MaxPageSize)) // #nosec
+	partners, err := h.Service.ListDealPartners(r.Context(), pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -1011,6 +1017,17 @@ func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
 		return gen.Organization{}, nil, false
 	}
+	// Parity with requireActiveOrgByID: only ACTIVE, non-deleted orgs in this
+	// platform may submit or list deals.
+	exists, err := h.orgs.ActiveOrgExists(r.Context(), orgID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve organization")
+		return gen.Organization{}, nil, false
+	}
+	if !exists {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
+		return gen.Organization{}, nil, false
+	}
 	org, err := h.orgs.GetOrganization(r.Context(), orgID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
@@ -1018,8 +1035,13 @@ func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen
 	}
 	role, err := h.orgs.MemberRole(r.Context(), orgID, user.UserID)
 	if err != nil {
-		// Non-member → 403 (BUG-021: never 404 for a permission denial).
-		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You must be an organization editor to manage deals")
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Non-member → 403 (BUG-021: never 404 for a permission denial).
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You must be an organization editor to manage deals")
+		} else {
+			// A real DB failure must not masquerade as a permission denial.
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to verify organization membership")
+		}
 		return gen.Organization{}, nil, false
 	}
 	if role != "owner" && role != "admin" && role != "editor" {

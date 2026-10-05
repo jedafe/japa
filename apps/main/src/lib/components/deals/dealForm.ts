@@ -23,6 +23,12 @@ export interface DealFormProps {
 	canManageProviders?: boolean;
 	/** Org audience: target organization id for POST /organizations/{id}/deals. */
 	orgId?: string;
+	/**
+	 * Org audience: display name of the provider the deal posts under
+	 * (server-derived from the org — shown read-only in place of the staff
+	 * provider select).
+	 */
+	providerName?: string;
 	/** Optional currency datalist options (page data); falls back to a plain input. */
 	currencies?: { code: string; name: string; symbol?: string }[];
 	onsaved?: (coupon: Coupon) => void;
@@ -228,6 +234,9 @@ export function buildDetails(d: DealDetailsValues): Record<string, unknown> | un
 	if (d.trial.url.trim()) trial.url = d.trial.url.trim();
 	if (Object.keys(trial).length > 0) out.trial = trial;
 
+	// Sections need at least one of title/body; FAQ entries need BOTH q and a —
+	// a lone question renders a schema-invalid FAQPage Question and an
+	// unanswered <details> block on the deal page (§55).
 	const sections = d.sections
 		.map((s) => ({ title: s.title.trim(), body: s.body.trim() }))
 		.filter((s) => s.title || s.body);
@@ -235,7 +244,7 @@ export function buildDetails(d: DealDetailsValues): Record<string, unknown> | un
 
 	const faq = d.faq
 		.map((f) => ({ q: f.q.trim(), a: f.a.trim() }))
-		.filter((f) => f.q || f.a);
+		.filter((f) => f.q && f.a);
 	if (faq.length > 0) out.faq = faq;
 
 	return Object.keys(out).length > 0 ? out : undefined;

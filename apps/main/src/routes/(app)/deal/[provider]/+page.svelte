@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import {
 		Ticket,
@@ -127,6 +127,12 @@
 				commission_rate: provider.commission_rate ?? null
 			});
 			if (res.data) {
+				// A deactivated provider 404s on GET /deals/partners/{slug} — leave
+				// the page instead of invalidating into a not-found reload.
+				if (!pf.is_active) {
+					await goto('/deals');
+					return;
+				}
 				await invalidateAll();
 				editing = false;
 			} else {
