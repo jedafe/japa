@@ -13,7 +13,13 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	try {
 		const partner = await apiGet<DealPartner>(ctx, `/deals/partners/${event.params.provider}`);
-		return { partner };
+		return {
+			partner,
+			// Staff gate for the inline provider edit form (§55).
+			canManageProviders: !!event.locals.user?.permissions?.includes(
+				'affiliate.providers.manage'
+			)
+		};
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Partner not found' });
