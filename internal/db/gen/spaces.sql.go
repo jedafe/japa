@@ -1940,6 +1940,46 @@ func (q *Queries) GetSpaceTypeBySlug(ctx context.Context, slug string) (SpaceTyp
 	return i, err
 }
 
+const getSpaceTypesByIDs = `-- name: GetSpaceTypesByIDs :many
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
+FROM space_types
+WHERE id = ANY($1::uuid[])
+`
+
+// Batch type lookup for list serializers that need per-row wiki_only/type
+// fields without N+1 queries.
+func (q *Queries) GetSpaceTypesByIDs(ctx context.Context, ids []pgtype.UUID) ([]SpaceType, error) {
+	rows, err := q.db.Query(ctx, getSpaceTypesByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SpaceType
+	for rows.Next() {
+		var i SpaceType
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Description,
+			&i.Icon,
+			&i.FieldGroupID,
+			&i.IsSystem,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Category,
+			&i.WikiOnly,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserMaxSpacesCreatable = `-- name: GetUserMaxSpacesCreatable :one
 SELECT COALESCE(MAX(ug.max_spaces_creatable), 0)::int AS max_spaces_creatable
 FROM user_group_memberships ugm

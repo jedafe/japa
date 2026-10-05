@@ -1331,6 +1331,8 @@ export interface SpaceType {
 	field_group_id: string | null;
 	is_system: boolean;
 	category?: string;
+	/** §80 — wiki-only types have no community surface (attraction, …). */
+	wiki_only?: boolean;
 	created_at: string;
 	updated_at: string;
 }
@@ -1371,6 +1373,8 @@ export interface Space {
 	is_pending?: boolean;
 	/** Viewer-scoped: the caller follows this space. */
 	is_following?: boolean;
+	/** §80 — the space's type is wiki-only (no community surface). */
+	wiki_only?: boolean;
 }
 
 /** GET /spaces/{slug} response — `{ space, rules, keywords, logo_url }` bundle. */
@@ -1394,6 +1398,9 @@ export interface SpaceDetail {
 	 *  is a country, else its country ancestor's); display fallback for
 	 *  currency/price_range fields without an explicit {currency_code}. */
 	country_currency_code?: string;
+	/** §80 — the space's type is wiki-only; suppress community CTAs and
+	 *  redirect /spaces/{slug} → /wiki/{slug}. */
+	wiki_only?: boolean;
 }
 
 /** GET /spaces/{slug}/moderators item — ListSpaceModeratorsRow. */

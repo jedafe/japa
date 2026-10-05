@@ -123,6 +123,12 @@ func canActInSpace(
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
+	// §80 wiki-only space types accept no community writes — structural rule,
+	// applied before the axis so even admin-granted writes can't land.
+	if s.IsWikiOnlyType(ctx, space.SpaceTypeID) {
+		return false
+	}
+
 	switch perm {
 	case PermOpen:
 		return true

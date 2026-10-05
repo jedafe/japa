@@ -171,6 +171,23 @@ func (s *Service) IsWikiOnlyType(ctx context.Context, spaceTypeID pgtype.UUID) b
 	return st.WikiOnly
 }
 
+// coerceWikiOnlyAxes forces the wiki-only axes onto create params when the
+// target space type is wiki-only (§80). Applied in the service layer so
+// every write path — HTTP create, seeders, imports — produces a space with
+// no community surface.
+func (s *Service) coerceWikiOnlyAxes(ctx context.Context, params *gen.CreateSpaceParams) {
+	if !s.IsWikiOnlyType(ctx, params.SpaceTypeID) {
+		return
+	}
+
+	axes := WikiOnlyPermAxes()
+	params.Visibility = axes.Visibility
+	params.PostingPerm = axes.Posting
+	params.ReplyingPerm = axes.Replying
+	params.CommentingPerm = axes.Commenting
+	params.JoiningPerm = axes.Joining
+}
+
 // sourceManager creates canonical intel_sources rows for entity profiles
 // (v2 source directory, Task 5).
 type sourceManager interface {

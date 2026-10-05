@@ -209,6 +209,8 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 	n := v.Len()
 	out := make([]map[string]any, 0, n)
 	ids := make([]pgtype.UUID, 0, n)
+	typeIDs := make(map[pgtype.UUID]struct{})
+	rowTypeIDs := make([]pgtype.UUID, 0, n)
 
 	for i := range n {
 		elem := v.Index(i)
@@ -225,6 +227,17 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 
 		ids = append(ids, id)
 
+		var spaceTypeID pgtype.UUID
+		if stField := elem.FieldByName("SpaceTypeID"); stField.IsValid() {
+			if stID, ok := stField.Interface().(pgtype.UUID); ok {
+				spaceTypeID = stID
+				if _, seen := typeIDs[stID]; !seen {
+					typeIDs[stID] = struct{}{}
+				}
+			}
+		}
+		rowTypeIDs = append(rowTypeIDs, spaceTypeID)
+
 		m := rowToMap(elem.Interface())
 
 		if logoField := elem.FieldByName("LogoMediaID"); logoField.IsValid() {
@@ -234,6 +247,27 @@ func (h *Handlers) spacesWithDetails(ctx context.Context, viewerUserID pgtype.UU
 		}
 
 		out = append(out, m)
+	}
+
+	// §80 wiki-only space types: per-row wiki_only on space list rows so the
+	// frontend can suppress community CTAs without a per-card type lookup.
+	if len(typeIDs) > 0 {
+		typeIDList := make([]pgtype.UUID, 0, len(typeIDs))
+		for tid := range typeIDs {
+			typeIDList = append(typeIDList, tid)
+		}
+
+		if types, err := h.Service.GetSpaceTypesByIDs(ctx, typeIDList); err == nil {
+			wikiOnlyByType := make(map[string]bool, len(types))
+			for _, st := range types {
+				wikiOnlyByType[st.ID.String()] = st.WikiOnly
+			}
+			for i, m := range out {
+				m["wiki_only"] = wikiOnlyByType[rowTypeIDs[i].String()]
+			}
+		} else {
+			slog.Warn("spaces: failed to load space types for wiki_only", "error", err)
+		}
 	}
 
 	stats, err := h.Service.CountSpaceStats(ctx, ids)
@@ -641,6 +675,10 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 	// a country, else its country ancestor's. Best-effort; "" when none.
 	countryCurrency := h.Service.ResolveCountryCurrencyCode(r.Context(), space.ID, space.GeoCode)
 
+	// §80 wiki-only space types — top-level flag on the detail envelope so
+	// /spaces/{slug} can redirect to /wiki/{slug} and suppress community UI.
+	wikiOnly := h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID)
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"space":                 space,
@@ -654,6 +692,7 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 			"is_pending":            isPending,
 			"is_following":          isFollowing,
 			"country_currency_code": countryCurrency,
+			"wiki_only":             wikiOnly,
 		},
 	})
 }
@@ -684,7 +723,11 @@ func (h *Handlers) AdminGetSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{"space": space, "rules": rules},
+		"data": map[string]any{
+			"space":     space,
+			"rules":     rules,
+			"wiki_only": h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID),
+		},
 	})
 }
 

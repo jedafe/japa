@@ -243,7 +243,12 @@ func isStoryModerator(r *http.Request, userID pgtype.UUID) bool {
 // handleServiceError translates a Service-layer error into the appropriate HTTP
 // response.
 func handleServiceError(w http.ResponseWriter, err error) {
+	// §80 wiki-only space types reject community writes with 409.
+	var wikiOnly interface{ WikiOnlySpace() bool }
 	switch {
+	case errors.As(err, &wikiOnly):
+		errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
+			"This space is wiki-only")
 	case errors.Is(err, ErrDuplicateContent):
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
 	case errors.Is(err, ErrOrgPostForbidden):
@@ -1028,6 +1033,13 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 		if h.spaceChecker != nil {
 			allowed, err := h.spaceChecker.CanPostInSpace(r.Context(), createInput.SpaceID, user.UserID)
 			if err != nil {
+				// §80 wiki-only space types accept no posts.
+				var wikiOnly interface{ WikiOnlySpace() bool }
+				if errors.As(err, &wikiOnly) {
+					errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
+						"This space is wiki-only")
+					return
+				}
 				errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to check space posting permission")
 				return
 			}

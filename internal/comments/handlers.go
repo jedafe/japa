@@ -507,6 +507,13 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err != nil {
+				// §80 wiki-only space types accept no comments/replies.
+				var wikiOnly interface{ WikiOnlySpace() bool }
+				if errors.As(err, &wikiOnly) {
+					errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
+						"This space is wiki-only")
+					return
+				}
 				slog.Warn("comments: space perm check failed", "space_id", spaceID.String(), "error", err)
 			} else if !allowed {
 				errpkg.WriteError(w, http.StatusForbidden, "space_permission_denied",
