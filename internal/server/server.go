@@ -881,6 +881,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{page_size} caching (§55)
 	couponHandlers := coupons.NewHandlers(couponService)
 	couponHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in coupons responses
+	couponHandlers.SetOrgResolver(orgService)          // §55 org deal submissions
 	worker.RegisterCouponFeedSyncer(couponService)     // §55: coupon:sync_feeds / coupon:import_feed
 
 	// Wire the coupon service into the renderer for render-time coupon_embed
@@ -4270,6 +4271,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/content", contentHandlers.ListByOrganization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/analytics", orgHandlers.GetOrganizationAnalytics)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveOrgByID(orgService)).Get("/organizations/{id}/media", mediaHandlers.ListByOrganization)
+			// Organization deal submissions (§55) — org member-role gated inside the handler.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+				Post("/organizations/{id}/deals", couponHandlers.SubmitOrgDeal)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+				Get("/organizations/{id}/deals", couponHandlers.ListOrgDeals)
 			// Org follow/unfollow (Section 31 — universal polymorphic follow) — M5: rate-limited
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/organizations/{id}/follow", orgHandlers.ToggleFollow)
 			r.With(features.Gate(featureChecker, "feature.follow"), auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "follows.toggle"), mw.RateLimit(vkClient.Redis(), "moderate")).Delete("/organizations/{id}/follow", orgHandlers.ToggleFollow)
@@ -5437,6 +5443,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Deal pages — slug-based public routes backing /deal/* on the
 			// main app (§55 Deal Pages).
+			r.Get("/deals/partners", couponHandlers.ListDealPartners)
 			r.Get("/deals/partners/{slug}", couponHandlers.GetDealPartner)
 			r.Get("/deals/{slug}", couponHandlers.GetDealBySlug)
 			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Get("/deals/{slug}/go", couponHandlers.DealGo)

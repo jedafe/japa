@@ -21,6 +21,7 @@ import (
 type Handlers struct {
 	Service *Service
 	lit     literalResolver // nil disables literal resolution (§14)
+	orgs    OrgResolver     // nil disables org deal endpoints (§55)
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -29,9 +30,21 @@ type literalResolver interface {
 	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
 }
 
+// OrgResolver is the slice of organizations.Service the deals handlers need —
+// defined here to avoid an import cycle (same adapter pattern as
+// couponRenderAdapter in server.go).
+type OrgResolver interface {
+	MemberRole(ctx context.Context, orgID, userID pgtype.UUID) (string, error)
+	GetOrganization(ctx context.Context, id pgtype.UUID) (gen.Organization, error)
+}
+
 // SetLiteralResolver injects the template-literal catalog so user-facing
 // titles/descriptions render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// SetOrgResolver injects the organizations adapter so the org deal
+// endpoints can verify membership roles (§55).
+func (h *Handlers) SetOrgResolver(o OrgResolver) { h.orgs = o }
 
 // resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
 // Best-effort — failures are logged inside the resolver.
@@ -103,6 +116,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrInvalidFeedSource):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_feed_source", err.Error())
+	case errors.Is(err, ErrInvalidDetails):
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrFeedSyncLocked):
 		errpkg.WriteError(w, http.StatusConflict, "feed_sync_locked", err.Error())
 	case errors.Is(err, ErrProviderHasCoupons):
@@ -160,6 +175,13 @@ func (h *Handlers) GetCoupon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Org-submitted deals sit at status='pending' until staff review —
+	// never expose them through the public endpoint (§55).
+	if coupon.Status == string(CouponStatusPending) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", ErrCouponNotFound.Error())
+		return
+	}
+
 	h.resolveLiterals(r, &coupon)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
@@ -209,6 +231,20 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 }
 
 // ── Public Deal Routes (Section 55 — Deal Pages) ────────────────────
+
+// ListDealPartners handles GET /api/v1/deals/partners — the public index of
+// active deal providers (§55).
+func (h *Handlers) ListDealPartners(w http.ResponseWriter, r *http.Request) {
+	partners, err := h.Service.ListDealPartners(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.resolveLiterals(r, &partners)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": partners})
+}
 
 // GetDealPartner handles GET /api/v1/deals/partners/{slug} — the provider
 // profile plus its active coupons for the /deal/{provider} landing page.
@@ -954,4 +990,83 @@ func (h *Handlers) SyncCouponFeedNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]bool{"queued": true}})
+}
+
+// ── Organization Deal Submissions (Section 55 — Deals Redesign) ─────
+
+// requireOrgEditor resolves the org from {id} and verifies the caller holds an
+// owner/admin/editor role. Returns (org, user, ok); writes the error response
+// on failure. Plain 'member' cannot submit deals.
+func (h *Handlers) requireOrgEditor(w http.ResponseWriter, r *http.Request) (gen.Organization, *auth.AuthenticatedUser, bool) {
+	user, ok := h.requireUser(w, r)
+	if !ok {
+		return gen.Organization{}, nil, false
+	}
+	if h.orgs == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "feature_unavailable", "Organization deals are not available")
+		return gen.Organization{}, nil, false
+	}
+	orgID, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return gen.Organization{}, nil, false
+	}
+	org, err := h.orgs.GetOrganization(r.Context(), orgID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Organization not found")
+		return gen.Organization{}, nil, false
+	}
+	role, err := h.orgs.MemberRole(r.Context(), orgID, user.UserID)
+	if err != nil {
+		// Non-member → 403 (BUG-021: never 404 for a permission denial).
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You must be an organization editor to manage deals")
+		return gen.Organization{}, nil, false
+	}
+	if role != "owner" && role != "admin" && role != "editor" {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Organization deal management requires an editor role")
+		return gen.Organization{}, nil, false
+	}
+	return org, user, true
+}
+
+// SubmitOrgDeal handles POST /api/v1/organizations/{id}/deals — org members
+// submit deals that land as status='pending' for staff moderation (§55).
+func (h *Handlers) SubmitOrgDeal(w http.ResponseWriter, r *http.Request) {
+	org, user, ok := h.requireOrgEditor(w, r)
+	if !ok {
+		return
+	}
+	var input SubmitDealInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if input.Title == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
+		return
+	}
+	coupon, err := h.Service.SubmitOrgDeal(r.Context(), org, user.UserID, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": coupon})
+}
+
+// ListOrgDeals handles GET /api/v1/organizations/{id}/deals — the org's own
+// submissions in every status (§55).
+func (h *Handlers) ListOrgDeals(w http.ResponseWriter, r *http.Request) {
+	org, _, ok := h.requireOrgEditor(w, r)
+	if !ok {
+		return
+	}
+	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
+	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
+	coupons, err := h.Service.ListOrgDeals(r.Context(), org.ID, page, pageSize)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	h.resolveLiterals(r, &coupons)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons, "page": page, "page_size": pageSize})
 }
