@@ -18,7 +18,8 @@ import type {
 	JapaStageOption,
 	JapaIntent,
 	CalendarCategory,
-	TrendingWindow
+	TrendingWindow,
+	RoadmapStatus
 } from '$lib/types';
 
 type Translator = (key: string, fallback?: string) => string;
@@ -173,4 +174,52 @@ export function trendingTabs(t: Translator): { id: 'content' | 'tags' | 'spaces'
 		{ id: 'spaces', label: t('trending.tab_spaces', 'Spaces') },
 		{ id: 'users', label: t('trending.tab_users', 'People') }
 	];
+}
+
+// --- Public product roadmap (§113) ---
+
+/** Statuses that accept votes — voting is rejected for the rest (§113). */
+export const roadmapVotableStatuses: RoadmapStatus[] = [
+	'under_review',
+	'planned',
+	'in_progress'
+];
+
+/** Statuses rendered on the public board / reachable via /roadmap/[slug]. */
+export const roadmapPublicStatuses: RoadmapStatus[] = [
+	'under_review',
+	'planned',
+	'in_progress',
+	'shipped'
+];
+
+export function roadmapStatusLabel(t: Translator, value: RoadmapStatus | string): string {
+	return t(`roadmap.status.${value}`, value.replace(/_/g, ' '));
+}
+
+/**
+ * Allowed lifecycle transitions, mirroring roadmap.IsValidTransition
+ * (§113 — Status Lifecycle). The backend re-validates on PATCH; this map
+ * only constrains which options the moderator <select> offers so illegal
+ * jumps are never presented in the UI.
+ */
+const roadmapTransitions: Record<RoadmapStatus, RoadmapStatus[]> = {
+	pending: ['under_review', 'declined'],
+	under_review: ['planned', 'declined', 'archived'],
+	planned: ['in_progress', 'under_review', 'declined', 'archived'],
+	in_progress: ['shipped', 'planned', 'archived'],
+	shipped: ['archived'],
+	declined: ['under_review', 'archived'],
+	archived: []
+};
+
+/** Options for the moderator status select: current status + valid targets. */
+export function roadmapStatusOptions(
+	t: Translator,
+	current: RoadmapStatus
+): { value: RoadmapStatus; label: string }[] {
+	return [current, ...(roadmapTransitions[current] ?? [])].map((value) => ({
+		value,
+		label: roadmapStatusLabel(t, value)
+	}));
 }

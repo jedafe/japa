@@ -4945,3 +4945,88 @@ export interface SopQuota {
 	used: number;
 	remaining: number;
 }
+
+/* ------------------------------------------------------------------ *
+ * Public product roadmap — Section 113
+ * Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
+ * GET /roadmap/board → grouped status columns + categories; votes are
+ * one-per-user; each item's content_id points at the shadow contents row
+ * that carries the §49 comment thread.
+ * ------------------------------------------------------------------ */
+
+export type RoadmapStatus =
+	| 'pending'
+	| 'under_review'
+	| 'planned'
+	| 'in_progress'
+	| 'shipped'
+	| 'declined'
+	| 'archived';
+
+export interface RoadmapCategory {
+	id: string;
+	slug: string;
+	name: string;
+	description: string | null;
+	color: string | null;
+	sort_order: number;
+}
+
+/** One card on the public board (GET /roadmap/board → columns[].items). */
+export interface RoadmapBoardItem {
+	id: string;
+	slug: string;
+	title: string;
+	summary: string | null;
+	status: RoadmapStatus;
+	category_name: string | null;
+	category_slug: string | null;
+	category_color: string | null;
+	vote_count: number;
+	/** True when the authenticated viewer has voted (guests: always false). */
+	has_voted: boolean;
+	is_flagship: boolean;
+	target_window: string | null;
+	feature_flag_key: string | null;
+	/** Shadow contents row id — the §49 comments thread attaches here. */
+	content_id: string | null;
+	shipped_at: string | null;
+	created_at: string;
+}
+
+export interface RoadmapBoardColumn {
+	status: RoadmapStatus;
+	label: string;
+	items: RoadmapBoardItem[];
+}
+
+/** GET /roadmap/board payload. */
+export interface RoadmapBoard {
+	columns: RoadmapBoardColumn[];
+	categories: RoadmapCategory[];
+}
+
+/** GET /roadmap/items/{slug} — board fields plus the description body. */
+export interface RoadmapItemDetail extends RoadmapBoardItem {
+	/** Base64 TipTap JSON (submitted via encodeReplyBody) or plain text. */
+	body: string | null;
+}
+
+/** GET /roadmap/changelog row — shipped items ordered by shipped_at DESC. */
+export interface RoadmapChangelogItem {
+	id: string;
+	slug: string;
+	title: string;
+	summary: string | null;
+	status: RoadmapStatus;
+	category_name: string | null;
+	category_slug: string | null;
+	category_color: string | null;
+	vote_count: number;
+	is_flagship: boolean;
+	target_window: string | null;
+	feature_flag_key: string | null;
+	content_id: string | null;
+	shipped_at: string | null;
+	created_at: string;
+}
