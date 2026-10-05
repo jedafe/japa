@@ -1,7 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Ticket, BadgeCheck, Copy, ExternalLink, Handshake } from 'lucide-svelte';
+	import {
+		Ticket,
+		BadgeCheck,
+		Copy,
+		ExternalLink,
+		Handshake,
+		Pencil,
+		Loader2,
+		AlertCircle
+	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
@@ -54,6 +64,89 @@
 		return '';
 	}
 
+	// Inline provider edit (staff only — gated by data.canManageProviders, §55).
+	// Page-local form: this is its only use, so no shared component.
+	let editing = $state(false);
+	let pf = $state({
+		name: '',
+		slug: '',
+		description: '',
+		category: '',
+		base_url: '',
+		is_featured: false,
+		is_active: false
+	});
+	let providerSaving = $state(false);
+	let providerError = $state('');
+
+	const inputClass =
+		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
+	const labelClass = 'mb-1 block text-sm font-medium text-[var(--color-text)]';
+
+	function toggleEdit() {
+		if (editing) {
+			editing = false;
+			return;
+		}
+		// Seed the form from the loaded provider on open.
+		pf = {
+			name: provider.name ?? '',
+			slug: provider.slug ?? '',
+			description: provider.description ?? '',
+			category: provider.category ?? '',
+			base_url: provider.base_url ?? '',
+			is_featured: provider.is_featured,
+			is_active: provider.is_active
+		};
+		providerError = '';
+		editing = true;
+	}
+
+	async function saveProvider(e: SubmitEvent) {
+		e.preventDefault();
+		providerError = '';
+		if (!pf.name.trim()) {
+			providerError = t('deal.form.errors.name_required', 'Name is required');
+			return;
+		}
+		providerSaving = true;
+		try {
+			// PATCH /admin/affiliate-providers/{id} — UpdateProvider rewrites
+			// every column, so send the full CreateProviderInput field set:
+			// fields this form doesn't edit are passed through unchanged so a
+			// save can't null them out.
+			const res = await api.patch(`/admin/affiliate-providers/${provider.id}`, {
+				name: pf.name.trim(),
+				slug: pf.slug.trim() || provider.slug,
+				provider_type: provider.provider_type,
+				description: pf.description.trim() || null,
+				category: pf.category.trim() || null,
+				base_url: pf.base_url.trim() || null,
+				is_featured: pf.is_featured,
+				is_active: pf.is_active,
+				logo_media_id: provider.logo_media_id ?? null,
+				tracking_param: provider.tracking_param ?? null,
+				tracking_value: provider.tracking_value ?? null,
+				commission_rate: provider.commission_rate ?? null
+			});
+			if (res.data) {
+				await invalidateAll();
+				editing = false;
+			} else {
+				providerError =
+					res.error?.message ??
+					t('deal.form.errors.provider_save_failed', 'Failed to save provider');
+			}
+		} catch (err) {
+			providerError =
+				err instanceof Error
+					? err.message
+					: t('deal.form.errors.provider_save_failed', 'Failed to save provider');
+		} finally {
+			providerSaving = false;
+		}
+	}
+
 	// recordEvent fires-and-forgets a copy event to the backend (Section 55).
 	// Errors are silently ignored — event tracking must never block the UI.
 	function recordEvent(couponId: string, eventType: 'click' | 'copy') {
@@ -100,7 +193,17 @@
 				<Handshake size={24} />
 			</span>
 			<div class="min-w-0 flex-1">
-				<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{provider.name}</h1>
+				<div class="flex items-center gap-2">
+					<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{provider.name}</h1>
+					{#if provider.category}
+						<span
+							class="inline-flex shrink-0 items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]"
+							title={t('deal.category', 'Category')}
+						>
+							{provider.category}
+						</span>
+					{/if}
+				</div>
 				{#if provider.description}
 					<p class="truncate text-xs text-[var(--color-muted)]">{provider.description}</p>
 				{/if}
@@ -113,7 +216,116 @@
 					{t('deal.featured', 'Featured partner')}
 				</span>
 			{/if}
+			{#if data.canManageProviders}
+				<button
+					type="button"
+					onclick={toggleEdit}
+					aria-expanded={editing}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+				>
+					<Pencil size={14} />
+					{t('deal.edit_provider', 'Edit provider')}
+				</button>
+			{/if}
 		</div>
+
+		{#if editing}
+			<!-- Ref: §55 — staff inline provider edit (PATCH /admin/affiliate-providers/{id}). -->
+			<form
+				onsubmit={saveProvider}
+				novalidate
+				class="mt-4 space-y-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4"
+			>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div>
+						<label for="pf-name" class={labelClass}>
+							{t('deal.form.provider_name', 'Provider name')}
+							<span class="text-red-500">*</span>
+						</label>
+						<input id="pf-name" type="text" bind:value={pf.name} class={inputClass} />
+					</div>
+					<div>
+						<label for="pf-slug" class={labelClass}>{t('deal.form.slug', 'Slug')}</label>
+						<input id="pf-slug" type="text" bind:value={pf.slug} class={inputClass} />
+					</div>
+					<div>
+						<label for="pf-category" class={labelClass}>
+							{t('deal.form.provider_category', 'Category')}
+						</label>
+						<input id="pf-category" type="text" bind:value={pf.category} class={inputClass} />
+					</div>
+					<div>
+						<label for="pf-base-url" class={labelClass}>
+							{t('deal.form.provider_base_url', 'Base URL')}
+						</label>
+						<input
+							id="pf-base-url"
+							type="url"
+							bind:value={pf.base_url}
+							placeholder="https://example.com"
+							class={inputClass}
+						/>
+					</div>
+				</div>
+				<div>
+					<label for="pf-description" class={labelClass}>
+						{t('deal.form.provider_description', 'Provider description')}
+					</label>
+					<textarea id="pf-description" bind:value={pf.description} rows={2} class={inputClass}
+					></textarea>
+				</div>
+				<div class="flex flex-wrap items-center gap-4">
+					<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+						<input
+							type="checkbox"
+							bind:checked={pf.is_active}
+							class="h-4 w-4 rounded border-[var(--color-border)]"
+						/>
+						{t('deal.form.provider_active', 'Active')}
+					</label>
+					<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+						<input
+							type="checkbox"
+							bind:checked={pf.is_featured}
+							class="h-4 w-4 rounded border-[var(--color-border)]"
+						/>
+						{t('deal.form.provider_featured', 'Featured')}
+					</label>
+				</div>
+
+				{#if providerError}
+					<div
+						class="flex items-center gap-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500"
+						role="alert"
+					>
+						<AlertCircle size={16} /> {providerError}
+					</div>
+				{/if}
+
+				<div class="flex justify-end gap-2">
+					<button
+						type="button"
+						onclick={() => (editing = false)}
+						disabled={providerSaving}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{t('common.cancel', 'Cancel')}
+					</button>
+					<button
+						type="submit"
+						disabled={providerSaving}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+					>
+						{#if providerSaving}
+							<Loader2 size={16} class="animate-spin" />
+						{/if}
+						{providerSaving
+							? t('common.submitting', 'Submitting…')
+							: t('deal.form.submit_edit', 'Save changes')}
+					</button>
+				</div>
+			</form>
+		{/if}
 	</div>
 
 	<div class="p-4">

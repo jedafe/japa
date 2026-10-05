@@ -2011,6 +2011,8 @@ export interface DealPartnerProvider {
 	provider_type: string;
 	logo_media_id?: string | null;
 	base_url?: string | null;
+	tracking_param?: string | null;
+	tracking_value?: string | null;
 	is_active: boolean;
 	is_featured: boolean;
 	commission_rate?: number | string | null;
