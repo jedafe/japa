@@ -1,10 +1,11 @@
 <script lang="ts">
-	// /coupons — migrated to the EntityPage scaffold; declarative CRUD entity with date conversion.
+	// /deals — migrated to the EntityPage scaffold; declarative CRUD entity with date conversion.
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
+	import type { ActionContext } from '$lib/components/ui/data-table';
 	import { couponsAdminApiExtended, affiliateProvidersAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { Trash2 } from 'lucide-svelte';
+	import { CheckCircle, Eye, Pencil, Trash2, XCircle } from 'lucide-svelte';
 	import { dateInputToStartOfDayISO, dateInputToEndOfDayISO, isoTimestampToDateInput } from '$lib/utils/date';
 	import { loadCurrencies, currencyOptions, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import { onMount } from 'svelte';
@@ -17,6 +18,7 @@
 		coupon_type: string;
 		provider_id: string | null;
 		provider_name?: string | null;
+		provider_category?: string | null;
 		description: string | null;
 		discount_type: string | null;
 		discount_value: number | null;
@@ -25,6 +27,7 @@
 		referral_url: string | null;
 		is_verified: boolean;
 		status: string;
+		details?: Record<string, unknown> | null;
 		valid_from?: string;
 		expires_at?: string;
 		total_clicks: number;
@@ -68,10 +71,23 @@
 		try {
 			await Promise.all(idArr.map((id) => couponsAdminApiExtended.delete(id)));
 		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete coupons');
+			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete deals');
 		} finally {
 			bulkDeleting = false;
 		}
+	}
+
+	// §55 — pending deals are moderated via PATCH /admin/coupons/{id} status
+	// transitions. UpdateCouponInput requires `title`, so it is included in the
+	// payload alongside the status change.
+	async function moderateDeal(row: Coupon, status: 'active' | 'suspended', ctx?: ActionContext) {
+		pageError = '';
+		const res = await couponsAdminApiExtended.update(row.id, { title: row.title, status });
+		if (!res.ok) {
+			pageError = res.error ?? t('common.error', 'Failed to update deal');
+			return;
+		}
+		ctx?.reload();
 	}
 
 	const discountTypeOptions = [
@@ -88,7 +104,16 @@
 	const statusFilterOptions = [
 		{ value: 'active', label: t('coupons.active', 'Active') },
 		{ value: 'expired', label: t('coupons.expired', 'Expired') },
-		{ value: 'suspended', label: t('coupons.suspended', 'Suspended') }
+		{ value: 'suspended', label: t('coupons.suspended', 'Suspended') },
+		{ value: 'pending', label: t('deals.pending', 'Pending review') }
+	];
+
+	// Form status select — pending deals become active/suspended after review.
+	const statusOptions = [
+		{ value: 'active', label: t('coupons.active', 'Active') },
+		{ value: 'suspended', label: t('coupons.suspended', 'Suspended') },
+		{ value: 'pending', label: t('deals.pending', 'Pending review') },
+		{ value: 'expired', label: t('coupons.expired', 'Expired') }
 	];
 
 	// ── Provider autocomplete helpers (filter pre-loaded options client-side) ──
@@ -108,9 +133,10 @@
 		return providerOptions.find((o) => o.value === id)?.label ?? id;
 	}
 
-	// `is_active` is derived from `status`; `valid_from`/`expires_at` are converted
-	// to date-input format in `load` so EntityForm's date inputs seed correctly.
-	// `provider_id` and `is_verified` are included per Section 55 (provider linkage + verify).
+	// `valid_from`/`expires_at` are converted to date-input format in `load` so
+	// EntityForm's date inputs seed correctly. `provider_id`, `is_verified`,
+	// `status`, and `details` are included per Section 55 (provider linkage,
+	// verification, moderation status, and deal page content).
 	let fields = $derived<FieldDef[]>([
 		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
 		{ key: 'slug', label: t('coupons.slug', 'Slug'), type: 'text', placeholder: t('coupons.slug_placeholder', 'Auto-generated from title if blank') },
@@ -123,23 +149,29 @@
 			? { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'select', options: currencyOptions(currencies) }
 			: { key: 'currency', label: t('coupons.currency', 'Currency'), type: 'text', placeholder: 'e.g. NGN, USD' },
 		{ key: 'description', label: t('coupons.description_field', 'Description'), type: 'textarea' },
+		{ key: 'details', label: t('deals.details_json', 'Deal page content (JSON)'), type: 'textarea', placeholder: '{ "hero": "…", "sections": [] }' },
 		{ key: 'referral_url', label: t('coupons.referral_url', 'Referral URL'), type: 'url' },
 		{ key: 'terms_url', label: t('coupons.terms_url', 'Terms URL'), type: 'url' },
 		{ key: 'valid_from', label: t('coupons.valid_from', 'Valid From'), type: 'date' },
 		{ key: 'expires_at', label: t('coupons.valid_until', 'Valid Until'), type: 'date' },
 		{ key: 'is_verified', label: t('coupons.verified', 'Verified'), type: 'checkbox' },
-		{ key: 'is_active', label: t('coupons.active', 'Active'), type: 'checkbox' }
+		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: statusOptions }
 	]);
 
 	const config = $derived<EntityPageConfig>({
-		title: t('coupons.title', 'Coupons'),
-		description: t('coupons.description', 'Manage discount coupons'),
-		createLabel: t('coupons.create', 'Create Coupon'),
+		title: t('deals.title', 'Deals'),
+		description: t('deals.description', 'Manage deals and discount offers'),
+		createLabel: t('deals.create', 'New deal'),
 		createPermission: 'coupons.manage',
 		pageSize: 25,
 		columns: [
 			{ key: 'title', label: t('coupons.title_field', 'Title'), sortable: true },
 			{ key: 'code', label: t('coupons.code', 'Code'), sortable: true },
+			{
+				key: 'provider_category',
+				label: t('deals.category', 'Category'),
+				render: (v: string | null) => v ?? '—'
+			},
 			{
 				key: 'discount_value',
 				label: t('coupons.discount', 'Discount'),
@@ -169,6 +201,24 @@
 			{ key: 'status', label: t('common.status', 'Status'), options: statusFilterOptions },
 			{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), options: couponTypeOptions }
 		],
+		actions: [
+			{ label: t('common.view', 'View'), icon: Eye, onclick: (row: Coupon, ctx?: ActionContext) => ctx?.openView(row) },
+			{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row: Coupon, ctx?: ActionContext) => ctx?.openEdit(row) },
+			{
+				label: t('deals.approve', 'Approve'),
+				icon: CheckCircle,
+				show: (row: Coupon) => row.status === 'pending',
+				onclick: (row: Coupon, ctx?: ActionContext) => moderateDeal(row, 'active', ctx)
+			},
+			{
+				label: t('deals.reject', 'Reject'),
+				icon: XCircle,
+				variant: 'destructive',
+				show: (row: Coupon) => row.status === 'pending',
+				onclick: (row: Coupon, ctx?: ActionContext) => moderateDeal(row, 'suspended', ctx)
+			},
+			{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row: Coupon, ctx?: ActionContext) => ctx?.openDelete(row) }
+		],
 		bulkActions: [
 			{
 				label: t('common.deleteSelected', 'Delete Selected'),
@@ -192,19 +242,20 @@
 			const result = await couponsAdminApiExtended.list(params.toString() || undefined);
 			if (result.ok) {
 				const raw = (result.data as Coupon[]) ?? [];
-				// Convert ISO timestamps to date-input format for form seeding; add is_active derived from status.
+				// Convert ISO timestamps to date-input format for form seeding; the
+				// details object is stringified for the JSON textarea field.
 				const data = raw.map((c) => ({
 					...c,
 					valid_from: c.valid_from ? isoTimestampToDateInput(c.valid_from) : '',
 					expires_at: c.expires_at ? isoTimestampToDateInput(c.expires_at) : '',
-					is_active: c.status === 'active'
+					details: c.details ? JSON.stringify(c.details, null, 2) : ''
 				}));
 				// Use server-provided total if available; fall back to data.length.
 				const total = (result as any).total ?? data.length;
 				const totalPages = pageSize ? Math.max(1, Math.ceil(total / pageSize)) : 1;
 				return { data, total, totalPages };
 			}
-			throw new Error(result.error ?? t('common.error', 'Failed to load coupons'));
+			throw new Error(result.error ?? t('common.error', 'Failed to load deals'));
 		},
 		create: async (body) => {
 			const payload: Record<string, unknown> = {
@@ -214,8 +265,19 @@
 				discount_type: body.discount_type ?? 'percent',
 				discount_value: body.discount_value ? Number(body.discount_value) : null,
 				is_verified: !!body.is_verified,
-				status: body.is_active ? 'active' : 'suspended'
+				status: body.status ?? 'active'
 			};
+			if (body.details && String(body.details).trim()) {
+				try {
+					const parsed = JSON.parse(String(body.details));
+					if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+						return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
+					}
+					payload.details = parsed;
+				} catch {
+					return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
+				}
+			}
 			if (body.slug) payload.slug = String(body.slug).trim();
 			if (body.provider_id) payload.provider_id = String(body.provider_id);
 			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
@@ -235,8 +297,19 @@
 				discount_type: body.discount_type ?? 'percent',
 				discount_value: body.discount_value ? Number(body.discount_value) : null,
 				is_verified: !!body.is_verified,
-				status: body.is_active ? 'active' : 'suspended'
+				status: body.status ?? 'active'
 			};
+			if (body.details && String(body.details).trim()) {
+				try {
+					const parsed = JSON.parse(String(body.details));
+					if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+						return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
+					}
+					payload.details = parsed;
+				} catch {
+					return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
+				}
+			}
 			if (body.slug) payload.slug = String(body.slug).trim();
 			if (body.provider_id) payload.provider_id = String(body.provider_id);
 			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
@@ -257,7 +330,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('coupons.title', 'Coupons')} — JapaConnect Admin</title>
+	<title>{t('deals.title', 'Deals')} — JapaConnect Admin</title>
 </svelte:head>
 
 {#if pageError}
@@ -295,10 +368,22 @@
 				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.provider_name}</p>
 			</div>
 		{/if}
+		{#if row.provider_category}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('deals.category', 'Category')}</p>
+				<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.provider_category}</p>
+			</div>
+		{/if}
 		{#if row.description}
 			<div>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.description_field', 'Description')}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.description}</p>
+			</div>
+		{/if}
+		{#if row.details}
+			<div>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('deals.details', 'Deal details')}</p>
+				<pre class="mt-1 max-h-64 overflow-auto rounded-lg p-3 text-xs" style="background: var(--color-surface-alt, var(--color-surface)); color: var(--color-foreground)">{typeof row.details === 'string' ? row.details : JSON.stringify(row.details, null, 2)}</pre>
 			</div>
 		{/if}
 		<div>

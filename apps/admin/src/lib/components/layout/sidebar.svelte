@@ -208,7 +208,7 @@
 			{ path: "/wallet/credit-packs", label: t("nav.credit_packs", "Credit Packs"), icon: Package, permission: "wallet.credit_pack.manage" },
 			{ path: "/wallet/purchases", label: t("nav.credit_purchases", "Credit Purchases"), icon: Receipt, permission: "wallet.purchases.view_any" },
 			{ path: "/wallet/withdrawals", label: t("nav.withdrawals", "Withdrawals"), icon: ArrowRightLeft, permission: "wallet.withdraw.approve" },
-			{ path: "/coupons", label: t("nav.coupons", "Coupons"), icon: Tag, permission: "coupons.manage" },
+			{ path: "/deals", label: t("nav.deals", "Deals"), icon: Tag, permission: "coupons.manage" },
 			{ path: "/coupon-feeds", label: t("nav.coupon_feeds", "Deal Feeds"), icon: Rss, permission: "coupons.manage" },
 			{ path: "/discount-codes", label: t("nav.discount_codes", "Discount Codes"), icon: DollarSign, permission: "payments.discount_codes.manage" },
 			{ path: "/plans", label: t("nav.plans", "Subscription Plans"), icon: CreditCard, permission: "payments.plans.manage" },
