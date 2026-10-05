@@ -62,8 +62,7 @@ row per Rule 12.
 | `title` | text | required |
 | `slug` | text | unique, indexed |
 | `summary` | text | card preview |
-| `body` | text | markdown source |
-| `body_html` | text | rendered |
+| `body` | text | markdown source; frontend renders it (same pipeline as comments) |
 | `category_id` | uuid FK → roadmap_categories | nullable |
 | `status` | text | see lifecycle below |
 | `sort_order` | int | manual ordering within a status column |
@@ -71,8 +70,7 @@ row per Rule 12.
 | `target_window` | text | free label, e.g. `Q4 2026` |
 | `feature_flag_key` | text | nullable; links to a flags-registry key (e.g. `spaces.enabled`) shown as a rollout badge |
 | `content_id` | uuid FK → contents | shadow comments row |
-| `vote_count` | int | denormalized |
-| `comment_count` | int | denormalized |
+| `vote_count` | int | denormalized; self-healing recount per mutation (ADR-127) |
 | `submitted_by` | uuid FK → users | nullable (admin-created items) |
 | `approved_by` | uuid FK → users | nullable |
 | `shipped_at` | timestamptz | set on `→ shipped` |
@@ -131,7 +129,8 @@ window). `pending`, `declined`, `archived` never render publicly.
 | GET | `/admin/roadmap/submissions` (`status=pending` queue) | `roadmap.moderate` |
 | CRUD | `/admin/roadmap/categories[/{id}]` | `roadmap.edit` |
 
-RBAC nodes: `roadmap.view`, `roadmap.create`, `roadmap.edit`, `roadmap.delete`,
+RBAC nodes: `roadmap.vote`, `roadmap.submit` (member-tier roles),
+`roadmap.view`, `roadmap.create`, `roadmap.edit`, `roadmap.delete`,
 `roadmap.moderate` — seeded to `super_admin` and `admin` groups; added to the
 permission-key-naming convention doc.
 
@@ -143,9 +142,10 @@ All data from the API (Rule 16); i18n keys in `en.json` + `fr.json`.
   In Progress → Recently Shipped), flagship item pinned at top ("Now building:
   Spaces & Content Creation"), category filter chips, sort by votes/recency,
   vote buttons (anonymous → login prompt), "Submit a request" CTA.
-- **`/roadmap/[slug]`** — item detail: full `body_html`, vote button, status
-  stepper, `target_window`, feature-flag rollout badge, comments thread
-  (existing comment components), related items.
+- **`/roadmap/[slug]`** — item detail: full body (markdown rendered like
+  comments), vote button, status stepper, `target_window`, feature-flag
+  rollout badge, comments thread (existing comment components; comment
+  counts come from the comments API), related items.
 - **`/roadmap/changelog`** — shipped items grouped by `shipped_at`, release-notes
   style.
 - **`/roadmap/submit`** (or dialog) — auth-required form: title, description,
@@ -205,7 +205,7 @@ All data from the API (Rule 16); i18n keys in `en.json` + `fr.json`.
 3. Catalog entries: `api-routes-catalog.md`, `valkey-keys-catalog.md`
    (`jc:roadmap:*`), `system-settings-catalog.md`
    (`roadmap.submissions_enabled`, `roadmap.custom_domain`,
-   `roadmap.board_cache_ttl_seconds`),
+   `roadmap.board_cache_ttl_seconds`, `roadmap.shipped_window_days`),
    `permission-key-naming.md`, `MIGRATION-ORDER.md`, §11 Asynq task
    (`roadmap:ship_notify`), `internal/features` registry (`roadmap.enabled`,
    default `true`)
