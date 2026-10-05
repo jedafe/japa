@@ -961,7 +961,7 @@ SELECT EXISTS (
 
 - Create: `a.svc.CreateSpaceWithOwner(ctx, gen.CreateSpaceParams{ParentID: parentID, SpaceTypeID: <attraction id via GetSpaceTypeBySlug("attraction")>, Name, Slug, Level: "custom", Visibility: "public", PostingPerm: "admins", ReplyingPerm: "admins", CommentingPerm: "admins", JoiningPerm: "invite", Status: "active", WikiContent: {"wikidata_id": qid}}, a.systemUserID, []pgtype.UUID{parentID})` — `CreateSpaceWithOwner` links `space_parent_spaces` in the same tx; `WikiContent` is a `sqlc.narg` on `CreateSpace` so the seed stamp lands at insert. Then `upsertAttractionTextField(ctx, &space, attractionFieldUUIDs.WikidataID, qid)` + `a.svc.EnqueueAutoPopulate(ctx, space.ID)` + `a.svc.EnqueueSearchIndex(ctx, space.ID, "index")`.
 - Slug collision → `-2`, `-3` suffix loop (slug is globally unique on `spaces`).
-- Multi-`P131` border attractions: v1 links only the trigger parent (the SPARQL returns one row per item); multi-parent linking is a documented follow-up — `space_parent_spaces` already supports it.
+- Multi-`P131` border attractions: **implemented** — geo spaces stamp `wikidata_id` in `wiki_content` during auto-population; the SPARQL query carries `OPTIONAL { ?item wdt:P131 ?loc }`; `SpaceIDsByWikidataIDs` batch-resolves located-in QIDs to stamped spaces; `candidateGeoParents` links every match at create and `linkAttractionParents` (in `populateAttractionSpace`) links them on every enrichment run. Trigger parent stays primary; `ON CONFLICT DO NOTHING` keeps re-runs idempotent.
 - `dryRun`: returns `AttractionSeedResult{Candidates: n, Slugs: [...]}` with zero writes.
 - `limit`: default 100, hard cap 500 (package const `attractionSeedMaxLimit` — same pattern as `defaultDirectoryLimit`; no new settings key).
 - Result → `slog.Info` JSON summary (no audit-writer hook exists on the adapter; a `wiki_audit` row is out of scope).
@@ -1046,7 +1046,7 @@ r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolv
 - Modify: `apps/main/src/lib/components/wiki/EntityFieldsPanel.svelte` + `formatWikiFieldValue` (image rendering)
 - Modify: `apps/main/src/routes/(app)/wiki/[space_slug]/+page.svelte` (gallery strip, kind chip, hide community CTA for wiki_only)
 - Modify: `apps/main/src/routes/(app)/spaces/[slug]/+page.server.ts` (redirect)
-- Check: media upload picker for `SuggestEdit` — **defer**: v1 galleries are seeded/admin-managed; community image uploads stay a follow-up (spec allows).
+- Check: media upload picker for `SuggestEdit` — **implemented**: `CustomFieldGroup` gained `image_single`/`image_multi`/`media` branches rendering a thumbnail strip + an "Add image" trigger opening `MediaLibraryModal` (library/upload/stock); values store `{id,url?,alt?}` refs that `parseMediaFieldRefs` accepts. `formatValue` renders read-only media fields as alt text/count instead of JSON.
 
 **Interfaces:**
 - Consumes: `directory.children[].image_url|blurb|kind` (Task 3); `value.items[].url|alt|full_url` for image fields (Task 4); `space.wiki_only` (Task 2); `kind` cfv on the overview group.
@@ -1123,7 +1123,7 @@ Restructure the `<dl>` row so image fields break out of the dt/dd inline pair in
 - `const spaceWikiOnly = $derived(data.spaceDetail?.wiki_only === true);` — **top-level** on the detail envelope (Task 2 Step 7 puts it beside `is_member`, not inside `space`).
 - Hide the "Still have questions" community CTA block (~line 471) when `spaceWikiOnly` (`{#if !spaceWikiOnly}` — verify the existing `{#if}` guard wraps it).
 - `WikiSidebar` gains `wikiOnly?: boolean` prop hiding the "Need Help? → Join Community" section (~line 134) — it links `/spaces/{slug}`, which now redirects back to `/wiki/{slug}` (circular dead-end). Pass `wikiOnly={spaceWikiOnly}` at **all 3 call sites**: index `+page.svelte` (~line 256), `[page_slug]/+page.svelte` (~line 289), `[page_slug]/history/+page.svelte` (~line 109). All three server loads already fetch `spaceDetail` → `wiki_only` propagates free.
-- Kind chip / hero gallery strip: **defer** — `kind` already renders via `EntityFieldsPanel` as a select value; the `wiki_attraction_overview` group also feeds `WikiQuickFacts` free when the index's `quickFactsGroup` resolves to it (verify the prop's group-slug source when implementing).
+- Kind chip / hero gallery strip: **implemented (chip)** — `GET /wiki/{slug}` envelope carries `kind` (read from the `kind` cfv via `spaceKindValue`); the index page humanizes it into a hero chip beside the `<h1>` (`historic-site` → `Historic Site`), omitted when unset. Gallery strip stays deferred — the fields-panel grid covers it.
 
 - [ ] **Step 5: spaces → wiki redirect**
 
@@ -1185,4 +1185,4 @@ git commit -m "feat(admin): attraction seeding trigger on wiki types page (§80)
   - `WikiSidebar.wikiOnly` prop added — Join Community links `/spaces/{slug}` which redirects back to `/wiki/{slug}` (all 3 call sites).
   - `kind` reads `value_json.value`, not `value_text`.
   - Seeder stores `{"wikidata_id": qid}` in `wiki_content` at insert AND upserts the `wikidata_id` cfv — `populateAttractionSpace` fetches that entity directly by QID (no search) for seeded spaces.
-- **Deferred (documented, not blocking):** multi-`P131` border-attraction multi-parent linking (v1 links the trigger parent; the junction supports more later); SuggestEdit media picker for community gallery uploads; `kind` hero chip (renders via EntityFieldsPanel regardless).
+- **Follow-ups — all implemented:** multi-`P131` border-attraction parent linking (create-time via `candidateGeoParents` + enrichment-time via `linkAttractionParents`, both deduped and idempotent); SuggestEdit media picker (`CustomFieldGroup` media branches + `MediaLibraryModal`); `kind` hero chip (`kind` on the index envelope, humanized label beside the title).

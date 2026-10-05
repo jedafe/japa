@@ -637,6 +637,9 @@ type WikiIndexDTO struct {
 	Pages        []WikiPageDTO     `json:"pages"`
 	Ancestors    []WikiSpaceRefDTO `json:"ancestors,omitempty"`
 	AncestorsAlt []WikiSpaceRefDTO `json:"ancestors_alt,omitempty"`
+	// §80 attractions — the space's `kind` select value (e.g. "waterfall")
+	// for the index hero chip; empty for spaces without the field.
+	Kind string `json:"kind,omitempty"`
 }
 
 func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiIndexDTO, error) {
@@ -672,8 +675,28 @@ func (s *Service) GetWikiIndex(ctx context.Context, spaceSlug string) (*WikiInde
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
+	out.Kind = s.spaceKindValue(ctx, spaceID)
 
 	return out, nil
+}
+
+// spaceKindValue reads the `kind` select field for one space — the hero
+// chip on attraction wiki indexes (§80). Best-effort: "" when the field
+// reader is unwired, errors, or no kind is set.
+func (s *Service) spaceKindValue(ctx context.Context, spaceID pgtype.UUID) string {
+	if s.fields == nil {
+		return ""
+	}
+	vals, err := s.fields.ListFieldValuesWithDefsForEntities(ctx, "space", []pgtype.UUID{spaceID})
+	if err != nil {
+		return ""
+	}
+	for _, v := range vals {
+		if v.FieldKey == "kind" {
+			return selectValueJSON(v.ValueJson)
+		}
+	}
+	return ""
 }
 
 // enqueueStubSeed fire-and-forget enqueues wiki:seed_stub_pages for one
@@ -719,6 +742,7 @@ func (s *Service) GetWikiIndexByDestSpaceID(ctx context.Context, spaceID pgtype.
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		out.Ancestors, out.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)
 	}
+	out.Kind = s.spaceKindValue(ctx, spaceID)
 
 	return out, nil
 }

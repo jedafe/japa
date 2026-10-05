@@ -91,6 +91,13 @@
 	// Only the platform-stored header is rendered here — the auto-populated
 	// thumbnail URL points at Wikimedia and would hotlink on every view.
 	const heroUrl = $derived(data.spaceDetail?.header_url || '');
+	// §80 attractions — the `kind` select value humanized for the hero
+	// chip ("historic-site" → "Historic Site"); empty when unset.
+	const kindLabel = $derived(
+		(data.spaceKind ?? '')
+			.replace(/[-_]+/g, ' ')
+			.replace(/\b\w/g, (c) => c.toUpperCase())
+	);
 	const intro = $derived.by(() => {
 		const desc = space?.description?.trim();
 		if (desc) return desc;
@@ -350,7 +357,16 @@
 			/>
 		{/if}
 		<div class="min-w-0">
-			<h1 class="text-2xl font-semibold text-[var(--color-text)]">{spaceName}</h1>
+			<div class="flex flex-wrap items-center gap-2">
+				<h1 class="text-2xl font-semibold text-[var(--color-text)]">{spaceName}</h1>
+				{#if kindLabel}
+					<span
+						class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)]"
+					>
+						{kindLabel}
+					</span>
+				{/if}
+			</div>
 			<p class="mt-0.5 text-sm text-[var(--color-muted)]">{tagline}</p>
 		</div>
 	</div>
@@ -469,7 +485,10 @@
 				{/each}
 			</div>
 
-			<!-- Community CTA -->
+			<!-- Community CTA — hidden on wiki-only spaces (attractions):
+			     "Ask a Question" links /spaces/{slug} which redirects back
+			     here. -->
+			{#if !data.spaceDetail?.wiki_only}
 			<div class="mt-6 flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)]">
 					<CircleHelp size={18} class="text-[var(--color-primary)]" aria-hidden="true" />
@@ -489,6 +508,7 @@
 					{t('wiki.ask_a_question', 'Ask a Question')}
 				</a>
 			</div>
+			{/if}
 		{/if}
 
 		{#if lastUpdated}
