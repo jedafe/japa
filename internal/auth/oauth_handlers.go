@@ -281,8 +281,15 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// New user → onboarding wizard, regardless of the stored redirect path.
-	h.issueSessionAndRedirect(w, r, userID, "/onboarding", true)
+	// New user → onboarding wizard, carrying the validated redirect so
+	// completion returns to it (§120 MCP consent round-trip). The path was
+	// sanitized by safeRedirectTarget — it is a relative site path or an
+	// allowlisted API-origin absolute URL, never an open-redirect vector.
+	target := "/onboarding"
+	if redirectPath != "/" {
+		target += "?redirect=" + url.QueryEscape(redirectPath)
+	}
+	h.issueSessionAndRedirect(w, r, userID, target, true)
 }
 
 // createOAuthUser creates a new OAuth-only user (password_hash = NULL) with a

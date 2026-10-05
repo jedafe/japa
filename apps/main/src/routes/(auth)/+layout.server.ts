@@ -5,6 +5,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { apiContext, apiGet } from '$lib/server/api';
+import { resolvePostLoginRedirect } from '$lib/server/auth';
 import type { OnboardingStatus } from '$lib/types';
 
 export const load: LayoutServerLoad = async (event) => {
@@ -21,12 +22,13 @@ export const load: LayoutServerLoad = async (event) => {
 			onboarding = null;
 		}
 
-		if (onboarding && !onboarding.completed) {
-			throw redirect(303, '/onboarding');
-		}
-
-		const redirectTarget = event.url.searchParams.get('redirect');
-		throw redirect(303, redirectTarget ?? '/');
+		// resolvePostLoginRedirect sanitizes the ?redirect= target (§120:
+		// relative paths or the allowlisted API origin only) and threads it
+		// through /onboarding when the wizard hasn't run yet.
+		throw redirect(
+			303,
+			resolvePostLoginRedirect(onboarding, event.url.searchParams.get('redirect'))
+		);
 	}
 
 	return {};

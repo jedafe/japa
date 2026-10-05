@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import { navigatePostLogin } from '$lib/auth/redirect';
 	import { t } from '$lib/i18n';
 	import { Check, ChevronLeft, ChevronRight, Sparkles, MapPin, Trophy, Heart, ShieldCheck, Plane, Globe, Landmark, Luggage, Lightbulb } from 'lucide-svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
@@ -239,8 +240,16 @@
 				// renders the tour targets (primary nav, space switcher, compose).
 				// invalidateAll refreshes root-layout onboardingCompleted so the
 				// finish-setup card disappears immediately after completion.
+				// §120: a ?redirect= target (e.g. the MCP OAuth authorize URL)
+				// supersedes the tour — navigatePostLogin handles the absolute
+				// API-host URL via location.assign.
 				await invalidateAll();
-				await goto('/?tour=1');
+				const dest = data.postOnboardingRedirect ?? '/';
+				if (dest === '/') {
+					await goto('/?tour=1');
+				} else {
+					await navigatePostLogin(dest);
+				}
 			}
 		} catch {
 			error = t('onboarding.error', 'Something went wrong. Please try again.');

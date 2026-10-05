@@ -344,8 +344,14 @@ export function resolvePostLoginRedirect(
 	onboarding: OnboardingStatus | null,
 	redirectTarget: string | null
 ): string {
-	if (onboarding && !onboarding.completed) return '/onboarding';
-	return sanitizePostLoginTarget(redirectTarget);
+	const target = sanitizePostLoginTarget(redirectTarget);
+	if (onboarding && !onboarding.completed) {
+		// §120: carry the post-onboarding destination (e.g. the MCP OAuth
+		// authorize URL) through the wizard so completion returns the user
+		// to the consent flow instead of dropping them on the home feed.
+		return target === '/' ? '/onboarding' : '/onboarding?redirect=' + encodeURIComponent(target);
+	}
+	return target;
 }
 
 /**
@@ -364,7 +370,7 @@ const API_PUBLIC_ORIGIN = env.PRIVATE_API_PUBLIC_ORIGIN ?? API_BASE;
  * {api-host}/oauth/authorize after sign-in. Everything else reduces to '/'
  * so the login flow is not an open-redirect vector.
  */
-function sanitizePostLoginTarget(target: string | null): string {
+export function sanitizePostLoginTarget(target: string | null): string {
 	if (!target) return '/';
 	if (target.startsWith('/') && !target.startsWith('//')) {
 		// Browsers normalize "/\evil.com" to "//evil.com" on navigation.
