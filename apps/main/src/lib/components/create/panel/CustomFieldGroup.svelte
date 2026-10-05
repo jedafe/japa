@@ -1,7 +1,9 @@
 <script lang="ts">
-	import type { CustomFieldDef, GeoCountry } from '$lib/types';
+	import type { CustomFieldDef, GeoCountry, MediaAsset } from '$lib/types';
 	import Autocomplete from '../Autocomplete.svelte';
 	import type { AutocompleteItem } from '../Autocomplete.svelte';
+	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
+	import { ImagePlus, X } from 'lucide-svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { listCountries } from '$lib/api/geo';
 	import { listCurrencies } from '$lib/api/hub';
@@ -26,6 +28,65 @@
 	function setField(key: string, val: unknown) {
 		onvalues({ ...values, [key]: val });
 		onedit();
+	}
+
+	// §80 Wiki-Only Attractions — image_single/image_multi/media fields
+	// pick platform media (library, upload, stock) via the shared media
+	// modal. Stored values carry {id, url?, alt?} — id+alt are what the
+	// backend's parseMediaFieldRefs reads; url rides along so the editor
+	// can thumbnail both pre-existing resolved values and fresh picks.
+	interface MediaRef {
+		id: string;
+		url?: string;
+		alt?: string;
+	}
+	const MEDIA_FIELD_TYPES = new Set(['image_single', 'image_multi', 'media']);
+	let mediaPickerKey = $state<string | null>(null);
+
+	function mediaItemsOf(field: CustomFieldDef): MediaRef[] {
+		let probe: unknown = values[field.key];
+		if (probe === null || probe === undefined || probe === '') return [];
+		// Unwrap the {"value": …} envelope some writes produce.
+		if (typeof probe === 'object' && !Array.isArray(probe) && 'value' in probe) {
+			probe = (probe as Record<string, unknown>).value;
+		}
+		const toRef = (el: unknown): MediaRef | null => {
+			if (typeof el === 'string' && el) return { id: el };
+			if (el && typeof el === 'object' && !Array.isArray(el)) {
+				const o = el as Record<string, unknown>;
+				if (typeof o.id !== 'string' || o.id === '') return null;
+				return {
+					id: o.id,
+					url: typeof o.url === 'string' ? o.url : undefined,
+					alt: typeof o.alt === 'string' ? o.alt : undefined
+				};
+			}
+			return null;
+		};
+		if (Array.isArray(probe)) return probe.map(toRef).filter((x): x is MediaRef => x !== null);
+		const one = toRef(probe);
+		return one ? [one] : [];
+	}
+
+	function mediaAddItem(field: CustomFieldDef, asset: MediaAsset) {
+		const item: MediaRef = { id: asset.id };
+		if (asset.url) item.url = asset.url;
+		if (asset.alt_text) item.alt = asset.alt_text;
+		if (field.field_type === 'image_single') {
+			setField(field.key, item);
+			return;
+		}
+		setField(field.key, [...mediaItemsOf(field), item]);
+	}
+
+	function mediaRemoveItem(field: CustomFieldDef, idx: number) {
+		if (field.field_type === 'image_single') {
+			setField(field.key, '');
+			return;
+		}
+		const arr = mediaItemsOf(field);
+		arr.splice(idx, 1);
+		setField(field.key, arr);
 	}
 
 	// Repeater helpers — add/remove/move items. Plain repeaters store
@@ -325,7 +386,10 @@
 		'multiselect',
 		'price_range',
 		'price_parts',
-		'group'
+		'group',
+		'image_single',
+		'image_multi',
+		'media'
 	]);
 
 	function isFullWidth(field: CustomFieldDef): boolean {
@@ -564,6 +628,38 @@
 			rendered as separate custom_fields rows by the parent, so this is a
 			visual label only. -->
 			<div class="cf-group-label">{field.label}</div>
+		{:else if MEDIA_FIELD_TYPES.has(field.field_type)}
+			<!-- §80 — media picker: thumbnail strip of current refs + an
+			     add button opening the shared library/upload/stock modal. -->
+			{@const items = mediaItemsOf(field)}
+			<span class="cf-label">{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</span>
+			<div class="cf-media">
+				{#each items as m, i (m.id + '-' + i)}
+					<span class="cf-media-thumb">
+						{#if m.url}
+							<img src={m.url} alt={m.alt ?? ''} loading="lazy" />
+						{:else}
+							<span class="cf-media-nothumb">{m.alt || m.id.slice(0, 8)}</span>
+						{/if}
+						<button
+							type="button"
+							class="cf-media-remove"
+							aria-label={t('common.remove', 'Remove')}
+							onclick={() => mediaRemoveItem(field, i)}
+						><X size={12} /></button>
+					</span>
+				{/each}
+				{#if field.field_type !== 'image_single' || items.length === 0}
+					<button
+						type="button"
+						class="cf-media-add"
+						onclick={() => (mediaPickerKey = field.key)}
+					>
+						<ImagePlus size={15} />
+						{t('common.add_image', 'Add image')}
+					</button>
+				{/if}
+			</div>
 		{:else}
 			<label class="cf-label" for={field.key}>{field.label}{#if field.is_required}<span class="cf-required">*</span>{/if}</label>
 			<input
@@ -578,6 +674,20 @@
 	</div>
 {/each}
 </div>
+
+{#if mediaPickerKey}
+	{@const pickerField = fields.find((f) => f.key === mediaPickerKey)}
+	{#if pickerField}
+		<MediaLibraryModal
+			allowedType={pickerField.field_type === 'media' ? '' : 'image'}
+			onSelect={(asset) => {
+				mediaAddItem(pickerField, asset);
+				mediaPickerKey = null;
+			}}
+			onClose={() => (mediaPickerKey = null)}
+		/>
+	{/if}
+{/if}
 
 <style>
 	.cf-grid {
@@ -750,5 +860,71 @@
 		padding: 4px 0;
 		border-bottom: 1px solid var(--color-border);
 		margin-bottom: 2px;
+	}
+	/* §80 media fields — thumbnail strip + picker trigger. */
+	.cf-media {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		align-items: center;
+	}
+	.cf-media-thumb {
+		position: relative;
+		width: 72px;
+		height: 72px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: var(--color-bg);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.cf-media-thumb img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.cf-media-nothumb {
+		font-size: 0.65rem;
+		color: var(--color-muted);
+		padding: 4px;
+		text-align: center;
+		word-break: break-all;
+	}
+	.cf-media-remove {
+		position: absolute;
+		top: 2px;
+		right: 2px;
+		width: 18px;
+		height: 18px;
+		border: none;
+		border-radius: 50%;
+		background: rgba(0, 0, 0, 0.65);
+		color: #fff;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		line-height: 1;
+	}
+	.cf-media-add {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 72px;
+		padding: 0 14px;
+		border: 1px dashed var(--color-border);
+		border-radius: var(--radius);
+		background: transparent;
+		color: var(--color-muted);
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+	}
+	.cf-media-add:hover {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
 	}
 </style>

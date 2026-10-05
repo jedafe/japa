@@ -312,6 +312,16 @@
 		if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
 		if (typeof v === 'number') return String(v);
 		if (typeof v === 'string') return v;
+		// §80 media fields resolve to {id,url,alt} objects — render alt text
+		// or a count instead of a JSON blob.
+		if (f.field_type === 'image_single' || f.field_type === 'image_multi' || f.field_type === 'media') {
+			const items = Array.isArray(v) ? v : [v];
+			const labels = items
+				.map((i) => (i && typeof i === 'object' ? ((i as { alt?: string }).alt ?? '') : ''))
+				.filter(Boolean);
+			if (labels.length > 0) return labels.join(', ');
+			return t('wiki.media_count', '{count} image(s)', { count: items.length });
+		}
 		if (Array.isArray(v)) {
 			return v
 				.map((i) => (typeof i === 'object' && i !== null ? JSON.stringify(i) : String(i)))

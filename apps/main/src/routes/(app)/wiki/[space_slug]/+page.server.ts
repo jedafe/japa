@@ -29,6 +29,9 @@ type WikiIndexEnvelope = {
 	data: WikiPageIndex[] | null;
 	ancestors?: WikiSpaceRef[];
 	ancestors_alt?: WikiSpaceRef[];
+	/** §80 attractions — the space's `kind` select value for the hero
+	 *  chip (e.g. "waterfall", "museum"). */
+	kind?: string;
 };
 
 /**
@@ -64,6 +67,7 @@ export const load: PageServerLoad = async (event) => {
 			index: items,
 			ancestors: indexEnvelope.ancestors ?? [],
 			ancestorsAlt: indexEnvelope.ancestors_alt ?? [],
+			spaceKind: indexEnvelope.kind ?? '',
 			authed,
 			userPermissions,
 			loadError: false,
@@ -80,6 +84,7 @@ export const load: PageServerLoad = async (event) => {
 			index: [] as WikiPageIndex[],
 			ancestors: [] as WikiSpaceRef[],
 			ancestorsAlt: [] as WikiSpaceRef[],
+			spaceKind: '',
 			authed,
 			userPermissions,
 			loadError: true,
