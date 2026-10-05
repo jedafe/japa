@@ -39,3 +39,10 @@ sql:
               type: "Vector"
               import: "github.com/pgvector/pgvector-go"
               pointer: true
+          # coupons.details is editorial JSON for the deal page; RawMessage so
+          # API responses embed the object instead of base64 (§55).
+          - column: "coupons.details"
+            go_type:
+              type: "RawMessage"
+              import: "encoding/json"
+              pointer: false

@@ -1,27 +1,31 @@
 -- name: CreateAffiliateProvider :one
-INSERT INTO affiliate_providers (name, slug, description, provider_type, logo_media_id, base_url, tracking_param, tracking_value, commission_rate, is_active, is_featured) VALUES (@name, @slug, sqlc.narg(description), @provider_type, sqlc.narg(logo_media_id), sqlc.narg(base_url), sqlc.narg(tracking_param), sqlc.narg(tracking_value), sqlc.narg(commission_rate), @is_active, @is_featured)
+INSERT INTO affiliate_providers (name, slug, description, provider_type, logo_media_id, base_url, tracking_param, tracking_value, commission_rate, is_active, is_featured, category, organization_id) VALUES (@name, @slug, sqlc.narg(description), @provider_type, sqlc.narg(logo_media_id), sqlc.narg(base_url), sqlc.narg(tracking_param), sqlc.narg(tracking_value), sqlc.narg(commission_rate), @is_active, @is_featured, sqlc.narg(category), sqlc.narg(organization_id))
 RETURNING id, name, slug, description, provider_type, logo_media_id,
  base_url, tracking_param, tracking_value, commission_rate,
- is_active, is_featured, author_commission_pct, created_at, updated_at;
+ is_active, is_featured, author_commission_pct, category, organization_id,
+ created_at, updated_at;
 
 -- name: GetAffiliateProviderByID :one
 SELECT id, name, slug, description, provider_type, logo_media_id,
  base_url, tracking_param, tracking_value, commission_rate,
- is_active, is_featured, author_commission_pct, created_at, updated_at
+ is_active, is_featured, author_commission_pct, category, organization_id,
+ created_at, updated_at
 FROM affiliate_providers
 WHERE id = @id;
 
 -- name: GetAffiliateProviderBySlug :one
 SELECT id, name, slug, description, provider_type, logo_media_id,
  base_url, tracking_param, tracking_value, commission_rate,
- is_active, is_featured, author_commission_pct, created_at, updated_at
+ is_active, is_featured, author_commission_pct, category, organization_id,
+ created_at, updated_at
 FROM affiliate_providers
 WHERE slug = @slug;
 
 -- name: ListAffiliateProviders :many
 SELECT id, name, slug, description, provider_type, logo_media_id,
  base_url, tracking_param, tracking_value, commission_rate,
- is_active, is_featured, author_commission_pct, created_at, updated_at
+ is_active, is_featured, author_commission_pct, category, organization_id,
+ created_at, updated_at
 FROM affiliate_providers
 WHERE (@is_active::bool IS NULL OR is_active = @is_active)
 ORDER BY name ASC
@@ -33,11 +37,12 @@ SET name = @name, description = sqlc.narg(description), provider_type = @provide
  logo_media_id = sqlc.narg(logo_media_id), base_url = sqlc.narg(base_url),
  tracking_param = sqlc.narg(tracking_param), tracking_value = sqlc.narg(tracking_value),
  commission_rate = sqlc.narg(commission_rate), is_active = @is_active,
- is_featured = @is_featured, updated_at = now()
+ is_featured = @is_featured, category = sqlc.narg(category), updated_at = now()
 WHERE id = @id
 RETURNING id, name, slug, description, provider_type, logo_media_id,
  base_url, tracking_param, tracking_value, commission_rate,
- is_active, is_featured, author_commission_pct, created_at, updated_at;
+ is_active, is_featured, author_commission_pct, category, organization_id,
+ created_at, updated_at;
 
 -- name: DeleteAffiliateProvider :exec
 DELETE FROM affiliate_providers
@@ -53,18 +58,20 @@ WHERE provider_id = @provider_id;
 -- =====================
 
 -- name: CreateCoupon :one
-INSERT INTO coupons (provider_id, coupon_type, title, slug, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES (sqlc.narg(provider_id), @coupon_type, @title, @slug, sqlc.narg(description), @code, sqlc.narg(discount_type), sqlc.narg(discount_value), sqlc.narg(currency), sqlc.narg(terms_url), sqlc.narg(referral_url), @is_verified, @status, sqlc.narg(valid_from), sqlc.narg(expires_at), sqlc.narg(created_by))
+INSERT INTO coupons (provider_id, coupon_type, title, slug, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by, details) VALUES (sqlc.narg(provider_id), @coupon_type, @title, @slug, sqlc.narg(description), @code, sqlc.narg(discount_type), sqlc.narg(discount_value), sqlc.narg(currency), sqlc.narg(terms_url), sqlc.narg(referral_url), @is_verified, @status, sqlc.narg(valid_from), sqlc.narg(expires_at), sqlc.narg(created_by), sqlc.narg(details))
 RETURNING id, provider_id, coupon_type, title, description, code,
  discount_type, discount_value, currency, terms_url, referral_url,
  is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at, slug;
+ created_by, created_at, updated_at, slug, details;
 
 -- name: GetCouponByID :one
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
- ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+ c.details,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.category AS provider_category
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.id = @id;
@@ -74,7 +81,9 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
- ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+ c.details,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.category AS provider_category
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.code = @code;
@@ -84,18 +93,22 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ c.details,
  ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.category AS provider_category,
  ap.base_url AS provider_base_url, ap.is_active AS provider_is_active
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.slug = @slug;
+WHERE c.slug = @slug AND c.status <> 'pending';
 
 -- name: ListCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
- ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+ c.details,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.category AS provider_category
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
@@ -110,7 +123,9 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
- ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
+ c.details,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.category AS provider_category
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.status = 'active'
@@ -129,12 +144,12 @@ SET title = @title, slug = @slug, description = sqlc.narg(description), code = @
  currency = sqlc.narg(currency), terms_url = sqlc.narg(terms_url),
  referral_url = sqlc.narg(referral_url), is_verified = @is_verified,
  status = @status, valid_from = sqlc.narg(valid_from),
- expires_at = sqlc.narg(expires_at), updated_at = now()
+ expires_at = sqlc.narg(expires_at), details = sqlc.narg(details), updated_at = now()
 WHERE id = @id
 RETURNING id, provider_id, coupon_type, title, description, code,
  discount_type, discount_value, currency, terms_url, referral_url,
  is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at, slug;
+ created_by, created_at, updated_at, slug, details;
 
 -- name: DeleteCoupon :exec
 DELETE FROM coupons
@@ -327,3 +342,39 @@ WHERE EXISTS (
  SELECT 1 FROM coupon_events ce
  WHERE ce.coupon_id = c.id AND ce.event_type = 'copy'
 );
+
+-- =====================
+-- Deal Partners / Org Submissions (Section 55 Deals Redesign)
+-- =====================
+
+-- name: ListActiveDealPartners :many
+-- Slim provider rows for the public GET /deals/partners index (§55) — powers
+-- the /deals filter pills and the deal form's provider select.
+SELECT id, name, slug, description, category, logo_media_id, base_url,
+ is_featured, organization_id
+FROM affiliate_providers
+WHERE is_active = true
+ORDER BY name ASC;
+
+-- name: GetAffiliateProviderByOrgID :one
+SELECT id, name, slug, description, provider_type, logo_media_id,
+ base_url, tracking_param, tracking_value, commission_rate,
+ is_active, is_featured, author_commission_pct, category, organization_id,
+ created_at, updated_at
+FROM affiliate_providers
+WHERE organization_id = @organization_id;
+
+-- name: ListCouponsByOrganization :many
+-- All of an org's coupons in every status (org's own submissions view).
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ c.details,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.category AS provider_category
+FROM coupons c
+JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE ap.organization_id = @organization_id
+ORDER BY c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
