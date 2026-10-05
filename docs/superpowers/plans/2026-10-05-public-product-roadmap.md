@@ -66,7 +66,8 @@ GET    /admin/roadmap/items                  [perm: roadmap.view]
 POST   /admin/roadmap/items                  [perm: roadmap.create]
 GET    /admin/roadmap/items/{id}             [perm: roadmap.view]
 PATCH  /admin/roadmap/items/{id}             [perm: roadmap.edit]
-DELETE /admin/roadmap/items/{id}             [perm: roadmap.delete; ?force=true + admin.hard_delete]
+DELETE /admin/roadmap/items/{id}             [perm: roadmap.delete; ?force=true engages admin.hard_delete via rbac.RequireForceDelete]
+POST   /admin/roadmap/items/{id}/restore     [perm: roadmap.edit] Clear deleted_at
 PATCH  /admin/roadmap/items/{id}/status      [perm: roadmap.moderate]
 POST   /admin/roadmap/items/reorder          [perm: roadmap.edit]
 GET    /admin/roadmap/submissions            [perm: roadmap.moderate] pending queue
@@ -209,6 +210,22 @@ WHERE ur.slug IN ('super_admin', 'super_admin_role', 'admin-group-role')
   AND p.key LIKE 'roadmap.%'
 ON CONFLICT DO NOTHING;
 
+-- Notification type for roadmap:ship_notify (§113). notification lists JOIN
+-- notification_types on key — an unseeded key silently drops the rows.
+INSERT INTO notification_types (key, label, description, default_in_app, default_email, default_push) VALUES
+    ('roadmap_shipped', 'Roadmap Item Shipped',
+     'A roadmap item you voted for has shipped',
+     true, false, false)
+ON CONFLICT (key) DO NOTHING;
+
+-- Flagship: the first wave — Spaces & Content Creation (in_progress).
+INSERT INTO roadmap_items (title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key)
+SELECT 'Spaces & Content Creation', 'spaces-content-creation',
+       'The core of JapaConnect: geo-first spaces and rich content creation — posts, articles, media, and moderation tools.',
+       'The core of JapaConnect: geo-first spaces (Country → State → City → University) and rich content creation — posts, articles, media, drafts, and moderation tools. This is the first feature wave going live.',
+       c.id, 'in_progress', 0, true, 'Q4 2026', NULL
+FROM roadmap_categories c WHERE c.slug = 'spaces-content';
+
 COMMIT;
 ```
 
@@ -221,6 +238,7 @@ BEGIN;
 DELETE FROM role_permissions WHERE permission_id IN
     (SELECT id FROM permissions WHERE key LIKE 'roadmap.%');
 DELETE FROM permissions WHERE key LIKE 'roadmap.%';
+DELETE FROM notification_types WHERE key = 'roadmap_shipped';
 
 DROP TABLE IF EXISTS roadmap_votes;
 DROP TABLE IF EXISTS roadmap_items;
@@ -253,7 +271,7 @@ git commit -m "db: roadmap tables, categories seed, and roadmap.* permission nod
 - Regenerate: `internal/db/gen/roadmap.sql.go` (via `make sqlc-gen`)
 
 **Interfaces:**
-- Produces gen functions consumed by `internal/roadmap/store.go` (Task 5): `CreateRoadmapItem`, `GetRoadmapItemByID`, `GetRoadmapItemBySlug`, `ListPublicRoadmapItems`, `ListRoadmapItemsByStatus`, `ListAdminRoadmapItems`, `CountAdminRoadmapItems`, `UpdateRoadmapItem`, `UpdateRoadmapItemStatus`, `SetRoadmapItemContent`, `SoftDeleteRoadmapItem`, `ReorderRoadmapItems`, `ListRoadmapCategories`, `CreateRoadmapCategory`, `UpdateRoadmapCategory`, `SoftDeleteRoadmapCategory`, `TryCreateRoadmapVote`, `DeleteRoadmapVote`, `SyncRoadmapVoteCount`, `ListRoadmapVoterIDs`, `ListRoadmapSitemapItems`, `CreateRoadmapShadowContent`.
+- Produces gen functions consumed by `internal/roadmap/store.go` (Task 5): `CreateRoadmapItem`, `GetRoadmapItemByID`, `GetRoadmapItemBySlug`, `ListPublicRoadmapItems`, `ListRoadmapChangelog`, `ListAdminRoadmapItems`, `CountAdminRoadmapItems`, `UpdateRoadmapItem`, `UpdateRoadmapItemStatus`, `SetRoadmapItemContent`, `SoftDeleteRoadmapItem`, `RestoreRoadmapItem`, `HardDeleteRoadmapItem`, `UpdateRoadmapShadowContent`, `ReorderRoadmapItems`, `ListRoadmapCategories`, `ListAdminRoadmapCategories`, `GetRoadmapCategoryByID`, `CreateRoadmapCategory`, `UpdateRoadmapCategory`, `SoftDeleteRoadmapCategory`, `TryCreateRoadmapVote`, `DeleteRoadmapVote`, `SyncRoadmapVoteCount`, `ListRoadmapVoterIDs`, `ListRoadmapSitemapItems`, `CreateRoadmapShadowContent`.
 
 - [ ] **Step 1: Write the query file**
 
@@ -274,9 +292,11 @@ INSERT INTO roadmap_items (
 SELECT * FROM roadmap_items WHERE id = @id;
 
 -- name: GetRoadmapItemBySlug :one
-SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color
+SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+       (v.user_id IS NOT NULL) AS has_voted
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id
+LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = sqlc.narg(viewer_id)
 WHERE i.slug = @slug AND i.deleted_at IS NULL;
 
 -- name: ListPublicRoadmapItems :many
@@ -290,12 +310,12 @@ WHERE i.status = ANY(@statuses::text[]) AND i.deleted_at IS NULL
   AND (i.status <> 'shipped' OR i.shipped_at > now() - make_interval(days => @shipped_window_days))
 ORDER BY i.is_flagship DESC, i.sort_order ASC, i.vote_count DESC, i.created_at DESC;
 
--- name: ListRoadmapItemsByStatus :many
+-- name: ListRoadmapChangelog :many
 SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color
 FROM roadmap_items i
 LEFT JOIN roadmap_categories c ON c.id = i.category_id
-WHERE i.status = @status AND i.deleted_at IS NULL
-ORDER BY i.sort_order ASC, i.created_at DESC;
+WHERE i.status = 'shipped' AND i.deleted_at IS NULL
+ORDER BY i.shipped_at DESC;
 
 -- name: ListAdminRoadmapItems :many
 SELECT i.*, c.name AS category_name
@@ -345,8 +365,15 @@ UPDATE roadmap_items SET content_id = @content_id, updated_at = now() WHERE id =
 -- name: SoftDeleteRoadmapItem :exec
 UPDATE roadmap_items SET deleted_at = now(), updated_at = now() WHERE id = @id AND deleted_at IS NULL;
 
+-- name: RestoreRoadmapItem :exec
+UPDATE roadmap_items SET deleted_at = NULL, updated_at = now() WHERE id = @id AND deleted_at IS NOT NULL;
+
 -- name: HardDeleteRoadmapItem :exec
 DELETE FROM roadmap_items WHERE id = @id AND deleted_at IS NOT NULL;
+
+-- name: UpdateRoadmapShadowContent :exec
+UPDATE contents SET title = @title, body = @body, content_hash = sqlc.narg(content_hash), updated_at = now()
+WHERE id = @content_id AND content_type = 'roadmap';
 
 -- name: ReorderRoadmapItems :exec
 UPDATE roadmap_items SET sort_order = v.ord
@@ -539,7 +566,7 @@ type BoardItem struct {
 	IsFlagship     bool        `json:"is_flagship"`
 	TargetWindow   *string     `json:"target_window"`
 	FeatureFlagKey *string     `json:"feature_flag_key"`
-	ContentID      pgtype.UUID `json:"content_id"`
+	ContentID      *pgtype.UUID `json:"content_id"`
 	ShippedAt      *time.Time  `json:"shipped_at"`
 	CreatedAt      time.Time   `json:"created_at"`
 }
@@ -593,9 +620,10 @@ func (s *Store) createItem(ctx context.Context, p gen.CreateRoadmapItemParams) (
 	return row, nil
 }
 
+// viewerID is the zero pgtype.UUID for guests (narg params → NULL).
 func (s *Store) listPublicItems(ctx context.Context, viewerID pgtype.UUID, categorySlug *string, shippedWindowDays int32) ([]gen.ListPublicRoadmapItemsRow, error) {
 	rows, err := s.read.ListPublicRoadmapItems(ctx, gen.ListPublicRoadmapItemsParams{
-		ViewerID:          viewerID,
+		ViewerID:          viewerID, // adjust to the generated param type (*pgtype.UUID when narg emits pointers)
 		CategorySlug:      categorySlug,
 		Statuses:          PublicStatuses,
 		ShippedWindowDays: shippedWindowDays,
@@ -652,6 +680,7 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminItemInput) (gen.RoadmapItem, error)
 func (s *Service) AdminSetStatus(ctx context.Context, id pgtype.UUID, to ItemStatus, actorID pgtype.UUID) (gen.RoadmapItem, error)
 func (s *Service) AdminDeleteItem(ctx context.Context, id pgtype.UUID, force bool) error
+func (s *Service) AdminRestoreItem(ctx context.Context, id pgtype.UUID) error
 func (s *Service) AdminReorderItems(ctx context.Context, ids []pgtype.UUID, orders []int32) error
 func (s *Service) ListCategories(ctx context.Context) ([]gen.RoadmapCategory, error)
 func (s *Service) AdminListCategories(ctx context.Context) ([]gen.RoadmapCategory, error)
@@ -680,14 +709,16 @@ const boardCacheKey = "jc:roadmap:board"
 ```
 
 - `GetBoard`: read `jc:roadmap:board` JSON from Valkey (skip when `categorySlug != ""` — filtered views aren't cached); on miss call `store.listPublicItems` with `PublicStatuses` and `roadmap.shipped_window_days` (default 90) via `s.settings.GetIntOr(ctx, ...)`, group into `BoardColumn`s (labels: Under Consideration / Planned / In Progress / Recently Shipped), fetch categories, marshal + `SET` with TTL `roadmap.board_cache_ttl_seconds` (default 60). Map rows to `BoardItem` (convert `pgtype.Timestamptz` → `*time.Time` where `Valid`).
-- `GetItem`: `getItemBySlug`; reject `status='pending'` with `errpkg.ErrNotFound` unless caller has moderate (pass a `canModerate bool` param or let handler check status==pending → 404 — simplest: service returns pending only to moderators via `GetItemAdmin` distinction; public `GetItem` 404s on pending/declined/archived). Include `has_voted` via a `HasRoadmapVote`-style check — add query `HasRoadmapVote :one SELECT EXISTS(...)`. (Add to roadmap.sql in Task 3.)
-- `CastVote`: ensure item exists & public status → `tryCreateVote`; on `pgx.ErrNoRows` (conflict do-nothing) return `ErrAlreadyVoted`; `syncVoteCount`; `invalidateBoard`; return new count.
+- `GetItem`: `getItemBySlug(slug, viewerID)` — the query already returns `has_voted` via the votes join; public access 404s (`errpkg.ErrNotFound`) on `pending`/`declined`/`archived` rows (moderators use `AdminGetItem`).
+- `CastVote`: ensure item exists and is in a **votable** status (`under_review`, `planned`, `in_progress` — not `pending`/`shipped`/`declined`/`archived`, which return `errpkg.ErrInvalid` → 400) → `tryCreateVote`; on `pgx.ErrNoRows` (conflict do-nothing) return `ErrAlreadyVoted`; `syncVoteCount`; `invalidateBoard`; return new count.
 - `RemoveVote`: `deleteVote` execrows → 0 rows ⇒ `ErrNotVoted`; `syncVoteCount`; invalidate.
 - `CreateSubmission`: gate on `roadmap.submissions_enabled` (default true → `errpkg.ErrFeatureDisabled` when off); title required (`errpkg.ErrRequired`); slug = `content.Slugify(title)` deduped with `-2/-3` suffix loop; `status='pending'`, `submitted_by=user`; **no shadow content yet** (created on approval).
 - `AdminCreateItem`: validate, `status` defaults `under_review`; create shadow content via `createShadowContent` then `setItemContent`.
-- `AdminUpdateItem`: update fields; if title/summary changed, also update the shadow contents row title/body via a small `UPDATE contents` query (add `UpdateRoadmapShadowContent :exec UPDATE contents SET title=@title, body=@body, updated_at=now() WHERE id=@content_id` to roadmap.sql).
+- `AdminUpdateItem`: update fields; also keep the shadow contents row in sync via `UpdateRoadmapShadowContent` (title, body, refreshed `content_hash`).
 - `AdminSetStatus`: fetch current → `IsValidTransition` else `errpkg.ErrInvalidStatusTransition`; on `pending→under_review` create shadow content + set `approved_by`; on `→shipped` enqueue `roadmap:ship_notify` payload `{"item_id","title","slug"}` fire-and-forget (Rule 8).
-- `AdminDeleteItem`: `soft` default; `force` requires already-deleted (else `errpkg.ErrNotDeleted`) → `HardDeleteRoadmapItem` (route gated by `rbac.RequireForceDelete`, not checked here).
+- `AdminDeleteItem`: `soft` default; `force` requires already-deleted (else `errpkg.ErrNotDeleted`) → `HardDeleteRoadmapItem`. The handler reads `?force=true` — the `rbac.RequireForceDelete` middleware (Task 7) gates the perm, not the service.
+- `AdminRestoreItem`: `RestoreRoadmapItem` (clears `deleted_at`); 404 if not deleted → reuse `errpkg.ErrNotFound` semantics by fetching the row first.
+- **Body format:** `roadmap_items.body` stores base64 TipTap JSON (same convention as §49 comments — the frontend encodes via `encodeReplyBody`). `content_hash` on the shadow contents row is computed over the decoded/plain text per Rule 12.
 - `AdminReorderItems`: pass `ids`+`orders` arrays to `reorderItems`.
 - `createShadowContent(ctx, item, authorID)`: slug `roadmap-<item.slug>`, `content_hash` = sha256 hex of normalized body per Rule 12 (reuse the normalizer if exported — else replicate: lowercase, collapse whitespace, trim); `CreateRoadmapShadowContent`; on unique-violation retry with `-2` suffix.
 - `invalidateBoard(ctx)`: `s.vk.Del(ctx, boardCacheKey)` guarded by `if s.vk != nil`.
@@ -720,8 +751,9 @@ func NewHandlers(service *Service) *Handlers
 // public
 GetBoard, GetChangelog, GetItem, CastVote, RemoveVote, CreateSubmission
 // admin
-AdminListItems, AdminGetItem, AdminCreateItem, AdminUpdateItem,
-AdminSetStatus, AdminDeleteItem, AdminReorderItems,
+AdminListItems, AdminListSubmissions, AdminGetItem, AdminCreateItem,
+AdminUpdateItem, AdminSetStatus, AdminDeleteItem, AdminRestoreItem,
+AdminReorderItems,
 AdminListCategories, AdminCreateCategory, AdminUpdateCategory, AdminDeleteCategory
 ```
 
@@ -734,11 +766,11 @@ errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": board})
 Public handlers:
 - `GetBoard` — `viewerID` from `auth.FromContext` (nil for guests — OptionalAuth route); `category` query param; `errpkg.WriteJSON(w, 200, {"data": board})`.
 - `GetItem` — slug param; service `ErrNotFound` → 404 via HandleServiceError.
-- `GetChangelog` — items where `status='shipped'` ordered `shipped_at DESC` (add `ListChangelogItems` query or reuse `ListRoadmapItemsByStatus` filtered + grouped client-side — prefer a dedicated `ListRoadmapChangelog :many SELECT i.*, c.name AS category_name FROM roadmap_items i LEFT JOIN roadmap_categories c ON c.id=i.category_id WHERE i.status='shipped' AND i.deleted_at IS NULL ORDER BY i.shipped_at DESC` in roadmap.sql).
+- `GetChangelog` — `store.listChangelog` (`ListRoadmapChangelog`, shipped DESC).
 - `CastVote`/`RemoveVote` — require user; `{id}` param; return `{"data":{"vote_count": n}}`; map `ErrAlreadyVoted` → `errpkg.WriteError(w, 409, "already_voted", ...)`.
 - `CreateSubmission` — require user; JSON body `{title, summary, body, category_id}`; 400 on missing title; 201 with item.
 
-Admin handlers — JSON bodies mirror `AdminItemInput` `{title, slug?, summary, body, category_id?, status?, sort_order, is_flagship, target_window?, feature_flag_key?}`; `AdminSetStatus` body `{status}`; `AdminReorderItems` body `{items: [{id, sort_order}]}`; `AdminListItems` reads `page_size`, `page_offset`, `status`, `category_id`, `q` (search), `sort` (`recent|votes|title`), `include_deleted`.
+Admin handlers — JSON bodies mirror `AdminItemInput` `{title, slug?, summary, body, category_id?, status?, sort_order, is_flagship, target_window?, feature_flag_key?}`; `AdminSetStatus` body `{status}`; `AdminReorderItems` body `{items: [{id, sort_order}]}`; `AdminListItems` reads `page_size`, `page_offset`, `status`, `category_id`, `q` (search), `sort` (`recent|votes|title`), `include_deleted`; `AdminListSubmissions` = same list hardcoded to `status=pending`; `AdminDeleteItem` reads `?force=true` → `force` arg; `AdminRestoreItem` (POST, empty body) → `AdminRestoreItem` service call.
 
 - [ ] **Step 2: Build + commit**
 
@@ -802,10 +834,12 @@ r.With(features.Gate(featureChecker, "roadmap.enabled")).Group(func(r chi.Router
         Get("/admin/roadmap/items/{id}", roadmapHandlers.AdminGetItem)
     r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
         Patch("/admin/roadmap/items/{id}", roadmapHandlers.AdminUpdateItem)
-    r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.delete")).
-        Delete("/admin/roadmap/items/{id}", roadmapHandlers.AdminDeleteItem)
+    // Soft delete always; ?force=true engages the admin.hard_delete check
+    // inside rbac.RequireForceDelete (JCE pattern, server.go ~line 4201).
     r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.delete"), rbac.RequireForceDelete(rbacResolver)).
-        Delete("/admin/roadmap/items/{id}/permanent", roadmapHandlers.AdminHardDeleteItem)
+        Delete("/admin/roadmap/items/{id}", roadmapHandlers.AdminDeleteItem)
+    r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+        Post("/admin/roadmap/items/{id}/restore", roadmapHandlers.AdminRestoreItem)
     r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.moderate")).
         Patch("/admin/roadmap/items/{id}/status", roadmapHandlers.AdminSetStatus)
     r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
@@ -823,7 +857,7 @@ r.With(features.Gate(featureChecker, "roadmap.enabled")).Group(func(r chi.Router
 })
 ```
 
-Notes for the implementer: `AdminListSubmissions` = `AdminListItems` hardcoded to `status=pending`; `AdminHardDeleteItem` calls `AdminDeleteItem(id, force=true)` (verify `rbac.RequireForceDelete` exists — used at server.go:4201; if it requires `?force=true` in the URL instead, keep `?force` on the DELETE route and drop the separate `/permanent` path — match the JCE pattern).
+Notes for the implementer: `AdminListSubmissions` = `AdminListItems` hardcoded to `status=pending`. Verified: `rbac.RequireForceDelete` (`internal/rbac/middleware.go:106`) is a pass-through unless `?force=true` — attach it to the DELETE route itself.
 
 - [ ] **Step 4: Build + curl smoke test**
 
@@ -1013,7 +1047,7 @@ export interface RoadmapItemDetail extends RoadmapBoardItem {
 }
 ```
 
-- [ ] **Step 2: `VoteButton.svelte`** — pill button showing ▲ count; pressed state when `has_voted`; `api.post/delete('/roadmap/items/'+item.id+'/vote')` toggle; guests → `goto('/auth/login?next=/roadmap')`; optimistic count update rolled back on error.
+- [ ] **Step 2: `VoteButton.svelte`** — pill button showing ▲ count; pressed state when `has_voted`; `api.post/delete('/roadmap/items/'+item.id+'/vote')` toggle (`api.delete` exists on the client); guests → `goto('/login?redirect=/roadmap')` (login lives at `/login`, `(auth)` group); optimistic count update rolled back on error.
 
 - [ ] **Step 3: `StatusBadge.svelte` + `RoadmapCard.svelte`** — badge maps status → label/color via i18n keys `roadmap.status.<status>`; card renders title, summary, category chip (colored dot), target window, `is_flagship` pin, vote button, link to `/roadmap/{slug}`; when `canModerate`, a small status `<select>` that PATCHes `/admin/roadmap/items/{id}/status` via `api.patch` then `invalidateAll()`.
 
@@ -1067,7 +1101,9 @@ comments = envelope.data ?? [];
 
 Return `{ item, comments, commentsLoadError, deletedUserIds }` — merge deleted-user IDs from comments the same way the blog page does (copy that block verbatim).
 
-- [ ] **Step 2: `+page.svelte`** — layout: status stepper (Under Review → Planned → In Progress → Shipped with current highlighted), `VoteButton`, category chip, `target_window`, feature-flag badge (`feature_flag_key` present → "rolling out" badge), `{@html tiptapBodyToHtml(item.body)}` description, submitter credit + dates, `<CommentThread comments={data.comments} contentId={item.content_id} contentType="roadmap" authed={!!data.user} currentUserId={data.user?.id ?? null} canModerate={canModerate} loadError={data.commentsLoadError} />`. Moderators get the same inline status select as the card.
+- [ ] **Step 2: `+page.svelte`** — layout: status stepper (Under Review → Planned → In Progress → Shipped with current highlighted), `VoteButton`, category chip, `target_window`, feature-flag badge (`feature_flag_key` present → "rolling out" badge), description, submitter credit + dates, `<CommentThread comments={data.comments} contentId={item.content_id} contentType="roadmap" authed={!!data.user} currentUserId={data.user?.id ?? null} canModerate={canModerate} loadError={data.commentsLoadError} />`. Moderators get the same inline status select as the card.
+
+  **Body rendering:** `body` is base64 TipTap JSON (same as §49 comments). Render with `tiptapBodyToHtml(item.body)`; it returns `''` when the body isn't a decodable doc (e.g. a plain-text submission) — fall back to `{item.body}` in a `whitespace-pre-wrap` block. The submit form encodes via `encodeReplyBody` (`$lib/tiptap/serialize`), so new content always renders rich.
 
 - [ ] **Step 3: Check + commit**
 
@@ -1089,7 +1125,7 @@ git commit -am "main: /roadmap/[slug] detail with §49 comments (§113)"
 
 - [ ] **Step 1: Changelog page** — server load fetches `/roadmap/changelog`; page groups items by `shipped_at` month ("October 2026") and renders a release-notes list: date, title link, summary, category chip.
 
-- [ ] **Step 2: Submit page** — `+page.server.ts` redirects unauthenticated users to `/auth/login?next=/roadmap/submit`; loads categories via `/roadmap/board`. `+page.svelte` form: title input, category `AutocompleteSelect` (same component as `/feedback`), summary textarea, body textarea (plain text — comments accept plain body; reuse `CommentEditor` if it accepts a `placeholder` prop, else `<textarea>`), submit → `api.post('/roadmap/submissions', {...})`; on success show "submitted for review" state. Follow the `/feedback` page's structure and error handling.
+- [ ] **Step 2: Submit page** — `+page.server.ts` redirects unauthenticated users to `/login?redirect=/roadmap/submit`; loads categories via `/roadmap/board`. `+page.svelte` form: title input, category `AutocompleteSelect` (same component as `/feedback`), summary textarea, body textarea; on submit encode the body with `encodeReplyBody` (`$lib/tiptap/serialize`) so `roadmap_items.body` stores base64 TipTap JSON like comments → `api.post('/roadmap/submissions', {...})`; on success show "submitted for review" state. Follow the `/feedback` page's structure and error handling.
 
 - [ ] **Step 3: Check + commit**
 
@@ -1106,12 +1142,14 @@ git commit -am "main: roadmap changelog + submission pages (§113)"
 - Modify: `apps/main/src/hooks.server.ts`
 - Modify: `apps/main/src/app.d.ts` (`Locals` + `PageData`)
 - Modify: `apps/main/src/routes/+layout.server.ts` (pass `isRoadmapHost` into PageData)
-- Modify: `apps/main/src/routes/(app)/+layout.svelte` or the app-shell component that branches on `isUniversityHost` (find where it renders — grep showed only layout.server.ts files reference it; the branch likely lives in `+layout.svelte` or `app-shell` components — locate and mirror it)
+- Modify: `apps/main/src/routes/(app)/+layout.svelte` (minimal roadmap chrome branch)
+- Modify: `apps/main/src/routes/(app)/+layout.server.ts` (roadmap-host path allowlist redirect)
+- Modify: `apps/main/src/routes/(app)/+page.server.ts` (`/` → `/roadmap` on roadmap host)
 - Modify: `apps/main/.env.example` (`JC_ROADMAP_HOSTS`)
 
 **Interfaces:**
-- Consumes: `isUniversitySurface()` + `event.locals.isUniversityHost` (hooks.server.ts ~lines 58–67, 265).
-- Produces: `event.locals.isRoadmapHost`, `PageData.isRoadmapHost`; when true the app shell renders a minimal roadmap-branded header/footer instead of the full community chrome; the subdomain root `/` redirects to `/roadmap`.
+- Consumes: `isUniversitySurface()` + `event.locals.isUniversityHost` (hooks.server.ts ~lines 58–67, 265). **Note:** the university host *redirects* to a separate origin (`universityUrl()` — `(app)/+layout.server.ts:15`), it does NOT swap shells. The roadmap host is a different pattern: same app, minimal chrome — there is no existing in-app shell branch to copy.
+- Produces: `event.locals.isRoadmapHost`, `PageData.isRoadmapHost`; when true the app renders a minimal roadmap-branded shell and `/` redirects to `/roadmap`.
 
 - [ ] **Step 1: Host detector** in `hooks.server.ts` beside `isUniversitySurface`:
 
@@ -1132,13 +1170,15 @@ Set `event.locals.isRoadmapHost = isRoadmapSurface(event.url.hostname)` beside t
 
 - [ ] **Step 2: Types** — add `isRoadmapHost: boolean` to `Locals` and `PageData` in `app.d.ts`.
 
-- [ ] **Step 3: PageData** — in `apps/main/src/routes/+layout.server.ts`, include `isRoadmapHost: event.locals.isRoadmapHost` in the returned data (mirroring `isUniversityHost`).
+- [ ] **Step 3: PageData** — in `apps/main/src/routes/+layout.server.ts`, add `isRoadmapHost: event.locals.isRoadmapHost` to the returned object (alongside `isUniversityHost` at ~line 239).
 
-- [ ] **Step 4: Shell branch** — where `isUniversityHost` switches shells (locate the component), add the roadmap branch: when `data.isRoadmapHost`, render a minimal shell — logo + "Roadmap" + "Back to JapaConnect" link — wrapping `<slot />`. Also redirect `/` → `/roadmap` on the roadmap host: in `apps/main/src/routes/(app)/+page.server.ts` (or wherever the root load lives) add `if (event.locals.isRoadmapHost) redirect(302, '/roadmap')` — alternatively a dedicated `+page.server.ts` guard; match how the university host handles `/`.
+- [ ] **Step 4: Root redirect** — in `apps/main/src/routes/(app)/+page.server.ts`, at the top of `load`: `if (event.locals.isRoadmapHost) redirect(302, '/roadmap')`. Also in `(app)/+layout.server.ts` consider redirecting non-roadmap paths on the roadmap host to `/roadmap` (the surface is roadmap-only) — implement a allowlist: `/roadmap`, `/roadmap/*`, `/login`, `/api/*` pass; everything else redirects to `/roadmap`. Keep it simple: `if (event.locals.isRoadmapHost && !event.url.pathname.startsWith('/roadmap') && !pathname.startsWith('/login') && !pathname.startsWith('/api')) throw redirect(302, '/roadmap')`.
 
-- [ ] **Step 5: `.env.example`** — add `JC_ROADMAP_HOSTS=`.
+- [ ] **Step 5: Minimal shell** — in `apps/main/src/routes/(app)/+layout.svelte`, branch on `data.isRoadmapHost`: render a compact header (logo + "Product Roadmap" + changelog link + "Back to JapaConnect" link to the apex domain) and footer instead of the full community chrome (nav/sidebars/widgets). Keep `<slot />` inside. Do NOT render the app-shell sidebars/left-nav in roadmap mode.
 
-- [ ] **Step 6: Check + commit**
+- [ ] **Step 6: `.env.example`** — add `JC_ROADMAP_HOSTS=`.
+
+- [ ] **Step 7: Check + commit**
 
 ```bash
 cd apps/main && bun run check
@@ -1177,6 +1217,8 @@ export const roadmapAdminApi = {
 		api(`/admin/roadmap/items/${id}`, { method: 'DELETE' }),
 	hardDelete: (id: string) =>
 		api(`/admin/roadmap/items/${id}?force=true`, { method: 'DELETE' }),
+	restore: (id: string) =>
+		api(`/admin/roadmap/items/${id}/restore`, { method: 'POST', body: {} }),
 	setStatus: (id: string, status: string) =>
 		api(`/admin/roadmap/items/${id}/status`, { method: 'PATCH', body: { status } }),
 	reorder: (items: { id: string; sort_order: number }[]) =>
@@ -1197,9 +1239,9 @@ export const roadmapCategoriesAdminApi = {
 };
 ```
 
-- [ ] **Step 2: Items page** `routes/roadmap/+page.svelte` — `EntityPage` scaffold per `share-platforms` template. Columns: title (link-styled), `status` (badge render via column `render`), `category_name`, `vote_count` (sortable), `target_window`, `is_flagship`, `created_at`. Filters: status `select` (all 7 statuses), category `select` (options loaded from `roadmapCategoriesAdminApi.list` on mount — follow `/users` dynamic-filter pattern). `fields` (EntityForm): title (text, required), slug (text, optional placeholder "auto"), summary (textarea), body (textarea), category_id (select, options from categories API), status (select), sort_order (number), is_flagship (checkbox), target_window (text), feature_flag_key (text). Permissions: `createPermission: 'roadmap.create'`, `editPermission: 'roadmap.edit'`, `deletePermission: 'roadmap.delete'`, `hardDeletePermission: 'admin.hard_delete'`; provide `remove`, `hardRemove` (needs `isDeleted: (row) => row.deleted_at != null` — include `include_deleted=true` in load params). Custom `actions`: default set + "Change Status" row action opening a page-local `<Modal>` with a status select → `roadmapAdminApi.setStatus` → `entityController?.reload()`. `exportable: true`.
+- [ ] **Step 2: Items page** `routes/roadmap/+page.svelte` — `EntityPage` scaffold per `share-platforms` template. Columns: title (link-styled), `status` (badge render via column `render`), `category_name`, `vote_count` (sortable), `target_window`, `is_flagship`, `created_at`. Filters: status `select` (all 7 statuses), category `select` (options loaded from `roadmapCategoriesAdminApi.list` on mount — follow `/users` dynamic-filter pattern). `fields` (EntityForm): title (text, required), slug (text, optional placeholder "auto"), summary (textarea), body (textarea), category_id (select, options from categories API), status (select), sort_order (number), is_flagship (checkbox), target_window (text), feature_flag_key (text). Permissions: `createPermission: 'roadmap.create'`, `editPermission: 'roadmap.edit'`, `deletePermission: 'roadmap.delete'`, `hardDeletePermission: 'admin.hard_delete'`; provide `remove`, `hardRemove` (`roadmapAdminApi.hardDelete`), and `restore` (`roadmapAdminApi.restore`) with `isDeleted: (row) => row.deleted_at != null` — always include `include_deleted=true` in the `load` params so deleted rows are visible for Restore/HardDelete. Custom `actions`: default set + "Change Status" row action opening a page-local `<Modal>` with a status select → `roadmapAdminApi.setStatus` → `entityController?.reload()`. `exportable: true`.
 
-- [ ] **Step 3: Submissions page** `routes/roadmap/submissions/+page.svelte` — `EntityPage` readonly-ish list over `roadmapAdminApi.submissions` (status=pending rows). Custom `actions`: **Approve** (`show: row => row.status === 'pending'` → `setStatus(id,'under_review')` → reload) and **Decline** (`variant:'destructive'` → confirm `Modal` → `setStatus(id,'declined')` → reload). Include View action (opens `viewSnippet` showing title/summary/body/submitter). `hideCreate: true`, no delete.
+- [ ] **Step 3: Submissions page** `routes/roadmap/submissions/+page.svelte` — `EntityPage` with `readonly: true` over `roadmapAdminApi.submissions` (status=pending rows). Custom `actions`: **Approve** (`show: row => row.status === 'pending'` → `setStatus(id,'under_review')` → reload) and **Decline** (`variant:'destructive'` → confirm `Modal` → `setStatus(id,'declined')` → reload), plus **View** (`viewSnippet` showing title/summary/body/submitter).
 
 - [ ] **Step 4: Categories page** `routes/roadmap/categories/+page.svelte` — simple `EntityPage` like share-platforms: columns slug/name/color (componentSnippet swatch)/sort_order; fields slug/name/description/color (`type:'color'`)/sort_order; permissions `roadmap.edit`; bulk delete on.
 
@@ -1246,24 +1288,11 @@ git commit -am "seo+i18n: roadmap sitemap and translations (§113)"
 
 ---
 
-### Task 15: Seed flagship content + end-to-end verification
+### Task 15: End-to-end verification
 
-**Files:**
-- Optionally create: `migrations/000795_roadmap.up.sql` amendment is NOT needed — seed the flagship item via the admin UI post-deploy, or include a seed row in the migration for the Spaces item (decision: include it — the flagship is a product decision made in this spec):
+The flagship "Spaces & Content Creation" item + `roadmap_shipped` notification type are seeded by the `000795` migration (Task 2). This task is verification only.
 
-In the up migration (amend Task 2's file before it ships — fine since it hasn't run anywhere yet), append:
-
-```sql
--- Flagship: the first wave — Spaces & Content Creation (in_progress).
-INSERT INTO roadmap_items (title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key)
-SELECT 'Spaces & Content Creation', 'spaces-content-creation',
-       'The core of JapaConnect: geo-first spaces and rich content creation — posts, articles, media, and moderation tools.',
-       'The core of JapaConnect: geo-first spaces (Country → State → City → University) and rich content creation — posts, articles, media, drafts, and moderation tools. This is the first feature wave going live.',
-       c.id, 'in_progress', 0, true, 'Q4 2026', NULL
-FROM roadmap_categories c WHERE c.slug = 'spaces-content';
-```
-
-- [ ] **Step 1: Amend migration + re-run on a fresh DB** (down + up) to confirm idempotency.
+- [ ] **Step 1: Re-run migration on a fresh DB** (down + up) to confirm idempotency.
 
 - [ ] **Step 2: Backend regression checks**
 
@@ -1305,6 +1334,6 @@ git commit -am "roadmap: flagship seed + docs (§113 complete)"
 
 ## Self-review notes
 
-- **Spec coverage:** board/detail/changelog/submit pages, votes, comments via shadow contents, admin CRUD + triage + reorder + categories, inline edit, host detection, feature flag, notifications, sitemap, i18n, GDPR cascade — all mapped to tasks.
-- **Query inventory:** Task 3's `roadmap.sql` must also include `HasRoadmapVote`, `UpdateRoadmapShadowContent`, and `ListRoadmapChangelog` (referenced by Tasks 5–6 — add them in Step 1 alongside the listed queries).
+- **Spec coverage:** board/detail/changelog/submit pages, votes, comments via shadow contents, admin CRUD + triage + reorder + categories + restore, inline edit, host detection, feature flag, notifications, sitemap, i18n, GDPR cascade — all mapped to tasks.
+- **Review fixes applied:** single `?force=true` DELETE route with `rbac.RequireForceDelete`; `roadmap_shipped` seeded in `notification_types` (lists JOIN on the key — unseeded keys silently disappear); body stored as base64 TipTap JSON (encode via `encodeReplyBody`, render via `tiptapBodyToHtml` with plain-text fallback); `has_voted` folded into `GetRoadmapItemBySlug`; missing queries added (`ListRoadmapChangelog`, `UpdateRoadmapShadowContent`, `RestoreRoadmapItem`); flagship seed moved into the migration; university-host pattern corrected (it redirects to a separate origin — roadmap gets its own minimal-shell branch); login path `/login?redirect=`; votable statuses exclude `shipped`.
 - **Known follow-ups (not in scope):** anonymous voting, per-tenant roadmaps, email digests of roadmap changes, auto-sync of `feature_flag_key` badge with real flag state.
