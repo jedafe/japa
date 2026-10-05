@@ -149,17 +149,18 @@ func (q *Queries) CreateAffiliateProvider(ctx context.Context, arg CreateAffilia
 
 const createCoupon = `-- name: CreateCoupon :one
 
-INSERT INTO coupons (provider_id, coupon_type, title, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+INSERT INTO coupons (provider_id, coupon_type, title, slug, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 RETURNING id, provider_id, coupon_type, title, description, code,
  discount_type, discount_value, currency, terms_url, referral_url,
  is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at
+ created_by, created_at, updated_at, slug
 `
 
 type CreateCouponParams struct {
 	ProviderID    pgtype.UUID        `json:"provider_id"`
 	CouponType    string             `json:"coupon_type"`
 	Title         string             `json:"title"`
+	Slug          string             `json:"slug"`
 	Description   *string            `json:"description"`
 	Code          string             `json:"code"`
 	DiscountType  *string            `json:"discount_type"`
@@ -182,6 +183,7 @@ func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Cou
 		arg.ProviderID,
 		arg.CouponType,
 		arg.Title,
+		arg.Slug,
 		arg.Description,
 		arg.Code,
 		arg.DiscountType,
@@ -217,6 +219,7 @@ func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Cou
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Slug,
 	)
 	return i, err
 }
@@ -432,7 +435,7 @@ func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, id pgtype.U
 }
 
 const getCouponByCode = `-- name: GetCouponByCode :one
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -447,6 +450,7 @@ type GetCouponByCodeRow struct {
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
 	Code                string             `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
@@ -476,6 +480,7 @@ func (q *Queries) GetCouponByCode(ctx context.Context, code string) (GetCouponBy
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,
+		&i.Slug,
 		&i.Description,
 		&i.Code,
 		&i.DiscountType,
@@ -500,7 +505,7 @@ func (q *Queries) GetCouponByCode(ctx context.Context, code string) (GetCouponBy
 }
 
 const getCouponByID = `-- name: GetCouponByID :one
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -515,6 +520,7 @@ type GetCouponByIDRow struct {
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
 	Code                string             `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
@@ -544,6 +550,7 @@ func (q *Queries) GetCouponByID(ctx context.Context, id pgtype.UUID) (GetCouponB
 		&i.ProviderID,
 		&i.CouponType,
 		&i.Title,
+		&i.Slug,
 		&i.Description,
 		&i.Code,
 		&i.DiscountType,
@@ -567,9 +574,84 @@ func (q *Queries) GetCouponByID(ctx context.Context, id pgtype.UUID) (GetCouponB
 	return i, err
 }
 
+const getCouponBySlug = `-- name: GetCouponBySlug :one
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.base_url AS provider_base_url, ap.is_active AS provider_is_active
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.slug = $1
+`
+
+type GetCouponBySlugRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	ProviderID          pgtype.UUID        `json:"provider_id"`
+	CouponType          string             `json:"coupon_type"`
+	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
+	Description         *string            `json:"description"`
+	Code                string             `json:"code"`
+	DiscountType        *string            `json:"discount_type"`
+	DiscountValue       pgtype.Numeric     `json:"discount_value"`
+	Currency            *string            `json:"currency"`
+	TermsUrl            *string            `json:"terms_url"`
+	ReferralUrl         *string            `json:"referral_url"`
+	IsVerified          bool               `json:"is_verified"`
+	Status              string             `json:"status"`
+	ValidFrom           pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	TotalClicks         int32              `json:"total_clicks"`
+	TotalCopies         int32              `json:"total_copies"`
+	CreatedBy           pgtype.UUID        `json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ProviderName        *string            `json:"provider_name"`
+	ProviderSlug        *string            `json:"provider_slug"`
+	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
+	ProviderBaseUrl     *string            `json:"provider_base_url"`
+	ProviderIsActive    *bool              `json:"provider_is_active"`
+}
+
+func (q *Queries) GetCouponBySlug(ctx context.Context, slug string) (GetCouponBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getCouponBySlug, slug)
+	var i GetCouponBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProviderID,
+		&i.CouponType,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.TermsUrl,
+		&i.ReferralUrl,
+		&i.IsVerified,
+		&i.Status,
+		&i.ValidFrom,
+		&i.ExpiresAt,
+		&i.TotalClicks,
+		&i.TotalCopies,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProviderName,
+		&i.ProviderSlug,
+		&i.ProviderLogoMediaID,
+		&i.ProviderBaseUrl,
+		&i.ProviderIsActive,
+	)
+	return i, err
+}
+
 const getCouponForRender = `-- name: GetCouponForRender :one
 
-SELECT c.id, c.title, c.code, c.discount_type, c.discount_value,
+SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
  c.referral_url, c.status, c.expires_at,
  ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
@@ -580,6 +662,7 @@ WHERE c.id = $1
 type GetCouponForRenderRow struct {
 	ID                  pgtype.UUID        `json:"id"`
 	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
 	Code                string             `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
@@ -603,6 +686,7 @@ func (q *Queries) GetCouponForRender(ctx context.Context, id pgtype.UUID) (GetCo
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
+		&i.Slug,
 		&i.Code,
 		&i.DiscountType,
 		&i.DiscountValue,
@@ -627,7 +711,7 @@ func (q *Queries) InvalidateCouponCache(ctx context.Context) error {
 }
 
 const listActiveCoupons = `-- name: ListActiveCoupons :many
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -656,6 +740,7 @@ type ListActiveCouponsRow struct {
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
 	Code                string             `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
@@ -697,6 +782,7 @@ func (q *Queries) ListActiveCoupons(ctx context.Context, arg ListActiveCouponsPa
 			&i.ProviderID,
 			&i.CouponType,
 			&i.Title,
+			&i.Slug,
 			&i.Description,
 			&i.Code,
 			&i.DiscountType,
@@ -846,7 +932,7 @@ func (q *Queries) ListCouponEvents(ctx context.Context, arg ListCouponEventsPara
 }
 
 const listCoupons = `-- name: ListCoupons :many
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -875,6 +961,7 @@ type ListCouponsRow struct {
 	ProviderID          pgtype.UUID        `json:"provider_id"`
 	CouponType          string             `json:"coupon_type"`
 	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
 	Code                string             `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
@@ -917,6 +1004,7 @@ func (q *Queries) ListCoupons(ctx context.Context, arg ListCouponsParams) ([]Lis
 			&i.ProviderID,
 			&i.CouponType,
 			&i.Title,
+			&i.Slug,
 			&i.Description,
 			&i.Code,
 			&i.DiscountType,
@@ -1029,22 +1117,23 @@ func (q *Queries) UpdateAffiliateProvider(ctx context.Context, arg UpdateAffilia
 
 const updateCoupon = `-- name: UpdateCoupon :one
 UPDATE coupons
-SET title = $1, description = $2, code = $3,
- provider_id = $4,
- discount_type = $5, discount_value = $6,
- currency = $7, terms_url = $8,
- referral_url = $9, is_verified = $10,
- status = $11, valid_from = $12,
- expires_at = $13, updated_at = now()
-WHERE id = $14
+SET title = $1, slug = $2, description = $3, code = $4,
+ provider_id = $5,
+ discount_type = $6, discount_value = $7,
+ currency = $8, terms_url = $9,
+ referral_url = $10, is_verified = $11,
+ status = $12, valid_from = $13,
+ expires_at = $14, updated_at = now()
+WHERE id = $15
 RETURNING id, provider_id, coupon_type, title, description, code,
  discount_type, discount_value, currency, terms_url, referral_url,
  is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at
+ created_by, created_at, updated_at, slug
 `
 
 type UpdateCouponParams struct {
 	Title         string             `json:"title"`
+	Slug          string             `json:"slug"`
 	Description   *string            `json:"description"`
 	Code          string             `json:"code"`
 	ProviderID    pgtype.UUID        `json:"provider_id"`
@@ -1063,6 +1152,7 @@ type UpdateCouponParams struct {
 func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Coupon, error) {
 	row := q.db.QueryRow(ctx, updateCoupon,
 		arg.Title,
+		arg.Slug,
 		arg.Description,
 		arg.Code,
 		arg.ProviderID,
@@ -1099,6 +1189,7 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Cou
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Slug,
 	)
 	return i, err
 }

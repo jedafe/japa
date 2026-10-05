@@ -2430,6 +2430,11 @@ func HandleContentGenerateDraft(ctx context.Context, t *asynq.Task) error {
 type contentRegenerateFromSourcePayload struct {
 	ContentID     string `json:"content_id"`
 	IntelRecordID string `json:"intel_record_id"`
+	// UserID is the actor who triggered the regeneration (agent tool or
+	// admin action). Actors holding agent.skip_hitl bypass the
+	// draft-and-review detour and take the in-place update path (§75).
+	// System-triggered enqueues leave it empty.
+	UserID string `json:"user_id,omitempty"`
 }
 
 // HandleContentRegenerateFromSource rewrites an existing contents row from
@@ -2459,7 +2464,14 @@ func HandleContentRegenerateFromSource(ctx context.Context, t *asynq.Task) error
 		return fmt.Errorf("task:content:regenerate_from_source: bad intel_record_id: %w", err)
 	}
 
-	if err := studioProcessor.RegenerateFromSource(ctx, contentID, intelRecordID); err != nil {
+	var actorID pgtype.UUID
+	if payload.UserID != "" {
+		if actorID, err = scanUUID(payload.UserID); err != nil {
+			return fmt.Errorf("task:content:regenerate_from_source: bad user_id: %w", err)
+		}
+	}
+
+	if err := studioProcessor.RegenerateFromSource(ctx, contentID, intelRecordID, actorID); err != nil {
 		return fmt.Errorf("task:content:regenerate_from_source: %w", err)
 	}
 

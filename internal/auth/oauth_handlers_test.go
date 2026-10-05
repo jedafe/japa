@@ -437,6 +437,8 @@ func TestSafeRedirectPath(t *testing.T) {
 		{"absolute https URL", "https://evil.com/path", "/"},
 		{"no leading slash", "dashboard", "/"},
 		{"backslash not treated as path", "\\evil.com", "/"},
+		{"slash-backslash protocol-relative trick", "/\\evil.com", "/"},
+		{"path containing scheme separator", "/login/https://x", "/"},
 		{"data URI", "data:text/html,<script>", "/"},
 		{"javascript URI", "javascript:alert(1)", "/"},
 		{"path with query string", "/login?next=/dashboard", "/login?next=/dashboard"},
@@ -452,6 +454,48 @@ func TestSafeRedirectPath(t *testing.T) {
 				t.Fatalf("safeRedirectPath(%q) = %q, want %q", tt.path, got, tt.want)
 			}
 		})
+	}
+}
+
+// --- safeRedirectTarget tests (§120: allowlisted API-host absolute URLs) ---
+
+func TestSafeRedirectTarget(t *testing.T) {
+	t.Parallel()
+
+	const apiOrigin = "https://api.japaconnect.com"
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"empty defaults to root", "", "/"},
+		{"relative path unchanged", "/feed", "/feed"},
+		{"absolute URL on API origin allowed", apiOrigin + "/oauth/authorize?client_id=x", apiOrigin + "/oauth/authorize?client_id=x"},
+		{"absolute URL on API origin with port differs", "https://api.japaconnect.com:4443/oauth/authorize", "/"},
+		{"absolute URL on other host rejected", "https://evil.com/oauth/authorize", "/"},
+		{"scheme mismatch rejected", "http://api.japaconnect.com/oauth/authorize", "/"},
+		{"subdomain suffix rejected", "https://api.japaconnect.com.evil.com/", "/"},
+		{"userinfo trick rejected", "https://api.japaconnect.com@evil.com/", "/"},
+		{"protocol-relative rejected", "//api.japaconnect.com/x", "/"},
+		{"javascript URI rejected", "javascript:alert(1)", "/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := safeRedirectTarget(tt.path, apiOrigin)
+			if got != tt.want {
+				t.Fatalf("safeRedirectTarget(%q, %q) = %q, want %q", tt.path, apiOrigin, got, tt.want)
+			}
+		})
+	}
+
+	// No allowlist configured → all absolute URLs reduce to "/" (same as
+	// safeRedirectPath).
+	if got := safeRedirectTarget("https://api.japaconnect.com/x", ""); got != "/" {
+		t.Fatalf("safeRedirectTarget with empty origin = %q, want /", got)
 	}
 }
 

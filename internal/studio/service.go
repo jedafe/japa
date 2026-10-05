@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
@@ -581,6 +582,19 @@ func (s *Service) MarkJobPublished(ctx context.Context, jobID, draftContentID pg
 	return s.store.UpdateJobPublished(ctx, jobID, draftContentID, aiModel)
 }
 
+// PublishToolTableDraft publishes a routed tool-table draft directly,
+// bypassing the HITL review queue. Used when the job's created_by holds
+// agent.skip_hitl (§75 HITL bypass). Mirrors the tool-table branch of
+// OnStudioReviewApproved; the caller is responsible for the job/intel
+// state transitions (MarkJobPublished + intel record publish).
+func (s *Service) PublishToolTableDraft(ctx context.Context, actorID pgtype.UUID, targetTable string, targetID pgtype.UUID) error {
+	if s.toolTablePub == nil {
+		return fmt.Errorf("studio: tool-table publisher not wired for %s", targetTable)
+	}
+
+	return s.toolTablePub.Publish(ctx, actorID, targetTable, targetID, "")
+}
+
 // ShouldAutoPublish returns true if the content type can skip review.
 // High-stakes guide categories always return false.
 func (s *Service) ShouldAutoPublish(ctx context.Context, contentType, guideCategory string) bool {
@@ -679,7 +693,13 @@ func (s *Service) EnqueueRetryFailed(ctx context.Context, batchID pgtype.UUID) e
 // intel_records row to 'published'.
 func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
 	job, err := s.store.GetJobByReviewID(ctx, reviewID)
-	if err != nil {
+	// Regen drafts (RegenerateFromSource) create source='studio' reviews
+	// with no linked studio_jobs row — the review still carries the draft
+	// target in its content_id/target_table, so approval must proceed
+	// without job transitions instead of failing closed.
+	jobless := errors.Is(err, pgx.ErrNoRows)
+
+	if err != nil && !jobless {
 		return fmt.Errorf("studio: approve: find job by review_id: %w", err)
 	}
 
@@ -736,13 +756,15 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewer
 		return fmt.Errorf("studio: approve: no target id to publish (job_id=%s, target_table=%s)", job.ID.String(), targetTable)
 	}
 
-	// Transition the studio job to 'published'.
-	if err := s.store.UpdateJobReviewed(ctx, job.ID, "published"); err != nil {
-		return fmt.Errorf("studio: approve: update job status: %w", err)
-	}
+	// Transition the studio job to 'published' + the linked intel_record
+	// (§75) — only when the review is linked to a job.
+	if !jobless {
+		if err := s.store.UpdateJobReviewed(ctx, job.ID, "published", reviewerID); err != nil {
+			return fmt.Errorf("studio: approve: update job status: %w", err)
+		}
 
-	// Transition the linked intel_record to 'published' (§75).
-	s.transitionIntelRecordOnPublish(ctx, job.IntelRecordID)
+		s.transitionIntelRecordOnPublish(ctx, job.IntelRecordID)
+	}
 
 	slog.Info("studio: review approved, job published", "job_id", job.ID, "review_id", reviewID, "target_table", targetTable, "target_id", targetID, "content_id", job.DraftContentID, "intel_record_id", job.IntelRecordID)
 
@@ -753,11 +775,17 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewer
 // rejected (§75: "Reject → job rejected, draft remains as unpublished content").
 func (s *Service) OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error {
 	job, err := s.store.GetJobByReviewID(ctx, reviewID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Jobless studio review (regen drafts): nothing to transition —
+		// the draft simply remains unpublished (§75 reject semantics).
+		return nil
+	}
+
 	if err != nil {
 		return fmt.Errorf("studio: reject: find job by review_id: %w", err)
 	}
 
-	if err := s.store.UpdateJobReviewed(ctx, job.ID, "rejected"); err != nil {
+	if err := s.store.UpdateJobReviewed(ctx, job.ID, "rejected", reviewerID); err != nil {
 		return fmt.Errorf("studio: reject: update job status: %w", err)
 	}
 

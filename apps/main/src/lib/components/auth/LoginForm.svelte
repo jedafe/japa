@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n/store.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
+	import { navigatePostLogin, safeRelativePath } from '$lib/auth/redirect';
 	import { validateLogin } from '$lib/auth/validation';
 	import { mapAuthError } from '$lib/auth/errors';
 	import PasswordField from './PasswordField.svelte';
@@ -61,7 +62,11 @@
 			if (onSuccess) {
 				await onSuccess(data.redirect ?? redirectTarget);
 			} else {
-				await goto(data.redirect ?? redirectTarget);
+				// §120: the MCP OAuth consent flow targets an absolute URL on
+				// the API host — navigatePostLogin picks location.assign for
+				// it and goto for same-origin paths. The raw ?redirect= param
+				// is only a fallback and is capped to relative paths.
+				await navigatePostLogin(data.redirect ?? safeRelativePath(redirectTarget));
 			}
 		} catch {
 			errors = { form: t('auth.errors.generic') };

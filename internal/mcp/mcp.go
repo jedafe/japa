@@ -103,6 +103,10 @@ var apiKeyToolGates = map[string]toolGate{
 	"persona_voices.read": {scope: agentUsePermission},
 	"personas.list":       {scope: agentUsePermission},
 	"personas.read":       {scope: agentUsePermission},
+	// §120 ChatGPT deep-research aliases — same gate as the underlying
+	// content.search / content.read tools.
+	"search": {scope: "api.read.content"},
+	"fetch":  {scope: "api.read.content"},
 }
 
 // SessionStore is the subset of gen.Queries the MCP server needs to create
@@ -120,6 +124,7 @@ type Server struct {
 	sessions     SessionStore
 	perms        ai.PermissionChecker
 	tierResolver publicapi.TierResolver
+	siteBaseURL  string
 }
 
 // NewServer creates an MCP server handler backed by the agent executor.
@@ -135,6 +140,10 @@ func NewServer(executor *ai.Executor, registry *ai.ToolHandlerRegistry, sessions
 // SetTierResolver wires the resolver used for premium tool gating.
 // Nil → all callers resolve to "regular" (fail-closed for premium tools).
 func (s *Server) SetTierResolver(tr publicapi.TierResolver) { s.tierResolver = tr }
+
+// SetSiteBaseURL sets the public site base URL used by the §120 search/fetch
+// aliases to build content links (e.g. https://example.com).
+func (s *Server) SetSiteBaseURL(u string) { s.siteBaseURL = u }
 
 // callerTier resolves the user's unified tier; nil resolver or error →
 // "regular" (fail-closed, same convention as RequireTier).
@@ -422,6 +431,12 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 	}
 	tools = filtered
 
+	// §120: append the ChatGPT deep-research aliases the caller can see.
+	if !tierResolved {
+		tier = s.callerTier(ctx, user.UserID)
+	}
+	tools = append(tools, s.aliasDescriptors(ctx, user, tier)...)
+
 	result := listToolsResult{Tools: tools}
 
 	return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, false
@@ -460,6 +475,13 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 	// catalog check so denied tools get a precise denial message.
 	if msg := s.toolDenied(ctx, user, callReq.Name); msg != "" {
 		return s.errorResp(req.ID, -32602, "Invalid params", msg), false
+	}
+
+	// §120: search/fetch are synthetic aliases over content.search /
+	// content.read — dispatch before the catalog check (the alias name is
+	// not a catalog row).
+	if alias, ok := chatGPTAliasTools[callReq.Name]; ok {
+		return s.handleAliasCall(ctx, user, req, callReq, alias)
 	}
 
 	// Validate that the tool is in the user's catalog (fail-fast with a clear

@@ -590,25 +590,29 @@ func (e *Executor) Execute(ctx context.Context, p ExecuteParams) (res *ToolResul
 	// ai_agent_tool_calls, but no ai_hitl_reviews row is created.
 	skipHITL := e.perms != nil &&
 		e.perms.HasPermission(ctx, p.UserID, "agent.skip_hitl")
-	if (cfg.RequiresHITL || (hres != nil && hres.ForceHITL)) && e.store != nil && !skipHITL {
-		if preID, ok := hitlReviewIDFromMeta(hres); ok {
-			hitlReviewID = preID
+	// A handler may have already created its own HITL review — e.g.
+	// content.create_draft's fallback when a skip_hitl direct publish
+	// fails. Honor the linkage unconditionally: the review row exists and
+	// the call record must reflect that it awaits review.
+	if preID, ok := hitlReviewIDFromMeta(hres); ok {
+		hitlReviewID = preID
+		resultStatus = ToolCallStatusHITLQueued
+		hres.Status = ToolCallStatusHITLQueued
+	}
+
+	if (cfg.RequiresHITL || (hres != nil && hres.ForceHITL)) && e.store != nil && !skipHITL && !hitlReviewID.Valid {
+		review, hitlErr := e.createHITL(ctx, p, call, cfg, hres)
+		if hitlErr != nil {
+			slog.Warn("ai: HITL review creation failed; tool result returned without review",
+				"tool", call.Name, "error", hitlErr)
+			// Non-fatal: the tool call still succeeded; the HITL queue
+			// simply did not get a row. The admin can still see the tool
+			// call in ai_agent_tool_calls.
+		} else {
+			hitlReviewID = review.ID
 			resultStatus = ToolCallStatusHITLQueued
 			hres.Status = ToolCallStatusHITLQueued
-		} else {
-			review, hitlErr := e.createHITL(ctx, p, call, cfg, hres)
-			if hitlErr != nil {
-				slog.Warn("ai: HITL review creation failed; tool result returned without review",
-					"tool", call.Name, "error", hitlErr)
-				// Non-fatal: the tool call still succeeded; the HITL queue
-				// simply did not get a row. The admin can still see the tool
-				// call in ai_agent_tool_calls.
-			} else {
-				hitlReviewID = review.ID
-				resultStatus = ToolCallStatusHITLQueued
-				hres.Status = ToolCallStatusHITLQueued
-				hres.Metadata = appendMeta(hres.Metadata, "hitl_review_id", review.ID)
-			}
+			hres.Metadata = appendMeta(hres.Metadata, "hitl_review_id", review.ID)
 		}
 	}
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // stubPersonaResolver implements ai.PersonaResolver for tests.
@@ -307,6 +308,139 @@ func TestContentCreateDraftHandler_HITLFailure_NonFatal(t *testing.T) {
 	// No hitl_review_id in Metadata when HITL creation failed.
 	if _, ok := tr.Metadata["hitl_review_id"]; ok {
 		t.Error("expected no hitl_review_id in Metadata when HITL creation failed")
+	}
+}
+
+func TestContentCreateDraftHandler_SkipHITL_PublishesDirectly(t *testing.T) {
+	t.Parallel()
+
+	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
+	callingUserID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+
+	var publishedStatus string
+
+	deps := &ToolDeps{
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
+			return ContentCreateRow{ID: contentID, Status: "draft", AuthorID: input.AuthorID}, nil
+		},
+		Permission: &stubPerms{granted: map[string]bool{"agent.skip_hitl": true}},
+		ContentLifecycle: &stubContentLifecycleService{
+			updateStatusFunc: func(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+				if id != contentID {
+					t.Errorf("UpdateContentStatus id = %v, want %v", id, contentID)
+				}
+
+				publishedStatus = status
+
+				return gen.UpdateContentStatusRow{}, nil
+			},
+		},
+		HITL: &stubHITLStore{},
+	}
+
+	handler := ContentCreateDraftHandler(deps)
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), callingUserID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success; content=%s", tr.Status, tr.Content)
+	}
+
+	if publishedStatus != "published" {
+		t.Errorf("UpdateContentStatus status = %q, want published", publishedStatus)
+	}
+
+	// No review row when the actor holds agent.skip_hitl.
+	if deps.HITL.(*stubHITLStore).called {
+		t.Error("expected no HITL review for agent.skip_hitl holder")
+	}
+
+	if _, ok := tr.Metadata["hitl_review_id"]; ok {
+		t.Error("expected no hitl_review_id in Metadata for bypassed review")
+	}
+
+	m := parseToolResult(t, tr)
+	if m["status"] != "published" {
+		t.Errorf("status = %v, want published", m["status"])
+	}
+
+	if m["review_status"] != "auto-published via agent.skip_hitl" {
+		t.Errorf("review_status = %v, want 'auto-published via agent.skip_hitl'", m["review_status"])
+	}
+}
+
+func TestContentCreateDraftHandler_SkipHITL_PublishFails_FallsBackToReview(t *testing.T) {
+	t.Parallel()
+
+	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
+	callingUserID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+
+	deps := &ToolDeps{
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
+			return ContentCreateRow{ID: contentID, Status: "draft", AuthorID: input.AuthorID}, nil
+		},
+		Permission: &stubPerms{granted: map[string]bool{"agent.skip_hitl": true}},
+		ContentLifecycle: &stubContentLifecycleService{
+			updateStatusFunc: func(ctx context.Context, id pgtype.UUID, status string) (gen.UpdateContentStatusRow, error) {
+				return gen.UpdateContentStatusRow{}, errors.New("no primary space")
+			},
+		},
+		HITL: &stubHITLStore{},
+	}
+
+	handler := ContentCreateDraftHandler(deps)
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), callingUserID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success; content=%s", tr.Status, tr.Content)
+	}
+
+	// Publish failure falls back to the review queue so the draft is not
+	// stranded unpublished.
+	if !deps.HITL.(*stubHITLStore).called {
+		t.Fatal("expected HITL review fallback when direct publish fails")
+	}
+
+	if _, ok := tr.Metadata["hitl_review_id"].(pgtype.UUID); !ok {
+		t.Error("expected hitl_review_id in Metadata for fallback review")
+	}
+}
+
+func TestContentCreateDraftHandler_SkipHITL_NoLifecycle_FallsBackToReview(t *testing.T) {
+	t.Parallel()
+
+	contentID := mustUUID(t, "00000000-0000-0000-0000-000000000001")
+	callingUserID := mustUUID(t, "00000000-0000-0000-0000-000000000099")
+
+	deps := &ToolDeps{
+		ContentCreator: func(ctx context.Context, input ContentCreateInput) (ContentCreateRow, error) {
+			return ContentCreateRow{ID: contentID, Status: "draft", AuthorID: input.AuthorID}, nil
+		},
+		Permission: &stubPerms{granted: map[string]bool{"agent.skip_hitl": true}},
+		// ContentLifecycle unwired — cannot publish directly.
+		HITL: &stubHITLStore{},
+	}
+
+	handler := ContentCreateDraftHandler(deps)
+
+	tr, err := handler(t.Context(), json.RawMessage(`{"title":"T","content_type":"article","body":"B"}`), callingUserID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success; content=%s", tr.Status, tr.Content)
+	}
+
+	if !deps.HITL.(*stubHITLStore).called {
+		t.Fatal("expected HITL review fallback when ContentLifecycle is unwired")
 	}
 }
 

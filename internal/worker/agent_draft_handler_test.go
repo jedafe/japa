@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // stubAgentDraftProcessor captures the payload passed to CreateAgentDraft.
@@ -183,6 +184,134 @@ func TestHandleAgentCreateDraftRequest_ProcessorError_Propagates(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected error from processor failure")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// content:regenerate_from_source — actor user_id passthrough (§75, ADR-076
+// Amendment 2 + agent.skip_hitl sitewide bypass)
+// ---------------------------------------------------------------------------
+
+// stubStudioProcessor captures the actor ID passed to RegenerateFromSource.
+type stubStudioProcessor struct {
+	lastActorID pgtype.UUID
+	lastContent pgtype.UUID
+	lastIntel   pgtype.UUID
+	called      bool
+	err         error
+}
+
+func (s *stubStudioProcessor) RunBatch(_ context.Context, _ pgtype.UUID) error {
+	return nil
+}
+
+func (s *stubStudioProcessor) RetryFailed(_ context.Context, _ pgtype.UUID) error {
+	return nil
+}
+
+func (s *stubStudioProcessor) RetryBatchFailed(_ context.Context, _ pgtype.UUID) (int, error) {
+	return 0, nil
+}
+
+func (s *stubStudioProcessor) GenerateJob(_ context.Context, _ pgtype.UUID) error {
+	return nil
+}
+
+func (s *stubStudioProcessor) RegenerateFromSource(_ context.Context, contentID, intelRecordID, actorID pgtype.UUID) error {
+	s.called = true
+	s.lastContent = contentID
+	s.lastIntel = intelRecordID
+	s.lastActorID = actorID
+
+	return s.err
+}
+
+func makeRegenTask(t *testing.T, payload map[string]string) *asynq.Task {
+	t.Helper()
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshaling payload: %v", err)
+	}
+
+	return asynq.NewTask(TypeContentRegenerateFromSource, b)
+}
+
+func TestHandleContentRegenerateFromSource_PassesActorID(t *testing.T) {
+	orig := studioProcessor
+
+	t.Cleanup(func() { studioProcessor = orig })
+
+	stub := &stubStudioProcessor{}
+	studioProcessor = stub
+
+	actorID := "00000000-0000-0000-0000-000000000099"
+	contentID := "00000000-0000-0000-0000-000000000001"
+	intelID := "00000000-0000-0000-0000-000000000002"
+
+	err := HandleContentRegenerateFromSource(t.Context(), makeRegenTask(t, map[string]string{
+		"content_id":      contentID,
+		"intel_record_id": intelID,
+		"user_id":         actorID,
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !stub.called {
+		t.Fatal("processor should be called for valid payload")
+	}
+
+	if !stub.lastActorID.Valid || stub.lastActorID.String() != actorID {
+		t.Errorf("actorID = %v, want %s", stub.lastActorID, actorID)
+	}
+}
+
+func TestHandleContentRegenerateFromSource_NoUserID_InvalidActor(t *testing.T) {
+	orig := studioProcessor
+
+	t.Cleanup(func() { studioProcessor = orig })
+
+	stub := &stubStudioProcessor{}
+	studioProcessor = stub
+
+	err := HandleContentRegenerateFromSource(t.Context(), makeRegenTask(t, map[string]string{
+		"content_id":      "00000000-0000-0000-0000-000000000001",
+		"intel_record_id": "00000000-0000-0000-0000-000000000002",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !stub.called {
+		t.Fatal("processor should be called for valid payload")
+	}
+
+	// System-triggered runs carry no actor — the bypass cannot fire.
+	if stub.lastActorID.Valid {
+		t.Errorf("expected invalid actorID for system-triggered run, got %v", stub.lastActorID)
+	}
+}
+
+func TestHandleContentRegenerateFromSource_BadUserID_Errors(t *testing.T) {
+	orig := studioProcessor
+
+	t.Cleanup(func() { studioProcessor = orig })
+
+	stub := &stubStudioProcessor{}
+	studioProcessor = stub
+
+	err := HandleContentRegenerateFromSource(t.Context(), makeRegenTask(t, map[string]string{
+		"content_id":      "00000000-0000-0000-0000-000000000001",
+		"intel_record_id": "00000000-0000-0000-0000-000000000002",
+		"user_id":         "not-a-uuid",
+	}))
+	if err == nil {
+		t.Fatal("expected error for malformed user_id")
+	}
+
+	if stub.called {
+		t.Error("processor should not be called for malformed user_id")
 	}
 }
 
