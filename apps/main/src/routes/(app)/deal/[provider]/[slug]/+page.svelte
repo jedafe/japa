@@ -1,21 +1,42 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { invalidateAll } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Ticket, BadgeCheck, Copy, ExternalLink, Clock } from 'lucide-svelte';
+	import {
+		Ticket,
+		BadgeCheck,
+		Copy,
+		ExternalLink,
+		Clock,
+		Pencil,
+		ChevronRight
+	} from 'lucide-svelte';
 	import { api, apiBaseUrl } from '$lib/api/client';
 	import type { PageData } from './$types';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript, safeHref } from '$lib/utils/safeHtml';
 	import { currencySymbol } from '$lib/utils/currency';
+	import { dealPath, type Coupon } from '$lib/types';
+	import DealForm from '$lib/components/deals/DealForm.svelte';
 
 	let { data }: { data: PageData } = $props();
 
 	const coupon = $derived(data.coupon);
+	const details = $derived(coupon.details ?? null);
+	const sections = $derived(details?.sections ?? []);
+	const faq = $derived(details?.faq ?? []);
+	const trial = $derived(details?.trial ?? null);
+	// Staff-authored URL rendered into href — guard against unsafe schemes.
+	const trialUrl = $derived(safeHref(trial?.url));
+	const summary = $derived(details?.summary ?? coupon.description ?? null);
+	const providerLabel = $derived(coupon.provider_name ?? t('deal.this_deal', 'this deal'));
+
+	let editing = $state(false);
 
 	const title = $derived(
 		t('coupon.title', '{name} — JapaConnect').replace('{name}', coupon.title)
 	);
 	const description = $derived(
-		coupon.description ??
+		summary ??
 			t('coupon.description', 'Coupon code and discount from {provider}.').replace(
 				'{provider}',
 				coupon.provider_name ?? ''
@@ -33,19 +54,40 @@
 		})
 	);
 
-	const discountLabel = $derived(
-		coupon.discount_type === 'percent'
-			? t('coupon.percent_off', '{n}% off').replace('{n}', String(coupon.discount_value ?? ''))
-			: coupon.discount_type === 'fixed'
-				? t('coupon.amount_off', '{cur}{n} off')
-						.replace('{cur}', currencySymbol(coupon.currency, data.currencies) || (coupon.currency ?? ''))
-						.replace('{n}', String(coupon.discount_value ?? ''))
-				: coupon.discount_type === 'free_shipping'
-					? t('coupon.free_shipping', 'Free shipping')
-					: coupon.discount_value !== undefined && coupon.discount_value !== null
-						? String(coupon.discount_value)
-						: ''
+	// FAQPage structured data — only when editorial FAQ entries exist (§55).
+	const faqJsonLd = $derived(
+		faq.length
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'FAQPage',
+					mainEntity: faq.map((f) => ({
+						'@type': 'Question',
+						name: f.q,
+						acceptedAnswer: { '@type': 'Answer', text: f.a }
+					}))
+				})
+			: null
 	);
+
+	function discountLabelFor(c: Coupon): string {
+		if (c.discount_type === 'percent') {
+			return t('coupon.percent_off', '{n}% off').replace('{n}', String(c.discount_value ?? ''));
+		}
+		if (c.discount_type === 'fixed') {
+			return t('coupon.amount_off', '{cur}{n} off')
+				.replace('{cur}', currencySymbol(c.currency, data.currencies) || (c.currency ?? ''))
+				.replace('{n}', String(c.discount_value ?? ''));
+		}
+		if (c.discount_type === 'free_shipping') {
+			return t('coupon.free_shipping', 'Free shipping');
+		}
+		if (c.discount_value !== undefined && c.discount_value !== null) {
+			return String(c.discount_value);
+		}
+		return '';
+	}
+
+	const discountLabel = $derived(discountLabelFor(coupon));
 
 	// Click-through goes through the backend /go redirect so the click is
 	// recorded server-side even without JS (Section 55 Deal Pages).
@@ -84,77 +126,268 @@
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
 	{@html safeJsonLdScript(jsonLd)}
+	{@html safeJsonLdScript(faqJsonLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-4">
-		<div class="mb-2 flex items-center gap-1.5 text-sm">
-			<a
-				href="/deals"
-				class="inline-flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
-			>
-				{t('deals.back', 'All deals')}
-			</a>
-			{#if coupon.provider_slug}
-				<span class="text-[var(--color-text-subtle)]">/</span>
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<div class="flex items-center gap-1.5 text-sm">
 				<a
-					href="/deal/{coupon.provider_slug}"
+					href="/deals"
 					class="inline-flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
 				>
-					{coupon.provider_name}
+					{t('deals.back', 'All deals')}
 				</a>
-			{/if}
-		</div>
-		<div class="flex items-center gap-3">
-			<span
-				class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
-			>
-				<Ticket size={24} />
-			</span>
-			<div class="min-w-0 flex-1">
-				<h1 class="truncate text-xl font-semibold text-[var(--color-text)]">{coupon.title}</h1>
-				{#if coupon.provider_name}
-					<p class="truncate text-xs text-[var(--color-muted)]">{coupon.provider_name}</p>
+				{#if coupon.provider_slug}
+					<span class="text-[var(--color-text-subtle)]">/</span>
+					<a
+						href="/deal/{coupon.provider_slug}"
+						class="inline-flex items-center gap-1.5 text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+					>
+						{coupon.provider_name}
+					</a>
 				{/if}
 			</div>
-			{#if coupon.is_verified}
-				<span
-					class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-primary)]"
-				>
-					<BadgeCheck size={14} />
-					{t('coupon.verified', 'Verified')}
-				</span>
-			{/if}
+			<div class="flex items-center gap-3">
+				{#if coupon.updated_at}
+					<span class="text-xs text-[var(--color-muted)]">
+						{t('deal.last_updated', 'Last updated {date}').replace(
+							'{date}',
+							new Date(coupon.updated_at).toLocaleDateString()
+						)}
+					</span>
+				{/if}
+				{#if data.canManage && !editing}
+					<button
+						type="button"
+						onclick={() => (editing = true)}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<Pencil size={14} />
+						{t('deal.edit', 'Edit')}
+					</button>
+				{/if}
+			</div>
 		</div>
 	</div>
 
 	<div class="p-4">
-		<div
-			class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
-		>
-			<!-- Code + discount -->
-			<div class="flex flex-wrap items-center gap-3">
-				{#if coupon.code}
-					<code
-						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 font-mono text-lg font-semibold tracking-wide text-[var(--color-text)]"
+		{#if editing}
+			<!-- Ref: §55 — staff inline edit reuses the shared DealForm. -->
+			<DealForm
+				mode="edit"
+				audience="staff"
+				coupon={coupon}
+				providers={data.providers}
+				canManageProviders={data.canManageProviders}
+				currencies={data.currencies}
+				onsaved={async () => {
+					await invalidateAll();
+					editing = false;
+				}}
+				oncancel={() => (editing = false)}
+			/>
+		{:else}
+			<!-- Title + lede -->
+			<div class="flex items-start gap-3">
+				<span
+					class="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius)] bg-[var(--color-surface-subtle)] text-[var(--color-primary)]"
+				>
+					<Ticket size={24} />
+				</span>
+				<div class="min-w-0 flex-1">
+					<h1 class="text-xl font-semibold text-[var(--color-text)]">{coupon.title}</h1>
+					{#if summary}
+						<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{summary}</p>
+					{/if}
+				</div>
+			</div>
+
+			<!-- Active offer -->
+			<div
+				class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
+			>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<h2
+						class="text-xs font-semibold tracking-wide text-[var(--color-muted)] uppercase"
 					>
-						{coupon.code}
-					</code>
-				{/if}
-				{#if discountLabel}
-					<span class="text-base font-semibold text-[var(--color-primary)]">{discountLabel}</span>
+						{t('deal.active_offer', 'Active offer')}
+					</h2>
+					<div class="flex items-center gap-2">
+						{#if coupon.provider_name}
+							<span class="text-sm font-medium text-[var(--color-text)]"
+								>{coupon.provider_name}</span
+							>
+						{/if}
+						{#if coupon.is_verified}
+							<span
+								class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-primary)]"
+							>
+								<BadgeCheck size={14} />
+								{t('coupon.verified', 'Verified')}
+							</span>
+						{/if}
+					</div>
+				</div>
+
+				<div class="mt-4 flex flex-wrap items-center gap-3">
+					{#if coupon.code}
+						<code
+							class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 font-mono text-lg font-semibold tracking-wide text-[var(--color-text)]"
+						>
+							{coupon.code}
+						</code>
+						<button
+							type="button"
+							onclick={copyCode}
+							class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Copy size={16} />
+							{copied ? t('coupon.copied', 'Copied!') : t('coupon.copy', 'Copy code')}
+						</button>
+					{/if}
+					{#if discountLabel}
+						<span class="text-base font-semibold text-[var(--color-primary)]"
+							>{discountLabel}</span
+						>
+					{/if}
+				</div>
+
+				{#if coupon.referral_url || coupon.provider_base_url}
+					<a
+						href={goUrl}
+						target="_blank"
+						rel="noopener noreferrer nofollow"
+						class="mt-5 inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+					>
+						<ExternalLink size={16} />
+						{t('coupon.cta', 'Get this deal')}
+					</a>
 				{/if}
 			</div>
 
-			{#if coupon.description}
-				<p class="mt-4 text-sm text-[var(--color-text-subtle)]">{coupon.description}</p>
+			<!-- Secondary offer (trial / onboarding) -->
+			{#if trial && (trial.title || trial.body || trialUrl)}
+				<div
+					class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-5"
+				>
+					{#if trial.title}
+						<h3 class="text-sm font-semibold text-[var(--color-text)]">{trial.title}</h3>
+					{/if}
+					{#if trial.body}
+						<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{trial.body}</p>
+					{/if}
+					{#if trialUrl}
+						<a
+							href={trialUrl}
+							target="_blank"
+							rel="nofollow noopener"
+							class="mt-3 inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<ExternalLink size={14} />
+							{t('deal.trial_cta', 'Try it now')}
+						</a>
+					{/if}
+				</div>
 			{/if}
 
-			<!-- Provider + expiry -->
-			<div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-[var(--color-muted)]">
-				{#if coupon.provider_name}
-					<span>{coupon.provider_name}</span>
+			<!-- Why {provider} / How to redeem -->
+			<section class="mt-6">
+				<h2 class="text-base font-semibold text-[var(--color-text)]">
+					{t('deal.why', 'Why {provider}').replace('{provider}', providerLabel)}
+				</h2>
+				{#if sections.length}
+					<ol class="mt-3 list-decimal space-y-3 pl-5">
+						{#each sections as section, i (i)}
+							<li class="text-sm text-[var(--color-text)]">
+								{#if section.title}
+									<p class="font-medium">{section.title}</p>
+								{/if}
+								{#if section.body}
+									<p class="mt-0.5 text-[var(--color-text-subtle)]">{section.body}</p>
+								{/if}
+							</li>
+						{/each}
+					</ol>
+				{:else}
+					<h3 class="mt-3 text-sm font-semibold text-[var(--color-text)]">
+						{t('deal.how_to_redeem', 'How to redeem')}
+					</h3>
+					<ol class="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-[var(--color-text-subtle)]">
+						<li>{t('deal.redeem_step_1', "Follow the deal link to open the offer on the provider's site.")}</li>
+						<li>{t('deal.redeem_step_2', 'Copy the coupon code if one is shown.')}</li>
+						<li>{t('deal.redeem_step_3', 'The discount applies at checkout.')}</li>
+					</ol>
 				{/if}
+			</section>
+
+			<!-- Other ways to save -->
+			{#if data.related.length}
+				<section class="mt-6">
+					<h2 class="text-base font-semibold text-[var(--color-text)]">
+						{t('deal.other_ways', 'Other ways to save on {provider}').replace(
+							'{provider}',
+							coupon.provider_name ?? t('deals.internal', 'JapaConnect')
+						)}
+					</h2>
+					<div class="mt-3 grid gap-2 sm:grid-cols-2">
+						{#each data.related as rel (rel.id)}
+							<a
+								href={dealPath(rel)}
+								class="group flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
+							>
+								<div class="min-w-0 flex-1">
+									<p
+										class="truncate text-sm font-medium text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+									>
+										{rel.title}
+									</p>
+									{#if discountLabelFor(rel)}
+										<span class="text-xs font-medium text-[var(--color-primary)]">
+											{discountLabelFor(rel)}
+										</span>
+									{/if}
+								</div>
+								<ChevronRight
+									size={16}
+									class="shrink-0 text-[var(--color-muted)] transition-transform group-hover:translate-x-0.5"
+								/>
+							</a>
+						{/each}
+					</div>
+				</section>
+			{/if}
+
+			<!-- FAQ -->
+			{#if faq.length}
+				<section class="mt-6">
+					<h2 class="text-base font-semibold text-[var(--color-text)]">
+						{t('deal.faq', 'Frequently asked questions')}
+					</h2>
+					<div
+						class="mt-3 divide-y divide-[var(--color-border)] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]"
+					>
+						{#each faq as f, i (i)}
+							<details class="group">
+								<summary
+									class="flex cursor-pointer items-center justify-between gap-3 p-4 text-sm font-medium text-[var(--color-text)]"
+								>
+									{f.q}
+									<ChevronRight
+										size={16}
+										class="shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-90"
+									/>
+								</summary>
+								<p class="px-4 pb-4 text-sm text-[var(--color-text-subtle)]">{f.a}</p>
+							</details>
+						{/each}
+					</div>
+				</section>
+			{/if}
+
+			<!-- Terms + expiry -->
+			<div class="mt-6 flex flex-wrap items-center gap-4 text-xs text-[var(--color-muted)]">
 				{#if coupon.expires_at}
 					<span class="inline-flex items-center gap-1">
 						<Clock size={12} />
@@ -164,42 +397,17 @@
 						)}
 					</span>
 				{/if}
-			</div>
-
-			<!-- Actions -->
-			<div class="mt-5 flex flex-wrap items-center gap-3">
-				{#if coupon.code}
-					<button
-						type="button"
-						onclick={copyCode}
-						class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-					>
-						<Copy size={16} />
-						{copied ? t('coupon.copied', 'Copied!') : t('coupon.copy', 'Copy code')}
-					</button>
-				{/if}
-				{#if coupon.referral_url || coupon.provider_base_url}
-					<a
-						href={goUrl}
-						target="_blank"
-						rel="noopener noreferrer nofollow"
-						class="inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-					>
-						<ExternalLink size={16} />
-						{t('coupon.cta', 'Get this deal')}
-					</a>
-				{/if}
 				{#if coupon.terms_url}
 					<a
 						href={coupon.terms_url}
 						target="_blank"
 						rel="noopener noreferrer"
-						class="text-sm text-[var(--color-text-subtle)] underline transition-colors hover:text-[var(--color-text)]"
+						class="underline transition-colors hover:text-[var(--color-text)]"
 					>
 						{t('coupon.terms', 'Terms & conditions')}
 					</a>
 				{/if}
 			</div>
-		</div>
+		{/if}
 	</div>
 </div>
