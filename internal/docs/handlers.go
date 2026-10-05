@@ -590,3 +590,17 @@ func (h *Handlers) OpenAPIHandler(w http.ResponseWriter, _ *http.Request) {
 		slog.Warn("json encode error", "error", err)
 	}
 }
+
+// GPTActionsHandler serves the curated OpenAPI subset that ChatGPT GPT
+// Actions consumes (§120, ADR-126) — read-only, production server URL only.
+func (h *Handlers) GPTActionsHandler(w http.ResponseWriter, _ *http.Request) {
+	spec := publicapi.GetGPTActionsSpec(h.siteURL, h.siteName)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(spec); err != nil {
+		slog.Warn("json encode error", "error", err)
+	}
+}

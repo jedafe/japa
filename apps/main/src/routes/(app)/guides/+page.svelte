@@ -190,6 +190,26 @@
 	function humanizeKey(key: string): string {
 		return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 	}
+
+	// Roadmap stage sub-filter — one chip per stage that has guides, in the
+	// same canonical order as the groups. `?stage=` keeps it shareable.
+	const selectedStage = $derived(data.stage || 'all');
+	const stageFilters = $derived([
+		{ stage: 'all', label: t('common.all', 'All'), count: items.length },
+		...roadmapGroups.map((g) => ({ stage: g.stage, label: g.label, count: g.items.length }))
+	]);
+	const visibleGroups = $derived(
+		selectedStage === 'all'
+			? roadmapGroups
+			: roadmapGroups.filter((g) => g.stage === selectedStage)
+	);
+
+	function applyStage(stage: string) {
+		const params = new URLSearchParams({ tab: 'roadmap' });
+		if (data.category) params.set('category', data.category);
+		if (stage !== 'all') params.set('stage', stage);
+		goto(`/guides?${params.toString()}`);
+	}
 </script>
 
 <svelte:head>
@@ -321,9 +341,37 @@
 			{:else if roadmapGroups.length === 0}
 				<EmptyState icon={BookOpen} title={t('guides.empty', 'No guides yet. Check back soon.')} />
 			{:else}
+				<!-- Stage filter chips — same pill pattern as /notifications -->
+				<div
+					class="mb-4 flex items-center gap-1 overflow-x-auto"
+					role="tablist"
+					aria-label={t('guides.filter_stage', 'Filter by journey stage')}
+				>
+					{#each stageFilters as filter (filter.stage)}
+						<button
+							type="button"
+							role="tab"
+							aria-selected={selectedStage === filter.stage}
+							onclick={() => applyStage(filter.stage)}
+							class="inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors {selectedStage ===
+							filter.stage
+								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+								: 'text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-subtle)]'}"
+						>
+							{filter.label}
+							<span class={selectedStage === filter.stage ? 'opacity-80' : 'text-[var(--color-muted)]'}>
+								{filter.count}
+							</span>
+						</button>
+					{/each}
+				</div>
+
+				{#if visibleGroups.length === 0}
+					<EmptyState icon={BookOpen} title={t('guides.stage_empty', 'No guides at this stage yet.')} />
+				{:else}
 				<!-- Journey roadmap: guides grouped by stage in japa order (§87) -->
 				<div class="space-y-6">
-					{#each roadmapGroups as group, i (group.stage)}
+					{#each visibleGroups as group, i (group.stage)}
 						<section>
 							<div class="mb-2 flex items-center gap-2">
 								<span class="grid h-6 w-6 place-items-center rounded-full bg-[var(--color-primary)]/10 text-xs font-semibold text-[var(--color-primary)]">
@@ -340,6 +388,7 @@
 						</section>
 					{/each}
 				</div>
+				{/if}
 			{/if}
 		{:else if data.loadError}
 			<p class="py-12 text-center text-[var(--color-text-subtle)]">

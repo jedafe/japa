@@ -153,7 +153,7 @@ func (h *OAuthHandlers) HandleInitiate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	redirect = safeRedirectPath(redirect)
+	redirect = safeRedirectTarget(redirect, h.Config.RedirectBase)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     oauthRedirectCookie,
@@ -204,7 +204,7 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// the cookie could have been tampered with between the two requests.
 	redirectPath := "/"
 	if rc, err := r.Cookie(oauthRedirectCookie); err == nil && rc.Value != "" {
-		redirectPath = safeRedirectPath(rc.Value)
+		redirectPath = safeRedirectTarget(rc.Value, h.Config.RedirectBase)
 	}
 
 	h.clearOAuthCookies(w)
@@ -473,18 +473,25 @@ func (h *OAuthHandlers) issueSessionAndRedirect(w http.ResponseWriter, r *http.R
 	h.redirectToFrontend(w, r, redirectPath)
 }
 
-// redirectToFrontend sends a 302 to the frontend base + path. The path
-// is validated by safeRedirectPath at both initiation (when stored in the
-// cookie) and callback (when read back), ensuring it is a relative site
-// path and not an open-redirect vector.
+// redirectToFrontend sends a 302 to the frontend base + path — or to the
+// path verbatim when it is an allowlisted absolute URL (§120 MCP consent
+// round-trip targets the API host). The path is validated by
+// safeRedirectTarget at both initiation (when stored in the cookie) and
+// callback (when read back), ensuring it is a relative site path or a URL on
+// the API issuer origin — never an open-redirect vector.
 func (h *OAuthHandlers) redirectToFrontend(w http.ResponseWriter, r *http.Request, path string) {
+	if u, err := url.Parse(path); err == nil && u.IsAbs() {
+		http.Redirect(w, r, path, http.StatusFound) // #nosec G601 -- absolute target was allowlisted to the API issuer origin by safeRedirectTarget
+		return
+	}
+
 	base := strings.TrimRight(h.FrontendBaseURL, "/")
 	if base == "" {
 		base = "/"
 	}
 
 	target := base + path
-	http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- path is validated by safeRedirectPath at both initiation and callback
+	http.Redirect(w, r, target, http.StatusFound) // #nosec G710 -- path is validated by safeRedirectTarget at both initiation and callback
 }
 
 // redirectOAuthError redirects to the frontend login page with an error code.
@@ -526,20 +533,40 @@ func RequireAuthRoute(kr *KeyRotation, vkClient valkeycompat.Cmdable) func(http.
 // attacker sets redirect=//evil.com and the victim is sent to evil.com after
 // a successful OAuth login.
 func safeRedirectPath(path string) string {
+	return safeRedirectTarget(path, "")
+}
+
+// safeRedirectTarget is safeRedirectPath plus one narrow exception: absolute
+// http(s) URLs whose scheme+host match allowedOrigin (the API host base,
+// JC_OAUTH_REDIRECT_BASE). §120 MCP consent: the login round-trip must be
+// able to bounce the user back to {api-host}/oauth/authorize. Any other
+// absolute URL still reduces to "/".
+func safeRedirectTarget(path, allowedOrigin string) string {
 	if path == "" {
 		return "/"
 	}
 
-	// Must start with "/" and not "//" (protocol-relative).
-	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
-		return "/"
+	// Relative site path: single "/", not "//" (protocol-relative). A
+	// backslash is rejected too — browsers normalize "/\evil.com" to
+	// "//evil.com" when following a Location header.
+	if strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") {
+		if strings.Contains(path, "\\") || strings.Contains(path, "://") {
+			return "/"
+		}
+		return path
 	}
 
-	// Reject absolute URLs (scheme://...) — these would be redirected to
-	// an external host.
-	if strings.Contains(path, "://") {
-		return "/"
+	// Absolute URL — allowed only on the API issuer origin.
+	if allowedOrigin != "" {
+		u, err := url.Parse(path)
+		ao, aerr := url.Parse(allowedOrigin)
+		if err == nil && aerr == nil && u.IsAbs() &&
+			(u.Scheme == "https" || u.Scheme == "http") &&
+			strings.EqualFold(u.Scheme, ao.Scheme) &&
+			strings.EqualFold(u.Host, ao.Host) {
+			return path
+		}
 	}
 
-	return path
+	return "/"
 }

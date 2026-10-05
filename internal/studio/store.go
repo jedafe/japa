@@ -562,13 +562,16 @@ func (s *Store) GetJobByReviewID(ctx context.Context, reviewID pgtype.UUID) (Job
 	return j, err
 }
 
-// UpdateJobReviewed sets the status and reviewed_at timestamp for a job.
-// Used by the moderation hook to transition a job to 'published' (approve)
-// or 'rejected' (reject) after HITL review (§75, ADR-076 §3).
-func (s *Store) UpdateJobReviewed(ctx context.Context, id pgtype.UUID, status string) error {
+// UpdateJobReviewed sets the status and reviewed_at timestamp for a job and
+// stamps hitl_reviewed_by/hitl_reviewed_at with the acting reviewer (the
+// ADR-088 columns exist for exactly this audit trail). Used by the
+// moderation hook to transition a job to 'published' (approve) or
+// 'rejected' (reject) after HITL review (§75, ADR-076 §3).
+func (s *Store) UpdateJobReviewed(ctx context.Context, id pgtype.UUID, status string, reviewerID pgtype.UUID) error {
 	_, err := s.db.Writer.Exec(ctx, `UPDATE studio_jobs SET status = $2, reviewed_at = now(),
+		          hitl_reviewed_by = $3, hitl_reviewed_at = now(),
 		          published_at = CASE WHEN $2 = 'published' THEN now() ELSE published_at END
-		  WHERE id = $1`, id, status)
+		  WHERE id = $1`, id, status, reviewerID)
 
 	return err
 }

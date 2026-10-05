@@ -1167,6 +1167,7 @@ type studioProcessorService interface {
 	MarkJobRoutedToReview(ctx context.Context, jobID, reviewID pgtype.UUID) error
 	MarkJobFailed(ctx context.Context, jobID pgtype.UUID, errMsg string) error
 	MarkJobPublished(ctx context.Context, jobID, draftContentID pgtype.UUID, aiModel string) error
+	PublishToolTableDraft(ctx context.Context, actorID pgtype.UUID, targetTable string, targetID pgtype.UUID) error
 	ShouldAutoPublish(ctx context.Context, contentType, guideCategory string) bool
 	RunBatch(ctx context.Context, batchID pgtype.UUID) error
 	RetryFailed(ctx context.Context, jobID pgtype.UUID) error
@@ -1307,7 +1308,48 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, jobID pgt
 	// contents creation as a safe default.
 	if isToolTableType(job.ContentType) {
 		if draftID, targetTable, routed, rerr := a.tryToolTableRouting(ctx, jobID, job, persona, body, extractionContext); rerr == nil && routed {
+			// Jobs created by actors holding agent.skip_hitl bypass the
+			// review queue (§75): publish the routed draft directly.
+			// Story-type routing produces a contents row, so contents
+			// targets go through UpdateContentStatus like the default
+			// path; dedicated tool tables use the tool-table publisher.
+			// A publish failure falls back to the normal HITL route so
+			// no draft is lost.
+			if a.perms != nil && job.CreatedBy.Valid &&
+				a.perms.HasPermission(ctx, job.CreatedBy, "agent.skip_hitl") {
+				var perr error
+				if targetTable == "contents" {
+					_, perr = a.contentSvc.UpdateContentStatus(ctx, draftID, "published")
+				} else {
+					perr = a.studio.PublishToolTableDraft(ctx, job.CreatedBy, targetTable, draftID)
+				}
+
+				if perr != nil {
+					slog.Warn("studio: generate: skip_hitl publish failed, routing to review", "job_id", jobID, "draft_id", draftID, "target_table", targetTable, "error", perr)
+				} else {
+					if err := a.studio.MarkJobPublished(ctx, jobID, draftID, aiModel); err != nil {
+						slog.Warn("studio: generate: mark job published failed", "job_id", jobID, "error", err)
+					} else {
+						a.syncCampaignItem(ctx, jobID, "published", draftID, pgtype.UUID{}, nil)
+					}
+
+					a.transitionIntelRecordOnPublish(ctx, job.IntelRecordID)
+					slog.Info("studio: generate: tool-table draft auto-published via agent.skip_hitl", "job_id", jobID, "draft_id", draftID, "target_table", targetTable)
+
+					return nil
+				}
+			}
+
+			// Mark generated (draft_ready) before routing — a failure here
+			// is fatal so the task retries rather than leaving a draft
+			// orphaned in 'generating'.
+			if err := a.studio.MarkJobGenerated(ctx, jobID, draftID, aiModel); err != nil {
+				return fmt.Errorf("studio: generate: mark generated: %w", err)
+			}
+
+			a.syncCampaignItem(ctx, jobID, "draft_ready", draftID, pgtype.UUID{}, nil)
 			a.routeToHITL(ctx, jobID, draftID, targetTable, job.ContentType, aiModel, fvJSON)
+
 			return nil
 		}
 
@@ -1383,7 +1425,11 @@ func (a *studioDraftProcessorAdapter) GenerateJob(ctx context.Context, jobID pgt
 // intel_record extraction (§75, ADR-076 Amendment 2). It preserves the
 // content's identity and slug; if the live body has been manually edited or
 // the type requires HITL, it creates a new draft instead of overwriting.
-func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, contentID, intelRecordID pgtype.UUID) error {
+// actorID is the user who triggered the regeneration (from the task
+// payload); actors holding agent.skip_hitl take the in-place update path
+// directly instead of the draft-and-review detour. A zero/invalid actorID
+// (system-triggered runs) keeps full HITL protection.
+func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, contentID, intelRecordID, actorID pgtype.UUID) error {
 	existing, err := a.contentSvc.GetContent(ctx, contentID)
 	if err != nil {
 		return fmt.Errorf("regenerate: get content: %w", err)
@@ -1450,7 +1496,15 @@ func (a *studioDraftProcessorAdapter) RegenerateFromSource(ctx context.Context, 
 	// If the content is published and either HITL is required or a human has
 	// edited the body since the last AI generation, create a new draft for
 	// review rather than overwriting the live article.
+	// Actors holding agent.skip_hitl bypass the detour: they deliberately
+	// requested the rewrite, so the in-place update runs directly (§75).
 	needsHITL := highStakes || manual || (existing.Status == content.StatusPublished && !canAutoPublish)
+
+	if needsHITL && a.perms != nil && actorID.Valid &&
+		a.perms.HasPermission(ctx, actorID, "agent.skip_hitl") {
+		slog.Info("regenerate: in-place update via agent.skip_hitl", "content_id", contentID, "actor_id", actorID, "high_stakes", highStakes, "manual_edit", manual)
+		needsHITL = false
+	}
 
 	if needsHITL {
 		draft, err := a.contentSvc.CreateContent(ctx, content.CreateContentInput{
@@ -1881,21 +1935,15 @@ func (a *studioDraftProcessorAdapter) syncCampaignItem(ctx context.Context, jobI
 	}
 }
 
-// routeToHITL marks the job as generated and creates a HITL review with
-// the appropriate target_table (migration 000477, ADR-076 Amendment 1).
+// routeToHITL creates a HITL review with the appropriate target_table and
+// transitions the job to 'in_review' (migration 000477, ADR-076 Amendment
+// 1). Callers must have already marked the job generated (draft_ready).
 func (a *studioDraftProcessorAdapter) routeToHITL(
 	ctx context.Context,
 	jobID, draftID pgtype.UUID,
 	targetTable, contentType, aiModel string,
 	fvJSON []byte,
 ) {
-	if err := a.studio.MarkJobGenerated(ctx, jobID, draftID, aiModel); err != nil {
-		slog.Warn("studio: generate: mark generated failed", "job_id", jobID, "draft_id", draftID, "error", err)
-		return
-	}
-
-	a.syncCampaignItem(ctx, jobID, "draft_ready", draftID, pgtype.UUID{}, nil)
-
 	if a.aiStore == nil {
 		return
 	}
@@ -2700,4 +2748,77 @@ func (a *agentPOFAdapter) Calculate(ctx context.Context, in ai.POFCalculateInput
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// agentWikiAdapter bridges the wiki §80 revision-queue surface onto the
+// ai.WikiAgentService mirror interface (internal/wiki imports internal/ai,
+// so the ai package cannot reference the concrete types).
+type agentWikiAdapter struct {
+	svc   *wiki.Service
+	store *wiki.Store
+}
+
+func (a *agentWikiAdapter) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, in ai.WikiCreatePageInput) (string, string, string, error) {
+	return a.svc.CreatePageWithRevision(ctx, userID, wiki.CreateWikiPageInput{
+		SpaceSlug: in.SpaceSlug,
+		Slug:      in.Slug,
+		Title:     in.Title,
+		Category:  in.Category,
+		Content:   in.Content,
+		Summary:   in.Summary,
+		Position:  in.Position,
+	})
+}
+
+func (a *agentWikiAdapter) CreatePageShell(ctx context.Context, spaceID, createdBy pgtype.UUID, slug, title, category string) (string, error) {
+	id, err := a.store.CreatePage(ctx, spaceID, createdBy, slug, title, category)
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
+}
+
+func (a *agentWikiAdapter) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, summary string) (string, error) {
+	return a.svc.SubmitRevision(ctx, userID, spaceSlug, pageSlug, wiki.SubmitRevisionInput{
+		Content: content,
+		Summary: summary,
+	})
+}
+
+func (a *agentWikiAdapter) SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, opsRaw json.RawMessage, summary string, canManage bool) (string, bool, error) {
+	ops, err := wiki.ParseOps(opsRaw)
+	if err != nil {
+		return "", false, fmt.Errorf("invalid ops: %w", err)
+	}
+	return a.svc.SubmitPageFieldOps(ctx, userID, spaceSlug, pageSlug, content, ops, summary, canManage)
+}
+
+func (a *agentWikiAdapter) StructuredEditsEnabled(ctx context.Context) bool {
+	return a.svc.StructuredEditsEnabled(ctx)
+}
+
+func (a *agentWikiAdapter) ApproveRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error {
+	return a.svc.ApproveRevisionByID(ctx, revID, reviewerID, notes)
+}
+
+func (a *agentWikiAdapter) RejectRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error {
+	return a.svc.RejectRevisionByID(ctx, revID, reviewerID, notes)
+}
+
+func (a *agentWikiAdapter) CommunityEditsAllowed(ctx context.Context) bool {
+	return a.svc.CommunityEditsAllowed(ctx)
+}
+
+func (a *agentWikiAdapter) MinReputationToEdit(ctx context.Context) int {
+	return a.svc.MinReputationToEdit(ctx)
+}
+
+func (a *agentWikiAdapter) SpaceSlugByID(ctx context.Context, spaceID pgtype.UUID) (string, error) {
+	slug, _, err := a.store.GetSpaceByID(ctx, spaceID)
+	return slug, err
+}
+
+func (a *agentWikiAdapter) SpaceIDBySlug(ctx context.Context, spaceSlug string) (pgtype.UUID, error) {
+	id, _, err := a.store.GetSpaceBySlug(ctx, spaceSlug)
+	return id, err
 }

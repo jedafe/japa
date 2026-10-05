@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -882,13 +883,26 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 		// created content_id. The review ID is surfaced via Metadata so
 		// the executor records it on ai_agent_tool_calls and skips its
 		// own generic createHITL (which would set source='agent_tool').
-		// Actors holding agent.skip_hitl bypass the review queue entirely.
+		// Actors holding agent.skip_hitl bypass the review queue: the
+		// draft publishes directly (same behavior as the
+		// agent:create_draft_request worker path). If publish fails or
+		// the lifecycle service is unwired, fall back to the review
+		// queue so the draft is not stranded unpublished (§103).
 		var hitlReviewID pgtype.UUID
 
 		skipHITL := deps.Permission != nil &&
 			deps.Permission.HasPermission(ctx, userID, "agent.skip_hitl")
 
-		if deps.HITL != nil && !skipHITL {
+		publishedDirect := false
+		if skipHITL && deps.ContentLifecycle != nil {
+			if _, perr := deps.ContentLifecycle.UpdateContentStatus(ctx, row.ID, "published"); perr == nil {
+				publishedDirect = true
+			} else {
+				slog.Warn("content.create_draft: skip_hitl publish failed, routing to HITL", "content_id", row.ID, "error", perr)
+			}
+		}
+
+		if deps.HITL != nil && !publishedDirect {
 			review, hitlErr := deps.HITL.CreateHITLReview(ctx, HITLReview{
 
 				ContentID:   row.ID,
@@ -906,17 +920,24 @@ func ContentCreateDraftHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
+		outStatus := row.Status
+		reviewStatus := "draft submitted for admin review"
+		if publishedDirect {
+			outStatus = "published"
+			reviewStatus = "auto-published via agent.skip_hitl"
+		}
+
 		out := map[string]any{
 			"content_id":     uuidString(row.ID),
 			"title":          row.Title,
 			"slug":           row.Slug,
-			"status":         row.Status,
+			"status":         outStatus,
 			"content_type":   row.ContentType,
 			"author_id":      uuidString(row.AuthorID),
 			"geo_space_id":   uuidString(row.GeoSpaceID),
 			"created_at":     timestampString(row.CreatedAt),
 			"hitl_review_id": uuidString(hitlReviewID),
-			"review_status":  "draft submitted for admin review",
+			"review_status":  reviewStatus,
 			"guide_category": row.GuideCategory,
 		}
 		if row.OrganizationID.Valid {

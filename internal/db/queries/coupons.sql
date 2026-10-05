@@ -53,14 +53,14 @@ WHERE provider_id = @provider_id;
 -- =====================
 
 -- name: CreateCoupon :one
-INSERT INTO coupons (provider_id, coupon_type, title, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES (sqlc.narg(provider_id), @coupon_type, @title, sqlc.narg(description), @code, sqlc.narg(discount_type), sqlc.narg(discount_value), sqlc.narg(currency), sqlc.narg(terms_url), sqlc.narg(referral_url), @is_verified, @status, sqlc.narg(valid_from), sqlc.narg(expires_at), sqlc.narg(created_by))
+INSERT INTO coupons (provider_id, coupon_type, title, slug, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, created_by) VALUES (sqlc.narg(provider_id), @coupon_type, @title, @slug, sqlc.narg(description), @code, sqlc.narg(discount_type), sqlc.narg(discount_value), sqlc.narg(currency), sqlc.narg(terms_url), sqlc.narg(referral_url), @is_verified, @status, sqlc.narg(valid_from), sqlc.narg(expires_at), sqlc.narg(created_by))
 RETURNING id, provider_id, coupon_type, title, description, code,
  discount_type, discount_value, currency, terms_url, referral_url,
  is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at;
+ created_by, created_at, updated_at, slug;
 
 -- name: GetCouponByID :one
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -70,7 +70,7 @@ LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.id = @id;
 
 -- name: GetCouponByCode :one
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -79,8 +79,19 @@ FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.code = @code;
 
+-- name: GetCouponBySlug :one
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
+ c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
+ c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
+ c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
+ ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id,
+ ap.base_url AS provider_base_url, ap.is_active AS provider_is_active
+FROM coupons c
+LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+WHERE c.slug = @slug;
+
 -- name: ListCoupons :many
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -95,7 +106,7 @@ ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListActiveCoupons :many
-SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description,
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
  c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at,
@@ -112,7 +123,7 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateCoupon :one
 UPDATE coupons
-SET title = @title, description = sqlc.narg(description), code = @code,
+SET title = @title, slug = @slug, description = sqlc.narg(description), code = @code,
  provider_id = sqlc.narg(provider_id),
  discount_type = sqlc.narg(discount_type), discount_value = sqlc.narg(discount_value),
  currency = sqlc.narg(currency), terms_url = sqlc.narg(terms_url),
@@ -123,7 +134,7 @@ WHERE id = @id
 RETURNING id, provider_id, coupon_type, title, description, code,
  discount_type, discount_value, currency, terms_url, referral_url,
  is_verified, status, valid_from, expires_at, total_clicks, total_copies,
- created_by, created_at, updated_at;
+ created_by, created_at, updated_at, slug;
 
 -- name: DeleteCoupon :exec
 DELETE FROM coupons
@@ -187,7 +198,7 @@ WHERE coupon_id = @coupon_id AND event_type = @event_type;
 -- BE-LOW-001: platform-scoped so a render request cannot resolve a coupon
 -- from another platform. The InternalGuard on the render routes is defense-
 -- in-depth; this query is the primary platform isolation control.
-SELECT c.id, c.title, c.code, c.discount_type, c.discount_value,
+SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
  c.referral_url, c.status, c.expires_at,
  ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c

@@ -16,14 +16,27 @@ import (
 
 const agentUsePermission = "agent.use"
 
-// AuthMiddleware returns middleware that accepts either a Bearer JWT or an
-// X-API-Key header for the MCP endpoint, then enforces the agent.use
-// permission/scope before handing the request to the MCP handler.
-func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicAPIService *publicapi.Service, resolver *rbac.RBAC) func(http.Handler) http.Handler {
+// AuthMiddleware returns middleware that accepts a Bearer JWT, an X-API-Key
+// header, or a §120 OAuth bearer token for the MCP endpoint, then enforces
+// the agent.use permission/scope before handing the request to the MCP
+// handler. oauthSvc may be nil — OAuth bearer auth is then disabled.
+// issuer is the API host's public base URL; it feeds the WWW-Authenticate
+// resource_metadata pointer that lets MCP clients discover the AS.
+func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicAPIService *publicapi.Service, resolver *rbac.RBAC, oauthSvc *OAuthService, issuer string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			user, apiKey := authOrAPIKey(r, kr, vkClient, publicAPIService)
+			user, apiKey := authOrAPIKey(r, kr, vkClient, publicAPIService, oauthSvc)
 			if user == nil || !user.UserID.Valid {
+				challenge := "Bearer"
+				if issuer != "" {
+					challenge = `Bearer resource_metadata="` + issuer + `/.well-known/oauth-protected-resource"`
+				}
+				// RFC 6750 §3.1: distinguish "no credentials" from
+				// "credentials presented but rejected".
+				if r.Header.Get("Authorization") != "" || r.Header.Get("X-API-Key") != "" {
+					challenge += `, error="invalid_token"`
+				}
+				w.Header().Set("WWW-Authenticate", challenge)
 				http.Error(w, `{"error":{"code":"unauthenticated","message":"Authentication required"}}`, http.StatusUnauthorized)
 				return
 			}
@@ -36,6 +49,8 @@ func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicA
 				}
 				// Expose the key to the public API rate limiter and mark the
 				// caller so tools/list + tools/call restrict to read-only.
+				// OAuth callers reuse this path — they carry the synthetic
+				// key context produced by ResolveAccessToken.
 				ctx = publicapi.WithAPIKeyContext(ctx, apiKey)
 				ctx = context.WithValue(ctx, apiKeyCallerKey, true)
 			} else {
@@ -51,14 +66,17 @@ func AuthMiddleware(kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicA
 	}
 }
 
-func authOrAPIKey(r *http.Request, kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicAPIService *publicapi.Service) (*auth.AuthenticatedUser, *publicapi.APIKeyContext) {
-	// Prefer JWT Bearer when both are present.
+func authOrAPIKey(r *http.Request, kr *auth.KeyRotation, vkClient valkeycompat.Cmdable, publicAPIService *publicapi.Service, oauthSvc *OAuthService) (*auth.AuthenticatedUser, *publicapi.APIKeyContext) {
+	// Prefer Bearer when present. JWT first; a token that fails JWT
+	// validation falls through to the §120 OAuth access-token lookup.
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") && parts[1] != "" {
-			user, err := validateBearer(r.Context(), parts[1], kr, vkClient)
-			if err == nil {
+			if user, err := validateBearer(r.Context(), parts[1], kr, vkClient); err == nil {
 				return user, nil
+			}
+			if keyCtx, user, err := validateOAuthBearer(r.Context(), parts[1], oauthSvc); err == nil {
+				return user, keyCtx
 			}
 		}
 	}
@@ -72,6 +90,31 @@ func authOrAPIKey(r *http.Request, kr *auth.KeyRotation, vkClient valkeycompat.C
 	}
 
 	return nil, nil
+}
+
+// validateOAuthBearer resolves a §120 opaque access token into a synthetic
+// APIKeyContext so the read-only tool gate, per-scope checks, and rate
+// limiter apply unchanged. Only tokens carrying the MCP prefix are looked
+// up — an arbitrary non-JWT bearer string never reaches the DB.
+func validateOAuthBearer(ctx context.Context, token string, oauthSvc *OAuthService) (*publicapi.APIKeyContext, *auth.AuthenticatedUser, error) {
+	if oauthSvc == nil || !strings.HasPrefix(token, oauthAccessTokenPrefix) {
+		return nil, nil, errors.New("not an oauth access token")
+	}
+
+	userID, scopes, clientID, err := oauthSvc.ResolveAccessToken(ctx, token)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	keyCtx := &publicapi.APIKeyContext{
+		UserID:        userID,
+		Scopes:        scopes,
+		KeyPrefix:     "oauth:" + clientID,
+		RateLimitTier: "basic",
+	}
+	user := &auth.AuthenticatedUser{UserID: userID}
+
+	return keyCtx, user, nil
 }
 
 func validateBearer(ctx context.Context, token string, kr *auth.KeyRotation, vkClient valkeycompat.Cmdable) (*auth.AuthenticatedUser, error) {

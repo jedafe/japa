@@ -1194,6 +1194,7 @@ type Coupon struct {
 	CreatedBy     pgtype.UUID        `json:"created_by"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Slug          string             `json:"slug"`
 }
 
 type CouponEvent struct {
@@ -2669,6 +2670,44 @@ type OauthAccount struct {
 	Provider       string             `json:"provider"`
 	ProviderUserID string             `json:"provider_user_id"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type OauthAuthorizationCode struct {
+	ID                  pgtype.UUID        `json:"id"`
+	CodeHash            string             `json:"code_hash"`
+	ClientID            string             `json:"client_id"`
+	UserID              pgtype.UUID        `json:"user_id"`
+	RedirectUri         string             `json:"redirect_uri"`
+	Scope               string             `json:"scope"`
+	CodeChallenge       string             `json:"code_challenge"`
+	CodeChallengeMethod string             `json:"code_challenge_method"`
+	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	UsedAt              pgtype.Timestamptz `json:"used_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+}
+
+type OauthClient struct {
+	ID                      pgtype.UUID        `json:"id"`
+	ClientID                string             `json:"client_id"`
+	ClientName              string             `json:"client_name"`
+	RedirectUris            []string           `json:"redirect_uris"`
+	GrantTypes              []string           `json:"grant_types"`
+	Scopes                  []string           `json:"scopes"`
+	TokenEndpointAuthMethod string             `json:"token_endpoint_auth_method"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+}
+
+type OauthToken struct {
+	ID         pgtype.UUID        `json:"id"`
+	TokenHash  string             `json:"token_hash"`
+	ClientID   string             `json:"client_id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Scope      string             `json:"scope"`
+	TokenType  string             `json:"token_type"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	RevokedAt  pgtype.Timestamptz `json:"revoked_at"`
+	ReplacedBy pgtype.UUID        `json:"replaced_by"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type OnboardingState struct {

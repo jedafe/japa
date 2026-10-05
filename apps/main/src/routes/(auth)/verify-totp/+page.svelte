@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n/store.svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { goto } from '$app/navigation';
+	import { navigatePostLogin, safeRelativePath } from '$lib/auth/redirect';
 	import { ShieldCheck } from 'lucide-svelte';
 
 	let { data } = $props();
@@ -49,7 +50,7 @@
 				return;
 			}
 			await invalidateAll();
-			await goto(payload.redirect ?? data.redirectTarget);
+			await navigatePostLogin(payload.redirect ?? safeRelativePath(data.redirectTarget));
 		} catch {
 			errorKey = 'auth.errors.generic';
 		} finally {
@@ -96,7 +97,7 @@
 				return;
 			}
 			await invalidateAll();
-			await goto(payload.redirect ?? data.redirectTarget);
+			await navigatePostLogin(payload.redirect ?? safeRelativePath(data.redirectTarget));
 		} catch {
 			errorKey = 'auth.errors.generic';
 		} finally {

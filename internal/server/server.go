@@ -2093,6 +2093,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	agentDeps.FXConverter = &agentFXAdapter{svc: fxService}
 	agentDeps.CRSCalculator = &agentCRSAdapter{svc: crsCalculatorService}
 	agentDeps.POFCalculator = &agentPOFAdapter{svc: pofCalculatorService}
+	// Destination wiki content tools (§80 revision queue). Points feeds
+	// the wiki.min_reputation_to_edit community-submission gate.
+	agentDeps.Wiki = &agentWikiAdapter{svc: wikiService, store: wikiStore}
+	agentDeps.Points = walletService
 
 	agentRegistry := ai.NewToolHandlerRegistry()
 	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
@@ -2491,7 +2495,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	publicAPIService := publicapi.NewService(publicAPIStore)
 	publicAPIService.SetKeyCountReader(settingsService) // api.keys.max_per_user (Rule 3)
 	publicAPIService.SetTierResolver(tierService)       // cap rate limits by user tier
-	publicAPIService.SetAdminChecker(rbacResolver)      // Phase 3: admin-only scope gating
+
+	// §120 OAuth 2.1 authorization server (ADR-126): web agents (claude.ai,
+	// ChatGPT connectors) obtain per-user bearer tokens for /api/v1/mcp via
+	// DCR + PKCE auth-code flow. Consent-page CSRF token is HMAC-signed with
+	// the at-rest encryption key (JWT secret as dev fallback).
+	mcpOAuthSecret := cfg.EncryptionKey
+	if mcpOAuthSecret == "" {
+		mcpOAuthSecret = cfg.JWTSecret
+	}
+	mcpOAuthService := mcp.NewOAuthService(mcp.NewOAuthStore(database.Writer), settingsService, vkClient.Redis())
+	mcpOAuthHandlers := mcp.NewOAuthHandlers(mcpOAuthService, cfg.MCPPublicURL, cfg.SiteURL, cfg.SiteName, kr, vkClient.Redis(), mcpOAuthSecret)
+	mcpServer.SetSiteBaseURL(cfg.SiteURL)
+	publicAPIService.SetAdminChecker(rbacResolver) // Phase 3: admin-only scope gating
 	// Agent Data API: narrow readers over the moat domain services. The
 	// domain services are injected here — publicapi never re-implements
 	// domain queries (docs/superpowers/specs/2026-09-23-agent-data-api-design.md).
@@ -2801,6 +2817,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// OpenAPI Spec (Section 44 — docs subdomain)
 		// catalog: GET /docs/openapi.json (single canonical spec, §6.4 dedupe)
 		r.Get("/docs/openapi.json", docsHandlers.OpenAPIHandler)
+		// §120: curated spec for ChatGPT GPT Actions.
+		r.Get("/docs/gpt-actions.json", docsHandlers.GPTActionsHandler)
+	})
+
+	// §120 OAuth 2.1 authorization server + MCP discovery (ADR-126).
+	// Root-level paths — web MCP clients resolve them from host metadata.
+	// Tight rate limit on the write-ish endpoints; metadata is public.
+	r.Group(func(r chi.Router) {
+		r.Use(mw.RateLimit(vkClient.Redis(), "tight"))
+		r.Post("/oauth/register", mcpOAuthHandlers.HandleRegister)
+		r.Post("/oauth/token", mcpOAuthHandlers.HandleToken)
+		r.Post("/oauth/revoke", mcpOAuthHandlers.HandleRevoke)
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
+		r.Get("/.well-known/oauth-protected-resource", mcpOAuthHandlers.HandleProtectedResourceMetadata)
+		r.Get("/.well-known/oauth-protected-resource/api/v1/mcp", mcpOAuthHandlers.HandleProtectedResourceMetadata)
+		r.Get("/.well-known/oauth-authorization-server", mcpOAuthHandlers.HandleAuthorizationServerMetadata)
+		// Consent GET renders the page; POST consumes the signed consent.
+		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/oauth/authorize", mcpOAuthHandlers.HandleAuthorize)
+		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Post("/oauth/authorize", mcpOAuthHandlers.HandleAuthorize)
 	})
 
 	// API routes go through platform resolution
@@ -5215,7 +5252,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// endpoint that exposes the agent tool catalog to MCP clients.
 			// Supports both JWT Bearer and X-API-Key auth; GET is the legacy SSE
 			// fallback, POST is the Streamable HTTP JSON-RPC transport.
-			r.With(mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver),
+			r.With(mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver, mcpOAuthService, cfg.MCPPublicURL),
 				publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService, publicAPIService)).
 				Handle("/mcp", mcpServer)
 

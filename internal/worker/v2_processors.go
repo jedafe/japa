@@ -125,8 +125,10 @@ type StudioProcessor interface {
 	GenerateJob(ctx context.Context, jobID pgtype.UUID) error
 	// RegenerateFromSource rewrites the body of an existing contents row from
 	// the latest intel_record extraction, preserving its identity and status
-	// unless HITL is required (§75, ADR-076 Amendment 2).
-	RegenerateFromSource(ctx context.Context, contentID, intelRecordID pgtype.UUID) error
+	// unless HITL is required (§75, ADR-076 Amendment 2). actorID carries the
+	// triggering user so agent.skip_hitl holders bypass the review detour;
+	// an invalid actorID (system-triggered runs) keeps full HITL protection.
+	RegenerateFromSource(ctx context.Context, contentID, intelRecordID, actorID pgtype.UUID) error
 }
 
 // AgentDraftProcessor handles the agent:create_draft_request task

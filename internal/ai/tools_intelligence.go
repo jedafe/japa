@@ -211,10 +211,17 @@ func ContentRegenerateFromSourceHandler(deps *ToolDeps) ToolHandler {
 			}
 		}
 
-		payload, _ := json.Marshal(map[string]string{
+		payloadMap := map[string]string{
 			"content_id":      a.ContentID,
 			"intel_record_id": a.IntelRecordID,
-		})
+		}
+		// Carry the actor so the worker can honor agent.skip_hitl — holders
+		// take the in-place update path instead of a draft-and-review detour.
+		if userID.Valid {
+			payloadMap["user_id"] = userID.String()
+		}
+
+		payload, _ := json.Marshal(payloadMap)
 		if err := deps.TaskEnqueuer.Enqueue(worker.TypeContentRegenerateFromSource, payload); err != nil {
 			return errorToolResult("enqueue_failed", fmt.Sprintf("failed to enqueue regeneration: %v", err)), nil
 		}

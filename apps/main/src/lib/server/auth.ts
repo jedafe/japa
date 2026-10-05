@@ -339,13 +339,48 @@ export async function initiateOAuth(
 	return payload.data.auth_url as string;
 }
 
-/** Resolve the post-login redirect: /onboarding if incomplete, else the target or /. */
+/** Resolve the post-login redirect: /onboarding if incomplete, else the sanitized target or /. */
 export function resolvePostLoginRedirect(
 	onboarding: OnboardingStatus | null,
 	redirectTarget: string | null
 ): string {
 	if (onboarding && !onboarding.completed) return '/onboarding';
-	return redirectTarget || '/';
+	return sanitizePostLoginTarget(redirectTarget);
+}
+
+/**
+ * Browser-facing origin of the Go API. PRIVATE_API_BASE_URL is the SSR-internal
+ * address — in split deployments (k8s service, docker network) it differs from
+ * the public issuer the browser sees. PRIVATE_API_PUBLIC_ORIGIN must equal the
+ * backend's JC_MCP_PUBLIC_URL origin; it defaults to API_BASE for the common
+ * single-host/dev case.
+ */
+const API_PUBLIC_ORIGIN = env.PRIVATE_API_PUBLIC_ORIGIN ?? API_BASE;
+
+/**
+ * Sanitize a user-supplied post-login redirect target. Allowed: relative
+ * site paths (`/foo`, not `//evil.com`) and absolute URLs on the API host
+ * origin — the §120 MCP OAuth consent flow bounces the browser to
+ * {api-host}/oauth/authorize after sign-in. Everything else reduces to '/'
+ * so the login flow is not an open-redirect vector.
+ */
+function sanitizePostLoginTarget(target: string | null): string {
+	if (!target) return '/';
+	if (target.startsWith('/') && !target.startsWith('//')) {
+		// Browsers normalize "/\evil.com" to "//evil.com" on navigation.
+		if (target.includes('\\')) return '/';
+		return target;
+	}
+	try {
+		const u = new URL(target);
+		const apiOrigin = new URL(API_PUBLIC_ORIGIN).origin;
+		if ((u.protocol === 'https:' || u.protocol === 'http:') && u.origin === apiOrigin) {
+			return u.toString();
+		}
+	} catch {
+		// Unparseable — treat as unsafe.
+	}
+	return '/';
 }
 
 /** Re-export apiContext for convenience in form actions. */

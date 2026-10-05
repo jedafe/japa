@@ -665,6 +665,17 @@ type ToolDeps struct {
 	FXConverter   FXConverterService
 	CRSCalculator CRSCalculatorService
 	POFCalculator POFCalculatorService
+
+	// Destination wiki content tools (§80 revision queue). nil → the
+	// wiki content tools return "not configured". Page flag/provisioning
+	// ops stay on the generic catalog writer; these cover the
+	// revision-gated content path.
+	Wiki WikiAgentService
+	// Points reads the caller's lifetime reputation balance for the
+	// wiki.min_reputation_to_edit gate on community submissions.
+	// nil → the reputation check fails closed when the threshold is > 0
+	// (same convention as the REST handler's BUG-004 fix).
+	Points PointsBalanceReader
 }
 
 // ---------------------------------------------------------------------------
@@ -794,6 +805,52 @@ type POFCalculateInput struct {
 // pof.calculate tool calls.
 type POFCalculatorService interface {
 	Calculate(ctx context.Context, input POFCalculateInput) ([]map[string]any, error)
+}
+
+// ---------------------------------------------------------------------------
+// Destination wiki tool dependencies (Section 80 — revision queue)
+// ---------------------------------------------------------------------------
+
+// WikiCreatePageInput mirrors wiki.CreateWikiPageInput (which lives in a
+// package that imports ai — the wiring-layer adapter converts between them).
+type WikiCreatePageInput struct {
+	SpaceSlug string
+	Slug      string
+	Title     string
+	Category  string
+	Content   json.RawMessage
+	Summary   string
+	Position  *int32
+}
+
+// WikiAgentService is the subset of internal/wiki.Service/Store the wiki
+// agent tools call. SubmitRevision and CreatePageWithRevision are the
+// §80 revision-queue writes: submissions create *pending* revisions, so
+// agent-produced content still passes moderator review. CreatePageShell
+// covers content-less provisioning calls. ApproveRevision/RejectRevision
+// are the moderator queue actions (revision-keyed).
+type WikiAgentService interface {
+	CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, in WikiCreatePageInput) (pageID, revID, pageSlug string, err error)
+	CreatePageShell(ctx context.Context, spaceID, createdBy pgtype.UUID, slug, title, category string) (pageID string, err error)
+	SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, summary string) (revID string, err error)
+	// SubmitFieldOps submits §80 structured field ops (optionally with
+	// prose — a mixed revision). ops is the raw ops array; the adapter
+	// decodes it via wiki.ParseOps. canManage flags wiki.fields.manage
+	// holders, whose submissions auto-apply.
+	SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, ops json.RawMessage, summary string, canManage bool) (revID string, autoApproved bool, err error)
+	ApproveRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error
+	RejectRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error
+	CommunityEditsAllowed(ctx context.Context) bool
+	StructuredEditsEnabled(ctx context.Context) bool
+	MinReputationToEdit(ctx context.Context) int
+	SpaceSlugByID(ctx context.Context, spaceID pgtype.UUID) (string, error)
+	SpaceIDBySlug(ctx context.Context, spaceSlug string) (pgtype.UUID, error)
+}
+
+// PointsBalanceReader is the subset of internal/wallet.Service used for the
+// wiki reputation gate (wiki.min_reputation_to_edit).
+type PointsBalanceReader interface {
+	GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
 // ---------------------------------------------------------------------------

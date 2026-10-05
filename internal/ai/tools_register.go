@@ -296,4 +296,15 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("crs.calculate", CRSCalculateHandler(deps))
 	registry.RegisterHandler("pof.calculate", POFCalculateHandler(deps))
 	registry.RegisterHandler("fx.convert", FXConvertHandler(deps))
+
+	// --- Destination wiki tools (§80 revision queue) ---
+	// wiki_page.create is registered again here, overriding the generic
+	// writer's shell create: payloads carrying `content` route through
+	// CreatePageWithRevision so the page lands with an initial pending
+	// revision; content-less payloads keep the provisioning-shell path.
+	// submit_revision/review_revision cover the body-edit and moderator
+	// approve/reject steps the generic ops cannot express.
+	registry.RegisterHandler("wiki_page.create", WikiPageCreateHandler(deps))
+	registry.RegisterHandler("wiki_page.submit_revision", WikiPageSubmitRevisionHandler(deps))
+	registry.RegisterHandler("wiki_page.review_revision", WikiPageReviewRevisionHandler(deps))
 }

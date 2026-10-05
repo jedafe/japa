@@ -21,6 +21,8 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const tab = event.url.searchParams.get('tab') ?? 'latest';
 	const category = event.url.searchParams.get('category') ?? '';
+	// Roadmap sub-filter — narrows the grouped view to one journey_stage.
+	const stage = event.url.searchParams.get('stage') ?? '';
 	const cursor = event.url.searchParams.get('cursor') ?? '';
 	const offset = parseInt(event.url.searchParams.get('offset') ?? '0', 10) || 0;
 
@@ -40,6 +42,7 @@ export const load: PageServerLoad = async (event) => {
 			categories,
 			category,
 			tab,
+			stage,
 			authed,
 			pageSize: PAGE_SIZE,
 			nextCursor: null as string | null,
@@ -95,6 +98,7 @@ export const load: PageServerLoad = async (event) => {
 		categories,
 		category,
 		tab,
+		stage,
 		authed,
 		pageSize: PAGE_SIZE,
 		nextCursor,
