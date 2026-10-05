@@ -6,6 +6,7 @@ package gen
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 
@@ -256,6 +257,8 @@ type AffiliateProvider struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	// Percentage of external affiliate commission shared with the content author who embedded the link. 0 = no sharing.
 	AuthorCommissionPct pgtype.Numeric `json:"author_commission_pct"`
+	Category            *string        `json:"category"`
+	OrganizationID      pgtype.UUID    `json:"organization_id"`
 }
 
 type AiAgentSession struct {
@@ -1197,6 +1200,7 @@ type Coupon struct {
 	Slug          string             `json:"slug"`
 	FeedID        pgtype.UUID        `json:"feed_id"`
 	ExternalID    *string            `json:"external_id"`
+	Details       json.RawMessage    `json:"details"`
 }
 
 type CouponEvent struct {
