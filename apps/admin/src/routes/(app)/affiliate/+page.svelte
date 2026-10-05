@@ -379,7 +379,7 @@
 		saving = true;
 		try {
 			const slug = newProvider.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-			const result = await affiliateProvidersAdminApi.create({ ...newProvider, slug });
+			const result = await affiliateProvidersAdminApi.create({ ...newProvider, category: newProvider.category || null, slug });
 			if (result.ok) {
 				showCreateSlideOver = false;
 				newProvider = { name: '', base_url: '', category: '', commission_rate: 0 };

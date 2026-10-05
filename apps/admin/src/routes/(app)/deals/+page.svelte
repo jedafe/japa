@@ -77,12 +77,65 @@
 		}
 	}
 
+	// Shared payload builder for create/update/moderation. PATCH UpdateCoupon is
+	// a full-column overwrite (internal/db/queries/coupons.sql UpdateCoupon sets
+	// every sqlc.narg column from the input), so every payload must carry the
+	// complete field set — omitting a key NULLs that column server-side.
+	// `details` accepts either the stringified JSON produced by `load` (form
+	// seeding / row data) or a raw object.
+	function buildCouponPayload(
+		body: Record<string, unknown>
+	): { ok: true; payload: Record<string, unknown> } | { ok: false; error: string } {
+		const payload: Record<string, unknown> = {
+			title: String(body.title ?? '').trim(),
+			code: String(body.code ?? '').trim().toUpperCase(),
+			coupon_type: body.coupon_type ?? 'external',
+			discount_type: body.discount_type ?? 'percent',
+			discount_value: body.discount_value ? Number(body.discount_value) : null,
+			is_verified: !!body.is_verified,
+			status: body.status ?? 'active'
+		};
+		if (body.details != null && body.details !== '') {
+			let parsed: unknown;
+			if (typeof body.details === 'object') {
+				parsed = body.details;
+			} else {
+				try {
+					parsed = JSON.parse(String(body.details));
+				} catch {
+					return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
+				}
+			}
+			if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+				return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
+			}
+			payload.details = parsed;
+		}
+		if (body.slug) payload.slug = String(body.slug).trim();
+		if (body.provider_id) payload.provider_id = String(body.provider_id);
+		if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
+		if (body.description) payload.description = String(body.description).trim();
+		if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
+		if (body.terms_url) payload.terms_url = String(body.terms_url).trim();
+		if (body.valid_from) payload.valid_from = dateInputToStartOfDayISO(String(body.valid_from));
+		if (body.expires_at) payload.valid_until = dateInputToEndOfDayISO(String(body.expires_at));
+		return { ok: true, payload };
+	}
+
 	// §55 — pending deals are moderated via PATCH /admin/coupons/{id} status
-	// transitions. UpdateCouponInput requires `title`, so it is included in the
-	// payload alongside the status change.
+	// transitions. The PATCH overwrites every column, so the payload is rebuilt
+	// from the row via buildCouponPayload with only `status` overridden —
+	// sending a partial body would NULL provider, code, discount, URLs, dates
+	// and details, and reset is_verified.
 	async function moderateDeal(row: Coupon, status: 'active' | 'suspended', ctx?: ActionContext) {
 		pageError = '';
-		const res = await couponsAdminApiExtended.update(row.id, { title: row.title, status });
+		const built = buildCouponPayload(row as unknown as Record<string, unknown>);
+		if (!built.ok) {
+			pageError = built.error;
+			return;
+		}
+		built.payload.status = status;
+		const res = await couponsAdminApiExtended.update(row.id, built.payload);
 		if (!res.ok) {
 			pageError = res.error ?? t('common.error', 'Failed to update deal');
 			return;
@@ -258,67 +311,15 @@
 			throw new Error(result.error ?? t('common.error', 'Failed to load deals'));
 		},
 		create: async (body) => {
-			const payload: Record<string, unknown> = {
-				title: String(body.title ?? '').trim(),
-				code: String(body.code ?? '').trim().toUpperCase(),
-				coupon_type: body.coupon_type ?? 'external',
-				discount_type: body.discount_type ?? 'percent',
-				discount_value: body.discount_value ? Number(body.discount_value) : null,
-				is_verified: !!body.is_verified,
-				status: body.status ?? 'active'
-			};
-			if (body.details && String(body.details).trim()) {
-				try {
-					const parsed = JSON.parse(String(body.details));
-					if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-						return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
-					}
-					payload.details = parsed;
-				} catch {
-					return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
-				}
-			}
-			if (body.slug) payload.slug = String(body.slug).trim();
-			if (body.provider_id) payload.provider_id = String(body.provider_id);
-			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
-			if (body.description) payload.description = String(body.description).trim();
-			if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
-			if (body.terms_url) payload.terms_url = String(body.terms_url).trim();
-			if (body.valid_from) payload.valid_from = dateInputToStartOfDayISO(String(body.valid_from));
-			if (body.expires_at) payload.valid_until = dateInputToEndOfDayISO(String(body.expires_at));
-			const res = await couponsAdminApiExtended.create(payload);
+			const built = buildCouponPayload(body);
+			if (!built.ok) return { ok: false, error: built.error };
+			const res = await couponsAdminApiExtended.create(built.payload);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		update: async (id, body) => {
-			const payload: Record<string, unknown> = {
-				title: String(body.title ?? '').trim(),
-				code: String(body.code ?? '').trim().toUpperCase(),
-				coupon_type: body.coupon_type ?? 'external',
-				discount_type: body.discount_type ?? 'percent',
-				discount_value: body.discount_value ? Number(body.discount_value) : null,
-				is_verified: !!body.is_verified,
-				status: body.status ?? 'active'
-			};
-			if (body.details && String(body.details).trim()) {
-				try {
-					const parsed = JSON.parse(String(body.details));
-					if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-						return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
-					}
-					payload.details = parsed;
-				} catch {
-					return { ok: false, error: t('deals.details_invalid', 'details must be a JSON object') };
-				}
-			}
-			if (body.slug) payload.slug = String(body.slug).trim();
-			if (body.provider_id) payload.provider_id = String(body.provider_id);
-			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
-			if (body.description) payload.description = String(body.description).trim();
-			if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
-			if (body.terms_url) payload.terms_url = String(body.terms_url).trim();
-			if (body.valid_from) payload.valid_from = dateInputToStartOfDayISO(String(body.valid_from));
-			if (body.expires_at) payload.valid_until = dateInputToEndOfDayISO(String(body.expires_at));
-			const res = await couponsAdminApiExtended.update(id, payload);
+			const built = buildCouponPayload(body);
+			if (!built.ok) return { ok: false, error: built.error };
+			const res = await couponsAdminApiExtended.update(id, built.payload);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		remove: async (id) => {
