@@ -71,15 +71,15 @@
 
 	function discountLabelFor(c: Coupon): string {
 		if (c.discount_type === 'percent') {
-			return t('coupon.percent_off', '{n}% off').replace('{n}', String(c.discount_value ?? ''));
+			return t('coupons.percent_off', '{n}% off').replace('{n}', String(c.discount_value ?? ''));
 		}
 		if (c.discount_type === 'fixed') {
-			return t('coupon.amount_off', '{cur}{n} off')
+			return t('coupons.amount_off', '{cur}{n} off')
 				.replace('{cur}', currencySymbol(c.currency, data.currencies) || (c.currency ?? ''))
 				.replace('{n}', String(c.discount_value ?? ''));
 		}
 		if (c.discount_type === 'free_shipping') {
-			return t('coupon.free_shipping', 'Free shipping');
+			return t('coupons.free_shipping', 'Free shipping');
 		}
 		if (c.discount_value !== undefined && c.discount_value !== null) {
 			return String(c.discount_value);
