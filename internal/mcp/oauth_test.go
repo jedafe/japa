@@ -301,6 +301,7 @@ func TestAuthorizeUnauthenticatedRedirectsToLogin(t *testing.T) {
 		ClientID:     "jcmc_test",
 		ClientName:   "Test Client",
 		RedirectURIs: []string{"https://agent.example.com/cb"},
+		GrantTypes:   []string{"authorization_code", "refresh_token"},
 		Scopes:       []string{"agent.use", "api.read.content"},
 	}
 
@@ -583,6 +584,7 @@ func TestAuthorizeScopeMustIncludeAgentUse(t *testing.T) {
 	store.clients["jcmc_test"] = &OAuthClient{
 		ClientID:     "jcmc_test",
 		RedirectURIs: []string{"https://agent.example.com/cb"},
+		GrantTypes:   []string{"authorization_code", "refresh_token"},
 		Scopes:       []string{"api.read.content"},
 	}
 
