@@ -8,6 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -221,5 +224,56 @@ func TestAttractionSeededQID_WikiContentFallback(t *testing.T) {
 	space.WikiContent = nil
 	if got := a.attractionSeededQID(context.Background(), &space); got != "" {
 		t.Fatalf("nil wiki_content: got %q want empty", got)
+	}
+}
+
+func TestClampAttractionSeedLimit(t *testing.T) {
+	if got := clampAttractionSeedLimit(0); got != attractionSeedDefaultLimit {
+		t.Fatalf("0 → %d, want %d", got, attractionSeedDefaultLimit)
+	}
+	if got := clampAttractionSeedLimit(9999); got != attractionSeedMaxLimit {
+		t.Fatalf("9999 → %d, want %d", got, attractionSeedMaxLimit)
+	}
+	if got := clampAttractionSeedLimit(42); got != 42 {
+		t.Fatalf("42 → %d", got)
+	}
+}
+
+func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("format") != "json" {
+			t.Errorf("missing format=json")
+		}
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		fmt.Fprint(w, `{"results":{"bindings":[
+			{"item":{"value":"http://www.wikidata.org/entity/Q38324"},
+			 "itemLabel":{"value":"Victoria Falls"},
+			 "itemDescription":{"value":"waterfall on the Zambezi"}},
+			{"item":{"value":"http://www.wikidata.org/entity/Q38324"},
+			 "itemLabel":{"value":"Victoria Falls"},
+			 "itemDescription":{"value":"dup row"}},
+			{"item":{"value":"http://www.wikidata.org/entity/Q99999"},
+			 "itemLabel":{"value":"Q99999"},
+			 "itemDescription":{"value":"unlabeled — label service fallback"}},
+			{"item":{"value":"http://www.wikidata.org/entity/Q13911"},
+			 "itemLabel":{"value":"Olumo Rock"},
+			 "itemDescription":{"value":"rock formation in Abeokuta"}}
+		]}}`)
+	}))
+	defer srv.Close()
+
+	old := wikidataSPARQLEndpoint
+	wikidataSPARQLEndpoint = srv.URL
+	defer func() { wikidataSPARQLEndpoint = old }()
+
+	got, err := fetchAttractionCandidates(context.Background(), "Q1000", 50)
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d candidates, want 2 (dedup + unlabeled drop): %+v", len(got), got)
+	}
+	if got[0].QID != "Q38324" || got[0].Name != "Victoria Falls" {
+		t.Fatalf("candidate[0] wrong: %+v", got[0])
 	}
 }

@@ -432,6 +432,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Register space auto-populate processor for the worker's space:auto_populate task.
 	spaceAutoPopulateAdapter := spaces.NewProcessorAdapter(spaceService)
 	worker.RegisterSpaceAutoPopulateProcessor(spaceAutoPopulateAdapter)
+	// §80 attractions: the adapter doubles as the wiki:seed_attractions
+	// processor (it owns the Wikidata fetches, media uploader, and custom
+	// fields enricher) and the dry-run candidate lister for the admin route.
+	worker.RegisterWikiSeedAttractionsProcessor(spaceAutoPopulateAdapter)
+	spaceHandlers.SetAttractionSeeder(spaceAutoPopulateAdapter)
 
 	// Geo HTTP handlers — /api/v1/geo/*. The hierarchy endpoints reuse
 	// spaceService (countries/states/cities are seeded as spaces).
@@ -6697,6 +6702,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/wiki/page-templates/{id}", wikiHandlers.HandleUpdatePageTemplate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
 					Delete("/admin/wiki/page-templates/{id}", wikiHandlers.HandleDeletePageTemplate)
+				// §80 attractions: Wikidata bulk seed — dry_run previews
+				// candidates; otherwise enqueues wiki:seed_attractions.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
+					Post("/admin/wiki/seed/attractions", spaceHandlers.HandleSeedAttractions)
 
 				// §80 Community Field Ops — structured entity-field edits.
 				// Nested under wiki.enabled AND wiki.structured_edits (§80:

@@ -1200,7 +1200,7 @@ type Coupon struct {
 	Slug          string             `json:"slug"`
 	FeedID        pgtype.UUID        `json:"feed_id"`
 	ExternalID    *string            `json:"external_id"`
-	Details       json.RawMessage    `json:"details"`
+	Details       *json.RawMessage   `json:"details"`
 }
 
 type CouponEvent struct {

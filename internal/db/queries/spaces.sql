@@ -1376,3 +1376,24 @@ SELECT
  )::int AS follower_count
 FROM spaces s
 WHERE s.id = ANY(@space_ids::uuid[]);
+
+-- =====================
+-- §80 Attractions — wikidata_id dedup for the bulk seeder
+-- =====================
+
+-- name: SpaceExistsByWikidataID :one
+-- True when any space already carries this Wikidata QID — the attraction
+-- wikidata_id custom field is the authoritative check (it survives
+-- wiki_content rewrites), with the wiki_content->>'wikidata_id' stamp the
+-- seeder writes at insert as fallback for rows enriched before the field
+-- existed.
+SELECT EXISTS (
+    SELECT 1 FROM custom_field_values cfv
+    WHERE cfv.entity_type = 'space'
+      AND cfv.field_id = '00000000-0000-0000-0000-000000000117'::uuid
+      AND cfv.value_text = @qid
+) OR EXISTS (
+    SELECT 1 FROM spaces s
+    WHERE s.deleted_at IS NULL
+      AND s.wiki_content->>'wikidata_id' = @qid
+) AS exists;

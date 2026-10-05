@@ -137,6 +137,10 @@ ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateCoupon :one
+-- Full-column overwrite: every SET column is written unconditionally. Any new
+-- column added here MUST also be sent by every PATCH caller (admin deals page
+-- buildCouponPayload, main DealForm buildCouponPayload, moderation payloads) —
+-- a key the caller omits arrives as NULL and wipes the stored value (§55).
 UPDATE coupons
 SET title = @title, slug = @slug, description = sqlc.narg(description), code = @code,
  provider_id = sqlc.narg(provider_id),
@@ -354,7 +358,8 @@ SELECT id, name, slug, description, category, logo_media_id, base_url,
  is_featured, organization_id
 FROM affiliate_providers
 WHERE is_active = true
-ORDER BY name ASC;
+ORDER BY name ASC
+LIMIT @page_limit;
 
 -- name: GetAffiliateProviderByOrgID :one
 SELECT id, name, slug, description, provider_type, logo_media_id,

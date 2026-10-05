@@ -4280,6 +4280,35 @@ func (q *Queries) SpaceExists(ctx context.Context, id pgtype.UUID) (bool, error)
 	return exists, err
 }
 
+const spaceExistsByWikidataID = `-- name: SpaceExistsByWikidataID :one
+
+SELECT EXISTS (
+    SELECT 1 FROM custom_field_values cfv
+    WHERE cfv.entity_type = 'space'
+      AND cfv.field_id = '00000000-0000-0000-0000-000000000117'::uuid
+      AND cfv.value_text = $1
+) OR EXISTS (
+    SELECT 1 FROM spaces s
+    WHERE s.deleted_at IS NULL
+      AND s.wiki_content->>'wikidata_id' = $1
+) AS exists
+`
+
+// =====================
+// §80 Attractions — wikidata_id dedup for the bulk seeder
+// =====================
+// True when any space already carries this Wikidata QID — the attraction
+// wikidata_id custom field is the authoritative check (it survives
+// wiki_content rewrites), with the wiki_content->>'wikidata_id' stamp the
+// seeder writes at insert as fallback for rows enriched before the field
+// existed.
+func (q *Queries) SpaceExistsByWikidataID(ctx context.Context, qid *string) (*bool, error) {
+	row := q.db.QueryRow(ctx, spaceExistsByWikidataID, qid)
+	var exists *bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const spaceHasChildSpaces = `-- name: SpaceHasChildSpaces :one
 SELECT EXISTS(SELECT 1 FROM spaces WHERE parent_id = $1) AS exists
 `
