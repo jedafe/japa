@@ -4793,11 +4793,13 @@ func HandleMaintenancePruneTravelResults(ctx context.Context, _ *asynq.Task) err
 
 // HandleMaintenancePruneOAuthRecords deletes OAuth rows past their retention
 // window (§120): expired authorization codes and expired-but-unrevoked tokens
-// after mcp.oauth_record_retention_days (default 30), and revoked token rows
-// after mcp.oauth_revoked_retention_days (default 90). Revoked refresh rows
-// are kept longer because the reuse-detection path needs the row to exist to
-// distinguish a replayed token from an unknown one. A setting <= 0 skips that
-// sweep (keep forever).
+// after mcp.oauth_record_retention_days (default 30), revoked token rows
+// after mcp.oauth_revoked_retention_days (default 90), and client
+// registrations with no token or code rows after mcp.oauth_client_idle_days
+// (default 30). Revoked refresh rows are kept longer because the
+// reuse-detection path needs the row to exist to distinguish a replayed
+// token from an unknown one; idle-client pruning bounds DCR spam. A setting
+// <= 0 skips that sweep (keep forever).
 func HandleMaintenancePruneOAuthRecords(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_oauth_records — pruning expired OAuth records")
 
@@ -4807,9 +4809,11 @@ func HandleMaintenancePruneOAuthRecords(ctx context.Context, _ *asynq.Task) erro
 
 	recordDays := 30
 	revokedDays := 90
+	idleDays := 30
 	if appSettings != nil {
 		recordDays = appSettings.GetIntOr(ctx, "mcp.oauth_record_retention_days", 30)
 		revokedDays = appSettings.GetIntOr(ctx, "mcp.oauth_revoked_retention_days", 90)
+		idleDays = appSettings.GetIntOr(ctx, "mcp.oauth_client_idle_days", 30)
 	}
 
 	sweeps := []struct {
@@ -4823,6 +4827,11 @@ func HandleMaintenancePruneOAuthRecords(ctx context.Context, _ *asynq.Task) erro
 			`DELETE FROM oauth_tokens WHERE revoked_at IS NULL AND expires_at < now() - make_interval(days => $1)`},
 		{"revoked_tokens", revokedDays,
 			`DELETE FROM oauth_tokens WHERE revoked_at IS NOT NULL AND revoked_at < now() - make_interval(days => $1)`},
+		{"idle_clients", idleDays,
+			`DELETE FROM oauth_clients c
+			 WHERE c.created_at < now() - make_interval(days => $1)
+			   AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.client_id = c.client_id)
+			   AND NOT EXISTS (SELECT 1 FROM oauth_authorization_codes ac WHERE ac.client_id = c.client_id)`},
 	}
 
 	for _, s := range sweeps {

@@ -93,6 +93,9 @@ type OAuthToken struct {
 type OAuthStore interface {
 	CreateClient(ctx context.Context, c OAuthClient) error
 	GetClientByClientID(ctx context.Context, clientID string) (*OAuthClient, error)
+	// CountClients returns the live oauth_clients row count — enforces the
+	// mcp.oauth_max_clients registration cap (§120 DCR spam bound).
+	CountClients(ctx context.Context) (int64, error)
 	CreateAuthorizationCode(ctx context.Context, codeHash string, c OAuthAuthorizationCode) error
 	// ConsumeAuthorizationCode atomically marks a code used; returns
 	// pgx.ErrNoRows when the code is unknown, already used, or expired.
@@ -136,6 +139,12 @@ func (s *oauthPGXStore) CreateClient(ctx context.Context, c OAuthClient) error {
 	`, c.ClientID, c.ClientName, c.RedirectURIs, c.GrantTypes, c.Scopes, c.TokenEndpointAuthMethod)
 
 	return err
+}
+
+func (s *oauthPGXStore) CountClients(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM oauth_clients`).Scan(&n)
+	return n, err
 }
 
 func (s *oauthPGXStore) GetClientByClientID(ctx context.Context, clientID string) (*OAuthClient, error) {
@@ -373,6 +382,18 @@ func (s *OAuthService) reuseGraceWindow(ctx context.Context) time.Duration {
 	}
 
 	return time.Duration(sec) * time.Second
+}
+
+// maxClients bounds oauth_clients growth — RFC 7591 registration is public
+// and rate-limited per-IP, so a hard global cap plus the idle-client sweep
+// keeps distributed registration spam from growing the table (§120).
+// Returns <= 0 when the cap is disabled (mcp.oauth_max_clients <= 0).
+func (s *OAuthService) maxClients(ctx context.Context) int64 {
+	n := int64(500)
+	if s.settings != nil {
+		n = int64(s.settings.GetIntOr(ctx, "mcp.oauth_max_clients", 500))
+	}
+	return n
 }
 
 // famrevCacheKey is the tombstone written when a client/user token family is
