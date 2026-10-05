@@ -265,6 +265,65 @@ var toolCatalog = []toolCatalogDef{
 		countSQL: "SELECT COUNT(*) FROM travel_providers",
 		readSQL:  "SELECT id, name, slug, provider_type, api_config, affiliate_config, is_active, created_at FROM travel_providers WHERE id = $1",
 	},
+	// Calculator + reference-data tools (§107 CRS, §108 POF, §109 ECA,
+	// §110 SOP, §112 FX). fx_rate is read-only — rates are written by the
+	// mid-market fetch job, not by editors.
+	{
+		toolType: "crs_ruleset",
+		label:    "CRS Rulesets",
+		category: "immigration",
+		countSQL: "SELECT COUNT(*) FROM crs_rulesets",
+		readSQL:  "SELECT id, version_label, effective_date, status, source_url, ai_generated, created_at FROM crs_rulesets WHERE id = $1",
+	},
+	{
+		toolType: "crs_draw",
+		label:    "CRS Draws",
+		category: "immigration",
+		countSQL: "SELECT COUNT(*) FROM crs_draws",
+		readSQL:  "SELECT id, draw_number, draw_date, category, crs_cutoff, invitations_issued, tie_break_rule, source_url, status, created_at FROM crs_draws WHERE id = $1",
+	},
+	{
+		toolType: "pof_requirement",
+		label:    "POF Requirements",
+		category: "financial",
+		countSQL: "SELECT COUNT(*) FROM pof_requirements",
+		readSQL:  "SELECT id, destination_space_id, visa_type, program_label, amount_schedule, currency, funds_must_be_liquid, accepted_proof, notes, effective_date, source_url, status, is_active, created_at FROM pof_requirements WHERE id = $1",
+	},
+	{
+		toolType: "sop_template",
+		label:    "SOP Templates",
+		category: "immigration",
+		countSQL: "SELECT COUNT(*) FROM sop_templates",
+		readSQL:  "SELECT id, destination_space_id, purpose, title, structure, status, is_active, ai_generated, created_at FROM sop_templates WHERE id = $1",
+	},
+	{
+		toolType: "sop_sample",
+		label:    "SOP Samples",
+		category: "immigration",
+		countSQL: "SELECT COUNT(*) FROM sop_samples",
+		readSQL:  "SELECT id, destination_space_id, program_level, field_of_study, title, word_count, status, ai_generated, created_at FROM sop_samples WHERE id = $1",
+	},
+	{
+		toolType: "eca_guide",
+		label:    "ECA Guides",
+		category: "immigration",
+		countSQL: "SELECT COUNT(*) FROM eca_guides",
+		readSQL:  "SELECT id, destination_space_id, provider_id, purpose, pathway_steps, fee_estimate, currency, timeline_estimate, documents_required, accepted_for, official_url, status, is_active, created_at FROM eca_guides WHERE id = $1",
+	},
+	{
+		toolType: "eca_provider",
+		label:    "ECA Providers",
+		category: "immigration",
+		countSQL: "SELECT COUNT(*) FROM eca_providers",
+		readSQL:  "SELECT id, slug, name, website, is_active, created_at FROM eca_providers WHERE id = $1",
+	},
+	{
+		toolType: "fx_rate",
+		label:    "FX Rates",
+		category: "financial",
+		countSQL: "SELECT COUNT(*) FROM fx_rates",
+		readSQL:  "SELECT id, base_currency, quote_currency, rate, source, fetched_at FROM fx_rates WHERE id = $1",
+	},
 }
 
 // ListTools returns the catalog of available Japa tools with record counts.
@@ -397,6 +456,36 @@ func (r *agentToolsRegistry) ToolTypes() []string {
 	}
 
 	return types
+}
+
+// WritableToolOps returns, per tool_type, which write ops have a resolved
+// backing method. Used by RegisterPhase9Tools so a seeded row whose op is
+// unresolvable (e.g. a table with no delete method) does not produce a
+// catalog-advertised dead tool.
+func (r *agentToolsRegistry) WritableToolOps() map[string]map[string]bool {
+	out := make(map[string]map[string]bool, len(r.writers))
+	for toolType, w := range r.writers {
+		if w == nil {
+			continue
+		}
+		ops := map[string]bool{}
+		if w.create != nil {
+			ops["create"] = true
+		}
+		if w.update != nil {
+			ops["update"] = true
+		}
+		if w.delete != nil {
+			ops["delete"] = true
+		}
+		if w.assignGeo != nil {
+			ops["assign_geo"] = true
+		}
+		if len(ops) > 0 {
+			out[toolType] = ops
+		}
+	}
+	return out
 }
 
 func (r *agentToolsRegistry) findToolWriter(toolType string) (*toolWriter, error) {

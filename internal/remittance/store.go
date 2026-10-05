@@ -41,6 +41,13 @@ func NewStore(database *db.DB) *Store {
 
 // CreateProvider inserts a new remittance provider.
 func (s *Store) CreateProvider(ctx context.Context, arg gen.CreateRemittanceProviderParams) (gen.RemittanceProvider, error) {
+	if arg.IsBenchmark == nil {
+		// is_benchmark is NOT NULL (migration 000780); a nil insert param
+		// violates the constraint rather than falling back to the column
+		// default, so normalize it here.
+		f := false
+		arg.IsBenchmark = &f
+	}
 	return s.writeQueries.CreateRemittanceProvider(ctx, arg)
 }
 

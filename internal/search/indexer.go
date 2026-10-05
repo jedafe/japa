@@ -83,6 +83,9 @@ func (ix *Indexer) IndexContent(ctx context.Context, contentID [16]byte) error {
 		pgtype.UUID{Bytes: contentID, Valid: true},
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexPosts, contentID)
+		}
 		return fmt.Errorf("fetching content for index: %w", err)
 	}
 
@@ -363,6 +366,9 @@ func (ix *Indexer) IndexForumThread(ctx context.Context, threadID [16]byte) erro
 		pgtype.UUID{Bytes: threadID, Valid: true},
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexForumThreads, threadID)
+		}
 		return fmt.Errorf("fetching forum thread for index: %w", err)
 	}
 
@@ -419,6 +425,9 @@ func (ix *Indexer) IndexSpace(ctx context.Context, spaceID [16]byte) error {
 		pgtype.UUID{Bytes: spaceID, Valid: true},
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexSpaces, spaceID)
+		}
 		return fmt.Errorf("fetching space for index: %w", err)
 	}
 
@@ -500,6 +509,9 @@ func (ix *Indexer) IndexUser(ctx context.Context, userID [16]byte) error {
 		uID,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexUsers, userID)
+		}
 		return fmt.Errorf("fetching user profile for index: %w", err)
 	}
 
@@ -569,6 +581,9 @@ func (ix *Indexer) IndexTag(ctx context.Context, tagID [16]byte) error {
 		pgtype.UUID{Bytes: tagID, Valid: true},
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexTags, tagID)
+		}
 		return fmt.Errorf("fetching tag for index: %w", err)
 	}
 
@@ -612,6 +627,9 @@ func (ix *Indexer) IndexDirectoryTag(ctx context.Context, tagID [16]byte) error 
 		pgtype.UUID{Bytes: tagID, Valid: true},
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexTags, tagID)
+		}
 		return fmt.Errorf("fetching directory tag for index: %w", err)
 	}
 
@@ -675,6 +693,9 @@ func (ix *Indexer) IndexOrganization(ctx context.Context, orgID [16]byte) error 
 		pgtype.UUID{Bytes: orgID, Valid: true},
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexOrganizations, orgID)
+		}
 		return fmt.Errorf("fetching organization for index: %w", err)
 	}
 
@@ -910,6 +931,9 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID [16]byte) err
 		trID,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexLearningTracks, trackID)
+		}
 		return fmt.Errorf("fetching learning track for index: %w", err)
 	}
 
@@ -988,6 +1012,9 @@ func (ix *Indexer) IndexDocPage(ctx context.Context, pageID [16]byte) error {
 		pgtype.UUID{Bytes: pageID, Valid: true},
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ix.DeleteDocument(ctx, IndexDocPages, pageID)
+		}
 		return fmt.Errorf("fetching doc page for index: %w", err)
 	}
 

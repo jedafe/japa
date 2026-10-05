@@ -319,8 +319,13 @@ SET confirmed = @confirmed,
 WHERE id = @id AND deleted_at IS NULL;
 
 -- name: ListMediaForScanning :many
+-- Recency bound: pending uploads confirm within minutes of initiation, so
+-- a row still unconfirmed after a week is abandoned (its object typically
+-- missing). Without the bound those rows re-enqueue forever, starving the
+-- 50-per-night sweep and blocking every newer unscanned row behind them.
 SELECT id, storage_path FROM media
 WHERE confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL AND rejected_at IS NULL
+ AND created_at > now() - interval '7 days'
 ORDER BY created_at ASC
 LIMIT 50;
 

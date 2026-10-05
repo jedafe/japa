@@ -112,7 +112,7 @@ func toMediaResponses(items []gen.Medium, svc *Service) []MediaResponse {
 	cfg := loadMediaURLConfig()
 	for i := range items {
 		url := ServeURL(items[i].StorageBucket, items[i].StoragePath)
-		if isImageMIME(CanonicalMIMEType(items[i].MimeType)) {
+		if isProxyableImageMIME(items[i].MimeType) {
 			url = mediaURLWithConfig(items[i].StorageBucket, items[i].StoragePath, ImageProxyOpts{}, cfg)
 		}
 		result[i] = toMediaResponse(&items[i], url)
@@ -403,6 +403,8 @@ func (h *Handlers) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusBadRequest, "upload_incomplete", "Upload did not complete — no stored object found")
 		case errors.Is(err, errUploadInvalid):
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_upload", "Uploaded object failed validation")
+		case errors.Is(err, errStorageUnavailable):
+			errpkg.WriteError(w, http.StatusServiceUnavailable, "storage_unavailable", "Storage temporarily unavailable — retry the confirmation")
 		default:
 			errpkg.WriteError(w, http.StatusInternalServerError, "confirm_error", "Failed to confirm upload")
 		}
@@ -458,7 +460,7 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, mediaID pgtype.UUID) {
 		); err != nil {
 			slog.Warn("media: failed to enqueue image processing", "media_id", mediaIDStr, "error", err)
 		}
-	case isVideoMIME(mimeType):
+	case strings.HasPrefix(CanonicalMIMEType(mimeType), "video/"):
 		processPayload, _ := json.Marshal(map[string]string{
 			"media_id": mediaIDStr,
 
@@ -473,22 +475,24 @@ func (h *Handlers) enqueueMediaTasks(ctx context.Context, mediaID pgtype.UUID) {
 	}
 }
 
-func isImageMIME(mimeType string) bool {
-	switch mimeType {
-	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml":
-		return true
+// isProxyableImageMIME reports whether imgproxy can transform the type:
+// any image/* except the still-image ISO-BMFF types (HEIC/HEIF), which
+// need libheif that many imgproxy builds lack — those get the raw
+// ServeURL so at least Safari can render them natively.
+func isProxyableImageMIME(mimeType string) bool {
+	switch CanonicalMIMEType(mimeType) {
+	case "image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence":
+		return false
 	}
 
-	return false
+	return strings.HasPrefix(CanonicalMIMEType(mimeType), "image/")
 }
 
+// isVideoMIME reports whether the type is any video/* — the
+// media.video.upload permission gate and task routing must cover every
+// video container, not just the ones in the upload allowlist.
 func isVideoMIME(mimeType string) bool {
-	switch mimeType {
-	case "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo":
-		return true
-	}
-
-	return false
+	return strings.HasPrefix(mimeType, "video/")
 }
 
 // GetMedia handles GET /api/v1/media/{id}.
@@ -1268,8 +1272,37 @@ func sniffStoredContentType(localPath string) (string, error) {
 	return http.DetectContentType(head[:n]), nil
 }
 
-// mediaRoot is the base directory for locally stored media files.
-const mediaRoot = "data/media"
+// mediaRoot is the base directory for locally stored media files. It is
+// resolved to an absolute path at process start so the storage location is
+// pinned to the directory that existed when the process launched — a
+// CWD-relative constant would silently split the media store whenever the
+// binary is started from a different working directory (objects written
+// under one root become "not found" under another). Operators can override
+// the root with JC_MEDIA_ROOT (see config.Config.MediaRoot).
+var mediaRoot = func() string {
+	abs, err := filepath.Abs("data/media")
+	if err != nil {
+		return "data/media"
+	}
+	return abs
+}()
+
+// SetMediaRoot pins the local media storage root to dir (JC_MEDIA_ROOT).
+// Relative paths resolve against the startup working directory; absolute
+// paths are used as-is. Called once from server wiring before any handler
+// or Asynq task runs — no-op for empty input.
+func SetMediaRoot(dir string) {
+	if dir == "" {
+		return
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		slog.Warn("media: ignoring invalid JC_MEDIA_ROOT", "dir", dir, "error", err)
+		return
+	}
+	mediaRoot = abs
+	slog.Info("media: local storage root configured", "dir", mediaRoot)
+}
 
 // resolveMediaPath maps a bucket and request path to a file inside mediaRoot.
 // It rejects anything that escapes the bucket directory (path traversal) or

@@ -59,6 +59,17 @@ type toolServiceSet struct {
 	readinessAssessment  any
 	taxTreatyPair        any
 	travelProvider       any
+
+	// Store handles for read-modify-write merges where the getter lives on
+	// the store but the update lives on the service.
+	remittanceProviderStore any
+	travelProviderStore     any
+
+	// Calculator + reference-data tool tables (§107, §108, §109, §110).
+	crsCalculator any
+	pofCalculator any
+	sopGenerator  any
+	ecaGuide      any
 }
 
 // buildToolWriters creates a toolWriter for each tool in toolCatalog that
@@ -93,34 +104,59 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		"readiness_assessment":      svc.readinessAssessment,
 		"tax_treaty_pair":           svc.taxTreatyPair,
 		"travel_provider":           svc.travelProvider,
+		// Calculator + reference-data tools (§107, §108, §109, §110).
+		"crs_ruleset":     svc.crsCalculator,
+		"crs_draw":        svc.crsCalculator,
+		"pof_requirement": svc.pofCalculator,
+		"sop_template":    svc.sopGenerator,
+		"sop_sample":      svc.sopGenerator,
+		"eca_guide":       svc.ecaGuide,
+		"eca_provider":    svc.ecaGuide,
 	}
 
 	// Method name overrides for tools whose service methods don't follow the
-	// default "Create"/"Update"/"Delete" convention.
+	// default "Create"/"Update"/"Delete" convention. An empty field falls
+	// back to the default name; a name that doesn't resolve to a real method
+	// leaves the op unregistered (nil closure → graceful "not supported"
+	// error at call time and exclusion from WritableToolOps).
 	methodOverrides := map[string]methodNames{
-		"arrival_checklist":         {create: "CreateGuide", update: "UpdateGuide"},
+		"arrival_checklist":         {create: "CreateGuide", update: "UpdateGuide", delete: "DeleteGuide"},
 		"credential_pathway":        {create: "CreatePathway", update: "UpdatePathway", delete: "DeletePathway"},
 		"credential_profession":     {create: "CreateProfession", update: "UpdateProfession", delete: "DeleteProfession"},
 		"language_test":             {create: "CreateLanguageTest", update: "UpdateLanguageTest", delete: "DeleteLanguageTest"},
-		"language_test_requirement": {create: "CreateRequirement"},
+		"language_test_requirement": {create: "CreateRequirement", update: "UpdateRequirement", delete: "DeleteRequirement"},
 		"processing_time":           {create: "CreateProcessingTime", update: "UpdateProcessingTime", delete: "DeleteProcessingTime"},
 		"readiness_assessment":      {create: "CreateAssessment", update: "UpdateAssessment", delete: "DeleteAssessment"},
 		"remittance_rate":           {create: "CreateRate", update: "UpdateRate", delete: "DeleteRate"},
-		"tax_obligation_guide":      {create: "CreateGuide", update: "UpdateGuide"},
+		"tax_obligation_guide":      {create: "CreateGuide", update: "UpdateGuide", delete: "DeleteGuide"},
 		"visa_timeline":             {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},
 		"planning_group":            {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},
 		"mutual_aid":                {create: "Create", update: "UpdateOwn", delete: "DeleteOwn"},
-		"travel_provider":           {create: "CreateProvider", update: "UpdateProvider"},
-		"remittance_provider":       {create: "CreateProvider", update: "UpdateProvider"},
+		"travel_provider":           {create: "CreateProvider", update: "UpdateProvider", delete: "DeleteProvider", mergeGetter: "GetProviderByID"},
+		"remittance_provider":       {create: "CreateProvider", update: "UpdateProvider", delete: "DeleteProvider", mergeGetter: "GetProviderByID"},
 		"embassy":                   {create: "CreateEmbassy", update: "UpdateEmbassy"},
 		"appointment_alert":         {create: "CreateAlert", update: "UpdateAlert", delete: "DeleteAlert"},
-		"calendar_entry":            {create: "CreateEntry", update: "UpdateEntry"},
-		"scam_report":               {create: "CreateReport", update: "UpdateReport"},
-		"cv_formatter":              {create: "CreateStandard", update: "UpdateStandard"},
-		"tax_treaty_pair":           {create: "CreateOrUpdateTreaty"},
-		"digest_edition":            {create: "CreateEdition"},
-		"scholarship":               {create: "AdminCreateScholarship"},
-		"community_organisation":    {create: "CreateOrg"},
+		"calendar_entry":            {create: "CreateEntry", update: "UpdateEntry", delete: "AdminSoftDeleteEntry", mergeGetter: "GetEntry"},
+		"scam_report":               {create: "CreateReport", update: "UpdateReport", mergeGetter: "GetReport"},
+		"cv_formatter":              {create: "CreateStandard", update: "UpdateStandard", delete: "DeleteStandard", mergeGetter: "GetStandardByDest", mergeIDKey: "destination_space_id"},
+		"tax_treaty_pair":           {create: "CreateOrUpdateTreaty", update: "UpdateTreaty", delete: "DeleteTreaty"},
+		"digest_edition":            {create: "CreateEdition", update: "UpdateEdition", delete: "DeleteEdition"},
+		"scholarship":               {create: "AdminCreateScholarship", update: "UpdateScholarship", delete: "DeleteScholarship"},
+		"community_organisation":    {create: "CreateOrg", update: "UpdateOrg", delete: "DeleteOrg"},
+		"crs_ruleset":               {create: "CreateRuleset", update: "UpdateRuleset", delete: "DeleteRuleset"},
+		"crs_draw":                  {create: "CreateDraw", update: "UpdateDraw", delete: "DeleteDraw"},
+		"pof_requirement":           {create: "CreateRequirement", update: "UpdateRequirement", delete: "DeleteRequirement"},
+		"sop_template":              {create: "CreateTemplate", update: "UpdateTemplate", delete: "DeleteTemplate"},
+		"sop_sample":                {create: "CreateSample", update: "UpdateSample", delete: "DeleteSample"},
+		"eca_guide":                 {create: "CreateGuide", update: "UpdateGuide", delete: "DeleteGuide"},
+		"eca_provider":              {create: "CreateProvider", update: "UpdateProvider", delete: "DeleteProvider"},
+	}
+
+	// Services whose merge getter lives on the store rather than the
+	// service the update is dispatched to.
+	getterSvcByTool := map[string]any{
+		"remittance_provider": svc.remittanceProviderStore,
+		"travel_provider":     svc.travelProviderStore,
 	}
 
 	writers := make(map[string]*toolWriter)
@@ -132,23 +168,58 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 
 		names := methodOverrides[toolType]
 		v := reflect.ValueOf(service)
+
+		updateName := resolveWriteMethod(v, names.update, "Update")
+
+		// assign_geo only resolves when the update input can actually carry
+		// a geo field — otherwise the tool would no-op silently.
+		assignGeoName := ""
+		if updateName != "" && methodLastArgHasGeoField(v, updateName) {
+			assignGeoName = updateName
+		}
+
+		updateFunc := reflectUpdateFunc(v, updateName, names.updateUserArg)
+		assignGeoFunc := reflectUpdateFunc(v, assignGeoName, names.updateUserArg)
+
+		// Full-row update inputs need read-modify-write. When a mergeGetter
+		// is declared but cannot be resolved, fail closed: better no update
+		// op than one that zero-fills fields the caller didn't send.
+		if names.mergeGetter != "" {
+			getterSvc := v
+			if gs, ok := getterSvcByTool[toolType]; ok && gs != nil {
+				getterSvc = reflect.ValueOf(gs)
+			}
+			merged := newMergeUpdateFunc(getterSvc, names.mergeGetter, names.mergeIDKey, v, updateName, names.updateUserArg)
+			if merged == nil {
+				updateFunc, assignGeoFunc = nil, nil
+			} else {
+				updateFunc = merged
+				if assignGeoName != "" {
+					assignGeoFunc = merged
+				}
+			}
+		}
+
 		writers[toolType] = &toolWriter{
-			create:    reflectCreateFunc(v, names.create),
-			update:    reflectUpdateFunc(v, names.update),
-			delete:    reflectDeleteFunc(v, names.delete),
-			assignGeo: reflectUpdateFunc(v, names.update),
+			create:    reflectCreateFunc(v, resolveWriteMethod(v, names.create, "Create")),
+			update:    updateFunc,
+			delete:    reflectDeleteFunc(v, resolveDeleteMethod(v, names.delete)),
+			assignGeo: assignGeoFunc,
 		}
 	}
 
-	// Wiki pages use a store method with explicit positional arguments
-	// rather than a single DTO. Wire a bespoke create closure.
+	// Wiki pages use store methods with explicit positional arguments
+	// rather than a single DTO. Wire bespoke closures: CreatePage for
+	// create, UpdatePage for the page-flag subset of update (body edits go
+	// through the revision workflow per §80 — not a direct write), and
+	// DeleteWikiPage for soft delete.
 	if svc, ok := serviceByTool["wiki_page"]; ok && svc != nil {
-		m := reflect.ValueOf(svc).MethodByName("CreatePage")
-		if m.IsValid() {
+		v := reflect.ValueOf(svc)
+		if m := v.MethodByName("CreatePage"); m.IsValid() {
 			writers["wiki_page"] = &toolWriter{
 				create:    newWikiCreateFunc(m),
-				update:    nil,
-				delete:    nil,
+				update:    newWikiUpdateFunc(v.MethodByName("UpdatePage")),
+				delete:    reflectDeleteFunc(v, "DeleteWikiPage"),
 				assignGeo: nil,
 			}
 		}
@@ -205,6 +276,59 @@ func newWikiCreateFunc(m reflect.Value) func(context.Context, pgtype.UUID, map[s
 		}
 
 		return structToMap(out[0].Interface())
+	}
+}
+
+// newWikiUpdateFunc adapts wiki.Store.UpdatePage(ctx, pageID, isLocked,
+// isFeatured, isActive *bool, dataEntityType *string, position *int32) to the
+// generic update closure. The payload keys are the page's flag fields;
+// absent keys are passed as nil (unchanged). Body edits are not accepted —
+// §80 routes content changes through the revision queue.
+func newWikiUpdateFunc(m reflect.Value) func(context.Context, pgtype.UUID, string, map[string]any) (map[string]any, error) {
+	return func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+		if !m.IsValid() {
+			return nil, errors.New("wiki: UpdatePage method not found")
+		}
+
+		var pageID pgtype.UUID
+		if err := pageID.Scan(id); err != nil {
+			return nil, fmt.Errorf("invalid tool_id: %w", err)
+		}
+
+		optBool := func(key string) *bool {
+			v, ok := payload[key]
+			if !ok || v == nil {
+				return nil
+			}
+			b, ok := v.(bool)
+			if !ok {
+				return nil
+			}
+			return &b
+		}
+
+		var position *int32
+		if v, ok := payload["position"]; ok && v != nil {
+			if f, ok := v.(float64); ok {
+				p := int32(f) //nolint:gosec // position is a small ordinal
+				position = &p
+			}
+		}
+
+		out := m.Call([]reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(pageID),
+			reflect.ValueOf(optBool("is_locked")),
+			reflect.ValueOf(optBool("is_featured")),
+			reflect.ValueOf(optBool("is_active")),
+			reflect.ValueOf(getOptionalString(payload, "data_entity_type")),
+			reflect.ValueOf(position),
+		})
+		if !out[0].IsNil() {
+			return nil, out[0].Interface().(error)
+		}
+
+		return map[string]any{"id": id, "updated": true}, nil
 	}
 }
 
@@ -284,49 +408,286 @@ type methodNames struct {
 	create string
 	update string
 	delete string
+	// updateUserArg marks an update3 method whose second argument is the
+	// calling user's UUID, not the record id — Update(ctx, userID, input)
+	// with the record id carried inside the input struct. Reflection can't
+	// tell a userID from a record ID (both are pgtype.UUID), so the shape
+	// must be declared explicitly or the call silently mis-binds.
+	updateUserArg bool
+	// mergeGetter names a read method used for read-modify-write updates on
+	// services whose update input is a full row/params struct rather than a
+	// partial-fields DTO (UpdateReport, UpdateEntry, UpdateProvider,
+	// UpdateStandard). Without the merge, a partial payload zero-fills
+	// every field it omits.
+	mergeGetter string
+	// mergeIDKey names the payload key that supplies the getter's id
+	// argument when the record isn't keyed by its own primary key — e.g.
+	// cv_formatter standards are upsert-keyed by destination_space_id.
+	// Empty means the getter is called with the record id.
+	mergeIDKey string
+}
+
+// resolveWriteMethod returns the name of the create/update method to call:
+// the explicit override when set, otherwise the default. Returns "" when no
+// candidate resolves to a method with a supported signature — the caller
+// leaves the op nil so no dead tool is registered.
+func resolveWriteMethod(svc reflect.Value, preferred, fallback string) string {
+	name := preferred
+	if name == "" {
+		name = fallback
+	}
+	if name != "" && validWriteSignature(svc, name) {
+		return name
+	}
+	return ""
+}
+
+// validWriteSignature reports whether the named method matches one of the
+// create/update shapes reflectCallCreateOrUpdate can dispatch:
+//
+//	Create: (ctx, input) | (ctx, userID, input)
+//	Update: (ctx, input) | (ctx, id, input) | (ctx, id, userID, input)
+//
+// The trailing input argument must be a struct (or pointer to struct) or a
+// map — anything else (e.g. a status string or a bare pgtype.UUID as the
+// last parameter) cannot be populated from the payload map.
+func validWriteSignature(svc reflect.Value, name string) bool {
+	m := svc.MethodByName(name)
+	if !m.IsValid() {
+		return false
+	}
+
+	mt := m.Type()
+	nIn, nOut := mt.NumIn(), mt.NumOut()
+	if nOut != 1 && nOut != 2 {
+		return false
+	}
+	if nIn == 0 || !isContextArg(mt.In(0)) {
+		return false
+	}
+
+	uuidType := reflect.TypeOf(pgtype.UUID{})
+	var arityOK bool
+	switch {
+	case isCreateMethodName(name):
+		// (ctx, input) or (ctx, userID, input)
+		arityOK = nIn == 2 || (nIn == 3 && mt.In(1) == uuidType)
+	case isUpdateMethodName(name):
+		// (ctx, input) | (ctx, id|userID, input) | (ctx, id, userID, input)
+		// A 3-arg update's middle UUID is assumed to be the record id unless
+		// methodNames.updateUserArg declares it the caller — reflection
+		// cannot distinguish the two.
+		arityOK = nIn == 2 ||
+			(nIn == 3 && mt.In(1) == uuidType) ||
+			(nIn == 4 && mt.In(1) == uuidType && mt.In(2) == uuidType)
+	default:
+		return false
+	}
+	if !arityOK || !isPayloadInputType(mt.In(nIn-1)) {
+		return false
+	}
+	return true
+}
+
+// isContextArg reports whether t implements context.Context.
+func isContextArg(t reflect.Type) bool {
+	return t.Implements(reflect.TypeOf((*context.Context)(nil)).Elem())
+}
+
+// isPayloadInputType reports whether t can be populated by mapToStruct —
+// a struct or *struct DTO (excluding scalar wrappers such as pgtype.UUID),
+// or a map type that receives the payload keys directly.
+func isPayloadInputType(t reflect.Type) bool {
+	uuidType := reflect.TypeOf(pgtype.UUID{})
+	if t == uuidType {
+		return false
+	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t.Kind() == reflect.Struct || t.Kind() == reflect.Map
+}
+
+// methodLastArgHasGeoField reports whether the resolved update method's
+// trailing input type contains a geo-scope field (any *_space_id style
+// field, matching json tags or field names, up to a shallow nesting depth).
+// assign_geo forwards its payload to the update method, so without such a
+// field the op would silently do nothing.
+func methodLastArgHasGeoField(svc reflect.Value, name string) bool {
+	m := svc.MethodByName(name)
+	if !m.IsValid() {
+		return false
+	}
+	return typeHasGeoField(m.Type().In(m.Type().NumIn()-1), 0)
+}
+
+func typeHasGeoField(t reflect.Type, depth int) bool {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || depth > 3 {
+		return false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		name := strings.ToLower(f.Name)
+		tag := strings.ToLower(strings.Split(f.Tag.Get("json"), ",")[0])
+		if geoFieldName(name) || geoFieldName(tag) {
+			return true
+		}
+		ft := f.Type
+		if ft.Kind() == reflect.Ptr {
+			ft = ft.Elem()
+		}
+		if (f.Anonymous || ft.Kind() == reflect.Struct) && !strings.HasPrefix(ft.String(), "pgtype.") {
+			if typeHasGeoField(ft, depth+1) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// geoFieldName matches geo-scope field identifiers: destination_space_id,
+// origin_space_id, issuing_space_id, city_space_id, space_id, and similar —
+// anything containing "space" and ending in "id".
+func geoFieldName(n string) bool {
+	return strings.Contains(n, "space") && strings.HasSuffix(n, "id")
+}
+
+// validDeleteSignature reports whether the named method matches a dispatch
+// shape in reflectDeleteFunc: (ctx, id) or (ctx, id, userID), returning
+// nothing or a single error.
+func validDeleteSignature(svc reflect.Value, name string) bool {
+	m := svc.MethodByName(name)
+	if !m.IsValid() {
+		return false
+	}
+
+	mt := m.Type()
+	if mt.NumOut() > 1 || !isContextArg(mt.In(0)) {
+		return false
+	}
+
+	uuidType := reflect.TypeOf(pgtype.UUID{})
+	switch mt.NumIn() {
+	case 2: // (ctx, id)
+		return mt.In(1) == uuidType
+	case 3: // (ctx, id, userID)
+		return mt.In(1) == uuidType && mt.In(2) == uuidType
+	default:
+		return false
+	}
+}
+
+// resolveDeleteMethod returns the name of the delete method to call. An
+// explicit override must resolve as-is; when empty, "Delete" and then the
+// delete-like fallbacks are tried in order.
+func resolveDeleteMethod(svc reflect.Value, preferred string) string {
+	if preferred != "" {
+		if validDeleteSignature(svc, preferred) {
+			return preferred
+		}
+		return ""
+	}
+	for _, name := range []string{"Delete", "Deactivate", "Archive", "SoftDelete", "DeleteOwn", "DeleteOrg"} {
+		if validDeleteSignature(svc, name) {
+			return name
+		}
+	}
+	return ""
 }
 
 func reflectCreateFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, map[string]any) (map[string]any, error) {
 	name := methodName
 	if name == "" {
-		name = "Create"
+		return nil
 	}
 
 	return func(ctx context.Context, userID pgtype.UUID, payload map[string]any) (map[string]any, error) {
-		return reflectCallCreateOrUpdate(svc, name, ctx, userID, "", payload)
+		return reflectCallCreateOrUpdate(svc, name, ctx, userID, "", payload, false)
 	}
 }
 
-func reflectUpdateFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, string, map[string]any) (map[string]any, error) {
+func reflectUpdateFunc(svc reflect.Value, methodName string, userArg bool) func(context.Context, pgtype.UUID, string, map[string]any) (map[string]any, error) {
 	name := methodName
 	if name == "" {
-		name = "Update"
+		return nil
 	}
 
 	return func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
-		return reflectCallCreateOrUpdate(svc, name, ctx, userID, id, payload)
+		return reflectCallCreateOrUpdate(svc, name, ctx, userID, id, payload, userArg)
+	}
+}
+
+// newMergeUpdateFunc builds a read-modify-write update closure for services
+// whose update method takes a full row or sqlc params struct — every column
+// is written unconditionally, so a partial payload would zero-fill the
+// fields it omits. The getter's current row is marshalled to a map, the
+// caller's payload is overlaid, and the merged map is unmarshalled into the
+// update input. Returns nil when the getter or update method cannot be
+// resolved — the caller fails closed and leaves the op unregistered.
+//
+// Getter shapes supported: (ctx, id) or (ctx, id, userID). When mergeIDKey
+// is set, the getter's id argument is read from that payload key instead of
+// the record id (upsert-keyed records like cv_standards). The getter may
+// live on a different service value than the updater (e.g. remittance's
+// GetProviderByID is on the store while UpdateProvider is on the service).
+func newMergeUpdateFunc(getterSvc reflect.Value, getterName, mergeIDKey string, updateSvc reflect.Value, updateName string, userArg bool) func(context.Context, pgtype.UUID, string, map[string]any) (map[string]any, error) {
+	g := getterSvc.MethodByName(getterName)
+	if updateName == "" || !g.IsValid() || !updateSvc.MethodByName(updateName).IsValid() {
+		return nil
+	}
+	gt := g.Type()
+	if gt.NumIn() != 2 && gt.NumIn() != 3 {
+		return nil
+	}
+
+	return func(ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+		key := id
+		if mergeIDKey != "" {
+			s, _ := payload[mergeIDKey].(string)
+			if s == "" {
+				return nil, fmt.Errorf("%s is required for this record's update", mergeIDKey)
+			}
+			key = s
+		}
+
+		var keyUUID pgtype.UUID
+		if err := keyUUID.Scan(key); err != nil {
+			return nil, fmt.Errorf("invalid lookup id: %w", err)
+		}
+
+		args := []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(keyUUID)}
+		if gt.NumIn() == 3 {
+			args = append(args, reflect.ValueOf(userID))
+		}
+
+		out := g.Call(args)
+		if len(out) == 2 && !out[1].IsNil() {
+			return nil, out[1].Interface().(error)
+		}
+
+		base, err := structToMap(out[0].Interface())
+		if err != nil {
+			return nil, fmt.Errorf("marshal current row for merge: %w", err)
+		}
+		for k, v := range payload {
+			base[k] = v
+		}
+
+		return reflectCallCreateOrUpdate(updateSvc, updateName, ctx, userID, id, base, userArg)
 	}
 }
 
 func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Context, pgtype.UUID, string) error {
 	name := methodName
 	if name == "" {
-		name = "Delete"
+		return nil
 	}
 
 	return func(ctx context.Context, userID pgtype.UUID, id string) error {
 		m := svc.MethodByName(name)
-		if !m.IsValid() {
-			// Try common delete-like fallbacks.
-			for _, alt := range []string{"Deactivate", "Archive", "SoftDelete", "DeleteOwn", "DeleteOrg"} {
-				m = svc.MethodByName(alt)
-				if m.IsValid() {
-					name = alt
-					break
-				}
-			}
-		}
-
 		if !m.IsValid() {
 			return fmt.Errorf("delete method %q not found", name)
 		}
@@ -352,14 +713,6 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 			}
 
 			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}
-		case 4:
-			// (ctx, id, ID, userID) — legacy platform-aware signature
-			var idUUID pgtype.UUID
-			if err := idUUID.Scan(id); err != nil {
-				return fmt.Errorf("invalid tool_id: %w", err)
-			}
-
-			args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}
 		default:
 			return fmt.Errorf("delete method %q has %d inputs", name, mt.NumIn())
 		}
@@ -373,7 +726,7 @@ func reflectDeleteFunc(svc reflect.Value, methodName string) func(context.Contex
 	}
 }
 
-func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context.Context, userID pgtype.UUID, id string, payload map[string]any) (map[string]any, error) {
+func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context.Context, userID pgtype.UUID, id string, payload map[string]any, updateUserArg bool) (map[string]any, error) {
 	m := svc.MethodByName(methodName)
 	if !m.IsValid() {
 		return nil, fmt.Errorf("method %q not found", methodName)
@@ -394,16 +747,18 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 	// Create: (ctx, userID, input)
 	// Update: (ctx, input) -- input contains id
 	// Update: (ctx, id, input)
+	// Update: (ctx, userID, input) -- updateUserArg, input contains id
 	// Update: (ctx, id, userID, input)
 	var (
-		create2 = isCreate && nIn == 2
-		create3 = isCreate && nIn == 3
-		update2 = isUpdate && nIn == 2
-		update3 = isUpdate && nIn == 3
-		update4 = isUpdate && nIn == 4
+		create2     = isCreate && nIn == 2
+		create3     = isCreate && nIn == 3
+		update2     = isUpdate && nIn == 2
+		update3     = isUpdate && nIn == 3 && !updateUserArg
+		update3User = isUpdate && nIn == 3 && updateUserArg
+		update4     = isUpdate && nIn == 4
 	)
 
-	if !create2 && !create3 && !update2 && !update3 && !update4 {
+	if !create2 && !create3 && !update2 && !update3 && !update3User && !update4 {
 		return nil, fmt.Errorf("method %q has %d inputs and %d outputs", methodName, nIn, nOut)
 	}
 
@@ -414,7 +769,6 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		mergedPayload[k] = v
 	}
 
-	mergedPayload["the id"] = ""
 	if id != "" {
 		mergedPayload["id"] = id
 	}
@@ -444,7 +798,7 @@ func reflectCallCreateOrUpdate(svc reflect.Value, methodName string, ctx context
 		args = []reflect.Value{reflect.ValueOf(ctx)}
 	case update3:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID)}
-	case create3:
+	case create3, update3User:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(userID)}
 	case update4:
 		args = []reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(idUUID), reflect.ValueOf(userID)}

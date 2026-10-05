@@ -965,6 +965,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		Region:    cfg.S3Region,
 		Bucket:    cfg.S3Bucket,
 	})
+	// Pin the local-storage root (JC_MEDIA_ROOT) before any upload, scan, or
+	// transcode path resolves mediaRoot — an unset env keeps the default.
+	media.SetMediaRoot(cfg.MediaRoot)
 	// Inject system_settings provider for Rule 3 compliance
 	// (media.max_upload_mb, media.allowed_video_types, media.cdn.base_url,
 	// media.proxy.*).
@@ -1020,10 +1023,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	worker.RegisterMediaScanProcessor(mediaScanProcessor)
 	worker.RegisterMediaCleaner(mediaService)
 
-	// Video processor — ffmpeg-based transcoding, thumbnail generation,
-	// and compression for video uploads. Registered with the worker so
-	// the video_processing handler can invoke it asynchronously.
-	worker.RegisterVideoProcessor(media.NewVideoProcessor())
+	// Video processor — ffmpeg-based transcoding/compression for video
+	// uploads. The adapter wraps the ffmpeg processor with storage
+	// plumbing (object fetch, storage rewrite, media row update) since
+	// storage_path is a storage key, not a filesystem path.
+	worker.RegisterMediaVideoProcessor(media.NewVideoProcessorAdapter(mediaService))
 
 	// Webhook Delivery subsystem — registers the processor so the Asynq
 	// webhook_delivery handler can fetch, sign, and deliver outgoing webhooks.
@@ -2070,7 +2074,25 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		readinessAssessment:  assessmentService,
 		taxTreatyPair:        taxCalculatorStore,
 		travelProvider:       travelService,
+		// Merge-getter stores for read-modify-write updates on
+		// provider tables (getters live on the stores).
+		remittanceProviderStore: remittanceStore,
+		travelProviderStore:     travelStore,
+		// Calculator + reference-data tools (§107, §108, §109, §110).
+		crsCalculator: crsCalculatorService,
+		pofCalculator: pofCalculatorService,
+		sopGenerator:  sopGeneratorService,
+		ecaGuide:      ecaGuideService,
 	}))
+
+	// Community discussion tools (§08 forum, §49 comments). forumService is
+	// created later inside the API route group; agentDeps.Forum is wired
+	// there — handlers resolve deps lazily at call time.
+	agentDeps.Comments = &agentCommentsAdapter{svc: commentsService}
+	// Deterministic calculator tools (§107 CRS, §108 POF, §112 FX).
+	agentDeps.FXConverter = &agentFXAdapter{svc: fxService}
+	agentDeps.CRSCalculator = &agentCRSAdapter{svc: crsCalculatorService}
+	agentDeps.POFCalculator = &agentPOFAdapter{svc: pofCalculatorService}
 
 	agentRegistry := ai.NewToolHandlerRegistry()
 	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
@@ -3813,6 +3835,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// BUG-013: wire notification dispatcher for reply-to-author
 			// notifications. Ref: Section 35.
 			forumService.SetNotificationDispatcher(commentNotificationAdapter{svc: notificationService})
+			// §08 forum agent tools: wired here because forumService only
+			// exists inside the API route group. Handlers read deps lazily.
+			agentDeps.Forum = &agentForumAdapter{svc: forumService}
 			forumHandlers := forum.NewHandlers(forumService, contentService)
 			// BUG-001: wire per-category user site-activity into the AI context
 			// builder (ADR-025). The adapter is created here because forumService

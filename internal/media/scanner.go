@@ -69,9 +69,15 @@ func (p *ScanProcessor) ProcessMediaScan(ctx context.Context, mediaID string) er
 	if err != nil {
 		// ClamAV unreachable — log and confirm the media item rather
 		// than blocking uploads. This matches the graceful-degradation
-		// pattern used throughout the codebase.
-		slog.Error("media:scan: ClamAV error, confirming without scan",
-			"media_id", mediaID, "error", err)
+		// pattern used throughout the codebase. Daemon-down is a WARN
+		// (deployment gap); a real scan-protocol error stays ERROR.
+		if errors.Is(err, ErrClamAVUnavailable) {
+			slog.Warn("media:scan: ClamAV unavailable, confirming without scan",
+				"media_id", mediaID, "error", err)
+		} else {
+			slog.Error("media:scan: ClamAV error, confirming without scan",
+				"media_id", mediaID, "error", err)
+		}
 		return p.svc.confirmMediaByID(ctx, mid[:])
 	}
 

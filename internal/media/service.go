@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -178,9 +179,12 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 	case errors.Is(serr, errObjectMissing):
 		return fmt.Errorf("%w: upload did not complete — object not found in storage", errObjectMissing)
 	case serr != nil:
-		// Storage unreachable — degrade to the sniff-only path below.
-		slog.Warn("confirm: could not stat object, continuing with header check",
-			"media_id", mediaID.String(), "error", serr)
+		// Storage unreachable — the size was never verified, so confirm
+		// must not proceed (an unreachable backend could mask a missing
+		// or oversized object). Reject as retryable; the row stays
+		// unconfirmed and the client can re-confirm after recovery, or
+		// the nightly scan sweep finalizes it.
+		return fmt.Errorf("%w: %v", errStorageUnavailable, serr)
 	case size <= 0:
 		return fmt.Errorf("%w: uploaded object is empty", errUploadInvalid)
 	case size > s.MaxUploadBytes(ctx):
@@ -197,27 +201,28 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 	}
 
 	// Fetch the first 512 bytes from object storage for content inspection.
+	// The size check above already established the object exists, so a
+	// missing-file error here means it raced away; anything else is an
+	// indeterminate storage state — reject as retryable rather than
+	// confirming unverified content.
 	header, err := s.fetchFileHeader(ctx, m.StorageBucket, m.StoragePath)
 	if err != nil {
-		slog.Warn("mime inspection: failed to read file header, confirming without check",
-			"media_id", mediaID.String(), "error", err)
-		// Degrade gracefully — if object storage is unreachable we still
-		// confirm rather than blocking all uploads.
-		return s.store.ConfirmMedia(ctx, mediaID)
+		if errors.Is(err, errObjectMissing) || os.IsNotExist(err) {
+			return fmt.Errorf("%w: upload did not complete — object not found in storage", errObjectMissing)
+		}
+		return fmt.Errorf("%w: %v", errStorageUnavailable, err)
+	}
+	if len(header) == 0 {
+		return fmt.Errorf("%w: could not read stored object bytes", errStorageUnavailable)
 	}
 
-	if len(header) > 0 {
-		detected, matches, verifyErr := VerifyMIMEType(header, m.MimeType)
-		if verifyErr != nil {
-			slog.Warn("mime inspection: verification error, confirming without check",
-				"media_id", mediaID.String(), "error", verifyErr)
-			return s.store.ConfirmMedia(ctx, mediaID)
-		}
-
-		if !matches {
-			return fmt.Errorf("MIME mismatch: client claimed %s but content is %s",
-				CanonicalMIMEType(m.MimeType), detected)
-		}
+	detected, matches, verifyErr := VerifyMIMEType(header, m.MimeType)
+	if verifyErr != nil {
+		return fmt.Errorf("mime verification failed: %w", verifyErr)
+	}
+	if !matches {
+		return fmt.Errorf("%w: MIME mismatch — client claimed %s but content is %s",
+			errUploadInvalid, CanonicalMIMEType(m.MimeType), detected)
 	}
 
 	return s.store.ConfirmMedia(ctx, mediaID)
@@ -225,14 +230,20 @@ func (s *Service) ConfirmUpload(ctx context.Context, mediaID, uploaderID pgtype.
 
 // errObjectMissing marks a definitively-missing storage object — S3 404 or
 // absent local file — as opposed to storage being unreachable. ConfirmUpload
-// treats missing objects as a failed upload (reject) while unreachable
-// storage keeps the graceful-degradation confirm.
+// treats missing objects as a failed upload (reject) and unreachable
+// storage as retryable (errStorageUnavailable) — neither confirms.
 var errObjectMissing = errors.New("media: stored object not found")
 
 // errUploadInvalid marks a stored upload object that failed confirmation
 // validation (empty, or over the configured size limit) — a 400-class
 // client error, distinct from storage failures.
 var errUploadInvalid = errors.New("media: uploaded object failed validation")
+
+// errStorageUnavailable marks an indeterminate storage state (unreachable
+// backend, transient failures) during confirm — a 503-class retryable
+// error. The row stays unconfirmed so the client can retry and the
+// nightly scan sweep remains a backstop.
+var errStorageUnavailable = errors.New("media: storage temporarily unavailable")
 
 // fetchFileHeader reads up to n bytes from the beginning of an object in
 // the storage bucket. This is used for content-based MIME type detection
@@ -288,7 +299,8 @@ func (s *Service) fetchFromS3(ctx context.Context, bucket, path string, n int64)
 // objectSizeBytes returns the stored object's real size — S3 HEAD when the
 // client is configured, local stat otherwise. Returns errObjectMissing when
 // the object definitively does not exist; other errors mean the size could
-// not be determined (storage unreachable — callers degrade gracefully).
+// not be determined (storage unreachable — ConfirmUpload rejects those as
+// retryable rather than confirming unverified objects).
 func (s *Service) objectSizeBytes(ctx context.Context, bucket, path string) (int64, error) {
 	var upstreamErr error
 	notFound := s.s3 == nil // local-only storage: stat decides missing
@@ -652,7 +664,7 @@ func (s *Service) GetMediaURL(m *gen.Medium, opts ImageProxyOpts) string {
 		return ""
 	}
 
-	if !isImageMIME(CanonicalMIMEType(m.MimeType)) {
+	if !isProxyableImageMIME(m.MimeType) {
 		return ServeURL(m.StorageBucket, m.StoragePath)
 	}
 
@@ -881,7 +893,18 @@ func (s *Service) StoreFromBytes(ctx context.Context, uploaderID pgtype.UUID, da
 //
 // The uploaderID is the system/admin user ID to attribute the media to.
 func (s *Service) StoreFromURL(ctx context.Context, uploaderID pgtype.UUID, sourceURL, filename string) (pgtype.UUID, error) {
-	// 1. Download the image.
+	// SSRF guard — same rules as ProxyRemote: http(s) only, no userinfo,
+	// and every dial validates resolved IPs as public. Ingestion callers
+	// pass URLs from external metadata (Wikidata, stock APIs), so a
+	// malicious or compromised source must not reach internal hosts or
+	// cloud metadata endpoints. Redirect hops are validated at connect
+	// time by the guarded DialContext.
+	u, err := url.Parse(sourceURL)
+	if err != nil || u == nil || u.Host == "" || u.User != nil ||
+		(u.Scheme != "https" && u.Scheme != "http") {
+		return pgtype.UUID{}, fmt.Errorf("invalid source url")
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return pgtype.UUID{}, fmt.Errorf("creating download request: %w", err)
@@ -889,26 +912,28 @@ func (s *Service) StoreFromURL(ctx context.Context, uploaderID pgtype.UUID, sour
 
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (university:fetch_logo)")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	// Share the proxy's SSRF-safe transport; keep the larger download
+	// timeout this path needs.
+	client := &http.Client{Timeout: 30 * time.Second, Transport: proxyHTTPClient.Transport}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("downloading logo from %s: %w", sourceURL, err)
+		return pgtype.UUID{}, fmt.Errorf("downloading media from %s: %w", sourceURL, err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return pgtype.UUID{}, fmt.Errorf("logo download returned %d for %s", resp.StatusCode, sourceURL)
+		return pgtype.UUID{}, fmt.Errorf("download returned %d for %s", resp.StatusCode, sourceURL)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxFileSizeBytes))
+	body, err := readLimited(resp.Body, MaxFileSizeBytes)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("reading logo body: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("reading body from %s: %w", sourceURL, err)
 	}
 
 	if len(body) == 0 {
-		return pgtype.UUID{}, fmt.Errorf("logo body is empty from %s", sourceURL)
+		return pgtype.UUID{}, fmt.Errorf("body is empty from %s", sourceURL)
 	}
 
 	return s.StoreFromBytes(ctx, uploaderID, body, filename, nil)
@@ -938,8 +963,13 @@ func DetectStorageMIME(data []byte, filename string) string {
 		// — notably SVG, which sniffs as generic text but is a valid
 		// image type when the filename says .svg. Callers re-validate the
 		// resolved type, so a misleading extension cannot widen what is
-		// accepted.
-		if fm := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))); fm != "" {
+		// accepted. ExtensionToMIME (project-controlled) is consulted
+		// before mime.TypeByExtension, which depends on the host's
+		// /etc/mime.types and may be empty on minimal images.
+		ext := strings.ToLower(filepath.Ext(filename))
+		if fm := ExtensionToMIME[ext]; fm != "" {
+			mimeType = fm
+		} else if fm := mime.TypeByExtension(ext); fm != "" {
 			mimeType = fm
 		}
 	}

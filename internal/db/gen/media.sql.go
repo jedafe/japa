@@ -855,6 +855,7 @@ func (q *Queries) ListMediaForOptimization(ctx context.Context, arg ListMediaFor
 const listMediaForScanning = `-- name: ListMediaForScanning :many
 SELECT id, storage_path FROM media
 WHERE confirmed = false AND deleted_at IS NULL AND quarantined_at IS NULL AND rejected_at IS NULL
+ AND created_at > now() - interval '7 days'
 ORDER BY created_at ASC
 LIMIT 50
 `
@@ -864,6 +865,10 @@ type ListMediaForScanningRow struct {
 	StoragePath string      `json:"storage_path"`
 }
 
+// Recency bound: pending uploads confirm within minutes of initiation, so
+// a row still unconfirmed after a week is abandoned (its object typically
+// missing). Without the bound those rows re-enqueue forever, starving the
+// 50-per-night sweep and blocking every newer unscanned row behind them.
 func (q *Queries) ListMediaForScanning(ctx context.Context) ([]ListMediaForScanningRow, error) {
 	rows, err := q.db.Query(ctx, listMediaForScanning)
 	if err != nil {

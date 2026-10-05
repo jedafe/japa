@@ -40,6 +40,11 @@ type ScanResult struct {
 	VirusName string
 }
 
+// ErrClamAVUnavailable marks daemon-connectivity failures (dial refused,
+// unreachable host) as opposed to scan-protocol errors, so callers can log
+// the degraded path once at WARN instead of ERROR per file.
+var ErrClamAVUnavailable = errors.New("clamav daemon unreachable")
+
 // Scan sends the file data to ClamAV via the INSTREAM command and returns
 // the scan result. The INSTREAM protocol sends the file in 2048-byte
 // chunks, terminated by a zero-length chunk, then reads the response line.
@@ -51,7 +56,7 @@ type ScanResult struct {
 func (c *ClamAVClient) Scan(reader io.Reader) (ScanResult, error) {
 	conn, err := net.DialTimeout("tcp", c.addr, c.timeout)
 	if err != nil {
-		return ScanResult{}, fmt.Errorf("clamav connect %s: %w", c.addr, err)
+		return ScanResult{}, fmt.Errorf("clamav connect %s: %w: %w", c.addr, err, ErrClamAVUnavailable)
 	}
 
 	defer func() { _ = conn.Close() }()
