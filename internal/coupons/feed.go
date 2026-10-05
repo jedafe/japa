@@ -618,7 +618,10 @@ func (s *Service) upsertOffer(ctx context.Context, src gen.CouponFeedSource, o f
 // resolveOfferProvider picks the coupon's provider: the feed's
 // default_provider_id wins; otherwise the offer's store is slugified and
 // matched against affiliate_providers.slug — a miss auto-creates an active
-// provider so its /deal/{provider} page exists (§55).
+// provider so its /deal/{provider} page exists (§55). The slug match excludes
+// organization-linked providers (organization_id IS NULL): a feed must never
+// attach offers to a member-submission provider, so an org-linked hit behaves
+// like a miss and the next suffix is tried instead.
 func (s *Service) resolveOfferProvider(ctx context.Context, src gen.CouponFeedSource, o feedOffer) (pgtype.UUID, error) {
 	if src.DefaultProviderID.Valid {
 		return src.DefaultProviderID, nil

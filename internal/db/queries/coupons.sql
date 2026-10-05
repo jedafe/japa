@@ -27,7 +27,7 @@ SELECT id, name, slug, description, provider_type, logo_media_id,
  is_active, is_featured, author_commission_pct, category, organization_id,
  created_at, updated_at
 FROM affiliate_providers
-WHERE (@is_active::bool IS NULL OR is_active = @is_active)
+WHERE (sqlc.narg(is_active)::bool IS NULL OR is_active = sqlc.narg(is_active))
 ORDER BY name ASC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -74,9 +74,13 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  ap.category AS provider_category
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.id = @id;
+WHERE c.id = @id
+ AND (ap.id IS NULL OR ap.is_active = true);
 
--- name: GetCouponByCode :one
+-- name: GetCouponByIDInternal :one
+-- Admin/write-path lookup with no provider-active filter — staff must still
+-- read, moderate, and update deals parked under inactive (unvetted org)
+-- providers (§55). Public callers use GetCouponByID.
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -86,7 +90,16 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  ap.category AS provider_category
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.code = @code;
+WHERE c.id = @id;
+
+-- name: GetCouponSlugExists :one
+-- Write-path slug ownership check: intentionally NO status or provider
+-- filter — pending and inactive-provider deals still own their slug, so
+-- resolveCouponSlug must see them or idx_coupons_slug raises 23505 at
+-- INSERT time (§55).
+SELECT id
+FROM coupons
+WHERE slug = @slug;
 
 -- name: GetCouponBySlug :one
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
@@ -99,7 +112,8 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  ap.base_url AS provider_base_url, ap.is_active AS provider_is_active
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
-WHERE c.slug = @slug AND c.status <> 'pending';
+WHERE c.slug = @slug AND c.status <> 'pending'
+ AND (ap.id IS NULL OR ap.is_active = true);
 
 -- name: ListCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
@@ -118,6 +132,16 @@ WHERE (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListCouponsCount :one
+-- Mirrors ListCoupons's WHERE clause — powers the admin deals list's
+-- pagination total (§55). No JOIN needed: the filters touch coupons only.
+SELECT COUNT(*) AS count
+FROM coupons c
+WHERE (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
+ AND (sqlc.narg(coupon_type)::text IS NULL OR c.coupon_type = sqlc.narg(coupon_type))
+ AND (sqlc.narg(provider_id)::uuid IS NULL OR c.provider_id = sqlc.narg(provider_id))
+ AND (sqlc.narg(search)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(search) || '%' OR c.code ILIKE '%' || sqlc.narg(search) || '%');
+
 -- name: ListActiveCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
@@ -129,6 +153,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.status = 'active'
+ AND (ap.id IS NULL OR ap.is_active = true)
  AND (c.expires_at IS NULL OR c.expires_at > now())
  AND (sqlc.narg(provider_id)::uuid IS NULL OR c.provider_id = sqlc.narg(provider_id))
  AND (sqlc.narg(coupon_type)::text IS NULL OR c.coupon_type = sqlc.narg(coupon_type))
@@ -254,9 +279,13 @@ WHERE feed_id = @feed_id
 RETURNING id;
 
 -- name: GetAffiliateProviderIDBySlug :one
+-- Feed-import provider match: org-linked providers are excluded — a feed
+-- must never silently attach offers to (or activate) an organization's
+-- unvetted provider; the caller treats the slug as taken and suffixes
+-- like any other collision (§55).
 SELECT id
 FROM affiliate_providers
-WHERE slug = @slug;
+WHERE slug = @slug AND organization_id IS NULL;
 
 -- =====================
 -- Coupon Events

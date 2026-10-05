@@ -60,11 +60,25 @@ func (s *Store) getProviderByOrgID(ctx context.Context, orgID pgtype.UUID) (gen.
 	return rowToProvider(row), nil
 }
 
+// getProviderByOrgIDForWrite is the writer-pool variant of
+// getProviderByOrgID. providerForOrg uses it to re-check org ownership
+// after a 23505 insert race — a row committed by a concurrent request on
+// the primary may not have reached the read replica yet (§55).
+func (s *Store) getProviderByOrgIDForWrite(ctx context.Context, orgID pgtype.UUID) (gen.AffiliateProvider, error) {
+	row, err := s.write.GetAffiliateProviderByOrgID(ctx, orgID)
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+	return rowToProvider(row), nil
+}
+
 func (s *Store) listActiveDealPartners(ctx context.Context, limit int32) ([]gen.ListActiveDealPartnersRow, error) {
 	return s.read.ListActiveDealPartners(ctx, limit)
 }
 
-func (s *Store) listProviders(ctx context.Context, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
+// listProviders lists providers; isActive nil returns all rows (admin
+// needs inactive org providers visible for moderation — §55).
+func (s *Store) listProviders(ctx context.Context, isActive *bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
 	rows, err := s.read.ListAffiliateProviders(ctx, gen.ListAffiliateProvidersParams{
 
 		IsActive:   isActive,
@@ -110,8 +124,22 @@ func (s *Store) getCouponByID(ctx context.Context, id pgtype.UUID) (gen.GetCoupo
 	return s.read.GetCouponByID(ctx, id)
 }
 
+// getCouponByIDInternal loads a coupon without the provider-active filter —
+// the write path (update/delete) and admin read must reach deals parked
+// under inactive org providers (§55).
+func (s *Store) getCouponByIDInternal(ctx context.Context, id pgtype.UUID) (gen.GetCouponByIDInternalRow, error) {
+	return s.read.GetCouponByIDInternal(ctx, id)
+}
+
 func (s *Store) getCouponBySlug(ctx context.Context, slug string) (gen.GetCouponBySlugRow, error) {
 	return s.read.GetCouponBySlug(ctx, slug)
+}
+
+// couponSlugExists returns the ID of the coupon owning a slug regardless of
+// status — the write-path uniqueness check for resolveCouponSlug. Uses the
+// writer pool so a slug claimed moments ago on the primary is seen (§55).
+func (s *Store) couponSlugExists(ctx context.Context, slug string) (pgtype.UUID, error) {
+	return s.write.GetCouponSlugExists(ctx, slug)
 }
 
 func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsRow, error) {
@@ -123,6 +151,18 @@ func (s *Store) listCoupons(ctx context.Context, status, couponType, search *str
 		Search:     search,
 		PageLimit:  limit,
 		PageOffset: offset,
+	})
+}
+
+// countCouponsFiltered mirrors listCoupons's filters for the admin list
+// pagination total (§55).
+func (s *Store) countCouponsFiltered(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID) (int64, error) {
+	return s.read.ListCouponsCount(ctx, gen.ListCouponsCountParams{
+
+		Status:     status,
+		CouponType: couponType,
+		ProviderID: providerID,
+		Search:     search,
 	})
 }
 
