@@ -94,6 +94,7 @@ func TestParseUUIDParam(t *testing.T) {
 	t.Parallel()
 
 	r := withChiParam(httptest.NewRequest(http.MethodGet, "/x", nil), "id", "11111111-1111-1111-1111-111111111111")
+
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
 		t.Fatalf("expected valid UUID parse, got %v", err)
@@ -191,6 +192,7 @@ func TestCreateSubmissionHandlerNoAuth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/roadmap/submissions",
 		bytes.NewBuffer([]byte(`{"title":"x"}`)))
 	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	h.CreateSubmission(w, req)

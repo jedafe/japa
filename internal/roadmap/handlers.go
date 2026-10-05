@@ -11,6 +11,7 @@
 package roadmap
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -184,8 +185,9 @@ func (h *Handlers) GetItem(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
 }
 
-// CastVote handles POST /api/v1/roadmap/items/{id}/vote.
-func (h *Handlers) CastVote(w http.ResponseWriter, r *http.Request) {
+// handleVote runs a vote mutation (cast or remove) for the authenticated
+// user and responds with the item's updated vote count.
+func (h *Handlers) handleVote(w http.ResponseWriter, r *http.Request, vote func(context.Context, pgtype.UUID, pgtype.UUID) (int32, error)) {
 	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -197,7 +199,7 @@ func (h *Handlers) CastVote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.Service.CastVote(r.Context(), id, user.UserID)
+	count, err := vote(r.Context(), id, user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -206,26 +208,14 @@ func (h *Handlers) CastVote(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"vote_count": count}})
 }
 
+// CastVote handles POST /api/v1/roadmap/items/{id}/vote.
+func (h *Handlers) CastVote(w http.ResponseWriter, r *http.Request) {
+	h.handleVote(w, r, h.Service.CastVote)
+}
+
 // RemoveVote handles DELETE /api/v1/roadmap/items/{id}/vote.
 func (h *Handlers) RemoveVote(w http.ResponseWriter, r *http.Request) {
-	user, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
-		return
-	}
-
-	count, err := h.Service.RemoveVote(r.Context(), id, user.UserID)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"vote_count": count}})
+	h.handleVote(w, r, h.Service.RemoveVote)
 }
 
 // CreateSubmission handles POST /api/v1/roadmap/submissions.
@@ -324,8 +314,9 @@ func (h *Handlers) AdminListSubmissions(w http.ResponseWriter, r *http.Request) 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
 }
 
-// AdminGetItem handles GET /api/v1/admin/roadmap/items/{id}.
-func (h *Handlers) AdminGetItem(w http.ResponseWriter, r *http.Request) {
+// adminItemByID runs an admin operation that takes an item ID from the URL
+// and returns the item row (GET detail, restore).
+func (h *Handlers) adminItemByID(w http.ResponseWriter, r *http.Request, fn func(context.Context, pgtype.UUID) (gen.RoadmapItem, error)) {
 	_, ok := h.requireUser(w, r)
 	if !ok {
 		return
@@ -337,13 +328,18 @@ func (h *Handlers) AdminGetItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.Service.AdminGetItem(r.Context(), id)
+	item, err := fn(r.Context(), id)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
+}
+
+// AdminGetItem handles GET /api/v1/admin/roadmap/items/{id}.
+func (h *Handlers) AdminGetItem(w http.ResponseWriter, r *http.Request) {
+	h.adminItemByID(w, r, h.Service.AdminGetItem)
 }
 
 // adminItemRequest is the JSON body shared by item create and update.
@@ -530,24 +526,7 @@ func (h *Handlers) AdminDeleteItem(w http.ResponseWriter, r *http.Request) {
 
 // AdminRestoreItem handles POST /api/v1/admin/roadmap/items/{id}/restore.
 func (h *Handlers) AdminRestoreItem(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid item ID")
-		return
-	}
-
-	item, err := h.Service.AdminRestoreItem(r.Context(), id)
-	if err != nil {
-		handleServiceError(w, err)
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": item})
+	h.adminItemByID(w, r, h.Service.AdminRestoreItem)
 }
 
 // AdminReorderItems handles POST /api/v1/admin/roadmap/items/reorder.

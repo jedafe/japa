@@ -158,6 +158,7 @@ func buildBoard(rows []gen.ListPublicRoadmapItemsRow, cats []gen.RoadmapCategory
 	}
 
 	columns := make([]BoardColumn, 0, len(boardColumnOrder))
+
 	for _, def := range boardColumnOrder {
 		items := byStatus[string(def.Status)]
 		if items == nil {
@@ -188,12 +189,14 @@ func buildBoard(rows []gen.ListPublicRoadmapItemsRow, cats []gen.RoadmapCategory
 
 func boardItemFromRow(r gen.ListPublicRoadmapItemsRow) BoardItem {
 	var contentID *pgtype.UUID
+
 	if r.ContentID.Valid {
 		c := r.ContentID
 		contentID = &c
 	}
 
 	var shippedAt *time.Time
+
 	if r.ShippedAt.Valid {
 		t := r.ShippedAt.Time
 		shippedAt = &t
@@ -508,67 +511,12 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 		return gen.RoadmapItem{}, err
 	}
 
-	title := current.Title
-	if strings.TrimSpace(in.Title) != "" {
-		title = strings.TrimSpace(in.Title)
+	params, err := s.mergeItemPatch(ctx, current, in)
+	if err != nil {
+		return gen.RoadmapItem{}, err
 	}
 
-	slug := current.Slug
-	if in.Slug != "" && in.Slug != current.Slug {
-		slug, err = s.uniqueItemSlug(ctx, content.Slugify(in.Slug))
-		if err != nil {
-			return gen.RoadmapItem{}, err
-		}
-	}
-
-	summary := current.Summary
-	if in.Summary != nil {
-		summary = in.Summary
-	}
-
-	body := current.Body
-	if in.Body != nil {
-		body = in.Body
-	}
-
-	categoryID := current.CategoryID
-	if in.CategoryID != nil {
-		categoryID = *in.CategoryID
-	}
-
-	sortOrder := current.SortOrder
-	if in.SortOrder != nil {
-		sortOrder = *in.SortOrder
-	}
-
-	isFlagship := current.IsFlagship
-	if in.IsFlagship != nil {
-		isFlagship = *in.IsFlagship
-	}
-
-	targetWindow := current.TargetWindow
-	if in.TargetWindow != nil {
-		targetWindow = in.TargetWindow
-	}
-
-	featureFlagKey := current.FeatureFlagKey
-	if in.FeatureFlagKey != nil {
-		featureFlagKey = in.FeatureFlagKey
-	}
-
-	item, err := s.store.updateItem(ctx, gen.UpdateRoadmapItemParams{
-		ID:             id,
-		Title:          title,
-		Slug:           slug,
-		Summary:        summary,
-		Body:           body,
-		CategoryID:     categoryID,
-		SortOrder:      sortOrder,
-		IsFlagship:     isFlagship,
-		TargetWindow:   targetWindow,
-		FeatureFlagKey: featureFlagKey,
-		ApprovedBy:     current.ApprovedBy, // unchanged by edit; set on approval
-	})
+	item, err := s.store.updateItem(ctx, params)
 	if err != nil {
 		return gen.RoadmapItem{}, err
 	}
@@ -577,6 +525,68 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 	s.invalidateBoard(ctx)
 
 	return item, nil
+}
+
+// mergeItemPatch overlays a PATCH input onto the current row — scalar
+// pointers distinguish "absent" from "set to empty"; a changed slug is
+// re-slugified and de-duplicated.
+func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, in AdminItemInput) (gen.UpdateRoadmapItemParams, error) {
+	params := gen.UpdateRoadmapItemParams{
+		ID:             current.ID,
+		Title:          current.Title,
+		Slug:           current.Slug,
+		Summary:        current.Summary,
+		Body:           current.Body,
+		CategoryID:     current.CategoryID,
+		SortOrder:      current.SortOrder,
+		IsFlagship:     current.IsFlagship,
+		TargetWindow:   current.TargetWindow,
+		FeatureFlagKey: current.FeatureFlagKey,
+		ApprovedBy:     current.ApprovedBy, // unchanged by edit; set on approval
+	}
+
+	if strings.TrimSpace(in.Title) != "" {
+		params.Title = strings.TrimSpace(in.Title)
+	}
+
+	if in.Slug != "" && in.Slug != current.Slug {
+		slug, err := s.uniqueItemSlug(ctx, content.Slugify(in.Slug))
+		if err != nil {
+			return gen.UpdateRoadmapItemParams{}, err
+		}
+
+		params.Slug = slug
+	}
+
+	if in.Summary != nil {
+		params.Summary = in.Summary
+	}
+
+	if in.Body != nil {
+		params.Body = in.Body
+	}
+
+	if in.CategoryID != nil {
+		params.CategoryID = *in.CategoryID
+	}
+
+	if in.SortOrder != nil {
+		params.SortOrder = *in.SortOrder
+	}
+
+	if in.IsFlagship != nil {
+		params.IsFlagship = *in.IsFlagship
+	}
+
+	if in.TargetWindow != nil {
+		params.TargetWindow = in.TargetWindow
+	}
+
+	if in.FeatureFlagKey != nil {
+		params.FeatureFlagKey = in.FeatureFlagKey
+	}
+
+	return params, nil
 }
 
 // AdminSetStatus drives the lifecycle state machine (§113). Approving a
@@ -869,7 +879,7 @@ func (s *Service) createShadowContent(ctx context.Context, item gen.RoadmapItem,
 
 	baseSlug := "roadmap-" + item.Slug
 
-	for i := 0; i < content.MaxSlugAttempts; i++ {
+	for i := range content.MaxSlugAttempts {
 		slug := baseSlug
 		if i > 0 {
 			slug = fmt.Sprintf("%s-%d", baseSlug, i+1)

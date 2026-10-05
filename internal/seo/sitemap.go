@@ -573,7 +573,6 @@ func (h *SitemapHandler) latestRoadmapLastMod(ctx context.Context) string {
 // excluded — it is an auth-required form, not indexable content.
 // Ref: japaconnect-engineering/sections/113-public-product-roadmap.md.
 func (h *SitemapHandler) ServeRoadmapSitemap(w http.ResponseWriter, r *http.Request) {
-
 	if h.cachedSitemapXML(w, r, "roadmap") {
 		return
 	}
@@ -595,13 +594,13 @@ func (h *SitemapHandler) ServeRoadmapSitemap(w http.ResponseWriter, r *http.Requ
 
 	entries := []urlEntry{
 		{
-			Loc:        fmt.Sprintf("%s/roadmap", base),
+			Loc:        base + "/roadmap",
 			LastMod:    lastMod,
 			ChangeFreq: "daily",
 			Priority:   "0.6",
 		},
 		{
-			Loc:        fmt.Sprintf("%s/roadmap/changelog", base),
+			Loc:        base + "/roadmap/changelog",
 			LastMod:    lastMod,
 			ChangeFreq: "weekly",
 			Priority:   "0.5",
@@ -610,7 +609,7 @@ func (h *SitemapHandler) ServeRoadmapSitemap(w http.ResponseWriter, r *http.Requ
 
 	for _, item := range rows {
 		entries = append(entries, urlEntry{
-			Loc:        fmt.Sprintf("%s/roadmap/%s", base, item.Slug),
+			Loc:        base + "/roadmap/" + item.Slug,
 			LastMod:    item.UpdatedAt.Time.Format(time.RFC3339),
 			ChangeFreq: "weekly",
 			Priority:   "0.5",

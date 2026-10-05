@@ -123,8 +123,10 @@ func TestDeref(t *testing.T) {
 // Board assembly
 // ---------------------------------------------------------------------------
 
-func TestBuildBoard(t *testing.T) {
-	t.Parallel()
+// boardFixture returns two rows (one planned, one shipped) and one category
+// for buildBoard tests.
+func boardFixture(t *testing.T) ([]gen.ListPublicRoadmapItemsRow, []gen.RoadmapCategory) {
+	t.Helper()
 
 	var itemID, catID pgtype.UUID
 	if err := itemID.Scan("11111111-1111-1111-1111-111111111111"); err != nil {
@@ -168,6 +170,13 @@ func TestBuildBoard(t *testing.T) {
 		{ID: catID, Slug: "community", Name: "Community", SortOrder: 1},
 	}
 
+	return rows, cats
+}
+
+func TestBuildBoardColumns(t *testing.T) {
+	t.Parallel()
+
+	rows, cats := boardFixture(t)
 	board := buildBoard(rows, cats)
 
 	// All four columns must render in order, even the empty ones.
@@ -193,6 +202,13 @@ func TestBuildBoard(t *testing.T) {
 				i, col.Status, col.Label, len(col.Items), want.status, want.label, want.items)
 		}
 	}
+}
+
+func TestBuildBoardItemMapping(t *testing.T) {
+	t.Parallel()
+
+	rows, cats := boardFixture(t)
+	board := buildBoard(rows, cats)
 
 	planned := board.Columns[1].Items[0]
 	if planned.Title != "Planned thing" || planned.VoteCount != 7 || !planned.HasVoted {
