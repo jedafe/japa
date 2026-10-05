@@ -1224,6 +1224,8 @@
 	"deals.load_error": "Échec du chargement des bons plans. Veuillez réessayer plus tard.",
 	"deals.new_deal": "Nouvelle offre",
 	"deals.partners": "Partenaires",
+	"deals.status.expired": "Expirée",
+	"deals.status.pending": "En attente",
 	"deals.table.category": "Catégorie",
 	"deals.table.claim": "Obtenir",
 	"deals.table.deal": "Offre",

@@ -50,8 +50,12 @@ export interface DealFormValues {
 	status: string;
 	description: string;
 	discount_type: string;
-	/** Number input bound as a string; converted to a JS number on submit. */
-	discount_value: string;
+	/**
+	 * Number input binding — Svelte 5 coerces `type="number"` inputs to
+	 * `number` (or `null` when empty), so the field accepts both. Converted
+	 * to a JS number on submit.
+	 */
+	discount_value: string | number | null;
 	currency: string;
 	terms_url: string;
 	referral_url: string;
@@ -181,8 +185,11 @@ export function buildCouponPayload(
 	str('terms_url', v.terms_url);
 	str('referral_url', v.referral_url);
 
-	if (v.discount_value.trim()) {
-		const n = Number(v.discount_value);
+	// number inputs bind as number|null in Svelte 5 — coerce defensively so a
+	// null after clearing the field can't throw.
+	const dv = v.discount_value;
+	if (dv !== null && dv !== undefined && String(dv).trim() !== '') {
+		const n = Number(dv);
 		if (Number.isFinite(n)) payload.discount_value = n;
 	}
 
@@ -251,25 +258,19 @@ export function emptyNewProviderValues(): NewProviderValues {
 }
 
 /**
- * Body for POST /admin/affiliate-providers.
- *
- * NOTE: the backend `CreateProviderInput` struct (internal/coupons/service.go)
- * declares no json tags, so Go's decoder matches keys case-insensitively
- * against the Go field names — snake_case keys like `provider_type` or
- * `base_url` are silently dropped. Keys below fold to the Go field names
- * (ProviderType, BaseURL, IsFeatured); single-word keys (name, slug,
- * description, category) match as-is.
+ * Body for POST /admin/affiliate-providers — keys match the json tags on
+ * `CreateProviderInput` (internal/coupons/service.go). Deal partners created
+ * inline are coupon providers (§55); the list endpoints surface all active
+ * providers regardless of type.
  */
 export function buildProviderPayload(v: NewProviderValues): Record<string, unknown> {
 	const payload: Record<string, unknown> = {
 		name: v.name.trim(),
 		slug: v.slug.trim(),
-		// Deal partners created inline are coupon providers (§55); the list
-		// endpoints surface all active providers regardless of type.
-		providerType: 'coupon'
+		provider_type: 'coupon'
 	};
 	if (v.description.trim()) payload.description = v.description.trim();
 	if (v.category.trim()) payload.category = v.category.trim();
-	if (v.base_url.trim()) payload.baseUrl = v.base_url.trim();
+	if (v.base_url.trim()) payload.base_url = v.base_url.trim();
 	return payload;
 }
