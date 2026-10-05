@@ -2,6 +2,7 @@ package coupons
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -168,5 +169,54 @@ func TestValidateCouponDetails(t *testing.T) {
 func TestPendingConstant(t *testing.T) {
 	if CouponStatusPending != "pending" {
 		t.Error("wrong CouponStatusPending value")
+	}
+}
+
+func TestValidateOutboundURL(t *testing.T) {
+	str := func(s string) *string { return &s }
+	cases := []struct {
+		name    string
+		u       *string
+		wantErr bool
+	}{
+		{"nil ok", nil, false},
+		{"empty ok", str(""), false},
+		{"blank ok", str("   "), false},
+		{"https ok", str("https://example.com/deal?x=1"), false},
+		{"http ok", str("http://example.com"), false},
+		{"javascript rejected", str("javascript:alert(1)"), true},
+		{"data rejected", str("data:text/html,<script>x</script>"), true},
+		{"file rejected", str("file:///etc/passwd"), true},
+		{"hostless https rejected", str("https:///path"), true},
+		{"schemeless rejected", str("example.com"), true},
+		{"protocol-relative rejected", str("//example.com"), true},
+		{"relative rejected", str("/local/path"), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateOutboundURL("test_url", tc.u)
+			if tc.wantErr && err == nil {
+				t.Error("expected error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if tc.wantErr && err != nil && !errors.Is(err, ErrInvalidURL) {
+				t.Errorf("expected ErrInvalidURL, got %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateCouponWriteURLs(t *testing.T) {
+	bad := "javascript:alert(1)"
+	input := CreateCouponInput{Title: "x", Status: string(CouponStatusActive), ReferralURL: &bad}
+	if err := validateCouponWrite(input); !errors.Is(err, ErrInvalidURL) {
+		t.Errorf("expected ErrInvalidURL, got %v", err)
+	}
+	input.ReferralURL = nil
+	input.TermsURL = &bad
+	if err := validateCouponWrite(input); !errors.Is(err, ErrInvalidURL) {
+		t.Errorf("expected ErrInvalidURL, got %v", err)
 	}
 }

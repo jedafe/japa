@@ -28,6 +28,9 @@ var (
 	ErrDealRedirectUnavailable = errors.New("deal redirect unavailable")
 	// ErrInvalidDetails is a sentinel error: coupons.details failed validation.
 	ErrInvalidDetails = errors.New("invalid deal details")
+	// ErrInvalidURL is a sentinel error: an outbound URL field (terms_url,
+	// referral_url, base_url) is not an absolute http(s) URL.
+	ErrInvalidURL = errors.New("invalid url")
 )
 
 // InternalDealProviderSlug is the reserved provider URL segment used by
