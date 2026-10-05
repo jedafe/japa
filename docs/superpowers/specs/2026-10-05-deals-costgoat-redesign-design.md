@@ -49,6 +49,11 @@ ALTER TABLE coupons ADD CONSTRAINT coupons_status_check
 
 - `affiliate_providers.category` — free text, no CHECK (categories evolve without
   migrations).
+- `affiliate_providers` rows are always the **merchant/brand** a deal belongs to
+  (DigitalOcean, Amazon, Remitly…) — shown on deal rows and as the
+  `/deal/{provider}` landing page. They are unrelated to `coupon_feed_sources`
+  (admin import pipelines); the feed importer already auto-creates a provider per
+  offer merchant. For org submissions the provider *is* the org's public brand.
 - `affiliate_providers.organization_id` — links a provider to the org that owns it;
   one provider per org (partial unique index). Providers auto-created for
   org-submitted deals.
