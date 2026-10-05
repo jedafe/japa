@@ -131,14 +131,7 @@ func (a *ProcessorAdapter) attractionSeededQID(ctx context.Context, space *gen.G
 		}
 	}
 
-	var m map[string]any
-	if err := json.Unmarshal(space.WikiContent, &m); err == nil {
-		if qid, ok := m["wikidata_id"].(string); ok && strings.HasPrefix(qid, "Q") {
-			return qid
-		}
-	}
-
-	return ""
+	return wikiContentWikidataID(space.WikiContent)
 }
 
 // populateAttractionSpace enriches an attraction wiki space from Wikidata +
@@ -219,8 +212,63 @@ func (a *ProcessorAdapter) populateAttractionSpace(ctx context.Context, space *g
 	}
 
 	a.enrichAttractionFields(ctx, space, ent, qid)
+	a.linkAttractionParents(ctx, space, ent)
 
 	return wikiErr
+}
+
+// linkAttractionParents resolves the attraction's Wikidata P131
+// (located-in) chain against existing geo spaces and links every match
+// as an additional parent via space_parent_spaces (§80 border
+// attractions — Victoria Falls links both Livingstone-side and
+// Victoria Falls Town-side chains). The trigger/primary parent set at
+// create is untouched; AddParentSpace's ON CONFLICT DO NOTHING keeps
+// re-runs idempotent and unmatched QIDs are skipped silently.
+func (a *ProcessorAdapter) linkAttractionParents(ctx context.Context, space *gen.GetSpaceByIDRow, ent *wikidataUniversity) {
+	if ent == nil || len(ent.LocatedIn) == 0 {
+		return
+	}
+
+	matches, err := a.svc.read.SpaceIDsByWikidataIDs(ctx, ent.LocatedIn)
+	if err != nil {
+		slog.Warn("space:auto_populate — P131 parent resolution failed",
+			"space_id", space.ID.String(), "error", err)
+		return
+	}
+	if len(matches) == 0 {
+		return
+	}
+
+	linked := map[pgtype.UUID]bool{space.ID: true}
+	if space.ParentID.Valid {
+		linked[space.ParentID] = true
+	}
+	if parents, perr := a.svc.GetParentSpaces(ctx, space.ID); perr == nil {
+		for _, p := range parents {
+			linked[p.ID] = true
+		}
+	}
+
+	for _, m := range matches {
+		// Only geographic containers are valid attraction parents —
+		// a QID could collide with a stamped university or attraction.
+		switch m.TypeSlug {
+		case "country", "state", "city":
+		default:
+			continue
+		}
+		if linked[m.ID] {
+			continue
+		}
+		if err := a.svc.AddParentSpace(ctx, space.ID, m.ID); err != nil {
+			slog.Warn("space:auto_populate — P131 parent link failed",
+				"space_id", space.ID.String(), "parent_id", m.ID.String(), "error", err)
+			continue
+		}
+		linked[m.ID] = true
+		slog.Info("space:auto_populate — linked P131 parent",
+			"space_id", space.ID.String(), "parent_id", m.ID.String(), "parent_type", m.TypeSlug)
+	}
 }
 
 // marshalWikiContentWithQID serializes the Wikipedia summary and merges in
@@ -248,6 +296,43 @@ func marshalWikiContentWithQID(s *wikipediaSummary, qid string) ([]byte, error) 
 	}
 
 	return out, nil
+}
+
+// wikiContentWikidataID reads the wikidata_id stamp out of a space's
+// stored wiki_content JSON ("" when absent or unparseable).
+func wikiContentWikidataID(wikiContent []byte) string {
+	var m map[string]any
+	if err := json.Unmarshal(wikiContent, &m); err != nil {
+		return ""
+	}
+	if qid, ok := m["wikidata_id"].(string); ok && strings.HasPrefix(qid, "Q") {
+		return qid
+	}
+	return ""
+}
+
+// stampSpaceWikidataID merges a Wikidata QID into a space's wiki_content
+// without disturbing other keys — used when a space has no Wikipedia
+// summary to rewrite (or when the seeder resolves a parent's QID). No-op
+// when the stamp is already present, so retries stay idempotent.
+func (a *ProcessorAdapter) stampSpaceWikidataID(ctx context.Context, space *gen.GetSpaceByIDRow, qid string) {
+	if qid == "" || wikiContentWikidataID(space.WikiContent) == qid {
+		return
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(space.WikiContent, &m); err != nil || m == nil {
+		m = map[string]any{}
+	}
+	m["wikidata_id"] = qid
+
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	if _, err := a.svc.UpdateSpaceWikiContent(ctx, space.ID, raw); err != nil {
+		slog.Warn("spaces: wikidata_id stamp failed", "space_id", space.ID.String(), "qid", qid, "error", err)
+	}
 }
 
 // wikiContentImageURL pulls the best image URL out of a stored

@@ -4321,6 +4321,53 @@ func (q *Queries) SpaceHasChildSpaces(ctx context.Context, id pgtype.UUID) (bool
 	return exists, err
 }
 
+const spaceIDsByWikidataIDs = `-- name: SpaceIDsByWikidataIDs :many
+SELECT DISTINCT s.id, st.slug AS type_slug, (s.wiki_content->>'wikidata_id')::text AS qid
+FROM spaces s
+JOIN space_types st ON st.id = s.space_type_id
+WHERE s.deleted_at IS NULL
+  AND s.wiki_content->>'wikidata_id' = ANY($1::text[])
+UNION
+SELECT s.id, st.slug AS type_slug, cfv.value_text::text AS qid
+FROM custom_field_values cfv
+JOIN spaces s ON s.id = cfv.entity_id AND s.deleted_at IS NULL
+JOIN space_types st ON st.id = s.space_type_id
+WHERE cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000117'::uuid
+  AND cfv.value_text = ANY($1::text[])
+`
+
+type SpaceIDsByWikidataIDsRow struct {
+	ID       pgtype.UUID `json:"id"`
+	TypeSlug string      `json:"type_slug"`
+	Qid      string      `json:"qid"`
+}
+
+// Batch QID → space resolution for multi-P131 attraction parent linking
+// (§80): matches the wikidata_id custom field and the wiki_content stamp
+// geo spaces carry after auto-population. Returns the space's type slug
+// so callers can keep geo parents (country/state/city) and skip anything
+// else that happens to carry the QID.
+func (q *Queries) SpaceIDsByWikidataIDs(ctx context.Context, qids []string) ([]SpaceIDsByWikidataIDsRow, error) {
+	rows, err := q.db.Query(ctx, spaceIDsByWikidataIDs, qids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SpaceIDsByWikidataIDsRow
+	for rows.Next() {
+		var i SpaceIDsByWikidataIDsRow
+		if err := rows.Scan(&i.ID, &i.TypeSlug, &i.Qid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const suggestParentSpaces = `-- name: SuggestParentSpaces :many
 SELECT s.id, s.name, s.slug FROM spaces s
 WHERE s.status = 'active' AND s.deleted_at IS NULL
