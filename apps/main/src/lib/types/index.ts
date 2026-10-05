@@ -1950,6 +1950,14 @@ export interface LearnEnrollment {
  * Coupons — Section 21 (GET /coupons, /coupons/{id})
  * ------------------------------------------------------------------ */
 
+/** coupons.details JSONB — editorial sections for the /deal page (§55). */
+export interface CouponDetails {
+	summary?: string;
+	trial?: { title?: string; body?: string; url?: string };
+	sections?: { title?: string; body?: string }[];
+	faq?: { q?: string; a?: string }[];
+}
+
 /** GET /coupons item — a public active coupon. */
 export interface Coupon {
 	id: string;
@@ -1980,6 +1988,10 @@ export interface Coupon {
 	provider_logo_media_id?: string | null;
 	provider_base_url?: string | null;
 	provider_is_active?: boolean | null;
+	/** Flat provider taxonomy label (§55) — drives the /deals category pills. */
+	provider_category?: string | null;
+	/** JSONB editorial sections for the /deal page (§55). */
+	details?: CouponDetails | null;
 }
 
 /** Reserved provider URL segment for internal (provider-less) coupons. */
@@ -2002,8 +2014,23 @@ export interface DealPartnerProvider {
 	is_active: boolean;
 	is_featured: boolean;
 	commission_rate?: number | string | null;
+	/** Flat provider taxonomy label (§55). */
+	category?: string | null;
 	created_at: string;
 	updated_at: string;
+}
+
+/** GET /deals/partners item — slim provider for selects/filter pills (§55). */
+export interface DealPartnerRef {
+	id: string;
+	name: string;
+	slug: string;
+	description?: string | null;
+	category?: string | null;
+	logo_media_id?: string | null;
+	base_url?: string | null;
+	is_featured: boolean;
+	organization_id?: string | null;
 }
 
 /** GET /deals/partners/{slug} payload — provider + its active deals. */
