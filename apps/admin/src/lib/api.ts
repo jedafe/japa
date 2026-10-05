@@ -2573,3 +2573,41 @@ export const campaignsAdminApi = {
 export const adminCatalogApi = {
 	get: (name: string) => api<CatalogOption[]>(`/admin/catalogs/${encodeURIComponent(name)}`),
 };
+
+// ── Public Product Roadmap (§113) ───────────────────────────────────────
+// Admin CRUD for roadmap items, the pending-submission triage queue, and
+// categories. All routes sit under /admin/roadmap and are gated by the
+// roadmap.* permission nodes on the backend.
+
+export const roadmapAdminApi = {
+	list: (params?: string) => api<unknown>(`/admin/roadmap/items${params ? `?${params}` : ''}`),
+	get: (id: string) => api<unknown>(`/admin/roadmap/items/${id}`),
+	create: (body: Record<string, unknown>) =>
+		api('/admin/roadmap/items', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api(`/admin/roadmap/items/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/roadmap/items/${id}`, { method: 'DELETE' }),
+	// Permanent delete of an already soft-deleted row — admin.hard_delete.
+	hardDelete: (id: string) =>
+		api(`/admin/roadmap/items/${id}?force=true`, { method: 'DELETE' }),
+	restore: (id: string) =>
+		api(`/admin/roadmap/items/${id}/restore`, { method: 'POST', body: {} }),
+	setStatus: (id: string, status: string) =>
+		api(`/admin/roadmap/items/${id}/status`, { method: 'PATCH', body: { status } }),
+	reorder: (items: { id: string; sort_order: number }[]) =>
+		api('/admin/roadmap/items/reorder', { method: 'POST', body: { items } }),
+	submissions: (params?: string) =>
+		api<unknown>(`/admin/roadmap/submissions${params ? `?${params}` : ''}`),
+};
+
+export const roadmapCategoriesAdminApi = {
+	list: (params?: string) =>
+		api<unknown>(`/admin/roadmap/categories${params ? `?${params}` : ''}`),
+	create: (body: Record<string, unknown>) =>
+		api('/admin/roadmap/categories', { method: 'POST', body }),
+	update: (id: string, body: Record<string, unknown>) =>
+		api(`/admin/roadmap/categories/${id}`, { method: 'PATCH', body }),
+	delete: (id: string) =>
+		api(`/admin/roadmap/categories/${id}`, { method: 'DELETE' }),
+};

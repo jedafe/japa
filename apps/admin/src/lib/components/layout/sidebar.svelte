@@ -24,7 +24,8 @@
 		Route, ListChecks, BadgeCheck, Home,
 		FileCheck, Globe2, Calculator, MapPin,
 		CalendarClock, ClipboardCheck, Gauge, PiggyBank, Timer,
-		ScanSearch, Video, Inbox, Rss
+		ScanSearch, Video, Inbox, Rss, Tags,
+		Map as MapIcon
 	} from "lucide-svelte";
 	import { clsx } from "clsx";
 	import { sidebarCollapsed } from "$lib/stores/sidebar.svelte";
@@ -105,6 +106,9 @@
 			{ path: "/tags", label: t("nav.tags", "Tags"), icon: Tag, permission: "tags.manage" },
 			{ path: "/reactions", label: t("nav.reactions", "Reactions"), icon: Star, permission: "content.reaction_types.manage" },
 		{ path: "/share-platforms", label: t("nav.share_platforms", "Share Platforms"), icon: Share2, permission: "content.reaction_types.manage" },
+			{ path: "/roadmap", label: t("nav.roadmap", "Roadmap"), icon: MapIcon, permission: "roadmap.view" },
+			{ path: "/roadmap/submissions", label: t("nav.roadmap_submissions", "Roadmap Submissions"), icon: Inbox, permission: "roadmap.moderate" },
+			{ path: "/roadmap/categories", label: t("nav.roadmap_categories", "Roadmap Categories"), icon: Tags, permission: "roadmap.edit" },
 	{ path: "/imports", label: t("nav.imports", "Content Imports"), icon: FileUp, permission: "import.manage" }
 			]
 		},
