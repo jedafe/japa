@@ -481,6 +481,14 @@ func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Reques
 	base := h.baseURL(r)
 	entries := make([]urlEntry, 0)
 
+	// Deals index page (/deals) — canonical listing of all live deals.
+	entries = append(entries, urlEntry{
+		Loc:        fmt.Sprintf("%s/deals", base),
+		LastMod:    h.latestDealsLastMod(r.Context()),
+		ChangeFreq: "daily",
+		Priority:   "0.6",
+	})
+
 	rows, err := h.reader.Query(r.Context(), `SELECT c.slug, COALESCE(ap.slug, 'japaconnect'), c.updated_at
 		 FROM coupons c
 		 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
