@@ -4,6 +4,7 @@
 	// by GET /roadmap/board (Rule 16: categories, columns, and items all come
 	// from the API). The flagship item (is_flagship) is pinned in a banner
 	// above the grid. Voting is logged-in only; guests get a login CTA.
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -47,6 +48,14 @@
 <svelte:head>
 	<title>{t('roadmap.title', 'Product Roadmap')} — JapaConnect</title>
 	<meta name="description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
+	<link rel="canonical" href="{page.url.origin}/roadmap" />
+	<meta property="og:title" content={t('roadmap.title', 'Product Roadmap')} />
+	<meta property="og:description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.href} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={t('roadmap.title', 'Product Roadmap')} />
+	<meta name="twitter:description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
 </svelte:head>
 
 <section class="mx-auto max-w-full space-y-6 px-4 py-8">

@@ -4,6 +4,7 @@
 	// window, feature-flag rollout badge, description, and the §49 comment
 	// thread (via the item's shadow contents row). Moderators carrying
 	// roadmap.moderate get the same inline status select as board cards.
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { tiptapBodyToHtml } from '$lib/tiptap/serialize';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
@@ -55,9 +56,24 @@
 
 <svelte:head>
 	<title>{item.title} — {t('roadmap.title', 'Product Roadmap')} — JapaConnect</title>
-	{#if item.summary}
-		<meta name="description" content={item.summary} />
-	{/if}
+	<meta
+		name="description"
+		content={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')}
+	/>
+	<link rel="canonical" href={page.url.href} />
+	<meta property="og:title" content={item.title} />
+	<meta
+		property="og:description"
+		content={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')}
+	/>
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content={page.url.href} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={item.title} />
+	<meta
+		name="twitter:description"
+		content={item.summary || t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')}
+	/>
 </svelte:head>
 
 <section class="mx-auto max-w-3xl space-y-6 px-4 py-8">

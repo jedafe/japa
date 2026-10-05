@@ -60,7 +60,7 @@ func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings site
 // sitemapCacheKey builds the platform-scoped Valkey cache key for a sitemap
 // sub-file. Pattern: jc:cache:sitemap:{}:{type}
 // (valkey-keys-catalog.md). type is "content", "spaces", "tags", "users",
-// "images", or "index".
+// "images", "deals", "roadmap", or "index".
 func sitemapCacheKey(sitemapType string) string {
 	return "jc:cache:sitemap:" + "" + ":" + sitemapType
 }
@@ -115,7 +115,7 @@ func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 		return
 	}
 
-	types := []string{"index", "content", "spaces", "tags", "users", "images"}
+	types := []string{"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap"}
 	for _, t := range types {
 		if err := rdb.Del(ctx, sitemapCacheKey(t)).Err(); err != nil {
 			slog.Warn("sitemap: failed to invalidate cache", "type", t, "error", err)
@@ -220,6 +220,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		{Loc: base + "/sitemap-users.xml", LastMod: usersLastMod},
 		{Loc: base + "/sitemap-images.xml", LastMod: imagesLastMod},
 		{Loc: base + "/sitemap-deals.xml", LastMod: h.latestDealsLastMod(r.Context())},
+		{Loc: base + "/sitemap-roadmap.xml", LastMod: h.latestRoadmapLastMod(r.Context())},
 	}
 
 	var buf strings.Builder
@@ -548,6 +549,75 @@ func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.serveSitemapBytes(w, r, "deals", renderURLSetXML(entries))
+}
+
+// latestRoadmapLastMod returns the most recent updated_at among public-status
+// roadmap items, or empty when none exist. Used as the lastmod for
+// /sitemap-roadmap.xml and the /roadmap board entry.
+// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md.
+func (h *SitemapHandler) latestRoadmapLastMod(ctx context.Context) string {
+	rows, err := h.queries.ListRoadmapSitemapItems(ctx)
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+
+	return rows[0].UpdatedAt.Time.Format(time.RFC3339)
+}
+
+// ServeRoadmapSitemap serves roadmap sitemap entries — the static /roadmap
+// board and /roadmap/changelog pages plus one URL per public-status item
+// (/roadmap/{slug}). ListRoadmapSitemapItems already restricts to the
+// public lifecycle statuses (under_review/planned/in_progress/shipped) and
+// excludes soft-deleted rows, so pending/declined/archived items and user
+// submissions never reach the sitemap. /roadmap/submit is intentionally
+// excluded — it is an auth-required form, not indexable content.
+// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md.
+func (h *SitemapHandler) ServeRoadmapSitemap(w http.ResponseWriter, r *http.Request) {
+
+	if h.cachedSitemapXML(w, r, "roadmap") {
+		return
+	}
+
+	rows, err := h.queries.ListRoadmapSitemapItems(r.Context())
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		return
+	}
+
+	base := h.baseURL(r)
+
+	// Rows come back ordered by updated_at DESC — the first row's timestamp
+	// is the freshest lastmod for the static entries.
+	lastMod := ""
+	if len(rows) > 0 {
+		lastMod = rows[0].UpdatedAt.Time.Format(time.RFC3339)
+	}
+
+	entries := []urlEntry{
+		{
+			Loc:        fmt.Sprintf("%s/roadmap", base),
+			LastMod:    lastMod,
+			ChangeFreq: "daily",
+			Priority:   "0.6",
+		},
+		{
+			Loc:        fmt.Sprintf("%s/roadmap/changelog", base),
+			LastMod:    lastMod,
+			ChangeFreq: "weekly",
+			Priority:   "0.5",
+		},
+	}
+
+	for _, item := range rows {
+		entries = append(entries, urlEntry{
+			Loc:        fmt.Sprintf("%s/roadmap/%s", base, item.Slug),
+			LastMod:    item.UpdatedAt.Time.Format(time.RFC3339),
+			ChangeFreq: "weekly",
+			Priority:   "0.5",
+		})
+	}
+
+	h.serveSitemapBytes(w, r, "roadmap", renderURLSetXML(entries))
 }
 
 // ServeUsersSitemap serves user profile sitemap entries (P5.6 — Task 31),

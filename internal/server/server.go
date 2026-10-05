@@ -2821,6 +2821,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
 		r.Get("/sitemap-images.xml", sitemapHandler.ServeImagesSitemap)
 		r.Get("/sitemap-deals.xml", sitemapHandler.ServeDealsSitemap)
+		r.Get("/sitemap-roadmap.xml", sitemapHandler.ServeRoadmapSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required, platform-scoped)
 		rssHandlers := rsspkg.NewHandlers(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName)

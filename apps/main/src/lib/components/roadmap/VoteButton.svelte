@@ -51,9 +51,29 @@
 		pending = false;
 
 		if (res.error) {
-			// Roll back the optimistic update.
-			voted = prevVoted;
-			count = prevCount;
+			// A mid-page session expiry sends the member to login instead of a
+			// silent rollback (§113: votes are logged-in only).
+			if (res.status === 401 || res.error.code === 'unauthorized') {
+				voted = prevVoted;
+				count = prevCount;
+				goto(`/login?redirect=${encodeURIComponent(page.url.pathname + page.url.search)}`);
+				return;
+			}
+			// 409 codes mean the server state disagreed with the optimistic
+			// guess — converge to the server's answer instead of a blind
+			// rollback (already_voted ⇒ the tally already includes this vote;
+			// not_voted ⇒ it does not).
+			if (res.error.code === 'already_voted') {
+				voted = true;
+				count = prevCount;
+			} else if (res.error.code === 'not_voted') {
+				voted = false;
+				count = Math.max(0, prevCount - 1);
+			} else {
+				// Roll back the optimistic update.
+				voted = prevVoted;
+				count = prevCount;
+			}
 			return;
 		}
 		if (res.data && typeof res.data.vote_count === 'number') {

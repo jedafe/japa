@@ -2,6 +2,7 @@
 	// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
 	// Release-notes style changelog — shipped roadmap items grouped by the
 	// month of shipped_at. All data from GET /roadmap/changelog (Rule 16).
+	import { page } from '$app/state';
 	import { t, i18n } from '$lib/i18n';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { ArrowLeft, History, PackageOpen, TriangleAlert } from 'lucide-svelte';
@@ -48,6 +49,20 @@
 	<title>{t('roadmap.changelog.title', 'Changelog')} — JapaConnect</title>
 	<meta
 		name="description"
+		content={t('roadmap.changelog.subtitle', 'Everything that has shipped on the roadmap.')}
+	/>
+	<link rel="canonical" href="{page.url.origin}/roadmap/changelog" />
+	<meta property="og:title" content={t('roadmap.changelog.title', 'Changelog')} />
+	<meta
+		property="og:description"
+		content={t('roadmap.changelog.subtitle', 'Everything that has shipped on the roadmap.')}
+	/>
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.href} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={t('roadmap.changelog.title', 'Changelog')} />
+	<meta
+		name="twitter:description"
 		content={t('roadmap.changelog.subtitle', 'Everything that has shipped on the roadmap.')}
 	/>
 </svelte:head>
