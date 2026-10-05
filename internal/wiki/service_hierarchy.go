@@ -336,14 +336,28 @@ func selectValueJSON(raw []byte) string {
 		return ""
 	}
 
-	var v struct {
-		Value string `json:"value"`
-	}
-	if err := json.Unmarshal(raw, &v); err != nil {
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
 		return ""
 	}
 
-	return v.Value
+	// Stored shapes seen across writers: {"value":"x"}, {"values":["x",…]},
+	// and the bare JSON string "x".
+	switch t := probe.(type) {
+	case string:
+		return t
+	case map[string]any:
+		if s, ok := t["value"].(string); ok {
+			return s
+		}
+		if arr, ok := t["values"].([]any); ok && len(arr) > 0 {
+			if s, ok := arr[0].(string); ok {
+				return s
+			}
+		}
+	}
+
+	return ""
 }
 
 // directoryChildKinds batch-reads the `kind` select field for the capped
