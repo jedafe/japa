@@ -2138,6 +2138,24 @@ export const wikiAdminApi = {
 		api<unknown>(`/admin/wiki/page-templates/${id}`, { method: 'PATCH', body }),
 	deletePageTemplate: (id: string) =>
 		api<unknown>(`/admin/wiki/page-templates/${id}`, { method: 'DELETE' }),
+	// §80 attractions: Wikidata bulk seed under a geo parent space.
+	// dry_run:true returns the candidate list synchronously; otherwise the
+	// wiki:seed_attractions task is enqueued and the response is
+	// {queued: true}.
+	seedAttractions: (body: { within: string; limit?: number; dry_run?: boolean }) =>
+		api<AttractionSeedResponse>(`/admin/wiki/seed/attractions`, { method: 'POST', body }),
+};
+
+// §80 attractions — POST /admin/wiki/seed/attractions payload/response.
+export type AttractionSeedCandidate = {
+	qid: string;
+	name: string;
+	description?: string;
+};
+export type AttractionSeedResponse = {
+	candidates?: AttractionSeedCandidate[];
+	count?: number;
+	queued?: boolean;
 };
 
 export const scamAlertAdminApi = {
