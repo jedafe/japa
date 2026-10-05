@@ -41,43 +41,36 @@
 		id: string;
 		name: string;
 		slug: string;
+		is_active?: boolean;
 	};
 
 	let entityController = $state<EntityPageController | undefined>(undefined);
 	let pageError = $state('');
-	let bulkDeleting = $state(false);
 	let providerOptions = $state<Array<{ value: string; label: string }>>([]);
 	// §58 — managed currency list: drives the currency select options and
 	// symbol rendering for fixed-amount discounts.
 	let currencies = $state<CurrencyInfo[]>([]);
 
-	// Load affiliate providers for the provider_id select (Section 55 — provider linkage).
+	// Load affiliate providers for the provider_id select (Section 55 — provider
+	// linkage). `is_active` is intentionally absent from the query so inactive
+	// providers (e.g. org providers awaiting approval) still resolve as options.
 	onMount(async () => {
 		loadCurrencies().then((list) => (currencies = list));
 		try {
 			const res = await affiliateProvidersAdminApi.list('page_size=100');
 			if (res.ok && Array.isArray(res.data)) {
-				providerOptions = (res.data as Provider[]).map((p) => ({ value: p.id, label: p.name }));
+				providerOptions = (res.data as Provider[]).map((p) => ({
+					value: p.id,
+					label:
+						p.is_active === false
+							? `${p.name} (${t('common.inactive', 'Inactive')})`
+							: p.name
+				}));
 			}
 		} catch {
 			// Providers list is best-effort; the select will just be empty.
 		}
 	});
-
-	async function bulkDelete(ids: Set<string>) {
-		const idArr = Array.from(ids);
-		if (idArr.length === 0) return;
-		if (bulkDeleting) return; // in-flight guard
-		bulkDeleting = true;
-		pageError = '';
-		try {
-			await Promise.all(idArr.map((id) => couponsAdminApiExtended.delete(id)));
-		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('common.error', 'Failed to delete deals');
-		} finally {
-			bulkDeleting = false;
-		}
-	}
 
 	// Shared payload builder for create/update/moderation. PATCH UpdateCoupon is
 	// a full-column overwrite (internal/db/queries/coupons.sql UpdateCoupon sets
@@ -92,13 +85,18 @@
 	// the raw ISO timestamps captured in `load` (_valid_from_iso /
 	// _expires_at_iso) because the row's date-input values are collapsed to
 	// YYYY-MM-DD and re-expanding them would shift real timestamps.
+	// `forCreate` uppercases the coupon code (create-time normalization); on
+	// update/moderation the stored casing is preserved verbatim so a save
+	// can't silently change the displayed code.
 	function buildCouponPayload(
 		body: Record<string, unknown>,
-		opts?: { forModeration?: boolean }
+		opts?: { forModeration?: boolean; forCreate?: boolean }
 	): { ok: true; payload: Record<string, unknown> } | { ok: false; error: string } {
 		const payload: Record<string, unknown> = {
 			title: String(body.title ?? '').trim(),
-			code: String(body.code ?? '').trim().toUpperCase(),
+			code: opts?.forCreate
+				? String(body.code ?? '').trim().toUpperCase()
+				: String(body.code ?? '').trim(),
 			coupon_type: body.coupon_type ?? 'external',
 			discount_type: body.discount_type ?? (opts?.forModeration ? null : 'percent'),
 			discount_value:
@@ -214,7 +212,7 @@
 		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
 		{ key: 'slug', label: t('coupons.slug', 'Slug'), type: 'text', placeholder: t('coupons.slug_placeholder', 'Auto-generated from title if blank') },
 		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', placeholder: t('coupons.code_placeholder', 'Optional — deal offers may not need one') },
-		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', options: couponTypeOptions },
+		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', options: couponTypeOptions, hideInEdit: true },
 		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'autocomplete', placeholder: t('coupons.provider_placeholder', 'Search provider…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
 		{ key: 'discount_type', label: t('coupons.type', 'Discount Type'), type: 'select', options: discountTypeOptions },
 		{ key: 'discount_value', label: t('coupons.value', 'Value'), type: 'number' },
@@ -292,14 +290,6 @@
 			},
 			{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row: Coupon, ctx?: ActionContext) => ctx?.openDelete(row) }
 		],
-		bulkActions: [
-			{
-				label: t('common.deleteSelected', 'Delete Selected'),
-				icon: Trash2,
-				variant: 'destructive',
-				onclick: bulkDelete
-			}
-		],
 		fields,
 		load: async ({ q, page, pageSize, sort, filter }) => {
 			const params = new URLSearchParams();
@@ -314,7 +304,9 @@
 			if (sortKey) params.set('sort', sortKey);
 			const result = await couponsAdminApiExtended.list(params.toString() || undefined);
 			if (result.ok) {
-				const raw = (result.data as Coupon[]) ?? [];
+				// apiRaw — the body is { data: [...], total } (§55).
+				const body = result.data;
+				const raw = (Array.isArray(body?.data) ? body.data : []) as Coupon[];
 				// Convert ISO timestamps to date-input format for form seeding; the
 				// details object is stringified for the JSON textarea field.
 				const data = raw.map((c) => ({
@@ -328,15 +320,21 @@
 					expires_at: c.expires_at ? isoTimestampToDateInput(c.expires_at) : '',
 					details: c.details ? JSON.stringify(c.details, null, 2) : ''
 				}));
-				// Use server-provided total if available; fall back to data.length.
-				const total = (result as any).total ?? data.length;
-				const totalPages = pageSize ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				// Server-provided total drives EntityPage pagination; fall back to
+				// the page row count when the field is absent.
+				const total = typeof body?.total === 'number' ? body.total : data.length;
+				const totalPages =
+					typeof body?.total_pages === 'number'
+						? body.total_pages
+						: pageSize
+							? Math.max(1, Math.ceil(total / pageSize))
+							: 1;
 				return { data, total, totalPages };
 			}
 			throw new Error(result.error ?? t('common.error', 'Failed to load deals'));
 		},
 		create: async (body) => {
-			const built = buildCouponPayload(body);
+			const built = buildCouponPayload(body, { forCreate: true });
 			if (!built.ok) return { ok: false, error: built.error };
 			const res = await couponsAdminApiExtended.create(built.payload);
 			return res.ok ? { ok: true } : { ok: false, error: res.error };

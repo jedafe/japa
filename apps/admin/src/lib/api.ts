@@ -1475,7 +1475,10 @@ export const broadcastsAdminApiExtended = {
 };
 
 export const couponsAdminApiExtended = {
-	list: (params?: string) => api<unknown>(`/admin/coupons${params ? `?${params}` : ''}`),
+	// apiRaw — the admin coupons list returns `total` alongside `data`
+	// (§55); callers need the pagination sidecar for server-side paging.
+	list: (params?: string) =>
+		apiRaw<{ data: unknown[]; total?: number; total_pages?: number }>(`/admin/coupons${params ? `?${params}` : ''}`),
 	get: (id: string) => api<unknown>(`/admin/coupons/${id}`),
 	create: (body: Record<string, unknown>) => api<unknown>('/admin/coupons', { method: 'POST', body }),
 	update: (id: string, body: Record<string, unknown>) =>
