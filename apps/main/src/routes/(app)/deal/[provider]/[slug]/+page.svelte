@@ -364,7 +364,7 @@
 			{/if}
 
 			<!-- FAQ -->
-			{#if faq.length}
+			{#if faqSchemaEntries.length}
 				<section class="mt-6">
 					<h2 class="text-base font-semibold text-[var(--color-text)]">
 						{t('deal.faq', 'Frequently asked questions')}
@@ -372,7 +372,7 @@
 					<div
 						class="mt-3 divide-y divide-[var(--color-border)] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)]"
 					>
-						{#each faq as f, i (i)}
+						{#each faqSchemaEntries as f, i (i)}
 							<details class="group">
 								<summary
 									class="flex cursor-pointer items-center justify-between gap-3 p-4 text-sm font-medium text-[var(--color-text)]"
