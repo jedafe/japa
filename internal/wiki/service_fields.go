@@ -23,6 +23,7 @@ import (
 	"github.com/jedafe/japa/internal/comparison/resolver"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -519,7 +520,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 			}
 
 			if v, ok := valuesByField[f.ID.String()]; ok {
-				dto.Value = cfvValueJSON(v)
+				dto.Value = s.entityFieldValueJSON(ctx, v)
 			}
 
 			dto.Visible = visibleSet[f.ID.String()] || canManage
@@ -707,7 +708,7 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 		}
 
 		if v, ok := valuesByField[f.ID.String()]; ok {
-			dto.Value = cfvValueJSON(v)
+			dto.Value = s.entityFieldValueJSON(ctx, v)
 		}
 
 		dto.Visible = visibleSet[f.ID.String()] || canManage
@@ -1477,6 +1478,139 @@ func entityClassesFor(entityType string, spaceTypeID pgtype.UUID, spaceTypeSlug 
 	default:
 		return []string{"jce_entity:" + entityType}
 	}
+}
+
+// mediaFieldTypes carry value_json media references that resolve to
+// {id,url,alt} objects on the field read path (§80 gallery fields).
+var mediaFieldTypes = map[string]bool{
+	customfields.FieldTypeImageSingle: true,
+	customfields.FieldTypeImageMulti:  true,
+	customfields.FieldTypeMedia:       true,
+}
+
+// mediaFieldItem is one resolved media reference inside an image/media
+// field value — the frontend gets a usable URL + alt instead of a bare id.
+type mediaFieldItem struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// entityFieldValueJSON renders a cfv row to its JSON value, resolving
+// image_single/image_multi/media value_json media references into
+// {id,url,alt} objects (single fields emit the object, multi/media emit an
+// array). Non-media types — and any resolution failure — pass value_json
+// through verbatim so a resolver outage never blanks stored values.
+func (s *Service) entityFieldValueJSON(ctx context.Context, v gen.ListCustomFieldValuesWithDefsByEntityRow) json.RawMessage {
+	if !mediaFieldTypes[v.FieldType] || len(v.ValueJson) == 0 || s.media == nil {
+		return cfvValueJSON(v)
+	}
+
+	ids, alts := parseMediaFieldRefs(v.ValueJson)
+	if len(ids) == 0 {
+		return cfvValueJSON(v)
+	}
+
+	rows, err := s.store.ListMediaByIDs(ctx, ids)
+	if err != nil {
+		slog.Warn("wiki: entity fields: media resolution failed", "error", err)
+		return cfvValueJSON(v)
+	}
+
+	byID := make(map[pgtype.UUID]*gen.Medium, len(rows))
+	for i := range rows {
+		m := rows[i]
+		byID[m.ID] = &m
+	}
+
+	items := make([]mediaFieldItem, 0, len(ids))
+	for _, id := range ids {
+		m := byID[id]
+		if m == nil {
+			continue
+		}
+		alt := alts[id.String()]
+		if alt == "" && m.AltText != nil {
+			alt = *m.AltText
+		}
+		items = append(items, mediaFieldItem{
+			ID:  id.String(),
+			URL: s.media.GetMediaURL(m, media.ImageProxyOpts{Width: 960, Format: "webp"}),
+			Alt: alt,
+		})
+	}
+
+	var raw []byte
+	if v.FieldType == customfields.FieldTypeImageSingle {
+		if len(items) == 0 {
+			return nil
+		}
+		raw, err = json.Marshal(items[0])
+	} else {
+		raw, err = json.Marshal(items)
+	}
+	if err != nil {
+		return cfvValueJSON(v)
+	}
+
+	return json.RawMessage(raw)
+}
+
+// parseMediaFieldRefs extracts ordered media IDs (and any authored alt
+// text) from the accepted stored shapes:
+//
+//	"<uuid>"                          — bare id
+//	{"value": "<uuid>"}               — wrapped single (select convention)
+//	["<uuid>", …]                     — id array
+//	{"value": ["<uuid>", …]}          — wrapped array
+//	[{"id": "<uuid>", "alt": "…"}, …] — object array (alt carried through)
+func parseMediaFieldRefs(raw []byte) ([]pgtype.UUID, map[string]string) {
+	alts := map[string]string{}
+	var ids []pgtype.UUID
+
+	addID := func(s string) {
+		var id pgtype.UUID
+		if err := id.Scan(s); err == nil && id.Valid {
+			ids = append(ids, id)
+		}
+	}
+	addObj := func(m map[string]any) {
+		s, _ := m["id"].(string)
+		addID(s)
+		if alt, _ := m["alt"].(string); alt != "" && s != "" {
+			alts[s] = alt
+		}
+	}
+
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil, nil
+	}
+
+	// Unwrap the {"value": …} envelope used by select-style writes.
+	if m, ok := probe.(map[string]any); ok {
+		if inner, exists := m["value"]; exists {
+			probe = inner
+		}
+	}
+
+	switch t := probe.(type) {
+	case string:
+		addID(t)
+	case map[string]any:
+		addObj(t)
+	case []any:
+		for _, el := range t {
+			switch e := el.(type) {
+			case string:
+				addID(e)
+			case map[string]any:
+				addObj(e)
+			}
+		}
+	}
+
+	return ids, alts
 }
 
 // cfvValueJSON renders a stored custom_field_values row as the JSON value for
