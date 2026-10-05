@@ -39,6 +39,20 @@ func (h *Handlers) ListSpaceRules(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rules})
 }
 
+// rejectWikiOnly writes 409 wiki_only_space and returns true when the
+// space's type is wiki-only — §80 wiki-only spaces carry no community
+// write surface (rules, membership, posts).
+func (h *Handlers) rejectWikiOnly(w http.ResponseWriter, r *http.Request, space *gen.GetSpaceBySlugRow) bool {
+	if !h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID) {
+		return false
+	}
+
+	errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
+		"This space is wiki-only")
+
+	return true
+}
+
 // CreateSpaceRule handles POST /api/v1/spaces/{slug}/rules.
 func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
@@ -46,10 +60,7 @@ func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// §80 wiki-only space types carry no rules surface.
-	if h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID) {
-		errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
-			"This space is wiki-only")
+	if h.rejectWikiOnly(w, r, space) {
 		return
 	}
 
@@ -87,6 +98,10 @@ func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
+		return
+	}
+
+	if h.rejectWikiOnly(w, r, space) {
 		return
 	}
 
@@ -131,6 +146,10 @@ func (h *Handlers) UpdateSpaceRule(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeleteSpaceRule(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
+		return
+	}
+
+	if h.rejectWikiOnly(w, r, space) {
 		return
 	}
 

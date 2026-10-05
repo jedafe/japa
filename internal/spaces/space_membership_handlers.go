@@ -21,9 +21,7 @@ func (h *Handlers) ToggleSpaceMembership(w http.ResponseWriter, r *http.Request)
 	}
 
 	// §80 wiki-only space types have no joinable community surface.
-	if h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID) {
-		errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
-			"This space is wiki-only and does not accept members")
+	if h.rejectWikiOnly(w, r, space) {
 		return
 	}
 

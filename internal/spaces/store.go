@@ -146,6 +146,22 @@ func (s *Service) GetSpaceType(ctx context.Context, id pgtype.UUID) (gen.SpaceTy
 	return st, nil
 }
 
+// GetSpaceTypesByIDs returns the space types matching the given IDs —
+// batch lookup for list serializers that need per-row wiki_only without
+// N+1 type queries (§80 wiki-only space types).
+func (s *Service) GetSpaceTypesByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.SpaceType, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	types, err := s.read.GetSpaceTypesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("getting space types by ids: %w", err)
+	}
+
+	return types, nil
+}
+
 // GetSpaceTypeBySlug returns the space type matching the given slug, scoped
 // to the platform.
 func (s *Service) GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error) {
@@ -810,6 +826,8 @@ func (s *Service) GetPublicSpaceByGeoCode(ctx context.Context, geoCode string) (
 // CreateSpace creates a new space. The caller is responsible for validating
 // the level and permission axes before calling this method.
 func (s *Service) CreateSpace(ctx context.Context, params gen.CreateSpaceParams) (gen.CreateSpaceRow, error) {
+	s.coerceWikiOnlyAxes(ctx, &params)
+
 	space, err := s.write.CreateSpace(ctx, params)
 	if err != nil {
 		return gen.CreateSpaceRow{}, fmt.Errorf("creating space: %w", err)
@@ -831,17 +849,7 @@ func (s *Service) CreateSpaceWithOwner(
 	creatorUserID pgtype.UUID,
 	parentSpaceIDs []pgtype.UUID,
 ) (gen.CreateSpaceRow, error) {
-	// §80 wiki-only space types: force the restrictive axes regardless of
-	// caller input so every write path (HTTP create, seeders, imports)
-	// produces a space with no community surface.
-	if s.IsWikiOnlyType(ctx, params.SpaceTypeID) {
-		axes := WikiOnlyPermAxes()
-		params.Visibility = axes.Visibility
-		params.PostingPerm = axes.Posting
-		params.ReplyingPerm = axes.Replying
-		params.CommentingPerm = axes.Commenting
-		params.JoiningPerm = axes.Joining
-	}
+	s.coerceWikiOnlyAxes(ctx, &params)
 
 	space, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateSpaceRow, error) {
 		space, err := q.CreateSpace(ctx, params)

@@ -47,6 +47,13 @@ SELECT id, name, slug, description, icon, field_group_id, is_system, created_at,
 FROM space_types
 WHERE slug = @slug;
 
+-- name: GetSpaceTypesByIDs :many
+-- Batch type lookup for list serializers that need per-row wiki_only/type
+-- fields without N+1 queries.
+SELECT id, name, slug, description, icon, field_group_id, is_system, created_at, updated_at, category, wiki_only
+FROM space_types
+WHERE id = ANY(@ids::uuid[]);
+
 -- name: CreateSpaceType :one
 INSERT INTO space_types (name, slug, description, icon, field_group_id, category, is_system) VALUES (@name, @slug, sqlc.narg(description), sqlc.narg(icon), sqlc.narg(field_group_id), sqlc.narg(category), @is_system)
 
