@@ -62,6 +62,10 @@ const (
 	TypeScholarshipSyncFromGuide      = "scholarship:sync_from_guide"
 	TypeDocsGeneratePage              = "docs:generate_page"
 	TypeFormFireSubmissionTriggers    = "form:fire_submission_triggers"
+	// §113 Public Product Roadmap (ADR-127) — notification fan-out when an
+	// item transitions to shipped; enqueued fire-and-forget by
+	// PATCH /admin/roadmap/items/{id}/status.
+	TypeRoadmapShipNotify = "roadmap:ship_notify"
 
 	// ---- Service Packages & Bookings (§111, ADR-123) ----.
 	// booking_created/status_changed fan out org/booker notifications on the
@@ -222,6 +226,8 @@ var handlerRegistry = []struct {
 	{TypeScholarshipSyncFromGuide, HandleScholarshipSyncFromGuide},
 	{TypeDocsGeneratePage, HandleDocsGeneratePage},
 	{TypeFormFireSubmissionTriggers, HandleFormFireSubmissionTriggers},
+	// §113 Public Product Roadmap (ADR-127)
+	{TypeRoadmapShipNotify, HandleRoadmapShipNotify},
 
 	// §111 Service Packages & Bookings (ADR-123)
 	{TypeServiceBookingCreated, HandleServiceBookingCreated},
