@@ -878,7 +878,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
 	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
-	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{platform} caching (§55)
+	couponService.SetCache(vkClient.Redis()) // VALKEY-005: jc:coupon:{id} + jc:coupon_list:{page_size} caching (§55)
 	couponHandlers := coupons.NewHandlers(couponService)
 	couponHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in coupons responses
 	worker.RegisterCouponFeedSyncer(couponService)     // §55: coupon:sync_feeds / coupon:import_feed

@@ -17,7 +17,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
-// Cache TTLs (Section 55 Valkey Caching / catalog: jc:coupon:{id}, jc:coupon_list:{platform}).
+// Cache TTLs (Section 55 Valkey Caching / catalog: jc:coupon:{id}, jc:coupon_list:{page_size}).
 const (
 	couponCacheTTL     = 15 * time.Minute
 	couponListCacheTTL = 5 * time.Minute
@@ -283,9 +283,9 @@ func (s *Service) ListCoupons(ctx context.Context, status, couponType, search *s
 }
 
 func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsRow, error) {
-	// Only cache unfiltered first-page lists (jc:coupon_list:{platform}, TTL 5min — Section 55).
+	// Only cache unfiltered first-page lists (jc:coupon_list:{page_size}, TTL 5min — Section 55).
 	canCache := providerID == nil && couponType == nil && search == nil && page == 1
-	cacheKey := valkey.MustKey("coupon_list:")
+	cacheKey := valkey.MustKey("coupon_list:%d", pageSize)
 
 	if canCache && s.vk != nil {
 		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
@@ -388,18 +388,15 @@ func (s *Service) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
 }
 
 // invalidateCouponCaches clears the single-coupon cache (jc:coupon:{id}),
-// the slug cache (jc:coupon_slug:{slug}) for every slug given, and the
-// platform coupon list cache (jc:coupon_list:{platform}) after any coupon
-// mutation (Section 55). Best-effort: errors are logged.
+// the slug cache (jc:coupon_slug:{slug}) for every slug given, and every
+// coupon list cache (jc:coupon_list:*) after any coupon mutation
+// (Section 55). Best-effort: errors are logged.
 func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UUID, slugs ...string) {
 	if s.vk == nil {
 		return
 	}
 
-	keys := []string{
-		valkey.MustKey("coupon:%s", couponID.String()),
-		valkey.MustKey("coupon_list:"),
-	}
+	keys := []string{valkey.MustKey("coupon:%s", couponID.String())}
 	for _, slug := range slugs {
 		if slug != "" {
 			keys = append(keys, valkey.MustKey("coupon_slug:%s", slug))
@@ -407,6 +404,31 @@ func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UU
 	}
 	if err := s.vk.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("coupons: failed to invalidate caches", "keys", keys, "error", err)
+	}
+
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
+}
+
+// deleteKeysByPattern SCAN-deletes all Valkey keys matching a glob pattern
+// (same approach as config settings invalidation — Section 55).
+func (s *Service) deleteKeysByPattern(ctx context.Context, pattern string) {
+	var cursor uint64
+
+	for {
+		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			slog.Warn("coupons: failed to scan valkey for cache invalidation", "pattern", pattern, "error", err)
+			return
+		}
+
+		if len(keys) > 0 {
+			_ = s.vk.Del(ctx, keys...).Err()
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
 	}
 }
 
