@@ -21,6 +21,9 @@
 - Space type IDs (fixed, from baseline seed): country `…060`, state `…061`, city `…062`, university `…064`. **New:** attraction `00000000-0000-0000-0000-000000000071`.
 - `wiki_type_categories.field_group_id` is **NOT NULL** — every category needs a field group, even an empty one (directory/prose-only categories get `wiki_{type}_{category}` groups with no fields).
 - Every category's group must get a `custom_field_group_assignments` row scoped to `entity_class = 'space_type:{slug}'`, `entity_id NULL` (pattern in `migrations/000739`, tail block).
+- **Attraction overview fields get deterministic UUIDs** (`00000000-0000-0000-0000-000000000111`–`…000121`; highest baseline `…000110`) so enrichment + seed-dedup address them without lookups — the `universityFieldUUIDs` convention (processoradapter.go:553).
+- `select` values store `{"value": "museum"}` in `value_json` (NOT `value_text`); `image_multi`/`media` store `{"media_ids": ["<uuid>", …]}` — a new convention this feature defines; read side renders `{"items":[{"id","url","alt","full_url"}]}`.
+- `wiki_content` carries `{"wikidata_id": "Q…"}` for seeded attractions; `populateAttractionSpace` must preserve that key when overwriting with the summary JSON (merge, don't replace).
 
 ---
 
@@ -124,19 +127,22 @@ WHERE NOT EXISTS (
 );
 
 -- Attraction overview field schema (wiki_attraction_overview group).
-INSERT INTO custom_fields (group_id, label, key, field_type, options, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, config)
-SELECT g.id, v.label, v.key, v.field_type, v.options, false, true, true, v.filterable, false, true, v.position, '{}'::jsonb
+-- Deterministic UUIDs (…0111–…0121, next free after baseline …0110) so
+-- enrichAttractionFields + the seed dedup upsert can address fields without
+-- a lookup — mirrors universityFieldUUIDs (processoradapter.go).
+INSERT INTO custom_fields (id, group_id, label, key, field_type, options, is_required, is_system, show_in_frontend, filterable, sortable, searchable, position, config)
+SELECT v.id, g.id, v.label, v.key, v.field_type, v.options, false, true, true, v.filterable, false, true, v.position, '{}'::jsonb
 FROM custom_field_groups g
 CROSS JOIN (VALUES
-    ('Kind',           'kind',          'select',      '[{"value":"museum","label":"Museum"},{"value":"landmark","label":"Landmark"},{"value":"monument","label":"Monument"},{"value":"historic-site","label":"Historic Site"},{"value":"religious-site","label":"Religious Site"},{"value":"market","label":"Market"},{"value":"waterfall","label":"Waterfall"},{"value":"mountain","label":"Mountain"},{"value":"rock-formation","label":"Rock Formation"},{"value":"lake","label":"Lake"},{"value":"cave","label":"Cave"},{"value":"beach","label":"Beach"},{"value":"forest-reserve","label":"Forest Reserve"},{"value":"canyon","label":"Canyon"},{"value":"hot-spring","label":"Hot Spring"},{"value":"national-park","label":"National Park"},{"value":"garden","label":"Garden"},{"value":"zoo","label":"Zoo"},{"value":"theme-park","label":"Theme Park"},{"value":"other","label":"Other"}]'::jsonb, true,  1),
-    ('Address',        'address',       'text',        NULL::jsonb, false, 2),
-    ('Coordinates',    'coordinates',   'text',        NULL::jsonb, false, 3),
-    ('Opening Hours',  'opening_hours', 'textarea',    NULL::jsonb, false, 4),
-    ('Entry Fee',      'entry_fee',     'price_range', NULL::jsonb, false, 5),
-    ('Website',        'website',       'url',         NULL::jsonb, false, 6),
-    ('Wikidata ID',    'wikidata_id',   'text',        NULL::jsonb, false, 7),
-    ('Gallery',        'gallery',       'image_multi', '{"max_files":12,"max_size_mb":8}'::jsonb, false, 8)
-) AS v(label, key, field_type, options, filterable, position)
+    ('00000000-0000-0000-0000-000000000111'::uuid, 'Kind',           'kind',          'select',      '[{"value":"museum","label":"Museum"},{"value":"landmark","label":"Landmark"},{"value":"monument","label":"Monument"},{"value":"historic-site","label":"Historic Site"},{"value":"religious-site","label":"Religious Site"},{"value":"market","label":"Market"},{"value":"waterfall","label":"Waterfall"},{"value":"mountain","label":"Mountain"},{"value":"rock-formation","label":"Rock Formation"},{"value":"lake","label":"Lake"},{"value":"cave","label":"Cave"},{"value":"beach","label":"Beach"},{"value":"forest-reserve","label":"Forest Reserve"},{"value":"canyon","label":"Canyon"},{"value":"hot-spring","label":"Hot Spring"},{"value":"national-park","label":"National Park"},{"value":"garden","label":"Garden"},{"value":"zoo","label":"Zoo"},{"value":"theme-park","label":"Theme Park"},{"value":"other","label":"Other"}]'::jsonb, true,  1),
+    ('00000000-0000-0000-0000-000000000112'::uuid, 'Address',        'address',       'text',        NULL::jsonb, false, 2),
+    ('00000000-0000-0000-0000-000000000113'::uuid, 'Coordinates',    'coordinates',   'text',        NULL::jsonb, false, 3),
+    ('00000000-0000-0000-0000-000000000114'::uuid, 'Opening Hours',  'opening_hours', 'textarea',    NULL::jsonb, false, 4),
+    ('00000000-0000-0000-0000-000000000115'::uuid, 'Entry Fee',      'entry_fee',     'price_range', NULL::jsonb, false, 5),
+    ('00000000-0000-0000-0000-000000000116'::uuid, 'Website',        'website',       'url',         NULL::jsonb, false, 6),
+    ('00000000-0000-0000-0000-000000000117'::uuid, 'Wikidata ID',    'wikidata_id',   'text',        NULL::jsonb, false, 7),
+    ('00000000-0000-0000-0000-000000000118'::uuid, 'Gallery',        'gallery',       'image_multi', '{"max_files":12,"max_size_mb":8}'::jsonb, false, 8)
+) AS v(id, label, key, field_type, options, filterable, position)
 WHERE g.slug = 'wiki_attraction_overview'
   AND NOT EXISTS (
       SELECT 1 FROM custom_fields cf WHERE cf.group_id = g.id AND cf.key = v.key
@@ -248,7 +254,7 @@ git commit -m "feat(wiki): space_types.wiki_only + attraction type/category seed
 
 - [ ] **Step 1: Write the failing tests**
 
-New file `internal/spaces/wiki_only_test.go` — pure unit tests (no DB; the package's existing tests fabricate rows):
+New file `internal/spaces/wiki_only_test.go` — pure unit tests (no DB; `IsWikiOnlyType`/`CanPostInSpace` need a store, so they get covered by the handler-level/integration path rather than fabricated rows):
 
 ```go
 package spaces
@@ -256,10 +262,6 @@ package spaces
 import (
 	"errors"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgtype"
-
-	"github.com/jedafe/japa/internal/db/gen"
 )
 
 func TestWikiOnlyPermAxes(t *testing.T) {
@@ -271,15 +273,6 @@ func TestWikiOnlyPermAxes(t *testing.T) {
 	}
 }
 
-func TestCanPostInSpace_WikiOnlyDenied(t *testing.T) {
-	svc := &Service{}
-	space := gen.Space{PostingPerm: PermOpen}
-	ok, err := svc.canPostInSpaceChecked(context.TODO(), space, pgtype.UUID{}, nil, nil, true)
-	if err != nil || ok {
-		t.Fatalf("wiki-only space must deny posting, got ok=%v err=%v", ok, err)
-	}
-}
-
 func TestErrWikiOnlySpace_Marker(t *testing.T) {
 	var m interface{ WikiOnlySpace() bool }
 	if !errors.As(ErrWikiOnlySpace, &m) {
@@ -287,8 +280,6 @@ func TestErrWikiOnlySpace_Marker(t *testing.T) {
 	}
 }
 ```
-
-> `canPostInSpaceChecked` is the test seam introduced below: `Service.CanPostInSpace` gains a wiki-only pre-check; the seam keeps the existing signature while making the flag injectable. If simpler, have `CanPostInSpace` look up the type itself (service has `GetSpaceType`) and test only `WikiOnlyPermAxes` + the marker — the join/rules handler tests exercise the 409 via `IsWikiOnlyType`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -341,26 +332,20 @@ if s.IsWikiOnlyType(ctx, space.SpaceTypeID) {
 }
 ```
 
-- [ ] **Step 4: Coerce axes on create/update**
+- [ ] **Step 4: Coerce axes in the service layer (not the handlers)**
 
-In `space_crud_handlers.go` `CreateSpace` — after `axes := DefaultPermAxes()` / preset resolution and before `CreateSpace` is invoked:
+Coercion belongs in `Service.CreateSpaceWithOwner` and `Service.UpdateSpace` (`internal/spaces/store.go`) so every write path — HTTP create/update, the attraction seeder, admin imports — gets the forced axes without relying on the caller:
 
 ```go
-// §80 wiki-only types: force the restrictive axes regardless of preset.
-if h.Service.IsWikiOnlyType(r.Context(), spaceTypeID) {
-	axes = WikiOnlyPermAxes()
+// §80 wiki-only types: force the restrictive axes regardless of input.
+if s.IsWikiOnlyType(ctx, params.SpaceTypeID) {
+	params.Visibility, params.PostingPerm, params.ReplyingPerm,
+		params.CommentingPerm, params.JoiningPerm =
+		VisibilityPublic, PermAdmins, PermAdmins, PermAdmins, JoiningInvite
 }
 ```
 
-In `UpdateSpace` — after loading `existing` and before building params:
-
-```go
-posting, replying, commenting, joining := /* resolved axes */
-if h.Service.IsWikiOnlyType(r.Context(), existing.SpaceTypeID) {
-	posting, replying, commenting, joining =
-		PermAdmins, PermAdmins, PermAdmins, JoiningInvite
-}
-```
+In `UpdateSpace`, coerce via `existing.SpaceTypeID` (the type can't change on update — `UpdateSpaceParams` has no space_type_id column). Handlers need no wiki-only branch; the service guarantees it. The seeder (Task 6) passes `WikiOnlyPermAxes()` values anyway for readability.
 
 - [ ] **Step 5: Reject join + rules writes with 409**
 
@@ -378,15 +363,20 @@ Same block at the top of `CreateSpaceRule` in `space_rules_handlers.go` (it also
 
 - [ ] **Step 6: Map the sentinel in content creation**
 
-In `internal/content/handlers.go` (~line 1029): `PostCheckerAdapter.CanPostInSpace` is changed in the spaces package to return `spaces.ErrWikiOnlySpace` when `IsWikiOnlyType` — i.e., in `internal/spaces/adapter.go` after loading `space`:
+In `internal/spaces/adapter.go` `PostCheckerAdapter.CanPostInSpace`: **load the space and check `IsWikiOnlyType` BEFORE the super-admin bypass** — wiki-only is a structural property of the space type, not a permission the admin override may skip:
 
 ```go
+space, err := a.Service.GetSpace(ctx, spaceID)
+if err != nil {
+	return false, fmt.Errorf("loading space for post check: %w", err)
+}
 if a.Service.IsWikiOnlyType(ctx, space.SpaceTypeID) {
 	return false, ErrWikiOnlySpace
 }
+// Super admins bypass all posting-perm checks (existing block follows).
 ```
 
-Then in `content/handlers.go` replace the `!allowed`/error block:
+In `internal/content/handlers.go` (~line 1029) replace the error/`!allowed` block:
 
 ```go
 allowed, err := h.spaceChecker.CanPostInSpace(r.Context(), createInput.SpaceID, user.UserID)
@@ -404,7 +394,13 @@ if err != nil {
 
 - [ ] **Step 7: `wiki_only` on space responses**
 
-In `spacesWithDetails` (`space_crud_handlers.go` ~line 196): build a `typeID → wiki_only` map once via `h.Service.ListSpaceTypes(ctx)` (small table, already a service method), then set `m["wiki_only"] = flag` on each row map, keyed on the row's `SpaceTypeID` reflection field (same pattern used for `LogoMediaID`).
+`wiki_only` is a **top-level key on the response `data` map**, not a field inside the space row (the row serializes verbatim and the column lives on `space_types`):
+
+- `GetSpace` detail map (`space_crud_handlers.go` ~line 644): add `"wiki_only": h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID)` beside `country_currency_code` — the wiki index reads `data.spaceDetail.wiki_only`.
+- `AdminGetSpace` detail map (~line 686): same key.
+- `spacesWithDetails` (~line 199): build a `typeID → wiki_only` map once via `h.Service.ListSpaceTypes(ctx)` (small table, already a service method), then set `m["wiki_only"] = flag` on each row map, keyed on the row's `SpaceTypeID` reflection field (same pattern used for `LogoMediaID`).
+
+`/space-types` picks up `wiki_only` on the type row automatically once the column exists (gen struct json tags) — the `SpaceType` TS interface gains `wiki_only?: boolean`.
 
 - [ ] **Step 8: Test + build**
 
@@ -467,7 +463,7 @@ Expected: FAIL — signatures don't exist yet.
 
 - [ ] **Step 3: Extend the SQL + store**
 
-`internal/db/queries/wiki_types.sql` — in `ListWikiDirectoryChildren` SELECT list add `s.logo_media_id, s.header_image_id, s.description, s.wiki_content`, and add them to the `GROUP BY`. Same additions to `WikiSpaceHasDirectoryChildren` are NOT needed.
+`internal/db/queries/wiki_types.sql` — in `ListWikiDirectoryChildren` SELECT list add `s.logo_media_id, s.header_image_id, s.description, s.wiki_content`. They need no `GROUP BY` addition — `s.id` is the `spaces` PK already in GROUP BY, so Postgres functional dependency covers sibling columns. `WikiSpaceHasDirectoryChildren` is unchanged.
 
 `internal/wiki/store.go`:
 
@@ -568,7 +564,21 @@ func dirBlurb(c *WikiDirectoryChild) string {
 }
 ```
 
-**Kind batch read** in `computeDirectory` before building rows — collect child IDs, call `s.fields` (the fieldReadStore already injected) or a new store query wrapping `ListCustomFieldValuesWithDefsForEntities(ctx, entity_type='space', entity_ids, ` filter `field_key='kind'` in Go (the batched query returns all show_in_frontend values; filter client-side, one query total). Extract `value_text`/first select option from `value_json`. Nil-safe when `s.fields` is unset → kinds empty.
+**Kind batch read** in `computeDirectory` before building rows — collect child IDs, call `s.fields.ListFieldValuesWithDefsForEntities(ctx, "space", ids)` once (the `fieldReadStore` interface already exposes it), filter rows to `FieldKey == "kind"`, and build a `entity_id → kind` map. `select` stores `{"value": "museum"}` in `ValueJson` — unmarshal that shape:
+
+```go
+func cfvSelectValue(raw []byte) string {
+	var v struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return ""
+	}
+	return v.Value
+}
+```
+
+Nil-safe: `s.fields == nil` → kinds empty. The batched read returns all visible values for those spaces — one query regardless of grid size (only run it when ≥1 child's `SpaceTypeSlug == "attraction"` to keep non-attraction directories at their current query count).
 
 - [ ] **Step 5: Test + build**
 
@@ -712,53 +722,79 @@ func TestAttractionTypeKeywords_Score(t *testing.T) {
 
 - [ ] **Step 2: Implement**
 
+In `AutoPopulateSpace`'s switch (line ~231):
+
 ```go
 case "attraction":
 	populateErr = a.populateAttractionSpace(ctx, &space)
 ```
 
+Add the keyword set to `geoTypeKeywords` (the amendment's shape — same scorer reused; `geoWikidataEntity`'s `keywords := geoTypeKeywords[spaceType]` lookup needs no other change):
+
 ```go
-// attractionTypeKeywords disambiguates Wikidata hits for POI spaces —
-// mirrors geoTypeKeywords. Scores the parent's "attraction in {place}"
-// description pattern.
-var attractionTypeKeywords = []string{
-	"attraction", "museum", "landmark", "monument", "memorial",
+"attraction": {"attraction", "museum", "landmark", "monument", "memorial",
 	"park", "garden", "castle", "fort", "palace", "mosque", "church",
 	"cathedral", "temple", "shrine", "market", "zoo", "aquarium",
 	"waterfall", "mountain", "hill", "rock", "monolith", "inselberg",
 	"lake", "river", "cave", "beach", "forest", "reserve", "canyon",
-	"spring", "falls", "historic site", "heritage",
-}
+	"spring", "falls", "historic site", "heritage"},
+```
 
-// scoreAttractionHit ranks a wikidataSearchResult for an attraction:
-// +2 when the description mentions the parent space name, +1 per keyword.
-func scoreAttractionHit(r wikidataSearchResult, parentName string) int {
-	desc := strings.ToLower(r.Description)
-	s := 0
-	if parentName != "" && strings.Contains(desc, parentName) {
-		s += 2
+Add `Coords string` to `wikidataUniversity` + P625 claim parsing in `fetchWikidataEntity` (globecoordinate value):
+
+```go
+// P625 = coordinate location ({ "latitude": -17.92, "longitude": 25.86, ... })
+if claims, ok := entity.Claims["P625"]; ok && len(claims) > 0 {
+	var coordObj struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
 	}
-	for _, kw := range attractionTypeKeywords {
-		if strings.Contains(desc, kw) {
-			s++
-			break
-		}
+	if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &coordObj); err == nil { // #nosec G104 -- best-effort Wikidata parse
+		uni.Coords = fmt.Sprintf("%g,%g", coordObj.Latitude, coordObj.Longitude)
 	}
-	return s
+}
+```
+
+```go
+// attractionFieldUUIDs are the deterministic custom_fields IDs seeded by
+// migration 000795 (wiki_attraction_overview group) — same convention as
+// universityFieldUUIDs.
+var attractionFieldUUIDs = struct {
+	Coords      string
+	Website     string
+	WikidataID  string
+}{
+	Coords:     "00000000-0000-0000-0000-000000000113",
+	Website:    "00000000-0000-0000-0000-000000000116",
+	WikidataID: "00000000-0000-0000-0000-000000000117",
 }
 
 // populateAttractionSpace enriches an attraction space from Wikipedia +
 // Wikidata (§80 Wiki-Only Space Types): summary → wiki_content, P18 →
 // header, P154/P94 → logo, official website + P625 coordinates → cfvs.
+//
+// The seeder stamps wiki_content with {"wikidata_id": "Q…"} at creation —
+// when present the entity is fetched DIRECTLY by QID (deterministic: no
+// scored search, no imagery gate). The qid is then merged back into the
+// stored summary JSON so downstream dedup stays valid.
 func (a *ProcessorAdapter) populateAttractionSpace(ctx context.Context, space *gen.GetSpaceByIDRow) error {
 	var wikiErr error
+	var wikiSummary *wikipediaSummary
 
 	wikiSummary, err := fetchWikipediaSummary(ctx, space.Name)
 	switch {
 	case err == nil:
-		if wikiJSON, merr := json.Marshal(wikiSummary); merr == nil {
-			if _, uerr := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); uerr != nil {
-				slog.Warn("space:auto_populate — wiki content update failed", "space_id", space.ID.String(), "error", uerr)
+		// Preserve the seeded wikidata_id across the overwrite — merge it
+		// into the summary JSON before persisting.
+		var merged map[string]any
+		if merr := json.Unmarshal(mustMarshal(wikiSummary), &merged); merr == nil {
+			if qid := seededWikidataID(space.WikiContent); qid != "" {
+				merged["wikidata_id"] = qid
+			}
+			if wikiJSON, jerr := json.Marshal(merged); jerr == nil {
+				if _, uerr := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); uerr != nil {
+					slog.Warn("space:auto_populate — wiki content update failed", "space_id", space.ID.String(), "error", uerr)
+				}
 			}
 		}
 		if !space.HeaderImageID.Valid {
@@ -770,8 +806,6 @@ func (a *ProcessorAdapter) populateAttractionSpace(ctx context.Context, space *g
 		wikiErr = fmt.Errorf("fetching Wikipedia summary for %q: %w", space.Name, err)
 	}
 
-	// Wikidata entity for logo/website/coordinates — scored search,
-	// first hit carrying usable claims wins (same probe cap as geo).
 	ent := a.attractionWikidataEntity(ctx, space)
 	if ent != nil {
 		if !space.LogoMediaID.Valid {
@@ -781,15 +815,54 @@ func (a *ProcessorAdapter) populateAttractionSpace(ctx context.Context, space *g
 			a.storeSpaceImage(ctx, space, ent.Image, "header")
 		}
 		a.enrichAttractionFields(ctx, space, ent)
+	} else if qid := seededWikidataID(space.WikiContent); qid != "" {
+		// No resolved entity but the seed stamped a QID — still record it so
+		// dedup and the overview field stay populated.
+		a.upsertAttractionTextField(ctx, space, attractionFieldUUIDs.WikidataID, qid)
 	}
 
 	return wikiErr
 }
+
+// seededWikidataID reads the qid the seeder stamped into wiki_content
+// ({"wikidata_id": "Q…"}); "" for admin-created attractions.
+func seededWikidataID(wikiContent []byte) string {
+	var wc struct {
+		WikidataID string `json:"wikidata_id"`
+	}
+	if err := json.Unmarshal(wikiContent, &wc); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(wc.WikidataID)
+}
+
+// attractionWikidataEntity resolves the Wikidata entity for an attraction:
+// the seeded QID (direct fetch — deterministic) when present, else the
+// scored search used by geo spaces. Unlike geoWikidataEntity the acceptance
+// gate is any usable claim (image, website, coords) — POI enrichment is
+// still valuable when the entity carries no image.
+func (a *ProcessorAdapter) attractionWikidataEntity(ctx context.Context, space *gen.GetSpaceByIDRow) *wikidataUniversity {
+	if qid := seededWikidataID(space.WikiContent); qid != "" {
+		if ent, err := fetchWikidataEntity(ctx, qid); err == nil {
+			return ent
+		}
+	}
+	ent := a.geoWikidataEntity(ctx, space, "attraction")
+	if ent == nil {
+		return nil
+	}
+	if ent.Image != "" || ent.Logo != "" || ent.Website != "" || ent.Coords != "" {
+		return ent
+	}
+	return nil
+}
 ```
 
-`attractionWikidataEntity` clones `geoWikidataEntity` with `scoreAttractionHit` instead of the geo scorer (extract the shared loop or parameterize the scorer — parameterize: `func (a *ProcessorAdapter) wikidataEntity(ctx, space, scoreFn)` and make `geoWikidataEntity` a thin caller).
-
-`enrichAttractionFields` mirrors `enrichUniversityFields`: `UpsertFieldValue` for `website` (ent.Website), `coordinates` (extend `wikidataUniversity` fetch to also pull `P625` — check `fetchWikidataEntity` claims parsing; add `Coords string` field), and `wikidata_id` (ent.WikidataID). Field IDs resolve via field key + the attraction overview group — reuse the resolution helper `enrichUniversityFields` uses (inspect it first and copy the get-or-skip pattern).
+> Note: `geoWikidataEntity`'s existing gate (`Flag||CoatOfArms||Image`) already covers the common case (P18 image); `attractionWikidataEntity` wraps it for the QID-first path and the relaxed acceptance. If the wrap gets awkward, parameterize `geoWikidataEntity`'s accept check with a `func(*wikidataUniversity) bool` — geo callers pass the existing imagery predicate.
+>
+> `enrichAttractionFields` mirrors `enrichUniversityFields`: `UpsertFieldValue` (ValueText) for `website` (ent.Website), `coordinates` (ent.Coords), `wikidata_id` (ent.WikidataID) via `attractionFieldUUIDs`; nil-guard on `a.customFields`; best-effort logging, never returned errors.
+>
+> `mustMarshal` — existing codebase helper or inline `b, _ := json.Marshal(...)`; check for an existing helper before adding one.
 
 - [ ] **Step 3: Test + build** — `go test ./internal/spaces/ -run Attraction -v && go build ./...`
 - [ ] **Step 4: Commit** — `git commit -m "feat(spaces): attraction auto-populate via Wikipedia/Wikidata (§80)"`
@@ -799,22 +872,24 @@ func (a *ProcessorAdapter) populateAttractionSpace(ctx context.Context, space *g
 ### Task 6: `wiki:seed_attractions` task + admin trigger route
 
 **Files:**
-- Modify: `internal/worker/tasks.go` (const + handler registry + `taskQueue` low tier + task info table entry)
-- Modify: `internal/worker/handlers.go` (`HandleWikiSeedAttractions` + `RegisterWikiSeedAttractionsProcessor`)
-- Modify: `internal/worker/noop.go` (noop processor guard)
-- Create: `internal/worker/wikiseedattractionsprocessor.go` (interface, mirroring `spaceautopopulateprocessor.go`)
-- Create: `internal/spaces/attraction_seeder.go` (SPARQL candidates + create/link/enqueue)
-- Modify: `internal/wiki/handlers.go` + `handlers_types.go` (`HandleSeedAttractions`, `SetAttractionSeeder` + seeder interface)
+- Modify: `internal/worker/tasks.go` (`TypeWikiSeedAttractions` const + `{TypeWikiSeedAttractions, HandleWikiSeedAttractions}` registry entry)
+- Modify: `internal/worker/enqueuer.go` (low-tier `taskTier` entry + `taskTypeCatalog` entry)
+- Modify: `internal/worker/handlers.go` (`HandleWikiSeedAttractions`, mirroring `HandleWikiSeedStubPages` ~line 5560)
+- Create: `internal/worker/wikiseedattractionsprocessor.go` (interface + package var + `Register…`, mirroring `wikiseedprocessor.go`)
+- Modify: `internal/worker/noop.go` (nil-guard registration, mirroring `noopSpaceAutoPopulateProcessor` ~line 104)
+- Create: `internal/spaces/attraction_seeder.go` (SPARQL candidates + create/link/enqueue on `*ProcessorAdapter`)
+- Create: `internal/spaces/attraction_seed_handler.go` (`HandleSeedAttractions` on `*Handlers` + `SetAttractionSeeder` with a same-package interface)
+- Modify: `internal/db/queries/spaces.sql` (`SpaceExistsByWikidataID` dedup query) + `make sqlc-gen`
 - Modify: `internal/server/server.go` (route registration + processor + seeder wiring)
 
 **Interfaces:**
 - Produces:
   - `worker.TypeWikiSeedAttractions = "wiki:seed_attractions"`
-  - `worker.WikiSeedAttractionsProcessor interface { SeedAttractions(ctx context.Context, parentSpaceID string, limit int, dryRun bool) error }`
-  - `func (s *spaces.Service) ListAttractionCandidates(ctx context.Context, parentSpaceID pgtype.UUID, limit int) ([]AttractionCandidate, error)`
-  - `func (s *spaces.Service) SeedAttractions(ctx context.Context, parentSpaceID pgtype.UUID, limit int, dryRun bool) (*AttractionSeedResult, error)`
-  - `POST /api/v1/admin/wiki/seed/attractions {within, limit?, dry_run?}` (`wiki.manage`)
-- `AttractionCandidate{QID, Name, Description}`; `AttractionSeedResult{Created, SkippedDuplicate, Failed int, Slugs []string}`
+  - `worker.WikiSeedAttractionsProcessor interface { SeedAttractions(ctx context.Context, parentSpaceID string, limit int, dryRun bool) error }` — implemented by `*spaces.ProcessorAdapter` (it already owns `svc`, `systemUserID`, `mediaUploader`, `customFields`, and sits beside `fetchWikidataEntity`/`wikiRateLimiter`)
+  - `func (a *ProcessorAdapter) ListAttractionCandidates(ctx context.Context, parentSpaceID pgtype.UUID, limit int) ([]AttractionCandidate, error)`
+  - `spaces.attractionSeeder` interface (`ListAttractionCandidates` only) injected into `spaces.Handlers` via `SetAttractionSeeder` — same package, no wiki↔spaces coupling
+  - `POST /api/v1/admin/wiki/seed/attractions {within, limit?, dry_run?}` (`wiki.manage`) — served by `spacesHandlers.HandleSeedAttractions` (route path ≠ package)
+- `AttractionCandidate{QID, Name, Description}`; `AttractionSeedResult{Candidates, Created, SkippedDuplicate, Failed int, Slugs []string}`
 
 - [ ] **Step 1: Write the failing test** — pure unit: slug dedup + dry-run no-writes. Seed the seeder with a fake candidate source:
 
@@ -864,13 +939,32 @@ type AttractionSeedResult struct {
 }
 ```
 
-- `attractionSPARQL(parentQID)` builds the query: `?item wdt:P31/wdt:P279* ?class . VALUES ?class { wd:Q… } ?item wdt:P131* wd:{parentQID} .` with `LIMIT` — executed against `https://query.wikidata.org/sparql?format=json` through `wikiRateLimiter` (same HTTP pattern as `searchWikidataEntities`).
-- Parent QID: read `spaces.wiki_content.wikidata_id`/`wikidata_id` JSON key (geo spaces store it there — the university seeds show `wikidata_id` in wiki_content); if absent, resolve via `searchWikidataEntity(ctx, space.Name)` with geo keyword scoring.
-- Dedup: `wiki_content->>'wikidata_id' = qid` check via a new store query `SpaceExistsByWikidataID` (add to `internal/db/queries/spaces.sql`: `SELECT EXISTS(SELECT 1 FROM spaces WHERE wiki_content->>'wikidata_id' = @qid AND deleted_at IS NULL)`) + slug collision → `-2`, `-3` suffix loop.
-- Create: `s.CreateSpace(ctx, gen.CreateSpaceParams{SpaceTypeID: <attraction type id resolved via GetSpaceTypeBySlug("attraction")>, Name, Slug, Level: "custom", Visibility: "public", PostingPerm: "admins", ReplyingPerm: "admins", CommentingPerm: "admins", JoiningPerm: "invite", Status: "active", WikiContent: {"wikidata_id": qid}})`, then `s.AddParentSpace(ctx, id, parentID)` + `s.UpdateSpaceParentID` (`parent_id` = nearest), then `s.EnqueueAutoPopulate(ctx, id)`.
-- Multi-P131: keep v1 simple — link only the trigger parent; note multi-parent linking as follow-up (the query returns one row per item).
-- `dryRun`: returns `AttractionSeedResult{Candidates: n}` with `Slugs` = candidate slugs, zero writes.
-- Result → `audit_logs` row if an audit hook is available on the service (check `s.audit`/`auditLogger` patterns; else `slog.Info` the JSON).
+- `attractionSPARQL(parentQID)` builds the query: `?item wdt:P31/wdt:P279* ?class . VALUES ?class { wd:Q… } ?item wdt:P131* wd:{parentQID} .` with `LIMIT` — executed against `https://query.wikidata.org/sparql?format=json` through `wikiRateLimiter` (same HTTP pattern as `searchWikidataEntities`; the endpoint is a fixed upstream const like the existing `https://www.wikidata.org/w/api.php` literal at processoradapter.go:862).
+- Parent QID: read `space.WikiContent`'s `wikidata_id` key (geo spaces carry it — baseline seeds show `wikidata_id` in wiki_content); if absent, resolve via `searchWikidataEntity(ctx, space.Name)` with geo keyword scoring.
+- **Dedup** — `SpaceExistsByWikidataID` on `internal/db/queries/spaces.sql`, checking both the cfv (authoritative) and wiki_content (belt):
+
+```sql
+-- name: SpaceExistsByWikidataID :one
+-- §80 attractions: Wikidata-QID dedup for wiki:seed_attractions — the cfv
+-- survives wiki_content rewrites; the JSON check covers unseeded rows.
+SELECT EXISTS (
+    SELECT 1 FROM custom_field_values cfv
+    WHERE cfv.entity_type = 'space'
+      AND cfv.field_id = '00000000-0000-0000-0000-000000000117'::uuid
+      AND cfv.value_text = @qid
+) OR EXISTS (
+    SELECT 1 FROM spaces s
+    WHERE s.deleted_at IS NULL
+      AND s.wiki_content->>'wikidata_id' = @qid
+);
+```
+
+- Create: `a.svc.CreateSpaceWithOwner(ctx, gen.CreateSpaceParams{ParentID: parentID, SpaceTypeID: <attraction id via GetSpaceTypeBySlug("attraction")>, Name, Slug, Level: "custom", Visibility: "public", PostingPerm: "admins", ReplyingPerm: "admins", CommentingPerm: "admins", JoiningPerm: "invite", Status: "active", WikiContent: {"wikidata_id": qid}}, a.systemUserID, []pgtype.UUID{parentID})` — `CreateSpaceWithOwner` links `space_parent_spaces` in the same tx; `WikiContent` is a `sqlc.narg` on `CreateSpace` so the seed stamp lands at insert. Then `upsertAttractionTextField(ctx, &space, attractionFieldUUIDs.WikidataID, qid)` + `a.svc.EnqueueAutoPopulate(ctx, space.ID)` + `a.svc.EnqueueSearchIndex(ctx, space.ID, "index")`.
+- Slug collision → `-2`, `-3` suffix loop (slug is globally unique on `spaces`).
+- Multi-`P131` border attractions: v1 links only the trigger parent (the SPARQL returns one row per item); multi-parent linking is a documented follow-up — `space_parent_spaces` already supports it.
+- `dryRun`: returns `AttractionSeedResult{Candidates: n, Slugs: [...]}` with zero writes.
+- `limit`: default 100, hard cap 500 (package const `attractionSeedMaxLimit` — same pattern as `defaultDirectoryLimit`; no new settings key).
+- Result → `slog.Info` JSON summary (no audit-writer hook exists on the adapter; a `wiki_audit` row is out of scope).
 
 - [ ] **Step 3: Wire the task**
 
@@ -901,48 +995,43 @@ func RegisterWikiSeedAttractionsProcessor(p WikiSeedAttractionsProcessor) {
 
 `HandleWikiSeedAttractions` — clone `HandleWikiSeedStubPages` with payload `{parent_space_id, limit, dry_run}`; missing parent_space_id → error.
 
-`tasks.go`: `TypeWikiSeedAttractions = "wiki:seed_attractions"` in the §80 block; `{TypeWikiSeedAttractions, HandleWikiSeedAttractions}` in the handler registry; `{TypeWikiSeedAttractions, "low", "Bulk-seed attraction spaces from Wikidata"}` in the task-info table; add to `QueueForTask`/`taskQueue` mapping if task→queue is a separate switch (check `enqueuer.go:366`).
+`tasks.go`: `TypeWikiSeedAttractions = "wiki:seed_attractions"` in the §80 block (near `TypeWikiSeedStubPages` ~line 133); `{TypeWikiSeedAttractions, HandleWikiSeedAttractions}` in the handler registry (near line 279).
 
-`noop.go`: nil-guard registration mirroring `noopSpaceAutoPopulateProcessor`.
+`enqueuer.go`: `TypeWikiSeedAttractions` in the low-tier `taskTier` list (~line 281, beside `TypeSpaceAutoPopulate`) + `{TypeWikiSeedAttractions, "low", "Bulk-seed attraction spaces from Wikidata"}` in `taskTypeCatalog` (~line 489).
 
-`internal/spaces/workeradapter` or a new adapter on `Service`: `func (s *Service) SeedAttractionsJob(ctx context.Context, parentSpaceID string, limit int, dryRun bool) error` (string→UUID scan → `s.SeedAttractions`) — satisfies `worker.WikiSeedAttractionsProcessor`; register in `server.go` near `worker.RegisterSpaceAutoPopulateProcessor(...)`.
+`noop.go`: nil-guard registration mirroring `noopSpaceAutoPopulateProcessor` (~line 104).
+
+`internal/spaces/processoradapter.go` (or `attraction_seeder.go`): `func (a *ProcessorAdapter) SeedAttractions(ctx, parentSpaceID string, limit int, dryRun bool) error` — string→UUID scan → `a.seedAttractions(...)`. Satisfies `worker.WikiSeedAttractionsProcessor`; register `worker.RegisterWikiSeedAttractionsProcessor(spaceAutoPopulateAdapter)` at server.go ~434, and `spacesHandlers.SetAttractionSeeder(spaceAutoPopulateAdapter)` beside it.
 
 - [ ] **Step 4: Admin route**
 
-`internal/wiki/handlers_types.go` (or a new small file): 
+`internal/spaces/attraction_seed_handler.go` — the route lives on `spaces.Handlers` so the seeder interface stays same-package (wiki would need a shared `AttractionCandidate` type otherwise):
 
 ```go
-// attractionSeeder is the subset of spaces.Service the seed route needs.
+// attractionSeeder is the subset of *ProcessorAdapter the seed route needs
+// for dry-run previews (§80 Wiki-Only Space Types).
 type attractionSeeder interface {
-	ListAttractionCandidates(ctx context.Context, parentSpaceID pgtype.UUID, limit int) ([]spaces.AttractionCandidate, error)
+	ListAttractionCandidates(ctx context.Context, parentSpaceID pgtype.UUID, limit int) ([]AttractionCandidate, error)
 }
-```
 
-> Import direction: `internal/wiki` may not import `internal/spaces` (check first — wiki already imports `internal/db/gen` and customfields; spaces imports neither wiki nor content). If importing spaces creates a cycle, define the interface against a local `AttractionCandidate` struct and adapt in server.go.
-
-`handlers.go`:
-
-```go
 // SetAttractionSeeder wires the Wikidata candidate lister used by
 // POST /admin/wiki/seed/attractions dry-run previews. Optional.
-func (h *Handlers) SetAttractionSeeder(s attractionSeeder) { h.seeder = s }
+func (h *Handlers) SetAttractionSeeder(s attractionSeeder) { h.attrSeeder = s }
 ```
 
 `HandleSeedAttractions`:
 
-- Parse `{within, limit?, dry_run?}`; resolve `within` slug → space ID via `s.service`'s existing `GetSpaceBySlug` store path (the wiki service resolves slugs for categories — reuse).
-- `dry_run: true` → synchronous `ListAttractionCandidates` → `200 {candidates:[{qid,name,description}]}`.
-- `dry_run: false` (default) → enqueue `wiki:seed_attractions` `{parent_space_id, limit, dry_run:false}` via `s.service.enqueuer` (`TaskEnqueuer` — already injected) → `202 {queued:true}`.
-- Missing/unknown `within` → `400 invalid_space` / `404 space_not_found`.
+- Parse `{within, limit?, dry_run?}`; resolve `within` → space via `h.Service.GetSpaceBySlug(r.Context(), within)` (accepts slug or UUID per the query doc); parent must be a `country`/`state`/`city` level space → else `400 invalid_parent`.
+- `dry_run: true` → synchronous `h.attrSeeder.ListAttractionCandidates(ctx, space.ID, limit)` → `200 {data:{candidates:[{qid,name,description}]}}`; nil seeder → `503 not_configured`.
+- `dry_run: false` (default) → marshal `{parent_space_id, limit, dry_run:false}` → `h.Service`'s `enqueuer` (`spaceEnqueuer` is already `Enqueue(taskType, payload, opts...)`) → `202 {data:{queued:true}}`. Same-package: the handler can call `h.Service.enqueuer` directly or via a new `EnqueueTask` helper — prefer a helper `func (s *Service) EnqueueTask(taskType string, payload []byte)` if a generic one doesn't already exist (check before adding).
+- Missing `within` → `400 missing_within`; unknown slug → `404 space_not_found`.
 
-`server.go` — register inside the `wiki.manage` route block (after the types routes):
+`server.go` — register inside the `wiki.manage` route block (after the types routes ~line 6690), handler on `spacesHandlers`:
 
 ```go
 r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "wiki.manage")).
-	Post("/admin/wiki/seed/attractions", wikiHandlers.HandleSeedAttractions)
+	Post("/admin/wiki/seed/attractions", spacesHandlers.HandleSeedAttractions)
 ```
-
-And wiring: `wikiHandlers.SetAttractionSeeder(spacesService)` (or adapter) + `worker.RegisterWikiSeedAttractionsProcessor(...)`.
 
 - [ ] **Step 5: Build + test** — `go build ./... && go test ./internal/wiki/ ./internal/spaces/ ./internal/worker/ -v`
 - [ ] **Step 6: Commit** — `git commit -m "feat(wiki): wiki:seed_attractions bulk seeder + admin trigger route (§80)"`
@@ -979,7 +1068,7 @@ export interface WikiDirectoryChild {
 }
 ```
 
-`Space` interface: add `wiki_only?: boolean`; `SpaceType`: add `wiki_only?: boolean`.
+`Space` interface: `wiki_only?: boolean` (list rows via `spacesWithDetails`); `SpaceType`: `wiki_only?: boolean` (free via regen); `SpaceDetail`: `wiki_only?: boolean` — **top-level**, sibling of `space` (the backend adds it to the detail `data` map, not the row).
 
 - [ ] **Step 2: Rich directory card**
 
@@ -1027,14 +1116,14 @@ Wherever `formatWikiFieldValue` lives (check `apps/main/src/lib/wiki/format.ts` 
 
 Restructure the `<dl>` row so image fields break out of the dt/dd inline pair into a full-width block (check the existing markup — line ~196-204 — and wrap: non-image fields keep the row, image fields get a block-level section).
 
-- [ ] **Step 4: Wiki index — gallery strip, kind chip, wiki_only CTA**
+- [ ] **Step 4: Wiki index — wiki_only CTA suppression**
 
 `apps/main/src/routes/(app)/wiki/[space_slug]/+page.svelte`:
 
-- `const spaceWikiOnly = $derived(data.spaceDetail?.space?.wiki_only === true);`
-- Hide the "Still have questions" community CTA block when `spaceWikiOnly` (`{#if !spaceWikiOnly}`).
-- Kind chip: read the overview group's `kind` value — the index page's `EntityFieldsPanel` data or `data.spaceDetail` doesn't carry cfvs; simplest: render the chip from `data.spaceDetail?.space?.kind` if the backend adds it, else skip — **defer chip to the fields panel** (kind already renders there as a select value). If wanted on the hero: load `/wiki/entities/space/{id}/fields` client-side when `spaceWikiOnly` and read `kind` — acceptable but optional; mark as nice-to-have.
-- Gallery strip: same source — if the fields endpoint is loaded anyway (EntityFieldsPanel does), lift the `gallery` field's `items` into a horizontal strip under the hero (`<img>` scroll-x row) when present.
+- `const spaceWikiOnly = $derived(data.spaceDetail?.wiki_only === true);` — **top-level** on the detail envelope (Task 2 Step 7 puts it beside `is_member`, not inside `space`).
+- Hide the "Still have questions" community CTA block (~line 471) when `spaceWikiOnly` (`{#if !spaceWikiOnly}` — verify the existing `{#if}` guard wraps it).
+- `WikiSidebar` gains `wikiOnly?: boolean` prop hiding the "Need Help? → Join Community" section (~line 134) — it links `/spaces/{slug}`, which now redirects back to `/wiki/{slug}` (circular dead-end). Pass `wikiOnly={spaceWikiOnly}` at **all 3 call sites**: index `+page.svelte` (~line 256), `[page_slug]/+page.svelte` (~line 289), `[page_slug]/history/+page.svelte` (~line 109). All three server loads already fetch `spaceDetail` → `wiki_only` propagates free.
+- Kind chip / hero gallery strip: **defer** — `kind` already renders via `EntityFieldsPanel` as a select value; the `wiki_attraction_overview` group also feeds `WikiQuickFacts` free when the index's `quickFactsGroup` resolves to it (verify the prop's group-slug source when implementing).
 
 - [ ] **Step 5: spaces → wiki redirect**
 
@@ -1063,14 +1152,14 @@ git commit -m "feat(main): attraction cards, gallery rendering, wiki-only space 
 ### Task 8: Admin — "Seed attractions" action
 
 **Files:**
-- Modify: `apps/admin/src/routes/community/wiki/+page.svelte` (seed panel/action)
+- Modify: `apps/admin/src/lib/components/wiki/WikiTypesAdmin.svelte` (seed action — the types tab lives here, not on the page; `apps/admin/src/routes/community/wiki/+page.svelte` just hosts the tabs)
 
 **Interfaces:**
 - Consumes: `POST /api/v1/admin/wiki/seed/attractions` (Task 6)
 
-- [ ] **Step 1: Inspect the page** — read `+page.svelte`; it's the wiki types admin. Find the wiki-types list rendering.
+- [ ] **Step 1: Inspect the component** — `WikiTypesAdmin.svelte` renders the wiki-types table (`space_type_slug` column ~line 240) with an `actions` array pattern.
 
-- [ ] **Step 2: Add the seed UI** — on the `attraction` type row (or a dedicated card on the page): a "Seed attractions" button opening the page-local SlideOver with: `within` space-slug input (text or the existing space autocomplete), `limit` number input, `dry_run` checkbox, submit → `POST /admin/wiki/seed/attractions`; on `dry_run` render the returned candidate list (name + QID) inside the slide-over. Follow the EntityPage/SlideOver conventions in `apps/admin/AGENTS.md` — no hand-rolled modals.
+- [ ] **Step 2: Add the seed UI** — a "Seed attractions" `ActionItem` on the types table with `show: (row) => row.space_type_slug === 'attraction'`, opening a component-local `SlideOver` (per `apps/admin/AGENTS.md` — no hand-rolled modals) containing: `within` space-slug input, `limit` number input, `dry_run` checkbox; submit → `POST /admin/wiki/seed/attractions`; on `dry_run` render the returned candidate list (name + QID) inside the slide-over; on enqueue show the 202 `queued` state via the page's existing toast/notice convention.
 
 - [ ] **Step 3: Check + commit**
 
@@ -1082,9 +1171,18 @@ git commit -m "feat(admin): attraction seeding trigger on wiki types page (§80)
 
 ---
 
-## Self-Review notes
+## Review notes (verified against code before implementation)
 
-- **Spec coverage:** §1 data model (Task 1) · §2 gating (Task 2 + Task 7 redirect/CTA) · §3 rich cards (Task 3 + 7) · §4 gallery (Task 4 + 7; SuggestEdit media picker deferred — noted in Task 7) · §5 creation/seeding (Tasks 5, 6, 8) · §6 JEOS updates (done at spec time).
-- **Multi-P131 linking** is spec'd as "link every resolved parent" — Task 6 v1 links the trigger parent only; border-attraction multi-linking noted as follow-up in the seeder.
-- **`kind` chip on attraction hero** deferred to the fields panel (Task 7 marks it optional) — the value renders there regardless.
-- **SuggestEdit media picker** (community gallery uploads) deferred to follow-up — spec called it part of §4; it's the only partial gap, flagged here so it's not lost.
+- **Spec coverage:** §1 data model (Task 1) · §2 gating (Task 2 + Task 7 redirect/CTA/sidebar) · §3 rich cards (Task 3 + 7) · §4 gallery (Task 4 + 7; SuggestEdit media picker deferred) · §5 creation/seeding (Tasks 5, 6, 8) · §6 JEOS updates (done at spec time).
+- **Verified anchors:** migration 000795 free; `wiki_type_categories.rollup`/`icon` exist (000750/000753); all field types valid; `fieldReadStore.ListFieldValuesWithDefsForEntities` exists; both `cfvValueJSON` call sites share `gen.ListCustomFieldValuesWithDefsByEntityRow`; `gen.Medium.AltText` is `*string`; `media.ImageProxyOpts{Width,Height,Format}`; `CreateSpaceParams.WikiContent` is `sqlc.narg` (seed stamp lands at insert); `taskTier` map + `taskTypeCatalog` + handler registry confirmed; `wiki.manage` block in server.go confirmed; `select` cfv stores `{"value":…}` in `value_json`; `/space-types` exposes `wiki_only` free via regen.
+- **Corrections applied during review:**
+  - Field UUIDs made deterministic (`…0111`–`…0121`) for `enrichAttractionFields`/dedup (universityFieldUUIDs convention).
+  - `wiki_only` surfaces as a top-level `data` key on `GetSpace`/`AdminGetSpace` + per-row in `spacesWithDetails` — the space row itself carries no such column.
+  - Seeder + `ListAttractionCandidates` live on `*ProcessorAdapter`; admin route on `spacesHandlers` (route path ≠ package).
+  - Dedup checks the `wikidata_id` cfv (survives `wiki_content` rewrites) OR `wiki_content->>'wikidata_id'`; `populateAttractionSpace` preserves the seeded qid by merging it into the stored summary.
+  - `PostCheckerAdapter` checks `IsWikiOnlyType` **before** the super-admin bypass.
+  - Axis coercion moved into `Service.CreateSpaceWithOwner`/`UpdateSpace` so all write paths are covered.
+  - `WikiSidebar.wikiOnly` prop added — Join Community links `/spaces/{slug}` which redirects back to `/wiki/{slug}` (all 3 call sites).
+  - `kind` reads `value_json.value`, not `value_text`.
+  - Seeder stores `{"wikidata_id": qid}` in `wiki_content` at insert AND upserts the `wikidata_id` cfv — `populateAttractionSpace` fetches that entity directly by QID (no search) for seeded spaces.
+- **Deferred (documented, not blocking):** multi-`P131` border-attraction multi-parent linking (v1 links the trigger parent; the junction supports more later); SuggestEdit media picker for community gallery uploads; `kind` hero chip (renders via EntityFieldsPanel regardless).
