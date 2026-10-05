@@ -271,6 +271,16 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 
 	var headerURL string
 
+	// §80 multi-P131 linking: the Wikidata entity is resolved before the
+	// summary write so the space's wiki_content stamps its QID — that
+	// stamp is what lets attraction P131 lookups resolve back to this
+	// geo space (SpaceIDsByWikidataIDs).
+	ent := a.geoWikidataEntity(ctx, space, spaceType)
+	qid := ""
+	if ent != nil {
+		qid = ent.WikidataID
+	}
+
 	for _, t := range titles {
 		s, err := fetchWikipediaSummary(ctx, t)
 		if err == nil {
@@ -294,9 +304,13 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 		if wikiErr == nil {
 			slog.Warn("space:auto_populate — no Wikipedia article found", "space_id", space.ID.String(), "title", title)
 		}
+		// No summary — still stamp the QID onto wiki_content when it's
+		// missing so P131 resolution works for article-less geo spaces.
+		a.stampSpaceWikidataID(ctx, space, qid)
 	} else {
-		// Update the space's WikiContent with the fetched summary.
-		wikiJSON, err := json.Marshal(wikiSummary)
+		// Update the space's WikiContent with the fetched summary, merging
+		// the resolved Wikidata QID into the stored JSON.
+		wikiJSON, err := marshalWikiContentWithQID(wikiSummary, qid)
 		if err != nil {
 			slog.Warn("space:auto_populate — failed to marshal wiki summary", "error", err)
 			return nil
@@ -316,8 +330,6 @@ func (a *ProcessorAdapter) populateGeoSpace(ctx context.Context, space *gen.GetS
 	// Wikidata entity resolves both the emblem and the P18 image — the
 	// P18 photo is preferred over the Wikipedia original for the header
 	// because Wikipedia's lead image is often the flag/map itself.
-	ent := a.geoWikidataEntity(ctx, space, spaceType)
-
 	if !space.LogoMediaID.Valid {
 		switch {
 		case spaceType == "country" && space.GeoCode != nil && *space.GeoCode != "":

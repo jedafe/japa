@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,10 +66,14 @@ var attractionClassQIDs = []string{
 }
 
 // AttractionCandidate is one Wikidata hit for the admin dry-run preview.
+// LocatedIn carries the item's direct P131 (located-in) QIDs — matched
+// against stamped geo spaces at create so border attractions link every
+// existing parent, not just the trigger space (§80).
 type AttractionCandidate struct {
-	QID         string `json:"qid"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	QID         string   `json:"qid"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	LocatedIn   []string `json:"located_in,omitempty"`
 }
 
 // AttractionSeedResult summarises a seed run for the task log and the
@@ -120,14 +125,21 @@ func (a *ProcessorAdapter) ListAttractionCandidates(ctx context.Context, parentS
 	return fetchAttractionCandidates(ctx, parentQID, limit)
 }
 
-// parentWikidataQID resolves the parent's Wikidata entity by name — geo
-// spaces don't stamp wikidata_id today, so the seeder reuses the geo
-// disambiguator (parent-name + level keywords) to find it.
+// parentWikidataQID resolves the parent's Wikidata QID — the
+// wiki_content stamp first (free), then the geo name-search
+// disambiguator, whose result is stamped back so later runs and P131
+// lookups skip the search.
 func (a *ProcessorAdapter) parentWikidataQID(ctx context.Context, parent *gen.GetSpaceByIDRow) (string, error) {
+	if qid := wikiContentWikidataID(parent.WikiContent); qid != "" {
+		return qid, nil
+	}
+
 	ent := a.geoWikidataEntity(ctx, parent, parent.Level)
 	if ent == nil || ent.WikidataID == "" {
 		return "", fmt.Errorf("wiki:seed_attractions: could not resolve Wikidata entity for parent %q", parent.Name)
 	}
+
+	a.stampSpaceWikidataID(ctx, parent, ent.WikidataID)
 
 	return ent.WikidataID, nil
 }
@@ -165,6 +177,11 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 		}
 		return res, nil
 	}
+
+	// §80 border attractions — resolve every candidate's P131 located-in
+	// QIDs against stamped geo spaces in one batch; each create links the
+	// trigger parent plus every matched extra parent.
+	extraParents := a.candidateGeoParents(ctx, candidates, parentID)
 
 	for _, c := range candidates {
 		if c.QID == "" || c.Name == "" {
@@ -208,7 +225,7 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 			CommentingPerm: string(axes.Commenting),
 			JoiningPerm:    string(axes.Joining),
 			Status:         "active",
-		}, a.systemUserID, []pgtype.UUID{parentID})
+		}, a.systemUserID, extraParents[c.QID])
 		if err != nil {
 			slog.Warn("wiki:seed_attractions: create failed", "name", c.Name, "qid", c.QID, "error", err)
 			res.Failed++
@@ -227,6 +244,64 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 	}
 
 	return res, nil
+}
+
+// candidateGeoParents resolves each candidate's P131 located-in chain to
+// existing geo spaces — one batch lookup for the whole candidate set —
+// returning the full parent list per candidate QID (trigger parent first,
+// matched extras after, deduped). Resolution failures degrade to the
+// trigger parent alone, never fail the seed.
+func (a *ProcessorAdapter) candidateGeoParents(ctx context.Context, candidates []AttractionCandidate, parentID pgtype.UUID) map[string][]pgtype.UUID {
+	out := make(map[string][]pgtype.UUID, len(candidates))
+	for _, c := range candidates {
+		out[c.QID] = []pgtype.UUID{parentID}
+	}
+
+	var qids []string
+	seenQID := map[string]bool{}
+	for _, c := range candidates {
+		for _, q := range c.LocatedIn {
+			if !seenQID[q] {
+				seenQID[q] = true
+				qids = append(qids, q)
+			}
+		}
+	}
+	if len(qids) == 0 {
+		return out
+	}
+
+	matches, err := a.svc.read.SpaceIDsByWikidataIDs(ctx, qids)
+	if err != nil {
+		slog.Warn("wiki:seed_attractions: P131 parent resolution failed", "error", err)
+		return out
+	}
+
+	// QID → matched geo space IDs (country/state/city only — a QID could
+	// collide with a stamped university or attraction).
+	byQID := make(map[string][]pgtype.UUID, len(matches))
+	for _, m := range matches {
+		switch m.TypeSlug {
+		case "country", "state", "city":
+		default:
+			continue
+		}
+		byQID[m.Qid] = append(byQID[m.Qid], m.ID)
+	}
+
+	for _, c := range candidates {
+		seen := map[pgtype.UUID]bool{parentID: true}
+		for _, q := range c.LocatedIn {
+			for _, id := range byQID[q] {
+				if !seen[id] {
+					seen[id] = true
+					out[c.QID] = append(out[c.QID], id)
+				}
+			}
+		}
+	}
+
+	return out
 }
 
 // upsertAttractionTextField is the value_text upsert shared by the seeder
@@ -283,10 +358,14 @@ func fetchAttractionCandidates(ctx context.Context, parentQID string, limit int)
 		classValues.WriteString("wd:" + qid + " ")
 	}
 
-	query := fmt.Sprintf(`SELECT DISTINCT ?item ?itemLabel ?itemDescription WHERE {
+	// ?loc collects the item's direct P131 located-in entities — border
+	// attractions get one binding per location, folded into
+	// AttractionCandidate.LocatedIn for multi-parent linking.
+	query := fmt.Sprintf(`SELECT DISTINCT ?item ?itemLabel ?itemDescription ?loc WHERE {
   VALUES ?class { %s}
   ?item wdt:P31/wdt:P279* ?class .
   ?item wdt:P131* wd:%s .
+  OPTIONAL { ?item wdt:P131 ?loc }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
 LIMIT %d`, classValues.String(), parentQID, limit)
@@ -338,6 +417,9 @@ LIMIT %d`, classValues.String(), parentQID, limit)
 				ItemDescription struct {
 					Value string `json:"value"`
 				} `json:"itemDescription"`
+				Loc *struct {
+					Value string `json:"value"`
+				} `json:"loc"`
 			} `json:"bindings"`
 		} `json:"results"`
 	}
@@ -345,26 +427,42 @@ LIMIT %d`, classValues.String(), parentQID, limit)
 		return nil, fmt.Errorf("decoding SPARQL response: %w", err)
 	}
 
-	var out []AttractionCandidate
-	seen := make(map[string]struct{}, len(sr.Results.Bindings))
+	// One candidate per item QID — multi-location items repeat across
+	// bindings, each carrying one ?loc.
+	byItem := make(map[string]*AttractionCandidate, len(sr.Results.Bindings))
+	var order []string
+	lastSeg := func(uri string) string {
+		if i := strings.LastIndexByte(uri, '/'); i >= 0 {
+			return uri[i+1:]
+		}
+		return uri
+	}
 	for _, b := range sr.Results.Bindings {
 		// item.value is the entity URI — the QID is the last path segment.
-		qid := b.Item.Value
-		if i := strings.LastIndexByte(qid, '/'); i >= 0 {
-			qid = qid[i+1:]
-		}
+		qid := lastSeg(b.Item.Value)
 		if qid == "" || b.ItemLabel.Value == "" || strings.HasPrefix(b.ItemLabel.Value, "Q") {
 			continue // unlabeled entity — the label service fell back to the QID
 		}
-		if _, dup := seen[qid]; dup {
-			continue
+		c, ok := byItem[qid]
+		if !ok {
+			c = &AttractionCandidate{
+				QID:         qid,
+				Name:        b.ItemLabel.Value,
+				Description: b.ItemDescription.Value,
+			}
+			byItem[qid] = c
+			order = append(order, qid)
 		}
-		seen[qid] = struct{}{}
-		out = append(out, AttractionCandidate{
-			QID:         qid,
-			Name:        b.ItemLabel.Value,
-			Description: b.ItemDescription.Value,
-		})
+		if b.Loc != nil {
+			if loc := lastSeg(b.Loc.Value); strings.HasPrefix(loc, "Q") && !slices.Contains(c.LocatedIn, loc) {
+				c.LocatedIn = append(c.LocatedIn, loc)
+			}
+		}
+	}
+
+	out := make([]AttractionCandidate, 0, len(order))
+	for _, qid := range order {
+		out = append(out, *byItem[qid])
 	}
 
 	slog.Info("wiki:seed_attractions: SPARQL returned candidates",

@@ -1397,3 +1397,23 @@ SELECT EXISTS (
     WHERE s.deleted_at IS NULL
       AND s.wiki_content->>'wikidata_id' = @qid
 ) AS exists;
+
+-- name: SpaceIDsByWikidataIDs :many
+-- Batch QID → space resolution for multi-P131 attraction parent linking
+-- (§80): matches the wikidata_id custom field and the wiki_content stamp
+-- geo spaces carry after auto-population. Returns the space's type slug
+-- so callers can keep geo parents (country/state/city) and skip anything
+-- else that happens to carry the QID.
+SELECT DISTINCT s.id, st.slug AS type_slug, (s.wiki_content->>'wikidata_id')::text AS qid
+FROM spaces s
+JOIN space_types st ON st.id = s.space_type_id
+WHERE s.deleted_at IS NULL
+  AND s.wiki_content->>'wikidata_id' = ANY(@qids::text[])
+UNION
+SELECT s.id, st.slug AS type_slug, cfv.value_text::text AS qid
+FROM custom_field_values cfv
+JOIN spaces s ON s.id = cfv.entity_id AND s.deleted_at IS NULL
+JOIN space_types st ON st.id = s.space_type_id
+WHERE cfv.entity_type = 'space'
+  AND cfv.field_id = '00000000-0000-0000-0000-000000000117'::uuid
+  AND cfv.value_text = ANY(@qids::text[]);

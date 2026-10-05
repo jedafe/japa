@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -248,10 +249,16 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 		fmt.Fprint(w, `{"results":{"bindings":[
 			{"item":{"value":"http://www.wikidata.org/entity/Q38324"},
 			 "itemLabel":{"value":"Victoria Falls"},
-			 "itemDescription":{"value":"waterfall on the Zambezi"}},
+			 "itemDescription":{"value":"waterfall on the Zambezi"},
+			 "loc":{"value":"http://www.wikidata.org/entity/Q1111"}},
 			{"item":{"value":"http://www.wikidata.org/entity/Q38324"},
 			 "itemLabel":{"value":"Victoria Falls"},
-			 "itemDescription":{"value":"dup row"}},
+			 "itemDescription":{"value":"waterfall on the Zambezi"},
+			 "loc":{"value":"http://www.wikidata.org/entity/Q2222"}},
+			{"item":{"value":"http://www.wikidata.org/entity/Q38324"},
+			 "itemLabel":{"value":"Victoria Falls"},
+			 "itemDescription":{"value":"dup row"},
+			 "loc":{"value":"http://www.wikidata.org/entity/Q1111"}},
 			{"item":{"value":"http://www.wikidata.org/entity/Q99999"},
 			 "itemLabel":{"value":"Q99999"},
 			 "itemDescription":{"value":"unlabeled — label service fallback"}},
@@ -275,5 +282,115 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 	}
 	if got[0].QID != "Q38324" || got[0].Name != "Victoria Falls" {
 		t.Fatalf("candidate[0] wrong: %+v", got[0])
+	}
+	// §80 border attractions — the item's three bindings carry two
+	// distinct P131 locations; both fold into LocatedIn, deduped.
+	if !slices.Equal(got[0].LocatedIn, []string{"Q1111", "Q2222"}) {
+		t.Fatalf("LocatedIn wrong: %+v", got[0].LocatedIn)
+	}
+	if len(got[1].LocatedIn) != 0 {
+		t.Fatalf("no-loc candidate must have empty LocatedIn: %+v", got[1].LocatedIn)
+	}
+}
+
+// TestAttractionP131ParentLinking exercises the multi-P131 parent
+// resolution end-to-end against a real DB: stamped geo spaces resolve via
+// SpaceIDsByWikidataIDs, linkAttractionParents adds every match, skips
+// non-geo types and unmatched QIDs, and re-runs stay idempotent.
+func TestAttractionP131ParentLinking(t *testing.T) {
+	svc, database := linkTestService(t)
+	ctx := t.Context()
+	q := gen.New(database.Writer)
+	a := NewProcessorAdapter(svc)
+
+	countryType, err := q.GetSpaceTypeBySlug(ctx, "country")
+	if err != nil {
+		t.Fatalf("country type: %v", err)
+	}
+	attractionType, err := q.GetSpaceTypeBySlug(ctx, "attraction")
+	if err != nil {
+		t.Fatalf("attraction type: %v", err)
+	}
+
+	hash := "x"
+	creatorID, err := q.CreateUser(ctx, gen.CreateUserParams{
+		Email:        "p131-test@example.invalid",
+		Username:     "p131-test",
+		PasswordHash: &hash,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.Writer.Exec(ctx, `DELETE FROM users WHERE id = $1`, creatorID)
+	})
+
+	mkSpace := func(name, slug string, typeID pgtype.UUID, qid string, parents []pgtype.UUID) gen.CreateSpaceRow {
+		t.Helper()
+		var wc []byte
+		if qid != "" {
+			wc, _ = json.Marshal(map[string]string{"wikidata_id": qid})
+		}
+		sp, err := svc.CreateSpaceWithOwner(ctx, gen.CreateSpaceParams{
+			SpaceTypeID: typeID,
+			Name:        name,
+			Slug:        slug,
+			WikiContent: wc,
+			Level:       "custom",
+			Visibility:  VisibilityPublic,
+			PostingPerm: PermAdmins,
+			Status:      "active",
+		}, creatorID, parents)
+		if err != nil {
+			t.Fatalf("create %s: %v", name, err)
+		}
+		t.Cleanup(func() {
+			_, _ = database.Writer.Exec(ctx, `DELETE FROM spaces WHERE id = $1`, sp.ID)
+		})
+		return sp
+	}
+
+	zambia := mkSpace("P131 Zambia", "p131-zambia", countryType.ID, "QTP111", nil)
+	zimbabwe := mkSpace("P131 Zimbabwe", "p131-zimbabwe", countryType.ID, "QTP222", nil)
+
+	// Batch resolution: matches both stamps, skips the unknown QID.
+	matches, err := q.SpaceIDsByWikidataIDs(ctx, []string{"QTP111", "QTP222", "QTP_MISSING"})
+	if err != nil {
+		t.Fatalf("SpaceIDsByWikidataIDs: %v", err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("got %d matches, want 2: %+v", len(matches), matches)
+	}
+	for _, m := range matches {
+		if m.TypeSlug != "country" || m.Qid == "" {
+			t.Fatalf("bad match row: %+v", m)
+		}
+	}
+
+	falls := mkSpace("P131 Falls", "p131-falls", attractionType.ID, "QTP333",
+		[]pgtype.UUID{zambia.ID})
+
+	full, err := svc.GetSpace(ctx, falls.ID)
+	if err != nil {
+		t.Fatalf("get attraction: %v", err)
+	}
+
+	ent := &wikidataUniversity{LocatedIn: []string{"QTP111", "QTP222", "QTP_MISSING"}}
+	a.linkAttractionParents(ctx, &full, ent)
+	a.linkAttractionParents(ctx, &full, ent) // idempotent re-run
+
+	parents, err := svc.GetParentSpaces(ctx, falls.ID)
+	if err != nil {
+		t.Fatalf("parents: %v", err)
+	}
+	have := map[pgtype.UUID]bool{}
+	for _, p := range parents {
+		have[p.ID] = true
+	}
+	if !have[zambia.ID] || !have[zimbabwe.ID] {
+		t.Fatalf("want both geo parents linked, got %+v", parents)
+	}
+	if len(parents) != 2 {
+		t.Fatalf("re-run duplicated a parent link: %+v", parents)
 	}
 }
