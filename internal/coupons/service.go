@@ -64,14 +64,22 @@ func (n *noopEnqueuer) Enqueue(_ string, _ []byte, _ ...interface{}) error { ret
 // ── Provider Operations ─────────────────────────────────────────────
 
 // CreateProviderInput is an exported type.
+// Json tags are required — POST/PATCH /admin/affiliate-providers decode this
+// struct directly, and untagged fields only match Go field names, which
+// silently drops snake_case keys like provider_type/base_url (§55).
 type CreateProviderInput struct {
-	Name, Slug, ProviderType              string
-	Description                           *string
-	LogoMediaID                           *pgtype.UUID
-	BaseURL, TrackingParam, TrackingValue *string
-	CommissionRate                        *pgtype.Numeric
-	IsActive, IsFeatured                  bool
-	Category                              *string
+	Name           string          `json:"name"`
+	Slug           string          `json:"slug"`
+	ProviderType   string          `json:"provider_type"`
+	Description    *string         `json:"description"`
+	LogoMediaID    *pgtype.UUID    `json:"logo_media_id"`
+	BaseURL        *string         `json:"base_url"`
+	TrackingParam  *string         `json:"tracking_param"`
+	TrackingValue  *string         `json:"tracking_value"`
+	CommissionRate *pgtype.Numeric `json:"commission_rate"`
+	IsActive       bool            `json:"is_active"`
+	IsFeatured     bool            `json:"is_featured"`
+	Category       *string         `json:"category"`
 }
 
 // CreateProvider is an exported method.
