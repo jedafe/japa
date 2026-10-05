@@ -44,10 +44,16 @@
 		const selfId = field.excludeSelf && editing ? String(editing.id ?? '') : '';
 		return selfId ? items.filter((i) => i.id !== selfId) : items;
 	}
+
+	// hideInEdit fields are omitted from the edit form but still seeded into
+	// formValue by EntityPage.openEdit, so their values reach the update body.
+	const visibleFields = $derived(
+		editing ? fields.filter((f) => !f.hideInEdit) : fields
+	);
 </script>
 
 <form class={clsx('flex flex-col gap-4', className)} onsubmit={handleSubmit}>
-	{#each fields as field (field.key)}
+	{#each visibleFields as field (field.key)}
 		<div class="flex flex-col gap-1">
 			<label for={field.key} class="text-sm font-medium" style="color: var(--color-foreground)">
 				{field.label}{#if field.required}<span style="color: var(--color-danger)">*</span>{/if}

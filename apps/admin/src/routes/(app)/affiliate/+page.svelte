@@ -13,7 +13,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
-	import { Plus, Trash2, Link2, Users, Percent, DollarSign, BarChart3 } from 'lucide-svelte';
+	import { Plus, Trash2, Link2, Users, Percent, DollarSign, BarChart3, Pencil } from 'lucide-svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type AffiliateProvider = {
@@ -24,9 +24,10 @@
 		provider_type: string;
 		base_url: string | null;
 		category: string | null;
+		logo_media_id: string | null;
 		tracking_param: string | null;
 		tracking_value: string | null;
-		commission_rate: number | null;
+		commission_rate: number | string | null;
 		is_active: boolean;
 		is_featured: boolean;
 		created_at: string;
@@ -108,6 +109,26 @@
 	let error = $state('');
 	let showCreateSlideOver = $state(false);
 	let newProvider = $state({ name: '', base_url: '', category: '', commission_rate: 0 });
+	// Provider edit — PATCH UpdateProvider rewrites every column, so the form
+	// seeds from the full row (GET /admin/affiliate-providers/{id}) and the
+	// payload carries the complete field set except slug (not in the
+	// update SQL). A partial PATCH would NULL tracking/commission fields.
+	let showEditProviderSlideOver = $state(false);
+	let editProviderTarget = $state<AffiliateProvider | null>(null);
+	let editProviderLoading = $state(false);
+	let editProvider = $state({
+		name: '',
+		description: '',
+		provider_type: 'affiliate',
+		base_url: '',
+		category: '',
+		logo_media_id: '',
+		tracking_param: '',
+		tracking_value: '',
+		commission_rate: '',
+		is_active: true,
+		is_featured: false
+	});
 	let saving = $state(false);
 	let searchQuery = $state('');
 
@@ -272,7 +293,19 @@
 	]);
 
 	// ── Row actions via ActionMenu ──────────────────────────────────────────
+	const providerTypeOptions = [
+		{ value: 'affiliate', label: 'Affiliate' },
+		{ value: 'coupon', label: 'Coupon' },
+		{ value: 'both', label: 'Both' }
+	];
+
 	const providerActions: ActionItem[] = [
+		{
+			label: t('common.edit', 'Edit'),
+			icon: Pencil,
+			show: () => canManageProviders,
+			onclick: (row) => openEditProvider(row)
+		},
 		{
 			label: t('common.delete', 'Delete'),
 			icon: Trash2,
@@ -331,7 +364,9 @@
 					error = result.error;
 				}
 			} else if (activeTab === 'providers') {
-				const result = await affiliateProvidersAdminApi.list();
+				// `is_active` is intentionally absent — the admin list shows ALL
+				// providers including inactive/pending-approval ones (§55).
+				const result = await affiliateProvidersAdminApi.list('page_size=100');
 				if (result.ok) {
 					providers = (Array.isArray(result.data) ? result.data : []) as AffiliateProvider[];
 				} else { error = result.error; }
@@ -383,6 +418,79 @@
 			if (result.ok) {
 				showCreateSlideOver = false;
 				newProvider = { name: '', base_url: '', category: '', commission_rate: 0 };
+				load();
+			} else {
+				error = result.error ?? t('common.error');
+			}
+		} catch {
+			error = t('common.error');
+		} finally {
+			saving = false;
+		}
+	}
+
+	// Fetch the full provider row before opening the edit form — PATCH is a
+	// full-column overwrite, so a save seeded from a trimmed payload would
+	// NULL the fields it doesn't carry (tracking_*, commission_rate…).
+	async function openEditProvider(row: AffiliateProvider) {
+		if (editProviderLoading) return;
+		error = '';
+		editProviderLoading = true;
+		try {
+			const result = await affiliateProvidersAdminApi.get(row.id);
+			if (!result.ok) {
+				error = result.error ?? t('common.error');
+				return;
+			}
+			const p = result.data as AffiliateProvider | null;
+			if (!p) {
+				error = t('common.error');
+				return;
+			}
+			editProviderTarget = p;
+			editProvider = {
+				name: p.name ?? '',
+				description: p.description ?? '',
+				provider_type: p.provider_type || 'affiliate',
+				base_url: p.base_url ?? '',
+				category: p.category ?? '',
+				logo_media_id: p.logo_media_id ?? '',
+				tracking_param: p.tracking_param ?? '',
+				tracking_value: p.tracking_value ?? '',
+				commission_rate: p.commission_rate != null ? String(p.commission_rate) : '',
+				is_active: p.is_active,
+				is_featured: p.is_featured
+			};
+			showEditProviderSlideOver = true;
+		} catch {
+			error = t('common.error');
+		} finally {
+			editProviderLoading = false;
+		}
+	}
+
+	async function saveProviderEdit() {
+		if (!editProviderTarget || !editProvider.name.trim()) return;
+		if (saving) return; // in-flight guard
+		saving = true;
+		try {
+			const result = await affiliateProvidersAdminApi.update(editProviderTarget.id, {
+				name: editProvider.name.trim(),
+				description: editProvider.description.trim() || null,
+				provider_type: editProvider.provider_type || editProviderTarget.provider_type,
+				base_url: editProvider.base_url.trim() || null,
+				category: editProvider.category.trim() || null,
+				logo_media_id: editProvider.logo_media_id.trim() || null,
+				tracking_param: editProvider.tracking_param.trim() || null,
+				tracking_value: editProvider.tracking_value.trim() || null,
+				commission_rate:
+					editProvider.commission_rate !== '' ? Number(editProvider.commission_rate) : null,
+				is_active: editProvider.is_active,
+				is_featured: editProvider.is_featured
+			});
+			if (result.ok) {
+				showEditProviderSlideOver = false;
+				editProviderTarget = null;
 				load();
 			} else {
 				error = result.error ?? t('common.error');
@@ -741,6 +849,77 @@
 			<Button variant="outline" onclick={() => showCreateSlideOver = false}>{t('common.cancel')}</Button>
 			<Button onclick={createProvider} disabled={saving || !newProvider.name || !newProvider.base_url}>
 				{saving ? t('common.creating') : t('common.create')}
+			</Button>
+		</div>
+	{/snippet}
+</SlideOver>
+
+<!-- Edit Provider SlideOver — full-column PATCH; every UpdateProviderInput
+     field except slug is carried so the overwrite can't NULL hidden columns. -->
+<SlideOver bind:open={showEditProviderSlideOver} title={t('affiliate.edit_provider', 'Edit Provider')}>
+	<div class="space-y-4">
+		<div>
+			<label for="edit-provider-name" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.name')}</label>
+			<input id="edit-provider-name" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.name} />
+		</div>
+		<div>
+			<label for="edit-provider-desc" class="mb-1 block text-sm font-medium text-foreground-alt">{t('common.description', 'Description')}</label>
+			<textarea id="edit-provider-desc" rows="2" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.description}></textarea>
+		</div>
+		<div>
+			<label for="edit-provider-type" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.provider_type', 'Provider Type')}</label>
+			<AutocompleteSelect
+				id="edit-provider-type"
+				bind:value={editProvider.provider_type}
+				options={providerTypeOptions}
+				class="w-full"
+			/>
+		</div>
+		<div>
+			<label for="edit-provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}</label>
+			<input id="edit-provider-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="https://example.com" bind:value={editProvider.base_url} />
+		</div>
+		<div>
+			<label for="edit-provider-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.category', 'Category')}</label>
+			<input id="edit-provider-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('affiliate.category_placeholder', 'Cloud, AI, SaaS, Dev…')} bind:value={editProvider.category} />
+		</div>
+		<div>
+			<label for="edit-provider-logo" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.logo_media_id', 'Logo Media ID')}</label>
+			<input id="edit-provider-logo" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 font-mono text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="UUID" bind:value={editProvider.logo_media_id} />
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label for="edit-provider-tp" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.tracking_param', 'Tracking Param')}</label>
+				<input id="edit-provider-tp" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.tracking_param} />
+			</div>
+			<div>
+				<label for="edit-provider-tv" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.tracking_value', 'Tracking Value')}</label>
+				<input id="edit-provider-tv" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.tracking_value} />
+			</div>
+		</div>
+		<div>
+			<label for="edit-provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}</label>
+			<div class="flex items-center gap-2">
+				<input id="edit-provider-rate" type="number" min="0" max="100" step="0.1" class="w-24 rounded-lg border border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" bind:value={editProvider.commission_rate} />
+				<span class="text-sm text-muted">%</span>
+			</div>
+		</div>
+		<div class="flex items-center gap-6">
+			<label class="flex items-center gap-2 text-sm text-foreground">
+				<input type="checkbox" bind:checked={editProvider.is_active} class="h-4 w-4 rounded" />
+				{t('affiliate.is_active', 'Active')}
+			</label>
+			<label class="flex items-center gap-2 text-sm text-foreground">
+				<input type="checkbox" bind:checked={editProvider.is_featured} class="h-4 w-4 rounded" />
+				{t('affiliate.is_featured', 'Featured')}
+			</label>
+		</div>
+	</div>
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (showEditProviderSlideOver = false)}>{t('common.cancel')}</Button>
+			<Button onclick={saveProviderEdit} disabled={saving || !editProvider.name.trim()}>
+				{saving ? t('common.saving') : t('common.save')}
 			</Button>
 		</div>
 	{/snippet}

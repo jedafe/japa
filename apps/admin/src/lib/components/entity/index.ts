@@ -15,6 +15,11 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			/** Omit the field from the edit form (still seeded into the update
+			 *  body and rendered on create). For columns the update endpoint
+			 *  cannot change — e.g. coupon_type is absent from UpdateCoupon's
+			 *  SET clause (§55). */
+			hideInEdit?: boolean;
 	  }
 	| {
 			key: string;
@@ -26,6 +31,7 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			hideInEdit?: boolean;
 	  }
 	| {
 			key: string;
@@ -47,4 +53,5 @@ export type FieldDef =
 			help?: string;
 			class?: string;
 			readonlyInEdit?: boolean;
+			hideInEdit?: boolean;
 	  };
