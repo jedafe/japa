@@ -472,6 +472,13 @@ WITH RECURSIVE descendants AS (
 SELECT s.id, s.slug, s.name, s.level, s.space_type_id,
        COALESCE(st.slug, '') AS space_type_slug,
        MIN(d.depth)::int AS depth, s.geo_code,
+       s.header_image_id, s.logo_media_id,
+       -- §80 directory cards: blurb prefers the authored description, then
+       -- the Wikipedia summary's short description, then a truncated extract.
+       COALESCE(NULLIF(s.description, ''),
+                NULLIF(s.wiki_content->>'description', ''),
+                LEFT(s.wiki_content->>'extract', 280),
+                '')::text AS blurb,
        COUNT(wp.id) FILTER (WHERE wp.is_active = true)::bigint AS page_count
 FROM descendants d
 JOIN spaces s ON s.id = d.id
@@ -482,7 +489,8 @@ LEFT JOIN wiki_pages wp ON wp.space_id = s.id
 -- as its own descendant.
 WHERE s.id <> @space_id AND s.deleted_at IS NULL AND s.status = 'active'
   AND (cardinality(@type_ids::uuid[]) = 0 OR s.space_type_id = ANY(@type_ids::uuid[]))
-GROUP BY s.id, s.slug, s.name, s.level, s.space_type_id, st.slug, s.geo_code
+GROUP BY s.id, s.slug, s.name, s.level, s.space_type_id, st.slug, s.geo_code,
+         s.header_image_id, s.logo_media_id, s.description, s.wiki_content
 ORDER BY MIN(d.depth), s.name, s.slug;
 
 -- name: WikiSpaceHasDirectoryChildren :one

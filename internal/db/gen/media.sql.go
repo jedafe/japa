@@ -336,6 +336,61 @@ func (q *Queries) GetMediaByIDAny(ctx context.Context, id pgtype.UUID) (Medium, 
 	return i, err
 }
 
+const getMediaByIDs = `-- name: GetMediaByIDs :many
+SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+`
+
+// Batch fetch for card-grid resolution (§80 directory cards) — one query for
+// a page of children rather than a per-card GetMediaByID.
+func (q *Queries) GetMediaByIDs(ctx context.Context, ids []pgtype.UUID) ([]Medium, error) {
+	rows, err := q.db.Query(ctx, getMediaByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Medium
+	for rows.Next() {
+		var i Medium
+		if err := rows.Scan(
+			&i.ID,
+			&i.UploaderUserID,
+			&i.OriginalFilename,
+			&i.MimeType,
+			&i.FileSizeBytes,
+			&i.WidthPx,
+			&i.HeightPx,
+			&i.DurationSecs,
+			&i.StoragePath,
+			&i.StorageBucket,
+			&i.AltText,
+			&i.Caption,
+			&i.Confirmed,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.QuarantineReason,
+			&i.QuarantinedAt,
+			&i.ReviewedBy,
+			&i.ReviewedAt,
+			&i.UserGroupID,
+			&i.SourcePlatform,
+			&i.SourcePhotographer,
+			&i.SourcePhotographerUrl,
+			&i.SourceLicense,
+			&i.SourceLicenseUrl,
+			&i.SourcePhotoID,
+			&i.RejectedAt,
+			&i.Flagged,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMediaByStoragePath = `-- name: GetMediaByStoragePath :one
 SELECT id, uploader_user_id, original_filename, mime_type, file_size_bytes, width_px, height_px, duration_secs, storage_path, storage_bucket, alt_text, caption, confirmed, deleted_at, created_at, quarantine_reason, quarantined_at, reviewed_by, reviewed_at, user_group_id, source_platform, source_photographer, source_photographer_url, source_license, source_license_url, source_photo_id, rejected_at, flagged FROM media WHERE storage_path = $1
 `

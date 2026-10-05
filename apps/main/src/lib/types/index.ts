@@ -3405,6 +3405,13 @@ export interface WikiDirectoryChild {
 	level: string;
 	type_slug?: string;
 	geo_code?: string;
+	/** §80 rich cards — imgproxy URL for the child's header image (logo
+	 *  fallback); absent when the child has no media. */
+	image_url?: string;
+	/** §80 rich cards — description or truncated Wikipedia extract. */
+	blurb?: string;
+	/** §80 rich cards — the child's `kind` select-field value (attractions). */
+	kind?: string;
 	page_count: number;
 	depth: number;
 }

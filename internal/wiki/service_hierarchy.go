@@ -18,6 +18,7 @@ import (
 
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // ancestorDepth caps the breadcrumb walk — mirrors the ?within= join depth
@@ -128,7 +129,9 @@ type WikiRollupDTO struct {
 }
 
 // WikiDirectoryChildDTO is one card in a directory-mode listing — the
-// space's identity plus geo_code and its active wiki page count.
+// space's identity plus geo_code and its active wiki page count. ImageURL,
+// Blurb, and Kind carry the richer card surface added by §80 (attraction
+// directory grids); they are empty when the child has no media/fields.
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiDirectoryChildDTO struct {
 	Slug      string  `json:"slug"`
@@ -136,6 +139,9 @@ type WikiDirectoryChildDTO struct {
 	Level     string  `json:"level"`
 	TypeSlug  string  `json:"type_slug,omitempty"`
 	GeoCode   *string `json:"geo_code,omitempty"`
+	ImageURL  string  `json:"image_url,omitempty"`
+	Blurb     string  `json:"blurb,omitempty"`
+	Kind      string  `json:"kind,omitempty"`
 	PageCount int64   `json:"page_count"`
 	Depth     int32   `json:"depth"`
 }
@@ -208,18 +214,29 @@ func (s *Service) computeDirectory(ctx context.Context, spaceID, spaceTypeID pgt
 		levels = append(levels, c.SpaceTypeSlug)
 	}
 
+	// §80 directory cards: sort+cap first so image/field batch resolution
+	// only touches the children actually rendered — not the full listing.
+	sortDirectoryChildren(children)
+	n := len(children)
+	if limit > 0 && n > limit {
+		n = limit
+	}
+	capped := children[:n]
+
+	imageURLs := s.directoryChildImages(ctx, capped)
+	kinds := s.directoryChildKinds(ctx, capped)
+
 	return &WikiDirectoryDTO{
 		Levels:   levels,
-		Children: directoryChildRows(children, limit),
+		Children: directoryChildDTOs(capped, imageURLs, kinds),
 		Total:    len(children),
 	}
 }
 
-// directoryChildRows maps directory children to DTOs, ordered by depth
-// then name (slug tie-break) and capped at limit — deterministic so the
-// truncated tail is always the same spaces, not an arbitrary subset.
-// limit <= 0 means uncapped.
-func directoryChildRows(children []WikiDirectoryChild, limit int) []WikiDirectoryChildDTO {
+// sortDirectoryChildren orders directory children by depth, then name,
+// then slug — deterministic so cap truncation drops the same tail every
+// time, not an arbitrary subset.
+func sortDirectoryChildren(children []WikiDirectoryChild) {
 	sort.SliceStable(children, func(i, j int) bool {
 		if children[i].Depth != children[j].Depth {
 			return children[i].Depth < children[j].Depth
@@ -229,19 +246,133 @@ func directoryChildRows(children []WikiDirectoryChild, limit int) []WikiDirector
 		}
 		return children[i].Slug < children[j].Slug
 	})
+}
 
-	n := len(children)
-	if limit > 0 && n > limit {
-		n = limit
-	}
-
-	out := make([]WikiDirectoryChildDTO, 0, n)
-	for _, c := range children[:n] {
-		out = append(out, WikiDirectoryChildDTO{
+// directoryChildDTOs maps (already sorted+capped) directory children to
+// card DTOs, merging the batch-resolved image URLs and kind values.
+func directoryChildDTOs(
+	children []WikiDirectoryChild,
+	imageURLs map[pgtype.UUID]string,
+	kinds map[pgtype.UUID]string,
+) []WikiDirectoryChildDTO {
+	out := make([]WikiDirectoryChildDTO, 0, len(children))
+	for _, c := range children {
+		dto := WikiDirectoryChildDTO{
 			Slug: c.Slug, Name: c.Name, Level: c.Level,
 			TypeSlug: c.SpaceTypeSlug, GeoCode: c.GeoCode,
+			Blurb: c.Blurb,
 			PageCount: c.PageCount, Depth: c.Depth,
-		})
+		}
+		if url := imageURLs[c.ID]; url != "" {
+			dto.ImageURL = url
+		}
+		if kind := kinds[c.ID]; kind != "" {
+			dto.Kind = kind
+		}
+		out = append(out, dto)
+	}
+	return out
+}
+
+// directoryChildImages batch-resolves each child's card image: header image
+// preferred (card aspect), logo as fallback. One GetMediaByIDs query serves
+// the whole capped page; URL signing goes through the injected media
+// resolver. Best-effort — nil maps on any failure.
+func (s *Service) directoryChildImages(ctx context.Context, children []WikiDirectoryChild) map[pgtype.UUID]string {
+	if s.media == nil || len(children) == 0 {
+		return nil
+	}
+
+	seen := make(map[pgtype.UUID]struct{}, len(children))
+	ids := make([]pgtype.UUID, 0, len(children)*2)
+	for _, c := range children {
+		for _, mid := range []pgtype.UUID{c.HeaderImageID, c.LogoMediaID} {
+			if mid.Valid {
+				if _, dup := seen[mid]; !dup {
+					seen[mid] = struct{}{}
+					ids = append(ids, mid)
+				}
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	mediaRows, err := s.store.ListMediaByIDs(ctx, ids)
+	if err != nil {
+		slog.Warn("wiki: directory: media batch failed", "error", err)
+		return nil
+	}
+
+	byID := make(map[pgtype.UUID]*gen.Medium, len(mediaRows))
+	for i := range mediaRows {
+		m := mediaRows[i]
+		byID[m.ID] = &m
+	}
+
+	out := make(map[pgtype.UUID]string, len(children))
+	for _, c := range children {
+		var m *gen.Medium
+		switch {
+		case c.HeaderImageID.Valid:
+			m = byID[c.HeaderImageID]
+		case c.LogoMediaID.Valid:
+			m = byID[c.LogoMediaID]
+		}
+		if m == nil {
+			continue
+		}
+		out[c.ID] = s.media.GetMediaURL(m, media.ImageProxyOpts{Width: 640, Height: 360, Format: "webp"})
+	}
+	return out
+}
+
+// selectValueJSON extracts the scalar from a select-type field value's
+// value_json blob — selects store {"value": "museum"}, not a value_text
+// (§80 directory cards read `kind` this way).
+func selectValueJSON(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var v struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return ""
+	}
+
+	return v.Value
+}
+
+// directoryChildKinds batch-reads the `kind` select field for the capped
+// children so attraction cards can render a kind chip. Best-effort — nil
+// map when the field-value reader is unwired or errors.
+func (s *Service) directoryChildKinds(ctx context.Context, children []WikiDirectoryChild) map[pgtype.UUID]string {
+	if s.fields == nil || len(children) == 0 {
+		return nil
+	}
+
+	ids := make([]pgtype.UUID, 0, len(children))
+	for _, c := range children {
+		ids = append(ids, c.ID)
+	}
+
+	vals, err := s.fields.ListFieldValuesWithDefsForEntities(ctx, "space", ids)
+	if err != nil {
+		slog.Warn("wiki: directory: kind values failed", "error", err)
+		return nil
+	}
+
+	out := make(map[pgtype.UUID]string, len(children))
+	for _, v := range vals {
+		if v.FieldKey != "kind" {
+			continue
+		}
+		if kind := selectValueJSON(v.ValueJson); kind != "" {
+			out[v.EntityID] = kind
+		}
 	}
 	return out
 }

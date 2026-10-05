@@ -133,20 +133,38 @@
 			{/if}
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
 				{#each children as child (child.slug)}
+					<!-- §80 rich cards — an image_url child renders as an
+					     image-first card; others keep the text card. -->
 					<a
 						href="/wiki/{encodeURIComponent(child.slug)}"
-						class="flex flex-col gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+						class="flex flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
 						data-sveltekit-preload-data="hover"
 					>
-						<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-							{child.name}
-							{#if child.geo_code}
-								<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--color-muted)]">{child.geo_code}</span>
+						{#if child.image_url}
+							<img
+								src={child.image_url}
+								alt={child.name}
+								loading="lazy"
+								class="aspect-[16/9] w-full object-cover"
+							/>
+						{/if}
+						<span class="flex flex-col gap-1 px-4 py-3">
+							<span class="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+								{child.name}
+								{#if child.geo_code}
+									<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] uppercase text-[var(--color-muted)]">{child.geo_code}</span>
+								{/if}
+								{#if child.kind}
+									<span class="rounded bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10px] capitalize text-[var(--color-muted)]">{child.kind.replace(/-/g, ' ')}</span>
+								{/if}
+							</span>
+							{#if child.blurb}
+								<span class="line-clamp-2 text-xs text-[var(--color-muted)]">{child.blurb}</span>
 							{/if}
-						</span>
-						<span class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
-							<MapPin size={11} />
-							{pageCountLabel(child.page_count)}
+							<span class="flex items-center gap-1.5 text-xs text-[var(--color-muted)]">
+								<MapPin size={11} />
+								{pageCountLabel(child.page_count)}
+							</span>
 						</span>
 					</a>
 				{/each}

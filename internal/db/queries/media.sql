@@ -20,6 +20,11 @@ SELECT * FROM media WHERE id = @id AND deleted_at IS NULL;
 -- name: GetMediaByIDAny :one
 SELECT * FROM media WHERE id = @id;
 
+-- name: GetMediaByIDs :many
+-- Batch fetch for card-grid resolution (§80 directory cards) — one query for
+-- a page of children rather than a per-card GetMediaByID.
+SELECT * FROM media WHERE id = ANY(@ids::uuid[]) AND deleted_at IS NULL;
+
 -- name: HardDeleteMedia :execrows
 -- Admin force-delete — only rows already soft-deleted are removed
 -- (gated by admin.hard_delete via ?force=true).
