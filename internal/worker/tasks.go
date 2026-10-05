@@ -132,6 +132,9 @@ const (
 
 	TypeWikiSeedStubPages   = "wiki:seed_stub_pages"
 	TypeWikiFieldsPropagate = "wiki:fields_propagate"
+	// TypeWikiSeedAttractions bulk-seeds attraction wiki spaces under a geo
+	// parent from Wikidata (§80 attractions amendment).
+	TypeWikiSeedAttractions = "wiki:seed_attractions"
 
 	// ---- Periodic sweep tasks (enqueued by scheduler, not API) ----.
 
@@ -278,6 +281,7 @@ var handlerRegistry = []struct {
 	{TypeRedirectRecordHit, HandleRedirectRecordHit},
 	{TypeWikiSeedStubPages, HandleWikiSeedStubPages},
 	{TypeWikiFieldsPropagate, HandleWikiFieldsPropagate},
+	{TypeWikiSeedAttractions, HandleWikiSeedAttractions},
 	// Periodic sweep handlers
 	{TypeScheduledPublishSweep, HandleScheduledPublishSweep},
 	{TypeGdprRetentionSweep, HandleGdprRetentionSweep},

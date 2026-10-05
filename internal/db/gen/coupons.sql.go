@@ -183,7 +183,7 @@ type CreateCouponParams struct {
 	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
 	CreatedBy     pgtype.UUID        `json:"created_by"`
-	Details       json.RawMessage    `json:"details"`
+	Details       *json.RawMessage   `json:"details"`
 }
 
 type CreateCouponRow struct {
@@ -208,7 +208,7 @@ type CreateCouponRow struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Slug          string             `json:"slug"`
-	Details       json.RawMessage    `json:"details"`
+	Details       *json.RawMessage   `json:"details"`
 }
 
 // =====================
@@ -679,7 +679,7 @@ type GetCouponByCodeRow struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	Details             json.RawMessage    `json:"details"`
+	Details             *json.RawMessage   `json:"details"`
 	ProviderName        *string            `json:"provider_name"`
 	ProviderSlug        *string            `json:"provider_slug"`
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
@@ -778,7 +778,7 @@ type GetCouponByIDRow struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	Details             json.RawMessage    `json:"details"`
+	Details             *json.RawMessage   `json:"details"`
 	ProviderName        *string            `json:"provider_name"`
 	ProviderSlug        *string            `json:"provider_slug"`
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
@@ -855,7 +855,7 @@ type GetCouponBySlugRow struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	Details             json.RawMessage    `json:"details"`
+	Details             *json.RawMessage   `json:"details"`
 	ProviderName        *string            `json:"provider_name"`
 	ProviderSlug        *string            `json:"provider_slug"`
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
@@ -1038,7 +1038,7 @@ type ListActiveCouponsRow struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	Details             json.RawMessage    `json:"details"`
+	Details             *json.RawMessage   `json:"details"`
 	ProviderName        *string            `json:"provider_name"`
 	ProviderSlug        *string            `json:"provider_slug"`
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
@@ -1105,6 +1105,7 @@ SELECT id, name, slug, description, category, logo_media_id, base_url,
 FROM affiliate_providers
 WHERE is_active = true
 ORDER BY name ASC
+LIMIT $1
 `
 
 type ListActiveDealPartnersRow struct {
@@ -1124,8 +1125,8 @@ type ListActiveDealPartnersRow struct {
 // =====================
 // Slim provider rows for the public GET /deals/partners index (§55) — powers
 // the /deals filter pills and the deal form's provider select.
-func (q *Queries) ListActiveDealPartners(ctx context.Context) ([]ListActiveDealPartnersRow, error) {
-	rows, err := q.db.Query(ctx, listActiveDealPartners)
+func (q *Queries) ListActiveDealPartners(ctx context.Context, pageLimit int32) ([]ListActiveDealPartnersRow, error) {
+	rows, err := q.db.Query(ctx, listActiveDealPartners, pageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -1386,7 +1387,7 @@ type ListCouponsRow struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	Details             json.RawMessage    `json:"details"`
+	Details             *json.RawMessage   `json:"details"`
 	ProviderName        *string            `json:"provider_name"`
 	ProviderSlug        *string            `json:"provider_slug"`
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
@@ -1490,7 +1491,7 @@ type ListCouponsByOrganizationRow struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
-	Details             json.RawMessage    `json:"details"`
+	Details             *json.RawMessage   `json:"details"`
 	ProviderName        string             `json:"provider_name"`
 	ProviderSlug        string             `json:"provider_slug"`
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
@@ -1705,7 +1706,7 @@ type UpdateCouponParams struct {
 	Status        string             `json:"status"`
 	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
-	Details       json.RawMessage    `json:"details"`
+	Details       *json.RawMessage   `json:"details"`
 	ID            pgtype.UUID        `json:"id"`
 }
 
@@ -1731,9 +1732,13 @@ type UpdateCouponRow struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	Slug          string             `json:"slug"`
-	Details       json.RawMessage    `json:"details"`
+	Details       *json.RawMessage   `json:"details"`
 }
 
+// Full-column overwrite: every SET column is written unconditionally. Any new
+// column added here MUST also be sent by every PATCH caller (admin deals page
+// buildCouponPayload, main DealForm buildCouponPayload, moderation payloads) —
+// a key the caller omits arrives as NULL and wipes the stored value (§55).
 func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (UpdateCouponRow, error) {
 	row := q.db.QueryRow(ctx, updateCoupon,
 		arg.Title,

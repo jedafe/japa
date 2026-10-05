@@ -304,6 +304,24 @@ func (s *Service) EnqueueAutoPopulate(ctx context.Context, spaceID pgtype.UUID) 
 	}
 }
 
+// EnqueueWikiSeedAttractions enqueues the wiki:seed_attractions bulk-seed
+// task for a geo parent (§80 attractions amendment). Best-effort — logs
+// errors but never fails the caller.
+func (s *Service) EnqueueWikiSeedAttractions(ctx context.Context, parentSpaceID pgtype.UUID, limit int, dryRun bool) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]any{
+		"parent_space_id": parentSpaceID.String(),
+		"limit":           limit,
+		"dry_run":         dryRun,
+	})
+	if err := s.enqueuer.Enqueue(worker.TypeWikiSeedAttractions, payload); err != nil {
+		slog.Warn("spaces: failed to enqueue wiki:seed_attractions", "parent_space_id", parentSpaceID.String(), "error", err)
+	}
+}
+
 // EnqueueSearchIndex enqueues a search:index_entity task to sync the space to
 // the Meilisearch index (BL-004). operation is "index" (create/update) or
 // "delete". Best-effort — logs errors but never fails the caller.

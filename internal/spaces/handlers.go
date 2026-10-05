@@ -86,6 +86,7 @@ type Handlers struct {
 	media      MediaResolver    // nil = logo_url omitted from responses
 	ragIndexer RAGEntityIndexer // nil disables RAG indexing (§69)
 	settings   settingsReader   // nil falls back to defaults
+	attrSeeder attractionSeeder // nil disables seed dry-run previews (§80)
 }
 
 // FollowToggleService is the subset of the follows.Service used by the space

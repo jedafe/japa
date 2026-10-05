@@ -5588,6 +5588,43 @@ func HandleWikiSeedStubPages(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandleWikiSeedAttractions bulk-seeds attraction wiki spaces under a geo
+// parent from Wikidata (§80 attractions amendment). The task is idempotent:
+// the processor dedups on the wikidata_id custom field / wiki_content stamp
+// and slug, so retries never double-create.
+func HandleWikiSeedAttractions(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:wiki:seed_attractions")
+
+	if wikiSeedAttractionsProcessor == nil {
+		slog.Warn("task:wiki:seed_attractions: no seed processor registered, skipping")
+		return nil
+	}
+
+	var payload struct {
+		ParentSpaceID string `json:"parent_space_id"`
+		Limit         int    `json:"limit"`
+		DryRun        bool   `json:"dry_run"`
+	}
+
+	if err := parsePayload(t, &payload); err != nil {
+		slog.Error("task:wiki:seed_attractions: invalid payload", "error", err)
+		return err
+	}
+
+	if payload.ParentSpaceID == "" {
+		return errors.New("wiki:seed_attractions: parent_space_id is required")
+	}
+
+	if err := wikiSeedAttractionsProcessor.SeedAttractions(ctx, payload.ParentSpaceID, payload.Limit, payload.DryRun); err != nil {
+		slog.Error("task:wiki:seed_attractions: failed", "parent_space_id", payload.ParentSpaceID, "error", err)
+		return err
+	}
+
+	slog.Info("task:wiki:seed_attractions: completed", "parent_space_id", payload.ParentSpaceID)
+
+	return nil
+}
+
 // HandleWikiFieldsPropagate busts JCE comparison caches for one entity after a
 // wiki fields/mixed revision containing value-affecting ops (set_value,
 // upsert_field) is approved (§80 Community Field Ops, §30 Sub-spec 5).

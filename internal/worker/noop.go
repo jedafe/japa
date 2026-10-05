@@ -71,6 +71,14 @@ func (noopSpaceAutoPopulateProcessor) AutoPopulateSpace(_ context.Context, space
 	return nil
 }
 
+// noopWikiSeedAttractionsProcessor is a no-op WikiSeedAttractionsProcessor.
+type noopWikiSeedAttractionsProcessor struct{}
+
+func (noopWikiSeedAttractionsProcessor) SeedAttractions(_ context.Context, _ string, _ int, _ bool) error {
+	slog.Debug("worker: noop wiki seed attractions processor")
+	return nil
+}
+
 // RegisterNoopProcessors registers no-op implementations for every
 // processor interface that hasn't already been registered. Call this
 // at startup after all real processors have been registered, so
@@ -102,6 +110,10 @@ func RegisterNoopProcessors() {
 
 	if spaceAutoPopulateProcessor == nil {
 		RegisterSpaceAutoPopulateProcessor(noopSpaceAutoPopulateProcessor{})
+	}
+
+	if wikiSeedAttractionsProcessor == nil {
+		RegisterWikiSeedAttractionsProcessor(noopWikiSeedAttractionsProcessor{})
 	}
 
 	if docsPageGenerator == nil {
