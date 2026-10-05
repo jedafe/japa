@@ -3,7 +3,7 @@
 **Date:** 2026-10-05
 **Status:** Approved design, pre-implementation
 **JEOS:** new section `sections/113-public-product-roadmap.md` + `adr/ADR-127-public-product-roadmap.md` (to be authored as part of implementation, before code per AGENTS.md)
-**Migration:** `000795_roadmap.{up,down}.sql`
+**Migration:** `000796_roadmap.{up,down}.sql`
 
 ## 1. Purpose
 
@@ -52,7 +52,7 @@ comment code. Feed/search/sitemap queries already filter by `content_type`, so
 `roadmap` rows cannot leak into them. `content_hash` is computed on the shadow
 row per Rule 12.
 
-## 4. Data model — migration `000795_roadmap`
+## 4. Data model — migration `000796_roadmap`
 
 ### `roadmap_items`
 

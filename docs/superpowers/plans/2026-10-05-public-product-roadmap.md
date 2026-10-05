@@ -96,7 +96,7 @@ Add row:
 
 - [x] **Step 7: Update `permission-key-naming.md`** — add `roadmap.vote`, `roadmap.submit`, `roadmap.view`, `roadmap.create`, `roadmap.edit`, `roadmap.delete`, `roadmap.moderate` in the domain-prefix format used there.
 
-- [x] **Step 8: Update `schemas/MIGRATION-ORDER.md`** — append `000795_roadmap` after `000794` in the ordered list; note FK dependencies: `roadmap_items → roadmap_categories, contents, users`; `roadmap_votes → roadmap_items, users`.
+- [x] **Step 8: Update `schemas/MIGRATION-ORDER.md`** — append `000796_roadmap` after `000794` in the ordered list; note FK dependencies: `roadmap_items → roadmap_categories, contents, users`; `roadmap_votes → roadmap_items, users`.
 
 - [x] **Step 9: Update `sections/11-job-queue-asynq.md`** — add `roadmap:ship_notify` to the task catalog: queue `default`, payload `{item_id, title, slug}`, notifies all voters + `submitted_by` (in-app notification type `roadmap_shipped`).
 
@@ -111,11 +111,11 @@ git commit -m "jeos: section 113 + ADR-127 public product roadmap, catalog entri
 
 ---
 
-### Task 2: Migration `000795_roadmap`
+### Task 2: Migration `000796_roadmap`
 
 **Files:**
-- Create: `migrations/000795_roadmap.up.sql`
-- Create: `migrations/000795_roadmap.down.sql`
+- Create: `migrations/000796_roadmap.up.sql`
+- Create: `migrations/000796_roadmap.down.sql`
 
 **Interfaces:**
 - Produces: tables `roadmap_categories`, `roadmap_items`, `roadmap_votes`; permission nodes `roadmap.*`; role grants for `member`/`pro_member`/`business_member` (vote+submit) and admin roles (all nodes). Role slugs verified in `000735_baseline_seed.up.sql`: `super_admin`, `super_admin_role`, `admin-group-role`, `member`, `pro_member`, `business_member`, `guest`.
@@ -123,7 +123,7 @@ git commit -m "jeos: section 113 + ADR-127 public product roadmap, catalog entri
 - [ ] **Step 1: Write the up migration**
 
 ```sql
--- 000795_roadmap.up.sql
+-- 000796_roadmap.up.sql
 --
 -- Public product roadmap (§113): community-votable, admin-curated feature
 -- roadmap. Items carry a hidden contents row (content_type='roadmap') so the
@@ -232,7 +232,7 @@ COMMIT;
 - [ ] **Step 2: Write the down migration**
 
 ```sql
--- 000795_roadmap.down.sql
+-- 000796_roadmap.down.sql
 BEGIN;
 
 DELETE FROM role_permissions WHERE permission_id IN
@@ -258,7 +258,7 @@ Expected: clean apply; `psql -c '\d roadmap_items'` shows the table.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add migrations/000795_roadmap.up.sql migrations/000795_roadmap.down.sql
+git add migrations/000796_roadmap.up.sql migrations/000796_roadmap.down.sql
 git commit -m "db: roadmap tables, categories seed, and roadmap.* permission nodes (§113)"
 ```
 
@@ -1290,7 +1290,7 @@ git commit -am "seo+i18n: roadmap sitemap and translations (§113)"
 
 ### Task 15: End-to-end verification
 
-The flagship "Spaces & Content Creation" item + `roadmap_shipped` notification type are seeded by the `000795` migration (Task 2). This task is verification only.
+The flagship "Spaces & Content Creation" item + `roadmap_shipped` notification type are seeded by the `000796` migration (Task 2). This task is verification only.
 
 - [ ] **Step 1: Re-run migration on a fresh DB** (down + up) to confirm idempotency.
 
