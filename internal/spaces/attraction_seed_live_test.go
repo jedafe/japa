@@ -224,3 +224,80 @@ func TestSeedAttractions_LiveDB(t *testing.T) {
 		t.Fatalf("re-seed result: %+v", res2)
 	}
 }
+
+// TestSeedAttractions_LiveUpstream runs the seeder against the real
+// Wikidata Query Service — the same code path the wiki:seed_attractions
+// worker executes — creating real attraction spaces under a stamped geo
+// parent, then removing them on teardown. Gated on JC_SEED_UPSTREAM=1
+// plus JC_DATABASE_URL; the parent space must already carry a
+// wikidata_id stamp (populateGeoSpace does this) so the parent lookup
+// does not depend on the rate-limited wbsearchentities endpoint.
+func TestSeedAttractions_LiveUpstream(t *testing.T) {
+	if os.Getenv("JC_SEED_UPSTREAM") != "1" {
+		t.Skip("set JC_SEED_UPSTREAM=1 (with JC_DATABASE_URL) to run the live upstream seed test")
+	}
+	svc, database := linkTestService(t)
+	ctx := t.Context()
+	bg := context.Background()
+	q := gen.New(database.Writer)
+	a := NewProcessorAdapter(svc)
+
+	hash := "x"
+	creatorID, err := q.CreateUser(ctx, gen.CreateUserParams{
+		Email:        "seedup-test@example.invalid",
+		Username:     "seedup-test",
+		PasswordHash: &hash,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.Writer.Exec(bg, `DELETE FROM users WHERE id = $1`, creatorID)
+	})
+	a.SetSystemUserID(creatorID)
+
+	parent, err := svc.GetSpaceBySlug(ctx, "abeokuta")
+	if err != nil {
+		t.Skipf("abeokuta space missing: %v", err)
+	}
+	if stamp := wikiContentWikidataID(parent.WikiContent); stamp == "" {
+		t.Skip("abeokuta is not wikidata-stamped yet")
+	}
+
+	res, err := a.seedAttractions(ctx, parent.ID, 5, false)
+	if err != nil {
+		t.Fatalf("seedAttractions: %v", err)
+	}
+	t.Logf("seed result: %+v slugs=%v", res, res.Slugs)
+	if res.Created == 0 {
+		t.Fatalf("no attractions created: %+v", res)
+	}
+
+	children, err := svc.GetChildSpaces(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("children: %v", err)
+	}
+	attractionType, _ := q.GetSpaceTypeBySlug(ctx, "attraction")
+	seen := 0
+	for _, ch := range children {
+		if ch.SpaceTypeID != attractionType.ID {
+			continue
+		}
+		seen++
+		t.Cleanup(func() {
+			if _, err := database.Writer.Exec(bg, `DELETE FROM spaces WHERE id = $1`, ch.ID); err != nil {
+				t.Logf("cleanup %s: %v", ch.ID, err)
+			}
+		})
+		if wikiContentWikidataID(ch.WikiContent) == "" {
+			t.Errorf("child %s missing wikidata_id stamp", ch.Slug)
+		}
+		if ch.PostingPerm != PermAdmins || ch.JoiningPerm != JoiningInvite {
+			t.Errorf("child %s axes not coerced: %s %s", ch.Slug, ch.PostingPerm, ch.JoiningPerm)
+		}
+		t.Logf("created attraction %s qid=%s", ch.Slug, wikiContentWikidataID(ch.WikiContent))
+	}
+	if seen != res.Created {
+		t.Fatalf("created=%d but %d attraction children under parent", res.Created, seen)
+	}
+}

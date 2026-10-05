@@ -10,7 +10,7 @@ import (
 
 // Store provides low-level database access for roadmap operations.
 // The Service layer wraps Store methods with business logic.
-// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md
+// Ref: japaconnect-engineering/sections/113-public-product-roadmap.md.
 type Store struct {
 	write *gen.Queries
 	read  *gen.Queries
