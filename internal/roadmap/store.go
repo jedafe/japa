@@ -56,10 +56,18 @@ func (s *Store) getItemBySlug(ctx context.Context, slug string, viewerID pgtype.
 }
 
 func (s *Store) listPublicItems(ctx context.Context, viewerID pgtype.UUID, categorySlug *string, shippedWindowDays int32) ([]gen.ListPublicRoadmapItemsRow, error) {
+	// The query's no-filter sentinel is an empty string
+	// (sqlc.narg(category_slug)::text = ''); a NULL would make the whole
+	// predicate NULL and silently drop every row.
+	slug := ""
+	if categorySlug != nil {
+		slug = *categorySlug
+	}
+
 	rows, err := s.read.ListPublicRoadmapItems(ctx, gen.ListPublicRoadmapItemsParams{
 		ViewerID:          viewerID,
 		Statuses:          PublicStatuses,
-		CategorySlug:      categorySlug,
+		CategorySlug:      &slug,
 		ShippedWindowDays: shippedWindowDays,
 	})
 	if err != nil {
@@ -84,25 +92,17 @@ func (s *Store) listAdminItems(ctx context.Context, f AdminListFilter) (AdminLis
 		limit = DefaultPageSize
 	}
 
-	var status, search, sort *string
-	if f.Status != "" {
-		status = &f.Status
-	}
-
-	if f.Search != "" {
-		search = &f.Search
-	}
-
-	if f.Sort != "" {
-		sort = &f.Sort
-	}
+	// Empty string is the no-filter sentinel for these params (the queries
+	// compare sqlc.narg(...)::text = ''); NULLs would make the predicates
+	// NULL and silently drop every row.
+	status, search, sort := f.Status, f.Search, f.Sort
 
 	rows, err := s.read.ListAdminRoadmapItems(ctx, gen.ListAdminRoadmapItemsParams{
-		Status:         status,
+		Status:         &status,
 		CategoryID:     f.CategoryID,
-		Search:         search,
+		Search:         &search,
 		IncludeDeleted: f.IncludeDeleted,
-		Sort:           sort,
+		Sort:           &sort,
 		PageOffset:     f.PageOffset,
 		PageLimit:      limit,
 	})
@@ -111,9 +111,9 @@ func (s *Store) listAdminItems(ctx context.Context, f AdminListFilter) (AdminLis
 	}
 
 	total, err := s.read.CountAdminRoadmapItems(ctx, gen.CountAdminRoadmapItemsParams{
-		Status:         status,
+		Status:         &status,
 		CategoryID:     f.CategoryID,
-		Search:         search,
+		Search:         &search,
 		IncludeDeleted: f.IncludeDeleted,
 	})
 	if err != nil {
