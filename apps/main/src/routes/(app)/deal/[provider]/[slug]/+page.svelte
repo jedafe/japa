@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { invalidateAll } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import {
 		Ticket,
 		BadgeCheck,
@@ -21,13 +21,32 @@
 	let { data }: { data: PageData } = $props();
 
 	const coupon = $derived(data.coupon);
-	const details = $derived(coupon.details ?? null);
-	const sections = $derived(details?.sections ?? []);
-	const faq = $derived(details?.faq ?? []);
-	const trial = $derived(details?.trial ?? null);
+	// coupons.details is free-form JSONB — the admin JSON editor can write a
+	// scalar, an array, or wrong-typed members (§55). Coerce defensively so a
+	// malformed payload can't crash SSR.
+	const details = $derived(
+		coupon.details && typeof coupon.details === 'object' && !Array.isArray(coupon.details)
+			? coupon.details
+			: null
+	);
+	const sections = $derived(Array.isArray(details?.sections) ? details.sections : []);
+	const faq = $derived(Array.isArray(details?.faq) ? details.faq : []);
+	const trial = $derived(
+		details?.trial && typeof details.trial === 'object' && !Array.isArray(details.trial)
+			? details.trial
+			: null
+	);
 	// Staff-authored URL rendered into href — guard against unsafe schemes.
 	const trialUrl = $derived(safeHref(trial?.url));
-	const summary = $derived(details?.summary ?? coupon.description ?? null);
+	const termsUrl = $derived(safeHref(coupon.terms_url));
+	const summary = $derived(
+		(typeof details?.summary === 'string' ? details.summary : '') || coupon.description || null
+	);
+	// The claim CTA is meaningless once the deal has lapsed — the /go redirect
+	// already soft-lands on the provider's base_url server-side.
+	const isExpired = $derived(
+		!!coupon.expires_at && new Date(coupon.expires_at).getTime() <= Date.now()
+	);
 	const providerLabel = $derived(coupon.provider_name ?? t('deal.this_deal', 'this deal'));
 
 	let editing = $state(false);
@@ -157,7 +176,7 @@
 				{#if coupon.updated_at}
 					<span class="text-xs text-[var(--color-muted)]">
 						{t('deals.last_updated', 'Last updated {date}', {
-							date: new Date(coupon.updated_at).toLocaleDateString()
+							date: new Date(coupon.updated_at).toLocaleDateString(i18n.locale)
 						})}
 					</span>
 				{/if}
@@ -228,7 +247,7 @@
 								class="inline-flex items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-2 py-1 text-xs font-medium text-[var(--color-primary)]"
 							>
 								<BadgeCheck size={14} />
-								{t('coupon.verified', 'Verified')}
+								{t('coupons.verified', 'Verified')}
 							</span>
 						{/if}
 					</div>
@@ -247,7 +266,7 @@
 							class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							<Copy size={16} />
-							{copied ? t('coupon.copied', 'Copied!') : t('coupon.copy', 'Copy code')}
+							{copied ? t('coupons.copied', 'Copied!') : t('coupons.copy_code', 'Copy code')}
 						</button>
 					{/if}
 					{#if discountLabel}
@@ -257,7 +276,7 @@
 					{/if}
 				</div>
 
-				{#if coupon.referral_url || coupon.provider_base_url}
+				{#if (coupon.referral_url || coupon.provider_base_url) && !isExpired}
 					<a
 						href={goUrl}
 						target="_blank"
@@ -395,20 +414,20 @@
 				{#if coupon.expires_at}
 					<span class="inline-flex items-center gap-1">
 						<Clock size={12} />
-						{t('coupon.expires', 'Expires {date}').replace(
+						{t('coupons.expires', 'Expires {date}').replace(
 							'{date}',
-							new Date(coupon.expires_at).toLocaleDateString()
+							new Date(coupon.expires_at).toLocaleDateString(i18n.locale)
 						)}
 					</span>
 				{/if}
-				{#if coupon.terms_url}
+				{#if termsUrl}
 					<a
-						href={coupon.terms_url}
+						href={termsUrl}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="underline transition-colors hover:text-[var(--color-text)]"
 					>
-						{t('coupon.terms', 'Terms & conditions')}
+						{t('coupons.terms', 'Terms & conditions')}
 					</a>
 				{/if}
 			</div>

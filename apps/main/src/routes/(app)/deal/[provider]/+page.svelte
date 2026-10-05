@@ -16,7 +16,7 @@
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import { dealPath, type Coupon } from '$lib/types';
+	import { dealPath, type AffiliateProviderAdmin, type Coupon } from '$lib/types';
 	import { currencySymbol } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
@@ -66,7 +66,12 @@
 
 	// Inline provider edit (staff only — gated by data.canManageProviders, §55).
 	// Page-local form: this is its only use, so no shared component.
+	// The public partner payload is a trimmed projection — the PATCH is a
+	// full-column overwrite, so the form seeds from the full admin row fetched
+	// on open, or tracking/commission fields would be written back as NULL.
 	let editing = $state(false);
+	let providerLoading = $state(false);
+	let providerRow = $state<AffiliateProviderAdmin | null>(null);
 	let pf = $state({
 		name: '',
 		description: '',
@@ -82,27 +87,55 @@
 		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 	const labelClass = 'mb-1 block text-sm font-medium text-[var(--color-text)]';
 
-	function toggleEdit() {
+	async function toggleEdit() {
 		if (editing) {
 			editing = false;
 			return;
 		}
-		// Seed the form from the loaded provider on open.
-		pf = {
-			name: provider.name ?? '',
-			description: provider.description ?? '',
-			category: provider.category ?? '',
-			base_url: provider.base_url ?? '',
-			is_featured: provider.is_featured,
-			is_active: provider.is_active
-		};
+		if (providerLoading) return;
 		providerError = '';
-		editing = true;
+		providerLoading = true;
+		try {
+			// GET /admin/affiliate-providers/{id} returns the full row (§55).
+			// If it fails, don't open the form — a save seeded from the trimmed
+			// public view would NULL the fields it doesn't carry.
+			const res = await api.get<AffiliateProviderAdmin>(
+				`/admin/affiliate-providers/${provider.id}`
+			);
+			if (!res.data) {
+				providerError =
+					res.error?.message ??
+					t('deal.form.errors.provider_load_failed', 'Failed to load provider');
+				return;
+			}
+			providerRow = res.data;
+			pf = {
+				name: res.data.name ?? '',
+				description: res.data.description ?? '',
+				category: res.data.category ?? '',
+				base_url: res.data.base_url ?? '',
+				is_featured: res.data.is_featured,
+				is_active: res.data.is_active
+			};
+			editing = true;
+		} catch (err) {
+			providerError =
+				err instanceof Error
+					? err.message
+					: t('deal.form.errors.provider_load_failed', 'Failed to load provider');
+		} finally {
+			providerLoading = false;
+		}
 	}
 
 	async function saveProvider(e: SubmitEvent) {
 		e.preventDefault();
+		if (providerSaving) return;
 		providerError = '';
+		if (!providerRow) {
+			providerError = t('deal.form.errors.provider_load_failed', 'Failed to load provider');
+			return;
+		}
 		if (!pf.name.trim()) {
 			providerError = t('deal.form.errors.name_required', 'Name is required');
 			return;
@@ -110,21 +143,21 @@
 		providerSaving = true;
 		try {
 			// PATCH /admin/affiliate-providers/{id} — UpdateProvider rewrites
-			// every column, so send the full CreateProviderInput field set:
-			// fields this form doesn't edit are passed through unchanged so a
+			// every column, so send the full field set: fields this form
+			// doesn't edit are passed through from the loaded admin row so a
 			// save can't null them out.
-			const res = await api.patch(`/admin/affiliate-providers/${provider.id}`, {
+			const res = await api.patch(`/admin/affiliate-providers/${providerRow.id}`, {
 				name: pf.name.trim(),
-				provider_type: provider.provider_type,
+				provider_type: providerRow.provider_type,
 				description: pf.description.trim() || null,
 				category: pf.category.trim() || null,
 				base_url: pf.base_url.trim() || null,
 				is_featured: pf.is_featured,
 				is_active: pf.is_active,
-				logo_media_id: provider.logo_media_id ?? null,
-				tracking_param: provider.tracking_param ?? null,
-				tracking_value: provider.tracking_value ?? null,
-				commission_rate: provider.commission_rate ?? null
+				logo_media_id: providerRow.logo_media_id ?? null,
+				tracking_param: providerRow.tracking_param ?? null,
+				tracking_value: providerRow.tracking_value ?? null,
+				commission_rate: providerRow.commission_rate ?? null
 			});
 			if (res.data) {
 				// A deactivated provider 404s on GET /deals/partners/{slug} — leave
@@ -224,13 +257,27 @@
 					type="button"
 					onclick={toggleEdit}
 					aria-expanded={editing}
-					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					disabled={providerLoading}
+					class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
-					<Pencil size={14} />
+					{#if providerLoading}
+						<Loader2 size={14} class="animate-spin" />
+					{:else}
+						<Pencil size={14} />
+					{/if}
 					{t('deal.edit_provider', 'Edit provider')}
 				</button>
 			{/if}
 		</div>
+
+		{#if providerError && !editing}
+			<div
+				class="mt-3 flex items-center gap-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500"
+				role="alert"
+			>
+				<AlertCircle size={16} /> {providerError}
+			</div>
+		{/if}
 
 		{#if editing}
 			<!-- Ref: §55 — staff inline provider edit (PATCH /admin/affiliate-providers/{id}). -->
@@ -388,7 +435,7 @@
 									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 								>
 									<Copy size={12} />
-									{t('coupons.copy', 'Copy code')}
+									{t('coupons.copy_code', 'Copy code')}
 								</button>
 							{/if}
 							{#if coupon.referral_url}
@@ -396,7 +443,7 @@
 									class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)]"
 								>
 									<ExternalLink size={12} />
-									{t('coupons.visit', 'Visit')}
+									{t('coupons.visit', 'Visit site')}
 								</span>
 							{/if}
 						</div>

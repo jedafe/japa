@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
+import { hasPerm } from '$lib/server/auth';
 import type { Coupon, MyOrganization } from '$lib/types';
 
 /**
@@ -24,7 +25,7 @@ export const load: PageServerLoad = async (event) => {
 	// "New deal" CTA (§55 org submissions): staff holding the coupons.manage
 	// RBAC node, or any member with an owner/admin/editor role in at least
 	// one organization (resolved via GET /me/organizations).
-	let canSubmit = !!event.locals.user?.permissions?.includes('coupons.manage');
+	let canSubmit = hasPerm(event.locals.user?.permissions, 'coupons.manage');
 	if (!canSubmit && event.locals.user) {
 		try {
 			const orgs = await apiList<MyOrganization>(ctx, '/me/organizations?page_size=50');

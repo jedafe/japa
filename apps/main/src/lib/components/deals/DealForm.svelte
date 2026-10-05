@@ -40,9 +40,12 @@
 	let slugTouched = $state(untrack(() => Boolean(coupon?.slug)));
 
 	// Inline "+ New provider" block (staff only, permission-gated upstream).
+	// Providers created here are merged into the select options so a retry
+	// after a failed coupon save can't create the same provider twice.
 	let npOpen = $state(false);
 	let np = $state<NewProviderValues>(emptyNewProviderValues());
 	let npSlugTouched = $state(false);
+	let createdProviders = $state<DealPartnerRef[]>([]);
 
 	let submitting = $state(false);
 	let errorMsg = $state('');
@@ -57,8 +60,11 @@
 	// deal would otherwise render the provider select blank and a save would
 	// NULL provider_id — prepend a sentinel option so the select keeps it.
 	const providerOptions = $derived.by((): DealPartnerRef[] => {
+		const merged = createdProviders.some((c) => !providers.some((p) => p.id === c.id))
+			? [...providers, ...createdProviders.filter((c) => !providers.some((p) => p.id === c.id))]
+			: providers;
 		const currentId = coupon?.provider_id;
-		if (currentId && !providers.some((p) => p.id === currentId)) {
+		if (currentId && !merged.some((p) => p.id === currentId)) {
 			const label =
 				coupon?.provider_name ?? t('deal.form.provider_current', 'Current provider');
 			return [
@@ -68,18 +74,19 @@
 					is_featured: false,
 					name: `${label} (${t('deal.form.provider_inactive', 'inactive')})`
 				},
-				...providers
+				...merged
 			];
 		}
-		return providers;
+		return merged;
 	});
 
-	// Rule 16: provider options come from the providers prop; the category
-	// datalist derives from those providers — no hardcoded option lists.
+	// Rule 16: provider options come from the providers prop (plus any
+	// inline-created providers); the category datalist derives from those
+	// providers — no hardcoded option lists.
 	const providerCategories = $derived(
 		[
 			...new Set(
-				providers
+				providerOptions
 					.map((p) => p.category)
 					.filter((c): c is string => typeof c === 'string' && c.length > 0)
 			)
@@ -124,6 +131,7 @@
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
+		if (submitting) return;
 		errorMsg = '';
 		if (!v.title.trim()) {
 			errorMsg = t('deal.form.errors.title_required', 'Title is required');
@@ -142,7 +150,7 @@
 			// the coupon can reference the returned id.
 			if (audience === 'staff' && canManageProviders && npOpen && np.name.trim()) {
 				if (!np.slug.trim()) np.slug = slugify(np.name);
-				const pres = await api.post<{ id: string }>(
+				const pres = await api.post<DealPartnerRef>(
 					'/admin/affiliate-providers',
 					buildProviderPayload(np)
 				);
@@ -153,6 +161,14 @@
 					return;
 				}
 				providerId = pres.data.id;
+				// The provider now exists — adopt it: select it, close the block,
+				// and merge it into the options so a retry after a failed coupon
+				// save doesn't attempt to create the same slug again.
+				v.provider_id = providerId;
+				npOpen = false;
+				createdProviders = [...createdProviders, pres.data];
+				np = emptyNewProviderValues();
+				npSlugTouched = false;
 			}
 
 			const payload = buildCouponPayload({ ...v, provider_id: providerId }, audience);

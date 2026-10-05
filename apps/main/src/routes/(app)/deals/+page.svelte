@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Pages)
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { Ticket, BadgeCheck, ExternalLink, Plus } from 'lucide-svelte';
 	import { EmptyState, ListPageBar, PageAction } from '$lib/components/ui';
 	import type { PageData } from './$types';
@@ -29,21 +29,28 @@
 
 	// Category pills derive from the loaded coupons' provider_category values
 	// (Rule 16 — no hardcoded option lists); uncategorized deals only appear
-	// under "All". Selection syncs to ?category= via history.replaceState —
-	// a shallow URL update, not a SvelteKit navigation.
-	const categories = $derived(
-		[
-			...new Set(
-				data.coupons
-					.map((c) => c.provider_category)
-					.filter((c): c is string => typeof c === 'string' && c.length > 0)
-			)
-		].sort((a, b) => a.localeCompare(b))
-	);
+	// under "All". Values are trimmed and deduped case-insensitively (first-seen
+	// casing wins) so ' SaaS '/'saas' don't render as two pills. Selection
+	// syncs to ?category= via history.replaceState — a shallow URL update,
+	// not a SvelteKit navigation.
+	const categories = $derived.by(() => {
+		const seen = new Map<string, string>();
+		for (const c of data.coupons) {
+			const cat = c.provider_category?.trim();
+			if (!cat) continue;
+			const key = cat.toLowerCase();
+			if (!seen.has(key)) seen.set(key, cat);
+		}
+		return [...seen.values()].sort((a, b) => a.localeCompare(b));
+	});
 	let selectedCategory = $state(page.url.searchParams.get('category') ?? '');
 	const filteredCoupons = $derived(
 		selectedCategory
-			? data.coupons.filter((c) => c.provider_category === selectedCategory)
+			? data.coupons.filter(
+					(c) =>
+						(c.provider_category?.trim().toLowerCase() ?? '') ===
+						selectedCategory.toLowerCase()
+				)
 			: data.coupons
 	);
 
@@ -66,7 +73,7 @@
 		for (const c of data.coupons) {
 			if (c.updated_at && c.updated_at > max) max = c.updated_at;
 		}
-		return max ? new Date(max).toLocaleDateString() : '';
+		return max ? new Date(max).toLocaleDateString(i18n.locale) : '';
 	});
 
 	function discountLabel(c: Coupon): string {
