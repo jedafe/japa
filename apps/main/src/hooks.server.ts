@@ -68,6 +68,17 @@ function isUniversitySurface(host: string): boolean {
 }
 
 /**
+ * ADR-127: detect whether the request host is the public roadmap surface.
+ * The canonical host is roadmap.japaconnect.com; additional custom domains
+ * via the JC_ROADMAP_HOSTS env var (comma-separated).
+ */
+function isRoadmapSurface(host: string): boolean {
+	const canonical = 'roadmap.japaconnect.com';
+	const configured = env.JC_ROADMAP_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) ?? [];
+	return [canonical, ...configured].includes(host.toLowerCase());
+}
+
+/**
  * Resolve the current user and CSRF token for an already-present access token.
  * Returns { ok: true } when the token is valid and the user is attached. On
  * 401/403 it clears the token and any cached CSRF entry and reports
@@ -263,6 +274,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// university.japaconnect.com (and configurable custom domains like japauni.com)
 	// render the Japa University shell instead of the diaspora community shell.
 	event.locals.isUniversityHost = isUniversitySurface(event.url.hostname);
+
+	// ADR-127: detect the public roadmap surface by host.
+	// roadmap.japaconnect.com renders a minimal roadmap-branded shell inside
+	// the same app — unlike the university surface it does not redirect.
+	event.locals.isRoadmapHost = isRoadmapSurface(event.url.hostname);
 
 	// Resolve the session and (for authenticated users) the CSRF token.
 	// The main app is public: an absent or invalid token simply means "guest"
