@@ -23,6 +23,7 @@
 		description: string | null;
 		provider_type: string;
 		base_url: string | null;
+		category: string | null;
 		tracking_param: string | null;
 		tracking_value: string | null;
 		commission_rate: number | null;
@@ -106,7 +107,7 @@
 	let loading = $state(true);
 	let error = $state('');
 	let showCreateSlideOver = $state(false);
-	let newProvider = $state({ name: '', base_url: '', commission_rate: 0 });
+	let newProvider = $state({ name: '', base_url: '', category: '', commission_rate: 0 });
 	let saving = $state(false);
 	let searchQuery = $state('');
 
@@ -201,6 +202,7 @@
 	const providerColumns = $derived([
 		{ key: 'name', label: t('affiliate.name'), sortable: true, render: (value: string) => `<span class="font-medium text-foreground">${value ?? '—'}</span>` },
 		{ key: 'base_url', label: t('affiliate.base_url'), render: (value: string | null) => value ? `<span class="font-mono text-xs text-muted">${value}</span>` : '<span class="text-xs text-muted">—</span>' },
+		{ key: 'category', label: t('affiliate.category', 'Category'), render: (value: string | null) => value ? `<span class="text-sm">${value}</span>` : '<span class="text-xs text-muted">—</span>' },
 		{ key: 'commission_rate', label: t('affiliate.commission_rate'), sortable: true, render: (value: number | null) => value != null ? `<span class="font-medium">${value}%</span>` : '<span class="text-xs text-muted">—</span>' },
 		{
 			key: 'is_active',
@@ -380,7 +382,7 @@
 			const result = await affiliateProvidersAdminApi.create({ ...newProvider, slug });
 			if (result.ok) {
 				showCreateSlideOver = false;
-				newProvider = { name: '', base_url: '', commission_rate: 0 };
+				newProvider = { name: '', base_url: '', category: '', commission_rate: 0 };
 				load();
 			} else {
 				error = result.error ?? t('common.error');
@@ -721,6 +723,10 @@
 		<div>
 			<label for="provider-url" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.base_url')}</label>
 			<input id="provider-url" type="url" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder="https://example.com" bind:value={newProvider.base_url} />
+		</div>
+		<div>
+			<label for="provider-category" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.category', 'Category')}</label>
+			<input id="provider-category" type="text" class="w-full rounded-lg border border bg-surface px-3 py-2 text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" placeholder={t('affiliate.category_placeholder', 'Cloud, AI, SaaS, Dev…')} bind:value={newProvider.category} />
 		</div>
 		<div>
 			<label for="provider-rate" class="mb-1 block text-sm font-medium text-foreground-alt">{t('affiliate.commission_rate')}</label>
