@@ -4791,6 +4791,57 @@ func HandleMaintenancePruneTravelResults(ctx context.Context, _ *asynq.Task) err
 	return nil
 }
 
+// HandleMaintenancePruneOAuthRecords deletes OAuth rows past their retention
+// window (§120): expired authorization codes and expired-but-unrevoked tokens
+// after mcp.oauth_record_retention_days (default 30), and revoked token rows
+// after mcp.oauth_revoked_retention_days (default 90). Revoked refresh rows
+// are kept longer because the reuse-detection path needs the row to exist to
+// distinguish a replayed token from an unknown one. A setting <= 0 skips that
+// sweep (keep forever).
+func HandleMaintenancePruneOAuthRecords(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("maintenance:prune_oauth_records — pruning expired OAuth records")
+
+	if dbPool == nil {
+		return errors.New("maintenance:prune_oauth_records: database pool not registered")
+	}
+
+	recordDays := 30
+	revokedDays := 90
+	if appSettings != nil {
+		recordDays = appSettings.GetIntOr(ctx, "mcp.oauth_record_retention_days", 30)
+		revokedDays = appSettings.GetIntOr(ctx, "mcp.oauth_revoked_retention_days", 90)
+	}
+
+	sweeps := []struct {
+		name  string
+		days  int
+		query string
+	}{
+		{"authorization_codes", recordDays,
+			`DELETE FROM oauth_authorization_codes WHERE expires_at < now() - make_interval(days => $1)`},
+		{"expired_tokens", recordDays,
+			`DELETE FROM oauth_tokens WHERE revoked_at IS NULL AND expires_at < now() - make_interval(days => $1)`},
+		{"revoked_tokens", revokedDays,
+			`DELETE FROM oauth_tokens WHERE revoked_at IS NOT NULL AND revoked_at < now() - make_interval(days => $1)`},
+	}
+
+	for _, s := range sweeps {
+		if s.days <= 0 {
+			continue
+		}
+		tag, err := dbPool.Writer.Exec(ctx, s.query, s.days)
+		if err != nil {
+			slog.Error("maintenance:prune_oauth_records failed", "sweep", s.name, "error", err)
+			return err
+		}
+		if tag.RowsAffected() > 0 {
+			slog.Info("maintenance:prune_oauth_records swept", "sweep", s.name, "deleted", tag.RowsAffected())
+		}
+	}
+
+	return nil
+}
+
 // HotelDirectorySyncer pulls active hotel providers' content feeds into
 // travel_hotels (§67, ADR-124). Local interface so worker does not import the
 // travel package's service surface.

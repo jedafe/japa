@@ -187,6 +187,10 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// (§67 — stale-fallback retention is bounded, default 30 days).
 	schedule("0 2 * * 0", TypeMaintenancePruneTravelResults, 7*24*time.Hour)
 
+	// Weekly: prune expired/revoked OAuth rows past their retention windows
+	// (§120 — codes and expired tokens 30d, revoked tokens 90d by default).
+	schedule("0 2 * * 0", TypeMaintenancePruneOAuthRecords, 7*24*time.Hour)
+
 	// Daily: pull configured provider hotel-content feeds into travel_hotels
 	// (§67, ADR-124 hotel directory).
 	schedule("0 3 * * *", TypeTravelSyncHotelDirectory, 24*time.Hour)

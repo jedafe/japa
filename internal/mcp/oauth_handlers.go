@@ -366,6 +366,19 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 		return nil, errors.New("redirect_uri does not match the registered URIs for this client")
 	}
 
+	// §120: a client registered without authorization_code (e.g. refresh-only)
+	// can never exchange the code — fail before rendering consent.
+	grantOK := false
+	for _, g := range client.GrantTypes {
+		if g == "authorization_code" {
+			grantOK = true
+			break
+		}
+	}
+	if !grantOK {
+		return nil, errors.New("client is not registered for the authorization_code grant")
+	}
+
 	scope := q.Get("scope")
 	if scope == "" {
 		scope = strings.Join(client.Scopes, " ")

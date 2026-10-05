@@ -112,6 +112,7 @@ const (
 	TypeMaintenancePruneAuditLogs       = "maintenance:prune_audit_logs"
 	TypeMaintenancePrunePushTokens      = "maintenance:prune_push_tokens"
 	TypeMaintenancePruneTravelResults   = "maintenance:prune_travel_results"
+	TypeMaintenancePruneOAuthRecords    = "maintenance:prune_oauth_records"
 	TypeTravelSyncHotelDirectory        = "travel:sync_hotel_directory"
 	TypeModerationAutoHide              = "moderation:auto_hide"
 	TypeReportNotifyAdmin               = "report:notify_admin"
@@ -257,6 +258,7 @@ var handlerRegistry = []struct {
 	{TypeMaintenancePruneAuditLogs, HandleMaintenancePruneAuditLogs},
 	{TypeMaintenancePrunePushTokens, HandleMaintenancePrunePushTokens},
 	{TypeMaintenancePruneTravelResults, HandleMaintenancePruneTravelResults},
+	{TypeMaintenancePruneOAuthRecords, HandleMaintenancePruneOAuthRecords},
 	{TypeTravelSyncHotelDirectory, HandleTravelSyncHotelDirectory},
 	{TypeModerationAutoHide, HandleModerationAutoHide},
 	{TypeReportNotifyAdmin, HandleReportNotifyAdmin},
