@@ -1,9 +1,10 @@
 <script lang="ts">
+	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Pages)
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
-	import { Ticket, BadgeCheck, Copy, ExternalLink, Store } from 'lucide-svelte';
-	import { EmptyState, ListPageBar } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
+	import { Ticket, BadgeCheck, ExternalLink, Plus } from 'lucide-svelte';
+	import { EmptyState, ListPageBar, PageAction } from '$lib/components/ui';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { dealPath, type Coupon } from '$lib/types';
@@ -26,20 +27,45 @@
 		})
 	);
 
-	// Partner directory strip — unique providers among the listed deals,
-	// deduplicated by provider_slug (coupon rows embed provider_* fields).
-	const partners = $derived(
+	// Category pills derive from the loaded coupons' provider_category values
+	// (Rule 16 — no hardcoded option lists); uncategorized deals only appear
+	// under "All". Selection syncs to ?category= via history.replaceState —
+	// a shallow URL update, not a SvelteKit navigation.
+	const categories = $derived(
 		[
-			...new Map(
+			...new Set(
 				data.coupons
-					.filter((c) => c.provider_slug && c.provider_name)
-					.map((c) => [
-						c.provider_slug as string,
-						{ slug: c.provider_slug as string, name: c.provider_name as string }
-					])
-			).values()
-		].sort((a, b) => a.name.localeCompare(b.name))
+					.map((c) => c.provider_category)
+					.filter((c): c is string => typeof c === 'string' && c.length > 0)
+			)
+		].sort((a, b) => a.localeCompare(b))
 	);
+	let selectedCategory = $state(page.url.searchParams.get('category') ?? '');
+	const filteredCoupons = $derived(
+		selectedCategory
+			? data.coupons.filter((c) => c.provider_category === selectedCategory)
+			: data.coupons
+	);
+
+	function selectCategory(cat: string) {
+		selectedCategory = cat;
+		const url = new URL(page.url);
+		if (cat) {
+			url.searchParams.set('category', cat);
+		} else {
+			url.searchParams.delete('category');
+		}
+		history.replaceState(history.state, '', url);
+	}
+
+	// "Last updated" in the page bar — newest updated_at across the listing.
+	const lastUpdated = $derived.by(() => {
+		let max = '';
+		for (const c of data.coupons) {
+			if (c.updated_at && c.updated_at > max) max = c.updated_at;
+		}
+		return max ? new Date(max).toLocaleDateString() : '';
+	});
 
 	function discountLabel(c: Coupon): string {
 		if (c.discount_type === 'percent') {
@@ -60,19 +86,18 @@
 		return '';
 	}
 
-	// recordEvent fires-and-forgets a click/copy event to the backend (Section 55).
-	// Errors are silently ignored — event tracking must never block the UI.
-	function recordEvent(couponId: string, eventType: 'click' | 'copy') {
-		api.post(`/coupons/${couponId}/click`, { event_type: eventType }).catch(() => {});
+	function providerName(c: Coupon): string {
+		return c.provider_name ?? t('deals.internal', 'JapaConnect');
 	}
 
-	async function copyCode(coupon: Coupon) {
-		if (!coupon.code) return;
-		try {
-			await navigator.clipboard.writeText(coupon.code);
-			recordEvent(coupon.id, 'copy');
-		} catch {
-			// Clipboard may be unavailable; ignore silently.
+	function openDeal(coupon: Coupon) {
+		goto(dealPath(coupon));
+	}
+
+	function onRowKeydown(e: KeyboardEvent, coupon: Coupon) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			openDeal(coupon);
 		}
 	}
 </script>
@@ -92,7 +117,18 @@
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">
-	<ListPageBar title={t('deals.heading', 'Deals')} />
+	<ListPageBar title={t('deals.heading', 'Deals')}>
+		{#snippet actions()}
+			{#if lastUpdated}
+				<span class="hidden text-xs text-[var(--color-text-subtle)] sm:inline">
+					{t('deals.last_updated', 'Last updated {date}', { date: lastUpdated })}
+				</span>
+			{/if}
+			{#if data.canSubmit}
+				<PageAction href="/deals/new" icon={Plus} label={t('deals.new_deal', 'New deal')} />
+			{/if}
+		{/snippet}
+	</ListPageBar>
 
 	<div class="p-4">
 		{#if data.loadError}
@@ -102,100 +138,156 @@
 		{:else if data.coupons.length === 0}
 			<EmptyState icon={Ticket} title={t('deals.empty', 'No deals available right now.')} />
 		{:else}
-			{#if partners.length > 0}
-				<nav aria-label={t('deals.partners', 'Deal partners')} class="mb-4">
-					<h2
-						class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
-					>
-						<Store size={14} />
-						{t('deals.partners', 'Deal partners')}
-					</h2>
+			{#if categories.length > 0}
+				<nav aria-label={t('deals.table.category', 'Category')} class="mb-4">
 					<ul class="flex flex-wrap gap-2">
-						{#each partners as partner (partner.slug)}
+						<li>
+							<button
+								type="button"
+								onclick={() => selectCategory('')}
+								aria-pressed={selectedCategory === ''}
+								class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {selectedCategory ===
+								''
+									? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+									: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
+							>
+								{t('deals.categories.all', 'All')}
+							</button>
+						</li>
+						{#each categories as category (category)}
 							<li>
-								<a
-									href="/deal/{partner.slug}"
-									class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]"
+								<button
+									type="button"
+									onclick={() => selectCategory(category)}
+									aria-pressed={selectedCategory === category}
+									class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {selectedCategory ===
+									category
+										? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-[var(--color-primary-contrast)]'
+										: 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]'}"
 								>
-									{partner.name}
-								</a>
+									{category}
+								</button>
 							</li>
 						{/each}
 					</ul>
 				</nav>
 			{/if}
 
-			<div class="grid gap-3 sm:grid-cols-2">
-				{#each data.coupons as coupon (coupon.id)}
-					<a
-						href={dealPath(coupon)}
-						class="group flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
-					>
-						<div class="flex items-start justify-between gap-2">
-							<div class="min-w-0">
-								<h2
-									class="truncate text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+			{#if filteredCoupons.length === 0}
+				<EmptyState icon={Ticket} title={t('deals.empty', 'No deals available right now.')} />
+			{:else}
+				<!-- Desktop: costgoat-style table (Provider / Category / Deal / Details / Claim) -->
+				<div class="hidden overflow-x-auto sm:block">
+					<table class="w-full border-collapse text-left text-sm">
+						<thead>
+							<tr
+								class="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]"
+							>
+								<th class="px-3 py-2 font-medium">{t('deals.table.provider', 'Provider')}</th>
+								<th class="px-3 py-2 font-medium">{t('deals.table.category', 'Category')}</th>
+								<th class="px-3 py-2 font-medium">{t('deals.table.deal', 'Deal')}</th>
+								<th class="px-3 py-2 font-medium">{t('deals.table.details', 'Details')}</th>
+								<th class="px-3 py-2 font-medium">{t('deals.table.claim', 'Claim')}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each filteredCoupons as coupon (coupon.id)}
+								<tr
+									role="link"
+									tabindex="0"
+									onclick={() => openDeal(coupon)}
+									onkeydown={(e) => onRowKeydown(e, coupon)}
+									class="cursor-pointer border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 								>
-									{coupon.title}
-								</h2>
-								{#if coupon.provider_name}
-									<p class="mt-0.5 truncate text-xs text-[var(--color-text-subtle)]">
-										{coupon.provider_name}
+									<td class="px-3 py-3 font-medium text-[var(--color-text)]">
+										{providerName(coupon)}
+									</td>
+									<td class="px-3 py-3">
+										{#if coupon.provider_category}
+											<span
+												class="inline-flex items-center rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs font-medium text-[var(--color-text)]"
+											>
+												{coupon.provider_category}
+											</span>
+										{:else}
+											<span class="text-[var(--color-text-subtle)]">—</span>
+										{/if}
+									</td>
+									<td class="px-3 py-3">
+										<div class="flex items-center gap-1.5">
+											<span class="font-medium text-[var(--color-text)]">{coupon.title}</span>
+											{#if coupon.is_verified}
+												<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+											{/if}
+										</div>
+										{#if discountLabel(coupon)}
+											<span class="text-xs font-medium text-[var(--color-primary)]">
+												{discountLabel(coupon)}
+											</span>
+										{/if}
+									</td>
+									<td class="max-w-64 px-3 py-3">
+										{#if coupon.description}
+											<p class="line-clamp-1 text-xs text-[var(--color-text-subtle)]">
+												{coupon.description}
+											</p>
+										{:else}
+											<span class="text-[var(--color-text-subtle)]">—</span>
+										{/if}
+									</td>
+									<td class="px-3 py-3">
+										<span
+											class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
+										>
+											<ExternalLink size={12} />
+											{t('coupons.visit', 'Claim')}
+										</span>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+
+				<!-- Mobile: compact stacked rows, same click-through -->
+				<div class="sm:hidden">
+					{#each filteredCoupons as coupon (coupon.id)}
+						<a
+							href={dealPath(coupon)}
+							class="flex items-start justify-between gap-3 border-b border-[var(--color-border)] py-3"
+						>
+							<div class="min-w-0">
+								<div class="flex items-center gap-1.5">
+									<h2 class="truncate text-sm font-semibold text-[var(--color-text)]">
+										{coupon.title}
+									</h2>
+									{#if coupon.is_verified}
+										<BadgeCheck size={14} class="shrink-0 text-[var(--color-primary)]" />
+									{/if}
+								</div>
+								<p class="mt-0.5 truncate text-xs text-[var(--color-text-subtle)]">
+									{providerName(coupon)}{#if coupon.provider_category}
+										· {coupon.provider_category}{/if}
+								</p>
+								{#if coupon.description}
+									<p class="mt-1 line-clamp-1 text-xs text-[var(--color-text-subtle)]">
+										{coupon.description}
 									</p>
 								{/if}
 							</div>
-							{#if coupon.is_verified}
-								<span
-									class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary)]"
-								>
-									<BadgeCheck size={12} />
-									{t('coupons.verified', 'Verified')}
-								</span>
-							{/if}
-						</div>
-
-						<div class="flex items-center gap-2">
-							{#if coupon.code}
-								<code
-									class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1 font-mono text-xs text-[var(--color-text)]"
-								>
-									{coupon.code}
-								</code>
-							{/if}
-							{#if discountLabel(coupon)}
-								<span class="text-xs font-medium text-[var(--color-primary)]">
+							<span
+								class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--color-primary)]"
+							>
+								{#if discountLabel(coupon)}
 									{discountLabel(coupon)}
-								</span>
-							{/if}
-						</div>
-
-						<div class="flex items-center gap-2">
-							{#if coupon.code}
-								<button
-									type="button"
-									onclick={(e) => {
-										e.preventDefault();
-										e.stopPropagation();
-										copyCode(coupon);
-									}}
-									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-								>
-									<Copy size={12} />
-									{t('coupons.copy', 'Copy code')}
-								</button>
-							{/if}
-							{#if coupon.referral_url}
-								<span
-									class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)]"
-								>
-									<ExternalLink size={12} />
-									{t('coupons.visit', 'Visit')}
-								</span>
-							{/if}
-						</div>
-					</a>
-				{/each}
-			</div>
+								{:else}
+									<ExternalLink size={14} />
+								{/if}
+							</span>
+						</a>
+					{/each}
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>
