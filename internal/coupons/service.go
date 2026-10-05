@@ -71,11 +71,12 @@ type CreateProviderInput struct {
 	BaseURL, TrackingParam, TrackingValue *string
 	CommissionRate                        *pgtype.Numeric
 	IsActive, IsFeatured                  bool
+	Category                              *string
 }
 
 // CreateProvider is an exported method.
 func (s *Service) CreateProvider(ctx context.Context, input CreateProviderInput) (gen.AffiliateProvider, error) {
-	return s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
+	p, err := s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 
 		Name:           input.Name,
 		Slug:           input.Slug,
@@ -88,7 +89,17 @@ func (s *Service) CreateProvider(ctx context.Context, input CreateProviderInput)
 		CommissionRate: toNullableNumeric(input.CommissionRate),
 		IsActive:       input.IsActive,
 		IsFeatured:     input.IsFeatured,
+		Category:       input.Category,
 	})
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+
+	// Provider fields render inside coupon payloads — flush list/slug caches.
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
+
+	return p, nil
 }
 
 // GetProvider is an exported method.
@@ -125,12 +136,22 @@ func (s *Service) UpdateProvider(ctx context.Context, id pgtype.UUID, input Upda
 		return gen.AffiliateProvider{}, fmt.Errorf("checking provider: %w", err)
 	}
 
-	return s.store.updateProvider(ctx, gen.UpdateAffiliateProviderParams{
+	p, err := s.store.updateProvider(ctx, gen.UpdateAffiliateProviderParams{
 		ID: id, Name: input.Name, Description: input.Description,
 		ProviderType: input.ProviderType, LogoMediaID: toNullableUUID(input.LogoMediaID),
 		BaseUrl: input.BaseURL, TrackingParam: input.TrackingParam, TrackingValue: input.TrackingValue,
 		CommissionRate: toNullableNumeric(input.CommissionRate), IsActive: input.IsActive, IsFeatured: input.IsFeatured,
+		Category: input.Category,
 	})
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+
+	// Provider fields render inside coupon payloads — flush list/slug caches.
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
+
+	return p, nil
 }
 
 // DeleteProvider is an exported method.
@@ -153,7 +174,15 @@ func (s *Service) DeleteProvider(ctx context.Context, id pgtype.UUID) error {
 		return ErrProviderHasCoupons
 	}
 
-	return s.store.deleteProvider(ctx, id)
+	if err := s.store.deleteProvider(ctx, id); err != nil {
+		return err
+	}
+
+	// Provider fields render inside coupon payloads — flush list/slug caches.
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
+
+	return nil
 }
 
 // ── Coupon Operations ───────────────────────────────────────────────
@@ -175,10 +204,34 @@ type CreateCouponInput struct {
 	IsVerified    bool                `json:"is_verified,omitempty"`
 	ValidFrom     *pgtype.Timestamptz `json:"valid_from,omitempty"`
 	ExpiresAt     *pgtype.Timestamptz `json:"valid_until,omitempty"`
+	Details       json.RawMessage     `json:"details,omitempty"`
+}
+
+// maxCouponDetailsBytes caps the coupons.details JSONB payload (§55).
+const maxCouponDetailsBytes = 32 * 1024
+
+// validateCouponDetails accepts nil/empty and JSON objects up to
+// maxCouponDetailsBytes; anything else is ErrInvalidDetails.
+func validateCouponDetails(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	if len(raw) > maxCouponDetailsBytes {
+		return ErrInvalidDetails
+	}
+	var v map[string]any
+	if err := json.Unmarshal(raw, &v); err != nil || v == nil {
+		return ErrInvalidDetails
+	}
+	return nil
 }
 
 // CreateCoupon is an exported method.
 func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input CreateCouponInput) (gen.CreateCouponRow, error) {
+	if err := validateCouponDetails(input.Details); err != nil {
+		return gen.CreateCouponRow{}, err
+	}
+
 	slug, err := s.resolveCouponSlug(ctx, input.Slug, input.Title, pgtype.UUID{})
 	if err != nil {
 		return gen.CreateCouponRow{}, err
@@ -190,7 +243,8 @@ func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input Cr
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
-		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt), CreatedBy: userID,
+		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
+		Details: input.Details, CreatedBy: userID,
 	})
 	if err != nil {
 		return gen.CreateCouponRow{}, err
@@ -325,6 +379,10 @@ type UpdateCouponInput = CreateCouponInput
 
 // UpdateCoupon is an exported method.
 func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input UpdateCouponInput) (gen.UpdateCouponRow, error) {
+	if err := validateCouponDetails(input.Details); err != nil {
+		return gen.UpdateCouponRow{}, err
+	}
+
 	current, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
@@ -348,6 +406,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
+		Details: input.Details,
 	})
 	if err != nil {
 		return gen.UpdateCouponRow{}, err
@@ -412,6 +471,10 @@ func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UU
 // deleteKeysByPattern SCAN-deletes all Valkey keys matching a glob pattern
 // (same approach as config settings invalidation — Section 55).
 func (s *Service) deleteKeysByPattern(ctx context.Context, pattern string) {
+	if s.vk == nil {
+		return
+	}
+
 	var cursor uint64
 
 	for {
@@ -844,4 +907,100 @@ func numericFromFloat(f float64) pgtype.Numeric {
 	_ = n.Scan(fmt.Sprintf("%.2f", f))
 
 	return n
+}
+
+// ── Org Deal Submissions (Section 55 Deals Redesign) ────────────────
+
+// SubmitDealInput is the payload for POST /organizations/{id}/deals —
+// provider_id/status/is_verified are server-controlled for org submissions.
+type SubmitDealInput = CreateCouponInput
+
+// SubmitOrgDeal creates a pending coupon under the organization's own
+// affiliate provider (auto-created from the org on first submission).
+// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
+func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userID pgtype.UUID, input SubmitDealInput) (gen.CreateCouponRow, error) {
+	if err := validateCouponDetails(input.Details); err != nil {
+		return gen.CreateCouponRow{}, err
+	}
+	provider, err := s.providerForOrg(ctx, org)
+	if err != nil {
+		return gen.CreateCouponRow{}, err
+	}
+	slug, err := s.resolveCouponSlug(ctx, input.Slug, input.Title, pgtype.UUID{})
+	if err != nil {
+		return gen.CreateCouponRow{}, err
+	}
+	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
+		ProviderID: provider.ID, CouponType: string(CouponTypeExternal),
+		Title: input.Title, Slug: slug, Description: input.Description,
+		Code: strPtrOrNil(input.Code), DiscountType: input.DiscountType,
+		DiscountValue: toNullableNumeric(input.DiscountValue), Currency: input.Currency,
+		TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
+		IsVerified: false, Status: string(CouponStatusPending),
+		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
+		Details: input.Details, CreatedBy: userID,
+	})
+	if err != nil {
+		return gen.CreateCouponRow{}, err
+	}
+	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
+	return c, nil
+}
+
+// providerForOrg returns the org's affiliate provider, creating it from the
+// org's public profile on first use. affiliate_providers.slug is unique, so
+// collisions suffix -2/-3… like resolveCouponSlug.
+func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen.AffiliateProvider, error) {
+	p, err := s.store.getProviderByOrgID(ctx, org.ID)
+	if err == nil {
+		return p, nil
+	}
+	if !isNoRows(err) {
+		return gen.AffiliateProvider{}, fmt.Errorf("getting org provider: %w", err)
+	}
+	base := content.Slugify(org.Slug)
+	if base == "" {
+		base = content.Slugify(org.Name)
+	}
+	for i := 0; i < maxCouponSlugAttempts; i++ {
+		candidate := base
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		if _, err := s.store.getProviderBySlug(ctx, candidate); err == nil {
+			continue
+		} else if !isNoRows(err) {
+			return gen.AffiliateProvider{}, fmt.Errorf("checking provider slug: %w", err)
+		}
+		return s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
+			Name: org.Name, Slug: candidate, Description: org.Description,
+			ProviderType: string(ProviderTypeBoth), BaseUrl: org.WebsiteUrl,
+			LogoMediaID: org.LogoMediaID, IsActive: true,
+			OrganizationID: org.ID,
+		})
+	}
+	return gen.AffiliateProvider{}, fmt.Errorf("could not find unique provider slug after %d attempts", maxCouponSlugAttempts)
+}
+
+// ListOrgDeals lists an org's coupons in all statuses (submissions view).
+func (s *Service) ListOrgDeals(ctx context.Context, orgID pgtype.UUID, page, pageSize int32) ([]gen.ListCouponsByOrganizationRow, error) {
+	limit, offset := paginate(page, pageSize)
+	return s.store.listCouponsByOrganization(ctx, orgID, limit, offset)
+}
+
+// ListDealPartners returns active providers for GET /deals/partners.
+func (s *Service) ListDealPartners(ctx context.Context) ([]DealPartnerRef, error) {
+	rows, err := s.store.listActiveDealPartners(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]DealPartnerRef, 0, len(rows))
+	for _, r := range rows {
+		refs = append(refs, DealPartnerRef{
+			ID: r.ID, Name: r.Name, Slug: r.Slug, Description: r.Description,
+			Category: r.Category, LogoMediaID: r.LogoMediaID, BaseURL: r.BaseUrl,
+			IsFeatured: r.IsFeatured, OrganizationID: r.OrganizationID,
+		})
+	}
+	return refs, nil
 }

@@ -9,7 +9,11 @@
 // link entities store IDs, not resolved values. Resolution happens at render time.
 package coupons
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
 
 // Exported var values.
 var (
@@ -22,6 +26,8 @@ var (
 	// ErrDealRedirectUnavailable is a sentinel error: the deal has no
 	// click-through target (no referral_url and no provider base_url).
 	ErrDealRedirectUnavailable = errors.New("deal redirect unavailable")
+	// ErrInvalidDetails is a sentinel error: coupons.details failed validation.
+	ErrInvalidDetails = errors.New("invalid deal details")
 )
 
 // InternalDealProviderSlug is the reserved provider URL segment used by
@@ -42,7 +48,24 @@ const (
 	CouponStatusActive    CouponStatus = "active"
 	CouponStatusExpired   CouponStatus = "expired"
 	CouponStatusSuspended CouponStatus = "suspended"
+	// CouponStatusPending marks organization-submitted deals awaiting staff
+	// review. Pending coupons are never exposed by public endpoints (§55).
+	CouponStatusPending CouponStatus = "pending"
 )
+
+// DealPartnerRef is the slim provider row returned by GET /deals/partners —
+// powers the /deals filter pills and the deal form's provider select.
+type DealPartnerRef struct {
+	ID             pgtype.UUID `json:"id"`
+	Name           string      `json:"name"`
+	Slug           string      `json:"slug"`
+	Description    *string     `json:"description,omitempty"`
+	Category       *string     `json:"category,omitempty"`
+	LogoMediaID    pgtype.UUID `json:"logo_media_id,omitempty"`
+	BaseURL        *string     `json:"base_url,omitempty"`
+	IsFeatured     bool        `json:"is_featured"`
+	OrganizationID pgtype.UUID `json:"organization_id,omitempty"`
+}
 
 // CouponType distinguishes external partner coupons from internal platform coupons.
 type CouponType string

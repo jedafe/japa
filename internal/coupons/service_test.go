@@ -1,6 +1,7 @@
 package coupons
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -133,5 +134,39 @@ func TestConstants(t *testing.T) {
 
 	if CouponTypeInternal != "internal" {
 		t.Error("wrong CouponTypeInternal value")
+	}
+}
+
+func TestValidateCouponDetails(t *testing.T) {
+	oversize := json.RawMessage(`{"s":"` + string(make([]byte, 40*1024)) + `"}`)
+	cases := []struct {
+		name    string
+		raw     json.RawMessage
+		wantErr bool
+	}{
+		{"nil ok", nil, false},
+		{"empty ok", json.RawMessage(""), false},
+		{"object ok", json.RawMessage(`{"summary":"hi","faq":[{"q":"a","a":"b"}]}`), false},
+		{"array rejected", json.RawMessage(`[1,2]`), true},
+		{"scalar rejected", json.RawMessage(`"x"`), true},
+		{"invalid json", json.RawMessage(`{bad`), true},
+		{"oversize rejected", oversize, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateCouponDetails(tc.raw)
+			if tc.wantErr && err == nil {
+				t.Error("expected error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestPendingConstant(t *testing.T) {
+	if CouponStatusPending != "pending" {
+		t.Error("wrong CouponStatusPending value")
 	}
 }
