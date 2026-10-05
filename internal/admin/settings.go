@@ -60,6 +60,7 @@ type Handlers struct {
 	Orgs                OrgVerifier
 	Tasks               TaskEnqueuer
 	StudioHook          StudioReviewHook
+	DraftPublishHook    DraftPublishHook           // Optional — publishes non-studio ai_hitl_reviews targets on approve (§103)
 	ToolReviewHook      ToolReviewHook             // Optional — §§107–110 tool entities in the unified queue
 	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
@@ -84,6 +85,14 @@ func (h *Handlers) SetLiteralCatalog(c *literals.Catalog) { h.Catalog = c }
 type StudioReviewHook interface {
 	OnStudioReviewApproved(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
 	OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
+}
+
+// DraftPublishHook is the subset of the HITL target publisher the
+// moderation handler needs to take a non-studio ai_hitl_reviews row's
+// target live on approve — contents rows get status='published';
+// tool-table targets route through the dedicated tool publisher (§103).
+type DraftPublishHook interface {
+	PublishHITLTarget(ctx context.Context, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID) error
 }
 
 // ToolReviewHook is the dispatcher the unified moderation queue calls to
@@ -162,6 +171,13 @@ func (h *Handlers) SetOrgVerifier(o OrgVerifier) {
 // approved or rejected (§75, ADR-076 §3).
 func (h *Handlers) SetStudioReviewHook(s StudioReviewHook) {
 	h.StudioHook = s
+}
+
+// SetDraftPublishHook injects the publisher that takes a non-studio
+// ai_hitl_reviews target live on approve (§103 "Approve → publish" —
+// agent_draft_request drafts enter the queue unpublished).
+func (h *Handlers) SetDraftPublishHook(d DraftPublishHook) {
+	h.DraftPublishHook = d
 }
 
 // SetToolReviewHook injects the §§107–110 tool review dispatcher so the

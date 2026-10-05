@@ -7,9 +7,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,8 +21,10 @@ import (
 	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/communitylocator"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/db"
+	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/languagetesthub"
@@ -152,6 +156,131 @@ func (p *toolTablePublisher) publishWikiPage(ctx context.Context, reviewerID, pa
 	_, err = p.wikiSvc.ApproveRevision(ctx, revID, pageID, reviewerID, notes)
 
 	return err
+}
+
+// regenContentStore is the subset of *content.Service the regen-draft
+// merger needs — satisfied by *content.Service directly; declared as an
+// interface so the merge path is unit-testable.
+type regenContentStore interface {
+	GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error)
+	UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, input content.UpdateContentInput, bypassEditWindow bool) (gen.UpdateContentRow, error)
+	DeleteContent(ctx context.Context, id pgtype.UUID) error
+}
+
+// regenDraftMergerAdapter implements studio.RegenDraftMerger. Approving a
+// jobless (regen) studio review applies the draft's regenerated
+// body/field_values onto the original contents row referenced by
+// _ai_provenance.previous_content_id, preserving the original's slug,
+// status, geo, and visibility — then soft-deletes the draft (§75
+// merge-onto-original semantics; the alternative is two live copies of the
+// same guide).
+type regenDraftMergerAdapter struct {
+	contentSvc regenContentStore
+}
+
+// MergeRegenDraft returns (intelRecordID, merged, err). merged=false means
+// the draft carries no previous_content_id provenance — not a regen draft —
+// and the caller should publish it directly.
+func (a *regenDraftMergerAdapter) MergeRegenDraft(ctx context.Context, draftID, reviewerID pgtype.UUID) (pgtype.UUID, bool, error) {
+	draft, err := a.contentSvc.GetContent(ctx, draftID)
+	if err != nil {
+		return pgtype.UUID{}, false, fmt.Errorf("regen merge: get draft: %w", err)
+	}
+
+	var prevID, intelID pgtype.UUID
+
+	aiModel := ""
+
+	if len(draft.FieldValues) > 0 {
+		var fv map[string]any
+		if err := json.Unmarshal(draft.FieldValues, &fv); err == nil {
+			if prov, ok := fv["_ai_provenance"].(map[string]any); ok {
+				if raw, ok := prov["previous_content_id"].(string); ok {
+					_ = prevID.Scan(raw)
+				}
+
+				if raw, ok := prov["intel_record_id"].(string); ok {
+					_ = intelID.Scan(raw)
+				}
+
+				aiModel, _ = prov["ai_model"].(string)
+			}
+		}
+	}
+
+	if !prevID.Valid {
+		return pgtype.UUID{}, false, nil
+	}
+
+	original, err := a.contentSvc.GetContent(ctx, prevID)
+	if err != nil {
+		return pgtype.UUID{}, false, fmt.Errorf("regen merge: get original content %s: %w", prevID, err)
+	}
+
+	hash := content.ComputeContentHash(draft.Body)
+	now := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+
+	_, err = a.contentSvc.UpdateContent(ctx, prevID, reviewerID, content.UpdateContentInput{
+		Title:         draft.Title,
+		Slug:          original.Slug,
+		Body:          draft.Body,
+		BodyHtml:      "",
+		FieldValues:   draft.FieldValues,
+		ContentHash:   &hash,
+		GeoSpaceID:    original.GeoSpaceID,
+		SeoIndexable:  &original.SeoIndexable,
+		Status:        original.Status,
+		Visibility:    original.Visibility,
+		GuideCategory: original.GuideCategory,
+		AIGeneratedAt: now,
+		AIModel:       &aiModel,
+	}, true) // bypassEditWindow: reviewer-driven merge
+	if err != nil {
+		return pgtype.UUID{}, false, fmt.Errorf("regen merge: update original: %w", err)
+	}
+
+	if err := a.contentSvc.DeleteContent(ctx, draftID); err != nil {
+		// Non-fatal: the merge already landed; the leftover draft stays
+		// unpublished and can be cleaned up manually.
+		slog.Warn("regen merge: soft-delete draft failed", "draft_id", draftID, "error", err)
+	}
+
+	return intelID, true, nil
+}
+
+// hitlDraftPublisher implements ai.DraftPublishHook — it takes the target of
+// a non-studio ai_hitl_reviews row live when the review is approved (§103
+// "Approve → publish": agent_draft_request drafts enter the queue
+// unpublished, so approval must publish or the draft is orphaned).
+// contents targets publish via UpdateContentStatus; tool-table targets
+// route through the same publisher used by studio approvals.
+type hitlDraftPublisher struct {
+	contentPub   studio.ContentPublisher
+	toolTablePub studio.ToolTablePublisher
+}
+
+// PublishHITLTarget publishes the review target. An empty target_table is
+// treated as 'contents' (the column default).
+func (p *hitlDraftPublisher) PublishHITLTarget(ctx context.Context, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID) error {
+	if !targetID.Valid {
+		return errors.New("hitl publish: no target id")
+	}
+
+	if targetTable == "" || targetTable == "contents" {
+		if p.contentPub == nil {
+			return errors.New("hitl publish: content publisher not wired")
+		}
+
+		_, err := p.contentPub.UpdateContentStatus(ctx, targetID, "published")
+
+		return err
+	}
+
+	if p.toolTablePub == nil {
+		return fmt.Errorf("hitl publish: tool-table publisher not wired for %s", targetTable)
+	}
+
+	return p.toolTablePub.Publish(ctx, reviewerID, targetTable, targetID, "")
 }
 
 // strPtrOrNil returns a pointer to the string if non-empty, otherwise nil.

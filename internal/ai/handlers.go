@@ -70,6 +70,15 @@ type StudioReviewHook interface {
 	OnStudioReviewRejected(ctx context.Context, reviewID, reviewerID pgtype.UUID) error
 }
 
+// DraftPublishHook publishes the target of a non-studio ai_hitl_reviews row
+// when it is approved (§103: "Approve → publish" for agent_draft_request
+// drafts and manual submissions that carry a content_id). target_table
+// disambiguates: 'contents' rows get status='published'; tool-table targets
+// route through the dedicated tool publisher.
+type DraftPublishHook interface {
+	PublishHITLTarget(ctx context.Context, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID) error
+}
+
 // Handlers holds dependencies for AI HTTP handlers.
 type Handlers struct {
 	Dispatcher           *Dispatcher
@@ -85,6 +94,7 @@ type Handlers struct {
 	costs                *CostEstimator      // estimates per-request USD cost from token usage
 	PersonaVoiceResolver                     // optional voice prompt resolver (persona_voices)
 	StudioReviewHook                         // optional hook for studio HITL review lifecycle
+	DraftPublishHook                         // optional hook — publish non-studio review targets on approve
 	userContext          UserContextProvider // per-category user activity data (BUG-001)
 }
 
@@ -107,6 +117,13 @@ func (h *Handlers) SetRAGService(r RAGRetriever) {
 // approve/reject can transition studio_jobs and linked tool-table rows.
 func (h *Handlers) SetStudioReviewHook(sh StudioReviewHook) {
 	h.StudioReviewHook = sh
+}
+
+// SetDraftPublishHook injects the publisher that takes a non-studio HITL
+// review's target live on approve (§103: agent_draft_request drafts enter
+// the queue unpublished; approve publishes them).
+func (h *Handlers) SetDraftPublishHook(dh DraftPublishHook) {
+	h.DraftPublishHook = dh
 }
 
 // SetConsentChecker injects the consent checker used to verify
@@ -2305,6 +2322,21 @@ func (h *Handlers) HandleApproveHITL(w http.ResponseWriter, r *http.Request) {
 			// approval cannot complete.
 			errpkg.WriteError(w, http.StatusBadGateway, "studio_hook_failed",
 				fmt.Sprintf("The studio publish step failed: %v. The review has not been approved", err))
+
+			return
+		}
+	}
+
+	// Non-studio reviews carrying a publishable target (agent_draft_request
+	// drafts, manual submissions) publish on approve — §103 "Approve →
+	// publish". Fail closed like the studio hook: a publish failure leaves
+	// the review pending instead of reporting an approved-but-unpublished
+	// draft.
+	if review.Source != HITLSourceStudio && review.ContentID.Valid && h.DraftPublishHook != nil {
+		if err := h.PublishHITLTarget(r.Context(), user.UserID, review.TargetTable, review.ContentID); err != nil {
+			slog.Error("draft publish hook failed", "review_id", reviewID, "content_id", review.ContentID, "target_table", review.TargetTable, "error", err)
+			errpkg.WriteError(w, http.StatusBadGateway, "publish_failed",
+				fmt.Sprintf("The publish step failed: %v. The review has not been approved", err))
 
 			return
 		}

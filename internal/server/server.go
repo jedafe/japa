@@ -1867,10 +1867,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// (published/rejected) and the linked intel_records status when a
 	// source='studio' HITL review is approved/rejected (§75, ADR-076 §3).
 	// Without this, studio jobs stay 'in_review' forever after admin review.
-	studioService.SetIntelRecordUpdater(&studioIntelStatusAdapter{store: intelStores})
-	studioService.SetContentPublisher(&studioContentPublisherAdapter{svc: contentService})
-	studioService.SetHITLReviewReader(&hitlReviewReaderAdapter{store: aiStore})
-	studioService.SetToolTablePublisher(&toolTablePublisher{
+	contentPub := &studioContentPublisherAdapter{svc: contentService}
+	toolTablePub := &toolTablePublisher{
 		db:              database,
 		arrivalSvc:      arrivalChecklistService,
 		communityOrgSvc: communityLocatorService,
@@ -1883,10 +1881,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		wikiSvc:         wikiService,
 		calendarSvc:     calendarService,
 		docsSvc:         docsService,
-	})
+	}
+
+	studioService.SetIntelRecordUpdater(&studioIntelStatusAdapter{store: intelStores})
+	studioService.SetContentPublisher(contentPub)
+	studioService.SetHITLReviewReader(&hitlReviewReaderAdapter{store: aiStore})
+	studioService.SetToolTablePublisher(toolTablePub)
+	studioService.SetRegenDraftMerger(&regenDraftMergerAdapter{contentSvc: contentService})
 
 	studioReviewHook := &multiStudioReviewHook{hooks: []studioReviewHookLike{studioService, campaignService}}
 	adminHandlers.SetStudioReviewHook(studioReviewHook)
+	// §103 "Approve → publish": non-studio ai_hitl_reviews rows moderated via
+	// PATCH /admin/moderation-queue publish their content_id target on
+	// approve (agent_draft_request drafts enter the queue unpublished).
+	draftPub := &hitlDraftPublisher{contentPub: contentPub, toolTablePub: toolTablePub}
+	adminHandlers.SetDraftPublishHook(draftPub)
 
 	// §97: wire the AI Gateway dispatcher into the attestation guide so
 	// GenerateDraft can populate pathway_steps via the content_generation
@@ -1921,6 +1930,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
 	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
 	aiHandlers.SetStudioReviewHook(studioReviewHook)
+	// §103 "Approve → publish": non-studio HITL reviews carrying a content_id
+	// (agent_draft_request drafts, manual submissions) publish their target
+	// on approve; without this the review is approved but the draft stays
+	// unpublished forever.
+	aiHandlers.SetDraftPublishHook(draftPub)
 	aiHandlers.SetPersonaVoiceResolver(personasService)
 	aiHandlers.AsynqClient = asynqClient
 

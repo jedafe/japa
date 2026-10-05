@@ -61,6 +61,15 @@ type ToolTablePublisher interface {
 	Publish(ctx context.Context, reviewerID pgtype.UUID, targetTable string, targetID pgtype.UUID, notes string) error
 }
 
+// RegenDraftMerger merges a regeneration draft back into its source
+// contents row — merge-onto-original approval semantics for jobless regen
+// reviews (§75). Returns (intelRecordID, merged, err); merged=false means
+// the draft carries no _ai_provenance.previous_content_id and the caller
+// should fall back to publishing the draft directly.
+type RegenDraftMerger interface {
+	MergeRegenDraft(ctx context.Context, draftID, reviewerID pgtype.UUID) (pgtype.UUID, bool, error)
+}
+
 // Service holds the business logic for the AI Content Studio.
 type Service struct {
 	store        *Store
@@ -70,6 +79,7 @@ type Service struct {
 	contentPub   ContentPublisher
 	hitlReader   HITLReviewReader
 	toolTablePub ToolTablePublisher
+	regenMerger  RegenDraftMerger
 }
 
 // NewService creates a Service backed by the given store and settings.
@@ -96,6 +106,11 @@ func (s *Service) SetHITLReviewReader(r HITLReviewReader) { s.hitlReader = r }
 
 // SetToolTablePublisher injects the publisher for tool-table drafts.
 func (s *Service) SetToolTablePublisher(p ToolTablePublisher) { s.toolTablePub = p }
+
+// SetRegenDraftMerger injects the contents-service merger that applies a
+// regen draft back onto its original row on review approval (§75
+// merge-onto-original semantics for jobless studio reviews).
+func (s *Service) SetRegenDraftMerger(m RegenDraftMerger) { s.regenMerger = m }
 
 // highStakesCategories are the guide categories that always require human
 // review, regardless of studio.auto_publish_types. Hardcoded per §75 — not
@@ -739,6 +754,24 @@ func (s *Service) OnStudioReviewApproved(ctx context.Context, reviewID, reviewer
 	if targetTable == "contents" && targetID.Valid {
 		if s.contentPub == nil {
 			return errors.New("studio: approve: content publisher not wired")
+		}
+
+		// Jobless reviews are regeneration drafts (§75): merge the draft
+		// back onto the original contents row instead of publishing a
+		// duplicate live copy. merged=false means no
+		// _ai_provenance.previous_content_id — fall through to publish.
+		if jobless && s.regenMerger != nil {
+			intelID, merged, merr := s.regenMerger.MergeRegenDraft(ctx, targetID, reviewerID)
+			if merr != nil {
+				return fmt.Errorf("studio: approve: merge regen draft: %w", merr)
+			}
+
+			if merged {
+				s.transitionIntelRecordOnPublish(ctx, intelID)
+				slog.Info("studio: regen draft merged onto original", "review_id", reviewID, "draft_id", targetID, "intel_record_id", intelID)
+
+				return nil
+			}
 		}
 
 		if _, perr := s.contentPub.UpdateContentStatus(ctx, targetID, "published"); perr != nil {
