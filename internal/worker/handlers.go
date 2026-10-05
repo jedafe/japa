@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	texttemplate "text/template"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -228,23 +229,6 @@ var scholarshipSyncer ScholarshipSyncer
 // RegisterScholarshipSyncer injects the adapter for the scholarship:sync_from_guide task.
 func RegisterScholarshipSyncer(s ScholarshipSyncer) {
 	scholarshipSyncer = s
-}
-
-// videoProcessor holds the video processor for background video processing.
-var videoProcessor interface {
-	Transcode(ctx context.Context, inputPath, outputPath string) error
-	GenerateThumbnail(ctx context.Context, inputPath, outputPath, timestamp string) error
-	Compress(ctx context.Context, inputPath, outputPath string) error
-}
-
-// RegisterVideoProcessor sets the video processor for the video_processing handler.
-func RegisterVideoProcessor(p interface {
-	Transcode(ctx context.Context, inputPath, outputPath string) error
-	GenerateThumbnail(ctx context.Context, inputPath, outputPath, timestamp string) error
-	Compress(ctx context.Context, inputPath, outputPath string) error
-},
-) {
-	videoProcessor = p
 }
 
 // videoImportProcessor holds the bulk video import processor for the
@@ -1195,8 +1179,8 @@ type emailSendPayload struct {
 }
 
 // HandleEmailSend sends a single transactional email via SMTP.
-// When template_slug is provided with a , the handler looks up
-// the DB-stored email template and renders it with html/template (XSS-safe).
+// When template_slug is provided, the handler looks up the DB-stored email
+// template and renders it with html/template (XSS-safe).
 // Falls back to raw body/subject when no template is specified (backward compat).
 // // Ref: sections/20-email-notification-bugs.md.
 func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
@@ -1210,7 +1194,7 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	}
 
 	if payload.To == "" {
-		return errors.New("task:email:send: to is required")
+		return fmt.Errorf("task:email:send: to is required: %w", asynq.SkipRetry)
 	}
 
 	subject := payload.Subject
@@ -1228,7 +1212,7 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 	body = resolveText(ctx, body)
 
 	if payload.To == "" || subject == "" {
-		return errors.New("task:email:send: to and subject are required")
+		return fmt.Errorf("task:email:send: to and subject are required: %w", asynq.SkipRetry)
 	}
 
 	if err := sendEmailWithContext(ctx, payload.To, subject, body, isHTML); err != nil {
@@ -1246,7 +1230,7 @@ func HandleEmailSend(ctx context.Context, t *asynq.Task) error {
 // html/template (auto-escaping values for XSS safety) and falls back to the
 // caller-supplied subject/body when no template matches or rendering fails.
 func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject, body string, isHTML bool) (string, string, bool) {
-	if payload.TemplateSlug == "" || dbPool == nil || "" == "" {
+	if payload.TemplateSlug == "" || dbPool == nil {
 		return subject, body, isHTML
 	}
 
@@ -1259,9 +1243,16 @@ func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject
 		return subject, body, isHTML
 	}
 
-	// Use template subject if the caller didn't override it.
+	// Use template subject if the caller didn't override it. Subjects carry
+	// the same {{.Var}} placeholders as bodies, so render them too — with
+	// text/template, since html/template entity-escapes plain-text subjects
+	// (& → &amp; etc.).
 	if subject == "" {
-		subject = tmpl.Subject
+		if rendered, ok := renderSubjectTemplate(tmpl.Subject, payload); ok {
+			subject = rendered
+		} else {
+			subject = tmpl.Subject
+		}
 	}
 
 	// Render the template body with html/template (auto-escapes values).
@@ -1278,6 +1269,26 @@ func resolveEmailTemplate(ctx context.Context, payload emailSendPayload, subject
 	}
 
 	return subject, body, isHTML
+}
+
+// renderSubjectTemplate renders a template subject with the payload's
+// template_data via text/template (subjects are plain text — no HTML
+// entity escaping). Returns ("", false) on parse/execute failure so the
+// caller can fall back to the raw subject.
+func renderSubjectTemplate(subject string, payload emailSendPayload) (string, bool) {
+	tmplParsed, err := texttemplate.New("subject").Parse(subject)
+	if err != nil {
+		slog.Error("task:email:send: failed to parse subject template", "template_slug", payload.TemplateSlug, "error", err)
+		return "", false
+	}
+
+	var buf bytes.Buffer
+	if err := tmplParsed.Execute(&buf, templateDataFromMap(payload.TemplateSiteName, payload.TemplateData)); err != nil {
+		slog.Error("task:email:send: failed to render subject template", "template_slug", payload.TemplateSlug, "error", err)
+		return "", false
+	}
+
+	return buf.String(), true
 }
 
 // renderEmailTemplate renders an HTML email template body with the payload's
@@ -2744,14 +2755,17 @@ func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) err
 	return nil
 }
 
-// HandleVideoProcessing processes uploaded video files for transcoding and thumbnail generation.
+// HandleVideoProcessing processes uploaded video files via the registered
+// MediaVideoProcessor (media package) — the storage_path column holds a
+// storage key, not a filesystem path, so object fetch/store and the media
+// row update must happen inside the media service, not here.
 func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:content:process_video")
 
 	var payload struct {
 		MediaID string `json:"media_id"`
 
-		Operation string `json:"operation"` // "transcode", "thumbnail", "compress"
+		Operation string `json:"operation"` // "transcode", "compress"
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -2759,92 +2773,23 @@ func HandleVideoProcessing(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
-	if videoProcessor == nil {
+	if mediaVideoProcessor == nil {
 		slog.Warn("task:content:process_video: no video processor registered, skipping")
 		return nil
 	}
 
-	queries, err := requireDB()
-	if err != nil {
-		slog.Warn("task:content:process_video: no database, skipping", "error", err)
-		return nil
+	if payload.MediaID == "" {
+		slog.Error("task:content:process_video: missing media_id in payload")
+		return errors.New("missing media_id")
 	}
 
-	mediaID, err := scanUUID(payload.MediaID)
-	if err != nil {
-		return fmt.Errorf("task:content:process_video: %w", err)
-	}
-
-	// Look up the media record to get the current storage path.
-	media, err := queries.GetMediaByID(ctx,
-		mediaID,
-	)
-	if err != nil {
-		slog.Error("task:content:process_video: media not found", "media_id", payload.MediaID, "error", err)
-		return fmt.Errorf("task:content:process_video: media not found: %w", err)
-	}
-
-	inputPath := media.StoragePath
-
-	outputPath, err := processVideoOperation(ctx, inputPath, payload.Operation, payload.MediaID)
-	if err != nil {
+	if err := mediaVideoProcessor.ProcessMediaVideo(ctx, payload.MediaID, payload.Operation); err != nil {
+		slog.Error("task:content:process_video: failed",
+			"media_id", payload.MediaID, "operation", payload.Operation, "error", err)
 		return err
 	}
 
-	// Update the media record to point to the processed file.
-	if err := gen.New(dbPool.Writer).UpdateMediaStoragePath(ctx, gen.UpdateMediaStoragePathParams{
-		StoragePath: outputPath, ID: mediaID,
-	}); err != nil {
-		slog.Error("task:content:process_video: failed to update storage path", "media_id", payload.MediaID, "new_path", outputPath, "error", err)
-		return fmt.Errorf("task:content:process_video: update storage path: %w", err)
-	}
-
-	slog.Info("task:content:process_video: completed", "media_id", payload.MediaID, "operation", payload.Operation, "output_path", outputPath)
-
 	return nil
-}
-
-// processVideoOperation routes a media file to the requested video
-// processing operation and returns the resulting output path.
-func processVideoOperation(ctx context.Context, inputPath, operation, mediaIDStr string) (string, error) {
-	switch operation {
-	case "transcode":
-		outputPath := inputPath + ".transcoded.mp4"
-		if err := videoProcessor.Transcode(ctx, inputPath, outputPath); err != nil {
-			slog.Error("task:content:process_video: transcode failed", "media_id", mediaIDStr, "error", err)
-			return "", fmt.Errorf("task:content:process_video: transcode: %w", err)
-		}
-
-		return outputPath, nil
-
-	case "thumbnail":
-		outputPath := inputPath + ".thumb.jpg"
-		// Thumbnail timestamp is configurable via system_settings
-		// (media.video_thumbnail_time, default "00:00:01").
-		thumbTime := "00:00:01"
-		if appSettings != nil {
-			thumbTime = appSettings.GetStringOr(ctx, "media.video_thumbnail_time", "00:00:01")
-		}
-
-		if err := videoProcessor.GenerateThumbnail(ctx, inputPath, outputPath, thumbTime); err != nil {
-			slog.Error("task:content:process_video: thumbnail failed", "media_id", mediaIDStr, "error", err)
-			return "", fmt.Errorf("task:content:process_video: thumbnail: %w", err)
-		}
-
-		return outputPath, nil
-
-	case "compress":
-		outputPath := inputPath + ".compressed.mp4"
-		if err := videoProcessor.Compress(ctx, inputPath, outputPath); err != nil {
-			slog.Error("task:content:process_video: compress failed", "media_id", mediaIDStr, "error", err)
-			return "", fmt.Errorf("task:content:process_video: compress: %w", err)
-		}
-
-		return outputPath, nil
-
-	default:
-		return "", fmt.Errorf("task:content:process_video: unknown operation %q", operation)
-	}
 }
 
 // HandleWalletProcessActivityEvent processes a wallet activity event and updates the ledger.

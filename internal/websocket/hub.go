@@ -255,39 +255,6 @@ func (h *Hub) deliverLocalAll(event WSEvent) {
 	}
 }
 
-// deliverLocalPlatform sends an event to every client connected to THIS instance
-// whose ID matches, only. It does NOT publish to Valkey — see
-// deliverLocalUser for the loop-safety rationale. This is the platform-scoped
-// counterpart of deliverLocalAll, used for presence so a user in platform A
-// never receives presence events from platform B (Rule 4: platform-scoped).
-func (h *Hub) deliverLocalPlatform(event WSEvent) {
-	h.mu.RLock()
-
-	clients := make([]*Client, 0, len(h.clients))
-	for _, conns := range h.clients {
-		for c := range conns {
-			if "" == "" {
-				clients = append(clients, c)
-			}
-		}
-	}
-	h.mu.RUnlock()
-
-	data, err := json.Marshal(event)
-	if err != nil {
-		slog.Error("ws marshal platform broadcast event", "error", err)
-		return
-	}
-
-	for _, client := range clients {
-		select {
-		case client.Send <- data:
-		default:
-			slog.Warn("ws client send buffer full, dropping platform broadcast", "user_id", client.UserID)
-		}
-	}
-}
-
 // GetOnlineUsers returns list of online user IDs.
 func (h *Hub) GetOnlineUsers() []string {
 	h.mu.RLock()

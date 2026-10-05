@@ -47,6 +47,7 @@ type Config struct {
 	S3SecretKey              string // JC_S3_SECRET_KEY — S3 secret key
 	S3Bucket                 string // JC_S3_BUCKET — S3 bucket name for media storage
 	S3Region                 string // JC_S3_REGION — S3 region (placeholder; SeaweedFS ignores this)
+	MediaRoot                string // JC_MEDIA_ROOT — local media storage root (default "data/media"; absolute paths recommended)
 	VAPIDPublicKey           string // JC_VAPID_PUBLIC_KEY — VAPID public key for WebPush notifications
 	VAPIDPrivateKey          string // JC_VAPID_PRIVATE_KEY — VAPID private key for WebPush notifications
 	VAPIDSubject             string // JC_VAPID_SUBJECT — VAPID subject (mailto: or https: URL) for WebPush
@@ -138,6 +139,7 @@ func Load() (Config, error) {
 		S3SecretKey:              os.Getenv("JC_S3_SECRET_KEY"),
 		S3Bucket:                 os.Getenv("JC_S3_BUCKET"),
 		S3Region:                 os.Getenv("JC_S3_REGION"),
+		MediaRoot:                os.Getenv("JC_MEDIA_ROOT"),
 		VAPIDPublicKey:           os.Getenv("JC_VAPID_PUBLIC_KEY"),
 		VAPIDPrivateKey:          os.Getenv("JC_VAPID_PRIVATE_KEY"),
 		VAPIDSubject:             os.Getenv("JC_VAPID_SUBJECT"),

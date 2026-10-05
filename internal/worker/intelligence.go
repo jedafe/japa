@@ -970,6 +970,14 @@ func intelChannelPreflightCheck(ctx context.Context, ch gen.IntelSourceChannel, 
 			return fmt.Errorf("task:intel:fetch_channel: preflight: %w: %w", err, asynq.SkipRetry)
 		}
 
+		if errors.Is(err, fetcher.ErrRateLimited) {
+			// Per-domain rate limit — transient but must not retry at the
+			// default exponential cadence (a burst of same-domain channels
+			// keeps the limiter hot). Tag it so RetryDelayFunc backs off
+			// to the upstream-rate-limit delay.
+			return fmt.Errorf("task:intel:fetch_channel: preflight: %w: %w", err, ErrUpstreamRateLimited)
+		}
+
 		return fmt.Errorf("task:intel:fetch_channel: preflight: %w", err)
 	}
 

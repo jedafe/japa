@@ -28,6 +28,8 @@ var mimeAlias = map[string]string{
 	"audio/x-wav":       "audio/wav",
 	"audio/wave":        "audio/wav",
 	"audio/x-pn-wav":    "audio/wav",
+	"audio/x-m4a":       "audio/mp4",
+	"audio/m4a":         "audio/mp4",
 	"application/x-pdf": "application/pdf",
 	"text/x-markdown":   "text/markdown",
 	"application/x-rtf": "application/rtf",
@@ -66,6 +68,7 @@ var AllowedMIMETypesByContext = map[UploadContext][]string{
 		"audio/mpeg",
 		"audio/ogg",
 		"audio/wav",
+		"audio/mp4",
 		"application/pdf",
 	},
 	// Avatar allowlist must cover every option exposed by the
@@ -112,7 +115,22 @@ var ExtensionToMIME = map[string]string{
 	".mp3":  "audio/mpeg",
 	".ogg":  "audio/ogg",
 	".wav":  "audio/wav",
+	".m4a":  "audio/mp4",
 	".pdf":  "application/pdf",
+	// Image types the allowlists reject but detection still labels honestly
+	// (e.g. ingestion, future enablement) rather than as .bin blobs.
+	".avif": "image/avif",
+	".heic": "image/heic",
+	".heif": "image/heif",
+	".bmp":  "image/bmp",
+	".tiff": "image/tiff",
+	".tif":  "image/tiff",
+	// Video containers outside the upload allowlist — classified correctly
+	// for ingestion; user uploads are still allowlist-gated.
+	".m4v": "video/x-m4v",
+	".mkv": "video/x-matroska",
+	".avi": "video/x-msvideo",
+	".3gp": "video/3gpp",
 	// Document formats (UploadContextDocument — §63 job applications).
 	".doc":      "application/msword",
 	".docx":     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",

@@ -86,6 +86,10 @@ type ReferralProcessor interface {
 	RecordClick(ctx context.Context, code, sessionID, ip, userAgent string) error
 	CheckConversion(ctx context.Context, payerID, paymentID pgtype.UUID, sessionID string) error
 	ReviewFlagged(ctx context.Context, referralID pgtype.UUID) error
+	// ReviewFlaggedSweep is the daily cron path (empty payload): returns the
+	// number of referrals currently in the flagged queue, surfaced for admin
+	// review (the queue itself is GET /admin/referrals/flagged).
+	ReviewFlaggedSweep(ctx context.Context) (int, error)
 }
 
 // AdsSelfServeProcessor handles self-serve ads background tasks (§61, ADR-079).
@@ -615,7 +619,7 @@ func HandleImportProcessSource(ctx context.Context, t *asynq.Task) error {
 func HandleImportFetchMedia(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "import:fetch_media", importProcessor != nil, []string{"user_id", "content_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return importProcessor.FetchMedia(ctx, ids[1], ids[2])
+			return importProcessor.FetchMedia(ctx, ids[0], ids[1])
 		})
 }
 
@@ -742,16 +746,45 @@ func HandleReferralCheckConversion(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "referral:check_conversion", referralProcessor != nil,
 		[]string{"payer_id", "payment_id"},
 		func(ctx context.Context, ids []pgtype.UUID, p map[string]string) error {
-			return referralProcessor.CheckConversion(ctx, ids[1], ids[2], p["session_id"])
+			return referralProcessor.CheckConversion(ctx, ids[0], ids[1], p["session_id"])
 		})
 }
 
 // HandleReferralReviewFlagged reviews a fraud-flagged referral (§60).
+// The daily cron enqueues an empty payload for sweep mode — surface the
+// flagged queue count for admin review — while a referral_id payload reviews
+// a single referral.
 func HandleReferralReviewFlagged(ctx context.Context, t *asynq.Task) error {
-	return procTask(ctx, t, "referral:review_flagged", referralProcessor != nil, []string{"referral_id"},
-		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return referralProcessor.ReviewFlagged(ctx, ids[0])
-		})
+	if referralProcessor == nil {
+		slog.Warn("task:referral:review_flagged: no processor registered, skipping")
+		return nil
+	}
+
+	var p struct {
+		ReferralID string `json:"referral_id"`
+	}
+	_ = json.Unmarshal(t.Payload(), &p)
+
+	if p.ReferralID == "" {
+		// Daily sweep — surface the flagged queue size (§60).
+		n, err := referralProcessor.ReviewFlaggedSweep(ctx)
+		if err != nil {
+			return fmt.Errorf("task:referral:review_flagged: sweep: %w", err)
+		}
+		slog.Info("task:referral:review_flagged: sweep completed", "flagged", n)
+		return nil
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(p.ReferralID); err != nil {
+		return fmt.Errorf("task:referral:review_flagged: bad referral_id: %w: %w", err, asynq.SkipRetry)
+	}
+
+	if err := referralProcessor.ReviewFlagged(ctx, id); err != nil {
+		return fmt.Errorf("task:referral:review_flagged: %w", err)
+	}
+
+	return nil
 }
 
 // HandleAdsRefundCampaignCredits refunds credits for a rejected campaign (§61).
@@ -829,7 +862,7 @@ func HandlePersonaDispatchAction(ctx context.Context, t *asynq.Task) error {
 func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "studio:run_batch", studioProcessor != nil, []string{"batch_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return studioProcessor.RunBatch(ctx, ids[1])
+			return studioProcessor.RunBatch(ctx, ids[0])
 		})
 }
 
@@ -839,12 +872,12 @@ func HandleStudioRunBatch(ctx context.Context, t *asynq.Task) error {
 func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "studio:retry_failed", studioProcessor != nil, []string{"batch_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			count, err := studioProcessor.RetryBatchFailed(ctx, ids[1])
+			count, err := studioProcessor.RetryBatchFailed(ctx, ids[0])
 			if err != nil {
 				return err
 			}
 
-			slog.Info("task:studio:retry_failed: retried jobs", "batch_id", ids[1], "count", count)
+			slog.Info("task:studio:retry_failed: retried jobs", "batch_id", ids[0], "count", count)
 
 			return nil
 		})
@@ -855,7 +888,7 @@ func HandleStudioRetryFailed(ctx context.Context, t *asynq.Task) error {
 func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "mentor:generate_embedding", mentorProcessor != nil, []string{"user_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return mentorProcessor.GenerateEmbedding(ctx, ids[1])
+			return mentorProcessor.GenerateEmbedding(ctx, ids[0])
 		})
 }
 
@@ -864,7 +897,7 @@ func HandleMentorGenerateEmbedding(ctx context.Context, t *asynq.Task) error {
 func HandleMentorUpdateMeilisearch(ctx context.Context, t *asynq.Task) error {
 	return procTask(ctx, t, "mentor:update_meilisearch", mentorProcessor != nil, []string{"user_id"},
 		func(ctx context.Context, ids []pgtype.UUID, _ map[string]string) error {
-			return mentorProcessor.UpdateMeilisearch(ctx, ids[1])
+			return mentorProcessor.UpdateMeilisearch(ctx, ids[0])
 		})
 }
 

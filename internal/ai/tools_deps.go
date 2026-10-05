@@ -654,6 +654,146 @@ type ToolDeps struct {
 	// shared voice/tone catalog and pick a persona before drafting content.
 	PersonaVoices  PersonaVoicesService  // nil → persona_voices.* tools return "not configured"
 	PersonaCatalog PersonaCatalogService // nil → personas.list/read return "not configured"
+
+	// Community discussion tools (§08 forum Q&A, §49 comments). nil →
+	// forum.*/comments.* tools return "not configured".
+	Forum    ForumService
+	Comments CommentsService
+
+	// Deterministic calculator tools (§107 CRS, §108 POF, §112 FX).
+	// nil → the matching tool returns "not configured".
+	FXConverter   FXConverterService
+	CRSCalculator CRSCalculatorService
+	POFCalculator POFCalculatorService
+}
+
+// ---------------------------------------------------------------------------
+// Forum Q&A tool dependencies (Section 08)
+// ---------------------------------------------------------------------------
+
+// ForumThreadInput mirrors forum.CreateThreadInput without importing
+// internal/forum (the ai package stays leaf-adjacent; the wiring-layer
+// adapter converts between the two).
+type ForumThreadInput struct {
+	ContentID   pgtype.UUID
+	SpaceID     pgtype.UUID
+	Title       string
+	Slug        string
+	Body        []byte
+	IsAnonymous bool
+	// Poll, when provided, is created in the same transaction as the thread.
+	Poll *ForumPollInput
+}
+
+// ForumPollInput mirrors forum.PollInput.
+type ForumPollInput struct {
+	Question      string
+	IsMultiSelect bool
+	CloseAt       pgtype.Timestamptz
+	Options       []ForumPollOptionInput
+}
+
+// ForumPollOptionInput mirrors forum.PollOptionInput.
+type ForumPollOptionInput struct {
+	Label    string
+	Position int32
+}
+
+// ForumReplyInput mirrors forum.CreateReplyInput.
+type ForumReplyInput struct {
+	ParentReplyID pgtype.UUID
+	Body          []byte
+	IsAnonymous   bool
+}
+
+// ForumService is the subset of internal/forum.Service the forum tools
+// call. The service enforces author/moderator RBAC internally (edit_own vs
+// edit_any, solve permission); the tool layer additionally gates on the
+// tool's required_permission node.
+type ForumService interface {
+	CreateThread(ctx context.Context, authorUserID pgtype.UUID, input ForumThreadInput) (gen.ForumThread, error)
+	GetThread(ctx context.Context, id pgtype.UUID) (gen.ForumThread, error)
+	GetThreadBySlug(ctx context.Context, slug string) (gen.ForumThread, error)
+	ListThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
+	ListThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error)
+	UpdateThread(ctx context.Context, id, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error)
+	DeleteThread(ctx context.Context, id, userID pgtype.UUID) error
+	SolveThread(ctx context.Context, id, solverUserID, acceptedReplyID pgtype.UUID) error
+	UnsolveThread(ctx context.Context, id, userID pgtype.UUID) error
+	CreateReply(ctx context.Context, threadID, authorUserID pgtype.UUID, input ForumReplyInput) (gen.ForumReply, error)
+	ListRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]gen.ForumReply, error)
+	UpdateReply(ctx context.Context, id, userID pgtype.UUID, body []byte) (gen.ForumReply, error)
+	DeleteReply(ctx context.Context, id, userID pgtype.UUID) error
+	Vote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, value int16) (gen.ForumVote, error)
+	RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error
+}
+
+// ---------------------------------------------------------------------------
+// Comments tool dependencies (Section 49)
+// ---------------------------------------------------------------------------
+
+// CommentCreateInput mirrors comments.CreateCommentInput.
+type CommentCreateInput struct {
+	ContentID   pgtype.UUID
+	ParentID    pgtype.UUID
+	Body        []byte // TipTap JSON document
+	IsAnonymous bool
+}
+
+// CommentsService is the subset of internal/comments.Service the comments
+// tools call.
+type CommentsService interface {
+	CreateComment(ctx context.Context, userID pgtype.UUID, input CommentCreateInput) (gen.Comment, error)
+	GetComment(ctx context.Context, commentID pgtype.UUID) (gen.GetCommentRow, error)
+	ListCommentsByContent(ctx context.Context, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error)
+	ListRepliesByParent(ctx context.Context, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error)
+	UpdateComment(ctx context.Context, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error)
+	SoftDeleteCommentByAuthor(ctx context.Context, commentID, userID pgtype.UUID) error
+	VoteComment(ctx context.Context, commentID, userID pgtype.UUID, value int16) error
+	RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic calculator tool dependencies (§107, §108, §112)
+// ---------------------------------------------------------------------------
+
+// FXConvertResult mirrors fx.ConvertResult.
+type FXConvertResult struct {
+	Amount    float64 `json:"amount"`
+	From      string  `json:"from"`
+	To        string  `json:"to"`
+	Rate      float64 `json:"rate"`
+	Converted float64 `json:"converted"`
+	FetchedAt string  `json:"fetched_at"`
+	Stale     bool    `json:"stale"`
+}
+
+// FXConverterService is the subset of internal/fx.Service the fx.convert
+// tool calls.
+type FXConverterService interface {
+	Convert(ctx context.Context, amount float64, from, to string) (*FXConvertResult, error)
+}
+
+// CRSCalculatorService is the subset of internal/crscalculator.Service the
+// crs.calculate tool calls. The LLM-produced arguments map 1:1 to the
+// calculator's own JSON request contract, so the adapter unmarshals the raw
+// JSON directly into crscalculator.CalculateRequest.
+type CRSCalculatorService interface {
+	Calculate(ctx context.Context, userID *pgtype.UUID, input json.RawMessage) (map[string]any, error)
+}
+
+// POFCalculateInput mirrors the POST /pof/calculate request.
+type POFCalculateInput struct {
+	DestSpaceID string `json:"dest_space_id"`
+	VisaType    string `json:"visa_type"`
+	Members     int    `json:"members"`
+	Dependants  int    `json:"dependants"`
+}
+
+// POFCalculatorService is the subset of internal/pofcalculator.Service the
+// pof.calculate tool calls.
+type POFCalculatorService interface {
+	Calculate(ctx context.Context, input POFCalculateInput) ([]map[string]any, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -791,6 +931,11 @@ type ToolsRegistryService interface {
 	ReadTool(ctx context.Context, toolType, id string) (map[string]any, error)
 	// ToolTypes returns the tool_type values in the catalog.
 	ToolTypes() []string
+	// WritableToolOps returns, per tool_type, which write ops are backed by
+	// a resolved service method (op names: create, update, delete,
+	// assign_geo). Registration uses this so a seeded row with no backing
+	// method does not produce a catalog-advertised dead tool.
+	WritableToolOps() map[string]map[string]bool
 	// CreateTool creates a new record in the named tool table.
 	CreateTool(ctx context.Context, userID pgtype.UUID, toolType string, payload map[string]any) (map[string]any, error)
 	// UpdateTool updates an existing record in the named tool table.

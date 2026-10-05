@@ -182,12 +182,25 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("tools.assign_geo", ToolsAssignGeoHandler(deps))
 
 	// --- Dedicated per-use-case write tools (design: 2026-08-24-dedicated-ai-tool-crud) ---
+	// Registration is per resolved op: a tool type whose backing service
+	// lacks e.g. a delete method gets no <type>.delete handler, so its
+	// seeded row must be disabled to avoid a catalog-advertised dead tool.
+	// Read-only catalog types (e.g. fx_rate) are still surfaced via
+	// tools.list/read.
 	if deps != nil && deps.ToolsRegistry != nil {
-		for _, toolType := range deps.ToolsRegistry.ToolTypes() {
-			registry.RegisterHandler(toolType+".create", UseCaseCreateHandler(deps, toolType))
-			registry.RegisterHandler(toolType+".update", UseCaseUpdateHandler(deps, toolType))
-			registry.RegisterHandler(toolType+".delete", UseCaseDeleteHandler(deps, toolType))
-			registry.RegisterHandler(toolType+".assign_geo", UseCaseAssignGeoHandler(deps, toolType))
+		for toolType, ops := range deps.ToolsRegistry.WritableToolOps() {
+			if ops["create"] {
+				registry.RegisterHandler(toolType+".create", UseCaseCreateHandler(deps, toolType))
+			}
+			if ops["update"] {
+				registry.RegisterHandler(toolType+".update", UseCaseUpdateHandler(deps, toolType))
+			}
+			if ops["delete"] {
+				registry.RegisterHandler(toolType+".delete", UseCaseDeleteHandler(deps, toolType))
+			}
+			if ops["assign_geo"] {
+				registry.RegisterHandler(toolType+".assign_geo", UseCaseAssignGeoHandler(deps, toolType))
+			}
 		}
 	}
 
@@ -257,4 +270,30 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("scam.list", ScamListHandler(deps))
 	registry.RegisterHandler("scam.get", ScamGetHandler(deps))
 	registry.RegisterHandler("search.semantic", SemanticSearchHandler(deps))
+
+	// --- Community discussion tools (§08 forum, §49 comments) ---
+	// Author-vs-moderator semantics are enforced inside the forum/comments
+	// services (edit_own vs edit_any); the catalog RBAC gate enforces each
+	// tool's required_permission first.
+	registry.RegisterHandler("forum.threads.list", ForumThreadsListHandler(deps))
+	registry.RegisterHandler("forum.threads.read", ForumThreadsReadHandler(deps))
+	registry.RegisterHandler("forum.threads.create", ForumThreadsCreateHandler(deps))
+	registry.RegisterHandler("forum.threads.update", ForumThreadsUpdateHandler(deps))
+	registry.RegisterHandler("forum.threads.delete", ForumThreadsDeleteHandler(deps))
+	registry.RegisterHandler("forum.threads.solve", ForumThreadsSolveHandler(deps))
+	registry.RegisterHandler("forum.replies.list", ForumRepliesListHandler(deps))
+	registry.RegisterHandler("forum.replies.create", ForumRepliesCreateHandler(deps))
+	registry.RegisterHandler("forum.replies.update", ForumRepliesUpdateHandler(deps))
+	registry.RegisterHandler("forum.replies.delete", ForumRepliesDeleteHandler(deps))
+	registry.RegisterHandler("forum.vote", ForumVoteHandler(deps))
+	registry.RegisterHandler("comments.list", CommentsListHandler(deps))
+	registry.RegisterHandler("comments.create", CommentsCreateHandler(deps))
+	registry.RegisterHandler("comments.update", CommentsUpdateHandler(deps))
+	registry.RegisterHandler("comments.delete", CommentsDeleteHandler(deps))
+	registry.RegisterHandler("comments.vote", CommentsVoteHandler(deps))
+
+	// --- Deterministic calculator tools (§107, §108, §112) ---
+	registry.RegisterHandler("crs.calculate", CRSCalculateHandler(deps))
+	registry.RegisterHandler("pof.calculate", POFCalculateHandler(deps))
+	registry.RegisterHandler("fx.convert", FXConvertHandler(deps))
 }

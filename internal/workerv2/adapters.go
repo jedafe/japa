@@ -476,6 +476,17 @@ func (a *ReferralAdapter) ReviewFlagged(ctx context.Context, referralID pgtype.U
 	return nil
 }
 
+// ReviewFlaggedSweep is the daily cron path — reports the size of the
+// flagged queue so ops sees it in logs/alerts. The queue itself is served by
+// GET /admin/referrals/flagged; resolution stays manual (BUG-007).
+func (a *ReferralAdapter) ReviewFlaggedSweep(ctx context.Context) (int, error) {
+	_, total, err := a.svc.AdminListFlagged(ctx, 1, 1)
+	if err != nil {
+		return 0, err
+	}
+	return int(total), nil // #nosec G115 — flagged counts are small
+}
+
 // ---------------------------------------------------------------------------
 // AdsSelfServeAdapter — wraps adsselfserve.Service (§61, ADR-079).
 // ---------------------------------------------------------------------------

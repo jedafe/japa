@@ -70,28 +70,70 @@ var proxyHTTPClient = &http.Client{
 				return nil, fmt.Errorf("media proxy: resolving %s: %w", host, err)
 			}
 
+			// Dial the validated IP, not the hostname — re-resolving here
+			// would re-open the DNS answer window (rebinding TOCTOU). TLS
+			// ServerName and the Host header still come from the request
+			// URL, so virtual hosting is unaffected.
+			var target net.IP
 			for _, ip := range ips {
 				if !isPublicIP(ip) {
 					return nil, fmt.Errorf("media proxy: %s resolves to non-public IP %s", host, ip)
 				}
+				if target == nil {
+					target = ip
+				}
+			}
+			if target == nil {
+				return nil, fmt.Errorf("media proxy: %s has no addresses", host)
 			}
 
-			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, net.JoinHostPort(host, port))
+			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, net.JoinHostPort(target.String(), port))
 		},
 	},
 }
 
+// nonPublicCIDRs covers non-public ranges the net.IP helpers miss —
+// IsPrivate only knows RFC1918/ULA and IsLinkLocal only the link-local
+// blocks, so CGNAT, benchmarking, reserved, and protocol-assignment
+// space would otherwise be dialed as "public".
+var nonPublicCIDRs = func() []*net.IPNet {
+	cidrs := []string{
+		"100.64.0.0/10",   // CGNAT (RFC 6598) — Tailscale/VPC internals
+		"192.0.0.0/24",    // IETF protocol assignments (RFC 6890)
+		"198.18.0.0/15",   // benchmark testing (RFC 2544)
+		"240.0.0.0/4",     // reserved (includes 255.255.255.255 broadcast)
+		"192.0.2.0/24",    // TEST-NET-1 (documentation)
+		"198.51.100.0/24", // TEST-NET-2
+		"203.0.113.0/24",  // TEST-NET-3
+	}
+	var out []*net.IPNet
+	for _, c := range cidrs {
+		if _, n, err := net.ParseCIDR(c); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}()
+
 // isPublicIP reports whether ip is a globally routable address. Everything
 // else — loopback, private RFC1918, link-local, CGNAT (100.64/10), ULA,
-// multicast, unspecified — is rejected.
+// multicast, unspecified, reserved — is rejected.
 func isPublicIP(ip net.IP) bool {
-	return ip.IsGlobalUnicast() &&
-		!ip.IsLoopback() &&
-		!ip.IsPrivate() &&
-		!ip.IsLinkLocalUnicast() &&
-		!ip.IsLinkLocalMulticast() &&
-		!ip.IsMulticast() &&
-		!ip.IsUnspecified()
+	if !ip.IsGlobalUnicast() ||
+		ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() ||
+		ip.IsUnspecified() {
+		return false
+	}
+	for _, n := range nonPublicCIDRs {
+		if n.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // ProxyRemote fetches rawURL server-side (SSRF-guarded), caches the payload in

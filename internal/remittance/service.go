@@ -1316,6 +1316,14 @@ func (s *Service) FetchAllProviderRates(ctx context.Context) (int, error) {
 			continue // skip manual providers
 		}
 
+		// Providers whose slug has no registered adapter (e.g. 'wise' before
+		// its adapter ships) can never succeed — skip quietly rather than
+		// WARN every 30-minute sweep.
+		if _, ok := s.providers[p.Slug]; !ok {
+			slog.Info("remittance: fetch all provider rates: skipping provider with no adapter", "slug", p.Slug)
+			continue
+		}
+
 		if err := s.FetchProviderRates(ctx, p.ID); err != nil {
 			slog.Warn("remittance: fetch all provider rates: provider failed", "provider_id", p.ID.String(), "slug", p.Slug, "error", err)
 			continue

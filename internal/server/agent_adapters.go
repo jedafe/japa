@@ -32,18 +32,23 @@ import (
 	"github.com/jedafe/japa/internal/attestationguide"
 	"github.com/jedafe/japa/internal/calendar"
 	"github.com/jedafe/japa/internal/campaign"
+	"github.com/jedafe/japa/internal/comments"
 	"github.com/jedafe/japa/internal/communitylocator"
 	"github.com/jedafe/japa/internal/comparison"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/credentialchecker"
+	"github.com/jedafe/japa/internal/crscalculator"
 	"github.com/jedafe/japa/internal/customfields"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
+	"github.com/jedafe/japa/internal/forum"
+	"github.com/jedafe/japa/internal/fx"
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/languagetesthub"
 	"github.com/jedafe/japa/internal/learning"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/personas"
+	"github.com/jedafe/japa/internal/pofcalculator"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/scholarships"
@@ -2503,4 +2508,196 @@ func (a *agentDataAdapter) GetScamAlert(ctx context.Context, id pgtype.UUID) (an
 
 func (a *agentDataAdapter) SemanticSearch(ctx context.Context, viewerID pgtype.UUID, query, lang, spaceSlug string, limit int32) (any, error) {
 	return a.svc.SemanticSearch(ctx, viewerID, query, lang, spaceSlug, limit)
+}
+
+// ---------------------------------------------------------------------------
+// Forum Q&A adapter (Section 08) — bridges ai.ForumService (mirror input
+// types) to internal/forum.Service. Author/moderator RBAC is enforced
+// inside the service; the executor's required_permission gate runs first.
+// ---------------------------------------------------------------------------
+
+type agentForumAdapter struct{ svc *forum.Service }
+
+func (a *agentForumAdapter) CreateThread(ctx context.Context, authorUserID pgtype.UUID, in ai.ForumThreadInput) (gen.ForumThread, error) {
+	out := forum.CreateThreadInput{
+		ContentID:   in.ContentID,
+		SpaceID:     in.SpaceID,
+		Title:       in.Title,
+		Slug:        in.Slug,
+		Body:        in.Body,
+		IsAnonymous: in.IsAnonymous,
+	}
+	if in.Poll != nil {
+		p := &forum.PollInput{
+			Question:      in.Poll.Question,
+			IsMultiSelect: in.Poll.IsMultiSelect,
+			CloseAt:       in.Poll.CloseAt,
+		}
+		for _, o := range in.Poll.Options {
+			p.Options = append(p.Options, forum.PollOptionInput{Label: o.Label, Position: o.Position})
+		}
+		out.Poll = p
+	}
+	return a.svc.CreateThread(ctx, authorUserID, out)
+}
+
+func (a *agentForumAdapter) GetThread(ctx context.Context, id pgtype.UUID) (gen.ForumThread, error) {
+	return a.svc.GetThread(ctx, id)
+}
+
+func (a *agentForumAdapter) GetThreadBySlug(ctx context.Context, slug string) (gen.ForumThread, error) {
+	return a.svc.GetThreadBySlug(ctx, slug)
+}
+
+func (a *agentForumAdapter) ListThreadsBySpace(ctx context.Context, spaceID pgtype.UUID, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return a.svc.ListThreadsBySpace(ctx, spaceID, cursorCreatedAt, limit)
+}
+
+func (a *agentForumAdapter) ListThreadsByPlatform(ctx context.Context, cursorCreatedAt pgtype.Timestamptz, limit int32) ([]gen.ForumThread, error) {
+	return a.svc.ListThreadsByPlatform(ctx, cursorCreatedAt, limit)
+}
+
+func (a *agentForumAdapter) UpdateThread(ctx context.Context, id, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error) {
+	return a.svc.UpdateThread(ctx, id, userID, title, body, isAnonymous)
+}
+
+func (a *agentForumAdapter) DeleteThread(ctx context.Context, id, userID pgtype.UUID) error {
+	return a.svc.DeleteThread(ctx, id, userID)
+}
+
+func (a *agentForumAdapter) SolveThread(ctx context.Context, id, solverUserID, acceptedReplyID pgtype.UUID) error {
+	return a.svc.SolveThread(ctx, id, solverUserID, acceptedReplyID)
+}
+
+func (a *agentForumAdapter) UnsolveThread(ctx context.Context, id, userID pgtype.UUID) error {
+	return a.svc.UnsolveThread(ctx, id, userID)
+}
+
+func (a *agentForumAdapter) CreateReply(ctx context.Context, threadID, authorUserID pgtype.UUID, in ai.ForumReplyInput) (gen.ForumReply, error) {
+	return a.svc.CreateReply(ctx, threadID, authorUserID, forum.CreateReplyInput{
+		ParentReplyID: in.ParentReplyID,
+		Body:          in.Body,
+		IsAnonymous:   in.IsAnonymous,
+	})
+}
+
+func (a *agentForumAdapter) ListRepliesByThread(ctx context.Context, threadID pgtype.UUID) ([]gen.ForumReply, error) {
+	return a.svc.ListRepliesByThread(ctx, threadID)
+}
+
+func (a *agentForumAdapter) UpdateReply(ctx context.Context, id, userID pgtype.UUID, body []byte) (gen.ForumReply, error) {
+	return a.svc.UpdateReply(ctx, id, userID, body)
+}
+
+func (a *agentForumAdapter) DeleteReply(ctx context.Context, id, userID pgtype.UUID) error {
+	return a.svc.DeleteReply(ctx, id, userID)
+}
+
+func (a *agentForumAdapter) Vote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID, value int16) (gen.ForumVote, error) {
+	return a.svc.Vote(ctx, userID, forum.VoteInput{EntityType: entityType, EntityID: entityID, Value: value})
+}
+
+func (a *agentForumAdapter) RemoveVote(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) error {
+	return a.svc.RemoveVote(ctx, userID, entityType, entityID)
+}
+
+// ---------------------------------------------------------------------------
+// Comments adapter (Section 49).
+// ---------------------------------------------------------------------------
+
+type agentCommentsAdapter struct{ svc *comments.Service }
+
+func (a *agentCommentsAdapter) CreateComment(ctx context.Context, userID pgtype.UUID, in ai.CommentCreateInput) (gen.Comment, error) {
+	return a.svc.CreateComment(ctx, userID, comments.CreateCommentInput{
+		ContentID:   in.ContentID,
+		ParentID:    in.ParentID,
+		Body:        in.Body,
+		IsAnonymous: in.IsAnonymous,
+	})
+}
+
+func (a *agentCommentsAdapter) GetComment(ctx context.Context, commentID pgtype.UUID) (gen.GetCommentRow, error) {
+	return a.svc.GetComment(ctx, commentID)
+}
+
+func (a *agentCommentsAdapter) ListCommentsByContent(ctx context.Context, contentID, viewerID pgtype.UUID, sort string, limit, offset int32) ([]gen.ListCommentsByContentRow, error) {
+	return a.svc.ListCommentsByContent(ctx, contentID, viewerID, sort, limit, offset)
+}
+
+func (a *agentCommentsAdapter) ListRepliesByParent(ctx context.Context, parentID, viewerID pgtype.UUID, limit, offset int32) ([]gen.ListRepliesByParentRow, error) {
+	return a.svc.ListRepliesByParent(ctx, parentID, viewerID, limit, offset)
+}
+
+func (a *agentCommentsAdapter) UpdateComment(ctx context.Context, commentID, userID pgtype.UUID, body []byte) (gen.Comment, error) {
+	return a.svc.UpdateComment(ctx, commentID, userID, body)
+}
+
+func (a *agentCommentsAdapter) SoftDeleteCommentByAuthor(ctx context.Context, commentID, userID pgtype.UUID) error {
+	return a.svc.SoftDeleteCommentByAuthor(ctx, commentID, userID)
+}
+
+func (a *agentCommentsAdapter) VoteComment(ctx context.Context, commentID, userID pgtype.UUID, value int16) error {
+	return a.svc.VoteComment(ctx, commentID, userID, value)
+}
+
+func (a *agentCommentsAdapter) RemoveCommentVote(ctx context.Context, commentID, userID pgtype.UUID) error {
+	return a.svc.RemoveCommentVote(ctx, commentID, userID)
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic calculator adapters (§107 CRS, §108 POF, §112 FX).
+// ---------------------------------------------------------------------------
+
+type agentFXAdapter struct{ svc *fx.Service }
+
+func (a *agentFXAdapter) Convert(ctx context.Context, amount float64, from, to string) (*ai.FXConvertResult, error) {
+	r, err := a.svc.Convert(ctx, amount, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return &ai.FXConvertResult{
+		Amount:    r.Amount,
+		From:      r.From,
+		To:        r.To,
+		Rate:      r.Rate,
+		Converted: r.Converted,
+		FetchedAt: r.FetchedAt,
+		Stale:     r.Stale,
+	}, nil
+}
+
+type agentCRSAdapter struct{ svc *crscalculator.Service }
+
+func (a *agentCRSAdapter) Calculate(ctx context.Context, userID *pgtype.UUID, input json.RawMessage) (map[string]any, error) {
+	var req crscalculator.CalculateRequest
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("invalid crs.calculate arguments: %w", err)
+	}
+	result, err := a.svc.Calculate(ctx, userID, req)
+	if err != nil {
+		return nil, err
+	}
+	return structToMap(result)
+}
+
+type agentPOFAdapter struct{ svc *pofcalculator.Service }
+
+func (a *agentPOFAdapter) Calculate(ctx context.Context, in ai.POFCalculateInput) ([]map[string]any, error) {
+	var destID pgtype.UUID
+	if err := destID.Scan(in.DestSpaceID); err != nil {
+		return nil, fmt.Errorf("invalid dest_space_id: %w", err)
+	}
+	results, err := a.svc.Calculate(ctx, destID, in.VisaType, in.Members, in.Dependants)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(results))
+	for _, r := range results {
+		m, err := structToMap(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }
