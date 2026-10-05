@@ -152,6 +152,94 @@ WHERE status = 'active'
 SELECT 1;
 
 -- =====================
+-- Deal Feed Sources (Section 55 Deal Feed Import)
+-- =====================
+
+-- name: CreateCouponFeedSource :one
+INSERT INTO coupon_feed_sources (name, source_type, endpoint_url, api_key_encrypted, default_provider_id, enabled)
+VALUES (@name, @source_type, @endpoint_url, sqlc.narg(api_key_encrypted), sqlc.narg(default_provider_id), @enabled)
+RETURNING id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at;
+
+-- name: GetCouponFeedSourceByID :one
+SELECT id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at
+FROM coupon_feed_sources
+WHERE id = @id;
+
+-- name: ListCouponFeedSources :many
+SELECT id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at,
+ (SELECT COUNT(*) FROM coupons c WHERE c.feed_id = coupon_feed_sources.id) AS coupon_count
+FROM coupon_feed_sources
+ORDER BY name ASC;
+
+-- name: ListEnabledCouponFeedSources :many
+SELECT id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at
+FROM coupon_feed_sources
+WHERE enabled = true
+ORDER BY name ASC;
+
+-- name: UpdateCouponFeedSource :one
+UPDATE coupon_feed_sources
+SET name = @name, source_type = @source_type, endpoint_url = @endpoint_url,
+ api_key_encrypted = COALESCE(sqlc.narg(api_key_encrypted), api_key_encrypted),
+ default_provider_id = sqlc.narg(default_provider_id),
+ enabled = @enabled, updated_at = now()
+WHERE id = @id
+RETURNING id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at;
+
+-- name: DeleteCouponFeedSource :exec
+DELETE FROM coupon_feed_sources
+WHERE id = @id;
+
+-- name: UpdateCouponFeedSourceSyncStatus :exec
+UPDATE coupon_feed_sources
+SET last_synced_at = now(), last_status = @last_status, last_error = sqlc.narg(last_error),
+ stats = sqlc.narg(stats), updated_at = now()
+WHERE id = @id;
+
+-- name: UpsertFeedCoupon :one
+-- Idempotent import: conflict target is the partial unique index
+-- idx_coupons_feed_external (feed_id, external_id). Slug is fixed at insert
+-- time — renames would churn /deal URLs — so the UPDATE branch never touches it.
+INSERT INTO coupons (provider_id, coupon_type, title, slug, description, code,
+ referral_url, is_verified, status, valid_from, expires_at, feed_id, external_id)
+VALUES (sqlc.narg(provider_id), 'external', @title, @slug, sqlc.narg(description),
+ sqlc.narg(code), sqlc.narg(referral_url), false, @status,
+ sqlc.narg(valid_from), sqlc.narg(expires_at), @feed_id, @external_id)
+ON CONFLICT (feed_id, external_id) WHERE feed_id IS NOT NULL
+DO UPDATE SET provider_id = sqlc.narg(provider_id), title = @title,
+ description = sqlc.narg(description), code = sqlc.narg(code),
+ referral_url = sqlc.narg(referral_url), status = @status,
+ valid_from = sqlc.narg(valid_from), expires_at = sqlc.narg(expires_at),
+ updated_at = now()
+RETURNING id, slug, code, status, (xmax = 0) AS inserted;
+
+-- name: GetCouponByFeedExternal :one
+SELECT id, slug
+FROM coupons
+WHERE feed_id = @feed_id AND external_id = @external_id;
+
+-- name: ExpireFeedCouponsNotSeen :many
+-- Absence-sweep for full-snapshot ('generic') feeds: active coupons of this
+-- source whose external_id was absent from the run are expired. Manual
+-- coupons (feed_id IS NULL) are never touched.
+UPDATE coupons
+SET status = 'expired', updated_at = now()
+WHERE feed_id = @feed_id
+ AND status = 'active'
+ AND (external_id IS NULL OR NOT (external_id = ANY(@seen_ids::text[])))
+RETURNING id;
+
+-- name: GetAffiliateProviderIDBySlug :one
+SELECT id
+FROM affiliate_providers
+WHERE slug = @slug;
+
+-- =====================
 -- Coupon Events
 -- =====================
 

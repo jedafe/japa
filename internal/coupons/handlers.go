@@ -99,8 +99,12 @@ func parseQueryString(r *http.Request, key string) *string {
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrCouponNotFound), errors.Is(err, ErrProviderNotFound),
-		errors.Is(err, ErrDealRedirectUnavailable):
+		errors.Is(err, ErrDealRedirectUnavailable), errors.Is(err, ErrFeedSourceNotFound):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
+	case errors.Is(err, ErrInvalidFeedSource):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_feed_source", err.Error())
+	case errors.Is(err, ErrFeedSyncLocked):
+		errpkg.WriteError(w, http.StatusConflict, "feed_sync_locked", err.Error())
 	case errors.Is(err, ErrProviderHasCoupons):
 		errpkg.WriteError(w, http.StatusConflict, "provider_has_coupons", err.Error())
 	case errors.Is(err, ErrCouponAlreadyExists):
@@ -430,11 +434,6 @@ func (h *Handlers) CreateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Code == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "code is required")
-		return
-	}
-
 	if input.CouponType == "" {
 		input.CouponType = string(CouponTypeExternal)
 	}
@@ -487,11 +486,6 @@ func (h *Handlers) UpdateCouponAdmin(w http.ResponseWriter, r *http.Request) {
 
 	if input.Title == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "title is required")
-		return
-	}
-
-	if input.Code == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "code is required")
 		return
 	}
 
@@ -847,4 +841,117 @@ func (h *Handlers) RecordAffiliateCommission(w http.ResponseWriter, r *http.Requ
 	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": commission})
+}
+
+// ── Deal Feed Sources (Section 55 — Deal Feed Import) ───────────────
+
+// ListCouponFeeds handles GET /api/v1/admin/coupon-feeds.
+func (h *Handlers) ListCouponFeeds(w http.ResponseWriter, r *http.Request) {
+	feeds, err := h.Service.ListFeedSources(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if feeds == nil {
+		feeds = []FeedSourceView{}
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": feeds})
+}
+
+// CreateCouponFeed handles POST /api/v1/admin/coupon-feeds.
+func (h *Handlers) CreateCouponFeed(w http.ResponseWriter, r *http.Request) {
+	var input FeedSourceInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name is required")
+		return
+	}
+	if strings.TrimSpace(input.EndpointURL) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "endpoint_url is required")
+		return
+	}
+
+	feed, err := h.Service.CreateFeedSource(r.Context(), input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": feed})
+}
+
+// GetCouponFeed handles GET /api/v1/admin/coupon-feeds/:id.
+func (h *Handlers) GetCouponFeed(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
+		return
+	}
+	feed, err := h.Service.GetFeedSource(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": feed})
+}
+
+// UpdateCouponFeed handles PATCH /api/v1/admin/coupon-feeds/:id.
+func (h *Handlers) UpdateCouponFeed(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
+		return
+	}
+	var input FeedSourceInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(input.Name) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "name is required")
+		return
+	}
+	if strings.TrimSpace(input.EndpointURL) == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_field", "endpoint_url is required")
+		return
+	}
+
+	feed, err := h.Service.UpdateFeedSource(r.Context(), id, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": feed})
+}
+
+// DeleteCouponFeed handles DELETE /api/v1/admin/coupon-feeds/:id. Imported
+// coupons are detached (feed_id → NULL), never deleted (§55).
+func (h *Handlers) DeleteCouponFeed(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
+		return
+	}
+	if err := h.Service.DeleteFeedSource(r.Context(), id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"deleted": true})
+}
+
+// SyncCouponFeedNow handles POST /api/v1/admin/coupon-feeds/:id/sync —
+// enqueues coupon:import_feed (fire-and-forget per Rule 8).
+func (h *Handlers) SyncCouponFeedNow(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUIDParam(r, "id")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid feed ID")
+		return
+	}
+	if err := h.Service.EnqueueFeedSync(r.Context(), id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]bool{"queued": true}})
 }

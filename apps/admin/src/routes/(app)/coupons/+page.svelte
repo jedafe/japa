@@ -13,7 +13,7 @@
 		id: string;
 		title: string;
 		slug: string;
-		code: string;
+		code: string | null;
 		coupon_type: string;
 		provider_id: string | null;
 		provider_name?: string | null;
@@ -114,7 +114,7 @@
 	let fields = $derived<FieldDef[]>([
 		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
 		{ key: 'slug', label: t('coupons.slug', 'Slug'), type: 'text', placeholder: t('coupons.slug_placeholder', 'Auto-generated from title if blank') },
-		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', required: true },
+		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', placeholder: t('coupons.code_placeholder', 'Optional — deal offers may not need one') },
 		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', options: couponTypeOptions },
 		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'autocomplete', placeholder: t('coupons.provider_placeholder', 'Search provider…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
 		{ key: 'discount_type', label: t('coupons.type', 'Discount Type'), type: 'select', options: discountTypeOptions },
@@ -279,7 +279,7 @@
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.code', 'Code')}</p>
-			<p class="mt-1 font-mono text-sm font-medium" style="color: var(--color-foreground)">{row.code}</p>
+			<p class="mt-1 font-mono text-sm font-medium" style="color: var(--color-foreground)">{row.code ?? '—'}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.slug', 'Slug')}</p>

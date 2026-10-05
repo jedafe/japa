@@ -225,10 +225,14 @@ func buildCouponWidgetHTML(c *CouponRenderResult, displayMode string) string {
 
 	if compact {
 		// Compact mode: code + CTA only, no discount/provider/expiry details.
-		b.WriteString(fmt.Sprintf(`<div class="coupon-code"><code>%s</code></div>`, htmlpkg.EscapeString(c.Code)))
+		if c.Code != "" {
+			b.WriteString(fmt.Sprintf(`<div class="coupon-code"><code>%s</code></div>`, htmlpkg.EscapeString(c.Code)))
+		}
 	} else {
-		// Code
-		b.WriteString(fmt.Sprintf(`<div class="coupon-code"><code>%s</code></div>`, htmlpkg.EscapeString(c.Code)))
+		// Code — feed-imported "deal" offers may carry none (§55).
+		if c.Code != "" {
+			b.WriteString(fmt.Sprintf(`<div class="coupon-code"><code>%s</code></div>`, htmlpkg.EscapeString(c.Code)))
+		}
 
 		// Discount
 		if c.DiscountType != nil && c.DiscountValue != nil {

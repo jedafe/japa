@@ -198,6 +198,8 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Coupon expiry check + event flush — hourly.
 	schedule("0 * * * *", TypeCouponExpireCheck, 1*time.Hour)
 	schedule("5 * * * *", TypeCouponTrackEvents, 1*time.Hour)
+	// Deal feed import — hourly fan-out to enabled coupon_feed_sources (§55).
+	schedule("30 * * * *", TypeCouponSyncFeeds, 1*time.Hour)
 
 	// §111: pending service bookings past their org-response SLA — hourly.
 	// Overridable via JC_SCHEDULER_CRON_SERVICE_BOOKING_EXPIRE_PENDING.

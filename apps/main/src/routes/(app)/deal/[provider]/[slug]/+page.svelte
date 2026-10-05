@@ -60,6 +60,7 @@
 	}
 
 	async function copyCode() {
+		if (!coupon.code) return;
 		try {
 			await navigator.clipboard.writeText(coupon.code);
 			copied = true;
@@ -133,11 +134,13 @@
 		>
 			<!-- Code + discount -->
 			<div class="flex flex-wrap items-center gap-3">
-				<code
-					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 font-mono text-lg font-semibold tracking-wide text-[var(--color-text)]"
-				>
-					{coupon.code}
-				</code>
+				{#if coupon.code}
+					<code
+						class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 font-mono text-lg font-semibold tracking-wide text-[var(--color-text)]"
+					>
+						{coupon.code}
+					</code>
+				{/if}
 				{#if discountLabel}
 					<span class="text-base font-semibold text-[var(--color-primary)]">{discountLabel}</span>
 				{/if}
@@ -165,14 +168,16 @@
 
 			<!-- Actions -->
 			<div class="mt-5 flex flex-wrap items-center gap-3">
-				<button
-					type="button"
-					onclick={copyCode}
-					class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-				>
-					<Copy size={16} />
-					{copied ? t('coupon.copied', 'Copied!') : t('coupon.copy', 'Copy code')}
-				</button>
+				{#if coupon.code}
+					<button
+						type="button"
+						onclick={copyCode}
+						class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<Copy size={16} />
+						{copied ? t('coupon.copied', 'Copied!') : t('coupon.copy', 'Copy code')}
+					</button>
+				{/if}
 				{#if coupon.referral_url || coupon.provider_base_url}
 					<a
 						href={goUrl}

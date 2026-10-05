@@ -162,7 +162,7 @@ type CreateCouponParams struct {
 	Title         string             `json:"title"`
 	Slug          string             `json:"slug"`
 	Description   *string            `json:"description"`
-	Code          string             `json:"code"`
+	Code          *string            `json:"code"`
 	DiscountType  *string            `json:"discount_type"`
 	DiscountValue pgtype.Numeric     `json:"discount_value"`
 	Currency      *string            `json:"currency"`
@@ -175,10 +175,34 @@ type CreateCouponParams struct {
 	CreatedBy     pgtype.UUID        `json:"created_by"`
 }
 
+type CreateCouponRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ProviderID    pgtype.UUID        `json:"provider_id"`
+	CouponType    string             `json:"coupon_type"`
+	Title         string             `json:"title"`
+	Description   *string            `json:"description"`
+	Code          *string            `json:"code"`
+	DiscountType  *string            `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	Currency      *string            `json:"currency"`
+	TermsUrl      *string            `json:"terms_url"`
+	ReferralUrl   *string            `json:"referral_url"`
+	IsVerified    bool               `json:"is_verified"`
+	Status        string             `json:"status"`
+	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	TotalClicks   int32              `json:"total_clicks"`
+	TotalCopies   int32              `json:"total_copies"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Slug          string             `json:"slug"`
+}
+
 // =====================
 // Coupons CRUD
 // =====================
-func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Coupon, error) {
+func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (CreateCouponRow, error) {
 	row := q.db.QueryRow(ctx, createCoupon,
 		arg.ProviderID,
 		arg.CouponType,
@@ -197,7 +221,7 @@ func (q *Queries) CreateCoupon(ctx context.Context, arg CreateCouponParams) (Cou
 		arg.ExpiresAt,
 		arg.CreatedBy,
 	)
-	var i Coupon
+	var i CreateCouponRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProviderID,
@@ -260,6 +284,54 @@ func (q *Queries) CreateCouponEvent(ctx context.Context, arg CreateCouponEventPa
 	return i, err
 }
 
+const createCouponFeedSource = `-- name: CreateCouponFeedSource :one
+
+INSERT INTO coupon_feed_sources (name, source_type, endpoint_url, api_key_encrypted, default_provider_id, enabled)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at
+`
+
+type CreateCouponFeedSourceParams struct {
+	Name              string      `json:"name"`
+	SourceType        string      `json:"source_type"`
+	EndpointUrl       string      `json:"endpoint_url"`
+	ApiKeyEncrypted   *string     `json:"api_key_encrypted"`
+	DefaultProviderID pgtype.UUID `json:"default_provider_id"`
+	Enabled           bool        `json:"enabled"`
+}
+
+// =====================
+// Deal Feed Sources (Section 55 Deal Feed Import)
+// =====================
+func (q *Queries) CreateCouponFeedSource(ctx context.Context, arg CreateCouponFeedSourceParams) (CouponFeedSource, error) {
+	row := q.db.QueryRow(ctx, createCouponFeedSource,
+		arg.Name,
+		arg.SourceType,
+		arg.EndpointUrl,
+		arg.ApiKeyEncrypted,
+		arg.DefaultProviderID,
+		arg.Enabled,
+	)
+	var i CouponFeedSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SourceType,
+		&i.EndpointUrl,
+		&i.ApiKeyEncrypted,
+		&i.DefaultProviderID,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.LastStatus,
+		&i.LastError,
+		&i.Stats,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteAffiliateProvider = `-- name: DeleteAffiliateProvider :exec
 DELETE FROM affiliate_providers
 WHERE id = $1
@@ -277,6 +349,16 @@ WHERE id = $1
 
 func (q *Queries) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteCoupon, id)
+	return err
+}
+
+const deleteCouponFeedSource = `-- name: DeleteCouponFeedSource :exec
+DELETE FROM coupon_feed_sources
+WHERE id = $1
+`
+
+func (q *Queries) DeleteCouponFeedSource(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteCouponFeedSource, id)
 	return err
 }
 
@@ -306,6 +388,43 @@ WHERE status = 'active'
 func (q *Queries) ExpireCoupons(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, expireCoupons)
 	return err
+}
+
+const expireFeedCouponsNotSeen = `-- name: ExpireFeedCouponsNotSeen :many
+UPDATE coupons
+SET status = 'expired', updated_at = now()
+WHERE feed_id = $1
+ AND status = 'active'
+ AND (external_id IS NULL OR NOT (external_id = ANY($2::text[])))
+RETURNING id
+`
+
+type ExpireFeedCouponsNotSeenParams struct {
+	FeedID  pgtype.UUID `json:"feed_id"`
+	SeenIds []string    `json:"seen_ids"`
+}
+
+// Absence-sweep for full-snapshot ('generic') feeds: active coupons of this
+// source whose external_id was absent from the run are expired. Manual
+// coupons (feed_id IS NULL) are never touched.
+func (q *Queries) ExpireFeedCouponsNotSeen(ctx context.Context, arg ExpireFeedCouponsNotSeenParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, expireFeedCouponsNotSeen, arg.FeedID, arg.SeenIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getAffiliateProviderByID = `-- name: GetAffiliateProviderByID :one
@@ -434,6 +553,19 @@ func (q *Queries) GetAffiliateProviderForRender(ctx context.Context, id pgtype.U
 	return i, err
 }
 
+const getAffiliateProviderIDBySlug = `-- name: GetAffiliateProviderIDBySlug :one
+SELECT id
+FROM affiliate_providers
+WHERE slug = $1
+`
+
+func (q *Queries) GetAffiliateProviderIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getAffiliateProviderIDBySlug, slug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getCouponByCode = `-- name: GetCouponByCode :one
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
@@ -452,7 +584,7 @@ type GetCouponByCodeRow struct {
 	Title               string             `json:"title"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
-	Code                string             `json:"code"`
+	Code                *string            `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
 	Currency            *string            `json:"currency"`
@@ -472,7 +604,7 @@ type GetCouponByCodeRow struct {
 	ProviderLogoMediaID pgtype.UUID        `json:"provider_logo_media_id"`
 }
 
-func (q *Queries) GetCouponByCode(ctx context.Context, code string) (GetCouponByCodeRow, error) {
+func (q *Queries) GetCouponByCode(ctx context.Context, code *string) (GetCouponByCodeRow, error) {
 	row := q.db.QueryRow(ctx, getCouponByCode, code)
 	var i GetCouponByCodeRow
 	err := row.Scan(
@@ -504,6 +636,29 @@ func (q *Queries) GetCouponByCode(ctx context.Context, code string) (GetCouponBy
 	return i, err
 }
 
+const getCouponByFeedExternal = `-- name: GetCouponByFeedExternal :one
+SELECT id, slug
+FROM coupons
+WHERE feed_id = $1 AND external_id = $2
+`
+
+type GetCouponByFeedExternalParams struct {
+	FeedID     pgtype.UUID `json:"feed_id"`
+	ExternalID *string     `json:"external_id"`
+}
+
+type GetCouponByFeedExternalRow struct {
+	ID   pgtype.UUID `json:"id"`
+	Slug string      `json:"slug"`
+}
+
+func (q *Queries) GetCouponByFeedExternal(ctx context.Context, arg GetCouponByFeedExternalParams) (GetCouponByFeedExternalRow, error) {
+	row := q.db.QueryRow(ctx, getCouponByFeedExternal, arg.FeedID, arg.ExternalID)
+	var i GetCouponByFeedExternalRow
+	err := row.Scan(&i.ID, &i.Slug)
+	return i, err
+}
+
 const getCouponByID = `-- name: GetCouponByID :one
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
@@ -522,7 +677,7 @@ type GetCouponByIDRow struct {
 	Title               string             `json:"title"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
-	Code                string             `json:"code"`
+	Code                *string            `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
 	Currency            *string            `json:"currency"`
@@ -593,7 +748,7 @@ type GetCouponBySlugRow struct {
 	Title               string             `json:"title"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
-	Code                string             `json:"code"`
+	Code                *string            `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
 	Currency            *string            `json:"currency"`
@@ -649,6 +804,34 @@ func (q *Queries) GetCouponBySlug(ctx context.Context, slug string) (GetCouponBy
 	return i, err
 }
 
+const getCouponFeedSourceByID = `-- name: GetCouponFeedSourceByID :one
+SELECT id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at
+FROM coupon_feed_sources
+WHERE id = $1
+`
+
+func (q *Queries) GetCouponFeedSourceByID(ctx context.Context, id pgtype.UUID) (CouponFeedSource, error) {
+	row := q.db.QueryRow(ctx, getCouponFeedSourceByID, id)
+	var i CouponFeedSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SourceType,
+		&i.EndpointUrl,
+		&i.ApiKeyEncrypted,
+		&i.DefaultProviderID,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.LastStatus,
+		&i.LastError,
+		&i.Stats,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getCouponForRender = `-- name: GetCouponForRender :one
 
 SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
@@ -663,7 +846,7 @@ type GetCouponForRenderRow struct {
 	ID                  pgtype.UUID        `json:"id"`
 	Title               string             `json:"title"`
 	Slug                string             `json:"slug"`
-	Code                string             `json:"code"`
+	Code                *string            `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
 	ReferralUrl         *string            `json:"referral_url"`
@@ -742,7 +925,7 @@ type ListActiveCouponsRow struct {
 	Title               string             `json:"title"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
-	Code                string             `json:"code"`
+	Code                *string            `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
 	Currency            *string            `json:"currency"`
@@ -931,6 +1114,66 @@ func (q *Queries) ListCouponEvents(ctx context.Context, arg ListCouponEventsPara
 	return items, nil
 }
 
+const listCouponFeedSources = `-- name: ListCouponFeedSources :many
+SELECT id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at,
+ (SELECT COUNT(*) FROM coupons c WHERE c.feed_id = coupon_feed_sources.id) AS coupon_count
+FROM coupon_feed_sources
+ORDER BY name ASC
+`
+
+type ListCouponFeedSourcesRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	Name              string             `json:"name"`
+	SourceType        string             `json:"source_type"`
+	EndpointUrl       string             `json:"endpoint_url"`
+	ApiKeyEncrypted   *string            `json:"api_key_encrypted"`
+	DefaultProviderID pgtype.UUID        `json:"default_provider_id"`
+	Enabled           bool               `json:"enabled"`
+	LastSyncedAt      pgtype.Timestamptz `json:"last_synced_at"`
+	LastStatus        *string            `json:"last_status"`
+	LastError         *string            `json:"last_error"`
+	Stats             []byte             `json:"stats"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	CouponCount       int64              `json:"coupon_count"`
+}
+
+func (q *Queries) ListCouponFeedSources(ctx context.Context) ([]ListCouponFeedSourcesRow, error) {
+	rows, err := q.db.Query(ctx, listCouponFeedSources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCouponFeedSourcesRow
+	for rows.Next() {
+		var i ListCouponFeedSourcesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.SourceType,
+			&i.EndpointUrl,
+			&i.ApiKeyEncrypted,
+			&i.DefaultProviderID,
+			&i.Enabled,
+			&i.LastSyncedAt,
+			&i.LastStatus,
+			&i.LastError,
+			&i.Stats,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CouponCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCoupons = `-- name: ListCoupons :many
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
@@ -963,7 +1206,7 @@ type ListCouponsRow struct {
 	Title               string             `json:"title"`
 	Slug                string             `json:"slug"`
 	Description         *string            `json:"description"`
-	Code                string             `json:"code"`
+	Code                *string            `json:"code"`
 	DiscountType        *string            `json:"discount_type"`
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
 	Currency            *string            `json:"currency"`
@@ -1024,6 +1267,48 @@ func (q *Queries) ListCoupons(ctx context.Context, arg ListCouponsParams) ([]Lis
 			&i.ProviderName,
 			&i.ProviderSlug,
 			&i.ProviderLogoMediaID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnabledCouponFeedSources = `-- name: ListEnabledCouponFeedSources :many
+SELECT id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at
+FROM coupon_feed_sources
+WHERE enabled = true
+ORDER BY name ASC
+`
+
+func (q *Queries) ListEnabledCouponFeedSources(ctx context.Context) ([]CouponFeedSource, error) {
+	rows, err := q.db.Query(ctx, listEnabledCouponFeedSources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CouponFeedSource
+	for rows.Next() {
+		var i CouponFeedSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.SourceType,
+			&i.EndpointUrl,
+			&i.ApiKeyEncrypted,
+			&i.DefaultProviderID,
+			&i.Enabled,
+			&i.LastSyncedAt,
+			&i.LastStatus,
+			&i.LastError,
+			&i.Stats,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1135,7 +1420,7 @@ type UpdateCouponParams struct {
 	Title         string             `json:"title"`
 	Slug          string             `json:"slug"`
 	Description   *string            `json:"description"`
-	Code          string             `json:"code"`
+	Code          *string            `json:"code"`
 	ProviderID    pgtype.UUID        `json:"provider_id"`
 	DiscountType  *string            `json:"discount_type"`
 	DiscountValue pgtype.Numeric     `json:"discount_value"`
@@ -1149,7 +1434,31 @@ type UpdateCouponParams struct {
 	ID            pgtype.UUID        `json:"id"`
 }
 
-func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Coupon, error) {
+type UpdateCouponRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ProviderID    pgtype.UUID        `json:"provider_id"`
+	CouponType    string             `json:"coupon_type"`
+	Title         string             `json:"title"`
+	Description   *string            `json:"description"`
+	Code          *string            `json:"code"`
+	DiscountType  *string            `json:"discount_type"`
+	DiscountValue pgtype.Numeric     `json:"discount_value"`
+	Currency      *string            `json:"currency"`
+	TermsUrl      *string            `json:"terms_url"`
+	ReferralUrl   *string            `json:"referral_url"`
+	IsVerified    bool               `json:"is_verified"`
+	Status        string             `json:"status"`
+	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	TotalClicks   int32              `json:"total_clicks"`
+	TotalCopies   int32              `json:"total_copies"`
+	CreatedBy     pgtype.UUID        `json:"created_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Slug          string             `json:"slug"`
+}
+
+func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (UpdateCouponRow, error) {
 	row := q.db.QueryRow(ctx, updateCoupon,
 		arg.Title,
 		arg.Slug,
@@ -1167,7 +1476,7 @@ func (q *Queries) UpdateCoupon(ctx context.Context, arg UpdateCouponParams) (Cou
 		arg.ExpiresAt,
 		arg.ID,
 	)
-	var i Coupon
+	var i UpdateCouponRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProviderID,
@@ -1228,4 +1537,143 @@ WHERE EXISTS (
 func (q *Queries) UpdateCouponCopyCounts(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, updateCouponCopyCounts)
 	return err
+}
+
+const updateCouponFeedSource = `-- name: UpdateCouponFeedSource :one
+UPDATE coupon_feed_sources
+SET name = $1, source_type = $2, endpoint_url = $3,
+ api_key_encrypted = COALESCE($4, api_key_encrypted),
+ default_provider_id = $5,
+ enabled = $6, updated_at = now()
+WHERE id = $7
+RETURNING id, name, source_type, endpoint_url, api_key_encrypted, default_provider_id,
+ enabled, last_synced_at, last_status, last_error, stats, created_at, updated_at
+`
+
+type UpdateCouponFeedSourceParams struct {
+	Name              string      `json:"name"`
+	SourceType        string      `json:"source_type"`
+	EndpointUrl       string      `json:"endpoint_url"`
+	ApiKeyEncrypted   *string     `json:"api_key_encrypted"`
+	DefaultProviderID pgtype.UUID `json:"default_provider_id"`
+	Enabled           bool        `json:"enabled"`
+	ID                pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateCouponFeedSource(ctx context.Context, arg UpdateCouponFeedSourceParams) (CouponFeedSource, error) {
+	row := q.db.QueryRow(ctx, updateCouponFeedSource,
+		arg.Name,
+		arg.SourceType,
+		arg.EndpointUrl,
+		arg.ApiKeyEncrypted,
+		arg.DefaultProviderID,
+		arg.Enabled,
+		arg.ID,
+	)
+	var i CouponFeedSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SourceType,
+		&i.EndpointUrl,
+		&i.ApiKeyEncrypted,
+		&i.DefaultProviderID,
+		&i.Enabled,
+		&i.LastSyncedAt,
+		&i.LastStatus,
+		&i.LastError,
+		&i.Stats,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateCouponFeedSourceSyncStatus = `-- name: UpdateCouponFeedSourceSyncStatus :exec
+UPDATE coupon_feed_sources
+SET last_synced_at = now(), last_status = $1, last_error = $2,
+ stats = $3, updated_at = now()
+WHERE id = $4
+`
+
+type UpdateCouponFeedSourceSyncStatusParams struct {
+	LastStatus *string     `json:"last_status"`
+	LastError  *string     `json:"last_error"`
+	Stats      []byte      `json:"stats"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateCouponFeedSourceSyncStatus(ctx context.Context, arg UpdateCouponFeedSourceSyncStatusParams) error {
+	_, err := q.db.Exec(ctx, updateCouponFeedSourceSyncStatus,
+		arg.LastStatus,
+		arg.LastError,
+		arg.Stats,
+		arg.ID,
+	)
+	return err
+}
+
+const upsertFeedCoupon = `-- name: UpsertFeedCoupon :one
+INSERT INTO coupons (provider_id, coupon_type, title, slug, description, code,
+ referral_url, is_verified, status, valid_from, expires_at, feed_id, external_id)
+VALUES ($1, 'external', $2, $3, $4,
+ $5, $6, false, $7,
+ $8, $9, $10, $11)
+ON CONFLICT (feed_id, external_id) WHERE feed_id IS NOT NULL
+DO UPDATE SET provider_id = $1, title = $2,
+ description = $4, code = $5,
+ referral_url = $6, status = $7,
+ valid_from = $8, expires_at = $9,
+ updated_at = now()
+RETURNING id, slug, code, status, (xmax = 0) AS inserted
+`
+
+type UpsertFeedCouponParams struct {
+	ProviderID  pgtype.UUID        `json:"provider_id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Description *string            `json:"description"`
+	Code        *string            `json:"code"`
+	ReferralUrl *string            `json:"referral_url"`
+	Status      string             `json:"status"`
+	ValidFrom   pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+	FeedID      pgtype.UUID        `json:"feed_id"`
+	ExternalID  *string            `json:"external_id"`
+}
+
+type UpsertFeedCouponRow struct {
+	ID       pgtype.UUID `json:"id"`
+	Slug     string      `json:"slug"`
+	Code     *string     `json:"code"`
+	Status   string      `json:"status"`
+	Inserted bool        `json:"inserted"`
+}
+
+// Idempotent import: conflict target is the partial unique index
+// idx_coupons_feed_external (feed_id, external_id). Slug is fixed at insert
+// time — renames would churn /deal URLs — so the UPDATE branch never touches it.
+func (q *Queries) UpsertFeedCoupon(ctx context.Context, arg UpsertFeedCouponParams) (UpsertFeedCouponRow, error) {
+	row := q.db.QueryRow(ctx, upsertFeedCoupon,
+		arg.ProviderID,
+		arg.Title,
+		arg.Slug,
+		arg.Description,
+		arg.Code,
+		arg.ReferralUrl,
+		arg.Status,
+		arg.ValidFrom,
+		arg.ExpiresAt,
+		arg.FeedID,
+		arg.ExternalID,
+	)
+	var i UpsertFeedCouponRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Code,
+		&i.Status,
+		&i.Inserted,
+	)
+	return i, err
 }

@@ -132,6 +132,7 @@
 		'/comparison-ingestion-jobs': 'jce.ingestion_job.view',
 		'/comparison-profiles': 'jce.profile.list',
 		'/coupons': 'coupons.manage',
+		'/coupon-feeds': 'coupons.manage',
 		'/discount-codes': 'payments.discount_codes.manage',
 		'/referral': 'referral.manage',
 		'/mentorship': 'mentorship.admin',

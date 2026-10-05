@@ -4876,6 +4876,70 @@ func HandleTravelSyncHotelDirectory(ctx context.Context, _ *asynq.Task) error {
 	return nil
 }
 
+// CouponFeedSyncer imports external deal feeds into coupons (§55 Deal Feed
+// Import). Local interface so worker does not import the coupons package's
+// service surface — mirrors HotelDirectorySyncer.
+type CouponFeedSyncer interface {
+	// SyncEnabledFeeds fans out coupon:import_feed per enabled source.
+	SyncEnabledFeeds(ctx context.Context) error
+	// SyncFeedSource imports one feed source by ID.
+	SyncFeedSource(ctx context.Context, feedID pgtype.UUID) error
+}
+
+// couponFeedSyncer is the registered implementation. Nil until wired by
+// server.go.
+var couponFeedSyncer CouponFeedSyncer
+
+// RegisterCouponFeedSyncer injects the adapter for the coupon:sync_feeds and
+// coupon:import_feed tasks.
+func RegisterCouponFeedSyncer(s CouponFeedSyncer) {
+	couponFeedSyncer = s
+}
+
+// HandleCouponSyncFeeds is the hourly cron fan-out: one coupon:import_feed
+// task per enabled coupon_feed_sources row (§55).
+func HandleCouponSyncFeeds(ctx context.Context, _ *asynq.Task) error {
+	slog.Info("coupon:sync_feeds — fanning out to enabled feed sources")
+
+	if couponFeedSyncer == nil {
+		return errors.New("coupon:sync_feeds: service not registered")
+	}
+
+	if err := couponFeedSyncer.SyncEnabledFeeds(ctx); err != nil {
+		slog.Error("coupon:sync_feeds failed", "error", err)
+		return err
+	}
+
+	return nil
+}
+
+// HandleCouponImportFeed imports one feed source; payload {"feed_id":"uuid"}.
+func HandleCouponImportFeed(ctx context.Context, task *asynq.Task) error {
+	if couponFeedSyncer == nil {
+		return errors.New("coupon:import_feed: service not registered")
+	}
+
+	var payload struct {
+		FeedID string `json:"feed_id"`
+	}
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("coupon:import_feed: bad payload: %w", err)
+	}
+	feedID, err := scanUUID(payload.FeedID)
+	if err != nil {
+		return fmt.Errorf("coupon:import_feed: %w", err)
+	}
+
+	slog.Info("coupon:import_feed — syncing feed source", "feed_id", payload.FeedID)
+
+	if err := couponFeedSyncer.SyncFeedSource(ctx, feedID); err != nil {
+		slog.Error("coupon:import_feed failed", "feed_id", payload.FeedID, "error", err)
+		return err
+	}
+
+	return nil
+}
+
 // HandleMaintenancePrunePushTokens deletes stale/unresponsive push tokens older than 90 days.
 func HandleMaintenancePrunePushTokens(ctx context.Context, _ *asynq.Task) error {
 	slog.Info("maintenance:prune_push_tokens — pruning stale push tokens")

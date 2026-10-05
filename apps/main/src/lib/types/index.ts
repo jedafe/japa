@@ -1959,7 +1959,8 @@ export interface Coupon {
 	title: string;
 	slug?: string;
 	description?: string | null;
-	code: string;
+	/** NULL for imported "deal" offers that need no code (§55 feed import). */
+	code?: string | null;
 	discount_type?: string | null;
 	discount_value?: number | string;
 	currency?: string | null;
