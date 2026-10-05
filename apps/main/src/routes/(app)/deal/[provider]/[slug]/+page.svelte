@@ -54,13 +54,17 @@
 		})
 	);
 
-	// FAQPage structured data — only when editorial FAQ entries exist (§55).
+	// FAQPage structured data — only from entries carrying BOTH q and a; a
+	// Question with an empty name (or no acceptedAnswer text) is schema-invalid
+	// (§55). buildDetails drops those at write time; filter again at render so
+	// legacy rows don't emit bad markup.
+	const faqSchemaEntries = $derived(faq.filter((f) => f.q && f.a));
 	const faqJsonLd = $derived(
-		faq.length
+		faqSchemaEntries.length
 			? JSON.stringify({
 					'@context': 'https://schema.org',
 					'@type': 'FAQPage',
-					mainEntity: faq.map((f) => ({
+					mainEntity: faqSchemaEntries.map((f) => ({
 						'@type': 'Question',
 						name: f.q,
 						acceptedAnswer: { '@type': 'Answer', text: f.a }
@@ -332,6 +336,7 @@
 					</h2>
 					<div class="mt-3 grid gap-2 sm:grid-cols-2">
 						{#each data.related as rel (rel.id)}
+							{@const relLabel = discountLabelFor(rel)}
 							<a
 								href={dealPath(rel)}
 								class="group flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
@@ -342,9 +347,9 @@
 									>
 										{rel.title}
 									</p>
-									{#if discountLabelFor(rel)}
+									{#if relLabel}
 										<span class="text-xs font-medium text-[var(--color-primary)]">
-											{discountLabelFor(rel)}
+											{relLabel}
 										</span>
 									{/if}
 								</div>

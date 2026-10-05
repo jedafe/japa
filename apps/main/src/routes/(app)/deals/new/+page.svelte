@@ -26,8 +26,12 @@
 	// auto-selected; the picker only renders when there is more than one.
 	// untrack: data.orgs only seeds the initial selection.
 	let selectedOrgId = $state(untrack(() => data.orgs[0]?.id ?? ''));
+	const SUBMISSIONS_PAGE_SIZE = 20;
 	let submissions = $state<Coupon[]>([]);
+	let submissionsPage = $state(0);
+	let submissionsHasMore = $state(false);
 	let submissionsLoading = $state(false);
+	let submissionsError = $state('');
 	let submitted = $state<Coupon | null>(null);
 	// Bumped after each save so DealForm remounts with a blank state — the
 	// component seeds its form values once and never resets itself.
@@ -35,12 +39,26 @@
 
 	const selectedOrg = $derived(data.orgs.find((o) => o.id === selectedOrgId));
 
-	async function loadSubmissions(orgId: string) {
+	// GET /organizations/{id}/deals returns {data, page, page_size}; a page
+	// shorter than page_size is the last one ("Load more" hides).
+	async function loadSubmissions(orgId: string, pageNum = 1, append = false) {
 		submissionsLoading = true;
+		if (!append) submissionsError = '';
 		try {
-			const res = await api.get<Coupon[]>(`/organizations/${orgId}/deals?page_size=50`);
+			const res = await api.get<Coupon[]>(
+				`/organizations/${orgId}/deals?page=${pageNum}&page_size=${SUBMISSIONS_PAGE_SIZE}`
+			);
 			// Stale-guard: ignore the response if the user switched orgs mid-flight.
-			if (selectedOrgId === orgId) submissions = res.data ?? [];
+			if (selectedOrgId !== orgId) return;
+			if (res.error || !res.data) {
+				submissionsError =
+					res.error?.message ??
+					t('deals.submissions_error', 'Failed to load submissions.');
+				return;
+			}
+			submissions = append ? [...submissions, ...res.data] : res.data;
+			submissionsPage = pageNum;
+			submissionsHasMore = res.data.length === SUBMISSIONS_PAGE_SIZE;
 		} finally {
 			if (selectedOrgId === orgId) submissionsLoading = false;
 		}
@@ -57,6 +75,9 @@
 	function onOrgChange() {
 		submitted = null;
 		submissions = [];
+		submissionsPage = 0;
+		submissionsHasMore = false;
+		submissionsError = '';
 	}
 
 	function onOrgSaved(coupon: Coupon) {
@@ -171,18 +192,26 @@
 			{/if}
 
 			{#key `${selectedOrgId}:${formKey}`}
-				<DealForm mode="create" audience="org" orgId={selectedOrgId} onsaved={onOrgSaved} />
+				<DealForm
+					mode="create"
+					audience="org"
+					orgId={selectedOrgId}
+					providerName={selectedOrg?.name}
+					onsaved={onOrgSaved}
+				/>
 			{/key}
 
 			<section>
 				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">
 					{t('deals.your_submissions', 'Your submissions')}
 				</h2>
-				{#if submissionsLoading}
+				{#if submissionsLoading && submissions.length === 0}
 					<div class="flex items-center gap-2 py-4 text-sm text-[var(--color-text-subtle)]">
 						<Loader2 size={16} class="animate-spin" />
 						{t('common.loading', 'Loading')}
 					</div>
+				{:else if submissionsError}
+					<p class="py-4 text-sm text-red-500" role="alert">{submissionsError}</p>
 				{:else if submissions.length === 0}
 					<p class="py-4 text-sm text-[var(--color-text-subtle)]">
 						{t('deals.submissions_empty', 'No submissions yet.')}
@@ -222,6 +251,19 @@
 							</li>
 						{/each}
 					</ul>
+					{#if submissionsHasMore}
+						<button
+							type="button"
+							disabled={submissionsLoading}
+							onclick={() => loadSubmissions(selectedOrgId, submissionsPage + 1, true)}
+							class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+						>
+							{#if submissionsLoading}
+								<Loader2 size={14} class="animate-spin" />
+							{/if}
+							{t('deals.load_more', 'Load more')}
+						</button>
+					{/if}
 				{/if}
 			</section>
 		{/if}

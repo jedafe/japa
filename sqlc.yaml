@@ -40,9 +40,11 @@ sql:
               import: "github.com/pgvector/pgvector-go"
               pointer: true
           # coupons.details is editorial JSON for the deal page; RawMessage so
-          # API responses embed the object instead of base64 (§55).
+          # API responses embed the object instead of base64 (§55). Pointer so
+          # an unset param writes SQL NULL — a bare nil RawMessage would write
+          # the JSON literal 'null' into the column.
           - column: "coupons.details"
             go_type:
               type: "RawMessage"
               import: "encoding/json"
-              pointer: false
+              pointer: true

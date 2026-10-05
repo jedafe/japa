@@ -60,8 +60,8 @@ func (s *Store) getProviderByOrgID(ctx context.Context, orgID pgtype.UUID) (gen.
 	return rowToProvider(row), nil
 }
 
-func (s *Store) listActiveDealPartners(ctx context.Context) ([]gen.ListActiveDealPartnersRow, error) {
-	return s.read.ListActiveDealPartners(ctx)
+func (s *Store) listActiveDealPartners(ctx context.Context, limit int32) ([]gen.ListActiveDealPartnersRow, error) {
+	return s.read.ListActiveDealPartners(ctx, limit)
 }
 
 func (s *Store) listProviders(ctx context.Context, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
@@ -108,10 +108,6 @@ func (s *Store) createCoupon(ctx context.Context, c gen.CreateCouponParams) (gen
 
 func (s *Store) getCouponByID(ctx context.Context, id pgtype.UUID) (gen.GetCouponByIDRow, error) {
 	return s.read.GetCouponByID(ctx, id)
-}
-
-func (s *Store) getCouponByCode(ctx context.Context, code *string) (gen.GetCouponByCodeRow, error) {
-	return s.read.GetCouponByCode(ctx, code)
 }
 
 func (s *Store) getCouponBySlug(ctx context.Context, slug string) (gen.GetCouponBySlugRow, error) {

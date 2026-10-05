@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
@@ -234,6 +235,16 @@ func validateCouponDetails(raw json.RawMessage) error {
 	return nil
 }
 
+// detailsParam maps the input details to the nullable sqlc param: empty/nil
+// → SQL NULL (a non-pointer nil RawMessage would store the JSON literal
+// 'null' instead of a NULL — §55).
+func detailsParam(raw json.RawMessage) *json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	return &raw
+}
+
 // CreateCoupon is an exported method.
 func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input CreateCouponInput) (gen.CreateCouponRow, error) {
 	if err := validateCouponDetails(input.Details); err != nil {
@@ -252,13 +263,20 @@ func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input Cr
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
-		Details: input.Details, CreatedBy: userID,
+		Details: detailsParam(input.Details), CreatedBy: userID,
 	})
 	if err != nil {
 		return gen.CreateCouponRow{}, err
 	}
 
 	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
+
+	// Org-linked providers start inactive (providerForOrg); a deal created
+	// directly as active approves the org branding — same activation hook as
+	// UpdateCoupon (§55).
+	if input.Status == string(CouponStatusActive) && c.ProviderID.Valid {
+		s.activateOrgProvider(ctx, c.ProviderID)
+	}
 
 	return c, nil
 }
@@ -414,7 +432,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
-		Details: input.Details,
+		Details: detailsParam(input.Details),
 	})
 	if err != nil {
 		return gen.UpdateCouponRow{}, err
@@ -954,7 +972,7 @@ func (s *Service) SubmitOrgDeal(ctx context.Context, org gen.Organization, userI
 		TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: false, Status: string(CouponStatusPending),
 		ValidFrom: toTimestamptz(input.ValidFrom), ExpiresAt: toTimestamptz(input.ExpiresAt),
-		Details: input.Details, CreatedBy: userID,
+		Details: detailsParam(input.Details), CreatedBy: userID,
 	})
 	if err != nil {
 		return gen.CreateCouponRow{}, err
@@ -978,6 +996,11 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 	if base == "" {
 		base = content.Slugify(org.Name)
 	}
+	if base == "" {
+		// Slugify can yield "" for a slug/name made entirely of non-ASCII or
+		// punctuation — refuse rather than create a provider with slug "".
+		return gen.AffiliateProvider{}, fmt.Errorf("organization %s has no slugifiable slug or name", org.ID.String())
+	}
 	for i := 0; i < maxCouponSlugAttempts; i++ {
 		candidate := base
 		if i > 0 {
@@ -992,12 +1015,22 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 		// and /deal/{provider} only expose active providers, so unvetted org
 		// branding never goes public at submission time (§55). Activated in
 		// UpdateCoupon via activateOrgProvider.
-		return s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
+		p, err := s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 			Name: org.Name, Slug: candidate, Description: org.Description,
 			ProviderType: string(ProviderTypeBoth), BaseUrl: org.WebsiteUrl,
 			LogoMediaID: org.LogoMediaID, IsActive: false,
 			OrganizationID: org.ID,
 		})
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				// Slug claimed between the check and the insert (TOCTOU) —
+				// retry the next suffix instead of failing the submission.
+				continue
+			}
+			return gen.AffiliateProvider{}, fmt.Errorf("creating org provider: %w", err)
+		}
+		return p, nil
 	}
 	return gen.AffiliateProvider{}, fmt.Errorf("could not find unique provider slug after %d attempts", maxCouponSlugAttempts)
 }
@@ -1040,9 +1073,14 @@ func (s *Service) ListOrgDeals(ctx context.Context, orgID pgtype.UUID, page, pag
 	return s.store.listCouponsByOrganization(ctx, orgID, limit, offset)
 }
 
-// ListDealPartners returns active providers for GET /deals/partners.
-func (s *Service) ListDealPartners(ctx context.Context) ([]DealPartnerRef, error) {
-	rows, err := s.store.listActiveDealPartners(ctx)
+// ListDealPartners returns active providers for GET /deals/partners. The
+// index is capped at MaxPageSize rows (default when pageSize is unset or
+// out of range) — partners are a small directory, not a paginated list.
+func (s *Service) ListDealPartners(ctx context.Context, pageSize int32) ([]DealPartnerRef, error) {
+	if pageSize <= 0 || pageSize > MaxPageSize {
+		pageSize = MaxPageSize
+	}
+	rows, err := s.store.listActiveDealPartners(ctx, pageSize)
 	if err != nil {
 		return nil, err
 	}

@@ -20,13 +20,17 @@ export const load: PageServerLoad = async (event) => {
 	const isStaff = perms.includes('coupons.manage');
 	const ctx = apiContext(event);
 
-	// Provider select options (staff form). The endpoint returns the full
-	// active list under `data`; apiList reads it regardless of pagination.
+	// Provider select options (staff form only — org submissions derive the
+	// provider server-side from the org, so non-staff never needs this fetch).
+	// The endpoint returns the full active list under `data`; apiList reads it
+	// regardless of pagination.
 	let providers: DealPartnerRef[] = [];
-	try {
-		providers = (await apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')).items;
-	} catch {
-		providers = [];
+	if (isStaff) {
+		try {
+			providers = (await apiList<DealPartnerRef>(ctx, '/deals/partners?page_size=100')).items;
+		} catch {
+			providers = [];
+		}
 	}
 
 	// Org submission eligibility mirrors the /deals index canSubmit check —
