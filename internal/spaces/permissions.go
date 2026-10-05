@@ -35,6 +35,12 @@ func (s *Service) CanPostInSpace(
 	permChecker PermissionChecker,
 	verifiedChecker UserVerifiedChecker,
 ) bool {
+	// §80 wiki-only space types accept no posts — structural rule, applied
+	// before the posting_perm axis so even admin-granted writes can't land.
+	if s.IsWikiOnlyType(ctx, space.SpaceTypeID) {
+		return false
+	}
+
 	switch space.PostingPerm {
 	case PermOpen:
 		return true
