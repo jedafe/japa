@@ -52,6 +52,18 @@ func (s *Store) getProviderBySlug(ctx context.Context, slug string) (gen.Affilia
 	return rowToProvider(row), nil
 }
 
+func (s *Store) getProviderByOrgID(ctx context.Context, orgID pgtype.UUID) (gen.AffiliateProvider, error) {
+	row, err := s.read.GetAffiliateProviderByOrgID(ctx, orgID)
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+	return rowToProvider(row), nil
+}
+
+func (s *Store) listActiveDealPartners(ctx context.Context) ([]gen.ListActiveDealPartnersRow, error) {
+	return s.read.ListActiveDealPartners(ctx)
+}
+
 func (s *Store) listProviders(ctx context.Context, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
 	rows, err := s.read.ListAffiliateProviders(ctx, gen.ListAffiliateProvidersParams{
 
@@ -126,6 +138,12 @@ func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, c
 		Search:     search,
 		PageLimit:  limit,
 		PageOffset: offset,
+	})
+}
+
+func (s *Store) listCouponsByOrganization(ctx context.Context, orgID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsByOrganizationRow, error) {
+	return s.read.ListCouponsByOrganization(ctx, gen.ListCouponsByOrganizationParams{
+		OrganizationID: orgID, PageLimit: limit, PageOffset: offset,
 	})
 }
 
@@ -272,7 +290,8 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
-			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			AuthorCommissionPct: r.AuthorCommissionPct, Category: r.Category, OrganizationID: r.OrganizationID,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	case gen.GetAffiliateProviderByIDRow:
 		return gen.AffiliateProvider{
@@ -280,7 +299,17 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
-			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			AuthorCommissionPct: r.AuthorCommissionPct, Category: r.Category, OrganizationID: r.OrganizationID,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	case gen.GetAffiliateProviderByOrgIDRow:
+		return gen.AffiliateProvider{
+			ID: r.ID, Name: r.Name, Slug: r.Slug,
+			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
+			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
+			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
+			AuthorCommissionPct: r.AuthorCommissionPct, Category: r.Category, OrganizationID: r.OrganizationID,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	case gen.ListAffiliateProvidersRow:
 		return gen.AffiliateProvider{
@@ -288,7 +317,8 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
-			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			AuthorCommissionPct: r.AuthorCommissionPct, Category: r.Category, OrganizationID: r.OrganizationID,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	case gen.GetAffiliateProviderBySlugRow:
 		return gen.AffiliateProvider{
@@ -296,7 +326,8 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
-			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			AuthorCommissionPct: r.AuthorCommissionPct, Category: r.Category, OrganizationID: r.OrganizationID,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	case gen.UpdateAffiliateProviderRow:
 		return gen.AffiliateProvider{
@@ -304,7 +335,8 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
 			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
 			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
-			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+			AuthorCommissionPct: r.AuthorCommissionPct, Category: r.Category, OrganizationID: r.OrganizationID,
+			CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	default:
 		return gen.AffiliateProvider{}
