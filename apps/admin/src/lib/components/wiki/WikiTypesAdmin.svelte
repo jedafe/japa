@@ -13,15 +13,18 @@
 		wikiAdminApi,
 		fieldGroupsAdminApiExtended,
 		spaceTypesApi,
+		spacesAdminApi,
 		type WikiTypeItem,
 		type WikiCategoryItem,
-		type WikiPageTemplateItem
+		type WikiPageTemplateItem,
+		type AttractionSeedCandidate
 	} from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, Pencil, Trash2, FolderTree, Layers, X, CheckCircle, XCircle } from 'lucide-svelte';
+	import { Eye, Pencil, Trash2, FolderTree, Layers, X, CheckCircle, XCircle, Sparkles } from 'lucide-svelte';
 	import type { ActionItem, BulkAction } from '$lib/components/ui/data-table';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { SlideOver } from '$lib/components/ui/slide-over';
 
 	const canManage = $derived(hasPermission('wiki.manage'));
 
@@ -138,6 +141,56 @@
 		return { ...row, id: row.space_type_id, parents: (row.parent_type_ids ?? []).length };
 	}
 
+	// ── §80 attractions: Wikidata bulk seed ──────────────────────────────
+	// The seed slide-over resolves a geo parent space (country/state/city)
+	// by slug, previews candidates via dry_run, then enqueues the
+	// wiki:seed_attractions task.
+	let seedOpen = $state(false);
+	let seedWithin = $state('');
+	let seedLimit = $state(100);
+	let seedBusy = $state(false);
+	let seedError = $state('');
+	let seedQueued = $state(false);
+	let seedCandidates = $state<AttractionSeedCandidate[] | null>(null);
+
+	// Parent picker — the admin spaces endpoint searches by name/slug; only
+	// geo levels are valid seed parents (the backend rejects others).
+	async function seedSpaceFetcher(q: string): Promise<AutocompleteItem[]> {
+		const res = await spacesAdminApi.list(`q=${encodeURIComponent(q)}&page_size=25`);
+		if (!res.ok) return [];
+		const data = res.data as { items?: { slug: string; name: string; level?: string }[] } | undefined;
+		return (data?.items ?? [])
+			.filter((s) => ['country', 'state', 'city'].includes(s.level ?? ''))
+			.map((s) => ({ id: s.slug, label: `${s.name} — ${s.level ?? 'space'} (${s.slug})` }));
+	}
+
+	async function runSeedAttractions(dryRun: boolean) {
+		if (!seedWithin || seedBusy) return;
+		seedBusy = true;
+		seedError = '';
+		seedQueued = false;
+		if (dryRun) seedCandidates = null;
+		try {
+			const res = await wikiAdminApi.seedAttractions({
+				within: seedWithin,
+				limit: seedLimit > 0 ? seedLimit : undefined,
+				dry_run: dryRun
+			});
+			if (!res.ok) {
+				seedError = res.error ?? t('app.wiki.seed_failed', 'Seed request failed');
+				return;
+			}
+			if (dryRun) {
+				seedCandidates = res.data?.candidates ?? [];
+			} else {
+				seedQueued = res.data?.queued === true;
+				seedCandidates = null;
+			}
+		} finally {
+			seedBusy = false;
+		}
+	}
+
 	// ── Bulk enable/disable ────────────────────────────────────────────────
 	// BulkAction.onclick receives only ids — resolve them against a map of
 	// every row seen this session (BulkBar's selectedRows covers just the
@@ -210,6 +263,19 @@
 			onclick: (row) => {
 				selectedType = row as WikiTypeItem;
 				selectedCategory = null;
+			}
+		},
+		// §80 attractions: Wikidata bulk seed — only meaningful on the
+		// attraction wiki type; opens the seed slide-over.
+		{
+			label: t('app.wiki.seed_attractions', 'Seed attractions'),
+			icon: Sparkles,
+			show: (row) => canManage && (row as WikiTypeItem).space_type_slug === 'attraction',
+			onclick: () => {
+				seedOpen = true;
+				seedError = '';
+				seedQueued = false;
+				seedCandidates = null;
 			}
 		},
 		{
@@ -877,6 +943,102 @@
 		</section>
 	{/if}
 </div>
+
+<!-- §80 attractions — Wikidata bulk seed slide-over: pick a geo parent,
+     preview candidates (dry run), then enqueue wiki:seed_attractions. -->
+<SlideOver bind:open={seedOpen} title={t('app.wiki.seed_attractions_title', 'Seed attractions')} size="default">
+	<div class="space-y-4">
+		<p class="text-xs leading-relaxed" style="color: var(--color-muted)">
+			{t(
+				'app.wiki.seed_attractions_help',
+				'Queries Wikidata for attractions located in the chosen space, then creates wiki-only attraction pages under it. Preview first to review candidates — seeding is idempotent on the Wikidata ID.'
+			)}
+		</p>
+
+		<div>
+			<p class="mb-1 text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.seed_within', 'Parent space')}
+			</p>
+			<Autocomplete
+				id="seed-within"
+				placeholder={t('app.wiki.seed_within_ph', 'Search countries, states, cities…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={seedSpaceFetcher}
+				selectedId={seedWithin || null}
+				onSelect={(item) => (seedWithin = item.id)}
+				onClear={() => (seedWithin = '')}
+			/>
+		</div>
+
+		<div>
+			<label for="seed-limit" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">
+				{t('app.wiki.seed_limit', 'Max attractions')}
+			</label>
+			<input
+				id="seed-limit" type="number" min="1" max="500"
+				class="w-full rounded-lg border p-2 text-sm"
+				style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)"
+				bind:value={seedLimit}
+			/>
+			<p class="mt-1 text-xs" style="color: var(--color-muted)">
+				{t('app.wiki.seed_limit_help', 'Caps the number of attractions created in one run (max 500).')}
+			</p>
+		</div>
+
+		{#if seedError}
+			<div
+				class="rounded-lg p-3 text-sm"
+				style="background: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)"
+			>
+				{seedError}
+			</div>
+		{/if}
+
+		{#if seedQueued}
+			<div
+				class="rounded-lg p-3 text-sm"
+				style="background: color-mix(in srgb, var(--color-success) 10%, transparent); color: var(--color-success)"
+			>
+				{t('app.wiki.seed_queued', 'Seed queued — attraction pages will populate in the background.')}
+			</div>
+		{/if}
+
+		{#if seedCandidates}
+			<div>
+				<p class="mb-1.5 text-sm font-medium" style="color: var(--color-foreground)">
+					{t('app.wiki.seed_candidates', 'Candidates ({count})').replace('{count}', String(seedCandidates.length))}
+				</p>
+				{#if seedCandidates.length === 0}
+					<p class="text-xs" style="color: var(--color-muted)">
+						{t('app.wiki.seed_candidates_empty', 'No attractions found for this space on Wikidata.')}
+					</p>
+				{:else}
+					<ul class="max-h-72 space-y-1 overflow-y-auto rounded-lg border p-2" style="border-color: var(--color-border)">
+						{#each seedCandidates as c (c.qid)}
+							<li class="text-xs">
+								<span class="font-medium" style="color: var(--color-foreground)">{c.name}</span>
+								<span class="font-mono" style="color: var(--color-muted)"> {c.qid}</span>
+								{#if c.description}
+									<span class="block" style="color: var(--color-muted)">{c.description}</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+		{/if}
+
+		<div class="flex justify-end gap-2 border-t pt-3" style="border-color: var(--color-border)">
+			<Button variant="outline" disabled={!seedWithin || seedBusy} onclick={() => runSeedAttractions(true)}>
+				{t('app.wiki.seed_preview', 'Preview candidates')}
+			</Button>
+			<Button disabled={!seedWithin || seedBusy} onclick={() => runSeedAttractions(false)}>
+				<Sparkles size={14} class="mr-1" />
+				{t('app.wiki.seed_run', 'Seed attractions')}
+			</Button>
+		</div>
+	</div>
+</SlideOver>
 
 {#snippet BoolCell({ value }: { value: boolean; row: unknown })}
 	<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium {value ? 'bg-success/15 text-success' : 'bg-muted/15 text-muted'}">
