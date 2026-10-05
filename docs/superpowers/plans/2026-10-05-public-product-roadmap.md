@@ -39,19 +39,19 @@
 **Interfaces:**
 - Produces: §113 as the implementation source of truth; catalog names used by every later task.
 
-- [ ] **Step 1: Write `sections/113-public-product-roadmap.md`**
+- [x] **Step 1: Write `sections/113-public-product-roadmap.md`**
 
 Structure it like `sections/38-ticket-system.md` (read it for the house style: status machine, tables, routes, settings, RBAC, Valkey keys). Content must cover: purpose (incremental launch comms, Spaces & Content Creation flagship), the status lifecycle `pending → under_review → planned → in_progress → shipped` (+ `declined`, `archived`), the three tables (schema in Task 2), the shadow-`contents`-row comments mechanism, public + admin routes (Task 6 list), RBAC nodes, Valkey key `jc:roadmap:board`, system settings `roadmap.submissions_enabled` / `roadmap.custom_domain` / `roadmap.board_cache_ttl_seconds` / `roadmap.shipped_window_days`, the `roadmap:ship_notify` task, and the `roadmap.japaconnect.com` host-detection mode.
 
-- [ ] **Step 2: Write `adr/ADR-127-public-product-roadmap.md`**
+- [x] **Step 2: Write `adr/ADR-127-public-product-roadmap.md`**
 
 Decisions to record: (a) dedicated module vs contents-native (feed/search pollution, vote semantics, `content_hash` collision risk), (b) shadow `contents` row for §49 comments reuse, (c) host-detection reuse of the ADR-063 `isUniversityHost` pattern for `roadmap.japaconnect.com`, (d) logged-in-only voting, (e) self-healing `vote_count` via recount query instead of increment counters.
 
-- [ ] **Step 3: Update `JEOS.md`**
+- [x] **Step 3: Update `JEOS.md`**
 
 Add a section-index row `| 113 | sections/113-public-product-roadmap.md | ...` and an ADR row `| 127 | adr/ADR-127-public-product-roadmap.md | ...` matching the existing table formats.
 
-- [ ] **Step 4: Update `api-routes-catalog.md`**
+- [x] **Step 4: Update `api-routes-catalog.md`**
 
 Add a `## Roadmap` block (base path `/api/v1`):
 
@@ -77,7 +77,7 @@ PATCH  /admin/roadmap/categories/{id}        [perm: roadmap.edit]
 DELETE /admin/roadmap/categories/{id}        [perm: roadmap.edit]
 ```
 
-- [ ] **Step 5: Update `valkey-keys-catalog.md`**
+- [x] **Step 5: Update `valkey-keys-catalog.md`**
 
 Add row:
 
@@ -85,7 +85,7 @@ Add row:
 | `jc:roadmap:board` | JSON-serialized public roadmap board payload (statuses × items + categories) | `roadmap.board_cache_ttl_seconds` (default 60s) | any roadmap item/category/vote mutation |
 ```
 
-- [ ] **Step 6: Update `system-settings-catalog.md`**
+- [x] **Step 6: Update `system-settings-catalog.md`**
 
 ```
 | `roadmap.submissions_enabled` | `true` | bool | Public feature-request submissions open |
@@ -94,15 +94,15 @@ Add row:
 | `roadmap.shipped_window_days` | `90` | int | How many days a shipped item stays on the public board |
 ```
 
-- [ ] **Step 7: Update `permission-key-naming.md`** — add `roadmap.vote`, `roadmap.submit`, `roadmap.view`, `roadmap.create`, `roadmap.edit`, `roadmap.delete`, `roadmap.moderate` in the domain-prefix format used there.
+- [x] **Step 7: Update `permission-key-naming.md`** — add `roadmap.vote`, `roadmap.submit`, `roadmap.view`, `roadmap.create`, `roadmap.edit`, `roadmap.delete`, `roadmap.moderate` in the domain-prefix format used there.
 
-- [ ] **Step 8: Update `schemas/MIGRATION-ORDER.md`** — append `000795_roadmap` after `000794` in the ordered list; note FK dependencies: `roadmap_items → roadmap_categories, contents, users`; `roadmap_votes → roadmap_items, users`.
+- [x] **Step 8: Update `schemas/MIGRATION-ORDER.md`** — append `000795_roadmap` after `000794` in the ordered list; note FK dependencies: `roadmap_items → roadmap_categories, contents, users`; `roadmap_votes → roadmap_items, users`.
 
-- [ ] **Step 9: Update `sections/11-job-queue-asynq.md`** — add `roadmap:ship_notify` to the task catalog: queue `default`, payload `{item_id, title, slug}`, notifies all voters + `submitted_by` (in-app notification type `roadmap_shipped`).
+- [x] **Step 9: Update `sections/11-job-queue-asynq.md`** — add `roadmap:ship_notify` to the task catalog: queue `default`, payload `{item_id, title, slug}`, notifies all voters + `submitted_by` (in-app notification type `roadmap_shipped`).
 
-- [ ] **Step 10: Sync the spec file** — in `docs/superpowers/specs/2026-10-05-public-product-roadmap-design.md` remove `body_html` and `comment_count` from the `roadmap_items` column table (frontend renders markdown like comments; comment counts come from the comments API), add `roadmap.vote` + `roadmap.submit` to the RBAC node list, and `roadmap.shipped_window_days` to the settings list.
+- [x] **Step 10: Sync the spec file** — in `docs/superpowers/specs/2026-10-05-public-product-roadmap-design.md` remove `body_html` and `comment_count` from the `roadmap_items` column table (frontend renders markdown like comments; comment counts come from the comments API), add `roadmap.vote` + `roadmap.submit` to the RBAC node list, and `roadmap.shipped_window_days` to the settings list.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add .jeos/ docs/superpowers/specs/2026-10-05-public-product-roadmap-design.md
