@@ -152,10 +152,9 @@
 			<div class="flex items-center gap-3">
 				{#if coupon.updated_at}
 					<span class="text-xs text-[var(--color-muted)]">
-						{t('deal.last_updated', 'Last updated {date}').replace(
-							'{date}',
-							new Date(coupon.updated_at).toLocaleDateString()
-						)}
+						{t('deals.last_updated', 'Last updated {date}', {
+							date: new Date(coupon.updated_at).toLocaleDateString()
+						})}
 					</span>
 				{/if}
 				{#if data.canManage && !editing}

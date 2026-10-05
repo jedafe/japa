@@ -295,6 +295,7 @@
 		currentPageSlug={data.pageSlug}
 		quickFactsGroup={data.page?.field_group_slug ?? ''}
 		{toc}
+		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
 </SetSidebar>
 

@@ -157,6 +157,43 @@ export function formatPricePartsInline(
 	return '—';
 }
 
+/** §80 attractions — one resolved media item inside an
+ *  image_single/image_multi/media field value (backend resolves stored
+ *  media ids to {id, url, alt} before the DTO leaves the API). */
+export interface MediaFieldItem {
+	id: string;
+	url: string;
+	alt?: string;
+}
+
+/** True for the media-bearing field types whose values are rendered as
+ *  images, not text. */
+export function isMediaFieldType(fieldType: string): boolean {
+	return fieldType === 'image_single' || fieldType === 'image_multi' || fieldType === 'media';
+}
+
+/** The resolved media items of a media field value — accepts the single
+ *  object shape (image_single) and the array shape (image_multi/media);
+ *  raw/unresolved values (bare ids, unresolved failures) yield [] so the
+ *  caller falls back to the text renderer. */
+export function mediaFieldItems(v: unknown): MediaFieldItem[] {
+	const pick = (x: unknown): MediaFieldItem | null => {
+		if (x === null || typeof x !== 'object' || Array.isArray(x)) return null;
+		const o = x as Record<string, unknown>;
+		if (typeof o.url !== 'string' || o.url === '') return null;
+		return {
+			id: typeof o.id === 'string' ? o.id : '',
+			url: o.url,
+			alt: typeof o.alt === 'string' && o.alt !== '' ? o.alt : undefined
+		};
+	};
+	if (Array.isArray(v)) {
+		return v.map(pick).filter((m): m is MediaFieldItem => m !== null);
+	}
+	const single = pick(v);
+	return single ? [single] : [];
+}
+
 /** §58 — currency display precedence for money-typed fields: the field's
  *  explicit {currency_code} option wins; otherwise the host space/entity's
  *  resolved country currency (space_currency_code / entity_currency_code);
