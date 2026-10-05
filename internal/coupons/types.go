@@ -19,7 +19,19 @@ var (
 	ErrProviderHasCoupons  = errors.New("cannot delete provider with existing coupons")
 	ErrCouponAlreadyExists = errors.New("coupon code already exists")
 	ErrInvalidStatus       = errors.New("invalid coupon status")
+	// ErrDealRedirectUnavailable is a sentinel error: the deal has no
+	// click-through target (no referral_url and no provider base_url).
+	ErrDealRedirectUnavailable = errors.New("deal redirect unavailable")
 )
+
+// InternalDealProviderSlug is the reserved provider URL segment used by
+// /deal/{provider}/{slug} for internal coupons that have no
+// affiliate_providers row (provider_id IS NULL).
+const InternalDealProviderSlug = "japaconnect"
+
+// reservedCouponSlugs are coupon slug values that would collide with static
+// route segments under /api/v1/deals/*.
+var reservedCouponSlugs = map[string]bool{"partners": true}
 
 // CouponStatus represents the lifecycle state of a coupon.
 type CouponStatus string

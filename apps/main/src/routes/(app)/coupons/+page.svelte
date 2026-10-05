@@ -6,7 +6,7 @@
 	import { api } from '$lib/api/client';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
-	import type { Coupon } from '$lib/types';
+	import { dealPath, type Coupon } from '$lib/types';
 	import { currencySymbol } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
@@ -88,7 +88,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each data.coupons as coupon (coupon.id)}
 					<a
-						href="/coupons/{coupon.id}"
+						href={dealPath(coupon)}
 						class="group flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 					>
 						<div class="flex items-start justify-between gap-2">

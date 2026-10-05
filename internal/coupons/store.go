@@ -43,6 +43,15 @@ func (s *Store) getProviderByID(ctx context.Context, id pgtype.UUID) (gen.Affili
 	return rowToProvider(row), nil
 }
 
+func (s *Store) getProviderBySlug(ctx context.Context, slug string) (gen.AffiliateProvider, error) {
+	row, err := s.read.GetAffiliateProviderBySlug(ctx, slug)
+	if err != nil {
+		return gen.AffiliateProvider{}, err
+	}
+
+	return rowToProvider(row), nil
+}
+
 func (s *Store) listProviders(ctx context.Context, isActive bool, limit, offset int32) ([]gen.AffiliateProvider, error) {
 	rows, err := s.read.ListAffiliateProviders(ctx, gen.ListAffiliateProvidersParams{
 
@@ -93,6 +102,10 @@ func (s *Store) getCouponByCode(ctx context.Context, code string) (gen.GetCoupon
 	return s.read.GetCouponByCode(ctx, code)
 }
 
+func (s *Store) getCouponBySlug(ctx context.Context, slug string) (gen.GetCouponBySlugRow, error) {
+	return s.read.GetCouponBySlug(ctx, slug)
+}
+
 func (s *Store) listCoupons(ctx context.Context, status, couponType, search *string, providerID pgtype.UUID, limit, offset int32) ([]gen.ListCouponsRow, error) {
 	return s.read.ListCoupons(ctx, gen.ListCouponsParams{
 
@@ -122,6 +135,29 @@ func (s *Store) updateCoupon(ctx context.Context, c gen.UpdateCouponParams) (gen
 
 func (s *Store) deleteCoupon(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteCoupon(ctx, id)
+}
+
+// ── Slug History ────────────────────────────────────────────────────
+
+// createSlugHistory records a coupon slug rename (entity_type 'coupon') so
+// old /deal URLs keep resolving via the slug_history redirect table (§55).
+func (s *Store) createSlugHistory(ctx context.Context, couponID pgtype.UUID, oldSlug, newSlug string) error {
+	_, err := s.write.CreateSlugHistory(ctx, gen.CreateSlugHistoryParams{
+		EntityType: "coupon",
+		EntityID:   couponID,
+		OldSlug:    oldSlug,
+		NewSlug:    newSlug,
+	})
+	return err
+}
+
+// getSlugRedirect returns the most recent slug_history redirect for a
+// coupon slug, or pgx.ErrNoRows when none exists.
+func (s *Store) getSlugRedirect(ctx context.Context, oldSlug string) (gen.SlugHistory, error) {
+	return s.read.GetSlugRedirect(ctx, gen.GetSlugRedirectParams{
+		EntityType: "coupon",
+		OldSlug:    oldSlug,
+	})
 }
 
 // ── Coupon Events ───────────────────────────────────────────────────
@@ -192,6 +228,14 @@ func rowToProvider[T any](row T) gen.AffiliateProvider {
 			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
 		}
 	case gen.ListAffiliateProvidersRow:
+		return gen.AffiliateProvider{
+			ID: r.ID, Name: r.Name, Slug: r.Slug,
+			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,
+			BaseUrl: r.BaseUrl, TrackingParam: r.TrackingParam, TrackingValue: r.TrackingValue,
+			CommissionRate: r.CommissionRate, IsActive: r.IsActive, IsFeatured: r.IsFeatured,
+			AuthorCommissionPct: r.AuthorCommissionPct, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		}
+	case gen.GetAffiliateProviderBySlugRow:
 		return gen.AffiliateProvider{
 			ID: r.ID, Name: r.Name, Slug: r.Slug,
 			Description: r.Description, ProviderType: r.ProviderType, LogoMediaID: r.LogoMediaID,

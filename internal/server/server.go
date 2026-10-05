@@ -2792,6 +2792,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		r.Get("/sitemap-tags.xml", sitemapHandler.ServeTagsSitemap)
 		r.Get("/sitemap-users.xml", sitemapHandler.ServeUsersSitemap)
 		r.Get("/sitemap-images.xml", sitemapHandler.ServeImagesSitemap)
+		r.Get("/sitemap-deals.xml", sitemapHandler.ServeDealsSitemap)
 		r.Get("/og/{id}.png", ogImageHandler.ServeOGImage)
 		// Universal RSS feeds (public — no auth required, platform-scoped)
 		rssHandlers := rsspkg.NewHandlers(gen.New(database.Reader), cfg.SiteURL, cfg.SiteName)
@@ -5418,6 +5419,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/coupons", couponHandlers.ListPublicCoupons)
 			r.Get("/coupons/{id}", couponHandlers.GetCoupon)
 			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Post("/coupons/{id}/click", couponHandlers.RecordCouponClick)
+
+			// Deal pages — slug-based public routes backing /deal/* on the
+			// main app (§55 Deal Pages).
+			r.Get("/deals/partners/{slug}", couponHandlers.GetDealPartner)
+			r.Get("/deals/{slug}", couponHandlers.GetDealBySlug)
+			r.With(mw.RateLimit(vkClient.Redis(), "moderate")).Get("/deals/{slug}/go", couponHandlers.DealGo)
 
 			// Render helpers (internal — called by Go renderer, AUDIT-BE-022).
 			// Gated by InternalGuard: only service-to-service calls or

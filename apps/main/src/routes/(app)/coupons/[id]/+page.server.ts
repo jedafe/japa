@@ -1,11 +1,11 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import type { Coupon } from '$lib/types';
+import { dealPath, type Coupon } from '$lib/types';
 
 /**
- * Coupon detail at /coupons/{id} — public, SSR. Shows the full coupon with
- * code, discount, provider, terms and a CTA to the referral URL.
+ * Legacy coupon detail at /coupons/{id} — permanently redirects to the
+ * canonical slug URL /deal/{provider}/{slug} (Section 55 Deal Pages).
  *
  * Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
  */
@@ -14,7 +14,7 @@ export const load: PageServerLoad = async (event) => {
 	const id = event.params.id;
 	try {
 		const coupon = await apiGet<Coupon>(ctx, `/coupons/${id}`);
-		return { coupon };
+		throw redirect(301, dealPath(coupon));
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Coupon not found' });

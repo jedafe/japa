@@ -12,6 +12,7 @@
 	type Coupon = {
 		id: string;
 		title: string;
+		slug: string;
 		code: string;
 		coupon_type: string;
 		provider_id: string | null;
@@ -112,6 +113,7 @@
 	// `provider_id` and `is_verified` are included per Section 55 (provider linkage + verify).
 	let fields = $derived<FieldDef[]>([
 		{ key: 'title', label: t('coupons.title_field', 'Title'), type: 'text', required: true, placeholder: 'e.g. 20% off Remitly — first transfer' },
+		{ key: 'slug', label: t('coupons.slug', 'Slug'), type: 'text', placeholder: t('coupons.slug_placeholder', 'Auto-generated from title if blank') },
 		{ key: 'code', label: t('coupons.code', 'Code'), type: 'text', required: true },
 		{ key: 'coupon_type', label: t('coupons.coupon_type', 'Coupon Type'), type: 'select', options: couponTypeOptions },
 		{ key: 'provider_id', label: t('coupons.provider', 'Provider'), type: 'autocomplete', placeholder: t('coupons.provider_placeholder', 'Search provider…'), emptyMessage: t('common.no_results', 'No results found'), fetcher: fetchProviderOptions, initialFetcher: fetchProviderOptionsInitial, getSelectedLabel: getProviderSelectedLabel },
@@ -214,6 +216,7 @@
 				is_verified: !!body.is_verified,
 				status: body.is_active ? 'active' : 'suspended'
 			};
+			if (body.slug) payload.slug = String(body.slug).trim();
 			if (body.provider_id) payload.provider_id = String(body.provider_id);
 			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
 			if (body.description) payload.description = String(body.description).trim();
@@ -234,6 +237,7 @@
 				is_verified: !!body.is_verified,
 				status: body.is_active ? 'active' : 'suspended'
 			};
+			if (body.slug) payload.slug = String(body.slug).trim();
 			if (body.provider_id) payload.provider_id = String(body.provider_id);
 			if (body.currency) payload.currency = String(body.currency).trim().toUpperCase();
 			if (body.description) payload.description = String(body.description).trim();
@@ -276,6 +280,10 @@
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.code', 'Code')}</p>
 			<p class="mt-1 font-mono text-sm font-medium" style="color: var(--color-foreground)">{row.code}</p>
+		</div>
+		<div>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.slug', 'Slug')}</p>
+			<p class="mt-1 font-mono text-sm font-medium" style="color: var(--color-foreground)">{row.slug}</p>
 		</div>
 		<div>
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('coupons.coupon_type', 'Type')}</p>
