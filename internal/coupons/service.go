@@ -431,6 +431,14 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 
 	s.invalidateCouponCaches(ctx, c.ID, current.Slug, c.Slug)
 
+	// Org-linked providers are created inactive (providerForOrg) so unvetted
+	// org branding is never public; approving the org's first deal activates
+	// the provider here. This also covers the admin moderation PATCH, which
+	// routes through UpdateCoupon (§55).
+	if input.Status == string(CouponStatusActive) && c.ProviderID.Valid {
+		s.activateOrgProvider(ctx, c.ProviderID)
+	}
+
 	return c, nil
 }
 
@@ -980,14 +988,50 @@ func (s *Service) providerForOrg(ctx context.Context, org gen.Organization) (gen
 		} else if !isNoRows(err) {
 			return gen.AffiliateProvider{}, fmt.Errorf("checking provider slug: %w", err)
 		}
+		// Inactive until the org's first deal is approved — /deals/partners
+		// and /deal/{provider} only expose active providers, so unvetted org
+		// branding never goes public at submission time (§55). Activated in
+		// UpdateCoupon via activateOrgProvider.
 		return s.store.createProvider(ctx, gen.CreateAffiliateProviderParams{
 			Name: org.Name, Slug: candidate, Description: org.Description,
 			ProviderType: string(ProviderTypeBoth), BaseUrl: org.WebsiteUrl,
-			LogoMediaID: org.LogoMediaID, IsActive: true,
+			LogoMediaID: org.LogoMediaID, IsActive: false,
 			OrganizationID: org.ID,
 		})
 	}
 	return gen.AffiliateProvider{}, fmt.Errorf("could not find unique provider slug after %d attempts", maxCouponSlugAttempts)
+}
+
+// activateOrgProvider flips an organization-linked provider to active once a
+// deal under it is approved (§55 Deals Redesign — org providers start
+// inactive). UpdateAffiliateProvider is a full-column overwrite, so every
+// existing field is passed back unchanged except is_active. Best-effort: the
+// coupon update already committed, so failures are logged, not returned.
+func (s *Service) activateOrgProvider(ctx context.Context, providerID pgtype.UUID) {
+	p, err := s.store.getProviderByID(ctx, providerID)
+	if err != nil {
+		slog.Warn("coupons: failed to load provider for org activation",
+			"provider_id", providerID.String(), "error", err)
+		return
+	}
+	if !p.OrganizationID.Valid || p.IsActive {
+		return
+	}
+	if _, err := s.store.updateProvider(ctx, gen.UpdateAffiliateProviderParams{
+		ID: p.ID, Name: p.Name, Description: p.Description,
+		ProviderType: p.ProviderType, LogoMediaID: p.LogoMediaID,
+		BaseUrl: p.BaseUrl, TrackingParam: p.TrackingParam, TrackingValue: p.TrackingValue,
+		CommissionRate: p.CommissionRate, IsActive: true, IsFeatured: p.IsFeatured,
+		Category: p.Category,
+	}); err != nil {
+		slog.Warn("coupons: failed to activate org provider",
+			"provider_id", providerID.String(), "error", err)
+		return
+	}
+
+	// The provider now renders in /deals/partners — flush list/slug caches.
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_list:*"))
+	s.deleteKeysByPattern(ctx, valkey.MustKey("coupon_slug:*"))
 }
 
 // ListOrgDeals lists an org's coupons in all statuses (submissions view).
