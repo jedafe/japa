@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	jcvalkey "github.com/jedafe/japa/internal/valkey"
+	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
@@ -46,11 +47,10 @@ type Service struct {
 // Ref: conventions/valkey-keys-catalog.md (jc:roadmap:board).
 const boardCacheKey = "jc:roadmap:board"
 
-// taskTypeShipNotify is the Asynq task enqueued fire-and-forget when an
-// item transitions to shipped (Rule 8). Registered in the §11 task
-// catalog; the worker handler is wired in internal/worker.
+// worker.TypeRoadmapShipNotify is the Asynq task enqueued fire-and-forget
+// when an item transitions to shipped (Rule 8). Registered in the §11
+// task catalog; the handler is HandleRoadmapShipNotify in internal/worker.
 // Ref: sections/11-job-queue-asynq.md (roadmap:ship_notify).
-const taskTypeShipNotify = "roadmap:ship_notify"
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
@@ -978,7 +978,7 @@ func (s *Service) enqueueShipNotify(item gen.RoadmapItem) {
 		return
 	}
 
-	if err := s.enqueuer.Enqueue(taskTypeShipNotify, payload); err != nil {
+	if err := s.enqueuer.Enqueue(worker.TypeRoadmapShipNotify, payload); err != nil {
 		slog.Error("enqueue roadmap ship_notify", "item_id", item.ID, "error", err)
 	}
 }

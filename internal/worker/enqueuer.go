@@ -269,6 +269,8 @@ var taskTier = func() map[string]string {
 		// §111 Service Packages & Bookings (ADR-123) — notification fan-outs, default tier.
 		TypeServiceBookingCreated,
 		TypeServiceBookingStatusChanged,
+		// §113 Public Product Roadmap (ADR-127) — ship notification fan-out, default tier.
+		TypeRoadmapShipNotify,
 	} {
 		m[t] = QueueDefault
 	}
@@ -435,6 +437,8 @@ var taskTypeCatalog = []struct {
 	{TypeServiceBookingStatusChanged, "default", "Notify booker of a service booking status transition"},
 	{TypeServiceBookingFeeSettle, "critical", "Recognize or refund the platform fee for a service booking (idempotent by booking_id)"},
 	{TypeServiceBookingExpirePending, "low", "Hourly sweep — expire pending bookings past their response SLA"},
+	// §113 Public Product Roadmap (ADR-127)
+	{TypeRoadmapShipNotify, "default", "Notify roadmap voters + submitter that an item shipped"},
 	{TypeAssessmentScoreSubmission, "default", "Score a completed readiness assessment, generate roadmap, notify (§71, ADR-071)"},
 	{TypeAssessmentCleanupAnonymous, "default", "Hourly cleanup of anonymous assessment_results older than 24h (§71)"},
 	{TypeStudioRunBatch, "default", "Enqueue individual content.generate_draft jobs for a studio batch (§75, ADR-076)"},
