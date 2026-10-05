@@ -40,7 +40,7 @@
 	// Load affiliate providers for the default_provider_id select (§55).
 	onMount(async () => {
 		try {
-			const res = await affiliateProvidersAdminApi.list('page_size=100');
+			const res = await affiliateProvidersAdminApi.list('page_size=100&is_active=true');
 			if (res.ok && Array.isArray(res.data)) {
 				providerOptions = (res.data as Provider[]).map((p) => ({ value: p.id, label: p.name }));
 			}
