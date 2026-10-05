@@ -71,6 +71,9 @@ var Registry = []Feature{
 	{Key: "achievement.enabled", Label: "Community Achievement Feed", Default: false},
 	{Key: "service_directory.enabled", Label: "Service Directory", Default: false},
 	{Key: "service_packages.enabled", Label: "Service Packages & Bookings", Default: false},
+	// §113 Public Product Roadmap (ADR-127) — community-votable board +
+	// changelog. Default on; all routes 404 via features.Gate when off.
+	{Key: "roadmap.enabled", Label: "Public Product Roadmap", Default: true},
 	// V2 Functional Tools (§90–§97, §99–§101) — Phase 49
 	{Key: "visa_routes.enabled", Label: "Visa Route Comparison", Default: false},
 	{Key: "appointment_alert.enabled", Label: "Embassy Appointment Alerter", Default: false},

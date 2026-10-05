@@ -127,6 +127,7 @@ import (
 	"github.com/jedafe/japa/internal/renderer"
 	"github.com/jedafe/japa/internal/reports"
 	"github.com/jedafe/japa/internal/reviews"
+	"github.com/jedafe/japa/internal/roadmap"
 	rsspkg "github.com/jedafe/japa/internal/rss"
 	"github.com/jedafe/japa/internal/scamalert"
 	"github.com/jedafe/japa/internal/scholarships"
@@ -880,6 +881,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ticketService.SetSettings(settingsService)
 	ticketHandlers := tickets.NewHandlers(ticketService)
 	ticketHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in tickets responses
+
+	// Public Product Roadmap subsystem (Section 113, ADR-127).
+	roadmapService := roadmap.NewServiceWithEnqueuer(database, taskEnqueuer)
+	roadmapService.SetSettings(settingsService)
+	roadmapService.SetValkey(vkClient.Redis()) // jc:roadmap:board cache
+	roadmapHandlers := roadmap.NewHandlers(roadmapService)
 
 	// Coupons & External Affiliate Providers subsystem (Section 55).
 	couponService := coupons.NewServiceWithEnqueuer(database, taskEnqueuer)
@@ -4589,6 +4596,60 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Put("/admin/ticket-types/{id}", ticketHandlers.UpdateTicketType)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
 					Delete("/admin/ticket-types/{id}", ticketHandlers.DeleteTicketType)
+			})
+
+			// Public Product Roadmap routes (Section 113, ADR-127).
+			// Feature-flagged via features.Gate — every roadmap route
+			// returns 404 when roadmap.enabled is off (ADR-042 contract).
+			r.With(features.Gate(featureChecker, "roadmap.enabled")).Group(func(r chi.Router) {
+				// Public board reads — OptionalAuth so guests can browse
+				// and authenticated viewers get has_voted on board items.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/roadmap/board", roadmapHandlers.GetBoard)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/roadmap/changelog", roadmapHandlers.GetChangelog)
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/roadmap/items/{slug}", roadmapHandlers.GetItem)
+
+				// Member actions — votes + community submissions.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.vote"), mw.RateLimit(vkClient.Redis(), "moderate")).
+					Post("/roadmap/items/{id}/vote", roadmapHandlers.CastVote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.vote"), mw.RateLimit(vkClient.Redis(), "moderate")).
+					Delete("/roadmap/items/{id}/vote", roadmapHandlers.RemoveVote)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.submit"), mw.RateLimit(vkClient.Redis(), "form_submission")).
+					Post("/roadmap/submissions", roadmapHandlers.CreateSubmission)
+
+				// Admin item management.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.view")).
+					Get("/admin/roadmap/items", roadmapHandlers.AdminListItems)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.create")).
+					Post("/admin/roadmap/items", roadmapHandlers.AdminCreateItem)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.view")).
+					Get("/admin/roadmap/items/{id}", roadmapHandlers.AdminGetItem)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Patch("/admin/roadmap/items/{id}", roadmapHandlers.AdminUpdateItem)
+				// Soft delete always; ?force=true engages the admin.hard_delete
+				// check inside rbac.RequireForceDelete (Rule 11).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.delete"), rbac.RequireForceDelete(rbacResolver)).
+					Delete("/admin/roadmap/items/{id}", roadmapHandlers.AdminDeleteItem)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Post("/admin/roadmap/items/{id}/restore", roadmapHandlers.AdminRestoreItem)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.moderate")).
+					Patch("/admin/roadmap/items/{id}/status", roadmapHandlers.AdminSetStatus)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Post("/admin/roadmap/items/reorder", roadmapHandlers.AdminReorderItems)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.moderate")).
+					Get("/admin/roadmap/submissions", roadmapHandlers.AdminListSubmissions)
+
+				// Category management.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.view")).
+					Get("/admin/roadmap/categories", roadmapHandlers.AdminListCategories)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Post("/admin/roadmap/categories", roadmapHandlers.AdminCreateCategory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Patch("/admin/roadmap/categories/{id}", roadmapHandlers.AdminUpdateCategory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+					Delete("/admin/roadmap/categories/{id}", roadmapHandlers.AdminDeleteCategory)
 			})
 
 			// i18n Translation management (admin) — catalog: /admin/i18n/*.
