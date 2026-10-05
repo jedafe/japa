@@ -251,6 +251,15 @@ func (s *Service) IsMember(ctx context.Context, orgID, userID pgtype.UUID) (bool
 	return s.store.IsMember(ctx, orgID, userID)
 }
 
+// MemberRole returns the caller's role in the organization
+// ("owner"|"admin"|"editor"|"member"). Non-members get an error wrapping
+// pgx.ErrNoRows — callers should map that to 403, not 404 (BUG-021).
+// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md
+// (organization deal submissions gate on this role).
+func (s *Service) MemberRole(ctx context.Context, orgID, userID pgtype.UUID) (string, error) {
+	return s.store.GetMemberRole(ctx, orgID, userID)
+}
+
 // MyOrganization is one row of GET /me/organizations — the org + the caller's
 // role in it. The role lets the dashboard badge owner/admin/member.
 type MyOrganization struct {
