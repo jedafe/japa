@@ -1957,6 +1957,7 @@ export interface Coupon {
 	provider_id: string | null;
 	coupon_type: string;
 	title: string;
+	slug?: string;
 	description?: string | null;
 	code: string;
 	discount_type?: string | null;
@@ -1976,6 +1977,38 @@ export interface Coupon {
 	provider_name?: string | null;
 	provider_slug?: string | null;
 	provider_logo_media_id?: string | null;
+	provider_base_url?: string | null;
+	provider_is_active?: boolean | null;
+}
+
+/** Reserved provider URL segment for internal (provider-less) coupons. */
+export const INTERNAL_DEAL_PROVIDER_SLUG = 'japaconnect';
+
+/** Returns the /deal/{provider}/{slug} canonical path for a coupon. */
+export function dealPath(coupon: Pick<Coupon, 'slug' | 'provider_slug'>): string {
+	return `/deal/${coupon.provider_slug ?? INTERNAL_DEAL_PROVIDER_SLUG}/${coupon.slug}`;
+}
+
+/** Affiliate provider profile returned by GET /deals/partners/{slug}. */
+export interface DealPartnerProvider {
+	id: string;
+	name: string;
+	slug: string;
+	description?: string | null;
+	provider_type: string;
+	logo_media_id?: string | null;
+	base_url?: string | null;
+	is_active: boolean;
+	is_featured: boolean;
+	commission_rate?: number | string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+/** GET /deals/partners/{slug} payload — provider + its active deals. */
+export interface DealPartner {
+	provider: DealPartnerProvider;
+	coupons: Coupon[];
 }
 
 /* ------------------------------------------------------------------ *

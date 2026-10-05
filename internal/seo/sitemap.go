@@ -219,6 +219,7 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		{Loc: base + "/sitemap-tags.xml"},
 		{Loc: base + "/sitemap-users.xml", LastMod: usersLastMod},
 		{Loc: base + "/sitemap-images.xml", LastMod: imagesLastMod},
+		{Loc: base + "/sitemap-deals.xml", LastMod: h.latestDealsLastMod(r.Context())},
 	}
 
 	var buf strings.Builder
@@ -449,6 +450,96 @@ func (h *SitemapHandler) ServeTagsSitemap(w http.ResponseWriter, r *http.Request
 	}
 
 	h.serveSitemapBytes(w, r, "tags", renderURLSetXML(entries))
+}
+
+// latestDealsLastMod returns the most recent updated_at among live coupons,
+// or empty when none exist. Used as the lastmod for /sitemap-deals.xml.
+func (h *SitemapHandler) latestDealsLastMod(ctx context.Context) string {
+	var ts time.Time
+
+	err := h.reader.QueryRow(ctx, `SELECT updated_at FROM coupons
+		 WHERE status = 'active' AND (expires_at IS NULL OR expires_at > now())
+		 ORDER BY updated_at DESC LIMIT 1`).Scan(&ts)
+	if err != nil {
+		return ""
+	}
+
+	return ts.Format(time.RFC3339)
+}
+
+// ServeDealsSitemap serves deal-page sitemap entries — one URL per live
+// coupon (/deal/{provider-slug}/{coupon-slug}) plus one per active provider
+// that has at least one live deal (/deal/{provider-slug}). Coupons without
+// a provider use the reserved 'japaconnect' segment.
+// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Pages).
+func (h *SitemapHandler) ServeDealsSitemap(w http.ResponseWriter, r *http.Request) {
+
+	if h.cachedSitemapXML(w, r, "deals") {
+		return
+	}
+
+	base := h.baseURL(r)
+	entries := make([]urlEntry, 0)
+
+	rows, err := h.reader.Query(r.Context(), `SELECT c.slug, COALESCE(ap.slug, 'japaconnect'), c.updated_at
+		 FROM coupons c
+		 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
+		 WHERE c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
+		   AND (ap.id IS NULL OR ap.is_active)
+		 ORDER BY c.updated_at DESC`)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		return
+	}
+
+	for rows.Next() {
+		var slug, providerSlug string
+
+		var updatedAt time.Time
+		if err := rows.Scan(&slug, &providerSlug, &updatedAt); err != nil {
+			continue
+		}
+
+		entries = append(entries, urlEntry{
+			Loc:        fmt.Sprintf("%s/deal/%s/%s", base, providerSlug, slug),
+			LastMod:    updatedAt.Format(time.RFC3339),
+			ChangeFreq: "weekly",
+			Priority:   "0.5",
+		})
+	}
+	rows.Close()
+
+	// Partner landing pages for active providers with at least one live deal.
+	prows, err := h.reader.Query(r.Context(), `SELECT ap.slug, MAX(c.updated_at)
+		 FROM affiliate_providers ap
+		 JOIN coupons c ON c.provider_id = ap.id
+		  AND c.status = 'active' AND (c.expires_at IS NULL OR c.expires_at > now())
+		 WHERE ap.is_active
+		 GROUP BY ap.slug`)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to generate sitemap")
+		return
+	}
+
+	defer prows.Close()
+
+	for prows.Next() {
+		var slug string
+
+		var updatedAt time.Time
+		if err := prows.Scan(&slug, &updatedAt); err != nil {
+			continue
+		}
+
+		entries = append(entries, urlEntry{
+			Loc:        fmt.Sprintf("%s/deal/%s", base, slug),
+			LastMod:    updatedAt.Format(time.RFC3339),
+			ChangeFreq: "weekly",
+			Priority:   "0.5",
+		})
+	}
+
+	h.serveSitemapBytes(w, r, "deals", renderURLSetXML(entries))
 }
 
 // ServeUsersSitemap serves user profile sitemap entries (P5.6 — Task 31),

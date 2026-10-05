@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/valkey"
@@ -162,6 +163,7 @@ type CreateCouponInput struct {
 	ProviderID    *pgtype.UUID        `json:"provider_id,omitempty"`
 	CouponType    string              `json:"coupon_type,omitempty"`
 	Title         string              `json:"title"`
+	Slug          *string             `json:"slug,omitempty"`
 	Code          string              `json:"code"`
 	Status        string              `json:"status,omitempty"`
 	Description   *string             `json:"description,omitempty"`
@@ -177,9 +179,14 @@ type CreateCouponInput struct {
 
 // CreateCoupon is an exported method.
 func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input CreateCouponInput) (gen.Coupon, error) {
+	slug, err := s.resolveCouponSlug(ctx, input.Slug, input.Title, pgtype.UUID{})
+	if err != nil {
+		return gen.Coupon{}, err
+	}
+
 	c, err := s.store.createCoupon(ctx, gen.CreateCouponParams{
 		ProviderID: toNullableUUID(input.ProviderID), CouponType: input.CouponType,
-		Title: input.Title, Description: input.Description, Code: input.Code,
+		Title: input.Title, Slug: slug, Description: input.Description, Code: input.Code,
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
 		IsVerified: input.IsVerified, Status: input.Status,
@@ -189,9 +196,50 @@ func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input Cr
 		return gen.Coupon{}, err
 	}
 
-	s.invalidateCouponCaches(ctx, c.ID)
+	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
 
 	return c, nil
+}
+
+// maxCouponSlugAttempts bounds the suffix loop in resolveCouponSlug so a
+// pathological run of collisions cannot loop forever (mirrors
+// content.MaxSlugAttempts).
+const maxCouponSlugAttempts = 100
+
+// resolveCouponSlug normalizes an optional admin-supplied slug (or derives
+// one from the title via content.Slugify) and returns a unique slug for the
+// coupons table. excludeID skips the coupon being updated so an unchanged
+// slug still resolves. Reserved slugs that collide with /api/v1/deals
+// static segments are suffixed like any other collision.
+func (s *Service) resolveCouponSlug(ctx context.Context, input *string, title string, excludeID pgtype.UUID) (string, error) {
+	base := content.Slugify(title)
+	if input != nil && *input != "" {
+		base = content.Slugify(*input)
+	}
+
+	for i := 0; i < maxCouponSlugAttempts; i++ {
+		candidate := base
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		if reservedCouponSlugs[candidate] {
+			continue
+		}
+
+		existing, err := s.store.getCouponBySlug(ctx, candidate)
+		if err != nil {
+			if isNoRows(err) {
+				return candidate, nil
+			}
+
+			return "", fmt.Errorf("checking coupon slug: %w", err)
+		}
+		if excludeID.Valid && existing.ID == excludeID {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not find unique coupon slug after %d attempts", maxCouponSlugAttempts)
 }
 
 // GetCoupon is an exported method.
@@ -277,7 +325,7 @@ type UpdateCouponInput = CreateCouponInput
 
 // UpdateCoupon is an exported method.
 func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input UpdateCouponInput) (gen.Coupon, error) {
-	_, err := s.store.getCouponByID(ctx, id)
+	current, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return gen.Coupon{}, ErrCouponNotFound
@@ -286,8 +334,15 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 		return gen.Coupon{}, fmt.Errorf("checking coupon: %w", err)
 	}
 
+	slug := current.Slug
+	if input.Slug != nil && *input.Slug != "" && content.Slugify(*input.Slug) != current.Slug {
+		if slug, err = s.resolveCouponSlug(ctx, input.Slug, input.Title, id); err != nil {
+			return gen.Coupon{}, err
+		}
+	}
+
 	c, err := s.store.updateCoupon(ctx, gen.UpdateCouponParams{
-		ID: id, Title: input.Title, Description: input.Description, Code: input.Code,
+		ID: id, Title: input.Title, Slug: slug, Description: input.Description, Code: input.Code,
 		ProviderID:   toNullableUUID(input.ProviderID),
 		DiscountType: input.DiscountType, DiscountValue: toNullableNumeric(input.DiscountValue),
 		Currency: input.Currency, TermsUrl: input.TermsURL, ReferralUrl: input.ReferralURL,
@@ -298,14 +353,23 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 		return gen.Coupon{}, err
 	}
 
-	s.invalidateCouponCaches(ctx, c.ID)
+	// Record a slug redirect so old /deal/{provider}/{slug} URLs keep
+	// resolving (§55 Deal Pages). Best-effort, mirrors content.RecordSlugChange.
+	if c.Slug != current.Slug {
+		if err := s.store.createSlugHistory(ctx, id, current.Slug, c.Slug); err != nil {
+			slog.Warn("coupons: failed to record slug history",
+				"coupon_id", id.String(), "old_slug", current.Slug, "new_slug", c.Slug, "error", err)
+		}
+	}
+
+	s.invalidateCouponCaches(ctx, c.ID, current.Slug, c.Slug)
 
 	return c, nil
 }
 
 // DeleteCoupon is an exported method.
 func (s *Service) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
-	_, err := s.store.getCouponByID(ctx, id)
+	current, err := s.store.getCouponByID(ctx, id)
 	if err != nil {
 		if isNoRows(err) {
 			return ErrCouponNotFound
@@ -318,15 +382,16 @@ func (s *Service) DeleteCoupon(ctx context.Context, id pgtype.UUID) error {
 		return err
 	}
 
-	s.invalidateCouponCaches(ctx, id)
+	s.invalidateCouponCaches(ctx, id, current.Slug)
 
 	return nil
 }
 
-// invalidateCouponCaches clears the single-coupon cache (jc:coupon:{id}) and
-// the platform coupon list cache (jc:coupon_list:{platform}) after any coupon
+// invalidateCouponCaches clears the single-coupon cache (jc:coupon:{id}),
+// the slug cache (jc:coupon_slug:{slug}) for every slug given, and the
+// platform coupon list cache (jc:coupon_list:{platform}) after any coupon
 // mutation (Section 55). Best-effort: errors are logged.
-func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UUID) {
+func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UUID, slugs ...string) {
 	if s.vk == nil {
 		return
 	}
@@ -335,9 +400,126 @@ func (s *Service) invalidateCouponCaches(ctx context.Context, couponID pgtype.UU
 		valkey.MustKey("coupon:%s", couponID.String()),
 		valkey.MustKey("coupon_list:"),
 	}
+	for _, slug := range slugs {
+		if slug != "" {
+			keys = append(keys, valkey.MustKey("coupon_slug:%s", slug))
+		}
+	}
 	if err := s.vk.Del(ctx, keys...).Err(); err != nil {
 		slog.Warn("coupons: failed to invalidate caches", "keys", keys, "error", err)
 	}
+}
+
+// ── Deal Pages (Section 55) ─────────────────────────────────────────
+
+// ResolveCouponBySlug returns the coupon row for a deal slug, cached under
+// jc:coupon_slug:{slug} (TTL 15min — Section 55). When the slug is not found
+// it consults slug_history (entity_type 'coupon') so renamed deals keep
+// resolving; the returned row always carries the canonical current slug.
+func (s *Service) ResolveCouponBySlug(ctx context.Context, slug string) (gen.GetCouponBySlugRow, error) {
+	cacheKey := valkey.MustKey("coupon_slug:%s", slug)
+	if s.vk != nil {
+		if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
+			var c gen.GetCouponBySlugRow
+			if jsonErr := json.Unmarshal([]byte(cached), &c); jsonErr == nil {
+				return c, nil
+			}
+		}
+	}
+
+	c, err := s.store.getCouponBySlug(ctx, slug)
+	if err != nil {
+		if !isNoRows(err) {
+			return gen.GetCouponBySlugRow{}, fmt.Errorf("getting coupon by slug: %w", err)
+		}
+
+		// Renamed-deal redirect via slug_history.
+		history, histErr := s.store.getSlugRedirect(ctx, slug)
+		if histErr != nil {
+			return gen.GetCouponBySlugRow{}, ErrCouponNotFound
+		}
+
+		c, err = s.store.getCouponBySlug(ctx, history.NewSlug)
+		if err != nil {
+			if isNoRows(err) {
+				return gen.GetCouponBySlugRow{}, ErrCouponNotFound
+			}
+
+			return gen.GetCouponBySlugRow{}, fmt.Errorf("getting coupon by redirected slug: %w", err)
+		}
+	}
+
+	// Best-effort cache write.
+	if s.vk != nil {
+		if data, jsonErr := json.Marshal(c); jsonErr == nil {
+			if err := s.vk.Set(ctx, cacheKey, string(data), couponCacheTTL).Err(); err != nil {
+				slog.Warn("coupons: failed to cache coupon by slug", "slug", slug, "error", err)
+			}
+		}
+	}
+
+	return c, nil
+}
+
+// DealPartner is the public payload for GET /deals/partners/{slug} — the
+// provider profile plus its active coupons.
+type DealPartner struct {
+	Provider gen.AffiliateProvider      `json:"provider"`
+	Coupons  []gen.ListActiveCouponsRow `json:"coupons"`
+}
+
+// GetDealPartner resolves an active affiliate provider by slug with its
+// active coupons for the /deal/{provider} landing page (Section 55).
+func (s *Service) GetDealPartner(ctx context.Context, slug string) (*DealPartner, error) {
+	p, err := s.store.getProviderBySlug(ctx, slug)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, ErrProviderNotFound
+		}
+
+		return nil, fmt.Errorf("getting provider by slug: %w", err)
+	}
+
+	if !p.IsActive {
+		return nil, ErrProviderNotFound
+	}
+
+	coupons, err := s.store.listActiveCoupons(ctx, p.ID, nil, nil, MaxPageSize, 0)
+	if err != nil {
+		return nil, fmt.Errorf("listing provider coupons: %w", err)
+	}
+
+	if coupons == nil {
+		coupons = []gen.ListActiveCouponsRow{}
+	}
+
+	return &DealPartner{Provider: p, Coupons: coupons}, nil
+}
+
+// ResolveDealClick returns the click-through target for /deals/{slug}/go:
+// the coupon's referral_url while the deal is live, otherwise the provider's
+// base_url as a soft landing. Returns ErrDealRedirectUnavailable when the
+// deal has no target at all (Section 55 Deal Pages).
+func (s *Service) ResolveDealClick(ctx context.Context, slug string) (target string, coupon gen.GetCouponBySlugRow, err error) {
+	coupon, err = s.ResolveCouponBySlug(ctx, slug)
+	if err != nil {
+		return "", coupon, err
+	}
+
+	live := coupon.Status == string(CouponStatusActive)
+	if live && coupon.ExpiresAt.Valid && coupon.ExpiresAt.Time.Before(time.Now()) {
+		live = false
+	}
+
+	if live && coupon.ReferralUrl != nil && *coupon.ReferralUrl != "" {
+		return *coupon.ReferralUrl, coupon, nil
+	}
+
+	if coupon.ProviderBaseUrl != nil && *coupon.ProviderBaseUrl != "" {
+		return *coupon.ProviderBaseUrl, coupon, nil
+	}
+
+	return "", coupon, ErrDealRedirectUnavailable
 }
 
 // ── Coupon Events ───────────────────────────────────────────────────

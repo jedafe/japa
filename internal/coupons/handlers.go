@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,7 +98,8 @@ func parseQueryString(r *http.Request, key string) *string {
 
 func handleServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrCouponNotFound), errors.Is(err, ErrProviderNotFound):
+	case errors.Is(err, ErrCouponNotFound), errors.Is(err, ErrProviderNotFound),
+		errors.Is(err, ErrDealRedirectUnavailable):
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, ErrProviderHasCoupons):
 		errpkg.WriteError(w, http.StatusConflict, "provider_has_coupons", err.Error())
@@ -200,6 +202,69 @@ func (h *Handlers) RecordCouponClick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]string{"status": "recorded"}})
+}
+
+// ── Public Deal Routes (Section 55 — Deal Pages) ────────────────────
+
+// GetDealPartner handles GET /api/v1/deals/partners/{slug} — the provider
+// profile plus its active coupons for the /deal/{provider} landing page.
+func (h *Handlers) GetDealPartner(w http.ResponseWriter, r *http.Request) {
+
+	slug := chi.URLParam(r, "slug")
+
+	partner, err := h.Service.GetDealPartner(r.Context(), slug)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.resolveLiterals(r, partner)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": partner})
+}
+
+// GetDealBySlug handles GET /api/v1/deals/{slug} — coupon detail by slug.
+// Renamed slugs resolve through slug_history; the payload's slug and
+// provider_slug fields let the frontend 301 to the canonical
+// /deal/{provider}/{slug} URL.
+func (h *Handlers) GetDealBySlug(w http.ResponseWriter, r *http.Request) {
+
+	slug := chi.URLParam(r, "slug")
+
+	coupon, err := h.Service.ResolveCouponBySlug(r.Context(), slug)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.resolveLiterals(r, &coupon)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
+}
+
+// DealGo handles GET /api/v1/deals/{slug}/go — records a 'click'
+// coupon_event (best-effort, mirroring POST /coupons/:id/click) then 302s to
+// the resolved click-through target (referral_url, or the provider base_url
+// for expired/untargeted deals).
+func (h *Handlers) DealGo(w http.ResponseWriter, r *http.Request) {
+
+	slug := chi.URLParam(r, "slug")
+
+	target, coupon, err := h.Service.ResolveDealClick(r.Context(), slug)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var userID *pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil && user.UserID.Valid {
+		userID = &user.UserID
+	}
+	if err := h.Service.RecordCouponEvent(r.Context(), coupon.ID, "click", userID, nil); err != nil {
+		slog.Warn("deals: failed to record go click", "slug", slug, "error", err)
+	}
+
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 // ── Admin Affiliate Provider Routes ─────────────────────────────────
