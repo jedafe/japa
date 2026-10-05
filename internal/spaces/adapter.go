@@ -26,15 +26,22 @@ func NewPostCheckerAdapter(svc *Service) *PostCheckerAdapter {
 // admins bypass the membership/permission check — they can post to any space
 // without joining it first (Section 03 — admin override).
 func (a *PostCheckerAdapter) CanPostInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
+	space, err := a.Service.GetSpace(ctx, spaceID)
+	if err != nil {
+		return false, fmt.Errorf("loading space for post check: %w", err)
+	}
+
+	// §80 wiki-only space types accept no posts — structural rule checked
+	// before the super-admin bypass (a wiki-only space has no feed for the
+	// content to land in, so the override doesn't apply).
+	if a.Service.IsWikiOnlyType(ctx, space.SpaceTypeID) {
+		return false, ErrWikiOnlySpace
+	}
+
 	// Super admins bypass all posting-perm checks.
 	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, userID)
 	if err == nil && isSuperAdmin {
 		return true, nil
-	}
-
-	space, err := a.Service.GetSpace(ctx, spaceID)
-	if err != nil {
-		return false, fmt.Errorf("loading space for post check: %w", err)
 	}
 
 	return a.Service.CanPostInSpace(ctx, space, userID, a.PermChecker, a.VerifiedChecker), nil
@@ -43,14 +50,19 @@ func (a *PostCheckerAdapter) CanPostInSpace(ctx context.Context, spaceID, userID
 // CanCommentInSpace loads the space and checks the commenting_perm axis
 // (Section 05 lines 145-154, BUG-002). Super admins bypass the check.
 func (a *PostCheckerAdapter) CanCommentInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
-	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, userID)
-	if err == nil && isSuperAdmin {
-		return true, nil
-	}
-
 	space, err := a.Service.GetSpace(ctx, spaceID)
 	if err != nil {
 		return false, fmt.Errorf("loading space for comment check: %w", err)
+	}
+
+	// §80 wiki-only space types accept no comments (see CanPostInSpace).
+	if a.Service.IsWikiOnlyType(ctx, space.SpaceTypeID) {
+		return false, ErrWikiOnlySpace
+	}
+
+	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, userID)
+	if err == nil && isSuperAdmin {
+		return true, nil
 	}
 
 	return a.Service.CanCommentInSpace(ctx, space, userID, a.PermChecker, a.VerifiedChecker), nil
@@ -59,14 +71,19 @@ func (a *PostCheckerAdapter) CanCommentInSpace(ctx context.Context, spaceID, use
 // CanReplyInSpace loads the space and checks the replying_perm axis
 // (Section 05 lines 145-154, BUG-002). Super admins bypass the check.
 func (a *PostCheckerAdapter) CanReplyInSpace(ctx context.Context, spaceID, userID pgtype.UUID) (bool, error) {
-	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, userID)
-	if err == nil && isSuperAdmin {
-		return true, nil
-	}
-
 	space, err := a.Service.GetSpace(ctx, spaceID)
 	if err != nil {
 		return false, fmt.Errorf("loading space for reply check: %w", err)
+	}
+
+	// §80 wiki-only space types accept no replies (see CanPostInSpace).
+	if a.Service.IsWikiOnlyType(ctx, space.SpaceTypeID) {
+		return false, ErrWikiOnlySpace
+	}
+
+	isSuperAdmin, err := a.Service.IsSuperAdmin(ctx, userID)
+	if err == nil && isSuperAdmin {
+		return true, nil
 	}
 
 	return a.Service.CanReplyInSpace(ctx, space, userID, a.PermChecker, a.VerifiedChecker), nil

@@ -46,6 +46,13 @@ func (h *Handlers) CreateSpaceRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §80 wiki-only space types carry no rules surface.
+	if h.Service.IsWikiOnlyType(r.Context(), space.SpaceTypeID) {
+		errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
+			"This space is wiki-only")
+		return
+	}
+
 	var req struct {
 		Title    string `json:"title"`
 		Body     string `json:"body"`

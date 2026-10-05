@@ -133,6 +133,44 @@ func DefaultPermAxes() SpacePermAxes {
 	}
 }
 
+// ErrWikiOnlySpace rejects writes into a space whose type is wiki-only
+// (§80 Wiki-Only Space Types & Attractions — a wiki-only space has no
+// community surface). The WikiOnlySpace marker method lets consumers in
+// other packages detect it via errors.As without importing this package.
+var ErrWikiOnlySpace = wikiOnlySpaceError{errors.New("wiki_only_space")}
+
+type wikiOnlySpaceError struct{ error }
+
+func (wikiOnlySpaceError) WikiOnlySpace() bool { return true }
+
+// WikiOnlyPermAxes returns the forced axes for wiki-only space types:
+// public visibility, admin-only write surface, invite-only join (§80).
+func WikiOnlyPermAxes() SpacePermAxes {
+	return SpacePermAxes{
+		Visibility: VisibilityPublic,
+		Posting:    PermAdmins,
+		Replying:   PermAdmins,
+		Commenting: PermAdmins,
+		Joining:    JoiningInvite,
+	}
+}
+
+// IsWikiOnlyType reports whether the given space type is wiki-only.
+// Fails closed — a lookup error must not convert a community space into
+// a wiki-only one.
+func (s *Service) IsWikiOnlyType(ctx context.Context, spaceTypeID pgtype.UUID) bool {
+	if !spaceTypeID.Valid {
+		return false
+	}
+
+	st, err := s.read.GetSpaceTypeByID(ctx, spaceTypeID)
+	if err != nil {
+		return false
+	}
+
+	return st.WikiOnly
+}
+
 // sourceManager creates canonical intel_sources rows for entity profiles
 // (v2 source directory, Task 5).
 type sourceManager interface {

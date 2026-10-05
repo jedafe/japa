@@ -831,6 +831,18 @@ func (s *Service) CreateSpaceWithOwner(
 	creatorUserID pgtype.UUID,
 	parentSpaceIDs []pgtype.UUID,
 ) (gen.CreateSpaceRow, error) {
+	// §80 wiki-only space types: force the restrictive axes regardless of
+	// caller input so every write path (HTTP create, seeders, imports)
+	// produces a space with no community surface.
+	if s.IsWikiOnlyType(ctx, params.SpaceTypeID) {
+		axes := WikiOnlyPermAxes()
+		params.Visibility = axes.Visibility
+		params.PostingPerm = axes.Posting
+		params.ReplyingPerm = axes.Replying
+		params.CommentingPerm = axes.Commenting
+		params.JoiningPerm = axes.Joining
+	}
+
 	space, err := db.WithTxResult(ctx, s.db.Writer, func(q *gen.Queries) (gen.CreateSpaceRow, error) {
 		space, err := q.CreateSpace(ctx, params)
 		if err != nil {
@@ -1124,6 +1136,18 @@ func (s *Service) SetSpaceParent(ctx context.Context, spaceID, parentID pgtype.U
 
 // UpdateSpace updates the mutable fields of a space, scoped to the platform.
 func (s *Service) UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error) {
+	// §80 wiki-only space types: force the restrictive axes regardless of
+	// caller input — the space's type can't change on update, so the check
+	// keys off the stored row's space_type_id.
+	if existing, err := s.read.GetSpaceByID(ctx, params.ID); err == nil &&
+		s.IsWikiOnlyType(ctx, existing.SpaceTypeID) {
+		params.Visibility = VisibilityPublic
+		params.PostingPerm = PermAdmins
+		params.ReplyingPerm = PermAdmins
+		params.CommentingPerm = PermAdmins
+		params.JoiningPerm = JoiningInvite
+	}
+
 	space, err := s.write.UpdateSpace(ctx, params)
 	if err != nil {
 		return gen.UpdateSpaceRow{}, fmt.Errorf("updating space: %w", err)
