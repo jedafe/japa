@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -46,6 +47,9 @@ func TestErrWikiOnlySpace_Marker(t *testing.T) {
 func TestWikiOnlyType_Gating(t *testing.T) {
 	svc, database := linkTestService(t)
 	ctx := t.Context()
+	// t.Context() is cancelled before Cleanup funcs run — teardown
+	// deletes need a live context or they silently no-op.
+	bg := context.Background()
 	q := gen.New(database.Writer)
 
 	st, err := q.CreateSpaceType(ctx, gen.CreateSpaceTypeParams{
@@ -57,7 +61,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 		t.Fatalf("create space type: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = database.Writer.Exec(ctx, `DELETE FROM space_types WHERE id = $1`, st.ID)
+		_, _ = database.Writer.Exec(bg, `DELETE FROM space_types WHERE id = $1`, st.ID)
 	})
 
 	wikiOnly := true
@@ -91,7 +95,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = database.Writer.Exec(ctx, `DELETE FROM users WHERE id = $1`, creatorID)
+		_, _ = database.Writer.Exec(bg, `DELETE FROM users WHERE id = $1`, creatorID)
 	})
 
 	space, err := svc.CreateSpaceWithOwner(ctx, gen.CreateSpaceParams{
@@ -110,7 +114,7 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 		t.Fatalf("create space: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = database.Writer.Exec(ctx, `DELETE FROM spaces WHERE id = $1`, space.ID)
+		_, _ = database.Writer.Exec(bg, `DELETE FROM spaces WHERE id = $1`, space.ID)
 	})
 
 	if space.PostingPerm != PermAdmins || space.ReplyingPerm != PermAdmins ||
@@ -300,6 +304,9 @@ func TestFetchAttractionCandidates_ParsesBindings(t *testing.T) {
 func TestAttractionP131ParentLinking(t *testing.T) {
 	svc, database := linkTestService(t)
 	ctx := t.Context()
+	// t.Context() is cancelled before Cleanup funcs run — teardown
+	// deletes need a live context or they silently no-op.
+	bg := context.Background()
 	q := gen.New(database.Writer)
 	a := NewProcessorAdapter(svc)
 
@@ -322,7 +329,7 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = database.Writer.Exec(ctx, `DELETE FROM users WHERE id = $1`, creatorID)
+		_, _ = database.Writer.Exec(bg, `DELETE FROM users WHERE id = $1`, creatorID)
 	})
 
 	mkSpace := func(name, slug string, typeID pgtype.UUID, qid string, parents []pgtype.UUID) gen.CreateSpaceRow {
@@ -345,16 +352,19 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 			t.Fatalf("create %s: %v", name, err)
 		}
 		t.Cleanup(func() {
-			_, _ = database.Writer.Exec(ctx, `DELETE FROM spaces WHERE id = $1`, sp.ID)
+			_, _ = database.Writer.Exec(bg, `DELETE FROM spaces WHERE id = $1`, sp.ID)
 		})
 		return sp
 	}
 
-	zambia := mkSpace("P131 Zambia", "p131-zambia", countryType.ID, "QTP111", nil)
-	zimbabwe := mkSpace("P131 Zimbabwe", "p131-zimbabwe", countryType.ID, "QTP222", nil)
+	// Unique QIDs/slugs per run — rows left by an earlier failed run must
+	// never collide with this one's fixtures.
+	uniq := fmt.Sprintf("%d", time.Now().UnixNano()%100000)
+	zambia := mkSpace("P131 Zambia", "p131-zambia-"+uniq, countryType.ID, "QTP111"+uniq, nil)
+	zimbabwe := mkSpace("P131 Zimbabwe", "p131-zimbabwe-"+uniq, countryType.ID, "QTP222"+uniq, nil)
 
 	// Batch resolution: matches both stamps, skips the unknown QID.
-	matches, err := q.SpaceIDsByWikidataIDs(ctx, []string{"QTP111", "QTP222", "QTP_MISSING"})
+	matches, err := q.SpaceIDsByWikidataIDs(ctx, []string{"QTP111" + uniq, "QTP222" + uniq, "QTP_MISSING"})
 	if err != nil {
 		t.Fatalf("SpaceIDsByWikidataIDs: %v", err)
 	}
@@ -367,7 +377,7 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 		}
 	}
 
-	falls := mkSpace("P131 Falls", "p131-falls", attractionType.ID, "QTP333",
+	falls := mkSpace("P131 Falls", "p131-falls-"+uniq, attractionType.ID, "QTP333"+uniq,
 		[]pgtype.UUID{zambia.ID})
 
 	full, err := svc.GetSpace(ctx, falls.ID)
@@ -375,7 +385,7 @@ func TestAttractionP131ParentLinking(t *testing.T) {
 		t.Fatalf("get attraction: %v", err)
 	}
 
-	ent := &wikidataUniversity{LocatedIn: []string{"QTP111", "QTP222", "QTP_MISSING"}}
+	ent := &wikidataUniversity{LocatedIn: []string{"QTP111" + uniq, "QTP222" + uniq, "QTP_MISSING"}}
 	a.linkAttractionParents(ctx, &full, ent)
 	a.linkAttractionParents(ctx, &full, ent) // idempotent re-run
 
