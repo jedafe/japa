@@ -5,6 +5,8 @@ package spaces
 // IsWikiOnlyType, axis coercion, and post denial.
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -144,5 +146,80 @@ func TestWikiOnlyType_Gating(t *testing.T) {
 	if updated.PostingPerm != PermAdmins || updated.JoiningPerm != JoiningInvite {
 		t.Fatalf("update did not coerce axes: posting=%s joining=%s",
 			updated.PostingPerm, updated.JoiningPerm)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// §80 attraction auto-population helpers
+// ---------------------------------------------------------------------------
+
+func TestClassifyAttractionKind(t *testing.T) {
+	cases := []struct {
+		name string
+		ent  *wikidataUniversity
+		want string
+	}{
+		{"p31 museum", &wikidataUniversity{InstanceOf: []string{"Q33506"}}, "museum"},
+		{"p31 waterfall", &wikidataUniversity{InstanceOf: []string{"Q34038"}}, "waterfall"},
+		{"p31 national park", &wikidataUniversity{InstanceOf: []string{"Q46169"}}, "national-park"},
+		{"desc monolith", &wikidataUniversity{Description: "Inselberg and monolith in Abeokuta"}, "rock-formation"},
+		{"desc falls", &wikidataUniversity{Description: "waterfall on the Zambezi"}, "waterfall"},
+		{"desc mountain", &wikidataUniversity{Description: "Highest mountain in Africa"}, "mountain"},
+		{"unknown→other", &wikidataUniversity{Description: "a place"}, "other"},
+		{"nil", nil, ""},
+	}
+	for _, tc := range cases {
+		if got := classifyAttractionKind(tc.ent); got != tc.want {
+			t.Fatalf("%s: got %q want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestMarshalWikiContentWithQID(t *testing.T) {
+	s := &wikipediaSummary{Title: "Victoria Falls", Extract: "a waterfall"}
+
+	raw, err := marshalWikiContentWithQID(s, "Q38324")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m["wikidata_id"] != "Q38324" || m["title"] != "Victoria Falls" {
+		t.Fatalf("merged map wrong: %v", m)
+	}
+
+	// No QID → plain summary JSON, no key injected.
+	raw, err = marshalWikiContentWithQID(s, "")
+	if err != nil {
+		t.Fatalf("marshal no qid: %v", err)
+	}
+	var m2 map[string]any
+	if err := json.Unmarshal(raw, &m2); err != nil {
+		t.Fatalf("unmarshal no qid: %v", err)
+	}
+	if _, ok := m2["wikidata_id"]; ok {
+		t.Fatal("wikidata_id must not appear when no QID is known")
+	}
+}
+
+func TestAttractionSeededQID_WikiContentFallback(t *testing.T) {
+	a := &ProcessorAdapter{} // no customFields — exercises the wiki_content arm
+
+	var space gen.GetSpaceByIDRow
+	space.WikiContent = []byte(`{"wikidata_id":"Q38324","title":"Victoria Falls"}`)
+	if got := a.attractionSeededQID(context.Background(), &space); got != "Q38324" {
+		t.Fatalf("got %q want Q38324", got)
+	}
+
+	space.WikiContent = []byte(`{"title":"no qid"}`)
+	if got := a.attractionSeededQID(context.Background(), &space); got != "" {
+		t.Fatalf("got %q want empty", got)
+	}
+
+	space.WikiContent = nil
+	if got := a.attractionSeededQID(context.Background(), &space); got != "" {
+		t.Fatalf("nil wiki_content: got %q want empty", got)
 	}
 }

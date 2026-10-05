@@ -233,6 +233,8 @@ func (a *ProcessorAdapter) AutoPopulateSpace(ctx context.Context, spaceID string
 		populateErr = a.populateGeoSpace(ctx, &space, spaceType)
 	case "university":
 		populateErr = a.populateUniversitySpace(ctx, &space)
+	case "attraction":
+		populateErr = a.populateAttractionSpace(ctx, &space)
 	default:
 		slog.Info("space:auto_populate — custom space, no auto-population needed", "space_id", spaceID, "type", spaceType)
 	}
@@ -733,21 +735,31 @@ func parseStudentCount(s string) (int, bool) {
 	return n, true
 }
 
-// wikidataUniversity holds structured data fetched from Wikidata.
+// wikidataUniversity holds structured data fetched from Wikidata. Despite
+// the name it is the shared wbgetentities parse — attraction enrichment
+// (§80) additionally uses InstanceOf/Coords/LocatedIn/Sitelink.
 type wikidataUniversity struct {
-	Name         string `json:"name"`
-	ShortName    string `json:"short_name,omitempty"`
-	Description  string `json:"description,omitempty"`
-	Country      string `json:"country,omitempty"`
-	Founded      string `json:"founded,omitempty"`
-	Students     string `json:"students,omitempty"`
-	Website      string `json:"website,omitempty"`
-	Logo         string `json:"logo,omitempty"`
-	CoatOfArms   string `json:"coat_of_arms,omitempty"`
-	Flag         string `json:"flag,omitempty"`
-	Image        string `json:"image,omitempty"`
-	WikidataID   string `json:"wikidata_id,omitempty"`
-	WikipediaURL string `json:"wikipedia_url,omitempty"`
+	Name         string   `json:"name"`
+	ShortName    string   `json:"short_name,omitempty"`
+	Description  string   `json:"description,omitempty"`
+	Country      string   `json:"country,omitempty"`
+	Founded      string   `json:"founded,omitempty"`
+	Students     string   `json:"students,omitempty"`
+	Website      string   `json:"website,omitempty"`
+	Logo         string   `json:"logo,omitempty"`
+	CoatOfArms   string   `json:"coat_of_arms,omitempty"`
+	Flag         string   `json:"flag,omitempty"`
+	Image        string   `json:"image,omitempty"`
+	WikidataID   string   `json:"wikidata_id,omitempty"`
+	WikipediaURL string   `json:"wikipedia_url,omitempty"`
+	// §80 attractions: P31 instance-of QIDs (kind classification), P625
+	// coordinate ("lat,lon"), P131 located-in QIDs, and the enwiki article
+	// title (drives the Wikipedia summary fetch so "Victoria Falls" lands
+	// on the falls article, not a name-search guess).
+	InstanceOf []string `json:"instance_of,omitempty"`
+	Coords     string   `json:"coords,omitempty"`
+	LocatedIn  []string `json:"located_in,omitempty"`
+	Sitelink   string   `json:"sitelink,omitempty"`
 }
 
 // fetchWikidataUniversity uses the Wikidata Search API (wbsearchentities)
@@ -870,8 +882,9 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	q.Set("action", "wbgetentities")
 	q.Set("ids", qid)
 	q.Set("format", "json")
-	q.Set("props", "labels|descriptions|claims")
+	q.Set("props", "labels|descriptions|claims|sitelinks")
 	q.Set("languages", "en")
+	q.Set("sitefilter", "enwiki")
 	req.URL.RawQuery = q.Encode()
 	req.Header.Set("User-Agent", "JapaConnect/1.0 (space:auto_populate)")
 
@@ -909,6 +922,9 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 					} `json:"datavalue"`
 				} `json:"mainsnak"`
 			} `json:"claims"`
+			Sitelinks map[string]struct {
+				Title string `json:"title"`
+			} `json:"sitelinks"`
 		} `json:"entities"`
 	}
 
@@ -1019,6 +1035,41 @@ func fetchWikidataEntity(ctx context.Context, qid string) (*wikidataUniversity, 
 	// P1813 = short name (monolingual text; e.g. "UNILAG", "UoPeople", "MIT").
 	if claims, ok := entity.Claims["P1813"]; ok && len(claims) > 0 {
 		uni.ShortName = extractString(claims[0].Mainsnak.Datavalue.Value)
+	}
+	// §80 attractions: P31 = instance of (entity-item values — the class QIDs
+	// used for kind classification), P625 = coordinate location
+	// (globecoordinate value), P131 = located in the administrative entity.
+	extractQID := func(raw json.RawMessage) string {
+		var obj struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &obj); err == nil { // #nosec G104 -- best-effort Wikidata parse
+			return obj.ID
+		}
+		return ""
+	}
+	for _, c := range entity.Claims["P31"] {
+		if id := extractQID(c.Mainsnak.Datavalue.Value); id != "" {
+			uni.InstanceOf = append(uni.InstanceOf, id)
+		}
+	}
+	for _, c := range entity.Claims["P131"] {
+		if id := extractQID(c.Mainsnak.Datavalue.Value); id != "" {
+			uni.LocatedIn = append(uni.LocatedIn, id)
+		}
+	}
+	if claims, ok := entity.Claims["P625"]; ok && len(claims) > 0 {
+		var coord struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		}
+		if err := json.Unmarshal(claims[0].Mainsnak.Datavalue.Value, &coord); err == nil { // #nosec G104 -- best-effort Wikidata parse
+			uni.Coords = strconv.FormatFloat(coord.Latitude, 'f', -1, 64) + "," +
+				strconv.FormatFloat(coord.Longitude, 'f', -1, 64)
+		}
+	}
+	if sl, ok := entity.Sitelinks["enwiki"]; ok {
+		uni.Sitelink = sl.Title
 	}
 
 	return uni, nil
