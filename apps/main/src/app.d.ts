@@ -21,6 +21,8 @@ declare global {
 			locale: Locale;
 			/** True when the request host is the Japa University surface (ADR-063). */
 			isUniversityHost: boolean;
+			/** True when the request host is the public roadmap surface (ADR-127). */
+			isRoadmapHost: boolean;
 			/**
 			 * Double-submit CSRF token fetched from GET /csrf (Ref: §5.2). Threaded
 			 * through ApiContext so server-side mutations attach X-CSRF-Token. Null
@@ -38,6 +40,8 @@ declare global {
 			theme: ThemeName;
 			locale: Locale;
 			isUniversityHost: boolean;
+			/** True on roadmap.japaconnect.com — renders the minimal roadmap shell (ADR-127). */
+			isRoadmapHost: boolean;
 			/** CSRF token for client-side mutations (echoed as X-CSRF-Token). */
 			csrfToken: string | null;
 			/** Feature flags from GET /feature-flags (public endpoint). */

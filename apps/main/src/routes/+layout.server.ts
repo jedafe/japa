@@ -237,6 +237,7 @@ export const load: LayoutServerLoad = async (event) => {
 		theme: event.locals.theme,
 		locale: event.locals.locale,
 		isUniversityHost: event.locals.isUniversityHost,
+		isRoadmapHost: event.locals.isRoadmapHost,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,
 		currencies,

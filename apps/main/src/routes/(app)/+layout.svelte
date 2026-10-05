@@ -5,6 +5,7 @@
 	import GuestHeader from '$lib/components/shell/GuestHeader.svelte';
 	import GuestFooter from '$lib/components/shell/GuestFooter.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
+	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { isExceptionRoute } from '$lib/components/create/gate';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
@@ -43,6 +44,13 @@
 	// ADR-058 §5 Exception #3: guest landing page renders WITHOUT the app shell.
 	// The new default guest homepage (guestHome) also uses GuestHeader and a custom footer.
 	const isGuestLanding = $derived(!!page.data.landing || !!page.data.guestHome);
+
+	// ADR-127: "Back to JapaConnect" targets the apex domain — derived from the
+	// request host by stripping the leading `roadmap.` label (port preserved for
+	// dev). JC_ROADMAP_HOSTS custom domains without that prefix keep their host.
+	const roadmapApexUrl = $derived(
+		`${page.url.protocol}//${page.url.host.replace(/^roadmap\./i, '')}`
+	);
 
 	// Settings hub: auto-collapse the left nav to give settings panels more
 	// room, but keep the right sidebar and let the user expand via the toggle.
@@ -150,7 +158,38 @@
 	});
 </script>
 
-{#if isGuestLanding}
+{#if data.isRoadmapHost}
+	<!-- ADR-127: roadmap.japaconnect.com renders a compact roadmap-branded
+	     shell — no app sidebars, left nav, widgets, chat FAB, or product tour.
+	     Voting/submission auth uses the shared session cookie on /login. -->
+	<header class="roadmap-header">
+		<div class="roadmap-header-inner">
+			<a href="/roadmap" class="roadmap-brand" aria-label={t('roadmap.title', 'Product Roadmap')}>
+				<ThemeLogo
+					logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
+					logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
+					alt={t('app.name')}
+					class="h-7 w-auto max-w-[120px] object-contain"
+				/>
+				<span class="roadmap-brand-title">{t('roadmap.title', 'Product Roadmap')}</span>
+			</a>
+			<nav class="roadmap-nav" aria-label={t('roadmap.nav', 'Roadmap navigation')}>
+				<a href="/roadmap/changelog" class="roadmap-nav-link">{t('roadmap.changelog', 'Changelog')}</a>
+				<a href={roadmapApexUrl} class="roadmap-nav-link roadmap-back-link">
+					{t('roadmap.back_to_site', 'Back to JapaConnect')}
+				</a>
+			</nav>
+		</div>
+	</header>
+	<main class="roadmap-main">
+		{@render children()}
+	</main>
+	<footer class="roadmap-footer">
+		<span>
+			&copy; {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+		</span>
+	</footer>
+{:else if isGuestLanding}
 	<!-- ADR-058 §5 Exception #3: guest landing page — GuestHeader + content + GuestFooter -->
 	<GuestHeader
 		logoUrl={page.data.guestHome
@@ -217,4 +256,67 @@
 <!-- Shared fullscreen media viewer — any surface opens it via openLightbox() -->
 <MediaLightbox bind:open={lightbox.open} bind:index={lightbox.index} items={lightbox.items} />
 
-<style></style>
+<style>
+	/* ADR-127 minimal roadmap shell */
+	.roadmap-header {
+		position: sticky;
+		top: 0;
+		z-index: 50;
+		border-bottom: 1px solid var(--color-border);
+		background: var(--color-surface);
+	}
+	.roadmap-header-inner {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		height: var(--nav-height);
+		padding: 0 1rem;
+		max-width: 72rem;
+		margin: 0 auto;
+	}
+	.roadmap-brand {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		font-weight: 600;
+		color: var(--color-text);
+		white-space: nowrap;
+	}
+	.roadmap-brand-title {
+		font-size: 0.9375rem;
+		font-weight: 600;
+	}
+	.roadmap-nav {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		margin-left: auto;
+	}
+	.roadmap-nav-link {
+		padding: 0.375rem 0.75rem;
+		border-radius: var(--radius);
+		font-size: 0.875rem;
+		font-weight: 500;
+		color: var(--color-text-subtle);
+		white-space: nowrap;
+		transition: color 0.15s, background 0.15s;
+	}
+	.roadmap-nav-link:hover {
+		color: var(--color-text);
+		background: var(--color-surface-subtle);
+	}
+	.roadmap-main {
+		max-width: 72rem;
+		margin: 0 auto;
+		padding: 2rem 1.5rem;
+		min-height: 60vh;
+	}
+	.roadmap-footer {
+		border-top: 1px solid var(--color-border);
+		padding: 1.5rem;
+		text-align: center;
+		font-size: 0.875rem;
+		color: var(--color-muted);
+		background: var(--color-surface);
+	}
+</style>

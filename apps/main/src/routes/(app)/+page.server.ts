@@ -1,4 +1,5 @@
 import type { PageServerLoad } from './$types';
+import { redirect } from '@sveltejs/kit';
 import { apiList, apiGet, apiGetEnvelope, apiContext } from '$lib/server/api';
 import { buildGuestHome, emptyGuestHome } from '$lib/server/guest-home';
 import { feedQueryString, resolveTab, resolveSort, PAGE_SIZE, type FeedTab, type SortValue } from '$lib/feed/endpoint';
@@ -27,6 +28,9 @@ import {
  *   from public settings and API-driven data (Rule 16) — NOT a redirect.
  */
 export const load: PageServerLoad = async (event) => {
+	// ADR-127: on the roadmap host the root path is the roadmap board.
+	if (event.locals.isRoadmapHost) redirect(302, '/roadmap');
+
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 
