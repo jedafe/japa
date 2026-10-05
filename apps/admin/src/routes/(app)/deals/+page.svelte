@@ -83,15 +83,26 @@
 	// complete field set — omitting a key NULLs that column server-side.
 	// `details` accepts either the stringified JSON produced by `load` (form
 	// seeding / row data) or a raw object.
+	//
+	// `forModeration` (approve/reject) preserves the row verbatim instead of
+	// re-deriving form-shaped values: discount_type passes through as NULL
+	// rather than defaulting to 'percent', and valid_from/expires_at re-send
+	// the raw ISO timestamps captured in `load` (_valid_from_iso /
+	// _expires_at_iso) because the row's date-input values are collapsed to
+	// YYYY-MM-DD and re-expanding them would shift real timestamps.
 	function buildCouponPayload(
-		body: Record<string, unknown>
+		body: Record<string, unknown>,
+		opts?: { forModeration?: boolean }
 	): { ok: true; payload: Record<string, unknown> } | { ok: false; error: string } {
 		const payload: Record<string, unknown> = {
 			title: String(body.title ?? '').trim(),
 			code: String(body.code ?? '').trim().toUpperCase(),
 			coupon_type: body.coupon_type ?? 'external',
-			discount_type: body.discount_type ?? 'percent',
-			discount_value: body.discount_value ? Number(body.discount_value) : null,
+			discount_type: body.discount_type ?? (opts?.forModeration ? null : 'percent'),
+			discount_value:
+				body.discount_value != null && String(body.discount_value) !== ''
+					? Number(body.discount_value)
+					: null,
 			is_verified: !!body.is_verified,
 			status: body.status ?? 'active'
 		};
@@ -117,8 +128,13 @@
 		if (body.description) payload.description = String(body.description).trim();
 		if (body.referral_url) payload.referral_url = String(body.referral_url).trim();
 		if (body.terms_url) payload.terms_url = String(body.terms_url).trim();
-		if (body.valid_from) payload.valid_from = dateInputToStartOfDayISO(String(body.valid_from));
-		if (body.expires_at) payload.valid_until = dateInputToEndOfDayISO(String(body.expires_at));
+		if (opts?.forModeration) {
+			if (body._valid_from_iso) payload.valid_from = String(body._valid_from_iso);
+			if (body._expires_at_iso) payload.valid_until = String(body._expires_at_iso);
+		} else {
+			if (body.valid_from) payload.valid_from = dateInputToStartOfDayISO(String(body.valid_from));
+			if (body.expires_at) payload.valid_until = dateInputToEndOfDayISO(String(body.expires_at));
+		}
 		return { ok: true, payload };
 	}
 
@@ -129,7 +145,9 @@
 	// and details, and reset is_verified.
 	async function moderateDeal(row: Coupon, status: 'active' | 'suspended', ctx?: ActionContext) {
 		pageError = '';
-		const built = buildCouponPayload(row as unknown as Record<string, unknown>);
+		const built = buildCouponPayload(row as unknown as Record<string, unknown>, {
+			forModeration: true
+		});
 		if (!built.ok) {
 			pageError = built.error;
 			return;
@@ -299,6 +317,11 @@
 				// details object is stringified for the JSON textarea field.
 				const data = raw.map((c) => ({
 					...c,
+					// Raw ISO kept for moderation payloads — the date-input values
+					// below collapse to YYYY-MM-DD and must not be re-expanded on
+					// approve/reject (they're only for form seeding).
+					_valid_from_iso: c.valid_from ?? null,
+					_expires_at_iso: c.expires_at ?? null,
 					valid_from: c.valid_from ? isoTimestampToDateInput(c.valid_from) : '',
 					expires_at: c.expires_at ? isoTimestampToDateInput(c.expires_at) : '',
 					details: c.details ? JSON.stringify(c.details, null, 2) : ''
