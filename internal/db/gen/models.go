@@ -3321,6 +3321,46 @@ type ReviewAggregate struct {
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
+type RoadmapCategory struct {
+	ID          pgtype.UUID        `json:"id"`
+	Slug        string             `json:"slug"`
+	Name        string             `json:"name"`
+	Description *string            `json:"description"`
+	Color       *string            `json:"color"`
+	SortOrder   int32              `json:"sort_order"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type RoadmapItem struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Summary        *string            `json:"summary"`
+	Body           *string            `json:"body"`
+	CategoryID     pgtype.UUID        `json:"category_id"`
+	Status         string             `json:"status"`
+	SortOrder      int32              `json:"sort_order"`
+	IsFlagship     bool               `json:"is_flagship"`
+	TargetWindow   *string            `json:"target_window"`
+	FeatureFlagKey *string            `json:"feature_flag_key"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	VoteCount      int32              `json:"vote_count"`
+	SubmittedBy    pgtype.UUID        `json:"submitted_by"`
+	ApprovedBy     pgtype.UUID        `json:"approved_by"`
+	ShippedAt      pgtype.Timestamptz `json:"shipped_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type RoadmapVote struct {
+	ItemID    pgtype.UUID        `json:"item_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type RolePermission struct {
 	RoleID       pgtype.UUID        `json:"role_id"`
 	PermissionID pgtype.UUID        `json:"permission_id"`

@@ -1120,9 +1120,9 @@ func TestGetSiblings_NestedScope(t *testing.T) {
 	}
 }
 
-// TestDirectoryChildRows_SortAndCap — the listing helper orders by depth
-// then name (slug tie-break) and truncates at the limit, deterministically
-// dropping the tail rather than an arbitrary subset.
+// TestDirectoryChildRows_SortAndCap — the sort helper orders by depth
+// then name (slug tie-break) and DTO mapping carries the card fields,
+// deterministically dropping the tail rather than an arbitrary subset.
 func TestDirectoryChildRows_SortAndCap(t *testing.T) {
 	mkID := func(b byte) pgtype.UUID {
 		var u pgtype.UUID
@@ -1139,7 +1139,8 @@ func TestDirectoryChildRows_SortAndCap(t *testing.T) {
 		{ID: mkID(3), Slug: "a-city", Name: "A City", Level: "city", SpaceTypeSlug: "city", Depth: 2},
 	}
 
-	rows := directoryChildRows(children, 3)
+	sortDirectoryChildren(children)
+	rows := directoryChildDTOs(children[:3], nil, nil)
 	if len(rows) != 3 {
 		t.Fatalf("cap: got %d want 3", len(rows))
 	}
@@ -1151,12 +1152,33 @@ func TestDirectoryChildRows_SortAndCap(t *testing.T) {
 		t.Fatalf("geo/page_count not carried: %+v", rows[0])
 	}
 
-	// limit <= 0 and over-length limits are no-ops on the slice bound.
-	if got := directoryChildRows(children, 0); len(got) != len(children) {
-		t.Fatalf("zero limit: got %d want %d", len(got), len(children))
+	// Enrichment maps merge into the DTO without disturbing the ordering.
+	rows = directoryChildDTOs(children,
+		map[pgtype.UUID]string{children[0].ID: "https://img/img.webp"},
+		map[pgtype.UUID]string{children[0].ID: "waterfall"},
+	)
+	if rows[0].ImageURL != "https://img/img.webp" || rows[0].Kind != "waterfall" {
+		t.Fatalf("enrichment not carried: %+v", rows[0])
 	}
-	if got := directoryChildRows(children, 99); len(got) != len(children) {
-		t.Fatalf("over limit: got %d want %d", len(got), len(children))
+	if rows[1].ImageURL != "" || rows[1].Kind != "" {
+		t.Fatalf("enrichment leaked to a child without values: %+v", rows[1])
+	}
+}
+
+// TestSelectValueJSON — select-type field values store {"value": "…"} in
+// value_json; the extractor returns the scalar or "" on missing/malformed.
+func TestSelectValueJSON(t *testing.T) {
+	if got := selectValueJSON([]byte(`{"value":"museum"}`)); got != "museum" {
+		t.Fatalf("got %q want museum", got)
+	}
+	if got := selectValueJSON(nil); got != "" {
+		t.Fatalf("nil: got %q want empty", got)
+	}
+	if got := selectValueJSON([]byte(`{"value": 1}`)); got != "" {
+		t.Fatalf("non-string: got %q want empty", got)
+	}
+	if got := selectValueJSON([]byte(`not json`)); got != "" {
+		t.Fatalf("malformed: got %q want empty", got)
 	}
 }
 

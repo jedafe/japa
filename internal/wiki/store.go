@@ -1517,6 +1517,9 @@ type WikiDirectoryChild struct {
 	SpaceTypeSlug string
 	Depth         int32
 	GeoCode       *string
+	HeaderImageID pgtype.UUID
+	LogoMediaID   pgtype.UUID
+	Blurb         string
 	PageCount     int64
 }
 
@@ -1541,11 +1544,29 @@ func (s *Store) ListDirectoryChildren(ctx context.Context, spaceID pgtype.UUID, 
 		out = append(out, WikiDirectoryChild{
 			ID: r.ID, Slug: r.Slug, Name: r.Name, Level: r.Level,
 			SpaceTypeID: r.SpaceTypeID, SpaceTypeSlug: r.SpaceTypeSlug,
-			Depth: r.Depth, GeoCode: r.GeoCode, PageCount: r.PageCount,
+			Depth: r.Depth, GeoCode: r.GeoCode,
+			HeaderImageID: r.HeaderImageID, LogoMediaID: r.LogoMediaID,
+			Blurb: r.Blurb, PageCount: r.PageCount,
 		})
 	}
 
 	return out, nil
+}
+
+// ListMediaByIDs batch-fetches media rows for directory-card image
+// resolution (§80) — one query for a capped page of children rather than a
+// per-card lookup through the media service.
+func (s *Store) ListMediaByIDs(ctx context.Context, ids []pgtype.UUID) ([]gen.Medium, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.read.GetMediaByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("wiki: list media by ids: %w", err)
+	}
+
+	return rows, nil
 }
 
 // HasDirectoryChildren reports whether the space has at least one active,
