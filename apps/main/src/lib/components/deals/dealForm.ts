@@ -106,16 +106,28 @@ export function emptyDealFormValues(): DealFormValues {
 /** Maps a coupon's details JSONB back into the editor shape (edit mode). */
 export function detailsFromCoupon(coupon: Coupon): DealDetailsValues {
 	const d = coupon.details;
-	if (!d) return emptyDetails();
+	// coupons.details is free-form JSONB — the admin JSON editor can write a
+	// scalar, an array, or wrong-typed members. Coerce defensively so staff
+	// can always open the editor on malformed rows instead of crashing.
+	if (!d || typeof d !== 'object' || Array.isArray(d)) return emptyDetails();
+	const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+	const trial =
+		d.trial && typeof d.trial === 'object' && !Array.isArray(d.trial) ? d.trial : null;
 	return {
-		summary: d.summary ?? '',
+		summary: str(d.summary),
 		trial: {
-			title: d.trial?.title ?? '',
-			body: d.trial?.body ?? '',
-			url: d.trial?.url ?? ''
+			title: str(trial?.title),
+			body: str(trial?.body),
+			url: str(trial?.url)
 		},
-		sections: (d.sections ?? []).map((s) => ({ title: s.title ?? '', body: s.body ?? '' })),
-		faq: (d.faq ?? []).map((f) => ({ q: f.q ?? '', a: f.a ?? '' }))
+		sections: (Array.isArray(d.sections) ? d.sections : []).map((s) => ({
+			title: str(s?.title),
+			body: str(s?.body)
+		})),
+		faq: (Array.isArray(d.faq) ? d.faq : []).map((f) => ({
+			q: str(f?.q),
+			a: str(f?.a)
+		}))
 	};
 }
 
@@ -161,9 +173,14 @@ export function couponToFormValues(coupon: Coupon): DealFormValues {
 
 /**
  * Builds the POST/PATCH body matching `CreateCouponInput` json tags
- * (internal/coupons/service.go). Empty optional strings are omitted so a
- * PATCH never blanks a column unintentionally at the Go layer; expires_at
- * (form) → valid_until (wire).
+ * (internal/coupons/service.go). PATCH UpdateCoupon is a full-column
+ * overwrite — every sqlc.narg column is written unconditionally, so an
+ * omitted key arrives NULL and wipes the stored value. The payload must
+ * therefore carry the complete field set (which it does); empty optional
+ * strings are omitted only where absent→NULL is the intended write.
+ * Note: `details` must be omitted rather than sent as JSON null —
+ * validateCouponDetails rejects a null body; expires_at (form) →
+ * valid_until (wire).
  *
  * Org submissions (POST /organizations/{id}/deals → SubmitDealInput) share the
  * same input struct but the server forces status='pending' and derives the

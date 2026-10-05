@@ -32,6 +32,16 @@ function cookieSecure(): boolean {
 	return !dev;
 }
 
+/**
+ * RBAC node check against a permission list (event.locals.user.permissions).
+ * The backend resolver grants super-admin '*' as a wildcard — every node
+ * check must honor it or wildcard admins lose staff affordances (same
+ * contract as the admin app's hasPermission).
+ */
+export function hasPerm(perms: string[] | null | undefined, node: string): boolean {
+	return !!perms && (perms.includes(node) || perms.includes('*'));
+}
+
 /** Set the jc_token cookie on the response. */
 export function setSessionCookie(event: RequestEvent, accessToken: string): void {
 	event.cookies.set(SESSION_COOKIE, accessToken, {

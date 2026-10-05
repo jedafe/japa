@@ -2006,11 +2006,33 @@ export const INTERNAL_DEAL_PROVIDER_SLUG = 'japaconnect';
 
 /** Returns the /deal/{provider}/{slug} canonical path for a coupon. */
 export function dealPath(coupon: Pick<Coupon, 'slug' | 'provider_slug'>): string {
-	return `/deal/${coupon.provider_slug ?? INTERNAL_DEAL_PROVIDER_SLUG}/${coupon.slug}`;
+	// A coupon without a slug has no canonical deal page — fall back to the
+	// index rather than emitting a malformed URL segment.
+	if (!coupon.slug) return '/deals';
+	return `/deal/${coupon.provider_slug || INTERNAL_DEAL_PROVIDER_SLUG}/${coupon.slug}`;
 }
 
-/** Affiliate provider profile returned by GET /deals/partners/{slug}. */
+/**
+ * Provider profile returned by GET /deals/partners/{slug} — a trimmed public
+ * projection (§55): commercial and ownership fields (provider_type,
+ * tracking_param/tracking_value, commission_rate, organization_id,
+ * is_active) are intentionally omitted. Staff editing a provider must fetch
+ * the full row via GET /admin/affiliate-providers/{id} (AffiliateProviderAdmin).
+ */
 export interface DealPartnerProvider {
+	id: string;
+	name: string;
+	slug: string;
+	description?: string | null;
+	/** Flat provider taxonomy label (§55) — drives the /deals category pills. */
+	category?: string | null;
+	logo_media_id?: string | null;
+	base_url?: string | null;
+	is_featured: boolean;
+}
+
+/** Full affiliate provider row — GET /admin/affiliate-providers/{id} (staff, §55). */
+export interface AffiliateProviderAdmin {
 	id: string;
 	name: string;
 	slug: string;
@@ -2025,8 +2047,9 @@ export interface DealPartnerProvider {
 	commission_rate?: number | string | null;
 	/** Flat provider taxonomy label (§55). */
 	category?: string | null;
-	created_at: string;
-	updated_at: string;
+	organization_id?: string | null;
+	created_at?: string;
+	updated_at?: string;
 }
 
 /** GET /deals/partners item — slim provider for selects/filter pills (§55). */

@@ -1,6 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import { hasPerm } from '$lib/server/auth';
 import { dealPath, type Coupon, type DealPartnerRef } from '$lib/types';
 
 /**
@@ -24,7 +25,7 @@ export const load: PageServerLoad = async (event) => {
 			throw redirect(301, canonical);
 		}
 
-		const canManage = !!event.locals.user?.permissions?.includes('coupons.manage');
+		const canManage = hasPerm(event.locals.user?.permissions, 'coupons.manage');
 
 		// Sibling deals — GET /coupons accepts a provider_id filter
 		// (ListPublicCoupons → ListActiveCoupons). Public endpoint, so this
@@ -54,7 +55,10 @@ export const load: PageServerLoad = async (event) => {
 			related,
 			canManage,
 			providers,
-			canManageProviders: !!event.locals.user?.permissions?.includes('affiliate.providers.manage')
+			canManageProviders: hasPerm(
+				event.locals.user?.permissions,
+				'affiliate.providers.manage'
+			)
 		};
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {

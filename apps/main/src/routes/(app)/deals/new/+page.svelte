@@ -7,7 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ArrowLeft, Ticket, Loader2, CheckCircle2 } from 'lucide-svelte';
-	import { t } from '$lib/i18n';
+	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import DealForm from '$lib/components/deals/DealForm.svelte';
 	import { EmptyState } from '$lib/components/ui';
@@ -56,7 +56,11 @@
 					t('deals.submissions_error', 'Failed to load submissions.');
 				return;
 			}
-			submissions = append ? [...submissions, ...res.data] : res.data;
+			// Dedupe on append — a row submitted between page fetches would
+			// otherwise shift windows and surface the same id twice.
+			submissions = append
+				? [...submissions, ...res.data.filter((c) => !submissions.some((s) => s.id === c.id))]
+				: res.data;
 			submissionsPage = pageNum;
 			submissionsHasMore = res.data.length === SUBMISSIONS_PAGE_SIZE;
 		} finally {
@@ -141,6 +145,7 @@
 				audience="staff"
 				providers={data.providers}
 				canManageProviders={data.canManageProviders}
+				currencies={data.currencies}
 				onsaved={(c) => goto(dealPath(c))}
 				oncancel={() => goto('/deals')}
 			/>
@@ -197,6 +202,7 @@
 					audience="org"
 					orgId={selectedOrgId}
 					providerName={selectedOrg?.name}
+					currencies={data.currencies}
 					onsaved={onOrgSaved}
 				/>
 			{/key}
@@ -237,7 +243,7 @@
 									{/if}
 									{#if coupon.created_at}
 										<p class="text-xs text-[var(--color-text-subtle)]">
-											{new Date(coupon.created_at).toLocaleDateString()}
+											{new Date(coupon.created_at).toLocaleDateString(i18n.locale)}
 										</p>
 									{/if}
 								</div>

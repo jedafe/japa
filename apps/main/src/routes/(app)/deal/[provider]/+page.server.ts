@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { hasPerm } from '$lib/server/auth';
 import type { DealPartner } from '$lib/types';
 
 /**
@@ -16,7 +17,8 @@ export const load: PageServerLoad = async (event) => {
 		return {
 			partner,
 			// Staff gate for the inline provider edit form (§55).
-			canManageProviders: !!event.locals.user?.permissions?.includes(
+			canManageProviders: hasPerm(
+				event.locals.user?.permissions,
 				'affiliate.providers.manage'
 			)
 		};

@@ -2,6 +2,7 @@
 import type { PageServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { apiContext, apiList } from '$lib/server/api';
+import { hasPerm } from '$lib/server/auth';
 import type { DealPartnerRef, MyOrganization } from '$lib/types';
 
 /**
@@ -17,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, `/login?redirect=${encodeURIComponent(event.url.pathname)}`);
 	}
 	const perms = event.locals.user.permissions ?? [];
-	const isStaff = perms.includes('coupons.manage');
+	const isStaff = hasPerm(perms, 'coupons.manage');
 	const ctx = apiContext(event);
 
 	// Provider select options (staff form only — org submissions derive the
@@ -50,6 +51,6 @@ export const load: PageServerLoad = async (event) => {
 		isStaff,
 		providers,
 		orgs,
-		canManageProviders: perms.includes('affiliate.providers.manage')
+		canManageProviders: hasPerm(perms, 'affiliate.providers.manage')
 	};
 };
