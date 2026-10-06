@@ -15,6 +15,8 @@
 		formatPricePart,
 		formatPriceRange,
 		formatWikiFieldValue,
+		isMediaFieldType,
+		mediaFieldItems,
 		type PricePartDef,
 		pricePartsSchema,
 		pricePartsValue,
@@ -199,12 +201,40 @@
 				{:else}
 					<dl class="divide-y divide-[var(--color-border)]">
 						{#each section.fields as f (f.id)}
+							{#if isMediaFieldType(f.field_type)}
+								<!-- §80 — image fields render as a linked thumbnail strip;
+								     text formatting would stringify {id,url,alt}. -->
+								{@const media = mediaFieldItems(f.value)}
+								{#if media.length > 0}
+									<div class="px-4 py-2 text-sm">
+										<dt class="text-[var(--color-muted)]">{f.label}</dt>
+										<dd class="mt-1.5 flex flex-wrap gap-2">
+											{#each media as m (m.id || m.url)}
+												<a
+													href={m.url}
+													target="_blank"
+													rel="noopener noreferrer"
+													class="block transition-opacity hover:opacity-90"
+												>
+													<img
+														src={m.url}
+														alt={m.alt ?? ''}
+														loading="lazy"
+														class="h-20 w-28 rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+													/>
+												</a>
+											{/each}
+										</dd>
+									</div>
+								{/if}
+							{:else}
 							<div class="flex items-baseline justify-between gap-3 px-4 py-2 text-sm">
 								<dt class="shrink-0 text-[var(--color-muted)]">{f.label}</dt>
 								<dd class="min-w-0 truncate text-right text-[var(--color-text)]">
 									{formatWikiFieldValue(f, currencies, contextCurrency)}
 								</dd>
 							</div>
+							{/if}
 						{/each}
 					</dl>
 				{/if}

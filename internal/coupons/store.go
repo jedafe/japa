@@ -166,12 +166,13 @@ func (s *Store) countCouponsFiltered(ctx context.Context, status, couponType, se
 	})
 }
 
-func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, couponType, search *string, limit, offset int32) ([]gen.ListActiveCouponsRow, error) {
+func (s *Store) listActiveCoupons(ctx context.Context, providerID pgtype.UUID, couponType, search *string, sort string, limit, offset int32) ([]gen.ListActiveCouponsRow, error) {
 	return s.read.ListActiveCoupons(ctx, gen.ListActiveCouponsParams{
 
 		ProviderID: providerID,
 		CouponType: couponType,
 		Search:     search,
+		Sort:       sort,
 		PageLimit:  limit,
 		PageOffset: offset,
 	})

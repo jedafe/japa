@@ -9,13 +9,13 @@
     },
     "playwright": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest"]
+      "command": "bunx",
+      "args": ["@playwright/mcp@latest"]
     },
     "context7": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"]
+      "command": "bunx",
+      "args": ["@upstash/context7-mcp"]
     }
   }
 }

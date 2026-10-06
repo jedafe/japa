@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
@@ -91,6 +92,47 @@ func TestIsUniqueViolation(t *testing.T) {
 	wrapped := fmt.Errorf("creating roadmap shadow content: %w", errors.New(`ERROR: duplicate key value violates unique constraint "contents_slug_key" (SQLSTATE 23505)`))
 	if !isUniqueViolation(wrapped) {
 		t.Error("expected true for wrapped 23505 violation")
+	}
+}
+
+func TestIsSlugConflict(t *testing.T) {
+	t.Parallel()
+
+	if isSlugConflict(errors.New("some other error")) {
+		t.Error("expected false for generic error")
+	}
+
+	// A content_hash violation names a different constraint — retrying with a
+	// new slug cannot fix it, so the shadow-create loop must not retry.
+	hashConflict := fmt.Errorf("creating roadmap shadow content: %w", errors.New(`ERROR: duplicate key value violates unique constraint "idx_contents_content_hash" (SQLSTATE 23505)`))
+	if isSlugConflict(hashConflict) {
+		t.Error("expected false for content_hash violation")
+	}
+
+	slugConflict := fmt.Errorf("creating roadmap shadow content: %w", errors.New(`ERROR: duplicate key value violates unique constraint "contents_slug_key" (SQLSTATE 23505)`))
+	if !isSlugConflict(slugConflict) {
+		t.Error("expected true for slug violation")
+	}
+}
+
+// Regression test for the approval 500: the shadow contents row's hash must
+// be scoped to the item so an empty body (or any body shared with another
+// contents row) never collides under the global idx_contents unique index.
+func TestShadowContentHashDistinguished(t *testing.T) {
+	t.Parallel()
+
+	var a, b gen.RoadmapItem
+	a.ID.Scan("00000000-0000-0000-0000-000000000001")
+	b.ID.Scan("00000000-0000-0000-0000-000000000002")
+
+	if shadowContentHash(a, "") == content.ComputeContentHash("") {
+		t.Error("empty-body hash must be distinguished from the global empty hash")
+	}
+	if shadowContentHash(a, "same body") == shadowContentHash(b, "same body") {
+		t.Error("identical bodies on different items must not share a hash")
+	}
+	if shadowContentHash(a, "x") != shadowContentHash(a, "x") {
+		t.Error("hash must be deterministic for the same item + body")
 	}
 }
 

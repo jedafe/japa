@@ -940,7 +940,7 @@ func (q *Queries) GetCouponFeedSourceByID(ctx context.Context, id pgtype.UUID) (
 const getCouponForRender = `-- name: GetCouponForRender :one
 
 SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
- c.referral_url, c.status, c.expires_at,
+ c.referral_url, c.status, c.valid_from, c.expires_at,
  ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
@@ -956,6 +956,7 @@ type GetCouponForRenderRow struct {
 	DiscountValue       pgtype.Numeric     `json:"discount_value"`
 	ReferralUrl         *string            `json:"referral_url"`
 	Status              string             `json:"status"`
+	ValidFrom           pgtype.Timestamptz `json:"valid_from"`
 	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
 	ProviderName        *string            `json:"provider_name"`
 	ProviderSlug        *string            `json:"provider_slug"`
@@ -980,6 +981,7 @@ func (q *Queries) GetCouponForRender(ctx context.Context, id pgtype.UUID) (GetCo
 		&i.DiscountValue,
 		&i.ReferralUrl,
 		&i.Status,
+		&i.ValidFrom,
 		&i.ExpiresAt,
 		&i.ProviderName,
 		&i.ProviderSlug,
@@ -1027,18 +1029,23 @@ FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.status = 'active'
  AND (ap.id IS NULL OR ap.is_active = true)
+ AND (c.valid_from IS NULL OR c.valid_from <= now())
  AND (c.expires_at IS NULL OR c.expires_at > now())
  AND ($1::uuid IS NULL OR c.provider_id = $1)
  AND ($2::text IS NULL OR c.coupon_type = $2)
  AND ($3::text IS NULL OR c.title ILIKE '%' || $3 || '%')
-ORDER BY c.created_at DESC
-LIMIT $5 OFFSET $4
+ORDER BY
+ CASE WHEN $4::text = 'popular' THEN c.total_clicks END DESC,
+ CASE WHEN $4::text = 'expiring' THEN c.expires_at END ASC NULLS LAST,
+ c.created_at DESC
+LIMIT $6 OFFSET $5
 `
 
 type ListActiveCouponsParams struct {
 	ProviderID pgtype.UUID `json:"provider_id"`
 	CouponType *string     `json:"coupon_type"`
 	Search     *string     `json:"search"`
+	Sort       string      `json:"sort"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
@@ -1077,6 +1084,7 @@ func (q *Queries) ListActiveCoupons(ctx context.Context, arg ListActiveCouponsPa
 		arg.ProviderID,
 		arg.CouponType,
 		arg.Search,
+		arg.Sort,
 		arg.PageOffset,
 		arg.PageLimit,
 	)

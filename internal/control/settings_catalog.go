@@ -692,6 +692,13 @@ var settingsCatalog = map[string]settingMeta{
 	"organizations.max_per_user":              {Type: "int", DefaultValue: "5", Description: "Max organizations a user can create (0 = none, -1 = unlimited)", Panel: "admin"},
 	"page.cache_ttl_secs":                     {Type: "int", DefaultValue: "300", Description: `TTL for the published-page Valkey cache (` + "`" + `jc:page:{the id}:{slug}` + "`" + `)`, Panel: "admin"},
 	"persona.max_batch_size":                  {Type: "int", DefaultValue: "100", Description: "Max personas a single POST /admin/personas request can provision (BUG-006: caps batch to prevent long-tx DoS)", Panel: "control"},
+	// Public Product Roadmap (§113, ADR-127). submissions_enabled and
+	// custom_domain are Public so apps/main can gate the submit form and run
+	// host detection off /site/settings/public (fx.custom_domain precedent).
+	"roadmap.submissions_enabled":   {Type: "bool", DefaultValue: "true", Public: true, Description: "Public feature-request submissions open (§113).", Panel: "control"},
+	"roadmap.custom_domain":         {Type: "string", DefaultValue: "", Public: true, Description: "Extra hostnames that render the roadmap surface (comma-separated; checked by apps/main host detection).", Panel: "control"},
+	"roadmap.board_cache_ttl_seconds": {Type: "int", DefaultValue: "60", Description: `TTL for the public board Valkey cache (` + "`" + `jc:roadmap:board` + "`" + `).`, Panel: "control"},
+	"roadmap.shipped_window_days":   {Type: "int", DefaultValue: "90", Description: "Days a shipped item stays on the public board before only appearing on the changelog.", Panel: "control"},
 	"site.custom_css":                         {Type: "string", DefaultValue: "", Description: `Raw CSS injected inside ` + "`" + `<style id="jc-custom-css">` + "`" + ` in ` + "`" + `<head>` + "`" + `. Max 50 KB.`, Panel: "admin"},
 	"site.custom_js":                          {Type: "string", DefaultValue: "", Description: `Raw JS injected as ` + "`" + `<script id="jc-custom-js">` + "`" + ` before ` + "`" + `</body>` + "`" + `. Max 100 KB.`, Panel: "admin"},
 	"trending.expiry.24h_hours":               {Type: "int", DefaultValue: "2", Description: "TTL (hours) for 24h trending snapshots", Panel: "admin"},

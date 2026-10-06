@@ -13,7 +13,7 @@
 		AlertCircle
 	} from 'lucide-svelte';
 	import { EmptyState } from '$lib/components/ui';
-	import { api } from '$lib/api/client';
+	import { api, apiBaseUrl } from '$lib/api/client';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { dealPath, type AffiliateProviderAdmin, type Coupon } from '$lib/types';
@@ -189,11 +189,19 @@
 		api.post(`/coupons/${couponId}/click`, { event_type: eventType }).catch(() => {});
 	}
 
+	// Click-through goes through the backend /go redirect so the click is
+	// recorded server-side even without JS (Section 55 Deal Pages).
+	const goUrl = (coupon: Coupon) => `${apiBaseUrl}/deals/${coupon.slug}/go`;
+
+	let copiedId = $state<string | null>(null);
+
 	async function copyCode(coupon: Coupon) {
 		if (!coupon.code) return;
 		try {
 			await navigator.clipboard.writeText(coupon.code);
+			copiedId = coupon.id;
 			recordEvent(coupon.id, 'copy');
+			setTimeout(() => (copiedId = null), 2000);
 		} catch {
 			// Clipboard may be unavailable; ignore silently.
 		}
@@ -386,68 +394,72 @@
 		{:else}
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each coupons as coupon (coupon.id)}
-					<a
-						href={dealPath(coupon)}
+					<div
 						class="group flex flex-col gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-subtle)]"
 					>
-						<div class="flex items-start justify-between gap-2">
-							<div class="min-w-0">
-								<h2
-									class="truncate text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
-								>
-									{coupon.title}
-								</h2>
+						<a href={dealPath(coupon)} class="flex flex-col gap-3">
+							<div class="flex items-start justify-between gap-2">
+								<div class="min-w-0">
+									<h2
+										class="truncate text-sm font-semibold text-[var(--color-text)] group-hover:text-[var(--color-primary)]"
+									>
+										{coupon.title}
+									</h2>
+								</div>
+								{#if coupon.is_verified}
+									<span
+										class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary)]"
+									>
+										<BadgeCheck size={12} />
+										{t('coupons.verified', 'Verified')}
+									</span>
+								{/if}
 							</div>
-							{#if coupon.is_verified}
-								<span
-									class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-xs font-medium text-[var(--color-primary)]"
-								>
-									<BadgeCheck size={12} />
-									{t('coupons.verified', 'Verified')}
-								</span>
-							{/if}
-						</div>
 
-						<div class="flex items-center gap-2">
-							{#if coupon.code}
-								<code
-									class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1 font-mono text-xs text-[var(--color-text)]"
-								>
-									{coupon.code}
-								</code>
-							{/if}
-							{#if discountLabel(coupon)}
-								<span class="text-xs font-medium text-[var(--color-primary)]">
-									{discountLabel(coupon)}
-								</span>
-							{/if}
-						</div>
+							<div class="flex items-center gap-2">
+								{#if coupon.code}
+									<code
+										class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2 py-1 font-mono text-xs text-[var(--color-text)]"
+									>
+										{coupon.code}
+									</code>
+								{/if}
+								{#if discountLabel(coupon)}
+									<span class="text-xs font-medium text-[var(--color-primary)]">
+										{discountLabel(coupon)}
+									</span>
+								{/if}
+							</div>
+						</a>
 
-						<div class="flex items-center gap-2">
-							{#if coupon.code}
-								<button
-									type="button"
-									onclick={(e) => {
-										e.preventDefault();
-										e.stopPropagation();
-										copyCode(coupon);
-									}}
-									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-								>
-									<Copy size={12} />
-									{t('coupons.copy_code', 'Copy code')}
-								</button>
-							{/if}
-							{#if coupon.referral_url}
-								<span
-									class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)]"
-								>
-									<ExternalLink size={12} />
-									{t('coupons.visit', 'Visit site')}
-								</span>
-							{/if}
-						</div>
-					</a>
+						{#if coupon.code || coupon.referral_url}
+							<div class="flex items-center gap-2">
+								{#if coupon.code}
+									<button
+										type="button"
+										onclick={() => copyCode(coupon)}
+										class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+									>
+										<Copy size={12} />
+										{copiedId === coupon.id
+											? t('coupons.copied', 'Copied!')
+											: t('coupons.copy_code', 'Copy code')}
+									</button>
+								{/if}
+								{#if coupon.referral_url && coupon.slug}
+									<a
+										href={goUrl(coupon)}
+										target="_blank"
+										rel="noopener noreferrer nofollow"
+										class="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-primary)]"
+									>
+										<ExternalLink size={12} />
+										{t('coupons.visit', 'Visit site')}
+									</a>
+								{/if}
+							</div>
+						{/if}
+					</div>
 				{/each}
 			</div>
 		{/if}

@@ -8,6 +8,19 @@ import type { Connect, Plugin } from 'vite';
 // PRIVATE_API_BASE_URL ($lib/server/api); this proxy only serves browser fetches.
 const API_TARGET = 'http://localhost:8080';
 
+// Branded-surface hosts (ADR-063 university, ADR-127 roadmap) must be listed in
+// server.allowedHosts or the dev server 403s them before hooks.server.ts can
+// detect the host. Canonical hosts plus the JC_*_HOSTS env lists — same sources
+// isUniversitySurface/isRoadmapSurface consult.
+const devAllowedHosts = [
+	'university.japaconnect.com',
+	'roadmap.japaconnect.com',
+	...(process.env.JC_UNIVERSITY_HOSTS ?? '').split(','),
+	...(process.env.JC_ROADMAP_HOSTS ?? '').split(',')
+]
+	.map((h) => h.trim())
+	.filter(Boolean);
+
 /**
  * For client-side fetches to /api/v1 and /ws: turn the jc_token cookie into a
  * Bearer header and forward the request host (port stripped) for reverse-proxy
@@ -40,6 +53,7 @@ function apiHeadersPlugin(): Plugin {
 export default defineConfig({
 	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
 	server: {
+		allowedHosts: devAllowedHosts,
 		// Allow serving workspace-level .bun node_modules (e.g. @fontsource
 		// fonts installed by Bun at the monorepo root). Without this, Vite
 		// rejects requests like:

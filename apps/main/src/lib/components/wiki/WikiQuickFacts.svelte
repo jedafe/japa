@@ -20,7 +20,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { getEntityFields, type WikiEntityField, type WikiEntityFieldGroup } from '$lib/api/wiki';
-	import { formatWikiFieldValue } from '$lib/utils/wikiFieldValue';
+	import { formatWikiFieldValue, isMediaFieldType } from '$lib/utils/wikiFieldValue';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 	import type { IconComponent } from '$lib/components/ui/icons';
 
@@ -71,8 +71,12 @@
 			.then((data) => {
 				if (cancelled) return;
 				contextCurrency = data?.entity_currency_code ?? '';
+				// §80 — media-typed fields (attraction gallery) are
+				// {id,url,alt} objects, not scalar facts; the body panels
+				// render them as thumbnails. Excluding them here keeps a
+				// resolved media array from stringifying into the rail.
 				fields = pickFacts(data?.groups ?? [], groupSlug).filter(
-					(f) => f.visible && hasValue(f)
+					(f) => f.visible && !isMediaFieldType(f.field_type) && hasValue(f)
 				);
 			})
 			.catch(() => {

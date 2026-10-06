@@ -3,7 +3,7 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { actionColorClass } from '$lib/constants/audit';
@@ -22,6 +22,8 @@
 	let deleteModalOpen = $state(false);
 	let pendingDeleteId = $state<string | null>(null);
 	let clearAllModalOpen = $state(false);
+	let bulkDeleteModalOpen = $state(false);
+	let pendingBulkDeleteIds = $state<string[]>([]);
 
 	let sortKey = $state('timestamp');
 	let sortDirection = $state<'asc' | 'desc'>('desc');
@@ -179,11 +181,12 @@
 
 	const bulkActions: DataTableBulkAction[] = [
 		{
-			label: t('audit.clear_all', 'Clear All'),
+			label: t('audit.clear_selected', 'Clear Selected'),
 			icon: Trash2,
 			variant: 'destructive',
-			onClick: () => {
-				clearAllModalOpen = true;
+			onClick: (ids: string[]) => {
+				pendingBulkDeleteIds = ids;
+				bulkDeleteModalOpen = true;
 			}
 		}
 	];
@@ -200,6 +203,24 @@
 		} catch {
 			message = t('audit.clear_error', 'Failed to clear audit entry.');
 		}
+	}
+
+	async function deleteSelected() {
+		const ids = pendingBulkDeleteIds;
+		bulkDeleteModalOpen = false;
+		pendingBulkDeleteIds = [];
+		const settled = await Promise.allSettled(
+			ids.map((id) => api(`/control/audit-logs/${id}`, { method: 'DELETE' }))
+		);
+		const failed = settled.filter(
+			(r) => r.status === 'rejected' || !(r as PromiseFulfilledResult<{ ok: boolean }>).value.ok
+		).length;
+		if (failed > 0) {
+			message = t('audit.clear_selected_partial', '{failed} of {count} entries could not be cleared.')
+				.replace('{failed}', String(failed))
+				.replace('{count}', String(ids.length));
+		}
+		load();
 	}
 
 	async function clearAll() {
@@ -328,21 +349,21 @@
 	<!-- H3: Select and date filters auto-apply on change (filter-on-change
 	     per DataTable spec). Text inputs keep Enter-to-apply to avoid
 	     fetching on every keystroke. -->
-	<Select
+	<AutocompleteSelect
 		bind:value={filterAction}
-		items={actionTypes}
+		options={actionTypes}
 		onValueChange={() => applyFilters()}
 		placeholder={t('audit.action_all', 'All Actions')}
 		ariaLabel={t('audit.action_placeholder', 'Filter by action')}
-		triggerClass="h-10 w-full"
+		class="w-full"
 	/>
-	<Select
+	<AutocompleteSelect
 		bind:value={filterTarget}
-		items={targetTypes}
+		options={targetTypes}
 		onValueChange={() => applyFilters()}
 		placeholder={t('audit.target_all', 'All Target Types')}
 		ariaLabel={t('audit.target_placeholder', 'Filter by target type')}
-		triggerClass="h-10 w-full"
+		class="w-full"
 	/>
 	<input
 		type="date"
@@ -359,12 +380,18 @@
 		aria-label="Filter to date"
 	/>
 </div>
-<div class="mb-4">
+<div class="mb-4 flex items-center gap-3">
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-sm font-medium transition-colors"
 		onclick={applyFilters}
 	>
 		{t('audit.apply_filters', 'Apply Filters')}
+	</button>
+	<button
+		class="border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-9px border px-3 py-1.5 text-sm font-medium transition-colors"
+		onclick={() => { clearAllModalOpen = true; }}
+	>
+		{t('audit.clear_all', 'Clear All')}
 	</button>
 </div>
 
@@ -407,5 +434,17 @@
 	}}
 	onCancel={() => {
 		clearAllModalOpen = false;
+	}}
+/>
+
+<ConfirmModal
+	bind:open={bulkDeleteModalOpen}
+	title={t('audit.clear_selected_title', 'Clear Selected Entries')}
+	consequence={t('audit.clear_selected_confirm', 'Permanently clear {count} selected audit log entries? This cannot be undone.').replace('{count}', String(pendingBulkDeleteIds.length))}
+	confirmText={t('audit.clear_confirm_text', 'CLEAR')}
+	onConfirm={deleteSelected}
+	onCancel={() => {
+		bulkDeleteModalOpen = false;
+		pendingBulkDeleteIds = [];
 	}}
 />

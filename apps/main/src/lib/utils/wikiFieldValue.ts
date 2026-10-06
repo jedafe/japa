@@ -194,6 +194,18 @@ export function mediaFieldItems(v: unknown): MediaFieldItem[] {
 	return single ? [single] : [];
 }
 
+/** §80 — select/multiselect values written outside the ops path may carry
+ *  a {"value": x} / {"values": […]} envelope; unwrap to the scalar/array so
+ *  option-label resolution still matches. */
+function unwrapChoiceValue(v: unknown): unknown {
+	if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+		const o = v as Record<string, unknown>;
+		if ('values' in o) return o.values;
+		if ('value' in o) return o.value;
+	}
+	return v;
+}
+
 /** §58 — currency display precedence for money-typed fields: the field's
  *  explicit {currency_code} option wins; otherwise the host space/entity's
  *  resolved country currency (space_currency_code / entity_currency_code);
@@ -203,7 +215,10 @@ export function formatWikiFieldValue(
 	currencies?: CurrencyInfo[] | null,
 	contextCurrencyCode?: string
 ): string {
-	const v = f.value;
+	let v = f.value;
+	if (f.field_type === 'select' || f.field_type === 'multiselect') {
+		v = unwrapChoiceValue(v);
+	}
 	if (v === null || v === undefined || v === '') return '—';
 	const code = fieldCurrencyCode(f.options) || contextCurrencyCode || '';
 	if (f.field_type === 'price_range') return formatPriceRange(v, code, currencies);

@@ -2,7 +2,7 @@
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import Switch from '$lib/components/ui/Switch.svelte';
 	import Tooltip from '$lib/components/ui/Tooltip.svelte';
 	import { api, getToken } from '$lib/api';
@@ -761,7 +761,11 @@
 		return fetchEntityTagsInitial;
 	}
 
-	beforeNavigate(({ cancel }) => {
+	beforeNavigate(({ cancel, to, from }) => {
+		// Same-page navigations (e.g. the ?category= deep-link update in
+		// selectCategory) never lose state — the dirty guard only applies
+		// when actually leaving the settings page.
+		if (to?.url.pathname === from?.url.pathname) return;
 		if (isDirty) {
 			const confirmed = window.confirm(
 				t('settings.unsaved_navigate', 'You have unsaved changes. Are you sure you want to leave?')
@@ -1057,12 +1061,12 @@
 	<div class="min-w-0 flex-1">
 		<!-- Mobile category selector -->
 		<div class="mb-4 md:hidden">
-			<Select
+			<AutocompleteSelect
 				value={activeCategory}
 				onValueChange={(v) => selectCategory(v)}
 				placeholder={t('settings.all', 'All')}
-				triggerClass="w-full"
-				items={[
+				class="w-full"
+				options={[
 					{ value: 'all', label: `${t('settings.all', 'All')} (${currentSettings.length})` },
 					...categoryItems.map(({ category, count }) => ({ value: category, label: `${formatNamespace(category)} (${count})` }))
 				]}
@@ -1265,13 +1269,13 @@
 									</div>
 
 								{:else if componentType === 'select'}
-									<Select
+									<AutocompleteSelect
 										id="setting-{setting.key}"
 										value={getSelectValue(getDisplayValue(setting))}
 										onValueChange={(v) => updateSetting(setting.key, v)}
-										items={getSelectOptionsForSetting(setting)}
+										options={getSelectOptionsForSetting(setting)}
 										placeholder={t('settings.select_placeholder')}
-										triggerClass={selectTriggerClasses}
+										class={selectTriggerClasses}
 									/>
 
 								{:else if componentType === 'multi-select'}
@@ -1286,7 +1290,7 @@
 												</span>
 											{/each}
 										</div>
-										<Select
+										<AutocompleteSelect
 											id="setting-{setting.key}"
 											value=""
 											onValueChange={(v) => {
@@ -1294,9 +1298,9 @@
 													updateSetting(setting.key, [...selectedValues, v].join(','));
 												}
 											}}
-											items={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
+											options={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
 											placeholder={t('settings.add_placeholder', 'Add...')}
-											triggerClass="{selectTriggerClasses} w-full"
+											class="{selectTriggerClasses} w-full"
 										/>
 									</div>
 
@@ -1661,13 +1665,13 @@
 											</div>
 
 										{:else if componentType === 'select'}
-											<Select
+											<AutocompleteSelect
 												id="setting-{setting.key}"
 												value={getSelectValue(getDisplayValue(setting))}
 												onValueChange={(v) => updateSetting(setting.key, v)}
-												items={getSelectOptionsForSetting(setting)}
+												options={getSelectOptionsForSetting(setting)}
 												placeholder={t('settings.select_placeholder')}
-												triggerClass={selectTriggerClasses}
+												class={selectTriggerClasses}
 											/>
 
 									{:else if componentType === 'multi-select'}
@@ -1682,7 +1686,7 @@
 													</span>
 												{/each}
 											</div>
-											<Select
+											<AutocompleteSelect
 												id="setting-{setting.key}"
 												value=""
 												onValueChange={(v) => {
@@ -1690,9 +1694,9 @@
 														updateSetting(setting.key, [...selectedValues, v].join(','));
 													}
 												}}
-												items={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
+												options={getMultiSelectOptionsForSetting(setting).filter((o) => !selectedValues.includes(o.value))}
 												placeholder={t('settings.add_placeholder', 'Add...')}
-												triggerClass="{selectTriggerClasses} w-full"
+												class="{selectTriggerClasses} w-full"
 											/>
 										</div>
 

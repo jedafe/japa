@@ -1165,6 +1165,43 @@ func TestDirectoryChildRows_SortAndCap(t *testing.T) {
 	}
 }
 
+// TestChoiceValueJSON — the entity-fields DTO normalizes select/multiselect
+// value_json to the canonical write shape (bare scalar / bare array),
+// unwrapping the {"value": …} / {"values": […]} envelopes other writers
+// (cfv upserts, attraction enrichment) produce.
+func TestChoiceValueJSON(t *testing.T) {
+	cases := []struct {
+		name  string
+		raw   string
+		multi bool
+		want  string
+	}{
+		{"select bare", `"museum"`, false, `"museum"`},
+		{"select wrapped", `{"value":"museum"}`, false, `"museum"`},
+		{"select wrapped array", `{"value":["museum","landmark"]}`, false, `"museum"`},
+		{"multi bare", `["a","b"]`, true, `["a","b"]`},
+		{"multi values envelope", `{"values":["a","b"]}`, true, `["a","b"]`},
+		{"multi value envelope", `{"value":["a","b"]}`, true, `["a","b"]`},
+		{"multi wrapped scalar", `{"value":"a"}`, true, `["a"]`},
+		{"select object without keys", `{"foo":1}`, false, ""},
+		{"select non-string", `{"value":1}`, false, ""},
+		{"multi mixed array", `{"values":["a",1]}`, true, ""},
+		{"malformed", `nope`, false, ""},
+	}
+	for _, tc := range cases {
+		got := choiceValueJSON([]byte(tc.raw), tc.multi)
+		if tc.want == "" {
+			if got != nil {
+				t.Fatalf("%s: got %s want nil", tc.name, got)
+			}
+			continue
+		}
+		if string(got) != tc.want {
+			t.Fatalf("%s: got %s want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestSelectValueJSON — select-type field values store {"value": "…"} in
 // value_json; the extractor returns the scalar or "" on missing/malformed.
 func TestSelectValueJSON(t *testing.T) {
@@ -1781,6 +1818,7 @@ func TestParseMediaFieldRefs(t *testing.T) {
 		{"wrapped single", `{"value":"` + id1 + `"}`, 1},
 		{"id array", `["` + id1 + `","` + id2 + `"]`, 2},
 		{"wrapped array", `{"value":["` + id1 + `","` + id2 + `"]}`, 2},
+		{"media_ids envelope", `{"media_ids":["` + id1 + `","` + id2 + `"]}`, 2},
 		{"object array", `[{"id":"` + id1 + `","alt":"falls"},{"id":"` + id2 + `"}]`, 2},
 		{"garbage", `{"foo":1}`, 0},
 		{"not json", `nope`, 0},

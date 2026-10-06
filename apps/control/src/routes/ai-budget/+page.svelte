@@ -29,8 +29,8 @@
 	let saving = $state(false);
 	let editError = $state('');
 
-	async function load() {
-		loading = true;
+	async function load(quiet = false) {
+		if (!quiet) loading = true;
 		const result = await api<AiBudget>('/control/ai-budget');
 		if (result.ok) {
 			budget = result.data;
@@ -41,7 +41,7 @@
 	$effect(() => {
 		load();
 		const interval = setInterval(() => {
-			if (document.visibilityState === 'visible') load();
+			if (document.visibilityState === 'visible') load(true);
 		}, 30_000);
 		return () => clearInterval(interval);
 	});
@@ -134,7 +134,7 @@
 			{t('ai_budget.edit_threshold', 'Edit Threshold')}
 		</button>
 	{/if}
-	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={load}>
+	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-xs font-medium transition-colors" onclick={() => load()}>
 		<RefreshCw class="size-3" />
 		{t('common.refresh')}
 	</button>

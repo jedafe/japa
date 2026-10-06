@@ -13,6 +13,7 @@
 	import ShareButton from '$lib/components/ui/ShareButton.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
+	import WikiGalleryStrip from '$lib/components/wiki/WikiGalleryStrip.svelte';
 	import WikiTabs from '$lib/components/wiki/WikiTabs.svelte';
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { categoryIconResolved, categoryTint } from '$lib/components/wiki/icons';
@@ -383,6 +384,11 @@
 				alt={spaceName}
 				class="mt-4 max-h-72 w-full rounded-[12px] border border-[var(--color-border)] object-cover"
 			/>
+		{/if}
+		<!-- §80 attractions — full-width gallery strip under the hero when a
+		     media field (e.g. the overview group's `gallery`) has values. -->
+		{#if structuredEditsOn && spaceId && !data.loadError}
+			<WikiGalleryStrip entityId={spaceId} />
 		{/if}
 
 		{#if !wikiEnabled && data.loadError}

@@ -364,11 +364,15 @@ func (s *Service) ResolveUserTier(ctx context.Context, userID pgtype.UUID) (stri
 
 // APIKeyUpdateFields holds the optional fields for a partial API key update.
 // Only non-zero/non-empty fields are written; the rest are left untouched.
+// Scopes is a pointer so callers can distinguish "not provided" (nil) from an
+// explicit scope list — the control-panel PATCH is the only path allowed to
+// change scopes (PUB-001 keeps them out of self-service updates).
 type APIKeyUpdateFields struct {
 	Name          string
 	Status        string
 	RateLimitTier string
 	Notes         string
+	Scopes        *[]string
 }
 
 // ErrNoFieldsToUpdate is returned by UpdateAPIKeyFields when no updatable
@@ -384,6 +388,7 @@ var apiKeyUpdateColumns = map[string]string{
 	"status":          "status",
 	"rate_limit_tier": "rate_limit_tier",
 	"notes":           "notes",
+	"scopes":          "scopes",
 }
 
 // UpdateAPIKeyFields performs a partial update of an API key using a strict
@@ -416,6 +421,15 @@ func (s *Service) UpdateAPIKeyFields(ctx context.Context, keyID pgtype.UUID, fie
 
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, argIdx))
 		args = append(args, s)
+		argIdx++
+	}
+
+	// Scopes is handled outside the string loop: it is a text[] column and
+	// a non-nil pointer means "replace the scope list" even when empty is
+	// rejected upstream.
+	if fields.Scopes != nil {
+		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", apiKeyUpdateColumns["scopes"], argIdx))
+		args = append(args, *fields.Scopes)
 		argIdx++
 	}
 

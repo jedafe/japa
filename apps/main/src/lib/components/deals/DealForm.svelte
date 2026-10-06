@@ -7,6 +7,9 @@
 	import { api } from '$lib/api/client';
 	import { slugify } from '$lib/studio/prompt';
 	import { Plus, Loader2, AlertCircle, Trash2 } from 'lucide-svelte';
+	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { Coupon, DealPartnerRef } from '$lib/types';
 	import {
 		buildCouponPayload,
@@ -100,6 +103,33 @@
 		v.status && !['active', 'suspended'].includes(v.status)
 			? ['active', 'suspended', v.status]
 			: ['active', 'suspended']
+	);
+
+	const providerSelectOptions = $derived([
+		{ value: '', label: t('deal.form.provider_none', 'No provider (internal deal)') },
+		...providerOptions.map((p) => ({ value: p.id, label: p.name, sublabel: p.category ?? undefined }))
+	]);
+
+	const discountTypeOptions = $derived([
+		{ value: '', label: t('deal.form.discount_none', 'None / see description') },
+		{ value: 'percent', label: t('deal.form.discount_percent', 'Percent off') },
+		{ value: 'fixed', label: t('deal.form.discount_fixed', 'Fixed amount off') },
+		{ value: 'free_shipping', label: t('deal.form.discount_free_shipping', 'Free shipping') }
+	]);
+
+	const statusSelectOptions = $derived(
+		statusOptions.map((s) => ({ value: s, label: statusLabel(s) }))
+	);
+
+	// Free-text suggestion lists (formerly <datalist>) — options derive from
+	// API data (providers prop / currencies page data), never hardcoded.
+	const categoryFetcher = $derived(
+		staticAutocompleteFetcher(providerCategories.map((c) => ({ id: c, label: c })))
+	);
+	const currencyFetcher = $derived(
+		staticAutocompleteFetcher(
+			(currencies ?? []).map((c) => ({ id: c.code, label: c.code, sublabel: c.name }))
+		)
 	);
 
 	function onTitleInput() {
@@ -215,12 +245,12 @@
 				{t('deal.form.provider', 'Provider')}
 			</label>
 			<div class="flex items-center gap-2">
-				<select id="deal-provider" bind:value={v.provider_id} class={inputClass}>
-					<option value="">{t('deal.form.provider_none', 'No provider (internal deal)')}</option>
-					{#each providerOptions as p (p.id)}
-						<option value={p.id}>{p.name}{p.category ? ` — ${p.category}` : ''}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="deal-provider"
+					bind:value={v.provider_id}
+					options={providerSelectOptions}
+					class="min-w-0 flex-1"
+				/>
 				{#if canManageProviders}
 					<button
 						type="button"
@@ -268,18 +298,18 @@
 						<label for="np-category" class={labelClass}>
 							{t('deal.form.provider_category', 'Category')}
 						</label>
-						<input
+						<Autocomplete
 							id="np-category"
-							type="text"
-							list="deal-provider-categories"
-							bind:value={np.category}
-							class={inputClass}
+							freeText
+							placeholder={t('deal.form.provider_category_placeholder', 'e.g. Travel')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={categoryFetcher}
+							initialFetcher={categoryFetcher}
+							selectedId={null}
+							selectedLabel={np.category}
+							onSelect={(i) => (np.category = i.id)}
+							onFreeTextBlur={(q) => (np.category = q)}
 						/>
-						<datalist id="deal-provider-categories">
-							{#each providerCategories as cat (cat)}
-								<option value={cat}></option>
-							{/each}
-						</datalist>
 					</div>
 					<div>
 						<label for="np-base-url" class={labelClass}>
@@ -359,12 +389,11 @@
 			<label for="deal-discount-type" class={labelClass}>
 				{t('deal.form.discount_type', 'Discount type')}
 			</label>
-			<select id="deal-discount-type" bind:value={v.discount_type} class={inputClass}>
-				<option value="">{t('deal.form.discount_none', 'None / see description')}</option>
-				<option value="percent">{t('deal.form.discount_percent', 'Percent off')}</option>
-				<option value="fixed">{t('deal.form.discount_fixed', 'Fixed amount off')}</option>
-				<option value="free_shipping">{t('deal.form.discount_free_shipping', 'Free shipping')}</option>
-			</select>
+			<AutocompleteSelect
+				id="deal-discount-type"
+				bind:value={v.discount_type}
+				options={discountTypeOptions}
+			/>
 		</div>
 		<div>
 			<label for="deal-discount-value" class={labelClass}>
@@ -382,19 +411,18 @@
 		<div>
 			<label for="deal-currency" class={labelClass}>{t('deal.form.currency', 'Currency')}</label>
 			{#if currencies && currencies.length > 0}
-				<input
+				<Autocomplete
 					id="deal-currency"
-					type="text"
-					list="deal-currencies"
-					bind:value={v.currency}
+					freeText
 					placeholder="USD"
-					class={inputClass}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={currencyFetcher}
+					initialFetcher={currencyFetcher}
+					selectedId={null}
+					selectedLabel={v.currency}
+					onSelect={(i) => (v.currency = i.id)}
+					onFreeTextBlur={(q) => (v.currency = q)}
 				/>
-				<datalist id="deal-currencies">
-					{#each currencies as c (c.code)}
-						<option value={c.code}>{c.code} — {c.name}</option>
-					{/each}
-				</datalist>
 			{:else}
 				<input
 					id="deal-currency"
@@ -470,11 +498,11 @@
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div>
 				<label for="deal-status" class={labelClass}>{t('deal.form.status', 'Status')}</label>
-				<select id="deal-status" bind:value={v.status} class={inputClass}>
-					{#each statusOptions as s (s)}
-						<option value={s}>{statusLabel(s)}</option>
-					{/each}
-				</select>
+				<AutocompleteSelect
+					id="deal-status"
+					bind:value={v.status}
+					options={statusSelectOptions}
+				/>
 			</div>
 			<div class="flex items-end pb-2">
 				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">

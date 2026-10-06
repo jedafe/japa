@@ -13,7 +13,7 @@
 		Inbox
 	} from 'lucide-svelte';
 	import { Menu, MenuItem } from '@japaconnect/ui';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { sanitizeHtml } from '$lib/utils';
 
@@ -33,7 +33,8 @@
 		emptyIcon = undefined as any,
 		onRowClick = undefined,
 		getRowId = (row) => (row as Record<string, unknown>).id as string,
-		selectable = true
+		selectable = true,
+		pageSizeOptions = [10, 25, 50, 100]
 	}: {
 		columns?: DataTableColumn[];
 		rows?: unknown[];
@@ -51,6 +52,7 @@
 		onRowClick?: (row: unknown) => void;
 		getRowId?: (row: unknown) => string;
 		selectable?: boolean;
+		pageSizeOptions?: number[];
 	} = $props();
 
 	let tableRef = $state<HTMLDivElement | null>(null);
@@ -159,8 +161,11 @@
 	}
 
 	function handleBulkAction(action: DataTableBulkAction) {
-		const ids = visibleIds.filter((id) => selectedIds.has(id));
-		action.onClick(ids);
+		// Act on the full selection set, not just the ids visible on this
+		// page — a user who selects rows across pages expects the action to
+		// cover every checked row (previously off-page selections were
+		// silently dropped).
+		action.onClick([...selectedIds]);
 		clearSelection();
 	}
 </script>
@@ -337,13 +342,13 @@
 				<span>{totalRows} {totalRows !== 1 ? t('lib.components.DataTable.items', 'items') : t('lib.components.DataTable.item', 'item')}</span>
 				<div class="flex items-center gap-1.5">
 					<span class="text-xs">{t('lib.components.DataTable.svelte.per_page')}</span>
-					<Select
+					<AutocompleteSelect
 						value={String(pageSize)}
 						onValueChange={(v) => {
 							pageSize = Number(v);
 							page = 0;
 						}}
-						items={[10, 25, 50, 100].map((opt) => ({ value: String(opt), label: String(opt) }))}
+						options={pageSizeOptions.map((opt) => ({ value: String(opt), label: String(opt) }))}
 						ariaLabel={t('lib.components.DataTable.svelte.per_page')}
 						compact
 					/>

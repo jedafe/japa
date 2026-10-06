@@ -5,9 +5,9 @@
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { Plus, RefreshCw } from 'lucide-svelte';
+	import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import type { DataTableColumn } from '$lib/api/types';
+	import type { DataTableColumn, DataTableRowAction } from '$lib/api/types';
 
 	type Currency = {
 		code: string;
@@ -175,34 +175,28 @@
 				return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}">${escapeHtml(label)}</span>`;
 			}
 		},
+	];
+
+	const rowActions: DataTableRowAction[] = [
 		{
-			key: '_actions',
-			label: t('common.actions', 'Actions'),
-			render: (_: unknown, row: Record<string, unknown>) => {
-				const code = row.code as string;
-				const isActive = row.is_active as boolean;
-				const editLabel = t('currencies.edit', 'Edit Currency');
-				const edit = `<button class="text-foreground-alt hover:text-foreground p-1" data-action="edit" data-code="${escapeHtml(code)}" aria-label="${escapeHtml(editLabel)}" title="${escapeHtml(editLabel)}"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>`;
-				const delLabel = t('currencies.deactivate', 'Deactivate Currency');
-				const del = isActive
-					? `<button class="text-destructive hover:text-destructive/80 p-1" data-action="delete" data-code="${escapeHtml(code)}" aria-label="${escapeHtml(delLabel)}" title="${escapeHtml(delLabel)}"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`
-					: '';
-				return `<div class="flex gap-1">${edit}${del}</div>`;
+			label: t('currencies.edit', 'Edit Currency'),
+			icon: Pencil,
+			onClick: (row) => {
+				const c = currencies.find((x) => x.code === (row as Record<string, unknown>).code);
+				if (c) openEdit(c);
+			}
+		},
+		{
+			label: t('currencies.deactivate', 'Deactivate Currency'),
+			icon: Trash2,
+			variant: 'destructive',
+			hidden: (row) => !(row as Record<string, unknown>).is_active,
+			onClick: (row) => {
+				const c = currencies.find((x) => x.code === (row as Record<string, unknown>).code);
+				if (c) requestDelete(c);
 			}
 		}
 	];
-
-	function handleTableClick(e: MouseEvent) {
-		const target = e.target as HTMLElement;
-		const btn = target.closest('[data-action]') as HTMLElement | null;
-		if (!btn) return;
-		const code = btn.dataset.code;
-		const action = btn.dataset.action;
-		const c = currencies.find((x) => x.code === code);
-		if (!c) return;
-		if (action === 'edit') openEdit(c);
-		else if (action === 'delete') requestDelete(c);
-	}
 
 	load();
 </script>
@@ -246,18 +240,16 @@
 			<p>{t('currencies.empty', 'No currencies configured.')}</p>
 		</div>
 	{:else}
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div role="presentation" onclick={handleTableClick}>
-			<DataTable
-				{columns}
-				rows={currencies as unknown as Record<string, unknown>[]}
-				totalRows={currencies.length}
-				{loading}
-				pageSize={20}
-				emptyMessage={t('currencies.empty', 'No currencies configured.')}
-				getRowId={(row) => (row as Record<string, unknown>).code as string}
-			/>
-		</div>
+		<DataTable
+			{columns}
+			rows={currencies as unknown as Record<string, unknown>[]}
+			totalRows={currencies.length}
+			{loading}
+			{rowActions}
+			pageSize={20}
+			emptyMessage={t('currencies.empty', 'No currencies configured.')}
+			getRowId={(row) => (row as Record<string, unknown>).code as string}
+		/>
 	{/if}
 </div>
 

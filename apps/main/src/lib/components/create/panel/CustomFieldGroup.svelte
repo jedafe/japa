@@ -235,16 +235,26 @@
 		setField(field.key, Object.keys(out).length > 0 ? out : '');
 	}
 
-	// Multiselect helpers — toggle a value in/out of the array.
+	// Multiselect helpers — toggle a value in/out of the array. Stored
+	// values may arrive bare ([…]) or wrapped ({"values":[…]}) depending
+	// on the writer — unwrap before checking.
+	function multiselectValues(key: string): string[] {
+		let v: unknown = values[key];
+		if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+			const o = v as Record<string, unknown>;
+			v = 'values' in o ? o.values : 'value' in o ? o.value : v;
+		}
+		return Array.isArray(v) ? (v as string[]) : [];
+	}
 	function multiselectToggle(key: string, opt: string) {
-		const arr = Array.isArray(values[key]) ? [...(values[key] as string[])] : [];
+		const arr = [...multiselectValues(key)];
 		const i = arr.indexOf(opt);
 		if (i >= 0) arr.splice(i, 1);
 		else arr.push(opt);
 		setField(key, arr);
 	}
 	function multiselectChecked(key: string, opt: string): boolean {
-		return Array.isArray(values[key]) && (values[key] as string[]).includes(opt);
+		return multiselectValues(key).includes(opt);
 	}
 
 	const label = (f: CustomFieldDef) => f.label + (f.is_required ? ' *' : '');
@@ -364,6 +374,16 @@
 		}
 		return staticAutocompleteFetcher(selectItems(field));
 	}
+	// Stored select values may arrive bare ("museum") or wrapped
+	// ({"value":"museum"}) depending on the writer — unwrap to the scalar
+	// option value so the chip seeds correctly.
+	function selectValue(key: string): string | null {
+		let v: unknown = values[key];
+		if (v !== null && typeof v === 'object' && !Array.isArray(v) && 'value' in v) {
+			v = (v as Record<string, unknown>).value;
+		}
+		return typeof v === 'string' && v ? v : null;
+	}
 	// Resolve a stored option value back to its label for the chip; falls
 	// back to the raw value for legacy data saved before {value,label}.
 	function selectLabel(field: CustomFieldDef, val: unknown): string | null {
@@ -417,8 +437,8 @@
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={selectFetcher(field)}
 				initialFetcher={selectFetcher(field)}
-				selectedId={typeof values[field.key] === 'string' && values[field.key] ? (values[field.key] as string) : null}
-				selectedLabel={selectLabel(field, values[field.key])}
+				selectedId={selectValue(field.key)}
+				selectedLabel={selectLabel(field, selectValue(field.key))}
 				onSelect={(item) => setField(field.key, item.id)}
 				onClear={() => setField(field.key, '')}
 			/>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2 } from 'lucide-svelte';
 
@@ -290,25 +290,22 @@
 				<div class="grid grid-cols-3 gap-4">
 					<div>
 						<label for="ce-method" class={labelClass}>{t('intel.field_crawl_method', 'Method')}</label>
-						<Select
+						<AutocompleteSelect
 							id="ce-method"
 							value={form.crawl_method}
 							onValueChange={(v) => { form.crawl_method = v; }}
-							items={methodItems}
-							triggerClass="mt-1 w-full"
-							viewportClass="max-h-64"
-							zIndex={70}
+							options={methodItems}
+							class="mt-1 w-full"
 						/>
 					</div>
 					<div>
 						<label for="ce-pipeline" class={labelClass}>{t('intel.channel_pipeline', 'Pipeline')}</label>
-						<Select
+						<AutocompleteSelect
 							id="ce-pipeline"
 							value={form.pipeline}
 							onValueChange={(v) => { form.pipeline = v; }}
-							items={pipelineItems}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							options={pipelineItems}
+							class="mt-1 w-full"
 						/>
 					</div>
 					<div>
@@ -361,13 +358,12 @@
 				<div class="grid grid-cols-1 gap-4">
 					<div>
 						<label for="ce-relevance" class={labelClass}>{t('intel.channel_relevance_mode', 'Relevance mode')}</label>
-						<Select
+						<AutocompleteSelect
 							id="ce-relevance"
 							value={form.relevance_mode}
 							onValueChange={(v) => { form.relevance_mode = v; }}
-							items={relevanceItems}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							options={relevanceItems}
+							class="mt-1 w-full"
 						/>
 					</div>
 				</div>

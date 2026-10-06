@@ -93,8 +93,8 @@
 		}
 	];
 
-	async function load() {
-		loading = true;
+	async function load(quiet = false) {
+		if (!quiet) loading = true;
 		try {
 			const result = await api<WebhookEndpoint[]>('/control/webhooks');
 			if (result.ok) {
@@ -115,7 +115,7 @@
 		load();
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
-				load();
+				load(true);
 			}
 		}, 30000);
 		return () => clearInterval(interval);

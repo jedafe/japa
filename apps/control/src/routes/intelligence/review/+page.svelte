@@ -11,7 +11,7 @@
 	import { goto } from '$app/navigation';
 	import { page as pageStore } from '$app/state';
 	import { RefreshCw, Eye, CheckCircle2, XCircle, ClipboardList } from 'lucide-svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	// The review record shape mirrors the IntelRecord row returned by
 	// /api/v1/intel/review/queue. JSON blob fields are kept as-is.
@@ -279,15 +279,15 @@
 	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 		<div class="flex flex-1 flex-wrap items-center gap-2">
 			<SearchInput bind:value={filter} placeholder={t('intel.search_records', 'Search records...')} class="w-64" />
-			<Select
+			<AutocompleteSelect
 				value={filterEntity}
 				onValueChange={(v) => { filterEntity = v; page = 0; }}
-				items={entityItems}
+				options={entityItems}
 				placeholder={t('intel.filter_all_entities', 'All entity types')}
-				triggerClass="h-input"
+				class="w-44"
 			/>
 			<!-- Status filter: updates the URL query param so the page reloads with the new status. -->
-			<Select
+			<AutocompleteSelect
 				value={statusFilter}
 				onValueChange={(v) => {
 					const url = new URL(window.location.href);
@@ -298,8 +298,8 @@
 					}
 					goto(url.pathname + url.search, { replaceState: false });
 				}}
-				items={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
-				triggerClass="h-input"
+				options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))}
+				class="w-44"
 			/>
 		</div>
 		<button

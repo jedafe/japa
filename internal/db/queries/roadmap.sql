@@ -20,11 +20,16 @@ INSERT INTO roadmap_items (
 -- name: GetRoadmapItemByID :one
 SELECT * FROM roadmap_items WHERE id = @id;
 
+-- name: GetRoadmapItemIDBySlug :one
+-- Existence check ignoring soft deletes — the slug UNIQUE constraint covers
+-- deleted rows too, so uniqueItemSlug must see them or create hits 23505.
+SELECT id FROM roadmap_items WHERE slug = @slug;
+
 -- name: GetRoadmapItemBySlug :one
 SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
-LEFT JOIN roadmap_categories c ON c.id = i.category_id
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
 LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = sqlc.narg(viewer_id)
 WHERE i.slug = @slug AND i.deleted_at IS NULL;
 
@@ -32,7 +37,7 @@ WHERE i.slug = @slug AND i.deleted_at IS NULL;
 SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
-LEFT JOIN roadmap_categories c ON c.id = i.category_id
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
 LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = sqlc.narg(viewer_id)
 WHERE i.status = ANY(@statuses::text[]) AND i.deleted_at IS NULL
   AND (sqlc.narg(category_slug)::text = '' OR c.slug = sqlc.narg(category_slug)::text)
@@ -42,7 +47,7 @@ ORDER BY i.is_flagship DESC, i.sort_order ASC, i.vote_count DESC, i.created_at D
 -- name: ListRoadmapChangelog :many
 SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color
 FROM roadmap_items i
-LEFT JOIN roadmap_categories c ON c.id = i.category_id
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
 WHERE i.status = 'shipped' AND i.deleted_at IS NULL
 ORDER BY i.shipped_at DESC;
 
@@ -83,7 +88,7 @@ RETURNING *;
 -- name: UpdateRoadmapItemStatus :one
 UPDATE roadmap_items SET
     status = @status,
-    shipped_at = CASE WHEN @status = 'shipped' THEN now() ELSE shipped_at END,
+    shipped_at = CASE WHEN @status = 'shipped' AND shipped_at IS NULL THEN now() ELSE shipped_at END,
     updated_at = now()
 WHERE id = @id
 RETURNING *;
@@ -103,6 +108,21 @@ DELETE FROM roadmap_items WHERE id = @id AND deleted_at IS NOT NULL;
 -- name: UpdateRoadmapShadowContent :exec
 UPDATE contents SET title = @title, body = @body, content_hash = sqlc.narg(content_hash), updated_at = now()
 WHERE id = @content_id AND content_type = 'roadmap';
+
+-- name: SoftDeleteRoadmapShadowContent :exec
+-- The shadow row tracks the item's lifecycle — a soft-deleted item must not
+-- leave its §49 comments thread publicly readable.
+UPDATE contents SET deleted_at = now(), updated_at = now()
+WHERE id = @content_id AND content_type = 'roadmap' AND deleted_at IS NULL;
+
+-- name: RestoreRoadmapShadowContent :exec
+UPDATE contents SET deleted_at = NULL, updated_at = now()
+WHERE id = @content_id AND content_type = 'roadmap' AND deleted_at IS NOT NULL;
+
+-- name: HardDeleteRoadmapShadowContent :exec
+-- Permanent removal under the admin.hard_delete ?force=true path (Rule 11);
+-- comments on the shadow row cascade via comments_content_id_fkey.
+DELETE FROM contents WHERE id = @content_id AND content_type = 'roadmap';
 
 -- name: ReorderRoadmapItems :exec
 UPDATE roadmap_items SET sort_order = v.ord
@@ -124,6 +144,12 @@ ORDER BY sort_order ASC, name ASC;
 
 -- name: GetRoadmapCategoryByID :one
 SELECT * FROM roadmap_categories WHERE id = @id;
+
+-- name: GetRoadmapCategoryIDBySlug :one
+-- Existence check ignoring soft deletes — the slug UNIQUE constraint covers
+-- deleted rows too, so admin create/update must see them to return 409
+-- instead of a raw 23505.
+SELECT id FROM roadmap_categories WHERE slug = @slug;
 
 -- name: CreateRoadmapCategory :one
 INSERT INTO roadmap_categories (slug, name, description, color, sort_order)

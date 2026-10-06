@@ -25,24 +25,26 @@
 	}: Props = $props();
 </script>
 
-<Tooltip.Root {delayDuration}>
-	<Tooltip.Trigger>
-		{@render children?.()}
-	</Tooltip.Trigger>
-	<Tooltip.Portal>
-		<Tooltip.Content
-			{side}
-			{sideOffset}
-			class="border-dark-10 bg-background shadow-popover rounded-input z-50 border px-3 py-1.5 text-xs font-medium {className}"
-		>
-			{#if typeof content === 'string'}
-				{content}
-			{:else}
-				{@render content?.()}
-			{/if}
-			{#if arrow}
-				<Tooltip.Arrow class="fill-[var(--background-alt,var(--background))] {arrowClass}" />
-			{/if}
-		</Tooltip.Content>
-	</Tooltip.Portal>
-</Tooltip.Root>
+<Tooltip.Provider {delayDuration}>
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			{@render children?.()}
+		</Tooltip.Trigger>
+		<Tooltip.Portal>
+			<Tooltip.Content
+				{side}
+				{sideOffset}
+				class="border-dark-10 bg-background shadow-popover rounded-input z-50 border px-3 py-1.5 text-xs font-medium {className}"
+			>
+				{#if typeof content === 'string'}
+					{content}
+				{:else}
+					{@render content?.()}
+				{/if}
+				{#if arrow}
+					<Tooltip.Arrow class="fill-[var(--background-alt,var(--background))] {arrowClass}" />
+				{/if}
+			</Tooltip.Content>
+		</Tooltip.Portal>
+	</Tooltip.Root>
+</Tooltip.Provider>

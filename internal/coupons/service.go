@@ -479,9 +479,22 @@ func (s *Service) CountCoupons(ctx context.Context, status, couponType, search *
 	return s.store.countCouponsFiltered(ctx, status, couponType, search, pgtype.UUID{})
 }
 
-func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID, couponType, search *string, page, pageSize int32) ([]gen.ListActiveCouponsRow, error) {
+// normalizeCouponSort whitelists the public ?sort= values (§55); anything else
+// falls back to the default newest-first ordering.
+func normalizeCouponSort(sort string) string {
+	switch sort {
+	case "expiring", "popular":
+		return sort
+	default:
+		return "newest"
+	}
+}
+
+func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID, couponType, search *string, sort string, page, pageSize int32) ([]gen.ListActiveCouponsRow, error) {
+	sort = normalizeCouponSort(sort)
+
 	// Only cache unfiltered first-page lists (jc:coupon_list:{page_size}, TTL 5min — Section 55).
-	canCache := providerID == nil && couponType == nil && search == nil && page == 1
+	canCache := providerID == nil && couponType == nil && search == nil && sort == "newest" && page == 1
 	cacheKey := valkey.MustKey("coupon_list:%d", pageSize)
 
 	if canCache && s.vk != nil {
@@ -500,7 +513,7 @@ func (s *Service) ListActiveCoupons(ctx context.Context, providerID *pgtype.UUID
 		pid = *providerID
 	}
 
-	coupons, err := s.store.listActiveCoupons(ctx, pid, couponType, search, limit, offset)
+	coupons, err := s.store.listActiveCoupons(ctx, pid, couponType, search, sort, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -742,7 +755,7 @@ func (s *Service) GetDealPartner(ctx context.Context, slug string) (*DealPartner
 		return nil, ErrProviderNotFound
 	}
 
-	coupons, err := s.store.listActiveCoupons(ctx, p.ID, nil, nil, MaxPageSize, 0)
+	coupons, err := s.store.listActiveCoupons(ctx, p.ID, nil, nil, "newest", MaxPageSize, 0)
 	if err != nil {
 		return nil, fmt.Errorf("listing provider coupons: %w", err)
 	}
@@ -772,6 +785,9 @@ func (s *Service) ResolveDealClick(ctx context.Context, slug string) (target str
 	}
 
 	live := coupon.Status == string(CouponStatusActive)
+	if live && coupon.ValidFrom.Valid && coupon.ValidFrom.Time.After(time.Now()) {
+		live = false
+	}
 	if live && coupon.ExpiresAt.Valid && coupon.ExpiresAt.Time.Before(time.Now()) {
 		live = false
 	}
@@ -850,6 +866,9 @@ func (s *Service) ResolveCouponForRender(ctx context.Context, id pgtype.UUID) (*
 	}
 
 	isExpired := r.Status != "active"
+	if r.ValidFrom.Valid && r.ValidFrom.Time.After(time.Now()) {
+		isExpired = true
+	}
 	if r.ExpiresAt.Valid && r.ExpiresAt.Time.Before(time.Now()) {
 		isExpired = true
 	}

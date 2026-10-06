@@ -41,7 +41,9 @@ var attractionClassQIDs = []string{
 	"Q570116",  // tourist attraction
 	"Q33506",   // museum
 	"Q4989906", // monument
-	"Q811979",  // architectural structure
+	// Q811979 (architectural structure) is intentionally NOT here: hospitals,
+	// schools, and other civic buildings subclass it, so the P31/P279*
+	// closure seeded them as "attractions". Concrete built kinds stay listed.
 	"Q839954",  // archaeological site
 	"Q23413",   // castle
 	"Q12518",   // tower
@@ -52,6 +54,8 @@ var attractionClassQIDs = []string{
 	"Q34038",   // waterfall
 	"Q8502",    // mountain
 	"Q46831",   // mountain range
+	"Q29553",   // hill
+	"Q1404150", // rock formation
 	"Q23397",   // lake
 	"Q35509",   // cave
 	"Q40080",   // beach
@@ -63,6 +67,19 @@ var attractionClassQIDs = []string{
 	"Q167346",  // botanical garden
 	"Q43501",   // zoo
 	"Q194195",  // amusement park
+}
+
+// attractionExcludedQIDs are classes an attraction must never be an
+// instance of (transitively) — civic infrastructure whose subclasses can
+// still reach a listed class (e.g. hospital → built structure before
+// Q811979 was dropped; belt-and-suspenders for future additions).
+var attractionExcludedQIDs = []string{
+	"Q16917",   // hospital
+	"Q3914",    // school
+	"Q3918",    // university — its own wiki type
+	"Q1248784", // airport
+	"Q40357",   // prison
+	"Q55488",   // railway station
 }
 
 // AttractionCandidate is one Wikidata hit for the admin dry-run preview.
@@ -180,8 +197,14 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 
 	// §80 border attractions — resolve every candidate's P131 located-in
 	// QIDs against stamped geo spaces in one batch; each create links the
-	// trigger parent plus every matched extra parent.
+	// trigger parent plus every matched extra parent. The seed target's
+	// ancestor chain links too — a geo parent without a wikidata_id stamp
+	// can't match a P131 QID but is still a legitimate parent.
 	extraParents := a.candidateGeoParents(ctx, candidates, parentID)
+
+	// Geo ancestors missing the wikidata_id stamp get auto-populate
+	// enqueued (fire-and-forget) so future P131 resolution can match them.
+	a.enqueueUnstampedGeoAncestors(ctx, parentID)
 
 	for _, c := range candidates {
 		if c.QID == "" || c.Name == "" {
@@ -243,6 +266,21 @@ func (a *ProcessorAdapter) seedAttractions(ctx context.Context, parentID pgtype.
 		res.Slugs = append(res.Slugs, slug)
 	}
 
+	// §80 — the run summary lands in audit_logs so bulk creates are
+	// traceable (no actor: the task runs headless, actor_user_id is NULL).
+	if meta, merr := json.Marshal(res); merr == nil {
+		targetType := "space"
+		if _, aerr := a.svc.write.CreateAuditLog(ctx, gen.CreateAuditLogParams{
+			ActionType: "wiki.seed_attractions",
+			TargetType: &targetType,
+			TargetID:   parentID,
+			Metadata:   meta,
+		}); aerr != nil {
+			slog.Warn("wiki:seed_attractions: audit log write failed",
+				"parent_space_id", parentID.String(), "error", aerr)
+		}
+	}
+
 	return res, nil
 }
 
@@ -289,8 +327,22 @@ func (a *ProcessorAdapter) candidateGeoParents(ctx context.Context, candidates [
 		byQID[m.Qid] = append(byQID[m.Qid], m.ID)
 	}
 
+	// The trigger parent's own ancestor chain (city → state → country)
+	// always links — P131 matching only reaches stamped geo spaces, and
+	// geo ancestors may lack the wikidata_id stamp on first runs.
+	ancestors, err := a.svc.read.ListSpaceAncestors(ctx, parentID)
+	if err != nil {
+		slog.Warn("wiki:seed_attractions: ancestor lookup failed", "error", err)
+	}
+
 	for _, c := range candidates {
 		seen := map[pgtype.UUID]bool{parentID: true}
+		for _, anc := range ancestors {
+			if !seen[anc.ID] && isGeoAncestor(anc) {
+				seen[anc.ID] = true
+				out[c.QID] = append(out[c.QID], anc.ID)
+			}
+		}
 		for _, q := range c.LocatedIn {
 			for _, id := range byQID[q] {
 				if !seen[id] {
@@ -302,6 +354,33 @@ func (a *ProcessorAdapter) candidateGeoParents(ctx context.Context, candidates [
 	}
 
 	return out
+}
+
+// isGeoAncestor keeps the parent list to geo spaces — an attraction must
+// never link a community/custom ancestor.
+func isGeoAncestor(anc gen.ListSpaceAncestorsRow) bool {
+	switch anc.TypeSlug {
+	case "country", "state", "city":
+		return true
+	}
+	return false
+}
+
+// enqueueUnstampedGeoAncestors fires space:auto_populate for every geo
+// ancestor of the seed parent whose wiki_content lacks a wikidata_id
+// stamp — that's the write path SpaceIDsByWikidataIDs reads, so stamped
+// ancestors make P131 multi-parent linking work on later runs.
+func (a *ProcessorAdapter) enqueueUnstampedGeoAncestors(ctx context.Context, parentID pgtype.UUID) {
+	ancestors, err := a.svc.read.ListSpaceAncestors(ctx, parentID)
+	if err != nil {
+		slog.Warn("wiki:seed_attractions: ancestor populate check failed", "error", err)
+		return
+	}
+	for _, anc := range ancestors {
+		if isGeoAncestor(anc) && !anc.HasWikidataID {
+			a.svc.EnqueueAutoPopulate(ctx, anc.ID)
+		}
+	}
 }
 
 // upsertAttractionTextField is the value_text upsert shared by the seeder
@@ -357,18 +436,28 @@ func fetchAttractionCandidates(ctx context.Context, parentQID string, limit int)
 	for _, qid := range attractionClassQIDs {
 		classValues.WriteString("wd:" + qid + " ")
 	}
+	var excludedValues strings.Builder
+	for _, qid := range attractionExcludedQIDs {
+		excludedValues.WriteString("wd:" + qid + " ")
+	}
 
 	// ?loc collects the item's direct P131 located-in entities — border
 	// attractions get one binding per location, folded into
-	// AttractionCandidate.LocatedIn for multi-parent linking.
+	// AttractionCandidate.LocatedIn for multi-parent linking. The FILTER
+	// NOT EXISTS drops civic infrastructure (hospitals, schools, …) that
+	// the broad class union would otherwise admit transitively.
 	query := fmt.Sprintf(`SELECT DISTINCT ?item ?itemLabel ?itemDescription ?loc WHERE {
   VALUES ?class { %s}
   ?item wdt:P31/wdt:P279* ?class .
   ?item wdt:P131* wd:%s .
+  FILTER NOT EXISTS {
+    VALUES ?excluded { %s}
+    ?item wdt:P31/wdt:P279* ?excluded .
+  }
   OPTIONAL { ?item wdt:P131 ?loc }
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
 }
-LIMIT %d`, classValues.String(), parentQID, limit)
+LIMIT %d`, classValues.String(), parentQID, excludedValues.String(), limit)
 
 	u, err := url.Parse(wikidataSPARQLEndpoint)
 	if err != nil {
