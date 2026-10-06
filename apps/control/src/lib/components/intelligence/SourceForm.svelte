@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { Loader2 } from 'lucide-svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
@@ -393,14 +393,13 @@
 					</div>
 					<div>
 						<label for="sf-kind" class={labelClass}>{t('intel.field_source_kind', 'Source Kind')}</label>
-						<Select
+						<AutocompleteSelect
 							id="sf-kind"
 							value={form.source_kind}
 							onValueChange={(v) => { form.source_kind = v; }}
-							items={kindItems}
+							options={kindItems}
 							placeholder={t('intel.field_source_kind', 'Source Kind')}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							class="mt-1 w-full"
 						/>
 					</div>
 				</div>
@@ -427,13 +426,12 @@
 					{:else}
 						<!-- Fallback when the meta catalog failed to load: keep the
 							legacy single-category select rather than a dead form. -->
-						<Select
+						<AutocompleteSelect
 							value={form.category}
 							onValueChange={(v) => { form.category = v; }}
-							items={categoryItems}
+							options={categoryItems}
 							placeholder={t('intel.field_category', 'Category')}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							class="mt-1 w-full"
 						/>
 					{/if}
 				</div>
@@ -441,14 +439,13 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-type" class={labelClass}>{t('intel.field_source_type', 'Source Type')}</label>
-						<Select
+						<AutocompleteSelect
 							id="sf-type"
 							value={form.source_type}
 							onValueChange={(v) => { form.source_type = v; }}
-							items={typeItems}
+							options={typeItems}
 							placeholder={t('intel.field_source_type', 'Source Type')}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							class="mt-1 w-full"
 						/>
 					</div>
 				</div>
@@ -456,24 +453,22 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-trust" class={labelClass}>{t('intel.field_trust_level', 'Trust Level')}</label>
-						<Select
+						<AutocompleteSelect
 							id="sf-trust"
 							value={String(form.trust_level)}
 							onValueChange={(v) => { form.trust_level = Number(v); }}
-							items={trustItems}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							options={trustItems}
+							class="mt-1 w-full"
 						/>
 					</div>
 					<div>
 						<label for="sf-method" class={labelClass}>{t('intel.field_crawl_method', 'Crawl Method')}</label>
-						<Select
+						<AutocompleteSelect
 							id="sf-method"
 							value={form.crawl_method}
 							onValueChange={(v) => { form.crawl_method = v; }}
-							items={methodItems}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							options={methodItems}
+							class="mt-1 w-full"
 						/>
 					</div>
 				</div>
@@ -487,13 +482,12 @@
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="sf-freq" class={labelClass}>{t('intel.field_crawl_frequency', 'Crawl Frequency')}</label>
-						<Select
+						<AutocompleteSelect
 							id="sf-freq"
 							value={form.crawl_frequency}
 							onValueChange={(v) => { form.crawl_frequency = v; }}
-							items={frequencyItems}
-							triggerClass="mt-1 w-full"
-							zIndex={70}
+							options={frequencyItems}
+							class="mt-1 w-full"
 						/>
 					</div>
 					<div>

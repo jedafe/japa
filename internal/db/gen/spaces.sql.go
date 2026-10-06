@@ -451,6 +451,11 @@ WHERE s.deleted_at IS NULL
  AND ($5::text = '' OR s.region = $5)
  AND ($6::text = '' OR s.subregion = $6)
  AND ($7::uuid IS NULL OR s.space_type_id = $7::uuid)
+ -- §80 wiki-only types (attraction) are browsable through the wiki
+ -- directory only — never the member-facing /spaces listing.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
  AND (
  $8::bool = false
  OR (
@@ -550,6 +555,10 @@ WHERE s.deleted_at IS NULL
  WHERE sm.space_id = s.id AND sm.user_id = $2::uuid AND sm.status = 'approved'
  )
  )
+ )
+ -- §80 wiki-only types (attraction) — same exclusion as the list query.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
  )
  AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
  AND ($4::text = '' OR s.geo_code = $4)
@@ -2577,6 +2586,70 @@ func (q *Queries) ListPublicSpacesByMemberUser(ctx context.Context, arg ListPubl
 	return items, nil
 }
 
+const listSpaceAncestors = `-- name: ListSpaceAncestors :many
+WITH RECURSIVE walk AS (
+    SELECT par.id, 1 AS depth
+    FROM (
+        SELECT j.parent_space_id AS id FROM space_parent_spaces j WHERE j.space_id = $1
+        UNION
+        SELECT s2.parent_id FROM spaces s2 WHERE s2.id = $1 AND s2.parent_id IS NOT NULL
+    ) par
+    UNION
+    SELECT par.id, w.depth + 1
+    FROM walk w
+    JOIN LATERAL (
+        SELECT j.parent_space_id AS id FROM space_parent_spaces j WHERE j.space_id = w.id
+        UNION
+        SELECT s2.parent_id FROM spaces s2 WHERE s2.id = w.id AND s2.parent_id IS NOT NULL
+    ) par ON true
+    WHERE w.depth < 3
+)
+SELECT DISTINCT s.id, s.level, COALESCE(st.slug, '') AS type_slug,
+       ((s.wiki_content->>'wikidata_id') IS NOT NULL)::boolean AS has_wikidata_id
+FROM walk w
+JOIN spaces s ON s.id = w.id
+LEFT JOIN space_types st ON st.id = s.space_type_id
+WHERE s.deleted_at IS NULL AND s.id <> $1
+`
+
+type ListSpaceAncestorsRow struct {
+	ID            pgtype.UUID `json:"id"`
+	Level         string      `json:"level"`
+	TypeSlug      string      `json:"type_slug"`
+	HasWikidataID bool        `json:"has_wikidata_id"`
+}
+
+// Every ancestor of a space via the parent_id ∪ space_parent_spaces edge
+// set (≤3 hops — the geo chain never exceeds city → state → country).
+// Returns each ancestor's level, type slug, and whether its wiki_content
+// carries a wikidata_id stamp — §80 attraction seeding links ancestors
+// directly (a geo parent without the stamp can't match a P131 QID) and
+// enqueues auto-populate for unstamped geo ancestors.
+func (q *Queries) ListSpaceAncestors(ctx context.Context, spaceID pgtype.UUID) ([]ListSpaceAncestorsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceAncestors, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceAncestorsRow
+	for rows.Next() {
+		var i ListSpaceAncestorsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Level,
+			&i.TypeSlug,
+			&i.HasWikidataID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSpaceJoinRequests = `-- name: ListSpaceJoinRequests :many
 
 
@@ -3532,6 +3605,11 @@ WHERE s.deleted_at IS NULL
  )
  )
  )
+ -- §80 wiki-only types (attraction) are browsable through the wiki
+ -- directory only — never the member-facing /spaces listing.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
  AND ($3::text = '' OR s.name ILIKE '%' || $3 || '%' OR s.slug ILIKE '%' || $3 || '%')
  AND ($4::text = '' OR s.geo_code = $4)
  AND ($5::text = '' OR s.level = $5)
@@ -3935,6 +4013,11 @@ WHERE s.deleted_at IS NULL
  AND ($5::text = '' OR s.region = $5)
  AND ($6::text = '' OR s.subregion = $6)
  AND ($7::uuid IS NULL OR s.space_type_id = $7::uuid)
+ -- §80 wiki-only types (attraction) are browsable through the wiki
+ -- directory only — never the member-facing /spaces listing.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
  AND (
  $8::bool = false
  OR (

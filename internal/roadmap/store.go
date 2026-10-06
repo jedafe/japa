@@ -43,6 +43,30 @@ func (s *Store) getItemByID(ctx context.Context, id pgtype.UUID) (gen.RoadmapIte
 	return row, nil
 }
 
+// getItemByIDOnWrite reads through the write pool. Used by the vote
+// endpoints, which must return the count they just synced — the read pool
+// may be a lagging replica and would report the pre-mutation count.
+func (s *Store) getItemByIDOnWrite(ctx context.Context, id pgtype.UUID) (gen.RoadmapItem, error) {
+	row, err := s.write.GetRoadmapItemByID(ctx, id)
+	if err != nil {
+		return gen.RoadmapItem{}, fmt.Errorf("getting roadmap item by ID: %w", err)
+	}
+
+	return row, nil
+}
+
+// getItemIDBySlug reports whether any row — including soft-deleted ones —
+// owns the slug. The UNIQUE constraint on slug covers deleted rows, so the
+// uniqueness check in uniqueItemSlug must see them or create hits 23505.
+func (s *Store) getItemIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	id, err := s.read.GetRoadmapItemIDBySlug(ctx, slug)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting roadmap item id by slug: %w", err)
+	}
+
+	return id, nil
+}
+
 func (s *Store) getItemBySlug(ctx context.Context, slug string, viewerID pgtype.UUID) (gen.GetRoadmapItemBySlugRow, error) {
 	row, err := s.read.GetRoadmapItemBySlug(ctx, gen.GetRoadmapItemBySlugParams{
 		ViewerID: viewerID, // zero-value UUID → NULL → anonymous viewer
@@ -235,8 +259,33 @@ func (s *Store) listAdminCategories(ctx context.Context) ([]gen.RoadmapCategory,
 	return rows, nil
 }
 
+// getCategoryIDBySlug reports whether any category row — including
+// soft-deleted ones — owns the slug. Same deleted-row blind spot as
+// getItemIDBySlug: create/update must see deleted slugs to return 409
+// instead of surfacing a raw 23505.
+func (s *Store) getCategoryIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	id, err := s.read.GetRoadmapCategoryIDBySlug(ctx, slug)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting roadmap category id by slug: %w", err)
+	}
+
+	return id, nil
+}
+
 func (s *Store) getCategoryByID(ctx context.Context, id pgtype.UUID) (gen.RoadmapCategory, error) {
 	row, err := s.read.GetRoadmapCategoryByID(ctx, id)
+	if err != nil {
+		return gen.RoadmapCategory{}, fmt.Errorf("getting roadmap category by ID: %w", err)
+	}
+
+	return row, nil
+}
+
+// getCategoryByIDOnWrite reads through the write pool — used by the
+// category update/delete paths, which merge onto the current row and must
+// not act on a lagging replica snapshot.
+func (s *Store) getCategoryByIDOnWrite(ctx context.Context, id pgtype.UUID) (gen.RoadmapCategory, error) {
+	row, err := s.write.GetRoadmapCategoryByID(ctx, id)
 	if err != nil {
 		return gen.RoadmapCategory{}, fmt.Errorf("getting roadmap category by ID: %w", err)
 	}
@@ -333,4 +382,28 @@ func (s *Store) createShadowContent(ctx context.Context, p gen.CreateRoadmapShad
 	}
 
 	return id, nil
+}
+
+func (s *Store) softDeleteShadowContent(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.write.SoftDeleteRoadmapShadowContent(ctx, contentID); err != nil {
+		return fmt.Errorf("soft-deleting roadmap shadow content: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) restoreShadowContent(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.write.RestoreRoadmapShadowContent(ctx, contentID); err != nil {
+		return fmt.Errorf("restoring roadmap shadow content: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) hardDeleteShadowContent(ctx context.Context, contentID pgtype.UUID) error {
+	if err := s.write.HardDeleteRoadmapShadowContent(ctx, contentID); err != nil {
+		return fmt.Errorf("hard-deleting roadmap shadow content: %w", err)
+	}
+
+	return nil
 }

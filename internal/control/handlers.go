@@ -2,7 +2,9 @@ package control
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1820,6 +1822,7 @@ func (h *Handlers) ListSecurityScanResults(w http.ResponseWriter, r *http.Reques
 		"data": map[string]any{
 			"results":     results,
 			"page":        page,
+			"total":       total,
 			"total_pages": totalPages,
 		},
 	})
@@ -3153,7 +3156,7 @@ func (h *Handlers) CreateOAuthClient(w http.ResponseWriter, r *http.Request) {
 
 	clients := h.loadOAuthClients(r)
 	entry := oauthClientEntry{
-		ID:           fmt.Sprintf("oauth_%d", time.Now().UnixNano()),
+		ID:           "oauth_" + randomHex(16),
 		Name:         input.Name,
 		Provider:     input.Provider,
 		ClientID:     input.ClientID,
@@ -3261,9 +3264,10 @@ func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Reques
 	clients := h.loadOAuthClients(r)
 	for i := range clients {
 		if clients[i].ID == id {
-			// Generate a new random secret (32 hex chars).
+			// Generate a new secret from crypto/rand — a timestamp-derived
+			// secret is predictable and would let an attacker precompute it.
 			// The new secret is returned exactly once; list/get always mask it.
-			newSecret := fmt.Sprintf("sec_%x", time.Now().UnixNano())
+			newSecret := "sec_" + randomHex(32)
 
 			clients[i].ClientSecret = newSecret
 			if err := h.saveOAuthClients(r, clients); err != nil {
@@ -3278,6 +3282,18 @@ func (h *Handlers) RotateOAuthClientSecret(w http.ResponseWriter, r *http.Reques
 	}
 
 	errpkg.WriteError(w, http.StatusNotFound, "not_found", "OAuth client not found")
+}
+
+// randomHex returns n bytes of crypto/rand entropy as a lowercase hex string.
+// On the (practically impossible) rand failure it returns an empty string —
+// callers use it for identifiers/secrets where an empty value is rejected by
+// downstream validation rather than silently predictable.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
 }
 
 func (h *Handlers) loadOAuthClients(r *http.Request) []oauthClientEntry {

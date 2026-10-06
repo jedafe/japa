@@ -5,7 +5,7 @@
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import TabsContent from '$lib/components/ui/TabsContent.svelte';
 	import { api } from '$lib/api';
@@ -39,8 +39,11 @@
 
 	let results = $state<ScanResult[]>([]);
 	let totalPages = $state(1);
+	let totalResults = $state(0);
 	let scanPage = $state(0);
-	let scanPageSize = $state(10);
+	// The backend paginates scan findings at a fixed page size of 20
+	// (ListSecurityScanResults) — the page-size selector is locked to it.
+	let scanPageSize = $state(20);
 	let scanLoading = $state(true);
 	let apiAvailable = $state(true);
 
@@ -291,10 +294,9 @@
 	let scanSortDirection = $state<'asc' | 'desc'>('asc');
 
 	let filteredResults = $derived.by(() => {
+		// Severity is filtered server-side; this derivation only applies the
+		// within-page search query and column sort on the current page slice.
 		let list = results;
-		if (filterSeverity !== 'all') {
-			list = list.filter((r) => r.severity === filterSeverity);
-		}
 		if (searchQuery.trim()) {
 			const q = searchQuery.toLowerCase();
 			list = list.filter(
@@ -336,11 +338,8 @@
 		return list;
 	});
 
-	let previousScanPage = $state(0);
-	let previousScanPageSize = $state(10);
-
-	async function loadIpBlocks() {
-		ipBlocksLoading = true;
+	async function loadIpBlocks(quiet = false) {
+		if (!quiet) ipBlocksLoading = true;
 		try {
 			const result = await api<IpBlock[]>('/control/security/ip-blocks');
 			if (result.ok) {
@@ -356,8 +355,8 @@
 		}
 	}
 
-	async function loadOverview() {
-		overviewLoading = true;
+	async function loadOverview(quiet = false) {
+		if (!quiet) overviewLoading = true;
 		try {
 			const result = await api<{ active_ip_blocks: number }>('/control/security');
 			if (result.ok && result.data) {
@@ -383,17 +382,17 @@
 		// post-scan refresh (scheduleScanRefresh) handles the "Run Scan" case.
 		const interval = setInterval(() => {
 			if (document.visibilityState === 'visible') {
-				loadScanResults();
-				loadIpBlocks();
-				loadOverview();
+				loadScanResults(true);
+				loadIpBlocks(true);
+				loadOverview(true);
 			}
 		}, 2 * 60 * 60 * 1000);
 
 		const onVisible = () => {
 			if (document.visibilityState === 'visible') {
-				loadScanResults();
-				loadIpBlocks();
-				loadOverview();
+				loadScanResults(true);
+				loadIpBlocks(true);
+				loadOverview(true);
 			}
 		};
 		document.addEventListener('visibilitychange', onVisible);
@@ -405,16 +404,34 @@
 		};
 	});
 
-	async function loadScanResults() {
-		scanLoading = true;
+	// Re-fetch scan findings whenever the server-side page or severity
+	// filter changes. Tracked separately from the mount effect so paging
+	// does not re-create the background-refresh interval.
+	let lastScanPage = $state(0);
+	let lastScanSeverity = $state('all');
+	$effect(() => {
+		if (scanPage !== lastScanPage || filterSeverity !== lastScanSeverity) {
+			lastScanPage = scanPage;
+			lastScanSeverity = filterSeverity;
+			loadScanResults();
+		}
+	});
+
+	// quiet=true refreshes in the background without flashing the table
+	// skeleton (used by the 2h interval and visibility-refocus poll).
+	async function loadScanResults(quiet = false) {
+		if (!quiet) scanLoading = true;
 		const sev = filterSeverity !== 'all' ? `&severity=${filterSeverity}` : '';
 		try {
-			const result = await api<{ results: ScanResult[]; page: number; total_pages: number }>(
+			const result = await api<{ results: ScanResult[]; page: number; total?: number; total_pages: number }>(
 				`/control/security/scan?page=${scanPage}${sev}`
 			);
 			if (result.ok) {
 				results = result.data.results ?? [];
 				totalPages = result.data.total_pages ?? 1;
+				// `total` is returned by newer backends; fall back to the
+				// page-count upper bound when absent.
+				totalResults = result.data.total ?? totalPages * 20;
 				apiAvailable = true;
 			} else {
 				apiAvailable = false;
@@ -427,8 +444,9 @@
 	}
 
 	function applySeverityFilter() {
+		// The page/severity watcher effect performs the refetch — just reset
+		// to the first page here.
 		scanPage = 0;
-		loadScanResults();
 	}
 
 	async function triggerScan() {
@@ -459,7 +477,7 @@
 
 	function scheduleScanRefresh() {
 		cancelScanRefresh();
-		scanRefreshTimer = setTimeout(() => loadScanResults(), SCAN_REFRESH_DELAY_MS);
+		scanRefreshTimer = setTimeout(() => loadScanResults(true), SCAN_REFRESH_DELAY_MS);
 	}
 
 	function cancelScanRefresh() {
@@ -637,7 +655,7 @@
 
 <div class="mb-4 grid gap-3 sm:grid-cols-3">
 	<MetricCard label={t('security.active_ip_blocks', 'Active IP Blocks')} value={activeIpBlocks} />
-	<MetricCard label={t('security.scan_findings', 'Scan Findings')} value={results.length} />
+	<MetricCard label={t('security.scan_findings', 'Scan Findings')} value={totalResults} />
 	<MetricCard label={t('security.ip_blocks', 'IP Blocks')} value={ipBlocks.length} />
 </div>
 
@@ -650,19 +668,14 @@
 >
 	<TabsContent value="scan-findings">
 		<div class="mb-4 flex items-center gap-3">
-			<Select
+			<AutocompleteSelect
 				bind:value={filterSeverity}
-				items={severityItems}
+				options={severityItems}
+				onValueChange={() => applySeverityFilter()}
 				placeholder={t('security.severity_all')}
 				ariaLabel={t('security.filter_severity')}
+				class="w-44"
 			/>
-			<button
-				type="button"
-				class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border px-3 py-1.5 text-sm font-medium transition-colors"
-				onclick={applySeverityFilter}
-			>
-				{t('audit.apply_filters', 'Apply')}
-			</button>
 			<SearchInput bind:value={searchQuery} placeholder={t('security.search_findings', 'Search findings...')} class="w-64" />
 			<div class="flex-1"></div>
 			<button
@@ -685,9 +698,10 @@
 		<DataTable
 			columns={scanColumns}
 			rows={filteredResults}
-			totalRows={filteredResults.length}
+			totalRows={totalResults}
 			bind:page={scanPage}
 			bind:pageSize={scanPageSize}
+			pageSizeOptions={[20]}
 			bind:sortKey={scanSortKey}
 			bind:sortDirection={scanSortDirection}
 			loading={scanLoading}
@@ -757,12 +771,12 @@
 
 				<div class="mb-4">
 					<label for="block-type-select" class="text-foreground mb-1 block text-sm font-medium">{t('security.block_type_label')}</label>
-					<Select
+					<AutocompleteSelect
 						bind:value={blockType}
-						items={blockTypeItems}
+						options={blockTypeItems}
 						placeholder={t('security.block_type')}
 						ariaLabel={t('security.block_type_label')}
-						triggerClass="h-10 w-full"
+						class="w-full"
 					/>
 				</div>
 

@@ -55,8 +55,8 @@
 	let enabledTotal = $derived(extensions.filter((e) => e.enabled).length);
 	let disabledTotal = $derived(extensions.length - enabledTotal);
 
-	async function load() {
-		loading = true;
+	async function load(quiet = false) {
+		if (!quiet) loading = true;
 		error = '';
 		const result = await api<Extension[]>('/control/extensions');
 		if (result.ok) {
@@ -83,7 +83,7 @@
 	$effect(() => {
 		load();
 		const interval = setInterval(() => {
-			if (document.visibilityState === 'visible') load();
+			if (document.visibilityState === 'visible') load(true);
 		}, 30_000);
 		return () => clearInterval(interval);
 	});
@@ -234,7 +234,7 @@
 	<div class="flex-1"></div>
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors"
-		onclick={load}
+		onclick={() => load()}
 	>
 		<RefreshCw class="size-3" />
 		{t('common.refresh', 'Refresh')}
@@ -275,7 +275,7 @@
 		<p class="text-destructive mt-3 text-sm">{error}</p>
 		<button
 			class="border-border-input bg-background-alt hover:bg-muted text-foreground mt-4 rounded-9px border px-4 py-2 text-sm font-medium transition-colors"
-			onclick={load}
+			onclick={() => load()}
 		>
 			{t('common.retry', 'Retry')}
 		</button>

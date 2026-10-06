@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
@@ -283,9 +284,18 @@ func (s *Service) GetChangelog(ctx context.Context) ([]gen.ListRoadmapChangelogR
 // vote_count. Only votable-status items accept votes (§113); a repeat
 // vote returns ErrAlreadyVoted → 409.
 func (s *Service) CastVote(ctx context.Context, itemID, userID pgtype.UUID) (int32, error) {
-	item, err := s.store.getItemByID(ctx, itemID)
+	// Read on the write pool: a just-published (or just-shipped) item may
+	// not have reached the replica yet, and the votability/deletion checks
+	// below must see the authoritative state.
+	item, err := s.store.getItemByIDOnWrite(ctx, itemID)
 	if err != nil {
 		return 0, err
+	}
+
+	// getItemByID intentionally sees soft-deleted rows (admin restore path);
+	// a deleted item must not accept votes even while its status is votable.
+	if item.DeletedAt.Valid {
+		return 0, fmt.Errorf("%w: roadmap item is deleted", ErrNotFound)
 	}
 
 	if !IsVotableStatus(ItemStatus(item.Status)) {
@@ -332,7 +342,9 @@ func (s *Service) RemoveVote(ctx context.Context, itemID, userID pgtype.UUID) (i
 }
 
 func (s *Service) voteCount(ctx context.Context, itemID pgtype.UUID) (int32, error) {
-	item, err := s.store.getItemByID(ctx, itemID)
+	// Read-through-write: the count was just synced on the write pool, and
+	// a lagging read replica would return the pre-mutation value here.
+	item, err := s.store.getItemByIDOnWrite(ctx, itemID)
 	if err != nil {
 		return 0, err
 	}
@@ -371,6 +383,10 @@ func (s *Service) CreateSubmission(ctx context.Context, in SubmissionInput) (gen
 		return gen.RoadmapItem{}, err
 	}
 
+	if err := s.requireLiveCategory(ctx, in.CategoryID); err != nil {
+		return gen.RoadmapItem{}, err
+	}
+
 	item, err := s.store.createItem(ctx, gen.CreateRoadmapItemParams{
 		Title:       strings.TrimSpace(in.Title),
 		Slug:        slug,
@@ -381,7 +397,7 @@ func (s *Service) CreateSubmission(ctx context.Context, in SubmissionInput) (gen
 		SubmittedBy: in.UserID,
 	})
 	if err != nil {
-		return gen.RoadmapItem{}, err
+		return gen.RoadmapItem{}, mapWriteErr(err)
 	}
 
 	// Submissions don't mutate the public board, but a pending→under_review
@@ -463,6 +479,10 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 		categoryID = *in.CategoryID
 	}
 
+	if err := s.requireLiveCategory(ctx, categoryID); err != nil {
+		return gen.RoadmapItem{}, err
+	}
+
 	var sortOrder int32
 	if in.SortOrder != nil {
 		sortOrder = *in.SortOrder
@@ -486,15 +506,32 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 		FeatureFlagKey: in.FeatureFlagKey,
 	})
 	if err != nil {
-		return gen.RoadmapItem{}, err
+		return gen.RoadmapItem{}, mapWriteErr(err)
 	}
 
 	// Lazily create the shadow contents row on first publishable save (§113).
 	// Failure is logged, not fatal — a later PATCH retries via
-	// ensureShadowContent and the item itself is already durable.
+	// ensureShadowContent and the item itself is already durable. On success
+	// the response row is updated in place so the POST payload already
+	// carries content_id instead of the pre-link snapshot.
 	if IsPublicStatus(ItemStatus(item.Status)) {
-		if _, err := s.ensureShadowContent(ctx, item, in.ActorID); err != nil {
+		if contentID, err := s.ensureShadowContent(ctx, item, in.ActorID); err != nil {
 			slog.Error("roadmap shadow content create failed", "item_id", item.ID, "error", err)
+		} else {
+			item.ContentID = contentID
+		}
+	}
+
+	// A create that lands directly on shipped must stamp shipped_at and run
+	// the voter fan-out — both otherwise only happen on the status-transition
+	// path, leaving the item invisible in the shipped board column
+	// (shipped_at NULL fails the window predicate) and unsent notifications.
+	if ItemStatus(item.Status) == StatusShipped {
+		if stamped, err := s.store.updateItemStatus(ctx, item.ID, string(StatusShipped)); err != nil {
+			slog.Error("roadmap shipped stamp failed on create", "item_id", item.ID, "error", err)
+		} else {
+			item = stamped
+			s.enqueueShipNotify(item)
 		}
 	}
 
@@ -506,9 +543,18 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 // AdminUpdateItem applies a PATCH to an item and keeps the shadow contents
 // row in sync (title, body, refreshed content_hash per Rule 12).
 func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminItemInput) (gen.RoadmapItem, error) {
-	current, err := s.store.getItemByID(ctx, id)
+	// mergeItemPatch overlays the PATCH onto the current row — read it on
+	// the write pool so a replica-stale snapshot can't drop a concurrent
+	// change (e.g. approved_by stamped moments ago).
+	current, err := s.store.getItemByIDOnWrite(ctx, id)
 	if err != nil {
 		return gen.RoadmapItem{}, err
+	}
+
+	// Deleted items are immutable until restored — editing one would also
+	// sync the (soft-deleted) shadow contents row.
+	if current.DeletedAt.Valid {
+		return gen.RoadmapItem{}, fmt.Errorf("%w: item is deleted", ErrNotFound)
 	}
 
 	params, err := s.mergeItemPatch(ctx, current, in)
@@ -518,7 +564,7 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 
 	item, err := s.store.updateItem(ctx, params)
 	if err != nil {
-		return gen.RoadmapItem{}, err
+		return gen.RoadmapItem{}, mapWriteErr(err)
 	}
 
 	s.syncShadowContent(ctx, item, in.ActorID)
@@ -549,13 +595,18 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 		params.Title = strings.TrimSpace(in.Title)
 	}
 
-	if in.Slug != "" && in.Slug != current.Slug {
-		slug, err := s.uniqueItemSlug(ctx, content.Slugify(in.Slug))
-		if err != nil {
-			return gen.UpdateRoadmapItemParams{}, err
-		}
+	if in.Slug != "" {
+		// Compare the slugified candidate to the current slug — a raw-input
+		// comparison ("My Slug!" vs "my-slug") would churn the slug to
+		// "my-slug-2" every save.
+		if candidate := content.Slugify(in.Slug); candidate != "" && candidate != current.Slug {
+			slug, err := s.uniqueItemSlug(ctx, candidate)
+			if err != nil {
+				return gen.UpdateRoadmapItemParams{}, err
+			}
 
-		params.Slug = slug
+			params.Slug = slug
+		}
 	}
 
 	if in.Summary != nil {
@@ -567,6 +618,10 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 	}
 
 	if in.CategoryID != nil {
+		if err := s.requireLiveCategory(ctx, *in.CategoryID); err != nil {
+			return gen.UpdateRoadmapItemParams{}, err
+		}
+
 		params.CategoryID = *in.CategoryID
 	}
 
@@ -598,9 +653,19 @@ func (s *Service) AdminSetStatus(ctx context.Context, id pgtype.UUID, to ItemSta
 		return gen.RoadmapItem{}, fmt.Errorf("%w: unknown status %q", errpkg.ErrInvalid, to)
 	}
 
-	current, err := s.store.getItemByID(ctx, id)
+	// The lifecycle check, approved_by stamp, and shadow-content ensure all
+	// key off this snapshot — read on the write pool. A replica-stale
+	// ContentID (nil) would make ensureShadowContent insert a second
+	// shadow row and orphan the first.
+	current, err := s.store.getItemByIDOnWrite(ctx, id)
 	if err != nil {
 		return gen.RoadmapItem{}, err
+	}
+
+	// A soft-deleted item must not move through the lifecycle — e.g. →
+	// shipped would fan out roadmap_shipped notifications for a deleted item.
+	if current.DeletedAt.Valid {
+		return gen.RoadmapItem{}, fmt.Errorf("%w: item is deleted", ErrNotFound)
 	}
 
 	from := ItemStatus(current.Status)
@@ -608,14 +673,10 @@ func (s *Service) AdminSetStatus(ctx context.Context, id pgtype.UUID, to ItemSta
 		return gen.RoadmapItem{}, fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
 	}
 
-	// Approving a community submission: create the shadow contents row and
-	// record the approving moderator. The full-row update is required to set
-	// approved_by — UpdateRoadmapItemStatus only touches status/shipped_at.
+	// Approving a community submission records the approving moderator. The
+	// full-row update is required to set approved_by — UpdateRoadmapItemStatus
+	// only touches status/shipped_at.
 	if from == StatusPending && to == StatusUnderReview {
-		if _, err := s.ensureShadowContent(ctx, current, actorID); err != nil {
-			return gen.RoadmapItem{}, fmt.Errorf("approving roadmap item: %w", err)
-		}
-
 		if _, err := s.store.updateItem(ctx, gen.UpdateRoadmapItemParams{
 			ID:             id,
 			Title:          current.Title,
@@ -633,12 +694,24 @@ func (s *Service) AdminSetStatus(ctx context.Context, id pgtype.UUID, to ItemSta
 		}
 	}
 
+	// Ensure the §49 shadow contents row exists whenever the item lands on a
+	// public status — not only pending→under_review approval. A declined→
+	// under_review reopen reaches the public board through a different path
+	// and would otherwise render with no comments thread (§113).
+	if IsPublicStatus(to) {
+		if _, err := s.ensureShadowContent(ctx, current, actorID); err != nil {
+			return gen.RoadmapItem{}, fmt.Errorf("publishing roadmap item: %w", err)
+		}
+	}
+
 	item, err := s.store.updateItemStatus(ctx, id, string(to))
 	if err != nil {
 		return gen.RoadmapItem{}, err
 	}
 
-	if to == StatusShipped {
+	// Fire only on the real transition into shipped — an idempotent
+	// shipped→shipped PATCH must not re-notify every voter.
+	if to == StatusShipped && from != StatusShipped {
 		s.enqueueShipNotify(item)
 	}
 
@@ -652,7 +725,7 @@ func (s *Service) AdminSetStatus(ctx context.Context, id pgtype.UUID, to ItemSta
 // admin.hard_delete permission gate lives in rbac.RequireForceDelete
 // middleware at the route level.
 func (s *Service) AdminDeleteItem(ctx context.Context, id pgtype.UUID, force bool) error {
-	item, err := s.store.getItemByID(ctx, id)
+	item, err := s.store.getItemByIDOnWrite(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -666,6 +739,16 @@ func (s *Service) AdminDeleteItem(ctx context.Context, id pgtype.UUID, force boo
 			return err
 		}
 
+		// Remove the shadow contents row too — the FK lives on the item side
+		// so the contents row would otherwise be orphaned forever. Comments
+		// on it cascade via comments_content_id_fkey (allowed here: this is
+		// the admin.hard_delete-gated path per Rule 11).
+		if item.ContentID.Valid {
+			if err := s.store.hardDeleteShadowContent(ctx, item.ContentID); err != nil {
+				slog.Warn("roadmap shadow content hard-delete failed", "item_id", item.ID, "content_id", item.ContentID, "error", err)
+			}
+		}
+
 		s.invalidateBoard(ctx)
 
 		return nil
@@ -673,6 +756,16 @@ func (s *Service) AdminDeleteItem(ctx context.Context, id pgtype.UUID, force boo
 
 	if err := s.store.softDeleteItem(ctx, id); err != nil {
 		return err
+	}
+
+	// The shadow row tracks the item's lifecycle — soft-delete it so the
+	// §49 comments thread stops being publicly readable while the item is
+	// gone. Best-effort like the other shadow syncs; a failure self-heals
+	// on the next delete/restore cycle.
+	if item.ContentID.Valid {
+		if err := s.store.softDeleteShadowContent(ctx, item.ContentID); err != nil {
+			slog.Warn("roadmap shadow content soft-delete failed", "item_id", item.ID, "content_id", item.ContentID, "error", err)
+		}
 	}
 
 	s.invalidateBoard(ctx)
@@ -683,7 +776,7 @@ func (s *Service) AdminDeleteItem(ctx context.Context, id pgtype.UUID, force boo
 // AdminRestoreItem clears deleted_at on a soft-deleted item and returns
 // the restored row.
 func (s *Service) AdminRestoreItem(ctx context.Context, id pgtype.UUID) (gen.RoadmapItem, error) {
-	item, err := s.store.getItemByID(ctx, id)
+	item, err := s.store.getItemByIDOnWrite(ctx, id)
 	if err != nil {
 		return gen.RoadmapItem{}, err
 	}
@@ -696,9 +789,20 @@ func (s *Service) AdminRestoreItem(ctx context.Context, id pgtype.UUID) (gen.Roa
 		return gen.RoadmapItem{}, err
 	}
 
+	// Bring the shadow contents row back with the item so its comments
+	// thread reappears (best-effort — a missing row is recreated on the
+	// next publishable save via ensureShadowContent).
+	if item.ContentID.Valid {
+		if err := s.store.restoreShadowContent(ctx, item.ContentID); err != nil {
+			slog.Warn("roadmap shadow content restore failed", "item_id", item.ID, "content_id", item.ContentID, "error", err)
+		}
+	}
+
 	s.invalidateBoard(ctx)
 
-	return s.store.getItemByID(ctx, id)
+	// Read-back on the write pool — the restore just committed there and a
+	// replica would still report deleted_at set.
+	return s.store.getItemByIDOnWrite(ctx, id)
 }
 
 // AdminReorderItems applies explicit sort_order values to a set of items.
@@ -751,7 +855,19 @@ func (s *Service) AdminCreateCategory(ctx context.Context, in CategoryInput) (ge
 
 	slug := in.Slug
 	if slug == "" {
-		slug = content.Slugify(in.Name)
+		slug = in.Name
+	}
+	slug = content.Slugify(slug)
+	if slug == "" {
+		return gen.RoadmapCategory{}, fmt.Errorf("%w: slug is required (could not be slugified)", errpkg.ErrRequired)
+	}
+
+	// The slug UNIQUE constraint covers soft-deleted rows — check existence
+	// across all rows so a deleted slug yields 409, not a 23505 500.
+	if taken, err := s.slugTaken(ctx, slug, pgtype.UUID{}); err != nil {
+		return gen.RoadmapCategory{}, err
+	} else if taken {
+		return gen.RoadmapCategory{}, fmt.Errorf("%w: slug %q", errpkg.ErrAlreadyExists, slug)
 	}
 
 	var sortOrder int32
@@ -767,7 +883,7 @@ func (s *Service) AdminCreateCategory(ctx context.Context, in CategoryInput) (ge
 		SortOrder:   sortOrder,
 	})
 	if err != nil {
-		return gen.RoadmapCategory{}, err
+		return gen.RoadmapCategory{}, mapWriteErr(err)
 	}
 
 	s.invalidateBoard(ctx)
@@ -777,7 +893,7 @@ func (s *Service) AdminCreateCategory(ctx context.Context, in CategoryInput) (ge
 
 // AdminUpdateCategory applies a PATCH to a category.
 func (s *Service) AdminUpdateCategory(ctx context.Context, id pgtype.UUID, in CategoryInput) (gen.RoadmapCategory, error) {
-	current, err := s.store.getCategoryByID(ctx, id)
+	current, err := s.store.getCategoryByIDOnWrite(ctx, id)
 	if err != nil {
 		return gen.RoadmapCategory{}, err
 	}
@@ -789,7 +905,15 @@ func (s *Service) AdminUpdateCategory(ctx context.Context, id pgtype.UUID, in Ca
 
 	slug := current.Slug
 	if in.Slug != "" {
-		slug = in.Slug
+		if candidate := content.Slugify(in.Slug); candidate != "" && candidate != current.Slug {
+			slug = candidate
+
+			if taken, err := s.slugTaken(ctx, slug, id); err != nil {
+				return gen.RoadmapCategory{}, err
+			} else if taken {
+				return gen.RoadmapCategory{}, fmt.Errorf("%w: slug %q", errpkg.ErrAlreadyExists, slug)
+			}
+		}
 	}
 
 	description := current.Description
@@ -816,7 +940,7 @@ func (s *Service) AdminUpdateCategory(ctx context.Context, id pgtype.UUID, in Ca
 		SortOrder:   sortOrder,
 	})
 	if err != nil {
-		return gen.RoadmapCategory{}, err
+		return gen.RoadmapCategory{}, mapWriteErr(err)
 	}
 
 	s.invalidateBoard(ctx)
@@ -827,7 +951,7 @@ func (s *Service) AdminUpdateCategory(ctx context.Context, id pgtype.UUID, in Ca
 // AdminDeleteCategory soft-deletes a category. Items keep their
 // category_id — the FK only fires on hard delete (ON DELETE SET NULL).
 func (s *Service) AdminDeleteCategory(ctx context.Context, id pgtype.UUID) error {
-	if _, err := s.store.getCategoryByID(ctx, id); err != nil {
+	if _, err := s.store.getCategoryByIDOnWrite(ctx, id); err != nil {
 		return err
 	}
 
@@ -870,12 +994,16 @@ func (s *Service) ensureShadowContent(ctx context.Context, item gen.RoadmapItem,
 }
 
 // createShadowContent inserts the hidden contents row that backs the §49
-// comment thread. content_hash is computed per Rule 12 from the decoded
-// body text via the shared content.ComputeContentHash helper. On a slug
-// collision the shadow slug retries with a numeric suffix.
+// comment thread. content_hash is computed per Rule 12 but scoped to the
+// item via ComputeContentHashWithDistinguisher — the idx_contents hash
+// index is global across all content types, so an undistinguished hash
+// would collide with any existing row carrying the same body text (most
+// commonly the empty-body hash e3b0c44… shared by drafts and seed
+// content), making the publish path fail with a 23505 on every retry.
+// On a slug collision the shadow slug retries with a numeric suffix.
 func (s *Service) createShadowContent(ctx context.Context, item gen.RoadmapItem, authorID pgtype.UUID) (pgtype.UUID, error) {
 	bodyText := shadowBodyText(deref(item.Body))
-	hash := content.ComputeContentHash(bodyText)
+	hash := shadowContentHash(item, bodyText)
 
 	baseSlug := "roadmap-" + item.Slug
 
@@ -896,7 +1024,9 @@ func (s *Service) createShadowContent(ctx context.Context, item gen.RoadmapItem,
 			return id, nil
 		}
 
-		if !isUniqueViolation(err) {
+		// Only a slug collision is retryable — a content_hash violation is
+		// unaffected by a new slug and would burn all attempts for nothing.
+		if !isSlugConflict(err) {
 			return pgtype.UUID{}, err
 		}
 	}
@@ -919,7 +1049,7 @@ func (s *Service) syncShadowContent(ctx context.Context, item gen.RoadmapItem, a
 	}
 
 	bodyText := shadowBodyText(deref(item.Body))
-	hash := content.ComputeContentHash(bodyText)
+	hash := shadowContentHash(item, bodyText)
 
 	if err := s.store.updateShadowContent(ctx, gen.UpdateRoadmapShadowContentParams{
 		ContentID:   item.ContentID,
@@ -929,6 +1059,15 @@ func (s *Service) syncShadowContent(ctx context.Context, item gen.RoadmapItem, a
 	}); err != nil {
 		slog.Error("roadmap shadow content sync failed", "item_id", item.ID, "content_id", item.ContentID, "error", err)
 	}
+}
+
+// shadowContentHash computes the shadow contents row's content_hash,
+// distinguished by the item id so identical bodies on different roadmap
+// items — and bodies shared with ordinary contents rows — never collide
+// under the global idx_contents unique index. Mirrors the video-source
+// distinguisher in internal/content (§41 / Rule 12).
+func shadowContentHash(item gen.RoadmapItem, bodyText string) string {
+	return content.ComputeContentHashWithDistinguisher(bodyText, "roadmap:"+item.ID.String())
 }
 
 // shadowBodyText returns the plain source text used for the shadow
@@ -950,9 +1089,87 @@ func shadowBodyText(body string) string {
 }
 
 // isUniqueViolation reports whether err wraps a Postgres unique-violation
-// (SQLSTATE 23505) — used for shadow-content slug retry.
+// (SQLSTATE 23505).
 func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+
 	return strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key")
+}
+
+// isSlugConflict reports whether err is a unique violation on the contents
+// slug — the only shadow-content conflict worth retrying with a new slug.
+func isSlugConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505" && strings.Contains(pgErr.ConstraintName, "slug")
+	}
+
+	return strings.Contains(err.Error(), "slug")
+}
+
+// mapWriteErr translates Postgres constraint violations into sentinel
+// errors so handlers return a 4xx envelope instead of 500 (Rule 5):
+// 23505 → already_exists (slug collision that slipped past prechecks),
+// 23503 → invalid (a referenced row — e.g. category_id — does not exist).
+func mapWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return err
+	}
+
+	switch pgErr.Code {
+	case "23505":
+		return fmt.Errorf("%w: slug or unique field already in use", errpkg.ErrAlreadyExists)
+	case "23503":
+		return fmt.Errorf("%w: a referenced record does not exist", errpkg.ErrInvalid)
+	}
+
+	return err
+}
+
+// requireLiveCategory rejects a category_id that points at a missing or
+// soft-deleted category. The FK only covers existence — a deleted category
+// would make the item render uncategorized on the public board (the join
+// filters c.deleted_at) while still looking categorized in admin lists.
+// An invalid/absent UUID is a no-op (means "no category").
+func (s *Service) requireLiveCategory(ctx context.Context, id pgtype.UUID) error {
+	if !id.Valid {
+		return nil
+	}
+
+	cat, err := s.store.getCategoryByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: category does not exist", errpkg.ErrInvalid)
+		}
+
+		return err
+	}
+
+	if cat.DeletedAt.Valid {
+		return fmt.Errorf("%w: category %q is deleted", errpkg.ErrInvalid, cat.Name)
+	}
+
+	return nil
+}
+
+// slugTaken reports whether a roadmap_categories slug is owned by a row
+// other than excludeID — including soft-deleted rows, which still hold the
+// UNIQUE slot. excludeID is the zero UUID on create.
+func (s *Service) slugTaken(ctx context.Context, slug string, excludeID pgtype.UUID) (bool, error) {
+	owner, err := s.store.getCategoryIDBySlug(ctx, slug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	return !excludeID.Valid || owner.Bytes != excludeID.Bytes, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -998,13 +1215,14 @@ func (s *Service) enqueueShipNotify(item gen.RoadmapItem) {
 // ---------------------------------------------------------------------------
 
 // uniqueItemSlug finds an unused roadmap_items slug by appending -2, -3,
-// … to the base until a gap appears. getItemBySlug wraps the gen query
-// error with %w, so errors.Is still sees pgx.ErrNoRows.
+// … to the base until a gap appears. getItemIDBySlug sees soft-deleted rows
+// too — the slug UNIQUE constraint covers them, so a deleted slug must not
+// be handed back out (it would hit 23505 on insert).
 func (s *Service) uniqueItemSlug(ctx context.Context, base string) (string, error) {
 	candidate := base
 
 	for i := 2; ; i++ {
-		_, err := s.store.getItemBySlug(ctx, candidate, pgtype.UUID{})
+		_, err := s.store.getItemIDBySlug(ctx, candidate)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return candidate, nil

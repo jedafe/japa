@@ -223,6 +223,20 @@ func (q *Queries) GetRoadmapCategoryByID(ctx context.Context, id pgtype.UUID) (R
 	return i, err
 }
 
+const getRoadmapCategoryIDBySlug = `-- name: GetRoadmapCategoryIDBySlug :one
+SELECT id FROM roadmap_categories WHERE slug = $1
+`
+
+// Existence check ignoring soft deletes — the slug UNIQUE constraint covers
+// deleted rows too, so admin create/update must see them to return 409
+// instead of a raw 23505.
+func (q *Queries) GetRoadmapCategoryIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getRoadmapCategoryIDBySlug, slug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getRoadmapItemByID = `-- name: GetRoadmapItemByID :one
 SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at FROM roadmap_items WHERE id = $1
 `
@@ -258,7 +272,7 @@ const getRoadmapItemBySlug = `-- name: GetRoadmapItemBySlug :one
 SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
-LEFT JOIN roadmap_categories c ON c.id = i.category_id
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
 LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = $1
 WHERE i.slug = $2 AND i.deleted_at IS NULL
 `
@@ -325,12 +339,36 @@ func (q *Queries) GetRoadmapItemBySlug(ctx context.Context, arg GetRoadmapItemBy
 	return i, err
 }
 
+const getRoadmapItemIDBySlug = `-- name: GetRoadmapItemIDBySlug :one
+SELECT id FROM roadmap_items WHERE slug = $1
+`
+
+// Existence check ignoring soft deletes — the slug UNIQUE constraint covers
+// deleted rows too, so uniqueItemSlug must see them or create hits 23505.
+func (q *Queries) GetRoadmapItemIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getRoadmapItemIDBySlug, slug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const hardDeleteRoadmapItem = `-- name: HardDeleteRoadmapItem :exec
 DELETE FROM roadmap_items WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
 func (q *Queries) HardDeleteRoadmapItem(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, hardDeleteRoadmapItem, id)
+	return err
+}
+
+const hardDeleteRoadmapShadowContent = `-- name: HardDeleteRoadmapShadowContent :exec
+DELETE FROM contents WHERE id = $1 AND content_type = 'roadmap'
+`
+
+// Permanent removal under the admin.hard_delete ?force=true path (Rule 11);
+// comments on the shadow row cascade via comments_content_id_fkey.
+func (q *Queries) HardDeleteRoadmapShadowContent(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, hardDeleteRoadmapShadowContent, contentID)
 	return err
 }
 
@@ -470,7 +508,7 @@ const listPublicRoadmapItems = `-- name: ListPublicRoadmapItems :many
 SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
        (v.user_id IS NOT NULL)::bool AS has_voted
 FROM roadmap_items i
-LEFT JOIN roadmap_categories c ON c.id = i.category_id
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
 LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = $1
 WHERE i.status = ANY($2::text[]) AND i.deleted_at IS NULL
   AND ($3::text = '' OR c.slug = $3::text)
@@ -603,7 +641,7 @@ func (q *Queries) ListRoadmapCategories(ctx context.Context) ([]RoadmapCategory,
 const listRoadmapChangelog = `-- name: ListRoadmapChangelog :many
 SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color
 FROM roadmap_items i
-LEFT JOIN roadmap_categories c ON c.id = i.category_id
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
 WHERE i.status = 'shipped' AND i.deleted_at IS NULL
 ORDER BY i.shipped_at DESC
 `
@@ -760,6 +798,16 @@ func (q *Queries) RestoreRoadmapItem(ctx context.Context, id pgtype.UUID) error 
 	return err
 }
 
+const restoreRoadmapShadowContent = `-- name: RestoreRoadmapShadowContent :exec
+UPDATE contents SET deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND content_type = 'roadmap' AND deleted_at IS NOT NULL
+`
+
+func (q *Queries) RestoreRoadmapShadowContent(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, restoreRoadmapShadowContent, contentID)
+	return err
+}
+
 const setRoadmapItemContent = `-- name: SetRoadmapItemContent :exec
 UPDATE roadmap_items SET content_id = $1, updated_at = now() WHERE id = $2
 `
@@ -789,6 +837,18 @@ UPDATE roadmap_items SET deleted_at = now(), updated_at = now() WHERE id = $1 AN
 
 func (q *Queries) SoftDeleteRoadmapItem(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, softDeleteRoadmapItem, id)
+	return err
+}
+
+const softDeleteRoadmapShadowContent = `-- name: SoftDeleteRoadmapShadowContent :exec
+UPDATE contents SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND content_type = 'roadmap' AND deleted_at IS NULL
+`
+
+// The shadow row tracks the item's lifecycle — a soft-deleted item must not
+// leave its §49 comments thread publicly readable.
+func (q *Queries) SoftDeleteRoadmapShadowContent(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteRoadmapShadowContent, contentID)
 	return err
 }
 
@@ -937,7 +997,7 @@ func (q *Queries) UpdateRoadmapItem(ctx context.Context, arg UpdateRoadmapItemPa
 const updateRoadmapItemStatus = `-- name: UpdateRoadmapItemStatus :one
 UPDATE roadmap_items SET
     status = $1,
-    shipped_at = CASE WHEN $1 = 'shipped' THEN now() ELSE shipped_at END,
+    shipped_at = CASE WHEN $1 = 'shipped' AND shipped_at IS NULL THEN now() ELSE shipped_at END,
     updated_at = now()
 WHERE id = $2
 RETURNING id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at

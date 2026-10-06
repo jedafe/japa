@@ -1563,6 +1563,7 @@ func (s *Service) entityFieldValueJSON(ctx context.Context, v gen.ListCustomFiel
 //	{"value": "<uuid>"}               — wrapped single (select convention)
 //	["<uuid>", …]                     — id array
 //	{"value": ["<uuid>", …]}          — wrapped array
+//	{"media_ids": ["<uuid>", …]}      — §80 documented envelope
 //	[{"id": "<uuid>", "alt": "…"}, …] — object array (alt carried through)
 func parseMediaFieldRefs(raw []byte) ([]pgtype.UUID, map[string]string) {
 	alts := map[string]string{}
@@ -1587,9 +1588,12 @@ func parseMediaFieldRefs(raw []byte) ([]pgtype.UUID, map[string]string) {
 		return nil, nil
 	}
 
-	// Unwrap the {"value": …} envelope used by select-style writes.
+	// Unwrap the {"value": …} envelope used by select-style writes and the
+	// {"media_ids": […]} envelope the §80 design doc specifies.
 	if m, ok := probe.(map[string]any); ok {
 		if inner, exists := m["value"]; exists {
+			probe = inner
+		} else if inner, exists := m["media_ids"]; exists {
 			probe = inner
 		}
 	}
@@ -1652,8 +1656,94 @@ func cfvValueJSON(v gen.ListCustomFieldValuesWithDefsByEntityRow) json.RawMessag
 		}
 	case "value_json":
 		if len(v.ValueJson) > 0 {
+			// §80 — writers disagree on the select/multiselect envelope:
+			// field ops store the canonical scalar/array while the cfv
+			// upsert API and attraction enrichment wrap it as
+			// {"value": …} / {"values": […]}. The DTO emits the canonical
+			// shape so option-label resolution and the SuggestEdit form
+			// seeding work regardless of the writer.
+			if v.FieldType == customfields.FieldTypeSelect ||
+				v.FieldType == customfields.FieldTypeMultiselect {
+				if unwrapped := choiceValueJSON(v.ValueJson, v.FieldType == customfields.FieldTypeMultiselect); unwrapped != nil {
+					return unwrapped
+				}
+			}
 			return json.RawMessage(v.ValueJson)
 		}
+	}
+
+	return nil
+}
+
+// choiceValueJSON normalizes a stored select/multiselect value_json to the
+// canonical write shape — a bare JSON string for select, a bare array of
+// strings for multiselect. Wrapped envelopes ({"value": x}, {"values": […]},
+// {"value": […]}) are unwrapped; bare scalars/arrays pass through. Returns
+// nil when the value cannot be read as a choice — the caller then passes
+// the raw value_json through unchanged.
+func choiceValueJSON(raw []byte, multi bool) json.RawMessage {
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return nil
+	}
+
+	// Unwrap the select-style envelope; an object without either key is
+	// not a choice value.
+	if m, ok := probe.(map[string]any); ok {
+		if inner, exists := m["values"]; exists {
+			probe = inner
+		} else if inner, exists := m["value"]; exists {
+			probe = inner
+		} else {
+			return nil
+		}
+	}
+
+	stringSlice := func(arr []any) ([]string, bool) {
+		out := make([]string, 0, len(arr))
+		for _, el := range arr {
+			s, ok := el.(string)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, s)
+		}
+		return out, true
+	}
+
+	if !multi {
+		switch t := probe.(type) {
+		case string:
+			if out, err := json.Marshal(t); err == nil {
+				return out
+			}
+		case []any:
+			// A select wrapped as {"value": […]} degrades to its first
+			// member — one value is all a select stores.
+			if ss, ok := stringSlice(t); ok && len(ss) > 0 {
+				if out, err := json.Marshal(ss[0]); err == nil {
+					return out
+				}
+			}
+		}
+		return nil
+	}
+
+	var ss []string
+	switch t := probe.(type) {
+	case string:
+		ss = []string{t}
+	case []any:
+		var ok bool
+		ss, ok = stringSlice(t)
+		if !ok {
+			return nil
+		}
+	default:
+		return nil
+	}
+	if out, err := json.Marshal(ss); err == nil {
+		return out
 	}
 
 	return nil

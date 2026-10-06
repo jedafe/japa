@@ -55,6 +55,8 @@ var attractionKindByQID = map[string]string{
 	"Q23397":   "lake",           // lake
 	"Q35509":   "cave",           // cave
 	"Q40080":   "beach",          // beach
+	"Q29553":   "mountain",       // hill (closest seeded kind)
+	"Q1404150": "rock-formation", // rock formation (Olumo/Zuma Rock)
 	"Q46169":   "national-park",  // national park
 	"Q1107656": "garden",         // garden
 	"Q167346":  "garden",         // botanical garden
@@ -171,8 +173,10 @@ func (a *ProcessorAdapter) populateAttractionSpace(ctx context.Context, space *g
 		wikiTitle = ent.Sitelink
 	}
 
+	var wikiSummary *wikipediaSummary
 	var wikiErr error
-	if wikiSummary, err := fetchWikipediaSummary(ctx, wikiTitle); err == nil {
+	if s, err := fetchWikipediaSummary(ctx, wikiTitle); err == nil {
+		wikiSummary = s
 		wikiJSON, err := marshalWikiContentWithQID(wikiSummary, qid)
 		if err == nil {
 			if _, uerr := a.svc.UpdateSpaceWikiContent(ctx, space.ID, wikiJSON); uerr != nil {
@@ -194,10 +198,17 @@ func (a *ProcessorAdapter) populateAttractionSpace(ctx context.Context, space *g
 		}
 	}
 
-	// Media ingest is best-effort and idempotent on .Valid.
+	// Media ingest is best-effort and idempotent on .Valid. Header
+	// precedence matches populateGeoSpace: Wikidata P18 first, then the
+	// freshly fetched summary's image — the space row is stale here (its
+	// wiki_content predates the update above), so it is only a fallback
+	// for runs where the summary fetch failed.
 	var headerURL string
 	if ent != nil {
 		headerURL = ent.Image
+	}
+	if headerURL == "" && wikiSummary != nil {
+		headerURL = firstNonEmpty(wikiSummary.OriginalImage, wikiSummary.Thumbnail)
 	}
 	if headerURL == "" {
 		if b := wikiContentImageURL(space.WikiContent); b != "" {

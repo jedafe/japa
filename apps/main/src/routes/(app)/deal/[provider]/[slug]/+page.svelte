@@ -42,11 +42,15 @@
 	const summary = $derived(
 		(typeof details?.summary === 'string' ? details.summary : '') || coupon.description || null
 	);
-	// The claim CTA is meaningless once the deal has lapsed — the /go redirect
-	// already soft-lands on the provider's base_url server-side.
+	// The claim CTA is meaningless once the deal has lapsed or before it starts —
+	// the /go redirect already soft-lands on the provider's base_url server-side.
 	const isExpired = $derived(
 		!!coupon.expires_at && new Date(coupon.expires_at).getTime() <= Date.now()
 	);
+	const isUpcoming = $derived(
+		!!coupon.valid_from && new Date(coupon.valid_from).getTime() > Date.now()
+	);
+	const isClaimable = $derived(!isExpired && !isUpcoming && coupon.status === 'active');
 	const providerLabel = $derived(coupon.provider_name ?? t('deal.this_deal', 'this deal'));
 
 	let editing = $state(false);
@@ -69,7 +73,6 @@
 			name: coupon.title,
 			description,
 			url: page.url.href,
-			...(coupon.referral_url ? { url: coupon.referral_url } : {})
 		})
 	);
 
@@ -276,7 +279,7 @@
 					{/if}
 				</div>
 
-				{#if (coupon.referral_url || coupon.provider_base_url) && !isExpired}
+				{#if (coupon.referral_url || coupon.provider_base_url) && isClaimable}
 					<a
 						href={goUrl}
 						target="_blank"
@@ -411,6 +414,15 @@
 
 			<!-- Terms + expiry -->
 			<div class="mt-6 flex flex-wrap items-center gap-4 text-xs text-[var(--color-muted)]">
+				{#if isUpcoming}
+					<span class="inline-flex items-center gap-1">
+						<Clock size={12} />
+						{t('coupons.starts', 'Starts {date}').replace(
+							'{date}',
+							new Date(coupon.valid_from as string).toLocaleDateString(i18n.locale)
+						)}
+					</span>
+				{/if}
 				{#if coupon.expires_at}
 					<span class="inline-flex items-center gap-1">
 						<Clock size={12} />

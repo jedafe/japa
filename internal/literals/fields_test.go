@@ -156,6 +156,38 @@ func TestResolveFieldsByteSlice(t *testing.T) {
 	}
 }
 
+func TestResolveFieldsByteSlicePointer(t *testing.T) {
+	t.Parallel()
+
+	// *json.RawMessage fields (e.g. coupons.details on generated rows) must
+	// resolve like plain json.RawMessage and never panic when nil.
+	type row struct {
+		Title   string
+		Details *json.RawMessage
+	}
+
+	var nilRow row
+	nilRow.Title = "T {{Current_Year}}"
+	if err := ResolveFields(context.Background(), &nilRow, testRC(), testTokens); err != nil {
+		t.Fatal(err)
+	}
+	if nilRow.Details != nil {
+		t.Fatalf("nil *json.RawMessage must stay nil; got %q", *nilRow.Details)
+	}
+	if nilRow.Title != "T 2026" {
+		t.Fatalf("Title = %q", nilRow.Title)
+	}
+
+	d := json.RawMessage(`{"faq":"{{Destination_Country|your destination}}"}`)
+	r := row{Title: "T", Details: &d}
+	if err := ResolveFields(context.Background(), &r, testRC(), testTokens); err != nil {
+		t.Fatal(err)
+	}
+	if string(*r.Details) != `{"faq":"your destination"}` {
+		t.Fatalf("Details = %q", *r.Details)
+	}
+}
+
 func TestResolveFieldsNilPointerMeta(t *testing.T) {
 	t.Parallel()
 

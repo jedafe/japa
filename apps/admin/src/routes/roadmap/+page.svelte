@@ -5,6 +5,7 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
 	import { roadmapAdminApi, roadmapCategoriesAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
@@ -416,16 +417,22 @@
 			<label for="roadmap-status" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">
 				{t('common.status', 'Status')}
 			</label>
-			<select
+			<Autocomplete
 				id="roadmap-status"
-				bind:value={statusChoice}
-				class="w-full rounded-lg border p-2 text-sm"
-				style="border-color: var(--color-border); background-color: var(--color-surface); color: var(--color-foreground)"
-			>
-				{#each STATUS_OPTIONS as opt (opt.value)}
-					<option value={opt.value}>{opt.label}</option>
-				{/each}
-			</select>
+				placeholder={t('common.status', 'Status')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={async (q: string) => {
+					const needle = q.trim().toLowerCase();
+					return STATUS_OPTIONS
+						.filter((o) => !needle || o.label.toLowerCase().includes(needle) || o.value.toLowerCase().includes(needle))
+						.map((o) => ({ id: o.value, label: o.label }));
+				}}
+				initialFetcher={async () => STATUS_OPTIONS.map((o) => ({ id: o.value, label: o.label }))}
+				selectedId={statusChoice || null}
+				selectedLabel={statusChoice ? (STATUS_OPTIONS.find((o) => o.value === statusChoice)?.label ?? statusChoice) : null}
+				onSelect={(item: AutocompleteItem) => { statusChoice = item.id; }}
+				onClear={() => { statusChoice = ''; }}
+			/>
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">
 				{t('roadmap.status_hint', 'Only valid lifecycle transitions are accepted.')}
 			</p>

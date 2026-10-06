@@ -15,6 +15,7 @@
 
 	let { data } = $props();
 	const categories = $derived(data.categories ?? []);
+	const submissionsEnabled = $derived(data.submissionsEnabled ?? true);
 
 	let title = $state('');
 	let categoryId = $state('');
@@ -121,6 +122,25 @@
 					{t('roadmap.submit.submit_another', 'Submit another')}
 				</button>
 			</div>
+		</div>
+	{:else if !submissionsEnabled}
+		<!-- roadmap.submissions_enabled is off — the POST would be rejected
+		     anyway; show the closed state instead of a dead form (§113). -->
+		<div
+			class="space-y-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center"
+		>
+			<p class="text-lg font-medium text-[var(--color-text)]">
+				{t('roadmap.submit.closed', 'Submissions are closed')}
+			</p>
+			<p class="text-sm text-[var(--color-muted)]">
+				{t('roadmap.submit.closed_body', 'We are not accepting new feature requests right now. Check back soon.')}
+			</p>
+			<a
+				href="/roadmap"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90"
+			>
+				{t('roadmap.back_to_board', 'Back to roadmap')}
+			</a>
 		</div>
 	{:else}
 		<form

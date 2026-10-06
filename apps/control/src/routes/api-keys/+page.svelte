@@ -6,7 +6,7 @@
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import { Key, Plus, Copy, Check } from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import Tabs from '$lib/components/ui/Tabs.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
@@ -42,7 +42,7 @@
 
 	// L3: DataTable columns for the top-keys-by-volume analytics list
 	const topKeyColumns: DataTableColumn[] = [
-		{ key: 'key_prefix', label: t('api_keys.key_prefix', 'Prefix'), sortable: true, render: (val) => `<span class="font-mono text-xs text-muted-foreground">${val}</span>` },
+		{ key: 'key_prefix', label: t('api_keys.key_prefix', 'Prefix'), sortable: true, render: (val) => `<span class="font-mono text-xs text-muted-foreground">${escapeHtml(val)}</span>` },
 		{ key: 'name', label: t('api_keys.name', 'Name'), sortable: true },
 		{ key: 'request_count', label: t('api_keys.requests', 'Requests'), sortable: true, render: (val) => `<span class="font-mono text-muted-foreground">${Number(val).toLocaleString()}</span>` }
 	];
@@ -496,11 +496,13 @@
 		class="w-72"
 	/>
 
-	<Select
+	<AutocompleteSelect
 		bind:value={filterTier}
-		items={tierItems}
+		options={tierItems}
+		onValueChange={(v) => handleTierChange(v)}
 		placeholder={t('api_keys.tier_all')}
 		ariaLabel={t('api_keys.tier')}
+		class="w-44"
 	/>
 
 	<span class="text-muted-foreground text-xs">
@@ -736,11 +738,11 @@
 					<label for="create-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
 					</label>
-					<Select
+					<AutocompleteSelect
 						bind:value={createForm.rate_limit_tier}
-						items={tierOptions}
+						options={tierOptions}
 						placeholder={t('api_keys.tier')}
-						triggerClass="mt-1 w-full"
+						class="mt-1 w-full"
 					/>
 				</div>
 
@@ -887,11 +889,11 @@
 					<label for="edit-tier" class="text-foreground block text-sm font-medium">
 						{t('api_keys.rate_limit_tier')}
 					</label>
-					<Select
+					<AutocompleteSelect
 						bind:value={editForm.rate_limit_tier}
-						items={tierOptions}
+						options={tierOptions}
 						placeholder={t('api_keys.tier')}
-						triggerClass="mt-1 w-full"
+						class="mt-1 w-full"
 					/>
 				</div>
 			</div>

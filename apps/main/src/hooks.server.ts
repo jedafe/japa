@@ -70,12 +70,16 @@ function isUniversitySurface(host: string): boolean {
 /**
  * ADR-127: detect whether the request host is the public roadmap surface.
  * The canonical host is roadmap.japaconnect.com; additional custom domains
- * via the JC_ROADMAP_HOSTS env var (comma-separated).
+ * come from the roadmap.custom_domain system setting (comma-separated, §113)
+ * and the JC_ROADMAP_HOSTS env var (comma-separated).
  */
-function isRoadmapSurface(host: string): boolean {
+function isRoadmapSurface(host: string, customDomainSetting?: unknown): boolean {
 	const canonical = 'roadmap.japaconnect.com';
 	const configured = env.JC_ROADMAP_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) ?? [];
-	return [canonical, ...configured].includes(host.toLowerCase());
+	const custom = typeof customDomainSetting === 'string'
+		? customDomainSetting.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)
+		: [];
+	return [canonical, ...configured, ...custom].includes(host.toLowerCase());
 }
 
 /**
@@ -278,7 +282,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// ADR-127: detect the public roadmap surface by host.
 	// roadmap.japaconnect.com renders a minimal roadmap-branded shell inside
 	// the same app — unlike the university surface it does not redirect.
-	event.locals.isRoadmapHost = isRoadmapSurface(event.url.hostname);
+	// Extra hosts come from the roadmap.custom_domain setting (§113).
+	event.locals.isRoadmapHost = isRoadmapSurface(
+		event.url.hostname,
+		siteSettings['roadmap.custom_domain']
+	);
 
 	// Resolve the session and (for authenticated users) the CSRF token.
 	// The main app is public: an absent or invalid token simply means "guest"

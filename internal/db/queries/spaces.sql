@@ -133,6 +133,11 @@ WHERE s.deleted_at IS NULL
  AND (@region::text = '' OR s.region = @region)
  AND (@subregion::text = '' OR s.subregion = @subregion)
  AND (@space_type_id::uuid IS NULL OR s.space_type_id = @space_type_id::uuid)
+ -- §80 wiki-only types (attraction) are browsable through the wiki
+ -- directory only — never the member-facing /spaces listing.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
  AND (
  @joined_only::bool = false
  OR (
@@ -176,6 +181,11 @@ WHERE s.deleted_at IS NULL
  AND (@region::text = '' OR s.region = @region)
  AND (@subregion::text = '' OR s.subregion = @subregion)
  AND (@space_type_id::uuid IS NULL OR s.space_type_id = @space_type_id::uuid)
+ -- §80 wiki-only types (attraction) are browsable through the wiki
+ -- directory only — never the member-facing /spaces listing.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
  AND (
  @joined_only::bool = false
  OR (
@@ -340,6 +350,11 @@ WHERE s.deleted_at IS NULL
  )
  )
  )
+ -- §80 wiki-only types (attraction) are browsable through the wiki
+ -- directory only — never the member-facing /spaces listing.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
+ )
  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
  AND (@level::text = '' OR s.level = @level)
@@ -383,6 +398,10 @@ WHERE s.deleted_at IS NULL
  WHERE sm.space_id = s.id AND sm.user_id = @viewer_user_id::uuid AND sm.status = 'approved'
  )
  )
+ )
+ -- §80 wiki-only types (attraction) — same exclusion as the list query.
+ AND NOT EXISTS (
+ SELECT 1 FROM space_types st WHERE st.id = s.space_type_id AND st.wiki_only
  )
  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%' OR s.slug ILIKE '%' || @search || '%')
  AND (@geo_code::text = '' OR s.geo_code = @geo_code)
@@ -756,6 +775,37 @@ WITH RECURSIVE walk AS (
 SELECT DISTINCT w.origin AS space_id, c.id AS country_id
 FROM walk w
 JOIN spaces c ON c.id = w.node AND c.level = 'country';
+
+-- name: ListSpaceAncestors :many
+-- Every ancestor of a space via the parent_id ∪ space_parent_spaces edge
+-- set (≤3 hops — the geo chain never exceeds city → state → country).
+-- Returns each ancestor's level, type slug, and whether its wiki_content
+-- carries a wikidata_id stamp — §80 attraction seeding links ancestors
+-- directly (a geo parent without the stamp can't match a P131 QID) and
+-- enqueues auto-populate for unstamped geo ancestors.
+WITH RECURSIVE walk AS (
+    SELECT par.id, 1 AS depth
+    FROM (
+        SELECT j.parent_space_id AS id FROM space_parent_spaces j WHERE j.space_id = @space_id
+        UNION
+        SELECT s2.parent_id FROM spaces s2 WHERE s2.id = @space_id AND s2.parent_id IS NOT NULL
+    ) par
+    UNION
+    SELECT par.id, w.depth + 1
+    FROM walk w
+    JOIN LATERAL (
+        SELECT j.parent_space_id AS id FROM space_parent_spaces j WHERE j.space_id = w.id
+        UNION
+        SELECT s2.parent_id FROM spaces s2 WHERE s2.id = w.id AND s2.parent_id IS NOT NULL
+    ) par ON true
+    WHERE w.depth < 3
+)
+SELECT DISTINCT s.id, s.level, COALESCE(st.slug, '') AS type_slug,
+       ((s.wiki_content->>'wikidata_id') IS NOT NULL)::boolean AS has_wikidata_id
+FROM walk w
+JOIN spaces s ON s.id = w.id
+LEFT JOIN space_types st ON st.id = s.space_type_id
+WHERE s.deleted_at IS NULL AND s.id <> @space_id;
 
 -- name: GetSpaceCountryCurrencyCode :one
 -- Resolves a space's country-level ancestor's currency_code by walking the

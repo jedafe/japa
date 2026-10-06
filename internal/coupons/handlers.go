@@ -104,6 +104,16 @@ func parseQueryInt(r *http.Request, key string, defaultVal int) int {
 	return n
 }
 
+// clampPageSize mirrors paginate()'s cap so the page_size echoed in list
+// responses matches the limit the query actually applied.
+func clampPageSize(n int32) int32 {
+	if n <= 0 || n > MaxPageSize {
+		return DefaultPageSize
+	}
+
+	return n
+}
+
 func parseQueryString(r *http.Request, key string) *string {
 	v := r.URL.Query().Get(key)
 	if v == "" {
@@ -163,24 +173,32 @@ func (h *Handlers) ListPublicCoupons(w http.ResponseWriter, r *http.Request) {
 
 	providerID := parseQueryUUID(r, "provider_id")
 	couponType := parseQueryString(r, "coupon_type")
+	if couponType == nil {
+		// `type` is the spec-documented alias (§55).
+		couponType = parseQueryString(r, "type")
+	}
 	// Accept both `q` (spec §55 documented param) and `search` (legacy alias).
 	search := parseQueryString(r, "q")
 	if search == nil {
 		search = parseQueryString(r, "search")
 	}
+	sort := r.URL.Query().Get("sort")
 
-	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
+	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
+	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 
-	coupons, err := h.Service.ListActiveCoupons(r.Context(), providerID, couponType, search, page, pageSize)
+	coupons, err := h.Service.ListActiveCoupons(r.Context(), providerID, couponType, search, sort, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
+	if coupons == nil {
+		coupons = []gen.ListActiveCouponsRow{}
+	}
 
 	h.resolveLiterals(r, &coupons)
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons, "page": page, "page_size": pageSize})
 }
 
 // GetCoupon handles GET /api/v1/coupons/:id.
@@ -346,8 +364,8 @@ func (h *Handlers) DealGo(w http.ResponseWriter, r *http.Request) {
 // inactive org providers must stay visible for moderation (§55).
 func (h *Handlers) ListProviders(w http.ResponseWriter, r *http.Request) {
 
-	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
+	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
+	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 
 	isActive, err := parseQueryBool(r, "is_active")
 	if err != nil {
@@ -477,13 +495,16 @@ func (h *Handlers) ListCouponsAdmin(w http.ResponseWriter, r *http.Request) {
 		search = parseQueryString(r, "search")
 	}
 
-	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
+	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
+	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 
 	coupons, err := h.Service.ListCoupons(r.Context(), status, couponType, search, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+	if coupons == nil {
+		coupons = []gen.ListCouponsRow{}
 	}
 
 	// Same filters, no pagination — the admin deals table needs total for
@@ -680,8 +701,8 @@ func parseQueryUUID(r *http.Request, key string) *pgtype.UUID {
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateScanResults(w http.ResponseWriter, r *http.Request) {
 
-	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
+	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
+	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 	limit, offset := paginate(page, pageSize)
 
 	rows, err := h.Service.store.listAffiliateScanResults(r.Context(), gen.ListAffiliateScanResultsParams{
@@ -764,8 +785,8 @@ func (h *Handlers) ReviewAffiliateScanResult(w http.ResponseWriter, r *http.Requ
 // BE-LOW-002: uses sqlc-generated query instead of raw SQL.
 func (h *Handlers) ListAffiliateCommissions(w http.ResponseWriter, r *http.Request) {
 
-	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
+	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
+	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 	limit, offset := paginate(page, pageSize)
 
 	// Parse optional credited filter into a *bool for the sqlc narg.
@@ -1137,8 +1158,8 @@ func (h *Handlers) ListOrgDeals(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page := int32(parseQueryInt(r, "page", 1))                        // #nosec
-	pageSize := int32(parseQueryInt(r, "page_size", DefaultPageSize)) // #nosec
+	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
+	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
 	coupons, err := h.Service.ListOrgDeals(r.Context(), org.ID, page, pageSize)
 	if err != nil {
 		handleServiceError(w, err)

@@ -35,11 +35,12 @@
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), 15000);
 		load(controller.signal);
-		// Poll every 15s for live queue updates.
+		// Poll every 15s for live queue updates — quiet so the loading
+		// skeleton doesn't flash on every tick.
 		const interval = setInterval(() => {
 			const c = new AbortController();
 			const t = setTimeout(() => c.abort(), 15000);
-			load(c.signal).finally(() => clearTimeout(t));
+			load(c.signal, true).finally(() => clearTimeout(t));
 		}, 15_000);
 		return () => {
 			clearTimeout(timeout);
@@ -80,8 +81,8 @@
 		setTimeout(() => { errorMessage = ''; }, 5000);
 	}
 
-	async function load(signal?: AbortSignal) {
-		loading = true;
+	async function load(signal?: AbortSignal, quiet = false) {
+		if (!quiet) loading = true;
 		try {
 			const result = await api<DlqEntry[]>('/control/queue/dlq', { signal });
 			if (signal?.aborted) return;
@@ -167,7 +168,10 @@
 	}
 
 	function extractTaskId(rowId: string): string {
-		return rowId.split('::')[0];
+		// Row ids are `${task_id}::${pageIndex}` — strip the trailing index
+		// suffix rather than splitting on '::' (task ids may contain '::').
+		const idx = rowId.lastIndexOf('::');
+		return idx === -1 ? rowId : rowId.slice(0, idx);
 	}
 
 	async function bulkDiscard(ids: string[]) {

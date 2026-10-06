@@ -10,6 +10,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import DealForm from '$lib/components/deals/DealForm.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { EmptyState } from '$lib/components/ui';
 	import { dealPath, type Coupon } from '$lib/types';
 	import type { PageData } from './$types';
@@ -18,8 +19,6 @@
 
 	const title = $derived(t('deals.new_title', 'New deal — JapaConnect'));
 
-	const inputClass =
-		'w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
 	const labelClass = 'mb-1 block text-sm font-medium text-[var(--color-text)]';
 
 	// Org submission mode (non-staff path only). Single eligible orgs are
@@ -178,16 +177,12 @@
 			{#if data.orgs.length > 1}
 				<div>
 					<label for="deal-org" class={labelClass}>{t('deals.org_picker', 'Submitting as')}</label>
-					<select
+					<AutocompleteSelect
 						id="deal-org"
 						bind:value={selectedOrgId}
-						onchange={onOrgChange}
-						class={inputClass}
-					>
-						{#each data.orgs as org (org.id)}
-							<option value={org.id}>{org.name}</option>
-						{/each}
-					</select>
+						options={data.orgs.map((o) => ({ value: o.id, label: o.name }))}
+						onValueChange={() => onOrgChange()}
+					/>
 				</div>
 			{:else if selectedOrg}
 				<p class="text-sm text-[var(--color-text-subtle)]">

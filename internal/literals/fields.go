@@ -480,19 +480,30 @@ func toCountryCode(v string) string {
 }
 
 // stringFieldValue reads a field's text content — string, *string, or a
-// byte-slice kind (Body []byte, Content json.RawMessage).
+// byte-slice kind (Body []byte, Content json.RawMessage, and pointer
+// variants like *json.RawMessage). Nil pointers to non-string types report
+// false so setStringField never attempts an incompatible reflect.Set.
 func stringFieldValue(fv reflect.Value) (string, bool) {
 	//nolint:exhaustive // only the relevant reflect.Kind cases are handled
 	switch fv.Kind() {
 	case reflect.String:
 		return fv.String(), true
 	case reflect.Pointer:
-		if fv.IsNil() {
-			return "", true
-		}
+		elem := fv.Type().Elem()
 
-		if fv.Elem().Kind() == reflect.String {
+		switch {
+		case elem.Kind() == reflect.String:
+			if fv.IsNil() {
+				return "", true
+			}
+
 			return fv.Elem().String(), true
+		case elem.Kind() == reflect.Slice && elem.Elem().Kind() == reflect.Uint8:
+			if fv.IsNil() {
+				return "", false
+			}
+
+			return string(fv.Elem().Bytes()), true
 		}
 	case reflect.Slice:
 		if fv.Type().Elem().Kind() == reflect.Uint8 {
@@ -523,7 +534,7 @@ func setStringField(fv reflect.Value, value string, isMeta bool) {
 				return
 			}
 
-			if fv.CanSet() {
+			if fv.CanSet() && fv.Type().Elem().Kind() == reflect.String {
 				v := value
 				fv.Set(reflect.ValueOf(&v))
 			}
@@ -532,8 +543,16 @@ func setStringField(fv reflect.Value, value string, isMeta bool) {
 		}
 
 		e := fv.Elem()
-		if e.Kind() == reflect.String && e.CanSet() {
-			e.SetString(value)
+
+		switch e.Kind() {
+		case reflect.String:
+			if e.CanSet() {
+				e.SetString(value)
+			}
+		case reflect.Slice:
+			if e.Type().Elem().Kind() == reflect.Uint8 && e.CanSet() {
+				e.SetBytes([]byte(value))
+			}
 		}
 	case reflect.Slice:
 		if fv.Type().Elem().Kind() == reflect.Uint8 && fv.CanSet() && !fv.IsNil() {

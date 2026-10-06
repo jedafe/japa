@@ -4,7 +4,7 @@
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { api } from '$lib/api';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
@@ -513,12 +513,12 @@
 />
 
 <div class="mb-4 flex flex-wrap items-center gap-3">
-	<Select
+	<AutocompleteSelect
 		bind:value={filterStatus}
-		items={statusItems}
+		options={statusItems}
 		placeholder={t('cron.all_status', 'All Status')}
 		ariaLabel={t('cron.filter_status', 'Filter by status')}
-		triggerClass="h-10"
+		class="w-44"
 	/>
 	<div class="flex-1"></div>
 	<button

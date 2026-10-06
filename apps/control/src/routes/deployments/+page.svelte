@@ -17,8 +17,8 @@
 	let sortKey = $state('');
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 
-	async function load() {
-		loading = true;
+	async function load(quiet = false) {
+		if (!quiet) loading = true;
 		try {
 			const result = await api<Deployment[]>('/control/deployments');
 			if (result.ok) {
@@ -38,7 +38,7 @@
 	$effect(() => {
 		load();
 		const interval = setInterval(() => {
-			if (document.visibilityState === 'visible') load();
+			if (document.visibilityState === 'visible') load(true);
 		}, 30_000);
 		return () => clearInterval(interval);
 	});
@@ -110,7 +110,7 @@
 			{t('deployments.last_updated', 'Last updated')}: {lastUpdated.toLocaleTimeString()}
 		</span>
 	{/if}
-	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors" onclick={load}>
+	<button class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px border flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors" onclick={() => load()}>
 		<RefreshCw class="size-3" />
 		{t('common.refresh')}
 	</button>

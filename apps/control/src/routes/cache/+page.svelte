@@ -35,12 +35,14 @@
 	// The previous $effect was a one-shot fetch with an empty cleanup return.
 	$effect(() => {
 		loadStats();
-		const interval = setInterval(loadStats, 30_000);
+		// Poll quietly — re-rendering the whole stats view as "Loading..."
+		// every 30s flashes the UI.
+		const interval = setInterval(() => loadStats(true), 30_000);
 		return () => clearInterval(interval);
 	});
 
-	async function loadStats() {
-		loadingStats = true;
+	async function loadStats(quiet = false) {
+		if (!quiet) loadingStats = true;
 		try {
 			const result = await api<CacheStats | { message: string }>('/control/cache/stats');
 			if (result.ok) {
@@ -124,7 +126,7 @@
 <div class="mb-4 flex items-center justify-end">
 	<button
 		class="border-border-input bg-background-alt hover:bg-muted text-foreground rounded-9px flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition-colors"
-		onclick={loadStats}
+		onclick={() => loadStats()}
 		disabled={loadingStats}
 	>
 		<RefreshCw class="size-3 {loadingStats ? 'animate-spin' : ''}" />

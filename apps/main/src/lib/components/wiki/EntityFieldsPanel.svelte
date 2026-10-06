@@ -216,12 +216,20 @@
 											</div>
 											<dd class="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-3">
 												{#each media as m (m.id || m.url)}
-													<img
-														src={m.url}
-														alt={m.alt ?? ''}
-														loading="lazy"
-														class="aspect-[4/3] w-full rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
-													/>
+													<!-- §80 — v1 thumbnails link the full media URL. -->
+													<a
+														href={m.url}
+														target="_blank"
+														rel="noopener noreferrer"
+														class="block transition-opacity hover:opacity-90"
+													>
+														<img
+															src={m.url}
+															alt={m.alt ?? ''}
+															loading="lazy"
+															class="aspect-[4/3] w-full rounded-[var(--radius)] border border-[var(--color-border)] object-cover"
+														/>
+													</a>
 												{/each}
 											</dd>
 										</div>

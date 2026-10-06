@@ -390,10 +390,11 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Name          string `json:"name"`
-		Status        string `json:"status"`
-		RateLimitTier string `json:"rate_limit_tier"`
-		Notes         string `json:"notes"`
+		Name          string    `json:"name"`
+		Status        string    `json:"status"`
+		RateLimitTier string    `json:"rate_limit_tier"`
+		Notes         string    `json:"notes"`
+		Scopes        *[]string `json:"scopes"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -410,6 +411,13 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// An explicit empty scope list would produce a key that can call
+	// nothing — reject it rather than silently bricking the key.
+	if input.Scopes != nil && len(*input.Scopes) == 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_scopes", "Scopes must not be empty")
+		return
+	}
+
 	// Delegate to the service method which uses a strict column allowlist
 	// (SEC-002 / LAYER-003) — no hand-concatenated SQL in the handler.
 	rowsAffected, err := h.Service.UpdateAPIKeyFields(r.Context(), keyID, APIKeyUpdateFields{
@@ -417,6 +425,7 @@ func (h *Handlers) UpdateAPIKeyStatus(w http.ResponseWriter, r *http.Request) {
 		Status:        input.Status,
 		RateLimitTier: input.RateLimitTier,
 		Notes:         input.Notes,
+		Scopes:        input.Scopes,
 	})
 	if err != nil {
 		if errors.Is(err, ErrNoFieldsToUpdate) {

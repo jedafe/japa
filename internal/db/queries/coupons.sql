@@ -154,11 +154,15 @@ FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.status = 'active'
  AND (ap.id IS NULL OR ap.is_active = true)
+ AND (c.valid_from IS NULL OR c.valid_from <= now())
  AND (c.expires_at IS NULL OR c.expires_at > now())
  AND (sqlc.narg(provider_id)::uuid IS NULL OR c.provider_id = sqlc.narg(provider_id))
  AND (sqlc.narg(coupon_type)::text IS NULL OR c.coupon_type = sqlc.narg(coupon_type))
  AND (sqlc.narg(search)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(search) || '%')
-ORDER BY c.created_at DESC
+ORDER BY
+ CASE WHEN sqlc.arg(sort)::text = 'popular' THEN c.total_clicks END DESC,
+ CASE WHEN sqlc.arg(sort)::text = 'expiring' THEN c.expires_at END ASC NULLS LAST,
+ c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: UpdateCoupon :one
@@ -335,7 +339,7 @@ WHERE coupon_id = @coupon_id AND event_type = @event_type;
 -- from another platform. The InternalGuard on the render routes is defense-
 -- in-depth; this query is the primary platform isolation control.
 SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
- c.referral_url, c.status, c.expires_at,
+ c.referral_url, c.status, c.valid_from, c.expires_at,
  ap.name AS provider_name, ap.slug AS provider_slug, ap.logo_media_id AS provider_logo_media_id
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id

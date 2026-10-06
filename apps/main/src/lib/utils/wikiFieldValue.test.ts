@@ -137,6 +137,43 @@ describe('formatWikiFieldValue', () => {
 			)
 		).toBe('₦800 – ₦1,600');
 	});
+
+	// §80 — the entity-fields DTO emits the canonical select/multiselect
+	// shape, but values written by other paths (cfv upsert, attraction
+	// enrichment) may still carry a {"value"/"values"} envelope; the
+	// formatter unwraps so option labels resolve instead of raw JSON.
+	const kindField = (value: unknown) => ({
+		id: 'f1',
+		key: 'kind',
+		label: 'Kind',
+		field_type: 'select',
+		value,
+		options: [{ value: 'museum', label: 'Museum' }],
+		can_edit: true,
+		visible: true
+	});
+
+	it('resolves option labels for bare and wrapped select values', () => {
+		expect(formatWikiFieldValue(kindField('museum'))).toBe('Museum');
+		expect(formatWikiFieldValue(kindField({ value: 'museum' }))).toBe('Museum');
+	});
+
+	it('unwraps {values:[…]} envelopes on multiselect fields', () => {
+		const f = {
+			id: 'f1',
+			key: 'tags',
+			label: 'Tags',
+			field_type: 'multiselect',
+			value: { values: ['a', 'b'] },
+			options: [
+				{ value: 'a', label: 'Alpha' },
+				{ value: 'b', label: 'Beta' }
+			],
+			can_edit: true,
+			visible: true
+		};
+		expect(formatWikiFieldValue(f)).toBe('Alpha, Beta');
+	});
 });
 
 // §80 attractions — resolved media field values.

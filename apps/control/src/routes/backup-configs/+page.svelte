@@ -4,13 +4,12 @@
 	import DataTable from '$lib/components/DataTable.svelte';
 	import AlertBanner from '$lib/components/ui/AlertBanner.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
-	import { Popover } from 'bits-ui';
 	import Modal from '$lib/components/ui/Modal.svelte';
-	import Select from '$lib/components/ui/Select.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { api } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { DatabaseBackup, Plus, Trash2, Play, Power, RefreshCw, ChevronDown, Check, X } from 'lucide-svelte';
+	import { DatabaseBackup, Plus, Trash2, Play, Power, RefreshCw, X } from 'lucide-svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
@@ -88,12 +87,25 @@
 		}
 	}
 
-	function toggleBackupTarget(targetKey: string) {
-		if (createForm.what_to_backup.includes(targetKey)) {
-			createForm.what_to_backup = createForm.what_to_backup.filter((t) => t !== targetKey);
-		} else {
+	function addBackupTarget(targetKey: string) {
+		if (!createForm.what_to_backup.includes(targetKey)) {
 			createForm.what_to_backup = [...createForm.what_to_backup, targetKey];
 		}
+	}
+
+	// Autocomplete fetcher for the backup-target picker: offers only the
+	// targets not already selected, matched against label and description.
+	async function fetchBackupTargetItems(query: string): Promise<AutocompleteItem[]> {
+		const q = query.trim().toLowerCase();
+		return backupTargets
+			.filter((t) => !createForm.what_to_backup.includes(t.key))
+			.filter(
+				(t) =>
+					!q ||
+					t.label.toLowerCase().includes(q) ||
+					t.description.toLowerCase().includes(q)
+			)
+			.map((t) => ({ id: t.key, label: t.label, sublabel: t.description }));
 	}
 
 	function removeBackupTarget(targetKey: string) {
@@ -335,8 +347,8 @@
 		}
 	}
 
-	async function load() {
-		loading = true;
+	async function load(quiet = false) {
+		if (!quiet) loading = true;
 		try {
 			const result = await api<{ data: BackupConfig[] }>('/control/backup-configs');
 			if (result.ok) {
@@ -365,7 +377,7 @@
 		loadBackupTargets();
 		loadSchedulePresets();
 		const interval = setInterval(() => {
-			load();
+			if (document.visibilityState === 'visible') load(true);
 		}, 30000);
 		return () => clearInterval(interval);
 	});
@@ -579,56 +591,18 @@
 						</div>
 					{/if}
 
-					<Popover.Root>
-						<Popover.Trigger
-							id="backup-targets"
-							class="border-border-input bg-background text-foreground hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus flex w-full items-center justify-between rounded-9px border px-3 py-2 text-sm transition-colors"
-							aria-label={t('backup_configs.what_to_backup', 'What to Backup')}
-						>
-							<span class={createForm.what_to_backup.length === 0 ? 'text-muted-foreground' : ''}>
-								{createForm.what_to_backup.length === 0
-									? t('backup_configs.select_targets', 'Select what to backup...')
-									: t('backup_configs.targets_selected', '{count} selected').replace('{count}', String(createForm.what_to_backup.length))}
-							</span>
-							<ChevronDown class="text-muted-foreground size-4 shrink-0" />
-						</Popover.Trigger>
-						<Popover.Portal>
-							<Popover.Content
-								class="border-border-input bg-background shadow-popover z-50 w-[var(--bits-popover-anchor-width)] rounded-xl border p-0"
-								sideOffset={4}
-							>
-								<div class="max-h-60 overflow-y-auto p-1">
-									{#each backupTargets as target (target.key)}
-										<button
-											type="button"
-											class="hover:bg-accent flex w-full items-center gap-2 rounded-9px px-3 py-2 text-left text-sm transition-colors {createForm.what_to_backup.includes(target.key) ? 'bg-accent' : ''}"
-											onclick={() => toggleBackupTarget(target.key)}
-											title={target.description}
-										>
-											<span class="flex-1">
-												<span class="text-foreground block font-medium">{target.label}</span>
-												<span class="text-muted-foreground block text-xs">{target.description}</span>
-											</span>
-											{#if createForm.what_to_backup.includes(target.key)}
-												<Check class="text-foreground size-4 shrink-0" />
-											{/if}
-										</button>
-									{/each}
-								</div>
-								{#if createForm.what_to_backup.length > 0}
-									<div class="border-border-input border-t p-2">
-										<button
-											type="button"
-											class="text-muted-foreground hover:text-foreground w-full text-center text-xs font-medium"
-											onclick={() => { createForm.what_to_backup = []; }}
-										>
-											{t('backup_configs.clear_all', 'Clear all')}
-										</button>
-									</div>
-								{/if}
-							</Popover.Content>
-						</Popover.Portal>
-					</Popover.Root>
+					<Autocomplete
+						id="backup-targets"
+						placeholder={createForm.what_to_backup.length === 0
+							? t('backup_configs.select_targets', 'Select what to backup...')
+							: t('backup_configs.targets_selected', '{count} selected').replace('{count}', String(createForm.what_to_backup.length))}
+						emptyMessage={t('backup_configs.no_targets', 'No backup targets found')}
+						ariaLabel={t('backup_configs.what_to_backup', 'What to Backup')}
+						fetcher={fetchBackupTargetItems}
+						initialFetcher={() => fetchBackupTargetItems('')}
+						selectedId={null}
+						onSelect={(item) => addBackupTarget(item.id)}
+					/>
 					<p class="text-muted-foreground mt-1 text-xs">
 						{t('backup_configs.what_to_backup_hint', 'Select which components to include in the backup.')}
 					</p>
@@ -637,15 +611,14 @@
 					<label for="bc-storage" class="text-foreground mb-1 block text-sm font-medium">
 						{t('backup_configs.storage_type', 'Storage Type')}
 					</label>
-					<Select
+					<AutocompleteSelect
 						id="bc-storage"
 						value={createForm.storage_type}
 						onValueChange={(v) => { createForm.storage_type = v as BackupConfig['storage_type']; }}
-						items={storageTypeOptions}
+						options={storageTypeOptions}
 						placeholder={t('backup_configs.select_storage', 'Select storage type...')}
 						ariaLabel={t('backup_configs.storage_type', 'Storage Type')}
-						triggerClass="w-full"
-						zIndex={70}
+						class="w-full"
 					/>
 				</div>
 				<div>

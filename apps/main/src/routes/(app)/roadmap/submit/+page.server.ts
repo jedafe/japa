@@ -18,6 +18,11 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(307, `/login?redirect=${encodeURIComponent('/roadmap/submit')}`);
 	}
 
+	// roadmap.submissions_enabled gates the form (§113) — the backend still
+	// enforces on POST; this just shows the closed state up front.
+	const submissionsEnabled =
+		(event.locals.siteSettings?.['roadmap.submissions_enabled'] as boolean | undefined) ?? true;
+
 	const ctx = apiContext(event);
 	let categories: RoadmapCategory[] = [];
 	try {
@@ -27,5 +32,5 @@ export const load: PageServerLoad = async (event) => {
 		// Categories degrade to an empty list — the field is optional.
 	}
 
-	return { categories };
+	return { categories, submissionsEnabled };
 };

@@ -104,7 +104,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	);
 	const kindOptions = $derived([
 		{ value: '', label: t('common.all_types', 'All types') },
-		...data.spaceTypes.map((st) => ({ value: st.slug, label: st.name })),
+		// §80 — wiki-only types (attraction) live under /wiki, not /spaces;
+		// offering them here filters to an empty list.
+		...data.spaceTypes.filter((st) => !st.wiki_only).map((st) => ({ value: st.slug, label: st.name })),
 		...(data.levels ?? [])
 			.filter((l) => !typeCoveredLevels.has(l))
 			.map((l) => ({
