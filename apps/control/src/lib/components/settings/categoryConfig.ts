@@ -120,7 +120,7 @@ export const categoryNames: Record<string, string> = {
     cors: 'CORS',
     media: 'Media Storage',
     pricing: 'Pricing Plans',
-    university: 'Japa University',
+    university: 'Japa Academy',
     geo_personalization: 'Geo Personalization',
     linkpreview: 'Link Preview',
     content: 'Content',

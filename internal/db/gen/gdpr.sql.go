@@ -210,10 +210,10 @@ func (q *Queries) AnonymizeFormSubmissionsByUser(ctx context.Context, userID pgt
 }
 
 const anonymizeInstructorPayoutsForInstructor = `-- name: AnonymizeInstructorPayoutsForInstructor :execrows
-UPDATE instructor_payouts ipo
+UPDATE academy_instructor_payouts ipo
 SET instructor_id = NULL
 WHERE ipo.instructor_id IN (
- SELECT ip.id FROM instructor_profiles ip
+ SELECT ip.id FROM academy_instructor_profiles ip
  WHERE ip.user_id = $1
  )
 `
@@ -250,7 +250,7 @@ const anonymizeRevenueSplitsForInstructor = `-- name: AnonymizeRevenueSplitsForI
 UPDATE revenue_splits rs
 SET instructor_id = NULL
 WHERE rs.instructor_id IN (
- SELECT ip.id FROM instructor_profiles ip
+ SELECT ip.id FROM academy_instructor_profiles ip
  WHERE ip.user_id = $1
  )
 `
@@ -331,17 +331,17 @@ func (q *Queries) AnonymizeUserProfile(ctx context.Context, userID pgtype.UUID) 
 
 const clearInstructorPayoutMethod = `-- name: ClearInstructorPayoutMethod :execrows
 
-UPDATE instructor_profiles
+UPDATE academy_instructor_profiles
 SET payout_method = NULL,
  updated_at = now()
 WHERE user_id = $1
 `
 
 // =====================================================================
-// Japa University GDPR cascade (ADR-063 / audit C2)
-// revenue_splits and instructor_payouts are financial audit records:
+// Japa Academy GDPR cascade (ADR-063 / audit C2)
+// revenue_splits and academy_instructor_payouts are financial audit records:
 // anonymize the instructor reference (SET NULL), never delete the row.
-// instructor_profiles.payout_method is sensitive jsonb — clear it before
+// academy_instructor_profiles.payout_method is sensitive jsonb — clear it before
 // the profile is cascade-deleted via users(id) ON DELETE CASCADE.
 // =====================================================================
 // Clears the sensitive payout_method jsonb on the user's instructor
@@ -1117,8 +1117,8 @@ FROM (
  ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
  ipo.currency, ipo.status, ipo.payout_reference,
  ipo.processed_at, ipo.created_at
- FROM instructor_payouts ipo
- JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
+ FROM academy_instructor_payouts ipo
+ JOIN academy_instructor_profiles ip ON ip.id = ipo.instructor_id
  WHERE ip.user_id = $1
 ) t
 `
@@ -1136,13 +1136,13 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
  SELECT id, display_name, headline, bio, social_links,
  tier, status, kyc_status, application_note, created_at, updated_at
- FROM instructor_profiles
+ FROM academy_instructor_profiles
  WHERE user_id = $1
 ) t
 `
 
 // =====================================================================
-// Japa University GDPR data export (ADR-063 / audit C2)
+// Japa Academy GDPR data export (ADR-063 / audit C2)
 // =====================================================================
 func (q *Queries) GdprExportInstructorProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportInstructorProfiles, userID)
@@ -1321,7 +1321,7 @@ FROM (
  rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
  rs.currency, rs.created_at
  FROM revenue_splits rs
- JOIN instructor_profiles ip ON ip.id = rs.instructor_id
+ JOIN academy_instructor_profiles ip ON ip.id = rs.instructor_id
  WHERE ip.user_id = $1
 ) t
 `
@@ -1942,7 +1942,7 @@ func (q *Queries) GdprExportUserForumVotes(ctx context.Context, userID pgtype.UU
 
 const gdprExportUserLearningCertificates = `-- name: GdprExportUserLearningCertificates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, track_id, certificate_number, media_id, issued_at FROM learning_certificates WHERE user_id = $1) t
+FROM (SELECT id, user_id, track_id, certificate_number, media_id, issued_at FROM academy_certificates WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserLearningCertificates(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
@@ -1954,7 +1954,7 @@ func (q *Queries) GdprExportUserLearningCertificates(ctx context.Context, userID
 
 const gdprExportUserLessonProgress = `-- name: GdprExportUserLessonProgress :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, lesson_id, status, completed_at, created_at, position_secs FROM lesson_progress WHERE user_id = $1) t
+FROM (SELECT id, user_id, lesson_id, status, completed_at, created_at, position_secs FROM academy_lesson_progress WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserLessonProgress(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

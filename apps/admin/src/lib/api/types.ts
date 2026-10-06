@@ -464,7 +464,7 @@ export interface MentorshipProgram {
 }
 
 // Learning types
-export interface LearningTrack {
+export interface AcademyTrack {
 	id: string;
 	title: string;
 	slug: string;
@@ -475,14 +475,14 @@ export interface LearningTrack {
 	created_at: string;
 }
 
-export interface LearningModule {
+export interface AcademyModule {
 	id: string;
 	title: string;
 	sort_order: number;
 	lessons_count: number;
 }
 
-export interface LearningLesson {
+export interface AcademyLesson {
 	id: string;
 	title: string;
 	type: 'video' | 'text' | 'quiz';

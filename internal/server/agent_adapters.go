@@ -45,7 +45,7 @@ import (
 	"github.com/jedafe/japa/internal/fx"
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/languagetesthub"
-	"github.com/jedafe/japa/internal/learning"
+	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/pofcalculator"
@@ -655,23 +655,23 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 // Phase 9 adapters (Section 103 — extended tool catalog)
 // ---------------------------------------------------------------------------
 
-// agentLearningAdapter bridges learning.Store to the ai.LearningStore
-// interface. The ai package uses mirror types (ai.LearningTrack,
-// ai.LearningLesson, ai.LearningCreateTrackInput, etc.) to avoid an import
-// cycle with internal/learning. This adapter converts between the two.
-// // learn.lessons.reorder has no backing Store method — the adapter uses
+// agentAcademyAdapter bridges academy.Store to the ai.LearningStore
+// interface. The ai package uses mirror types (ai.AcademyTrack,
+// ai.AcademyLesson, ai.LearningCreateTrackInput, etc.) to avoid an import
+// cycle with internal/academy. This adapter converts between the two.
+// // academy.lessons.reorder has no backing Store method — the adapter uses
 // UpdateLesson per entry to set the new sort_order. This is sequential
 // (not a single bulk SQL UPDATE) but correct; a future migration can add
 // a bulk reorder query if performance requires it.
-type agentLearningAdapter struct{ store *learning.Store }
+type agentAcademyAdapter struct{ store *academy.Store }
 
-func (a *agentLearningAdapter) ListTracks(ctx context.Context) ([]ai.LearningTrack, error) {
+func (a *agentAcademyAdapter) ListTracks(ctx context.Context) ([]ai.AcademyTrack, error) {
 	tracks, err := a.store.ListAllTracks(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make([]ai.LearningTrack, 0, len(tracks))
+	out := make([]ai.AcademyTrack, 0, len(tracks))
 	for _, t := range tracks {
 		out = append(out, learningTrackToAI(t))
 	}
@@ -679,8 +679,8 @@ func (a *agentLearningAdapter) ListTracks(ctx context.Context) ([]ai.LearningTra
 	return out, nil
 }
 
-func (a *agentLearningAdapter) CreateTrack(ctx context.Context, input ai.LearningCreateTrackInput) (*ai.LearningTrack, error) {
-	t, err := a.store.CreateTrack(ctx, learning.CreateTrackInput{
+func (a *agentAcademyAdapter) CreateTrack(ctx context.Context, input ai.LearningCreateTrackInput) (*ai.AcademyTrack, error) {
+	t, err := a.store.CreateTrack(ctx, academy.CreateTrackInput{
 		Title:                input.Title,
 		Slug:                 input.Slug,
 		Description:          input.Description,
@@ -700,8 +700,8 @@ func (a *agentLearningAdapter) CreateTrack(ctx context.Context, input ai.Learnin
 	return &aiT, nil
 }
 
-func (a *agentLearningAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateTrackInput) (*ai.LearningTrack, error) {
-	t, err := a.store.UpdateTrack(ctx, id, learning.UpdateTrackInput{
+func (a *agentAcademyAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateTrackInput) (*ai.AcademyTrack, error) {
+	t, err := a.store.UpdateTrack(ctx, id, academy.UpdateTrackInput{
 		Title:                input.Title,
 		Description:          input.Description,
 		Difficulty:           input.Difficulty,
@@ -720,13 +720,13 @@ func (a *agentLearningAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, 
 	return &aiT, nil
 }
 
-func (a *agentLearningAdapter) ListLessons(ctx context.Context) ([]ai.LearningLesson, error) {
+func (a *agentAcademyAdapter) ListLessons(ctx context.Context) ([]ai.AcademyLesson, error) {
 	lessons, err := a.store.ListAllLessons(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make([]ai.LearningLesson, 0, len(lessons))
+	out := make([]ai.AcademyLesson, 0, len(lessons))
 	for _, l := range lessons {
 		out = append(out, learningLessonToAI(l))
 	}
@@ -734,8 +734,8 @@ func (a *agentLearningAdapter) ListLessons(ctx context.Context) ([]ai.LearningLe
 	return out, nil
 }
 
-func (a *agentLearningAdapter) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input ai.LearningCreateLessonInput) (*ai.LearningLesson, error) {
-	l, err := a.store.CreateLesson(ctx, moduleID, learning.CreateLessonInput{
+func (a *agentAcademyAdapter) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input ai.LearningCreateLessonInput) (*ai.AcademyLesson, error) {
+	l, err := a.store.CreateLesson(ctx, moduleID, academy.CreateLessonInput{
 		Title:           input.Title,
 		Slug:            input.Slug,
 		LessonType:      input.LessonType,
@@ -755,8 +755,8 @@ func (a *agentLearningAdapter) CreateLesson(ctx context.Context, moduleID pgtype
 	return &aiL, nil
 }
 
-func (a *agentLearningAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateLessonInput) (*ai.LearningLesson, error) {
-	l, err := a.store.UpdateLesson(ctx, id, learning.UpdateLessonInput{
+func (a *agentAcademyAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateLessonInput) (*ai.AcademyLesson, error) {
+	l, err := a.store.UpdateLesson(ctx, id, academy.UpdateLessonInput{
 		Title:           input.Title,
 		LessonType:      input.LessonType,
 		Content:         input.Content,
@@ -776,11 +776,11 @@ func (a *agentLearningAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID,
 }
 
 // ReorderLessons updates each lesson's sort_order sequentially. The
-// learning.Store does not expose a bulk reorder query, so we call
+// academy.Store does not expose a bulk reorder query, so we call
 // UpdateLesson per entry. A failure on one entry aborts the reorder
 // (the caller can retry). This is acceptable for the AI agent's use
 // case (small batches).
-func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, entries []ai.LearningReorderEntry) error {
+func (a *agentAcademyAdapter) ReorderLessons(ctx context.Context, entries []ai.LearningReorderEntry) error {
 	for _, e := range entries {
 		// Fetch the existing lesson to preserve its fields, then update
 		// only the sort_order. UpdateLessonInput requires Title and
@@ -790,7 +790,7 @@ func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, entries []ai.
 			return fmt.Errorf("reorder: fetching lesson %s: %w", e.ID, err)
 		}
 
-		_, err = a.store.UpdateLesson(ctx, e.ID, learning.UpdateLessonInput{
+		_, err = a.store.UpdateLesson(ctx, e.ID, academy.UpdateLessonInput{
 			Title:           lesson.Title,
 			LessonType:      lesson.LessonType,
 			Content:         lesson.Content,
@@ -807,8 +807,8 @@ func (a *agentLearningAdapter) ReorderLessons(ctx context.Context, entries []ai.
 	return nil
 }
 
-func learningTrackToAI(t learning.Track) ai.LearningTrack {
-	return ai.LearningTrack{
+func learningTrackToAI(t academy.Track) ai.AcademyTrack {
+	return ai.AcademyTrack{
 		ID: t.ID,
 
 		Title:       t.Title,
@@ -822,8 +822,8 @@ func learningTrackToAI(t learning.Track) ai.LearningTrack {
 	}
 }
 
-func learningLessonToAI(l learning.Lesson) ai.LearningLesson {
-	return ai.LearningLesson{
+func learningLessonToAI(l academy.Lesson) ai.AcademyLesson {
+	return ai.AcademyLesson{
 		ID: l.ID,
 
 		ModuleID:        l.ModuleID,

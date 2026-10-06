@@ -41,7 +41,7 @@
 		'forum',
 		'discover',
 		'explore',
-		'learn',
+		'academy',
 		'jobs',
 		'achievements',
 		'bookmarks',

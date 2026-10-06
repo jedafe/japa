@@ -526,7 +526,7 @@ func (s *Service) Complete(ctx context.Context, userID pgtype.UUID) error {
 }
 
 // DismissTour marks the product tour as dismissed for the given surface.
-// The surface is a short slug ("main", "docs", "learn"); an empty surface
+// The surface is a short slug ("main", "docs", "academy"); an empty surface
 // defaults to "main" for backward compatibility with the original
 // tour_dismissed boolean. Dismissals are stored per-surface in the
 // tour_dismissals jsonb map so each app manages its own tour state.
@@ -557,6 +557,10 @@ func normalizeTourSurface(surface string) string {
 	surface = strings.ToLower(strings.TrimSpace(surface))
 	if surface == "" {
 		return "main"
+	}
+	// Legacy alias: the Learn surface was renamed to Academy.
+	if surface == "learn" {
+		return "academy"
 	}
 
 	var b strings.Builder

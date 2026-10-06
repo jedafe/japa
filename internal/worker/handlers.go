@@ -634,7 +634,7 @@ func HandlePaymentWebhookProcess(ctx context.Context, t *asynq.Task) error {
 // payment's purpose_type is form_submission (which updates the linked
 // submission to 'new' and enqueues its triggers).
 func onPaymentSucceeded(ctx context.Context, queries *gen.Queries, p gen.Payment) {
-	enqueueUniversityEnrollment(p)
+	enqueueAcademyEnrollment(p)
 	enqueueCreditPurchaseGrant(p)
 	enqueueReferralConversion(p)
 
@@ -744,12 +744,12 @@ func enqueueAffiliateCommission(ctx context.Context, p gen.Payment) bool {
 	return true
 }
 
-// enqueueUniversityEnrollment implements ADR-063: when a course_access
+// enqueueAcademyEnrollment implements ADR-063: when a course_access
 // payment succeeds, enqueue the university enrollment processor to credit
 // the creator ledger, upsert the enrollment, and bump the track's enrollment
 // counter. The purpose_id is the track_id. Fire-and-forget per Rule 8 — the
 // payment is already marked succeeded.
-func enqueueUniversityEnrollment(p gen.Payment) {
+func enqueueAcademyEnrollment(p gen.Payment) {
 	if p.PurposeType != "course_access" || taskEnqueuer == nil {
 		return
 	}
@@ -767,7 +767,7 @@ func enqueueUniversityEnrollment(p gen.Payment) {
 		"gross_kobo": p.Amount,
 	})
 
-	if err := taskEnqueuer.Enqueue(TypeUniversityProcessEnrollment, enrollPayload); err != nil {
+	if err := taskEnqueuer.Enqueue(TypeAcademyProcessEnrollment, enrollPayload); err != nil {
 		slog.Error("task:payment:process_webhook: failed to enqueue university enrollment", "payment_id", p.ID, "error", err)
 	}
 }
@@ -909,11 +909,11 @@ func reversePaymentSideEffects(ctx context.Context, p gen.Payment) error {
 		}
 	case "course_access":
 		// Revoke the course access grant for this payment (refund/chargeback).
-		// The course_access_grants table was added in migration 000211.
+		// The academy_course_access_grants table was added in migration 000211.
 		slog.Info("task:payment:process_webhook: revoking course access grant", "payment_id", p.ID)
 
 		if p.PurposeID.Valid {
-			if _, err := dbPool.Writer.Exec(ctx, `UPDATE course_access_grants SET revoked_at = now()
+			if _, err := dbPool.Writer.Exec(ctx, `UPDATE academy_course_access_grants SET revoked_at = now()
 				 WHERE payment_id = $1 AND revoked_at IS NULL`, p.ID); err != nil {
 				return fmt.Errorf("revoking course access grant: %w", err)
 			}
@@ -1423,7 +1423,7 @@ var entityTypeIndexNames = map[string]string{
 	"user":                      "users",
 	"tag":                       "tags",
 	"directory_tag":             "tags",
-	"learning_track":            "learning_tracks",
+	"academy_track":            "academy_tracks",
 	"doc_page":                  "doc_pages",
 	"organization":              "organizations",
 	"language_test_requirement": "language_test_requirements",
@@ -1443,7 +1443,7 @@ func entityIndexers(ix SearchIndexer) map[string]func(context.Context, [16]byte)
 		"user":                      ix.IndexUser,
 		"tag":                       ix.IndexTag,
 		"directory_tag":             ix.IndexDirectoryTag,
-		"learning_track":            ix.IndexLearningTrack,
+		"academy_track":            ix.IndexAcademyTrack,
 		"doc_page":                  ix.IndexDocPage,
 		"organization":              ix.IndexOrganization,
 		"language_test_requirement": ix.IndexLanguageTestRequirement,
@@ -2736,12 +2736,12 @@ func HandleTicketSendStatusUpdate(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
-// HandleLearningUpdateTrackCompletion recalculates a user's progress in a learning track.
-func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:learning:update_track_completion")
+// HandleAcademyUpdateTrackCompletion recalculates a user's progress in a learning track.
+func HandleAcademyUpdateTrackCompletion(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:academy:update_track_completion")
 
-	if learningProcessor == nil {
-		slog.Warn("task:learning:update_track_completion: no learning processor registered, skipping")
+	if academyProcessor == nil {
+		slog.Warn("task:academy:update_track_completion: no academy processor registered, skipping")
 		return nil
 	}
 
@@ -2753,16 +2753,16 @@ func HandleLearningUpdateTrackCompletion(ctx context.Context, t *asynq.Task) err
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
-		slog.Error("task:learning:update_track_completion: invalid payload", "error", err)
+		slog.Error("task:academy:update_track_completion: invalid payload", "error", err)
 		return err
 	}
 
-	if err := learningProcessor.UpdateTrackCompletion(ctx, payload.UserID, payload.TrackID); err != nil {
-		slog.Error("task:learning:update_track_completion: failed", "user_id", payload.UserID, "track_id", payload.TrackID, "error", err)
+	if err := academyProcessor.UpdateTrackCompletion(ctx, payload.UserID, payload.TrackID); err != nil {
+		slog.Error("task:academy:update_track_completion: failed", "user_id", payload.UserID, "track_id", payload.TrackID, "error", err)
 		return err
 	}
 
-	slog.Info("task:learning:update_track_completion: progress updated", "user_id", payload.UserID, "track_id", payload.TrackID, "progress", payload.Progress)
+	slog.Info("task:academy:update_track_completion: progress updated", "user_id", payload.UserID, "track_id", payload.TrackID, "progress", payload.Progress)
 
 	return nil
 }
@@ -3886,18 +3886,18 @@ func HandleMaintenanceRegenerateLLMsTxt(ctx context.Context, _ *asynq.Task) erro
 	return nil
 }
 
-// HandleLearningIssueCertificate issues a completion certificate for a learning track.
-func HandleLearningIssueCertificate(ctx context.Context, t *asynq.Task) error {
-	slog.Info("task:learning:issue_certificate")
+// HandleAcademyIssueCertificate issues a completion certificate for a learning track.
+func HandleAcademyIssueCertificate(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:academy:issue_certificate")
 
-	return procTask(ctx, t, "learning:issue_certificate", learningProcessor != nil, nil,
+	return procTask(ctx, t, "academy:issue_certificate", academyProcessor != nil, nil,
 		func(ctx context.Context, _ []pgtype.UUID, p map[string]string) error {
-			if err := learningProcessor.IssueCertificate(ctx, p["user_id"], p["track_id"], p["course_name"]); err != nil {
-				slog.Error("task:learning:issue_certificate: failed", "user_id", p["user_id"], "track_id", p["track_id"], "error", err)
+			if err := academyProcessor.IssueCertificate(ctx, p["user_id"], p["track_id"], p["course_name"]); err != nil {
+				slog.Error("task:academy:issue_certificate: failed", "user_id", p["user_id"], "track_id", p["track_id"], "error", err)
 				return err
 			}
 
-			slog.Info("task:learning:issue_certificate: certificate issued", "user_id", p["user_id"], "track_id", p["track_id"], "course_name", p["course_name"])
+			slog.Info("task:academy:issue_certificate: certificate issued", "user_id", p["user_id"], "track_id", p["track_id"], "course_name", p["course_name"])
 
 			return nil
 		})

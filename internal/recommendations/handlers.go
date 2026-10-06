@@ -143,7 +143,7 @@ var toolLabelMap = map[string]string{
 	"banking-guide":             "Banking Guide",
 	"mutual-aid-board":          "Mutual Aid Board",
 	"service-directory":         "Service Directory",
-	"japa-university":           "Japa University",
+	"japa-academy":           "Japa Academy",
 	"story-wall":                "Community Story Wall",
 	"scam-alert":                "Scam Alert",
 	"planning-groups":           "Planning Groups",
@@ -175,7 +175,7 @@ var toolURLMap = map[string]string{
 	"banking-guide":             "/tools/banking-guide",
 	"mutual-aid-board":          "/mutual-aid",
 	"service-directory":         "/services",
-	"japa-university":           "/university",
+	"japa-academy":           "/university",
 	"story-wall":                "/stories",
 	"scam-alert":                "/scam-alerts",
 	"planning-groups":           "/groups",
@@ -205,7 +205,7 @@ var featureSlugs = map[string]bool{
 	"service-directory":  true, // §98 Service Directory
 	"destination-wiki":   true, // §80 Destination Wiki
 	"mentorship":         true, // §102 Mentorship Matching
-	"japa-university":    true, // §77 Japa University (platform feature)
+	"japa-academy":    true, // §77 Japa Academy (platform feature)
 }
 
 // GetRecommendations handles GET /api/v1/recommendations (ADR-064a).
@@ -655,7 +655,7 @@ func defaultToolSlugs(vc visitor.VisitorContext) []string {
 	case vc.Archetype == visitor.ArchetypeDiaspora:
 		return []string{"community-locator", "destination-wiki", "service-directory"}
 	default:
-		return []string{"destination-wiki", "community-locator", "japa-university"}
+		return []string{"destination-wiki", "community-locator", "japa-academy"}
 	}
 }
 
@@ -677,7 +677,7 @@ func (h *Handlers) reasonForSlug(slug string, vc visitor.VisitorContext) string 
 	case "community-locator", "destination-wiki", "service-directory", "mutual-aid-board",
 		"story-wall", "scam-alert", "planning-groups", "visa-timeline",
 		"community-calendar", "japa-stage", "ask-an-expat", "achievement-feed",
-		"mentorship", "japa-university":
+		"mentorship", "japa-academy":
 		return "community"
 	case "cost-of-living-comparison":
 		return "exploring"

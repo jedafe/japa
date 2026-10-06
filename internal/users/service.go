@@ -1313,7 +1313,7 @@ func tsPtr(t pgtype.Timestamptz) *string {
 // bookmarked entity's title + slug (joined server-side per entity_type).
 // When folderID is valid, results are filtered to that folder (BL-002).
 // When entityTypes is non-empty, results are filtered to those entity types
-// (e.g. the learn app requests only 'learning_track' bookmarks).
+// (e.g. the learn app requests only 'academy_track' bookmarks).
 func (s *Service) ListUserBookmarks(ctx context.Context, userID, folderID pgtype.UUID, entityTypes []string, limit, offset int32) ([]BookmarkListItem, error) {
 	bookmarks, err := s.store.listUserBookmarks(ctx, userID, folderID, entityTypes, limit, offset)
 	if err != nil {

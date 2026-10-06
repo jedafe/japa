@@ -86,7 +86,7 @@ WHERE  ce.entity_type = 'forum_thread' AND ce.entity_id = ft.id;
 UPDATE content_embeddings SET visibility = 'private'
 WHERE  entity_type = 'forum_thread' AND space_id IS NULL;
 
--- wiki_page / learning_track remain 'public' (public corpora).
+-- wiki_page / academy_track remain 'public' (public corpora).
 
 ALTER TABLE content_embeddings ALTER COLUMN visibility DROP DEFAULT;
 -- CHECK: visibility IN ('public','members','private')
@@ -219,7 +219,7 @@ scoped retrieval, member-visible hits are legitimate — the filter becomes
 - `content`/`forum_thread` → resolve by ID without the public-only guard
   (check for a suitable gen query — `GetContentByID`-style, not
   `GetPublishedContentByID`) — attach title/href; unresolved → drop.
-- `wiki_page`/`learning_track` → unchanged (public corpora, no resolver).
+- `wiki_page`/`academy_track` → unchanged (public corpora, no resolver).
 
 ## Index-Time Changes
 
@@ -246,7 +246,7 @@ Call sites (all nine, verified by grep):
   via join, `space_id = ft.space_id`, `author_id = ft.author_user_id`.
 - `worker/handlers.go:2468` content embed task — needs
   `GetContentEmbeddingMeta` (title/body/status/visibility/space_id/author_id).
-- `learning/handlers.go:145` — `learning_track`, `visibility='public'`.
+- `learning/handlers.go:145` — `academy_track`, `visibility='public'`.
 - `wiki/handlers.go:626` — `wiki_page`, `visibility='public'`.
 - `rag.reindexForumThreads` (:395) — join `spaces` for visibility.
 - `rag.reindexSpaces` (:450) — space visibility.

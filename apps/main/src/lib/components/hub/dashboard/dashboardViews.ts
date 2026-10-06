@@ -28,7 +28,7 @@ export const DASHBOARD_COMPONENT_SLUGS: Set<string> = new Set([
 	'overview',
 	'analytics',
 	'relationships',
-	'learning',
+	'academy',
 	'certificates',
 	'knowledge-base'
 ]);

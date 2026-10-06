@@ -61,7 +61,7 @@
 					label = t('ai.generate.title');
 					break;
 				case 'learning':
-					label = t('learning.title');
+					label = t('academy.title');
 					break;
 				case 'mentorship':
 					label = t('mentorship.title');

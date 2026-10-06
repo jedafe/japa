@@ -19,7 +19,12 @@ export const load: PageServerLoad = async (event) => {
 
 	const parentData = await event.parent();
 	const menuItems = parentData.dashboardMenu?.items;
-	const slug = event.params.view;
+	let slug = event.params.view;
+
+	// Legacy slug: /dashboard/learning was renamed to /dashboard/academy.
+	if (slug === 'learning') {
+		throw redirect(308, `/dashboard/academy${event.url.search}`);
+	}
 
 	const meta = resolveView(slug, menuItems);
 	// Only [view] component slugs are valid for this dynamic route; direct route

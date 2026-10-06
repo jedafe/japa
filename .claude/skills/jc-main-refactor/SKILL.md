@@ -51,7 +51,7 @@ Replace static arrays (nav, countries, tags, groups, post types, chart datasets)
 
 ## 5b. Profile Learning Hub & Cross-App (ADR-060)
 - Replace hardcoded certificate/enrollment/knowledge-base lists with `GET /api/v1/me/certificates`, `GET /api/v1/me/enrollments`, and the bookmark routes (no new backend needed).
-- Extract any Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree) — replace with an absolute deep link to `learn.japaconnect.com` / `docs.japaconnect.com`; those apps own those surfaces.
+- Extract any Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree) — replace with an absolute deep link to `academy.japaconnect.com` / `docs.japaconnect.com`; those apps own those surfaces.
 - Consolidate scattered learning links into the dashboard hub tabs: `/dashboard/learning`, `/dashboard/certificates`, `/dashboard/knowledge-base`.
 - Point certificate cards at the public shareable page `/certificates/:id`; add earned-certificate badges to the public profile.
 

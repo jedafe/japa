@@ -35,7 +35,7 @@ All dropdowns/modals/selects/tooltips/accordions/tabs are Bits UI primitives · 
 ## E3. Profile Learning Hub & Cross-App (ADR-060)
 - Dashboard hub tabs present and API-sourced: `/dashboard/learning` (`me/enrollments`), `/dashboard/certificates` (`me/certificates`), `/dashboard/knowledge-base` (docs + bookmarks) — flag any hardcoded lists
 - No Learn/Docs surface re-implemented in this app (lesson player, curriculum rail, docs nav tree belong to `jc-learn-*` / `jc-docs-*`)
-- Cross-app links use absolute subdomain URLs (`learn.japaconnect.com`, `docs.japaconnect.com`)
+- Cross-app links use absolute subdomain URLs (`academy.japaconnect.com`, `docs.japaconnect.com`)
 - Certificate cards link to the public shareable page `/certificates/:id`; earned certificates badge the public profile
 - Dashboard is private: no ad slots, not indexed
 

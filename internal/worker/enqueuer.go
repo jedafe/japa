@@ -81,7 +81,7 @@ var idempotentTasks = map[string]bool{
 	TypeWalletAwardPoints:               true,
 	TypePaymentWebhookProcess:           true,
 	TypeSubscriptionWebhookProcess:      true,
-	TypeUniversityProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
+	TypeAcademyProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
 	TypeWalletProcessCreditPurchase:     true, // Section 58: double-credit guard
 	TypeServiceBookingFeeSettle:         true, // §111 — refund/settle is money-moving; dedupe by task+payload
 	TypeServiceBookingCreated:           true, // §111 — one org notification fan-out per booking
@@ -177,7 +177,7 @@ var taskTier = func() map[string]string {
 		TypeNotificationDispatchBatch, TypeWebhookDelivery, TypePaymentWebhookProcess,
 		TypeSubscriptionWebhookProcess, // §17 — subscription activation is entitlement-critical
 		TypeTicketSendConfirmation, TypePushDelivery, TypeDMNotifyRequest, TypeDMNotifyMessage,
-		TypeUniversityProcessEnrollment, TypeUniversitySendInstructorPayout,
+		TypeAcademyProcessEnrollment, TypeAcademySendInstructorPayout,
 		TypeAffiliateCreditCommission, // BUG-012: financial side effect → critical (§56)
 		TypeNotificationSendPush,      // §77 V2 — push delivery is user-facing-critical
 		TypeEmbassyDispatchAlerts,     // §91 — time-sensitive slot availability (ADR-099)
@@ -202,7 +202,7 @@ var taskTier = func() map[string]string {
 		TypeAgentCreateDraftRequest,
 		TypeJCERefreshValues,
 		TypeReviewAggregateRecalc, TypeTicketSendStatusUpdate,
-		TypeLearningUpdateTrackCompletion, TypeVideoProcessing, TypeVideoImportBulk,
+		TypeAcademyUpdateTrackCompletion, TypeVideoProcessing, TypeVideoImportBulk,
 		TypeWalletProcessActivityEvent, TypeNewsletterSend,
 		TypeScholarshipSyncFromGuide,
 		TypeAffiliateCreditAuthorCommission,
@@ -210,7 +210,7 @@ var taskTier = func() map[string]string {
 		TypeFormFireSubmissionTriggers,
 		TypeWalletProcessCreditPurchase,
 		TypeWalletAwardPoints, TypeWalletDeductCredits,
-		TypeUniversityNotifyInstructorApproved, TypeUniversityNotifyCourseApproved,
+		TypeAcademyNotifyInstructorApproved, TypeAcademyNotifyCourseApproved,
 		// V2 default-tier tasks (§§60-76)
 		TypeAssessmentScoreSubmission,
 		TypeAssessmentCleanupAnonymous,
@@ -282,7 +282,7 @@ var taskTier = func() map[string]string {
 		TypeMaintenanceUpdateVelocityScores, TypeMaintenanceCheckSLABreaches,
 		TypeMaintenanceUpdateGeoIPDB, TypeSpaceAutoPopulate, TypeWikiSeedAttractions,
 		TypeAnalyticsRefreshViews, TypeSecurityScan,
-		TypeMaintenanceRegenerateLLMsTxt, TypeLearningIssueCertificate,
+		TypeMaintenanceRegenerateLLMsTxt, TypeAcademyIssueCertificate,
 		TypeDBManualVacuum, TypeNewsletterDigest, TypeVideoGenerateSummary,
 		TypeComputeTrending, TypeComputeSuggestions,
 		TypeMaintenanceCheckExpiredBans, TypeMaintenanceCheckExpiredBoosts,
@@ -296,7 +296,7 @@ var taskTier = func() map[string]string {
 		TypeAffiliateExpireCheck,
 		TypeRedirectRecordHit,
 		TypeScheduledPublishSweep, TypeGdprRetentionSweep, TypeJceRefreshStale,
-		TypeUniversityCalculatePeriodPayouts, TypeUniversityFetchLogo,
+		TypeAcademyCalculatePeriodPayouts, TypeUniversityFetchLogo,
 		TypeContentScanAffiliateLinks,
 		TypePlatformDataExport, TypePlatformDataImport,
 		// V2 low-tier tasks (§§60-76)
@@ -384,8 +384,8 @@ var taskTypeCatalog = []struct {
 	{TypeNotificationDispatchBatch, "critical", "Batch send notifications"},
 	{TypeWebhookDelivery, "critical", "Deliver outbound webhook events"},
 	{TypePaymentWebhookProcess, "critical", "Process inbound payment webhook"},
-	{TypeUniversityProcessEnrollment, "critical", "Credit creator ledger for a paid course enrollment"},
-	{TypeUniversitySendInstructorPayout, "critical", "Execute a single instructor payout transfer"},
+	{TypeAcademyProcessEnrollment, "critical", "Credit creator ledger for a paid course enrollment"},
+	{TypeAcademySendInstructorPayout, "critical", "Execute a single instructor payout transfer"},
 	{TypeTicketSendConfirmation, "critical", "Send ticket confirmation email"},
 	{TypePushDelivery, "critical", "Send push notifications"},
 	{TypeDMNotifyRequest, "critical", "Notify DM request received"},
@@ -412,7 +412,7 @@ var taskTypeCatalog = []struct {
 	{TypeJCERefreshValues, "default", "Refresh stale/missing comparison values for a JCE comparison"},
 	{TypeReviewAggregateRecalc, "default", "Recalculate review aggregate scores"},
 	{TypeTicketSendStatusUpdate, "default", "Send ticket status change email"},
-	{TypeLearningUpdateTrackCompletion, "default", "Update learning track completion"},
+	{TypeAcademyUpdateTrackCompletion, "default", "Update learning track completion"},
 	{TypeVideoProcessing, "default", "Process uploaded video files"},
 	{TypeVideoImportBulk, "default", "Bulk import YouTube channel, playlist, or keyword results as video sources"},
 	{TypeVideoGenerateSummary, "low", "AI-generated title/body draft from video metadata (§106, ADR-117)"},
@@ -425,9 +425,9 @@ var taskTypeCatalog = []struct {
 	{TypeScholarshipSyncFromGuide, "default", "Derive or update a scholarships projection row from a published scholarship guide (§73)"},
 	{TypeDocsGeneratePage, "default", "Generate a docs page via AI (fire-and-forget)"},
 	{TypeAffiliateCreditAuthorCommission, "default", "Credit author revenue share for an external affiliate commission earned on their content"},
-	// Japa University (ADR-063)
-	{TypeUniversityNotifyInstructorApproved, "default", "Notify creator their instructor application was approved"},
-	{TypeUniversityNotifyCourseApproved, "default", "Notify creator their track was approved to the marketplace"},
+	// Japa Academy (ADR-063)
+	{TypeAcademyNotifyInstructorApproved, "default", "Notify creator their instructor application was approved"},
+	{TypeAcademyNotifyCourseApproved, "default", "Notify creator their track was approved to the marketplace"},
 	// V2 default-tier tasks (§§60-76, ADRs 068-085)
 	{TypeContentGenerateDraft, "default", "Generate a draft content item via the AI Gateway (studio/persona/agent)"},
 	{TypeContentRegenerateFromSource, "default", "Rewrite an existing content row from a linked intelligence extraction (§75, ADR-076 Amendment 2)"},
@@ -495,7 +495,7 @@ var taskTypeCatalog = []struct {
 	{TypeAnalyticsRefreshViews, "low", "Refresh analytics view counts"},
 	{TypeSecurityScan, "low", "Run security scan"},
 	{TypeMaintenanceRegenerateLLMsTxt, "low", "Regenerate llms.txt file"},
-	{TypeLearningIssueCertificate, "low", "Issue learning certificate"},
+	{TypeAcademyIssueCertificate, "low", "Issue learning certificate"},
 	{TypeDBManualVacuum, "low", "Run database VACUUM"},
 	{TypeNewsletterDigest, "low", "Send newsletter digest"},
 	{TypeComputeTrending, "low", "Compute trending content"},
@@ -521,7 +521,7 @@ var taskTypeCatalog = []struct {
 	{TypeScheduledPublishSweep, "low", "Sweep and publish due scheduled content"},
 	{TypeGdprRetentionSweep, "low", "Process GDPR retention-wait deletions"},
 	{TypeJceRefreshStale, "low", "Enqueue refresh tasks for stale JCE comparisons"},
-	{TypeUniversityCalculatePeriodPayouts, "low", "Roll open revenue splits into instructor payouts for a period"},
+	{TypeAcademyCalculatePeriodPayouts, "low", "Roll open revenue splits into instructor payouts for a period"},
 	{TypeUniversityFetchLogo, "low", "Fetch and store a university logo from a remote URL during space auto-seeding"},
 	{TypePlatformDataExport, "low", "Generate platform data export file (CSV/JSON/XLSX) from platform data (Section 67)"},
 	{TypePlatformDataImport, "low", "Parse platform data import file and insert/update rows (Section 67)"},

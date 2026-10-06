@@ -219,14 +219,14 @@ var settingsCatalog = map[string]settingMeta{
 	"affiliate.author_commission_default": {Type: "float", DefaultValue: "25", Description: "Default % of external affiliate commission shared with content author (when provider has no override).", Panel: "admin"},
 	"affiliate.unregistered_link_policy":  {Type: "string", DefaultValue: "flag", Description: "How to handle unregistered affiliate links: flag (log only), block (prevent publish), strip (remove link).", Options: `[{"value":"flag","label":"Flag (log only)"},{"value":"block","label":"Block (prevent publish)"},{"value":"strip","label":"Strip (remove link)"}]`, Panel: "admin"},
 	"affiliate.scan_on_publish":           {Type: "bool", DefaultValue: "true", Description: "Whether to scan content for unregistered affiliate links on publish.", Panel: "admin"},
-	// AUDIT-BE-SETTING-004: Japa University creator economy settings (ADR-063, Section 36).
-	"university.subdomain":                   {Type: "string", DefaultValue: "university", Description: "Host label for the Japa University shell.", Panel: "control"},
-	"university.custom_domain":               {Type: "string", DefaultValue: "", Description: "Optional custom domain (e.g. japauni.com); empty = use subdomain.", Panel: "control"},
-	"university.creator_percentage_default":  {Type: "int", DefaultValue: "75", Description: "Default creator revenue share % (platform takes the remainder).", Panel: "control"},
-	"university.platform_percentage_default": {Type: "int", DefaultValue: "25", Description: "Default platform revenue share %.", Panel: "control"},
-	"university.payout_schedule":             {Type: "string", DefaultValue: "monthly", Description: "Payout cadence: weekly | monthly.", Options: `[{"value":"weekly","label":"Weekly"},{"value":"monthly","label":"Monthly"}]`, Panel: "control"},
-	"university.min_payout_kobo":             {Type: "int", DefaultValue: "500000", Description: "Minimum accrued net (kobo) before a payout is issued.", Panel: "control"},
-	"university.pro_stream_rate_kobo":        {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period.", Panel: "control"},
+	// AUDIT-BE-SETTING-004: Japa Academy creator economy settings (ADR-063, Section 36).
+	"academy.subdomain":                   {Type: "string", DefaultValue: "academy", Description: "Host label for the Japa Academy shell.", Panel: "control"},
+	"academy.custom_domain":               {Type: "string", DefaultValue: "", Description: "Optional custom domain (e.g. japaacademy.com); empty = use subdomain.", Panel: "control"},
+	"academy.creator_percentage_default":  {Type: "int", DefaultValue: "75", Description: "Default creator revenue share % (platform takes the remainder).", Panel: "control"},
+	"academy.platform_percentage_default": {Type: "int", DefaultValue: "25", Description: "Default platform revenue share %.", Panel: "control"},
+	"academy.payout_schedule":             {Type: "string", DefaultValue: "monthly", Description: "Payout cadence: weekly | monthly.", Options: `[{"value":"weekly","label":"Weekly"},{"value":"monthly","label":"Monthly"}]`, Panel: "control"},
+	"academy.min_payout_kobo":             {Type: "int", DefaultValue: "500000", Description: "Minimum accrued net (kobo) before a payout is issued.", Panel: "control"},
+	"academy.pro_stream_rate_kobo":        {Type: "int", DefaultValue: "5000", Description: "Amount (kobo) accrued to a creator per Pro-enrolled learner per period.", Panel: "control"},
 	// AUDIT-BE-SETTING-005: geo-aware personalization master switch (ADR-064).
 	"geo_personalization.enabled": {Type: "bool", DefaultValue: "true", Description: "Master switch for geo-aware feed/search/discovery weighting.", Panel: "control"},
 	// ADR-064 / Phase 38.03: config-driven archetype market lists (CSV of ISO

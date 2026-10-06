@@ -43,7 +43,7 @@
 			{ value: 'forum_threads', label: 'Forum Threads' },
 			{ value: 'job_listings', label: 'Job Listings' },
 			{ value: 'achievements', label: 'Achievements' },
-			{ value: 'learning_tracks', label: 'Learning Tracks' },
+			{ value: 'academy_tracks', label: 'Learning Tracks' },
 			{ value: 'community_digest', label: 'Community Digest' },
 			{ value: 'reviews', label: 'Reviews' },
 			{ value: 'comparisons', label: 'Comparisons' },
@@ -86,7 +86,7 @@
 				{ key: 'milestone_type', label: 'Milestone Type', type: 'select', default: '', options: [{ value: '', label: 'All milestones' }, { value: 'relocation', label: 'Relocation' }, { value: 'career', label: 'Career' }, { value: 'education', label: 'Education' }, { value: 'community', label: 'Community' }] },
 				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
 			],
-			learning_tracks: [
+			academy_tracks: [
 				{ key: 'difficulty', label: 'Difficulty', type: 'select', default: '', options: [{ value: '', label: 'All levels' }, { value: 'beginner', label: 'Beginner' }, { value: 'intermediate', label: 'Intermediate' }, { value: 'advanced', label: 'Advanced' }] },
 				{ key: 'limit', label: 'Limit', type: 'number', default: 5 },
 			],
@@ -147,7 +147,7 @@
 	function fallbackContentWidgetTypes(): string[] {
 		return [
 			'latest_content', 'featured_content', 'blog_posts', 'forum_threads',
-			'job_listings', 'achievements', 'learning_tracks', 'community_digest',
+			'job_listings', 'achievements', 'academy_tracks', 'community_digest',
 			'reviews', 'comparisons', 'community_organisations',
 			'mentor_spotlight', 'space_members', 'user_leaderboard', 'upcoming_events',
 			'featured_spaces',

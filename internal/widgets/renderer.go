@@ -66,7 +66,7 @@ func (r *Renderer) Render(ctx context.Context, w Widget) (json.RawMessage, error
 	case "achievements":
 		return r.renderAchievements(ctx, w)
 	// --- Extended: domain-specific types ---
-	case "learning_tracks":
+	case "academy_tracks":
 		return r.renderLearningTracks(ctx, w)
 	case "community_digest":
 		return r.renderCommunityDigest(ctx, w)
@@ -1008,7 +1008,7 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 	                 lt.sort_order,
 	                 m.storage_bucket AS cover_storage_bucket,
 	                 m.storage_path AS cover_storage_path
-	          FROM learning_tracks lt
+	          FROM academy_tracks lt
 	          LEFT JOIN media m ON m.id = lt.cover_media_id AND m.deleted_at IS NULL
 	          WHERE lt.is_published = true`
 	args := []any{}
@@ -1027,7 +1027,7 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 
 	rows, err := r.reader.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("rendering learning_tracks: %w", err)
+		return nil, fmt.Errorf("rendering academy_tracks: %w", err)
 	}
 	defer rows.Close()
 
@@ -1047,7 +1047,7 @@ func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.Raw
 		var coverBucket, coverPath *string
 		if err := rows.Scan(&id, &title, &slug, &description, &difficulty,
 			&coverMediaID, &sortOrder, &coverBucket, &coverPath); err != nil {
-			return nil, fmt.Errorf("scanning learning_tracks: %w", err)
+			return nil, fmt.Errorf("scanning academy_tracks: %w", err)
 		}
 
 		item := map[string]any{

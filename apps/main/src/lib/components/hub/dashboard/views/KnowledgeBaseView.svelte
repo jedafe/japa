@@ -2,14 +2,14 @@
 	import { t } from '$lib/i18n';
 	import DashboardPanel from '$lib/components/hub/DashboardPanel.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
-	import { learnUrl, docsUrl } from '$lib/appOrigins';
+	import { academyUrl, docsUrl } from '$lib/appOrigins';
 	import { BookOpen } from 'lucide-svelte';
 	import type { Bookmark } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
 	const bookmarks = $derived((data as Bookmark[] | null) ?? []);
 
-	// learnUrl/docsUrl throw when the cross-app origin env var is unset — guard
+	// academyUrl/docsUrl throw when the cross-app origin env var is unset — guard
 	// so a missing env doesn't crash the render.
 	function safeCrossUrl(builder: (p: string) => string, path: string): string {
 		try { return builder(path); } catch { return '#'; }
@@ -32,8 +32,8 @@
 			// bookmark row carries the page's audience slug.
 			case 'doc_page':
 				return safeCrossUrl(docsUrl, `/docs/${bm.audience ?? 'users'}/${idOrSlug}`);
-			case 'learning_track':
-				return safeCrossUrl(learnUrl, `/tracks/${idOrSlug}`);
+			case 'academy_track':
+				return safeCrossUrl(academyUrl, `/tracks/${idOrSlug}`);
 			default:
 				return `/${idOrSlug}`;
 		}

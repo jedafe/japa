@@ -123,7 +123,7 @@
       case 'forum_threads': return slug ? `/forum/${slug}` : '#';
       case 'job_listings': return slug ? `/jobs/${slug}` : '#';
       case 'achievements': return slug ? `/achievements/${slug}` : '#';
-      case 'learning_tracks': return slug ? `/learn/${slug}` : '#';
+      case 'academy_tracks': return slug ? `/academy/${slug}` : '#';
       case 'featured_spaces': return slug ? `/spaces/${slug}` : '#';
       case 'professional_profiles': return slug ? `/profiles/${slug}` : '#';
       case 'community_organisations': return slug ? `/org/${slug}` : '#';

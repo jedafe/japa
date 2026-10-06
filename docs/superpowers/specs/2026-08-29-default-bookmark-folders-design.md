@@ -31,7 +31,7 @@ When a user bookmarks any item on the platform, the bookmark is automatically fi
 | `content` with `content_type = story` | `stories` | |
 | `content` with `content_type = achievement` | `achievements` | |
 | `content` with `content_type = service_listing` | `services` | |
-| `entity_type = learning_track` | `learn` | |
+| `entity_type = academy_track` | `learn` | |
 | `entity_type = doc_page` | `docs` | |
 | `entity_type = forum_thread` (or legacy `thread`) | `discussions` | Stored as `forum_thread` in the unified table. |
 | `entity_type = forum_reply` (or legacy `reply`) | `discussions` | Stored as `forum_reply` in the unified table. |

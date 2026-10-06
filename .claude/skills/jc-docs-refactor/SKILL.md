@@ -31,10 +31,10 @@ Any usage-stat/analytics chart rewritten in LayerChart (`jc-main-refactor` §3 p
 ## 7. Standard Migrations
 Apply `jc-main-refactor` §§1–2, 4–5 (Svelte 4→5, Bits UI — incl. `<Tabs.Root>` for API reference, Rule 16, skeletons, Tailwind v4, i18n, a11y, types).
 
-## 8. Japa University & Geo API Docs (ADR-063/064)
-- **Add API reference pages** for new v1.11.0 routes if missing: `/geo/me`, `/geo/lookup`, `/learn/university/*`, `/me/instructor-profile`, `/me/payouts`, `/universities`, `/admin/universities`. Use the three-column API-docs variant with method badges and Request/Response/Example tabs.
+## 8. Japa Academy & Geo API Docs (ADR-063/064)
+- **Add API reference pages** for new v1.11.0 routes if missing: `/geo/me`, `/geo/lookup`, `/academy/*`, `/me/instructor-profile`, `/me/payouts`, `/universities`, `/admin/universities`. Use the three-column API-docs variant with method badges and Request/Response/Example tabs.
 - **Document `?geo=` param** on feed/search/trending/discovery route docs — defaults to `ContentCountry` when absent, `?geo=all` for global.
-- **Document `price_kobo`** as integer in kobo; document `is_published_to_university` as distinct from `is_published`.
+- **Document `price_kobo`** as integer in kobo; document `is_published_to_academy` as distinct from `is_published`.
 - **Document `university_fields`** custom field group for Section 39 university spaces.
 
 ## App Shell & Docs Drift (ADR-060)

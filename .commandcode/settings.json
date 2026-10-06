@@ -144,7 +144,7 @@
       "Shell(head -30 /home/jmobile/websites/japa/japaconnect/apps/main/src/lib/i18n/en.json 2>/dev/null; echo \"---\"; wc -l /home/jmobile/websites/japa/japaconnect/apps/main/src/lib/i18n/en.json 2>/dev/null)",
       "Shell(sed:*)",
       "Shell(curl -s -o /dev/null -w %{http_code} http://localhost:8080/healthz 2 > /dev/null)",
-      "Shell(for ep in \"/health\" \"/api/v1/feature-flags\" \"/api/v1/trending/content\" \"/api/v1/checklist/selector\" \"/api/v1/calculator/cost-of-living/cities\" \"/api/v1/scholarships\" \"/api/v1/jobs\" \"/api/v1/remittance/providers\" \"/api/v1/assessment\" \"/api/v1/gamification/badges\" \"/api/v1/learn/university/catalog\" \"/api/v1/blog\" \"/api/v1/spaces\" \"/api/v1/forum\"; do code=$(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8080$ep\"); echo \"$code $ep\"; done)",
+      "Shell(for ep in \"/health\" \"/api/v1/feature-flags\" \"/api/v1/trending/content\" \"/api/v1/checklist/selector\" \"/api/v1/calculator/cost-of-living/cities\" \"/api/v1/scholarships\" \"/api/v1/jobs\" \"/api/v1/remittance/providers\" \"/api/v1/assessment\" \"/api/v1/gamification/badges\" \"/api/v1/academy/catalog\" \"/api/v1/blog\" \"/api/v1/spaces\" \"/api/v1/forum\"; do code=$(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:8080$ep\"); echo \"$code $ep\"; done)",
       "Shell(curl -s http://localhost:8080/api/v1/jobs?limit=2)",
       "Shell(curl -s http://localhost:8080/api/v1/trending/content)",
       "Shell(curl -s http://localhost:8080/api/v1/blog)",

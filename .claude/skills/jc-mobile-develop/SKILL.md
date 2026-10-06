@@ -166,7 +166,7 @@ To add a new mobile screen:
 Build order follows backend completion. Every screen below must have verified endpoints before implementation.
 
 **Launch screens (v1 endpoints — build first):**
-Auth/onboarding, home feed, discover, blog, guides, comparisons, forum, JapaBot chat, spaces, follow/social, notifications, DMs, Japa University, profile, settings, wallet, bookmarks, badges/challenges/leaderboard, jobs finder.
+Auth/onboarding, home feed, discover, blog, guides, comparisons, forum, JapaBot chat, spaces, follow/social, notifications, DMs, Japa Academy, profile, settings, wallet, bookmarks, badges/challenges/leaderboard, jobs finder.
 
 **V2 tool screens (add as backend phases 43–44 complete):**
 Visa Checklist, Readiness Assessment, Cost of Living, Scholarship Finder, Remittance Rate Tracker.

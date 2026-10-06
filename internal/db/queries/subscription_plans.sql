@@ -45,28 +45,28 @@ WHERE id = $1;
 -- ─── Subscription Plan ↔ Track junction (migration 000273) ───────────────
 
 -- name: AddTrackToPlan :exec
-INSERT INTO subscription_plan_tracks (plan_id, track_id) VALUES (@plan_id, @track_id)
+INSERT INTO academy_subscription_plan_tracks (plan_id, track_id) VALUES (@plan_id, @track_id)
 
 ON CONFLICT (plan_id, track_id) DO NOTHING;
 
 -- name: RemoveTrackFromPlan :exec
-DELETE FROM subscription_plan_tracks
+DELETE FROM academy_subscription_plan_tracks
 WHERE plan_id = @plan_id AND track_id = @track_id;
 
 -- name: RemoveAllTracksFromPlan :exec
-DELETE FROM subscription_plan_tracks
+DELETE FROM academy_subscription_plan_tracks
 WHERE plan_id = @plan_id;
 
 -- name: ListTrackIDsForPlan :many
-SELECT track_id FROM subscription_plan_tracks
+SELECT track_id FROM academy_subscription_plan_tracks
 WHERE plan_id = $1
 ORDER BY created_at ASC;
 
 -- name: CountTracksForPlan :one
-SELECT count(*) FROM subscription_plan_tracks
+SELECT count(*) FROM academy_subscription_plan_tracks
 WHERE plan_id = $1;
 
 -- name: IsTrackInPlan :one
-SELECT 1 FROM subscription_plan_tracks
+SELECT 1 FROM academy_subscription_plan_tracks
 WHERE plan_id = $1 AND track_id = $2
 LIMIT 1;

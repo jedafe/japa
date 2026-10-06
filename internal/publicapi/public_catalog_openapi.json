@@ -1494,10 +1494,10 @@
       ]
     }
   },
-  "/learn/tracks": {
+  "/academy/tracks": {
     "get": {
       "operationId": "GetLearnTracks",
-      "summary": "GET /learn/tracks",
+      "summary": "GET /academy/tracks",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1520,10 +1520,10 @@
       }
     }
   },
-  "/learn/tracks/{slug}": {
+  "/academy/tracks/{slug}": {
     "get": {
       "operationId": "GetLearnTracksSlug",
-      "summary": "GET /learn/tracks/{slug}",
+      "summary": "GET /academy/tracks/{slug}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1557,10 +1557,10 @@
       ]
     }
   },
-  "/learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}": {
+  "/academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}": {
     "get": {
       "operationId": "GetLearnTracksTrackSlugModulesModuleSlugLessonsLessonSlug",
-      "summary": "GET /learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}",
+      "summary": "GET /academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1612,10 +1612,10 @@
       ]
     }
   },
-  "/learn/quizzes/{id}": {
+  "/academy/quizzes/{id}": {
     "get": {
       "operationId": "GetLearnQuizzesId",
-      "summary": "GET /learn/quizzes/{id}",
+      "summary": "GET /academy/quizzes/{id}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1686,10 +1686,10 @@
       ]
     }
   },
-  "/learn/university/tracks/{slug}": {
+  "/academy/tracks/{slug}": {
     "get": {
       "operationId": "GetLearnUniversityTracksSlug",
-      "summary": "GET /learn/university/tracks/{slug}",
+      "summary": "GET /academy/tracks/{slug}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1723,10 +1723,10 @@
       ]
     }
   },
-  "/learn/university/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}": {
+  "/academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}": {
     "get": {
       "operationId": "GetLearnUniversityTracksTrackSlugModulesModuleSlugLessonsLessonSlug",
-      "summary": "GET /learn/university/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}",
+      "summary": "GET /academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1778,10 +1778,10 @@
       ]
     }
   },
-  "/learn/university/quizzes/{id}": {
+  "/academy/quizzes/{id}": {
     "get": {
       "operationId": "GetLearnUniversityQuizzesId",
-      "summary": "GET /learn/university/quizzes/{id}",
+      "summary": "GET /academy/quizzes/{id}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1815,10 +1815,10 @@
       ]
     }
   },
-  "/learn/university/tracks/{id}/reviews": {
+  "/academy/tracks/{id}/reviews": {
     "get": {
       "operationId": "GetLearnUniversityTracksIdReviews",
-      "summary": "GET /learn/university/tracks/{id}/reviews",
+      "summary": "GET /academy/tracks/{id}/reviews",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1852,10 +1852,10 @@
       ]
     }
   },
-  "/learn/university/instructors/{id}": {
+  "/academy/instructors/{id}": {
     "get": {
       "operationId": "GetLearnUniversityInstructorsId",
-      "summary": "GET /learn/university/instructors/{id}",
+      "summary": "GET /academy/instructors/{id}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1889,10 +1889,10 @@
       ]
     }
   },
-  "/learn/university/catalog": {
+  "/academy/catalog": {
     "get": {
       "operationId": "GetLearnUniversityCatalog",
-      "summary": "GET /learn/university/catalog",
+      "summary": "GET /academy/catalog",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1915,10 +1915,10 @@
       }
     }
   },
-  "/learn/university/catalog/options": {
+  "/academy/catalog/options": {
     "get": {
       "operationId": "GetLearnUniversityCatalogOptions",
-      "summary": "GET /learn/university/catalog/options",
+      "summary": "GET /academy/catalog/options",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1941,10 +1941,10 @@
       }
     }
   },
-  "/learn/university/catalog/{slug}": {
+  "/academy/catalog/{slug}": {
     "get": {
       "operationId": "GetLearnUniversityCatalogSlug",
-      "summary": "GET /learn/university/catalog/{slug}",
+      "summary": "GET /academy/catalog/{slug}",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -1978,10 +1978,10 @@
       ]
     }
   },
-  "/learn/tracks/{id}/reviews": {
+  "/academy/tracks/{id}/reviews": {
     "get": {
       "operationId": "GetLearnTracksIdReviews",
-      "summary": "GET /learn/tracks/{id}/reviews",
+      "summary": "GET /academy/tracks/{id}/reviews",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"
@@ -2663,10 +2663,10 @@
       }
     }
   },
-  "/learn/university/categories": {
+  "/academy/categories": {
     "get": {
       "operationId": "GetLearnUniversityCategories",
-      "summary": "GET /learn/university/categories",
+      "summary": "GET /academy/categories",
       "description": "Public route from the JEOS route catalog.",
       "tags": [
         "Public"

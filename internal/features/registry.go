@@ -24,7 +24,7 @@ var Registry = []Feature{
 	{Key: "feature.blog", Label: "Blog", Default: true},
 	{Key: "feature.forum", Label: "Forum / Q&A", Default: true},
 	{Key: "feature.comparison", Label: "Comparison Pages", Default: true},
-	{Key: "feature.learning", Label: "Learning Platform", Default: false},
+	{Key: "feature.academy", Label: "Japa Academy", Default: false},
 	// Social features
 	{Key: "feature.follow", Label: "Follow System", Default: true},
 	{Key: "feature.dm", Label: "Direct Messages", Default: true},

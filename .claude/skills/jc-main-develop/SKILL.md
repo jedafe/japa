@@ -90,7 +90,7 @@ Compose button/tab → `ComposeModal.svelte` with a content-type selector. Discu
 ### 3. Guest homepage (`/` unauthenticated) — Hashnode-style landing
 - NOT the shell. Rendered by the Page Builder from the `homepage` route-assignment (falls back to `/explore` when none assigned).
 - Slim marketing header → hero/slider → "Explore by destination" grid → trending discussions → featured universities → latest blog → newsletter form embed → CTA banner → footer. Ad slots: `hero_below`, `landing_inline_1`, `landing_footer`.
-- **Geo-aware (ADR-064):** the "Explore by destination" grid and trending discussions are geo-weighted server-side via `VisitorContext.ContentCountry` — a guest from Nigeria sees "planning to relocate" content; a guest from the UK sees "settling in / community" content; a global traveler is routed toward Japa University. This is SSR (no client flicker) and degrades gracefully when `GeoContext` is absent (falls back to global). The `?geo=` param always wins over the resolved `ContentCountry`.
+- **Geo-aware (ADR-064):** the "Explore by destination" grid and trending discussions are geo-weighted server-side via `VisitorContext.ContentCountry` — a guest from Nigeria sees "planning to relocate" content; a guest from the UK sees "settling in / community" content; a global traveler is routed toward Japa Academy. This is SSR (no client flicker) and degrades gracefully when `GeoContext` is absent (falls back to global). The `?geo=` param always wins over the resolved `ContentCountry`.
 - Authenticated `/` is the Primary timeline in the shell (ADR-032, unchanged).
 
 ---
@@ -109,7 +109,7 @@ Universities are a first-class space type (`space_type = 'university'`) with a d
 
 ## `/universities/[slug]` — single university page (center column + right sidebar)
 - Header: logo (profile image), name, country flag, rankings, quick stats bar
-- Center tabs: Overview (rich wiki TipTap) · Posts (content in this Space) · Forums (threads) · Courses (linked `learning_tracks` from Section 36) · Members · Reviews (Section 29 ratings) · Compare (link to Section 30 comparison)
+- Center tabs: Overview (rich wiki TipTap) · Posts (content in this Space) · Forums (threads) · Courses (linked `academy_tracks` from Section 36) · Members · Reviews (Section 29 ratings) · Compare (link to Section 30 comparison)
 - Right sidebar: key custom field values (ranking, tuition, programs, etc.)
 - "Compare" button → opens Section 30 comparison with this university pre-selected as Item 1
 - SEO: JSON-LD `EducationalOrganization` + `AggregateRating` from Section 29
@@ -143,7 +143,7 @@ The backend resolves `VisitorContext` (ADR-064) and exposes `ContentCountry` via
 **Profiles (`/u/[username]`, `/org/[slug]`):** cover + avatar header, name/bio/Primary Space badge/join date/follow counts, then center tabs (Posts/Replies/Media/Likes/Spaces; org adds About/Members). Right sidebar: follow button, mutual spaces, org affiliations. **Earned certificates render as badges here** (social proof), linking to public cert pages.
 
 **Profile learning hub — cross-app entry point (ADR-060).** The dashboard (`/dashboard`) is the single entry into the Learn and Docs apps; all tabs consume existing routes (no new backend), and cross-app links work off the shared session cookie + the ADR-054 cross-app menu system:
-- **Learning tab (`/dashboard/learning`):** continue-learning cards from `GET /api/v1/me/enrollments`, resume links deep-linking into `learn.japaconnect.com`; progress via LayerChart `LineChart`.
+- **Learning tab (`/dashboard/learning`):** continue-learning cards from `GET /api/v1/me/enrollments`, resume links deep-linking into `academy.japaconnect.com`; progress via LayerChart `LineChart`.
 - **Certificates tab (`/dashboard/certificates`):** grid from `GET /api/v1/me/certificates`; each links to its public, shareable cert page `/certificates/:id` (same certs badge the public profile).
 - **Knowledge Base tab (`/dashboard/knowledge-base`):** deep-links into Docs (users audience, `docs.japaconnect.com/docs/users`) + the user's bookmarked doc pages.
 

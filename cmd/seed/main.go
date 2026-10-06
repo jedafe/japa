@@ -233,9 +233,9 @@ func seedDemoContent(ctx context.Context, database *db.DB, tid, adminID pgtype.U
 		return fmt.Errorf("seeding reviews: %w", err)
 	}
 
-	// Step 8: Seed learning tracks
-	if err := seedLearning(ctx, database, tid, userIDs); err != nil {
-		return fmt.Errorf("seeding learning: %w", err)
+	// Step 8: Seed academy tracks
+	if err := seedAcademy(ctx, database, tid, userIDs); err != nil {
+		return fmt.Errorf("seeding academy: %w", err)
 	}
 
 	// Step 9: Seed tickets
@@ -976,7 +976,7 @@ func seedReviews(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs,
 	return nil
 }
 
-// trackDef defines a learning track for seeding.
+// trackDef defines a academy track for seeding.
 type trackDef struct {
 	title       string
 	slug        string
@@ -985,23 +985,23 @@ type trackDef struct {
 	modules     []moduleDef
 }
 
-// moduleDef defines a learning module for seeding.
+// moduleDef defines a academy module for seeding.
 type moduleDef struct {
 	title   string
 	slug    string
 	lessons []lessonDef
 }
 
-// lessonDef defines a learning lesson for seeding.
+// lessonDef defines a academy lesson for seeding.
 type lessonDef struct {
 	title   string
 	slug    string
 	content string
 }
 
-// seedLearning creates learning tracks, modules, and lessons.
-func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs []pgtype.UUID) error {
-	fmt.Println("seed: creating learning tracks...")
+// seedAcademy creates academy tracks, modules, and lessons.
+func seedAcademy(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs []pgtype.UUID) error {
+	fmt.Println("seed: creating academy tracks...")
 
 	tracks := []trackDef{
 		{
@@ -1169,17 +1169,17 @@ func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs
 	for i, track := range tracks {
 		var trackID pgtype.UUID
 
-		err := database.Writer.QueryRow(ctx, `INSERT INTO learning_tracks (title, slug, description, difficulty, is_published) VALUES ($1, $2, $3, $4, $5, true)
+		err := database.Writer.QueryRow(ctx, `INSERT INTO academy_tracks (title, slug, description, difficulty, is_published) VALUES ($1, $2, $3, $4, $5, true)
 			 ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
 			 RETURNING id`, tid, track.title, track.slug, track.description, track.difficulty).Scan(&trackID)
 		if err != nil {
-			return fmt.Errorf("creating learning track %d: %w", i+1, err)
+			return fmt.Errorf("creating academy track %d: %w", i+1, err)
 		}
 
 		for j, mod := range track.modules {
 			var moduleID pgtype.UUID
 
-			err := database.Writer.QueryRow(ctx, `INSERT INTO learning_modules (track_id, title, slug, sort_order) VALUES ($1, $2, $3, $4, $5)
+			err := database.Writer.QueryRow(ctx, `INSERT INTO academy_modules (track_id, title, slug, sort_order) VALUES ($1, $2, $3, $4, $5)
 				 ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
 				 RETURNING id`, tid, trackID, mod.title, mod.slug, j).Scan(&moduleID)
 			if err != nil {
@@ -1187,7 +1187,7 @@ func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs
 			}
 
 			for k, lesson := range mod.lessons {
-				_, err := database.Writer.Exec(ctx, `INSERT INTO learning_lessons (module_id, title, slug, content, sort_order, is_published) VALUES ($1, $2, $3, $4, $5, $6, true)
+				_, err := database.Writer.Exec(ctx, `INSERT INTO academy_lessons (module_id, title, slug, content, sort_order, is_published) VALUES ($1, $2, $3, $4, $5, $6, true)
 					 ON CONFLICT (slug) DO NOTHING`, tid, moduleID, lesson.title, lesson.slug, lesson.content, k)
 				if err != nil {
 					return fmt.Errorf(" creating lesson: %w", err)
@@ -1196,7 +1196,7 @@ func seedLearning(ctx context.Context, database *db.DB, tid pgtype.UUID, userIDs
 		}
 	}
 
-	fmt.Printf("seed: created %d learning tracks\n", len(tracks))
+	fmt.Printf("seed: created %d academy tracks\n", len(tracks))
 
 	return nil
 }

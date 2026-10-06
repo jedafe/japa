@@ -45,7 +45,7 @@ var contentTypeFolderNames = map[string]string{
 // names, covering non-content entity types and normalized forum types.
 var entityTypeFolderNames = map[string]string{
 	"blog_post":      "blog",
-	"learning_track": "learn",
+	"academy_track": "learn",
 	"doc_page":       "docs",
 	"forum_thread":   "discussions",
 	"forum_reply":    "discussions",

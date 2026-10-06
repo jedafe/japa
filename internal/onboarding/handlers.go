@@ -143,7 +143,7 @@ func (h *Handlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 }
 
 // DismissTour handles POST /api/v1/onboarding/tour/dismiss. The body is
-// optional — {"surface": "docs"|"learn"|...} records a per-surface
+// optional — {"surface": "docs"|"academy"|...} records a per-surface
 // dismissal; an empty body defaults to the "main" surface (Section 09).
 func (h *Handlers) DismissTour(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)

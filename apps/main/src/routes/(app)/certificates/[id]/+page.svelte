@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { Award, Download, ExternalLink } from 'lucide-svelte';
 	import { api } from '$lib/api/client';
-	import { learnUrl } from '$lib/appOrigins';
+	import { academyUrl } from '$lib/appOrigins';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -77,7 +77,7 @@
 					<dt class="text-xs text-[var(--color-muted)]">{t('certificates.track', 'Track')}</dt>
 					<dd class="mt-1 text-sm font-medium text-[var(--color-text)]">
 						{#if cert.track_slug}
-							<a href={learnUrl(`/tracks/${cert.track_slug}`)} class="text-[var(--color-primary)] hover:underline">
+							<a href={academyUrl(`/tracks/${cert.track_slug}`)} class="text-[var(--color-primary)] hover:underline">
 								{cert.title ?? t('certificates.view_track', 'View track')}
 							</a>
 						{:else}

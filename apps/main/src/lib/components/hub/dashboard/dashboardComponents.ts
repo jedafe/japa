@@ -2,7 +2,7 @@ import type { Component } from 'svelte';
 import OverviewView from './views/OverviewView.svelte';
 import AnalyticsView from './views/AnalyticsView.svelte';
 import RelationshipsView from './views/RelationshipsView.svelte';
-import LearningView from './views/LearningView.svelte';
+import AcademyView from './views/AcademyView.svelte';
 import CertificatesView from './views/CertificatesView.svelte';
 import KnowledgeBaseView from './views/KnowledgeBaseView.svelte';
 
@@ -18,7 +18,7 @@ export const DASHBOARD_VIEW_COMPONENTS: Record<string, Component<{ data: unknown
 	overview: OverviewView,
 	analytics: AnalyticsView,
 	relationships: RelationshipsView,
-	learning: LearningView,
+	academy: AcademyView,
 	certificates: CertificatesView,
 	'knowledge-base': KnowledgeBaseView
 };

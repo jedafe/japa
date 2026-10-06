@@ -198,7 +198,7 @@ func allTaskTypes() []string {
 		TypeAIGenerateContentEmbedding,
 		TypeReviewAggregateRecalc,
 		TypeTicketSendStatusUpdate,
-		TypeLearningUpdateTrackCompletion,
+		TypeAcademyUpdateTrackCompletion,
 		TypeVideoProcessing,
 		TypeWalletProcessActivityEvent,
 		TypeNewsletterSend,
@@ -216,7 +216,7 @@ func allTaskTypes() []string {
 		TypeAnalyticsRefreshViews,
 		TypeSecurityScan,
 		TypeMaintenanceRegenerateLLMsTxt,
-		TypeLearningIssueCertificate,
+		TypeAcademyIssueCertificate,
 		TypeDBManualVacuum,
 		TypeNewsletterDigest,
 	}

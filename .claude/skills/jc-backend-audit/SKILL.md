@@ -32,19 +32,19 @@ Per entity: List / Get / Create / Update / Delete / state-transitions-both-direc
 - [ ] Config: JSON-encoded settings decode correctly (round-trip test exists)
 
 ## D. Migration Integrity
-Every `.up.sql` has a correct `.down.sql` twin · numbering contiguous · no edits to applied migrations (checksum/history check) · schema table count vs JEOS-stated ~158 v1 + ~43 v2 planned = ~201 (20 v2 phases 41–47 + ~23 new v2 phases 48–50 §§79–102) — report actual, flag drift · circular FK (users↔spaces) still resolved via stub+ALTER pattern. **Japa University**: migration `000166` adds 3 tables (`instructor_profiles`, `revenue_splits`, `instructor_payouts`) + columns on `learning_tracks`/`enrollments`; migration `000167` adds `user_profiles.content_country_preference`. Verify `revenue_splits` has no UPDATE-enabling constructs (append-only, wallet-ledger philosophy).
+Every `.up.sql` has a correct `.down.sql` twin · numbering contiguous · no edits to applied migrations (checksum/history check) · schema table count vs JEOS-stated ~158 v1 + ~43 v2 planned = ~201 (20 v2 phases 41–47 + ~23 new v2 phases 48–50 §§79–102) — report actual, flag drift · circular FK (users↔spaces) still resolved via stub+ALTER pattern. **Japa Academy**: migration `000166` adds 3 tables (`academy_instructor_profiles`, `revenue_splits`, `academy_instructor_payouts`) + columns on `academy_tracks`/`enrollments`; migration `000167` adds `user_profiles.content_country_preference`. Verify `revenue_splits` has no UPDATE-enabling constructs (append-only, wallet-ledger philosophy).
 
 ## E. Asynq Reconciliation
-Enqueue call sites vs registered task types vs `asynq-tasks.md` (JEOS catalog: 95 total = 75 v1 shipped + 20 v2 planned; 4 v1 tasks extended for v2 — report actual vs catalog) · every task idempotent or justified · queue tiers sensible (payments/auth/university-payouts=critical, search sync/emails/university-notifications=default, digests/cleanup/payout-calc/university-logo=low) · retry+backoff configured · dead-letter monitoring wired. **Japa University tasks**: `university:process_enrollment` (idempotent on payment_id), `university:calculate_period_payouts` (scheduled), `university:send_instructor_payout` (idempotent, advisory-locked), `university:notify_instructor_approved`, `university:notify_course_approved`, `university:fetch_logo`. **Geo**: `maintenance:update_geoip_db` (weekly, atomic reader swap).
+Enqueue call sites vs registered task types vs `asynq-tasks.md` (JEOS catalog: 95 total = 75 v1 shipped + 20 v2 planned; 4 v1 tasks extended for v2 — report actual vs catalog) · every task idempotent or justified · queue tiers sensible (payments/auth/university-payouts=critical, search sync/emails/university-notifications=default, digests/cleanup/payout-calc/university-logo=low) · retry+backoff configured · dead-letter monitoring wired. **Japa Academy tasks**: `academy:process_enrollment` (idempotent on payment_id), `academy:calculate_period_payouts` (scheduled), `academy:send_instructor_payout` (idempotent, advisory-locked), `academy:notify_instructor_approved`, `academy:notify_course_approved`, `university:fetch_logo`. **Geo**: `maintenance:update_geoip_db` (weekly, atomic reader swap).
 
 ## F. Valkey & Settings Reconciliation
-Keys in code vs `valkey-keys.md` (69 patterns stated = 59 v1 + 10 v2) · all `jc:` namespaced · TTLs on every cache key · invalidation paired with every cached read's write path · `system_settings` keys in code vs catalog (187 total = 125 v1 + 62 v2 planned — report actual shipped vs catalog). **Geo**: `jc:visitor:ctx:{session_id}` (30-min TTL) — verify cache invalidation on `content_country_preference` change. **Japa University**: `jc:uni:instructor:{user_id}`, `jc:uni:payout:period:{instructor_id}:{period}`, `jc:uni:enrollment:processed:{payment_id}` — verify idempotency guard TTLs. **Settings**: `geo_personalization.enabled` (killswitch), `university.*` (7 keys), `university.surface_domain`.
+Keys in code vs `valkey-keys.md` (69 patterns stated = 59 v1 + 10 v2) · all `jc:` namespaced · TTLs on every cache key · invalidation paired with every cached read's write path · `system_settings` keys in code vs catalog (187 total = 125 v1 + 62 v2 planned — report actual shipped vs catalog). **Geo**: `jc:visitor:ctx:{session_id}` (30-min TTL) — verify cache invalidation on `content_country_preference` change. **Japa Academy**: `jc:uni:instructor:{user_id}`, `jc:uni:payout:period:{instructor_id}:{period}`, `jc:uni:enrollment:processed:{payment_id}` — verify idempotency guard TTLs. **Settings**: `geo_personalization.enabled` (killswitch), `university.*` (7 keys), `university.surface_domain`.
 
 ## G. Security
 sqlc-only data access (grep for `Exec(`/`Query(` with concatenated strings) · input validation on every handler · MIME sniffing on uploads · rate limiting on auth + expensive routes · secrets absent from logs/responses · tenant_id filtering on every tenant-scoped store method (sample-test cross-tenant access) · webhook signature verification + idempotency.
 
 ## H. GDPR/NDPR Erasure Completeness
-User deletion cascades through every user-owned table (enumerate against schema) AND calls the Honcho deletion API (required) · erasure task idempotent and resumable · exports cover the same surface. **Japa University**: `instructor_profiles`, `revenue_splits`, `instructor_payouts` are user-owned — erasure must cascade. `revenue_splits` are financial audit records: **anonymize the instructor reference, never delete the split row** (regulatory retention). `payout_method` (jsonb) is sensitive — encrypted at app layer, follow Section 19 handling rules.
+User deletion cascades through every user-owned table (enumerate against schema) AND calls the Honcho deletion API (required) · erasure task idempotent and resumable · exports cover the same surface. **Japa Academy**: `academy_instructor_profiles`, `revenue_splits`, `academy_instructor_payouts` are user-owned — erasure must cascade. `revenue_splits` are financial audit records: **anonymize the instructor reference, never delete the split row** (regulatory retention). `payout_method` (jsonb) is sensitive — encrypted at app layer, follow Section 19 handling rules.
 
 ## I. Contract Quality
 List routes return pagination meta · error responses use code+message shape · timestamps RFC 3339 UTC · IDs stringified · 4xx/5xx semantics correct (no 500 for expected conditions).
@@ -65,7 +65,7 @@ List routes return pagination meta · error responses use code+message shape · 
 | Routes: [n] vs catalog ~819 (~475 v1 + ~344 v2) | Permission nodes: seed [n] vs checked [n] vs stated 297 (249 v1 + 48 v2) |
 | Tables: [n] vs ~201 (~158 v1 + ~43 v2) | Asynq tasks: [n] vs 95 (75 v1 + 20 v2) | Valkey patterns: [n] vs 69 (59 v1 + 10 v2) | Settings keys: [n] vs 187 (125 v1 + 62 v2) |
 ### RBAC CRUD Matrix
-[entity × routes table — include Japa University: instructor_profiles, revenue_splits, instructor_payouts, universities (space type)]
+[entity × routes table — include Japa Academy: academy_instructor_profiles, revenue_splits, academy_instructor_payouts, universities (space type)]
 ### BE-Series Regression Results
 [checklist with pass/fail]
 ### Compliance Summary
@@ -78,7 +78,7 @@ List routes return pagination meta · error responses use code+message shape · 
 | Security | ✅/❌ |
 | GDPR erasure | ✅/❌ |
 | Geo-aware personalization (ADR-064) | ✅/❌ |
-| Japa University revenue/payouts (ADR-063) | ✅/❌ |
+| Japa Academy revenue/payouts (ADR-063) | ✅/❌ |
 ```
 ## K. V2 Audit Checklist (Run When Backend Phases 41–50 Are In Progress)
 

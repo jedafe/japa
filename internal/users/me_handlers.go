@@ -665,7 +665,7 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	entityType := r.URL.Query().Get("entity_type")
 
 	// The entity_type filter accepts a comma-separated list (e.g.
-	// ?entity_type=learning_track,content) so the learn app can request
+	// ?entity_type=academy_track,content) so the learn app can request
 	// multiple learning-related entity types in one call. When a single
 	// value is passed, it filters to that one type. When empty, all types
 	// are returned.
@@ -736,7 +736,7 @@ func (h *Handlers) CreateMyBookmark(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMyBookmark handles DELETE /api/v1/me/bookmarks/{id}.
 // Removes a bookmark by its row ID — polymorphic, works for any entity_type
-// (content, forum_thread, space, comment, learning_track, etc.). Platform +
+// (content, forum_thread, space, comment, academy_track, etc.). Platform +
 // owner scoped; returns 404 if the bookmark doesn't exist or belongs to
 // another user.
 func (h *Handlers) DeleteMyBookmark(w http.ResponseWriter, r *http.Request) {

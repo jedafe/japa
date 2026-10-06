@@ -17,8 +17,8 @@ These shipped once — check them before anything else when symptoms match:
 | BE-00x wallet race | Negative balances / double-spend | Spend path holds `pg_advisory_xact_lock(user_id)` inside the tx |
 | BE-005 RBAC seed gap | 403 on routes that should work | Every permission node the middleware checks exists in seed |
 | BE-00x config JSON | JSON-typed settings come back zero-valued | `config.NewSettings` decode path for JSON-encoded values |
-| BE-00x revenue split double-credit | Instructor credited twice for one enrollment | `university:process_enrollment` idempotent on `payment_id` — guard with `jc:uni:enrollment:processed:{payment_id}` SET NX |
-| BE-00x payout double-send | Instructor paid twice for same period | `university:send_instructor_payout` holds advisory lock on instructor_id; stamps splits with `payout_id` only after transfer succeeds |
+| BE-00x revenue split double-credit | Instructor credited twice for one enrollment | `academy:process_enrollment` idempotent on `payment_id` — guard with `jc:uni:enrollment:processed:{payment_id}` SET NX |
+| BE-00x payout double-send | Instructor paid twice for same period | `academy:send_instructor_payout` holds advisory lock on instructor_id; stamps splits with `payout_id` only after transfer succeeds |
 | BE-00x VisitorContext stale | Geo personalization shows wrong country after preference change | `jc:visitor:ctx:{session_id}` invalidated when `content_country_preference` changes |
 | BE-00x geo boost runaway | Local content dominates feed, viral global posts buried | Feed geo boost cap is bounded — verify multiplier doesn't crush engagement/velocity signals |
 
@@ -51,13 +51,13 @@ Task enqueued but type not registered in the mux (silent dead-letter) · wrong q
 Keys outside `jc:` namespace · cache set without TTL (unbounded growth) · cache invalidation missing on the write path (stale render cache) · `SET NX` idempotency key without expiry (permanently locked).
 
 ## 7. Tenancy & Security
-Store queries missing tenant_id filter (cross-tenant leak) · uploads trusting file extension over sniffed MIME · secrets in logs · rate limiting absent on auth/expensive routes. **Japa University**: `payout_method` (jsonb) is encrypted at app layer — verify it's never logged or returned in API responses unmasked. `instructor_profiles` tenant-scoped — verify cross-tenant isolation.
+Store queries missing tenant_id filter (cross-tenant leak) · uploads trusting file extension over sniffed MIME · secrets in logs · rate limiting absent on auth/expensive routes. **Japa Academy**: `payout_method` (jsonb) is encrypted at app layer — verify it's never logged or returned in API responses unmasked. `academy_instructor_profiles` tenant-scoped — verify cross-tenant isolation.
 
-## 8. Japa University (ADR-063) & Geo-Aware (ADR-064)
+## 8. Japa Academy (ADR-063) & Geo-Aware (ADR-064)
 - **Revenue splits immutability**: any UPDATE on `revenue_splits` is a defect — append-only, wallet-ledger philosophy. A "correct split amount" fix must be a compensating new row, never an edit.
-- **Payout idempotency**: `university:send_instructor_payout` must be idempotent — check advisory lock on `instructor_id` inside tx, and that splits are stamped with `payout_id` only AFTER the transfer succeeds (not before).
+- **Payout idempotency**: `academy:send_instructor_payout` must be idempotent — check advisory lock on `instructor_id` inside tx, and that splits are stamped with `payout_id` only AFTER the transfer succeeds (not before).
 - **Pro stream accrual**: `source='pro_stream'` splits have no `payment_id` — verify they don't trip the payment-id idempotency guard (different guard key).
-- **Marketplace publish gate**: catalog reads must filter `is_published_to_university = true` separately from `is_published` — a course published to the platform but not approved for the marketplace must not appear in the university catalog.
+- **Marketplace publish gate**: catalog reads must filter `is_published_to_academy = true` separately from `is_published` — a course published to the platform but not approved for the marketplace must not appear in the university catalog.
 - **VisitorContext cache**: `jc:visitor:ctx:{session_id}` (30-min TTL) — if geo personalization is wrong, check if the cache is stale after a preference change. Invalidation must fire on `content_country_preference` update.
 - **Geo killswitch**: `geo_personalization.enabled = false` must make all surfaces fall back to global ranking — verify no code path reads `ContentCountry` without checking the killswitch.
 - **University seeding**: `university:fetch_logo` task must store logo to SeaweedFS and set the `logo` field — if university pages show a broken image, check the task completed and the imgproxy URL is generated correctly.

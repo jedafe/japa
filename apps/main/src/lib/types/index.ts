@@ -1672,7 +1672,7 @@ export interface UniversityCompare {
  * Institutional course offering (Section 39) —
  * GET /universities/{slug}/courses[/{offeringSlug}]. A degree program a
  * university offers, joined with its canonical catalog course and the
- * university space. Distinct from CatalogTrack (Japa University creator
+ * university space. Distinct from CatalogTrack (Japa Academy creator
  * marketplace tracks).
  */
 export interface CourseOffering {
@@ -1853,10 +1853,10 @@ export interface TrendingUser extends TrendingSnapshotBase {
 }
 
 /* ------------------------------------------------------------------ *
- * Learning — Section 22 (GET /learn/tracks, /learn/tracks/{slug})
+ * Learning — Section 22 (GET /academy/tracks, /academy/tracks/{slug})
  * ------------------------------------------------------------------ */
 
-/** GET /learn/tracks item — a learning track. */
+/** GET /academy/tracks item — a learning track. */
 export interface LearnTrack {
 	id: string;
 
@@ -1871,7 +1871,7 @@ export interface LearnTrack {
 	updated_at: string;
 }
 
-/** GET /learn/tracks/{slug} — track with nested modules. */
+/** GET /academy/tracks/{slug} — track with nested modules. */
 export interface LearnTrackDetail {
 	track: LearnTrack;
 	modules: LearnModule[];
@@ -1889,7 +1889,7 @@ export interface LearnModule {
 	updated_at: string;
 }
 
-/** GET /learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug} — a single lesson. */
+/** GET /academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug} — a single lesson. */
 export interface LearnLesson {
 	id: string;
 
@@ -1907,7 +1907,7 @@ export interface LearnLesson {
 	updated_at: string;
 }
 
-/** GET /learn/progress/{trackId} — the user's progress in a track. */
+/** GET /academy/progress/{trackId} — the user's progress in a track. */
 export interface LearnProgress {
 	completed: number;
 	total: number;
@@ -2472,12 +2472,12 @@ export interface CreateReviewInput {
 }
 
 /* ------------------------------------------------------------------ *
- * University Marketplace — Section 17 (GET /learn/university/catalog)
+ * University Marketplace — Section 17 (GET /academy/catalog)
  * Public marketplace tracks sold by instructors. Prices are in kobo
  * (the smallest currency unit) per the Go backend's integer-money model.
  * ------------------------------------------------------------------ */
 
-/** GET /learn/university/catalog item — a marketplace track. */
+/** GET /academy/catalog item — a marketplace track. */
 export interface CatalogTrack {
 	id: string;
 	title: string;
@@ -2493,7 +2493,7 @@ export interface CatalogTrack {
 	language?: string | null;
 	total_enrolled?: number;
 	subscription_eligible?: boolean;
-	is_published_to_university?: boolean;
+	is_published_to_academy?: boolean;
 	/** Resolved cover image URL when a track has cover media. */
 	thumbnail_url?: string | null;
 	avg_rating?: number;
@@ -2501,7 +2501,7 @@ export interface CatalogTrack {
 	created_at: string;
 }
 
-/** A module within a marketplace track (GET /learn/university/catalog/{slug}). */
+/** A module within a marketplace track (GET /academy/catalog/{slug}). */
 export interface CatalogModule {
 	id: string;
 	title: string;
@@ -2520,14 +2520,14 @@ export interface CatalogLesson {
 	sort_order: number;
 }
 
-/** GET /learn/university/catalog/{slug} — track detail with modules/lessons. */
+/** GET /academy/catalog/{slug} — track detail with modules/lessons. */
 export interface CatalogTrackDetail {
 	track: CatalogTrack;
 	modules: CatalogModule[];
 }
 
-/** GET /learn/university/instructors/{id} — public instructor profile. */
-export interface InstructorProfile {
+/** GET /academy/instructors/{id} — public instructor profile. */
+export interface AcademyInstructorProfile {
 	id: string;
 	display_name: string;
 	headline?: string | null;

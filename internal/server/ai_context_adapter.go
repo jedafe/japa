@@ -2,7 +2,7 @@
 // into the AI context builder (ADR-025, BUG-001).
 //
 // The ai package defines the narrow UserContextProvider interface so the
-// handlers package does not import wallet, learning, mentorship, forum, or
+// handlers package does not import wallet, academy, mentorship, forum, or
 // referral directly. This adapter lives in the wiring layer where those
 // services are already constructed and simply aggregates the data.
 //
@@ -18,7 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/forum"
-	"github.com/jedafe/japa/internal/learning"
+	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/mentorship"
 	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/wallet"
@@ -28,7 +28,7 @@ import (
 // per-user data from the relevant services and stores.
 type userContextAdapter struct {
 	wallet     *wallet.Service
-	learning   *learning.Store
+	academy   *academy.Store
 	mentorship *mentorship.Service
 	forum      *forum.Service
 	referral   *referral.Service
@@ -38,7 +38,7 @@ type userContextAdapter struct {
 // newUserContextAdapter creates an adapter bound to the real service instances.
 func newUserContextAdapter(
 	wallet *wallet.Service,
-	learning *learning.Store,
+	academy *academy.Store,
 	mentorship *mentorship.Service,
 	forum *forum.Service,
 	referral *referral.Service,
@@ -46,7 +46,7 @@ func newUserContextAdapter(
 ) ai.UserContextProvider {
 	return &userContextAdapter{
 		wallet:     wallet,
-		learning:   learning,
+		academy:   academy,
 		mentorship: mentorship,
 		forum:      forum,
 		referral:   referral,
@@ -73,14 +73,14 @@ func (a *userContextAdapter) GetUserAIContextData(ctx context.Context, userID pg
 			}
 
 		case "course_progress":
-			if a.learning != nil {
-				enrollments, err := a.learning.ListEnrollmentsByUser(ctx, userID)
+			if a.academy != nil {
+				academy_enrollments, err := a.academy.ListEnrollmentsByUser(ctx, userID)
 				if err != nil {
 					return nil, fmt.Errorf("course_progress: %w", err)
 				}
 
-				summary := make([]map[string]any, 0, len(enrollments))
-				for _, e := range enrollments {
+				summary := make([]map[string]any, 0, len(academy_enrollments))
+				for _, e := range academy_enrollments {
 					summary = append(summary, map[string]any{
 						"track_slug":        e.TrackSlug,
 						"track_title":       e.TrackTitle,

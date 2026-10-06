@@ -126,7 +126,7 @@ func isDefaultProductionOrigin(origin, siteURL string) bool {
 	// via the JC_CORS_ORIGINS env var or cors.allowed_origins system setting.
 	for _, sub := range []string{
 		// Core app surfaces
-		"", "www.", "admin.", "control.", "docs.", "learn.", "api.", "university.",
+		"", "www.", "admin.", "control.", "docs.", "academy.", "api.",
 		// V1 identity tools (§§70–74)
 		"tools.", "remittance.", "scholarships.", "cost-of-living.",
 		"visa-checklist.", "readiness.", "japabot.",

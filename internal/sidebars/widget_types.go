@@ -117,19 +117,19 @@ func limitProp() PropField {
 }
 
 // appAll is a convenience value for widget types rendered by every app.
-var appAll = []string{string(AppMain), string(AppDocs), string(AppLearn)}
+var appAll = []string{string(AppMain), string(AppDocs), string(AppAcademy)}
 
 // appMainOnly scopes a widget type to the Main app — these widgets consume
 // main-app data surfaces (spaces, trending, content, orgs) that have no
-// renderer implementation on Docs/Learn.
+// renderer implementation on Docs/Academy.
 var appMainOnly = []string{string(AppMain)}
 
-// appMainLearn scopes learning widgets to the two surfaces that implement
-// them (Main sidebar + Learn sidebar).
-var appMainLearn = []string{string(AppMain), string(AppLearn)}
+// appMainAcademy scopes academy widgets to the two surfaces that implement
+// them (Main sidebar + Academy sidebar).
+var appMainAcademy = []string{string(AppMain), string(AppAcademy)}
 
-// appDocsLearn scopes the docs-style search launcher to Docs and Learn.
-var appDocsLearn = []string{string(AppDocs), string(AppLearn)}
+// appDocsAcademy scopes the docs-style search launcher to Docs and Academy.
+var appDocsAcademy = []string{string(AppDocs), string(AppAcademy)}
 
 // appDocsOnly scopes docs-only widgets (helpful vote) to the Docs app.
 var appDocsOnly = []string{string(AppDocs)}
@@ -156,7 +156,7 @@ var widgetRegistry = []WidgetType{
 		Icon:        "search",
 		Slot:        WidgetSlotTopbar,
 		Category:    WidgetCategoryNavigation,
-		Apps:        appDocsLearn,
+		Apps:        appDocsAcademy,
 		DefaultProps: map[string]any{
 			"placeholder": "",
 		},
@@ -360,7 +360,7 @@ var widgetRegistry = []WidgetType{
 		Icon:        "graduation-cap",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
-		Apps:        appMainLearn,
+		Apps:        appMainAcademy,
 		DefaultProps: map[string]any{
 			"limit": 3,
 			"title": "My Learning",
@@ -374,7 +374,7 @@ var widgetRegistry = []WidgetType{
 		Icon:        "circle-dashed",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
-		Apps:        appMainLearn,
+		Apps:        appMainAcademy,
 		DefaultProps: map[string]any{
 			"title": "My Progress",
 		},
@@ -384,11 +384,11 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "track_card",
 		Name:        "Featured Track Card",
-		Description: "Featured learning track card — data fetched from /learn/university/tracks/{slug} (track_slug prop) or /learn/university/catalog (fallback)",
+		Description: "Featured learning track card — data fetched from /academy/tracks/{slug} (track_slug prop) or /academy/catalog (fallback)",
 		Icon:        "book-open",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryLearning,
-		Apps:        appMainLearn,
+		Apps:        appMainAcademy,
 		DefaultProps: map[string]any{
 			"track_slug": "",
 			"title":      "Featured Track",

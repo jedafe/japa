@@ -1,0 +1,1644 @@
+package creator
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/admin"
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/media"
+)
+
+// literalResolver resolves {{...}} template literals in user-facing text
+// fields (§14). Implemented by *literals.Catalog; nil disables resolution.
+type literalResolver interface {
+	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
+}
+
+// Handlers exposes HTTP endpoints for the Japa Academy creator economy.
+// Each handler parses input, calls one service method, and renders a JSON
+// response following the JapaConnect API envelope.
+type Handlers struct {
+	service *Service
+	lit     literalResolver // nil disables literal resolution (§14)
+}
+
+// NewHandlers creates university handlers bound to the provided service.
+func NewHandlers(service *Service) *Handlers {
+	return &Handlers{service: service}
+}
+
+// SetLiteralResolver injects the template-literal catalog so track/instructor
+// titles and descriptions render {{...}} placeholders (§14).
+func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// resolveLiterals resolves {{...}} placeholders on a university DTO or
+// slice. Best-effort — failures are logged inside the resolver.
+func (h *Handlers) resolveLiterals(r *http.Request, v any) {
+	if literals.IsRawRequest(r) {
+		return
+	}
+
+	if h.lit == nil {
+		return
+	}
+
+	h.lit.ResolveFields(r.Context(), v, literals.NewRequestContext(r, ""))
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
+	u := auth.FromContext(r.Context())
+	if u == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return nil, false
+	}
+
+	return u, true
+}
+
+func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
+	var id pgtype.UUID
+	if err := id.Scan(chi.URLParam(r, name)); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid "+name)
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
+}
+
+// scanOptionalUUIDParam parses a query-string UUID that may be absent. Returns
+// (zero, false) when the param is missing or empty (meaning "no filter"); on a
+// malformed value it returns (zero, false) as well — the caller treats both as
+// "skip this filter" rather than 400-ing, since these are optional filters.
+func scanOptionalUUIDParam(r *http.Request, name string) (pgtype.UUID, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return pgtype.UUID{}, false
+	}
+
+	var id pgtype.UUID
+	if err := id.Scan(v); err != nil {
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
+}
+
+// parseOptionalTime parses an RFC 3339 query-string timestamp that may be
+// absent. Returns (zero, false) when missing/empty/malformed.
+func parseOptionalTime(r *http.Request, name string) (pgtype.Timestamptz, bool) {
+	v := r.URL.Query().Get(name)
+	if v == "" {
+		return pgtype.Timestamptz{}, false
+	}
+
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return pgtype.Timestamptz{}, false
+	}
+
+	return pgtype.Timestamptz{Time: t, Valid: true}, true
+}
+
+func parsePagination(r *http.Request) (int32, int32) {
+	limit, offset := int32(20), int32(0)
+
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
+			limit = int32(n) // #nosec
+		}
+	}
+
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = int32(n) // #nosec
+		}
+	}
+
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = (int32(n) - 1) * limit // #nosec
+		}
+	}
+
+	return limit, offset
+}
+
+func handleServiceError(w http.ResponseWriter, err error) {
+	errpkg.HandleServiceError(w, err)
+}
+
+// ---------------------------------------------------------------------------
+// Instructor (creator) — self
+// ---------------------------------------------------------------------------
+
+// Apply handles POST /academy/instructor/apply.
+func (h *Handlers) Apply(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var in ApplyInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	prof, err := h.service.Apply(r.Context(), user.UserID, in)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": prof})
+}
+
+// GetMyInstructorProfile handles GET /academy/instructor/me.
+// Returns the profile plus aggregate dashboard stats (total_enrolled,
+// total_revenue_kobo, courses_count) so the creator dashboard can render
+// without a second round-trip (BUG-003).
+func (h *Handlers) GetMyInstructorProfile(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.GetMyProfile(r.Context(), user.UserID)
+	if err != nil {
+		// A user with no instructor profile is not an error — it just means they
+		// have not applied yet. Return an empty 200 so the dashboard can render
+		// the "Become an Instructor" state without a 404 console log.
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nil})
+			return
+		}
+		handleServiceError(w, err)
+		return
+	}
+
+	// Enrich with aggregate dashboard stats.
+	var profID pgtype.UUID
+	_ = profID.Scan(prof.ID)
+	summary, _ := h.service.store.DashboardSummary(r.Context(), profID)
+
+	currency := ""
+	if h.service.settings != nil {
+		currency = h.service.settings.GetStringOr(r.Context(), "wallet.default_currency", "")
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id": prof.ID,
+
+		"user_id":                 prof.UserID,
+		"display_name":            prof.DisplayName,
+		"headline":                prof.Headline,
+		"bio":                     prof.Bio,
+		"social_links":            prof.SocialLinks,
+		"tier":                    prof.Tier,
+		"status":                  prof.Status,
+		"commission_pct_override": prof.CommissionPct,
+		"kyc_status":              prof.KycStatus,
+		"application_note":        prof.ApplicationNote,
+		"reviewed_at":             prof.ReviewedAt,
+		"created_at":              prof.CreatedAt,
+		"updated_at":              prof.UpdatedAt,
+		"total_enrolled":          summary.TotalEnrolled,
+		"total_revenue_kobo":      summary.TotalRevenueKobo,
+		"currency":                currency,
+		"courses_count":           summary.CoursesCount,
+	}})
+}
+
+// UpdateMyInstructorProfile handles PATCH /academy/instructor/me.
+func (h *Handlers) UpdateMyInstructorProfile(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		DisplayName  *string         `json:"display_name"`
+		Headline     *string         `json:"headline"`
+		Bio          *string         `json:"bio"`
+		SocialLinks  json.RawMessage `json:"social_links"`
+		PayoutMethod json.RawMessage `json:"payout_method"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	in := UpdateSelfInput{Headline: body.Headline, Bio: body.Bio}
+	if body.DisplayName != nil {
+		in.DisplayName = *body.DisplayName
+	}
+
+	if len(body.SocialLinks) > 0 {
+		in.SocialLinks = body.SocialLinks
+	}
+
+	if len(body.PayoutMethod) > 0 {
+		in.PayoutMethod = body.PayoutMethod
+	}
+
+	prof, err := h.service.UpdateMyProfile(r.Context(), user.UserID, in)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
+}
+
+// ---------------------------------------------------------------------------
+// Instructor — public
+// ---------------------------------------------------------------------------
+
+// GetPublicInstructor handles GET /academy/instructors/{id}.
+func (h *Handlers) GetPublicInstructor(w http.ResponseWriter, r *http.Request) {
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetPublic(r.Context(), instructorID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// List only live marketplace tracks, filtered at the DB level (BUG-017).
+	pubTracks, _ := h.service.store.ListPublishedTracksByInstructor(r.Context(), instructorID)
+	live := make([]Track, 0, len(pubTracks))
+
+	for _, t := range pubTracks {
+		live = append(live, trackFromPublishedRow(t))
+	}
+
+	h.resolveLiterals(r, &prof)
+	h.resolveLiterals(r, &live)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"instructor": prof,
+			"tracks":     live,
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Creator track management
+// ---------------------------------------------------------------------------
+
+// ListMyTracks handles GET /academy/my/tracks.
+func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	rows, err := h.service.store.ListTracksByInstructor(r.Context(), prof.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	tracks := make([]Track, 0, len(rows))
+	for _, row := range rows {
+		tracks = append(tracks, trackFromGetRow(row))
+	}
+
+	h.resolveLiterals(r, &tracks)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": tracks})
+}
+
+// CreateMyTrack handles POST /academy/my/tracks.
+func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if prof.Status != "approved" {
+		errpkg.WriteError(w, http.StatusForbidden, "not_approved_instructor", "Only approved instructors may create tracks")
+		return
+	}
+
+	var body struct {
+		Title                string  `json:"title"`
+		Slug                 string  `json:"slug"`
+		Description          *string `json:"description"`
+		Difficulty           *string `json:"difficulty"`
+		CoverMediaID         *string `json:"cover_media_id"`
+		PriceKobo            *int64  `json:"price_kobo"`
+		Currency             *string `json:"currency"`
+		Category             *string `json:"category"`
+		Language             *string `json:"language"`
+		GeoSpaceID           *string `json:"geo_space_id"`
+		SubscriptionEligible *bool   `json:"subscription_eligible"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	// BL-016: validate price_kobo is non-negative when set.
+	if body.PriceKobo != nil && *body.PriceKobo < 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
+		return
+	}
+
+	in := CreateTrackInput{
+		Title: body.Title, Slug: body.Slug, Description: body.Description,
+		Category: body.Category, Currency: body.Currency, Language: body.Language,
+		PriceKobo: body.PriceKobo, SubscriptionEligible: body.SubscriptionEligible,
+	}
+	if body.Difficulty != nil {
+		in.Difficulty = *body.Difficulty
+	}
+
+	if body.CoverMediaID != nil {
+		var cm pgtype.UUID
+		if err := cm.Scan(*body.CoverMediaID); err == nil {
+			in.CoverMediaID = &cm
+		}
+	}
+
+	if body.GeoSpaceID != nil && *body.GeoSpaceID != "" {
+		var gs pgtype.UUID
+		if err := gs.Scan(*body.GeoSpaceID); err == nil {
+			in.GeoSpaceID = &gs
+		}
+	}
+
+	track, err := h.service.CreateTrack(r.Context(), prof.ID, in)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": track})
+}
+
+// UpdateMyTrack handles PATCH /academy/my/tracks/{id}.
+func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	var body struct {
+		Title                *string `json:"title"`
+		Description          *string `json:"description"`
+		Difficulty           *string `json:"difficulty"`
+		CoverMediaID         *string `json:"cover_media_id"`
+		PriceKobo            *int64  `json:"price_kobo"`
+		Currency             *string `json:"currency"`
+		Category             *string `json:"category"`
+		Language             *string `json:"language"`
+		GeoSpaceID           *string `json:"geo_space_id"`
+		SubscriptionEligible *bool   `json:"subscription_eligible"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	// BL-016: validate price_kobo is non-negative when set.
+	if body.PriceKobo != nil && *body.PriceKobo < 0 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_price", "price_kobo must be non-negative")
+		return
+	}
+
+	in := UpdateTrackInput{
+		Title: body.Title, Description: body.Description, Difficulty: body.Difficulty,
+		Category: body.Category, Currency: body.Currency, Language: body.Language,
+		PriceKobo: body.PriceKobo, SubscriptionEligible: body.SubscriptionEligible,
+	}
+
+	if body.CoverMediaID != nil {
+		var cm pgtype.UUID
+		if err := cm.Scan(*body.CoverMediaID); err == nil {
+			in.CoverMediaID = &cm
+		}
+	}
+
+	if body.GeoSpaceID != nil && *body.GeoSpaceID != "" {
+		var gs pgtype.UUID
+		if err := gs.Scan(*body.GeoSpaceID); err == nil {
+			in.GeoSpaceID = &gs
+		}
+	}
+
+	track, err := h.service.UpdateTrack(r.Context(), trackID, prof.ID, in)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// SubmitMyTrack handles POST /academy/my/tracks/{id}/submit.
+func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	track, err := h.service.SubmitTrack(r.Context(), trackID, prof.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// GetMyTrackStats handles GET /academy/my/tracks/{id}/stats.
+func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	track, err := h.service.store.GetTrackByID(r.Context(), trackID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if !track.InstructorID.Valid || track.InstructorID.String() != prof.ID.String() {
+		errpkg.WriteError(w, http.StatusForbidden, "not_track_owner", "You do not own this track")
+		return
+	}
+
+	summary, err := h.service.store.EarningsSummary(r.Context(), prof.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	// Track-specific series + completion rate (BUG-007).
+	revSeries, _ := h.service.store.TrackRevenueSeries(r.Context(), trackID)
+	enrollSeries, _ := h.service.store.TrackEnrollmentSeries(r.Context(), trackID)
+	completion, _ := h.service.store.TrackCompletionRate(r.Context(), trackID)
+
+	var completionRate float64
+	if completion.TotalEnrolled > 0 {
+		completionRate = float64(completion.Completed) / float64(completion.TotalEnrolled) * 100
+	}
+
+	revData := make([]map[string]any, 0, len(revSeries))
+
+	for _, s := range revSeries {
+		if s.RevDate.Valid {
+			revData = append(revData, map[string]any{
+				"date": s.RevDate.Time.Format("2006-01-02"),
+				"kobo": s.Kobo,
+			})
+		}
+	}
+
+	enrollData := make([]map[string]any, 0, len(enrollSeries))
+
+	for _, s := range enrollSeries {
+		if s.EnrollDate.Valid {
+			enrollData = append(enrollData, map[string]any{
+				"date":  s.EnrollDate.Time.Format("2006-01-02"),
+				"count": s.Count,
+			})
+		}
+	}
+
+	totalRevenue := summary.OpenKobo + summary.PaidKobo
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"track_id":            trackID.String(),
+			"total_enrolled":      track.TotalEnrolled,
+			"completion_rate_pct": completionRate,
+			"total_revenue_kobo":  totalRevenue,
+			"currency":            track.Currency,
+			"revenue_series":      revData,
+			"enrollment_series":   enrollData,
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace catalog (public)
+// ---------------------------------------------------------------------------
+
+// ListCatalog handles GET /academy/catalog.
+// Supports ?q= (title search), ?level= (difficulty), ?category=, ?language=,
+// ?is_free=true, ?sort=popular|newest|rating, and ?space_id= filters. The
+// frontend search page and homepage send q and level (ADR-060 TrackSummary
+// contract); the university page Courses tab sends space_id to list linked
+// tracks (ADR-063 §9.2).
+func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
+
+	limit, offset := parsePagination(r)
+
+	f := CatalogFilter{
+		Category: r.URL.Query().Get("category"),
+		Language: r.URL.Query().Get("language"),
+		IsFree:   r.URL.Query().Get("is_free") == "true",
+		Level:    r.URL.Query().Get("level"),
+		Q:        r.URL.Query().Get("q"),
+		Sort:     r.URL.Query().Get("sort"),
+	}
+	if spaceID, ok := scanOptionalUUIDParam(r, "space_id"); ok {
+		f.SpaceID = spaceID
+	}
+
+	rows, err := h.service.store.ListCatalog(r.Context(), f, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	total, err := h.service.store.CountCatalog(r.Context(), f)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	items := make([]CatalogTrack, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, catalogTrackFromRow(row))
+	}
+
+	h.resolveLiterals(r, &items)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": items,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
+}
+
+// GetCatalogTrack handles GET /academy/catalog/{slug}.
+func (h *Handlers) GetCatalogTrack(w http.ResponseWriter, r *http.Request) {
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Track slug is required")
+		return
+	}
+
+	track, err := h.service.store.GetCatalogTrackBySlug(r.Context(), slug)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	h.resolveLiterals(r, &track)
+
+	// Map through CatalogTrackDetailFromRow to add the `level` JSON alias for
+	// the frontend TrackDetail.level contract (ADR-060).
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": CatalogTrackDetailFromRow(track)})
+}
+
+// ---------------------------------------------------------------------------
+// Creator earnings (self)
+// ---------------------------------------------------------------------------
+
+// GetMyEarnings handles GET /academy/my/earnings.
+// Returns the earnings summary (open/paid/total) plus a daily revenue_series
+// for the LayerChart (BUG-005).
+func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	summary, err := h.service.store.EarningsSummary(r.Context(), prof.ID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	series, _ := h.service.store.RevenueSeries(r.Context(), prof.ID)
+	revenueSeries := make([]map[string]any, 0, len(series))
+
+	for _, s := range series {
+		if s.RevDate.Valid {
+			revenueSeries = append(revenueSeries, map[string]any{
+				"date": s.RevDate.Time.Format("2006-01-02"),
+				"kobo": s.Kobo,
+			})
+		}
+	}
+
+	totalEarned := summary.OpenKobo + summary.PaidKobo
+
+	currency := ""
+	if h.service.settings != nil {
+		currency = h.service.settings.GetStringOr(r.Context(), "wallet.default_currency", "")
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"total_earned_kobo":   totalEarned,
+		"total_paid_out_kobo": summary.PaidKobo,
+		"pending_kobo":        summary.OpenKobo,
+		"currency":            currency,
+		"revenue_series":      revenueSeries,
+	}})
+}
+
+// GetMyPayouts handles GET /academy/my/payouts.
+// Returns payouts mapped to a clean DTO with the fields the frontend expects
+// (amount_kobo, requested_at, processed_at, status) (BUG-006).
+func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	limit, offset := parsePagination(r)
+
+	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	payouts, err := h.service.store.ListPayoutsByInstructor(r.Context(), prof.ID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	items := make([]payoutDTO, 0, len(payouts))
+	for _, p := range payouts {
+		items = append(items, payoutFromRow(p))
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+// payoutDTO is the clean API-facing payout record (BUG-006).
+type payoutDTO struct {
+	ID          string     `json:"id"`
+	AmountKobo  int64      `json:"amount_kobo"`
+	Status      string     `json:"status"`
+	PeriodStart string     `json:"period_start"`
+	PeriodEnd   string     `json:"period_end"`
+	RequestedAt time.Time  `json:"requested_at"`
+	ProcessedAt *time.Time `json:"processed_at,omitempty"`
+	Currency    string     `json:"currency"`
+}
+
+func payoutFromRow(p gen.AcademyInstructorPayout) payoutDTO {
+	d := payoutDTO{
+		ID:          p.ID.String(),
+		AmountKobo:  p.NetKobo,
+		Status:      p.Status,
+		PeriodStart: p.PeriodStart.Time.Format("2006-01-02"),
+		PeriodEnd:   p.PeriodEnd.Time.Format("2006-01-02"),
+		RequestedAt: p.CreatedAt.Time,
+		Currency:    p.Currency,
+	}
+	if p.ProcessedAt.Valid {
+		d.ProcessedAt = &p.ProcessedAt.Time
+	}
+
+	return d
+}
+
+// ---------------------------------------------------------------------------
+// Admin — instructors
+// ---------------------------------------------------------------------------
+
+// AdminListInstructors handles GET /admin/academy/instructors.
+// Optional ?space_id= scopes the list to instructors with a track targeted at
+// that space (ADR-063 admin per-university view).
+func (h *Handlers) AdminListInstructors(w http.ResponseWriter, r *http.Request) {
+
+	limit, offset := parsePagination(r)
+	status := r.URL.Query().Get("status")
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
+
+	rows, err := h.service.store.ListByStatus(r.Context(), status, spaceID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	total, err := h.service.store.CountByStatus(r.Context(), status, spaceID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	profiles := make([]AcademyInstructorProfile, 0, len(rows))
+	for _, row := range rows {
+		profiles = append(profiles, profileFromRow(row))
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": profiles,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
+}
+
+// AdminGetInstructor handles GET /admin/academy/instructors/{id}.
+// Returns the masked instructor profile (payout_method is never exposed raw).
+func (h *Handlers) AdminGetInstructor(w http.ResponseWriter, r *http.Request) {
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.store.GetByID(r.Context(), instructorID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
+}
+
+// AdminApproveInstructor handles POST /admin/academy/instructors/{id}/approve.
+func (h *Handlers) AdminApproveInstructor(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Tier               string   `json:"tier"`
+		CommissionOverride *float64 `json:"commission_pct_override"`
+	}
+
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	prof, err := h.service.ApproveInstructor(r.Context(), instructorID, user.UserID, body.Tier, body.CommissionOverride)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
+}
+
+// AdminRejectInstructor handles POST /admin/academy/instructors/{id}/reject.
+func (h *Handlers) AdminRejectInstructor(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.RejectInstructor(r.Context(), instructorID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
+}
+
+// AdminSuspendInstructor handles POST /admin/academy/instructors/{id}/suspend.
+func (h *Handlers) AdminSuspendInstructor(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.SuspendInstructor(r.Context(), instructorID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
+}
+
+// AdminReinstateInstructor handles POST /admin/academy/instructors/{id}/reinstate.
+func (h *Handlers) AdminReinstateInstructor(w http.ResponseWriter, r *http.Request) {
+
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	prof, err := h.service.ReinstateInstructor(r.Context(), instructorID, user.UserID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": prof})
+}
+
+// AdminDeleteInstructor handles DELETE /admin/academy/instructors/{id}.
+// Blocked while the instructor is approved — reject or suspend first.
+func (h *Handlers) AdminDeleteInstructor(w http.ResponseWriter, r *http.Request) {
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteInstructor(r.Context(), instructorID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// ---------------------------------------------------------------------------
+// Admin — courses & payouts
+// ---------------------------------------------------------------------------
+
+// AdminListPendingTracks handles GET /admin/academy/tracks/pending.
+// Optional ?space_id= scopes the list to tracks targeted at that space.
+// Returns {data, meta{total,limit,offset}} so the admin hub can show the
+// true pending count (not just the page length).
+func (h *Handlers) AdminListPendingTracks(w http.ResponseWriter, r *http.Request) {
+
+	limit, offset := parsePagination(r)
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
+
+	rows, err := h.service.store.ListPendingTracks(r.Context(), spaceID, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if rows == nil {
+		rows = []gen.ListPendingAcademyTracksRow{}
+	}
+
+	total, err := h.service.store.CountPendingTracks(r.Context(), spaceID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": rows,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
+}
+
+// AdminApproveTrack handles POST /admin/academy/tracks/{id}/approve.
+func (h *Handlers) AdminApproveTrack(w http.ResponseWriter, r *http.Request) {
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	track, err := h.service.ApproveTrack(r.Context(), trackID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// AdminListPayouts handles GET /admin/academy/payouts.
+// Optional ?space_id= scopes the list to payouts for instructors with a track
+// targeted at that space.
+// Returns {data, meta{total,limit,offset}} so the admin hub can show the
+// true pending-payout count (not just the page length).
+func (h *Handlers) AdminListPayouts(w http.ResponseWriter, r *http.Request) {
+
+	limit, offset := parsePagination(r)
+	status := r.URL.Query().Get("status")
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
+
+	payouts, err := h.service.store.ListPayoutsByStatus(r.Context(), spaceID, status, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if payouts == nil {
+		payouts = []gen.ListInstructorPayoutsByStatusRow{}
+	}
+
+	total, err := h.service.store.CountPayoutsByStatus(r.Context(), spaceID, status)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": payouts,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
+}
+
+// AdminGetPayout handles GET /admin/academy/payouts/{id}.
+func (h *Handlers) AdminGetPayout(w http.ResponseWriter, r *http.Request) {
+
+	payoutID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	payout, err := h.service.store.GetPayout(r.Context(), payoutID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
+}
+
+// AdminProcessPayout handles POST /admin/academy/payouts/{id}/process.
+func (h *Handlers) AdminProcessPayout(w http.ResponseWriter, r *http.Request) {
+
+	payoutID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.SendInstructorPayout(r.Context(), payoutID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	payout, err := h.service.store.GetPayout(r.Context(), payoutID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
+}
+
+// AdminListRevenueSplits handles GET /admin/academy/revenue-splits.
+// Read-only audit viewer over the immutable revenue_splits ledger (ADR-063 §9).
+// Supports optional filters: ?instructor_id= ?track_id= ?source=purchase|pro_stream
+// ?payout_id= ?from= ?to= (RFC 3339, half-open [from,to)) and offset pagination
+// (?page=&limit=). Returns the standard {data, meta{total,page,limit}} envelope.
+func (h *Handlers) AdminListRevenueSplits(w http.ResponseWriter, r *http.Request) {
+
+	limit, offset := parsePagination(r)
+
+	f := ListRevenueSplitsFilter{
+		Source: r.URL.Query().Get("source"),
+	}
+	if id, ok := scanOptionalUUIDParam(r, "instructor_id"); ok {
+		f.InstructorID = id
+	}
+
+	if id, ok := scanOptionalUUIDParam(r, "track_id"); ok {
+		f.TrackID = id
+	}
+
+	if id, ok := scanOptionalUUIDParam(r, "payout_id"); ok {
+		f.PayoutID = id
+	}
+
+	if id, ok := scanOptionalUUIDParam(r, "space_id"); ok {
+		f.SpaceID = id
+	}
+
+	if ts, ok := parseOptionalTime(r, "from"); ok {
+		f.FromTs = ts
+	}
+
+	if ts, ok := parseOptionalTime(r, "to"); ok {
+		f.ToTs = ts
+	}
+
+	splits, err := h.service.store.ListRevenueSplits(r.Context(), f, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if splits == nil {
+		splits = []gen.ListRevenueSplitsRow{}
+	}
+
+	total, err := h.service.store.CountRevenueSplits(r.Context(), f)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	page := int32(0)
+	if limit > 0 {
+		page = offset/limit + 1
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": splits,
+		"meta": map[string]any{"total": total, "page": page, "limit": limit},
+	})
+}
+
+// AdminGetRevenueSplit handles GET /admin/academy/revenue-splits/{id}.
+// Read-only single fetch of an immutable revenue-split audit record (ADR-063 §9).
+func (h *Handlers) AdminGetRevenueSplit(w http.ResponseWriter, r *http.Request) {
+
+	splitID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	split, err := h.service.store.GetRevenueSplitByID(r.Context(), splitID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": split})
+}
+
+// trackFromGetRow maps a ListAcademyTracksByInstructorRow into the Track DTO.
+func trackFromGetRow(r gen.ListAcademyTracksByInstructorRow) Track {
+	t := Track{
+		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
+		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
+		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
+		IsPublishedToAcademy: r.IsPublishedToAcademy,
+		SubmissionStatus:        r.AcademySubmissionStatus,
+		TotalRevenueKobo:        r.TotalRevenueKobo,
+		RejectionReason:         r.AcademyRejectionReason,
+		ThumbnailURL:            media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
+		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+	}
+
+	if r.CoverMediaID.Valid {
+		s := r.CoverMediaID.String()
+		t.CoverMediaID = &s
+	}
+
+	if r.InstructorID.Valid {
+		s := r.InstructorID.String()
+		t.InstructorID = &s
+	}
+
+	if r.PriceKobo != nil {
+		v := *r.PriceKobo
+		t.PriceKobo = &v
+	}
+
+	if r.Category != nil {
+		t.Category = r.Category
+	}
+
+	if r.GeoSpaceID.Valid {
+		s := r.GeoSpaceID.String()
+		t.GeoSpaceID = &s
+	}
+
+	if r.AcademySubmittedAt.Valid {
+		tm := r.AcademySubmittedAt.Time
+		t.SubmittedAt = &tm
+	}
+
+	if r.AcademyReviewedAt.Valid {
+		tm := r.AcademyReviewedAt.Time
+		t.ReviewedAt = &tm
+	}
+
+	return t
+}
+
+// trackFromPublishedRow maps a ListPublishedTracksByInstructorRow into the Track DTO.
+func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
+	t := Track{
+		ID: r.ID.String(), Title: r.Title, Slug: r.Slug, Description: r.Description,
+		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
+		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
+		IsPublishedToAcademy: r.IsPublishedToAcademy,
+		SubmissionStatus:        r.AcademySubmissionStatus,
+		RejectionReason:         r.AcademyRejectionReason,
+		ThumbnailURL:            media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
+		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+	}
+
+	if r.CoverMediaID.Valid {
+		s := r.CoverMediaID.String()
+		t.CoverMediaID = &s
+	}
+
+	if r.InstructorID.Valid {
+		s := r.InstructorID.String()
+		t.InstructorID = &s
+	}
+
+	if r.PriceKobo != nil {
+		v := *r.PriceKobo
+		t.PriceKobo = &v
+	}
+
+	if r.Category != nil {
+		t.Category = r.Category
+	}
+
+	if r.GeoSpaceID.Valid {
+		s := r.GeoSpaceID.String()
+		t.GeoSpaceID = &s
+	}
+
+	if r.AcademySubmittedAt.Valid {
+		tm := r.AcademySubmittedAt.Time
+		t.SubmittedAt = &tm
+	}
+
+	if r.AcademyReviewedAt.Valid {
+		tm := r.AcademyReviewedAt.Time
+		t.ReviewedAt = &tm
+	}
+
+	return t
+}
+
+// ---------------------------------------------------------------------------
+// Admin — all tracks, reject track, fail payout, update instructor (BUG-002)
+// ---------------------------------------------------------------------------
+
+// AdminListAllTracks handles GET /admin/academy/tracks.
+// Returns all marketplace tracks (not just pending), optionally filtered by
+// submission_status (BUG-002). Optional ?space_id= scopes to tracks targeted
+// at that space.
+func (h *Handlers) AdminListAllTracks(w http.ResponseWriter, r *http.Request) {
+
+	limit, offset := parsePagination(r)
+	status := r.URL.Query().Get("status")
+	spaceID, _ := scanOptionalUUIDParam(r, "space_id")
+
+	rows, err := h.service.store.ListAllTracks(r.Context(), spaceID, status, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if rows == nil {
+		rows = []gen.ListAllInstructorTracksRow{}
+	}
+
+	total, err := h.service.store.CountAllTracks(r.Context(), spaceID, status)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": rows,
+		"meta": map[string]int64{"total": total, "limit": int64(limit), "offset": int64(offset)},
+	})
+}
+
+// AdminGetTrack handles GET /admin/academy/tracks/{id}.
+func (h *Handlers) AdminGetTrack(w http.ResponseWriter, r *http.Request) {
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	track, err := h.service.store.GetTrackByID(r.Context(), trackID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// AdminRejectTrack handles POST /admin/academy/tracks/{id}/reject.
+// Rejects a submitted track with an optional reason (BUG-002, BUG-004).
+func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Reason *string `json:"reason"`
+	}
+
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	track, err := h.service.store.RejectTrack(r.Context(), trackID, body.Reason)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// AdminFailPayout handles POST /admin/academy/payouts/{id}/fail.
+// Marks a payout as failed with an optional reason (BUG-002).
+func (h *Handlers) AdminFailPayout(w http.ResponseWriter, r *http.Request) {
+
+	payoutID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Reason *string `json:"reason"`
+	}
+
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	payout, err := h.service.store.UpdatePayoutStatus(r.Context(), payoutID, "failed", nil, body.Reason)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": payout})
+}
+
+// AdminUpdateInstructor handles PATCH /admin/academy/instructors/{id}.
+// Updates an instructor's tier and/or commission override (BUG-002).
+func (h *Handlers) AdminUpdateInstructor(w http.ResponseWriter, r *http.Request) {
+
+	instructorID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Tier               string   `json:"tier"`
+		CommissionOverride *float64 `json:"commission_pct_override"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	var tier *string
+
+	if body.Tier != "" {
+		t := body.Tier
+		tier = &t
+	}
+
+	var commission *pgtype.Numeric
+
+	if body.CommissionOverride != nil {
+		var n pgtype.Numeric
+		if err := n.Scan(fmt.Sprintf("%f", *body.CommissionOverride)); err == nil {
+			commission = &n
+		}
+	}
+
+	prof, err := h.service.store.UpdateInstructorAdmin(r.Context(), instructorID, tier, commission)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": profileFromRow(prof)})
+}
+
+// AdminFeatureTrack handles POST /admin/academy/tracks/{id}/feature.
+// Toggles the featured flag on a marketplace track (BUG-012: wires the
+// academy.course.feature RBAC node).
+func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Featured *bool `json:"featured"`
+	}
+
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	featured := true
+	if body.Featured != nil {
+		featured = *body.Featured
+	}
+
+	track, err := h.service.store.SetTrackFeatured(r.Context(), trackID, featured)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// ---------------------------------------------------------------------------
+// Track categories (ADR-063 §9.1)
+// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+// ---------------------------------------------------------------------------
+
+// AdminListCategories handles GET /admin/academy/categories.
+// Supports ?active=true|false and ?search= filters plus ?page=&limit= pagination.
+func (h *Handlers) AdminListCategories(w http.ResponseWriter, r *http.Request) {
+
+	limit, offset := parsePagination(r)
+	active := r.URL.Query().Get("active")
+	search := r.URL.Query().Get("search")
+
+	rows, err := h.service.store.ListTrackCategories(r.Context(), active, search, limit, offset)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if rows == nil {
+		rows = []gen.AcademyTrackCategory{}
+	}
+
+	total, err := h.service.store.CountTrackCategories(r.Context(), active, search)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	page := int32(0)
+	if limit > 0 {
+		page = offset/limit + 1
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": rows,
+		"meta": map[string]any{"total": total, "page": page, "limit": limit},
+	})
+}
+
+// AdminCreateCategory handles POST /admin/academy/categories.
+func (h *Handlers) AdminCreateCategory(w http.ResponseWriter, r *http.Request) {
+
+	var body struct {
+		Slug      string `json:"slug"`
+		Name      string `json:"name"`
+		SortOrder *int32 `json:"sort_order"`
+		IsActive  *bool  `json:"is_active"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if body.Slug == "" || body.Name == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "slug and name are required")
+		return
+	}
+
+	sortOrder := int32(0)
+	if body.SortOrder != nil {
+		sortOrder = *body.SortOrder
+	}
+
+	isActive := true
+	if body.IsActive != nil {
+		isActive = *body.IsActive
+	}
+
+	cat, err := h.service.store.CreateTrackCategory(r.Context(), body.Slug, body.Name, sortOrder, isActive)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": cat})
+}
+
+// AdminGetCategory handles GET /admin/academy/categories/{id}.
+func (h *Handlers) AdminGetCategory(w http.ResponseWriter, r *http.Request) {
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	cat, err := h.service.store.GetTrackCategory(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cat})
+}
+
+// AdminUpdateCategory handles PATCH /admin/academy/categories/{id}.
+func (h *Handlers) AdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Slug      *string `json:"slug"`
+		Name      *string `json:"name"`
+		SortOrder *int32  `json:"sort_order"`
+		IsActive  *bool   `json:"is_active"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	cat, err := h.service.store.UpdateTrackCategory(r.Context(), id, body.Name, body.Slug, body.SortOrder, body.IsActive)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cat})
+}
+
+// AdminDeleteCategory handles DELETE /admin/academy/categories/{id}.
+// Blocked if any academy_tracks still reference the category slug.
+func (h *Handlers) AdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+	// Fetch the category first to get the slug for the track reference check.
+	cat, err := h.service.store.GetTrackCategory(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	count, err := h.service.store.CountTracksByCategory(r.Context(), cat.Slug)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if count > 0 {
+		errpkg.WriteError(w, http.StatusConflict, "category_in_use",
+			fmt.Sprintf("Cannot delete category '%s': %d track(s) still reference it. Reassign or clear those tracks first.", cat.Slug, count))
+		return
+	}
+
+	if err := h.service.store.DeleteTrackCategory(r.Context(), id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"deleted": true, "id": id}})
+}
+
+// PublicListActiveCategories handles GET /academy/categories.
+// No auth required — returns only active categories for the catalog dropdown.
+func (h *Handlers) PublicListActiveCategories(w http.ResponseWriter, r *http.Request) {
+
+	rows, err := h.service.store.ListActiveTrackCategories(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	if rows == nil {
+		rows = []gen.ListActiveAcademyTrackCategoriesRow{}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": rows})
+}
+
+// GetCatalogOptions handles GET /academy/catalog/options.
+// No auth required — returns public marketplace option lists (difficulty levels,
+// instructor social platforms). Ref: Section 36 (Rule 16).
+func (h *Handlers) GetCatalogOptions(w http.ResponseWriter, r *http.Request) {
+
+	difficulty, _ := admin.CatalogOptions("academy.tracks.difficulty")
+	social, _ := admin.CatalogOptions("academy.instructor.social_platforms")
+	sortOptions, _ := admin.CatalogOptions("academy.catalog.sort")
+	pageSizes, _ := admin.CatalogOptions("academy.catalog.page_sizes")
+
+	// Languages reflect what's actually in the live catalog (Rule 16) rather
+	// than a static locale list.
+	languages, err := h.service.store.ListCatalogLanguages(r.Context())
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if languages == nil {
+		languages = []string{}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"difficulty_levels": difficulty,
+			"social_platforms":  social,
+			"sort_options":      sortOptions,
+			"page_sizes":        pageSizes,
+			"languages":         languages,
+		},
+	})
+}

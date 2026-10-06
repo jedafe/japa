@@ -55,14 +55,14 @@ interface CachedCsrf {
 const csrfCache = new Map<string, CachedCsrf>();
 
 /**
- * ADR-063: detect whether the request host is the Japa University branded
- * surface. The canonical host is university.japaconnect.com; additional custom
- * domains (e.g. japauni.com) can be configured via the JC_UNIVERSITY_HOSTS env
+ * ADR-063: detect whether the request host is the Japa Academy branded
+ * surface. The canonical host is academy.japaconnect.com; additional custom
+ * domains (e.g. japauni.com) can be configured via the JC_ACADEMY_HOSTS env
  * var as a comma-separated list.
  */
-function isUniversitySurface(host: string): boolean {
-	const canonical = 'university.japaconnect.com';
-	const configured = env.JC_UNIVERSITY_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) ?? [];
+function isAcademySurface(host: string): boolean {
+	const canonical = 'academy.japaconnect.com';
+	const configured = env.JC_ACADEMY_HOSTS?.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean) ?? [];
 	const hosts = [canonical, ...configured];
 	return hosts.includes(host.toLowerCase());
 }
@@ -274,10 +274,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.csrfToken = null;
 	event.locals.siteSettings = siteSettings;
 
-	// ADR-063: detect the Japa University branded surface by host.
-	// university.japaconnect.com (and configurable custom domains like japauni.com)
-	// render the Japa University shell instead of the diaspora community shell.
-	event.locals.isUniversityHost = isUniversitySurface(event.url.hostname);
+	// ADR-063: detect the Japa Academy branded surface by host.
+	// academy.japaconnect.com (and configurable custom domains like japauni.com)
+	// render the Japa Academy shell instead of the diaspora community shell.
+	event.locals.isAcademyHost = isAcademySurface(event.url.hostname);
 
 	// ADR-127: detect the public roadmap surface by host.
 	// roadmap.japaconnect.com renders a minimal roadmap-branded shell inside

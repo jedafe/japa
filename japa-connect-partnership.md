@@ -37,7 +37,7 @@ For organizations whose value is credibility rather than transactions:
 
 - **Ask an Expat AMA (§88)** — scheduled structured AMAs for immigration lawyers/consultants; completed sessions emit `FAQPage` JSON-LD, so partners get SEO value.
 - **Destination Wiki (§80) & Community Calendar (§86)** — embassies/universities can be authoritative sources for official dates and requirements (calendar requires an official source URL anyway).
-- **Learn platform / Japa University (§36, ADR-063)** — agencies or professionals can publish paid courses with creator-economy revenue sharing.
+- **Learn platform / Japa Academy (§36, ADR-063)** — agencies or professionals can publish paid courses with creator-economy revenue sharing.
 - **Mentorship matching (§102)** — diaspora orgs and established professionals as mentors.
 
 ## 5. Trust & safety framing (do this first)

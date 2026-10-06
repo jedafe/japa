@@ -75,7 +75,7 @@ content_tags
 content_thread_links
 content_views
 coupon_events
-course_access_grants
+academy_course_access_grants
 credential_community_notes
 crs_score_history
 custom_field_values
@@ -101,8 +101,8 @@ forum_replies
 forum_thread_tags
 forum_threads
 forum_votes
-instructor_payouts
-instructor_profiles
+academy_instructor_payouts
+academy_instructor_profiles
 intel_inbound_events
 intel_jobs
 intel_raw_documents
@@ -112,8 +112,8 @@ ip_blocks
 job_applications
 jwt_signing_keys
 language_score_stories
-learning_certificates
-lesson_progress
+academy_certificates
+academy_lesson_progress
 media
 mentor_reviews
 mentor_sessions

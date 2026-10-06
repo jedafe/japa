@@ -153,7 +153,7 @@ export async function apiFetch<T>(
 
 		// On a CSRF rejection for a mutating request, refresh the token cookie
 		// and retry once with the updated X-CSRF-Token header. This mirrors the
-		// retry logic in the admin/main/learn/tools apps and prevents the user
+		// retry logic in the admin/main/academy/tools apps and prevents the user
 		// from having to manually reload the page when the session-scoped
 		// csrf_token cookie becomes stale.
 		if (isMutating && isCsrfRejection(res.status, body)) {

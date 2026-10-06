@@ -22,7 +22,7 @@ func TestResolveName(t *testing.T) {
 		{"content", "service_listing", "services"},
 		{"content", "unknown_type", ""},
 		{"blog_post", "", "blog"},
-		{"learning_track", "", "learn"},
+		{"academy_track", "", "learn"},
 		{"doc_page", "", "docs"},
 		{"forum_thread", "", "discussions"},
 		{"forum_reply", "", "discussions"},

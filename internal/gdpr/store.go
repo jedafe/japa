@@ -472,7 +472,7 @@ func (s *Store) deleteComparisonDataSourcesByUser(ctx context.Context, userID pg
 	return nil
 }
 
-// Japa University GDPR export helpers (ADR-063 / audit C2).
+// Japa Academy GDPR export helpers (ADR-063 / audit C2).
 func (s *Store) gdprExportInstructorProfiles(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportInstructorProfiles, userID)
 }

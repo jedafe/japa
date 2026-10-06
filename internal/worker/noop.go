@@ -50,15 +50,15 @@ func (noopAITranslateProcessor) TranslatePack(_ context.Context, packID, sourceL
 	return nil
 }
 
-// noopLearningProcessor is a no-op LearningProcessor that logs and returns nil.
-type noopLearningProcessor struct{}
+// noopAcademyProcessor is a no-op AcademyProcessor that logs and returns nil.
+type noopAcademyProcessor struct{}
 
-func (noopLearningProcessor) UpdateTrackCompletion(_ context.Context, userID, trackID string) error {
+func (noopAcademyProcessor) UpdateTrackCompletion(_ context.Context, userID, trackID string) error {
 	slog.Debug("worker: noop learning processor: update track completion", "user_id", userID, "track_id", trackID)
 	return nil
 }
 
-func (noopLearningProcessor) IssueCertificate(_ context.Context, userID, trackID, courseName string) error {
+func (noopAcademyProcessor) IssueCertificate(_ context.Context, userID, trackID, courseName string) error {
 	slog.Debug("worker: noop learning processor: issue certificate", "user_id", userID, "track_id", trackID, "course_name", courseName)
 	return nil
 }
@@ -104,8 +104,8 @@ func RegisterNoopProcessors() {
 		RegisterAITranslateProcessor(noopAITranslateProcessor{})
 	}
 
-	if learningProcessor == nil {
-		RegisterLearningProcessor(noopLearningProcessor{})
+	if academyProcessor == nil {
+		RegisterAcademyProcessor(noopAcademyProcessor{})
 	}
 
 	if spaceAutoPopulateProcessor == nil {

@@ -50,7 +50,7 @@ var indexTypeByUID = map[string]string{
 	IndexUsers:             "user",
 	IndexTags:              "tag",
 	IndexKnowledgeArticles: "article",
-	IndexLearningTracks:    "course",
+	IndexAcademyTracks:    "course",
 	IndexDocPages:          "doc_page",
 	IndexOrganizations:     "organization",
 }
@@ -71,7 +71,7 @@ var searchAttributesToRetrieve = []string{
 // geo-boost filter is applied to these indexes only.
 var indexesWithRelevantCountries = map[string]bool{
 	IndexPosts:          true,
-	IndexLearningTracks: true,
+	IndexAcademyTracks: true,
 }
 
 // hasRelevantCountries returns true when the given index UID has a
@@ -400,7 +400,7 @@ func buildPostFilter(contentType, spaceID, tagSlug string) FilterExpr {
 
 // runMultiSearchFiltered queries indexes filtered by type. When typeFilter
 // is empty, all indexes are queried (original behavior). geoCountry, when
-// non-empty, adds a soft boost for learning_tracks results whose
+// non-empty, adds a soft boost for academy_tracks results whose
 // relevant_countries array contains the visitor's country (ADR-064).
 // extraPostFilter, when non-nil, is appended to the posts index filter
 // (supports §54 ?content_type, ?space_id, ?tag_slug params). offset is the
@@ -428,7 +428,7 @@ func (h *Handlers) runMultiSearchFiltered(ctx context.Context, query string, lim
 			filters = append(filters, extraPostFilter)
 		}
 		// ADR-064 + ADR-064a: for indexes that carry a relevant_countries
-		// filterable attribute (posts, learning_tracks), boost results
+		// filterable attribute (posts, academy_tracks), boost results
 		// relevant to the visitor's country. The OR keeps globally-relevant
 		// content (empty relevant_countries) eligible.
 		// // `relevant_countries` is an array of ISO codes — Eq is membership
@@ -555,7 +555,7 @@ func mapHitToItem(resultType string, hit Hit) SearchResultItem {
 		item.Title = ""
 	case "forum_thread":
 		item.Slug = stringField(hit, "slug")
-	case "learning_track":
+	case "academy_track":
 		item.Slug = stringField(hit, "slug")
 	}
 
@@ -1281,7 +1281,7 @@ func searchTypeIndexes(typeFilter string) []string {
 	if typeFilter == "" || strings.Contains(typeFilter, ",") {
 		// Comma-separated: merge index sets for each type.
 		if typeFilter == "" {
-			return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexKnowledgeArticles, IndexLearningTracks, IndexDocPages, IndexOrganizations}
+			return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexKnowledgeArticles, IndexAcademyTracks, IndexDocPages, IndexOrganizations}
 		}
 
 		seen := map[string]bool{}
@@ -1316,7 +1316,7 @@ func singleTypeIndexes(typeFilter string) []string {
 	case "tag":
 		return []string{IndexTags}
 	case "course":
-		return []string{IndexLearningTracks}
+		return []string{IndexAcademyTracks}
 	case "doc", "doc_page":
 		return []string{IndexDocPages}
 	case "forum_thread":
@@ -1327,8 +1327,8 @@ func singleTypeIndexes(typeFilter string) []string {
 		return []string{IndexKnowledgeArticles}
 	case "all_no_users":
 		// §54: guests get all indexes EXCEPT the users index (privacy).
-		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexTags, IndexKnowledgeArticles, IndexLearningTracks, IndexDocPages, IndexOrganizations}
+		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexTags, IndexKnowledgeArticles, IndexAcademyTracks, IndexDocPages, IndexOrganizations}
 	default:
-		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexKnowledgeArticles, IndexLearningTracks, IndexDocPages, IndexOrganizations}
+		return []string{IndexPosts, IndexForumThreads, IndexSpaces, IndexUsers, IndexTags, IndexKnowledgeArticles, IndexAcademyTracks, IndexDocPages, IndexOrganizations}
 	}
 }

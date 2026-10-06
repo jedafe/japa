@@ -59,7 +59,7 @@ const docsRoutes: string[] = [
 	'/docs/search',
 ];
 
-// Learn platform (apps/learn) — port 3003
+// Academy platform (apps/academy) — port 3003
 const learnRoutes: string[] = [
 	'/',
 	'/bookmarks',
@@ -114,7 +114,8 @@ const adminRoutes: string[] = [
 	'/join-requests',
 	'/jobs',
 	'/jsonld-templates',
-	'/learning',
+	'/academy',
+	'/academy/learning',
 	'/media',
 	'/menus',
 	'/mentorship',
@@ -157,12 +158,11 @@ const adminRoutes: string[] = [
 	'/universities',
 	'/universities/course-catalog',
 	'/universities/course-offerings',
-	'/university',
-	'/university/categories',
-	'/university/instructors',
-	'/university/payouts',
-	'/university/revenue-splits',
-	'/university/tracks',
+	'/academy/categories',
+	'/academy/instructors',
+	'/academy/payouts',
+	'/academy/revenue-splits',
+	'/academy/tracks',
 	'/users',
 	'/users/groups',
 	'/users/roles',

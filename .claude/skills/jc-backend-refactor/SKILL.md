@@ -16,7 +16,7 @@ Business logic found in handlers → extract to service methods · direct store 
 - SELECT * in query files → explicit column lists (schema changes stop silently breaking scans)
 
 ## 3. Transaction Boundaries
-Multi-store mutations without shared tx → service-level `pgx.BeginFunc` wrapping · side-effect enqueues moved AFTER commit · wallet/credit paths verified for `pg_advisory_xact_lock` (never weaken this while refactoring). **Japa University**: payout paths (`university:send_instructor_payout`) must hold `pg_advisory_xact_lock(instructor_id)` inside the tx — never weaken this. `revenue_splits` append-only — a refactor that introduces an UPDATE on this table is a defect.
+Multi-store mutations without shared tx → service-level `pgx.BeginFunc` wrapping · side-effect enqueues moved AFTER commit · wallet/credit paths verified for `pg_advisory_xact_lock` (never weaken this while refactoring). **Japa Academy**: payout paths (`academy:send_instructor_payout`) must hold `pg_advisory_xact_lock(instructor_id)` inside the tx — never weaken this. `revenue_splits` append-only — a refactor that introduces an UPDATE on this table is a defect.
 
 ## 4. Error Hygiene
 `errors.New(fmt.Sprintf(...))` → `fmt.Errorf("...: %w", err)` · sentinel comparisons → `errors.Is/As` · swallowed errors (`_ =`) → handled or explicitly justified · GlitchTip capture on unexpected paths.

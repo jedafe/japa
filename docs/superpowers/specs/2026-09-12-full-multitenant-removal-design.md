@@ -102,7 +102,7 @@ Before the final schema migration, a data audit must confirm that every scoped r
 - Valkey key builders
   - Update all `jc:*:{tenant_id}` patterns to global variants.
   - Update `.jeos/conventions/valkey-keys-catalog.md`.
-- `internal/publicapi/service.go`, `internal/organizations/service.go`, `internal/university/service.go`, etc.
+- `internal/publicapi/service.go`, `internal/organizations/service.go`, `internal/academy/creator/service.go`, etc.
   - Remove tenant-scoped cache keys and query parameters.
 - `cmd/*` (24 references)
   - Remove `tenant_id` from CLI scripts and backfill tools.
@@ -124,7 +124,7 @@ Before the final schema migration, a data audit must confirm that every scoped r
   - Remove `tenants` route from navigation and constants.
 - `apps/control/src/lib/api/types.ts`, `apps/main/src/lib/types/index.ts`, etc.
   - Remove `tenant_id` from every TypeScript interface and DTO.
-- `apps/main/src/lib/server/api.ts`, `apps/learn/src/lib/server/api.ts`, `apps/tools/src/lib/server/api.ts`, `apps/docs/src/lib/server/api.ts`
+- `apps/main/src/lib/server/api.ts`, `apps/academy/src/lib/server/api.ts`, `apps/tools/src/lib/server/api.ts`, `apps/docs/src/lib/server/api.ts`
   - Remove tenant header forwarding (e.g. `X-Forwarded-Host` for tenant resolution can remain for reverse-proxy correctness, but no tenant ID is passed).
 - `apps/control/src/lib/locales/en.json`, `fr.json`, and other i18n files
   - Remove tenant-related locale keys.
@@ -137,7 +137,7 @@ Before the final schema migration, a data audit must confirm that every scoped r
 
 **Exit criteria:**
 
-- `bun run check` and `bun run build` pass in `apps/admin`, `apps/control`, `apps/docs`, `apps/learn`, `apps/main`, `apps/tools`, and `apps/studio-desktop`.
+- `bun run check` and `bun run build` pass in `apps/admin`, `apps/control`, `apps/docs`, `apps/academy`, `apps/main`, `apps/tools`, and `apps/studio-desktop`.
 - Playwright smoke tests for the admin and control surfaces pass.
 
 ### Phase 4 — Database schema migration

@@ -36,7 +36,7 @@ const (
 	// AppMain is an exported constant.
 	AppMain  App = "main"
 	AppDocs  App = "docs"
-	AppLearn App = "learn"
+	AppAcademy App = "academy"
 )
 
 // Position defines whether the sidebar is on the left or right.
@@ -78,7 +78,7 @@ const (
 
 // ValidApp checks whether a string is a valid app identifier.
 func ValidApp(s string) bool {
-	return s == string(AppMain) || s == string(AppDocs) || s == string(AppLearn)
+	return s == string(AppMain) || s == string(AppDocs) || s == string(AppAcademy)
 }
 
 // ValidPosition checks whether a string is a valid position.

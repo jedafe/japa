@@ -35,9 +35,9 @@ import '../features/spaces/screens/space_detail_screen.dart';
 import '../features/social/screens/notifications_screen.dart';
 import '../features/social/screens/messages_list_screen.dart';
 import '../features/social/screens/message_thread_screen.dart';
-import '../features/learning/screens/course_list_screen.dart';
-import '../features/learning/screens/course_detail_screen.dart';
-import '../features/learning/screens/lesson_player_screen.dart';
+import '../features/academy/screens/course_list_screen.dart';
+import '../features/academy/screens/course_detail_screen.dart';
+import '../features/academy/screens/lesson_player_screen.dart';
 import '../features/profile/screens/profile_screen.dart';
 import '../features/profile/screens/settings_screen.dart';
 import '../features/profile/screens/wallet_screen.dart';
@@ -188,17 +188,17 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const RemittanceRateScreen(),
       ),
       GoRoute(
-        path: '/learn/university/catalog',
+        path: '/academy/catalog',
         builder: (_, _) => const CourseListScreen(),
       ),
       GoRoute(
-        path: '/learn/university/catalog/:slug',
+        path: '/academy/catalog/:slug',
         builder: (ctx, state) =>
             CourseDetailScreen(slug: state.pathParameters['slug']!),
       ),
       GoRoute(
         path:
-            '/learn/tracks/:trackSlug/modules/:moduleSlug/lessons/:lessonSlug',
+            '/academy/tracks/:trackSlug/modules/:moduleSlug/lessons/:lessonSlug',
         builder: (ctx, state) => LessonPlayerScreen(
           trackSlug: state.pathParameters['trackSlug']!,
           moduleSlug: state.pathParameters['moduleSlug']!,

@@ -16,12 +16,12 @@ Build a matrix of EVERY entity managed in the panel × required backend routes:
 - Verify each route against JEOS `api-routes-catalog.md` or live probe
 - **Any entity where super-admin cannot perform full CRUD from the UI is a Critical finding** — whether the gap is a missing backend route (⛔ MISSING RBAC CRUD ENDPOINTS block) or a missing frontend control
 - State-capable entities (users, orgs, content, spaces, claims): verify BOTH directions exist and are surfaced (Ban AND Unban, Suspend AND Unsuspend, Approve AND Reject)
-- **Japa University entities (ADR-063):**
+- **Japa Academy entities (ADR-063):**
   - `universities` (Section 39 space type): List/Get/Create/Update/Delete + Verify/Unverify + status transitions (publish/draft/archive) + CSV bulk import
-  - `instructor_profiles`: List/Get + Approve/Reject + Suspend/Unsuspend + tier/commission update. **Both directions of every state transition required.**
-  - `university/tracks` (course approval): List/Get + Approve/Reject (sets `is_published_to_university`)
+  - `academy_instructor_profiles`: List/Get + Approve/Reject + Suspend/Unsuspend + tier/commission update. **Both directions of every state transition required.**
+  - `university/tracks` (course approval): List/Get + Approve/Reject (sets `is_published_to_academy`)
   - `university/payouts`: List/Get + Process (trigger payout) + Mark-failed. State: pending→processing→paid/failed
-- **Sensitive data check:** `instructor_profiles.payout_method` (jsonb) must be masked in the admin UI — never displayed raw (Critical security finding if exposed)
+- **Sensitive data check:** `academy_instructor_profiles.payout_method` (jsonb) must be masked in the admin UI — never displayed raw (Critical security finding if exposed)
 
 ## B. DataTable Spec Compliance (Per Entity List Page)
 - [ ] Sortable (URL-param) · [ ] Searchable (`?q=` debounced) · [ ] Filterable (`?filter=` panel) · [ ] Paginated (page-size selector, API meta)

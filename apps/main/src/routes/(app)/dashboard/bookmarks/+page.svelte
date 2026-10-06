@@ -8,7 +8,7 @@
 	// Filtering is done server-side via ?folder_id=uuid (BL-002/BL-007).
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { learnUrl, docsUrl } from '$lib/appOrigins';
+	import { academyUrl, docsUrl } from '$lib/appOrigins';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { Bookmark as BookmarkIcon, ExternalLink, FolderPlus, Trash2, Loader2, Folder, Pencil, Check, X, ChevronRight, ChevronDown } from 'lucide-svelte';
@@ -166,10 +166,10 @@
 		goto(url.pathname + url.search, { keepFocus: true, noScroll: true });
 	}
 
-	// learnUrl/docsUrl throw when the cross-app origin env var is unset — a
+	// academyUrl/docsUrl throw when the cross-app origin env var is unset — a
 	// throwing href expression would crash the render, so guard them.
 	function safeLearnUrl(path: string): string {
-		try { return learnUrl(path); } catch { return '#'; }
+		try { return academyUrl(path); } catch { return '#'; }
 	}
 	function safeDocsUrl(path: string): string {
 		try { return docsUrl(path); } catch { return '#'; }
@@ -198,7 +198,7 @@
 				return safeDocsUrl(`/docs/${b.audience ?? 'users'}/${idOrSlug}`);
 			// Learning tracks live on the Learn app (:3003 in dev) — a relative
 			// /tracks/… link would 404 here. ADR-060 cross-app deep links.
-			case 'learning_track':
+			case 'academy_track':
 				return safeLearnUrl(`/tracks/${idOrSlug}`);
 			default:
 				return `/content/${b.entity_id}`;
@@ -448,7 +448,7 @@
 						{ value: 'space', label: t('bookmarks.type.space', 'Space') },
 						{ value: 'tag', label: t('bookmarks.type.tag', 'Tag') },
 						{ value: 'comment', label: t('bookmarks.type.comment', 'Comment') },
-						{ value: 'learning_track', label: t('bookmarks.type.learning_track', 'Learning track') },
+						{ value: 'academy_track', label: t('bookmarks.type.academy_track', 'Learning track') },
 						{ value: 'doc_page', label: t('bookmarks.type.doc_page', 'Doc page') }
 					]}
 					ariaLabel={t('bookmarks.filter_type', 'Bookmark type')}

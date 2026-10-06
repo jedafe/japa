@@ -602,7 +602,7 @@
 		{:else if activeTab === 'programs'}
 			<!-- Programs tab — institutional degree offerings (Section 39
 			     university_course_offerings). Distinct from the Courses tab,
-			     which lists Japa University creator tracks. -->
+			     which lists Japa Academy creator tracks. -->
 			{#if programs.length === 0}
 				<div class="mt-3">
 					<EmptyState icon={GraduationCap} title={t('university.no_programs', 'No programs listed yet')} body={t('university.no_programs_hint', 'Degree programs offered by this university will appear here.')} />

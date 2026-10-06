@@ -8,7 +8,7 @@ import type { Certificate, PublicUser } from '$lib/types';
  * Renders the earned certificate as social proof; links to the recipient's
  * public profile.
  *
- * Ref: japaconnect-engineering/sections/17-payments-learning.md
+ * Ref: japaconnect-engineering/sections/17-payments-academy.md
  *      ADR-060 (certificates badge the public profile and link here)
  */
 export const load: PageServerLoad = async (event) => {
