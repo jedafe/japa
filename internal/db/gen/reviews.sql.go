@@ -572,9 +572,9 @@ type ListReviewsByEntityWithAuthorRow struct {
 }
 
 // Reviews joined to users + user_profiles so the learning track reviews list
-// (GET /learn/tracks/{id}/reviews) can render author username, display name,
+// (GET /academy/tracks/{id}/reviews) can render author username, display name,
 // and avatar without N+1 lookups. Mirrors the polymorphic reviews table
-// (entity_type/entity_id) — the caller filters by entity_type='learning_track'.
+// (entity_type/entity_id) — the caller filters by entity_type='academy_track'.
 // Ref: ADR-060 (Track Detail — Reviews tab), Section 29 (polymorphic reviews).
 func (q *Queries) ListReviewsByEntityWithAuthor(ctx context.Context, arg ListReviewsByEntityWithAuthorParams) ([]ListReviewsByEntityWithAuthorRow, error) {
 	rows, err := q.db.Query(ctx, listReviewsByEntityWithAuthor,

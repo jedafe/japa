@@ -306,8 +306,8 @@ type ResolvedItem struct {
 A registry maps `item_ref.type` to a resolver. Sub-spec 1 registers a core set and defines the pattern for adding more without schema changes.
 
 **Core resolvers in Sub-spec 1:**
-- `university` → `internal/university`
-- `course` → `internal/learning`
+- `university` → `internal/academy/creator`
+- `course` → `internal/academy`
 - `space` → `internal/spaces`
 - `visa_route` → `internal/visaroutes`
 - `col_city` → `internal/costofliving`

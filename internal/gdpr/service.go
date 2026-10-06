@@ -1428,10 +1428,10 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("reassigning platform_data_imports created_by: %w", err)
 		}
 
-		// Japa University GDPR cascade (ADR-063 / audit C2):
+		// Japa Academy GDPR cascade (ADR-063 / audit C2):
 		// - Clear sensitive payout_method jsonb on the user's instructor
 		// profile(s) before the profile is cascade-deleted.
-		// - Anonymize revenue_splits and instructor_payouts: sever the
+		// - Anonymize revenue_splits and academy_instructor_payouts: sever the
 		// instructor_id reference (SET NULL) so the financial audit
 		// records survive for regulatory retention. The FKs were changed
 		// from ON DELETE CASCADE to ON DELETE SET NULL in migration
@@ -1903,7 +1903,7 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 		// 'forum_thread'. content_embeddings has no FK to forum_threads
 		// (polymorphic entity_type/entity_id), so ON DELETE CASCADE does not
 		// fire. The thread body may contain PII (the user's words), so it
-		// must be removed on erasure. Spaces and learning_tracks are
+		// must be removed on erasure. Spaces and academy_tracks are
 		// platform-owned content (no author_user_id column) and are not
 		// purged here — they are not user PII.
 		// Ref: japaconnect-engineering/sections/69-rag-knowledge-layer.md
@@ -2211,8 +2211,8 @@ type UserDataExport struct {
 	ConsentRecords              []map[string]interface{} `json:"consent_records"`
 	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
 	ActivityEvents              []map[string]interface{} `json:"activity_events"`
-	LessonProgress              []map[string]interface{} `json:"lesson_progress"`
-	LearningCertificates        []map[string]interface{} `json:"learning_certificates"`
+	AcademyLessonProgress              []map[string]interface{} `json:"academy_lesson_progress"`
+	AcademyCertificates        []map[string]interface{} `json:"academy_certificates"`
 	MentorshipMatches           []map[string]interface{} `json:"mentorship_matches"`
 	MentorshipConnections       []map[string]interface{} `json:"mentorship_connections"` // §102 ADR-110
 	MentorProfiles              []map[string]interface{} `json:"mentor_profiles"`        // §102 ADR-110
@@ -2224,9 +2224,9 @@ type UserDataExport struct {
 	UserMutes                   []map[string]interface{} `json:"user_mutes"`
 	SpaceMutes                  []map[string]interface{} `json:"space_mutes"`
 	TicketComments              []map[string]interface{} `json:"ticket_comments"`
-	InstructorProfiles          []map[string]interface{} `json:"instructor_profiles"`
+	AcademyInstructorProfiles          []map[string]interface{} `json:"academy_instructor_profiles"`
 	RevenueSplits               []map[string]interface{} `json:"revenue_splits"`
-	InstructorPayouts           []map[string]interface{} `json:"instructor_payouts"`
+	AcademyInstructorPayouts           []map[string]interface{} `json:"academy_instructor_payouts"`
 	CustomFieldValues           []map[string]interface{} `json:"custom_field_values"`            // BUG-020
 	PushTokens                  []map[string]interface{} `json:"push_tokens"`                    // BUG-014
 	DMConversations             []map[string]interface{} `json:"dm_conversations"`               // BUG-022
@@ -2612,16 +2612,16 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 
 	// Learning lesson progress.
 	if rows, err := s.store.gdprExportUserLessonProgress(ctx, userID); err == nil {
-		export.LessonProgress = rows
+		export.AcademyLessonProgress = rows
 	} else {
-		slog.Warn("failed to collect lesson_progress for export", "user_id", userID.String(), "error", err)
+		slog.Warn("failed to collect academy_lesson_progress for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Issued learning certificates.
 	if rows, err := s.store.gdprExportUserLearningCertificates(ctx, userID); err == nil {
-		export.LearningCertificates = rows
+		export.AcademyCertificates = rows
 	} else {
-		slog.Warn("failed to collect learning_certificates for export", "user_id", userID.String(), "error", err)
+		slog.Warn("failed to collect academy_certificates for export", "user_id", userID.String(), "error", err)
 	}
 
 	// Mentorship matches where the user is mentor or mentee.
@@ -2752,11 +2752,11 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		slog.Warn("failed to collect comparison_data_sources for export", "user_id", userID.String(), "error", err)
 	}
 
-	// Japa University creator-economy data (ADR-063 / audit C2).
+	// Japa Academy creator-economy data (ADR-063 / audit C2).
 	if rows, err := s.store.gdprExportInstructorProfiles(ctx, userID); err == nil {
-		export.InstructorProfiles = rows
+		export.AcademyInstructorProfiles = rows
 	} else {
-		slog.Warn("failed to collect instructor_profiles for export", "user_id", userID.String(), "error", err)
+		slog.Warn("failed to collect academy_instructor_profiles for export", "user_id", userID.String(), "error", err)
 	}
 
 	if rows, err := s.store.gdprExportRevenueSplits(ctx, userID); err == nil {
@@ -2766,9 +2766,9 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 	}
 
 	if rows, err := s.store.gdprExportInstructorPayouts(ctx, userID); err == nil {
-		export.InstructorPayouts = rows
+		export.AcademyInstructorPayouts = rows
 	} else {
-		slog.Warn("failed to collect instructor_payouts for export", "user_id", userID.String(), "error", err)
+		slog.Warn("failed to collect academy_instructor_payouts for export", "user_id", userID.String(), "error", err)
 	}
 
 	// BUG-020: export custom_field_values for the user's profile entity so

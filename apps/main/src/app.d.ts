@@ -19,8 +19,8 @@ declare global {
 			/** Resolved UI locale code (e.g. 'en', 'fr', 'yo'), from the jc_locale
 			 *  cookie or the locale prefix in the URL. Dynamic per ADR-013. */
 			locale: Locale;
-			/** True when the request host is the Japa University surface (ADR-063). */
-			isUniversityHost: boolean;
+			/** True when the request host is the Japa Academy surface (ADR-063). */
+			isAcademyHost: boolean;
 			/** True when the request host is the public roadmap surface (ADR-127). */
 			isRoadmapHost: boolean;
 			/**
@@ -39,7 +39,7 @@ declare global {
 			user: SessionUser | null;
 			theme: ThemeName;
 			locale: Locale;
-			isUniversityHost: boolean;
+			isAcademyHost: boolean;
 			/** True on roadmap.japaconnect.com — renders the minimal roadmap shell (ADR-127). */
 			isRoadmapHost: boolean;
 			/** CSRF token for client-side mutations (echoed as X-CSRF-Token). */

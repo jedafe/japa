@@ -3440,29 +3440,29 @@ git commit -m "feat(mobile): add social feature module (notifications, DMs, foll
 
 ---
 
-## Task 13: Learning (Japa University) feature module
+## Task 13: Learning (Japa Academy) feature module
 
 **Files:**
-- Create: `apps/mobile/lib/features/learning/services/learning_service.dart`
-- Create: `apps/mobile/lib/features/learning/providers/learning_provider.dart`
-- Create: `apps/mobile/lib/features/learning/screens/course_list_screen.dart`
-- Create: `apps/mobile/lib/features/learning/screens/course_detail_screen.dart`
-- Create: `apps/mobile/lib/features/learning/screens/lesson_player_screen.dart`
-- Create: `apps/mobile/test/features/learning/learning_screen_test.dart`
+- Create: `apps/mobile/lib/features/academy/services/learning_service.dart`
+- Create: `apps/mobile/lib/features/academy/providers/learning_provider.dart`
+- Create: `apps/mobile/lib/features/academy/screens/course_list_screen.dart`
+- Create: `apps/mobile/lib/features/academy/screens/course_detail_screen.dart`
+- Create: `apps/mobile/lib/features/academy/screens/lesson_player_screen.dart`
+- Create: `apps/mobile/test/features/academy/learning_screen_test.dart`
 
 **Interfaces:**
 - Consumes: `JcApiClient`, `EntityCard`, `LoadingShimmer`, `JcErrorWidget`, `JcButton`.
-- Produces: `learningServiceProvider`, `courseListProvider`, `courseDetailProvider`, `courseLessonProvider`, `CourseListScreen`, `CourseDetailScreen`, `LessonPlayerScreen`, `/learn/university/catalog`, `/learn/university/catalog/:slug`, `/learn/tracks/:trackSlug/modules/:moduleSlug/lessons/:lessonSlug`.
+- Produces: `learningServiceProvider`, `courseListProvider`, `courseDetailProvider`, `courseLessonProvider`, `CourseListScreen`, `CourseDetailScreen`, `LessonPlayerScreen`, `/academy/catalog`, `/academy/catalog/:slug`, `/academy/tracks/:trackSlug/modules/:moduleSlug/lessons/:lessonSlug`.
 
 - [ ] **Step 1: Verify API routes**
 
 Routes consumed:
-- `GET /learn/university/catalog`
-- `GET /learn/university/catalog/{slug}`
-- `POST /learn/tracks/{id}/enroll`
-- `GET /learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}`
-- `POST /learn/lessons/{id}/progress`
-- `GET /learn/lessons/{id}`
+- `GET /academy/catalog`
+- `GET /academy/catalog/{slug}`
+- `POST /academy/tracks/{id}/enroll`
+- `GET /academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}`
+- `POST /academy/lessons/{id}/progress`
+- `GET /academy/lessons/{id}`
 
 - [ ] **Step 2: Create `learning_service.dart`**
 
@@ -3475,7 +3475,7 @@ class LearningService {
 
   Future<List<Map<String, dynamic>>> listCourses() async {
     final response = await _client.get<List<dynamic>>(
-      '/learn/university/catalog',
+      '/academy/catalog',
       parse: (json) => (json as List).cast<Map<String, dynamic>>(),
     );
     return response;
@@ -3483,19 +3483,19 @@ class LearningService {
 
   Future<Map<String, dynamic>> getCourse(String slug) async {
     final response = await _client.get<Map<String, dynamic>>(
-      '/learn/university/catalog/$slug',
+      '/academy/catalog/$slug',
       parse: (json) => json as Map<String, dynamic>,
     );
     return response;
   }
 
   Future<void> enroll(String id) async {
-    await _client.post<void>('/learn/tracks/$id/enroll', parse: (_) {});
+    await _client.post<void>('/academy/tracks/$id/enroll', parse: (_) {});
   }
 
   Future<Map<String, dynamic>> getLesson(String trackSlug, String moduleSlug, String lessonSlug) async {
     final response = await _client.get<Map<String, dynamic>>(
-      '/learn/tracks/$trackSlug/modules/$moduleSlug/lessons/$lessonSlug',
+      '/academy/tracks/$trackSlug/modules/$moduleSlug/lessons/$lessonSlug',
       parse: (json) => json as Map<String, dynamic>,
     );
     return response;
@@ -3503,7 +3503,7 @@ class LearningService {
 
   Future<void> updateProgress(String lessonId, double percent) async {
     await _client.post<void>(
-      '/learn/lessons/$lessonId/progress',
+      '/academy/lessons/$lessonId/progress',
       body: {'percent': percent},
       parse: (_) {},
     );
@@ -3516,7 +3516,7 @@ class LearningService {
 ```dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'package:japaconnect_mobile/features/learning/services/learning_service.dart';
+import 'package:japaconnect_mobile/features/academy/services/learning_service.dart';
 
 final learningServiceProvider = Provider<LearningService>((ref) {
   final client = ref.watch(jcApiClientProvider);
@@ -3547,7 +3547,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'package:japaconnect_mobile/features/learning/providers/learning_provider.dart';
+import 'package:japaconnect_mobile/features/academy/providers/learning_provider.dart';
 
 class CourseListScreen extends ConsumerWidget {
   const CourseListScreen({super.key});
@@ -3556,13 +3556,13 @@ class CourseListScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(courseListProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Japa University')),
+      appBar: AppBar(title: const Text('Japa Academy')),
       body: state.when(
         data: (items) => ListView.builder(
           itemCount: items.length,
           itemBuilder: (_, i) => ListTile(
             title: Text(items[i]['title'] ?? ''),
-            onTap: () => context.push('/learn/university/catalog/${items[i]['slug']}'),
+            onTap: () => context.push('/academy/catalog/${items[i]['slug']}'),
           ),
         ),
         loading: () => const LoadingShimmer(),
@@ -3575,14 +3575,14 @@ class CourseListScreen extends ConsumerWidget {
 
 - [ ] **Step 5: Create `CourseDetailScreen` and `LessonPlayerScreen` and add routes**
 
-`apps/mobile/lib/features/learning/screens/course_detail_screen.dart`:
+`apps/mobile/lib/features/academy/screens/course_detail_screen.dart`:
 
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'package:japaconnect_mobile/features/learning/providers/learning_provider.dart';
+import 'package:japaconnect_mobile/features/academy/providers/learning_provider.dart';
 
 class CourseDetailScreen extends ConsumerWidget {
   final String slug;
@@ -3617,13 +3617,13 @@ class CourseDetailScreen extends ConsumerWidget {
 }
 ```
 
-`apps/mobile/lib/features/learning/screens/lesson_player_screen.dart`:
+`apps/mobile/lib/features/academy/screens/lesson_player_screen.dart`:
 
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
-import 'package:japaconnect_mobile/features/learning/providers/learning_provider.dart';
+import 'package:japaconnect_mobile/features/academy/providers/learning_provider.dart';
 
 class LessonPlayerScreen extends ConsumerWidget {
   final String trackSlug;
@@ -3663,13 +3663,13 @@ class LessonPlayerScreen extends ConsumerWidget {
 Add routes in `router.dart`:
 
 ```dart
-GoRoute(path: '/learn/university/catalog', builder: (_, __) => const CourseListScreen()),
+GoRoute(path: '/academy/catalog', builder: (_, __) => const CourseListScreen()),
 GoRoute(
-  path: '/learn/university/catalog/:slug',
+  path: '/academy/catalog/:slug',
   builder: (context, state) => CourseDetailScreen(slug: state.pathParameters['slug']!),
 ),
 GoRoute(
-  path: '/learn/tracks/:trackSlug/modules/:moduleSlug/lessons/:lessonSlug',
+  path: '/academy/tracks/:trackSlug/modules/:moduleSlug/lessons/:lessonSlug',
   builder: (context, state) => LessonPlayerScreen(
     trackSlug: state.pathParameters['trackSlug']!,
     moduleSlug: state.pathParameters['moduleSlug']!,
@@ -3682,9 +3682,9 @@ GoRoute(
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:japaconnect_mobile/features/learning/screens/course_list_screen.dart';
-import 'package:japaconnect_mobile/features/learning/screens/course_detail_screen.dart';
-import 'package:japaconnect_mobile/features/learning/screens/lesson_player_screen.dart';
+import 'package:japaconnect_mobile/features/academy/screens/course_list_screen.dart';
+import 'package:japaconnect_mobile/features/academy/screens/course_detail_screen.dart';
+import 'package:japaconnect_mobile/features/academy/screens/lesson_player_screen.dart';
 
 void main() {
   testWidgets('learning screens show loading shimmer', (tester) async {
@@ -3706,7 +3706,7 @@ void main() {
 
 ```bash
 git add apps/mobile
-git commit -m "feat(mobile): add learning (Japa University) feature module"
+git commit -m "feat(mobile): add learning (Japa Academy) feature module"
 ```
 
 ---

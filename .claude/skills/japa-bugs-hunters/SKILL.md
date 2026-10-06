@@ -1,6 +1,6 @@
 ---
 name: japa-bugs-hunters
-description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 6 SvelteKit apps (+ Flutter mobile), (2) a backend API route, (3-9) a whole surface (backend / main / control / admin / docs / learn / tools), (10) a feature name from ./internal (e.g. forum, like, bookmark, ai, affiliate, persona, rag, remittance, studio, story_wall, wiki, scam_alert, planning_group, mentorship) for a full cross-stack audit against JEOS Specs with findings saved to ./.jeos/audit, or (11) apply fixes to a feature's audit findings in ./.jeos/audit/<feature_name>-audit.md. It hunts bugs from the JapaConnect Bug Hunter's Guide (.jeos/.ai/skills/japa-bugs-hunters.md) against the page/route/surface/feature, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Covers v1 (sections 01–59) and v2 (sections 60–102, ADRs 061–110) features including AI personas, RAG, content studio, participation orchestration, remittance, identity tools, the multi-surface tools/mobile architecture, 11 V2 community features (§§79–89, §98 — story wall, destination wiki, scam alert, planning groups, visa timeline, digest widget, mutual aid, community calendar, japa stage, ask-an-expat AMA, achievement feed, service directory), 12 V2 functional tools (§§90–97, §§99–101 — visa route comparison, embassy alerter, arrival checklist, processing time tracker, credential checker, CV formatter, housing guide, attestation guide, language test hub, tax calculator, community locator), mentorship matching (§102), and the geo-aware tool pattern (ADR-088 universal AI content generation). Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", "audit feature <name>", "audit [feature_name]", "fix [feature_name]", "audit /api/v1/<route>", "fix /api/v1/<route>", "audit <url-or-path>", "fix <url-or-path>", "audit <surface>", "fix <surface>" (surface = backend/main/control/admin/docs/learn/tools), or triggers /japa-bugs-hunters.
+description: JapaConnect comprehensive bug hunter. On load it presents a menu — (1) a frontend URL or page name of any of the 6 SvelteKit apps (+ Flutter mobile), (2) a backend API route, (3-9) a whole surface (backend / main / control / admin / docs / learn / tools), (10) a feature name from ./internal (e.g. forum, like, bookmark, ai, affiliate, persona, rag, remittance, studio, story_wall, wiki, scam_alert, planning_group, mentorship) for a full cross-stack audit against JEOS Specs with findings saved to ./.jeos/audit, or (11) apply fixes to a feature's audit findings in ./.jeos/audit/<feature_name>-audit.md. It hunts bugs from the JapaConnect Bug Hunter's Guide (.jeos/.ai/skills/japa-bugs-hunters.md) against the page/route/surface/feature, fixes frontend issues, and — when a bug needs backend work (missing route, unwired handler, incomplete CRUD, migration, RBAC, Valkey, Asynq, GDPR) — fixes the backend too until the target is 100% working. Covers v1 (sections 01–59) and v2 (sections 60–102, ADRs 061–110) features including AI personas, RAG, content studio, participation orchestration, remittance, identity tools, the multi-surface tools/mobile architecture, 11 V2 community features (§§79–89, §98 — story wall, destination wiki, scam alert, planning groups, visa timeline, digest widget, mutual aid, community calendar, japa stage, ask-an-expat AMA, achievement feed, service directory), 12 V2 functional tools (§§90–97, §§99–101 — visa route comparison, embassy alerter, arrival checklist, processing time tracker, credential checker, CV formatter, housing guide, attestation guide, language test hub, tax calculator, community locator), mentorship matching (§102), and the geo-aware tool pattern (ADR-088 universal AI content generation). Use when the user says "hunt bugs", "bug hunt", "audit and fix", "fix bugs on <page/route>", "audit feature <name>", "audit [feature_name]", "fix [feature_name]", "audit /api/v1/<route>", "fix /api/v1/<route>", "audit <url-or-path>", "fix <url-or-path>", "audit <surface>", "fix <surface>" (surface = backend/main/control/admin/docs/academy/tools), or triggers /japa-bugs-hunters.
 ---
 
 # JapaConnect Bug Hunter
@@ -101,7 +101,7 @@ options:
   - label: "Docs site"                (option 7)
       Audit + fix apps/docs (port 3004, SSR) against the Guide.
   - label: "Learn platform"           (option 8)
-      Audit + fix apps/learn (port 3003, SSR) against the Guide.
+      Audit + fix apps/academy (port 3003, SSR) against the Guide.
   - label: "Tools web surface"        (option 9)
       Audit + fix apps/tools (port 3005, SSR, tools.japaconnect.com) against the Guide — the sixth
       SvelteKit app with host-detection hub/single-tool shell modes (ADR-086, §78).
@@ -465,7 +465,7 @@ Map the surface to its bug sections, then audit file-by-file and fix:
   content. Use `jc-admin-audit` patterns.
 - **Option 7 — Docs (apps/docs):** §1, §2, §3, §6, §7, §16 (SSR, ADR-060 nav-tree/TOC), §18, §21, §27.
   Verify OpenAPI spec currency against the ~819-route catalog (§47).
-- **Option 8 — Learn (apps/learn):** §1, §2, §3, §6, §7, §16 (SSR, ADR-060 lesson-player exception),
+- **Option 8 — Learn (apps/academy):** §1, §2, §3, §6, §7, §16 (SSR, ADR-060 lesson-player exception),
   §18, §21, §27, §36 (learning routes). No new v2 learn pages per ADR-060.
 - **Option 9 — Tools (apps/tools):** §1, §2, §3, §6, §7, §16 (SSR), §18, §21, §27, §78 (host-detection
   hub/single-tool shell, ADR-086). Verify `hooks.server.ts` host detection reads per-tool
@@ -529,7 +529,7 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
    features, also check the geo-aware tool pattern conformance (`?dest=` filter, no hardcoded
    nationality, destination_country_id in schema) and ADR-088 AI generation column conformance.
 4. **(b) Map frontend** — for each of the 6 SvelteKit apps (`apps/main`, `apps/admin`,
-   `apps/control`, `apps/learn`, `apps/docs`, `apps/tools`) plus the Flutter `apps/mobile` where
+   `apps/control`, `apps/academy`, `apps/docs`, `apps/tools`) plus the Flutter `apps/mobile` where
    relevant, list components/screens, pages/routes, API calls (`/api/v1/<feature>/*`), UI/UX flows,
    and i18n keys referencing the feature. For `apps/mobile/`, map:
    - Feature module under `lib/features/<feature_name>/`
@@ -576,7 +576,7 @@ Run the following prompt against the supplied `[feature_name]`, then save the ou
 - ...
 ### apps/control
 - ...
-### apps/learn
+### apps/academy
 - ...
 ### apps/docs
 - ...
@@ -664,7 +664,7 @@ page/route scan.
      the v2 community/tool patterns (Cross-Cutting Fix Rules, v2 community/tool patterns section).
    - `ui-ux` → use the **Option 1 (Frontend URL / Page)** workflow against the bug's `file:line`
      (resolve the app from the path: `apps/main`→main, `apps/admin`→admin, `apps/control`→control,
-     `apps/learn`→learn, `apps/docs`→docs, `apps/tools`→tools, `apps/mobile`→mobile). For SvelteKit
+     `apps/academy`→learn, `apps/docs`→docs, `apps/tools`→tools, `apps/mobile`→mobile). For SvelteKit
      apps, launch Playwright to verify the fix when the bug is visual/interactive. For `apps/mobile/`,
      verify with `flutter analyze` + `flutter test`; run on an emulator/simulator if the visual fix
      must be validated. Use `jc-mobile-debug` / `jc-mobile-refactor` as the implementation guide.

@@ -364,16 +364,16 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// Low queue. BUG-006 fix: this was missing entirely.
 	schedule("0 6 * * *", TypeReferralReviewFlagged, 24*time.Hour)
 
-	// Japa University — monthly payout aggregation sweep (ADR-063 §6).
+	// Japa Academy — monthly payout aggregation sweep (ADR-063 §6).
 	// Runs on the 1st of each month at 00:00 UTC. The handler tolerates an
 	// empty (cron-mode) and iterates all active platforms, rolling
-	// open revenue_splits into instructor_payouts rows for the previous
-	// calendar month. The cadence matches the university.payout_schedule
+	// open revenue_splits into academy_instructor_payouts rows for the previous
+	// calendar month. The cadence matches the academy.payout_schedule
 	// system_setting default ("monthly"); a future weekly cadence would add
 	// a second entry gated by the setting. Low queue. BUG-001 fix: this was
 	// missing entirely — payouts were never auto-aggregated.
-	// Ref: japaconnect-engineering/adr/ADR-063-japa-university-creator-economy.md (§6)
-	schedule("0 0 1 * *", TypeUniversityCalculatePeriodPayouts, 24*time.Hour)
+	// Ref: japaconnect-engineering/adr/ADR-063-japa-academy-creator-economy.md (§6)
+	schedule("0 0 1 * *", TypeAcademyCalculatePeriodPayouts, 24*time.Hour)
 
 	// Intelligence System (§INTEL, ADR-112) — two cron entry points.
 	// schedule_crawls runs every 15 min on the critical queue: selects due

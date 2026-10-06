@@ -188,7 +188,7 @@ easy to miss, they're not just reindex):
   `GetContentEmbeddingMeta`; skip embedding entirely when
   `status != 'published'` (self-heal on stale tasks); build `EntityRef`
   from visibility/space/author.
-- `internal/learning/handlers.go:145` — `learning_track`, `Visibility:"public"`.
+- `internal/academy/handlers.go:145` — `academy_track`, `Visibility:"public"`.
 - `internal/wiki/handlers.go:626` — `wiki_page`, `Visibility:"public"`.
 - `rag.reindexForumThreads` (:395) — extend `ListForumThreadIDsForReindex`
   to `JOIN spaces` for visibility; threads in a null/deleted space →
@@ -231,7 +231,7 @@ easy to miss, they're not just reindex):
   (`contents.sql.go:729` — verified: filters `deleted_at IS NULL` only;
   `status='published'` is already enforced by the retrieval EXISTS guard).
   Attach title/href; unresolved → drop.
-- `wiki_page`/`learning_track` — unchanged.
+- `wiki_page`/`academy_track` — unchanged.
 - Tests: member-space hit for key owner resolves with title/href;
   deleted entity drops; unresolvable ID drops; keep the existing
   private-drop test only if its stub setup now maps to "unresolvable"

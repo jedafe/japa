@@ -476,7 +476,7 @@ export interface ChatMessage {
 }
 
 export interface ChatSource {
-	/** Entity type: 'content', 'forum_thread', 'space', 'learning_track'. */
+	/** Entity type: 'content', 'forum_thread', 'space', 'academy_track'. */
 	entity_type: string;
 	entity_id: string;
 	/** Similarity score from the retrieval ranking. */

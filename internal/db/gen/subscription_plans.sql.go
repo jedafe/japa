@@ -13,7 +13,7 @@ import (
 
 const addTrackToPlan = `-- name: AddTrackToPlan :exec
 
-INSERT INTO subscription_plan_tracks (plan_id, track_id) VALUES ($1, $2)
+INSERT INTO academy_subscription_plan_tracks (plan_id, track_id) VALUES ($1, $2)
 
 ON CONFLICT (plan_id, track_id) DO NOTHING
 `
@@ -30,7 +30,7 @@ func (q *Queries) AddTrackToPlan(ctx context.Context, arg AddTrackToPlanParams) 
 }
 
 const countTracksForPlan = `-- name: CountTracksForPlan :one
-SELECT count(*) FROM subscription_plan_tracks
+SELECT count(*) FROM academy_subscription_plan_tracks
 WHERE plan_id = $1
 `
 
@@ -159,7 +159,7 @@ func (q *Queries) GetSubscriptionPlanBySlug(ctx context.Context, slug string) (S
 }
 
 const isTrackInPlan = `-- name: IsTrackInPlan :one
-SELECT 1 FROM subscription_plan_tracks
+SELECT 1 FROM academy_subscription_plan_tracks
 WHERE plan_id = $1 AND track_id = $2
 LIMIT 1
 `
@@ -259,7 +259,7 @@ func (q *Queries) ListSubscriptionPlans(ctx context.Context) ([]SubscriptionPlan
 }
 
 const listTrackIDsForPlan = `-- name: ListTrackIDsForPlan :many
-SELECT track_id FROM subscription_plan_tracks
+SELECT track_id FROM academy_subscription_plan_tracks
 WHERE plan_id = $1
 ORDER BY created_at ASC
 `
@@ -285,7 +285,7 @@ func (q *Queries) ListTrackIDsForPlan(ctx context.Context, planID pgtype.UUID) (
 }
 
 const removeAllTracksFromPlan = `-- name: RemoveAllTracksFromPlan :exec
-DELETE FROM subscription_plan_tracks
+DELETE FROM academy_subscription_plan_tracks
 WHERE plan_id = $1
 `
 
@@ -295,7 +295,7 @@ func (q *Queries) RemoveAllTracksFromPlan(ctx context.Context, planID pgtype.UUI
 }
 
 const removeTrackFromPlan = `-- name: RemoveTrackFromPlan :exec
-DELETE FROM subscription_plan_tracks
+DELETE FROM academy_subscription_plan_tracks
 WHERE plan_id = $1 AND track_id = $2
 `
 

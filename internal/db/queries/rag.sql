@@ -71,7 +71,7 @@ WHERE entity_type = @entity_type AND entity_id = @entity_id
 -- published. An EXISTS subquery (only for entity_type = 'content' chunks)
 -- ensures that deleted/unpublished/archived/draft content passages are never
 -- returned in RAG retrieval. Non-content entity types (forum_thread, space,
--- learning_track) pass through the entity_type != 'content' branch.
+-- academy_track) pass through the entity_type != 'content' branch.
 -- Ref: ADR-069 §2 — "Content is unpublished or deleted — deletes its
 -- content_embeddings rows" implies only published content is retrievable.
 --
@@ -106,13 +106,13 @@ SELECT
  WHEN 'content' THEN (SELECT c.title FROM contents c WHERE c.id = ce.entity_id)
  WHEN 'forum_thread' THEN (SELECT ft.title FROM forum_threads ft WHERE ft.id = ce.entity_id)
  WHEN 'space' THEN (SELECT s.name FROM spaces s WHERE s.id = ce.entity_id)
- WHEN 'learning_track' THEN (SELECT lt.title FROM learning_tracks lt WHERE lt.id = ce.entity_id)
+ WHEN 'academy_track' THEN (SELECT lt.title FROM academy_tracks lt WHERE lt.id = ce.entity_id)
  ELSE NULL END AS entity_title,
  CASE ce.entity_type
  WHEN 'content' THEN (SELECT c.slug FROM contents c WHERE c.id = ce.entity_id)
  WHEN 'forum_thread' THEN (SELECT ft.slug FROM forum_threads ft WHERE ft.id = ce.entity_id)
  WHEN 'space' THEN (SELECT s.slug FROM spaces s WHERE s.id = ce.entity_id)
- WHEN 'learning_track' THEN (SELECT lt.slug FROM learning_tracks lt WHERE lt.id = ce.entity_id)
+ WHEN 'academy_track' THEN (SELECT lt.slug FROM academy_tracks lt WHERE lt.id = ce.entity_id)
  ELSE NULL END AS entity_slug
 FROM content_embeddings ce
 WHERE (@language::text = '' OR ce.language = @language)
@@ -132,8 +132,8 @@ WHERE (@language::text = '' OR ce.language = @language)
  WHERE s.id = ce.entity_id
  AND s.status = 'active'
  )
- WHEN 'learning_track' THEN EXISTS (
- SELECT 1 FROM learning_tracks lt
+ WHEN 'academy_track' THEN EXISTS (
+ SELECT 1 FROM academy_tracks lt
  WHERE lt.id = ce.entity_id
  AND lt.is_published = true
  )
@@ -287,12 +287,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- =====================================================================
 -- List all published learning track IDs for a platform (for full corpus
 -- re-index). Learning tracks are part of the RAG corpus (ADR-069 §2).
--- Only published tracks are indexed; learning_tracks has no deleted_at
+-- Only published tracks are indexed; academy_tracks has no deleted_at
 -- column (tracks are hard-deleted).
 -- =====================================================================
 
 -- name: ListLearningTrackIDsForReindex :many
-SELECT id FROM learning_tracks
+SELECT id FROM academy_tracks
 WHERE is_published = true
 ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;

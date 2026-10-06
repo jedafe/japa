@@ -59,6 +59,173 @@ func (ns NullBanOperation) Value() (driver.Value, error) {
 	return string(ns.BanOperation), nil
 }
 
+type AcademyCertificate struct {
+	ID                pgtype.UUID        `json:"id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	TrackID           pgtype.UUID        `json:"track_id"`
+	CertificateNumber string             `json:"certificate_number"`
+	MediaID           pgtype.UUID        `json:"media_id"`
+	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
+}
+
+type AcademyCourseAccessGrant struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	ContentID pgtype.UUID        `json:"content_id"`
+	GrantType string             `json:"grant_type"`
+	PaymentID pgtype.UUID        `json:"payment_id"`
+	GrantedAt pgtype.Timestamptz `json:"granted_at"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+}
+
+type AcademyEnrollment struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	AccessType  string             `json:"access_type"`
+	ProgressPct pgtype.Numeric     `json:"progress_pct"`
+	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	// Section 17 payment for paid enrollments; NULL for free/Pro/pro_stream (ADR-063).
+	PaymentID pgtype.UUID `json:"payment_id"`
+}
+
+// Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
+type AcademyInstructorPayout struct {
+	ID pgtype.UUID `json:"id"`
+	// Owning instructor; NULL after GDPR erasure (anonymized, regulatory retention).
+	InstructorID           pgtype.UUID        `json:"instructor_id"`
+	PeriodStart            pgtype.Date        `json:"period_start"`
+	PeriodEnd              pgtype.Date        `json:"period_end"`
+	GrossKobo              int64              `json:"gross_kobo"`
+	PlatformCommissionKobo int64              `json:"platform_commission_kobo"`
+	NetKobo                int64              `json:"net_kobo"`
+	Currency               string             `json:"currency"`
+	Status                 string             `json:"status"`
+	PayoutReference        *string            `json:"payout_reference"`
+	FailureReason          *string            `json:"failure_reason"`
+	ProcessedAt            pgtype.Timestamptz `json:"processed_at"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+}
+
+// Japa University creator identity; gated application/approval (ADR-063).
+type AcademyInstructorProfile struct {
+	ID          pgtype.UUID `json:"id"`
+	UserID      pgtype.UUID `json:"user_id"`
+	DisplayName string      `json:"display_name"`
+	Headline    *string     `json:"headline"`
+	Bio         *string     `json:"bio"`
+	SocialLinks []byte      `json:"social_links"`
+	Tier        string      `json:"tier"`
+	Status      string      `json:"status"`
+	// Creator revenue % override; NULL falls back to tier/system default.
+	CommissionPctOverride pgtype.Numeric     `json:"commission_pct_override"`
+	PayoutMethod          []byte             `json:"payout_method"`
+	KycStatus             string             `json:"kyc_status"`
+	ApplicationNote       *string            `json:"application_note"`
+	ReviewedBy            pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt            pgtype.Timestamptz `json:"reviewed_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AcademyLesson struct {
+	ID              pgtype.UUID        `json:"id"`
+	ModuleID        pgtype.UUID        `json:"module_id"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	LessonType      string             `json:"lesson_type"`
+	Content         *string            `json:"content"`
+	MediaID         pgtype.UUID        `json:"media_id"`
+	DurationMinutes *int32             `json:"duration_minutes"`
+	SortOrder       int32              `json:"sort_order"`
+	IsPublished     bool               `json:"is_published"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	// True when the lesson can be previewed without enrollment (ADR-060 access gate).
+	IsPreview bool `json:"is_preview"`
+}
+
+type AcademyLessonProgress struct {
+	ID           pgtype.UUID        `json:"id"`
+	UserID       pgtype.UUID        `json:"user_id"`
+	LessonID     pgtype.UUID        `json:"lesson_id"`
+	Status       string             `json:"status"`
+	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	PositionSecs *int32             `json:"position_secs"`
+}
+
+type AcademyModule struct {
+	ID          pgtype.UUID        `json:"id"`
+	TrackID     pgtype.UUID        `json:"track_id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Description *string            `json:"description"`
+	SortOrder   int32              `json:"sort_order"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AcademyQuiz struct {
+	ID          pgtype.UUID        `json:"id"`
+	LessonID    pgtype.UUID        `json:"lesson_id"`
+	Question    string             `json:"question"`
+	Options     string             `json:"options"`
+	Answer      string             `json:"answer"`
+	Explanation *string            `json:"explanation"`
+	Position    int32              `json:"position"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type AcademySubscriptionPlanTrack struct {
+	PlanID    pgtype.UUID        `json:"plan_id"`
+	TrackID   pgtype.UUID        `json:"track_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type AcademyTrack struct {
+	ID           pgtype.UUID        `json:"id"`
+	Title        string             `json:"title"`
+	Slug         string             `json:"slug"`
+	Description  *string            `json:"description"`
+	Difficulty   string             `json:"difficulty"`
+	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
+	IsPublished  bool               `json:"is_published"`
+	SortOrder    int32              `json:"sort_order"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	// Owning creator; NULL = platform/staff-authored course (ADR-063).
+	InstructorID pgtype.UUID `json:"instructor_id"`
+	// À la carte price; NULL = free or Pro-only.
+	PriceKobo *int64 `json:"price_kobo"`
+	Currency  string `json:"currency"`
+	// Marketplace visibility; distinct from is_published (draft/live).
+	IsPublishedToAcademy bool        `json:"is_published_to_academy"`
+	Category             *string     `json:"category"`
+	Language             string      `json:"language"`
+	TotalEnrolled        int32       `json:"total_enrolled"`
+	GeoSpaceID           pgtype.UUID `json:"geo_space_id"`
+	// Marketplace submission lifecycle: draft|pending|approved|rejected (ADR-063 §5).
+	AcademySubmissionStatus string             `json:"academy_submission_status"`
+	AcademySubmittedAt      pgtype.Timestamptz `json:"academy_submitted_at"`
+	AcademyReviewedAt       pgtype.Timestamptz `json:"academy_reviewed_at"`
+	// Admin rejection reason; cleared on re-submit (ADR-063 §5).
+	AcademyRejectionReason *string `json:"academy_rejection_reason"`
+	SubscriptionEligible   bool    `json:"subscription_eligible"`
+	AcademyFeatured        bool    `json:"academy_featured"`
+}
+
+type AcademyTrackCategory struct {
+	ID        pgtype.UUID        `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	SortOrder int32              `json:"sort_order"`
+	IsActive  bool               `json:"is_active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AccountDeletionRequest struct {
 	ID           pgtype.UUID        `json:"id"`
 	UserID       pgtype.UUID        `json:"user_id"`
@@ -1228,16 +1395,6 @@ type CouponFeedSource struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
-type CourseAccessGrant struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	ContentID pgtype.UUID        `json:"content_id"`
-	GrantType string             `json:"grant_type"`
-	PaymentID pgtype.UUID        `json:"payment_id"`
-	GrantedAt pgtype.Timestamptz `json:"granted_at"`
-	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
-}
-
 type CredentialCommunityNote struct {
 	ID        pgtype.UUID        `json:"id"`
 	PathwayID pgtype.UUID        `json:"pathway_id"`
@@ -1693,18 +1850,6 @@ type EmailVerification struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
-type Enrollment struct {
-	ID          pgtype.UUID        `json:"id"`
-	UserID      pgtype.UUID        `json:"user_id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	AccessType  string             `json:"access_type"`
-	ProgressPct pgtype.Numeric     `json:"progress_pct"`
-	EnrolledAt  pgtype.Timestamptz `json:"enrolled_at"`
-	CompletedAt pgtype.Timestamptz `json:"completed_at"`
-	// Section 17 payment for paid enrollments; NULL for free/Pro/pro_stream (ADR-063).
-	PaymentID pgtype.UUID `json:"payment_id"`
-}
-
 type ExternalDataSource struct {
 	ID            pgtype.UUID        `json:"id"`
 	Name          string             `json:"name"`
@@ -1931,45 +2076,6 @@ type HousingGuide struct {
 	OverrideSource       string             `json:"override_source"`
 	EditorialOverrides   []byte             `json:"editorial_overrides"`
 	GuideID              pgtype.UUID        `json:"guide_id"`
-}
-
-// Aggregated periodic creator payout; rolls up revenue_splits (ADR-063).
-type InstructorPayout struct {
-	ID pgtype.UUID `json:"id"`
-	// Owning instructor; NULL after GDPR erasure (anonymized, regulatory retention).
-	InstructorID           pgtype.UUID        `json:"instructor_id"`
-	PeriodStart            pgtype.Date        `json:"period_start"`
-	PeriodEnd              pgtype.Date        `json:"period_end"`
-	GrossKobo              int64              `json:"gross_kobo"`
-	PlatformCommissionKobo int64              `json:"platform_commission_kobo"`
-	NetKobo                int64              `json:"net_kobo"`
-	Currency               string             `json:"currency"`
-	Status                 string             `json:"status"`
-	PayoutReference        *string            `json:"payout_reference"`
-	FailureReason          *string            `json:"failure_reason"`
-	ProcessedAt            pgtype.Timestamptz `json:"processed_at"`
-	CreatedAt              pgtype.Timestamptz `json:"created_at"`
-}
-
-// Japa University creator identity; gated application/approval (ADR-063).
-type InstructorProfile struct {
-	ID          pgtype.UUID `json:"id"`
-	UserID      pgtype.UUID `json:"user_id"`
-	DisplayName string      `json:"display_name"`
-	Headline    *string     `json:"headline"`
-	Bio         *string     `json:"bio"`
-	SocialLinks []byte      `json:"social_links"`
-	Tier        string      `json:"tier"`
-	Status      string      `json:"status"`
-	// Creator revenue % override; NULL falls back to tier/system default.
-	CommissionPctOverride pgtype.Numeric     `json:"commission_pct_override"`
-	PayoutMethod          []byte             `json:"payout_method"`
-	KycStatus             string             `json:"kyc_status"`
-	ApplicationNote       *string            `json:"application_note"`
-	ReviewedBy            pgtype.UUID        `json:"reviewed_by"`
-	ReviewedAt            pgtype.Timestamptz `json:"reviewed_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
 type IntelInboundEvent struct {
@@ -2233,96 +2339,6 @@ type LanguageTestResource struct {
 	CommunityRating pgtype.Numeric     `json:"community_rating"`
 	RatingCount     int32              `json:"rating_count"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-}
-
-type LearningCertificate struct {
-	ID                pgtype.UUID        `json:"id"`
-	UserID            pgtype.UUID        `json:"user_id"`
-	TrackID           pgtype.UUID        `json:"track_id"`
-	CertificateNumber string             `json:"certificate_number"`
-	MediaID           pgtype.UUID        `json:"media_id"`
-	IssuedAt          pgtype.Timestamptz `json:"issued_at"`
-}
-
-type LearningLesson struct {
-	ID              pgtype.UUID        `json:"id"`
-	ModuleID        pgtype.UUID        `json:"module_id"`
-	Title           string             `json:"title"`
-	Slug            string             `json:"slug"`
-	LessonType      string             `json:"lesson_type"`
-	Content         *string            `json:"content"`
-	MediaID         pgtype.UUID        `json:"media_id"`
-	DurationMinutes *int32             `json:"duration_minutes"`
-	SortOrder       int32              `json:"sort_order"`
-	IsPublished     bool               `json:"is_published"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	// True when the lesson can be previewed without enrollment (ADR-060 access gate).
-	IsPreview bool `json:"is_preview"`
-}
-
-type LearningModule struct {
-	ID          pgtype.UUID        `json:"id"`
-	TrackID     pgtype.UUID        `json:"track_id"`
-	Title       string             `json:"title"`
-	Slug        string             `json:"slug"`
-	Description *string            `json:"description"`
-	SortOrder   int32              `json:"sort_order"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-}
-
-type LearningTrack struct {
-	ID           pgtype.UUID        `json:"id"`
-	Title        string             `json:"title"`
-	Slug         string             `json:"slug"`
-	Description  *string            `json:"description"`
-	Difficulty   string             `json:"difficulty"`
-	CoverMediaID pgtype.UUID        `json:"cover_media_id"`
-	IsPublished  bool               `json:"is_published"`
-	SortOrder    int32              `json:"sort_order"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	// Owning creator; NULL = platform/staff-authored course (ADR-063).
-	InstructorID pgtype.UUID `json:"instructor_id"`
-	// À la carte price; NULL = free or Pro-only.
-	PriceKobo *int64 `json:"price_kobo"`
-	Currency  string `json:"currency"`
-	// Marketplace visibility; distinct from is_published (draft/live).
-	IsPublishedToUniversity bool        `json:"is_published_to_university"`
-	Category                *string     `json:"category"`
-	Language                string      `json:"language"`
-	TotalEnrolled           int32       `json:"total_enrolled"`
-	GeoSpaceID              pgtype.UUID `json:"geo_space_id"`
-	// Marketplace submission lifecycle: draft|pending|approved|rejected (ADR-063 §5).
-	UniversitySubmissionStatus string             `json:"university_submission_status"`
-	UniversitySubmittedAt      pgtype.Timestamptz `json:"university_submitted_at"`
-	UniversityReviewedAt       pgtype.Timestamptz `json:"university_reviewed_at"`
-	// Admin rejection reason; cleared on re-submit (ADR-063 §5).
-	UniversityRejectionReason *string `json:"university_rejection_reason"`
-	SubscriptionEligible      bool    `json:"subscription_eligible"`
-	UniversityFeatured        bool    `json:"university_featured"`
-}
-
-type LessonProgress struct {
-	ID           pgtype.UUID        `json:"id"`
-	UserID       pgtype.UUID        `json:"user_id"`
-	LessonID     pgtype.UUID        `json:"lesson_id"`
-	Status       string             `json:"status"`
-	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	PositionSecs *int32             `json:"position_secs"`
-}
-
-type LessonQuiz struct {
-	ID          pgtype.UUID        `json:"id"`
-	LessonID    pgtype.UUID        `json:"lesson_id"`
-	Question    string             `json:"question"`
-	Options     string             `json:"options"`
-	Answer      string             `json:"answer"`
-	Explanation *string            `json:"explanation"`
-	Position    int32              `json:"position"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type Medium struct {
@@ -3884,12 +3900,6 @@ type SubscriptionPlan struct {
 	Tier          *string            `json:"tier"`
 }
 
-type SubscriptionPlanTrack struct {
-	PlanID    pgtype.UUID        `json:"plan_id"`
-	TrackID   pgtype.UUID        `json:"track_id"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-}
-
 type SystemSetting struct {
 	ID        pgtype.UUID        `json:"id"`
 	Key       string             `json:"key"`
@@ -4228,16 +4238,6 @@ type UniversityCourseOffering struct {
 	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
-type UniversityTrackCategory struct {
-	ID        pgtype.UUID        `json:"id"`
-	Slug      string             `json:"slug"`
-	Name      string             `json:"name"`
-	SortOrder int32              `json:"sort_order"`
-	IsActive  bool               `json:"is_active"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type User struct {

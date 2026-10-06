@@ -389,19 +389,19 @@ User portal + admin management under /tickets/* and /admin/tickets/*.
 ### Learning (20+ endpoints)
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | /learn/tracks | Published tracks |
-| GET | /learn/tracks/{slug} | Track detail |
-| GET | /learn/tracks/{ts}/modules/{ms}/lessons/{ls} | Lesson by slug |
-| POST | /learn/tracks/{id}/enroll | |
-| POST | /learn/lessons/{id}/progress | |
-| POST | /learn/lessons/{id}/complete | |
-| GET | /learn/quizzes/{id} | |
-| POST | /learn/quizzes/{id}/submit | |
+| GET | /academy/tracks | Published tracks |
+| GET | /academy/tracks/{slug} | Track detail |
+| GET | /academy/tracks/{ts}/modules/{ms}/lessons/{ls} | Lesson by slug |
+| POST | /academy/tracks/{id}/enroll | |
+| POST | /academy/lessons/{id}/progress | |
+| POST | /academy/lessons/{id}/complete | |
+| GET | /academy/quizzes/{id} | |
+| POST | /academy/quizzes/{id}/submit | |
 | GET | /certificates/{id} | |
 | GET | /certificates/{id}/download | |
 | GET | /me/certificates | |
 | GET | /me/enrollments | |
-| Admin | /admin/learn/* CRUD | |
+| Admin | /admin/academy/* CRUD | |
 
 ### Custom Fields & Forms (25+ endpoints)
 EAV system for dynamic fields on any entity. Forms with submissions.
@@ -526,10 +526,10 @@ coupons ─> coupon_events
 
 ### Learning
 ```
-learning_tracks ─1:N─> learning_modules ─1:N─> learning_lessons
-                                                         └─1:N─> lesson_progress
+academy_tracks ─1:N─> academy_modules ─1:N─> academy_lessons
+                                                         └─1:N─> academy_lesson_progress
 enrollments (user × track)
-learning_certificates
+academy_certificates
 ```
 
 ---
@@ -540,7 +540,7 @@ learning_certificates
 | apps/main/ | 3000 | Main user-facing app (all user features) |
 | apps/admin/ | 3001 | Admin dashboard |
 | apps/control/ | 3002 | Internal control panel |
-| apps/learn/ | 3003 | Learning platform |
+| apps/academy/ | 3003 | Learning platform |
 | apps/docs/ | 3004 | Documentation site |
 
 All use: SvelteKit 2 + Svelte 5 (runes) + Tailwind CSS 4 + bits-ui + Bun

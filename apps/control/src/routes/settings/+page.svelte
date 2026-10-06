@@ -68,7 +68,7 @@
 	let confirmResetSetting = $state<SystemSetting | null>(null);
 	let resetModalOpen = $state(false);
 	let confirmResetAllOpen = $state(false);
-	// C3: university.subdomain / university.custom_domain change warning (ADR-063 §2)
+	// C3: academy.subdomain / academy.custom_domain change warning (ADR-063 §2)
 	let confirmSurfaceDomainOpen = $state(false);
 	let pendingSurfaceDomainValue = $state('');
 
@@ -387,12 +387,12 @@
 					return;
 				}
 			}
-			// C3: university.subdomain / university.custom_domain change warning
+			// C3: academy.subdomain / academy.custom_domain change warning
 			// (ADR-063 §2). Changing either value affects how the Learn app
 			// detects its host — show a confirmation dialog before saving.
 			// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
 			const surfaceDomainSetting = changed.find(
-				(s) => s.key === 'university.subdomain' || s.key === 'university.custom_domain'
+				(s) => s.key === 'academy.subdomain' || s.key === 'academy.custom_domain'
 			);
 			if (surfaceDomainSetting && !confirmSurfaceDomainOpen) {
 				pendingSurfaceDomainValue = surfaceDomainSetting.value;
@@ -1884,13 +1884,13 @@
 	onConfirm={resetAll}
 />
 
-<!-- C3: university.subdomain / university.custom_domain change warning (ADR-063 §2) -->
+<!-- C3: academy.subdomain / academy.custom_domain change warning (ADR-063 §2) -->
 <ConfirmModal
 	bind:open={confirmSurfaceDomainOpen}
 	title={t('settings.surface_domain_warning_title', 'Surface Domain Change')}
 	consequence={t(
 		'settings.surface_domain_warning',
-		'Changing university.subdomain or university.custom_domain affects how the Learn app detects its host. This may break Learn app routing until DNS and the Learn app config are updated. New value: '
+		'Changing academy.subdomain or academy.custom_domain affects how the Learn app detects its host. This may break Learn app routing until DNS and the Learn app config are updated. New value: '
 	) + pendingSurfaceDomainValue}
 	confirmText={t('common.confirm', 'Confirm')}
 	onConfirm={confirmSurfaceDomainSave}

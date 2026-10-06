@@ -19,7 +19,7 @@ type SearchIndexer interface {
 	// IndexDirectoryTag indexes a tags-table directory tag (the /tags
 	// surface) into the shared tags index — entity_type "directory_tag".
 	IndexDirectoryTag(ctx context.Context, tagID [16]byte) error
-	IndexLearningTrack(ctx context.Context, trackID [16]byte) error
+	IndexAcademyTrack(ctx context.Context, trackID [16]byte) error
 	IndexDocPage(ctx context.Context, pageID [16]byte) error
 	IndexOrganization(ctx context.Context, orgID [16]byte) error
 	IndexLanguageTestRequirement(ctx context.Context, reqID [16]byte) error

@@ -7,17 +7,17 @@ description: Use when creating or modifying Asynq background tasks/workers in th
 
 Three-tier queues on Valkey: **critical** (payments, auth emails, webhooks out, university payouts, embassy polling/alerts) · **default** (search sync, notifications, media processing, general emails, university approval notifications, v2 community/functional tool tasks) · **low** (digests, cleanup, analytics rollups, backfills, payout calculation, university logo fetch, CV session purge, mentor embedding/search sync). 95 registered tasks (75 v1 + 20 v2) — keep `asynq-tasks.md` accurate.
 
-## Japa University Tasks (ADR-063)
+## Japa Academy Tasks (ADR-063)
 | Task | Queue | Idempotency | Notes |
 |---|---|---|---|
-| `university:process_enrollment` | critical | SET NX on `jc:uni:enrollment:processed:{payment_id}` | Creates/updates enrollment + writes `revenue_splits` row. Guard against double-credit. |
-| `university:calculate_period_payouts` | low (scheduled) | Valkey lock per instructor+period | Aggregates open splits (`payout_id IS NULL`) into `instructor_payouts` once threshold met. |
-| `university:send_instructor_payout` | critical | Advisory lock on instructor_id inside tx | Executes transfer via Section 17 provider; stamps splits with `payout_id` AFTER success. |
-| `university:notify_instructor_approved` | default | Send-state guard | Email notification on instructor approval. |
-| `university:notify_course_approved` | default | Send-state guard | Email notification on course marketplace approval. |
+| `academy:process_enrollment` | critical | SET NX on `jc:uni:enrollment:processed:{payment_id}` | Creates/updates enrollment + writes `revenue_splits` row. Guard against double-credit. |
+| `academy:calculate_period_payouts` | low (scheduled) | Valkey lock per instructor+period | Aggregates open splits (`payout_id IS NULL`) into `academy_instructor_payouts` once threshold met. |
+| `academy:send_instructor_payout` | critical | Advisory lock on instructor_id inside tx | Executes transfer via Section 17 provider; stamps splits with `payout_id` AFTER success. |
+| `academy:notify_instructor_approved` | default | Send-state guard | Email notification on instructor approval. |
+| `academy:notify_course_approved` | default | Send-state guard | Email notification on course marketplace approval. |
 | `university:fetch_logo` | low | Natural key (university slug) | Downloads logo from seed URL → SeaweedFS → sets `logo` field. Used during university space seeding. |
 
-**Revenue splits are immutable** — `university:process_enrollment` writes one row per revenue event and never updates it. A split correction is a compensating new row, never an edit. **Pro-stream splits** (`source='pro_stream'`) have no `payment_id` — they use a different idempotency key (`jc:uni:pro_stream:{instructor_id}:{enrollment_id}`) to avoid tripping the payment-id guard.
+**Revenue splits are immutable** — `academy:process_enrollment` writes one row per revenue event and never updates it. A split correction is a compensating new row, never an edit. **Pro-stream splits** (`source='pro_stream'`) have no `payment_id` — they use a different idempotency key (`jc:uni:pro_stream:{instructor_id}:{enrollment_id}`) to avoid tripping the payment-id guard.
 
 ## Geo-Aware Tasks (ADR-064)
 | Task | Queue | Notes |

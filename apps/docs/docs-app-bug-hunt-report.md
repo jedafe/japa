@@ -380,9 +380,9 @@ Playwright is not configured for `apps/docs`; existing unit and build checks pas
 
 ### 33. `jc_locale` language switch broken cross-app — sibling apps set it HttpOnly
 
-**Severity:** High — `apps/main`, `apps/learn`, `apps/tools` `hooks.server.ts` set `jc_locale` via `event.cookies.set` without `httpOnly: false` (SvelteKit defaults HttpOnly). Cookies ignore ports, so visiting `/fr/...` on `localhost:3000` planted an HttpOnly `jc_locale=fr` that the docs app could neither read (`document.cookie`) nor overwrite — the switcher silently no-oped and the UI stayed French (`cookieStore.set` threw "Cookie was malformed").
+**Severity:** High — `apps/main`, `apps/academy`, `apps/tools` `hooks.server.ts` set `jc_locale` via `event.cookies.set` without `httpOnly: false` (SvelteKit defaults HttpOnly). Cookies ignore ports, so visiting `/fr/...` on `localhost:3000` planted an HttpOnly `jc_locale=fr` that the docs app could neither read (`document.cookie`) nor overwrite — the switcher silently no-oped and the UI stayed French (`cookieStore.set` threw "Cookie was malformed").
 
-**Fix:** `httpOnly: false` added to the `jc_locale` set in `apps/main/src/hooks.server.ts`, `apps/learn/src/hooks.server.ts`, `apps/tools/src/hooks.server.ts` (docs already fixed in pass 2). Verified round-trip in one session sharing the jar: `/fr/docs/users` → English → `/docs/users` (en) → French → `/fr/docs/users`.
+**Fix:** `httpOnly: false` added to the `jc_locale` set in `apps/main/src/hooks.server.ts`, `apps/academy/src/hooks.server.ts`, `apps/tools/src/hooks.server.ts` (docs already fixed in pass 2). Verified round-trip in one session sharing the jar: `/fr/docs/users` → English → `/docs/users` (en) → French → `/fr/docs/users`.
 
 ### 34. cURL examples used `Authorization: Bearer` for API-key auth
 
@@ -417,7 +417,7 @@ Playwright is not configured for `apps/docs`; existing unit and build checks pas
 
 | Check | Result |
 |---|---|
-| `svelte-check` apps/docs, apps/main, apps/learn, apps/tools | 0 errors, 0 warnings (all four) |
+| `svelte-check` apps/docs, apps/main, apps/academy, apps/tools | 0 errors, 0 warnings (all four) |
 | Search `?q=test` default page size | 20 (was 5); 10/20/50 selectable; `limit` in URL |
 | Search audience + limit compose | `?q=test&audience=users&limit=50` correct |
 | API landing filter/method/tag grouping | live; method list matches spec exactly |
@@ -446,7 +446,7 @@ apps/docs/src/routes/docs/api/keys/+page.server.ts, +page.svelte
 apps/docs/src/routes/docs/api/playground/+page.server.ts, +page.svelte
 apps/docs/src/routes/docs/search/+page.server.ts, +page.svelte
 apps/main/src/hooks.server.ts    (jc_locale httpOnly:false)
-apps/learn/src/hooks.server.ts   (jc_locale httpOnly:false)
+apps/academy/src/hooks.server.ts   (jc_locale httpOnly:false)
 apps/tools/src/hooks.server.ts   (jc_locale httpOnly:false)
 ```
 

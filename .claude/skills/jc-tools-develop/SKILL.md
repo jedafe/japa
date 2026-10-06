@@ -129,4 +129,4 @@ AI content generation goes through the existing §20 AI Gateway (no direct LLM c
 
 ## See Also
 
-ADR-086 (multi-surface architecture), §78 (Tools Web Surface section), `ROADMAP-TOOLS.md`, ADR-007 (subdomain principle), ADR-063 (Japa University — host-detection precedent), ADR-088 (universal AI content generation), ADR-042 (feature-flag 404 not 403), `.jeos/skills/geo-aware-tool-pattern.md`, §§90–97 §§99–101 (V2 functional tools), `jc-tools-audit`, `jc-tools-debug`, `jc-tools-refactor`.
+ADR-086 (multi-surface architecture), §78 (Tools Web Surface section), `ROADMAP-TOOLS.md`, ADR-007 (subdomain principle), ADR-063 (Japa Academy — host-detection precedent), ADR-088 (universal AI content generation), ADR-042 (feature-flag 404 not 403), `.jeos/skills/geo-aware-tool-pattern.md`, §§90–97 §§99–101 (V2 functional tools), `jc-tools-audit`, `jc-tools-debug`, `jc-tools-refactor`.

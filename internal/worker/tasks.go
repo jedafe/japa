@@ -48,7 +48,7 @@ const (
 	TypeAgentCreateDraftRequest       = "agent:create_draft_request"
 	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
 	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
-	TypeLearningUpdateTrackCompletion = "learning:update_track_completion"
+	TypeAcademyUpdateTrackCompletion = "academy:update_track_completion"
 	TypeJCERefreshValues              = "jce:refresh_values"
 	TypeVideoProcessing               = "content:process_video"
 	TypeVideoImportBulk               = "video:import_bulk"
@@ -76,13 +76,13 @@ const (
 	TypeServiceBookingFeeSettle     = "service:booking_fee_settle"
 	TypeServiceBookingExpirePending = "service:booking_expire_pending"
 
-	// ---- Japa University creator economy (ADR-063) ----.
+	// ---- Japa Academy creator economy (ADR-063) ----.
 	// Critical: paid enrollment must credit the creator ledger immediately.
-	TypeUniversityProcessEnrollment        = "university:process_enrollment"
-	TypeUniversityNotifyInstructorApproved = "university:notify_instructor_approved"
-	TypeUniversityNotifyCourseApproved     = "university:notify_course_approved"
-	TypeUniversitySendInstructorPayout     = "university:send_instructor_payout"
-	TypeUniversityCalculatePeriodPayouts   = "university:calculate_period_payouts"
+	TypeAcademyProcessEnrollment        = "academy:process_enrollment"
+	TypeAcademyNotifyInstructorApproved = "academy:notify_instructor_approved"
+	TypeAcademyNotifyCourseApproved     = "academy:notify_course_approved"
+	TypeAcademySendInstructorPayout     = "academy:send_instructor_payout"
+	TypeAcademyCalculatePeriodPayouts   = "academy:calculate_period_payouts"
 	TypeUniversityFetchLogo                = "university:fetch_logo"
 
 	// ---- Low tier (background maintenance, lowest concurrency) ----.
@@ -102,7 +102,7 @@ const (
 	TypeAnalyticsRefreshViews           = "analytics:refresh_views"
 	TypeSecurityScan                    = "security:scan"
 	TypeMaintenanceRegenerateLLMsTxt    = "maintenance:regenerate_llms_txt"
-	TypeLearningIssueCertificate        = "learning:issue_certificate"
+	TypeAcademyIssueCertificate        = "academy:issue_certificate"
 	TypeDBManualVacuum                  = "db:manual_vacuum"
 	TypeNewsletterDigest                = "newsletter:digest"
 	TypeComputeTrending                 = "maintenance:compute_trending"
@@ -212,7 +212,7 @@ var handlerRegistry = []struct {
 	{TypeAgentCreateDraftRequest, HandleAgentCreateDraftRequest},
 	{TypeReviewAggregateRecalc, HandleReviewAggregateRecalc},
 	{TypeTicketSendStatusUpdate, HandleTicketSendStatusUpdate},
-	{TypeLearningUpdateTrackCompletion, HandleLearningUpdateTrackCompletion},
+	{TypeAcademyUpdateTrackCompletion, HandleAcademyUpdateTrackCompletion},
 	{TypeJCERefreshValues, HandleJceRefreshValues},
 	{TypeVideoProcessing, HandleVideoProcessing},
 	{TypeVideoImportBulk, HandleVideoImportBulk},
@@ -234,12 +234,12 @@ var handlerRegistry = []struct {
 	{TypeServiceBookingStatusChanged, HandleServiceBookingStatusChanged},
 	{TypeServiceBookingFeeSettle, HandleServiceBookingFeeSettle},
 	{TypeServiceBookingExpirePending, HandleServiceBookingExpirePending},
-	// Japa University creator economy (ADR-063)
-	{TypeUniversityProcessEnrollment, HandleUniversityProcessEnrollment},
-	{TypeUniversityNotifyInstructorApproved, HandleUniversityNotifyInstructorApproved},
-	{TypeUniversityNotifyCourseApproved, HandleUniversityNotifyCourseApproved},
-	{TypeUniversitySendInstructorPayout, HandleUniversitySendInstructorPayout},
-	{TypeUniversityCalculatePeriodPayouts, HandleUniversityCalculatePeriodPayouts},
+	// Japa Academy creator economy (ADR-063)
+	{TypeAcademyProcessEnrollment, HandleAcademyProcessEnrollment},
+	{TypeAcademyNotifyInstructorApproved, HandleAcademyNotifyInstructorApproved},
+	{TypeAcademyNotifyCourseApproved, HandleAcademyNotifyCourseApproved},
+	{TypeAcademySendInstructorPayout, HandleAcademySendInstructorPayout},
+	{TypeAcademyCalculatePeriodPayouts, HandleAcademyCalculatePeriodPayouts},
 	{TypeUniversityFetchLogo, HandleUniversityFetchLogo},
 	// Low handlers
 	{TypeDigestEmail, HandleDigestEmail},
@@ -257,7 +257,7 @@ var handlerRegistry = []struct {
 	{TypeAnalyticsRefreshViews, HandleAnalyticsRefreshViews},
 	{TypeSecurityScan, HandleSecurityScan},
 	{TypeMaintenanceRegenerateLLMsTxt, HandleMaintenanceRegenerateLLMsTxt},
-	{TypeLearningIssueCertificate, HandleLearningIssueCertificate},
+	{TypeAcademyIssueCertificate, HandleAcademyIssueCertificate},
 	{TypeDBManualVacuum, HandleDBManualVacuum},
 	{TypeNewsletterDigest, HandleNewsletterDigest},
 	{TypeComputeTrending, HandleComputeTrending},

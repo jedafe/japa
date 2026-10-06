@@ -160,7 +160,7 @@ func TestNormalizeTourSurface(t *testing.T) {
 		{"   ", "main"},
 		{"main", "main"},
 		{"Docs", "docs"},
-		{"  LEARN  ", "learn"},
+		{"  LEARN  ", "academy"},
 		{"admin-panel", "admin-panel"},
 		{"main'; DROP TABLE users;--", "maindroptableusers--"},
 		{strings.Repeat("a", 64), strings.Repeat("a", 32)},
@@ -177,7 +177,7 @@ func TestNormalizeTourSurface(t *testing.T) {
 func TestIsTourStepKey(t *testing.T) {
 	t.Parallel()
 
-	valid := []string{"primary-nav", "docs-search", "a", "step1", "learn-account"}
+	valid := []string{"primary-nav", "docs-search", "a", "step1", "academy-account"}
 	for _, k := range valid {
 		if !isTourStepKey(k) {
 			t.Errorf("isTourStepKey(%q) = false, want true", k)
@@ -208,8 +208,8 @@ func TestParseTourDismissals(t *testing.T) {
 	if !got["main"] || !got["docs"] {
 		t.Errorf("parseTourDismissals valid = %v, want main+docs", got)
 	}
-	if got["learn"] {
-		t.Error("parseTourDismissals valid: learn should be absent")
+	if got["academy"] {
+		t.Error("parseTourDismissals valid: academy should be absent")
 	}
 
 	// Corrupted payload degrades to an empty map rather than failing.

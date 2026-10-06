@@ -97,7 +97,7 @@ import (
 	_ "github.com/jedafe/japa/internal/jce/scoring"
 	"github.com/jedafe/japa/internal/jobs"
 	"github.com/jedafe/japa/internal/languagetesthub"
-	"github.com/jedafe/japa/internal/learning"
+	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mcp"
@@ -148,7 +148,7 @@ import (
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/universities"
-	"github.com/jedafe/japa/internal/university"
+	"github.com/jedafe/japa/internal/academy/creator"
 	"github.com/jedafe/japa/internal/university_courses"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
@@ -1158,34 +1158,34 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	analyticsHandlers := analytics.NewHandlers(analyticsService)
 
 	// Learning Platform subsystem (Section 36).
-	learningStore := learning.NewStore(database)
-	learningHandlers := learning.NewHandlers(learningStore, contentService)
-	learningHandlers.AsynqClient = asynqClient
+	academyStore := academy.NewStore(database)
+	academyHandlers := academy.NewHandlers(academyStore, contentService)
+	academyHandlers.AsynqClient = asynqClient
 
 	// Register learning processor for the worker's learning tasks.
-	learningAdapter := learning.NewProcessorAdapter(learningStore)
-	worker.RegisterLearningProcessor(learningAdapter)
+	academyAdapter := academy.NewProcessorAdapter(academyStore)
+	worker.RegisterAcademyProcessor(academyAdapter)
 
-	// Japa University creator-economy subsystem (ADR-063 — upgrade to Learn).
+	// Japa Academy creator-economy subsystem (ADR-063 — upgrade to Learn).
 	// The handlers/service/store already exist; this wires them into the router
 	// and the worker so the 24 catalogued routes stop 404ing (ROUTE-001/002).
-	universityStore := university.NewStore(database)
-	universityService := university.NewService(universityStore, settingsService, taskEnqueuer)
-	universityService.SetValkey(vkClient.Redis())
+	creatorStore := creator.NewStore(database)
+	creatorService := creator.NewService(creatorStore, settingsService, taskEnqueuer)
+	creatorService.SetValkey(vkClient.Redis())
 
 	// University course catalog/offerings for the JCE course resolver.
 	universityCourseStore := university_courses.NewStore(database)
 	universityCourseService := university_courses.NewService(universityCourseStore)
 	universityCourseHandlers := university_courses.NewHandlers(universityCourseService, spaceService)
 
-	universityService.SetMediaUploader(mediaService)
-	universityService.SetSpaceLogoUpdater(spaceService)
-	universityService.SetNotifier(notificationService)
-	universityHandlers := university.NewHandlers(universityService)
-	universityHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in university responses
+	creatorService.SetMediaUploader(mediaService)
+	creatorService.SetSpaceLogoUpdater(spaceService)
+	creatorService.SetNotifier(notificationService)
+	creatorHandlers := creator.NewHandlers(creatorService)
+	creatorHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in university responses
 	// Register university processor for the worker's 5 university Asynq tasks.
-	universityProcessor := university.NewProcessor(universityService)
-	worker.RegisterUniversityProcessor(universityProcessor)
+	creatorProcessor := creator.NewProcessor(creatorService)
+	worker.RegisterCreatorProcessor(creatorProcessor)
 
 	// Newsletter subsystem (Section 33).
 	newsletterService := newsletter.NewService(database)
@@ -1993,17 +1993,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// (§69/ADR-069). These handlers were created earlier; ragService is
 	// created above.
 	spaceHandlers.SetRAGIndexer(ragService)
-	learningHandlers.SetRAGIndexer(ragService)
+	academyHandlers.SetRAGIndexer(ragService)
 	// BUG-002 (rag-audit): inject the settings reader so the spaces and
 	// learning handlers can resolve i18n.default_language for RAG indexing
 	// instead of hardcoding "en".
 	spaceHandlers.SetSettings(settingsService)
-	learningHandlers.SetSettings(settingsService)
+	academyHandlers.SetSettings(settingsService)
 	// §14: wire the template-literal catalog into the wiki and learning
 	// handlers so {{...}} placeholders in page titles, revision content,
 	// track/lesson text resolve at render time.
 	wikiHandlers.SetLiteralResolver(literalsCatalog)
-	learningHandlers.SetLiteralResolver(literalsCatalog)
+	academyHandlers.SetLiteralResolver(literalsCatalog)
 
 	// AI Agent Executor (Section 103, ADR-111) — Phase 6 wiring.
 	// The agent handler ties together the gateway function-calling extension
@@ -2061,7 +2061,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// users use mirror types in the ai package to avoid import cycles, so
 	// adapters are wired here.
 	agentDeps.Spaces = spaceService
-	agentDeps.Learning = &agentLearningAdapter{store: learningStore}
+	agentDeps.Learning = &agentAcademyAdapter{store: academyStore}
 	agentDeps.Docs = &agentDocsAdapter{svc: docsService}
 	agentDeps.Menus = &agentMenusAdapter{svc: menusService}
 	agentDeps.Users = &agentUsersAdapter{svc: agentUsersSvc}
@@ -3689,7 +3689,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/admin/universities/bulk-import", universitiesHandlers.BulkImportUniversities)
 
 			// University course catalog + offerings admin CRUD (Section 39).
-			// Distinct from /admin/university/* (Japa University creator tracks,
+			// Distinct from /admin/academy/* (Japa Academy creator tracks,
 			// ADR-063): these manage institutional degree programs and are
 			// gated by the universities.course_catalog/offering.* nodes.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "universities.course_catalog.list")).
@@ -3911,7 +3911,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// is only available inside the API route group.
 			aiHandlers.SetUserContextProvider(newUserContextAdapter(
 				walletService,
-				learningStore,
+				academyStore,
 				mentorshipService,
 				forumService,
 				referralService,
@@ -5104,7 +5104,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Public profile Spaces tab — public+active spaces only; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/spaces", spaceHandlers.ListByMemberUser)
 			// Public profile Certificates tab — earned-certificate badges; gated to 404 non-active users.
-			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/certificates", learningHandlers.ListCertificatesByUser)
+			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/certificates", academyHandlers.ListCertificatesByUser)
 			// Public profile Likes tab — published+public content the user reacted to; gated to 404 non-active users.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), requireActiveProfileUser(usersService, "id")).Get("/users/{id}/likes", contentHandlers.ListLikedByUser)
 			// Public profile Replies tab — user's comments on published+public content; gated to 404 non-active users.
@@ -5712,184 +5712,169 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Post("/admin/docs/ai-generate", aiHandlers.HandleGenerate)
 
-			// Learning Platform routes (Section 36)
-			// Gated by feature.learning flag (default: false).
-			r.With(features.Gate(featureChecker, "feature.learning")).Group(func(r chi.Router) {
-				// Public: view published tracks (catalog: /learn/*)
-				r.Get("/learn/tracks", learningHandlers.ListPublishedTracks)
-				r.Get("/learn/tracks/{slug}", learningHandlers.GetTrackDetail)
-				r.Get("/learn/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}", learningHandlers.GetLesson)
+			// Japa Academy routes (Section 36)
+			// Gated by feature.academy flag (default: false).
+			r.With(features.Gate(featureChecker, "feature.academy")).Group(func(r chi.Router) {
+				// Public: view published tracks (catalog: /academy/*)
+				r.Get("/academy/tracks", academyHandlers.ListPublishedTracks)
+				r.Get("/academy/tracks/{slug}", academyHandlers.GetTrackDetail)
+				r.Get("/academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}", academyHandlers.GetLesson)
 
 				// Authenticated: enrollment, progress and certificates
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/tracks/{id}/enroll", learningHandlers.EnrollInTrack)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/lessons/{id}", learningHandlers.GetLessonByID)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/progress", learningHandlers.UpdateProgress)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/lessons/{id}/complete", learningHandlers.CompleteLesson)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/progress/{trackId}", learningHandlers.GetTrackProgress)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/certificates", learningHandlers.GetMyCertificates)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/academy/tracks/{id}/enroll", academyHandlers.EnrollInTrack)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/academy/lessons/{id}", academyHandlers.GetLessonByID)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/academy/lessons/{id}/progress", academyHandlers.UpdateProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/academy/lessons/{id}/complete", academyHandlers.CompleteLesson)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/academy/progress/{trackId}", academyHandlers.GetTrackProgress)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/certificates", academyHandlers.GetMyCertificates)
 				// /me/enrollments: any authenticated user can list their own
-				// enrollments — the handler filters by user.UserID, so no
+				// academy_enrollments — the handler filters by user.UserID, so no
 				// university-specific RBAC node is needed. The previous
 				// university.enrollment.view_own gate caused 403 for regular
 				// Learn users, breaking the track-detail enrollment state fetch.
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/enrollments", learningHandlers.ListMyEnrollments)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/enrollments", academyHandlers.ListMyEnrollments)
 
 				// Quizzes
-				r.Get("/learn/quizzes/{id}", learningHandlers.GetQuiz)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/quizzes/{id}/submit", learningHandlers.SubmitQuiz)
+				r.Get("/academy/quizzes/{id}", academyHandlers.GetQuiz)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/academy/quizzes/{id}/submit", academyHandlers.SubmitQuiz)
 
 				// Certificates (public detail + download — catalog: /certificates/:id)
-				r.Get("/certificates/{id}", learningHandlers.GetCertificateDetail)
-				r.Get("/certificates/{id}/download", learningHandlers.DownloadCertificate)
+				r.Get("/certificates/{id}", academyHandlers.GetCertificateDetail)
+				r.Get("/certificates/{id}/download", academyHandlers.DownloadCertificate)
 
-				// Track reviews (catalog: POST|GET /learn/tracks/{id}/reviews)
-				// AUDIT-FRESH-DEAD-NODES: wired university.review.create RBAC gate.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.review.create")).Post("/learn/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
-				r.Get("/learn/tracks/{id}/reviews", learningHandlers.ListTrackReviews)
+				// Track reviews (catalog: POST|GET /academy/tracks/{id}/reviews)
+				// AUDIT-FRESH-DEAD-NODES: wired academy.review.create RBAC gate.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.review.create")).Post("/academy/tracks/{id}/reviews", academyHandlers.CreateTrackReview)
+				r.Get("/academy/tracks/{id}/reviews", academyHandlers.ListTrackReviews)
 			})
 
-			// Japa University creator-economy routes (ADR-063 — upgrade to Learn).
+			// Japa Academy creator-economy routes (ADR-063 — upgrade to Learn).
 			// Instructor lifecycle
-			// AUDIT-FRESH-DEAD-NODES: wired university.instructor.apply RBAC gate.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.apply")).Post("/learn/university/instructor/apply", universityHandlers.Apply)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/instructor/me", universityHandlers.GetMyInstructorProfile)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/learn/university/instructor/me", universityHandlers.UpdateMyInstructorProfile)
-			r.Get("/learn/university/instructors/{id}", universityHandlers.GetPublicInstructor)
+			// AUDIT-FRESH-DEAD-NODES: wired academy.instructor.apply RBAC gate.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.apply")).Post("/academy/instructor/apply", creatorHandlers.Apply)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/academy/instructor/me", creatorHandlers.GetMyInstructorProfile)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/academy/instructor/me", creatorHandlers.UpdateMyInstructorProfile)
+			r.Get("/academy/instructors/{id}", creatorHandlers.GetPublicInstructor)
 
 			// Creator track management
-			// AUDIT-FRESH-DEAD-NODES: wired university.course.create/submit RBAC gates (BUG-011).
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/tracks", universityHandlers.ListMyTracks)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.create")).Post("/learn/university/my/tracks", universityHandlers.CreateMyTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/learn/university/my/tracks/{id}", universityHandlers.UpdateMyTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.submit")).Post("/learn/university/my/tracks/{id}/submit", universityHandlers.SubmitMyTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/my/tracks/{id}/stats", universityHandlers.GetMyTrackStats)
+			// AUDIT-FRESH-DEAD-NODES: wired academy.course.create/submit RBAC gates (BUG-011).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/academy/my/tracks", creatorHandlers.ListMyTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Post("/academy/my/tracks", creatorHandlers.CreateMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/academy/my/tracks/{id}", creatorHandlers.UpdateMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.submit")).Post("/academy/my/tracks/{id}/submit", creatorHandlers.SubmitMyTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/academy/my/tracks/{id}/stats", creatorHandlers.GetMyTrackStats)
 
 			// Marketplace catalog
-			r.Get("/learn/university/catalog", universityHandlers.ListCatalog)
+			r.Get("/academy/catalog", creatorHandlers.ListCatalog)
 			// Catalog option lists are registered before the {slug} route so the
 			// literal path /options is matched first (Rule 16).
-			r.Get("/learn/university/catalog/options", universityHandlers.GetCatalogOptions)
-			r.Get("/learn/university/catalog/{slug}", universityHandlers.GetCatalogTrack)
-
-			// Consolidated learner routes (ADR-063 consolidation: /learn/tracks/*
-			// moved under /learn/university/*). These point to the same handlers as
-			// the legacy /learn/tracks/* routes, which remain for backward compat.
-			r.Get("/learn/university/tracks/{slug}", learningHandlers.GetTrackDetail)
-			r.Get("/learn/university/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug}", learningHandlers.GetLesson)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/tracks/{id}/enroll", learningHandlers.EnrollInTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/lessons/{id}", learningHandlers.GetLessonByID)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/lessons/{id}/progress", learningHandlers.UpdateProgress)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/lessons/{id}/complete", learningHandlers.CompleteLesson)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/learn/university/progress/{trackId}", learningHandlers.GetTrackProgress)
-			r.Get("/learn/university/quizzes/{id}", learningHandlers.GetQuiz)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/learn/university/quizzes/{id}/submit", learningHandlers.SubmitQuiz)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.review.create")).Post("/learn/university/tracks/{id}/reviews", learningHandlers.CreateTrackReview)
-			r.Get("/learn/university/tracks/{id}/reviews", learningHandlers.ListTrackReviews)
+			r.Get("/academy/catalog/options", creatorHandlers.GetCatalogOptions)
+			r.Get("/academy/catalog/{slug}", creatorHandlers.GetCatalogTrack)
 
 			// Earnings & payouts
-			// AUDIT-FRESH-DEAD-NODES: wired university.payout.view_own RBAC gate on both endpoints (BUG-013).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_own")).Get("/learn/university/my/earnings", universityHandlers.GetMyEarnings)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_own")).Get("/learn/university/my/payouts", universityHandlers.GetMyPayouts)
+			// AUDIT-FRESH-DEAD-NODES: wired academy.payout.view_own RBAC gate on both endpoints (BUG-013).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.payout.view_own")).Get("/academy/my/earnings", creatorHandlers.GetMyEarnings)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.payout.view_own")).Get("/academy/my/payouts", creatorHandlers.GetMyPayouts)
 
 			// Content-country preference (ADR-064 geo personalization)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/me/preferences/content-country", usersHandlers.UpdateMyContentCountry)
 
-			// Admin: University management (catalog: /admin/university/*)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
-				Get("/admin/university/instructors", universityHandlers.AdminListInstructors)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
-				Get("/admin/university/instructors/{id}", universityHandlers.AdminGetInstructor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
-				Post("/admin/university/instructors/{id}/approve", universityHandlers.AdminApproveInstructor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.approve")).
-				Post("/admin/university/instructors/{id}/reject", universityHandlers.AdminRejectInstructor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
-				Post("/admin/university/instructors/{id}/suspend", universityHandlers.AdminSuspendInstructor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
-				Post("/admin/university/instructors/{id}/reinstate", universityHandlers.AdminReinstateInstructor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
-				Delete("/admin/university/instructors/{id}", universityHandlers.AdminDeleteInstructor)
+			// Admin: Academy management (catalog: /admin/academy/*)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.approve")).
+				Get("/admin/academy/instructors", creatorHandlers.AdminListInstructors)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.approve")).
+				Get("/admin/academy/instructors/{id}", creatorHandlers.AdminGetInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.approve")).
+				Post("/admin/academy/instructors/{id}/approve", creatorHandlers.AdminApproveInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.approve")).
+				Post("/admin/academy/instructors/{id}/reject", creatorHandlers.AdminRejectInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.manage")).
+				Post("/admin/academy/instructors/{id}/suspend", creatorHandlers.AdminSuspendInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.manage")).
+				Post("/admin/academy/instructors/{id}/reinstate", creatorHandlers.AdminReinstateInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.manage")).
+				Delete("/admin/academy/instructors/{id}", creatorHandlers.AdminDeleteInstructor)
 			// BUG-002: PATCH instructor tier/commission override.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.instructor.manage")).
-				Patch("/admin/university/instructors/{id}", universityHandlers.AdminUpdateInstructor)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
-				Get("/admin/university/tracks/pending", universityHandlers.AdminListPendingTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.instructor.manage")).
+				Patch("/admin/academy/instructors/{id}", creatorHandlers.AdminUpdateInstructor)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
+				Get("/admin/academy/tracks/pending", creatorHandlers.AdminListPendingTracks)
 			// BUG-002: GET all tracks (not just pending).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
-				Get("/admin/university/tracks", universityHandlers.AdminListAllTracks)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
-				Get("/admin/university/tracks/{id}", universityHandlers.AdminGetTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
-				Post("/admin/university/tracks/{id}/approve", universityHandlers.AdminApproveTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
+				Get("/admin/academy/tracks", creatorHandlers.AdminListAllTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
+				Get("/admin/academy/tracks/{id}", creatorHandlers.AdminGetTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
+				Post("/admin/academy/tracks/{id}/approve", creatorHandlers.AdminApproveTrack)
 			// BUG-002: POST reject track.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.approve")).
-				Post("/admin/university/tracks/{id}/reject", universityHandlers.AdminRejectTrack)
-			// BUG-012: POST feature/unfeature track (wires university.course.feature node).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.course.feature")).
-				Post("/admin/university/tracks/{id}/feature", universityHandlers.AdminFeatureTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
+				Post("/admin/academy/tracks/{id}/reject", creatorHandlers.AdminRejectTrack)
+			// BUG-012: POST feature/unfeature track (wires academy.course.feature node).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.feature")).
+				Post("/admin/academy/tracks/{id}/feature", creatorHandlers.AdminFeatureTrack)
 			// BUG-014: read-only payout endpoints gated by view_all, not the write process node.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_all")).
-				Get("/admin/university/payouts", universityHandlers.AdminListPayouts)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.view_all")).
-				Get("/admin/university/payouts/{id}", universityHandlers.AdminGetPayout)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process"),
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.payout.view_all")).
+				Get("/admin/academy/payouts", creatorHandlers.AdminListPayouts)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.payout.view_all")).
+				Get("/admin/academy/payouts/{id}", creatorHandlers.AdminGetPayout)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.payout.process"),
 				mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
-				Post("/admin/university/payouts/{id}/process", universityHandlers.AdminProcessPayout)
+				Post("/admin/academy/payouts/{id}/process", creatorHandlers.AdminProcessPayout)
 			// BUG-002: POST fail payout.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.payout.process")).
-				Post("/admin/university/payouts/{id}/fail", universityHandlers.AdminFailPayout)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.payout.process")).
+				Post("/admin/academy/payouts/{id}/fail", creatorHandlers.AdminFailPayout)
 
 			// Admin: revenue-split audit viewer (ADR-063 §9, read-only)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.revenue.list")).
-				Get("/admin/university/revenue-splits", universityHandlers.AdminListRevenueSplits)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.revenue.view")).
-				Get("/admin/university/revenue-splits/{id}", universityHandlers.AdminGetRevenueSplit)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.revenue.list")).
+				Get("/admin/academy/revenue-splits", creatorHandlers.AdminListRevenueSplits)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.revenue.view")).
+				Get("/admin/academy/revenue-splits/{id}", creatorHandlers.AdminGetRevenueSplit)
 
 			// Admin: track categories CRUD (ADR-063 §9.1)
 			// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
-				Get("/admin/university/categories", universityHandlers.AdminListCategories)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
-				Post("/admin/university/categories", universityHandlers.AdminCreateCategory)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
-				Get("/admin/university/categories/{id}", universityHandlers.AdminGetCategory)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
-				Patch("/admin/university/categories/{id}", universityHandlers.AdminUpdateCategory)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "university.category.manage")).
-				Delete("/admin/university/categories/{id}", universityHandlers.AdminDeleteCategory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.category.manage")).
+				Get("/admin/academy/categories", creatorHandlers.AdminListCategories)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.category.manage")).
+				Post("/admin/academy/categories", creatorHandlers.AdminCreateCategory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.category.manage")).
+				Get("/admin/academy/categories/{id}", creatorHandlers.AdminGetCategory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.category.manage")).
+				Patch("/admin/academy/categories/{id}", creatorHandlers.AdminUpdateCategory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.category.manage")).
+				Delete("/admin/academy/categories/{id}", creatorHandlers.AdminDeleteCategory)
 
 			// Public: active track categories for catalog dropdown (no auth required)
-			r.Get("/learn/university/categories", universityHandlers.PublicListActiveCategories)
+			r.Get("/academy/categories", creatorHandlers.PublicListActiveCategories)
 
-			// Admin: CRUD for tracks, modules, lessons
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Get("/admin/learn/tracks", learningHandlers.ListAllTracks)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Post("/admin/learn/tracks", learningHandlers.CreateTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Patch("/admin/learn/tracks/{id}", learningHandlers.UpdateTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Delete("/admin/learn/tracks/{id}", learningHandlers.DeleteTrack)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Post("/admin/learn/tracks/{trackId}/modules", learningHandlers.CreateModule)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Patch("/admin/learn/modules/{id}", learningHandlers.UpdateModule)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Delete("/admin/learn/modules/{id}", learningHandlers.DeleteModule)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Post("/admin/learn/modules/{moduleId}/lessons", learningHandlers.CreateLesson)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Patch("/admin/learn/lessons/{id}", learningHandlers.UpdateLesson)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Delete("/admin/learn/lessons/{id}", learningHandlers.DeleteLesson)
+			// Admin: CRUD for tracks, modules, lessons (curriculum management)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Get("/admin/academy/learning/tracks", academyHandlers.ListAllTracks)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Post("/admin/academy/learning/tracks", academyHandlers.CreateTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Patch("/admin/academy/learning/tracks/{id}", academyHandlers.UpdateTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Delete("/admin/academy/learning/tracks/{id}", academyHandlers.DeleteTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Post("/admin/academy/learning/tracks/{trackId}/modules", academyHandlers.CreateModule)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Patch("/admin/academy/learning/modules/{id}", academyHandlers.UpdateModule)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Delete("/admin/academy/learning/modules/{id}", academyHandlers.DeleteModule)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Post("/admin/academy/learning/modules/{moduleId}/lessons", academyHandlers.CreateLesson)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Patch("/admin/academy/learning/lessons/{id}", academyHandlers.UpdateLesson)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Delete("/admin/academy/learning/lessons/{id}", academyHandlers.DeleteLesson)
 
 			// Admin: flat list endpoints for DataTables
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Get("/admin/learn/modules", learningHandlers.ListAllModules)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Get("/admin/learn/lessons", learningHandlers.ListAllLessons)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Get("/admin/learn/tracks/{trackId}/modules", learningHandlers.ListModulesByTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Get("/admin/academy/learning/modules", academyHandlers.ListAllModules)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Get("/admin/academy/learning/lessons", academyHandlers.ListAllLessons)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Get("/admin/academy/learning/tracks/{trackId}/modules", academyHandlers.ListModulesByTrack)
 
 			// Page Builder admin CRUD routes (Section 16 — Page Builder)
 			// Page-type catalog (Rule 16 — no hardcoded option lists).
@@ -6214,11 +6199,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Patch("/spaces/{id}/pinned/reorder", spaceHandlers.ReorderPinned)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/spaces/suggest-parents", spaceHandlers.SuggestParentSpaces)
 
-			// Task 14: Learning admin extras
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Get("/admin/learn/tracks/{id}/enrollments", learningHandlers.ListTrackEnrollments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "learning.admin.manage")).
-				Post("/admin/learn/tracks/{id}/publish", learningHandlers.PublishTrack)
+			// Task 14: Academy curriculum admin extras
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Get("/admin/academy/learning/tracks/{id}/enrollments", academyHandlers.ListTrackEnrollments)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Post("/admin/academy/learning/tracks/{id}/publish", academyHandlers.PublishTrack)
 
 			// Task 15: Payments/coupons admin + subscription
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).

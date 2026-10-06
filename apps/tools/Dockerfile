@@ -1,34 +1,36 @@
-# Multi-stage Dockerfile for the JapaConnect Tools surface (apps/tools).
-# SvelteKit SSR via adapter-node, served by Bun in production.
-# Ref: §78 (Tools Web Surface), ADR-086.
+# syntax=docker/dockerfile:1.7
+# Tools — SvelteKit SSR (adapter-node). Build context is the repository root
+# so bun can resolve workspace:* dependencies (packages/ui, packages/api-url).
+FROM oven/bun:1.4 AS build
+WORKDIR /repo
 
-# --- Build stage ---
-FROM oven/bun:1.3 AS build
+# Install all workspaces from the lockfile. --parents keeps each package.json
+# in place so bun sees every workspace manifest.
+COPY --parents package.json bun.lock apps/*/package.json packages/*/package.json ./
+RUN bun install --frozen-lockfile
 
-WORKDIR /app
-
-# Copy lockfile + package.json first for cacheable install layer.
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
-
-# Copy the rest of the source and build.
 COPY . .
+
+# PUBLIC_* values are inlined by vite at build time (they are build args, not
+# runtime env). PRIVATE_* values are read at runtime by the SSR server.
+ARG PUBLIC_JC_API_URL
+ARG PUBLIC_MAIN_ORIGIN
+ENV PUBLIC_JC_API_URL=${PUBLIC_JC_API_URL} \
+    PUBLIC_MAIN_ORIGIN=${PUBLIC_MAIN_ORIGIN}
+
+WORKDIR /repo/apps/tools
 RUN bun run build
 
-# --- Runtime stage ---
-FROM oven/bun:1.3-slim AS runtime
+FROM oven/bun:1.4-slim AS runtime
+WORKDIR /repo
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3005
 
-WORKDIR /app
+COPY --from=build /repo/package.json /repo/bun.lock ./
+COPY --from=build /repo/node_modules ./node_modules
+COPY --from=build /repo/packages ./packages
+COPY --from=build /repo/apps/tools ./apps/tools
 
-# Copy the built output and production dependencies.
-COPY --from=build /app/build ./build
-COPY --from=build /app/package.json ./
-COPY --from=build /app/bun.lock* ./
-COPY --from=build /app/node_modules ./node_modules
-
-ENV NODE_ENV=production
-ENV PORT=3005
 EXPOSE 3005
-
-# adapter-node produces a Node-compatible server; Bun runs it natively.
-CMD ["bun", "build/index.js"]
+CMD ["bun", "apps/tools/build/index.js"]

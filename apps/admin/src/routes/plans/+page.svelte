@@ -74,7 +74,7 @@
 
 		// Fetch all learning tracks and the plan's current track list in parallel.
 		const [tracksRes, planTracksRes] = await Promise.all([
-			api<{ id: string; title: string; slug: string }[]>('/admin/learn/tracks'),
+			api<{ id: string; title: string; slug: string }[]>('/admin/academy/tracks'),
 			plansApi.listTracks(plan.id)
 		]);
 		if (tracksRes.ok && tracksRes.data) {

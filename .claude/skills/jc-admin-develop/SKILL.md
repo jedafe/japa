@@ -97,9 +97,9 @@ Three admin entity surfaces, all with full DataTable spec + Gate 2 RBAC CRUD:
 - **KYC review:** `kyc_status` visible in detail view; sensitive `payout_method` (jsonb) masked in UI, never shown raw.
 
 ### University Course Approval (ADR-063)
-- **List:** `GET /api/v1/admin/university/tracks` — filterable by `is_published_to_university` status, instructor, category; sortable; paginated.
-- **Approve/Reject:** `POST /:id/approve` AND `/:id/reject` — approve sets `is_published_to_university = true` and enqueues `university:notify_course_approved`. Both directions required.
-- **Payout management:** `GET /api/v1/admin/university/payouts` — list `instructor_payouts` by period/status; `POST /:id/process` to trigger `university:send_instructor_payout`; `POST /:id/mark-failed` for failed transfers. State: pending → processing → paid / failed.
+- **List:** `GET /api/v1/admin/academy/tracks` — filterable by `is_published_to_academy` status, instructor, category; sortable; paginated.
+- **Approve/Reject:** `POST /:id/approve` AND `/:id/reject` — approve sets `is_published_to_academy = true` and enqueues `academy:notify_course_approved`. Both directions required.
+- **Payout management:** `GET /api/v1/admin/academy/payouts` — list `academy_instructor_payouts` by period/status; `POST /:id/process` to trigger `academy:send_instructor_payout`; `POST /:id/mark-failed` for failed transfers. State: pending → processing → paid / failed.
 
 ## Stack & Design
 Same base stack as all JC apps (Svelte 5 Runes, Bits UI dot-notation, Tailwind v4, TypeScript, Lucide, `$t()` i18n, no AI attribution). Sidebar `#1C1B22`, content `#F7F7F7`/dark, accent `#3B49DF`, success/danger/warning tokens, 14px compact density, `[data-theme="dark"]`.

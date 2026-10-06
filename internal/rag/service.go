@@ -463,7 +463,7 @@ func (s *Service) QueueReindex(ctx context.Context) error {
 
 	slog.Info("rag: reindex: queued", "total_enqueued", totalEnqueued)
 
-	// BUG-001 fix: also re-index forum_threads, spaces, and learning_tracks
+	// BUG-001 fix: also re-index forum_threads, spaces, and academy_tracks
 	// (ADR-069 §2 corpus). These entity types are indexed inline (not via the
 	// content:generate_embedding worker task), so we enumerate their IDs and
 	// fire-and-forget IndexEntity calls in background goroutines. The HTTP
@@ -713,7 +713,7 @@ func (s *Service) fetchSpaceText(ctx context.Context, spaceID pgtype.UUID) (stri
 func (s *Service) fetchLearningTrackText(ctx context.Context, trackID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
-	row, err := q.GetLearningTrackByID(ctx,
+	row, err := q.GetAcademyTrackByID(ctx,
 		trackID,
 	)
 	if err != nil {

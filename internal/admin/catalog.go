@@ -105,12 +105,12 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "published", Label: "Published"},
 		{Value: "rejected", Label: "Rejected"},
 	},
-	"university.tracks.difficulty": {
+	"academy.tracks.difficulty": {
 		{Value: "beginner", Label: "Beginner"},
 		{Value: "intermediate", Label: "Intermediate"},
 		{Value: "advanced", Label: "Advanced"},
 	},
-	"university.instructor.social_platforms": {
+	"academy.instructor.social_platforms": {
 		{Value: "twitter", Label: "Twitter"},
 		{Value: "linkedin", Label: "LinkedIn"},
 		{Value: "website", Label: "Website"},
@@ -138,13 +138,13 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "pro_stream", Label: "Pro Stream"},
 	},
 	// Catalog sort modes supported by ListUniversityCatalog (ORDER BY CASE).
-	"university.catalog.sort": {
+	"academy.catalog.sort": {
 		{Value: "popular", Label: "Most popular"},
 		{Value: "newest", Label: "Newest"},
 		{Value: "rating", Label: "Top rated"},
 	},
 	// Page sizes offered by the marketplace catalog/search page-size control.
-	"university.catalog.page_sizes": {
+	"academy.catalog.page_sizes": {
 		{Value: "12", Label: "12"},
 		{Value: "24", Label: "24"},
 		{Value: "48", Label: "48"},
@@ -443,7 +443,7 @@ var widgetConfigCatalog = WidgetConfigOptions{
 		{Value: "forum_threads", Label: "Forum Threads"},
 		{Value: "job_listings", Label: "Job Listings"},
 		{Value: "achievements", Label: "Achievements"},
-		{Value: "learning_tracks", Label: "Learning Tracks"},
+		{Value: "academy_tracks", Label: "Learning Tracks"},
 		{Value: "community_digest", Label: "Community Digest"},
 		{Value: "reviews", Label: "Reviews"},
 		{Value: "comparisons", Label: "Comparisons"},
@@ -483,7 +483,7 @@ var widgetConfigCatalog = WidgetConfigOptions{
 			{Key: "milestone_type", Label: "Milestone Type", Type: "select", Default: "", Options: []CatalogOption{{Value: "", Label: "All milestones"}, {Value: "relocation", Label: "Relocation"}, {Value: "career", Label: "Career"}, {Value: "education", Label: "Education"}, {Value: "community", Label: "Community"}}},
 			{Key: "limit", Label: "Limit", Type: "number", Default: 5},
 		},
-		"learning_tracks": {
+		"academy_tracks": {
 			{Key: "difficulty", Label: "Difficulty", Type: "select", Default: "", Options: []CatalogOption{{Value: "", Label: "All levels"}, {Value: "beginner", Label: "Beginner"}, {Value: "intermediate", Label: "Intermediate"}, {Value: "advanced", Label: "Advanced"}}},
 			{Key: "limit", Label: "Limit", Type: "number", Default: 5},
 		},
@@ -544,7 +544,7 @@ var widgetConfigCatalog = WidgetConfigOptions{
 	},
 	ContentWidgetTypes: []string{
 		"latest_content", "featured_content", "blog_posts", "forum_threads",
-		"job_listings", "achievements", "learning_tracks", "community_digest",
+		"job_listings", "achievements", "academy_tracks", "community_digest",
 		"reviews", "comparisons", "community_organisations",
 		"mentor_spotlight", "space_members", "user_leaderboard", "upcoming_events",
 		"featured_spaces",

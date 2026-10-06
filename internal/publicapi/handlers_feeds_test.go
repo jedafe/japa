@@ -805,7 +805,7 @@ func TestSemanticSearchMapsResults(t *testing.T) {
 			// per-entity visibility resolver.
 			return []rag.RetrievedChunk{
 				{EntityType: "wiki_page", EntityID: "e1", ContentType: "wiki", ChunkText: "visa snippet", Similarity: 0.81},
-				{EntityType: "learning_track", EntityID: "e2", ChunkText: "track snippet", Similarity: 0.72},
+				{EntityType: "academy_track", EntityID: "e2", ChunkText: "track snippet", Similarity: 0.72},
 			}, nil
 		},
 	})

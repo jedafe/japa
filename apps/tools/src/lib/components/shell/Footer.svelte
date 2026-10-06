@@ -40,7 +40,7 @@
 			<div class="flex items-center gap-4 text-sm text-muted">
 				<a href={mainAppUrl('/')} class="hover:text-text transition-colors">{t('shell.footer.japaconnect', 'JapaConnect')}</a>
 				<a href={mainAppUrl('/docs')} class="hover:text-text transition-colors">{t('shell.footer.docs', 'Docs')}</a>
-				<a href={mainAppUrl('/learn')} class="hover:text-text transition-colors">{t('shell.footer.learn', 'Learn')}</a>
+				<a href={mainAppUrl('/academy')} class="hover:text-text transition-colors">{t('shell.footer.academy', 'Academy')}</a>
 			</div>
 		</div>
 	</footer>

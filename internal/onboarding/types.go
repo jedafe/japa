@@ -10,7 +10,7 @@ type OnboardingStatusResponse struct { //nolint:revive // stuttering type name p
 	Completed     bool            `json:"completed"`
 	StepData      json.RawMessage `json:"step_data"`
 	TourDismissed bool            `json:"tour_dismissed"`
-	// TourDismissals maps each app surface ("main", "docs", "learn") to its
+	// TourDismissals maps each app surface ("main", "docs", "academy") to its
 	// dismissal state so the product tour can be managed per surface.
 	TourDismissals map[string]bool `json:"tour_dismissals"`
 	// TourSteps maps each surface to its ordered list of tour target keys
@@ -24,7 +24,7 @@ type OnboardingStatusResponse struct { //nolint:revive // stuttering type name p
 
 // DismissTourRequest is the optional JSON body for
 // POST /api/v1/onboarding/tour/dismiss. Surface identifies which app's
-// product tour is being dismissed ("main", "docs", "learn"); an empty body
+// product tour is being dismissed ("main", "docs", "academy"); an empty body
 // or empty surface defaults to "main" for backward compatibility.
 type DismissTourRequest struct {
 	Surface string `json:"surface"`

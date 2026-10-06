@@ -90,7 +90,7 @@
 			'/forum': 'forum',
 			'/discover': 'discover',
 			'/explore': 'explore',
-			'/learn': 'learn',
+			'/academy': 'academy',
 			'/jobs': 'jobs',
 			'/achievements': 'achievements',
 			'/bookmarks': 'bookmarks'

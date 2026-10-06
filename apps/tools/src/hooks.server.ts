@@ -18,7 +18,7 @@ import type { SessionUser, ToolSurface } from '$lib/types';
  * configured via the JC_TOOLS_HUB_HOSTS env var (comma-separated).
  *
  * Ref: ADR-086 (multi-surface architecture), §78 (Tools Web Surface),
- *      ADR-063 (Japa University host-detection precedent).
+ *      ADR-063 (Japa Academy host-detection precedent).
  */
 
 /** system_settings keys that control per-tool domains (ADR-086). */

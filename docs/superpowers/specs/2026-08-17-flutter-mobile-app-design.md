@@ -20,7 +20,7 @@ The mobile surface is not a new backend; the only net-new backend routes are the
 
 ### v2.1 scope
 
-- **In scope:** auth/onboarding, home feed, discover, blog, guides, comparisons, forum, JapaBot chat, spaces, follow/social, notifications, DMs, Japa University (courses + lessons), user profile, settings, wallet, bookmarks, badges/challenges/leaderboard, jobs finder, and the five v2 identity tools (visa checklist, readiness, cost of living, scholarships, remittance).
+- **In scope:** auth/onboarding, home feed, discover, blog, guides, comparisons, forum, JapaBot chat, spaces, follow/social, notifications, DMs, Japa Academy (courses + lessons), user profile, settings, wallet, bookmarks, badges/challenges/leaderboard, jobs finder, and the five v2 identity tools (visa checklist, readiness, cost of living, scholarships, remittance).
 - **Out of scope:** Admin Panel, Control Panel, AI Content Studio, Persona management, Creator/Instructor dashboard.
 
 ---
@@ -151,7 +151,7 @@ apps/mobile/
 │       │   └── japabot/
 │       ├── spaces/
 │       ├── social/                  # follow, notifications, DMs
-│       ├── learning/                # Japa University
+│       ├── learning/                # Japa Academy
 │       ├── profile/                 # profile, settings, wallet, bookmarks
 │       ├── gamification/            # badges, challenges, leaderboard
 │       └── jobs/
@@ -189,7 +189,7 @@ Each feature module under `lib/features/<name>/` must:
 | `tools/japabot` | `POST /api/v1/ai/chat`, `GET /api/v1/ai/conversations` | JapaBot chat. |
 | `spaces` | `GET /api/v1/spaces`, `GET /api/v1/spaces/:slug/*`, `POST /api/v1/spaces/:id/join` | Space list, detail, feed. |
 | `social` | `POST /api/v1/follow/*`, `GET /api/v1/notifications`, `GET /api/v1/messages/*` | Follow, notifications, DMs. |
-| `learning` | `GET /api/v1/university/courses`, `POST /api/v1/university/courses/:id/enroll` | Japa University. |
+| `learning` | `GET /api/v1/university/courses`, `POST /api/v1/university/courses/:id/enroll` | Japa Academy. |
 | `profile` | `GET /api/v1/me`, `PATCH /api/v1/me`, `GET /api/v1/me/wallet`, `GET /api/v1/me/bookmarks` | Profile, settings, wallet, bookmarks. |
 | `gamification` | `GET /api/v1/me/badges`, `GET /api/v1/challenges/*` (per §64) | Badges, challenges, leaderboard. |
 | `jobs` | `GET /api/v1/jobs/*` (per §63) | Jobs finder, applications. |
@@ -286,7 +286,7 @@ Goal: complete the v1 community and account experience.
 - Forum, JapaBot.
 - Spaces list/detail/feed, join/leave.
 - Follow, notifications list, DMs.
-- Japa University course catalog, lesson player.
+- Japa Academy course catalog, lesson player.
 - Profile, settings, wallet, bookmarks, subscriptions.
 - Gamification (badges, challenges, leaderboard).
 - Jobs finder.

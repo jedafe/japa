@@ -26,7 +26,7 @@ const (
 	EntityTypeContent       = "content"
 	EntityTypeForumThread   = "forum_thread"
 	EntityTypeSpace         = "space"
-	EntityTypeLearningTrack = "learning_track"
+	EntityTypeLearningTrack = "academy_track"
 )
 
 // SourceTier classifies an entity as editorial (Tier 1) or community (Tier 2).
@@ -34,7 +34,7 @@ const (
 // // For content entities (entity_type = "content"), the actual content_type
 // (guide, blog_post, comparison, discussion) determines the tier — the
 // entity_type column is generic "content" for all content entities.
-// For non-content entities (forum_thread, space, learning_track), the
+// For non-content entities (forum_thread, space, academy_track), the
 // entity_type itself determines the tier.
 // // Ref: ADR-069 §4 — Source tier weighting.
 func SourceTier(entityType, contentType string) string {
@@ -44,7 +44,7 @@ func SourceTier(entityType, contentType string) string {
 	}
 
 	switch tierKey {
-	case "guide", "blog_post", "learning_track", "comparison":
+	case "guide", "blog_post", "academy_track", "comparison":
 		return "editorial"
 	case "discussion", "forum_thread", "space":
 		return "community"
@@ -136,7 +136,7 @@ func SourceURL(entityType, contentType, slug string) string {
 	case EntityTypeSpace:
 		return "/spaces/" + slug
 	case EntityTypeLearningTrack:
-		return "/learn/tracks/" + slug
+		return "/academy/tracks/" + slug
 	default:
 		return ""
 	}

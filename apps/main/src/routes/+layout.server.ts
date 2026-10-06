@@ -236,7 +236,7 @@ export const load: LayoutServerLoad = async (event) => {
 		viewerId: user?.id ?? null,
 		theme: event.locals.theme,
 		locale: event.locals.locale,
-		isUniversityHost: event.locals.isUniversityHost,
+		isAcademyHost: event.locals.isAcademyHost,
 		isRoadmapHost: event.locals.isRoadmapHost,
 		csrfToken: event.locals.csrfToken ?? null,
 		siteSettings,

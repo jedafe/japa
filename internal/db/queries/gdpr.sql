@@ -789,11 +789,11 @@ FROM (SELECT * FROM activity_events WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserLessonProgress :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM lesson_progress WHERE user_id = @user_id) t;
+FROM (SELECT * FROM academy_lesson_progress WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserLearningCertificates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM learning_certificates WHERE user_id = @user_id) t;
+FROM (SELECT * FROM academy_certificates WHERE user_id = @user_id) t;
 
 -- name: GdprExportUserMentorshipMatches :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -881,10 +881,10 @@ FROM (
 ) t;
 
 -- =====================================================================
--- Japa University GDPR cascade (ADR-063 / audit C2)
--- revenue_splits and instructor_payouts are financial audit records:
+-- Japa Academy GDPR cascade (ADR-063 / audit C2)
+-- revenue_splits and academy_instructor_payouts are financial audit records:
 -- anonymize the instructor reference (SET NULL), never delete the row.
--- instructor_profiles.payout_method is sensitive jsonb — clear it before
+-- academy_instructor_profiles.payout_method is sensitive jsonb — clear it before
 -- the profile is cascade-deleted via users(id) ON DELETE CASCADE.
 -- =====================================================================
 
@@ -892,7 +892,7 @@ FROM (
 -- Clears the sensitive payout_method jsonb on the user's instructor
 -- profile(s) before the user row is physically deleted. The profile row
 -- itself is removed by the users(id) ON DELETE CASCADE FK.
-UPDATE instructor_profiles
+UPDATE academy_instructor_profiles
 SET payout_method = NULL,
  updated_at = now()
 WHERE user_id = @user_id;
@@ -904,7 +904,7 @@ WHERE user_id = @user_id;
 UPDATE revenue_splits rs
 SET instructor_id = NULL
 WHERE rs.instructor_id IN (
- SELECT ip.id FROM instructor_profiles ip
+ SELECT ip.id FROM academy_instructor_profiles ip
  WHERE ip.user_id = @user_id
  );
 
@@ -912,15 +912,15 @@ WHERE rs.instructor_id IN (
 -- Severs the instructor reference on all instructor_payout rows owned by
 -- this user's instructor profile(s). The payout rows survive for
 -- regulatory retention; only the instructor link is anonymized.
-UPDATE instructor_payouts ipo
+UPDATE academy_instructor_payouts ipo
 SET instructor_id = NULL
 WHERE ipo.instructor_id IN (
- SELECT ip.id FROM instructor_profiles ip
+ SELECT ip.id FROM academy_instructor_profiles ip
  WHERE ip.user_id = @user_id
  );
 
 -- =====================================================================
--- Japa University GDPR data export (ADR-063 / audit C2)
+-- Japa Academy GDPR data export (ADR-063 / audit C2)
 -- =====================================================================
 
 -- name: GdprExportInstructorProfiles :one
@@ -928,7 +928,7 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (
  SELECT id, display_name, headline, bio, social_links,
  tier, status, kyc_status, application_note, created_at, updated_at
- FROM instructor_profiles
+ FROM academy_instructor_profiles
  WHERE user_id = @user_id
 ) t;
 
@@ -940,7 +940,7 @@ FROM (
  rs.platform_pct, rs.creator_kobo, rs.platform_kobo,
  rs.currency, rs.created_at
  FROM revenue_splits rs
- JOIN instructor_profiles ip ON ip.id = rs.instructor_id
+ JOIN academy_instructor_profiles ip ON ip.id = rs.instructor_id
  WHERE ip.user_id = @user_id
 ) t;
 
@@ -951,8 +951,8 @@ FROM (
  ipo.gross_kobo, ipo.platform_commission_kobo, ipo.net_kobo,
  ipo.currency, ipo.status, ipo.payout_reference,
  ipo.processed_at, ipo.created_at
- FROM instructor_payouts ipo
- JOIN instructor_profiles ip ON ip.id = ipo.instructor_id
+ FROM academy_instructor_payouts ipo
+ JOIN academy_instructor_profiles ip ON ip.id = ipo.instructor_id
  WHERE ip.user_id = @user_id
 ) t;
 

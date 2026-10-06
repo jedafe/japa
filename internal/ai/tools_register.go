@@ -151,13 +151,13 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 
 	// --- Learning tools (task 9.02) ---
 	// No privacy targets — learning data has no ai_exempt column.
-	registry.RegisterHandler("learn.tracks.list", LearnTracksListHandler(deps))
-	registry.RegisterHandler("learn.tracks.create", LearnTracksCreateHandler(deps))
-	registry.RegisterHandler("learn.tracks.update", LearnTracksUpdateHandler(deps))
-	registry.RegisterHandler("learn.lessons.list", LearnLessonsListHandler(deps))
-	registry.RegisterHandler("learn.lessons.create", LearnLessonsCreateHandler(deps))
-	registry.RegisterHandler("learn.lessons.update", LearnLessonsUpdateHandler(deps))
-	registry.RegisterHandler("learn.lessons.reorder", LearnLessonsReorderHandler(deps))
+	registry.RegisterHandler("academy.tracks.list", AcademyTracksListHandler(deps))
+	registry.RegisterHandler("academy.tracks.create", AcademyTracksCreateHandler(deps))
+	registry.RegisterHandler("academy.tracks.update", AcademyTracksUpdateHandler(deps))
+	registry.RegisterHandler("academy.lessons.list", AcademyLessonsListHandler(deps))
+	registry.RegisterHandler("academy.lessons.create", AcademyLessonsCreateHandler(deps))
+	registry.RegisterHandler("academy.lessons.update", AcademyLessonsUpdateHandler(deps))
+	registry.RegisterHandler("academy.lessons.reorder", AcademyLessonsReorderHandler(deps))
 
 	// --- Docs tools (task 9.03) ---
 	// No privacy targets — docs have no ai_exempt column.

@@ -1,7 +1,7 @@
 import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { apiContext, apiGet } from '$lib/server/api';
-import { universityUrl } from '$lib/appOrigins';
+import { academyUrl } from '$lib/appOrigins';
 
 /**
  * App-shell scoped data for every `(app)` route. This layout is re-run on
@@ -12,8 +12,8 @@ import { universityUrl } from '$lib/appOrigins';
  * and reused across navigations, making route switches feel instant.
  */
 export const load: LayoutServerLoad = async (event) => {
-	if (event.locals.isUniversityHost) {
-		throw redirect(302, universityUrl(`${event.url.pathname}${event.url.search}`));
+	if (event.locals.isAcademyHost) {
+		throw redirect(302, academyUrl(`${event.url.pathname}${event.url.search}`));
 	}
 
 	// ADR-127: the roadmap host serves only the public roadmap surface.

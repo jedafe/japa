@@ -889,14 +889,14 @@ func (ix *Indexer) DeleteDocument(ctx context.Context, indexName string, id [16]
 }
 
 // ---------------------------------------------------------------------------
-// Learning tracks (Japa University marketplace — ADR-063)
+// Learning tracks (Japa Academy marketplace — ADR-063)
 // ---------------------------------------------------------------------------
 
-// learningTrackDocument is the shape stored in the learning_tracks index.
+// academyTrackDocument is the shape stored in the academy_tracks index.
 // relevant_countries is a string array of ISO 3166-1 alpha-2 codes used for
 // geo-aware filtering (ADR-064): a visitor in "NG" can filter to courses
 // relevant to Nigeria.
-type learningTrackDocument struct {
+type academyTrackDocument struct {
 	ID string `json:"id"`
 
 	Title             string   `json:"title"`
@@ -917,30 +917,30 @@ type learningTrackDocument struct {
 	CreatedAt         int64    `json:"created_at"` // unix timestamp for §54 ?sort=latest
 }
 
-// IndexLearningTrack fetches a published marketplace track and upserts it
-// into the learning_tracks index. Only tracks with is_published_to_university
+// IndexAcademyTrack fetches a published marketplace track and upserts it
+// into the academy_tracks index. Only tracks with is_published_to_academy
 // = true are indexed; unpublished tracks are deleted from the index.
-func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID [16]byte) error {
+func (ix *Indexer) IndexAcademyTrack(ctx context.Context, trackID [16]byte) error {
 	if ix.engine == nil {
 		slog.Warn("search:index: no search engine, skipping")
 		return nil
 	}
 	trID := pgtype.UUID{Bytes: trackID, Valid: true}
 
-	row, err := ix.read.GetUniversityTrackByID(ctx,
+	row, err := ix.read.GetInstructorTrackByID(ctx,
 		trID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return ix.DeleteDocument(ctx, IndexLearningTracks, trackID)
+			return ix.DeleteDocument(ctx, IndexAcademyTracks, trackID)
 		}
 		return fmt.Errorf("fetching learning track for index: %w", err)
 	}
 
 	// If the track is not published to the marketplace, remove it from
 	// the index so it doesn't appear in search results.
-	if !row.IsPublishedToUniversity {
-		return ix.DeleteDocument(ctx, IndexLearningTracks, trackID)
+	if !row.IsPublishedToAcademy {
+		return ix.DeleteDocument(ctx, IndexAcademyTracks, trackID)
 	}
 
 	desc := ""
@@ -953,7 +953,7 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID [16]byte) err
 		category = *row.Category
 	}
 
-	doc := learningTrackDocument{
+	doc := academyTrackDocument{
 		ID: row.ID.String(),
 
 		Title:         row.Title,
@@ -966,14 +966,14 @@ func (ix *Indexer) IndexLearningTrack(ctx context.Context, trackID [16]byte) err
 		IsFree:        row.PriceKobo == nil || *row.PriceKobo == 0,
 		PriceKobo:     row.PriceKobo,
 		Currency:      row.Currency,
-		URL:           "/learn/university/catalog/" + row.Slug,
+		URL:           "/academy/catalog/" + row.Slug,
 		// relevant_countries is resolved from the track's geo_space_id by
 		// walking the space hierarchy to the country level (ADR-064).
 		RelevantCountries: ix.resolveRelevantCountries(ctx, row.GeoSpaceID),
 		CreatedAt:         row.CreatedAt.Time.Unix(),
 	}
 
-	if err := ix.engine.UpsertDocuments(ctx, IndexLearningTracks, []learningTrackDocument{doc}); err != nil {
+	if err := ix.engine.UpsertDocuments(ctx, IndexAcademyTracks, []academyTrackDocument{doc}); err != nil {
 		return fmt.Errorf("upserting learning track document: %w", err)
 	}
 
@@ -1057,7 +1057,7 @@ type ReindexSummary struct {
 	User          int `json:"user"`
 	Tag           int `json:"tag"`
 	DirectoryTag  int `json:"directory_tag"`
-	LearningTrack int `json:"learning_track"`
+	AcademyTrack int `json:"academy_track"`
 	DocPage       int `json:"doc_page"`
 	Organization  int `json:"organization"`
 	Errors        int `json:"errors"`
@@ -1257,11 +1257,11 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		}
 	}
 
-	// Learning tracks — offset-paginated via ListUniversityCatalog with
-	// empty filters (all published tracks). IndexLearningTrack re-fetches
-	// the full row via GetUniversityTrackByID.
+	// Learning tracks — offset-paginated via ListAcademyCatalog with
+	// empty filters (all published tracks). IndexAcademyTrack re-fetches
+	// the full row via GetInstructorTrackByID.
 	for offset := int32(0); ; offset += reindexBatchSize {
-		rows, err := ix.read.ListUniversityCatalog(ctx, gen.ListUniversityCatalogParams{
+		rows, err := ix.read.ListAcademyCatalog(ctx, gen.ListAcademyCatalogParams{
 
 			Category:   "",
 			Language:   "",
@@ -1278,12 +1278,12 @@ func (ix *Indexer) ReindexAll(ctx context.Context) (*ReindexSummary, error) {
 		}
 
 		for _, row := range rows {
-			if err := ix.IndexLearningTrack(ctx, row.ID.Bytes); err != nil {
+			if err := ix.IndexAcademyTrack(ctx, row.ID.Bytes); err != nil {
 				slog.Warn("search:reindex: learning track failed", "id", row.ID, "error", err)
 
 				summary.Errors++
 			} else {
-				summary.LearningTrack++
+				summary.AcademyTrack++
 			}
 		}
 

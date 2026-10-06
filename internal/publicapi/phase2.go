@@ -513,7 +513,7 @@ func (s *Service) semanticHit(ctx context.Context, c rag.RetrievedChunk) (Public
 			hit.Href = &href
 		}
 	default:
-		// wiki_page and learning_track corpora are public-facing by design
+		// wiki_page and academy_track corpora are public-facing by design
 		// (approval-gated wiki, public course catalog); they surface without
 		// title/href since there is no cheap per-entity resolver.
 	}

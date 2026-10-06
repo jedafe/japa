@@ -40,15 +40,15 @@ Apply `jc-main-audit` §E.
 ## I. Standard Compliance
 Apply `jc-main-audit` §§B (Rule 16), D (Bits UI), B(runes), G (security/{@html}), H (a11y — plus code-region roles, copy-button labels, nav landmarks, external-link rel), I (i18n).
 
-## J. Japa University & Geo-Aware API Docs (ADR-063/064)
-- API reference pages exist for the new v1.11.0 routes: `GET /geo/me`, `GET /geo/lookup`, `/learn/university/*`, `/me/instructor-profile`, `/me/payouts`, `/universities`, `/admin/universities` — flag any missing
+## J. Japa Academy & Geo-Aware API Docs (ADR-063/064)
+- API reference pages exist for the new v1.11.0 routes: `GET /geo/me`, `GET /geo/lookup`, `/academy/*`, `/me/instructor-profile`, `/me/payouts`, `/universities`, `/admin/universities` — flag any missing
 - `?geo=` param behavior documented on feed/search/trending/discovery routes (defaults to `ContentCountry`, explicit `?geo=all` for global)
-- `price_kobo` documented as integer (kobo), `is_published_to_university` documented as distinct from `is_published`
+- `price_kobo` documented as integer (kobo), `is_published_to_academy` documented as distinct from `is_published`
 - University spaces (Section 39) `university_fields` custom field group documented
 - All new routes use the three-column API-docs variant with method badges and Request/Response/Example tabs
 
 ## Report Format
-Same structure as `jc-main-audit` with categories: Memory leaks · API routes/sidebar · Search modal · Code blocks · On-This-Page · Responsive · SEO · Bits UI · Svelte 5 · A11y · **Japa University/Geo API docs (ADR-063/064)**.
+Same structure as `jc-main-audit` with categories: Memory leaks · API routes/sidebar · Search modal · Code blocks · On-This-Page · Responsive · SEO · Bits UI · Svelte 5 · A11y · **Japa Academy/Geo API docs (ADR-063/064)**.
 
 ## App Shell & Docs Drift (ADR-060)
 - Docs uses the unified shell (ADR-058) adapted per ADR-060: the **left nav IS the audience-gated doc nav tree** (from `GET /api/v1/docs/nav`), collapsible (`ui.nav_collapsed` server-side, not localStorage); the **right sidebar IS the in-page TOC** + "was this helpful?" — flag social-widget sidebars or a hardcoded nav tree.

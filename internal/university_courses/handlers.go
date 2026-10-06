@@ -9,8 +9,8 @@
 //     by the universities.course_catalog.* / universities.course_offering.*
 //     RBAC nodes seeded in migration 000730.
 //
-// These are distinct from the Japa University creator tracks under
-// /admin/university/* (ADR-063) — this package manages the degree programs a
+// These are distinct from the Japa Academy creator tracks under
+// /admin/academy/* (ADR-063) — this package manages the degree programs a
 // real-world university offers.
 package university_courses
 

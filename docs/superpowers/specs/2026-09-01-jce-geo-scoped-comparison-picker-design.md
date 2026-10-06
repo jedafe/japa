@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-01  
 **Status:** Design  
-**Scope:** `apps/main`, `internal/comparison`, `internal/spaces`, `internal/learning`, `internal/visaroutes`, `internal/costofliving`, `migrations`
+**Scope:** `apps/main`, `internal/comparison`, `internal/spaces`, `internal/academy`, `internal/visaroutes`, `internal/costofliving`, `migrations`
 
 ## 1. Problem
 
@@ -93,7 +93,7 @@ Add `parent_id` / `geo_code` filter to find universities in a selected city/stat
 
 #### `course` (new resolver backed by university-course offerings)
 
-Replace the existing `course` resolver that reads `learning_tracks`. <ref_snippet file="/home/jmobile/websites/japa/japaconnect/internal/comparison/resolver/course.go" lines="55-84" />
+Replace the existing `course` resolver that reads `academy_tracks`. <ref_snippet file="/home/jmobile/websites/japa/japaconnect/internal/comparison/resolver/course.go" lines="55-84" />
 
 New resolver:
 
@@ -152,7 +152,7 @@ Unique: `(tenant_id, course_id, university_id)`.
 
 #### Service and store
 
-- `internal/learning` or a new `internal/university_courses` package.
+- `internal/academy` or a new `internal/university_courses` package.
 - `GetOfferingByID`, `GetOfferingBySlug`, `SearchOfferings` (by `university_id` and/or query).
 - `CreateCatalog`, `UpdateCatalog`, `CreateOffering`, `UpdateOffering`, `DeleteOffering`.
 

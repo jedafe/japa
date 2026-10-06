@@ -265,25 +265,25 @@ type SpacesService interface {
 	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
 }
 
-// LearningStore is the subset of internal/learning.Store the Phase 9 learn
-// tools call. learning.Track and learning.Lesson are content-package types
+// LearningStore is the subset of internal/academy.Store the Phase 9 learn
+// tools call. academy.Track and academy.Lesson are content-package types
 // that would create an import cycle if imported here, so mirror types
-// (LearningTrack, LearningLesson) are defined below and the wiring layer
+// (AcademyTrack, AcademyLesson) are defined below and the wiring layer
 // adapts between them.
 // // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Learn tools)
 // Ref: japaconnect-engineering/sections/36-learning-platform.md.
 type LearningStore interface {
-	ListTracks(ctx context.Context) ([]LearningTrack, error)
-	CreateTrack(ctx context.Context, input LearningCreateTrackInput) (*LearningTrack, error)
-	UpdateTrack(ctx context.Context, id pgtype.UUID, input LearningUpdateTrackInput) (*LearningTrack, error)
-	ListLessons(ctx context.Context) ([]LearningLesson, error)
-	CreateLesson(ctx context.Context, moduleID pgtype.UUID, input LearningCreateLessonInput) (*LearningLesson, error)
-	UpdateLesson(ctx context.Context, id pgtype.UUID, input LearningUpdateLessonInput) (*LearningLesson, error)
+	ListTracks(ctx context.Context) ([]AcademyTrack, error)
+	CreateTrack(ctx context.Context, input LearningCreateTrackInput) (*AcademyTrack, error)
+	UpdateTrack(ctx context.Context, id pgtype.UUID, input LearningUpdateTrackInput) (*AcademyTrack, error)
+	ListLessons(ctx context.Context) ([]AcademyLesson, error)
+	CreateLesson(ctx context.Context, moduleID pgtype.UUID, input LearningCreateLessonInput) (*AcademyLesson, error)
+	UpdateLesson(ctx context.Context, id pgtype.UUID, input LearningUpdateLessonInput) (*AcademyLesson, error)
 	ReorderLessons(ctx context.Context, entries []LearningReorderEntry) error
 }
 
-// LearningTrack mirrors learning.Track (the subset the AI tools surface).
-type LearningTrack struct {
+// AcademyTrack mirrors academy.Track (the subset the AI tools surface).
+type AcademyTrack struct {
 	ID pgtype.UUID `json:"id"`
 
 	Title       string             `json:"title"`
@@ -296,7 +296,7 @@ type LearningTrack struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
-// LearningCreateTrackInput mirrors learning.CreateTrackInput.
+// LearningCreateTrackInput mirrors academy.CreateTrackInput.
 type LearningCreateTrackInput struct {
 	Title                string      `json:"title"`
 	Slug                 string      `json:"slug"`
@@ -309,7 +309,7 @@ type LearningCreateTrackInput struct {
 	SubscriptionEligible bool        `json:"subscription_eligible,omitempty"`
 }
 
-// LearningUpdateTrackInput mirrors learning.UpdateTrackInput.
+// LearningUpdateTrackInput mirrors academy.UpdateTrackInput.
 type LearningUpdateTrackInput struct {
 	Title                string      `json:"title"`
 	Description          *string     `json:"description,omitempty"`
@@ -321,8 +321,8 @@ type LearningUpdateTrackInput struct {
 	SubscriptionEligible *bool       `json:"subscription_eligible,omitempty"`
 }
 
-// LearningLesson mirrors learning.Lesson (the subset the AI tools surface).
-type LearningLesson struct {
+// AcademyLesson mirrors academy.Lesson (the subset the AI tools surface).
+type AcademyLesson struct {
 	ID pgtype.UUID `json:"id"`
 
 	ModuleID        pgtype.UUID        `json:"module_id"`
@@ -338,7 +338,7 @@ type LearningLesson struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
-// LearningCreateLessonInput mirrors learning.CreateLessonInput.
+// LearningCreateLessonInput mirrors academy.CreateLessonInput.
 type LearningCreateLessonInput struct {
 	Title           string      `json:"title"`
 	Slug            string      `json:"slug"`
@@ -351,7 +351,7 @@ type LearningCreateLessonInput struct {
 	IsPreview       bool        `json:"is_preview"`
 }
 
-// LearningUpdateLessonInput mirrors learning.UpdateLessonInput.
+// LearningUpdateLessonInput mirrors academy.UpdateLessonInput.
 type LearningUpdateLessonInput struct {
 	Title           string      `json:"title"`
 	LessonType      string      `json:"lesson_type"`

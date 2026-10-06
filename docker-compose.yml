@@ -115,22 +115,10 @@ services:
       - "8099:8080"
     restart: unless-stopped
 
-  # Honcho — Plastic Labs AI agent memory service.
-  honcho:
-    image: honcho:latest
-    environment:
-      DATABASE_URL: postgresql://japa:japa@postgres:5432/honcho?sslmode=disable
-    ports:
-      - "8001:8001"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8001/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
+  # Honcho (AI agent memory) is intentionally NOT part of the compose stack —
+  # its image is not published to a registry. The API degrades gracefully when
+  # JC_HONCHO_URL is unset; point it at an external Honcho deployment to enable
+  # persona memory features.
 
   # GlitchTip — Sentry-compatible error reporting (self-hosted).
   glitchtip:
@@ -196,7 +184,6 @@ services:
       JC_MEILISEARCH_URL: http://meilisearch:7700
       JC_MEILISEARCH_KEY: ${JC_MEILISEARCH_KEY}
       JC_IMGPROXY_BASE_URL: http://imgproxy:8080
-      JC_HONCHO_URL: http://honcho:8001
       JC_RELEASE_SHA: dev
       JC_ENV: development
       JC_PORT: "8080"
@@ -222,48 +209,91 @@ services:
       - go-api
     restart: unless-stopped
 
+  # ── Frontend apps ──────────────────────────────────────────────────────────
+  # All SvelteKit apps are built from the repository root so bun can resolve
+  # workspace:* dependencies (packages/ui, packages/api-url, ...). PUBLIC_*
+  # values are inlined by vite at build time — they are build args, not runtime
+  # env. PRIVATE_* values are read at runtime by the SSR server.
+
+  # Main site — SvelteKit SSR, port 3000.
+  main:
+    build:
+      context: .
+      dockerfile: apps/main/Dockerfile
+      args:
+        PUBLIC_JC_API_URL: http://localhost:8080/api/v1
+        PUBLIC_JC_WS_URL: ws://localhost:8080/api/v1/ws
+        PUBLIC_JC_ACADEMY_ORIGIN: http://localhost:3003
+        PUBLIC_DOCS_ORIGIN: http://localhost:3004
+        PUBLIC_JC_TOOLS_ORIGIN: http://localhost:3005
+    ports:
+      - "3000:3000"
+    environment:
+      - PRIVATE_API_BASE_URL=http://go-api:8080
+    restart: unless-stopped
+
+  # Admin Panel — SvelteKit, port 3001.
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        PUBLIC_JC_API_URL: http://localhost:8080/api/v1
+        PUBLIC_JC_WS_URL: ws://localhost:8080/api/v1/ws
+        PUBLIC_JC_ENV: development
+        PUBLIC_JC_SITE_URL: http://localhost
+    ports:
+      - "3001:3001"
+    environment:
+      - PRIVATE_API_BASE_URL=http://go-api:8080
+    restart: unless-stopped
+
   # Control Panel — SvelteKit SPA for internal admin tooling, port 3002.
   control:
     build:
-      context: ./apps/control
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/control/Dockerfile
+      args:
+        PUBLIC_JC_API_URL: http://localhost:8080/api/v1
+        PUBLIC_JC_ENV: development
     ports:
       - "3002:3002"
     environment:
       - PRIVATE_API_BASE_URL=http://go-api:8080
-      - PUBLIC_JC_API_URL=/api/v1
-      - PUBLIC_JC_ENV=development
       - PUBLIC_JC_UMAMI_URL=${PUBLIC_JC_UMAMI_URL}
       - PUBLIC_JC_UMAMI_SITE_ID_CONTROL=${PUBLIC_JC_UMAMI_SITE_ID_CONTROL}
     restart: unless-stopped
 
-  # Learn — SvelteKit SSR learning platform, port 3003.
-  learn:
+  # Academy — SvelteKit SSR learning + creator marketplace, port 3003.
+  academy:
     build:
-      context: ./apps/learn
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/academy/Dockerfile
+      args:
+        PUBLIC_JC_API_URL: http://localhost:8080/api/v1
+        PUBLIC_MAIN_ORIGIN: http://localhost:3000
     ports:
       - "3003:3003"
     environment:
       - PRIVATE_API_BASE_URL=http://go-api:8080
-      - PUBLIC_JC_API_URL=/api/v1
-      - PUBLIC_MAIN_ORIGIN=http://nginx
       - PUBLIC_JC_UMAMI_URL=${PUBLIC_JC_UMAMI_URL}
-      - PUBLIC_JC_UMAMI_SITE_ID_LEARN=${PUBLIC_JC_UMAMI_SITE_ID_LEARN}
+      - PUBLIC_JC_UMAMI_SITE_ID_ACADEMY=${PUBLIC_JC_UMAMI_SITE_ID_ACADEMY}
     restart: unless-stopped
 
   # Docs — SvelteKit SSR documentation site, port 3004.
   docs:
     build:
-      context: ./apps/docs
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/docs/Dockerfile
+      args:
+        PUBLIC_JC_API_URL: http://localhost:8080/api/v1
+        PUBLIC_MAIN_ORIGIN: http://localhost:3000
+        PUBLIC_ADMIN_ORIGIN: http://localhost:3001
+        PUBLIC_DOCS_ORIGIN: http://localhost:3004
     ports:
       - "3004:3004"
     environment:
       - PRIVATE_API_BASE_URL=http://go-api:8080
-      - PUBLIC_JC_API_URL=/api/v1
-      - PUBLIC_MAIN_ORIGIN=http://nginx
-      - PUBLIC_DOCS_ORIGIN=http://localhost:3004
       - PUBLIC_JC_UMAMI_URL=${PUBLIC_JC_UMAMI_URL}
       - PUBLIC_JC_UMAMI_SITE_ID_DOCS=${PUBLIC_JC_UMAMI_SITE_ID_DOCS}
     restart: unless-stopped
@@ -273,14 +303,15 @@ services:
   # domains render the single-tool shell — ADR-086, §78).
   tools:
     build:
-      context: ./apps/tools
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/tools/Dockerfile
+      args:
+        PUBLIC_JC_API_URL: http://localhost:8080/api/v1
+        PUBLIC_MAIN_ORIGIN: http://localhost:3000
     ports:
       - "3005:3005"
     environment:
       - PRIVATE_API_BASE_URL=http://go-api:8080
-      - PUBLIC_JC_API_URL=/api/v1
-      - PUBLIC_MAIN_ORIGIN=http://nginx
       - PUBLIC_JC_UMAMI_URL=${PUBLIC_JC_UMAMI_URL}
       - PUBLIC_JC_UMAMI_SITE_ID_TOOLS=${PUBLIC_JC_UMAMI_SITE_ID_TOOLS}
     restart: unless-stopped

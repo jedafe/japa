@@ -94,7 +94,7 @@
 		'custom_field': Tag,
 		'comparison': LayoutGrid,
 		'spaces': Globe,
-		'learn': GraduationCap,
+		'academy': GraduationCap,
 		'docs': FileText,
 		'tools': Wrench,
 		'menu': LayoutGrid,

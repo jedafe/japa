@@ -34,12 +34,12 @@ All Control Panel dashboards render metrics with LayerChart:
 - `geo_personalization.enabled` (boolean, default `true`) — the killswitch. When false, all surfaces fall back to global ranking. Prominently placed in the settings UI with a warning dialog on disable ("This will disable geo-personalized content for all users").
 - Feed geo boost cap, search geo weight multiplier — numeric settings, tuneable without deploy.
 
-**Japa University (ADR-063) settings:**
+**Japa Academy (ADR-063) settings:**
 - `university.default_commission_pct`, `university.verified_tier_commission_pct`, `university.partner_tier_commission_pct` — revenue split percentages per tier.
-- `university.pro_stream_rate_kobo` — per-Pro-learner stream rate for creator compensation.
+- `academy.pro_stream_rate_kobo` — per-Pro-learner stream rate for creator compensation.
 - `university.payout_min_threshold_kobo` — minimum payout amount; below this, payouts roll to next period.
 - `university.payout_period_days` — payout cycle length.
-- `university.surface_domain` — the Japa University branded domain (default `university.japaconnect.com`). Changing this affects host detection in the Learn app.
+- `university.surface_domain` — the Japa Academy branded domain (default `academy.japaconnect.com`). Changing this affects host detection in the Learn app.
 
 **Job Queue:** tabs Critical/Default/Low · stats + failed-jobs DataTable (retry action) · poll 15s.
 **Health:** service cards + LayerChart sparklines · poll 30s.

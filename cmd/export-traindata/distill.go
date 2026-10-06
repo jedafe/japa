@@ -178,9 +178,9 @@ func loadSeedDocuments(ctx context.Context, pool *pgxpool.Pool, maxDocs int) ([]
 	// Lessons — curriculum text, strongest teaching signal per token.
 	lrows, err := pool.Query(ctx, `
 		SELECT l.title, l.content, t.title
-		FROM learning_lessons l
-		JOIN learning_modules m ON m.id = l.module_id
-		JOIN learning_tracks t ON t.id = m.track_id
+		FROM academy_lessons l
+		JOIN academy_modules m ON m.id = l.module_id
+		JOIN academy_tracks t ON t.id = m.track_id
 		WHERE l.is_published AND t.is_published AND l.lesson_type = 'article'
 		  AND length(l.content) > 500
 	`)

@@ -24,7 +24,7 @@ For every screen in the v2.1 contract (ADR-074 §5), verify:
 - [ ] If a required endpoint is missing, record it as a **backend gap**, not a frontend gap.
 
 Launch-screen checklist:
-- Auth/onboarding, home feed, discover, blog, guides, comparisons, forum, JapaBot, spaces, follow/social, notifications, DMs, Japa University, profile, settings, wallet, bookmarks, badges/challenges/leaderboard, jobs finder.
+- Auth/onboarding, home feed, discover, blog, guides, comparisons, forum, JapaBot, spaces, follow/social, notifications, DMs, Japa Academy, profile, settings, wallet, bookmarks, badges/challenges/leaderboard, jobs finder.
 
 V2 tool-screen checklist (only required as their backend phases complete):
 - Visa Checklist, Readiness Assessment, Cost of Living, Scholarship Finder, Remittance Rate Tracker.

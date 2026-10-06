@@ -901,8 +901,8 @@ export const universitiesAdminApi = {
 
 // --- University Course Catalog + Offerings (Section 39) ---
 // Institutional degree programs (university_course_catalog +
-// university_course_offerings) — distinct from the Japa University creator
-// tracks under universityAdminApi.
+// university_course_offerings) — distinct from the Japa Academy creator
+// tracks under academyAdminApi.
 
 export type CourseCatalogEntry = {
 	id: string;
@@ -990,58 +990,58 @@ export const courseOfferingsAdminApi = {
 		}),
 };
 
-// --- Japa University Creator Economy (ADR-063) ---
+// --- Japa Academy Creator Economy (ADR-063) ---
 
-export const universityAdminApi = {
+export const academyAdminApi = {
 	listInstructors: (params?: string) =>
-		api<unknown>(`/admin/university/instructors${params ? `?${params}` : ''}`),
+		api<unknown>(`/admin/academy/instructors${params ? `?${params}` : ''}`),
 	getInstructor: (id: string) =>
-		api<unknown>(`/admin/university/instructors/${id}`),
+		api<unknown>(`/admin/academy/instructors/${id}`),
 	approveInstructor: (id: string, body: { tier?: string; commission_pct_override?: number }) =>
-		api<unknown>(`/admin/university/instructors/${id}/approve`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/instructors/${id}/approve`, { method: 'POST', body }),
 	rejectInstructor: (id: string) =>
-		api<unknown>(`/admin/university/instructors/${id}/reject`, { method: 'POST', body: {} }),
+		api<unknown>(`/admin/academy/instructors/${id}/reject`, { method: 'POST', body: {} }),
 	suspendInstructor: (id: string) =>
-		api<unknown>(`/admin/university/instructors/${id}/suspend`, { method: 'POST', body: {} }),
+		api<unknown>(`/admin/academy/instructors/${id}/suspend`, { method: 'POST', body: {} }),
 	reinstateInstructor: (id: string) =>
-		api<unknown>(`/admin/university/instructors/${id}/reinstate`, { method: 'POST', body: {} }),
+		api<unknown>(`/admin/academy/instructors/${id}/reinstate`, { method: 'POST', body: {} }),
 	listPendingTracks: (params?: string) =>
-		apiRaw<{ data: { id: string; title: string; slug: string; description?: string | null; difficulty: string; instructor_id?: string | null; instructor_name: string; price_kobo?: number | null; currency: string; category?: string | null; language: string; geo_space_id?: string | null; total_enrolled: number; is_published: boolean; is_published_to_university: boolean; created_at: string; updated_at: string }[]; meta: { total: number; limit: number; offset: number } }>(`/admin/university/tracks/pending${params ? `?${params}` : ''}`),
+		apiRaw<{ data: { id: string; title: string; slug: string; description?: string | null; difficulty: string; instructor_id?: string | null; instructor_name: string; price_kobo?: number | null; currency: string; category?: string | null; language: string; geo_space_id?: string | null; total_enrolled: number; is_published: boolean; is_published_to_academy: boolean; created_at: string; updated_at: string }[]; meta: { total: number; limit: number; offset: number } }>(`/admin/academy/tracks/pending${params ? `?${params}` : ''}`),
 	listAllTracks: (params?: string) =>
-		apiRaw<{ data: { id: string; title: string; slug: string; description?: string | null; difficulty: string; instructor_id?: string | null; instructor_name: string; price_kobo?: number | null; currency: string; category?: string | null; language: string; geo_space_id?: string | null; total_enrolled: number; is_published: boolean; is_published_to_university: boolean; created_at: string; updated_at: string }[]; meta: { total: number; limit: number; offset: number } }>(`/admin/university/tracks${params ? `?${params}` : ''}`),
+		apiRaw<{ data: { id: string; title: string; slug: string; description?: string | null; difficulty: string; instructor_id?: string | null; instructor_name: string; price_kobo?: number | null; currency: string; category?: string | null; language: string; geo_space_id?: string | null; total_enrolled: number; is_published: boolean; is_published_to_academy: boolean; created_at: string; updated_at: string }[]; meta: { total: number; limit: number; offset: number } }>(`/admin/academy/tracks${params ? `?${params}` : ''}`),
 	getTrack: (id: string) =>
-		api<unknown>(`/admin/university/tracks/${id}`),
+		api<unknown>(`/admin/academy/tracks/${id}`),
 	approveTrack: (id: string) =>
-		api<unknown>(`/admin/university/tracks/${id}/approve`, { method: 'POST', body: {} }),
+		api<unknown>(`/admin/academy/tracks/${id}/approve`, { method: 'POST', body: {} }),
 	rejectTrack: (id: string, body: { reason?: string }) =>
-		api<unknown>(`/admin/university/tracks/${id}/reject`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/tracks/${id}/reject`, { method: 'POST', body }),
 	listPayouts: (params?: string) =>
-		api<unknown>(`/admin/university/payouts${params ? `?${params}` : ''}`),
+		api<unknown>(`/admin/academy/payouts${params ? `?${params}` : ''}`),
 	listRevenueSplits: (params?: string) =>
-		api<unknown>(`/admin/university/revenue-splits${params ? `?${params}` : ''}`),
+		api<unknown>(`/admin/academy/revenue-splits${params ? `?${params}` : ''}`),
 	getPayout: (id: string) =>
-		api<unknown>(`/admin/university/payouts/${id}`),
+		api<unknown>(`/admin/academy/payouts/${id}`),
 	processPayout: (id: string) =>
-		api<unknown>(`/admin/university/payouts/${id}/process`, { method: 'POST', body: {} }),
+		api<unknown>(`/admin/academy/payouts/${id}/process`, { method: 'POST', body: {} }),
 	markPayoutFailed: (id: string, body: { reason?: string }) =>
-		api<unknown>(`/admin/university/payouts/${id}/fail`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/payouts/${id}/fail`, { method: 'POST', body }),
 	deleteInstructor: (id: string) =>
-		api<unknown>(`/admin/university/instructors/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/instructors/${id}`, { method: 'DELETE' }),
 	updateInstructor: (id: string, body: { tier?: string; commission_pct_override?: number }) =>
-		api<unknown>(`/admin/university/instructors/${id}`, { method: 'PATCH', body }),
+		api<unknown>(`/admin/academy/instructors/${id}`, { method: 'PATCH', body }),
 	featureTrack: (id: string, featured: boolean) =>
-		api<unknown>(`/admin/university/tracks/${id}/feature`, { method: 'POST', body: { featured } }),
+		api<unknown>(`/admin/academy/tracks/${id}/feature`, { method: 'POST', body: { featured } }),
 	// Track categories (ADR-063 §9.1)
 	listCategories: (params?: string) =>
-		apiRaw<{ data: { id: string; slug: string; name: string; sort_order: number; is_active: boolean; created_at: string; updated_at: string }[]; meta: { total: number; page: number; limit: number } }>(`/admin/university/categories${params ? `?${params}` : ''}`),
+		apiRaw<{ data: { id: string; slug: string; name: string; sort_order: number; is_active: boolean; created_at: string; updated_at: string }[]; meta: { total: number; page: number; limit: number } }>(`/admin/academy/categories${params ? `?${params}` : ''}`),
 	createCategory: (body: { slug: string; name: string; sort_order?: number; is_active?: boolean }) =>
-		api<unknown>(`/admin/university/categories`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/categories`, { method: 'POST', body }),
 	getCategory: (id: string) =>
-		api<unknown>(`/admin/university/categories/${id}`),
+		api<unknown>(`/admin/academy/categories/${id}`),
 	updateCategory: (id: string, body: { slug?: string; name?: string; sort_order?: number; is_active?: boolean }) =>
-		api<unknown>(`/admin/university/categories/${id}`, { method: 'PATCH', body }),
+		api<unknown>(`/admin/academy/categories/${id}`, { method: 'PATCH', body }),
 	deleteCategory: (id: string) =>
-		api<unknown>(`/admin/university/categories/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/categories/${id}`, { method: 'DELETE' }),
 };
 
 // --- Geo IP (public hierarchy + admin lookup) ---
@@ -1535,25 +1535,25 @@ export const i18nAdminApiExtended = {
 		api<unknown>(`/admin/i18n/strings/${id}/translate`, { method: 'POST', body }),
 };
 
-export const learnAdminApiExtended = {
-	listTracks: (params?: string) => api<unknown>(`/admin/learn/tracks${params ? `?${params}` : ''}`),
-	getTrackEnrollments: (id: string) => api<unknown>(`/admin/learn/tracks/${id}/enrollments`),
-	createTrack: (body: Record<string, unknown>) => api<unknown>('/admin/learn/tracks', { method: 'POST', body }),
+export const academyLearningAdminApi = {
+	listTracks: (params?: string) => api<unknown>(`/admin/academy/learning/tracks${params ? `?${params}` : ''}`),
+	getTrackEnrollments: (id: string) => api<unknown>(`/admin/academy/learning/tracks/${id}/enrollments`),
+	createTrack: (body: Record<string, unknown>) => api<unknown>('/admin/academy/learning/tracks', { method: 'POST', body }),
 	updateTrack: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/learn/tracks/${id}`, { method: 'PATCH', body }),
+		api<unknown>(`/admin/academy/learning/tracks/${id}`, { method: 'PATCH', body }),
 	publishTrack: (id: string) =>
-		api<unknown>(`/admin/learn/tracks/${id}/publish`, { method: 'POST', body: {} }),
-	deleteTrack: (id: string) => api<{ deleted: boolean }>(`/admin/learn/tracks/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/learning/tracks/${id}/publish`, { method: 'POST', body: {} }),
+	deleteTrack: (id: string) => api<{ deleted: boolean }>(`/admin/academy/learning/tracks/${id}`, { method: 'DELETE' }),
 	addModule: (trackId: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/learn/tracks/${trackId}/modules`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/learning/tracks/${trackId}/modules`, { method: 'POST', body }),
 	updateModule: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/learn/modules/${id}`, { method: 'PATCH', body }),
-	deleteModule: (id: string) => api<{ deleted: boolean }>(`/admin/learn/modules/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/learning/modules/${id}`, { method: 'PATCH', body }),
+	deleteModule: (id: string) => api<{ deleted: boolean }>(`/admin/academy/learning/modules/${id}`, { method: 'DELETE' }),
 	addLesson: (moduleId: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/learn/modules/${moduleId}/lessons`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/learning/modules/${moduleId}/lessons`, { method: 'POST', body }),
 	updateLesson: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/learn/lessons/${id}`, { method: 'PATCH', body }),
-	deleteLesson: (id: string) => api<{ deleted: boolean }>(`/admin/learn/lessons/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/learning/lessons/${id}`, { method: 'PATCH', body }),
+	deleteLesson: (id: string) => api<{ deleted: boolean }>(`/admin/academy/learning/lessons/${id}`, { method: 'DELETE' }),
 };
 
 export const mentorshipAdminApiExtended = {

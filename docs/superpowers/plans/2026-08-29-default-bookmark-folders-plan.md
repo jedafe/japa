@@ -60,7 +60,7 @@ var contentTypeFolderNames = map[string]string{
 
 var entityTypeFolderNames = map[string]string{
     "blog_post":         "blog",
-    "learning_track":    "learn",
+    "academy_track":    "learn",
     "doc_page":          "docs",
     "forum_thread":      "discussions",
     "forum_reply":       "discussions",
@@ -111,7 +111,7 @@ Modify `internal/bookmarkfolders/bookmarkfolders.go` to expose `Service.Resolver
 - [ ] **Step 5: Write tests**
 
 In `internal/bookmarkfolders/defaults_test.go`:
-- Test `Resolve` for `blog_post` -> `blog`, `learning_track` -> `learn`, `forum_thread` -> `discussions`.
+- Test `Resolve` for `blog_post` -> `blog`, `academy_track` -> `learn`, `forum_thread` -> `discussions`.
 - Test unknown entity/content type returns empty `FolderResponse{}` and no folder is created.
 - Test `CreateDefaultFoldersForUser` creates all folders and is idempotent on a second call.
 
@@ -327,7 +327,7 @@ func (s *Service) CreateBookmark(ctx context.Context, ID, userID, entityID, fold
 
 - [ ] **Step 3: Test**
 
-Add test for `POST /me/bookmarks` with `entity_type: learning_track` -> folder `learn`, and `entity_type: content` with a blog_post -> folder `blog`.
+Add test for `POST /me/bookmarks` with `entity_type: academy_track` -> folder `learn`, and `entity_type: content` with a blog_post -> folder `blog`.
 
 Run: `go test ./internal/users/...`
 
@@ -459,7 +459,7 @@ CASE
     WHEN b.entity_type = 'forum_reply'             THEN ft2.title
     WHEN b.entity_type = 'space'                   THEN s.name
     WHEN b.entity_type = 'tag'                     THEN t.name
-    WHEN b.entity_type = 'learning_track'          THEN lt.title
+    WHEN b.entity_type = 'academy_track'          THEN lt.title
     WHEN b.entity_type = 'doc_page'                THEN dp.title
 END AS title,
 ```
@@ -575,7 +575,7 @@ make migrate-up
 Start the backend (`make run` / `go run ./cmd/server`) and the main app (`bun run dev`), then:
 1. Register a new user; verify `/me/bookmark-folders` returns the default folders.
 2. Bookmark a blog post; verify it lands in the `blog` folder.
-3. Bookmark a course (learning_track); verify it lands in the `learn` folder.
+3. Bookmark a course (academy_track); verify it lands in the `learn` folder.
 4. Bookmark a doc page; verify it lands in the `docs` folder.
 5. Bookmark a forum thread; verify it lands in the `discussions` folder.
 6. Visit `http://localhost:3000/dashboard/bookmarks` and switch folders.

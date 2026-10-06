@@ -24,7 +24,7 @@
 	import ProgressRing from '$lib/components/shell/ProgressRing.svelte';
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
-	import { learnUrl } from '$lib/appOrigins';
+	import { academyUrl } from '$lib/appOrigins';
 	import type { SessionUser, TrendingTag, SpaceSuggestion, LearnEnrollment, CatalogTrack } from '$lib/types';
 
 	interface SidebarWidget {
@@ -135,12 +135,12 @@
 	// hydration mismatches (Guide §16).
 	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
 
-	// learnUrl throws when the cross-app origin env vars are unset — a
+	// academyUrl throws when the cross-app origin env vars are unset — a
 	// throwing href expression would crash the whole renderer, so all
 	// learning-widget links go through this guard (returns '' → the
 	// template falls back to '#').
 	function safeLearnUrl(path: string): string {
-		try { return learnUrl(path); } catch { return ''; }
+		try { return academyUrl(path); } catch { return ''; }
 	}
 
 	// lucide icon lookup for admin-configured icon names (metric_card.icon,
@@ -188,7 +188,7 @@
 	const nonEmptyBookmarkFolders = $derived(
 		bookmarkFolders.filter((f) => (f.bookmark_count ?? 0) > 0)
 	);
-	let enrollments = $state<LearnEnrollment[]>([]);
+	let academy_enrollments = $state<LearnEnrollment[]>([]);
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
 	let spaceTypes = $state<SpaceTypeItem[]>([]);
@@ -298,7 +298,7 @@
 			case 'forum_threads': return slug ? `/forum/${slug}` : '#';
 			case 'job_listings': return slug ? `/jobs/${slug}` : '#';
 			case 'achievements': return slug ? `/achievements/${slug}` : '#';
-			case 'learning_tracks': return slug ? safeLearnUrl(`/tracks/${encodeURIComponent(slug)}`) || '#' : '#';
+			case 'academy_tracks': return slug ? safeLearnUrl(`/tracks/${encodeURIComponent(slug)}`) || '#' : '#';
 			case 'featured_spaces': return slug ? `/spaces/${slug}` : '#';
 			case 'professional_profiles': return slug ? `/profiles/${slug}` : '#';
 			case 'community_organisations': return slug ? `/org/${slug}` : '#';
@@ -586,7 +586,7 @@
 			};
 			if (!user) { dataLoaded = loaded; return; }
 			const res = await api.get<LearnEnrollment[]>('/me/enrollments');
-			enrollments = res.data ?? [];
+			academy_enrollments = res.data ?? [];
 			dataLoaded = loaded;
 		}
 		async function fetchFeaturedTrack() {
@@ -594,13 +594,13 @@
 			featuredTrackLoading = true;
 			try {
 				if (configuredSlug) {
-					// /learn/university/tracks/{slug} returns the flat TrackDetail
+					// /academy/tracks/{slug} returns the flat TrackDetail
 					// DTO (enrolled_count, not the catalog's total_enrolled) — the
 					// render reads both so either shape works.
-					const res = await api.get<CatalogTrack>(`/learn/university/tracks/${encodeURIComponent(configuredSlug)}`);
+					const res = await api.get<CatalogTrack>(`/academy/tracks/${encodeURIComponent(configuredSlug)}`);
 					featuredTrack = res.data ?? null;
 				} else {
-					const res = await api.get<CatalogTrack[]>('/learn/university/catalog?limit=1');
+					const res = await api.get<CatalogTrack[]>('/academy/catalog?limit=1');
 					featuredTrack = (res.data ?? [])[0] ?? null;
 				}
 			} catch {
@@ -1323,19 +1323,19 @@
 			</div>
 			{#if !dataLoaded[widget.widget_type]}
 				<p class="text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
-			{:else if enrollments.length === 0}
-				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_enrollments', 'No active enrollments')}</p>
+			{:else if academy_enrollments.length === 0}
+				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_enrollments', 'No active academy_enrollments')}</p>
 			{:else}
 				<!-- continue_learning shows only the most recent enrollment per
 				     its registry contract; learning_enrollments shows the full list. -->
 				<ul class="space-y-2">
-					{#each enrollments.slice(0, widget.widget_type === 'continue_learning' ? 1 : limit) as enr (enr.id)}
+					{#each academy_enrollments.slice(0, widget.widget_type === 'continue_learning' ? 1 : limit) as enr (enr.id)}
 						<li>
 							<a href={safeLearnUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 								<span class="block truncate">{enr.track_title}</span>
 								{#if (enr.lessons_total ?? 0) > 0}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
-										{Math.round(enr.progress_pct ?? 0)}% · {enr.lessons_completed ?? 0}/{enr.lessons_total ?? 0} {t('learn.lessons', 'lessons')}
+										{Math.round(enr.progress_pct ?? 0)}% · {enr.lessons_completed ?? 0}/{enr.lessons_total ?? 0} {t('academy.lessons', 'lessons')}
 									</span>
 								{:else}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">{Math.round(enr.progress_pct ?? 0)}%</span>
@@ -1356,26 +1356,26 @@
 					<div class="jc-skeleton h-16 w-16 rounded-full"></div>
 				</div>
 				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('common.loading', 'Loading…')}</p>
-			{:else if enrollments.length === 0}
+			{:else if academy_enrollments.length === 0}
 				<div class="mx-auto grid h-20 w-20 place-items-center">
 					<ProgressRing value={0} />
 				</div>
-				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('learn.empty', 'No learning tracks yet.')}</p>
+				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('academy.empty', 'No learning tracks yet.')}</p>
 				<a
 					href={safeLearnUrl('/tracks') || '#'}
 					class="mt-2 inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 				>
-					{t('learn.view_track', 'View track')}
+					{t('academy.view_track', 'View track')}
 				</a>
 			{:else}
-				{@const totalCompleted = enrollments.reduce((sum, e) => sum + (e.lessons_completed ?? 0), 0)}
-				{@const totalLessons = enrollments.reduce((sum, e) => sum + (e.lessons_total ?? 0), 0)}
+				{@const totalCompleted = academy_enrollments.reduce((sum, e) => sum + (e.lessons_completed ?? 0), 0)}
+				{@const totalLessons = academy_enrollments.reduce((sum, e) => sum + (e.lessons_total ?? 0), 0)}
 				{@const avgPct = totalLessons > 0 ? Math.round((totalCompleted / totalLessons) * 100) : 0}
 				<div class="mx-auto grid h-20 w-20 place-items-center">
 					<ProgressRing value={avgPct} />
 				</div>
 				<p class="mt-2 text-sm font-medium text-[var(--color-text)]">{avgPct}%</p>
-				<p class="text-xs text-[var(--color-muted)]">{totalCompleted}/{totalLessons} {t('learn.lessons', 'lessons')}</p>
+				<p class="text-xs text-[var(--color-muted)]">{totalCompleted}/{totalLessons} {t('academy.lessons', 'lessons')}</p>
 			{/if}
 		</section>
 	{/if}
@@ -1410,7 +1410,7 @@
 						<span class="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">{featuredTrack.level}</span>
 					{/if}
 					{#if enrolledCount != null}
-						<span>{enrolledCount} {t('learn.enrolled', 'enrolled')}</span>
+						<span>{enrolledCount} {t('academy.enrolled', 'enrolled')}</span>
 					{/if}
 				</div>
 				{#if featuredTrack.description}
@@ -1418,7 +1418,7 @@
 				{/if}
 			</a>
 		{:else}
-			<p class="text-xs text-[var(--color-muted)]">{t('learn.empty', 'No learning tracks yet.')}</p>
+			<p class="text-xs text-[var(--color-muted)]">{t('academy.empty', 'No learning tracks yet.')}</p>
 		{/if}
 	</section>
 {:else if widget.widget_type === 'configured_widget'}

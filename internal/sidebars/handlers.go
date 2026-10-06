@@ -146,7 +146,7 @@ func (h *Handlers) GetSidebarOptions(w http.ResponseWriter, r *http.Request) {
 	apps := []SidebarOption{
 		{Value: string(AppMain), Label: "Main"},
 		{Value: string(AppDocs), Label: "Docs"},
-		{Value: string(AppLearn), Label: "Learn"},
+		{Value: string(AppAcademy), Label: "Academy"},
 	}
 	positions := []SidebarOption{
 		{Value: string(PositionLeft), Label: "Left"},
@@ -420,6 +420,11 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 	app := r.URL.Query().Get("app")
 	position := r.URL.Query().Get("position")
 	requestPath := r.URL.Query().Get("path")
+
+	// Legacy alias: the Learn surface was renamed to Academy.
+	if app == "learn" {
+		app = "academy"
+	}
 
 	if app == "" || position == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "app and position query params are required")

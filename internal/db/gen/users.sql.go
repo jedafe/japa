@@ -2005,7 +2005,7 @@ SELECT
  WHEN b.entity_type = 'forum_reply' THEN frt.title
  WHEN b.entity_type = 'space' THEN s.name
  WHEN b.entity_type = 'tag' THEN t.name
- WHEN b.entity_type = 'learning_track' THEN lt.title
+ WHEN b.entity_type = 'academy_track' THEN lt.title
  WHEN b.entity_type = 'doc_page' THEN dp.title
  END AS title,
  CASE
@@ -2014,7 +2014,7 @@ SELECT
  WHEN b.entity_type = 'forum_reply' THEN frt.slug
  WHEN b.entity_type = 'space' THEN s.slug
  WHEN b.entity_type = 'tag' THEN t.slug
- WHEN b.entity_type = 'learning_track' THEN lt.slug
+ WHEN b.entity_type = 'academy_track' THEN lt.slug
  WHEN b.entity_type = 'doc_page' THEN dp.slug
  END AS slug,
  CASE
@@ -2033,8 +2033,8 @@ LEFT JOIN spaces s
  ON b.entity_type = 'space' AND b.entity_id = s.id
 LEFT JOIN tags t
  ON b.entity_type = 'tag' AND b.entity_id = t.id
-LEFT JOIN learning_tracks lt
- ON b.entity_type = 'learning_track' AND b.entity_id = lt.id
+LEFT JOIN academy_tracks lt
+ ON b.entity_type = 'academy_track' AND b.entity_id = lt.id
 LEFT JOIN doc_pages dp
  ON b.entity_type = 'doc_page' AND b.entity_id = dp.id
 WHERE b.user_id = $1
@@ -2067,7 +2067,7 @@ type ListUserBookmarksRow struct {
 // Enriches each bookmark with the title + slug of the bookmarked entity.
 // entity_type drives which table is joined (content/blog_post→contents,
 // forum_thread→forum_threads, forum_reply→forum_replies/forum_threads,
-// space→spaces, tag→tags, learning_track→learning_tracks,
+// space→spaces, tag→tags, academy_track→academy_tracks,
 // doc_page→doc_pages). Unknown types get NULL title/slug; the frontend
 // falls back to the entity_id.
 // Platform-scoped (BL-006), optional folder_id filter (BL-002), and optional

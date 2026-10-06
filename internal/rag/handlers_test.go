@@ -81,7 +81,7 @@ func TestSourceTier(t *testing.T) {
 		// Non-content entity types — contentType is ignored.
 		{"forum_thread", "", "community"},
 		{"space", "", "community"},
-		{"learning_track", "", "editorial"},
+		{"academy_track", "", "editorial"},
 		// Content entity type — contentType determines the tier.
 		{"content", "guide", "editorial"},
 		{"content", "blog_post", "editorial"},
