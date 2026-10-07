@@ -97,6 +97,14 @@ type ServiceDTO struct {
 	// can quote it (§111: "Reserve — {fee} platform fee").
 	PlatformFee     *int64 `json:"platform_fee,omitempty"`
 	AgentBalanceDue *int64 `json:"agent_balance_due,omitempty"`
+
+	// Marketplace coupon surfaces — gated on service_coupons.enabled.
+	// Coupons is populated on the public detail payload (active coupons
+	// only); the field is omitted entirely when the flag is off.
+	// HasCoupon rides list rows only (the SQL EXISTS badge) and is likewise
+	// suppressed when the flag is off.
+	Coupons   []ListingCoupon `json:"coupons,omitempty"`
+	HasCoupon bool            `json:"has_coupon,omitempty"`
 }
 
 // PackageItemDTO is one ordered component line item of a package (§111).
@@ -1139,6 +1147,18 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 		s.attachPackageDataCached(ctx, row.ID, row.MetaID, &dto)
 	}
 
+	// Attached coupons ride the public detail payload when the coupons
+	// flag is on (active-window rows only — the same set a redemption
+	// could consume). Best-effort like the reviews sidecar: a failure
+	// degrades to no coupons rather than failing the detail read.
+	if s.CouponsEnabled(ctx) {
+		if coupons, err := s.ListingCouponsDTO(ctx, row.MetaID, true); err != nil {
+			slog.Warn("servicedir: attach coupons failed", "content_id", row.ID, "error", err)
+		} else {
+			dto.Coupons = coupons
+		}
+	}
+
 	return dto, nil
 }
 
@@ -1434,9 +1454,16 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 		return nil, 0, fmt.Errorf("servicedir: list: %w", err)
 	}
 
+	couponsOn := s.CouponsEnabled(ctx)
+
 	dtos := make([]ServiceDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+		dto := rowToDTO(r)
+		if couponsOn {
+			dto.HasCoupon = r.HasCoupon
+		}
+
+		dtos = append(dtos, dto)
 	}
 
 	return dtos, total, nil
@@ -1454,43 +1481,12 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 // purchase_mode, capacity, availability, items[] and departures[] are
 // writable on package listings by service.package.create holders.
 func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, input EditServiceInput, isEditAny, canCreatePackage bool) (ServiceDTO, error) {
-	existing, err := s.content.GetContent(ctx, contentID)
+	// Ownership/shape check shared with the other listing-scoped writes
+	// (loadListingForEdit): author, owning-org member, or service.edit_any
+	// (BUG-008, BUG-009).
+	existing, meta, err := s.loadListingForEdit(ctx, contentID, userID, isEditAny)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ServiceDTO{}, pgx.ErrNoRows
-		}
-
-		return ServiceDTO{}, fmt.Errorf("servicedir: edit: get content: %w", err)
-	}
-
-	meta, err := s.store.GetMeta(ctx, contentID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ServiceDTO{}, pgx.ErrNoRows
-		}
-
-		return ServiceDTO{}, fmt.Errorf("servicedir: edit: get meta: %w", err)
-	}
-
-	// service.edit_any holders (admins) bypass the ownership check (BUG-009).
-	if !isEditAny {
-		// Check author ownership first (BUG-008).
-		if existing.AuthorID != userID {
-			// Not the author — check if the user is a member of the org
-			// that owns the listing (§98: service.edit_own = "listing owner org").
-			if !meta.OrgID.Valid {
-				return ServiceDTO{}, ErrNotOwner
-			}
-
-			isMember, err := s.store.IsOrgMember(ctx, meta.OrgID, userID)
-			if err != nil {
-				return ServiceDTO{}, fmt.Errorf("servicedir: edit: check org membership: %w", err)
-			}
-
-			if !isMember {
-				return ServiceDTO{}, ErrNotOwner
-			}
-		}
+		return ServiceDTO{}, err
 	}
 
 	isPackage := meta.ListingKind == ListingKindPackage

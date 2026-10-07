@@ -234,6 +234,12 @@ type ServiceRow struct {
 	Capacity       *int32
 	AvailableFrom  pgtype.Date
 	AvailableUntil pgtype.Date
+
+	// HasCoupon is the list-query badge column — true when the listing has
+	// at least one currently-active attached coupon. Populated only by the
+	// list/org-list queries (the EXISTS projection); detail rows leave it
+	// false.
+	HasCoupon bool
 }
 
 // rowFromList maps a generated list row to the shared domain row.
@@ -259,6 +265,7 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
+		HasCoupon: r.HasCoupon,
 	}
 }
 
@@ -364,6 +371,7 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
+		HasCoupon: r.HasCoupon,
 	}
 }
 
@@ -830,4 +838,130 @@ func (s *Store) countListingsByCategory(ctx context.Context, slug string) (int64
 	}
 
 	return n, nil
+}
+
+// ---------------------------------------------------------------------------
+// service_listing_coupons / coupon_redemptions (marketplace — attach +
+// redeem; servicedir owns these tables so booking+redemption commit in one
+// transaction)
+// ---------------------------------------------------------------------------
+
+// listListingCoupons returns the coupon join rows for a listing, ordered
+// by link position. activeOnly narrows to currently-redeemable coupons
+// (status='active' inside the validity window) for the public payload.
+func (s *Store) listListingCoupons(ctx context.Context, metaID pgtype.UUID, activeOnly bool) ([]couponLinkRow, error) {
+	if activeOnly {
+		rows, err := s.read.ListActiveServiceListingCoupons(ctx, metaID)
+		if err != nil {
+			return nil, fmt.Errorf("servicedir: list active listing coupons: %w", err)
+		}
+
+		out := make([]couponLinkRow, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, linkRowFromActive(r))
+		}
+
+		return out, nil
+	}
+
+	rows, err := s.read.ListServiceListingCoupons(ctx, metaID)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: list listing coupons: %w", err)
+	}
+
+	out := make([]couponLinkRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, linkRowFromAll(r))
+	}
+
+	return out, nil
+}
+
+// getListingCouponByCode resolves an attached coupon by (case-insensitive)
+// code scoped to the listing — the redemption lookup. Returns the raw join
+// row unfiltered by status/window; the pricing path enforces the rule set
+// so rejections can carry a specific sentinel.
+func (s *Store) getListingCouponByCode(ctx context.Context, metaID pgtype.UUID, code string) (couponLinkRow, error) {
+	row, err := s.read.GetListingCouponByCode(ctx, gen.GetListingCouponByCodeParams{
+		ListingMetaID: metaID, Code: code,
+	})
+	if err != nil {
+		return couponLinkRow{}, fmt.Errorf("servicedir: get listing coupon by code: %w", err)
+	}
+
+	return linkRowFromCode(row), nil
+}
+
+// getCouponByIDForOrg loads a coupon scoped to its owning organization —
+// the attach validation lookup: a miss means the coupon does not exist or
+// belongs to a different org (both surface as ErrCouponNotApplicable
+// upstream).
+func (s *Store) getCouponByIDForOrg(ctx context.Context, couponID, orgID pgtype.UUID) (gen.Coupon, error) {
+	row, err := s.read.GetCouponByIDForOrg(ctx, gen.GetCouponByIDForOrgParams{
+		ID: couponID, OrganizationID: orgID,
+	})
+	if err != nil {
+		return gen.Coupon{}, fmt.Errorf("servicedir: get coupon for org: %w", err)
+	}
+
+	return row, nil
+}
+
+// setListingCoupons replaces the listing's coupon links inside one
+// transaction — delete-all then re-insert in slice order (position follows
+// the caller's ordering). Replace-on-save matches the §111
+// items/departures convention.
+func (s *Store) setListingCoupons(ctx context.Context, metaID pgtype.UUID, couponIDs []pgtype.UUID) error {
+	return db.WithTx(ctx, s.pool.Writer, func(q *gen.Queries) error {
+		if err := q.DeleteServiceListingCoupons(ctx, metaID); err != nil {
+			return fmt.Errorf("servicedir: delete listing coupons: %w", err)
+		}
+
+		for i, id := range couponIDs {
+			if _, err := q.CreateServiceListingCouponLink(ctx, gen.CreateServiceListingCouponLinkParams{
+				CouponID:      id,
+				ListingMetaID: metaID,
+				Position:      int32(i), //nolint:gosec // bounded by max_per_listing check
+			}); err != nil {
+				return fmt.Errorf("servicedir: link listing coupon %d: %w", i, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// countCouponRedemptions returns live redemptions for a coupon — bookings
+// that died (cancelled/declined/refunded) do not burn the cap.
+func (s *Store) countCouponRedemptions(ctx context.Context, couponID pgtype.UUID) (int64, error) {
+	n, err := s.read.CountCouponRedemptions(ctx, couponID)
+	if err != nil {
+		return 0, fmt.Errorf("servicedir: count coupon redemptions: %w", err)
+	}
+
+	return n, nil
+}
+
+// countCouponRedemptionsByUser returns a user's live redemptions of a
+// coupon — the per_user_limit check.
+func (s *Store) countCouponRedemptionsByUser(ctx context.Context, couponID, userID pgtype.UUID) (int64, error) {
+	n, err := s.read.CountCouponRedemptionsByUser(ctx, gen.CountCouponRedemptionsByUserParams{
+		CouponID: couponID, UserID: userID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("servicedir: count coupon redemptions by user: %w", err)
+	}
+
+	return n, nil
+}
+
+// createCouponRedemption inserts the authoritative redemption record for
+// a booking.
+func (s *Store) createCouponRedemption(ctx context.Context, p gen.CreateCouponRedemptionParams) (gen.CouponRedemption, error) {
+	row, err := s.write.CreateCouponRedemption(ctx, p)
+	if err != nil {
+		return gen.CouponRedemption{}, fmt.Errorf("servicedir: create coupon redemption: %w", err)
+	}
+
+	return row, nil
 }

@@ -145,7 +145,15 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       EXISTS(
+           SELECT 1 FROM service_listing_coupons lc
+           JOIN coupons cp ON cp.id = lc.coupon_id
+           WHERE lc.listing_meta_id = sm.id
+             AND cp.status = 'active'
+             AND (cp.valid_from IS NULL OR cp.valid_from <= now())
+             AND (cp.expires_at IS NULL OR cp.expires_at > now())
+       ) AS has_coupon
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -258,7 +266,15 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       EXISTS(
+           SELECT 1 FROM service_listing_coupons lc
+           JOIN coupons cp ON cp.id = lc.coupon_id
+           WHERE lc.listing_meta_id = sm.id
+             AND cp.status = 'active'
+             AND (cp.valid_from IS NULL OR cp.valid_from <= now())
+             AND (cp.expires_at IS NULL OR cp.expires_at > now())
+       ) AS has_coupon
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -885,11 +901,14 @@ VALUES (@coupon_id, @user_id, @service_booking_id, @listing_meta_id, @amount_sav
 RETURNING *;
 
 -- name: ListingHasActiveCoupon :one
+-- Mirrors ListActiveServiceListingCoupons' active-window filters (incl.
+-- valid_from) so a future-dated coupon does not flip the badge.
 SELECT EXISTS(
     SELECT 1 FROM service_listing_coupons lc
     JOIN coupons c ON c.id = lc.coupon_id
     WHERE lc.listing_meta_id = @listing_meta_id
       AND c.status = 'active'
+      AND (c.valid_from IS NULL OR c.valid_from <= now())
       AND (c.expires_at IS NULL OR c.expires_at > now())
 ) AS has_coupon;
 

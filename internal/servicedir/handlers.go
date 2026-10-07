@@ -167,6 +167,24 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 	case errors.Is(err, ErrPackagesDisabled):
 		// Disabled feature → 404 per convention.
 		errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
+	case errors.Is(err, ErrCouponsDisabled):
+		errpkg.WriteError(w, http.StatusNotFound, "service_coupons_disabled", "Service coupons are not available")
+	case errors.Is(err, ErrInvalidCoupon):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_coupon", "The coupon is invalid or no longer redeemable")
+	case errors.Is(err, ErrCouponNotApplicable):
+		errpkg.WriteError(w, http.StatusBadRequest, "coupon_not_applicable", "The coupon does not apply to this listing")
+	case errors.Is(err, ErrCouponMinSpend):
+		errpkg.WriteError(w, http.StatusBadRequest, "coupon_min_spend", "The booking total is below the coupon's minimum spend")
+	case errors.Is(err, ErrCouponCapReached):
+		errpkg.WriteError(w, http.StatusBadRequest, "coupon_cap_reached", "The coupon redemption limit has been reached")
+	case errors.Is(err, ErrCouponUserLimit):
+		errpkg.WriteError(w, http.StatusBadRequest, "coupon_user_limit", "You have already used this coupon the maximum number of times")
+	case errors.Is(err, ErrCouponFirstTime):
+		errpkg.WriteError(w, http.StatusBadRequest, "coupon_first_time_only", "This coupon is only available to first-time customers")
+	case errors.Is(err, ErrInvalidTier):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_tier", "The selected pricing tier is not available")
+	case errors.Is(err, ErrTooManyCoupons):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_coupons", "Too many coupons attached to this listing")
 	case errors.Is(err, ErrOrgNotVerified):
 		errpkg.WriteError(w, http.StatusForbidden, "organization_not_verified", "Only verified organizations can publish packages")
 	case errors.Is(err, ErrOrgRequired):
@@ -602,6 +620,107 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": ClaimStatusPending}})
+}
+
+// ---------------------------------------------------------------------------
+// Listing coupon attach (marketplace — GET/PUT /services/:id/coupons;
+// service.edit_own|service.edit_any checked at route registration, and the
+// service layer re-verifies the caller owns *this* listing)
+// ---------------------------------------------------------------------------
+
+// HandleGetCoupons handles GET /services/:id/coupons — the listing's
+// attached coupon set (all statuses) for the editor. :id is the listing's
+// content id (same param PATCH /services/:id uses).
+func (h *Handlers) HandleGetCoupons(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	isEditAny := h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
+
+	coupons, err := h.service.ListingCouponsForEdit(r.Context(), contentID, user.UserID, isEditAny)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		writeServiceError(w, err, "coupons_failed", "Failed to list listing coupons")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
+}
+
+// HandleSetCoupons handles PUT /services/:id/coupons — replace-on-save of
+// the listing's attached coupon set. Body: {"coupon_ids": ["uuid", ...]};
+// an empty/absent list clears the attachments. Returns the resulting set.
+func (h *Handlers) HandleSetCoupons(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	var body struct {
+		CouponIDs []string `json:"coupon_ids"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	couponIDs := make([]pgtype.UUID, 0, len(body.CouponIDs))
+	for _, raw := range body.CouponIDs {
+		var id pgtype.UUID
+		if err := id.Scan(raw); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon id")
+			return
+		}
+
+		couponIDs = append(couponIDs, id)
+	}
+
+	// Same pattern as HandleEdit: the route middleware verified at least
+	// one of edit_own/edit_any; service.edit_any additionally bypasses the
+	// ownership check in the service layer.
+	isEditAny := h.rbac != nil && h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")
+
+	coupons, err := h.service.SetListingCoupons(r.Context(), contentID, user.UserID, isEditAny, couponIDs)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		slog.Error("servicedir: set coupons failed", "content_id", contentID, "error", err)
+		writeServiceError(w, err, "coupons_update_failed", "Failed to update listing coupons")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons})
 }
 
 // ---------------------------------------------------------------------------

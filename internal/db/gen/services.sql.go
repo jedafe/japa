@@ -3307,7 +3307,15 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       EXISTS(
+           SELECT 1 FROM service_listing_coupons lc
+           JOIN coupons cp ON cp.id = lc.coupon_id
+           WHERE lc.listing_meta_id = sm.id
+             AND cp.status = 'active'
+             AND (cp.valid_from IS NULL OR cp.valid_from <= now())
+             AND (cp.expires_at IS NULL OR cp.expires_at > now())
+       ) AS has_coupon
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -3398,6 +3406,7 @@ type ListServiceListingsRow struct {
 	AvailableUntil     pgtype.Date        `json:"available_until"`
 	AuthorName         *string            `json:"author_name"`
 	AuthorAvatar       *string            `json:"author_avatar"`
+	HasCoupon          bool               `json:"has_coupon"`
 }
 
 // Public filtered list. Optional filters are sqlc.narg — NULL means
@@ -3476,6 +3485,7 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 			&i.AvailableUntil,
 			&i.AuthorName,
 			&i.AuthorAvatar,
+			&i.HasCoupon,
 		); err != nil {
 			return nil, err
 		}
@@ -3502,7 +3512,15 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       EXISTS(
+           SELECT 1 FROM service_listing_coupons lc
+           JOIN coupons cp ON cp.id = lc.coupon_id
+           WHERE lc.listing_meta_id = sm.id
+             AND cp.status = 'active'
+             AND (cp.valid_from IS NULL OR cp.valid_from <= now())
+             AND (cp.expires_at IS NULL OR cp.expires_at > now())
+       ) AS has_coupon
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -3575,6 +3593,7 @@ type ListServiceListingsByOrgRow struct {
 	AvailableUntil     pgtype.Date        `json:"available_until"`
 	AuthorName         *string            `json:"author_name"`
 	AuthorAvatar       *string            `json:"author_avatar"`
+	HasCoupon          bool               `json:"has_coupon"`
 }
 
 // Org's listings. ?status= filters; the public /org/:org_id/packages
@@ -3641,6 +3660,7 @@ func (q *Queries) ListServiceListingsByOrg(ctx context.Context, arg ListServiceL
 			&i.AvailableUntil,
 			&i.AuthorName,
 			&i.AuthorAvatar,
+			&i.HasCoupon,
 		); err != nil {
 			return nil, err
 		}
@@ -3769,10 +3789,13 @@ SELECT EXISTS(
     JOIN coupons c ON c.id = lc.coupon_id
     WHERE lc.listing_meta_id = $1
       AND c.status = 'active'
+      AND (c.valid_from IS NULL OR c.valid_from <= now())
       AND (c.expires_at IS NULL OR c.expires_at > now())
 ) AS has_coupon
 `
 
+// Mirrors ListActiveServiceListingCoupons' active-window filters (incl.
+// valid_from) so a future-dated coupon does not flip the badge.
 func (q *Queries) ListingHasActiveCoupon(ctx context.Context, listingMetaID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, listingHasActiveCoupon, listingMetaID)
 	var has_coupon bool

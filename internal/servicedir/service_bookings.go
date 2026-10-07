@@ -718,9 +718,16 @@ func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UU
 		return nil, 0, err
 	}
 
+	couponsOn := s.CouponsEnabled(ctx)
+
 	out := make([]ServiceDTO, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, rowToDTO(r))
+		dto := rowToDTO(r)
+		if couponsOn {
+			dto.HasCoupon = r.HasCoupon
+		}
+
+		out = append(out, dto)
 	}
 
 	return out, int64(len(out)), nil

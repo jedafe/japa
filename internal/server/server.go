@@ -6969,6 +6969,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/services/{id}", serviceDirHandlers.HandleEdit)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.claim")).
 					Post("/services/{id}/claim", serviceDirHandlers.HandleClaim)
+				// Marketplace — listing coupon attach. {id} is the listing
+				// content id; handlers self-gate on service_coupons.enabled
+				// and re-verify caller ownership in the service layer.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
+					Get("/services/{id}/coupons", serviceDirHandlers.HandleGetCoupons)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
+					Put("/services/{id}/coupons", serviceDirHandlers.HandleSetCoupons)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
 					Get("/admin/services", serviceDirHandlers.HandleAdminList)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
