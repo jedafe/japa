@@ -33,6 +33,7 @@ Additionally, the public roadmap (§113) tracks shipping state manually per item
 | **Phase** | Rollout lifecycle on the flag: `planned → in_progress → testing → shipped`, plus `archived`. |
 | **Surface state** | Per-surface visibility: `visible` (default), `hidden` (functional, not advertised), `disabled` (surface-scoped 404). |
 | **Audience** | Optional per-surface restriction on *who* the flag is enabled for: user-group slugs (`group:beta_testers`) and/or permission nodes (`perm:beta.access`). Empty = everyone. |
+| **Geo rule** | Optional per-surface restriction on *where* the flag is enabled: `geo_allow` ISO country codes (empty = all) and `geo_deny` codes (always wins). Resolved from the visitor's IP via `internal/geoip`. |
 | **Linked item** | A `roadmap_items` row whose `feature_flag_key` points at a flag; its status is derived, not manual. |
 
 ## 3. Data model
@@ -52,15 +53,17 @@ type FlagConfig struct {
 	Surfaces          map[string]SurfaceRule     `json:"surfaces"`       // surface -> rule
 }
 
-// SurfaceRule is the per-surface visibility + audience policy for a flag.
+// SurfaceRule is the per-surface visibility, audience, and geo policy for a flag.
 type SurfaceRule struct {
-	State    string   `json:"state"`              // visible|hidden|disabled
-	Audience []string `json:"audience,omitempty"` // group slugs or permission nodes; empty = everyone
+	State    string   `json:"state"`               // visible|hidden|disabled
+	Audience []string `json:"audience,omitempty"`  // group:/perm: entries; empty = everyone
+	GeoAllow []string `json:"geo_allow,omitempty"` // ISO 3166-1 alpha-2; empty = all countries
+	GeoDeny  []string `json:"geo_deny,omitempty"`  // ISO alpha-2 denied even if in GeoAllow
 }
 ```
 
 - `Phase` empty/absent is treated as `shipped` for enabled flags and `planned` for disabled ones (back-compat with all existing rows).
-- `Surfaces` absent or missing a surface = `{state: "visible"}` (everyone). Unknown surface keys → 400 `invalid_surface`; unknown state values → 400 `invalid_surface_state`. Audience entries are validated as `group:`/`perm:` prefixed strings (`["group:beta_testers", "perm:beta.access"]`); anything else → 400 `invalid_audience`.
+- `Surfaces` absent or missing a surface = `{state: "visible"}` (everyone, all countries). Unknown surface keys → 400 `invalid_surface`; unknown state values → 400 `invalid_surface_state`. Audience entries must be `group:`/`perm:` prefixed; anything else → 400 `invalid_audience`. Geo entries must be 2-letter ISO alpha-2 codes, stored uppercase; anything else → 400 `invalid_geo`.
 - `ShowOnRoadmap` drives auto-create/sync/archive of the linked roadmap item (§5).
 
 ### 3.2 Registry becomes the single catalog
@@ -150,24 +153,36 @@ Wired in `server.go` next to the existing `SetOnFlagEnabled` (line ~1324): the c
 ### 5.1 State resolution
 
 ```
-global enabled=false                     → 404 everywhere (existing Gate behavior)
-surface state = disabled                 → 404 for that surface only
-surface state = hidden                   → routes work; excluded from surface's flag map
-surface state = visible (default)        → normal
-audience set + caller not in audience    → flag evaluates OFF for that caller
-                                           on that surface (404 via Gate, absent
-                                           from their flags map)
+global enabled=false                       → 404 everywhere (existing Gate behavior)
+surface state = disabled                   → 404 for that surface only
+geo_deny contains caller's country         → flag OFF for that caller on that surface
+geo_allow non-empty, country not in it     → flag OFF for that caller on that surface
+audience set + caller not in audience      → flag OFF for that caller on that surface
+surface state = hidden                     → routes work; excluded from surface's flag map
+surface state = visible (default)          → normal
+(OFF = 404 via Gate + absent from the caller's flags map)
 ```
 
 **Audience** is orthogonal to state — it refines *who* a `visible`/`hidden` state applies to:
 
 - `visible` + `audience: [group:beta_testers]` → shown in nav and functional **only** for beta testers; everyone else gets it disabled on that surface. This is the canonical "testing" configuration.
 - `hidden` + audience → nav-hidden for everyone; functional only for members (non-members → 404).
-- `disabled` → off for all on that surface; audience irrelevant.
+- `disabled` → off for all on that surface; audience/geo irrelevant.
 - Caller matches audience when **any** entry matches: `group:<slug>` = user's group slug, `perm:<node>` = user holds that permission node (checked via the RBAC resolver — additive with, not a replacement for, route-level `rbac.RequirePermission`).
 - Anonymous callers are never in an audience (empty group/no perms) → audience-scoped flags are off for them.
 - `super_admin` bypasses audience checks — operators managing a rollout must never be locked out of their own feature.
-- Performance: the global enabled/rollout result stays on the existing L1/L2 cache; the audience check is a per-request overlay evaluated against the caller's already-resolved group/permission set — no extra DB hit on the hot path.
+- Performance: the global enabled/rollout result stays on the existing L1/L2 cache; audience and geo checks are per-request overlays evaluated against the caller's already-resolved groups/permissions and the request-context `GeoContext` — no extra DB hit on the hot path.
+
+**Geo** is orthogonal too — it refines *where* a state applies:
+
+- `visible` + `geo_allow: [US, CA]` → feature on only for visitors/users whose IP geo-resolves to US or Canada. Everyone else: flag off on that surface.
+- `visible` + `geo_deny: [NG]` → on everywhere except Nigeria.
+- Both set → deny wins (`geo_allow: [US], geo_deny: []` vs `geo_allow: [], geo_deny: [NG]` compose naturally; a code in both lists is denied).
+- Resolution reads `geoip.FromContext(r.Context())` — populated globally by `geoip.Middleware` (wired at server.go:241) which resolves `clientip.FromRequest(r)`. No header trust involved: unlike `X-JC-Surface`, geo is enforced server-side and can't be forged by the client.
+- **Unknown country fails closed for allow-lists, open for deny-lists:** `IsValid=false` (private IP, missing GeoLite DB, lookup miss) never satisfies `geo_allow`, and never matches `geo_deny`. A feature gated to "US only" goes dark when geo is unavailable; a feature denying "NG" stays on.
+- **SSR caveat — required, not optional:** SSR apps (main, academy, docs, tools) call the API server-side, so `RemoteAddr` is the app server, not the visitor. Each app's server-side API client must forward the visitor IP via `X-Forwarded-For` (clientip only honors XFF from trusted proxies — app server IPs/origins go in the trusted-proxy config), alongside `X-JC-Surface`. Direct browser→API calls (admin/control SPAs, mobile, extension) need no forwarding.
+- Geo is **IP-based** (the Facebook model), not profile-country — it works identically for anonymous visitors and logged-in users, and follows the person, not the account. VPNs are a known evasion vector; geo is a rollout/compliance lever, not a security boundary.
+- `super_admin` does NOT bypass geo rules — geo is location truth, not authorization; an admin in NG testing a US-only feature should see what a US user sees is false. (Use a staging env or VPN to preview geo-gated features.)
 
 ### 5.2 Surface detection — `X-JC-Surface`
 
@@ -186,9 +201,9 @@ Each app's API client sends a header identifying its surface:
 
 `features.Gate` and the flags endpoints resolve the surface via a shared helper: `features.SurfaceFrom(r)` → header value if in the known set, else `""`. Unknown/absent → treated as no surface: global `enabled` applies, and the flag is *included* in the flag map (back-compat for public API consumers, which don't render nav). **The header is advisory and spoofable by design** — `hidden` is a discovery control, not an authorization boundary. Anything requiring hard isolation uses `disabled` or global `enabled=false`; audience checks are the exception — they ARE authorization and are enforced server-side against the caller's resolved groups/permissions, never the header.
 
-### 5.3 `GET /api/v1/feature-flags` — surface- and audience-scoped
+### 5.3 `GET /api/v1/feature-flags` — surface-, audience-, and geo-scoped
 
-Response stays `{data: {key: bool}}` (back-compat). The endpoint gains `OptionalAuth`: with a valid `X-JC-Surface`, `bool` = `enabled && surface != hidden && surface != disabled && caller ∈ audience (when set)` and rollout-hash passes. Anonymous callers see only flags with no audience restriction. Apps consult this map for nav exactly as they do today — hidden/disabled/out-of-audience features simply read false. Because the result is caller-dependent, the per-user map is NOT written to the shared L1/L2 flag cache (only the underlying per-flag global resolution is cached).
+Response stays `{data: {key: bool}}` (back-compat). The endpoint gains `OptionalAuth`: with a valid `X-JC-Surface`, `bool` = `enabled && surface != hidden && surface != disabled && caller ∈ audience (when set) && caller's country passes geo rules` and rollout-hash passes. Anonymous callers see only flags with no audience restriction. Apps consult this map for nav exactly as they do today — hidden/disabled/out-of-audience features simply read false. Because the result is caller-dependent, the per-user map is NOT written to the shared L1/L2 flag cache (only the underlying per-flag global resolution is cached).
 
 New richer endpoint for surfaces that need phase data (e.g. "Coming soon"/"Beta" badges on cards):
 
@@ -219,7 +234,7 @@ Cards gain a "Manage" action opening a slide-over (mirroring the admin panel's `
 
 - **General** — name, description, category (writes config blob); enabled toggle.
 - **Rollout** — phase select + `rollout_percentage` input (existing PATCH …/rollout endpoint).
-- **Visibility** — per-surface 3-state segmented control (Visible / Hidden / Disabled), defaults shown from `DefaultSurfaces`; each surface row optionally expands to an audience picker (multi-select of user groups + permission nodes, fed from `/control` group and permission-node lists). Preset shortcut: "Beta testers + staff" applies `audience: [group:beta_testers]` to the selected surfaces — the standard `testing` configuration.
+- **Visibility** — per-surface 3-state segmented control (Visible / Hidden / Disabled), defaults shown from `DefaultSurfaces`; each surface row optionally expands to an audience picker (multi-select of user groups + permission nodes, fed from `/control` group and permission-node lists) and a geo picker (country multi-select fed from the existing `GET /geo/countries` handler, in `geo_allow`/`geo_deny` mode). Preset shortcuts: "Beta testers + staff" applies `audience: [group:beta_testers]` (the standard `testing` config); "Apply to all surfaces" writes one rule to every surface.
 - **Roadmap** — `show_on_roadmap` toggle, linked item slug/status/link to admin roadmap page, warning when `roadmap.enabled` is off.
 
 ### 6.3 API surface
@@ -258,10 +273,13 @@ To make `feature_flags` genuinely sole-sourced:
 - **Unknown `X-JC-Surface`:** ignored (treated as absent) — never used to *increase* exposure.
 - **Audience group renamed:** config stores slugs, so a rename orphans the restriction (audience silently matches nobody → feature dark). The control UI warns on save when a referenced slug no longer exists; admin can then pick the renamed group. Acceptable because renames are admin-initiated and rare.
 - **In-audience user without the route's permission node:** still 403 from `rbac.RequirePermission` — audience widens nav visibility, never bypasses route RBAC.
+- **GeoLite DB missing/unloaded:** `geoip.NewReader` degrades to all-invalid `GeoContext`; per the fail-closed rule, allow-listed features go dark while deny-listed stay on. Control panel surfaces a warning badge on any flag carrying geo rules when `geoip.Reader.IsLoaded()` is false.
+- **SSR without forwarded IP:** same as unknown country — the app server's IP usually geo-resolves to the host's datacenter country, which is *valid* but wrong (e.g. a German VPS makes a US-only feature dark for all SSR visitors). Mitigation = the required XFF forwarding in §5.1; Playwright smoke test asserts a forwarded US IP unlocks a US-only flag.
+- **Geo-gated feature on the roadmap:** the board is global — a linked item stays visible regardless of geo (the roadmap communicates intent, not access); the flag's routes still geo-gate normally.
 
 ## 9. Testing
 
-- **Go:** table tests for `SurfaceFrom`, surface-state resolution matrix (enabled × hidden × disabled × no-header), audience evaluation (group match, perm match, anonymous → off, super_admin bypass, renamed/missing group → off), `SyncFlagPhase` transitions, `status_derived` rejection on linked items, config validation errors, merge of Registry+DB in `ListExtensions`.
+- **Go:** table tests for `SurfaceFrom`, surface-state resolution matrix (enabled × hidden × disabled × no-header), audience evaluation (group match, perm match, anonymous → off, super_admin bypass, renamed/missing group → off), geo evaluation (allow match/miss, deny match/miss, both-set deny-wins, invalid GeoContext → allow-fails/deny-passes, super_admin does NOT bypass geo), `SyncFlagPhase` transitions, `status_derived` rejection on linked items, config validation errors, merge of Registry+DB in `ListExtensions`.
 - **Migration:** up/down for the CHECK constraint; backfill idempotent (`ON CONFLICT DO NOTHING`).
 - **Frontend:** `bun run check` on control/admin/main/tools; Playwright smoke — toggle a feature hidden on `main`, confirm nav drops it and direct URL still works; flip `show_on_roadmap`, confirm card appears in the right column; phase `→ testing` moves the card.
 - **Regression:** feed/search/sitemap still exclude `content_type='roadmap'`; `/feature-flags` response shape unchanged for header-less callers.
@@ -272,6 +290,6 @@ To make `feature_flags` genuinely sole-sourced:
 2. `FlagConfig` extension + write-path hooks + `onConfigChanged` wiring.
 3. `roadmap` module: `testing` status, `SyncFlagPhase`, linked-status derivation, admin validation/select.
 4. Control `/extensions`: catalog switch to Registry, extended PATCH, card + slide-over UI.
-5. `X-JC-Surface` header in each app's API client + `Gate`/flags-endpoint surface resolution.
+5. `X-JC-Surface` header + `X-Forwarded-For` visitor-IP forwarding in each app's API client (SSR apps also add their IPs to the trusted-proxy config) + `Gate`/flags-endpoint surface, audience, and geo resolution.
 6. Service `GetBoolOr("*.enabled")` → `FeatureChecker` migration + settings catalog deprecation.
 7. Board "Testing" column + enriched badges; JEOS section updates (§42 amendment, §113 amendment, settings catalog, api-routes-catalog).
