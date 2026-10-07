@@ -765,3 +765,46 @@ SET booker_user_id = NULL,
     updated_at = now()
 WHERE booker_user_id = @booker_user_id
   AND anonymized_at IS NULL;
+
+-- ---------------------------------------------------------------------
+-- service_categories (dynamic taxonomy — marketplace upgrade)
+-- ---------------------------------------------------------------------
+
+-- name: ListServiceCategories :many
+SELECT id, slug, label, description, icon, accent_color, applies_to,
+       position, is_active, created_at, updated_at
+FROM service_categories
+ORDER BY position ASC, label ASC;
+
+-- name: GetServiceCategoryBySlug :one
+SELECT id, slug, label, description, icon, accent_color, applies_to,
+       position, is_active, created_at, updated_at
+FROM service_categories
+WHERE slug = @slug;
+
+-- name: CreateServiceCategory :one
+INSERT INTO service_categories (slug, label, description, icon, accent_color,
+    applies_to, position, is_active)
+VALUES (@slug, @label, sqlc.narg(description), sqlc.narg(icon),
+    sqlc.narg(accent_color), COALESCE(sqlc.narg(applies_to), 'both'),
+    COALESCE(sqlc.narg(position), 0), COALESCE(sqlc.narg(is_active), true))
+RETURNING *;
+
+-- name: UpdateServiceCategory :one
+UPDATE service_categories
+SET label = @label,
+    description = sqlc.narg(description),
+    icon = sqlc.narg(icon),
+    accent_color = sqlc.narg(accent_color),
+    applies_to = COALESCE(sqlc.narg(applies_to), applies_to),
+    position = COALESCE(sqlc.narg(position), position),
+    is_active = COALESCE(sqlc.narg(is_active), is_active),
+    updated_at = now()
+WHERE slug = @slug
+RETURNING *;
+
+-- name: DeleteServiceCategory :exec
+DELETE FROM service_categories WHERE slug = @slug;
+
+-- name: CountServiceListingsByCategory :one
+SELECT COUNT(*) FROM service_listing_meta WHERE service_category = @slug;

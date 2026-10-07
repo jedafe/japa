@@ -242,7 +242,7 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cats := h.service.Categories()
+	cats := h.service.Categories(r.Context())
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
 

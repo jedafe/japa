@@ -317,9 +317,16 @@ func (s *Service) PackagesEnabled(ctx context.Context) bool {
 }
 
 // Option is a single selectable value exposed by the option endpoints.
+// The taxonomy fields (description/icon/accent_color/applies_to) are
+// additive — populated only by DB-backed sources such as
+// service_categories; older consumers see the same {value,label} shape.
 type Option struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	AccentColor string `json:"accent_color,omitempty"`
+	AppliesTo   string `json:"applies_to,omitempty"`
 }
 
 var categoryLabels = map[string]string{
@@ -336,8 +343,34 @@ func sortOptions(opts []Option) {
 	sort.Slice(opts, func(i, j int) bool { return opts[i].Value < opts[j].Value })
 }
 
-// Categories returns the canonical service category options (Rule 16).
-func (s *Service) Categories() []Option {
+// Categories returns the service category options for pickers (Rule 16).
+// Primary source is the service_categories table — the dynamic
+// marketplace taxonomy, active rows only, in position order; the
+// hardcoded §98 enum is the fallback when the store is unwired or the
+// query errors so the endpoint never hard-fails.
+func (s *Service) Categories(ctx context.Context) []Option {
+	if s.store != nil {
+		if rows, err := s.store.listCategories(ctx, false); err == nil && len(rows) > 0 {
+			out := make([]Option, 0, len(rows))
+			for _, r := range rows {
+				if !r.IsActive {
+					continue
+				}
+
+				out = append(out, Option{
+					Value:       r.Slug,
+					Label:       r.Label,
+					Description: strOrEmpty(r.Description),
+					Icon:        strOrEmpty(r.Icon),
+					AccentColor: strOrEmpty(r.AccentColor),
+					AppliesTo:   r.AppliesTo,
+				})
+			}
+
+			return out
+		}
+	}
+
 	out := make([]Option, 0, len(categoryLabels))
 	for v, label := range categoryLabels {
 		out = append(out, Option{Value: v, Label: label})
@@ -348,8 +381,37 @@ func (s *Service) Categories() []Option {
 	return out
 }
 
+// categorySet resolves the valid service_category set. Primary source is
+// the service_categories table (dynamic taxonomy); the hardcoded §98 enum
+// is the fallback when the store is unwired or the table errors — callers
+// must never see a hard failure for category validation.
+func (s *Service) categorySet(ctx context.Context) map[string]struct{} {
+	if s.store != nil {
+		if rows, err := s.store.listCategories(ctx, false); err == nil && len(rows) > 0 {
+			set := make(map[string]struct{}, len(rows))
+			for _, r := range rows {
+				if r.IsActive {
+					set[r.Slug] = struct{}{}
+				}
+			}
+			return set
+		}
+	}
+	return validCategories
+}
+
+// IsValidCategoryDB reports whether slug is a valid service_category in
+// the dynamic taxonomy. Shares categorySet's fallback to the §98 static
+// enum when the store is unwired or the query errors — the slug check is
+// identical, this exported form exists for admin category tooling.
+func (s *Service) IsValidCategoryDB(ctx context.Context, slug string) bool {
+	_, ok := s.categorySet(ctx)[slug]
+	return ok
+}
+
 // ErrInvalidCategory is returned when a create/edit input supplies a
-// service_category that is not in the §98 canonical enum.
+// service_category slug that is not an active row in the dynamic
+// service_categories taxonomy (with the §98 enum as fallback).
 var ErrInvalidCategory = errors.New("invalid service_category")
 
 // ErrInvalidVerificationType is returned when an admin verify request
@@ -437,9 +499,11 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 	if input.Title == "" {
 		return ServiceDTO{}, errors.New("title is required")
 	}
-	// BUG-013: validate service_category against the §98 enum. Empty is
-	// rejected because the column is NOT NULL.
-	if input.ServiceCategory == "" || !IsValidCategory(input.ServiceCategory) {
+	// BUG-013: validate service_category against the dynamic taxonomy —
+	// categorySet resolves the service_categories table with the §98 enum
+	// as fallback. Empty is rejected because the column is NOT NULL (and
+	// "" never matches a slug).
+	if _, ok := s.categorySet(ctx)[input.ServiceCategory]; input.ServiceCategory == "" || !ok {
 		return ServiceDTO{}, ErrInvalidCategory
 	}
 
@@ -1277,8 +1341,10 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	}
 
 	if input.ServiceCategory != nil {
-		// BUG-013: validate category on edit when supplied.
-		if *input.ServiceCategory == "" || !IsValidCategory(*input.ServiceCategory) {
+		// BUG-013: validate category on edit when supplied — a nil pointer
+		// keeps the stored value; a present-but-empty string is rejected
+		// (no matching slug) because the column is NOT NULL.
+		if _, ok := s.categorySet(ctx)[*input.ServiceCategory]; !ok {
 			return ServiceDTO{}, ErrInvalidCategory
 		}
 
@@ -1926,6 +1992,15 @@ func metaToDTO(c gen.GetContentByIDRow, m gen.ServiceListingMetum) ServiceDTO {
 	}
 
 	return dto
+}
+
+// strOrEmpty dereferences an optional text column to "" when NULL.
+func strOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+
+	return *s
 }
 
 // nilIfEmpty collapses a present-but-empty optional text field to NULL so

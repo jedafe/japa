@@ -821,6 +821,17 @@ func (q *Queries) CountServiceListings(ctx context.Context, arg CountServiceList
 	return count, err
 }
 
+const countServiceListingsByCategory = `-- name: CountServiceListingsByCategory :one
+SELECT COUNT(*) FROM service_listing_meta WHERE service_category = $1
+`
+
+func (q *Queries) CountServiceListingsByCategory(ctx context.Context, slug string) (int64, error) {
+	row := q.db.QueryRow(ctx, countServiceListingsByCategory, slug)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createServiceBooking = `-- name: CreateServiceBooking :one
 
 INSERT INTO service_bookings (
@@ -908,6 +919,54 @@ func (q *Queries) CreateServiceBooking(ctx context.Context, arg CreateServiceBoo
 		&i.UpdatedAt,
 		&i.RemindedAt,
 		&i.DisputeReason,
+	)
+	return i, err
+}
+
+const createServiceCategory = `-- name: CreateServiceCategory :one
+INSERT INTO service_categories (slug, label, description, icon, accent_color,
+    applies_to, position, is_active)
+VALUES ($1, $2, $3, $4,
+    $5, COALESCE($6, 'both'),
+    COALESCE($7, 0), COALESCE($8, true))
+RETURNING id, slug, label, description, icon, accent_color, applies_to, position, is_active, created_at, updated_at
+`
+
+type CreateServiceCategoryParams struct {
+	Slug        string      `json:"slug"`
+	Label       string      `json:"label"`
+	Description *string     `json:"description"`
+	Icon        *string     `json:"icon"`
+	AccentColor *string     `json:"accent_color"`
+	AppliesTo   interface{} `json:"applies_to"`
+	Position    interface{} `json:"position"`
+	IsActive    interface{} `json:"is_active"`
+}
+
+func (q *Queries) CreateServiceCategory(ctx context.Context, arg CreateServiceCategoryParams) (ServiceCategory, error) {
+	row := q.db.QueryRow(ctx, createServiceCategory,
+		arg.Slug,
+		arg.Label,
+		arg.Description,
+		arg.Icon,
+		arg.AccentColor,
+		arg.AppliesTo,
+		arg.Position,
+		arg.IsActive,
+	)
+	var i ServiceCategory
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Label,
+		&i.Description,
+		&i.Icon,
+		&i.AccentColor,
+		&i.AppliesTo,
+		&i.Position,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1185,6 +1244,15 @@ func (q *Queries) DecrementDepartureBookedCount(ctx context.Context, arg Decreme
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteServiceCategory = `-- name: DeleteServiceCategory :exec
+DELETE FROM service_categories WHERE slug = $1
+`
+
+func (q *Queries) DeleteServiceCategory(ctx context.Context, slug string) error {
+	_, err := q.db.Exec(ctx, deleteServiceCategory, slug)
+	return err
 }
 
 const deleteServicePackageDepartures = `-- name: DeleteServicePackageDepartures :exec
@@ -1518,6 +1586,32 @@ func (q *Queries) GetServiceBookingDetail(ctx context.Context, id pgtype.UUID) (
 		&i.PaymentProvider,
 		&i.DepartureStartsOn,
 		&i.DepartureEndsOn,
+	)
+	return i, err
+}
+
+const getServiceCategoryBySlug = `-- name: GetServiceCategoryBySlug :one
+SELECT id, slug, label, description, icon, accent_color, applies_to,
+       position, is_active, created_at, updated_at
+FROM service_categories
+WHERE slug = $1
+`
+
+func (q *Queries) GetServiceCategoryBySlug(ctx context.Context, slug string) (ServiceCategory, error) {
+	row := q.db.QueryRow(ctx, getServiceCategoryBySlug, slug)
+	var i ServiceCategory
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Label,
+		&i.Description,
+		&i.Icon,
+		&i.AccentColor,
+		&i.AppliesTo,
+		&i.Position,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2533,6 +2627,49 @@ func (q *Queries) ListServiceBookingsByUser(ctx context.Context, arg ListService
 	return items, nil
 }
 
+const listServiceCategories = `-- name: ListServiceCategories :many
+
+SELECT id, slug, label, description, icon, accent_color, applies_to,
+       position, is_active, created_at, updated_at
+FROM service_categories
+ORDER BY position ASC, label ASC
+`
+
+// ---------------------------------------------------------------------
+// service_categories (dynamic taxonomy — marketplace upgrade)
+// ---------------------------------------------------------------------
+func (q *Queries) ListServiceCategories(ctx context.Context) ([]ServiceCategory, error) {
+	rows, err := q.db.Query(ctx, listServiceCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ServiceCategory
+	for rows.Next() {
+		var i ServiceCategory
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.Label,
+			&i.Description,
+			&i.Icon,
+			&i.AccentColor,
+			&i.AppliesTo,
+			&i.Position,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServiceListings = `-- name: ListServiceListings :many
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
@@ -3158,6 +3295,59 @@ func (q *Queries) SetServiceListingVerified(ctx context.Context, arg SetServiceL
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateServiceCategory = `-- name: UpdateServiceCategory :one
+UPDATE service_categories
+SET label = $1,
+    description = $2,
+    icon = $3,
+    accent_color = $4,
+    applies_to = COALESCE($5, applies_to),
+    position = COALESCE($6, position),
+    is_active = COALESCE($7, is_active),
+    updated_at = now()
+WHERE slug = $8
+RETURNING id, slug, label, description, icon, accent_color, applies_to, position, is_active, created_at, updated_at
+`
+
+type UpdateServiceCategoryParams struct {
+	Label       string  `json:"label"`
+	Description *string `json:"description"`
+	Icon        *string `json:"icon"`
+	AccentColor *string `json:"accent_color"`
+	AppliesTo   *string `json:"applies_to"`
+	Position    *int32  `json:"position"`
+	IsActive    *bool   `json:"is_active"`
+	Slug        string  `json:"slug"`
+}
+
+func (q *Queries) UpdateServiceCategory(ctx context.Context, arg UpdateServiceCategoryParams) (ServiceCategory, error) {
+	row := q.db.QueryRow(ctx, updateServiceCategory,
+		arg.Label,
+		arg.Description,
+		arg.Icon,
+		arg.AccentColor,
+		arg.AppliesTo,
+		arg.Position,
+		arg.IsActive,
+		arg.Slug,
+	)
+	var i ServiceCategory
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Label,
+		&i.Description,
+		&i.Icon,
+		&i.AccentColor,
+		&i.AppliesTo,
+		&i.Position,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateServiceListingClaimStatus = `-- name: UpdateServiceListingClaimStatus :execrows

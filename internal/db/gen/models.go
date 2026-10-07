@@ -3446,6 +3446,20 @@ type ServiceBooking struct {
 	DisputeReason   *string            `json:"dispute_reason"`
 }
 
+type ServiceCategory struct {
+	ID          pgtype.UUID        `json:"id"`
+	Slug        string             `json:"slug"`
+	Label       string             `json:"label"`
+	Description *string            `json:"description"`
+	Icon        *string            `json:"icon"`
+	AccentColor *string            `json:"accent_color"`
+	AppliesTo   string             `json:"applies_to"`
+	Position    int32              `json:"position"`
+	IsActive    bool               `json:"is_active"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ServiceListingMetum struct {
 	ID                 pgtype.UUID        `json:"id"`
 	ContentID          pgtype.UUID        `json:"content_id"`

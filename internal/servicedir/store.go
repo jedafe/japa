@@ -745,3 +745,41 @@ func (s *Store) GetListingOrgID(ctx context.Context, contentID pgtype.UUID) (pgt
 
 	return row.OrgID, row.ListingKind, nil
 }
+
+// ---------------------------------------------------------------------------
+// service_categories — dynamic taxonomy (marketplace upgrade)
+// ---------------------------------------------------------------------------
+
+// listCategories returns service_categories rows in position order.
+// activeOnly filters to is_active rows in Go — the single
+// ListServiceCategories query serves both the public picker (active
+// only) and the admin category manager (full set).
+func (s *Store) listCategories(ctx context.Context, activeOnly bool) ([]gen.ServiceCategory, error) {
+	rows, err := s.read.ListServiceCategories(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: list categories: %w", err)
+	}
+
+	if !activeOnly {
+		return rows, nil
+	}
+
+	out := make([]gen.ServiceCategory, 0, len(rows))
+	for _, r := range rows {
+		if r.IsActive {
+			out = append(out, r)
+		}
+	}
+
+	return out, nil
+}
+
+// getCategoryBySlug returns a single service_categories row by slug.
+func (s *Store) getCategoryBySlug(ctx context.Context, slug string) (gen.ServiceCategory, error) {
+	row, err := s.read.GetServiceCategoryBySlug(ctx, slug)
+	if err != nil {
+		return gen.ServiceCategory{}, fmt.Errorf("servicedir: get category by slug: %w", err)
+	}
+
+	return row, nil
+}
