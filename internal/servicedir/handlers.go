@@ -240,6 +240,8 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_preferred_dates", "preferred_dates must be {start_on, end_on, flexible} with start_on <= end_on")
 	case errors.Is(err, ErrPackageOrgImmutable):
 		errpkg.WriteError(w, http.StatusBadRequest, "package_org_immutable", "A package's selling organization cannot change after creation")
+	case errors.Is(err, ErrInvalidFeaturedMedia):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_media_id", "Invalid featured_media_id format")
 	case errors.Is(err, ErrInvalidID):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid id")
 	case errors.Is(err, content.ErrEditWindowExpired):

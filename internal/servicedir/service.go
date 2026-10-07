@@ -84,11 +84,13 @@ type ServiceDTO struct {
 
 	// Marketplace card surfaces — populated from the media +
 	// review_aggregates JOINs on the listing queries (§98 detail card /
-	// marketplace listing spec). FeaturedImageURL is the imgproxy URL of
-	// contents.featured_image_id; omitted when no live media row exists.
-	// RatingAvg/ReviewCount come from the §29 review_aggregates rollup
-	// (entity_type='service_listing', entity_id=contents.id); omitted when
-	// the listing has no reviews yet.
+	// marketplace listing spec). FeaturedMediaID serializes
+	// contents.featured_image_id so the authoring UI can round-trip the
+	// picked media row; FeaturedImageURL is the imgproxy URL, omitted when
+	// no live media row exists. RatingAvg/ReviewCount come from the §29
+	// review_aggregates rollup (entity_type='service_listing',
+	// entity_id=contents.id); omitted when the listing has no reviews yet.
+	FeaturedMediaID  string  `json:"featured_media_id,omitempty"`
 	FeaturedImageURL string  `json:"featured_image_url,omitempty"`
 	RatingAvg        float64 `json:"rating_avg,omitempty"`
 	ReviewCount      int32   `json:"review_count,omitempty"`
@@ -182,6 +184,10 @@ type CreateServiceInput struct {
 	WebsiteURL         string `json:"website_url"`
 	BookingURL         string `json:"booking_url"`
 	PriceRange         string `json:"price_range"`
+	// FeaturedImageID sets contents.featured_image_id (media row id); the
+	// payload name featured_media_id matches the serialized DTO field so
+	// the authoring UI round-trips one key. Empty = no featured image.
+	FeaturedImageID string `json:"featured_media_id"`
 
 	// §111 package fields (ignored unless listing_kind='package')
 	ListingKind    string                  `json:"listing_kind"`
@@ -210,6 +216,9 @@ type EditServiceInput struct {
 	WebsiteURL         *string `json:"website_url"`
 	BookingURL         *string `json:"booking_url"`
 	PriceRange         *string `json:"price_range"`
+	// FeaturedImageID patches contents.featured_image_id — nil keeps the
+	// stored media row, "" clears it, a UUID string replaces it.
+	FeaturedImageID *string `json:"featured_media_id"`
 
 	// §111 package fields. items[]/departures[]/tiers[] are replace-on-save:
 	// a non-nil slice replaces the whole set.
@@ -517,6 +526,9 @@ var (
 	// ErrPackageOrgImmutable — the selling org of a package cannot change
 	// post-create; the merchant of record is bound to the booking pipeline.
 	ErrPackageOrgImmutable = errors.New("package_org_immutable")
+	// ErrInvalidFeaturedMedia — featured_media_id failed UUID parsing on a
+	// create/edit payload (400 invalid_featured_media_id).
+	ErrInvalidFeaturedMedia = errors.New("invalid featured_media_id")
 )
 
 // ---------------------------------------------------------------------------
@@ -868,6 +880,15 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		}
 	}
 
+	// contents.featured_image_id is a media row reference — parse only;
+	// media existence/ownership is not validated (no FK on the column).
+	var featuredImageID pgtype.UUID
+	if input.FeaturedImageID != "" {
+		if err := featuredImageID.Scan(input.FeaturedImageID); err != nil {
+			return ServiceDTO{}, ErrInvalidFeaturedMedia
+		}
+	}
+
 	originCommunities, err := normalizeOriginCommunities(input.OriginCommunities)
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("invalid origin_communities: %w", err)
@@ -914,14 +935,15 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 	}
 
 	contentRow, err := s.content.CreateContent(ctx, content.CreateContentInput{
-		AuthorID:       authorID,
-		OrganizationID: orgID,
-		ContentType:    content.TypeServiceListing,
-		Title:          input.Title,
-		Body:           input.Body,
-		Status:         createStatus,
-		Visibility:     content.VisibilityPublic,
-		GeoSpaceID:     destSpaceID,
+		AuthorID:        authorID,
+		OrganizationID:  orgID,
+		ContentType:     content.TypeServiceListing,
+		Title:           input.Title,
+		Body:            input.Body,
+		Status:          createStatus,
+		Visibility:      content.VisibilityPublic,
+		GeoSpaceID:      destSpaceID,
+		FeaturedImageID: featuredImageID,
 	})
 	if err != nil {
 		return ServiceDTO{}, fmt.Errorf("servicedir: create content: %w", err)
@@ -1835,11 +1857,15 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		keepIDs = append(keepIDs, bookedIDs...)
 	}
 
-	// All input validated — start writing. Title/body first via the
-	// §14 content service.
+	// All input validated — start writing. Title/body/featured image go
+	// through the §14 content service. FeaturedImageID is seeded with the
+	// stored value because UpdateContent writes the column unconditionally
+	// (sqlc.narg, not COALESCE) — without the seed a title/body-only save
+	// would clear the featured image.
 	updateInput := content.UpdateContentInput{
-		Title: existing.Title,
-		Body:  existing.Body,
+		Title:           existing.Title,
+		Body:            existing.Body,
+		FeaturedImageID: existing.FeaturedImageID,
 	}
 	if input.Title != nil {
 		updateInput.Title = *input.Title
@@ -1847,6 +1873,17 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 
 	if input.Body != nil {
 		updateInput.Body = *input.Body
+	}
+
+	// featured_media_id patch: nil keeps the stored row, "" clears the
+	// image, a UUID string replaces it. Media existence/ownership is not
+	// validated (no FK on contents.featured_image_id).
+	if input.FeaturedImageID != nil {
+		if *input.FeaturedImageID == "" {
+			updateInput.FeaturedImageID = pgtype.UUID{}
+		} else if err := updateInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
+			return ServiceDTO{}, ErrInvalidFeaturedMedia
+		}
 	}
 
 	// §111: commercial edits (price_amount, items, purchase_mode, tiers) on
@@ -1867,7 +1904,8 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	// compare values, not field presence.
 	contentChanged := updateInput.Status != "" ||
 		updateInput.Title != existing.Title ||
-		updateInput.Body != existing.Body
+		updateInput.Body != existing.Body ||
+		updateInput.FeaturedImageID != existing.FeaturedImageID
 	if contentChanged {
 		// The §49 edit window guards post-publication bait-and-switch —
 		// non-published listings (in_review/draft) aren't public yet, so
@@ -2178,6 +2216,10 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	// Featured image + review aggregate (media / review_aggregates JOINs).
 	// Pattern: internal/story/service.go (media.MediaURL over storage refs);
 	// Numeric→float64 coercion mirrors the server review adapter.
+	if r.FeaturedImageID.Valid {
+		dto.FeaturedMediaID = r.FeaturedImageID.String()
+	}
+
 	if r.FeaturedStorageBucket != nil && r.FeaturedStoragePath != nil {
 		dto.FeaturedImageURL = media.MediaURL(*r.FeaturedStorageBucket, *r.FeaturedStoragePath, media.ImageProxyOpts{})
 	}
@@ -2279,6 +2321,13 @@ func metaToDTO(c gen.GetContentByIDRow, m gen.ServiceListingMetum) ServiceDTO {
 	dto.VerifiedAt = formatTs(m.VerifiedAt)
 	if c.AuthorID.Valid {
 		dto.AuthorID = c.AuthorID.String()
+	}
+
+	// contents.featured_image_id → featured_media_id so create/edit write
+	// responses round-trip the picked media row (the GetContentByID query
+	// has no media JOIN, so featured_image_url stays empty here).
+	if c.FeaturedImageID.Valid {
+		dto.FeaturedMediaID = c.FeaturedImageID.String()
 	}
 
 	// §111 package fields.
