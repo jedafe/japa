@@ -1534,12 +1534,21 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 	}
 
 	couponsOn := s.CouponsEnabled(ctx)
+	tiersOn := s.TiersEnabled(ctx)
 
 	dtos := make([]ServiceDTO, 0, len(rows))
 	for _, r := range rows {
 		dto := rowToDTO(r)
 		if couponsOn {
 			dto.HasCoupon = r.HasCoupon
+		}
+		// min_price COALESCEs the lowest active tier over price_amount —
+		// with the tiers flag off a stale tier row would leak a hidden
+		// price surface, so fall back to the meta price instead.
+		if tiersOn {
+			dto.MinPrice = r.MinPrice
+		} else {
+			dto.MinPrice = r.PriceAmount
 		}
 
 		dtos = append(dtos, dto)
@@ -2017,9 +2026,20 @@ func (s *Service) AdminList(ctx context.Context, status, claimStatus, serviceCat
 		return nil, 0, fmt.Errorf("servicedir: admin list: %w", err)
 	}
 
+	tiersOn := s.TiersEnabled(ctx)
+
 	dtos := make([]ServiceDTO, 0, len(rows))
 	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+		dto := rowToDTO(r)
+		// Same tiers-flag gate as the public list — a stale tier row must
+		// not masquerade as the listing's "From" price when tiers are off.
+		if tiersOn {
+			dto.MinPrice = r.MinPrice
+		} else {
+			dto.MinPrice = r.PriceAmount
+		}
+
+		dtos = append(dtos, dto)
 	}
 
 	return dtos, total, nil
@@ -2239,7 +2259,8 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	dto.PriceAmount = r.PriceAmount
 	dto.PurchaseMode = r.PurchaseMode
 	dto.Capacity = r.Capacity
-	dto.MinPrice = r.MinPrice
+	// MinPrice is stamped by the list call sites (gated on
+	// service_packages.tiers_enabled) — rowToDTO has no flag context.
 	if r.PriceCurrency != nil {
 		dto.PriceCurrency = *r.PriceCurrency
 	}
