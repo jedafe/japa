@@ -957,12 +957,22 @@ type UpdateContentInput struct {
 	Status          string
 	Visibility      string
 	PublishAt       pgtype.Timestamptz
-	IsLocked        bool
-	IsPinned        bool
-	OrganizationID  pgtype.UUID
-	GuideCategory   *string
-	AIGeneratedAt   pgtype.Timestamptz
-	AIModel         *string
+	// ClearPublishAt NULLs publish_at. An invalid PublishAt means "keep the
+	// stored schedule" — publish_at is otherwise managed by ScheduleContent
+	// and the PATCH publish_at field.
+	ClearPublishAt bool
+	// IsLocked/IsPinned are *bool so a PATCH that omits them preserves the
+	// stored flags; non-nil writes the value (including explicit false).
+	IsLocked       *bool
+	IsPinned       *bool
+	OrganizationID pgtype.UUID
+	// ClearFeaturedImageID/ClearHeaderImageID NULL the image columns when
+	// set. An invalid UUID alone now means "keep the stored image".
+	ClearFeaturedImageID bool
+	ClearHeaderImageID   bool
+	GuideCategory        *string
+	AIGeneratedAt        pgtype.Timestamptz
+	AIModel              *string
 	// BypassSpaceCheck lets admins update the primary space without the
 	// per-space membership/permission gate.
 	BypassSpaceCheck bool
@@ -1096,11 +1106,6 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		newSlug = uniqueSlug
 	}
 
-	fieldValues := input.FieldValues
-	if fieldValues == nil {
-		fieldValues = existing.FieldValues
-	}
-
 	// Preserve body, body_html, and content_hash on metadata-only updates
 	// where the client omits those fields (BUG-004). The SQL UPDATE uses
 	// COALESCE for content_hash; this service-level fallback keeps body/body_html
@@ -1187,40 +1192,9 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	// content when the update leaves them unset.
 	s.inferJourneyMetadataForUpdate(ctx, s.read, existing, &input)
 
-	content, err := s.write.UpdateContent(ctx, gen.UpdateContentParams{
-		OrganizationID:  input.OrganizationID,
-		Title:           input.Title,
-		Slug:            newSlug,
-		Body:            input.Body,
-		BodyHtml:        input.BodyHtml,
-		FieldValues:     fieldValues,
-		ContentHash:     input.ContentHash,
-		GeoSpaceID:      primarySpaceID,
-		HeaderImageID:   input.HeaderImageID,
-		FeaturedImageID: input.FeaturedImageID,
-		VideoSourceID:   input.VideoSourceID,
-		CanonicalUrl:    input.CanonicalUrl,
-		MetaTitle:       input.MetaTitle,
-		MetaDescription: input.MetaDescription,
-		OgImageUrl:      input.OgImageUrl,
-		SeoIndexable:    input.SeoIndexable,
-		Status:          input.Status,
-		Visibility:      input.Visibility,
-		ReadTimeMinutes: ComputeReadTime(input.Body),
-		PublishAt:       input.PublishAt,
-		IsLocked:        input.IsLocked,
-		IsPinned:        input.IsPinned,
-		GuideCategory:   input.GuideCategory,
-		AiGeneratedAt:   input.AIGeneratedAt,
-		AiModel:         input.AIModel,
-		JourneyStage:    input.JourneyStage,
-		VisaRoute:       input.VisaRoute,
-		SourceCountry:   input.SourceCountry,
-		TargetCountry:   input.TargetCountry,
-		IntelSourceID:   input.IntelSourceID,
-		IntelRecordID:   input.IntelRecordID,
-		ID:              id,
-	})
+	params := buildUpdateContentParams(id, input, existing, newSlug, primarySpaceID)
+
+	content, err := s.write.UpdateContent(ctx, params)
 	if err != nil {
 		return gen.UpdateContentRow{}, fmt.Errorf("updating content: %w", err)
 	}
@@ -1259,7 +1233,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		if dst == nil {
 			dst = existing.TargetCountry
 		}
-		s.syncStoryMeta(ctx, s.write, content.ID, src, dst, fieldValues)
+		s.syncStoryMeta(ctx, s.write, content.ID, src, dst, params.FieldValues)
 	}
 
 	// Record slug change for 301 redirect.
@@ -1268,7 +1242,7 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	// Create a revision.
 	if _, err := s.write.CreateContentRevision(ctx, gen.CreateContentRevisionParams{
 		ContentID:   id,
-		FieldValues: fieldValues,
+		FieldValues: params.FieldValues,
 		Title:       input.Title,
 		Body:        input.Body,
 		BodyHtml:    input.BodyHtml,
@@ -1285,6 +1259,121 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	})
 
 	return content, nil
+}
+
+// buildUpdateContentParams maps an UpdateContentInput onto the generated
+// UPDATE params. The UpdateContent query writes most columns unconditionally
+// via sqlc.narg (not COALESCE), so every field the caller did not explicitly
+// provide is seeded from the existing row — an omitted field must preserve
+// the stored value, not NULL it.
+//
+// Rules:
+//   - published_at is never writable here; it is stamped by
+//     UpdateContentStatus, so the stored value always passes through.
+//   - organization_id has no clear path (the org role-guard only runs when
+//     setting one), so an invalid input always keeps the stored value.
+//   - *string fields (canonical_url, meta_title, meta_description,
+//     og_image_url): nil keeps the stored value, non-nil writes as-is.
+//   - publish_at, header_image_id, featured_image_id: invalid keeps the
+//     stored value unless the matching Clear* flag requests an explicit NULL.
+//   - is_locked / is_pinned: nil keeps the stored flag; non-nil writes the
+//     pointed-at value so callers can both set and unset.
+func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing gen.GetContentByIDRow, newSlug string, primarySpaceID pgtype.UUID) gen.UpdateContentParams {
+	params := gen.UpdateContentParams{
+		ID:              id,
+		Title:           input.Title,
+		Slug:            newSlug,
+		Body:            input.Body,
+		BodyHtml:        input.BodyHtml,
+		ContentHash:     input.ContentHash,
+		GeoSpaceID:      primarySpaceID,
+		VideoSourceID:   input.VideoSourceID,
+		SeoIndexable:    input.SeoIndexable,
+		Status:          input.Status,
+		Visibility:      input.Visibility,
+		ReadTimeMinutes: ComputeReadTime(input.Body),
+		GuideCategory:   input.GuideCategory,
+		AiGeneratedAt:   input.AIGeneratedAt,
+		AiModel:         input.AIModel,
+		JourneyStage:    input.JourneyStage,
+		VisaRoute:       input.VisaRoute,
+		SourceCountry:   input.SourceCountry,
+		TargetCountry:   input.TargetCountry,
+		IntelSourceID:   input.IntelSourceID,
+		IntelRecordID:   input.IntelRecordID,
+
+		// Preserve-on-omit seeds.
+		FieldValues:     input.FieldValues,
+		OrganizationID:  input.OrganizationID,
+		CanonicalUrl:    input.CanonicalUrl,
+		MetaTitle:       input.MetaTitle,
+		MetaDescription: input.MetaDescription,
+		OgImageUrl:      input.OgImageUrl,
+		PublishAt:       input.PublishAt,
+		PublishedAt:     existing.PublishedAt,
+		HeaderImageID:   input.HeaderImageID,
+		FeaturedImageID: input.FeaturedImageID,
+		IsLocked:        existing.IsLocked,
+		IsPinned:        existing.IsPinned,
+	}
+
+	if params.FieldValues == nil {
+		params.FieldValues = existing.FieldValues
+	}
+
+	if !input.OrganizationID.Valid {
+		params.OrganizationID = existing.OrganizationID
+	}
+
+	if input.CanonicalUrl == nil {
+		params.CanonicalUrl = existing.CanonicalUrl
+	}
+
+	if input.MetaTitle == nil {
+		params.MetaTitle = existing.MetaTitle
+	}
+
+	if input.MetaDescription == nil {
+		params.MetaDescription = existing.MetaDescription
+	}
+
+	if input.OgImageUrl == nil {
+		params.OgImageUrl = existing.OgImageUrl
+	}
+
+	if !input.PublishAt.Valid {
+		params.PublishAt = existing.PublishAt
+	}
+
+	if input.ClearPublishAt && !input.PublishAt.Valid {
+		params.PublishAt = pgtype.Timestamptz{}
+	}
+
+	if !input.HeaderImageID.Valid {
+		params.HeaderImageID = existing.HeaderImageID
+	}
+
+	if input.ClearHeaderImageID && !input.HeaderImageID.Valid {
+		params.HeaderImageID = pgtype.UUID{}
+	}
+
+	if !input.FeaturedImageID.Valid {
+		params.FeaturedImageID = existing.FeaturedImageID
+	}
+
+	if input.ClearFeaturedImageID && !input.FeaturedImageID.Valid {
+		params.FeaturedImageID = pgtype.UUID{}
+	}
+
+	if input.IsLocked != nil {
+		params.IsLocked = *input.IsLocked
+	}
+
+	if input.IsPinned != nil {
+		params.IsPinned = *input.IsPinned
+	}
+
+	return params
 }
 
 // UpdateContentStatus changes the status of a content row (e.g. draft to

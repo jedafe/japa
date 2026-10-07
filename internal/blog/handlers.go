@@ -2119,8 +2119,8 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		PublishAt       *string         `json:"publish_at"`
 		GeoSpaceID      *string         `json:"geo_space_id"`
 		OrganizationID  *string         `json:"organization_id"`
-		IsLocked        bool            `json:"is_locked"`
-		IsPinned        bool            `json:"is_pinned"`
+		IsLocked        *bool           `json:"is_locked"`
+		IsPinned        *bool           `json:"is_pinned"`
 		GuideCategory   *string         `json:"guide_category"`
 	}
 
@@ -2183,30 +2183,39 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if raw.HeaderImageID != nil && *raw.HeaderImageID != "" {
-		if err := input.HeaderImageID.Scan(*raw.HeaderImageID); err != nil {
+	if raw.HeaderImageID != nil {
+		if *raw.HeaderImageID == "" {
+			input.ClearHeaderImageID = true
+		} else if err := input.HeaderImageID.Scan(*raw.HeaderImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
 			return
 		}
 	}
 
-	if raw.FeaturedImageID != nil && *raw.FeaturedImageID != "" {
-		if err := input.FeaturedImageID.Scan(*raw.FeaturedImageID); err != nil {
+	if raw.FeaturedImageID != nil {
+		if *raw.FeaturedImageID == "" {
+			input.ClearFeaturedImageID = true
+		} else if err := input.FeaturedImageID.Scan(*raw.FeaturedImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
 			return
 		}
 	}
 
-	if raw.PublishAt != nil && *raw.PublishAt != "" {
-		var err error
-		if input.PublishAt, err = content.ParsePublishAtParam(*raw.PublishAt); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
-			return
-		}
+	if raw.PublishAt != nil {
+		if *raw.PublishAt == "" {
+			// Explicit empty string clears a pending schedule.
+			input.ClearPublishAt = true
+		} else {
+			var err error
+			if input.PublishAt, err = content.ParsePublishAtParam(*raw.PublishAt); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
+				return
+			}
 
-		if input.PublishAt.Valid && input.PublishAt.Time.Before(time.Now()) {
-			errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
-			return
+			if input.PublishAt.Valid && input.PublishAt.Time.Before(time.Now()) {
+				errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+				return
+			}
 		}
 	}
 

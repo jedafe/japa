@@ -1867,10 +1867,9 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	}
 
 	// All input validated — start writing. Title/body/featured image go
-	// through the §14 content service. FeaturedImageID is seeded with the
-	// stored value because UpdateContent writes the column unconditionally
-	// (sqlc.narg, not COALESCE) — without the seed a title/body-only save
-	// would clear the featured image.
+	// through the §14 content service. UpdateContent preserves fields the
+	// input leaves unset; featured image clears go through ClearFeaturedImageID
+	// because an invalid UUID now means "keep the stored image".
 	updateInput := content.UpdateContentInput{
 		Title:           existing.Title,
 		Body:            existing.Body,
@@ -1890,6 +1889,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	if input.FeaturedImageID != nil {
 		if *input.FeaturedImageID == "" {
 			updateInput.FeaturedImageID = pgtype.UUID{}
+			updateInput.ClearFeaturedImageID = true
 		} else if err := updateInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
 			return ServiceDTO{}, ErrInvalidFeaturedMedia
 		}

@@ -1625,8 +1625,8 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		SpaceID         *string         `json:"space_id"`
 		GeoSpaceID      *string         `json:"geo_space_id"`
 		OrganizationID  *string         `json:"organization_id"`
-		IsLocked        bool            `json:"is_locked"`
-		IsPinned        bool            `json:"is_pinned"`
+		IsLocked        *bool           `json:"is_locked"`
+		IsPinned        *bool           `json:"is_pinned"`
 		GuideCategory   *string         `json:"guide_category"`
 		// Journey-aware recommendation metadata.
 		JourneyStage  *string `json:"journey_stage"`
@@ -1779,15 +1779,19 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if input.HeaderImageID != nil && *input.HeaderImageID != "" {
-		if err := updateInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
+	if input.HeaderImageID != nil {
+		if *input.HeaderImageID == "" {
+			updateInput.ClearHeaderImageID = true
+		} else if err := updateInput.HeaderImageID.Scan(*input.HeaderImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_header_image_id", "Invalid header_image_id format")
 			return
 		}
 	}
 
-	if input.FeaturedImageID != nil && *input.FeaturedImageID != "" {
-		if err := updateInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
+	if input.FeaturedImageID != nil {
+		if *input.FeaturedImageID == "" {
+			updateInput.ClearFeaturedImageID = true
+		} else if err := updateInput.FeaturedImageID.Scan(*input.FeaturedImageID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_image_id", "Invalid featured_image_id format")
 			return
 		}
@@ -1800,16 +1804,21 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if input.PublishAt != nil && *input.PublishAt != "" {
-		var err error
-		if updateInput.PublishAt, err = ParsePublishAtParam(*input.PublishAt); err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
-			return
-		}
-		// Validate that publish_at is in the future when setting a new schedule.
-		if updateInput.PublishAt.Valid && updateInput.PublishAt.Time.Before(time.Now()) {
-			errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
-			return
+	if input.PublishAt != nil {
+		if *input.PublishAt == "" {
+			// Explicit empty string clears a pending schedule.
+			updateInput.ClearPublishAt = true
+		} else {
+			var err error
+			if updateInput.PublishAt, err = ParsePublishAtParam(*input.PublishAt); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_publish_at", "Invalid publish_at format")
+				return
+			}
+			// Validate that publish_at is in the future when setting a new schedule.
+			if updateInput.PublishAt.Valid && updateInput.PublishAt.Time.Before(time.Now()) {
+				errpkg.WriteError(w, http.StatusBadRequest, "publish_at_in_past", "publish_at must be in the future")
+				return
+			}
 		}
 	}
 
