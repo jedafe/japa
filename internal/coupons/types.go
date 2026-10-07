@@ -31,6 +31,16 @@ var (
 	// ErrInvalidURL is a sentinel error: an outbound URL field (terms_url,
 	// referral_url, base_url) is not an absolute http(s) URL.
 	ErrInvalidURL = errors.New("invalid url")
+	// ErrCouponCodeTaken is a sentinel error: an org coupon insert/update hit
+	// the global coupons_code_key unique index (23505 on code).
+	ErrCouponCodeTaken = errors.New("coupon code already taken")
+	// ErrInvalidCouponInput is a sentinel error: an org-owned service coupon
+	// payload failed validation (required fields, code format, discount
+	// bounds, validity window, caps, applies_to).
+	ErrInvalidCouponInput = errors.New("invalid coupon input")
+	// ErrUnsupportedDiscount is a sentinel error: a discount_type that is not
+	// meaningful for service coupons (free_shipping) was supplied.
+	ErrUnsupportedDiscount = errors.New("unsupported discount type for service coupons")
 )
 
 // InternalDealProviderSlug is the reserved provider URL segment used by
@@ -92,6 +102,18 @@ const (
 	DiscountTypePercent      DiscountType = "percent"
 	DiscountTypeFixed        DiscountType = "fixed"
 	DiscountTypeFreeShipping DiscountType = "free_shipping"
+)
+
+// CouponAppliesTo scopes an org-owned service coupon to standalone service
+// bookings, package bookings, or both (coupons.applies_to CHECK constraint).
+type CouponAppliesTo string
+
+// Exported const values.
+const (
+	// AppliesToService is an exported constant.
+	AppliesToService CouponAppliesTo = "service"
+	AppliesToPackage CouponAppliesTo = "package"
+	AppliesToBoth    CouponAppliesTo = "both"
 )
 
 // ProviderType classifies affiliate providers.

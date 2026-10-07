@@ -192,6 +192,42 @@ func (s *Store) deleteCoupon(ctx context.Context, id pgtype.UUID) error {
 	return s.write.DeleteCoupon(ctx, id)
 }
 
+// ── Org-Owned Service Coupons (Services Marketplace) ────────────────
+
+func (s *Store) createOrgCoupon(ctx context.Context, p gen.CreateOrgCouponParams) (gen.Coupon, error) {
+	return s.write.CreateOrgCoupon(ctx, p)
+}
+
+// getCouponByIDForOrg loads a coupon scoped to its owning organization — the
+// ownership gate for the org coupon update/delete paths.
+func (s *Store) getCouponByIDForOrg(ctx context.Context, id, orgID pgtype.UUID) (gen.Coupon, error) {
+	return s.read.GetCouponByIDForOrg(ctx, gen.GetCouponByIDForOrgParams{
+		ID: id, OrganizationID: orgID,
+	})
+}
+
+func (s *Store) countOrgCouponRedemptions(ctx context.Context, couponID pgtype.UUID) (int64, error) {
+	return s.read.CountOrgCouponRedemptions(ctx, couponID)
+}
+
+func (s *Store) listOrgCoupons(ctx context.Context, orgID pgtype.UUID, limit, offset int32) ([]gen.ListOrgCouponsRow, error) {
+	return s.read.ListOrgCoupons(ctx, gen.ListOrgCouponsParams{
+		OrganizationID: orgID, PageLimit: limit, PageOffset: offset,
+	})
+}
+
+func (s *Store) updateOrgCoupon(ctx context.Context, p gen.UpdateOrgCouponParams) (gen.Coupon, error) {
+	return s.write.UpdateOrgCoupon(ctx, p)
+}
+
+// deleteOrgCoupon hard-deletes an org coupon row; the caller must have
+// verified zero redemptions (coupon_redemptions.coupon_id is CASCADE).
+func (s *Store) deleteOrgCoupon(ctx context.Context, id, orgID pgtype.UUID) (int64, error) {
+	return s.write.DeleteOrgCoupon(ctx, gen.DeleteOrgCouponParams{
+		ID: id, OrganizationID: orgID,
+	})
+}
+
 // ── Slug History ────────────────────────────────────────────────────
 
 // createSlugHistory records a coupon slug rename (entity_type 'coupon') so

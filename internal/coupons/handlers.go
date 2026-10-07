@@ -157,6 +157,12 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "provider_has_coupons", err.Error())
 	case errors.Is(err, ErrCouponAlreadyExists):
 		errpkg.WriteError(w, http.StatusConflict, "already_exists", err.Error())
+	case errors.Is(err, ErrCouponCodeTaken):
+		errpkg.WriteError(w, http.StatusConflict, "coupon_code_taken", err.Error())
+	case errors.Is(err, ErrUnsupportedDiscount):
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_discount", err.Error())
+	case errors.Is(err, ErrInvalidCouponInput):
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, errpkg.ErrDuplicate):
 		errpkg.WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, errpkg.ErrRequired):
@@ -1167,4 +1173,96 @@ func (h *Handlers) ListOrgDeals(w http.ResponseWriter, r *http.Request) {
 	}
 	h.resolveLiterals(r, &coupons)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons, "page": page, "page_size": pageSize})
+}
+
+// ── Organization Service Coupons (Services Marketplace) ─────────────
+//
+// Org-owned 'internal' coupons redeemed against the org's service listings.
+// Same member-role gate as the §55 deal endpoints (requireOrgEditor).
+
+// ListOrgCoupons handles GET /api/v1/organizations/{id}/coupons — the org's
+// service coupons with redemption/listing rollups, same {data,page,page_size}
+// envelope as ListOrgDeals.
+func (h *Handlers) ListOrgCoupons(w http.ResponseWriter, r *http.Request) {
+	org, _, ok := h.requireOrgEditor(w, r)
+	if !ok {
+		return
+	}
+	page := int32(parseQueryInt(r, "page", 1))                                       // #nosec
+	pageSize := clampPageSize(int32(parseQueryInt(r, "page_size", DefaultPageSize))) // #nosec
+	coupons, err := h.Service.ListOrgCoupons(r.Context(), org.ID, page, pageSize)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if coupons == nil {
+		coupons = []gen.ListOrgCouponsRow{}
+	}
+	h.resolveLiterals(r, &coupons)
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupons, "page": page, "page_size": pageSize})
+}
+
+// CreateOrgCoupon handles POST /api/v1/organizations/{id}/coupons — creates
+// an active, unverified internal coupon owned by the org.
+func (h *Handlers) CreateOrgCoupon(w http.ResponseWriter, r *http.Request) {
+	org, user, ok := h.requireOrgEditor(w, r)
+	if !ok {
+		return
+	}
+	var input OrgCouponInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	coupon, err := h.Service.CreateOrgCoupon(r.Context(), org.ID, user.UserID, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": coupon})
+}
+
+// UpdateOrgCoupon handles PATCH /api/v1/organizations/{id}/coupons/{cid} —
+// partial update; absent fields keep the stored values.
+func (h *Handlers) UpdateOrgCoupon(w http.ResponseWriter, r *http.Request) {
+	org, _, ok := h.requireOrgEditor(w, r)
+	if !ok {
+		return
+	}
+	cid, err := parseUUIDParam(r, "cid")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		return
+	}
+	var input OrgCouponInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+	coupon, err := h.Service.UpdateOrgCoupon(r.Context(), org.ID, cid, input)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": coupon})
+}
+
+// DeleteOrgCoupon handles DELETE /api/v1/organizations/{id}/coupons/{cid}.
+// Coupons with redemptions are suspended instead of hard-deleted to preserve
+// the coupon_redemptions audit trail; both paths return 204.
+func (h *Handlers) DeleteOrgCoupon(w http.ResponseWriter, r *http.Request) {
+	org, _, ok := h.requireOrgEditor(w, r)
+	if !ok {
+		return
+	}
+	cid, err := parseUUIDParam(r, "cid")
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid coupon ID")
+		return
+	}
+	if err := h.Service.DeleteOrgCoupon(r.Context(), org.ID, cid); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusNoContent, nil)
 }
