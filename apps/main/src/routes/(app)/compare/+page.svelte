@@ -99,12 +99,17 @@
 	let selectedItems = $state<ResolvedItem[]>([]);
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	let scopeSelections = $state<Record<string, string>>({});
-	$effect(() => {
-		// Sync local scope state with the server-loaded page data on every navigation.
-		scopeSelections = Object.fromEntries(
+	// SSR-safe initial value — same computation as the sync effect below so the
+	// narrow summary chip renders correctly on first paint.
+	function initialScope() {
+		return Object.fromEntries(
 			Object.entries(data.scopeParams ?? {}).filter(([key]) => (data.scopeChain ?? []).includes(key))
 		);
+	}
+	let scopeSelections = $state<Record<string, string>>(initialScope());
+	$effect(() => {
+		// Sync local scope state with the server-loaded page data on every navigation.
+		scopeSelections = initialScope();
 	});
 
 	$effect(() => {
@@ -847,13 +852,13 @@
 				/>
 			</div>
 
-			<div class="flex gap-2 items-center">
+			<div class="flex flex-wrap gap-2 items-center">
 				{#if itemRefTypes.length > 1}
 					<JceSelect
 						options={refTypeOptions}
 						value={source}
 						onchange={(value) => selectSource(value)}
-						class="w-auto"
+						class="w-full sm:w-auto"
 					/>
 				{/if}
 
@@ -1006,7 +1011,7 @@
 
 		<!-- Sticky zone: AI quick panel + compare tray (hidden in nested browse mode) -->
 		{#if !isNestedSource}
-			<div class="sticky bottom-0 z-40 -mx-4 space-y-2 sm:-mx-6" style="background-color: var(--color-bg)">
+			<div class="sticky bottom-20 z-40 -mx-4 space-y-2 sm:bottom-0 sm:-mx-6" style="background-color: var(--color-bg)">
 				{#if aiQuickOpen && aiQuickEnabled}
 					<div class="px-4 sm:px-6">
 						<AiQuickPanel

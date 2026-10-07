@@ -48,7 +48,7 @@
 	{#if hint}
 		<p class="mb-2 text-xs" style="color: var(--color-muted)">{hint}</p>
 	{/if}
-	<div class="flex items-center gap-3">
+	<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 		<div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
 			{#if items.length === 0}
 				<span class="text-sm" style="color: var(--color-muted)">
@@ -80,7 +80,7 @@
 			{/if}
 		</div>
 
-		<div class="flex shrink-0 items-center gap-2">
+		<div class="flex shrink-0 items-center justify-end gap-2 mr-16 sm:mr-0">
 			{#if items.length > 0}
 				<span class="text-xs whitespace-nowrap" style="color: var(--color-muted)">
 					{items.length}/{maxItems}
