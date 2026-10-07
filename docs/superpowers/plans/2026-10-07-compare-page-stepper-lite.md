@@ -200,11 +200,9 @@ git commit -m "feat(compare): pure flow helpers for stepper-lite picker"
 - [ ] **Step 1: Add keys to `jce_en.json`** — insert alphabetically among existing `jce.compare.*` keys (the file is a flat JSON object; keep one key per line, trailing commas correct):
 
 ```json
-"jce.compare.landing.subtitle": "What do you want to compare?",
 "jce.compare.landing.popular": "Popular comparisons",
 "jce.compare.landing.see_all": "See all",
 "jce.compare.landing.type_items": "{n} items",
-"jce.compare.step.type": "Type",
 "jce.compare.step.narrow": "Narrow",
 "jce.compare.step.narrow_optional": "Narrow (optional)",
 "jce.compare.step.select": "Select {count}/{max}",
@@ -222,11 +220,9 @@ git commit -m "feat(compare): pure flow helpers for stepper-lite picker"
 - [ ] **Step 2: Add French equivalents to `jce_fr.json`** (same keys):
 
 ```json
-"jce.compare.landing.subtitle": "Que voulez-vous comparer ?",
 "jce.compare.landing.popular": "Comparaisons populaires",
 "jce.compare.landing.see_all": "Tout voir",
 "jce.compare.landing.type_items": "{n} éléments",
-"jce.compare.step.type": "Type",
 "jce.compare.step.narrow": "Affiner",
 "jce.compare.step.narrow_optional": "Affiner (optionnel)",
 "jce.compare.step.select": "Sélection {count}/{max}",
@@ -281,21 +277,26 @@ let {
 }>();
 ```
 
-After the existing trailing `$effect` (the options loader, lines 96–110), add:
+After the existing trailing `$effect` (the options loader, lines 96–110), add a non-reactive snapshot var + the sync effect. The snapshot (`prevLabels`) is a plain `let` — deliberately NOT `$state` — so writing to `labels` never re-triggers this effect (avoids a self-dependency loop):
 
 ```ts
+let prevLabels = '';
+
 $effect(() => {
 	// Surface id→title for selected steps so parents can render a summary
-	// (e.g. "Nigeria · Lagos"). Keep stale labels until options arrive.
+	// (e.g. "Nigeria · Lagos"). Unresolved ids simply omit until options load.
 	const next: Record<string, string> = {};
 	for (const step of chain) {
 		const id = selections[step];
 		if (!id) continue;
 		const opt = options[step]?.find((o) => o.id === id);
 		if (opt) next[step] = opt.title;
-		else if (labels[step]) next[step] = labels[step];
 	}
-	if (JSON.stringify(next) !== JSON.stringify(labels)) labels = next;
+	const serialized = JSON.stringify(next);
+	if (serialized !== prevLabels) {
+		prevLabels = serialized;
+		labels = next;
+	}
 });
 ```
 
@@ -456,10 +457,11 @@ git commit -m "feat(compare): step header chip indicator"
 ```ts
 interface Props {
 	chain: string[];                          // data.scopeChain
-	selections: Record<string, string>;       // current scope selections
+	selections: Record<string, string>;       // current scope selections (read-only down)
 	labels?: Record<string, string>;          // bindable — id→title per step
 	required: boolean;                        // missingRequiredScope != null
 	requiredStepLabel?: string;               // e.g. 'University' — for title when required
+	requiredItemLabel?: string;               // e.g. 'courses' — for title when required
 	onChange: (step: string, value: string) => void;  // → page setScopeSelection
 	onSkip: () => void;
 	onDone: () => void;
@@ -492,6 +494,7 @@ interface Props {
 		labels = $bindable({}),
 		required,
 		requiredStepLabel = '',
+		requiredItemLabel = '',
 		onChange,
 		onSkip,
 		onDone,
@@ -511,7 +514,7 @@ interface Props {
 			{#if required && requiredStepLabel}
 				{t('jce.compare.narrow.required_prompt', 'Choose a {step} to see {label}.', {
 					step: requiredStepLabel,
-					label: t('jce.compare.items_heading')
+					label: requiredItemLabel || t('jce.compare.items_heading')
 				})}
 			{:else}
 				{t('jce.compare.scope.title')}
@@ -531,7 +534,7 @@ interface Props {
 		</div>
 	</div>
 
-	<ScopeChain {chain} bind:selections bind:labels onChange={(k, v) => onChange(k, v)} />
+	<ScopeChain {chain} {selections} bind:labels onChange={(k, v) => onChange(k, v)} />
 
 	{#if hasSelection}
 		<div class="flex justify-end">
@@ -581,12 +584,15 @@ interface Props {
 	aiActive: boolean;           // panel open → pressed state
 	hint?: string;               // already-translated hint line ('' hides)
 	itemLabel: string;           // e.g. 'universities' — for the pick hint
+	itemIcon?: Component;        // source icon for the chips
 	onRemove: (item: ResolvedItem) => void;
 	onCompare: () => void;
 	onLogin: () => void;
 	onToggleAi: () => void;
 }
 ```
+
+The tray is a **plain bar** — the page's sticky wrapper (Task 10) owns the `sticky bottom-0` boundary, so the component itself carries no sticky positioning (avoids nested sticky).
 
 - [ ] **Step 1: Write the component** — `apps/main/src/lib/components/compare/CompareTray.svelte`:
 
@@ -633,7 +639,7 @@ interface Props {
 </script>
 
 <div
-	class="sticky bottom-0 z-40 -mx-4 mt-6 border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:-mx-6 sm:px-6"
+	class="border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6"
 	style="background-color: var(--color-bg); border-color: var(--color-border)"
 	role="region"
 	aria-label={t('jce.compare.heading')}
@@ -775,7 +781,7 @@ interface Props {
 </script>
 
 <div
-	class="rounded-[var(--radius-card)] border p-3 space-y-3 text-sm"
+	class="max-h-[60vh] overflow-y-auto rounded-[var(--radius-card)] border p-3 space-y-3 text-sm"
 	style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-text)"
 	role="region"
 	aria-label={t('jce.compare.ai_quick.button')}
@@ -1076,12 +1082,11 @@ New state + derived (after existing derived block ~line 134):
 ```ts
 let popularComparisons = $derived(data.popularComparisons ?? []);
 let scopeLabels = $state<Record<string, string>>({});
-let narrowOpen = $state(false);
-let narrowDismissed = $state(false);
 let showNarrow = $derived((data.scopeChain ?? []).length > 0);
-let requiredScopeMissing = $derived(
-	missingRequiredScope(source, data.scopeChain ?? [], scopeSelections) !== null
+let missingScope = $derived(
+	missingRequiredScope(source, data.scopeChain ?? [], scopeSelections)
 );
+let requiredScopeMissing = $derived(missingScope !== null);
 let narrowSummary = $derived(
 	scopeSummary(data.scopeChain ?? [], scopeSelections, scopeLabels)
 );
@@ -1094,18 +1099,30 @@ let selectSummary = $derived(t('jce.compare.step.select', undefined, {
 	count: String(selectedItems.length),
 	max: String(maxItems)
 }));
+
+let narrowDismissed = $state(false);
+// Open immediately when the type is scoped and no scope params are set —
+// this is also the SSR/first-render state (no collapsed→open flash).
+let narrowOpen = $state(
+	(data.scopeChain ?? []).length > 0 && Object.keys(data.scopeParams ?? {}).length === 0
+);
 ```
 
-Auto-open the narrow panel on workspace entry for scoped types — add this `$effect`:
+Auto-open the narrow panel on subsequent client-side navigations — **open-only** effect: it must never force-close (a selection change mid-chain would otherwise collapse the panel after the first pick):
 
 ```ts
 $effect(() => {
-	// Auto-expand the narrow panel for scoped types when nothing is chosen
-	// and the user hasn't dismissed it. Deep links with scope params arrive
-	// collapsed; the step-2 chip re-opens.
-	narrowOpen =
-		showNarrow && !narrowDismissed && Object.keys(scopeSelections).length === 0;
+	if (showNarrow && !narrowDismissed && Object.keys(scopeSelections).length === 0) {
+		narrowOpen = true;
+	}
 });
+```
+
+Reset narrow state on type/source switches so a new scoped type auto-opens again — inside `selectType` and `selectSource`, add to the existing reset blocks:
+
+```ts
+	narrowDismissed = false;
+	scopeLabels = {};
 ```
 
 `runAiQuick` signature change — the AI form now lives in `AiQuickPanel` and calls back with `{ focus, fields, createPost }`. Replace the existing function (lines 437–465) so it takes the payload and drops the component-local input refs:
@@ -1144,7 +1161,7 @@ async function runAiQuick(opts: { focus: string; fields: string; createPost: boo
 
 Delete now-unused state: `aiQuickFocus`, `aiQuickFields`, `aiQuickCreatePost` (lines 109–111). Keep `aiQuickOpen`, `aiQuickLoading`, `aiQuickResult`, `aiQuickError`, `aiQuickEnabled`.
 
-Add narrow-panel callbacks:
+Add narrow-panel callbacks. The collapse trigger is **Done, Skip, or selecting the deepest chain step** — NOT any pick (a country→state→city user must stay in the panel through intermediate steps; this refines spec §3.4):
 
 ```ts
 function skipNarrow() {
@@ -1158,6 +1175,11 @@ function doneNarrow() {
 function toggleNarrow() {
 	narrowOpen = !narrowOpen;
 	if (!narrowOpen) narrowDismissed = true;
+}
+function narrowChange(step: string, value: string) {
+	setScopeSelection(step, value);
+	const chain = data.scopeChain ?? [];
+	if (value && step === chain[chain.length - 1]) doneNarrow();
 }
 function backToLanding() {
 	const url = new URL(page.url);
@@ -1175,14 +1197,16 @@ function backToLanding() {
 }
 ```
 
-- [ ] **Step 2: Template restructure** — replace the `{#if mine} … {:else} … {/if}` block (lines 583–1075) with three branches. Keep the existing `ListPageBar`/`UrlTabs` and error banner at top, but render tabs **only in landing mode** (`{#if user && !selectedType}` or `{#if user && mine}` — i.e. wrap the existing `{#if user}<ListPageBar>…` block in `{#if !selectedType}`).
+- [ ] **Step 2: Template restructure** — replace the `{#if mine} … {:else} … {/if}` block (lines 583–1075) with three branches. Keep the existing `ListPageBar`/`UrlTabs` and error banner at top, but render tabs only outside workspace: wrap the existing `{#if user}<ListPageBar>…` block in `{#if user && (!selectedType || mine)}` — the `|| mine` covers `?type=x&mine=true`, where the mine grid still shows and the user needs a way back to "new".
+
+Also remove `X` from the lucide import list (line 20) — after the restructure it is unused (`Sparkles` stays: the "Promote" button in the mine grid still uses it).
 
 Branch A — `{:else if !selectedType}` (landing), replacing the old type-button-cloud section:
 
 ```svelte
 	<section class="space-y-3">
 		<h2 class="text-sm font-semibold" style="color: var(--color-text)">
-			{t('jce.compare.landing.subtitle')}
+			{t('jce.compare.choose_type')}
 		</h2>
 		<TypeCardGrid {types} iconFor={(t2) => typeIcon(t2)} onSelect={selectType} />
 	</section>
@@ -1250,10 +1274,9 @@ Branch B — workspace (`{:else}`). Order: `StepHeader` → optional `NarrowPane
 			selections={scopeSelections}
 			bind:labels={scopeLabels}
 			required={requiredScopeMissing}
-			requiredStepLabel={requiredScopeMissing
-				? t(`jce.compare.scope.select_${missingRequiredScope(source, data.scopeChain ?? [], scopeSelections)}`)
-				: ''}
-			onChange={setScopeSelection}
+			requiredStepLabel={missingScope ? sourceLabel(missingScope) : ''}
+			requiredItemLabel={sourcePlural(source)}
+			onChange={narrowChange}
 			onSkip={skipNarrow}
 			onDone={doneNarrow}
 			onClear={clearScope}
@@ -1261,7 +1284,7 @@ Branch B — workspace (`{:else}`). Order: `StepHeader` → optional `NarrowPane
 	{/if}
 ```
 
-`selections` is passed **down only** (not `bind:`) — `scopeSelections` is `$state` owned by the page, driven by an `$effect` syncing `data.scopeParams`, and all mutations go through `setScopeSelection` (URL navigation). ScopeChain's own `bind:selections` inside NarrowPanel is fine: ScopeChain never assigns it, it only calls `onChange`, which NarrowPanel forwards. `labels` is bound upward (page → NarrowPanel → ScopeChain) so the summary chip can render titles.
+`selections` is passed **down only** (not `bind:`) — `scopeSelections` is `$state` owned by the page, driven by an `$effect` syncing `data.scopeParams`, and all mutations go through `narrowChange` → `setScopeSelection` (URL navigation). `labels` is bound upward (page → NarrowPanel → ScopeChain) so the summary chip can render titles. `sourceLabel(missingScope)` resolves e.g. `university` → `jce.compare.sources.university.label` ("University") — the `sources.*` keys exist for every resolver type; `scope.select_*` keys are phrased for the dropdown ("Select university") and don't compose into the prompt sentence.
 
 Filter row — replace the old standalone scope-chain section AND the old controls row (lines 883–939) with:
 
@@ -1331,7 +1354,7 @@ Grid area — replace the old `{#if pagedItems.length === 0} … {/if}` block's 
 			<Icon size={40} class="mx-auto mb-3" style="color: var(--color-muted)" />
 			<p style="color: var(--color-muted)">
 				{t('jce.compare.narrow.required_prompt', undefined, {
-					step: t(`jce.compare.scope.select_${missingRequiredScope(source, data.scopeChain ?? [], scopeSelections)}`),
+					step: missingScope ? sourceLabel(missingScope) : '',
 					label: sourcePlural(source)
 				})}
 			</p>
@@ -1345,19 +1368,21 @@ Grid area — replace the old `{#if pagedItems.length === 0} … {/if}` block's 
 	{/if}
 ```
 
-Sticky zone — last element inside the page container, replacing the deleted selected-panel + AI block (old lines 684–881). Hidden for nested source:
+Sticky zone — last element inside the page container, replacing the deleted selected-panel + AI block (old lines 684–881). Hidden for nested source. The outer wrapper is the single sticky boundary; its negative margins stretch it to the padded container's edges and it re-pads children, so `CompareTray`'s own horizontal padding keeps working unchanged:
 
 ```svelte
 	{#if !isNestedSource}
-		<div class="sticky bottom-0 z-40 space-y-2">
+		<div class="sticky bottom-0 z-40 -mx-4 space-y-2 sm:-mx-6" style="background-color: var(--color-bg)">
 			{#if aiQuickOpen && aiQuickEnabled}
-				<AiQuickPanel
-					loading={aiQuickLoading}
-					result={aiQuickResult}
-					error={aiQuickError}
-					onRun={runAiQuick}
-					onClose={() => (aiQuickOpen = false)}
-				/>
+				<div class="px-4 sm:px-6">
+					<AiQuickPanel
+						loading={aiQuickLoading}
+						result={aiQuickResult}
+						error={aiQuickError}
+						onRun={runAiQuick}
+						onClose={() => (aiQuickOpen = false)}
+					/>
+				</div>
 			{/if}
 			<CompareTray
 				items={selectedItems}
@@ -1374,7 +1399,7 @@ Sticky zone — last element inside the page container, replacing the deleted se
 				onLogin={saveGuestSelectionAndLogin}
 				onToggleAi={() => (aiQuickOpen = !aiQuickOpen)}
 			/>
-		{/if}
+		</div>
 	{/if}
 ```
 
@@ -1414,7 +1439,10 @@ Expected: all tests pass (incl. 6 new compareFlow tests).
 |---|---|
 | `/compare` | Landing: tabs (authed), type cards, popular strip |
 | `/compare?type=universities` | Workspace, narrow panel open, step chips visible |
-| pick country then Done | panel collapses, step-2 chip shows label |
+| pick country (chain: country→state→city) | panel stays open, state/city unlock |
+| pick city (deepest step) | panel auto-collapses, step-2 chip shows "Nigeria · Lagos" |
+| pick a step then Done | panel collapses, chip shows partial summary |
+| change type after skipping narrow | new type's panel auto-opens again |
 | `/compare?type=courses` | narrow panel open without Skip; grid shows required prompt |
 | select 2 items | tray shows chips + enabled Compare |
 | select max items | tray hint appears; grid cards disabled |

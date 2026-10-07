@@ -78,7 +78,7 @@ A slim breadcrumb-style indicator pinned at the top of workspace mode:
 For scoped types, the scope chain renders inside a distinct panel placed between the step header and the filter row:
 
 - **Auto-expanded** on workspace entry when the type has a scope chain and no scope params are set. Titled e.g. "Narrow your options"; contains the existing `ScopeChain` selectors plus a **Skip** action when the scope is optional.
-- **Collapses** to nothing (its state surfaces in the step-2 chip) after the user picks any scope value or presses Skip. Collapsed state is component state only — a fresh page load re-expands the panel if the type is scoped and no scope params are set. The step-2 chip re-opens it at any time.
+- **Collapses** to nothing (its state surfaces in the step-2 chip) on Done, Skip, or selecting the deepest chain step — intermediate picks (e.g. country in country→state→city) keep it open. Collapsed state is component state only — a fresh page load re-expands the panel if the type is scoped and no scope params are set. The step-2 chip re-opens it at any time.
 - **Required scopes** (`source === 'course'` without a university — the existing special case): no Skip action; the item grid below renders a prompt state using the missing step's own label ("Choose a {step label} to see {item plural}") instead of an empty result grid.
 - Non-scoped types never render the panel or the step-2 chip.
 
