@@ -73,6 +73,10 @@ func TestValidateOrgCouponInput(t *testing.T) {
 		{"percent 0 rejected", func(i *OrgCouponInput) { i.DiscountValue = orgCouponNum("0") }, ErrInvalidCouponInput},
 		{"percent negative rejected", func(i *OrgCouponInput) { i.DiscountValue = orgCouponNum("-5") }, ErrInvalidCouponInput},
 		{"percent missing value", func(i *OrgCouponInput) { i.DiscountValue = nil }, ErrInvalidCouponInput},
+		// pgtype.Numeric accepts NaN/±Infinity — non-finite values must not
+		// slip through the range checks (every comparison against them is false).
+		{"percent NaN rejected", func(i *OrgCouponInput) { i.DiscountValue = orgCouponNum("NaN") }, ErrInvalidCouponInput},
+		{"percent -Infinity rejected", func(i *OrgCouponInput) { i.DiscountValue = orgCouponNum("-Infinity") }, ErrInvalidCouponInput},
 		{"fixed 0 rejected", func(i *OrgCouponInput) {
 			i.DiscountType = string(DiscountTypeFixed)
 			i.DiscountValue = orgCouponNum("0")
@@ -80,6 +84,10 @@ func TestValidateOrgCouponInput(t *testing.T) {
 		{"fixed negative rejected", func(i *OrgCouponInput) {
 			i.DiscountType = string(DiscountTypeFixed)
 			i.DiscountValue = orgCouponNum("-1")
+		}, ErrInvalidCouponInput},
+		{"fixed Infinity rejected", func(i *OrgCouponInput) {
+			i.DiscountType = string(DiscountTypeFixed)
+			i.DiscountValue = orgCouponNum("Infinity")
 		}, ErrInvalidCouponInput},
 		{"value without type rejected", func(i *OrgCouponInput) {
 			i.DiscountType = ""

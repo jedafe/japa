@@ -2535,6 +2535,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mcpOAuthService := mcp.NewOAuthService(mcp.NewOAuthStore(database.Writer), settingsService, vkClient.Redis())
 	mcpOAuthHandlers := mcp.NewOAuthHandlers(mcpOAuthService, cfg.MCPPublicURL, cfg.SiteURL, cfg.SiteName, kr, vkClient.Redis(), mcpOAuthSecret)
 	mcpOAuthHandlers.SetPermissionResolver(rbacResolver) // §120 v1.4: agent.use grants require the user's RBAC node
+	mcpOAuthService.SetTierResolver(publicAPIService)    // §120 v1.4: OAuth bearers get the owner's rate-tier cap
 	mcpServer.SetSiteBaseURL(cfg.SiteURL)
 	publicAPIService.SetAdminChecker(rbacResolver) // Phase 3: admin-only scope gating
 	// Agent Data API: narrow readers over the moat domain services. The
@@ -4260,7 +4261,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/organizations/{id}/deals", couponHandlers.ListOrgDeals)
 			// Org-owned service coupons (Services Marketplace) — member-role gated inside the handler.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/organizations/{id}/coupons", couponHandlers.ListOrgCoupons)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/organizations/{id}/coupons", couponHandlers.CreateOrgCoupon)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+				Post("/organizations/{id}/coupons", couponHandlers.CreateOrgCoupon)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Patch("/organizations/{id}/coupons/{cid}", couponHandlers.UpdateOrgCoupon)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/organizations/{id}/coupons/{cid}", couponHandlers.DeleteOrgCoupon)
 			// Org follow/unfollow (Section 31 — universal polymorphic follow) — M5: rate-limited

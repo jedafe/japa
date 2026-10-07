@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 
@@ -83,12 +84,18 @@ func timestamptzPtr(t pgtype.Timestamptz) *pgtype.Timestamptz {
 }
 
 // numericToFloat extracts a finite float from an optional numeric input.
+// pgtype.Numeric accepts NaN/±Infinity (Postgres numeric does too); every
+// comparison against them is false, so they would slip through the >0/<=100
+// checks — reject non-finite values outright.
 func numericToFloat(n *pgtype.Numeric) (float64, error) {
 	if n == nil || !n.Valid {
 		return 0, errors.New("missing numeric value")
 	}
 	v, err := n.Float64Value()
 	if err != nil || !v.Valid {
+		return 0, errors.New("invalid numeric value")
+	}
+	if math.IsNaN(v.Float64) || math.IsInf(v.Float64, 0) {
 		return 0, errors.New("invalid numeric value")
 	}
 	return v.Float64, nil
@@ -380,6 +387,10 @@ func (s *Service) DeleteOrgCoupon(ctx context.Context, orgID, couponID pgtype.UU
 			ID: couponID, OrganizationID: orgID,
 		})
 		if err != nil {
+			if isNoRows(err) {
+				// The WHERE id+organization_id guard raced a delete/move.
+				return ErrCouponNotFound
+			}
 			return mapOrgCouponWriteErr(err)
 		}
 		s.invalidateCouponCaches(ctx, couponID, current.Slug)
