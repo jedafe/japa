@@ -4,7 +4,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus, MoreHorizontal } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus, MoreVertical } from 'lucide-svelte';
 	import { Modal, Menu, MenuItem, MenuSeparator } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
@@ -494,34 +494,6 @@ import { contentHref } from '$lib/utils/contentLink';
 						<span class="rounded border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
 							{t('content_type.discussion', 'Discussion')}
 						</span>
-
-						<!-- Actions dropdown (edit/delete for author or moderator,
-						     report for everyone — can_* flags come from the backend) -->
-						{#if !editing && (data.canEdit || data.canDelete || thread.content_id)}
-							<Menu contentClass="min-w-44">
-								{#snippet trigger(props)}
-									<button
-										type="button"
-										{...props}
-										class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
-										aria-label={t('comments.options', 'More options')}
-										title={t('comments.options', 'More options')}
-									>
-										<MoreHorizontal size={16} />
-									</button>
-								{/snippet}
-								{#if data.canEdit}
-									<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
-								{/if}
-								{#if data.canDelete}
-									<MenuItem icon={Trash2} onSelect={deleteThread} disabled={deleting} destructive>{t('forum.delete', 'Delete')}</MenuItem>
-								{/if}
-								{#if data.canEdit || data.canDelete}
-									<MenuSeparator />
-								{/if}
-								<MenuItem icon={Flag} onSelect={openReport} disabled={!thread.content_id}>{t('forum.report', 'Report')}</MenuItem>
-							</Menu>
-						{/if}
 					</div>
 				</div>
 				{#if deleteError}
@@ -768,6 +740,37 @@ import { contentHref } from '$lib/utils/contentLink';
 				</span>
 				{#if shared}<span class="text-sm text-[var(--color-success)]">{t('forum.shared', 'Copied!')}</span>{/if}
 			</button>
+
+			<!-- Thread actions menu — edit/delete for author or moderator,
+			     report for everyone (can_* flags come from the backend).
+			     Opens upward: the rail is fixed to the viewport bottom below sm. -->
+			{#if !editing && (data.canEdit || data.canDelete || thread.content_id)}
+				<Menu side="top" contentClass="min-w-44">
+					{#snippet trigger(props)}
+						<button
+							type="button"
+							{...props}
+							class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)]"
+							aria-label={t('comments.options', 'More options')}
+							title={t('comments.options', 'More options')}
+						>
+							<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-primary)]">
+								<MoreVertical size={18} />
+							</span>
+						</button>
+					{/snippet}
+					{#if data.canEdit}
+						<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
+					{/if}
+					{#if data.canDelete}
+						<MenuItem icon={Trash2} onSelect={deleteThread} disabled={deleting} destructive>{t('forum.delete', 'Delete')}</MenuItem>
+					{/if}
+					{#if data.canEdit || data.canDelete}
+						<MenuSeparator />
+					{/if}
+					<MenuItem icon={Flag} onSelect={openReport} disabled={!thread.content_id}>{t('forum.report', 'Report')}</MenuItem>
+				</Menu>
+			{/if}
 		</div>
 		{#if data.canSolve}
 			<div class="mt-3 flex justify-end">
