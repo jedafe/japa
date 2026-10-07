@@ -25,20 +25,20 @@ Key user decisions (confirmed):
 ### 2.1 Dynamic service categories
 
 - New table `service_categories`:
-  - `id uuid pk`, `slug text unique`, `label text`, `description text`, `icon text` (lucide name), `accent_color text`, `applies_to text check in ('service','package','both')`, `position int`, `is_active bool`, `tenant_id`, timestamps.
+  - `id uuid pk`, `slug text unique`, `label text`, `description text`, `icon text` (lucide name), `accent_color text`, `applies_to text not null default 'both' check in ('service','package','both')`, `position int`, `is_active bool`, timestamps. (No `tenant_id` — single-tenant deployment.)
   - Seed: existing 7 enum values (immigration_legal, relocation, finance, education, health, community, other) + marketplace additions: `study_abroad`, `work_abroad`, `travel`, `insurance`, `documents`, `family_sponsorship`.
-- `service_listing_meta.service_category` remains `text`; validation in `servicedir.Service` reads the table (with in-process cache + Valkey `jc:service_categories` cache) instead of the hardcoded `categoryLabels` map. Unknown category → `invalid_category` error unchanged.
+- `service_listing_meta.service_category` remains `text`; validation in `servicedir.Service` reads the table per request (the hardcoded `categoryLabels` map remains as the fallback when the table is unavailable, so the check never hard-fails). Unknown category → `invalid_category` error unchanged.
 - `GET /services/categories` keeps its `{value, label}[]` contract (extended to include `icon`, `accent_color`, `applies_to`, `description` for the marketplace UI — additive fields, existing consumers unaffected).
-- Admin CRUD: `GET/POST /admin/service-categories`, `PATCH/DELETE /admin/service-categories/:id` behind RBAC node `service_categories.manage` (seeded migration; granted to admin role). Slug is immutable after create (referenced by `service_listing_meta.service_category`); label/description/icon/color/position/active are mutable. Delete = soft (`is_active=false`) when listings reference the slug; hard-delete allowed otherwise.
+- Admin CRUD: `GET/POST /admin/service-categories`, `PATCH/DELETE /admin/service-categories/:slug` behind RBAC node `service.categories.manage` (seeded by migration 000803; granted to admin roles). Slug is immutable after create (referenced by `service_listing_meta.service_category`); label/description/icon/color/position/active are mutable. Delete = soft (`is_active=false`) when listings reference the slug; hard-delete allowed otherwise.
 
 ### 2.2 Coupon ↔ listing link + full rule set
 
 Extend the existing §55 `coupons` entity rather than building a parallel system:
 
 - `ALTER TABLE coupons` adds: `max_redemptions int`, `per_user_limit int`, `min_spend bigint` (minor units), `first_time_only bool`, `applies_to text check in ('service','package','both')`, `organization_id uuid references organizations(id)` (org-owned coupons; existing `provider_id` remains for affiliate providers).
-- New join `service_listing_coupons` (`id, tenant_id, coupon_id fk, listing_meta_id fk, position int, overrides jsonb` — overrides may re-scope `discount_value`/`min_spend` per listing; `unique(coupon_id, listing_meta_id)`).
+- New join `service_listing_coupons` (`id, coupon_id fk, listing_meta_id fk, position int, overrides jsonb` — overrides may re-scope `discount_value`/`min_spend` per listing; `unique(coupon_id, listing_meta_id)`).
 - New `coupon_redemptions` (`id, coupon_id, user_id, service_booking_id, listing_meta_id, amount_saved bigint, currency, created_at`) — the authoritative record for cap/per-user/first-time checks. `coupon_events` (click/copy) unchanged.
-- Org manage API: `GET/POST /organizations/:id/coupons`, `GET/PATCH/DELETE /organizations/:id/coupons/:cid`. Create validates code uniqueness per org, discount type+value, window, caps. Status transitions: active ⇄ suspended; expired is derived. AuthZ reuses the existing org-deals precedent (`/organizations/{id}/deals`): org admin/manager role on the organization.
+- Org manage API: `GET/POST /organizations/:id/coupons`, `PATCH/DELETE /organizations/:id/coupons/:cid`. Create validates code uniqueness (globally — the `coupons_code_key` unique index), discount type+value, window, caps. Status transitions: active ⇄ suspended; expired is derived. Delete suspends when redemptions exist (audit trail), hard-deletes otherwise. AuthZ reuses the existing org-deals precedent (`/organizations/{id}/deals`): org member role `owner`/`admin`/`editor` via `requireOrgEditor`.
 - Attach API: `GET/PUT /services/:id/coupons` — set ordered coupon list for a listing; creator must own/manage the listing's org and own the coupons.
 - Public surface: `GET /services/:slug` response gains `coupons: [{ id, code?, title, discount_type, discount_value, expires_at, masked }]`. Codes may be masked (`reveal_on: click|always`) — v1 shows the code (simpler; reveal tracking optional via existing `/coupons/:id/click`).
 
@@ -59,7 +59,7 @@ External listings (`purchase_mode='external'`): no redemption; coupon renders as
 
 ### 2.4 Package pricing tiers
 
-- New table `service_package_tiers` (`id, tenant_id, listing_meta_id fk, name, badge text, description, price_amount bigint, price_currency, features text[] (checkmarks), position int, is_featured bool, is_active bool`).
+- New table `service_package_tiers` (`id, listing_meta_id fk, name, badge text, description, price_amount bigint, price_currency, features text[] (checkmarks), position int, is_featured bool, is_active bool`).
 - `GET /services/:slug` returns `tiers[]` for packages; card `From $X` = min active tier price (fallback `price_amount`).
 - `POST /services/:id/bookings` accepts `tier_id`; snapshots `tier_id`, `tier_name`, `tier_price` on `service_bookings`. Fee computed on tier price (post-coupon).
 - Create/edit payloads accept `tiers[]` (replace-set semantics, same pattern as package items/departures).
@@ -74,10 +74,10 @@ External listings (`purchase_mode='external'`): no redemption; coupon renders as
 
 ### 2.6 Migrations (additive, zero-downtime)
 
-1. `NNNNNN_service_categories.up/down.sql` — table + seed + indexes.
-2. `NNNNNN_coupon_listing_link.up/down.sql` — coupons columns, `service_listing_coupons`, `coupon_redemptions`, RBAC node seed.
-3. `NNNNNN_service_package_tiers.up/down.sql` — tiers table + `service_bookings` columns (`tier_id`, `coupon_id`, `discount_amount`, `coupon_code`).
-4. sqlc regen after each; queries in `internal/db/queries/servicedir*.sql` + `coupons.sql`.
+1. `000803_service_categories.up/down.sql` — table + seed + `service.categories.manage` permission node + role grant.
+2. `000804_listing_coupons_and_tiers.up/down.sql` — coupons columns, `service_listing_coupons`, `coupon_redemptions`, `service_package_tiers` (+ indexes on each new table/column), `service_bookings` columns (`tier_id`, `coupon_id`, `coupon_code`, `discount_amount`), settings seeds.
+3. `000805_booking_tier_coupon_snapshots.up/down.sql` — `service_bookings.tier_name` + `tier_price_amount` booking-time snapshots.
+4. sqlc regen after each; queries in `internal/db/queries/services.sql` + `coupons.sql`.
 
 ## 3. Frontend (`apps/main`)
 
@@ -139,9 +139,9 @@ Mockups 4–5 structure:
 
 ## 4. RBAC / settings / flags
 
-- New permission nodes: `service_categories.manage` (admin), `coupons.create`/`coupons.manage.own` or reuse `organizations.manage` for org coupon CRUD — plan finalizes against `bootstrapPermissions`.
+- New permission node: `service.categories.manage` (admin) — seeded by migration 000803. Org coupon CRUD uses org member roles (`owner`/`admin`/`editor` via `requireOrgEditor`), not a new node.
 - Feature flags reused: `service_directory.enabled`, `service_packages.enabled`; new `service_coupons.enabled` + `service_packages.tiers_enabled` gates so the additions dark-launch safely.
-- Settings: `service_packages.coupons.enabled`, `coupons.max_per_listing` (default 3).
+- Settings: `service_packages.coupons.max_per_listing` (default 3), `service_packages.tiers.max_count` (default 5) — seeded by migration 000804.
 
 ## 5. Data flow summary
 
