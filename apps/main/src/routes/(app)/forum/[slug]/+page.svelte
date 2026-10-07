@@ -4,7 +4,7 @@
 	import { t, i18n } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus } from 'lucide-svelte';
+	import { ArrowLeft, CheckCircle2, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus } from 'lucide-svelte';
 	import { Modal } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
@@ -728,13 +728,6 @@ import { contentHref } from '$lib/utils/contentLink';
 				</span>
 				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{thread.reply_count}</span>
 			</a>
-			<span class="flex flex-1 items-center justify-center gap-1.5 text-[var(--color-text-subtle)]">
-				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)]">
-					<Eye size={18} />
-				</span>
-				<span class="text-sm font-medium text-[var(--color-text-subtle)] [font-variant-numeric:tabular-nums]">{thread.view_count}</span>
-			</span>
-
 			<!-- Subtle separator between content stats and utility actions -->
 			<div class="h-5 w-px bg-[var(--color-border)]"></div>
 
@@ -761,18 +754,6 @@ import { contentHref } from '$lib/utils/contentLink';
 					<Share2 size={18} />
 				</span>
 				{#if shared}<span class="text-sm text-[var(--color-success)]">{t('forum.shared', 'Copied!')}</span>{/if}
-			</button>
-			<button
-				type="button"
-				onclick={openReport}
-				disabled={!data.authed || !thread.content_id}
-				class="flex flex-1 items-center justify-center text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-50"
-				aria-label={t('forum.report', 'Report')}
-				title={!data.authed ? t('forum.login_to_report', 'Log in to report') : thread.content_id ? t('forum.report', 'Report') : t('forum.report_unavailable', 'Reporting unavailable')}
-			>
-				<span class="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-danger)]">
-					<Flag size={18} />
-				</span>
 			</button>
 		</div>
 		{#if data.canSolve}
