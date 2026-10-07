@@ -207,7 +207,6 @@
 				<span class="flex items-center gap-1"><Clock size={14} /> {comparison.content.read_time_minutes} {t('blog.min_read', 'min read')}</span>
 			{/if}
 			<span class="flex items-center gap-1"><Eye size={14} /> {comparison.content.view_count} {t('content.views', 'views')}</span>
-			<span class="ml-auto capitalize">{comparison.metadata.depth} · {comparison.content.status} · {comparison.content.visibility}</span>
 		</div>
 
 	{#if sanitizedBody}
