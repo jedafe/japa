@@ -52,6 +52,43 @@ func (s *Store) ListPackageItems(ctx context.Context, packageMetaID pgtype.UUID)
 }
 
 // ---------------------------------------------------------------------------
+// Package pricing tiers (replace-on-save)
+// ---------------------------------------------------------------------------
+
+// ReplacePackageTiers swaps the full tier set for a package inside one
+// transaction — tiers[] is replace-on-save on create/edit, same pattern as
+// ReplacePackageItems. position follows slice order (already stamped by the
+// service layer's validatePackageTiers).
+func (s *Store) ReplacePackageTiers(ctx context.Context, packageMetaID pgtype.UUID, tiers []gen.CreateServicePackageTierParams) error {
+	return db.WithTx(ctx, s.pool.Writer, func(q *gen.Queries) error {
+		if err := q.DeleteServicePackageTiers(ctx, packageMetaID); err != nil {
+			return fmt.Errorf("servicedir: delete package tiers: %w", err)
+		}
+
+		for i := range tiers {
+			tiers[i].ListingMetaID = packageMetaID
+			if _, err := q.CreateServicePackageTier(ctx, tiers[i]); err != nil {
+				return fmt.Errorf("servicedir: create package tier %d: %w", i, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// listPackageTiers returns the package's ACTIVE pricing tiers in position
+// order (the public detail set). Inactive rows are editor-only and are
+// fetched via ListAllServicePackageTiers when needed.
+func (s *Store) listPackageTiers(ctx context.Context, packageMetaID pgtype.UUID) ([]gen.ServicePackageTier, error) {
+	rows, err := s.read.ListServicePackageTiers(ctx, packageMetaID)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: list package tiers: %w", err)
+	}
+
+	return rows, nil
+}
+
+// ---------------------------------------------------------------------------
 // Package departures (replace-on-save; booked departures are preserved)
 // ---------------------------------------------------------------------------
 

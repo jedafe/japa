@@ -105,6 +105,13 @@ type ServiceDTO struct {
 	// suppressed when the flag is off.
 	Coupons   []ListingCoupon `json:"coupons,omitempty"`
 	HasCoupon bool            `json:"has_coupon,omitempty"`
+
+	// Marketplace tier surfaces — gated on service_packages.tiers_enabled.
+	// Tiers is populated on the package detail payload (active tiers only,
+	// position order). MinPrice rides list rows only — the "From $X" card
+	// price (lowest active tier, fallback price_amount).
+	Tiers    []PackageTierDTO `json:"tiers,omitempty"`
+	MinPrice *int64           `json:"min_price,omitempty"`
 }
 
 // PackageItemDTO is one ordered component line item of a package (§111).
@@ -175,6 +182,7 @@ type CreateServiceInput struct {
 	AvailableUntil string                  `json:"available_until"`
 	Items          []PackageItemInput      `json:"items"`
 	Departures     []PackageDepartureInput `json:"departures"`
+	Tiers          []TierInput             `json:"tiers"`
 }
 
 // EditServiceInput is the request body for PATCH /services/:id.
@@ -191,8 +199,8 @@ type EditServiceInput struct {
 	BookingURL         *string `json:"booking_url"`
 	PriceRange         *string `json:"price_range"`
 
-	// §111 package fields. items[]/departures[] are replace-on-save: a
-	// non-nil slice replaces the whole set.
+	// §111 package fields. items[]/departures[]/tiers[] are replace-on-save:
+	// a non-nil slice replaces the whole set.
 	ListingKind    *string                  `json:"listing_kind"`
 	PriceAmount    *int64                   `json:"price_amount"`
 	PriceCurrency  *string                  `json:"price_currency"`
@@ -203,6 +211,7 @@ type EditServiceInput struct {
 	AvailableUntil *string                  `json:"available_until"`
 	Items          *[]PackageItemInput      `json:"items"`
 	Departures     *[]PackageDepartureInput `json:"departures"`
+	Tiers          *[]TierInput             `json:"tiers"`
 }
 
 // SettingsReader is the narrow settings contract servicedir needs
@@ -872,6 +881,16 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		return ServiceDTO{}, err
 	}
 
+	// tiers[] is gated on service_packages.tiers_enabled — with the flag
+	// off the field is silently ignored (no validation, no write).
+	var tierParams []gen.CreateServicePackageTierParams
+	if isPackage && s.TiersEnabled(ctx) {
+		tierParams, err = s.validatePackageTiers(ctx, input.Tiers)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
 	// BUG-013: create as 'in_review' so the listing enters the admin
 	// review queue and can be published. 'draft' would make it
 	// invisible with no publish path. Packages additionally require
@@ -967,6 +986,13 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		if err := s.store.ReplacePackageDepartures(ctx, metaRow.ID, nil, depParams); err != nil {
 			slog.Error("servicedir: create package departures failed", "meta_id", metaRow.ID, "error", err)
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package departures: %w", err)
+		}
+
+		if s.TiersEnabled(ctx) {
+			if err := s.store.ReplacePackageTiers(ctx, metaRow.ID, tierParams); err != nil {
+				slog.Error("servicedir: create package tiers failed", "meta_id", metaRow.ID, "error", err)
+				return ServiceDTO{}, fmt.Errorf("servicedir: create package tiers: %w", err)
+			}
 		}
 	}
 
@@ -1220,11 +1246,12 @@ func (s *Service) GetBySlugEditor(ctx context.Context, slug string, userID pgtyp
 }
 
 // packageDetailCache is the cached slice of a package detail response —
-// items, open departures, and the quoted platform fee (jc:svc_package:*,
-// 15min per conventions/valkey-keys-catalog.md).
+// items, open departures, active pricing tiers, and the quoted platform
+// fee (jc:svc_package:*, 15min per conventions/valkey-keys-catalog.md).
 type packageDetailCache struct {
 	Items           []PackageItemDTO      `json:"items"`
 	Departures      []PackageDepartureDTO `json:"departures"`
+	Tiers           []PackageTierDTO      `json:"tiers,omitempty"`
 	PlatformFee     *int64                `json:"platform_fee,omitempty"`
 	AgentBalanceDue *int64                `json:"agent_balance_due,omitempty"`
 }
@@ -1244,6 +1271,12 @@ func (s *Service) attachPackageDataCached(ctx context.Context, contentID, metaID
 				dto.PlatformFee = cached.PlatformFee
 				dto.AgentBalanceDue = cached.AgentBalanceDue
 
+				// Tiers ride the cache but stay suppressed while the flag
+				// is off (a flag flip can lag behind cached content).
+				if s.TiersEnabled(ctx) {
+					dto.Tiers = cached.Tiers
+				}
+
 				return
 			}
 		}
@@ -1261,6 +1294,7 @@ func (s *Service) attachPackageDataCached(ctx context.Context, contentID, metaID
 	payload, err := json.Marshal(packageDetailCache{
 		Items:           dto.Items,
 		Departures:      dto.Departures,
+		Tiers:           dto.Tiers,
 		PlatformFee:     dto.PlatformFee,
 		AgentBalanceDue: dto.AgentBalanceDue,
 	})
@@ -1313,6 +1347,17 @@ func (s *Service) attachPackageData(ctx context.Context, metaID pgtype.UUID, dto
 	dto.Departures = make([]PackageDepartureDTO, 0, len(deps))
 	for _, d := range deps {
 		dto.Departures = append(dto.Departures, departureToDTO(d))
+	}
+
+	// Active pricing tiers ride the package detail (marketplace spec §2.4)
+	// — gated on service_packages.tiers_enabled; flag off → field omitted.
+	if s.TiersEnabled(ctx) {
+		tiers, err := s.listPackageTiers(ctx, metaID)
+		if err != nil {
+			return err
+		}
+
+		dto.Tiers = tiers
 	}
 
 	// Quote the platform fee for paid packages so the checkout copy can
@@ -1692,6 +1737,16 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		}
 	}
 
+	// tiers[] mirrors items[] replace-on-save semantics, gated on
+	// service_packages.tiers_enabled — flag off → field silently ignored.
+	var tierParams []gen.CreateServicePackageTierParams
+	if isPackage && input.Tiers != nil && s.TiersEnabled(ctx) {
+		tierParams, err = s.validatePackageTiers(ctx, *input.Tiers)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
 	var depInserts []gen.CreateServicePackageDepartureParams
 	var depUpdates []gen.UpdateServicePackageDepartureParams
 	var keepIDs []pgtype.UUID
@@ -1782,11 +1837,14 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		updateInput.Body = *input.Body
 	}
 
-	// §111: commercial edits (price_amount, items, purchase_mode) on a
-	// published package re-enter the review queue — same gate as create.
+	// §111: commercial edits (price_amount, items, purchase_mode, tiers) on
+	// a published package re-enter the review queue — same gate as create.
+	// A tiers[] change counts only when the tiers flag is on; with it off
+	// the field is ignored and must not bounce the listing into review.
 	if isPackage && existing.Status == content.StatusPublished &&
 		s.settings.GetBoolOr(ctx, "service_packages.review_before_publish", true) &&
-		(input.PriceAmount != nil || input.PurchaseMode != nil || input.Items != nil) {
+		(input.PriceAmount != nil || input.PurchaseMode != nil || input.Items != nil ||
+			(input.Tiers != nil && s.TiersEnabled(ctx))) {
 		updateInput.Status = content.StatusInReview
 	}
 
@@ -1828,6 +1886,12 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 
 		if err := s.store.ReplacePackageDepartures(ctx, meta.ID, keepIDs, depInserts); err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: replace package departures: %w", err)
+		}
+	}
+
+	if isPackage && input.Tiers != nil && s.TiersEnabled(ctx) {
+		if err := s.store.ReplacePackageTiers(ctx, meta.ID, tierParams); err != nil {
+			return ServiceDTO{}, fmt.Errorf("servicedir: edit: replace package tiers: %w", err)
 		}
 	}
 
@@ -2104,6 +2168,7 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	dto.PriceAmount = r.PriceAmount
 	dto.PurchaseMode = r.PurchaseMode
 	dto.Capacity = r.Capacity
+	dto.MinPrice = r.MinPrice
 	if r.PriceCurrency != nil {
 		dto.PriceCurrency = *r.PriceCurrency
 	}

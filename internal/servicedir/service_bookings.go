@@ -102,10 +102,13 @@ type PreferredDatesInput struct {
 
 // CreateBookingInput is the request body for POST /services/:id/bookings.
 // provider/email/return_url are required when intent='booking' on a
-// purchase_mode='paid' listing (the fee checkout fields).
+// purchase_mode='paid' listing (the fee checkout fields). tier_id selects
+// one of the listing's active service_package_tiers rows (marketplace spec
+// §2.4) — parsed and priced by the redemption path.
 type CreateBookingInput struct {
 	Intent         string               `json:"intent"` // inquiry | booking (default derived from purchase_mode)
 	DepartureID    string               `json:"departure_id"`
+	TierID         string               `json:"tier_id"`
 	PartySize      int32                `json:"party_size"`
 	PreferredDates *PreferredDatesInput `json:"preferred_dates"`
 	Note           string               `json:"note"`

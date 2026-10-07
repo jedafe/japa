@@ -183,6 +183,8 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "coupon_first_time_only", "This coupon is only available to first-time customers")
 	case errors.Is(err, ErrInvalidTier):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_tier", "The selected pricing tier is not available")
+	case errors.Is(err, ErrInvalidTiers):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_tiers", "The pricing tier list is invalid")
 	case errors.Is(err, ErrTooManyCoupons):
 		errpkg.WriteError(w, http.StatusBadRequest, "too_many_coupons", "Too many coupons attached to this listing")
 	case errors.Is(err, ErrOrgNotVerified):

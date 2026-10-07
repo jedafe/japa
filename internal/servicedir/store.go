@@ -240,6 +240,12 @@ type ServiceRow struct {
 	// list/org-list queries (the EXISTS projection); detail rows leave it
 	// false.
 	HasCoupon bool
+
+	// MinPrice is the list-query "From $X" column — the lowest active
+	// service_package_tiers price, falling back to the meta row's
+	// price_amount. Populated only by the list/org-list queries (the
+	// COALESCE subquery projection); detail rows leave it nil.
+	MinPrice *int64
 }
 
 // rowFromList maps a generated list row to the shared domain row.
@@ -265,7 +271,7 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
-		HasCoupon: r.HasCoupon,
+		HasCoupon: r.HasCoupon, MinPrice: r.MinPrice,
 	}
 }
 
@@ -371,7 +377,7 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
-		HasCoupon: r.HasCoupon,
+		HasCoupon: r.HasCoupon, MinPrice: r.MinPrice,
 	}
 }
 

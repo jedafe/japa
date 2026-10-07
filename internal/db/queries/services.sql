@@ -146,6 +146,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(
+           (SELECT MIN(t.price_amount) FROM service_package_tiers t
+            WHERE t.listing_meta_id = sm.id AND t.is_active),
+           sm.price_amount
+       ) AS min_price,
        EXISTS(
            SELECT 1 FROM service_listing_coupons lc
            JOIN coupons cp ON cp.id = lc.coupon_id
@@ -267,6 +272,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(
+           (SELECT MIN(t.price_amount) FROM service_package_tiers t
+            WHERE t.listing_meta_id = sm.id AND t.is_active),
+           sm.price_amount
+       ) AS min_price,
        EXISTS(
            SELECT 1 FROM service_listing_coupons lc
            JOIN coupons cp ON cp.id = lc.coupon_id

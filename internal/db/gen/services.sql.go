@@ -3308,6 +3308,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(
+           (SELECT MIN(t.price_amount) FROM service_package_tiers t
+            WHERE t.listing_meta_id = sm.id AND t.is_active),
+           sm.price_amount
+       ) AS min_price,
        EXISTS(
            SELECT 1 FROM service_listing_coupons lc
            JOIN coupons cp ON cp.id = lc.coupon_id
@@ -3406,6 +3411,7 @@ type ListServiceListingsRow struct {
 	AvailableUntil     pgtype.Date        `json:"available_until"`
 	AuthorName         *string            `json:"author_name"`
 	AuthorAvatar       *string            `json:"author_avatar"`
+	MinPrice           *int64             `json:"min_price"`
 	HasCoupon          bool               `json:"has_coupon"`
 }
 
@@ -3485,6 +3491,7 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 			&i.AvailableUntil,
 			&i.AuthorName,
 			&i.AuthorAvatar,
+			&i.MinPrice,
 			&i.HasCoupon,
 		); err != nil {
 			return nil, err
@@ -3513,6 +3520,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       COALESCE(
+           (SELECT MIN(t.price_amount) FROM service_package_tiers t
+            WHERE t.listing_meta_id = sm.id AND t.is_active),
+           sm.price_amount
+       ) AS min_price,
        EXISTS(
            SELECT 1 FROM service_listing_coupons lc
            JOIN coupons cp ON cp.id = lc.coupon_id
@@ -3593,6 +3605,7 @@ type ListServiceListingsByOrgRow struct {
 	AvailableUntil     pgtype.Date        `json:"available_until"`
 	AuthorName         *string            `json:"author_name"`
 	AuthorAvatar       *string            `json:"author_avatar"`
+	MinPrice           *int64             `json:"min_price"`
 	HasCoupon          bool               `json:"has_coupon"`
 }
 
@@ -3660,6 +3673,7 @@ func (q *Queries) ListServiceListingsByOrg(ctx context.Context, arg ListServiceL
 			&i.AvailableUntil,
 			&i.AuthorName,
 			&i.AuthorAvatar,
+			&i.MinPrice,
 			&i.HasCoupon,
 		); err != nil {
 			return nil, err
