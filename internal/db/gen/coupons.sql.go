@@ -74,6 +74,17 @@ func (q *Queries) CountCouponsByProvider(ctx context.Context, providerID pgtype.
 	return count, err
 }
 
+const countOrgCouponRedemptions = `-- name: CountOrgCouponRedemptions :one
+SELECT COUNT(*) FROM coupon_redemptions r WHERE r.coupon_id = $1
+`
+
+func (q *Queries) CountOrgCouponRedemptions(ctx context.Context, couponID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrgCouponRedemptions, couponID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAffiliateProvider = `-- name: CreateAffiliateProvider :one
 INSERT INTO affiliate_providers (name, slug, description, provider_type, logo_media_id, base_url, tracking_param, tracking_value, commission_rate, is_active, is_featured, category, organization_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id, name, slug, description, provider_type, logo_media_id,
@@ -346,6 +357,108 @@ func (q *Queries) CreateCouponFeedSource(ctx context.Context, arg CreateCouponFe
 	return i, err
 }
 
+const createOrgCoupon = `-- name: CreateOrgCoupon :one
+
+INSERT INTO coupons (coupon_type, title, slug, description, code, discount_type,
+    discount_value, currency, terms_url, referral_url, is_verified, status,
+    valid_from, expires_at, created_by, organization_id, max_redemptions,
+    per_user_limit, min_spend, first_time_only, applies_to)
+VALUES ('internal', $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9, false, 'active',
+    $10, $11, $12,
+    $13, $14, $15,
+    $16, COALESCE($17, false),
+    COALESCE($18, 'both'))
+RETURNING id, provider_id, coupon_type, title, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, total_clicks, total_copies, created_by, created_at, updated_at, slug, feed_id, external_id, details, organization_id, max_redemptions, per_user_limit, min_spend, first_time_only, applies_to
+`
+
+type CreateOrgCouponParams struct {
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Description    *string            `json:"description"`
+	Code           *string            `json:"code"`
+	DiscountType   *string            `json:"discount_type"`
+	DiscountValue  pgtype.Numeric     `json:"discount_value"`
+	Currency       *string            `json:"currency"`
+	TermsUrl       *string            `json:"terms_url"`
+	ReferralUrl    *string            `json:"referral_url"`
+	ValidFrom      pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	MaxRedemptions *int32             `json:"max_redemptions"`
+	PerUserLimit   *int32             `json:"per_user_limit"`
+	MinSpend       *int64             `json:"min_spend"`
+	FirstTimeOnly  interface{}        `json:"first_time_only"`
+	AppliesTo      interface{}        `json:"applies_to"`
+}
+
+// =====================
+// Org Coupons (Services Marketplace — coupon lifecycle owned by the
+// coupons package; listing attach/redeem lives in services.sql so a
+// booking + redemption commit in one tx)
+// =====================
+// slug required NOT NULL on coupons — generate as '<code-lower>-<suffix>'
+// in the service layer using the existing resolveCouponSlug pattern
+// (GetCouponSlugExists loop) so slugs never collide.
+func (q *Queries) CreateOrgCoupon(ctx context.Context, arg CreateOrgCouponParams) (Coupon, error) {
+	row := q.db.QueryRow(ctx, createOrgCoupon,
+		arg.Title,
+		arg.Slug,
+		arg.Description,
+		arg.Code,
+		arg.DiscountType,
+		arg.DiscountValue,
+		arg.Currency,
+		arg.TermsUrl,
+		arg.ReferralUrl,
+		arg.ValidFrom,
+		arg.ExpiresAt,
+		arg.CreatedBy,
+		arg.OrganizationID,
+		arg.MaxRedemptions,
+		arg.PerUserLimit,
+		arg.MinSpend,
+		arg.FirstTimeOnly,
+		arg.AppliesTo,
+	)
+	var i Coupon
+	err := row.Scan(
+		&i.ID,
+		&i.ProviderID,
+		&i.CouponType,
+		&i.Title,
+		&i.Description,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.TermsUrl,
+		&i.ReferralUrl,
+		&i.IsVerified,
+		&i.Status,
+		&i.ValidFrom,
+		&i.ExpiresAt,
+		&i.TotalClicks,
+		&i.TotalCopies,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.FeedID,
+		&i.ExternalID,
+		&i.Details,
+		&i.OrganizationID,
+		&i.MaxRedemptions,
+		&i.PerUserLimit,
+		&i.MinSpend,
+		&i.FirstTimeOnly,
+		&i.AppliesTo,
+	)
+	return i, err
+}
+
 const deleteAffiliateProvider = `-- name: DeleteAffiliateProvider :exec
 DELETE FROM affiliate_providers
 WHERE id = $1
@@ -374,6 +487,23 @@ WHERE id = $1
 func (q *Queries) DeleteCouponFeedSource(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteCouponFeedSource, id)
 	return err
+}
+
+const deleteOrgCoupon = `-- name: DeleteOrgCoupon :execrows
+DELETE FROM coupons WHERE id = $1 AND organization_id = $2
+`
+
+type DeleteOrgCouponParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) DeleteOrgCoupon(ctx context.Context, arg DeleteOrgCouponParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrgCoupon, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteProcessedCouponEvents = `-- name: DeleteProcessedCouponEvents :exec
@@ -744,6 +874,53 @@ func (q *Queries) GetCouponByID(ctx context.Context, id pgtype.UUID) (GetCouponB
 		&i.ProviderSlug,
 		&i.ProviderLogoMediaID,
 		&i.ProviderCategory,
+	)
+	return i, err
+}
+
+const getCouponByIDForOrg = `-- name: GetCouponByIDForOrg :one
+SELECT c.id, c.provider_id, c.coupon_type, c.title, c.description, c.code, c.discount_type, c.discount_value, c.currency, c.terms_url, c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at, c.total_clicks, c.total_copies, c.created_by, c.created_at, c.updated_at, c.slug, c.feed_id, c.external_id, c.details, c.organization_id, c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only, c.applies_to FROM coupons c WHERE c.id = $1 AND c.organization_id = $2
+`
+
+type GetCouponByIDForOrgParams struct {
+	ID             pgtype.UUID `json:"id"`
+	OrganizationID pgtype.UUID `json:"organization_id"`
+}
+
+func (q *Queries) GetCouponByIDForOrg(ctx context.Context, arg GetCouponByIDForOrgParams) (Coupon, error) {
+	row := q.db.QueryRow(ctx, getCouponByIDForOrg, arg.ID, arg.OrganizationID)
+	var i Coupon
+	err := row.Scan(
+		&i.ID,
+		&i.ProviderID,
+		&i.CouponType,
+		&i.Title,
+		&i.Description,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.TermsUrl,
+		&i.ReferralUrl,
+		&i.IsVerified,
+		&i.Status,
+		&i.ValidFrom,
+		&i.ExpiresAt,
+		&i.TotalClicks,
+		&i.TotalCopies,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.FeedID,
+		&i.ExternalID,
+		&i.Details,
+		&i.OrganizationID,
+		&i.MaxRedemptions,
+		&i.PerUserLimit,
+		&i.MinSpend,
+		&i.FirstTimeOnly,
+		&i.AppliesTo,
 	)
 	return i, err
 }
@@ -1653,6 +1830,89 @@ func (q *Queries) ListEnabledCouponFeedSources(ctx context.Context) ([]CouponFee
 	return items, nil
 }
 
+const listOrgCoupons = `-- name: ListOrgCoupons :many
+SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
+       c.currency, c.status, c.valid_from, c.expires_at, c.applies_to,
+       c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
+       c.terms_url, c.referral_url, c.created_at,
+       (SELECT COUNT(*) FROM coupon_redemptions r WHERE r.coupon_id = c.id) AS redemption_count,
+       (SELECT COUNT(*) FROM service_listing_coupons lc WHERE lc.coupon_id = c.id) AS listing_count
+FROM coupons c
+WHERE c.organization_id = $1
+ORDER BY c.created_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListOrgCouponsParams struct {
+	OrganizationID pgtype.UUID `json:"organization_id"`
+	PageOffset     int32       `json:"page_offset"`
+	PageLimit      int32       `json:"page_limit"`
+}
+
+type ListOrgCouponsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	Title           string             `json:"title"`
+	Slug            string             `json:"slug"`
+	Code            *string            `json:"code"`
+	DiscountType    *string            `json:"discount_type"`
+	DiscountValue   pgtype.Numeric     `json:"discount_value"`
+	Currency        *string            `json:"currency"`
+	Status          string             `json:"status"`
+	ValidFrom       pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	AppliesTo       string             `json:"applies_to"`
+	MaxRedemptions  *int32             `json:"max_redemptions"`
+	PerUserLimit    *int32             `json:"per_user_limit"`
+	MinSpend        *int64             `json:"min_spend"`
+	FirstTimeOnly   bool               `json:"first_time_only"`
+	TermsUrl        *string            `json:"terms_url"`
+	ReferralUrl     *string            `json:"referral_url"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	RedemptionCount int64              `json:"redemption_count"`
+	ListingCount    int64              `json:"listing_count"`
+}
+
+func (q *Queries) ListOrgCoupons(ctx context.Context, arg ListOrgCouponsParams) ([]ListOrgCouponsRow, error) {
+	rows, err := q.db.Query(ctx, listOrgCoupons, arg.OrganizationID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgCouponsRow
+	for rows.Next() {
+		var i ListOrgCouponsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Code,
+			&i.DiscountType,
+			&i.DiscountValue,
+			&i.Currency,
+			&i.Status,
+			&i.ValidFrom,
+			&i.ExpiresAt,
+			&i.AppliesTo,
+			&i.MaxRedemptions,
+			&i.PerUserLimit,
+			&i.MinSpend,
+			&i.FirstTimeOnly,
+			&i.TermsUrl,
+			&i.ReferralUrl,
+			&i.CreatedAt,
+			&i.RedemptionCount,
+			&i.ListingCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateAffiliateProvider = `-- name: UpdateAffiliateProvider :one
 UPDATE affiliate_providers
 SET name = $1, description = $2, provider_type = $3,
@@ -1959,6 +2219,98 @@ func (q *Queries) UpdateCouponFeedSourceSyncStatus(ctx context.Context, arg Upda
 		arg.ID,
 	)
 	return err
+}
+
+const updateOrgCoupon = `-- name: UpdateOrgCoupon :one
+UPDATE coupons SET
+    title = $1, description = $2,
+    code = $3, discount_type = $4,
+    discount_value = $5, currency = $6,
+    terms_url = $7, referral_url = $8,
+    status = $9, valid_from = $10, expires_at = $11,
+    max_redemptions = $12, per_user_limit = $13,
+    min_spend = $14, first_time_only = COALESCE($15, first_time_only),
+    applies_to = COALESCE($16, applies_to), updated_at = now()
+WHERE id = $17 AND organization_id = $18
+RETURNING id, provider_id, coupon_type, title, description, code, discount_type, discount_value, currency, terms_url, referral_url, is_verified, status, valid_from, expires_at, total_clicks, total_copies, created_by, created_at, updated_at, slug, feed_id, external_id, details, organization_id, max_redemptions, per_user_limit, min_spend, first_time_only, applies_to
+`
+
+type UpdateOrgCouponParams struct {
+	Title          string             `json:"title"`
+	Description    *string            `json:"description"`
+	Code           *string            `json:"code"`
+	DiscountType   *string            `json:"discount_type"`
+	DiscountValue  pgtype.Numeric     `json:"discount_value"`
+	Currency       *string            `json:"currency"`
+	TermsUrl       *string            `json:"terms_url"`
+	ReferralUrl    *string            `json:"referral_url"`
+	Status         string             `json:"status"`
+	ValidFrom      pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	MaxRedemptions *int32             `json:"max_redemptions"`
+	PerUserLimit   *int32             `json:"per_user_limit"`
+	MinSpend       *int64             `json:"min_spend"`
+	FirstTimeOnly  *bool              `json:"first_time_only"`
+	AppliesTo      *string            `json:"applies_to"`
+	ID             pgtype.UUID        `json:"id"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+}
+
+func (q *Queries) UpdateOrgCoupon(ctx context.Context, arg UpdateOrgCouponParams) (Coupon, error) {
+	row := q.db.QueryRow(ctx, updateOrgCoupon,
+		arg.Title,
+		arg.Description,
+		arg.Code,
+		arg.DiscountType,
+		arg.DiscountValue,
+		arg.Currency,
+		arg.TermsUrl,
+		arg.ReferralUrl,
+		arg.Status,
+		arg.ValidFrom,
+		arg.ExpiresAt,
+		arg.MaxRedemptions,
+		arg.PerUserLimit,
+		arg.MinSpend,
+		arg.FirstTimeOnly,
+		arg.AppliesTo,
+		arg.ID,
+		arg.OrganizationID,
+	)
+	var i Coupon
+	err := row.Scan(
+		&i.ID,
+		&i.ProviderID,
+		&i.CouponType,
+		&i.Title,
+		&i.Description,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.TermsUrl,
+		&i.ReferralUrl,
+		&i.IsVerified,
+		&i.Status,
+		&i.ValidFrom,
+		&i.ExpiresAt,
+		&i.TotalClicks,
+		&i.TotalCopies,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Slug,
+		&i.FeedID,
+		&i.ExternalID,
+		&i.Details,
+		&i.OrganizationID,
+		&i.MaxRedemptions,
+		&i.PerUserLimit,
+		&i.MinSpend,
+		&i.FirstTimeOnly,
+		&i.AppliesTo,
+	)
+	return i, err
 }
 
 const upsertFeedCoupon = `-- name: UpsertFeedCoupon :one

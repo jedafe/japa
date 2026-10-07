@@ -1281,30 +1281,36 @@ type ContentView struct {
 }
 
 type Coupon struct {
-	ID            pgtype.UUID        `json:"id"`
-	ProviderID    pgtype.UUID        `json:"provider_id"`
-	CouponType    string             `json:"coupon_type"`
-	Title         string             `json:"title"`
-	Description   *string            `json:"description"`
-	Code          *string            `json:"code"`
-	DiscountType  *string            `json:"discount_type"`
-	DiscountValue pgtype.Numeric     `json:"discount_value"`
-	Currency      *string            `json:"currency"`
-	TermsUrl      *string            `json:"terms_url"`
-	ReferralUrl   *string            `json:"referral_url"`
-	IsVerified    bool               `json:"is_verified"`
-	Status        string             `json:"status"`
-	ValidFrom     pgtype.Timestamptz `json:"valid_from"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
-	TotalClicks   int32              `json:"total_clicks"`
-	TotalCopies   int32              `json:"total_copies"`
-	CreatedBy     pgtype.UUID        `json:"created_by"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
-	Slug          string             `json:"slug"`
-	FeedID        pgtype.UUID        `json:"feed_id"`
-	ExternalID    *string            `json:"external_id"`
-	Details       *json.RawMessage   `json:"details"`
+	ID             pgtype.UUID        `json:"id"`
+	ProviderID     pgtype.UUID        `json:"provider_id"`
+	CouponType     string             `json:"coupon_type"`
+	Title          string             `json:"title"`
+	Description    *string            `json:"description"`
+	Code           *string            `json:"code"`
+	DiscountType   *string            `json:"discount_type"`
+	DiscountValue  pgtype.Numeric     `json:"discount_value"`
+	Currency       *string            `json:"currency"`
+	TermsUrl       *string            `json:"terms_url"`
+	ReferralUrl    *string            `json:"referral_url"`
+	IsVerified     bool               `json:"is_verified"`
+	Status         string             `json:"status"`
+	ValidFrom      pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	TotalClicks    int32              `json:"total_clicks"`
+	TotalCopies    int32              `json:"total_copies"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Slug           string             `json:"slug"`
+	FeedID         pgtype.UUID        `json:"feed_id"`
+	ExternalID     *string            `json:"external_id"`
+	Details        *json.RawMessage   `json:"details"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	MaxRedemptions *int32             `json:"max_redemptions"`
+	PerUserLimit   *int32             `json:"per_user_limit"`
+	MinSpend       *int64             `json:"min_spend"`
+	FirstTimeOnly  bool               `json:"first_time_only"`
+	AppliesTo      string             `json:"applies_to"`
 }
 
 type CouponEvent struct {
@@ -1330,6 +1336,17 @@ type CouponFeedSource struct {
 	Stats             []byte             `json:"stats"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type CouponRedemption struct {
+	ID               pgtype.UUID        `json:"id"`
+	CouponID         pgtype.UUID        `json:"coupon_id"`
+	UserID           pgtype.UUID        `json:"user_id"`
+	ServiceBookingID pgtype.UUID        `json:"service_booking_id"`
+	ListingMetaID    pgtype.UUID        `json:"listing_meta_id"`
+	AmountSaved      int64              `json:"amount_saved"`
+	Currency         *string            `json:"currency"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 type CredentialCommunityNote struct {
@@ -3444,6 +3461,10 @@ type ServiceBooking struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	RemindedAt      pgtype.Timestamptz `json:"reminded_at"`
 	DisputeReason   *string            `json:"dispute_reason"`
+	TierID          pgtype.UUID        `json:"tier_id"`
+	CouponID        pgtype.UUID        `json:"coupon_id"`
+	CouponCode      *string            `json:"coupon_code"`
+	DiscountAmount  *int64             `json:"discount_amount"`
 }
 
 type ServiceCategory struct {
@@ -3458,6 +3479,15 @@ type ServiceCategory struct {
 	IsActive    bool               `json:"is_active"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type ServiceListingCoupon struct {
+	ID            pgtype.UUID        `json:"id"`
+	CouponID      pgtype.UUID        `json:"coupon_id"`
+	ListingMetaID pgtype.UUID        `json:"listing_meta_id"`
+	Position      int32              `json:"position"`
+	Overrides     []byte             `json:"overrides"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type ServiceListingMetum struct {
@@ -3511,6 +3541,22 @@ type ServicePackageItem struct {
 	Included           bool               `json:"included"`
 	Optional           bool               `json:"optional"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
+type ServicePackageTier struct {
+	ID            pgtype.UUID        `json:"id"`
+	ListingMetaID pgtype.UUID        `json:"listing_meta_id"`
+	Name          string             `json:"name"`
+	Badge         *string            `json:"badge"`
+	Description   *string            `json:"description"`
+	PriceAmount   int64              `json:"price_amount"`
+	PriceCurrency *string            `json:"price_currency"`
+	Features      []string           `json:"features"`
+	Position      int32              `json:"position"`
+	IsFeatured    bool               `json:"is_featured"`
+	IsActive      bool               `json:"is_active"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SharePlatform struct {

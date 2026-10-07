@@ -416,3 +416,60 @@ JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE ap.organization_id = @organization_id
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- =====================
+-- Org Coupons (Services Marketplace — coupon lifecycle owned by the
+-- coupons package; listing attach/redeem lives in services.sql so a
+-- booking + redemption commit in one tx)
+-- =====================
+
+-- name: CreateOrgCoupon :one
+-- slug required NOT NULL on coupons — generate as '<code-lower>-<suffix>'
+-- in the service layer using the existing resolveCouponSlug pattern
+-- (GetCouponSlugExists loop) so slugs never collide.
+INSERT INTO coupons (coupon_type, title, slug, description, code, discount_type,
+    discount_value, currency, terms_url, referral_url, is_verified, status,
+    valid_from, expires_at, created_by, organization_id, max_redemptions,
+    per_user_limit, min_spend, first_time_only, applies_to)
+VALUES ('internal', @title, @slug, sqlc.narg(description), @code,
+    sqlc.narg(discount_type), sqlc.narg(discount_value), sqlc.narg(currency),
+    sqlc.narg(terms_url), sqlc.narg(referral_url), false, 'active',
+    sqlc.narg(valid_from), sqlc.narg(expires_at), sqlc.narg(created_by),
+    @organization_id, sqlc.narg(max_redemptions), sqlc.narg(per_user_limit),
+    sqlc.narg(min_spend), COALESCE(sqlc.narg(first_time_only), false),
+    COALESCE(sqlc.narg(applies_to), 'both'))
+RETURNING *;
+
+-- name: GetCouponByIDForOrg :one
+SELECT c.* FROM coupons c WHERE c.id = @id AND c.organization_id = @organization_id;
+
+-- name: CountOrgCouponRedemptions :one
+SELECT COUNT(*) FROM coupon_redemptions r WHERE r.coupon_id = @coupon_id;
+
+-- name: ListOrgCoupons :many
+SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
+       c.currency, c.status, c.valid_from, c.expires_at, c.applies_to,
+       c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
+       c.terms_url, c.referral_url, c.created_at,
+       (SELECT COUNT(*) FROM coupon_redemptions r WHERE r.coupon_id = c.id) AS redemption_count,
+       (SELECT COUNT(*) FROM service_listing_coupons lc WHERE lc.coupon_id = c.id) AS listing_count
+FROM coupons c
+WHERE c.organization_id = @organization_id
+ORDER BY c.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: UpdateOrgCoupon :one
+UPDATE coupons SET
+    title = @title, description = sqlc.narg(description),
+    code = @code, discount_type = sqlc.narg(discount_type),
+    discount_value = sqlc.narg(discount_value), currency = sqlc.narg(currency),
+    terms_url = sqlc.narg(terms_url), referral_url = sqlc.narg(referral_url),
+    status = @status, valid_from = sqlc.narg(valid_from), expires_at = sqlc.narg(expires_at),
+    max_redemptions = sqlc.narg(max_redemptions), per_user_limit = sqlc.narg(per_user_limit),
+    min_spend = sqlc.narg(min_spend), first_time_only = COALESCE(sqlc.narg(first_time_only), first_time_only),
+    applies_to = COALESCE(sqlc.narg(applies_to), applies_to), updated_at = now()
+WHERE id = @id AND organization_id = @organization_id
+RETURNING *;
+
+-- name: DeleteOrgCoupon :execrows
+DELETE FROM coupons WHERE id = @id AND organization_id = @organization_id;

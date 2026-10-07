@@ -481,14 +481,15 @@ INSERT INTO service_bookings (
     listing_meta_id, departure_id, booker_user_id, org_id, intent,
     party_size, preferred_dates, note, status, purchase_mode,
     payment_id, total_price, fee_amount, fee_currency, agent_balance_due,
-    expires_at
+    expires_at, tier_id, coupon_id, coupon_code, discount_amount
 ) VALUES (
     @listing_meta_id, sqlc.narg(departure_id), @booker_user_id, @org_id,
     @intent, sqlc.narg(party_size), sqlc.narg(preferred_dates),
     sqlc.narg(note), sqlc.narg(status), @purchase_mode,
     sqlc.narg(payment_id), sqlc.narg(total_price), sqlc.narg(fee_amount),
     sqlc.narg(fee_currency), sqlc.narg(agent_balance_due),
-    sqlc.narg(expires_at)
+    sqlc.narg(expires_at), sqlc.narg(tier_id), sqlc.narg(coupon_id),
+    sqlc.narg(coupon_code), sqlc.narg(discount_amount)
 ) RETURNING *;
 
 -- name: GetServiceBooking :one
@@ -504,13 +505,15 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title,
        sm.listing_kind, sm.capacity AS package_capacity,
        o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
-       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
+       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
+       t.name AS tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
 WHERE sb.id = @id;
 
 -- name: AttachServiceBookingPayment :one
@@ -533,13 +536,15 @@ RETURNING *;
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
-       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on
+       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
+       t.name AS tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
 WHERE sb.booker_user_id = @booker_user_id
   AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
@@ -560,7 +565,8 @@ WHERE sb.booker_user_id = @booker_user_id
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.avatar_url AS booker_avatar
+       u.username AS booker_username, up.avatar_url AS booker_avatar,
+       t.name AS tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
@@ -569,6 +575,7 @@ LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN users u ON u.id = sb.booker_user_id
 LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
 -- Note: anonymized rows are NOT filtered out — §111 GDPR says the row
 -- survives erasure as the org's financial/audit record (booker PII is
 -- already wiped by AnonymizeServiceBookings, and the user join just
@@ -808,3 +815,119 @@ DELETE FROM service_categories WHERE slug = @slug;
 
 -- name: CountServiceListingsByCategory :one
 SELECT COUNT(*) FROM service_listing_meta WHERE service_category = @slug;
+
+-- ---------------------------------------------------------------------
+-- service_listing_coupons / coupon_redemptions / service_package_tiers
+-- (Services Marketplace — servicedir owns attach/redeem/tiers so a
+-- booking + redemption commit in one WithTxResult)
+-- ---------------------------------------------------------------------
+
+-- name: ListServiceListingCoupons :many
+SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
+       c.terms_url, c.referral_url, c.status, c.expires_at, c.applies_to,
+       c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
+       c.organization_id, lc.position, lc.overrides
+FROM service_listing_coupons lc
+JOIN coupons c ON c.id = lc.coupon_id
+WHERE lc.listing_meta_id = @listing_meta_id
+ORDER BY lc.position ASC;
+
+-- name: ListActiveServiceListingCoupons :many
+SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
+       c.terms_url, c.referral_url, c.status, c.expires_at, c.applies_to,
+       c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
+       c.organization_id, lc.position, lc.overrides
+FROM service_listing_coupons lc
+JOIN coupons c ON c.id = lc.coupon_id
+WHERE lc.listing_meta_id = @listing_meta_id
+  AND c.status = 'active'
+  AND (c.valid_from IS NULL OR c.valid_from <= now())
+  AND (c.expires_at IS NULL OR c.expires_at > now())
+ORDER BY lc.position ASC;
+
+-- name: GetListingCouponByCode :one
+SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
+       c.terms_url, c.referral_url, c.status, c.expires_at, c.applies_to,
+       c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
+       c.organization_id, lc.position, lc.overrides
+FROM service_listing_coupons lc
+JOIN coupons c ON c.id = lc.coupon_id
+WHERE lc.listing_meta_id = @listing_meta_id
+  AND lower(c.code) = lower(@code);
+
+-- name: DeleteServiceListingCoupons :exec
+DELETE FROM service_listing_coupons WHERE listing_meta_id = @listing_meta_id;
+
+-- name: CreateServiceListingCouponLink :one
+INSERT INTO service_listing_coupons (coupon_id, listing_meta_id, position)
+VALUES (@coupon_id, @listing_meta_id, COALESCE(sqlc.narg(position), 0))
+RETURNING *;
+
+-- name: CountListingCouponLinks :one
+SELECT COUNT(*) FROM service_listing_coupons WHERE listing_meta_id = @listing_meta_id;
+
+-- name: CountCouponRedemptions :one
+-- Dead bookings don't burn caps: cancel/decline/refund auto-releases.
+SELECT COUNT(*) FROM coupon_redemptions r
+JOIN service_bookings b ON b.id = r.service_booking_id
+WHERE r.coupon_id = @coupon_id
+  AND b.status NOT IN ('cancelled','declined','refunded');
+
+-- name: CountCouponRedemptionsByUser :one
+SELECT COUNT(*) FROM coupon_redemptions r
+JOIN service_bookings b ON b.id = r.service_booking_id
+WHERE r.coupon_id = @coupon_id AND r.user_id = @user_id
+  AND b.status NOT IN ('cancelled','declined','refunded');
+
+-- name: CreateCouponRedemption :one
+INSERT INTO coupon_redemptions (coupon_id, user_id, service_booking_id, listing_meta_id, amount_saved, currency)
+VALUES (@coupon_id, @user_id, @service_booking_id, @listing_meta_id, @amount_saved, sqlc.narg(currency))
+RETURNING *;
+
+-- name: ListingHasActiveCoupon :one
+SELECT EXISTS(
+    SELECT 1 FROM service_listing_coupons lc
+    JOIN coupons c ON c.id = lc.coupon_id
+    WHERE lc.listing_meta_id = @listing_meta_id
+      AND c.status = 'active'
+      AND (c.expires_at IS NULL OR c.expires_at > now())
+) AS has_coupon;
+
+-- name: CreateServicePackageTier :one
+INSERT INTO service_package_tiers (listing_meta_id, name, badge, description,
+    price_amount, price_currency, features, position, is_featured, is_active)
+VALUES (@listing_meta_id, @name, sqlc.narg(badge), sqlc.narg(description),
+    @price_amount, sqlc.narg(price_currency), @features,
+    COALESCE(sqlc.narg(position), 0), COALESCE(sqlc.narg(is_featured), false),
+    COALESCE(sqlc.narg(is_active), true))
+RETURNING *;
+
+-- name: ListServicePackageTiers :many
+SELECT * FROM service_package_tiers
+WHERE listing_meta_id = @listing_meta_id AND is_active = true
+ORDER BY position ASC;
+
+-- name: ListAllServicePackageTiers :many
+SELECT * FROM service_package_tiers
+WHERE listing_meta_id = @listing_meta_id
+ORDER BY position ASC;
+
+-- name: GetServicePackageTier :one
+SELECT * FROM service_package_tiers
+WHERE id = @id AND listing_meta_id = @listing_meta_id;
+
+-- name: DeleteServicePackageTiers :exec
+DELETE FROM service_package_tiers WHERE listing_meta_id = @listing_meta_id;
+
+-- name: DeleteServicePackageTiersExcept :exec
+DELETE FROM service_package_tiers
+WHERE listing_meta_id = @listing_meta_id
+  AND id <> ALL(@keep_ids::uuid[]);
+-- name: GetMinActiveTierPrice :one
+SELECT MIN(price_amount) FROM service_package_tiers
+WHERE listing_meta_id = @listing_meta_id AND is_active = true;
+
+-- name: CountServiceBookingsByUserOrg :one
+SELECT COUNT(*) FROM service_bookings
+WHERE booker_user_id = @user_id AND org_id = @org_id
+  AND status NOT IN ('cancelled','declined','refunded');
