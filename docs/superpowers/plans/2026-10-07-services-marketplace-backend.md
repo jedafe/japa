@@ -4,7 +4,7 @@
 
 **Goal:** Deliver the backend half of the services/packages marketplace upgrade: dynamic service categories, org-owned listing coupons with real checkout redemption, package pricing tiers, and enriched listing payloads (featured image, ratings, coupon badge).
 
-**Architecture:** Extend `internal/servicedir` (§98/§111) and `internal/coupons` (§55) — no new packages. servicedir consumes coupon data through a `CouponStore` adapter seam (same pattern as `ReviewFetcher`/`PaymentCreator`), wired in `internal/server`. All data access via sqlc in `internal/db/queries/{services,coupons}.sql` → `make sqlc-gen`. Schema is **de-tenanted** (migration 000668 dropped tenant_id) — new tables have NO tenant columns.
+**Architecture:** Extend `internal/servicedir` (§98/§111) and `internal/coupons` (§55) — no new packages. Coupon lifecycle (create/list/update/delete) stays in `internal/coupons`; servicedir reads the `coupons` table and writes `service_listing_coupons`/`coupon_redemptions` through its own sqlc store (they are servicedir-owned tables), so booking + redemption commit atomically via `db.WithTxResult(ctx, s.pool.Writer, ...)` — no adapter seam needed for coupon data. All data access via sqlc in `internal/db/queries/{services,coupons}.sql` → `make sqlc-gen`. Schema is **de-tenanted** (migration 000668 dropped tenant_id) — new tables have NO tenant columns.
 
 **Tech Stack:** Go 1.x, chi router, sqlc+pgx, PostgreSQL, golang-migrate (`migrations/NNNNNN_name.{up,down}.sql`, next number **000803**), Valkey, feature flags via `internal/features/registry.go`.
 
@@ -24,25 +24,8 @@
 ## Interfaces consumed/produced (cross-task contract)
 
 ```go
-// internal/servicedir/coupons.go (new) — adapter seam, wired in internal/server
-type CouponStore interface {
-    ListListingCoupons(ctx, metaID pgtype.UUID, activeOnly bool) ([]ListingCoupon, error)
-    GetListingCouponByCode(ctx, metaID pgtype.UUID, code string) (ListingCoupon, error)
-    SetListingCoupons(ctx, metaID pgtype.UUID, couponIDs []pgtype.UUID) error
-    GetCouponOrgID(ctx, couponID pgtype.UUID) (pgtype.UUID, error)
-    CountRedemptions(ctx, couponID pgtype.UUID) (int64, error)
-    CountRedemptionsByUser(ctx, couponID, userID pgtype.UUID) (int64, error)
-    CreateRedemption(ctx, p CreateRedemptionParams) error
-}
-
-// CreateRedemptionParams — servicedir-local params for the seam; the
-// server-side adapter maps it onto gen.CreateCouponRedemptionParams.
-type CreateRedemptionParams struct {
-    CouponID, UserID, BookingID, ListingMetaID pgtype.UUID
-    AmountSaved int64
-    Currency    string
-}
-
+// internal/servicedir/coupons.go (new) — DTO + service methods over the
+// servicedir store (no adapter seam; all queries are servicedir-owned).
 type ListingCoupon struct {
     ID, Code, Title, DiscountType, ReferralURL, TermsURL string
     DiscountValue float64   // percent 0-100 or minor units per DiscountType
@@ -53,7 +36,7 @@ type ListingCoupon struct {
     MinSpend      *int64
     FirstTimeOnly bool
     AppliesTo     string   // service|package|both
-    OrgID         string
+    OrgID         string   // coupons.organization_id — must equal listing's org
     Position      int32
 }
 
@@ -71,7 +54,7 @@ type Quote struct {
     Base int64; Discount int64; Total int64; Fee int64; Balance int64
     Currency string; TierID pgtype.UUID; CouponID pgtype.UUID; CouponCode string
 }
-func (s *Service) priceQuote(ctx, listing listingRow, bookerID pgtype.UUID, tierID, couponCode string) (Quote, error)
+func (s *Service) priceQuote(ctx context.Context, listing ServiceRow, bookerID pgtype.UUID, tierID, couponCode string) (Quote, error)
 ```
 
 New API routes (added to `api-routes-catalog.md` in the JEOS task):
@@ -182,7 +165,7 @@ Run: `go build ./internal/features/` — expected PASS.
 
 **Files:**
 - Modify: `internal/db/queries/services.sql` (append block at end)
-- Modify: `internal/servicedir/store.go` (category store methods), `internal/servicedir/service.go` (categorySet cache + IsValidCategory swap + Categories())
+- Modify: `internal/servicedir/store.go` (category store methods), `internal/servicedir/service.go` (categorySet + category validation swap + Categories(ctx)), `internal/servicedir/handlers.go` (call site)
 
 **Interfaces:**
 - Produces: `Store.listCategories(ctx, activeOnly bool) ([]gen.ServiceCategory, error)`, `Service.IsValidCategoryDB(ctx, slug string) bool`, `Service.categorySet(ctx) map[string]struct{}`
@@ -288,9 +271,9 @@ func (s *Service) categorySet(ctx context.Context) map[string]struct{} {
 }
 ```
 
-Replace the three `IsValidCategory(...)` call sites in `service.go` (create ~line 440, edit ~line 1280) with `s.categorySet(ctx)` membership checks. Keep `IsValidCategory` exported (it's part of the package API / used by tests).
+Replace the `IsValidCategory(...)` call sites in `service.go` (create ~line 440, edit ~line 1280) with `s.categorySet(ctx)` membership checks. Keep `IsValidCategory` exported (it's part of the package API / used by tests). **Note `ServiceRow.ServiceCategory` is `*string`** — deref before the membership check (nil/empty = no category = valid).
 
-- [ ] **Step 6: Extend `HandleCategories` payload** — in `service.go` `Categories()` keep returning `[]Option` but add fields to `Option` (`icon`, `accent_color`, `applies_to`, `description` — all `omitempty`), populated from the DB rows (fallback: value/label only from `categoryLabels`).
+- [ ] **Step 6: Extend `Categories()` — signature + payload.** Change `func (s *Service) Categories() []Option` → `func (s *Service) Categories(ctx context.Context) []Option` and update the single call site `h.service.Categories()` at `internal/servicedir/handlers.go:245` → `h.service.Categories(r.Context())`. Populate from the DB `listCategories` rows (full metadata, not just slugs), falling back to `categoryLabels` on error. Extend `Option` with additive fields — `Icon`, `AccentColor`, `AppliesTo`, `Description` (all string, all `json:"...,omitempty"`) so existing consumers are unaffected.
 
 - [ ] **Step 7:** `go test ./internal/servicedir/` PASS → commit `feat: dynamic service categories with DB-backed validation`.
 
@@ -415,13 +398,33 @@ Down migration drops in reverse order. Apply + verify columns exist. Commit.
 
 ### Task 5: sqlc queries for coupons/links/redemptions/tiers
 
-**Files:** `internal/db/queries/coupons.sql` (append), `internal/db/queries/services.sql` (append tiers + booking columns on `CreateServiceBooking`)
+**Files:** `internal/db/queries/coupons.sql` (org-coupon lifecycle queries — coupons package owns coupon CRUD), `internal/db/queries/services.sql` (listing-link, redemption, tier, booking-column queries — servicedir owns attach/redeem/tiers so booking+redemption commit in one `WithTxResult`)
 
 - [ ] **Step 1: coupons.sql additions**
 
 ```sql
+-- name: CreateOrgCoupon :one
+-- slug required NOT NULL on coupons — generate as '<code-lower>-<suffix>'
+-- in the service layer using the existing resolveCouponSlug pattern
+-- (GetCouponSlugExists loop) so slugs never collide.
+INSERT INTO coupons (coupon_type, title, slug, description, code, discount_type,
+    discount_value, currency, terms_url, referral_url, is_verified, status,
+    valid_from, expires_at, created_by, organization_id, max_redemptions,
+    per_user_limit, min_spend, first_time_only, applies_to)
+VALUES ('internal', @title, @slug, sqlc.narg(description), @code,
+    sqlc.narg(discount_type), sqlc.narg(discount_value), sqlc.narg(currency),
+    sqlc.narg(terms_url), sqlc.narg(referral_url), false, 'active',
+    sqlc.narg(valid_from), sqlc.narg(expires_at), sqlc.narg(created_by),
+    @organization_id, sqlc.narg(max_redemptions), sqlc.narg(per_user_limit),
+    sqlc.narg(min_spend), COALESCE(sqlc.narg(first_time_only), false),
+    COALESCE(sqlc.narg(applies_to), 'both'))
+RETURNING *;
+
 -- name: GetCouponByIDForOrg :one
 SELECT c.* FROM coupons c WHERE c.id = @id AND c.organization_id = @organization_id;
+
+-- name: CountOrgCouponRedemptions :one
+SELECT COUNT(*) FROM coupon_redemptions r WHERE r.coupon_id = @coupon_id;
 
 -- name: ListOrgCoupons :many
 SELECT c.id, c.title, c.slug, c.code, c.discount_type, c.discount_value,
@@ -450,7 +453,11 @@ RETURNING *;
 
 -- name: DeleteOrgCoupon :execrows
 DELETE FROM coupons WHERE id = @id AND organization_id = @organization_id;
+```
 
+- [ ] **Step 2: services.sql additions** — listing-link, redemption, tier, and booking queries (servicedir-owned so attach/redeem can share one tx):
+
+```sql
 -- name: ListServiceListingCoupons :many
 SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
        c.terms_url, c.referral_url, c.status, c.expires_at, c.applies_to,
@@ -496,12 +503,17 @@ RETURNING *;
 SELECT COUNT(*) FROM service_listing_coupons WHERE listing_meta_id = @listing_meta_id;
 
 -- name: CountCouponRedemptions :one
+-- Dead bookings don't burn caps: cancel/decline/refund auto-releases.
 SELECT COUNT(*) FROM coupon_redemptions r
 JOIN service_bookings b ON b.id = r.service_booking_id
 WHERE r.coupon_id = @coupon_id
   AND b.status NOT IN ('cancelled','declined','refunded');
 
--- name: CountCouponRedemptionsByUser :one  -- same join + AND r.user_id=@user_id
+-- name: CountCouponRedemptionsByUser :one
+SELECT COUNT(*) FROM coupon_redemptions r
+JOIN service_bookings b ON b.id = r.service_booking_id
+WHERE r.coupon_id = @coupon_id AND r.user_id = @user_id
+  AND b.status NOT IN ('cancelled','declined','refunded');
 
 -- name: CreateCouponRedemption :one
 INSERT INTO coupon_redemptions (coupon_id, user_id, service_booking_id, listing_meta_id, amount_saved, currency)
@@ -512,16 +524,12 @@ RETURNING *;
 SELECT EXISTS(SELECT 1 FROM service_listing_coupons lc JOIN coupons c ON c.id=lc.coupon_id
               WHERE lc.listing_meta_id=@listing_meta_id AND c.status='active'
                 AND (c.expires_at IS NULL OR c.expires_at>now())) AS has_coupon;
-```
 
-- [ ] **Step 2: services.sql additions**
-
-```sql
 -- name: CreateServicePackageTier :one
 INSERT INTO service_package_tiers (listing_meta_id, name, badge, description,
     price_amount, price_currency, features, position, is_featured, is_active)
 VALUES (@listing_meta_id, @name, sqlc.narg(badge), sqlc.narg(description),
-    @price_amount, sqlc.narg(price_currency), sqlc.narg(features),
+    @price_amount, sqlc.narg(price_currency), @features,
     COALESCE(sqlc.narg(position), 0), COALESCE(sqlc.narg(is_featured), false),
     COALESCE(sqlc.narg(is_active), true))
 RETURNING *;
@@ -557,7 +565,7 @@ WHERE booker_user_id = @user_id AND org_id = @org_id
   AND status NOT IN ('cancelled','declined','refunded');
 ```
 
-Also extend `CreateServiceBooking` INSERT with `tier_id, coupon_id, coupon_code, discount_amount` (`sqlc.narg` each).
+Also extend `CreateServiceBooking` INSERT with `tier_id, coupon_id, coupon_code, discount_amount` (`sqlc.narg` each), and add the same four columns to the SELECT lists of `GetServiceBooking`, `GetServiceBookingDetail`, `ListServiceBookingsByUser`, `ListServiceBookingsByOrg`, `AdminListServiceBookings` so `BookingDTO` gains `tier_id`, `coupon_code`, `discount_amount` (the `/me/service-bookings` + org inbox UIs display them). In `GetServiceBookingDetail`/`ListServiceBookingsBy*` also `LEFT JOIN service_package_tiers t ON t.id = service_bookings.tier_id` → `t.name AS tier_name` so UIs can label the purchased tier without a second fetch.
 
 - [ ] **Step 3:** `make sqlc-gen` → `go build ./internal/db/gen/` PASS → commit `feat: sqlc queries for listing coupons, redemptions, tiers`.
 
@@ -589,28 +597,33 @@ r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/organizations/{id}/coupo
 ### Task 7: Listing coupon attach + public payload (`internal/servicedir`)
 
 **Files:**
-- Create: `internal/servicedir/coupons.go` (`CouponStore` interface, `ListingCoupon`, `SetCouponStore` on Service, `SetListingCoupons`, `listingCoupons` payload builder)
-- Create: `internal/coupons/listing_links.go` + `internal/server/coupon_adapter.go` (`serviceCouponAdapter` implementing `servicedir.CouponStore` over coupons.Store — mirrors `servicedir_adapters.go`)
-- Modify: `internal/servicedir/handlers.go` (`HandleGetCoupons`, `HandleSetCoupons`), `service.go` (detail/list payload fields), `internal/server/server.go` (wiring + routes)
+- Create: `internal/servicedir/coupons.go` (`ListingCoupon` DTO + mapper from the gen row, `SetListingCoupons`, `ListingCouponsDTO`, `CouponsEnabled`)
+- Modify: `internal/servicedir/store.go` (link/redemption wrappers: `listListingCoupons`, `getListingCouponByCode`, `setListingCoupons` via `db.WithTx`, `countCouponRedemptions*`, `createCouponRedemption`)
+- Modify: `internal/servicedir/handlers.go` (`HandleGetCoupons`, `HandleSetCoupons`), `service.go` (detail/list payload fields), `internal/server/server.go` (routes — no extra service wiring needed)
 
-- [ ] **Step 1: `CouponStore` interface + `ListingCoupon` DTO** (contract block above — copy verbatim).
+- [ ] **Step 1: `ListingCoupon` DTO + row mapper** in `coupons.go` (contract block above). Map `ListServiceListingCouponsRow`/`ListActiveServiceListingCouponsRow`/`GetListingCouponByCodeRow` → `ListingCoupon` (`code`/`discount_value` are nullable on `gen.Coupon` — nil-safe), apply `overrides` jsonb fields when present (`discount_value`, `min_spend` may be re-scoped per listing).
 
-- [ ] **Step 2: coupons package link methods** — `listing_links.go`: `GetCouponOrgID`, `ListListingCoupons(activeOnly)`, `GetListingCouponByCode`, `SetListingCoupons` (delete+insert in tx via `s.write.WithTx`? store has no tx seam — use sequential execs under a `pgx.Tx` via the database pool like `service_bookings.go` does if available; otherwise delete-then-insert is acceptable because attach is editor-path, non-financial), `CountRedemptions*`, `CreateRedemption`.
+- [ ] **Step 2: store wrappers** — one-line pass-throughs to the Task-5 gen queries; `setListingCoupons` = `db.WithTx(ctx, s.pool.Writer, func(q){ q.DeleteServiceListingCoupons; loop q.CreateServiceListingCouponLink })`.
 
-- [ ] **Step 3: servicedir service methods** — `SetListingCoupons(ctx, editorUser, metaID, couponIDs)`: caller permission already resolved by handler (same edit-authorization path as `HandleEdit` — reuse `canEditListing` equivalent); validate: all coupons exist, `organization_id == listing.org_id` (coupons can't cross orgs), `applies_to` covers `listing_kind`, count ≤ `service_packages.coupons.max_per_listing` (default 3). `ListingCouponsDTO(ctx, metaID, public bool)` → []ListingCoupon sorted by position; `has_coupon` on list rows via `ListingHasActiveCoupon` (batch: extend `ListServiceListings` with a lateral EXISTS — modify the sqlc query instead of N+1).
+- [ ] **Step 3: service methods** — `SetListingCoupons(ctx, contentID, userID, isEditAny bool, couponIDs []pgtype.UUID)`:
+  - mirror `EditOwn` authz: caller must be author or org member (same check `EditOwn` performs — reuse that internal helper, it already exists for `HandleEdit`)
+  - all coupons exist, `organization_id == listing.OrgID` → `ErrCouponNotApplicable`; `applies_to` covers `listing_kind`; count ≤ `settings[service_packages.coupons.max_per_listing]` (default 3) → `ErrTooManyCoupons` (400 `too_many_coupons`; declare the sentinel alongside the Task-9 coupon errors or here — one definition, both tasks reference it)
+  - `CouponsEnabled(ctx)` gates on the `service_coupons.enabled` flag (same style as `PackagesEnabled`)
+- `ListingCouponsDTO(ctx, metaID, activeOnly)` → `[]ListingCoupon` sorted by position.
+- `has_coupon` on list rows — lateral EXISTS added to `ListServiceListings` SELECT (also `ListServiceListingsByOrg`), mapped onto `ServiceRow.HasCoupon` — not N+1.
 
-- [ ] **Step 4: Handlers + routes + wiring**
+- [ ] **Step 4: Handlers + routes**
 
 ```go
-r.With(auth.RequireAuth(...), rbac.RequirePermission(rbacResolver, "service.edit")).
+r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
     Get("/services/{id}/coupons", serviceDirHandlers.HandleGetCoupons)
-r.With(auth.RequireAuth(...), rbac.RequirePermission(rbacResolver, "service.edit")).
+r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
     Put("/services/{id}/coupons", serviceDirHandlers.HandleSetCoupons)
 ```
 
-(check the actual node used by `PATCH /services/{id}` at server.go ~6941 — reuse it.) Wire `serviceDirService.SetCouponStore(&serviceCouponAdapter{...})` in server.go next to the `SetReviewFetcher` call site.
+Handlers: `{id}` is the listing **content id** (same param `PATCH /services/{id}` uses). `HandleSetCoupons` computes `isEditAny` via `h.rbac.HasPermission(r.Context(), user.UserID, "service.edit_any")` — the exact pattern `HandleGet`'s `?raw=1` path uses at handlers.go:363 — then calls `service.SetListingCoupons`. Body: `{"coupon_ids": ["uuid", ...]}`.
 
-- [ ] **Step 5: Public payloads** — `GET /services/:slug` gains `coupons: []ListingCoupon` (activeOnly, omit `code` when flag `service_coupons.enabled` off); each `ListingCoupon` JSON: `{id, title, code, discount_type, discount_value, currency, expires_at, terms_url, referral_url, applies_to}`. List rows gain `has_coupon bool`. Gate both on `service_coupons.enabled`.
+- [ ] **Step 5: Public payloads** — `GET /services/:slug` gains `coupons: []ListingCoupon` (activeOnly; field omitted entirely when `service_coupons.enabled` is off). Each `ListingCoupon` JSON: `{id, title, code, discount_type, discount_value, currency, expires_at, terms_url, referral_url, applies_to}`. List rows gain `has_coupon bool`. Gate both on the flag.
 
 - [ ] **Step 6:** build + tests PASS → commit `feat: listing coupon attach API + public coupon payloads`.
 
@@ -635,7 +648,7 @@ r.With(auth.RequireAuth(...), rbac.RequirePermission(rbacResolver, "service.edit
 **Files:** `internal/servicedir/service_bookings.go` (extend), new `internal/servicedir/pricing.go` (`applyDiscount`, `priceQuote`), `handlers_bookings.go` (`HandlePricePreview`), `service_bookings_test.go` (extend), `server.go` (route)
 
 **Interfaces:**
-- Consumes: `CouponStore` (Task 7), tier queries (Task 5), `CountServiceBookingsByUserOrg` (Task 5).
+- Consumes: store methods from Task 7 (`getListingCouponByCode`, `countCouponRedemptions*`, `createCouponRedemption`), tier queries + `CountServiceBookingsByUserOrg` (Task 5).
 - Produces: `CreateBookingInput{+TierID, +CouponCode}`, `Quote`, errors below.
 
 - [ ] **Step 1: Failing tests** — `pricing_test.go`:
@@ -656,16 +669,17 @@ func TestApplyDiscount(t *testing.T) {
 - [ ] **Step 2: `pricing.go`** — `applyDiscount(base int64, dtype string, dval float64) int64` per table above; `priceQuote(ctx, listing, bookerID, tierID, couponCode)`:
 
 ```go
-base := listing.PriceAmount (or tier.PriceAmount when tierID set — tier must belong to meta, be active → else ErrInvalidTier)
+base := *listing.PriceAmount  // or tier.PriceAmount when tierID set —
+                              // tier must belong to meta + be active → else ErrInvalidTier
 if couponCode != "" {
-    lc := s.coupons.GetListingCouponByCode(ctx, metaID, couponCode)   // not-found → ErrInvalidCoupon
-    check status active + window → ErrInvalidCoupon
-    check lc.OrgID == listing.OrgID → ErrInvalidCoupon
+    lc, err := s.store.getListingCouponByCode(ctx, listing.MetaID, couponCode) // pgx.ErrNoRows → ErrInvalidCoupon
+    check lc.Status == active + valid_from/expires_at window → ErrInvalidCoupon
+    check lc.OrgID == listing.OrgID.String() → ErrInvalidCoupon
     check lc.AppliesTo covers listing.ListingKind → ErrCouponNotApplicable
     if lc.MinSpend != nil && base < *lc.MinSpend → ErrCouponMinSpend
-    if lc.MaxRedemptions != nil && CountRedemptions >= max → ErrCouponCapReached
-    if lc.PerUserLimit != nil && CountRedemptionsByUser >= lim → ErrCouponUserLimit
-    if lc.FirstTimeOnly && CountServiceBookingsByUserOrg(booker, org) > 0 → ErrCouponFirstTime
+    if lc.MaxRedemptions != nil && s.store.countCouponRedemptions(ctx, id) >= max → ErrCouponCapReached
+    if lc.PerUserLimit != nil && s.store.countCouponRedemptionsByUser(ctx, id, bookerID) >= lim → ErrCouponUserLimit
+    if lc.FirstTimeOnly && s.store.countBookingsByUserOrg(ctx, bookerID, listing.OrgID) > 0 → ErrCouponFirstTime
     discount := base - applyDiscount(base, lc.DiscountType, lc.DiscountValue)
 }
 total := base - discount; fee := s.computeFee(ctx, total); balance := total - fee
@@ -673,9 +687,16 @@ total := base - discount; fee := s.computeFee(ctx, total); balance := total - fe
 
 New sentinels: `ErrInvalidCoupon, ErrCouponNotApplicable, ErrCouponMinSpend, ErrCouponCapReached, ErrCouponUserLimit, ErrCouponFirstTime, ErrInvalidTier` → 400 codes `invalid_coupon, coupon_not_applicable, coupon_min_spend, coupon_cap_reached, coupon_user_limit, coupon_first_time_only, invalid_tier`.
 
-- [ ] **Step 3: CreateBooking integration** — in `CreateBooking`, replace the `total = *listing.PriceAmount` block with `quote, err := s.priceQuote(...)` (bookerID = booker); require `Idempotency-Key` BEFORE coupon resolution for paid path (Rule 9: nothing writes on reject). Stamp `params.TierID/CouponID/CouponCode/DiscountAmount`. After `s.store.CreateBooking` succeeds and a coupon was applied: `s.coupons.CreateRedemption(ctx, {coupon_id, user_id, service_booking_id: booking.ID, listing_meta_id, amount_saved: discount, currency})` — redemption insert failure logs-and-continues (booking is authoritative; reconcile counts tolerate it) OR wrap booking+redemption in one tx if the store already exposes a tx seam — check `store.CreateBooking`; prefer the tx if trivially available. Inquiries (`intent='inquiry'`): ignore `coupon_code`/`tier_id` fields silently? No — reject `invalid_intent` parity with existing strictness: coupon on inquiry → `ErrInvalidCoupon`.
+- [ ] **Step 3: CreateBooking integration** — in `CreateBooking` (service_bookings.go ~line 378), replace the `total = *listing.PriceAmount` block with `quote, err := s.priceQuote(ctx, listing, bookerID, input.TierID, input.CouponCode)`; require `Idempotency-Key` BEFORE `priceQuote` runs for the paid path (Rule 9: nothing writes on reject — keep the existing check position). Stamp `params.TierID/CouponID/CouponCode/DiscountAmount` and `TotalPrice=quote.Total`, `FeeAmount=quote.Fee`, `AgentBalanceDue=quote.Balance`. **Atomicity:** move booking insert + redemption insert into a new store method `createBookingWithRedemption(ctx, params, redemption)` using `db.WithTxResult(ctx, s.pool.Writer, func(q){ q.CreateServiceBooking; if redemption != nil { q.CreateCouponRedemption } })` — same tx helper `store_packages.go` already uses; fail the whole booking if the redemption insert fails (a paid booking must never silently lose its recorded discount). Inquiries (`intent='inquiry'`): `coupon_code`/`tier_id` present → `ErrInvalidCoupon` (parity with existing strict intent checks, not silently ignored).
 
-- [ ] **Step 4: `GET /services/{id}/price-preview`** — authed + `mw.RateLimit(...,"moderate")`; loads listing by content id, calls `priceQuote` with `?tier_id=&coupon_code=`; response:
+- [ ] **Step 4: `GET /services/{id}/price-preview`** — inside the existing `service_directory.enabled` route group (server.go ~line 6960, next to the bookings routes); `{id}` = listing content id:
+
+```go
+r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+    Get("/services/{id}/price-preview", serviceDirHandlers.HandlePricePreview)
+```
+
+Loads the listing by content id, calls `priceQuote` with `?tier_id=&coupon_code=`; response:
 
 ```json
 { "data": { "base": 249900, "discount": 25000, "total": 224900, "fee": 22490, "balance_due": 202410, "currency": "USD", "coupon_valid": true } }
