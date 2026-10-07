@@ -4,8 +4,8 @@
 	import { t, i18n } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus } from 'lucide-svelte';
-	import { Modal } from '$lib/components/ui';
+	import { ArrowLeft, CheckCircle2, Eye, MessageSquare, Bookmark, Share2, Flag, Pencil, Save, Trash2, X, Loader2, Plus, MoreHorizontal } from 'lucide-svelte';
+	import { Modal, Menu, MenuItem, MenuSeparator } from '$lib/components/ui';
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
@@ -286,8 +286,9 @@ import { contentHref } from '$lib/utils/contentLink';
 	let reportError = $state('');
 	let reportSubmitted = $state(false);
 
-	function openReport() {
+	async function openReport() {
 		if (!thread.content_id) return;
+		if (!data.authed && !(await requireAuthOrRedirect())) return;
 		reportOpen = true;
 		reportSubmitted = false;
 		reportError = '';
@@ -494,42 +495,32 @@ import { contentHref } from '$lib/utils/contentLink';
 							{t('content_type.discussion', 'Discussion')}
 						</span>
 
-						<!-- Action icons (edit/delete for author or moderator,
+						<!-- Actions dropdown (edit/delete for author or moderator,
 						     report for everyone — can_* flags come from the backend) -->
-						{#if data.canEdit && !editing}
-							<button
-								type="button"
-								onclick={startEdit}
-								class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
-								aria-label={t('forum.edit', 'Edit')}
-								title={t('forum.edit', 'Edit')}
-							>
-								<Pencil size={14} />
-							</button>
-						{/if}
-						{#if data.canDelete && !editing}
-							<button
-								type="button"
-								disabled={deleting}
-								onclick={deleteThread}
-								class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] disabled:opacity-50"
-								aria-label={deleting ? t('common.loading', 'Loading...') : t('forum.delete', 'Delete')}
-								title={t('forum.delete', 'Delete')}
-							>
-								{#if deleting}<Loader2 size={14} class="animate-spin" />{:else}<Trash2 size={14} />{/if}
-							</button>
-						{/if}
-						{#if !editing}
-							<button
-								type="button"
-								onclick={openReport}
-								disabled={!data.authed || !thread.content_id}
-								class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-danger)] disabled:cursor-not-allowed disabled:opacity-50"
-								aria-label={t('forum.report', 'Report')}
-								title={!data.authed ? t('forum.login_to_report', 'Log in to report') : thread.content_id ? t('forum.report', 'Report') : t('forum.report_unavailable', 'Reporting unavailable')}
-							>
-								<Flag size={14} />
-							</button>
+						{#if !editing && (data.canEdit || data.canDelete || thread.content_id)}
+							<Menu contentClass="min-w-44">
+								{#snippet trigger(props)}
+									<button
+										type="button"
+										{...props}
+										class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+										aria-label={t('comments.options', 'More options')}
+										title={t('comments.options', 'More options')}
+									>
+										<MoreHorizontal size={16} />
+									</button>
+								{/snippet}
+								{#if data.canEdit}
+									<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
+								{/if}
+								{#if data.canDelete}
+									<MenuItem icon={Trash2} onSelect={deleteThread} disabled={deleting} destructive>{t('forum.delete', 'Delete')}</MenuItem>
+								{/if}
+								{#if data.canEdit || data.canDelete}
+									<MenuSeparator />
+								{/if}
+								<MenuItem icon={Flag} onSelect={openReport} disabled={!thread.content_id}>{t('forum.report', 'Report')}</MenuItem>
+							</Menu>
 						{/if}
 					</div>
 				</div>
