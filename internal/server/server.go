@@ -6970,6 +6970,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/services/{id}/unverify", serviceDirHandlers.HandleAdminUnverify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
 					Patch("/admin/services/{id}/claim/{claim_id}", serviceDirHandlers.HandleAdminResolveClaim)
+				// Marketplace upgrade — dynamic service_categories taxonomy CRUD.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.categories.manage")).
+					Get("/admin/service-categories", serviceDirHandlers.HandleAdminListCategories)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.categories.manage")).
+					Post("/admin/service-categories", serviceDirHandlers.HandleAdminCreateCategory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.categories.manage")).
+					Patch("/admin/service-categories/{slug}", serviceDirHandlers.HandleAdminUpdateCategory)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.categories.manage")).
+					Delete("/admin/service-categories/{slug}", serviceDirHandlers.HandleAdminDeleteCategory)
 
 				// Section 111 — Service Packages & Bookings (ADR-123).
 				// Handlers self-gate on service_packages.enabled (404 when

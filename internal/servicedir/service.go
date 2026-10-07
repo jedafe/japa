@@ -15,11 +15,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -487,6 +489,225 @@ var (
 	// post-create; the merchant of record is bound to the booking pipeline.
 	ErrPackageOrgImmutable = errors.New("package_org_immutable")
 )
+
+// ---------------------------------------------------------------------------
+// Admin service_categories CRUD (marketplace upgrade — dynamic taxonomy)
+// ---------------------------------------------------------------------------
+
+// CategoryInput is the admin payload for creating or patching a
+// service_categories row. Slug is immutable after creation — listings
+// reference it by value via service_listing_meta.service_category — so
+// PATCH rejects a body slug that disagrees with the path slug. Position
+// and IsActive are pointers so "not supplied" can ride the update query's
+// COALESCE; the text fields use "" as not-supplied (clearing a field is
+// not supported — set a new value instead).
+type CategoryInput struct {
+	Slug        string `json:"slug"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Icon        string `json:"icon"`
+	AccentColor string `json:"accent_color"`
+	AppliesTo   string `json:"applies_to"`
+	Position    *int32 `json:"position"`
+	IsActive    *bool  `json:"is_active"`
+}
+
+// CategoryInputError is a validation failure on CategoryInput. Msg is
+// safe to surface verbatim in the API error envelope (400 invalid_input).
+type CategoryInputError struct{ Msg string }
+
+func (e *CategoryInputError) Error() string { return e.Msg }
+
+// ErrCategoryExists is returned when a category create hits the slug
+// unique constraint (SQLSTATE 23505) — mapped to 409 category_exists.
+var ErrCategoryExists = errors.New("service category slug already exists")
+
+// categorySlugRe constrains taxonomy slugs to lowercase snake_case
+// tokens, matching every seeded row in migration 000803.
+var categorySlugRe = regexp.MustCompile(`^[a-z][a-z0-9_]{1,48}$`)
+
+// categoryAppliesTo enumerates the CHECK constraint values on
+// service_categories.applies_to.
+var categoryAppliesTo = map[string]struct{}{
+	"service": {},
+	"package": {},
+	"both":    {},
+}
+
+// categoryAccentPalette is the token-mapped palette admins pick from —
+// free hex is rejected (marketplace spec §2.1). 'cyan' is included for
+// compatibility with the seeded 'insurance' row (migration 000803).
+var categoryAccentPalette = map[string]struct{}{
+	"violet": {}, "green": {}, "amber": {}, "blue": {}, "sky": {},
+	"emerald": {}, "rose": {}, "orange": {}, "slate": {}, "indigo": {},
+	"gray": {}, "cyan": {},
+}
+
+func categoryInputErr(format string, args ...any) *CategoryInputError {
+	return &CategoryInputError{Msg: fmt.Sprintf(format, args...)}
+}
+
+// validateCategoryInput enforces the taxonomy constraints shared by
+// create and update. Slug format is checked only on create (the slug is
+// immutable thereafter); label is required on every write because the
+// update query sets it unconditionally.
+func validateCategoryInput(in CategoryInput, creating bool) error {
+	if creating && !categorySlugRe.MatchString(in.Slug) {
+		return categoryInputErr("slug must match ^[a-z][a-z0-9_]{1,48}$")
+	}
+
+	if strings.TrimSpace(in.Label) == "" {
+		return categoryInputErr("label is required")
+	}
+
+	if len(in.Label) > 80 {
+		return categoryInputErr("label must be 80 characters or fewer")
+	}
+
+	if in.AppliesTo != "" {
+		if _, ok := categoryAppliesTo[in.AppliesTo]; !ok {
+			return categoryInputErr("applies_to must be one of service|package|both")
+		}
+	}
+
+	if in.AccentColor != "" {
+		if _, ok := categoryAccentPalette[in.AccentColor]; !ok {
+			return categoryInputErr("accent_color must be one of violet|green|amber|blue|sky|emerald|rose|orange|slate|indigo|gray|cyan")
+		}
+	}
+
+	return nil
+}
+
+// AdminListCategories returns every service_categories row — active and
+// inactive — in position order for the admin taxonomy manager.
+func (s *Service) AdminListCategories(ctx context.Context) ([]gen.ServiceCategory, error) {
+	return s.store.listCategories(ctx, false)
+}
+
+// AdminCreateCategory inserts a service_categories row after validation.
+// A slug unique-violation maps to ErrCategoryExists (409 category_exists).
+func (s *Service) AdminCreateCategory(ctx context.Context, in CategoryInput) (gen.ServiceCategory, error) {
+	if err := validateCategoryInput(in, true); err != nil {
+		return gen.ServiceCategory{}, err
+	}
+
+	// applies_to is COALESCE'd to 'both' — an explicit "" would land in the
+	// CHECK constraint, so collapse it to NULL (which means "defaulted").
+	var appliesTo interface{}
+	if in.AppliesTo != "" {
+		appliesTo = in.AppliesTo
+	}
+
+	row, err := s.store.createCategory(ctx, gen.CreateServiceCategoryParams{
+		Slug:        in.Slug,
+		Label:       in.Label,
+		Description: nilIfEmpty(&in.Description),
+		Icon:        nilIfEmpty(&in.Icon),
+		AccentColor: nilIfEmpty(&in.AccentColor),
+		AppliesTo:   appliesTo,
+		Position:    in.Position, // *int32 — nil encodes as NULL → COALESCE default
+		IsActive:    in.IsActive, // *bool — nil encodes as NULL → COALESCE default
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.ServiceCategory{}, ErrCategoryExists
+		}
+
+		return gen.ServiceCategory{}, err
+	}
+
+	return row, nil
+}
+
+// AdminUpdateCategory patches a service_categories row. The slug is
+// immutable — a body slug that disagrees with the path slug is rejected.
+// description/icon/accent_color are unconditional SETs (sqlc.narg), so an
+// omitted field carries the current value forward instead of clearing to
+// NULL. Unknown slug surfaces pgx.ErrNoRows (404).
+func (s *Service) AdminUpdateCategory(ctx context.Context, slug string, in CategoryInput) (gen.ServiceCategory, error) {
+	if in.Slug != "" && in.Slug != slug {
+		return gen.ServiceCategory{}, categoryInputErr("slug is immutable and cannot be changed")
+	}
+
+	if err := validateCategoryInput(in, false); err != nil {
+		return gen.ServiceCategory{}, err
+	}
+
+	current, err := s.store.getCategoryBySlug(ctx, slug)
+	if err != nil {
+		return gen.ServiceCategory{}, err
+	}
+
+	description := current.Description
+	if in.Description != "" {
+		description = &in.Description
+	}
+
+	icon := current.Icon
+	if in.Icon != "" {
+		icon = &in.Icon
+	}
+
+	accentColor := current.AccentColor
+	if in.AccentColor != "" {
+		accentColor = &in.AccentColor
+	}
+
+	var appliesTo *string
+	if in.AppliesTo != "" {
+		appliesTo = &in.AppliesTo
+	}
+
+	return s.store.updateCategory(ctx, gen.UpdateServiceCategoryParams{
+		Label:       in.Label,
+		Description: description,
+		Icon:        icon,
+		AccentColor: accentColor,
+		AppliesTo:   appliesTo,
+		Position:    in.Position,
+		IsActive:    in.IsActive,
+		Slug:        slug,
+	})
+}
+
+// AdminDeleteCategory removes a service_categories row. Slugs still
+// referenced by listings are soft-disabled (is_active=false) so those
+// listings keep resolving a label; unreferenced slugs are hard-deleted.
+// Unknown slug surfaces pgx.ErrNoRows (404).
+func (s *Service) AdminDeleteCategory(ctx context.Context, slug string) error {
+	current, err := s.store.getCategoryBySlug(ctx, slug)
+	if err != nil {
+		return err
+	}
+
+	count, err := s.store.countListingsByCategory(ctx, slug)
+	if err != nil {
+		return err
+	}
+
+	if count > 0 {
+		// In use → soft-disable via the update query. label/description/
+		// icon/accent_color are unconditional SETs, so carry the current
+		// values; only is_active actually changes.
+		_, err = s.store.updateCategory(ctx, gen.UpdateServiceCategoryParams{
+			Label:       current.Label,
+			Description: current.Description,
+			Icon:        current.Icon,
+			AccentColor: current.AccentColor,
+			IsActive:    boolPtr(false),
+			Slug:        slug,
+		})
+
+		return err
+	}
+
+	return s.store.deleteCategory(ctx, slug)
+}
+
+// boolPtr returns a pointer to b.
+func boolPtr(b bool) *bool { return &b }
 
 // Create creates a new service listing — a contents row with
 // content_type='service_listing' plus a service_listing_meta row. The

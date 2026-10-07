@@ -783,3 +783,51 @@ func (s *Store) getCategoryBySlug(ctx context.Context, slug string) (gen.Service
 
 	return row, nil
 }
+
+// createCategory inserts a service_categories row. A slug collision
+// surfaces as a wrapped SQLSTATE 23505 — callers map it to
+// ErrCategoryExists.
+func (s *Store) createCategory(ctx context.Context, p gen.CreateServiceCategoryParams) (gen.ServiceCategory, error) {
+	row, err := s.write.CreateServiceCategory(ctx, p)
+	if err != nil {
+		return gen.ServiceCategory{}, fmt.Errorf("servicedir: create category: %w", err)
+	}
+
+	return row, nil
+}
+
+// updateCategory applies the COALESCE patch to a service_categories row.
+// No matching slug yields a wrapped pgx.ErrNoRows → 404 upstream.
+func (s *Store) updateCategory(ctx context.Context, p gen.UpdateServiceCategoryParams) (gen.ServiceCategory, error) {
+	row, err := s.write.UpdateServiceCategory(ctx, p)
+	if err != nil {
+		return gen.ServiceCategory{}, fmt.Errorf("servicedir: update category: %w", err)
+	}
+
+	return row, nil
+}
+
+// deleteCategory hard-deletes a service_categories row. Only reached for
+// slugs with zero listing references — in-use slugs are soft-disabled
+// (is_active=false) by the service layer instead.
+func (s *Store) deleteCategory(ctx context.Context, slug string) error {
+	if err := s.write.DeleteServiceCategory(ctx, slug); err != nil {
+		return fmt.Errorf("servicedir: delete category: %w", err)
+	}
+
+	return nil
+}
+
+// countListingsByCategory returns how many service_listing_meta rows
+// reference the slug. The query is verbatim — it does not join
+// contents.deleted_at, so soft-deleted listings inflate the count; that
+// overcount is accepted per the marketplace plan (it only makes the
+// delete path prefer soft-disable).
+func (s *Store) countListingsByCategory(ctx context.Context, slug string) (int64, error) {
+	n, err := s.read.CountServiceListingsByCategory(ctx, slug)
+	if err != nil {
+		return 0, fmt.Errorf("servicedir: count listings by category: %w", err)
+	}
+
+	return n, nil
+}

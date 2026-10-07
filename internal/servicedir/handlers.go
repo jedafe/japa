@@ -11,6 +11,10 @@
 //	GET   /api/v1/admin/services               — moderation queue (auth, service.verify)
 //	PATCH /api/v1/admin/services/:id/verify    — mark verified (auth, service.verify)
 //	PATCH /api/v1/admin/services/:id/claim/:claim_id — resolve claim (auth, service.verify)
+//	GET   /api/v1/admin/service-categories         — taxonomy list (auth, service.categories.manage)
+//	POST  /api/v1/admin/service-categories         — create category (auth, service.categories.manage)
+//	PATCH /api/v1/admin/service-categories/:slug   — update category (auth, service.categories.manage)
+//	DELETE /api/v1/admin/service-categories/:slug  — delete/disable category (auth, service.categories.manage)
 //
 // Ref: japaconnect-engineering/sections/98-service-directory.md
 //
@@ -459,7 +463,7 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	service, err := h.service.Create(r.Context(), user.UserID, input, canCreatePackage)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCategory) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category is not a valid active category")
 			return
 		}
 
@@ -521,7 +525,7 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if errors.Is(err, ErrInvalidCategory) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category must be one of immigration_legal|relocation|finance|education|health|community|other")
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_category", "service_category is not a valid active category")
 			return
 		}
 
@@ -814,4 +818,141 @@ func (h *Handlers) HandleAdminResolveClaim(w http.ResponseWriter, r *http.Reques
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"claim_status": claimStatus}})
+}
+
+// ---------------------------------------------------------------------------
+// Admin service_categories CRUD (marketplace upgrade — dynamic taxonomy,
+// service.categories.manage permission checked at route registration)
+// ---------------------------------------------------------------------------
+
+// writeCategoryError maps category service-layer errors to the standard
+// snake_case API error contract. Validation failures carry their own
+// message; unexpected errors fall through to the provided 500.
+func writeCategoryError(w http.ResponseWriter, err error, code, msg string) {
+	var inputErr *CategoryInputError
+	switch {
+	case errors.As(err, &inputErr):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", inputErr.Msg)
+	case errors.Is(err, ErrCategoryExists):
+		errpkg.WriteError(w, http.StatusConflict, "category_exists", "A category with that slug already exists")
+	case errors.Is(err, pgx.ErrNoRows):
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Category not found")
+	default:
+		slog.Error("servicedir: category request failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, code, msg)
+	}
+}
+
+// HandleAdminListCategories handles GET /admin/service-categories — the
+// full taxonomy (active + inactive rows) in position order.
+func (h *Handlers) HandleAdminListCategories(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	cats, err := h.service.AdminListCategories(r.Context())
+	if err != nil {
+		slog.Error("servicedir: admin list categories failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list service categories")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
+}
+
+// HandleAdminCreateCategory handles POST /admin/service-categories —
+// create a taxonomy row. Body: CategoryInput (slug + label required).
+// 201 on success; duplicate slug → 409 category_exists.
+func (h *Handlers) HandleAdminCreateCategory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	var input CategoryInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	cat, err := h.service.AdminCreateCategory(r.Context(), input)
+	if err != nil {
+		writeCategoryError(w, err, "create_failed", "Failed to create service category")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": cat})
+}
+
+// HandleAdminUpdateCategory handles PATCH
+// /admin/service-categories/{slug} — patch a taxonomy row. The slug is
+// immutable: a body slug that disagrees with the path is rejected.
+// Unknown slug → 404 not_found.
+func (h *Handlers) HandleAdminUpdateCategory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Category slug is required")
+		return
+	}
+
+	var input CategoryInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	cat, err := h.service.AdminUpdateCategory(r.Context(), slug, input)
+	if err != nil {
+		writeCategoryError(w, err, "update_failed", "Failed to update service category")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cat})
+}
+
+// HandleAdminDeleteCategory handles DELETE
+// /admin/service-categories/{slug} — removes a taxonomy row. Slugs still
+// referenced by listings are soft-disabled (is_active=false) instead of
+// hard-deleted. 204 on success; unknown slug → 404 not_found.
+func (h *Handlers) HandleAdminDeleteCategory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	if slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Category slug is required")
+		return
+	}
+
+	if err := h.service.AdminDeleteCategory(r.Context(), slug); err != nil {
+		writeCategoryError(w, err, "delete_failed", "Failed to delete service category")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
