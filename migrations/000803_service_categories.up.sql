@@ -28,6 +28,7 @@ INSERT INTO service_categories (slug, label, description, icon, accent_color, ap
     ('travel',             'Travel',               'Flights, itineraries and travel documents',        'plane',        'sky',    'both',    60),
     ('finance',            'Finance',              'Banking, transfers and tax help',                  'landmark',     'emerald','both',    70),
     ('health',             'Health & Insurance',   'Health coverage and insurance plans',              'heart-pulse',  'rose',   'both',    80),
+    ('insurance',          'Insurance',            'Travel, health and relocation insurance',          'shield-check', 'cyan',   'both',    85),
     ('family_sponsorship', 'Family Sponsorship',   'Sponsor loved ones to join you abroad',            'users',        'orange', 'package', 90),
     ('documents',          'Documents',            'Translation, attestation and notarization',        'file-text',    'slate',  'service', 100),
     ('community',          'Community',            'Diaspora community services',                      'users-round',  'indigo', 'service', 110),
