@@ -4,7 +4,7 @@
 // items. Non-moderators get a 403.
 import { redirect, error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 
 export interface ScopedEntity {
 	id: string;
@@ -87,7 +87,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const qs = new URLSearchParams();
-	for (const k of ['entity_type', 'space_id', 'tag_id', 'assigned', 'q', 'page', 'page_size'] as const) {
+	for (const k of ['entity_type', 'content_type', 'space_id', 'tag_id', 'assigned', 'q', 'page', 'page_size'] as const) {
 		const v = params.get(k);
 		if (v) qs.set(k, v);
 	}
@@ -110,12 +110,14 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Rule 16 — status/entity-type filter options come from the backend
-	// catalogs (auth-only endpoints, so moderators can read them). Space/tag
-	// filter options come from the caller's own moderation scope.
-	const [statusOptions, typeOptions] = await Promise.all([
+	// catalogs (auth-only endpoints, so moderators can read them). Content-type
+	// options come from GET /content-types — the same source /studio/contents
+	// uses. Space/tag filter options come from the caller's own moderation scope.
+	const [statusOptions, typeOptions, contentTypes] = await Promise.all([
 		apiGet<{ value: string; label: string }[]>(ctx, '/admin/catalogs/reports.status').then((r) => r ?? []).catch(() => []),
-		apiGet<{ value: string; label: string }[]>(ctx, '/admin/catalogs/reports.entity_type').then((r) => r ?? []).catch(() => [])
+		apiGet<{ value: string; label: string }[]>(ctx, '/admin/catalogs/reports.entity_type').then((r) => r ?? []).catch(() => []),
+		apiList<{ value: string; label: string }>(ctx, '/content-types').then((r) => r.items).catch(() => [])
 	]);
 
-	return { scope, queue, statusOptions, typeOptions };
+	return { scope, queue, statusOptions, typeOptions, contentTypes };
 };

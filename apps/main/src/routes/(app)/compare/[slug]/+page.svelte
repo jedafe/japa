@@ -4,8 +4,7 @@
 	import {
 		deleteComparison,
 		getFreshness,
-		promoteComparison,
-		scoreComparison
+		promoteComparison
 	} from '$lib/api/jce';
 	import { t } from '$lib/i18n';
 	import {
@@ -14,26 +13,16 @@
 		uniqueResolvedItems
 	} from '$lib/utils/comparison';
 	import type {
-		ComparisonProfile,
-		FreshnessCell,
 		FreshnessSummary,
 		JCEDimension,
-		JapaScore,
 		MatrixDimension,
 		MatrixItem,
-		ResolvedItem,
-		ScoreResult
+		ResolvedItem
 	} from '$lib/types/jce';
 	import type { PageData } from './$types';
-	import ScoreBadge from '$lib/components/compare/ScoreBadge.svelte';
-	import ScoreExplanation from '$lib/components/compare/ScoreExplanation.svelte';
-	import RecommendationPanel from '$lib/components/compare/RecommendationPanel.svelte';
-	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
-	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
-	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
-	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink, RefreshCw, User } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -45,33 +34,10 @@
 	let mainOrigin = $derived(data.mainOrigin);
 	let typeSlug = $derived(data.typeSlug ?? '');
 	let user = $derived(data.user ?? null);
-	let profiles = $derived(data.profiles ?? []);
 	let features = $derived((data.features as Record<string, boolean> | undefined) ?? {});
 
 	let freshness = $state<FreshnessSummary | null>(null);
-	let advisorOpen = $state(false);
-
-	let smartMode = $state('none');
-	$effect.pre(() => {
-		smartMode = data.comparison.metadata.smart_mode ?? 'none';
-	});
-	$effect(() => {
-		const mode = scoreResult?.smart_mode;
-		if (mode && mode !== smartMode) {
-			smartMode = mode;
-		}
-	});
-	let activeProfile = $state<ComparisonProfile | null>(null);
-	let profileOpen = $state(false);
-	let scoring = $state(false);
 	let freshnessTimeout: ReturnType<typeof setTimeout> | null = null;
-	let scoreTimeout: ReturnType<typeof setTimeout> | null = null;
-
-	$effect.pre(() => {
-		if (activeProfile === null) {
-			activeProfile = data.defaultProfile ?? null;
-		}
-	});
 
 	function scheduleFreshness(contentID: string) {
 		if (freshnessTimeout) clearTimeout(freshnessTimeout);
@@ -86,48 +52,6 @@
 		if (comparison?.content?.id && user && features['feature.jce.refresh']) {
 			scheduleFreshness(comparison.content.id);
 		}
-	});
-
-	let refreshedScore = $state<ScoreResult | null>(null);
-
-	$effect.pre(() => {
-		// Reset any client-side refresh when the server data changes (e.g. navigation).
-		data.comparison.content.id;
-		refreshedScore = null;
-	});
-
-	let scoreResult = $derived(refreshedScore ?? data.scoreResult ?? null);
-	let recommendations = $derived(
-		refreshedScore ? (refreshedScore.recommendations ?? []) : (data.recommendations ?? [])
-	);
-
-	let bestItemId = $derived.by(() => {
-		if (!scoreResult || scoreResult.scores.length === 0) return null;
-		const eligible = scoreResult.scores.filter((s) => s.eligible_status !== 'ineligible');
-		if (eligible.length === 0) return null;
-		const top = scoreResult.recommendation_summary?.top_item_id;
-		if (top) {
-			const topScore = eligible.find((s) => s.item_id === top);
-			if (topScore) return top;
-		}
-		return eligible.reduce((best, s) => (s.japa_score > best.japa_score ? s : best), eligible[0]).item_id;
-	});
-
-	let sortedItems = $derived.by(() => {
-		if (!scoreResult) return matrix;
-		const indexById = new Map(matrix.map((item, i) => [item.id, i]));
-		return matrix.slice().sort((a, b) => {
-			const scoreA = scoreResult.scores.find((s) => s.item_id === a.id);
-			const scoreB = scoreResult.scores.find((s) => s.item_id === b.id);
-			const ineligibleA = scoreA?.eligible_status === 'ineligible' ? 1 : 0;
-			const ineligibleB = scoreB?.eligible_status === 'ineligible' ? 1 : 0;
-			if (ineligibleA !== ineligibleB) return ineligibleA - ineligibleB;
-			const hasScoreA = scoreA ? 1 : 0;
-			const hasScoreB = scoreB ? 1 : 0;
-			if (hasScoreA !== hasScoreB) return hasScoreB - hasScoreA;
-			if (scoreA && scoreB) return scoreB.japa_score - scoreA.japa_score;
-			return (indexById.get(a.id) ?? 0) - (indexById.get(b.id) ?? 0);
-		});
 	});
 
 	let deleting = $state(false);
@@ -176,30 +100,6 @@
 		}
 	}
 
-	function refreshScore(mode?: string, force = false) {
-		if (!user) return;
-		if (scoreTimeout) clearTimeout(scoreTimeout);
-		scoreTimeout = setTimeout(async () => {
-			if (!comparison?.content?.id) return;
-			const targetMode = mode ?? smartMode;
-			scoring = true;
-			error = '';
-			try {
-				const res = await scoreComparison(comparison.content.id, activeProfile?.id, targetMode, force);
-				if (res) {
-					refreshedScore = res;
-				} else {
-					const unknownError = t('jce.compare.errors.unknown');
-					error = t('jce.compare.errors.load_score', unknownError, { message: unknownError });
-				}
-			} catch (e) {
-				error = e instanceof Error ? e.message : t('jce.compare.errors.unknown');
-			} finally {
-				scoring = false;
-			}
-		}, 250);
-	}
-
 	function edit() {
 		const ids = resolvedItems.map((i: ResolvedItem) => i.id).join(',');
 		const url = new URL('/compare', page.url);
@@ -212,21 +112,12 @@
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
 	}
 
-	function findCell(itemId: string, dimId: string): FreshnessCell | undefined {
-		const item = freshness?.by_item.find((i) => i.item_id === itemId);
-		return item?.cells.find((c) => c.dimension_id === dimId);
-	}
-
 	function formatValue(cell?: MatrixDimension) {
 		if (!cell) return '—';
 		if (cell.value !== undefined && cell.value !== null) return cell.value;
 		if (cell.value_rating !== undefined && cell.value_rating !== null) return cell.value_rating;
 		if (cell.value_boolean !== undefined && cell.value_boolean !== null) return cell.value_boolean ? t('jce.common.yes') : t('jce.common.no');
 		return '—';
-	}
-
-	function scoreFor(item: MatrixItem): JapaScore | undefined {
-		return scoreResult?.scores.find((s) => s.item_id === item.id);
 	}
 </script>
 
@@ -310,63 +201,13 @@
 		</div>
 	</section>
 
-	{#if user}
-		<section>
-			<div class="flex flex-wrap items-center gap-3 mb-3">
-				<SmartToggle bind:mode={smartMode} modes={data.smartModes} onchange={(m) => refreshScore(m, true)} />
-
-				<button
-					type="button"
-					class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium transition-colors"
-					style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
-					onclick={() => (profileOpen = true)}
-				>
-					<User size={12} />
-					{activeProfile?.title ?? t('jce.profile.select')}
-				</button>
-
-				{#if smartMode !== 'none'}
-					<button
-						type="button"
-						class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-button)] text-xs font-medium transition-colors disabled:opacity-50"
-						style="background-color: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text)"
-						disabled={scoring}
-						onclick={() => refreshScore(smartMode, true)}
-					>
-						<RefreshCw size={12} />
-						{scoring ? t('jce.compare.score.loading') : t('jce.compare.score.refresh')}
-					</button>
-				{/if}
-			</div>
-
-			<ProfileDrawer
-				bind:open={profileOpen}
-				{profiles}
-				bind:activeProfile
-				scoreFactors={data.scoreFactors ?? []}
-			allowedGoals={data.allowedGoals ?? []}
-				onsave={() => refreshScore(smartMode, true)}
-			/>
-		</section>
-	{/if}
-
-	{#if sortedItems.length > 0}
+	{#if matrix.length > 0}
 		<section>
 			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 				<h2 class="text-lg font-semibold" style="color: var(--color-text)">{t('jce.compare.matrix_heading')}</h2>
 				<div class="flex flex-wrap items-center gap-2">
 					{#if user && features['feature.jce.refresh']}
 						<RefreshButton comparisonID={comparison.content.id} />
-					{/if}
-					{#if user && features['feature.jce.ai_advisor']}
-						<button
-							type="button"
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-							style="background-color: var(--color-primary, #3b82f6); color: white"
-							onclick={() => (advisorOpen = true)}
-						>
-							{t('jce.advisor.open', 'Ask AI Advisor')}
-						</button>
 					{/if}
 					{#if user && features['feature.jce.refresh'] && freshness}
 						<FreshnessChip summary={freshness} />
@@ -378,22 +219,9 @@
 					<thead>
 						<tr>
 							<th style="color: var(--color-text)">{t('jce.compare.matrix_dimension')}</th>
-							{#each sortedItems as item (item.id)}
-								{@const score = scoreFor(item)}
-								<th
-									style="color: var(--color-text); {score?.eligible_status === 'ineligible' ? 'opacity: 0.5' : ''}"
-								>
-									<div class="space-y-1">
-										<div>{item.title}</div>
-										{#if scoreResult}
-											{#if score}
-												<ScoreBadge {score} best={bestItemId === item.id} />
-												<ScoreExplanation {score} />
-											{:else}
-												<span class="text-xs" style="color: var(--color-muted)">{t('jce.score.no_data')}</span>
-											{/if}
-										{/if}
-									</div>
+							{#each matrix as item (item.id)}
+								<th style="color: var(--color-text)">
+									<div>{item.title}</div>
 								</th>
 							{/each}
 						</tr>
@@ -402,18 +230,9 @@
 						{#each uniqueDims as dim (dim.id)}
 							<tr>
 								<td class="font-medium" style="color: var(--color-text)">{dim.label}</td>
-								{#each sortedItems as item (item.id)}
-									{@const score = scoreFor(item)}
-									<td
-										class="{score?.eligible_status === 'ineligible' ? 'opacity-50' : ''}"
-										style="color: var(--color-muted)"
-									>
-										<div class="space-y-1">
-											<div>{formatValue(cellFor(item, dim))}</div>
-											{#if user && features['feature.jce.refresh'] && freshness}
-												<FreshnessChip cell={findCell(item.id, dim.id)} />
-											{/if}
-										</div>
+								{#each matrix as item (item.id)}
+									<td style="color: var(--color-muted)">
+										{formatValue(cellFor(item, dim))}
 									</td>
 								{/each}
 							</tr>
@@ -424,24 +243,11 @@
 		</section>
 	{/if}
 
-	{#if scoreResult || recommendations.length > 0}
-		<RecommendationPanel {recommendations} />
-	{/if}
-
 	{#if comparison.metadata.depth === 'quick'}
 		<!-- Localized notice with hardcoded <strong> wrapper; no user content is interpolated. -->
 		<div class="rounded-[var(--radius-card)] border p-4 text-sm" style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-muted)">
 			{@html t('jce.compare.quick_comparison_notice')
 				.replace('{promote}', '<strong style="color: var(--color-text)">' + t('jce.compare.promote_to_detailed') + '</strong>')}
 		</div>
-	{/if}
-
-	{#if user && features['feature.jce.ai_advisor']}
-		<AIAdvisorDrawer
-			bind:open={advisorOpen}
-			comparisonID={comparison.content.id}
-			profileID={activeProfile?.id}
-			items={comparison.items ?? []}
-		/>
 	{/if}
 </div>

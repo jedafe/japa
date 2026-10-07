@@ -6,7 +6,6 @@
 		PanelLeftClose,
 		PanelLeftOpen,
 		PenSquare,
-		LogIn,
 		Hash,
 		ChevronsUpDown,
 		ExternalLink
@@ -276,10 +275,11 @@
 		{/if}
 	</div>
 
-	<!-- Account / Space switcher (bottom) -->
-	<div class="border-t border-[var(--color-border)] p-2" data-tour="space-switcher">
-		{#if user && userSpaces.length > 0}
-			<!-- Space switcher — ADR-058: stays in the left nav, not the account menu -->
+	<!-- Space switcher (bottom) — ADR-058: stays in the left nav, not the
+	     account menu. The account entry lives in the right-sidebar topbar
+	     (user_dropdown widget). -->
+	{#if user && userSpaces.length > 0}
+		<div class="border-t border-[var(--color-border)] p-2" data-tour="space-switcher">
 			<UiMenu side="right" align="start" contentClass="flex max-h-[min(28rem,var(--bits-floating-available-height,70vh))] min-w-52 flex-col overflow-hidden">
 				{#snippet trigger(props)}
 					<button
@@ -314,49 +314,8 @@
 					{t('nav.space_switcher_browse')}
 				</UiMenuItem>
 			</UiMenu>
-		{/if}
-
-		{#if user}
-			<a
-				href="/u/{user.username}"
-				data-tour="account"
-				aria-label={collapsed ? user.display_name || user.username : undefined}
-				onmouseenter={(e) => showFlyout(e, user.display_name || user.username)}
-				onmouseleave={hideFlyout}
-				onfocus={(e) => showFlyout(e, user.display_name || user.username)}
-				onblur={hideFlyout}
-				class={clsx('flex items-center gap-3 rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]', collapsed && 'justify-center')}
-			>
-				{#if user.avatar_url}
-					<img src={user.avatar_url} alt={`Avatar of ${user.display_name ?? user.username ?? "user"}`} class="h-8 w-8 shrink-0 rounded-full object-cover" />
-				{:else}
-					<span
-						class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-xs font-medium text-[var(--color-text-subtle)]"
-						>{user.display_name?.charAt(0)?.toUpperCase() ?? '?'}</span
-					>
-				{/if}
-				{#if !collapsed}
-					<span class="min-w-0 flex-1">
-						<span class="block truncate text-sm font-medium text-[var(--color-text)]">{user.display_name}</span>
-						<span class="block truncate text-xs text-[var(--color-muted)]">@{user.username}</span>
-					</span>
-				{/if}
-			</a>
-		{:else}
-			<a
-				href="/login"
-				aria-label={collapsed ? t('nav.account') : undefined}
-				onmouseenter={(e) => showFlyout(e, t('nav.account'))}
-				onmouseleave={hideFlyout}
-				onfocus={(e) => showFlyout(e, t('nav.account'))}
-				onblur={hideFlyout}
-				class="flex items-center justify-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-			>
-				<LogIn size={18} />
-				{#if !collapsed}<span>{t('nav.account')}</span>{/if}
-			</a>
-		{/if}
-	</div>
+		</div>
+	{/if}
 
 	<!-- Collapsed-rail label flyout (fixed — escapes the items list's
 	     overflow-y-auto, which would clip an in-flow tooltip) -->

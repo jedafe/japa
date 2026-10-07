@@ -200,18 +200,17 @@ WHERE ci.content_id = @content_id
 -- =====================
 
 -- name: InsertComparisonContentMetadata :exec
-INSERT INTO comparison_content_metadata (content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config) VALUES (@content_id, @depth, sqlc.narg(promoted_from_id), sqlc.narg(promoted_at), sqlc.narg(smart_mode), @score_version, sqlc.narg(config)) ;
+INSERT INTO comparison_content_metadata (content_id, depth, promoted_from_id, promoted_at, config) VALUES (@content_id, @depth, sqlc.narg(promoted_from_id), sqlc.narg(promoted_at), sqlc.narg(config)) ;
 
 -- name: GetComparisonContentMetadata :one
-SELECT content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
+SELECT content_id, depth, promoted_from_id, promoted_at, config, created_at, updated_at
 FROM comparison_content_metadata
 WHERE content_id = @content_id;
 
 -- name: UpdateComparisonContentMetadata :exec
 UPDATE comparison_content_metadata
 SET depth = sqlc.narg(depth), promoted_from_id = sqlc.narg(promoted_from_id),
- promoted_at = sqlc.narg(promoted_at), smart_mode = sqlc.narg(smart_mode),
- score_version = sqlc.narg(score_version), config = sqlc.narg(config), updated_at = now()
+ promoted_at = sqlc.narg(promoted_at), config = sqlc.narg(config), updated_at = now()
 WHERE content_id = @content_id;
 
 -- name: DeleteComparisonContentMetadata :exec
@@ -278,7 +277,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at, c.deleted_at,
- m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
+ m.depth, m.promoted_from_id, m.promoted_at, m.config AS metadata_config
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 WHERE c.content_type = 'comparison'
@@ -367,7 +366,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  up.avatar_url AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config,
+ m.depth, m.promoted_from_id, m.promoted_at, m.config AS metadata_config,
  fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
  hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c

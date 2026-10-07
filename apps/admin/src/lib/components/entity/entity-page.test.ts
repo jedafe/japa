@@ -85,7 +85,13 @@ describe('EntityPage', () => {
 		await waitFor(() => expect(screen.getByLabelText('Name')).toBeTruthy());
 		expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Alpha');
 		await fireEvent.submit(document.querySelector('form') as HTMLFormElement);
-		await waitFor(() => expect(config.update).toHaveBeenCalledWith('1', expect.objectContaining({ name: 'Alpha' })));
+		await waitFor(() =>
+			expect(config.update).toHaveBeenCalledWith(
+				'1',
+				expect.objectContaining({ name: 'Alpha' }),
+				expect.objectContaining({ id: '1' })
+			)
+		);
 	});
 
 	it('Delete action opens the confirm modal and Confirm calls config.remove', async () => {

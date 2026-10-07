@@ -104,23 +104,7 @@ func RegisterPhase7ComparisonTools(registry *ToolHandlerRegistry, deps *ToolDeps
 	registry.RegisterHandler("comparison.read", ComparisonReadHandler(deps))
 	registry.RegisterPrivacyTarget("comparison.read", ComparisonReadPrivacyTarget)
 
-	// --- JCE Sub-spec 4 AI advisor tools (Task 8) ---
-	// comparison.analyze — answer a natural-language question about a comparison.
-	registry.RegisterHandler("comparison.analyze", JCEAnalyzeHandler(deps))
-	registry.RegisterPrivacyTarget("comparison.analyze", JCEAnalyzePrivacyTarget)
-
-	// comparison.rank — rank comparison items with reasoning.
-	registry.RegisterHandler("comparison.rank", JCERankHandler(deps))
-	registry.RegisterPrivacyTarget("comparison.rank", JCERankPrivacyTarget)
-
-	// comparison.explain — explain a single item/factor or recommendation.
-	registry.RegisterHandler("comparison.explain", JCEExplainHandler(deps))
-	registry.RegisterPrivacyTarget("comparison.explain", JCEExplainPrivacyTarget)
-
-	// comparison.recommend_next_step — get top next actions and recommendations.
-	registry.RegisterHandler("comparison.recommend_next_step", JCERecommendHandler(deps))
-	registry.RegisterPrivacyTarget("comparison.recommend_next_step", JCERecommendPrivacyTarget)
-
+	// --- JCE Sub-spec 4 refresh tool (Task 8) ---
 	// comparison.refresh — trigger a refresh of stale comparison values.
 	registry.RegisterHandler("comparison.refresh", JCERefreshHandler(deps))
 	registry.RegisterPrivacyTarget("comparison.refresh", JCERefreshPrivacyTarget)

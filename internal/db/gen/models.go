@@ -912,8 +912,6 @@ type ComparisonContentMetadatum struct {
 	Depth          string             `json:"depth"`
 	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
-	SmartMode      *string            `json:"smart_mode"`
-	ScoreVersion   int32              `json:"score_version"`
 	Config         []byte             `json:"config"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
@@ -984,67 +982,6 @@ type ComparisonItem struct {
 	OverrideSource     string             `json:"override_source"`
 	EditorialOverrides []byte             `json:"editorial_overrides"`
 	ItemRef            []byte             `json:"item_ref"`
-}
-
-type ComparisonProfile struct {
-	ID             pgtype.UUID        `json:"id"`
-	UserID         pgtype.UUID        `json:"user_id"`
-	Title          string             `json:"title"`
-	SourceSpaceID  pgtype.UUID        `json:"source_space_id"`
-	TargetSpaceIds []pgtype.UUID      `json:"target_space_ids"`
-	Goals          []byte             `json:"goals"`
-	Preferences    []byte             `json:"preferences"`
-	Demographics   []byte             `json:"demographics"`
-	IsDefault      bool               `json:"is_default"`
-	IsTemplate     bool               `json:"is_template"`
-	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
-}
-
-type ComparisonRecommendation struct {
-	ID         pgtype.UUID        `json:"id"`
-	ContentID  pgtype.UUID        `json:"content_id"`
-	ItemID     pgtype.UUID        `json:"item_id"`
-	ProfileID  pgtype.UUID        `json:"profile_id"`
-	FactorID   pgtype.UUID        `json:"factor_id"`
-	Text       string             `json:"text"`
-	ActionType *string            `json:"action_type"`
-	ActionUrl  *string            `json:"action_url"`
-	Priority   int32              `json:"priority"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-}
-
-type ComparisonScore struct {
-	ID             pgtype.UUID        `json:"id"`
-	ContentID      pgtype.UUID        `json:"content_id"`
-	ItemID         pgtype.UUID        `json:"item_id"`
-	FactorID       pgtype.UUID        `json:"factor_id"`
-	DimensionID    pgtype.UUID        `json:"dimension_id"`
-	ProfileID      pgtype.UUID        `json:"profile_id"`
-	ScoreValue     pgtype.Numeric     `json:"score_value"`
-	MaxValue       pgtype.Numeric     `json:"max_value"`
-	Explanation    *string            `json:"explanation"`
-	EligibleStatus *string            `json:"eligible_status"`
-	CalculatedAt   pgtype.Timestamptz `json:"calculated_at"`
-	Version        int32              `json:"version"`
-}
-
-type ComparisonScoreFactor struct {
-	ID               pgtype.UUID        `json:"id"`
-	ComparisonTypeID pgtype.UUID        `json:"comparison_type_id"`
-	FactorKey        string             `json:"factor_key"`
-	Label            string             `json:"label"`
-	Description      *string            `json:"description"`
-	DimensionSlug    *string            `json:"dimension_slug"`
-	DataSource       string             `json:"data_source"`
-	DefaultWeight    pgtype.Numeric     `json:"default_weight"`
-	Config           []byte             `json:"config"`
-	Version          int32              `json:"version"`
-	IsSystem         bool               `json:"is_system"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ComparisonTypeAccess struct {

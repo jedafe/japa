@@ -356,7 +356,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  up.avatar_url AS author_avatar_url,
  s.name AS space_name,
  s.slug AS space_slug,
- m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config,
+ m.depth, m.promoted_from_id, m.promoted_at, m.config AS metadata_config,
  fm.storage_bucket AS featured_storage_bucket, fm.storage_path AS featured_storage_path,
  hm.storage_bucket AS header_storage_bucket, hm.storage_path AS header_storage_path
 FROM contents c
@@ -420,8 +420,6 @@ type GetComparisonBySlugOrIDRow struct {
 	Depth                 string             `json:"depth"`
 	PromotedFromID        pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt            pgtype.Timestamptz `json:"promoted_at"`
-	SmartMode             *string            `json:"smart_mode"`
-	ScoreVersion          int32              `json:"score_version"`
 	MetadataConfig        []byte             `json:"metadata_config"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
 	FeaturedStoragePath   *string            `json:"featured_storage_path"`
@@ -479,8 +477,6 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 		&i.Depth,
 		&i.PromotedFromID,
 		&i.PromotedAt,
-		&i.SmartMode,
-		&i.ScoreVersion,
 		&i.MetadataConfig,
 		&i.FeaturedStorageBucket,
 		&i.FeaturedStoragePath,
@@ -491,7 +487,7 @@ func (q *Queries) GetComparisonBySlugOrID(ctx context.Context, arg GetComparison
 }
 
 const getComparisonContentMetadata = `-- name: GetComparisonContentMetadata :one
-SELECT content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config, created_at, updated_at
+SELECT content_id, depth, promoted_from_id, promoted_at, config, created_at, updated_at
 FROM comparison_content_metadata
 WHERE content_id = $1
 `
@@ -504,8 +500,6 @@ func (q *Queries) GetComparisonContentMetadata(ctx context.Context, contentID pg
 		&i.Depth,
 		&i.PromotedFromID,
 		&i.PromotedAt,
-		&i.SmartMode,
-		&i.ScoreVersion,
 		&i.Config,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -731,7 +725,7 @@ func (q *Queries) GetComparisonValuesByContent(ctx context.Context, contentID pg
 
 const insertComparisonContentMetadata = `-- name: InsertComparisonContentMetadata :exec
 
-INSERT INTO comparison_content_metadata (content_id, depth, promoted_from_id, promoted_at, smart_mode, score_version, config) VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO comparison_content_metadata (content_id, depth, promoted_from_id, promoted_at, config) VALUES ($1, $2, $3, $4, $5)
 `
 
 type InsertComparisonContentMetadataParams struct {
@@ -739,8 +733,6 @@ type InsertComparisonContentMetadataParams struct {
 	Depth          string             `json:"depth"`
 	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
-	SmartMode      *string            `json:"smart_mode"`
-	ScoreVersion   int32              `json:"score_version"`
 	Config         []byte             `json:"config"`
 }
 
@@ -753,8 +745,6 @@ func (q *Queries) InsertComparisonContentMetadata(ctx context.Context, arg Inser
 		arg.Depth,
 		arg.PromotedFromID,
 		arg.PromotedAt,
-		arg.SmartMode,
-		arg.ScoreVersion,
 		arg.Config,
 	)
 	return err
@@ -1318,7 +1308,7 @@ SELECT c.id, c.author_id, c.space_id, c.content_type,
  c.status, c.visibility, c.is_locked, c.is_pinned, c.read_time_minutes,
  c.view_count, c.comment_count, c.share_count, c.reshare_count,
  c.publish_at, c.published_at, c.created_at, c.updated_at, c.deleted_at,
- m.depth, m.promoted_from_id, m.promoted_at, m.smart_mode, m.score_version, m.config AS metadata_config
+ m.depth, m.promoted_from_id, m.promoted_at, m.config AS metadata_config
 FROM contents c
 JOIN comparison_content_metadata m ON m.content_id = c.id
 WHERE c.content_type = 'comparison'
@@ -1406,8 +1396,6 @@ type ListComparisonsWithFiltersRow struct {
 	Depth           string             `json:"depth"`
 	PromotedFromID  pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt      pgtype.Timestamptz `json:"promoted_at"`
-	SmartMode       *string            `json:"smart_mode"`
-	ScoreVersion    int32              `json:"score_version"`
 	MetadataConfig  []byte             `json:"metadata_config"`
 }
 
@@ -1473,8 +1461,6 @@ func (q *Queries) ListComparisonsWithFilters(ctx context.Context, arg ListCompar
 			&i.Depth,
 			&i.PromotedFromID,
 			&i.PromotedAt,
-			&i.SmartMode,
-			&i.ScoreVersion,
 			&i.MetadataConfig,
 		); err != nil {
 			return nil, err
@@ -1666,17 +1652,14 @@ func (q *Queries) SetComparisonTypeAccess(ctx context.Context, arg SetComparison
 const updateComparisonContentMetadata = `-- name: UpdateComparisonContentMetadata :exec
 UPDATE comparison_content_metadata
 SET depth = $1, promoted_from_id = $2,
- promoted_at = $3, smart_mode = $4,
- score_version = $5, config = $6, updated_at = now()
-WHERE content_id = $7
+ promoted_at = $3, config = $4, updated_at = now()
+WHERE content_id = $5
 `
 
 type UpdateComparisonContentMetadataParams struct {
 	Depth          *string            `json:"depth"`
 	PromotedFromID pgtype.UUID        `json:"promoted_from_id"`
 	PromotedAt     pgtype.Timestamptz `json:"promoted_at"`
-	SmartMode      *string            `json:"smart_mode"`
-	ScoreVersion   *int32             `json:"score_version"`
 	Config         []byte             `json:"config"`
 	ContentID      pgtype.UUID        `json:"content_id"`
 }
@@ -1686,8 +1669,6 @@ func (q *Queries) UpdateComparisonContentMetadata(ctx context.Context, arg Updat
 		arg.Depth,
 		arg.PromotedFromID,
 		arg.PromotedAt,
-		arg.SmartMode,
-		arg.ScoreVersion,
 		arg.Config,
 		arg.ContentID,
 	)

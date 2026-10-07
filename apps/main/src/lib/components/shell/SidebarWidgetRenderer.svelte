@@ -13,7 +13,7 @@
 	import { page } from '$app/state';
 	import { Menu, MenuItem } from '$lib/components/ui';
 	import { untrack } from 'svelte';
-	import SearchAutocomplete from './SearchAutocomplete.svelte';
+	import SearchLauncher from './SearchLauncher.svelte';
 	// Self-import enables configured_widget delegation: a sidebar-typed
 	// widget_configuration re-renders this component with its native
 	// widget_type and the echoed config as props.
@@ -869,8 +869,8 @@
 	<!-- data-tour hook: product tour (§09) highlights site search when the
 	     admin-managed search widget is configured. RightSidebar tags only the
 	     first search widget via searchTourTarget. -->
-	<div data-tour={searchTourTarget ? 'search' : undefined}>
-		<SearchAutocomplete placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
+	<div class="min-w-0 flex-1" data-tour={searchTourTarget ? 'search' : undefined}>
+		<SearchLauncher placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
 	</div>
 {:else if widget.widget_type === 'theme_toggle'}
 	<button
@@ -904,7 +904,11 @@
 		</Menu>
 	{/if}
 {:else if widget.widget_type === 'user_dropdown'}
-	<UserDropdown {user} />
+	<!-- data-tour="account" keeps the §09 Product Tour account step pointed
+	     at the avatar menu — it moved here from the left-nav account block. -->
+	<div class="shrink-0" data-tour="account">
+		<UserDropdown {user} />
+	</div>
 {:else if widget.widget_type === 'ad_slot'}
 	{#if !isDashboard}
 		<AdSlot slot={adSlot} format={adFormat} />
@@ -1469,7 +1473,7 @@
 		{/if}
 	{/if}
 {:else if widget.widget_type === 'search_launcher'}
-	<!-- Search launcher — Docs/Learn variant; Main app uses 'search' widget. -->
+	<SearchLauncher placeholder={typeof widgetProps.placeholder === 'string' ? widgetProps.placeholder : ''} />
 {:else if widget.widget_type === 'helpful_widget'}
 	<!-- Helpful widget — rendered by the Docs app; no-op in Main app. -->
 {:else}

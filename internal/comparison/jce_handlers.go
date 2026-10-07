@@ -198,7 +198,6 @@ type createJCEComparisonBody struct {
 	Depth      string        `json:"depth"`
 	Items      []jceItemBody `json:"items"`
 	Dimensions []string      `json:"dimensions"`
-	SmartMode  string        `json:"smart_mode"`
 	Config     any           `json:"config"`
 	// Optional journey targeting for the backing content row (§14 / §71).
 	JourneyStage  *string `json:"journey_stage"`
@@ -324,7 +323,6 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 		Depth:         depth,
 		Items:         items,
 		Dimensions:    body.Dimensions,
-		SmartMode:     body.SmartMode,
 		Config:        config,
 		JourneyStage:  body.JourneyStage,
 		VisaRoute:     body.VisaRoute,

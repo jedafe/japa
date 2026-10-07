@@ -45,6 +45,7 @@
 	const scope = $derived(data.scope);
 	const statusParam = $derived(page.url.searchParams.get('status') ?? 'pending');
 	const typeParam = $derived(page.url.searchParams.get('entity_type') ?? '');
+	const contentTypeParam = $derived(page.url.searchParams.get('content_type') ?? '');
 	const spaceParam = $derived(page.url.searchParams.get('space_id') ?? '');
 	const tagParam = $derived(page.url.searchParams.get('tag_id') ?? '');
 	const assignedParam = $derived(page.url.searchParams.get('assigned') ?? '');
@@ -79,6 +80,31 @@
 	const selectedTypeLabel = $derived(
 		typeItems.find((i) => i.id === typeParam)?.label ?? (typeParam || null)
 	);
+
+	// Content-type axis — same option source as /studio/contents (GET
+	// /content-types, loaded server-side). Filters the resolved
+	// entity_content_type (a report on a story, or a comment under one).
+	const contentTypeItems = $derived(
+		(data.contentTypes ?? []).map((ct): AutocompleteItem => ({ id: ct.value, label: ct.label }))
+	);
+	const selectedContentTypeLabel = $derived(
+		contentTypeItems.find((i) => i.id === contentTypeParam)?.label ?? (contentTypeParam || null)
+	);
+	// Row badges: a content report shows its content-type label (like
+	// /studio/contents' typeLabel) — strictly more informative than the raw
+	// "content" entity type; comments keep the entity label plus the parent
+	// content-type badge. Falls back to the raw value for unknown types.
+	function contentTypeLabel(value: string): string {
+		return contentTypeItems.find((i) => i.id === value)?.label ?? value;
+	}
+	function entityTypeLabel(value: string): string {
+		return typeItems.find((i) => i.id === value)?.label ?? value;
+	}
+	function entityBadgeLabel(item: ModerationQueueItem): string {
+		return item.entity_type === 'content' && item.entity_content_type
+			? contentTypeLabel(item.entity_content_type)
+			: entityTypeLabel(item.entity_type);
+	}
 
 	// Space/tag filters are scoped to the caller's own moderated entities —
 	// rendered only when the caller actually moderates spaces/tags. The
@@ -367,11 +393,34 @@
 					initialFetcher={async () => typeItems}
 					selectedId={typeParam || null}
 					selectedLabel={selectedTypeLabel}
-					onSelect={(i) => applyFilter({ entity_type: i.id })}
-					onClear={() => applyFilter({ entity_type: undefined })}
+					onSelect={(i) =>
+						applyFilter(
+							// The content-type filter only exists under entity_type
+							// 'content' — clear it on any other pick instead of
+							// leaving a hidden, still-active filter in the URL.
+							i.id === 'content'
+								? { entity_type: i.id }
+								: { entity_type: i.id, content_type: undefined }
+						)}
+					onClear={() => applyFilter({ entity_type: undefined, content_type: undefined })}
 					class="w-full"
 				/>
 			</div>
+			{#if typeParam === 'content'}
+				<div class="w-44">
+					<Autocomplete
+						placeholder={t('studio.moderation.all_content_types', 'All content types')}
+						emptyMessage={t('studio.moderation.no_matches', 'No matches')}
+						fetcher={localFetcher(contentTypeItems)}
+						initialFetcher={async () => contentTypeItems}
+						selectedId={contentTypeParam || null}
+						selectedLabel={selectedContentTypeLabel}
+						onSelect={(i) => applyFilter({ content_type: i.id })}
+						onClear={() => applyFilter({ content_type: undefined })}
+						class="w-full"
+					/>
+				</div>
+			{/if}
 			{#if spaceItems.length > 0}
 				<div class="w-44">
 					<Autocomplete
@@ -524,8 +573,13 @@
 									</p>
 								{/if}
 								<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
-									{item.entity_type}
+									{entityBadgeLabel(item)}
 								</span>
+								{#if item.entity_type === 'comment' && item.entity_content_type}
+									<span class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-xs text-[var(--color-muted)]">
+										{contentTypeLabel(item.entity_content_type)}
+									</span>
+								{/if}
 								<span class="rounded-full bg-[var(--color-danger)]/10 px-2 py-0.5 text-xs text-[var(--color-danger)]">
 									{reasonLabel(item.reason)}
 								</span>

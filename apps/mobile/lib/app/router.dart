@@ -17,7 +17,6 @@ import '../features/content/screens/guide_list_screen.dart';
 import '../features/content/screens/guide_detail_screen.dart';
 import '../features/jce/screens/comparison_list_screen.dart';
 import '../features/jce/screens/comparison_detail_screen.dart';
-import '../features/jce/screens/profile_list_screen.dart';
 import '../features/forum/screens/forum_list_screen.dart';
 import '../features/forum/screens/forum_detail_screen.dart';
 import '../features/forum/screens/forum_reply_screen.dart';
@@ -129,10 +128,6 @@ final jcRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: '/comparisons',
           builder: (_, _) => const JceComparisonListScreen()),
-      GoRoute(
-        path: '/comparisons/profiles',
-        builder: (_, _) => const JceProfileListScreen(),
-      ),
       GoRoute(
         path: '/comparisons/:id',
         builder: (ctx, state) =>

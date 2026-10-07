@@ -18,7 +18,7 @@ import (
 
 // BustCachesForItemRef finds every comparison content that contains an item
 // whose item_ref matches {type: entityType, id: entityID} and deletes its JCE
-// caches (freshness + advisor keys). Called by wiki.Service.PropagateFields —
+// caches (freshness key). Called by wiki.Service.PropagateFields —
 // the body of the wiki:fields_propagate Asynq task — after a fields/mixed
 // revision with value-affecting ops is approved.
 //

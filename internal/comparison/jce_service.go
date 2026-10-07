@@ -29,15 +29,6 @@ const (
 	DepthDetailed = "detailed"
 )
 
-// Smart mode values.
-const (
-	SmartModeNone        = "none"
-	SmartModeEligibility = "eligibility"
-	SmartModeCost        = "cost"
-	SmartModePathway     = "pathway"
-	SmartModeAIAdvisor   = "ai_advisor"
-)
-
 // JCEItemInput is an item passed by the JCE comparison picker.
 type JCEItemInput struct {
 	Title       string
@@ -60,8 +51,7 @@ type CreateJCEComparisonInput struct {
 	Depth      string // 'quick' or 'detailed'
 	Items      []JCEItemInput
 	Dimensions []string
-	SmartMode  string // 'none' | 'eligibility' | 'cost' | 'pathway'
-	Config     []byte // JSON metadata config (e.g. profile_id)
+	Config     []byte // JSON metadata config
 	// Optional journey targeting for the backing content row — describes the
 	// journey the comparison covers, not the author's (§14 Global Template
 	// Literals / §71).
@@ -183,11 +173,6 @@ func (s *Service) createJCEContentAndMetadata(
 		return gen.CreateContentRow{}, gen.ComparisonContentMetadatum{}, fmt.Errorf("creating comparison content: %w", err)
 	}
 
-	smartMode := input.SmartMode
-	if smartMode == "" {
-		smartMode = SmartModeNone
-	}
-
 	config := input.Config
 	if len(config) == 0 {
 		config = []byte("{}")
@@ -199,8 +184,6 @@ func (s *Service) createJCEContentAndMetadata(
 		Depth:          depth,
 		PromotedFromID: pgtype.UUID{Valid: false},
 		PromotedAt:     pgtype.Timestamptz{Valid: false},
-		SmartMode:      &smartMode,
-		ScoreVersion:   1,
 		Config:         config,
 	}
 
@@ -210,8 +193,6 @@ func (s *Service) createJCEContentAndMetadata(
 		Depth:          depth,
 		PromotedFromID: metadata.PromotedFromID,
 		PromotedAt:     metadata.PromotedAt,
-		SmartMode:      &smartMode,
-		ScoreVersion:   metadata.ScoreVersion,
 		Config:         config,
 	}); err != nil {
 		return gen.CreateContentRow{}, gen.ComparisonContentMetadatum{}, fmt.Errorf("inserting comparison metadata: %w", err)
@@ -783,8 +764,6 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, userID pgtype.UUI
 			ContentID: id,
 
 			Depth:        &metadata.Depth,
-			SmartMode:    metadata.SmartMode,
-			ScoreVersion: &metadata.ScoreVersion,
 			Config:       cfg,
 		}); err != nil {
 			return JCEComparison{}, fmt.Errorf("updating comparison metadata: %w", err)
@@ -975,8 +954,6 @@ func (s *Service) PromoteJCEComparison(ctx context.Context, id, userID pgtype.UU
 			Depth:          &newMetadata.Depth,
 			PromotedFromID: promotedFromID,
 			PromotedAt:     promotedAt,
-			SmartMode:      newMetadata.SmartMode,
-			ScoreVersion:   &newMetadata.ScoreVersion,
 			Config:         newMetadata.Config,
 		}); err != nil {
 			return JCEComparisonResult{}, fmt.Errorf("updating promotion metadata: %w", err)

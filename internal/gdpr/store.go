@@ -412,48 +412,12 @@ func (s *Store) gdprExportUserComparisonValues(ctx context.Context, userID pgtyp
 	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonValues, userID)
 }
 
-func (s *Store) gdprExportUserComparisonProfiles(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonProfiles, userID)
-}
-
-func (s *Store) gdprExportUserComparisonScores(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonScores, userID)
-}
-
-func (s *Store) gdprExportUserComparisonRecommendations(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
-	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonRecommendations, userID)
-}
-
 func (s *Store) gdprExportUserComparisonDataIngestionJobs(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataIngestionJobs, userID)
 }
 
 func (s *Store) gdprExportUserComparisonDataSources(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserComparisonDataSources, userID)
-}
-
-func (s *Store) deleteComparisonProfilesByUser(ctx context.Context, userID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonProfilesByUser(ctx, userID); err != nil {
-		return fmt.Errorf("deleting comparison profiles: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Store) deleteComparisonScoresByUser(ctx context.Context, userID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonScoresByUser(ctx, userID); err != nil {
-		return fmt.Errorf("deleting comparison scores: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Store) deleteComparisonRecommendationsByUser(ctx context.Context, userID pgtype.UUID) error {
-	if err := s.write.DeleteComparisonRecommendationsByUser(ctx, userID); err != nil {
-		return fmt.Errorf("deleting comparison recommendations: %w", err)
-	}
-
-	return nil
 }
 
 func (s *Store) deleteComparisonDataIngestionJobsByUser(ctx context.Context, userID pgtype.UUID) error {

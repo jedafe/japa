@@ -3,12 +3,20 @@
 	import { ApiError, getDigest, getFeed } from '../../lib/api';
 	import { contentHref, siteUrl } from '../../lib/links';
 	import {
-		clearApiKey,
-		getApiKey,
+		getCredential,
+		getValidAccessToken,
+		login,
+		logout,
+		type Credential,
+	} from '../../lib/oauth';
+	import {
+		clearAuth,
 		getCachedDigest,
+		getOAuthUser,
 		setApiKey,
 		setCachedDigest,
 		type DigestCache,
+		type OAuthUser,
 	} from '../../lib/storage';
 	import type { Digest, FeedItem } from '../../lib/types';
 	import FeedCard from './FeedCard.svelte';
@@ -17,8 +25,11 @@
 	// Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md
 	// (Browser-Extension Digest) — anonymous users see popular + a connect
 	// card; connected users get the aggregate digest (one call per tab open).
+	// §120 v1.4: "connected" is either an OAuth bearer session (primary) or
+	// a pasted extension API key (fallback).
 
-	let apiKey = $state<string | null>(null);
+	let credential = $state<Credential>(null);
+	let user = $state<OAuthUser | null>(null);
 	let digest = $state<Digest | null>(null);
 	let anonFeed = $state<FeedItem[]>([]);
 	let stale = $state(false);
@@ -31,10 +42,10 @@
 	let communityItems = $state<FeedItem[]>([]);
 	let communityLoading = $state(false);
 
-	async function refresh() {
+	async function refresh(retried = false) {
 		error = null;
-		if (!apiKey) {
-			// Anonymous: only feeds/popular is reachable without a key.
+		if (!credential) {
+			// Anonymous: only feeds/popular is reachable without a credential.
 			try {
 				anonFeed = await getFeed('popular', null);
 			} catch (e) {
@@ -55,14 +66,25 @@
 		}
 
 		try {
-			digest = await getDigest(apiKey);
+			digest = await getDigest(credential);
 			await setCachedDigest(digest);
 			stale = false;
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 401) {
-				// Revoked/expired key — drop it and fall back to anonymous.
-				await clearApiKey();
-				apiKey = null;
+				// OAuth: force one refresh + retry — the access token may have
+				// been revoked/expired since the session was stored.
+				if (!retried && credential?.kind === 'oauth') {
+					const token = await getValidAccessToken(true);
+					if (token) {
+						credential = { kind: 'oauth', token };
+						return refresh(true);
+					}
+				}
+				// Dead credential (revoked grant or key) — drop it and fall
+				// back to anonymous.
+				await clearAuth();
+				credential = null;
+				user = null;
 				digest = null;
 				loading = true;
 				return refresh();
@@ -81,7 +103,7 @@
 		}
 		communityLoading = true;
 		try {
-			communityItems = await getFeed(tab, apiKey);
+			communityItems = await getFeed(tab, credential);
 		} catch {
 			communityItems = [];
 		} finally {
@@ -91,15 +113,26 @@
 
 	async function onConnected(key: string) {
 		await setApiKey(key);
-		apiKey = key;
+		credential = { kind: 'apikey', token: key };
+		showSettings = false;
+		loading = true;
+		await refresh();
+	}
+
+	async function onLogin() {
+		await login(); // throws LoginCancelledError on abort — the panel filters it
+		credential = await getCredential();
+		user = await getOAuthUser();
 		showSettings = false;
 		loading = true;
 		await refresh();
 	}
 
 	async function onDisconnected() {
-		await clearApiKey();
-		apiKey = null;
+		await logout(); // revokes the refresh token + clears OAuth state
+		await clearAuth(); // also drops a pasted API key, if any
+		credential = null;
+		user = null;
 		digest = null;
 		showSettings = false;
 		loading = true;
@@ -107,7 +140,8 @@
 	}
 
 	onMount(async () => {
-		apiKey = await getApiKey();
+		credential = await getCredential();
+		if (credential?.kind === 'oauth') user = await getOAuthUser();
 		await refresh();
 		if (digest) communityItems = digest.community.popular;
 	});
@@ -123,15 +157,22 @@
 			{#if stale}
 				<span class="badge-stale">offline cache</span>
 			{/if}
-			<button class="ghost" onclick={refresh} aria-label="Refresh feed">Refresh</button>
+			<button class="ghost" onclick={() => refresh()} aria-label="Refresh feed">Refresh</button>
 			<button class="ghost" onclick={() => (showSettings = !showSettings)} aria-label="Settings">
-				{apiKey ? 'Settings' : 'Connect'}
+				{credential ? 'Settings' : 'Connect'}
 			</button>
 		</div>
 	</header>
 
 	{#if showSettings}
-		<SettingsPanel {apiKey} {onConnected} {onDisconnected} onClose={() => (showSettings = false)} />
+		<SettingsPanel
+			connected={credential !== null}
+			{user}
+			{onConnected}
+			{onLogin}
+			{onDisconnected}
+			onClose={() => (showSettings = false)}
+		/>
 	{/if}
 
 	{#if loading}
@@ -140,7 +181,7 @@
 				<div class="skeleton-card"></div>
 			{/each}
 		</div>
-	{:else if apiKey === null}
+	{:else if credential === null}
 		<!-- Anonymous: connect card + public popular feed -->
 		<section class="connect-hero">
 			<h1>Your migration feed, on every new tab</h1>
@@ -153,7 +194,7 @@
 		<section>
 			<h2>Popular in the community</h2>
 			{#if error}
-				<p class="error" role="alert">{error} <button class="ghost" onclick={refresh}>Retry</button></p>
+				<p class="error" role="alert">{error} <button class="ghost" onclick={() => refresh()}>Retry</button></p>
 			{:else}
 				<div class="card-grid">
 					{#each anonFeed as item (item.id)}
@@ -164,7 +205,7 @@
 		</section>
 	{:else if digest}
 		{#if error}
-			<p class="error" role="alert">{error} <button class="ghost" onclick={refresh}>Retry</button></p>
+			<p class="error" role="alert">{error} <button class="ghost" onclick={() => refresh()}>Retry</button></p>
 		{/if}
 
 		<div class="sections">
@@ -245,6 +286,6 @@
 			{/if}
 		</div>
 	{:else}
-		<p class="error" role="alert">{error ?? 'Could not load your digest.'} <button class="ghost" onclick={refresh}>Retry</button></p>
+		<p class="error" role="alert">{error ?? 'Could not load your digest.'} <button class="ghost" onclick={() => refresh()}>Retry</button></p>
 	{/if}
 </div>

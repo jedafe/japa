@@ -74,7 +74,18 @@ func (s *Server) aliasDescriptors(ctx context.Context, user *auth.AuthenticatedU
 		if !s.toolInCatalog(ctx, user, alias.underlying) {
 			continue
 		}
-		out = append(out, mcpTool{Name: name, Description: alias.description, InputSchema: alias.schema})
+		title := humanizeToolName(name)
+		out = append(out, mcpTool{
+			Name:        name,
+			Title:       title,
+			Description: alias.description,
+			InputSchema: alias.schema,
+			Annotations: &toolAnnotations{
+				Title:          title,
+				ReadOnlyHint:   true,
+				IdempotentHint: true,
+			},
+		})
 	}
 
 	return out
@@ -196,6 +207,7 @@ func (s *Server) reshapeAliasResult(name, content string) string {
 				Body        string `json:"body"`
 				ContentType string `json:"content_type"`
 				CreatedAt   string `json:"created_at"`
+				AuthorID    string `json:"author_id"`
 			} `json:"content"`
 		}
 		if err := json.Unmarshal([]byte(content), &payload); err != nil {
@@ -209,6 +221,7 @@ func (s *Server) reshapeAliasResult(name, content string) string {
 			"metadata": map[string]any{
 				"content_type": payload.Content.ContentType,
 				"created_at":   payload.Content.CreatedAt,
+				"author":       payload.Content.AuthorID,
 			},
 		})
 		if err != nil {

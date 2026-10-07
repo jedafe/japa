@@ -408,6 +408,8 @@ func TestMCP_GETStream(t *testing.T) {
 	}
 }
 
+// DELETE is the streamable-HTTP session-termination verb; a stateless
+// server answers 405 rather than a 200-wrapped JSON-RPC error.
 func TestMCP_UnsupportedMethod(t *testing.T) {
 	srv, _ := newTestMCP(t)
 	ctx := withUser(t.Context(), testUserID)
@@ -416,18 +418,11 @@ func TestMCP_UnsupportedMethod(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rr.Code)
 	}
-
-	var out map[string]any
-	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-
-	errObj := out["error"].(map[string]any)
-	if int(errObj["code"].(float64)) != -32600 {
-		t.Fatalf("expected -32600, got %v", errObj["code"])
+	if allow := rr.Header().Get("Allow"); allow != "GET, POST" {
+		t.Fatalf("expected Allow: GET, POST, got %q", allow)
 	}
 }
 
@@ -451,8 +446,105 @@ func TestMCP_Initialize_2025_11_25(t *testing.T) {
 	}
 
 	result := out["result"].(map[string]any)
-	if result["protocolVersion"] != protocolVersion {
-		t.Fatalf("expected advertised protocol version %q, got %q", protocolVersion, result["protocolVersion"])
+	// A supported request version is echoed back (spec negotiation).
+	if result["protocolVersion"] != "2025-11-25" {
+		t.Fatalf("expected negotiated protocol version 2025-11-25, got %q", result["protocolVersion"])
+	}
+	if result["instructions"] == "" {
+		t.Fatal("expected initialize to advertise server instructions")
+	}
+}
+
+// Claude/ChatGPT connectors request 2025-06-18; an unknown version must
+// still negotiate to a supported one rather than erroring (MCP lifecycle).
+func TestMCP_Initialize_2025_06_18_AndFallback(t *testing.T) {
+	srv, _ := newTestMCP(t)
+	ctx := withUser(t.Context(), testUserID)
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": {"protocolVersion": "2025-06-18", "capabilities": {},
+			"clientInfo": {"name": "claude", "version": "1.0"}}
+	}`)
+	if res := out["result"].(map[string]any); res["protocolVersion"] != "2025-06-18" {
+		t.Fatalf("expected 2025-06-18 echoed, got %q", res["protocolVersion"])
+	}
+
+	// Unknown version → server answers with its newest supported version.
+	_, out = postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 2, "method": "initialize",
+		"params": {"protocolVersion": "2099-01-01", "capabilities": {},
+			"clientInfo": {"name": "future", "version": "1.0"}}
+	}`)
+	res := out["result"].(map[string]any)
+	if res["protocolVersion"] != latestProtocolVersion {
+		t.Fatalf("expected fallback to %q, got %q", latestProtocolVersion, res["protocolVersion"])
+	}
+}
+
+func TestMCP_PingAndNotificationHandling(t *testing.T) {
+	srv, _ := newTestMCP(t)
+	ctx := withUser(t.Context(), testUserID)
+
+	status, out := postJSON(t, srv, ctx, `{"jsonrpc":"2.0","id":7,"method":"ping"}`)
+	if status != http.StatusOK {
+		t.Fatalf("ping: expected 200, got %d", status)
+	}
+	if _, ok := out["result"]; !ok {
+		t.Fatalf("ping: expected empty result, got %v", out)
+	}
+
+	// Unknown notifications must be silently accepted, never error-responded.
+	status, out = postJSON(t, srv, ctx, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{}}`)
+	if status != http.StatusAccepted || out != nil {
+		t.Fatalf("notification: expected 202/empty, got %d %v", status, out)
+	}
+}
+
+// Streamable HTTP permits JSON-RPC batches; verify mixed request +
+// notification batches produce a response array and notification-only
+// batches produce 202.
+func TestMCP_BatchRequests(t *testing.T) {
+	srv, _ := newTestMCP(t)
+	ctx := withUser(t.Context(), testUserID)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(`[
+		{"jsonrpc":"2.0","method":"notifications/initialized"},
+		{"jsonrpc":"2.0","id":1,"method":"ping"},
+		{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
+	]`))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req.WithContext(ctx))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("batch: expected 200, got %d", rec.Code)
+	}
+	var batch []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&batch); err != nil {
+		t.Fatalf("batch: decode: %v", err)
+	}
+	if len(batch) != 2 {
+		t.Fatalf("batch: expected 2 responses (notification skipped), got %d", len(batch))
+	}
+
+	// Notification-only batch → 202, no body.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(`[
+		{"jsonrpc":"2.0","method":"notifications/initialized"},
+		{"jsonrpc":"2.0","method":"notifications/cancelled","params":{}}
+	]`))
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req.WithContext(ctx))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("notification batch: expected 202, got %d", rec.Code)
+	}
+
+	// DELETE is the streamable session-termination verb → 405, not a
+	// JSON-RPC error body.
+	req = httptest.NewRequest(http.MethodDelete, "/api/v1/mcp", nil)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, req.WithContext(ctx))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("DELETE: expected 405, got %d", rec.Code)
 	}
 }
 
@@ -709,6 +801,121 @@ func TestPhase2SemanticTierAllowed(t *testing.T) {
 	res := out["result"].(map[string]any)
 	if res["isError"] == true {
 		t.Fatalf("expected successful result, got %v", res)
+	}
+}
+
+// §119 v1.3: an API key carrying the admin-only agent.write scope bypasses
+// the read-only gate map and sees the owner's full RBAC-filtered catalog —
+// write tools included, no api.read.* scope requirements.
+func TestAgentWriteKeyGetsFullCatalog(t *testing.T) {
+	srv, deps := newTestMCP(t)
+
+	deps.registry.RegisterConfig("content.create", ai.ToolConfig{FunctionName: "content.create"}, "", pgtype.UUID{})
+	deps.registry.RegisterConfig("content.read", ai.ToolConfig{FunctionName: "content.read"}, "", pgtype.UUID{})
+	deps.registry.RegisterConfig("scam.list", ai.ToolConfig{FunctionName: "scam.list"}, "", pgtype.UUID{})
+
+	// Note: no api.read.* scopes at all — elevation replaces the gate map.
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "agent.write")
+
+	status, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}
+	}`)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %v", status, out)
+	}
+
+	seen := map[string]bool{}
+	for _, tool := range out["result"].(map[string]any)["tools"].([]any) {
+		seen[tool.(map[string]any)["name"].(string)] = true
+	}
+	for _, name := range []string{"content.create", "content.read", "scam.list"} {
+		if !seen[name] {
+			t.Fatalf("expected %s visible to agent.write key", name)
+		}
+	}
+}
+
+// The elevated key can execute write tools through the executor — the call
+// is gated by the owner's RBAC, not the fixed allowlist.
+func TestAgentWriteKeyCanCallWriteTool(t *testing.T) {
+	srv, deps := newTestMCP(t)
+
+	deps.registry.RegisterConfig("content.create", ai.ToolConfig{FunctionName: "content.create"}, "", pgtype.UUID{})
+	deps.registry.RegisterHandler("content.create", func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ai.ToolResult, error) {
+		return &ai.ToolResult{Status: ai.ToolCallStatusSuccess, Content: `{"content":{"id":"abc"}}`}, nil
+	})
+	// A tool the owner's RBAC does not permit stays unreachable even with
+	// agent.write — elevation is not an RBAC bypass.
+	deps.registry.RegisterConfig("admin.thing", ai.ToolConfig{FunctionName: "admin.thing"}, "admin.thing", pgtype.UUID{})
+
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "agent.write")
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": {"name": "content.create", "arguments": {"title": "t", "body": "b"}}
+	}`)
+	if out["error"] != nil {
+		t.Fatalf("expected write call to pass the gate, got %v", out["error"])
+	}
+	if res := out["result"].(map[string]any); res["isError"] == true {
+		t.Fatalf("expected successful write result, got %v", res)
+	}
+
+	_, out = postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": {"name": "admin.thing", "arguments": {}}
+	}`)
+	errObj := out["error"].(map[string]any)
+	if int(errObj["code"].(float64)) != -32602 {
+		t.Fatalf("expected -32602 for RBAC-denied tool, got %v", errObj)
+	}
+}
+
+// Elevation does not lift premium tier gates: an agent.write key owned by a
+// regular-tier user is still denied minTier tools.
+func TestAgentWriteKeyStillTierGated(t *testing.T) {
+	srv, deps := newTestMCP(t)
+	deps.registry.RegisterConfig("destination.brief", ai.ToolConfig{FunctionName: "destination.brief"}, "", pgtype.UUID{})
+	srv.SetTierResolver(stubTierResolver{tier: "regular"})
+
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "agent.write")
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": {"name": "destination.brief", "arguments": {}}
+	}`)
+	errObj := out["error"].(map[string]any)
+	if int(errObj["code"].(float64)) != -32602 {
+		t.Fatalf("expected -32602, got %v", errObj)
+	}
+	if data, _ := errObj["data"].(string); !strings.Contains(data, "pro") {
+		t.Fatalf("expected tier denial naming pro, got %q", data)
+	}
+}
+
+// agent.write must stay an AdminOnly catalog scope: it is what keeps it off
+// self-serve mints and OAuth grants. If it ever becomes non-admin, DCR
+// clients could consent-mint write-capable jcpat_* tokens — this test fails
+// before that regression ships (§119 v1.3, §120 scope ceiling).
+func TestAgentWriteStaysAdminOnly(t *testing.T) {
+	if !publicapi.AnyAdminOnly([]string{"agent.write"}) {
+		t.Fatal("agent.write must be AdminOnly in the scope catalog")
+	}
+	for _, s := range publicapi.SelfServiceScopes() {
+		if s.Value == "agent.write" {
+			t.Fatal("agent.write leaked into the self-serve scope catalog")
+		}
+	}
+	for _, s := range oauthGrantableScopes() {
+		if s == "agent.write" {
+			t.Fatal("agent.write leaked into OAuth grantable scopes")
+		}
+	}
+	granted := filterGrantableScopes([]string{"agent.use", "agent.write", "*"})
+	for _, s := range granted {
+		if s == "agent.write" {
+			t.Fatal("agent.write must never be grantable via OAuth DCR")
+		}
 	}
 }
 

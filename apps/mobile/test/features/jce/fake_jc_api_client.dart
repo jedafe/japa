@@ -1,9 +1,7 @@
 import 'package:japaconnect_core/japaconnect_core.dart';
 
 class FakeJcApiClient extends JcApiClient {
-  final bool emptyProfiles;
-
-  FakeJcApiClient({this.emptyProfiles = false})
+  FakeJcApiClient()
       : super(
           baseUrl: 'http://localhost:8080/api/v1',
           tokenStore: TokenStore(),
@@ -59,33 +57,20 @@ class FakeJcApiClient extends JcApiClient {
     String path, {
     String method = 'POST',
     Map<String, dynamic>? body,
-  }) async* {
-    yield {'type': 'content', 'content': 'Hello from advisor'};
-  }
+  }) async* {}
 
   dynamic _dataFor(String path, {Map<String, dynamic>? body}) {
     if (path == '/feature-flags') {
       return {
         'feature.jce': true,
-        'feature.jce.scoring': true,
         'feature.jce.refresh': true,
-        'feature.jce.ai_advisor': true,
-        'feature.jce.profiles': true,
       };
     }
     if (path == '/me/permissions') {
       return {
         'permissions': [
-          'jce.score.view',
-          'jce.score.recalculate',
-          'jce.recommendation.view',
           'jce.refresh.trigger',
           'jce.ingestion_job.view',
-          'jce.ai_advisor.use',
-          'jce.profile.list',
-          'jce.profile.create',
-          'jce.profile.update',
-          'jce.profile.delete',
         ],
       };
     }
@@ -95,33 +80,11 @@ class FakeJcApiClient extends JcApiClient {
     if (RegExp(r'^/jce/comparisons/[^/]+/matrix$').hasMatch(path)) {
       return [];
     }
-    if (RegExp(r'^/jce/comparisons/[^/]+/score$').hasMatch(path)) {
-      return _sampleScore();
-    }
-    if (RegExp(r'^/jce/comparisons/[^/]+/recommendations$').hasMatch(path)) {
-      return _sampleRecommendations();
-    }
     if (RegExp(r'^/jce/comparisons/[^/]+/freshness$').hasMatch(path)) {
       return _sampleFreshness();
     }
     if (RegExp(r'^/jce/comparisons/[^/]+/ingestion-jobs$').hasMatch(path)) {
       return [];
-    }
-    if (RegExp(r'^/jce/comparison-types/[^/]+$').hasMatch(path)) {
-      return _sampleComparisonType();
-    }
-    if (path == '/jce/profiles') {
-      if (body != null) {
-        // create profile
-        return _sampleProfiles().first;
-      }
-      return emptyProfiles ? [] : _sampleProfiles();
-    }
-    if (RegExp(r'^/jce/profiles/[^/]+$').hasMatch(path)) {
-      return _sampleProfiles().first;
-    }
-    if (RegExp(r'^/jce/profiles/[^/]+/default$').hasMatch(path)) {
-      return null;
     }
     return null;
   }
@@ -139,16 +102,6 @@ class FakeJcApiClient extends JcApiClient {
           'sort_options': ['created_at', 'title'],
         },
       };
-    }
-    if (path == '/jce/profiles') {
-      final profiles = emptyProfiles ? [] : _sampleProfiles();
-      return {
-        'data': profiles,
-        'meta': {},
-      };
-    }
-    if (RegExp(r'^/jce/comparisons/[^/]+/recommendations$').hasMatch(path)) {
-      return {'data': _sampleRecommendations(), 'meta': {}};
     }
     if (RegExp(r'^/jce/comparisons/[^/]+/ingestion-jobs$').hasMatch(path)) {
       return {'data': [], 'meta': {}};
@@ -212,55 +165,6 @@ class FakeJcApiClient extends JcApiClient {
         ],
         'type_slug': 'city-vs-city',
       };
-
-  Map<String, dynamic> _sampleComparisonType() => {
-        'id': 't1',
-        'name': 'City vs City',
-        'slug': 'city-vs-city',
-        'item_label': 'City',
-        'config': {
-          'smart_modes': {'cost_optimized': {}, 'family_friendly': {}},
-        },
-      };
-
-  List<dynamic> _sampleProfiles() => [
-        {
-          'id': 'p1',
-          'title': 'Solo mover',
-          'target_space_ids': ['s1'],
-          'goals': [],
-          'preferences': {},
-          'is_default': true,
-          'is_template': false,
-        },
-      ];
-
-  Map<String, dynamic> _sampleScore() => {
-        'content_id': 'c1',
-        'smart_mode': 'none',
-        'scores': [
-          {
-            'item_id': 'i1',
-            'item_title': 'Lagos',
-            'japa_score': 85,
-            'max_value': 100,
-            'eligible_status': 'eligible',
-            'factor_scores': [],
-            'explanation': 'Great match',
-          },
-        ],
-        'recommendations': [],
-        'weights_snapshot': {},
-        'version': 1,
-      };
-
-  List<dynamic> _sampleRecommendations() => [
-        {
-          'id': 'r1',
-          'text': 'Consider Lagos for lower cost of living',
-          'priority': 1,
-        },
-      ];
 
   Map<String, dynamic> _sampleFreshness() => {
         'content_id': 'c1',

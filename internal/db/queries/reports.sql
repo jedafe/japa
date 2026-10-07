@@ -166,6 +166,7 @@ FROM scoped
 WHERE (@platform::bool OR scope_assigned OR scope_space OR scope_tag)
   AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
   AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type))
+  AND (sqlc.narg(content_type)::text IS NULL OR entity_content_type = sqlc.narg(content_type))
   AND (sqlc.narg(filter_space_id)::uuid IS NULL OR resolved_space_id = sqlc.narg(filter_space_id)::uuid)
   AND (sqlc.narg(filter_tag_id)::uuid IS NULL OR
        EXISTS (SELECT 1 FROM content_tags ct
@@ -195,6 +196,7 @@ WITH scoped AS (
                       AND ct.tag_id = ANY(@tag_ids::uuid[]))::bool AS scope_tag,
            cr.status, cr.entity_type, cr.entity_id, cr.reason, cr.notes,
            COALESCE(c.id, pc.id) AS resolved_content_id,
+           COALESCE(c.content_type, pc.content_type, '')::text AS entity_content_type,
            CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
                 ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
            COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title
@@ -209,6 +211,7 @@ SELECT COUNT(*)::int FROM scoped
 WHERE (@platform::bool OR scope_assigned OR scope_space OR scope_tag)
   AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
   AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type))
+  AND (sqlc.narg(content_type)::text IS NULL OR entity_content_type = sqlc.narg(content_type))
   AND (sqlc.narg(filter_space_id)::uuid IS NULL OR resolved_space_id = sqlc.narg(filter_space_id)::uuid)
   AND (sqlc.narg(filter_tag_id)::uuid IS NULL OR
        EXISTS (SELECT 1 FROM content_tags ct

@@ -1934,35 +1934,15 @@ func (s *Service) ListComparisonsAdmin(ctx context.Context, f ListComparisonsFil
 	return res.Items, nil
 }
 
-// DeleteJCEComparisonCaches deletes the JCE freshness and advisor caches for a
-// comparison after its values or metadata change. The deletions are best-effort;
-// a Valkey error is logged but not returned, so the primary operation always
-// succeeds.
+// DeleteJCEComparisonCaches deletes the JCE freshness cache for a comparison
+// after its values or metadata change. The deletion is best-effort; a Valkey
+// error is logged but not returned, so the primary operation always succeeds.
 func (s *Service) DeleteJCEComparisonCaches(ctx context.Context, contentID pgtype.UUID) {
 	if s.vk == nil {
 		return
 	}
 
-	_ = s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s", contentID.String())).Err()
-
-	pattern := fmt.Sprintf("jc:jce:advisor:%s:*", contentID.String())
-
-	var cursor uint64
-
-	for {
-		keys, nextCursor, err := s.vk.Scan(ctx, cursor, pattern, 100).Result()
-		if err != nil {
-			slog.Warn("comparison: failed to scan advisor cache for invalidation", "error", err)
-			return
-		}
-
-		if len(keys) > 0 {
-			_ = s.vk.Del(ctx, keys...).Err()
-		}
-
-		cursor = nextCursor
-		if cursor == 0 {
-			break
-		}
+	if err := s.vk.Del(ctx, fmt.Sprintf("jc:jce:freshness:%s", contentID.String())).Err(); err != nil {
+		slog.Warn("comparison: failed to delete JCE freshness cache", "error", err)
 	}
 }

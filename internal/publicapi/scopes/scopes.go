@@ -8,6 +8,8 @@
 // Ref: japaconnect-engineering/sections/47-public-api-developer-portal.md.
 package scopes
 
+import "strings"
+
 // ScopeOption describes a single API scope offered to developers when creating
 // an API key. The catalog is the canonical list of scopes enforced by
 // publicapi.RequireScope — the scope value MUST match a string passed to
@@ -119,6 +121,12 @@ var ScopeCatalog = []ScopeOption{
 		Description: "Call MCP agent tools via /api/v1/mcp (read-only tool set for API keys)",
 	},
 	{
+		Value:       "agent.write",
+		Label:       "Agent Write Access",
+		Description: "Elevate an MCP key past the read-only gate to its owner's full RBAC-filtered tool catalog (admin-approved; §119 v1.3)",
+		AdminOnly:   true,
+	},
+	{
 		Value:       "api.read.*",
 		Label:       "Read All",
 		Description: "Wildcard — read access to all read-scoped resources",
@@ -151,19 +159,38 @@ func SelfServiceScopes() []ScopeOption {
 }
 
 // AnyAdminOnly reports whether any of the requested scope strings is an
-// admin-only catalog entry. Unknown scope strings are not admin-only — they
-// are simply inert (no RequireScope gate will ever match them).
+// admin-only catalog entry — directly, or via a wildcard that would match
+// one at enforcement time. A self-minted "agent.*" or "api.write.*" looks
+// inert (not a catalog value) but satisfies HasScope checks for the
+// admin-only leaves it covers, so covering wildcards are treated as
+// admin-required too. Unknown non-wildcard strings remain inert — no
+// RequireScope gate will ever match them.
 func AnyAdminOnly(requested []string) bool {
-	admin := make(map[string]struct{})
+	admin := make([]string, 0, len(ScopeCatalog))
 	for _, s := range ScopeCatalog {
 		if s.AdminOnly {
-			admin[s.Value] = struct{}{}
+			admin = append(admin, s.Value)
 		}
 	}
 	for _, r := range requested {
-		if _, ok := admin[r]; ok {
-			return true
+		for _, a := range admin {
+			if scopeCovers(r, a) {
+				return true
+			}
 		}
+	}
+	return false
+}
+
+// scopeCovers mirrors publicapi.HasScope matching: exact, "*", and
+// "prefix.*" wildcards. Reimplemented here because this leaf package cannot
+// import publicapi (import cycle — publicapi consumes the catalog).
+func scopeCovers(requested, required string) bool {
+	switch {
+	case requested == "*" || requested == required:
+		return true
+	case strings.HasSuffix(requested, ".*"):
+		return strings.HasPrefix(required, requested[:len(requested)-2]+".")
 	}
 	return false
 }

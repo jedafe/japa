@@ -107,10 +107,6 @@ var Registry = []Feature{
 	{Key: "feature.jce", Label: "Japa Comparison Engine", Default: true},
 	{Key: "feature.jce.nested_items", Label: "JCE Nested Item References", Default: true},
 	{Key: "feature.jce.ai_quick", Label: "JCE AI Quick Comparisons", Default: false},
-	// Japa Comparison Engine (JCE) — Sub-spec 2/3
-	{Key: "feature.jce.profiles", Label: "JCE Comparison Profiles", Default: false},
-	{Key: "feature.jce.smart_compare", Label: "JCE Smart Compare", Default: false},
-	{Key: "feature.jce.scoring", Label: "JCE JapaScore", Default: false},
 }
 
 // DefaultFor returns the default enabled state for a feature key.

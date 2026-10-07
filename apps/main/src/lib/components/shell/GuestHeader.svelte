@@ -5,8 +5,8 @@
 	// Notifications, left nav) to a logged-out user is incoherent.
 	import { t } from '$lib/i18n';
 	import { theme } from '$lib/stores/theme.svelte';
-	import { Search, Sun, Moon, LogIn, UserPlus, Menu as MenuIcon, X } from 'lucide-svelte';
-	import SearchAutocomplete from './SearchAutocomplete.svelte';
+	import { Sun, Moon, LogIn, UserPlus, Menu as MenuIcon, X } from 'lucide-svelte';
+	import SearchLauncher from './SearchLauncher.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import type { Menu, MenuItem } from '$lib/types';
 
@@ -48,7 +48,7 @@
 		<!-- Right cluster: search, theme toggle, auth buttons, mobile hamburger -->
 		<div class="guest-actions">
 			<div class="guest-search">
-				<SearchAutocomplete />
+				<SearchLauncher />
 			</div>
 			<button
 				type="button"

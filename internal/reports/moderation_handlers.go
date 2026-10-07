@@ -53,6 +53,9 @@ func parseModerationFilter(r *http.Request) ModerationQueueFilter {
 	if v := r.URL.Query().Get("entity_type"); v != "" {
 		f.EntityType = &v
 	}
+	if v := r.URL.Query().Get("content_type"); v != "" {
+		f.ContentType = &v
+	}
 	if v := r.URL.Query().Get("space_id"); v != "" {
 		_ = f.SpaceID.Scan(v)
 	}

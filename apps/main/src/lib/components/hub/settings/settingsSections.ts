@@ -6,6 +6,7 @@ import PrivacySection from './sections/PrivacySection.svelte';
 import NotificationsSection from './sections/NotificationsSection.svelte';
 import NewsletterSection from './sections/NewsletterSection.svelte';
 import ConnectedSection from './sections/ConnectedSection.svelte';
+import ConnectedAppsSection from './sections/ConnectedAppsSection.svelte';
 import AffiliateSection from './sections/AffiliateSection.svelte';
 import WalletSection from './sections/WalletSection.svelte';
 import SubscriptionSection from './sections/SubscriptionSection.svelte';
@@ -54,6 +55,7 @@ export const SETTINGS_SECTIONS: SectionMeta[] = [
 	{ slug: 'security', labelKey: 'settings.nav.security', icon: 'shield', group: 'security', backendReady: true, component: SecuritySection },
 	{ slug: 'sessions', labelKey: 'settings.nav.sessions', icon: 'monitor', group: 'security', backendReady: true, component: SessionsSection },
 	{ slug: 'connected', labelKey: 'settings.nav.connected', icon: 'link', group: 'security', backendReady: true, component: ConnectedSection },
+	{ slug: 'connected-apps', labelKey: 'settings.nav.connected_apps', icon: 'bot', group: 'security', backendReady: true, component: ConnectedAppsSection },
 	{ slug: 'devices', labelKey: 'settings.nav.devices', icon: 'smartphone', group: 'security', backendReady: true, component: DevicesSection, featureFlag: 'feature.notifications' },
 	{ slug: 'notifications', labelKey: 'settings.nav.notifications', icon: 'bell', group: 'notifications', backendReady: true, component: NotificationsSection, featureFlag: 'feature.notifications' },
 	{ slug: 'newsletter', labelKey: 'settings.nav.newsletter', icon: 'mail', group: 'notifications', backendReady: true, component: NewsletterSection, featureFlag: 'feature.newsletter' },

@@ -159,9 +159,6 @@
 				case 'comparison-types':
 					label = t('comparison_types.title');
 					break;
-				case 'comparison-profiles':
-					label = t('comparison_profiles.title');
-					break;
 				case 'jsonld-templates':
 					label = t('jsonld_templates.title');
 					break;

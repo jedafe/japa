@@ -39,8 +39,7 @@ func retryDelay(n int, e error, t *asynq.Task) time.Duration {
 // archives after the first attempt instead of burning the retry budget.
 // errors.Is cannot reach the ai.ErrNoProviders sentinel from this package
 // (internal/ai imports worker — the reverse would cycle), so the stable
-// message substring is matched, the same check internal/jce/advisor.go
-// already uses. Covers the AI gateway and the email gateway.
+// message substring is matched. Covers the AI gateway and the email gateway.
 func permanentTaskError(next asynq.Handler) asynq.Handler {
 	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 		err := next.ProcessTask(ctx, t)

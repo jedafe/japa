@@ -28,5 +28,10 @@ Then load `.output/chrome-mv3` as an unpacked extension.
 channels, or `chrome://extensions` → Developer mode → "Load unpacked" on a
 build that still permits it. Store installs are unaffected.
 
-Anonymous tabs show the popular feed; paste a `jc_live_`/`jc_test_` key
-(from Settings → API keys on the site) to unlock the personalized digest.
+Anonymous tabs show the popular feed. To unlock the personalized digest,
+click **Sign in with JapaConnect** — the extension runs the §120 OAuth
+flow (`launchWebAuthFlow` → `/oauth/authorize` + PKCE → `/oauth/token`,
+identity via `/oauth/userinfo`) and stores the token pair locally. As a
+fallback you can paste a `jc_live_`/`jc_test_` key (from Settings → API
+keys on the site). Revoke a connected browser under Settings → Connected
+apps on the web.

@@ -2592,7 +2592,7 @@ func ragIndexAfterEmbed(ctx context.Context, contentID [16]byte, text string) {
 		if strings.Contains(err.Error(), "no providers registered") {
 			// Permanent configuration gap — no embedding provider can be
 			// conjured, so don't warn per content (same message check as
-			// jce/advisor.go and permanentTaskError).
+			// permanentTaskError).
 			slog.Info("task:content:generate_embedding: RAG index skipped, no embedding provider", "content_id", contentUUID.String())
 			return
 		}

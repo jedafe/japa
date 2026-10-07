@@ -1,23 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto, replaceState, invalidateAll } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import {
 		createQuickComparison,
 		createGuestSelection,
 		deleteComparison,
-		promoteComparison,
-		previewScore,
-		listScoreFactors
+		promoteComparison
 	} from '$lib/api/jce';
 	import { compareEntities, type CompareEntitiesResult } from '$lib/ai/compareApi';
-	import type { ComparisonProfile, ComparisonProfileInput, ComparisonType, ResolvedItem, JCEComparisonSummary, ScoreResult } from '$lib/types/jce';
-	import ProfileDrawer from '$lib/components/compare/ProfileDrawer.svelte';
+	import type { ComparisonType, ResolvedItem, JCEComparisonSummary } from '$lib/types/jce';
 	import ScopeChain from '$lib/components/compare/ScopeChain.svelte';
-	import SmartToggle from '$lib/components/compare/SmartToggle.svelte';
 	import JceSelect from '$lib/components/ui/JceSelect.svelte';
 	import { ListPageBar, UrlTabs, type UrlTab } from '$lib/components/ui';
-	import ScoreBadge from '$lib/components/compare/ScoreBadge.svelte';
-	import ScoreExplanation from '$lib/components/compare/ScoreExplanation.svelte';
 	import type { PageData } from './$types';
 	import { i18n, t } from '$lib/i18n';
 	import {
@@ -29,7 +23,6 @@
 		ExternalLink,
 		Sparkles,
 		Check,
-		User,
 		GraduationCap,
 		MapPin,
 		Briefcase,
@@ -44,11 +37,6 @@
 
 	let types = $derived(data.types ?? []);
 	let selectedType = $derived(data.selectedType ?? null);
-	let profileAllowedGoals = $derived(
-		((selectedType?.config as Record<string, unknown> | undefined)?.allowed_goals as
-			| { key: string; label: string; default_weight?: number }[]
-			| undefined) ?? []
-	);
 	let source = $derived(data.source ?? 'space');
 	let itemRefTypes = $derived(data.itemRefTypes ?? []);
 	let allowNestedComparisons = $derived(data.allowNestedComparisons ?? false);
@@ -62,53 +50,6 @@
 	let mainOrigin = $derived(data.mainOrigin);
 	let mine = $derived(data.mine ?? false);
 	let myComparisons = $derived(data.myComparisons ?? []);
-
-	let profiles = $derived(data.profiles ?? []);
-	let activeProfile = $state<ComparisonProfile | null>(null);
-	$effect.pre(() => {
-		if (activeProfile === null) {
-			activeProfile = data.defaultProfile ?? null;
-		}
-	});
-
-	let smartMode = $state<string>('none');
-	let smartModes = $derived.by(() => {
-		const cfg = selectedType?.config as Record<string, unknown> | undefined;
-		const smart = cfg?.smart_modes as Record<string, unknown> | undefined;
-		return smart ? Object.keys(smart) : [];
-	});
-	let profileScoreFactors = $state<{ key: string; label: string }[]>([]);
-	$effect(() => {
-		const typeID = selectedType?.id;
-		if (!typeID || !user) {
-			profileScoreFactors = [];
-			return;
-		}
-		let cancelled = false;
-		listScoreFactors(typeID)
-			.then((factors) => {
-				if (cancelled) return;
-				profileScoreFactors = factors.map((f) => ({ key: f.factor_key, label: f.label }));
-			})
-			.catch(() => {
-				if (cancelled) return;
-				profileScoreFactors = [];
-			});
-		return () => {
-			cancelled = true;
-		};
-	});
-	let profileOpen = $state(false);
-
-	let previewResult = $state<ScoreResult | null>(null);
-	let previewing = $state(false);
-	let previewError = $state('');
-	let previewTimeout: ReturnType<typeof setTimeout> | null = null;
-
-	let previewTop = $derived.by(() => {
-		if (!previewResult?.scores?.length) return null;
-		return [...previewResult.scores].sort((a, b) => b.japa_score - a.japa_score)[0];
-	});
 
 	// Snapshot the initial URL params; client-side filter state is updated manually.
 	const searchParams = page.url.searchParams;
@@ -462,65 +403,6 @@
 		return t(`jce.compare.sources.${value}.plural`, value);
 	}
 
-	function schedulePreview() {
-		if (previewTimeout) clearTimeout(previewTimeout);
-		if (!selectedType || !user || selectedItems.length < 2) {
-			previewResult = null;
-			return;
-		}
-		previewTimeout = setTimeout(async () => {
-			previewing = true;
-			previewError = '';
-			try {
-				const type = selectedType;
-				const refs = selectedItems.map((i) => ({
-					type: i.type,
-					id: i.id,
-					title: i.title,
-					slug: (i.metadata?.slug as string) ?? ''
-				}));
-				const profileInput: ComparisonProfileInput | undefined = activeProfile
-					? {
-							title: activeProfile.title,
-							source_space_id: activeProfile.source_space_id,
-							target_space_ids: activeProfile.target_space_ids,
-							goals: activeProfile.goals,
-							preferences: activeProfile.preferences,
-							demographics: activeProfile.demographics,
-							is_default: activeProfile.is_default,
-							is_template: activeProfile.is_template
-					  }
-					: undefined;
-				previewResult = await previewScore({
-					type_id: type.id,
-					smart_mode: smartMode,
-					item_refs: refs,
-					profile: profileInput
-				});
-			} catch (e) {
-				previewError = e instanceof Error ? e.message : t('jce.compare.errors.unknown');
-				previewResult = null;
-			} finally {
-				previewing = false;
-			}
-		}, 400);
-	}
-
-	$effect(() => {
-		// Track dependencies for live preview.
-		const _ = selectedItems.length + selectedItems.map((i) => i.id).join(',');
-		const _m = smartMode;
-		const _p = activeProfile?.id;
-		if (!selectedType || !user || selectedItems.length < 2) {
-			previewResult = null;
-			return;
-		}
-		schedulePreview();
-		return () => {
-			if (previewTimeout) clearTimeout(previewTimeout);
-		};
-	});
-
 	async function create() {
 		if (!selectedType || selectedItems.length < 2) return;
 		const type = selectedType;
@@ -540,9 +422,7 @@
 					type_id: type.id,
 					item_ref: { type: i.type, id: i.id, title: i.title, slug: (i.metadata?.slug as string) ?? '' }
 				})),
-				dimensions: [],
-				smart_mode: smartMode,
-				config: { profile_id: activeProfile?.id ?? null }
+				dimensions: []
 			};
 			const cmp = await createQuickComparison(input);
 			if (cmp?.slug) goto(`/compare/${cmp.slug}`);
@@ -976,51 +856,6 @@
 					</div>
 				{/if}
 
-				{#if user}
-					<div class="flex items-center gap-3 flex-wrap">
-						<div class="flex items-center gap-2">
-							<span class="text-xs font-medium" style="color: var(--color-muted)">
-								{t('jce.smart_mode.title')}
-							</span>
-							<SmartToggle bind:mode={smartMode} modes={smartModes} />
-						</div>
-						<button
-							type="button"
-							onclick={() => (profileOpen = true)}
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] border px-3 py-1.5 text-xs font-medium"
-							style="border-color: var(--color-border); background-color: var(--color-bg); color: var(--color-text)"
-						>
-							<User size={14} />
-							{activeProfile?.title ?? t('jce.profile.title')}
-						</button>
-					</div>
-
-					{#if previewing || previewError || previewResult}
-						<div
-							class="rounded-[var(--radius-card)] border p-3 text-sm space-y-2"
-							style="background-color: var(--color-bg); border-color: var(--color-border); color: var(--color-text)"
-						>
-							{#if previewing}
-								<span style="color: var(--color-muted)">{t('jce.compare.score.loading')}</span>
-							{:else if previewError}
-								<span style="color: #ef4444">{previewError}</span>
-							{:else if previewResult && previewTop}
-								<div class="font-medium" style="color: var(--color-text)">
-									{t('jce.score.best_match')}: {previewTop.item_title}
-								</div>
-								<div class="flex flex-wrap gap-3">
-									{#each previewResult.scores as score (score.item_id)}
-										<div class="flex items-center gap-2">
-											<ScoreBadge {score} best={score.item_id === previewTop.item_id} />
-											<span style="color: var(--color-text)">{score.item_title}</span>
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{/if}
-
 				{#if selectedItems.length > 0}
 					<div class="flex flex-wrap gap-2">
 						{#each selectedItems as item (item.id)}
@@ -1043,27 +878,6 @@
 					</div>
 				{/if}
 			</section>
-			{/if}
-
-			{#if user}
-				<ProfileDrawer
-					bind:open={profileOpen}
-					{profiles}
-					bind:activeProfile
-					scoreFactors={profileScoreFactors}
-					allowedGoals={profileAllowedGoals}
-					onsave={async (p: ComparisonProfile) => {
-						activeProfile = p;
-						profileOpen = false;
-						try {
-							await invalidateAll();
-						} catch (e) {
-							console.error('Failed to refresh profiles:', e);
-							error = 'jce.compare.errors.load_profiles';
-							errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
-						}
-					}}
-				/>
 			{/if}
 
 			{#if data.scopeChain?.length}

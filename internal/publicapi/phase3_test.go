@@ -36,7 +36,9 @@ func TestAdminOnlyScopeMarks(t *testing.T) {
 		"api.write.bookmarks": true,
 		"api.write.comments":  true,
 		"api.write.me":        true,
+		"agent.write":         true,
 		"*":                   true,
+		"agent.use":           false,
 		"api.read.content":    false,
 		"api.read.me":         false,
 		"api.read.*":          false,
@@ -67,6 +69,17 @@ func TestAnyAdminOnly(t *testing.T) {
 		{[]string{"api.read.content", "api.write.bookmarks"}, true},
 		{[]string{"*"}, true},
 		{[]string{"api.write.me"}, true},
+		{[]string{"agent.write"}, true},
+		// A requested wildcard that covers admin-only leaves is equally
+		// privileged — it must require admin approval or the mint gate is
+		// bypassed (HasScope matches "api.write.*" against api.write.content).
+		{[]string{"api.write.*"}, true},
+		{[]string{"agent.*"}, true},
+		{[]string{"api.*"}, true},
+		{[]string{"agent.use", "agent.*"}, true},
+		// Wildcards that cover no admin-only leaf stay self-serve.
+		{[]string{"api.read.*"}, false},
+		{[]string{"bogus.*"}, false},
 		{[]string{"bogus.scope"}, false}, // unknown scopes are inert, not admin-only
 	} {
 		if got := AnyAdminOnly(tc.scopes); got != tc.want {

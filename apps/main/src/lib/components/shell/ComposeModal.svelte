@@ -1,7 +1,19 @@
 <script lang="ts">
 	import { slide, fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
-	import { FileText, MessageSquare, PenTool, HelpCircle, X } from 'lucide-svelte';
+	import {
+		BookOpen,
+		Briefcase,
+		ClipboardList,
+		FileText,
+		MessageSquare,
+		Newspaper,
+		PenTool,
+		HelpCircle,
+		Scale,
+		Wrench,
+		X
+	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { compose } from './compose.svelte';
 	import DiscussionComposer from './DiscussionComposer.svelte';
@@ -17,11 +29,25 @@
 	 * japaconnect-engineering/adr/ADR-058-main-app-shell.md
 	 */
 
-	// Full-width options that route to /create.
+	// Route options rendered as paired rows: left item is left-aligned with a
+	// leading icon, right item is right-aligned with a trailing icon —
+	// matching the Discussion | Question row.
 	const routeOptions = $derived([
 		{ key: 'blog', icon: PenTool, label: t('create.blog', 'Blog'), href: '/create?type=blog_post' },
-		{ key: 'guide', icon: FileText, label: t('create.post', 'Guide'), href: '/create?type=guide' }
+		{ key: 'guide', icon: FileText, label: t('create.post', 'Guide'), href: '/create?type=guide' },
+		{ key: 'story', icon: BookOpen, label: t('create.story', 'Story'), href: '/create?type=story' },
+		{ key: 'news', icon: Newspaper, label: t('create.news', 'News'), href: '/create?type=news' },
+		{ key: 'list', icon: ClipboardList, label: t('create.list_label', 'List'), href: '/create?type=list' },
+		{ key: 'comparison', icon: Scale, label: t('create.comparison_label', 'Comparison'), href: '/create?type=comparison' },
+		{ key: 'jobs', icon: Briefcase, label: t('create.jobs', 'Jobs'), href: '/jobs/create' },
+		{ key: 'services', icon: Wrench, label: t('create.services', 'Services'), href: '/services/new' }
 	]);
+
+	const routeRows = $derived.by(() => {
+		const rows: (typeof routeOptions)[] = [];
+		for (let i = 0; i < routeOptions.length; i += 2) rows.push(routeOptions.slice(i, i + 2));
+		return rows;
+	});
 
 	function selectRoute(opt: (typeof routeOptions)[number]) {
 		compose.close();
@@ -93,16 +119,30 @@
 							<HelpCircle size={20} class="text-[var(--color-primary)]" />
 						</button>
 					</div>
-					<!-- Full-width options that route to /create -->
-					{#each routeOptions as opt (opt.key)}
-						<button
-							type="button"
-							onclick={() => selectRoute(opt)}
-							class="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-left text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
-						>
-							<opt.icon size={20} class="text-[var(--color-primary)]" />
-							<span>{opt.label}</span>
-						</button>
+					<!-- Paired rows that route to the create flows -->
+					{#each routeRows as row (row[0].key)}
+						{@const LeftIcon = row[0].icon}
+						<div class="flex items-stretch gap-2">
+							<button
+								type="button"
+								onclick={() => selectRoute(row[0])}
+								class="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-left text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<LeftIcon size={20} class="text-[var(--color-primary)]" />
+								<span>{row[0].label}</span>
+							</button>
+							{#if row[1]}
+								{@const RightIcon = row[1].icon}
+								<button
+									type="button"
+									onclick={() => selectRoute(row[1])}
+									class="flex flex-1 items-center justify-end gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 text-right text-sm text-[var(--color-text)] hover:border-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]"
+								>
+									<span>{row[1].label}</span>
+									<RightIcon size={20} class="text-[var(--color-primary)]" />
+								</button>
+							{/if}
+						</div>
 					{/each}
 				</div>
 			{/if}

@@ -464,37 +464,6 @@ export const comparisonAdminApi = {
 		api<unknown>(`/jce/comparisons/${id}?force=true`, { method: 'DELETE' }),
 };
 
-export interface ComparisonProfileAdmin {
-	id: string;
-	title: string;
-	source_space_id?: string | null;
-	target_space_ids: string[];
-	goals: { key: string; weight: number }[];
-	preferences: Record<string, number>;
-	demographics: Record<string, any>;
-	is_default: boolean;
-	is_template: boolean;
-	deleted_at?: string | null;
-}
-
-import type { ScoreFactorAdmin } from '$lib/types/jce';
-export type { ScoreFactorAdmin };
-
-export const jceAdminApi = {
-	listProfiles: (deleted?: string) =>
-		api<ComparisonProfileAdmin[]>(`/jce/profiles?all=true${deleted ? `&deleted=${deleted}` : ''}`),
-	createProfile: (body: Record<string, any>) => api<ComparisonProfileAdmin>('/jce/profiles', { method: 'POST', body }),
-	updateProfile: (id: string, body: Record<string, any>) => api<ComparisonProfileAdmin>(`/jce/profiles/${id}`, { method: 'PATCH', body }),
-	deleteProfile: (id: string) => api<unknown>(`/jce/profiles/${id}`, { method: 'DELETE' }),
-	// Permanent delete of an already soft-deleted row — admin.hard_delete.
-	hardDeleteProfile: (id: string) => api<unknown>(`/jce/profiles/${id}?force=true`, { method: 'DELETE' }),
-	listScoreFactors: (typeID: string) => api<ScoreFactorAdmin[]>(`/jce/comparison-types/${typeID}/score-factors`),
-	createScoreFactor: (typeID: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/comparison-types/${typeID}/score-factors`, { method: 'POST', body }),
-	updateScoreFactor: (id: string, body: Record<string, any>) => api<ScoreFactorAdmin>(`/jce/score-factors/${id}`, { method: 'PATCH', body }),
-	deleteScoreFactor: (id: string) => api<unknown>(`/jce/score-factors/${id}`, { method: 'DELETE' }),
-	getProfileStats: () => api<{ source_space_id: string; profile_count: number }[]>('/jce/profiles/stats?all=true'),
-};
-
 export interface UserDetail {
 	id: string;
 	username: string;

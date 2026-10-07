@@ -39,6 +39,9 @@ export const revokeOtherSessions = () => api.delete('/me/sessions');
 /* ---- connected accounts ---- */
 export const unlinkAccount = (provider: string) => api.delete(`/me/connected-accounts/${provider}`);
 
+/* ---- connected apps (§120 OAuth agent grants) ---- */
+export const revokeOAuthGrant = (clientId: string) => api.delete(`/me/oauth/grants/${clientId}`);
+
 /* ---- notifications ---- */
 export const patchNotifications = (v: Record<string, unknown>) =>
 	api.patch('/me/notification-preferences', v);

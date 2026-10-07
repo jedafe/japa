@@ -2097,12 +2097,11 @@ export interface ComparisonContent {
 	content_type: string;
 }
 
-/** JCE comparison metadata (depth, promotion state, smart mode). */
+/** JCE comparison metadata (depth, promotion state). */
 export interface ComparisonMetadata {
 	content_id: string;
 	depth: string;
 	promoted_at?: string | null;
-	smart_mode?: string | null;
 }
 
 /** GET /jce/comparisons/{id} — comparison content metadata with items and dimensions.

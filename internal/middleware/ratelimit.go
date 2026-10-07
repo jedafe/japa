@@ -38,10 +38,15 @@ type RateLimitTier struct {
 // ADR-022. The values are deliberately generous for legitimate clients
 // while still throttling abusive burst traffic.
 var Tiers = map[string]RateLimitTier{
-	"tight":           {Requests: 10, Window: time.Minute},
-	"moderate":        {Requests: 60, Window: time.Minute},
-	"loose":           {Requests: 300, Window: time.Minute},
-	"webhook":         {Requests: 3000, Window: time.Minute},
+	"tight":    {Requests: 10, Window: time.Minute},
+	"moderate": {Requests: 60, Window: time.Minute},
+	"loose":    {Requests: 300, Window: time.Minute},
+	"webhook":  {Requests: 3000, Window: time.Minute},
+	// §120: /oauth/token serves hosted connectors (claude.ai, ChatGPT) whose
+	// refreshes all egress through the provider's shared IPs — a per-IP
+	// "tight" bucket would collapse every connector user into 10 req/min.
+	// Still bounded against credential brute-forcing.
+	"oauth_token":     {Requests: 120, Window: time.Minute},
 	"form_submission": {Requests: 10, Window: time.Hour},  // §06: 10 submissions per user per hour
 	"mass_provision":  {Requests: 5, Window: time.Minute}, // §68: 5 mass-provisioning batches per admin per minute (defense-in-depth on top of persona.manage RBAC)
 }

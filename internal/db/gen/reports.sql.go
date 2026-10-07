@@ -114,18 +114,19 @@ func (q *Queries) CountAssignedReports(ctx context.Context, userID pgtype.UUID) 
 const countModerationQueue = `-- name: CountModerationQueue :one
 WITH scoped AS (
     SELECT cr.id,
-           COALESCE(cr.reviewed_by = $9::uuid, false)::bool AS scope_assigned,
+           COALESCE(cr.reviewed_by = $10::uuid, false)::bool AS scope_assigned,
            COALESCE(
-               (cr.entity_type = 'space'   AND cr.entity_id = ANY($10::uuid[])) OR
-               (cr.entity_type = 'content' AND c.space_id   = ANY($10::uuid[])) OR
-               (cr.entity_type = 'comment' AND pc.space_id  = ANY($10::uuid[])),
+               (cr.entity_type = 'space'   AND cr.entity_id = ANY($11::uuid[])) OR
+               (cr.entity_type = 'content' AND c.space_id   = ANY($11::uuid[])) OR
+               (cr.entity_type = 'comment' AND pc.space_id  = ANY($11::uuid[])),
                false
            )::bool AS scope_space,
            EXISTS (SELECT 1 FROM content_tags ct
                     WHERE ct.content_id = COALESCE(c.id, pc.id)
-                      AND ct.tag_id = ANY($11::uuid[]))::bool AS scope_tag,
+                      AND ct.tag_id = ANY($12::uuid[]))::bool AS scope_tag,
            cr.status, cr.entity_type, cr.entity_id, cr.reason, cr.notes,
            COALESCE(c.id, pc.id) AS resolved_content_id,
+           COALESCE(c.content_type, pc.content_type, '')::text AS entity_content_type,
            CASE WHEN cr.entity_type = 'space' THEN cr.entity_id
                 ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
            COALESCE(c.title, pc.title, s.name, tu.username, '') AS entity_title
@@ -140,22 +141,24 @@ SELECT COUNT(*)::int FROM scoped
 WHERE ($1::bool OR scope_assigned OR scope_space OR scope_tag)
   AND ($2::text IS NULL OR status = $2)
   AND ($3::text IS NULL OR entity_type = $3)
-  AND ($4::uuid IS NULL OR resolved_space_id = $4::uuid)
-  AND ($5::uuid IS NULL OR
+  AND ($4::text IS NULL OR entity_content_type = $4)
+  AND ($5::uuid IS NULL OR resolved_space_id = $5::uuid)
+  AND ($6::uuid IS NULL OR
        EXISTS (SELECT 1 FROM content_tags ct
-                WHERE ct.content_id = resolved_content_id AND ct.tag_id = $5::uuid))
-  AND ($6::bool = false OR scope_assigned)
-  AND ($7::bool = false OR status IN ('pending', 'reviewing'))
-  AND ($8::text IS NULL OR entity_id::text ILIKE '%' || $8 || '%'
-       OR reason ILIKE '%' || $8 || '%'
-       OR COALESCE(notes, '') ILIKE '%' || $8 || '%'
-       OR COALESCE(entity_title, '') ILIKE '%' || $8 || '%')
+                WHERE ct.content_id = resolved_content_id AND ct.tag_id = $6::uuid))
+  AND ($7::bool = false OR scope_assigned)
+  AND ($8::bool = false OR status IN ('pending', 'reviewing'))
+  AND ($9::text IS NULL OR entity_id::text ILIKE '%' || $9 || '%'
+       OR reason ILIKE '%' || $9 || '%'
+       OR COALESCE(notes, '') ILIKE '%' || $9 || '%'
+       OR COALESCE(entity_title, '') ILIKE '%' || $9 || '%')
 `
 
 type CountModerationQueueParams struct {
 	Platform      bool          `json:"platform"`
 	Status        *string       `json:"status"`
 	EntityType    *string       `json:"entity_type"`
+	ContentType   *string       `json:"content_type"`
 	FilterSpaceID pgtype.UUID   `json:"filter_space_id"`
 	FilterTagID   pgtype.UUID   `json:"filter_tag_id"`
 	AssignedOnly  bool          `json:"assigned_only"`
@@ -172,6 +175,7 @@ func (q *Queries) CountModerationQueue(ctx context.Context, arg CountModerationQ
 		arg.Platform,
 		arg.Status,
 		arg.EntityType,
+		arg.ContentType,
 		arg.FilterSpaceID,
 		arg.FilterTagID,
 		arg.AssignedOnly,
@@ -510,16 +514,16 @@ WITH scoped AS (
                 ELSE COALESCE(c.space_id, pc.space_id) END::uuid AS resolved_space_id,
            sp.name AS entity_space_name,
            sp.slug AS entity_space_slug,
-           COALESCE(cr.reviewed_by = $11::uuid, false)::bool AS scope_assigned,
+           COALESCE(cr.reviewed_by = $12::uuid, false)::bool AS scope_assigned,
            COALESCE(
-               (cr.entity_type = 'space'   AND cr.entity_id = ANY($12::uuid[])) OR
-               (cr.entity_type = 'content' AND c.space_id   = ANY($12::uuid[])) OR
-               (cr.entity_type = 'comment' AND pc.space_id  = ANY($12::uuid[])),
+               (cr.entity_type = 'space'   AND cr.entity_id = ANY($13::uuid[])) OR
+               (cr.entity_type = 'content' AND c.space_id   = ANY($13::uuid[])) OR
+               (cr.entity_type = 'comment' AND pc.space_id  = ANY($13::uuid[])),
                false
            )::bool AS scope_space,
            EXISTS (SELECT 1 FROM content_tags ct
                     WHERE ct.content_id = COALESCE(c.id, pc.id)
-                      AND ct.tag_id = ANY($13::uuid[]))::bool AS scope_tag
+                      AND ct.tag_id = ANY($14::uuid[]))::bool AS scope_tag
     FROM content_reports cr
     LEFT JOIN users ru          ON ru.id = cr.reporter_user_id
     LEFT JOIN user_profiles rup ON rup.user_id = cr.reporter_user_id
@@ -543,24 +547,26 @@ FROM scoped
 WHERE ($1::bool OR scope_assigned OR scope_space OR scope_tag)
   AND ($2::text IS NULL OR status = $2)
   AND ($3::text IS NULL OR entity_type = $3)
-  AND ($4::uuid IS NULL OR resolved_space_id = $4::uuid)
-  AND ($5::uuid IS NULL OR
+  AND ($4::text IS NULL OR entity_content_type = $4)
+  AND ($5::uuid IS NULL OR resolved_space_id = $5::uuid)
+  AND ($6::uuid IS NULL OR
        EXISTS (SELECT 1 FROM content_tags ct
-                WHERE ct.content_id = resolved_content_id AND ct.tag_id = $5::uuid))
-  AND ($6::bool = false OR scope_assigned)
-  AND ($7::bool = false OR status IN ('pending', 'reviewing'))
-  AND ($8::text IS NULL OR entity_id::text ILIKE '%' || $8 || '%'
-       OR reason ILIKE '%' || $8 || '%'
-       OR COALESCE(notes, '') ILIKE '%' || $8 || '%'
-       OR COALESCE(entity_title, '') ILIKE '%' || $8 || '%')
+                WHERE ct.content_id = resolved_content_id AND ct.tag_id = $6::uuid))
+  AND ($7::bool = false OR scope_assigned)
+  AND ($8::bool = false OR status IN ('pending', 'reviewing'))
+  AND ($9::text IS NULL OR entity_id::text ILIKE '%' || $9 || '%'
+       OR reason ILIKE '%' || $9 || '%'
+       OR COALESCE(notes, '') ILIKE '%' || $9 || '%'
+       OR COALESCE(entity_title, '') ILIKE '%' || $9 || '%')
 ORDER BY created_at DESC
-LIMIT $10 OFFSET $9
+LIMIT $11 OFFSET $10
 `
 
 type ListModerationQueueParams struct {
 	Platform      bool          `json:"platform"`
 	Status        *string       `json:"status"`
 	EntityType    *string       `json:"entity_type"`
+	ContentType   *string       `json:"content_type"`
 	FilterSpaceID pgtype.UUID   `json:"filter_space_id"`
 	FilterTagID   pgtype.UUID   `json:"filter_tag_id"`
 	AssignedOnly  bool          `json:"assigned_only"`
@@ -607,6 +613,7 @@ func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQue
 		arg.Platform,
 		arg.Status,
 		arg.EntityType,
+		arg.ContentType,
 		arg.FilterSpaceID,
 		arg.FilterTagID,
 		arg.AssignedOnly,

@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:japaconnect_core/japaconnect_core.dart';
 import 'package:japaconnect_mobile/features/jce/screens/comparison_list_screen.dart';
 import 'package:japaconnect_mobile/features/jce/screens/comparison_detail_screen.dart';
-import 'package:japaconnect_mobile/features/jce/screens/profile_list_screen.dart';
 import 'package:japaconnect_mobile/features/jce/providers/jce_provider.dart';
 import 'package:japaconnect_mobile/i18n/app_localizations.dart';
 
@@ -25,7 +24,6 @@ void main() {
     for (final screen in [
       const JceComparisonListScreen(),
       const JceComparisonDetailScreen(id: 'sample'),
-      const JceProfileListScreen(),
     ]) {
       await tester.pumpWidget(
         ProviderScope(child: MaterialApp(home: screen)),
@@ -52,7 +50,7 @@ void main() {
     expect(find.byIcon(Icons.sort), findsOneWidget);
   });
 
-  testWidgets('comparison detail renders title, bodyHtml fallback, and score', (tester) async {
+  testWidgets('comparison detail renders title and bodyHtml fallback', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -66,27 +64,9 @@ void main() {
 
     expect(find.text('Lagos vs London'), findsWidgets);
     expect(find.text('Body HTML'), findsOneWidget);
-    expect(find.text('Score'), findsOneWidget);
-    expect(find.text('Lagos: 85.0 / 100.0'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
-  testWidgets('comparison detail handles empty profile list', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          tProvider.overrideWith((_) => testL10n.t),
-          jcApiClientProvider.overrideWith((_) => FakeJcApiClient(emptyProfiles: true)),
-        ],
-        child: const MaterialApp(home: JceComparisonDetailScreen(id: 'c1')),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('No profiles yet'), findsOneWidget);
-  });
-
-  test('jceCapabilitiesProvider computes view score from fake client', () async {
+  test('jceCapabilitiesProvider computes refresh capabilities from fake client', () async {
     final container = ProviderContainer(
       overrides: [
         jcApiClientProvider.overrideWith((_) => FakeJcApiClient()),
@@ -94,35 +74,8 @@ void main() {
     );
     addTearDown(container.dispose);
     final caps = await container.read(jceCapabilitiesProvider.future);
-    expect(caps.canViewScore, isTrue);
-    expect(caps.canRecalculateScore, isTrue);
-  });
-
-  test('scoreComparisonProvider loads score from fake client', () async {
-    final container = ProviderContainer(
-      overrides: [
-        jcApiClientProvider.overrideWith((_) => FakeJcApiClient()),
-      ],
-    );
-    addTearDown(container.dispose);
-    final score = await container.read(scoreComparisonProvider('c1').future);
-    expect(score, isNotNull);
-    expect(score!.scores.first.itemTitle, 'Lagos');
-  });
-
-  testWidgets('profile list renders profiles and default label', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          tProvider.overrideWith((_) => testL10n.t),
-          jcApiClientProvider.overrideWith((_) => FakeJcApiClient()),
-        ],
-        child: const MaterialApp(home: JceProfileListScreen()),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Solo mover'), findsOneWidget);
-    expect(find.text('Default'), findsOneWidget);
+    expect(caps.canViewFreshness, isTrue);
+    expect(caps.canRefresh, isTrue);
+    expect(caps.canViewIngestionJobs, isTrue);
   });
 }

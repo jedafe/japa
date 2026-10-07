@@ -67,6 +67,9 @@ export const SETTINGS_LOADERS: Record<string, (ctx: ApiContext) => Promise<unkno
 		sessions: (await apiList<unknown>(ctx, '/me/sessions').catch(() => ({ items: [] }))).items
 	}),
 	connected: async (ctx) => (await apiList<unknown>(ctx, '/me/connected-accounts').catch(() => ({ items: [] }))).items,
+	// §120 connected apps — the caller's OAuth agent grants. Best-effort:
+	// degrades to an empty list when the endpoint is unavailable.
+	'connected-apps': async (ctx) => (await apiList<unknown>(ctx, '/me/oauth/grants').catch(() => ({ items: [] }))).items,
 	// Section 77 / ADR-074 — registered mobile push devices (Devices settings section).
 	// Best-effort: degrades to an empty list when the route is unavailable.
 	devices: async (ctx) => ({

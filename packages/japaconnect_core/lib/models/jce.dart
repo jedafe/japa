@@ -49,8 +49,6 @@ class ComparisonTypeConfig {
   final String? defaultItemRefType;
   final bool? allowNestedComparisons;
   final List<String>? allowedNestedTypes;
-  final Map<String, dynamic>? smartModes;
-  final List<ComparisonTypeGoal>? allowedGoals;
 
   const ComparisonTypeConfig({
     this.maxItemCount,
@@ -59,8 +57,6 @@ class ComparisonTypeConfig {
     this.defaultItemRefType,
     this.allowNestedComparisons,
     this.allowedNestedTypes,
-    this.smartModes,
-    this.allowedGoals,
   });
 
   factory ComparisonTypeConfig.fromJson(Map<String, dynamic> json) {
@@ -71,11 +67,6 @@ class ComparisonTypeConfig {
       defaultItemRefType: json['default_item_ref_type'] as String?,
       allowNestedComparisons: json['allow_nested_comparisons'] as bool?,
       allowedNestedTypes: _parseStringList(json['allowed_nested_types']),
-      smartModes: _parseMap(json['smart_modes']),
-      allowedGoals: _parseObjectList(
-        json['allowed_goals'],
-        (e) => ComparisonTypeGoal.fromJson(e as Map<String, dynamic>),
-      ),
     );
   }
 
@@ -86,34 +77,6 @@ class ComparisonTypeConfig {
         if (defaultItemRefType != null) 'default_item_ref_type': defaultItemRefType,
         if (allowNestedComparisons != null) 'allow_nested_comparisons': allowNestedComparisons,
         if (allowedNestedTypes != null) 'allowed_nested_types': allowedNestedTypes,
-        if (smartModes != null) 'smart_modes': smartModes,
-        if (allowedGoals != null) 'allowed_goals': allowedGoals!.map((e) => e.toJson()).toList(),
-      };
-}
-
-class ComparisonTypeGoal {
-  final String key;
-  final String label;
-  final double? defaultWeight;
-
-  const ComparisonTypeGoal({
-    required this.key,
-    required this.label,
-    this.defaultWeight,
-  });
-
-  factory ComparisonTypeGoal.fromJson(Map<String, dynamic> json) {
-    return ComparisonTypeGoal(
-      key: json['key'] as String,
-      label: json['label'] as String,
-      defaultWeight: _parseDouble(json['default_weight']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'key': key,
-        'label': label,
-        if (defaultWeight != null) 'default_weight': defaultWeight,
       };
 }
 
@@ -365,7 +328,6 @@ class JceComparisonMetadata {
   final String depth;
   final String? promotedFromId;
   final DateTime? promotedAt;
-  final String? smartMode;
   final Map<String, dynamic>? config;
 
   const JceComparisonMetadata({
@@ -373,7 +335,6 @@ class JceComparisonMetadata {
     required this.depth,
     this.promotedFromId,
     this.promotedAt,
-    this.smartMode,
     this.config,
   });
 
@@ -383,7 +344,6 @@ class JceComparisonMetadata {
       depth: json['depth'] as String,
       promotedFromId: json['promoted_from_id'] as String?,
       promotedAt: _parseDateTime(json['promoted_at']),
-      smartMode: json['smart_mode'] as String?,
       config: _parseMap(json['config']),
     );
   }
@@ -393,7 +353,6 @@ class JceComparisonMetadata {
         'depth': depth,
         if (promotedFromId != null) 'promoted_from_id': promotedFromId,
         if (promotedAt != null) 'promoted_at': promotedAt!.toIso8601String(),
-        if (smartMode != null) 'smart_mode': smartMode,
         if (config != null) 'config': config,
       };
 }
@@ -638,7 +597,6 @@ class CreateQuickComparisonInput {
   final String visibility;
   final List<JceItem> items;
   final List<String> dimensions;
-  final String? smartMode;
   final Map<String, dynamic>? config;
 
   const CreateQuickComparisonInput({
@@ -650,7 +608,6 @@ class CreateQuickComparisonInput {
     this.visibility = 'private',
     required this.items,
     required this.dimensions,
-    this.smartMode,
     this.config,
   });
 
@@ -663,471 +620,7 @@ class CreateQuickComparisonInput {
         'visibility': visibility,
         'items': items.map((e) => e.toJson()).toList(),
         'dimensions': dimensions,
-        if (smartMode != null) 'smart_mode': smartMode,
         if (config != null) 'config': config,
-      };
-}
-
-class ComparisonProfileGoal {
-  final String key;
-  final double weight;
-
-  const ComparisonProfileGoal({required this.key, required this.weight});
-
-  factory ComparisonProfileGoal.fromJson(Map<String, dynamic> json) {
-    return ComparisonProfileGoal(
-      key: json['key'] as String,
-      weight: _parseDouble(json['weight']) ?? 0,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'key': key,
-        'weight': weight,
-      };
-}
-
-class ComparisonProfileDemographics {
-  final int? age;
-  final String? occupation;
-  final String? familyStatus;
-  final String? languageProficiency;
-  final double? budgetMin;
-  final double? budgetMax;
-  final String? budgetCurrency;
-
-  const ComparisonProfileDemographics({
-    this.age,
-    this.occupation,
-    this.familyStatus,
-    this.languageProficiency,
-    this.budgetMin,
-    this.budgetMax,
-    this.budgetCurrency,
-  });
-
-  factory ComparisonProfileDemographics.fromJson(Map<String, dynamic> json) {
-    return ComparisonProfileDemographics(
-      age: _parseInt(json['age']),
-      occupation: json['occupation'] as String?,
-      familyStatus: json['family_status'] as String?,
-      languageProficiency: json['language_proficiency'] as String?,
-      budgetMin: _parseDouble(json['budget_min']),
-      budgetMax: _parseDouble(json['budget_max']),
-      budgetCurrency: json['budget_currency'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (age != null) 'age': age,
-        if (occupation != null) 'occupation': occupation,
-        if (familyStatus != null) 'family_status': familyStatus,
-        if (languageProficiency != null) 'language_proficiency': languageProficiency,
-        if (budgetMin != null) 'budget_min': budgetMin,
-        if (budgetMax != null) 'budget_max': budgetMax,
-        if (budgetCurrency != null) 'budget_currency': budgetCurrency,
-      };
-}
-
-class ComparisonProfile {
-  final String id;
-  final String title;
-  final String? sourceSpaceId;
-  final List<String> targetSpaceIds;
-  final List<ComparisonProfileGoal> goals;
-  final Map<String, double> preferences;
-  final ComparisonProfileDemographics? demographics;
-  final bool isDefault;
-  final bool isTemplate;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
-
-  const ComparisonProfile({
-    required this.id,
-    required this.title,
-    this.sourceSpaceId,
-    required this.targetSpaceIds,
-    required this.goals,
-    required this.preferences,
-    this.demographics,
-    required this.isDefault,
-    required this.isTemplate,
-    this.createdAt,
-    this.updatedAt,
-  });
-
-  factory ComparisonProfile.fromJson(Map<String, dynamic> json) {
-    return ComparisonProfile(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      sourceSpaceId: json['source_space_id'] as String?,
-      targetSpaceIds: _parseStringList(json['target_space_ids']) ?? [],
-      goals: _parseObjectList(
-        json['goals'],
-        (e) => ComparisonProfileGoal.fromJson(e as Map<String, dynamic>),
-      ),
-      preferences: _parseDoubleMap(json['preferences']),
-      demographics: json['demographics'] == null
-          ? null
-          : ComparisonProfileDemographics.fromJson(json['demographics'] as Map<String, dynamic>),
-      isDefault: json['is_default'] as bool? ?? false,
-      isTemplate: json['is_template'] as bool? ?? false,
-      createdAt: _parseDateTime(json['created_at']),
-      updatedAt: _parseDateTime(json['updated_at']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        if (sourceSpaceId != null) 'source_space_id': sourceSpaceId,
-        'target_space_ids': targetSpaceIds,
-        'goals': goals.map((e) => e.toJson()).toList(),
-        'preferences': preferences,
-        if (demographics != null) 'demographics': demographics!.toJson(),
-        'is_default': isDefault,
-        'is_template': isTemplate,
-        if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
-        if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
-      };
-}
-
-class ComparisonProfileInput {
-  final String? title;
-  final String? sourceSpaceId;
-  final List<String> targetSpaceIds;
-  final List<ComparisonProfileGoal>? goals;
-  final Map<String, double>? preferences;
-  final ComparisonProfileDemographics? demographics;
-  final bool? isDefault;
-  final bool? isTemplate;
-
-  const ComparisonProfileInput({
-    this.title,
-    this.sourceSpaceId,
-    required this.targetSpaceIds,
-    this.goals,
-    this.preferences,
-    this.demographics,
-    this.isDefault,
-    this.isTemplate,
-  });
-
-  Map<String, dynamic> toJson() => {
-        if (title != null) 'title': title,
-        if (sourceSpaceId != null) 'source_space_id': sourceSpaceId,
-        'target_space_ids': targetSpaceIds,
-        if (goals != null) 'goals': goals!.map((e) => e.toJson()).toList(),
-        if (preferences != null) 'preferences': preferences,
-        if (demographics != null) 'demographics': demographics!.toJson(),
-        if (isDefault != null) 'is_default': isDefault,
-        if (isTemplate != null) 'is_template': isTemplate,
-      };
-
-  factory ComparisonProfileInput.fromProfile(ComparisonProfile p) {
-    return ComparisonProfileInput(
-      title: p.title,
-      sourceSpaceId: p.sourceSpaceId,
-      targetSpaceIds: p.targetSpaceIds,
-      goals: p.goals,
-      preferences: p.preferences,
-      demographics: p.demographics,
-      isDefault: p.isDefault,
-      isTemplate: p.isTemplate,
-    );
-  }
-}
-
-class ScoreFactor {
-  final String id;
-  final String? comparisonTypeId;
-  final String factorKey;
-  final String label;
-  final String? description;
-  final String? dimensionSlug;
-  final String dataSource;
-  final double defaultWeight;
-  final Map<String, dynamic> config;
-  final int version;
-  final bool isSystem;
-
-  const ScoreFactor({
-    required this.id,
-    this.comparisonTypeId,
-    required this.factorKey,
-    required this.label,
-    this.description,
-    this.dimensionSlug,
-    required this.dataSource,
-    required this.defaultWeight,
-    required this.config,
-    required this.version,
-    required this.isSystem,
-  });
-
-  factory ScoreFactor.fromJson(Map<String, dynamic> json) {
-    return ScoreFactor(
-      id: json['id'] as String,
-      comparisonTypeId: json['comparison_type_id'] as String?,
-      factorKey: json['factor_key'] as String,
-      label: json['label'] as String,
-      description: json['description'] as String?,
-      dimensionSlug: json['dimension_slug'] as String?,
-      dataSource: json['data_source'] as String,
-      defaultWeight: _parseDouble(json['default_weight']) ?? 0,
-      config: _parseMap(json['config']) ?? {},
-      version: _parseInt(json['version']) ?? 0,
-      isSystem: json['is_system'] as bool? ?? false,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        if (comparisonTypeId != null) 'comparison_type_id': comparisonTypeId,
-        'factor_key': factorKey,
-        'label': label,
-        if (description != null) 'description': description,
-        if (dimensionSlug != null) 'dimension_slug': dimensionSlug,
-        'data_source': dataSource,
-        'default_weight': defaultWeight,
-        'config': config,
-        'version': version,
-        'is_system': isSystem,
-      };
-}
-
-class FactorScore {
-  final String factorKey;
-  final String label;
-  final double scoreValue;
-  final double maxValue;
-  final double weight;
-  final String explanation;
-  final bool? missing;
-  final double? missingScore;
-
-  const FactorScore({
-    required this.factorKey,
-    required this.label,
-    required this.scoreValue,
-    required this.maxValue,
-    required this.weight,
-    required this.explanation,
-    this.missing,
-    this.missingScore,
-  });
-
-  factory FactorScore.fromJson(Map<String, dynamic> json) {
-    return FactorScore(
-      factorKey: json['factor_key'] as String,
-      label: json['label'] as String,
-      scoreValue: _parseDouble(json['score_value']) ?? 0,
-      maxValue: _parseDouble(json['max_value']) ?? 0,
-      weight: _parseDouble(json['weight']) ?? 0,
-      explanation: json['explanation'] as String,
-      missing: json['missing'] as bool?,
-      missingScore: _parseDouble(json['missing_score']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'factor_key': factorKey,
-        'label': label,
-        'score_value': scoreValue,
-        'max_value': maxValue,
-        'weight': weight,
-        'explanation': explanation,
-        if (missing != null) 'missing': missing,
-        if (missingScore != null) 'missing_score': missingScore,
-      };
-}
-
-class JapaScore {
-  final String itemId;
-  final String itemTitle;
-  final double japaScore;
-  final double maxValue;
-  final String eligibleStatus;
-  final List<FactorScore> factorScores;
-  final String explanation;
-
-  const JapaScore({
-    required this.itemId,
-    required this.itemTitle,
-    required this.japaScore,
-    required this.maxValue,
-    required this.eligibleStatus,
-    required this.factorScores,
-    required this.explanation,
-  });
-
-  factory JapaScore.fromJson(Map<String, dynamic> json) {
-    return JapaScore(
-      itemId: json['item_id'] as String,
-      itemTitle: json['item_title'] as String,
-      japaScore: _parseDouble(json['japa_score']) ?? 0,
-      maxValue: _parseDouble(json['max_value']) ?? 0,
-      eligibleStatus: json['eligible_status'] as String,
-      factorScores: _parseObjectList(
-        json['factor_scores'],
-        (e) => FactorScore.fromJson(e as Map<String, dynamic>),
-      ),
-      explanation: json['explanation'] as String,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'item_id': itemId,
-        'item_title': itemTitle,
-        'japa_score': japaScore,
-        'max_value': maxValue,
-        'eligible_status': eligibleStatus,
-        'factor_scores': factorScores.map((e) => e.toJson()).toList(),
-        'explanation': explanation,
-      };
-}
-
-class ComparisonRecommendation {
-  final String id;
-  final String? itemId;
-  final String text;
-  final String? actionType;
-  final String? actionUrl;
-  final int priority;
-
-  const ComparisonRecommendation({
-    required this.id,
-    this.itemId,
-    required this.text,
-    this.actionType,
-    this.actionUrl,
-    required this.priority,
-  });
-
-  factory ComparisonRecommendation.fromJson(Map<String, dynamic> json) {
-    return ComparisonRecommendation(
-      id: json['id'] as String,
-      itemId: json['item_id'] as String?,
-      text: json['text'] as String,
-      actionType: json['action_type'] as String?,
-      actionUrl: json['action_url'] as String?,
-      priority: _parseInt(json['priority']) ?? 0,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        if (itemId != null) 'item_id': itemId,
-        'text': text,
-        if (actionType != null) 'action_type': actionType,
-        if (actionUrl != null) 'action_url': actionUrl,
-        'priority': priority,
-      };
-}
-
-class ScoreRecommendationSummary {
-  final String topItemId;
-  final double topJapaScore;
-  final int recommendationsCount;
-  final DateTime? lastScoredAt;
-
-  const ScoreRecommendationSummary({
-    required this.topItemId,
-    required this.topJapaScore,
-    required this.recommendationsCount,
-    this.lastScoredAt,
-  });
-
-  factory ScoreRecommendationSummary.fromJson(Map<String, dynamic> json) {
-    return ScoreRecommendationSummary(
-      topItemId: json['top_item_id'] as String,
-      topJapaScore: _parseDouble(json['top_japa_score']) ?? 0,
-      recommendationsCount: _parseInt(json['recommendations_count']) ?? 0,
-      lastScoredAt: _parseDateTime(json['last_scored_at']),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'top_item_id': topItemId,
-        'top_japa_score': topJapaScore,
-        'recommendations_count': recommendationsCount,
-        if (lastScoredAt != null) 'last_scored_at': lastScoredAt!.toIso8601String(),
-      };
-}
-
-class ScoreResult {
-  final String contentId;
-  final String? profileId;
-  final String smartMode;
-  final List<JapaScore> scores;
-  final List<ComparisonRecommendation> recommendations;
-  final Map<String, double> weightsSnapshot;
-  final ScoreRecommendationSummary? recommendationSummary;
-  final int version;
-
-  const ScoreResult({
-    required this.contentId,
-    this.profileId,
-    required this.smartMode,
-    required this.scores,
-    required this.recommendations,
-    required this.weightsSnapshot,
-    this.recommendationSummary,
-    required this.version,
-  });
-
-  factory ScoreResult.fromJson(Map<String, dynamic> json) {
-    return ScoreResult(
-      contentId: json['content_id'] as String,
-      profileId: json['profile_id'] as String?,
-      smartMode: json['smart_mode'] as String,
-      scores: _parseObjectList(
-        json['scores'],
-        (e) => JapaScore.fromJson(e as Map<String, dynamic>),
-      ),
-      recommendations: _parseObjectList(
-        json['recommendations'],
-        (e) => ComparisonRecommendation.fromJson(e as Map<String, dynamic>),
-      ),
-      weightsSnapshot: _parseDoubleMap(json['weights_snapshot']),
-      recommendationSummary: json['recommendation_summary'] == null
-          ? null
-          : ScoreRecommendationSummary.fromJson(
-              json['recommendation_summary'] as Map<String, dynamic>),
-      version: _parseInt(json['version']) ?? 0,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'content_id': contentId,
-        if (profileId != null) 'profile_id': profileId,
-        'smart_mode': smartMode,
-        'scores': scores.map((e) => e.toJson()).toList(),
-        'recommendations': recommendations.map((e) => e.toJson()).toList(),
-        'weights_snapshot': weightsSnapshot,
-        if (recommendationSummary != null) 'recommendation_summary': recommendationSummary!.toJson(),
-        'version': version,
-      };
-}
-
-class ScorePreviewInput {
-  final String typeId;
-  final String smartMode;
-  final List<Map<String, dynamic>> itemRefs;
-  final ComparisonProfileInput? profile;
-
-  const ScorePreviewInput({
-    required this.typeId,
-    required this.smartMode,
-    required this.itemRefs,
-    this.profile,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'type_id': typeId,
-        'smart_mode': smartMode,
-        'item_refs': itemRefs,
-        if (profile != null) 'profile': profile!.toJson(),
       };
 }
 
@@ -1313,153 +806,6 @@ class FreshnessSummary {
       };
 }
 
-class AdvisorRankItem {
-  final String itemId;
-  final String itemTitle;
-  final int rank;
-  final double japaScore;
-  final String reasoning;
-  final bool eligible;
-
-  const AdvisorRankItem({
-    required this.itemId,
-    required this.itemTitle,
-    required this.rank,
-    required this.japaScore,
-    required this.reasoning,
-    required this.eligible,
-  });
-
-  factory AdvisorRankItem.fromJson(Map<String, dynamic> json) {
-    return AdvisorRankItem(
-      itemId: json['item_id'] as String,
-      itemTitle: json['item_title'] as String,
-      rank: _parseInt(json['rank']) ?? 0,
-      japaScore: _parseDouble(json['japa_score']) ?? 0,
-      reasoning: json['reasoning'] as String,
-      eligible: json['eligible'] as bool? ?? false,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'item_id': itemId,
-        'item_title': itemTitle,
-        'rank': rank,
-        'japa_score': japaScore,
-        'reasoning': reasoning,
-        'eligible': eligible,
-      };
-}
-
-class NextAction {
-  final String? itemId;
-  final String text;
-  final String? actionType;
-  final String? actionUrl;
-  final int priority;
-
-  const NextAction({
-    this.itemId,
-    required this.text,
-    this.actionType,
-    this.actionUrl,
-    required this.priority,
-  });
-
-  factory NextAction.fromJson(Map<String, dynamic> json) {
-    return NextAction(
-      itemId: json['item_id'] as String?,
-      text: json['text'] as String,
-      actionType: json['action_type'] as String?,
-      actionUrl: json['action_url'] as String?,
-      priority: _parseInt(json['priority']) ?? 0,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        if (itemId != null) 'item_id': itemId,
-        'text': text,
-        if (actionType != null) 'action_type': actionType,
-        if (actionUrl != null) 'action_url': actionUrl,
-        'priority': priority,
-      };
-}
-
-class AdvisorResult {
-  final String contentId;
-  final String? profileId;
-  final String summary;
-  final List<AdvisorRankItem>? ranking;
-  final List<NextAction>? nextActions;
-  final List<String>? citations;
-  final String? providerName;
-  final String? providerRef;
-  final double freshnessScore;
-
-  const AdvisorResult({
-    required this.contentId,
-    this.profileId,
-    required this.summary,
-    this.ranking,
-    this.nextActions,
-    this.citations,
-    this.providerName,
-    this.providerRef,
-    required this.freshnessScore,
-  });
-
-  factory AdvisorResult.fromJson(Map<String, dynamic> json) {
-    return AdvisorResult(
-      contentId: json['content_id'] as String,
-      profileId: json['profile_id'] as String?,
-      summary: json['summary'] as String,
-      ranking: _parseObjectListOrNull(
-        json['ranking'],
-        (e) => AdvisorRankItem.fromJson(e as Map<String, dynamic>),
-      ),
-      nextActions: _parseObjectListOrNull(
-        json['next_actions'],
-        (e) => NextAction.fromJson(e as Map<String, dynamic>),
-      ),
-      citations: _parseStringList(json['citations']),
-      providerName: json['provider_name'] as String?,
-      providerRef: json['provider_ref'] as String?,
-      freshnessScore: _parseDouble(json['freshness_score']) ?? 0,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'content_id': contentId,
-        if (profileId != null) 'profile_id': profileId,
-        'summary': summary,
-        if (ranking != null) 'ranking': ranking!.map((e) => e.toJson()).toList(),
-        if (nextActions != null) 'next_actions': nextActions!.map((e) => e.toJson()).toList(),
-        if (citations != null) 'citations': citations,
-        if (providerName != null) 'provider_name': providerName,
-        if (providerRef != null) 'provider_ref': providerRef,
-        'freshness_score': freshnessScore,
-      };
-}
-
-class AdvisorStreamChunk {
-  final String type;
-  final String? content;
-
-  const AdvisorStreamChunk({required this.type, this.content});
-
-  factory AdvisorStreamChunk.fromJson(Map<String, dynamic> json) {
-    return AdvisorStreamChunk(
-      type: json['type'] as String,
-      content: json['content'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'type': type,
-        if (content != null) 'content': content,
-      };
-}
-
 class IngestionJob {
   final String id;
 
@@ -1555,16 +901,6 @@ Map<String, dynamic>? _parseMap(dynamic value) {
   return null;
 }
 
-Map<String, double> _parseDoubleMap(dynamic value) {
-  if (value is! Map) return {};
-  final result = <String, double>{};
-  value.forEach((k, v) {
-    final d = _parseDouble(v);
-    if (d != null) result[k.toString()] = d;
-  });
-  return result;
-}
-
 List<String>? _parseStringList(dynamic value) {
   if (value is! List) return null;
   return value.whereType<String>().toList();
@@ -1580,14 +916,5 @@ List<T> _parseObjectList<T>(
   T Function(dynamic) parser,
 ) {
   if (value is! List) return [];
-  return value.map(parser).whereType<T>().toList();
-}
-
-List<T>? _parseObjectListOrNull<T>(
-  dynamic value,
-  T Function(dynamic) parser,
-) {
-  if (value == null) return null;
-  if (value is! List) return null;
   return value.map(parser).whereType<T>().toList();
 }

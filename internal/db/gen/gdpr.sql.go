@@ -483,46 +483,6 @@ func (q *Queries) DeleteComparisonDataSourcesByUser(ctx context.Context, userID 
 	return err
 }
 
-const deleteComparisonProfilesByUser = `-- name: DeleteComparisonProfilesByUser :exec
-DELETE FROM comparison_profiles
-WHERE user_id = $1
-`
-
-// JCE Sub-spec 2/3: delete user-owned comparison profiles during GDPR erasure.
-// comparison_profiles.user_id has ON DELETE CASCADE, but we delete explicitly
-// to document the erasure path and ensure PII (goals, preferences, demographics)
-// is removed during the anonymization phase, before the final HardDeleteUser.
-func (q *Queries) DeleteComparisonProfilesByUser(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteComparisonProfilesByUser, userID)
-	return err
-}
-
-const deleteComparisonRecommendationsByUser = `-- name: DeleteComparisonRecommendationsByUser :exec
-DELETE FROM comparison_recommendations cr
-USING contents c
-WHERE cr.content_id = c.id
- AND c.author_id = $1
-`
-
-// JCE Sub-spec 2/3: delete generated recommendations for content authored by the user.
-func (q *Queries) DeleteComparisonRecommendationsByUser(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteComparisonRecommendationsByUser, userID)
-	return err
-}
-
-const deleteComparisonScoresByUser = `-- name: DeleteComparisonScoresByUser :exec
-DELETE FROM comparison_scores cs
-USING contents c
-WHERE cs.content_id = c.id
- AND c.author_id = $1
-`
-
-// JCE Sub-spec 2/3: delete computed scores for content authored by the user.
-func (q *Queries) DeleteComparisonScoresByUser(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, deleteComparisonScoresByUser, userID)
-	return err
-}
-
 const deleteConsent = `-- name: DeleteConsent :one
 DELETE FROM consent_records
 WHERE id = $1
@@ -1580,68 +1540,6 @@ FROM (
 // =====================================================================
 func (q *Queries) GdprExportUserComparisonItems(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserComparisonItems, userID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserComparisonProfiles = `-- name: GdprExportUserComparisonProfiles :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
- SELECT id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template,
- created_at, updated_at
- FROM comparison_profiles
- WHERE user_id = $1
- ORDER BY created_at
-) t
-`
-
-// JCE Sub-spec 2/3: export comparison profiles for GDPR data portability.
-func (q *Queries) GdprExportUserComparisonProfiles(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonProfiles, userID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserComparisonRecommendations = `-- name: GdprExportUserComparisonRecommendations :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
- SELECT cr.id, cr.content_id, cr.item_id, cr.profile_id,
- cr.factor_id, cr.text, cr.action_type, cr.action_url, cr.priority,
- cr.created_at, cr.updated_at
- FROM comparison_recommendations cr
- JOIN contents c ON c.id = cr.content_id
- WHERE c.author_id = $1
- ORDER BY cr.created_at
-) t
-`
-
-// JCE Sub-spec 2/3: export comparison recommendations for content authored by the user.
-func (q *Queries) GdprExportUserComparisonRecommendations(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonRecommendations, userID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserComparisonScores = `-- name: GdprExportUserComparisonScores :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
- SELECT cs.id, cs.content_id, cs.item_id, cs.factor_id,
- cs.dimension_id, cs.profile_id, cs.score_value, cs.max_value,
- cs.explanation, cs.eligible_status, cs.calculated_at, cs.version
- FROM comparison_scores cs
- JOIN contents c ON c.id = cs.content_id
- WHERE c.author_id = $1
- ORDER BY cs.calculated_at
-) t
-`
-
-// JCE Sub-spec 2/3: export comparison scores for content authored by the user.
-func (q *Queries) GdprExportUserComparisonScores(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserComparisonScores, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

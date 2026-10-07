@@ -52,9 +52,6 @@ comparison_content_metadata
 comparison_data_ingestion_jobs
 comparison_dimensions
 comparison_items
-comparison_profiles
-comparison_recommendations
-comparison_scores
 comparison_values
 consent_records
 content_affiliate_scan_results

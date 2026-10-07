@@ -520,7 +520,6 @@ func (s *Service) CreateDataSource(ctx context.Context, in DataSourceInput) (Dat
 	}
 
 	s.deleteJceCacheByPattern(ctx, "jc:jce:freshness:*")
-	s.deleteJceCacheByPattern(ctx, "jc:jce:advisor:*")
 
 	return ds, nil
 }
@@ -598,7 +597,6 @@ func (s *Service) UpdateDataSource(ctx context.Context, id pgtype.UUID, in DataS
 	}
 
 	s.deleteJceCacheByPattern(ctx, "jc:jce:freshness:*")
-	s.deleteJceCacheByPattern(ctx, "jc:jce:advisor:*")
 
 	return ds, nil
 }
@@ -627,7 +625,6 @@ func (s *Service) DeleteDataSource(ctx context.Context, id pgtype.UUID) error {
 	}
 
 	s.deleteJceCacheByPattern(ctx, "jc:jce:freshness:*")
-	s.deleteJceCacheByPattern(ctx, "jc:jce:advisor:*")
 
 	return nil
 }

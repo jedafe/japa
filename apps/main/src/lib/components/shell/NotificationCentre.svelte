@@ -211,10 +211,23 @@
 		<button
 			type="button"
 			{...props}
-			class="w-full text-left {klass}"
+			class={children
+				? `w-full text-left ${klass}`
+				: 'grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]'}
 			aria-label={t('nav.notifications')}
 		>
-			{@render children?.()}
+			{#if children}
+				{@render children()}
+			{:else}
+				<span class="relative">
+					<Bell size={18} />
+					{#if badge > 0}
+						<span
+							class="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[var(--color-primary)] px-0.5 text-[9px] font-semibold text-[var(--color-primary-contrast)]"
+						>{badge > 99 ? '99+' : badge}</span>
+					{/if}
+				</span>
+			{/if}
 		</button>
 	{/snippet}
 			<!-- Header -->

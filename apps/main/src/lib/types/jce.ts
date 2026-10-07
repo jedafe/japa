@@ -90,7 +90,6 @@ export interface JCEComparisonMetadata {
 	depth: 'quick' | 'detailed';
 	promoted_from_id?: string | null;
 	promoted_at?: string | null;
-	smart_mode?: string;
 	config?: Record<string, unknown> | null;
 }
 
@@ -158,108 +157,7 @@ export interface CreateQuickComparisonInput {
 	visibility: 'private';
 	items: JCEItem[];
 	dimensions: string[];
-	smart_mode?: string;
 	config?: Record<string, unknown>;
-}
-
-export interface ComparisonProfile {
-	id: string;
-	title: string;
-	source_space_id?: string | null;
-	target_space_ids: string[];
-	goals: { key: string; weight: number }[];
-	preferences: Record<string, number>;
-	demographics: {
-		age?: number;
-		occupation?: string;
-		family_status?: string;
-		language_proficiency?: string;
-		budget_min?: number;
-		budget_max?: number;
-		budget_currency?: string;
-	};
-	is_default: boolean;
-	is_template: boolean;
-	created_at?: string;
-	updated_at?: string;
-}
-
-export interface ScoreFactor {
-	id: string;
-	comparison_type_id?: string | null;
-	factor_key: string;
-	label: string;
-	description?: string;
-	dimension_slug?: string | null;
-	data_source: 'dimension' | 'resolver_metadata' | 'profile' | 'eligibility' | 'aggregate';
-	default_weight: number;
-	config: Record<string, unknown>;
-	version: number;
-	is_system: boolean;
-}
-
-export interface FactorScore {
-	factor_key: string;
-	label: string;
-	score_value: number;
-	max_value: number;
-	weight: number;
-	explanation: string;
-	missing?: boolean;
-	missing_score?: number;
-}
-
-export interface JapaScore {
-	item_id: string;
-	item_title: string;
-	japa_score: number;
-	max_value: number;
-	eligible_status: 'eligible' | 'limited' | 'ineligible';
-	factor_scores: FactorScore[];
-	explanation: string;
-}
-
-export interface ComparisonRecommendation {
-	id: string;
-	item_id?: string | null;
-	text: string;
-	action_type?: string | null;
-	action_url?: string | null;
-	priority: number;
-}
-
-export interface ScoreResult {
-	content_id: string;
-	profile_id?: string | null;
-	smart_mode: string;
-	scores: JapaScore[];
-	recommendations: ComparisonRecommendation[];
-	weights_snapshot: Record<string, number>;
-	recommendation_summary: {
-		top_item_id: string;
-		top_japa_score: number;
-		recommendations_count: number;
-		last_scored_at: string;
-	};
-	version: number;
-}
-
-export interface ScorePreviewInput {
-	type_id: string;
-	smart_mode: string;
-	item_refs: Record<string, unknown>[];
-	profile?: ComparisonProfileInput;
-}
-
-export interface ComparisonProfileInput {
-	title?: string;
-	source_space_id?: string | null;
-	target_space_ids: string[];
-	goals?: { key: string; weight: number }[];
-	preferences?: Record<string, number>;
-	demographics?: ComparisonProfile['demographics'];
-	is_default?: boolean;
-	is_template?: boolean;
 }
 
 export interface DataSource {
@@ -301,42 +199,6 @@ export interface FreshnessSummary {
 	stale_count: number;
 	total_count: number;
 	by_item: FreshnessItem[];
-}
-
-export interface AdvisorRankItem {
-	item_id: string;
-	item_title: string;
-	rank: number;
-	japa_score: number;
-	reasoning: string;
-	eligible: boolean;
-}
-
-export interface NextAction {
-	item_id?: string;
-	text: string;
-	action_type?: string;
-	action_url?: string;
-	priority: number;
-}
-
-export interface AdvisorResult {
-	content_id: string;
-	profile_id?: string | null;
-	summary: string;
-	ranking?: AdvisorRankItem[];
-	next_actions?: NextAction[];
-	citations?: string[];
-	provider_name?: string;
-	provider_ref?: string;
-	freshness_score: number;
-}
-
-export interface ProfileStat {
-	source_space_id: string;
-	profile_count: number;
-	source_space_name?: string | null;
-	source_space_slug?: string | null;
 }
 
 export interface IngestionJob {

@@ -77,21 +77,16 @@ type ComparisonService interface {
 	// Values (with provenance metadata for AI-filled values).
 	UpsertComparisonValueWithMetadata(ctx context.Context, input ComparisonValueUpsertInput, metadata []byte) (gen.ComparisonValue, error)
 
-	// Cache invalidation for JCE freshness/advisor after value mutations.
+	// Cache invalidation for JCE freshness after value mutations.
 	DeleteJCEComparisonCaches(ctx context.Context, contentID pgtype.UUID)
 }
 
-// JCEService is the subset of internal/jce.Service the JCE Sub-spec 4 AI
-// advisor tools (analyze, rank, explain, recommend, refresh) call. The
-// adapter in internal/jce implements this interface and converts the typed
-// domain results to map[string]any for the agent.
+// JCEService is the subset of internal/jce.Service the JCE comparison.refresh
+// tool calls. The adapter in internal/jce implements this interface and
+// converts the typed domain results to map[string]any for the agent.
 // // Ref: docs/superpowers/plans/2026-08-30-jce-subspec-4.md (Task 8)
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Comparison Engine).
 type JCEService interface {
-	Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (map[string]any, error)
-	Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error)
-	Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error)
-	Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error)
 	Refresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (map[string]any, error)
 }
 

@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/public';
 import { apiContext, apiGet, apiList, apiPost, ApiError, API_BASE } from '$lib/server/api';
-import type { ComparisonProfile, ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
+import type { ComparisonType, ComparisonTypeConfig, JCEComparisonSummary, ResolvedItem } from '$lib/types/jce';
 import type { ListMeta } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
@@ -274,21 +274,21 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	let profiles: ComparisonProfile[] = [];
-	if (event.locals.user) {
+	// Landing-mode discovery strip — published public detailed comparisons.
+	// Only fetched when the picker is in landing mode (no ?type, not the
+	// "mine" tab). Best-effort: failure hides the strip.
+	let popularComparisons: JCEComparisonSummary[] = [];
+	if (!typeSlug && !mine) {
 		try {
-			const res = await apiGet<ComparisonProfile[]>(ctx, '/jce/profiles');
-			profiles = res ?? [];
-		} catch (err) {
-			// Feature may be disabled; ignore 404 feature_disabled.
-			if (err instanceof ApiError && err.status !== 404) {
-				loadError = loadError || 'jce.compare.errors.load_profiles';
-				loadErrorParams = { message: err.message };
-			}
+			const res = await apiList<JCEComparisonSummary>(
+				ctx,
+				'/jce/comparisons?filter_depth=detailed&filter_status=published&filter_visibility=public&page_size=6&sort=popularity'
+			);
+			popularComparisons = mapComparisonTypes(res.items, allTypes);
+		} catch {
+			popularComparisons = [];
 		}
 	}
-
-	let defaultProfile = profiles.find((p) => p.is_default) ?? profiles[0] ?? null;
 
 	// §30 AI Quick Compare — the POST /ai/compare-entities endpoint is gated
 	// by agent.use. /me/permissions only returns explicitly resolved nodes,
@@ -332,8 +332,7 @@ export const load: PageServerLoad = async (event) => {
 		mine,
 		myComparisons,
 		myMeta,
-		profiles,
-		defaultProfile,
+		popularComparisons,
 		canAiQuick,
 		apiBase: API_BASE,
 		mainOrigin: event.url.origin

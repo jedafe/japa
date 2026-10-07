@@ -141,9 +141,13 @@ func (s *Service) ResolveModerationScope(ctx context.Context, userID pgtype.UUID
 }
 
 // ModerationQueueFilter holds the optional list filters for the scoped queue.
+// ContentType filters on the resolved entity's contents.content_type (reports
+// on a story, or a comment under one) — same axis as /studio/contents' type
+// filter, distinct from EntityType (the report target kind).
 type ModerationQueueFilter struct {
 	Status       *string
 	EntityType   *string
+	ContentType  *string
 	SpaceID      pgtype.UUID
 	TagID        pgtype.UUID
 	AssignedOnly bool
@@ -155,6 +159,7 @@ func (s *Service) queueParams(scope *ModerationScope, caller pgtype.UUID, f Mode
 		Platform:      scope.PlatformModerator,
 		Status:        f.Status,
 		EntityType:    f.EntityType,
+		ContentType:   f.ContentType,
 		FilterSpaceID: f.SpaceID,
 		FilterTagID:   f.TagID,
 		AssignedOnly:  f.AssignedOnly,
@@ -167,6 +172,7 @@ func (s *Service) queueParams(scope *ModerationScope, caller pgtype.UUID, f Mode
 		Platform:      list.Platform,
 		Status:        list.Status,
 		EntityType:    list.EntityType,
+		ContentType:   list.ContentType,
 		FilterSpaceID: list.FilterSpaceID,
 		FilterTagID:   list.FilterTagID,
 		AssignedOnly:  list.AssignedOnly,

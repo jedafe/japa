@@ -1049,27 +1049,6 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 			return fmt.Errorf("anonymizing comparison values: %w", err)
 		}
 
-		// JCE Sub-spec 2/3: delete user-owned comparison profiles. They contain
-		// PII (goals, preferences, demographics) and are not needed for audit.
-		if err := q.DeleteComparisonProfilesByUser(ctx,
-			userID,
-		); err != nil {
-			return fmt.Errorf("deleting comparison profiles: %w", err)
-		}
-
-		// JCE Sub-spec 2/3: delete computed scores and recommendations for
-		// content authored by the user. These are derived PII tied to content.
-		if err := q.DeleteComparisonScoresByUser(ctx,
-			userID,
-		); err != nil {
-			return fmt.Errorf("deleting comparison scores: %w", err)
-		}
-		if err := q.DeleteComparisonRecommendationsByUser(ctx,
-			userID,
-		); err != nil {
-			return fmt.Errorf("deleting comparison recommendations: %w", err)
-		}
-
 		// JCE Sub-spec 4: delete ingestion jobs tied to user-authored comparison
 		// content and any user-owned data sources (created_by_user_id is populated
 		// for future non-admin source creation; admin sources remain NULL).
@@ -2245,9 +2224,6 @@ type UserDataExport struct {
 	ComparisonItems             []map[string]interface{} `json:"comparison_items"`               // BUG-004
 	ComparisonDimensions        []map[string]interface{} `json:"comparison_dimensions"`          // BUG-004
 	ComparisonValues            []map[string]interface{} `json:"comparison_values"`              // BUG-004
-	ComparisonProfiles          []map[string]interface{} `json:"comparison_profiles"`            // JCE Sub-spec 2/3
-	ComparisonScores            []map[string]interface{} `json:"comparison_scores"`              // JCE Sub-spec 2/3
-	ComparisonRecommendations   []map[string]interface{} `json:"comparison_recommendations"`     // JCE Sub-spec 2/3
 	ComparisonDataIngestionJobs []map[string]interface{} `json:"comparison_data_ingestion_jobs"` // JCE Sub-spec 4
 	ComparisonDataSources       []map[string]interface{} `json:"comparison_data_sources"`        // JCE Sub-spec 4
 	CvFormatSessions            []map[string]interface{} `json:"cv_format_sessions"`             // §95 BUG-014
@@ -2720,24 +2696,6 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		export.ComparisonValues = rows
 	} else {
 		slog.Warn("failed to collect comparison_values for export", "user_id", userID.String(), "error", err)
-	}
-
-	if rows, err := s.store.gdprExportUserComparisonProfiles(ctx, userID); err == nil {
-		export.ComparisonProfiles = rows
-	} else {
-		slog.Warn("failed to collect comparison_profiles for export", "user_id", userID.String(), "error", err)
-	}
-
-	if rows, err := s.store.gdprExportUserComparisonScores(ctx, userID); err == nil {
-		export.ComparisonScores = rows
-	} else {
-		slog.Warn("failed to collect comparison_scores for export", "user_id", userID.String(), "error", err)
-	}
-
-	if rows, err := s.store.gdprExportUserComparisonRecommendations(ctx, userID); err == nil {
-		export.ComparisonRecommendations = rows
-	} else {
-		slog.Warn("failed to collect comparison_recommendations for export", "user_id", userID.String(), "error", err)
 	}
 
 	if rows, err := s.store.gdprExportUserComparisonDataIngestionJobs(ctx, userID); err == nil {

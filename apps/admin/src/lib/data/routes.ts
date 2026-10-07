@@ -89,7 +89,6 @@ const adminRoutes: string[] = [
 	'/comparison-types',
 	'/comparison-data-sources',
 	'/comparison-ingestion-jobs',
-	'/comparison-profiles',
 	'/comparisons',
 	'/content',
 	'/content/videos',

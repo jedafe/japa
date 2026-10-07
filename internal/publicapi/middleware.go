@@ -14,14 +14,34 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
+// BearerTokenResolver resolves a non-API-key bearer credential (a §120
+// OAuth access token) into the synthetic key context RequireScope enforces.
+// Implemented by mcp.OAuthService.ResolveBearer; nil disables bearer auth.
+type BearerTokenResolver func(ctx context.Context, token string) (*APIKeyContext, error)
+
 // APIKeyMiddleware extracts the X-API-Key header, validates it, and
 // injects the API key context into the request. Downstream handlers
-// can read the key info via APIKeyFromContext.
-func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
+// can read the key info via APIKeyFromContext. When no X-API-Key is
+// present, an `Authorization: Bearer jcpat_*` token is resolved through
+// resolveBearer (§120 v1.4 — "Login with JapaConnect" OAuth grants work
+// anywhere an API key is accepted on the public surface).
+func APIKeyMiddleware(service *Service, resolveBearer BearerTokenResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.Header.Get("X-API-Key")
 			if apiKey == "" {
+				// §120 v1.4: OAuth bearer fallback — a resolved token
+				// produces the same APIKeyContext an API key would.
+				if resolveBearer != nil {
+					if bearer := bearerToken(r); bearer != "" {
+						keyCtx, err := resolveBearer(r.Context(), bearer)
+						if err != nil {
+							errpkg.WriteError(w, http.StatusUnauthorized, "invalid_bearer_token", "Invalid or expired bearer token")
+							return
+						}
+						r = r.WithContext(context.WithValue(r.Context(), apiKeyContextKey, keyCtx))
+					}
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -61,6 +81,19 @@ func APIKeyMiddleware(service *Service) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// bearerToken extracts the raw token from an Authorization: Bearer header.
+func bearerToken(r *http.Request) string {
+	ah := r.Header.Get("Authorization")
+	if ah == "" {
+		return ""
+	}
+	parts := strings.SplitN(ah, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return ""
+	}
+	return parts[1]
 }
 
 // extractClientIP resolves the client's IP address, trusting forwarding

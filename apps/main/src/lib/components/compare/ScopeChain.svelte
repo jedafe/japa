@@ -12,9 +12,15 @@
 		geo_code?: string;
 	};
 
-	let { chain, selections = $bindable({}), onChange } = $props<{
+	let {
+		chain,
+		selections = $bindable({}),
+		labels = $bindable({}),
+		onChange
+	} = $props<{
 		chain: string[];
 		selections: Record<string, string>;
+		labels?: Record<string, string>;
 		onChange: (key: string, value: string) => void;
 	}>();
 
@@ -106,6 +112,25 @@
 				continue;
 			}
 			loadOptions(step);
+		}
+	});
+
+	let prevLabels = '';
+
+	$effect(() => {
+		// Surface id→title for selected steps so parents can render a summary
+		// (e.g. "Nigeria · Lagos"). Unresolved ids simply omit until options load.
+		const next: Record<string, string> = {};
+		for (const step of chain) {
+			const id = selections[step];
+			if (!id) continue;
+			const opt = options[step]?.find((o) => o.id === id);
+			if (opt) next[step] = opt.title;
+		}
+		const serialized = JSON.stringify(next);
+		if (serialized !== prevLabels) {
+			prevLabels = serialized;
+			labels = next;
 		}
 	});
 </script>

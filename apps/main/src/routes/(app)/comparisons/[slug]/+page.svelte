@@ -8,7 +8,6 @@
 		uniqueResolvedItems
 	} from '$lib/utils/comparison';
 	import type {
-		FreshnessCell,
 		FreshnessSummary,
 		JCEComparisonDetail,
 		JCEItem,
@@ -20,7 +19,6 @@
 	import type { PageData } from './$types';
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
-	import AIAdvisorDrawer from '$lib/components/compare/AIAdvisorDrawer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
@@ -63,7 +61,6 @@
 	);
 
 	let freshness = $state<FreshnessSummary | null>(null);
-	let advisorOpen = $state(false);
 
 	$effect(() => {
 		if (comparison?.content?.id && user && features['feature.jce.refresh']) {
@@ -82,11 +79,6 @@
 
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
-	}
-
-	function findCell(itemId: string, dimId: string): FreshnessCell | undefined {
-		const item = freshness?.by_item.find((i) => i.item_id === itemId);
-		return item?.cells.find((c) => c.dimension_id === dimId);
 	}
 
 	function formatValue(cell?: MatrixDimension) {
@@ -261,16 +253,6 @@
 					{#if user && features['feature.jce.refresh']}
 						<RefreshButton comparisonID={comparison.content.id} />
 					{/if}
-					{#if user && features['feature.jce.ai_advisor']}
-						<button
-							type="button"
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius-button)] px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50"
-							style="background-color: var(--color-primary, #3b82f6); color: white"
-							onclick={() => (advisorOpen = true)}
-						>
-							{t('jce.advisor.open', 'Ask AI Advisor')}
-						</button>
-					{/if}
 					{#if user && features['feature.jce.refresh'] && freshness}
 						<FreshnessChip summary={freshness} />
 					{/if}
@@ -292,12 +274,7 @@
 								<td class="font-medium" style="color: var(--color-text)">{dim.label}</td>
 								{#each matrix as item (item.id)}
 									<td style="color: var(--color-muted)">
-										<div class="space-y-1">
-											<div>{formatValue(cellFor(item, dim))}</div>
-											{#if user && features['feature.jce.refresh'] && freshness}
-												<FreshnessChip cell={findCell(item.id, dim.id)} />
-											{/if}
-										</div>
+										{formatValue(cellFor(item, dim))}
 									</td>
 								{/each}
 							</tr>
@@ -305,14 +282,6 @@
 					</tbody>
 				</table>
 			</div>
-
-			{#if user && features['feature.jce.ai_advisor']}
-				<AIAdvisorDrawer
-					bind:open={advisorOpen}
-					comparisonID={comparison.content.id}
-					items={comparison.items ?? []}
-				/>
-			{/if}
 		</section>
 	{/if}
 

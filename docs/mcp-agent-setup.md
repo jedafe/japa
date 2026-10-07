@@ -21,6 +21,14 @@ Two credential paths exist:
 
 Both end in the same read-only tool gate. `agent.use` scope is always required.
 
+Exception: an API key that also carries the **`agent.write`** scope bypasses
+the read-only gate and receives the key owner's full RBAC-filtered catalog —
+the same surface a JWT session gets, writes included. See
+[Write-capable keys](#write-capable-keys-agentwrite) below. `agent.write` is
+admin-only: it can only be granted via the control-panel API-keys flow (or by
+a caller holding `api.keys.manage`), can never be self-minted, and is never
+grantable through OAuth — `jcpat_*` tokens stay read-only.
+
 ## Local / CLI agents (API key)
 
 Generate a key at `/dashboard/developer` (or admin API-keys flow) with the
@@ -71,8 +79,68 @@ recommended minimum for useful results).
 ### Windsurf / Cline / generic MCP hosts
 
 Any host that supports remote Streamable HTTP servers with custom headers can
-attach the same URL + `X-API-Key` pair. Hosts that only support stdio need a
-stdio→HTTP bridge process (tracked in ADR-116 follow-ups).
+attach the same URL + `X-API-Key` pair.
+
+### stdio-only hosts (`cmd/mcpbridge`)
+
+Hosts that only support local stdio servers use `cmd/mcpbridge` — a
+stdlib-only Go binary that relays newline-delimited JSON-RPC between the
+host's stdio transport and the remote endpoint:
+
+```bash
+go build -o mcpbridge ./cmd/mcpbridge
+```
+
+```json
+{
+  "mcpServers": {
+    "japaconnect": {
+      "type": "stdio",
+      "command": "/path/to/mcpbridge",
+      "env": {
+        "JC_MCP_URL": "https://api.japaconnect.com/api/v1/mcp",
+        "JC_MCP_API_KEY": "jc_key_..."
+      }
+    }
+  }
+}
+```
+
+`JC_MCP_URL` defaults to the production endpoint; `JC_MCP_TOKEN` (a
+`jcpat_*` OAuth access token or JWT) can replace `JC_MCP_API_KEY` for
+Bearer auth. Diagnostics go to stderr; stdout carries only the protocol.
+
+## Write-capable keys (`agent.write`)
+
+For content management through an agent — the catalog's write tools
+(`content.create`, `content.update`, `content.publish`, docs/wiki/spaces
+writers, the tool-type record CRUD ops, etc.) — mint a key with both
+`agent.use` and `agent.write`. The key then acts with its owner's full
+RBAC-filtered catalog instead of the read-only gate: every tool the owning
+user could reach via a JWT session becomes available, and every boundary that
+applies to sessions still applies — RBAC `required_permission` filters,
+`is_blocked`/hardcoded blocklist, `ai_exempt` privacy, HITL (`agent.skip_hitl`
+still bypasses for admin-group/super-admin owners), and premium `minTier`
+gates.
+
+Mint via the admin/control path — self-serve keys are rejected with
+`scope_requires_admin` if they include `agent.write`:
+
+```bash
+curl -X POST https://api.japaconnect.com/api/v1/control/api-keys \
+  -H "Authorization: Bearer <admin-jwt>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"content-agent","scopes":["agent.use","agent.write"]}'
+```
+
+(That route requires the caller's `api.keys.manage` permission; the
+control-panel API-keys UI exposes the same option.)
+Keep the full key out of tracked files — it is shown once at creation and is
+bearer-equivalent to the owner's session. Use `${JC_MCP_API_KEY}` env
+references in MCP configs, never the literal.
+
+A plain `agent.use` + `api.read.*` key remains read-only — `agent.write` is
+the single switch. OAuth `jcpat_*` tokens can never carry it.
 
 ## Web agents (OAuth)
 
@@ -127,14 +195,16 @@ documents directly.
 
 - Access tokens `jcpat_*`, refresh tokens `jcprt_*`, auth codes `jcac_*`,
   client IDs `jcmc_*` — all hashed at rest.
-- Access tokens inherit the read-only API-key gate; `api.write.*` scopes are
-  never granted to OAuth clients.
+- Access tokens inherit the read-only API-key gate; `api.write.*` and
+  `agent.write` scopes are never granted to OAuth clients.
 - Refresh tokens rotate on every use. A second presentation within
   `mcp.oauth_reuse_grace_seconds` (default 30s) is treated as a lost-response
   retry (`invalid_grant`, tokens stay live); an older replay revokes the
   token family.
-- Clients can self-revoke via `/oauth/revoke`. A user-facing connected-apps
-  UI in `/dashboard` is a planned follow-up (§120).
+- Clients can self-revoke via `/oauth/revoke`. Users manage their grants at
+  **Settings → Connected apps** (`/settings/connected-apps`), backed by
+  `GET/DELETE /api/v1/me/oauth/grants*` — revoke drops the whole client/user
+  token family (`jc:oauth_famrev` tombstone included).
 
 ## Deployment checklist
 

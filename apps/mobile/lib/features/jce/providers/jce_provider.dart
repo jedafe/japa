@@ -173,14 +173,8 @@ final jceComparisonListProvider =
 );
 
 // ---------------------------------------------------------------------------
-// Detail / matrix / profiles
+// Detail / matrix
 // ---------------------------------------------------------------------------
-
-final jceComparisonTypeProvider =
-    FutureProvider.autoDispose.family<ComparisonType?, String>((ref, typeSlug) async {
-  final service = ref.watch(jceServiceProvider);
-  return service.getComparisonType(typeSlug);
-});
 
 final jceComparisonDetailProvider =
     FutureProvider.autoDispose.family<JceComparisonDetail?, String>((ref, id) async {
@@ -193,82 +187,6 @@ final jceMatrixProvider =
   final service = ref.watch(jceServiceProvider);
   return service.getMatrix(id);
 });
-
-final jceProfilesProvider =
-    FutureProvider.autoDispose<List<ComparisonProfile>>((ref) async {
-  final service = ref.watch(jceServiceProvider);
-  return service.listProfiles();
-});
-
-class SelectedProfileIdNotifier extends Notifier<String?> {
-  @override
-  String? build() => null;
-
-  void select(String? id) => state = id;
-}
-
-final selectedProfileIdProvider =
-    NotifierProvider<SelectedProfileIdNotifier, String?>(SelectedProfileIdNotifier.new);
-
-class SelectedSmartModeNotifier extends Notifier<String> {
-  @override
-  String build() => 'none';
-
-  void setMode(String mode) => state = mode;
-}
-
-final selectedSmartModeProvider =
-    NotifierProvider<SelectedSmartModeNotifier, String>(SelectedSmartModeNotifier.new);
-
-// ---------------------------------------------------------------------------
-// Score & recommendations
-// ---------------------------------------------------------------------------
-
-final jceRecommendationsProvider =
-    FutureProvider.autoDispose.family<List<ComparisonRecommendation>, String>((ref, id) async {
-  final service = ref.watch(jceServiceProvider);
-  final profileId = ref.watch(selectedProfileIdProvider);
-  return service.listRecommendations(id, profileID: profileId);
-});
-
-class ScoreComparisonNotifier extends AsyncNotifier<ScoreResult?> {
-  final String comparisonId;
-
-  ScoreComparisonNotifier(this.comparisonId);
-
-  JceService get _service => ref.read(jceServiceProvider);
-
-  @override
-  Future<ScoreResult?> build() async {
-    final profileId = ref.watch(selectedProfileIdProvider);
-    return _service.getScore(comparisonId, profileID: profileId);
-  }
-
-  Future<void> score({
-    String? profileId,
-    String? smartMode,
-    bool? force,
-  }) async {
-    state = const AsyncLoading();
-    try {
-      final result = await _service.scoreComparison(
-        comparisonId,
-        profileID: profileId,
-        smartMode: smartMode,
-        force: force ?? false,
-      );
-      state = AsyncData(result);
-      ref.invalidate(jceRecommendationsProvider(comparisonId));
-    } catch (e, st) {
-      state = AsyncError(e, st);
-    }
-  }
-}
-
-final scoreComparisonProvider =
-    AsyncNotifierProvider.autoDispose.family<ScoreComparisonNotifier, ScoreResult?, String>(
-  (arg) => ScoreComparisonNotifier(arg),
-);
 
 // ---------------------------------------------------------------------------
 // Freshness & refresh
@@ -324,70 +242,6 @@ final jceDataSourcesProvider =
 });
 
 // ---------------------------------------------------------------------------
-// Advisor stream
-// ---------------------------------------------------------------------------
-
-class JceAdvisorArgs {
-  final String comparisonId;
-  final String question;
-  final String? profileId;
-
-  const JceAdvisorArgs({
-    required this.comparisonId,
-    required this.question,
-    this.profileId,
-  });
-
-  @override
-  bool operator ==(Object other) =>
-      other is JceAdvisorArgs &&
-      other.comparisonId == comparisonId &&
-      other.question == question &&
-      other.profileId == profileId;
-
-  @override
-  int get hashCode => Object.hash(comparisonId, question, profileId);
-}
-
-class JceAdvisorArgsNotifier extends Notifier<JceAdvisorArgs?> {
-  final String comparisonId;
-
-  JceAdvisorArgsNotifier(this.comparisonId);
-
-  @override
-  JceAdvisorArgs? build() => null;
-
-  void setArgs(JceAdvisorArgs? args) => state = args;
-}
-
-final jceAdvisorArgsProvider =
-    NotifierProvider.autoDispose.family<JceAdvisorArgsNotifier, JceAdvisorArgs?, String>(
-  (arg) => JceAdvisorArgsNotifier(arg),
-);
-
-final jceAdvisorStreamProvider =
-    StreamProvider.autoDispose.family<List<AdvisorStreamChunk>, String>((ref, id) async* {
-  final args = ref.watch(jceAdvisorArgsProvider(id));
-  if (args == null) {
-    yield [];
-    return;
-  }
-
-  final service = ref.watch(jceServiceProvider);
-  final stream = service.streamAdvisor(
-    id,
-    args.question,
-    profileID: args.profileId,
-  );
-
-  final chunks = <AdvisorStreamChunk>[];
-  await for (final chunk in stream) {
-    chunks.add(chunk);
-    yield List.unmodifiable(chunks);
-  }
-});
-
-// ---------------------------------------------------------------------------
 // Capabilities (feature flags + permissions)
 // ---------------------------------------------------------------------------
 
@@ -399,32 +253,13 @@ class JceCapabilities {
 
   bool _hasPerm(String key) => permissions.contains(key);
 
-  bool get canViewScore =>
-      flags.isEnabled('feature.jce.scoring') &&
-      (_hasPerm('jce.score.view') || _hasPerm('jce.score.recalculate'));
-
-  bool get canRecalculateScore =>
-      flags.isEnabled('feature.jce.scoring') && _hasPerm('jce.score.recalculate');
-
-  bool get canViewRecommendations =>
-      flags.isEnabled('feature.jce.scoring') &&
-      _hasPerm('jce.recommendation.view');
-
-  bool get canViewFreshness =>
-      flags.isEnabled('feature.jce') &&
-      (_hasPerm('jce.score.view') || _hasPerm('jce.score.recalculate'));
+  bool get canViewFreshness => flags.isEnabled('feature.jce.refresh');
 
   bool get canRefresh =>
       flags.isEnabled('feature.jce.refresh') && _hasPerm('jce.refresh.trigger');
 
   bool get canViewIngestionJobs =>
       flags.isEnabled('feature.jce.refresh') && _hasPerm('jce.ingestion_job.view');
-
-  bool get canUseAdvisor =>
-      flags.isEnabled('feature.jce.ai_advisor') && _hasPerm('jce.ai_advisor.use');
-
-  bool get canUseProfiles =>
-      flags.isEnabled('feature.jce.profiles') && _hasPerm('jce.profile.list');
 }
 
 final jceCapabilitiesProvider = FutureProvider.autoDispose<JceCapabilities>((ref) async {

@@ -8,27 +8,31 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // fakeOAuthStore is an in-memory OAuthStore for handler/service tests.
 type fakeOAuthStore struct {
-	clients map[string]*OAuthClient
-	codes   map[string]*OAuthAuthorizationCode // by code_hash
-	tokens  map[string]*OAuthToken             // by token_hash
+	clients    map[string]*OAuthClient
+	codes      map[string]*OAuthAuthorizationCode // by code_hash
+	tokens     map[string]*OAuthToken             // by token_hash
+	identities map[pgtype.UUID]*OAuthUserIdentity
 }
 
 func newFakeOAuthStore() *fakeOAuthStore {
 	return &fakeOAuthStore{
-		clients: map[string]*OAuthClient{},
-		codes:   map[string]*OAuthAuthorizationCode{},
-		tokens:  map[string]*OAuthToken{},
+		clients:    map[string]*OAuthClient{},
+		codes:      map[string]*OAuthAuthorizationCode{},
+		tokens:     map[string]*OAuthToken{},
+		identities: map[pgtype.UUID]*OAuthUserIdentity{},
 	}
 }
 
@@ -116,12 +120,54 @@ func (f *fakeOAuthStore) RevokeTokenFamily(_ context.Context, clientID string, u
 	return nil
 }
 
+func (f *fakeOAuthStore) ListUserGrants(_ context.Context, userID pgtype.UUID) ([]OAuthGrant, error) {
+	byClient := map[string]*OAuthGrant{}
+	for _, t := range f.tokens {
+		if t.UserID != userID || t.RevokedAt != nil || t.ExpiresAt.Time.Before(time.Now()) {
+			continue
+		}
+		g := byClient[t.ClientID]
+		if g == nil {
+			g = &OAuthGrant{ClientID: t.ClientID}
+			if c, ok := f.clients[t.ClientID]; ok {
+				g.ClientName = c.ClientName
+			}
+			byClient[t.ClientID] = g
+		}
+		for _, sc := range strings.Fields(t.Scope) {
+			dup := false
+			for _, have := range g.Scopes {
+				if have == sc {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				g.Scopes = append(g.Scopes, sc)
+			}
+		}
+	}
+	out := make([]OAuthGrant, 0, len(byClient))
+	for _, g := range byClient {
+		sort.Strings(g.Scopes)
+		out = append(out, *g)
+	}
+	return out, nil
+}
+
 func (f *fakeOAuthStore) MarkTokenReplaced(_ context.Context, oldID, newID pgtype.UUID) error {
 	return nil
 }
 
 func (f *fakeOAuthStore) AuditOAuthEvent(_ context.Context, _ string, _ pgtype.UUID, _ map[string]any, _ string) error {
 	return nil
+}
+
+func (f *fakeOAuthStore) GetUserIdentity(_ context.Context, userID pgtype.UUID) (*OAuthUserIdentity, error) {
+	if id, ok := f.identities[userID]; ok {
+		return id, nil
+	}
+	return nil, pgx.ErrNoRows
 }
 
 func newTestOAuth() (*OAuthHandlers, *OAuthService, *fakeOAuthStore) {
@@ -531,6 +577,151 @@ func TestRefreshTokenStaleReuseRevokesFamily(t *testing.T) {
 	}
 }
 
+// Presenting another client's live refresh token must be rejected WITHOUT
+// consuming it — the victim's token stays usable (consume-before-bind would
+// burn it and skip reuse detection).
+func TestRefreshTokenCrossClientNotConsumed(t *testing.T) {
+	svc := NewOAuthService(newFakeOAuthStore(), nil, nil)
+	store := svc.store.(*fakeOAuthStore)
+
+	tok := "jcprt_" + strings.Repeat("e", 64)
+	store.seedToken(hashToken(tok), OAuthToken{
+		ClientID:  "jcmc_victim",
+		UserID:    testUserID,
+		Scope:     "agent.use",
+		TokenType: "refresh",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+
+	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_attacker"); err == nil {
+		t.Fatal("cross-client refresh token accepted")
+	}
+
+	// The victim's token must still be live and consumable.
+	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_victim"); err != nil {
+		t.Fatalf("victim token was burned by the rejected request: %v", err)
+	}
+}
+
+// RFC 6749 §5.2 — a missing grant_type is invalid_request.
+func TestTokenMissingGrantType(t *testing.T) {
+	h, _, store := newTestOAuth()
+	store.clients["jcmc_test"] = &OAuthClient{
+		ClientID:   "jcmc_test",
+		GrantTypes: []string{"authorization_code"},
+	}
+
+	form := url.Values{"client_id": {"jcmc_test"}}
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	h.HandleToken(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Fatalf("want invalid_request, got %s", rec.Body.String())
+	}
+}
+
+// §120 connected apps — list the caller's live grants.
+func TestListGrantsHandler(t *testing.T) {
+	h, _, store := newTestOAuth()
+	store.clients["jcmc_test"] = &OAuthClient{ClientID: "jcmc_test", ClientName: "Claude"}
+
+	store.seedToken("hash_a", OAuthToken{
+		ClientID:  "jcmc_test",
+		UserID:    testUserID,
+		Scope:     "agent.use api.read.content",
+		TokenType: "access",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+	// A revoked token for another client must not surface a grant.
+	store.seedToken("hash_b", OAuthToken{
+		ClientID:  "jcmc_dead",
+		UserID:    testUserID,
+		Scope:     "agent.use",
+		TokenType: "access",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		RevokedAt: &pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	})
+	// Another user's grant must not leak.
+	store.seedToken("hash_c", OAuthToken{
+		ClientID:  "jcmc_test",
+		UserID:    mustUUID("00000000-0000-0000-0000-0000000000ff"),
+		Scope:     "agent.use",
+		TokenType: "access",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me/oauth/grants", nil).
+		WithContext(withUser(t.Context(), testUserID))
+	rec := httptest.NewRecorder()
+	h.HandleListGrants(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data []grantView `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("grants = %d, want 1: %+v", len(resp.Data), resp.Data)
+	}
+	if resp.Data[0].ClientName != "Claude" || resp.Data[0].ClientID != "jcmc_test" {
+		t.Fatalf("bad grant row: %+v", resp.Data[0])
+	}
+	if len(resp.Data[0].Scopes) != 2 {
+		t.Fatalf("bad scopes: %v", resp.Data[0].Scopes)
+	}
+}
+
+// §120 connected apps — DELETE revokes the whole client/user family.
+func TestRevokeGrantHandler(t *testing.T) {
+	h, _, store := newTestOAuth()
+
+	for _, typ := range []string{"access", "refresh"} {
+		store.seedToken("hash_"+typ, OAuthToken{
+			ClientID:  "jcmc_test",
+			UserID:    testUserID,
+			Scope:     "agent.use",
+			TokenType: typ,
+			ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+		})
+	}
+	// A token for a different client must survive.
+	store.seedToken("hash_other", OAuthToken{
+		ClientID:  "jcmc_other",
+		UserID:    testUserID,
+		Scope:     "agent.use",
+		TokenType: "refresh",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("clientId", "jcmc_test")
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/me/oauth/grants/jcmc_test", nil).
+		WithContext(context.WithValue(withUser(t.Context(), testUserID), chi.RouteCtxKey, rctx))
+	rec := httptest.NewRecorder()
+	h.HandleRevokeGrant(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	for hash, tok := range store.tokens {
+		if tok.ClientID == "jcmc_test" && tok.RevokedAt == nil {
+			t.Fatalf("family token %s not revoked", hash)
+		}
+		if tok.ClientID == "jcmc_other" && tok.RevokedAt != nil {
+			t.Fatal("unrelated client's token was revoked")
+		}
+	}
+}
+
 func TestResolveAccessToken(t *testing.T) {
 	svc := NewOAuthService(newFakeOAuthStore(), nil, nil)
 	store := svc.store.(*fakeOAuthStore)
@@ -604,7 +795,9 @@ func TestConsentToken(t *testing.T) {
 	}
 }
 
-func TestAuthorizeScopeMustIncludeAgentUse(t *testing.T) {
+// §120 v1.4: a client registered for agent access must carry agent.use in
+// every grant — the scope ceiling can't drop below the client's intent.
+func TestAuthorizeAgentClientRequiresAgentUse(t *testing.T) {
 	h, _, store := newTestOAuth()
 	_, challenge := pkcePair()
 
@@ -612,13 +805,14 @@ func TestAuthorizeScopeMustIncludeAgentUse(t *testing.T) {
 		ClientID:     "jcmc_test",
 		RedirectURIs: []string{"https://agent.example.com/cb"},
 		GrantTypes:   []string{"authorization_code", "refresh_token"},
-		Scopes:       []string{"api.read.content"},
+		Scopes:       []string{"agent.use", "api.read.content"},
 	}
 
 	u := "/oauth/authorize?" + url.Values{
 		"response_type":         {"code"},
 		"client_id":             {"jcmc_test"},
 		"redirect_uri":          {"https://agent.example.com/cb"},
+		"scope":                 {"api.read.content"}, // agent.use dropped
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 	}.Encode()
@@ -627,11 +821,138 @@ func TestAuthorizeScopeMustIncludeAgentUse(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.HandleAuthorize(rec, req)
 
-	// Default scope = client scopes, which lacks agent.use → 400 page.
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 	if !strings.Contains(rec.Body.String(), "agent.use") {
 		t.Fatal("expected agent.use in error message")
+	}
+}
+
+// §120 v1.4: non-agent clients (extension, identity-only) are not held to
+// the agent.use requirement — an openid/digest grant proceeds to the
+// login redirect instead of erroring.
+func TestAuthorizeNonAgentClientNoAgentUseRequired(t *testing.T) {
+	h, _, store := newTestOAuth()
+	_, challenge := pkcePair()
+
+	store.clients["jcmc_ext"] = &OAuthClient{
+		ClientID:     "jcmc_ext",
+		ClientName:   "JapaConnect Browser Extension",
+		RedirectURIs: []string{"https://abcdefghijklmnop.chromiumapp.org/"},
+		GrantTypes:   []string{"authorization_code", "refresh_token"},
+		Scopes:       []string{"openid", "api.read.digest", "api.read.me"},
+	}
+
+	u := "/oauth/authorize?" + url.Values{
+		"response_type":         {"code"},
+		"client_id":             {"jcmc_ext"},
+		"redirect_uri":          {"https://abcdefghijklmnop.chromiumapp.org/"},
+		"scope":                 {"openid api.read.digest"},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+	}.Encode()
+
+	req := httptest.NewRequest(http.MethodGet, u, nil)
+	rec := httptest.NewRecorder()
+	h.HandleAuthorize(rec, req)
+
+	// Unauthenticated → 302 to login (not a 400 error page).
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 to login: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// §120 v1.4: the grant is intersected with the resource owner's own
+// capability — agent.use requires the agent.use RBAC node.
+func TestCheckUserCapability(t *testing.T) {
+	h, _, _ := newTestOAuth()
+
+	// Non-agent scope passes without a resolver.
+	if err := h.checkUserCapability(t.Context(), "openid api.read.digest", testUserID); err != nil {
+		t.Fatalf("non-agent scope rejected: %v", err)
+	}
+
+	// Agent scope without a resolver fails closed.
+	if err := h.checkUserCapability(t.Context(), "agent.use api.read.content", testUserID); err == nil {
+		t.Fatal("agent.use grant allowed without a permission resolver")
+	}
+
+	h.SetPermissionResolver(&stubPerms{granted: map[string]bool{}})
+	if err := h.checkUserCapability(t.Context(), "agent.use api.read.content", testUserID); err == nil {
+		t.Fatal("agent.use grant allowed for a user without the RBAC node")
+	}
+
+	h.SetPermissionResolver(&stubPerms{granted: map[string]bool{"agent.use": true}})
+	if err := h.checkUserCapability(t.Context(), "agent.use api.read.content", testUserID); err != nil {
+		t.Fatalf("agent.use grant rejected for a user holding the node: %v", err)
+	}
+}
+
+// §120 v1.4: GET /oauth/userinfo — openid-scoped tokens resolve identity.
+func TestUserinfoHandler(t *testing.T) {
+	h, _, store := newTestOAuth()
+
+	name := "Ada O"
+	avatar := "https://cdn.example.com/a.png"
+	store.identities[testUserID] = &OAuthUserIdentity{
+		UserID:        testUserID,
+		Email:         "ada@example.com",
+		Username:      "ada",
+		EmailVerified: true,
+		DisplayName:   &name,
+		AvatarURL:     &avatar,
+	}
+
+	tok := "jcpat_" + strings.Repeat("2", 64)
+	store.seedToken(hashToken(tok), OAuthToken{
+		ClientID:  "jcmc_ext",
+		UserID:    testUserID,
+		Scope:     "openid api.read.digest",
+		TokenType: "access",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+	noOpenID := "jcpat_" + strings.Repeat("3", 64)
+	store.seedToken(hashToken(noOpenID), OAuthToken{
+		ClientID:  "jcmc_ext",
+		UserID:    testUserID,
+		Scope:     "api.read.digest",
+		TokenType: "access",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+
+	// No bearer → 401.
+	req := httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
+	rec := httptest.NewRecorder()
+	h.HandleUserinfo(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no-token status = %d, want 401", rec.Code)
+	}
+
+	// Token without openid → 403.
+	req = httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+noOpenID)
+	rec = httptest.NewRecorder()
+	h.HandleUserinfo(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("no-openid status = %d, want 403", rec.Code)
+	}
+
+	// openid token → 200 claims.
+	req = httptest.NewRequest(http.MethodGet, "/oauth/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec = httptest.NewRecorder()
+	h.HandleUserinfo(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims["sub"] != testUserID.String() || claims["preferred_username"] != "ada" ||
+		claims["name"] != name || claims["email"] != "ada@example.com" ||
+		claims["email_verified"] != true || claims["picture"] != avatar {
+		t.Fatalf("bad claims: %v", claims)
 	}
 }

@@ -994,52 +994,6 @@ JOIN contents c ON c.id = ci.content_id
 WHERE cv.item_id = ci.id
  AND c.author_id = @user_id;
 
--- name: DeleteComparisonProfilesByUser :exec
--- JCE Sub-spec 2/3: delete user-owned comparison profiles during GDPR erasure.
--- comparison_profiles.user_id has ON DELETE CASCADE, but we delete explicitly
--- to document the erasure path and ensure PII (goals, preferences, demographics)
--- is removed during the anonymization phase, before the final HardDeleteUser.
-DELETE FROM comparison_profiles
-WHERE user_id = @user_id;
-
--- name: GdprExportUserComparisonProfiles :one
--- JCE Sub-spec 2/3: export comparison profiles for GDPR data portability.
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
- SELECT id, user_id, title, source_space_id, target_space_ids,
- goals, preferences, demographics, is_default, is_template,
- created_at, updated_at
- FROM comparison_profiles
- WHERE user_id = @user_id
- ORDER BY created_at
-) t;
-
--- name: GdprExportUserComparisonScores :one
--- JCE Sub-spec 2/3: export comparison scores for content authored by the user.
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
- SELECT cs.id, cs.content_id, cs.item_id, cs.factor_id,
- cs.dimension_id, cs.profile_id, cs.score_value, cs.max_value,
- cs.explanation, cs.eligible_status, cs.calculated_at, cs.version
- FROM comparison_scores cs
- JOIN contents c ON c.id = cs.content_id
- WHERE c.author_id = @user_id
- ORDER BY cs.calculated_at
-) t;
-
--- name: GdprExportUserComparisonRecommendations :one
--- JCE Sub-spec 2/3: export comparison recommendations for content authored by the user.
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (
- SELECT cr.id, cr.content_id, cr.item_id, cr.profile_id,
- cr.factor_id, cr.text, cr.action_type, cr.action_url, cr.priority,
- cr.created_at, cr.updated_at
- FROM comparison_recommendations cr
- JOIN contents c ON c.id = cr.content_id
- WHERE c.author_id = @user_id
- ORDER BY cr.created_at
-) t;
-
 -- name: GdprExportUserComparisonDataIngestionJobs :one
 -- JCE Sub-spec 4: export ingestion jobs for user-authored comparison content.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
@@ -1067,20 +1021,6 @@ FROM (
  WHERE ds.created_by_user_id = @user_id
  ORDER BY ds.created_at
 ) t;
-
--- name: DeleteComparisonScoresByUser :exec
--- JCE Sub-spec 2/3: delete computed scores for content authored by the user.
-DELETE FROM comparison_scores cs
-USING contents c
-WHERE cs.content_id = c.id
- AND c.author_id = @user_id;
-
--- name: DeleteComparisonRecommendationsByUser :exec
--- JCE Sub-spec 2/3: delete generated recommendations for content authored by the user.
-DELETE FROM comparison_recommendations cr
-USING contents c
-WHERE cr.content_id = c.id
- AND c.author_id = @user_id;
 
 -- name: DeleteComparisonDataIngestionJobsByUser :exec
 -- JCE Sub-spec 4: delete ingestion jobs tied to user-authored content during

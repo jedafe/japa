@@ -4,6 +4,7 @@
 package mcp
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,9 +19,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -48,6 +51,14 @@ type OAuthHandlers struct {
 	kr            *auth.KeyRotation
 	vk            valkeycompat.Cmdable
 	consentSecret []byte
+	perms         oauthPermChecker
+}
+
+// oauthPermChecker is the user-capability lookup the consent flow uses to
+// intersect a requested grant with what the resource owner can actually do
+// (§120 v1.4 — agent.use requires the agent.use RBAC node).
+type oauthPermChecker interface {
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // NewOAuthHandlers creates the handler set. consentSecret signs the consent
@@ -63,6 +74,13 @@ func NewOAuthHandlers(svc *OAuthService, issuer, siteURL, siteName string, kr *a
 		vk:            vk,
 		consentSecret: []byte(consentSecret),
 	}
+}
+
+// SetPermissionResolver wires the RBAC resolver used to gate user-scoped
+// grants (agent.use). Called post-construction to match the codebase's
+// setter-injection pattern for services built early in NewServer.
+func (h *OAuthHandlers) SetPermissionResolver(p oauthPermChecker) {
+	h.perms = p
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +107,7 @@ func (h *OAuthHandlers) HandleAuthorizationServerMetadata(w http.ResponseWriter,
 		"token_endpoint":                        h.issuer + "/oauth/token",
 		"registration_endpoint":                 h.issuer + "/oauth/register",
 		"revocation_endpoint":                   h.issuer + "/oauth/revoke",
+		"userinfo_endpoint":                     h.issuer + "/oauth/userinfo",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"code_challenge_methods_supported":      []string{"S256"},
@@ -99,12 +118,14 @@ func (h *OAuthHandlers) HandleAuthorizationServerMetadata(w http.ResponseWriter,
 }
 
 // oauthGrantableScopes returns the scope values an OAuth grant may carry:
-// every non-admin entry of the §47 catalog.
+// every non-admin entry of the §47 catalog plus the OAuth-only `openid`
+// pseudo-scope (§120 v1.4 — unlocks /oauth/userinfo, inert on API routes).
 func oauthGrantableScopes() []string {
-	out := make([]string, 0, len(publicapi.ScopeCatalog))
+	out := make([]string, 0, len(publicapi.ScopeCatalog)+1)
 	for _, s := range publicapi.SelfServiceScopes() {
 		out = append(out, s.Value)
 	}
+	out = append(out, oauthScopeOpenID)
 	sort.Strings(out)
 
 	return out
@@ -315,6 +336,14 @@ func (h *OAuthHandlers) HandleAuthorize(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// §120 v1.4: the grant cannot exceed what the resource owner can do —
+	// agent.use requires the user to hold the agent.use RBAC node. Fail at
+	// consent rather than issuing a token that 403s on every call.
+	if err := h.checkUserCapability(r.Context(), p.Scope, user.UserID); err != nil {
+		renderOAuthErrorPage(w, h.siteName, err.Error())
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		h.renderConsent(w, r, p, user)
@@ -409,7 +438,13 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 			}
 		}
 	}
-	if !publicapi.HasScope(strings.Fields(scope), agentUsePermission) {
+	// §120 v1.4: agent.use is mandatory only for clients registered for
+	// agent access — an MCP client must carry it in every grant, while a
+	// non-agent client (extension, identity-only) cannot even request it
+	// (scope ⊆ client scopes). Whether the *user* holds agent.use is a
+	// consent-time check in HandleAuthorize, not a request-shape check.
+	if publicapi.HasScope(client.Scopes, agentUsePermission) &&
+		!publicapi.HasScope(strings.Fields(scope), agentUsePermission) {
 		return nil, errors.New("the agent.use scope is required for MCP access")
 	}
 
@@ -421,6 +456,22 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 		CodeChallenge:       q.Get("code_challenge"),
 		CodeChallengeMethod: "S256",
 	}, nil
+}
+
+// checkUserCapability intersects the effective grant scope with the user's
+// own capability. The only user-gated scope today is agent.use (§03 RBAC
+// node); every other grantable scope is self-service, matching what
+// /me/api-keys may mint. A nil resolver fails closed — in production it is
+// always wired, and a grant we cannot verify must not be issued.
+func (h *OAuthHandlers) checkUserCapability(ctx context.Context, scope string, userID pgtype.UUID) error {
+	if !publicapi.HasScope(strings.Fields(scope), agentUsePermission) {
+		return nil
+	}
+	if h.perms == nil || !h.perms.HasPermission(ctx, userID, agentUsePermission) {
+		return errors.New("this application requires agent access, which is not enabled on your account")
+	}
+
+	return nil
 }
 
 // authorizeUser resolves the resource owner from the Bearer JWT or the
@@ -604,6 +655,13 @@ func (h *OAuthHandlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	grantType := r.PostForm.Get("grant_type")
+	if grantType == "" {
+		// RFC 6749 §5.2 — a missing grant_type is invalid_request, not
+		// unauthorized_client (which describes a registered client asking
+		// for a grant it did not register).
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "grant_type is required")
+		return
+	}
 	grantAllowed := false
 	for _, g := range client.GrantTypes {
 		if g == grantType {
@@ -645,6 +703,138 @@ func (h *OAuthHandlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeOAuthJSON(w, http.StatusOK, resp)
+}
+
+// ---------------------------------------------------------------------------
+// User grant management (§120 connected apps)
+// ---------------------------------------------------------------------------
+
+// grantView is the per-client row on GET /me/oauth/grants.
+type grantView struct {
+	ClientID       string   `json:"client_id"`
+	ClientName     string   `json:"client_name"`
+	Scopes         []string `json:"scopes"`
+	FirstGrantedAt string   `json:"first_granted_at"`
+	LastGrantedAt  string   `json:"last_granted_at"`
+}
+
+// HandleListGrants serves GET /api/v1/me/oauth/grants — the caller's
+// connected agent clients (distinct client_id over live oauth_tokens rows).
+func (h *OAuthHandlers) HandleListGrants(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
+
+	grants, err := h.svc.ListGrants(r.Context(), user.UserID)
+	if err != nil {
+		slog.Error("oauth: list grants", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list connected apps")
+		return
+	}
+
+	out := make([]grantView, 0, len(grants))
+	for _, g := range grants {
+		out = append(out, grantView{
+			ClientID:       g.ClientID,
+			ClientName:     g.ClientName,
+			Scopes:         g.Scopes,
+			FirstGrantedAt: g.FirstGrantedAt.Time.Format(time.RFC3339),
+			LastGrantedAt:  g.LastGrantedAt.Time.Format(time.RFC3339),
+		})
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
+// HandleRevokeGrant serves DELETE /api/v1/me/oauth/grants/{clientId} —
+// revokes the whole client/user token family. Idempotent: an unknown or
+// already-dead family is still a 200 so the UI can fire-and-forget.
+func (h *OAuthHandlers) HandleRevokeGrant(w http.ResponseWriter, r *http.Request) {
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthenticated", "Authentication required")
+		return
+	}
+
+	clientID := chi.URLParam(r, "clientId")
+	if clientID == "" || len(clientID) > 128 {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_client_id", "clientId is required")
+		return
+	}
+
+	if err := h.svc.RevokeUserGrant(r.Context(), clientID, user.UserID); err != nil {
+		slog.Error("oauth: revoke grant", "error", err, "client_id", clientID)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to disconnect the app")
+		return
+	}
+
+	if err := h.svc.store.AuditOAuthEvent(r.Context(), "oauth.token_family_revoked", user.UserID, map[string]any{
+		"client_id": clientID,
+		"reason":    "user_revoked",
+	}, clientip.FromRequest(r)); err != nil {
+		slog.Warn("oauth: audit grant revoke", "error", err)
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "revoked"}})
+}
+
+// HandleUserinfo serves GET /oauth/userinfo (§120 v1.4): the OIDC-style
+// claims endpoint "Login with JapaConnect" clients call to resolve the
+// signed-in identity. Requires a live jcpat_ access token with the openid
+// scope. Responses are never cached and errors follow the RFC 6750 shape.
+func (h *OAuthHandlers) HandleUserinfo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+
+	token := ""
+	if ah := r.Header.Get("Authorization"); ah != "" {
+		parts := strings.SplitN(ah, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			token = parts[1]
+		}
+	}
+	if !strings.HasPrefix(token, oauthAccessTokenPrefix) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="userinfo"`)
+		writeOAuthError(w, http.StatusUnauthorized, "invalid_token", "a valid access token is required")
+		return
+	}
+
+	userID, scopes, clientID, err := h.svc.ResolveAccessToken(r.Context(), token)
+	if err != nil {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="userinfo", error="invalid_token"`)
+		writeOAuthError(w, http.StatusUnauthorized, "invalid_token", "the access token is invalid, expired, or revoked")
+		return
+	}
+	if !publicapi.HasScope(scopes, oauthScopeOpenID) {
+		writeOAuthError(w, http.StatusForbidden, "insufficient_scope", "the openid scope is required")
+		return
+	}
+
+	ident, err := h.svc.store.GetUserIdentity(r.Context(), userID)
+	if err != nil {
+		slog.Error("oauth: userinfo lookup", "error", err, "client_id", clientID)
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "identity unavailable")
+		return
+	}
+
+	name := ident.Username
+	if ident.DisplayName != nil && *ident.DisplayName != "" {
+		name = *ident.DisplayName
+	}
+	claims := map[string]any{
+		"sub":                ident.UserID.String(),
+		"preferred_username": ident.Username,
+		"name":               name,
+		"email":              ident.Email,
+		"email_verified":     ident.EmailVerified,
+	}
+	if ident.AvatarURL != nil && *ident.AvatarURL != "" {
+		claims["picture"] = *ident.AvatarURL
+	}
+
+	writeOAuthJSON(w, http.StatusOK, claims)
 }
 
 // HandleRevoke implements RFC 7009 — always 200 on well-formed input.
@@ -751,6 +941,10 @@ func scopeDescriptions(scope string) []scopeLabel {
 
 	var out []scopeLabel
 	for _, s := range strings.Fields(scope) {
+		if s == oauthScopeOpenID {
+			out = append(out, scopeLabel{Label: "Know who you are", Description: "Read your basic profile (name, username, email)"})
+			continue
+		}
 		if opt, ok := catalog[s]; ok {
 			out = append(out, scopeLabel{Label: opt.Label, Description: opt.Description})
 		} else {

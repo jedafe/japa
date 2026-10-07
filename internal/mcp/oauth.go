@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,6 +42,11 @@ const (
 	oauthRefreshTokenPrefix = "jcprt_"
 	oauthAuthCodePrefix     = "jcac_"
 	oauthClientIDPrefix     = "jcmc_"
+
+	// oauthScopeOpenID is the OAuth-only pseudo-scope (§120 v1.4) that
+	// unlocks GET /oauth/userinfo. It is not a ScopeCatalog entry — it is
+	// inert to every publicapi.RequireScope gate.
+	oauthScopeOpenID = "openid"
 
 	// authorizationCodeTTL bounds the window in which a code can be
 	// exchanged. 10 minutes per common OAuth practice.
@@ -77,6 +83,17 @@ type OAuthAuthorizationCode struct {
 	ExpiresAt           pgtype.Timestamptz
 }
 
+// OAuthGrant is a connected-app row for the §120 grant-management
+// surface: a client holding at least one live (unrevoked, unexpired)
+// token for the user.
+type OAuthGrant struct {
+	ClientID       string
+	ClientName     string
+	Scopes         []string
+	FirstGrantedAt pgtype.Timestamptz
+	LastGrantedAt  pgtype.Timestamptz
+}
+
 // OAuthToken is an issued access or refresh token (hash-stored).
 type OAuthToken struct {
 	ID        pgtype.UUID
@@ -86,6 +103,17 @@ type OAuthToken struct {
 	TokenType string
 	ExpiresAt pgtype.Timestamptz
 	RevokedAt *pgtype.Timestamptz
+}
+
+// OAuthUserIdentity is the userinfo (§120 v1.4) claims source — the
+// identity fields a client holding an openid-scoped token may read.
+type OAuthUserIdentity struct {
+	UserID        pgtype.UUID
+	Email         string
+	Username      string
+	EmailVerified bool
+	DisplayName   *string
+	AvatarURL     *string
 }
 
 // OAuthStore is the persistence surface the OAuth handlers and token
@@ -112,13 +140,20 @@ type OAuthStore interface {
 	ConsumeRefreshToken(ctx context.Context, tokenHash string) (*OAuthToken, error)
 	RevokeTokenByHash(ctx context.Context, tokenHash string) error
 	// RevokeTokenFamily revokes every refresh + access token for a
-	// client/user pair — used on refresh-token reuse detection.
+	// client/user pair — used on refresh-token reuse detection and on
+	// user-initiated grant revocation (§120 connected apps).
 	RevokeTokenFamily(ctx context.Context, clientID string, userID pgtype.UUID) error
+	// ListUserGrants returns the distinct clients holding at least one
+	// unrevoked, unexpired token for the user — the connected-apps list.
+	ListUserGrants(ctx context.Context, userID pgtype.UUID) ([]OAuthGrant, error)
 	MarkTokenReplaced(ctx context.Context, oldID, newID pgtype.UUID) error
 	// AuditOAuthEvent writes an audit_logs row for grant lifecycle events.
 	// Best-effort — callers log-and-continue on error. actorUserID may be
 	// invalid (client-initiated events like DCR).
 	AuditOAuthEvent(ctx context.Context, action string, actorUserID pgtype.UUID, metadata map[string]any, ip string) error
+	// GetUserIdentity returns the userinfo claims row for an openid-scoped
+	// token owner.
+	GetUserIdentity(ctx context.Context, userID pgtype.UUID) (*OAuthUserIdentity, error)
 }
 
 // oauthPGXStore is the production OAuthStore backed by pgx (same style as
@@ -269,6 +304,48 @@ func (s *oauthPGXStore) RevokeTokenFamily(ctx context.Context, clientID string, 
 	return err
 }
 
+func (s *oauthPGXStore) ListUserGrants(ctx context.Context, userID pgtype.UUID) ([]OAuthGrant, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT t.client_id, c.client_name,
+		       array_agg(t.scope) AS scope_rows,
+		       min(t.created_at) AS first_granted_at,
+		       max(t.created_at) AS last_granted_at
+		FROM oauth_tokens t
+		JOIN oauth_clients c ON c.client_id = t.client_id
+		WHERE t.user_id = $1 AND t.revoked_at IS NULL AND t.expires_at > now()
+		GROUP BY t.client_id, c.client_name
+		ORDER BY last_granted_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []OAuthGrant
+	for rows.Next() {
+		var g OAuthGrant
+		var scopeRows []string
+		if err := rows.Scan(&g.ClientID, &g.ClientName, &scopeRows, &g.FirstGrantedAt, &g.LastGrantedAt); err != nil {
+			return nil, err
+		}
+		// Each token row carries a space-separated scope string; the grant's
+		// scope set is the deduped union across the family's rows.
+		set := map[string]struct{}{}
+		for _, row := range scopeRows {
+			for _, sc := range strings.Fields(row) {
+				set[sc] = struct{}{}
+			}
+		}
+		for sc := range set {
+			g.Scopes = append(g.Scopes, sc)
+		}
+		sort.Strings(g.Scopes)
+		out = append(out, g)
+	}
+
+	return out, rows.Err()
+}
+
 func (s *oauthPGXStore) MarkTokenReplaced(ctx context.Context, oldID, newID pgtype.UUID) error {
 	_, err := s.db.Exec(ctx, `
 		UPDATE oauth_tokens SET replaced_by = $2 WHERE id = $1
@@ -298,6 +375,23 @@ func (s *oauthPGXStore) AuditOAuthEvent(ctx context.Context, action string, acto
 	`, actor, action, string(payload), ipArg)
 
 	return err
+}
+
+func (s *oauthPGXStore) GetUserIdentity(ctx context.Context, userID pgtype.UUID) (*OAuthUserIdentity, error) {
+	var id OAuthUserIdentity
+	var emailVerifiedAt pgtype.Timestamptz
+	err := s.db.QueryRow(ctx, `
+		SELECT u.id, u.email, u.username, u.email_verified_at, up.display_name, up.avatar_url
+		FROM users u
+		LEFT JOIN user_profiles up ON up.user_id = u.id
+		WHERE u.id = $1
+	`, userID).Scan(&id.UserID, &id.Email, &id.Username, &emailVerifiedAt, &id.DisplayName, &id.AvatarURL)
+	if err != nil {
+		return nil, err
+	}
+	id.EmailVerified = emailVerifiedAt.Valid
+
+	return &id, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +582,36 @@ func (s *OAuthService) RevokeToken(ctx context.Context, token string) error {
 	return nil
 }
 
+// revokeTokenFamily revokes a client/user token family and drops the famrev
+// tombstone so cached access tokens die within the cache window. Callers
+// write the audit row.
+func (s *OAuthService) revokeTokenFamily(ctx context.Context, clientID string, userID pgtype.UUID) {
+	_ = s.store.RevokeTokenFamily(ctx, clientID, userID)
+	if s.cache != nil {
+		// Tombstone outlives the access-token cache window.
+		_ = s.cache.Set(ctx, famrevCacheKey(clientID, userID), "1", s.tokenCacheTTL(ctx)).Err()
+	}
+}
+
+// ListGrants returns the caller's connected-app rows (§120).
+func (s *OAuthService) ListGrants(ctx context.Context, userID pgtype.UUID) ([]OAuthGrant, error) {
+	return s.store.ListUserGrants(ctx, userID)
+}
+
+// RevokeUserGrant revokes every token a client holds for the user — the
+// connected-apps "disconnect" path (§120). Returns the store error so the
+// handler can distinguish a failure from an idempotent no-op.
+func (s *OAuthService) RevokeUserGrant(ctx context.Context, clientID string, userID pgtype.UUID) error {
+	if err := s.store.RevokeTokenFamily(ctx, clientID, userID); err != nil {
+		return err
+	}
+	if s.cache != nil {
+		_ = s.cache.Set(ctx, famrevCacheKey(clientID, userID), "1", s.tokenCacheTTL(ctx)).Err()
+	}
+
+	return nil
+}
+
 // verifyPKCE checks a code_verifier against a stored S256 challenge.
 // Constant-time compare — the verifier is the only proof of possession.
 func verifyPKCE(verifier, challenge string) bool {
@@ -582,39 +706,48 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context, code, clie
 // atomic — concurrent rotations of the same token cannot both succeed. Reuse
 // of a revoked token revokes the whole client/user token family (RFC 6819
 // §5.2.2.3) and drops a famrev tombstone so cached access tokens die too.
+//
+// The client binding is checked BEFORE the consume: presenting another
+// client's live refresh token must neither burn the victim's token nor
+// reach the reuse-detection path (the token is simply rejected).
 func (s *OAuthService) RotateRefreshToken(ctx context.Context, refreshToken, clientID string) (*tokenResponse, error) {
 	if !strings.HasPrefix(refreshToken, oauthRefreshTokenPrefix) {
 		return nil, errors.New("invalid grant")
 	}
 
 	hash := hashToken(refreshToken)
-	tok, err := s.store.ConsumeRefreshToken(ctx, hash)
-	if err != nil {
-		// Distinguish "already revoked" from unknown misses. Within the grace
+
+	prev, lerr := s.store.GetTokenByHash(ctx, "refresh", hash)
+	if lerr != nil {
+		return nil, errors.New("invalid grant")
+	}
+	if prev.ClientID != clientID {
+		return nil, errors.New("invalid grant")
+	}
+	if prev.RevokedAt != nil {
+		// Distinguish "already rotated" from unknown misses. Within the grace
 		// window a second presentation is most likely a lost-response retry
 		// (or a concurrent rotation) — plain invalid_grant, no family revoke.
 		// Older revocations replayed later are treated as compromise.
-		if prev, lerr := s.store.GetTokenByHash(ctx, "refresh", hash); lerr == nil && prev.RevokedAt != nil {
-			if time.Since(prev.RevokedAt.Time) <= s.reuseGraceWindow(ctx) {
-				return nil, errors.New("invalid grant")
-			}
-			_ = s.store.RevokeTokenFamily(ctx, prev.ClientID, prev.UserID)
-			if s.cache != nil {
-				// Tombstone outlives the access-token cache window.
-				_ = s.cache.Set(ctx, famrevCacheKey(prev.ClientID, prev.UserID), "1", s.tokenCacheTTL(ctx)).Err()
-			}
-			_ = s.store.AuditOAuthEvent(ctx, "oauth.token_family_revoked", prev.UserID, map[string]any{
-				"client_id": prev.ClientID,
-				"reason":    "refresh_token_reuse",
-			}, "")
-			return nil, errRefreshReuse
+		if time.Since(prev.RevokedAt.Time) <= s.reuseGraceWindow(ctx) {
+			return nil, errors.New("invalid grant")
 		}
+		s.revokeTokenFamily(ctx, prev.ClientID, prev.UserID)
+		_ = s.store.AuditOAuthEvent(ctx, "oauth.token_family_revoked", prev.UserID, map[string]any{
+			"client_id": prev.ClientID,
+			"reason":    "refresh_token_reuse",
+		}, "")
+		return nil, errRefreshReuse
+	}
+	if !prev.ExpiresAt.Valid || prev.ExpiresAt.Time.Before(time.Now()) {
 		return nil, errors.New("invalid grant")
 	}
-	if tok.ClientID != clientID {
-		return nil, errors.New("invalid grant")
-	}
-	if !tok.ExpiresAt.Valid || tok.ExpiresAt.Time.Before(time.Now()) {
+
+	tok, err := s.store.ConsumeRefreshToken(ctx, hash)
+	if err != nil {
+		// Lost the race to a concurrent rotation — the token went from live
+		// to revoked between our read and consume. Re-read once to catch the
+		// boundary and treat it as a grace-window retry.
 		return nil, errors.New("invalid grant")
 	}
 

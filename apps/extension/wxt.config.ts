@@ -16,7 +16,9 @@ export default defineConfig({
 		short_name: 'JapaConnect',
 		description:
 			'Your migration feed — destination visa intel, safety alerts, and community activity on every new tab.',
-		permissions: ['storage'],
+		// 'identity' powers the §120 "Login with JapaConnect" OAuth flow
+		// (launchWebAuthFlow → chromiumapp.org redirect).
+		permissions: ['storage', 'identity'],
 		host_permissions: [`${siteOrigin}/*`],
 		// No tabs/cookies permissions, no content scripts — the install
 		// prompt stays minimal and the surface stays read-only (V1).

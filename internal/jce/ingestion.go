@@ -183,7 +183,7 @@ func (s *Service) GetIngestionJob(ctx context.Context, id pgtype.UUID) (Ingestio
 
 // ListIngestionJobs returns the refresh history for a comparison. The caller
 // must be able to view the comparison — this mirrors the visibility checks on
-// the freshness and advisor endpoints so job metadata for private comparisons
+// the freshness endpoint so job metadata for private comparisons
 // does not leak to unrelated members holding jce.ingestion_job.view.
 func (s *Service) ListIngestionJobs(ctx context.Context, contentID pgtype.UUID, limit, offset int) ([]IngestionJob, error) {
 	userID := s.userIDFromContext(ctx)
@@ -776,15 +776,15 @@ func (s *Service) finalizeRefresh(ctx context.Context, contentID, jobID pgtype.U
 	}
 
 	s.deleteFreshnessCache(ctx, contentID)
-	s.deleteAdvisorCache(ctx, contentID)
 	s.releaseRefreshLock(ctx, contentID)
 
 	return nil
 }
 
-// ScheduleStaleRefresh scans all JCE comparisons with smart_mode != 'none',
-// skipping those with a recent completed refresh or an active job, and enqueues
-// refresh tasks for the stale ones. It returns the number of enqueued tasks.
+// ScheduleStaleRefresh scans all JCE comparisons that have at least one
+// entity-linked item (item_ref.type is set), skipping those with a recent
+// completed refresh or an active job, and enqueues refresh tasks for the
+// stale ones. It returns the number of enqueued tasks.
 func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) (int, error) {
 	if s.enqueuer == nil {
 		return 0, errors.New("jce refresh enqueuer not configured")
@@ -805,8 +805,13 @@ func (s *Service) ScheduleStaleRefresh(ctx context.Context, userID pgtype.UUID) 
 SELECT ccm.content_id
 FROM comparison_content_metadata ccm
 JOIN contents c ON c.id = ccm.content_id
-WHERE ccm.smart_mode IS DISTINCT FROM 'none'
-  AND c.deleted_at IS NULL
+WHERE c.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM comparison_items i
+      WHERE i.content_id = ccm.content_id
+        AND i.deleted_at IS NULL
+        AND i.item_ref->>'type' IS NOT NULL
+  )
   AND c.status = 'published'
   AND c.visibility = 'public'
   AND NOT EXISTS (

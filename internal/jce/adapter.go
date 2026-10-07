@@ -22,46 +22,6 @@ func NewToolAdapter(svc *Service) ai.JCEService {
 	return &ToolAdapter{svc: svc}
 }
 
-// Analyze implements ai.JCEService by delegating to Service.Analyze.
-func (a *ToolAdapter) Analyze(ctx context.Context, contentID, userID, profileID pgtype.UUID, question string) (map[string]any, error) {
-	res, err := a.svc.Analyze(ctx, contentID, userID, profileID, question)
-	if err != nil {
-		return nil, err
-	}
-
-	return toMap(res)
-}
-
-// Rank implements ai.JCEService by delegating to Service.Rank.
-func (a *ToolAdapter) Rank(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error) {
-	res, err := a.svc.Rank(ctx, contentID, userID, profileID)
-	if err != nil {
-		return nil, err
-	}
-
-	return toMap(res)
-}
-
-// Explain implements ai.JCEService by delegating to Service.Explain.
-func (a *ToolAdapter) Explain(ctx context.Context, contentID, itemID, userID, profileID pgtype.UUID, factorKey, question string) (map[string]any, error) {
-	res, err := a.svc.Explain(ctx, contentID, itemID, userID, profileID, factorKey, question)
-	if err != nil {
-		return nil, err
-	}
-
-	return toMap(res)
-}
-
-// Recommend implements ai.JCEService by delegating to Service.Recommend.
-func (a *ToolAdapter) Recommend(ctx context.Context, contentID, userID, profileID pgtype.UUID) (map[string]any, error) {
-	res, err := a.svc.Recommend(ctx, contentID, userID, profileID)
-	if err != nil {
-		return nil, err
-	}
-
-	return toMap(res)
-}
-
 // Refresh implements ai.JCEService by delegating to Service.RefreshComparison.
 func (a *ToolAdapter) Refresh(ctx context.Context, contentID, userID pgtype.UUID, sourceKind *string) (map[string]any, error) {
 	res, err := a.svc.RefreshComparison(ctx, contentID, userID, sourceKind)

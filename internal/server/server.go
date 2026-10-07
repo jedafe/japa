@@ -19,6 +19,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/academy"
+	"github.com/jedafe/japa/internal/academy/creator"
 	"github.com/jedafe/japa/internal/achievement"
 	"github.com/jedafe/japa/internal/admin"
 	"github.com/jedafe/japa/internal/adsselfserve"
@@ -94,10 +96,8 @@ import (
 	"github.com/jedafe/japa/internal/interactions"
 	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/jce"
-	_ "github.com/jedafe/japa/internal/jce/scoring"
 	"github.com/jedafe/japa/internal/jobs"
 	"github.com/jedafe/japa/internal/languagetesthub"
-	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/linkpreview"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/mcp"
@@ -148,7 +148,6 @@ import (
 	"github.com/jedafe/japa/internal/travel"
 	"github.com/jedafe/japa/internal/trending"
 	"github.com/jedafe/japa/internal/universities"
-	"github.com/jedafe/japa/internal/academy/creator"
 	"github.com/jedafe/japa/internal/university_courses"
 	"github.com/jedafe/japa/internal/users"
 	"github.com/jedafe/japa/internal/valkey"
@@ -1801,9 +1800,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	wikiService.SetEntityResolver(jceResolver)
 	wikiService.SetJCECacheBuster(comparisonService)
 
-	// JCE Sub-spec 2/3 service and handlers — must be created after comparisonService
-	// and jceResolver are wired so the scoring engine factory receives a fully
-	// configured comparison service and resolver registry.
+	// JCE Sub-spec 4 service and handlers — must be created after
+	// comparisonService and jceResolver are wired so data sources, freshness,
+	// and refresh receive a fully configured comparison service and resolver
+	// registry.
 	jceService := jce.NewService(database, comparisonService, jceResolver, settingsService, vkClient.Redis())
 	jceService.SetFeatureChecker(featureChecker)
 	jceService.SetEnqueuer(taskEnqueuer)
@@ -2534,6 +2534,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	}
 	mcpOAuthService := mcp.NewOAuthService(mcp.NewOAuthStore(database.Writer), settingsService, vkClient.Redis())
 	mcpOAuthHandlers := mcp.NewOAuthHandlers(mcpOAuthService, cfg.MCPPublicURL, cfg.SiteURL, cfg.SiteName, kr, vkClient.Redis(), mcpOAuthSecret)
+	mcpOAuthHandlers.SetPermissionResolver(rbacResolver) // §120 v1.4: agent.use grants require the user's RBAC node
 	mcpServer.SetSiteBaseURL(cfg.SiteURL)
 	publicAPIService.SetAdminChecker(rbacResolver) // Phase 3: admin-only scope gating
 	// Agent Data API: narrow readers over the moat domain services. The
@@ -2854,20 +2855,37 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// §120 OAuth 2.1 authorization server + MCP discovery (ADR-126).
 	// Root-level paths — web MCP clients resolve them from host metadata.
 	// Tight rate limit on the write-ish endpoints; metadata is public.
+	// mcp.PublicCORS wraps the machine-facing endpoints so browser-based MCP
+	// tooling can call them; OPTIONS preflights are answered before the rate
+	// limiter and never reach auth. /oauth/authorize stays unwrapped — it is
+	// a cookie-authenticated top-level navigation, not a fetch target.
 	r.Group(func(r chi.Router) {
-		r.Use(mw.RateLimit(vkClient.Redis(), "tight"))
+		r.Use(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "tight"))
 		r.Post("/oauth/register", mcpOAuthHandlers.HandleRegister)
-		r.Post("/oauth/token", mcpOAuthHandlers.HandleToken)
 		r.Post("/oauth/revoke", mcpOAuthHandlers.HandleRevoke)
+		r.Options("/oauth/register", mcp.NoContent)
+		r.Options("/oauth/revoke", mcp.NoContent)
 	})
+	// Token endpoint gets its own tier: hosted connectors call it from a
+	// small set of provider egress IPs on behalf of all their users.
+	r.With(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "oauth_token")).Post("/oauth/token", mcpOAuthHandlers.HandleToken)
+	r.With(mcp.PublicCORS).Options("/oauth/token", mcp.NoContent)
 	r.Group(func(r chi.Router) {
 		r.Use(mw.RateLimit(vkClient.Redis(), "loose"))
-		r.Get("/.well-known/oauth-protected-resource", mcpOAuthHandlers.HandleProtectedResourceMetadata)
-		r.Get("/.well-known/oauth-protected-resource/api/v1/mcp", mcpOAuthHandlers.HandleProtectedResourceMetadata)
-		r.Get("/.well-known/oauth-authorization-server", mcpOAuthHandlers.HandleAuthorizationServerMetadata)
+		r.With(mcp.PublicCORS).Get("/.well-known/oauth-protected-resource", mcpOAuthHandlers.HandleProtectedResourceMetadata)
+		r.With(mcp.PublicCORS).Get("/.well-known/oauth-protected-resource/api/v1/mcp", mcpOAuthHandlers.HandleProtectedResourceMetadata)
+		r.With(mcp.PublicCORS).Get("/.well-known/oauth-authorization-server", mcpOAuthHandlers.HandleAuthorizationServerMetadata)
+		r.With(mcp.PublicCORS).Options("/.well-known/oauth-protected-resource", mcp.NoContent)
+		r.With(mcp.PublicCORS).Options("/.well-known/oauth-protected-resource/api/v1/mcp", mcp.NoContent)
+		r.With(mcp.PublicCORS).Options("/.well-known/oauth-authorization-server", mcp.NoContent)
 		// Consent GET renders the page; POST consumes the signed consent.
 		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/oauth/authorize", mcpOAuthHandlers.HandleAuthorize)
 		r.With(mw.RateLimit(vkClient.Redis(), "tight")).Post("/oauth/authorize", mcpOAuthHandlers.HandleAuthorize)
+
+		// §120 v1.4 userinfo — a fetch target (unlike /oauth/authorize), so
+		// it carries PublicCORS like the other machine-facing OAuth routes.
+		r.With(mcp.PublicCORS, mw.RateLimit(vkClient.Redis(), "tight")).Get("/oauth/userinfo", mcpOAuthHandlers.HandleUserinfo)
+		r.With(mcp.PublicCORS).Options("/oauth/userinfo", mcp.NoContent)
 	})
 
 	// API routes go through platform resolution
@@ -4200,46 +4218,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comparison.value.manage")).
 					Put("/jce/comparisons/dimensions/{id}/values", comparisonHandlers.UpsertComparisonValues)
 
-				// JCE Sub-spec 2/3: profiles
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.list")).
-					Get("/jce/profiles", jceHandlers.ListProfiles)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.create")).
-					Post("/jce/profiles", jceHandlers.CreateProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.list")).
-					Get("/jce/profiles/stats", jceHandlers.GetProfileStats)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.view")).
-					Get("/jce/profiles/{id}", jceHandlers.GetProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.update")).
-					Patch("/jce/profiles/{id}", jceHandlers.UpdateProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.delete"), rbac.RequireForceDelete(rbacResolver)).
-					Delete("/jce/profiles/{id}", jceHandlers.DeleteProfile)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.profiles"), rbac.RequirePermission(rbacResolver, "jce.profile.update")).
-					Post("/jce/profiles/{id}/default", jceHandlers.SetDefaultProfile)
-
-				// JCE Sub-spec 2/3: score factors
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
-					Get("/jce/comparison-types/{id}/score-factors", jceHandlers.ListScoreFactors)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
-					Post("/jce/comparison-types/{id}/score-factors", jceHandlers.CreateScoreFactor)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
-					Get("/jce/score-factors/{id}", jceHandlers.GetScoreFactor)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
-					Patch("/jce/score-factors/{id}", jceHandlers.UpdateScoreFactor)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.factor.manage")).
-					Delete("/jce/score-factors/{id}", jceHandlers.DeleteScoreFactor)
-
-				// JCE Sub-spec 2/3: scoring and recommendations
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.score.recalculate")).
-					Post("/jce/comparisons/{id}/score", jceHandlers.ScoreComparison)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequireAnyPermission(rbacResolver, "jce.score.view", "jce.score.recalculate")).
-					Get("/jce/comparisons/{id}/score", jceHandlers.GetComparisonScore)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.scoring"), rbac.RequirePermission(rbacResolver, "jce.recommendation.view")).
-					Get("/jce/comparisons/{id}/recommendations", jceHandlers.ListRecommendations)
-
-				// JCE Sub-spec 2/3: score preview
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.smart_compare"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
-					Post("/jce/score-preview", jceHandlers.PreviewScoreForItems)
-
 				// JCE Sub-spec 4: data sources
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.data_sources"), rbac.RequirePermission(rbacResolver, "jce.data_source.view")).
 					Get("/jce/data-sources", jceHandlers.HandleListDataSources)
@@ -4252,25 +4230,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.data_sources"), rbac.RequirePermission(rbacResolver, "jce.data_source.manage")).
 					Delete("/jce/data-sources/{id}", jceHandlers.HandleDeleteDataSource)
 
-				// JCE Sub-spec 4: freshness, refresh, and ingestion jobs
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce"), rbac.RequirePermission(rbacResolver, "jce.score.view")).
+				// JCE Sub-spec 4: freshness, refresh, and ingestion jobs.
+				// Freshness enforces per-comparison access inside the service
+				// (canViewJCEComparison); the route itself only requires auth.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh")).
 					Get("/jce/comparisons/{id}/freshness", jceHandlers.HandleGetFreshness)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh"), rbac.RequirePermission(rbacResolver, "jce.refresh.trigger")).
 					Post("/jce/comparisons/{id}/refresh", jceHandlers.HandleRefreshComparison)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.refresh"), rbac.RequirePermission(rbacResolver, "jce.ingestion_job.view")).
 					Get("/jce/comparisons/{id}/ingestion-jobs", jceHandlers.HandleListIngestionJobs)
 
-				// JCE Sub-spec 4: AI advisor
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
-					Post("/jce/comparisons/{id}/analyze", jceHandlers.HandleAnalyze)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
-					Post("/jce/comparisons/{id}/rank", jceHandlers.HandleRank)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
-					Post("/jce/comparisons/{id}/explain", jceHandlers.HandleExplain)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
-					Post("/jce/comparisons/{id}/recommend", jceHandlers.HandleRecommend)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.jce.ai_advisor"), rbac.RequirePermission(rbacResolver, "jce.ai_advisor.use")).
-					Post("/jce/comparisons/{id}/advisor", jceHandlers.HandleStreamAdvisor)
 			})
 
 			// Organization routes (Section 07 — Organization Profiles & Claim Ownership)
@@ -4854,7 +4823,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// prefix keeps the public API routes at a distinct path that does
 			// not collide with the main API routes.
 			r.Group(func(r chi.Router) {
-				r.Use(publicapi.APIKeyMiddleware(publicAPIService))
+				// §120 v1.4: jcpat_ OAuth bearers ("Login with JapaConnect")
+				// resolve to the same synthetic key context as X-API-Key.
+				r.Use(publicapi.APIKeyMiddleware(publicAPIService, mcpOAuthService.ResolveBearer))
 				r.Use(publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService, publicAPIService))
 
 				// Scope enforcement (Section 47 lines 169-182, BUG-003 fix:
@@ -5025,6 +4996,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/sessions", usersHandlers.RevokeAllSessions)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/connected-accounts", usersHandlers.ListConnectedAccounts)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/connected-accounts/{provider}", usersHandlers.DisconnectAccount)
+			// §120 connected apps — list/revoke the caller's OAuth grants to
+			// web-agent MCP clients (claude.ai connectors, ChatGPT, …).
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/oauth/grants", mcpOAuthHandlers.HandleListGrants)
+			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/oauth/grants/{clientId}", mcpOAuthHandlers.HandleRevokeGrant)
 
 			// TOTP 2FA (catalog: /me/totp/* — moved out of the /auth group)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/totp/status", totpHandlers.HandleStatus)
@@ -5341,7 +5316,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// endpoint that exposes the agent tool catalog to MCP clients.
 			// Supports both JWT Bearer and X-API-Key auth; GET is the legacy SSE
 			// fallback, POST is the Streamable HTTP JSON-RPC transport.
-			r.With(mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver, mcpOAuthService, cfg.MCPPublicURL),
+			r.With(mcp.PublicCORS,
+				mcp.AuthMiddleware(kr, vkClient.Redis(), publicAPIService, rbacResolver, mcpOAuthService, cfg.MCPPublicURL),
 				publicapi.SlidingWindowRateLimitWithSettings(vkClient.Redis(), settingsService, publicAPIService)).
 				Handle("/mcp", mcpServer)
 
