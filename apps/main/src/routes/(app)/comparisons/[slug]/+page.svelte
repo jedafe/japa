@@ -246,8 +246,7 @@
 
 	{#if matrix.length > 0}
 		<section>
-			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-				<h2 class="text-lg font-semibold" style="color: var(--color-text)">{t('jce.compare.matrix_heading')}</h2>
+			<div class="mb-3 flex flex-wrap items-center justify-end gap-3">
 				<div class="flex flex-wrap items-center gap-2">
 					{#if user && features['feature.jce.refresh']}
 						<RefreshButton comparisonID={comparison.content.id} />
