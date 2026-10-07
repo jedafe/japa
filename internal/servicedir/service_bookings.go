@@ -68,6 +68,13 @@ type BookingDTO struct {
 	FeeAmount       *int64 `json:"fee_amount,omitempty"`
 	FeeCurrency     string `json:"fee_currency,omitempty"`
 	AgentBalanceDue *int64 `json:"agent_balance_due,omitempty"`
+	// Marketplace snapshots (spec §2.3/§2.4) — the tier/coupon the booking
+	// was priced with, frozen at create time.
+	TierID          string `json:"tier_id,omitempty"`
+	TierName        string `json:"tier_name,omitempty"`
+	TierPriceAmount *int64 `json:"tier_price_amount,omitempty"`
+	CouponCode      string `json:"coupon_code,omitempty"`
+	DiscountAmount  *int64 `json:"discount_amount,omitempty"`
 	OrgResponseNote string `json:"org_response_note,omitempty"`
 	DisputeReason   string `json:"dispute_reason,omitempty"`
 	ExpiresAt       string `json:"expires_at,omitempty"`
@@ -104,11 +111,13 @@ type PreferredDatesInput struct {
 // provider/email/return_url are required when intent='booking' on a
 // purchase_mode='paid' listing (the fee checkout fields). tier_id selects
 // one of the listing's active service_package_tiers rows (marketplace spec
-// §2.4) — parsed and priced by the redemption path.
+// §2.4) — parsed and priced by the redemption path. coupon_code applies a
+// listing-attached coupon (spec §2.3) — both are rejected on inquiries.
 type CreateBookingInput struct {
 	Intent         string               `json:"intent"` // inquiry | booking (default derived from purchase_mode)
 	DepartureID    string               `json:"departure_id"`
 	TierID         string               `json:"tier_id"`
+	CouponCode     string               `json:"coupon_code"`
 	PartySize      int32                `json:"party_size"`
 	PreferredDates *PreferredDatesInput `json:"preferred_dates"`
 	Note           string               `json:"note"`
@@ -211,6 +220,22 @@ func bookingToDTO(r BookingRow) BookingDTO {
 	if r.FeeCurrency != nil {
 		dto.FeeCurrency = *r.FeeCurrency
 	}
+
+	if r.TierID.Valid {
+		dto.TierID = r.TierID.String()
+	}
+
+	if r.TierName != nil {
+		dto.TierName = *r.TierName
+	}
+
+	dto.TierPriceAmount = r.TierPriceAmount
+
+	if r.CouponCode != nil {
+		dto.CouponCode = *r.CouponCode
+	}
+
+	dto.DiscountAmount = r.DiscountAmount
 
 	if r.OrgResponseNote != nil {
 		dto.OrgResponseNote = *r.OrgResponseNote
@@ -375,26 +400,40 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 		}
 	}
 
-	// §111 monetary snapshot for paid bookings — computed up front so the
-	// checkout-field checks below can skip a zero configured fee
-	// (fee_pct=0 / fee_fixed=0 means no charge and no checkout).
-	var total, fee int64
-	if intent == BookingIntentBooking {
-		if listing.PriceAmount == nil || listing.PriceCurrency == nil {
-			return BookingResult{}, ErrMissingPackagePrice
-		}
-
-		total = *listing.PriceAmount
-		fee = s.computeFee(ctx, total)
+	// Coupons and tiers only apply to paid bookings — an inquiry naming
+	// either is a malformed request, not a silent ignore (parity with the
+	// strict intent checks above).
+	if intent == BookingIntentInquiry && (input.TierID != "" || input.CouponCode != "") {
+		return BookingResult{}, ErrInvalidCoupon
 	}
 
-	// Rule 9 — fee checkout is a financial transaction: Idempotency-Key is
-	// required when the resolved intent initiates a payment. Checked before
-	// the booking row exists so a rejected request writes nothing.
-	paidCheckout := intent == BookingIntentBooking && fee > 0
-	if paidCheckout && mw.IdempotencyKeyFromContext(ctx) == "" {
+	// Rule 9 — a booking intent is a financial transaction attempt:
+	// Idempotency-Key is required before pricing runs so a rejected
+	// request writes nothing (and consumes no coupon rule checks).
+	if intent == BookingIntentBooking && mw.IdempotencyKeyFromContext(ctx) == "" {
 		return BookingResult{}, ErrIdempotencyRequired
 	}
+
+	// §111 monetary snapshot for paid bookings — tier + coupon resolution
+	// live in priceQuote (spec §2.3/§2.4). Computed up front so the
+	// checkout-field checks below can skip a zero configured fee
+	// (fee_pct=0 / fee_fixed=0 means no charge and no checkout).
+	var quote Quote
+	if intent == BookingIntentBooking {
+		var qerr error
+		quote, qerr = s.priceQuote(ctx, listing, bookerID, input.TierID, input.CouponCode)
+		if qerr != nil {
+			return BookingResult{}, qerr
+		}
+
+		if quote.Currency == "" {
+			return BookingResult{}, ErrMissingPackagePrice
+		}
+	}
+
+	// A fee of zero means no checkout — the booking lands directly in the
+	// org inbox (mirrors the inbox query's `sb.fee_amount = 0` arm).
+	paidCheckout := intent == BookingIntentBooking && quote.Fee > 0
 
 	partySize := input.PartySize
 	if partySize <= 0 {
@@ -469,16 +508,42 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 
 	// §111 monetary snapshot for paid bookings — values frozen at booking
 	// time so later price/fee-setting changes don't mutate open bookings.
+	// Tier name/price snapshot likewise freezes the selected tier (§2.4):
+	// a later tiers[] replace-set must not rewrite what the booker paid.
 	if intent == BookingIntentBooking {
-		balance := total - fee
+		params.TotalPrice = &quote.Total
+		params.FeeAmount = &quote.Fee
+		params.FeeCurrency = &quote.Currency
+		params.AgentBalanceDue = &quote.Balance
 
-		params.TotalPrice = &total
-		params.FeeAmount = &fee
-		params.FeeCurrency = listing.PriceCurrency
-		params.AgentBalanceDue = &balance
+		if quote.TierID.Valid {
+			params.TierID = quote.TierID
+			params.TierName = &quote.TierName
+			params.TierPriceAmount = &quote.Base
+		}
+
+		if quote.CouponID.Valid {
+			params.CouponID = quote.CouponID
+			params.CouponCode = &quote.CouponCode
+			params.DiscountAmount = &quote.Discount
+		}
 	}
 
-	booking, err := s.store.CreateBooking(ctx, params)
+	// The coupon_redemptions row commits in the same transaction as the
+	// booking — a failed redemption insert rolls the booking back rather
+	// than silently losing the recorded discount (spec §2.3).
+	var redemption *gen.CreateCouponRedemptionParams
+	if quote.CouponID.Valid {
+		redemption = &gen.CreateCouponRedemptionParams{
+			CouponID:      quote.CouponID,
+			UserID:        bookerID,
+			ListingMetaID: listing.MetaID,
+			AmountSaved:   quote.Discount,
+			Currency:      params.FeeCurrency,
+		}
+	}
+
+	booking, err := s.store.createBookingWithRedemption(ctx, params, redemption)
 	if err != nil {
 		return BookingResult{}, err
 	}

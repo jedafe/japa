@@ -96,6 +96,7 @@ type couponLinkRow struct {
 	TermsURL       *string
 	ReferralURL    *string
 	Status         string
+	ValidFrom      pgtype.Timestamptz
 	ExpiresAt      pgtype.Timestamptz
 	AppliesTo      string
 	MaxRedemptions *int32
@@ -112,7 +113,7 @@ func linkRowFromAll(r gen.ListServiceListingCouponsRow) couponLinkRow {
 		ID: r.ID, Title: r.Title, Code: r.Code, DiscountType: r.DiscountType,
 		DiscountValue: r.DiscountValue, Currency: r.Currency,
 		TermsURL: r.TermsUrl, ReferralURL: r.ReferralUrl, Status: r.Status,
-		ExpiresAt: r.ExpiresAt, AppliesTo: r.AppliesTo,
+		ValidFrom: r.ValidFrom, ExpiresAt: r.ExpiresAt, AppliesTo: r.AppliesTo,
 		MaxRedemptions: r.MaxRedemptions, PerUserLimit: r.PerUserLimit,
 		MinSpend: r.MinSpend, FirstTimeOnly: r.FirstTimeOnly,
 		OrganizationID: r.OrganizationID, Position: r.Position,
@@ -125,7 +126,7 @@ func linkRowFromActive(r gen.ListActiveServiceListingCouponsRow) couponLinkRow {
 		ID: r.ID, Title: r.Title, Code: r.Code, DiscountType: r.DiscountType,
 		DiscountValue: r.DiscountValue, Currency: r.Currency,
 		TermsURL: r.TermsUrl, ReferralURL: r.ReferralUrl, Status: r.Status,
-		ExpiresAt: r.ExpiresAt, AppliesTo: r.AppliesTo,
+		ValidFrom: r.ValidFrom, ExpiresAt: r.ExpiresAt, AppliesTo: r.AppliesTo,
 		MaxRedemptions: r.MaxRedemptions, PerUserLimit: r.PerUserLimit,
 		MinSpend: r.MinSpend, FirstTimeOnly: r.FirstTimeOnly,
 		OrganizationID: r.OrganizationID, Position: r.Position,
@@ -138,7 +139,7 @@ func linkRowFromCode(r gen.GetListingCouponByCodeRow) couponLinkRow {
 		ID: r.ID, Title: r.Title, Code: r.Code, DiscountType: r.DiscountType,
 		DiscountValue: r.DiscountValue, Currency: r.Currency,
 		TermsURL: r.TermsUrl, ReferralURL: r.ReferralUrl, Status: r.Status,
-		ExpiresAt: r.ExpiresAt, AppliesTo: r.AppliesTo,
+		ValidFrom: r.ValidFrom, ExpiresAt: r.ExpiresAt, AppliesTo: r.AppliesTo,
 		MaxRedemptions: r.MaxRedemptions, PerUserLimit: r.PerUserLimit,
 		MinSpend: r.MinSpend, FirstTimeOnly: r.FirstTimeOnly,
 		OrganizationID: r.OrganizationID, Position: r.Position,

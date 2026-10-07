@@ -225,6 +225,17 @@ type BookingRow struct {
 	DepartureEndsOn   pgtype.Date
 	BookerUsername    *string
 	BookerAvatar      *string
+
+	// Marketplace booking snapshots (spec §2.3/§2.4). TierID/TierName/
+	// TierPriceAmount freeze the selected pricing tier — TierName carries
+	// the COALESCE(sb.tier_name, t.name) effective name on joined queries
+	// so the snapshot wins after a tiers[] replace-set.
+	TierID          pgtype.UUID
+	TierName        *string
+	TierPriceAmount *int64
+	CouponID        pgtype.UUID
+	CouponCode      *string
+	DiscountAmount  *int64
 }
 
 // bookingFromGen projects a gen.ServiceBooking into the flat row shape.
@@ -240,6 +251,8 @@ func bookingFromGen(b gen.ServiceBooking) BookingRow {
 		ExpiresAt:     b.ExpiresAt, ConfirmedAt: b.ConfirmedAt, FulfilledAt: b.FulfilledAt,
 		CancelledAt: b.CancelledAt, CancelReason: b.CancelReason,
 		AnonymizedAt: b.AnonymizedAt, CreatedAt: b.CreatedAt, UpdatedAt: b.UpdatedAt,
+		TierID: b.TierID, TierName: b.TierName, TierPriceAmount: b.TierPriceAmount,
+		CouponID: b.CouponID, CouponCode: b.CouponCode, DiscountAmount: b.DiscountAmount,
 	}
 }
 
@@ -255,7 +268,12 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		TierID: r.TierID, TierName: r.TierName, TierPriceAmount: r.TierPriceAmount,
+		CouponID: r.CouponID, CouponCode: r.CouponCode, DiscountAmount: r.DiscountAmount,
 	})
+	if r.EffectiveTierName != "" {
+		row.TierName = strPtr(r.EffectiveTierName) // snapshot wins, live tier name is the fallback
+	}
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -283,7 +301,12 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		TierID: r.TierID, TierName: r.TierName, TierPriceAmount: r.TierPriceAmount,
+		CouponID: r.CouponID, CouponCode: r.CouponCode, DiscountAmount: r.DiscountAmount,
 	})
+	if r.EffectiveTierName != "" {
+		row.TierName = strPtr(r.EffectiveTierName)
+	}
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -310,7 +333,12 @@ func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		TierID: r.TierID, TierName: r.TierName, TierPriceAmount: r.TierPriceAmount,
+		CouponID: r.CouponID, CouponCode: r.CouponCode, DiscountAmount: r.DiscountAmount,
 	})
+	if r.EffectiveTierName != "" {
+		row.TierName = strPtr(r.EffectiveTierName)
+	}
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -337,6 +365,8 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
 		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
 		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		TierID: r.TierID, TierName: r.TierName, TierPriceAmount: r.TierPriceAmount,
+		CouponID: r.CouponID, CouponCode: r.CouponCode, DiscountAmount: r.DiscountAmount,
 	})
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
@@ -365,6 +395,59 @@ func (s *Store) CreateBooking(ctx context.Context, p gen.CreateServiceBookingPar
 	}
 
 	return row, nil
+}
+
+// createBookingWithRedemption inserts the booking and — when redemption is
+// non-nil — its coupon_redemptions row in one transaction (spec §2.3: the
+// redemption is the authoritative record, so a failed insert must roll the
+// booking back rather than silently lose the recorded discount).
+// redemption.ServiceBookingID is stamped from the new booking row inside
+// the tx.
+func (s *Store) createBookingWithRedemption(ctx context.Context, p gen.CreateServiceBookingParams, redemption *gen.CreateCouponRedemptionParams) (gen.ServiceBooking, error) {
+	return db.WithTxResult(ctx, s.pool.Writer, func(q *gen.Queries) (gen.ServiceBooking, error) {
+		booking, err := q.CreateServiceBooking(ctx, p)
+		if err != nil {
+			return gen.ServiceBooking{}, fmt.Errorf("servicedir: create booking: %w", err)
+		}
+
+		if redemption != nil {
+			redemption.ServiceBookingID = booking.ID
+			if _, err := q.CreateCouponRedemption(ctx, *redemption); err != nil {
+				return gen.ServiceBooking{}, fmt.Errorf("servicedir: create coupon redemption: %w", err)
+			}
+		}
+
+		return booking, nil
+	})
+}
+
+// getPackageTier returns a service_package_tiers row scoped to the
+// listing's meta id — the scoping IS the foreign-tier check (a tier id
+// belonging to another listing resolves to pgx.ErrNoRows). The caller
+// checks IsActive.
+func (s *Store) getPackageTier(ctx context.Context, tierID, metaID pgtype.UUID) (gen.ServicePackageTier, error) {
+	row, err := s.read.GetServicePackageTier(ctx, gen.GetServicePackageTierParams{
+		ID: tierID, ListingMetaID: metaID,
+	})
+	if err != nil {
+		return gen.ServicePackageTier{}, fmt.Errorf("servicedir: get package tier: %w", err)
+	}
+
+	return row, nil
+}
+
+// countBookingsByUserOrg returns the user's live bookings with the org
+// (cancelled/declined/refunded excluded by the query) — the coupon
+// first_time_only check.
+func (s *Store) countBookingsByUserOrg(ctx context.Context, userID, orgID pgtype.UUID) (int64, error) {
+	n, err := s.read.CountServiceBookingsByUserOrg(ctx, gen.CountServiceBookingsByUserOrgParams{
+		UserID: userID, OrgID: orgID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("servicedir: count bookings by user+org: %w", err)
+	}
+
+	return n, nil
 }
 
 // GetBookingDetail returns the joined booking detail by id.

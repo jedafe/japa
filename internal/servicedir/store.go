@@ -961,13 +961,7 @@ func (s *Store) countCouponRedemptionsByUser(ctx context.Context, couponID, user
 	return n, nil
 }
 
-// createCouponRedemption inserts the authoritative redemption record for
-// a booking.
-func (s *Store) createCouponRedemption(ctx context.Context, p gen.CreateCouponRedemptionParams) (gen.CouponRedemption, error) {
-	row, err := s.write.CreateCouponRedemption(ctx, p)
-	if err != nil {
-		return gen.CouponRedemption{}, fmt.Errorf("servicedir: create coupon redemption: %w", err)
-	}
-
-	return row, nil
-}
+// createCouponRedemption — the standalone redemption insert lives inside
+// Store.createBookingWithRedemption (store_packages.go): redemptions are
+// only ever written atomically with their booking, so there is no
+// non-transactional wrapper.

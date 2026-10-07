@@ -507,7 +507,8 @@ INSERT INTO service_bookings (
     listing_meta_id, departure_id, booker_user_id, org_id, intent,
     party_size, preferred_dates, note, status, purchase_mode,
     payment_id, total_price, fee_amount, fee_currency, agent_balance_due,
-    expires_at, tier_id, coupon_id, coupon_code, discount_amount
+    expires_at, tier_id, coupon_id, coupon_code, discount_amount,
+    tier_name, tier_price_amount
 ) VALUES (
     @listing_meta_id, sqlc.narg(departure_id), @booker_user_id, @org_id,
     @intent, sqlc.narg(party_size), sqlc.narg(preferred_dates),
@@ -515,7 +516,8 @@ INSERT INTO service_bookings (
     sqlc.narg(payment_id), sqlc.narg(total_price), sqlc.narg(fee_amount),
     sqlc.narg(fee_currency), sqlc.narg(agent_balance_due),
     sqlc.narg(expires_at), sqlc.narg(tier_id), sqlc.narg(coupon_id),
-    sqlc.narg(coupon_code), sqlc.narg(discount_amount)
+    sqlc.narg(coupon_code), sqlc.narg(discount_amount),
+    sqlc.narg(tier_name), sqlc.narg(tier_price_amount)
 ) RETURNING *;
 
 -- name: GetServiceBooking :one
@@ -532,7 +534,7 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title,
        o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       t.name AS tier_name
+       COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
@@ -563,7 +565,7 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS lis
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       t.name AS tier_name
+       COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
@@ -592,7 +594,7 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS lis
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
        u.username AS booker_username, up.avatar_url AS booker_avatar,
-       t.name AS tier_name
+       COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
@@ -850,7 +852,8 @@ SELECT COUNT(*) FROM service_listing_meta WHERE service_category = @slug;
 
 -- name: ListServiceListingCoupons :many
 SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
-       c.terms_url, c.referral_url, c.status, c.expires_at, c.applies_to,
+       c.terms_url, c.referral_url, c.status, c.valid_from, c.expires_at,
+       c.applies_to,
        c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
        c.organization_id, lc.position, lc.overrides
 FROM service_listing_coupons lc
@@ -860,7 +863,8 @@ ORDER BY lc.position ASC;
 
 -- name: ListActiveServiceListingCoupons :many
 SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
-       c.terms_url, c.referral_url, c.status, c.expires_at, c.applies_to,
+       c.terms_url, c.referral_url, c.status, c.valid_from, c.expires_at,
+       c.applies_to,
        c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
        c.organization_id, lc.position, lc.overrides
 FROM service_listing_coupons lc
@@ -873,7 +877,8 @@ ORDER BY lc.position ASC;
 
 -- name: GetListingCouponByCode :one
 SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
-       c.terms_url, c.referral_url, c.status, c.expires_at, c.applies_to,
+       c.terms_url, c.referral_url, c.status, c.valid_from, c.expires_at,
+       c.applies_to,
        c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
        c.organization_id, lc.position, lc.overrides
 FROM service_listing_coupons lc

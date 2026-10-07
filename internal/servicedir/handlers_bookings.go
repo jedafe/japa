@@ -84,6 +84,86 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": result})
 }
 
+// HandlePricePreview handles GET /services/:id/price-preview — the live
+// quote behind the booking modal's Apply button (?tier_id=&coupon_code=).
+// No mutation. Coupon rejections return 200 with coupon_valid:false +
+// error_code so the UI can show the undiscounted quote beside the failure
+// reason; an unknown/inactive tier is a hard 400 invalid_tier.
+func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if !h.packagesAvailable(w, r) {
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	tierID := r.URL.Query().Get("tier_id")
+	couponCode := r.URL.Query().Get("coupon_code")
+	if couponCode == "" {
+		// `coupon` is the spec-named alias for the same param.
+		couponCode = r.URL.Query().Get("coupon")
+	}
+
+	toDTO := func(q Quote, couponValid bool, errCode string) PricePreviewDTO {
+		return PricePreviewDTO{
+			Base:        q.Base,
+			Discount:    q.Discount,
+			Total:       q.Total,
+			Fee:         q.Fee,
+			BalanceDue:  q.Balance,
+			Currency:    q.Currency,
+			CouponValid: couponValid,
+			ErrorCode:   errCode,
+		}
+	}
+
+	quote, err := h.service.PricePreview(r.Context(), user.UserID, contentID, tierID, couponCode)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		if isCouponQuoteError(err) {
+			// Re-quote without the coupon so the base numbers still render;
+			// the tier was already validated (it resolves before the coupon
+			// chain), so a second failure is a genuine error.
+			baseQuote, berr := h.service.PricePreview(r.Context(), user.UserID, contentID, tierID, "")
+			if berr != nil {
+				if errors.Is(berr, pgx.ErrNoRows) {
+					errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+					return
+				}
+
+				slog.Error("servicedir: price preview base quote failed", "content_id", contentID, "error", berr)
+				writeServiceError(w, berr, "price_preview_failed", "Failed to compute price preview")
+
+				return
+			}
+
+			errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+				"data": toDTO(baseQuote, false, couponQuoteErrorCode(err)),
+			})
+
+			return
+		}
+
+		slog.Error("servicedir: price preview failed", "content_id", contentID, "error", err)
+		writeServiceError(w, err, "price_preview_failed", "Failed to compute price preview")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toDTO(quote, true, "")})
+}
+
 // HandleMyBookings handles GET /me/service-bookings — caller's booking
 // history (?status=&intent=&page=&limit=).
 func (h *Handlers) HandleMyBookings(w http.ResponseWriter, r *http.Request) {

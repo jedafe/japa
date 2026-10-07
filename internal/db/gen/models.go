@@ -3465,6 +3465,8 @@ type ServiceBooking struct {
 	CouponID        pgtype.UUID        `json:"coupon_id"`
 	CouponCode      *string            `json:"coupon_code"`
 	DiscountAmount  *int64             `json:"discount_amount"`
+	TierName        *string            `json:"tier_name"`
+	TierPriceAmount *int64             `json:"tier_price_amount"`
 }
 
 type ServiceCategory struct {

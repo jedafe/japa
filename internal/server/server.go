@@ -7002,6 +7002,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					rbac.RequirePermission(rbacResolver, "service.booking.create"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)). // Rule 9: fee checkout is financial
 					Post("/services/{id}/bookings", serviceDirHandlers.HandleCreateBooking)
+				// Live quote for the booking modal (?tier_id=&coupon_code=)
+				// — read-only; coupon rejections return 200 coupon_valid:false.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+					Get("/services/{id}/price-preview", serviceDirHandlers.HandlePricePreview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/services/{id}/departures", serviceDirHandlers.HandlePackageDepartures)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
