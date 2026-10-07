@@ -812,6 +812,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.id = $1
+ AND c.organization_id IS NULL
  AND (ap.id IS NULL OR ap.is_active = true)
 `
 
@@ -844,6 +845,9 @@ type GetCouponByIDRow struct {
 	ProviderCategory    *string            `json:"provider_category"`
 }
 
+// Public read: organization_id IS NULL keeps org-owned service coupons
+// (coupon_type='internal', redeemable at booking time only) out of
+// GET /coupons/{id} — platform-internal deals have organization_id NULL.
 func (q *Queries) GetCouponByID(ctx context.Context, id pgtype.UUID) (GetCouponByIDRow, error) {
 	row := q.db.QueryRow(ctx, getCouponByID, id)
 	var i GetCouponByIDRow
@@ -1016,6 +1020,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.slug = $1 AND c.status <> 'pending'
+ AND c.organization_id IS NULL
  AND (ap.id IS NULL OR ap.is_active = true)
 `
 
@@ -1050,6 +1055,8 @@ type GetCouponBySlugRow struct {
 	ProviderIsActive    *bool              `json:"provider_is_active"`
 }
 
+// Public deal detail — organization_id IS NULL scopes out org service
+// coupons (same rationale as GetCouponByID).
 func (q *Queries) GetCouponBySlug(ctx context.Context, slug string) (GetCouponBySlugRow, error) {
 	row := q.db.QueryRow(ctx, getCouponBySlug, slug)
 	var i GetCouponBySlugRow
@@ -1205,6 +1212,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.status = 'active'
+ AND c.organization_id IS NULL
  AND (ap.id IS NULL OR ap.is_active = true)
  AND (c.valid_from IS NULL OR c.valid_from <= now())
  AND (c.expires_at IS NULL OR c.expires_at > now())
@@ -1256,6 +1264,8 @@ type ListActiveCouponsRow struct {
 	ProviderCategory    *string            `json:"provider_category"`
 }
 
+// Public deals feed: organization_id IS NULL excludes org-owned service
+// coupons — they redeem via booking codes, not the /deals surface.
 func (q *Queries) ListActiveCoupons(ctx context.Context, arg ListActiveCouponsParams) ([]ListActiveCouponsRow, error) {
 	rows, err := q.db.Query(ctx, listActiveCoupons,
 		arg.ProviderID,

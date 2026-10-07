@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 func orgCouponNum(v string) *pgtype.Numeric {
@@ -120,6 +121,73 @@ func TestValidateOrgCouponInput(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatalf("expected %v, got nil", tc.wantErr)
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected error matching %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestResolveOrgCouponStatus(t *testing.T) {
+	strp := func(s string) *string { return &s }
+	ts := func(d time.Duration) *pgtype.Timestamptz {
+		return &pgtype.Timestamptz{Time: time.Now().Add(d), Valid: true}
+	}
+
+	activeCoupon := gen.Coupon{Status: string(CouponStatusActive)}
+	suspendedCoupon := gen.Coupon{Status: string(CouponStatusSuspended)}
+	expiredCoupon := gen.Coupon{Status: string(CouponStatusExpired)}
+	lapsedCoupon := gen.Coupon{
+		Status:    string(CouponStatusActive),
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(-time.Hour), Valid: true},
+	}
+
+	cases := []struct {
+		name          string
+		requested     *string
+		current       gen.Coupon
+		mergedExpires *pgtype.Timestamptz
+		want          string
+		wantErr       error
+	}{
+		{name: "absent keeps active", requested: nil, current: activeCoupon, want: "active"},
+		{name: "absent keeps suspended", requested: nil, current: suspendedCoupon, want: "suspended"},
+		{name: "absent keeps expired", requested: nil, current: expiredCoupon, want: "expired"},
+
+		{name: "suspend active", requested: strp("suspended"), current: activeCoupon, want: "suspended"},
+		{name: "reactivate suspended", requested: strp("active"), current: suspendedCoupon, want: "active"},
+		{name: "case and whitespace tolerant", requested: strp("  Suspended "), current: activeCoupon, want: "suspended"},
+		{name: "no-op active on active", requested: strp("active"), current: activeCoupon, want: "active"},
+
+		{name: "expired target rejected", requested: strp("expired"), current: activeCoupon, wantErr: ErrInvalidCouponInput},
+		{name: "pending target rejected", requested: strp("pending"), current: activeCoupon, wantErr: ErrInvalidCouponInput},
+		{name: "deleted target rejected", requested: strp("deleted"), current: activeCoupon, wantErr: ErrInvalidCouponInput},
+		{name: "bogus target rejected", requested: strp("bogus"), current: activeCoupon, wantErr: ErrInvalidCouponInput},
+		{name: "blank target rejected", requested: strp("   "), current: activeCoupon, wantErr: ErrInvalidCouponInput},
+
+		{name: "reactivate expired status rejected", requested: strp("active"), current: expiredCoupon, wantErr: ErrInvalidCouponInput},
+		{name: "reactivate lapsed expiry rejected", requested: strp("active"), current: lapsedCoupon, wantErr: ErrInvalidCouponInput},
+		{name: "reactivate with past merged expiry rejected", requested: strp("active"), current: suspendedCoupon, mergedExpires: ts(-time.Hour), wantErr: ErrInvalidCouponInput},
+		{name: "suspend lapsed coupon allowed", requested: strp("suspended"), current: lapsedCoupon, want: "suspended"},
+		{name: "suspend expired status allowed", requested: strp("suspended"), current: expiredCoupon, want: "suspended"},
+		{name: "activate with future merged expiry ok", requested: strp("active"), current: suspendedCoupon, mergedExpires: ts(time.Hour), want: "active"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveOrgCouponStatus(tc.requested, tc.current, tc.mergedExpires)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got != tc.want {
+					t.Fatalf("resolveOrgCouponStatus = %q, want %q", got, tc.want)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected %v, got nil (status %q)", tc.wantErr, got)
 			}
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("expected error matching %v, got %v", tc.wantErr, err)

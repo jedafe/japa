@@ -81,6 +81,35 @@ func TestBelowMinSpend(t *testing.T) {
 	})
 }
 
+func TestCouponCurrencyMismatch(t *testing.T) {
+	i64 := func(v int64) *int64 { return &v }
+
+	cases := []struct {
+		name  string
+		c     ListingCoupon
+		quote string
+		want  bool
+	}{
+		{"fixed USD on NGN quote", ListingCoupon{DiscountType: "fixed", Currency: "USD"}, "NGN", true},
+		{"fixed NGN on NGN quote", ListingCoupon{DiscountType: "fixed", Currency: "NGN"}, "NGN", false},
+		{"fixed currency case-insensitive", ListingCoupon{DiscountType: "fixed", Currency: "ngn"}, "NGN", false},
+		{"fixed unset currency matches", ListingCoupon{DiscountType: "fixed"}, "NGN", false},
+		{"percent USD on NGN quote is unit-free", ListingCoupon{DiscountType: "percent", Currency: "USD"}, "NGN", false},
+		{"percent + min_spend USD on NGN quote", ListingCoupon{DiscountType: "percent", Currency: "USD", MinSpend: i64(5000)}, "NGN", true},
+		{"percent + min_spend NGN on NGN quote", ListingCoupon{DiscountType: "percent", Currency: "NGN", MinSpend: i64(5000)}, "NGN", false},
+		{"no discount + min_spend mismatch", ListingCoupon{Currency: "USD", MinSpend: i64(5000)}, "NGN", true},
+		{"fixed coupon on empty quote currency", ListingCoupon{DiscountType: "fixed", Currency: "USD"}, "", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := couponCurrencyMismatch(tc.c, tc.quote); got != tc.want {
+				t.Fatalf("couponCurrencyMismatch(%+v, %q) = %v, want %v", tc.c, tc.quote, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCouponQuoteErrorCode(t *testing.T) {
 	cases := []struct {
 		name string

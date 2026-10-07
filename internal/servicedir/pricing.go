@@ -94,6 +94,21 @@ func belowMinSpend(base int64, minSpend *int64) bool {
 	return minSpend != nil && base < *minSpend
 }
 
+// couponCurrencyMismatch reports whether a coupon denominated in a
+// different currency than the quote carries an amount that is read
+// unit-blind — a 'fixed' discount_value or a min_spend threshold. A USD
+// fixed coupon on an NGN-priced quote would silently mis-discount (and
+// its min_spend would compare against the wrong unit). Percent coupons
+// with no min_spend are unit-free and skip the check; an unset coupon
+// currency matches anything (org coupons may not record one).
+func couponCurrencyMismatch(c ListingCoupon, quoteCurrency string) bool {
+	if c.Currency == "" || (c.DiscountType != "fixed" && c.MinSpend == nil) {
+		return false
+	}
+
+	return !strings.EqualFold(c.Currency, quoteCurrency)
+}
+
 // isCouponQuoteError reports whether err is one of the coupon redemption
 // sentinels — the price-preview endpoint maps these to a 200
 // coupon_valid:false payload rather than an HTTP error.
@@ -223,6 +238,13 @@ func (s *Service) priceQuote(ctx context.Context, listing ServiceRow, bookerID p
 			return Quote{}, ErrCouponNotApplicable
 		}
 
+		// Currency guard — fixed amounts and min_spend thresholds are
+		// denominated in the coupon's currency; a unit mismatch reads as
+		// not applicable rather than mis-discounting the quote.
+		if couponCurrencyMismatch(c, q.Currency) {
+			return Quote{}, ErrCouponNotApplicable
+		}
+
 		if belowMinSpend(q.Base, c.MinSpend) {
 			return Quote{}, ErrCouponMinSpend
 		}
@@ -293,6 +315,17 @@ func (s *Service) PricePreview(ctx context.Context, bookerID, listingContentID p
 
 	if listing.Status != content.StatusPublished {
 		return Quote{}, ErrBookingUnavailable
+	}
+
+	// Only paid listings produce a real quote — a preview on an inquiry or
+	// external listing would quote a price the booker cannot pay. Mirrors
+	// CreateBooking's purchase_mode gate (service_bookings.go).
+	switch listing.PurchaseMode {
+	case PurchaseModeExternal:
+		return Quote{}, ErrBookingUnavailable
+	case PurchaseModePaid:
+	default: // inquiry
+		return Quote{}, ErrInvalidIntent
 	}
 
 	return s.priceQuote(ctx, listing, bookerID, tierID, couponCode)

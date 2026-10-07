@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -23,14 +24,16 @@ import (
 // requireOrgEditor in handlers.go.
 
 // OrgCouponInput is the payload for POST/PATCH
-// /organizations/{id}/coupons. coupon_type, organization_id, is_verified and
-// status are server-controlled (create pins 'internal'/org/active; update
-// keeps the stored status). On PATCH, absent fields keep the stored value;
-// a blank string clears the optional text fields.
+// /organizations/{id}/coupons. coupon_type, organization_id and is_verified
+// are server-controlled (create pins 'internal'/org/false); status is
+// pinned 'active' on create and PATCH accepts only the §2.2 lifecycle
+// transitions 'active' ⇄ 'suspended'. On PATCH, absent fields keep the
+// stored value; a blank string clears the optional text fields.
 type OrgCouponInput struct {
 	Title          string              `json:"title"`
 	Slug           *string             `json:"slug,omitempty"`
 	Code           string              `json:"code"`
+	Status         *string             `json:"status,omitempty"`
 	Description    *string             `json:"description,omitempty"`
 	DiscountType   string              `json:"discount_type,omitempty"`
 	DiscountValue  *pgtype.Numeric     `json:"discount_value,omitempty"`
@@ -238,9 +241,38 @@ func mergeOrgCouponInput(input OrgCouponInput, cur gen.Coupon) OrgCouponInput {
 	return merged
 }
 
+// resolveOrgCouponStatus validates a PATCH status request against the
+// stored row — the org coupon lifecycle (spec §2.2) is active ⇄ suspended,
+// so any other target is invalid_input. Expired coupons cannot be
+// re-activated by a status flip: a stored 'expired' status or a lapsed
+// expires_at (stored, or set by this same PATCH) keeps them out of
+// circulation. A nil request means "keep current".
+func resolveOrgCouponStatus(requested *string, current gen.Coupon, mergedExpiresAt *pgtype.Timestamptz) (string, error) {
+	if requested == nil {
+		return current.Status, nil
+	}
+
+	target := CouponStatus(strings.ToLower(strings.TrimSpace(*requested)))
+	if target != CouponStatusActive && target != CouponStatusSuspended {
+		return "", fmt.Errorf("%w: status must be 'active' or 'suspended'", ErrInvalidCouponInput)
+	}
+
+	if target == CouponStatusActive {
+		now := time.Now()
+		if current.Status == string(CouponStatusExpired) ||
+			(current.ExpiresAt.Valid && !current.ExpiresAt.Time.After(now)) ||
+			(mergedExpiresAt != nil && !mergedExpiresAt.Time.After(now)) {
+			return "", fmt.Errorf("%w: expired coupons cannot be reactivated", ErrInvalidCouponInput)
+		}
+	}
+
+	return string(target), nil
+}
+
 // orgCouponUpdateParams projects a validated OrgCouponInput onto the
-// UpdateOrgCoupon query params. Status is server-controlled (the stored
-// status is passed through unchanged; the input has no status field).
+// UpdateOrgCoupon query params. Status is lifecycle-controlled: the stored
+// status passes through unless a PATCH supplied an 'active'/'suspended'
+// transition already vetted by resolveOrgCouponStatus.
 func orgCouponUpdateParams(input OrgCouponInput, status string, id, orgID pgtype.UUID) gen.UpdateOrgCouponParams {
 	return gen.UpdateOrgCouponParams{
 		Title:          input.Title,
@@ -335,7 +367,12 @@ func (s *Service) UpdateOrgCoupon(ctx context.Context, orgID, couponID pgtype.UU
 		return gen.Coupon{}, err
 	}
 
-	c, err := s.store.updateOrgCoupon(ctx, orgCouponUpdateParams(merged, current.Status, couponID, orgID))
+	status, err := resolveOrgCouponStatus(input.Status, current, merged.ExpiresAt)
+	if err != nil {
+		return gen.Coupon{}, err
+	}
+
+	c, err := s.store.updateOrgCoupon(ctx, orgCouponUpdateParams(merged, status, couponID, orgID))
 	if err != nil {
 		if isNoRows(err) {
 			// The WHERE id+organization_id guard raced a delete/move.

@@ -65,6 +65,9 @@ RETURNING id, provider_id, coupon_type, title, description, code,
  created_by, created_at, updated_at, slug, details;
 
 -- name: GetCouponByID :one
+-- Public read: organization_id IS NULL keeps org-owned service coupons
+-- (coupon_type='internal', redeemable at booking time only) out of
+-- GET /coupons/{id} — platform-internal deals have organization_id NULL.
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -75,6 +78,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.id = @id
+ AND c.organization_id IS NULL
  AND (ap.id IS NULL OR ap.is_active = true);
 
 -- name: GetCouponByIDInternal :one
@@ -102,6 +106,8 @@ FROM coupons
 WHERE slug = @slug;
 
 -- name: GetCouponBySlug :one
+-- Public deal detail — organization_id IS NULL scopes out org service
+-- coupons (same rationale as GetCouponByID).
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -113,6 +119,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.slug = @slug AND c.status <> 'pending'
+ AND c.organization_id IS NULL
  AND (ap.id IS NULL OR ap.is_active = true);
 
 -- name: ListCoupons :many
@@ -143,6 +150,8 @@ WHERE (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status))
  AND (sqlc.narg(search)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(search) || '%' OR c.code ILIKE '%' || sqlc.narg(search) || '%');
 
 -- name: ListActiveCoupons :many
+-- Public deals feed: organization_id IS NULL excludes org-owned service
+-- coupons — they redeem via booking codes, not the /deals surface.
 SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
  c.code, c.discount_type, c.discount_value, c.currency, c.terms_url,
  c.referral_url, c.is_verified, c.status, c.valid_from, c.expires_at,
@@ -153,6 +162,7 @@ SELECT c.id, c.provider_id, c.coupon_type, c.title, c.slug, c.description,
 FROM coupons c
 LEFT JOIN affiliate_providers ap ON ap.id = c.provider_id
 WHERE c.status = 'active'
+ AND c.organization_id IS NULL
  AND (ap.id IS NULL OR ap.is_active = true)
  AND (c.valid_from IS NULL OR c.valid_from <= now())
  AND (c.expires_at IS NULL OR c.expires_at > now())
