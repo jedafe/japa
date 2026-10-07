@@ -787,12 +787,21 @@ func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UU
 	}
 
 	couponsOn := s.CouponsEnabled(ctx)
+	tiersOn := s.TiersEnabled(ctx)
 
 	out := make([]ServiceDTO, 0, len(rows))
 	for _, r := range rows {
 		dto := rowToDTO(r)
 		if couponsOn {
 			dto.HasCoupon = r.HasCoupon
+		}
+		// Same tiers-flag gate as the public list — min_price COALESCEs
+		// the lowest active tier over price_amount, so with tiers off a
+		// stale tier row would leak a hidden price surface.
+		if tiersOn {
+			dto.MinPrice = r.MinPrice
+		} else {
+			dto.MinPrice = r.PriceAmount
 		}
 
 		out = append(out, dto)

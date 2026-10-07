@@ -2026,18 +2026,13 @@ func (s *Service) AdminList(ctx context.Context, status, claimStatus, serviceCat
 		return nil, 0, fmt.Errorf("servicedir: admin list: %w", err)
 	}
 
-	tiersOn := s.TiersEnabled(ctx)
-
 	dtos := make([]ServiceDTO, 0, len(rows))
 	for _, r := range rows {
 		dto := rowToDTO(r)
-		// Same tiers-flag gate as the public list — a stale tier row must
-		// not masquerade as the listing's "From" price when tiers are off.
-		if tiersOn {
-			dto.MinPrice = r.MinPrice
-		} else {
-			dto.MinPrice = r.PriceAmount
-		}
+		// AdminListServiceListings does not project the tier COALESCE —
+		// the admin surface emits the meta price unconditionally (no
+		// flag gating on the moderation queue).
+		dto.MinPrice = r.PriceAmount
 
 		dtos = append(dtos, dto)
 	}
