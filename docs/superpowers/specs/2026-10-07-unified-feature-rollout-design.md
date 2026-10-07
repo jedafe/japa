@@ -32,6 +32,7 @@ Additionally, the public roadmap (§113) tracks shipping state manually per item
 | **Surface** | A client app: `main`, `tools`, `academy`, `docs`, `mobile`, `admin`, `extension`, `desktop`. Control panel excluded — always managed, never gated. |
 | **Phase** | Rollout lifecycle on the flag: `planned → in_progress → testing → shipped`, plus `archived`. |
 | **Surface state** | Per-surface visibility: `visible` (default), `hidden` (functional, not advertised), `disabled` (surface-scoped 404). |
+| **Audience** | Optional per-surface restriction on *who* the flag is enabled for: user-group slugs (`group:beta_testers`) and/or permission nodes (`perm:beta.access`). Empty = everyone. |
 | **Linked item** | A `roadmap_items` row whose `feature_flag_key` points at a flag; its status is derived, not manual. |
 
 ## 3. Data model
@@ -48,12 +49,18 @@ type FlagConfig struct {
 	RolloutPercentage int                        `json:"rolloutPercentage"`
 	Phase             string                     `json:"phase"`          // planned|in_progress|testing|shipped|archived
 	ShowOnRoadmap     bool                       `json:"showOnRoadmap"`
-	Surfaces          map[string]string          `json:"surfaces"`       // surface -> visible|hidden|disabled
+	Surfaces          map[string]SurfaceRule     `json:"surfaces"`       // surface -> rule
+}
+
+// SurfaceRule is the per-surface visibility + audience policy for a flag.
+type SurfaceRule struct {
+	State    string   `json:"state"`              // visible|hidden|disabled
+	Audience []string `json:"audience,omitempty"` // group slugs or permission nodes; empty = everyone
 }
 ```
 
 - `Phase` empty/absent is treated as `shipped` for enabled flags and `planned` for disabled ones (back-compat with all existing rows).
-- `Surfaces` absent or missing a surface = `visible`. Unknown surface keys are rejected on write (400 `invalid_surface`); unknown state values → 400 `invalid_surface_state`.
+- `Surfaces` absent or missing a surface = `{state: "visible"}` (everyone). Unknown surface keys → 400 `invalid_surface`; unknown state values → 400 `invalid_surface_state`. Audience entries are validated as `group:`/`perm:` prefixed strings (`["group:beta_testers", "perm:beta.access"]`); anything else → 400 `invalid_audience`.
 - `ShowOnRoadmap` drives auto-create/sync/archive of the linked roadmap item (§5).
 
 ### 3.2 Registry becomes the single catalog
@@ -138,16 +145,29 @@ Wired in `server.go` next to the existing `SetOnFlagEnabled` (line ~1324): the c
 - `show_on_roadmap=true`, no item → create per §4.3.
 - `show_on_roadmap=true`, item exists, phase changed → write the derived status directly, bypassing `IsValidTransition` (the flag's phase graph is the authority; the manual state machine applies only to unlinked items). Invalidate `jc:roadmap:board`; fire `roadmap:ship_notify` on `→shipped`.
 
-## 5. Visibility model (per-surface states)
+## 5. Visibility model (per-surface states + audience)
 
 ### 5.1 State resolution
 
 ```
-global enabled=false                → 404 everywhere (existing Gate behavior)
-surface state = disabled            → 404 for that surface only
-surface state = hidden              → routes work; excluded from surface's flag map
-surface state = visible (default)   → normal
+global enabled=false                     → 404 everywhere (existing Gate behavior)
+surface state = disabled                 → 404 for that surface only
+surface state = hidden                   → routes work; excluded from surface's flag map
+surface state = visible (default)        → normal
+audience set + caller not in audience    → flag evaluates OFF for that caller
+                                           on that surface (404 via Gate, absent
+                                           from their flags map)
 ```
+
+**Audience** is orthogonal to state — it refines *who* a `visible`/`hidden` state applies to:
+
+- `visible` + `audience: [group:beta_testers]` → shown in nav and functional **only** for beta testers; everyone else gets it disabled on that surface. This is the canonical "testing" configuration.
+- `hidden` + audience → nav-hidden for everyone; functional only for members (non-members → 404).
+- `disabled` → off for all on that surface; audience irrelevant.
+- Caller matches audience when **any** entry matches: `group:<slug>` = user's group slug, `perm:<node>` = user holds that permission node (checked via the RBAC resolver — additive with, not a replacement for, route-level `rbac.RequirePermission`).
+- Anonymous callers are never in an audience (empty group/no perms) → audience-scoped flags are off for them.
+- `super_admin` bypasses audience checks — operators managing a rollout must never be locked out of their own feature.
+- Performance: the global enabled/rollout result stays on the existing L1/L2 cache; the audience check is a per-request overlay evaluated against the caller's already-resolved group/permission set — no extra DB hit on the hot path.
 
 ### 5.2 Surface detection — `X-JC-Surface`
 
@@ -164,11 +184,11 @@ Each app's API client sends a header identifying its surface:
 | `extension` | apps/extension (WXT background) |
 | `desktop` | apps/studio-desktop |
 
-`features.Gate` and the flags endpoints resolve the surface via a shared helper: `features.SurfaceFrom(r)` → header value if in the known set, else `""`. Unknown/absent → treated as no surface: global `enabled` applies, and the flag is *included* in the flag map (back-compat for public API consumers, which don't render nav). **The header is advisory and spoofable by design** — `hidden` is a discovery control, not an authorization boundary. Anything requiring hard isolation uses global `enabled=false`.
+`features.Gate` and the flags endpoints resolve the surface via a shared helper: `features.SurfaceFrom(r)` → header value if in the known set, else `""`. Unknown/absent → treated as no surface: global `enabled` applies, and the flag is *included* in the flag map (back-compat for public API consumers, which don't render nav). **The header is advisory and spoofable by design** — `hidden` is a discovery control, not an authorization boundary. Anything requiring hard isolation uses `disabled` or global `enabled=false`; audience checks are the exception — they ARE authorization and are enforced server-side against the caller's resolved groups/permissions, never the header.
 
-### 5.3 `GET /api/v1/feature-flags` — surface-scoped
+### 5.3 `GET /api/v1/feature-flags` — surface- and audience-scoped
 
-Response stays `{data: {key: bool}}` (back-compat). With a valid `X-JC-Surface`, `bool` = `enabled && surface != hidden && surface != disabled` and rollout-hash passes. Apps consult this map for nav exactly as they do today — hidden/disabled features simply absent/false.
+Response stays `{data: {key: bool}}` (back-compat). The endpoint gains `OptionalAuth`: with a valid `X-JC-Surface`, `bool` = `enabled && surface != hidden && surface != disabled && caller ∈ audience (when set)` and rollout-hash passes. Anonymous callers see only flags with no audience restriction. Apps consult this map for nav exactly as they do today — hidden/disabled/out-of-audience features simply read false. Because the result is caller-dependent, the per-user map is NOT written to the shared L1/L2 flag cache (only the underlying per-flag global resolution is cached).
 
 New richer endpoint for surfaces that need phase data (e.g. "Coming soon"/"Beta" badges on cards):
 
@@ -199,7 +219,7 @@ Cards gain a "Manage" action opening a slide-over (mirroring the admin panel's `
 
 - **General** — name, description, category (writes config blob); enabled toggle.
 - **Rollout** — phase select + `rollout_percentage` input (existing PATCH …/rollout endpoint).
-- **Visibility** — per-surface 3-state segmented control (Visible / Hidden / Disabled), defaults shown from `DefaultSurfaces`.
+- **Visibility** — per-surface 3-state segmented control (Visible / Hidden / Disabled), defaults shown from `DefaultSurfaces`; each surface row optionally expands to an audience picker (multi-select of user groups + permission nodes, fed from `/control` group and permission-node lists). Preset shortcut: "Beta testers + staff" applies `audience: [group:beta_testers]` to the selected surfaces — the standard `testing` configuration.
 - **Roadmap** — `show_on_roadmap` toggle, linked item slug/status/link to admin roadmap page, warning when `roadmap.enabled` is off.
 
 ### 6.3 API surface
@@ -236,10 +256,12 @@ To make `feature_flags` genuinely sole-sourced:
 - **`hashInRollout` limitation:** rollout % is global-deterministic, not per-user. If true cohort rollout is ever needed, that's a separate ADR — out of scope.
 - **Admin-created flag keys** (not in Registry): appear on /extensions with `Category: "Custom"`, `DefaultSurfaces` all-visible. They can carry phases/roadmap links like any flag.
 - **Unknown `X-JC-Surface`:** ignored (treated as absent) — never used to *increase* exposure.
+- **Audience group renamed:** config stores slugs, so a rename orphans the restriction (audience silently matches nobody → feature dark). The control UI warns on save when a referenced slug no longer exists; admin can then pick the renamed group. Acceptable because renames are admin-initiated and rare.
+- **In-audience user without the route's permission node:** still 403 from `rbac.RequirePermission` — audience widens nav visibility, never bypasses route RBAC.
 
 ## 9. Testing
 
-- **Go:** table tests for `SurfaceFrom`, surface-state resolution matrix (enabled × hidden × disabled × no-header), `SyncFlagPhase` transitions, `status_derived` rejection on linked items, config validation errors, merge of Registry+DB in `ListExtensions`.
+- **Go:** table tests for `SurfaceFrom`, surface-state resolution matrix (enabled × hidden × disabled × no-header), audience evaluation (group match, perm match, anonymous → off, super_admin bypass, renamed/missing group → off), `SyncFlagPhase` transitions, `status_derived` rejection on linked items, config validation errors, merge of Registry+DB in `ListExtensions`.
 - **Migration:** up/down for the CHECK constraint; backfill idempotent (`ON CONFLICT DO NOTHING`).
 - **Frontend:** `bun run check` on control/admin/main/tools; Playwright smoke — toggle a feature hidden on `main`, confirm nav drops it and direct URL still works; flip `show_on_roadmap`, confirm card appears in the right column; phase `→ testing` moves the card.
 - **Regression:** feed/search/sitemap still exclude `content_type='roadmap'`; `/feature-flags` response shape unchanged for header-less callers.
