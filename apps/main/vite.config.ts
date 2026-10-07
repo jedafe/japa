@@ -52,6 +52,9 @@ function apiHeadersPlugin(): Plugin {
 
 export default defineConfig({
 	plugins: [tailwindcss(), apiHeadersPlugin(), sveltekit(), svelteTesting()],
+	// $lib/appOrigins reads PUBLIC_* origins from import.meta.env, which Vite
+	// only populates for envPrefix-matched keys (default: VITE_ only).
+	envPrefix: ['VITE_', 'PUBLIC_'],
 	server: {
 		allowedHosts: devAllowedHosts,
 		// Allow serving workspace-level .bun node_modules (e.g. @fontsource
