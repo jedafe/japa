@@ -29,6 +29,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/media"
 )
 
 // ContentService is the subset of content.Service the servicedir package
@@ -80,6 +81,17 @@ type ServiceDTO struct {
 	AuthorID          string   `json:"author_id,omitempty"`
 	AuthorName        string   `json:"author_name,omitempty"`
 	AuthorAvatar      string   `json:"author_avatar,omitempty"`
+
+	// Marketplace card surfaces — populated from the media +
+	// review_aggregates JOINs on the listing queries (§98 detail card /
+	// marketplace listing spec). FeaturedImageURL is the imgproxy URL of
+	// contents.featured_image_id; omitted when no live media row exists.
+	// RatingAvg/ReviewCount come from the §29 review_aggregates rollup
+	// (entity_type='service_listing', entity_id=contents.id); omitted when
+	// the listing has no reviews yet.
+	FeaturedImageURL string  `json:"featured_image_url,omitempty"`
+	RatingAvg        float64 `json:"rating_avg,omitempty"`
+	ReviewCount      int32   `json:"review_count,omitempty"`
 
 	// §111 package fields — populated when listing_kind='package'.
 	ListingKind    string                `json:"listing_kind"`
@@ -2161,6 +2173,23 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 
 	if r.AuthorID.Valid {
 		dto.AuthorID = r.AuthorID.String()
+	}
+
+	// Featured image + review aggregate (media / review_aggregates JOINs).
+	// Pattern: internal/story/service.go (media.MediaURL over storage refs);
+	// Numeric→float64 coercion mirrors the server review adapter.
+	if r.FeaturedStorageBucket != nil && r.FeaturedStoragePath != nil {
+		dto.FeaturedImageURL = media.MediaURL(*r.FeaturedStorageBucket, *r.FeaturedStoragePath, media.ImageProxyOpts{})
+	}
+
+	if r.RatingAvg.Valid {
+		if avg, err := r.RatingAvg.Float64Value(); err == nil && avg.Valid {
+			dto.RatingAvg = avg.Float64
+		}
+	}
+
+	if r.RatingCount != nil {
+		dto.ReviewCount = *r.RatingCount
 	}
 
 	// §111 package fields.

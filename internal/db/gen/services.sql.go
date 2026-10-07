@@ -2022,7 +2022,7 @@ func (q *Queries) GetServiceCategoryBySlug(ctx context.Context, slug string) (Se
 const getServiceListingByContentID = `-- name: GetServiceListingByContentID :one
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -2034,7 +2034,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -2043,58 +2047,65 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.id = $1 AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
 
 type GetServiceListingByContentIDRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Body               string             `json:"body"`
-	BodyHtml           string             `json:"body_html"`
-	Status             string             `json:"status"`
-	Visibility         string             `json:"visibility"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	PublishedAt        pgtype.Timestamptz `json:"published_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	MetaID             pgtype.UUID        `json:"meta_id"`
-	OrgID              pgtype.UUID        `json:"org_id"`
-	OrgName            *string            `json:"org_name"`
-	OrgSlug            *string            `json:"org_slug"`
-	ServiceCategory    string             `json:"service_category"`
-	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName      *string            `json:"dest_space_name"`
-	DestSpaceCode      *string            `json:"dest_space_code"`
-	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName      *string            `json:"city_space_name"`
-	CitySpaceCode      *string            `json:"city_space_code"`
-	OriginCommunities  []string           `json:"origin_communities"`
-	IsRemote           bool               `json:"is_remote"`
-	WebsiteUrl         *string            `json:"website_url"`
-	BookingUrl         *string            `json:"booking_url"`
-	PriceRange         *string            `json:"price_range"`
-	IsVerified         bool               `json:"is_verified"`
-	VerificationType   *string            `json:"verification_type"`
-	ClaimStatus        string             `json:"claim_status"`
-	ClaimedByOrgID     pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName     *string            `json:"claimed_org_name"`
-	VerifiedBy         pgtype.UUID        `json:"verified_by"`
-	VerifiedAt         pgtype.Timestamptz `json:"verified_at"`
-	ListingKind        string             `json:"listing_kind"`
-	PriceAmount        *int64             `json:"price_amount"`
-	PriceCurrency      *string            `json:"price_currency"`
-	PricePer           *string            `json:"price_per"`
-	PurchaseMode       string             `json:"purchase_mode"`
-	Capacity           *int32             `json:"capacity"`
-	AvailableFrom      pgtype.Date        `json:"available_from"`
-	AvailableUntil     pgtype.Date        `json:"available_until"`
-	AuthorName         *string            `json:"author_name"`
-	AuthorAvatar       *string            `json:"author_avatar"`
+	ID                    pgtype.UUID        `json:"id"`
+	AuthorID              pgtype.UUID        `json:"author_id"`
+	Title                 string             `json:"title"`
+	Slug                  string             `json:"slug"`
+	Body                  string             `json:"body"`
+	BodyHtml              string             `json:"body_html"`
+	Status                string             `json:"status"`
+	Visibility            string             `json:"visibility"`
+	ViewCount             int32              `json:"view_count"`
+	CommentCount          int32              `json:"comment_count"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
+	MetaID                pgtype.UUID        `json:"meta_id"`
+	OrgID                 pgtype.UUID        `json:"org_id"`
+	OrgName               *string            `json:"org_name"`
+	OrgSlug               *string            `json:"org_slug"`
+	ServiceCategory       string             `json:"service_category"`
+	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName         *string            `json:"dest_space_name"`
+	DestSpaceCode         *string            `json:"dest_space_code"`
+	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName         *string            `json:"city_space_name"`
+	CitySpaceCode         *string            `json:"city_space_code"`
+	OriginCommunities     []string           `json:"origin_communities"`
+	IsRemote              bool               `json:"is_remote"`
+	WebsiteUrl            *string            `json:"website_url"`
+	BookingUrl            *string            `json:"booking_url"`
+	PriceRange            *string            `json:"price_range"`
+	IsVerified            bool               `json:"is_verified"`
+	VerificationType      *string            `json:"verification_type"`
+	ClaimStatus           string             `json:"claim_status"`
+	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName        *string            `json:"claimed_org_name"`
+	VerifiedBy            pgtype.UUID        `json:"verified_by"`
+	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
+	ListingKind           string             `json:"listing_kind"`
+	PriceAmount           *int64             `json:"price_amount"`
+	PriceCurrency         *string            `json:"price_currency"`
+	PricePer              *string            `json:"price_per"`
+	PurchaseMode          string             `json:"purchase_mode"`
+	Capacity              *int32             `json:"capacity"`
+	AvailableFrom         pgtype.Date        `json:"available_from"`
+	AvailableUntil        pgtype.Date        `json:"available_until"`
+	AuthorName            *string            `json:"author_name"`
+	AuthorAvatar          *string            `json:"author_avatar"`
+	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath   *string            `json:"featured_storage_path"`
+	RatingCount           *int32             `json:"rating_count"`
+	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
 }
 
 func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pgtype.UUID) (GetServiceListingByContentIDRow, error) {
@@ -2114,6 +2125,7 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedImageID,
 		&i.MetaID,
 		&i.OrgID,
 		&i.OrgName,
@@ -2147,6 +2159,10 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.AvailableUntil,
 		&i.AuthorName,
 		&i.AuthorAvatar,
+		&i.FeaturedStorageBucket,
+		&i.FeaturedStoragePath,
+		&i.RatingCount,
+		&i.RatingAvg,
 	)
 	return i, err
 }
@@ -2155,7 +2171,7 @@ const getServiceListingBySlug = `-- name: GetServiceListingBySlug :one
 
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -2167,7 +2183,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -2176,58 +2196,65 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.slug = $1 AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
 LIMIT 1
 `
 
 type GetServiceListingBySlugRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Body               string             `json:"body"`
-	BodyHtml           string             `json:"body_html"`
-	Status             string             `json:"status"`
-	Visibility         string             `json:"visibility"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	PublishedAt        pgtype.Timestamptz `json:"published_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	MetaID             pgtype.UUID        `json:"meta_id"`
-	OrgID              pgtype.UUID        `json:"org_id"`
-	OrgName            *string            `json:"org_name"`
-	OrgSlug            *string            `json:"org_slug"`
-	ServiceCategory    string             `json:"service_category"`
-	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName      *string            `json:"dest_space_name"`
-	DestSpaceCode      *string            `json:"dest_space_code"`
-	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName      *string            `json:"city_space_name"`
-	CitySpaceCode      *string            `json:"city_space_code"`
-	OriginCommunities  []string           `json:"origin_communities"`
-	IsRemote           bool               `json:"is_remote"`
-	WebsiteUrl         *string            `json:"website_url"`
-	BookingUrl         *string            `json:"booking_url"`
-	PriceRange         *string            `json:"price_range"`
-	IsVerified         bool               `json:"is_verified"`
-	VerificationType   *string            `json:"verification_type"`
-	ClaimStatus        string             `json:"claim_status"`
-	ClaimedByOrgID     pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName     *string            `json:"claimed_org_name"`
-	VerifiedBy         pgtype.UUID        `json:"verified_by"`
-	VerifiedAt         pgtype.Timestamptz `json:"verified_at"`
-	ListingKind        string             `json:"listing_kind"`
-	PriceAmount        *int64             `json:"price_amount"`
-	PriceCurrency      *string            `json:"price_currency"`
-	PricePer           *string            `json:"price_per"`
-	PurchaseMode       string             `json:"purchase_mode"`
-	Capacity           *int32             `json:"capacity"`
-	AvailableFrom      pgtype.Date        `json:"available_from"`
-	AvailableUntil     pgtype.Date        `json:"available_until"`
-	AuthorName         *string            `json:"author_name"`
-	AuthorAvatar       *string            `json:"author_avatar"`
+	ID                    pgtype.UUID        `json:"id"`
+	AuthorID              pgtype.UUID        `json:"author_id"`
+	Title                 string             `json:"title"`
+	Slug                  string             `json:"slug"`
+	Body                  string             `json:"body"`
+	BodyHtml              string             `json:"body_html"`
+	Status                string             `json:"status"`
+	Visibility            string             `json:"visibility"`
+	ViewCount             int32              `json:"view_count"`
+	CommentCount          int32              `json:"comment_count"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
+	MetaID                pgtype.UUID        `json:"meta_id"`
+	OrgID                 pgtype.UUID        `json:"org_id"`
+	OrgName               *string            `json:"org_name"`
+	OrgSlug               *string            `json:"org_slug"`
+	ServiceCategory       string             `json:"service_category"`
+	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName         *string            `json:"dest_space_name"`
+	DestSpaceCode         *string            `json:"dest_space_code"`
+	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName         *string            `json:"city_space_name"`
+	CitySpaceCode         *string            `json:"city_space_code"`
+	OriginCommunities     []string           `json:"origin_communities"`
+	IsRemote              bool               `json:"is_remote"`
+	WebsiteUrl            *string            `json:"website_url"`
+	BookingUrl            *string            `json:"booking_url"`
+	PriceRange            *string            `json:"price_range"`
+	IsVerified            bool               `json:"is_verified"`
+	VerificationType      *string            `json:"verification_type"`
+	ClaimStatus           string             `json:"claim_status"`
+	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName        *string            `json:"claimed_org_name"`
+	VerifiedBy            pgtype.UUID        `json:"verified_by"`
+	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
+	ListingKind           string             `json:"listing_kind"`
+	PriceAmount           *int64             `json:"price_amount"`
+	PriceCurrency         *string            `json:"price_currency"`
+	PricePer              *string            `json:"price_per"`
+	PurchaseMode          string             `json:"purchase_mode"`
+	Capacity              *int32             `json:"capacity"`
+	AvailableFrom         pgtype.Date        `json:"available_from"`
+	AvailableUntil        pgtype.Date        `json:"available_until"`
+	AuthorName            *string            `json:"author_name"`
+	AuthorAvatar          *string            `json:"author_avatar"`
+	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath   *string            `json:"featured_storage_path"`
+	RatingCount           *int32             `json:"rating_count"`
+	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
 }
 
 // ---------------------------------------------------------------------
@@ -2250,6 +2277,7 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.PublishedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedImageID,
 		&i.MetaID,
 		&i.OrgID,
 		&i.OrgName,
@@ -2283,6 +2311,10 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.AvailableUntil,
 		&i.AuthorName,
 		&i.AuthorAvatar,
+		&i.FeaturedStorageBucket,
+		&i.FeaturedStoragePath,
+		&i.RatingCount,
+		&i.RatingAvg,
 	)
 	return i, err
 }
@@ -3354,7 +3386,7 @@ func (q *Queries) ListServiceListingCoupons(ctx context.Context, listingMetaID p
 const listServiceListings = `-- name: ListServiceListings :many
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -3379,7 +3411,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
              AND cp.status = 'active'
              AND (cp.valid_from IS NULL OR cp.valid_from <= now())
              AND (cp.expires_at IS NULL OR cp.expires_at > now())
-       ) AS has_coupon
+       ) AS has_coupon,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -3388,6 +3424,8 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND c.status = COALESCE($1, 'published')
@@ -3424,54 +3462,59 @@ type ListServiceListingsParams struct {
 }
 
 type ListServiceListingsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Body               string             `json:"body"`
-	BodyHtml           string             `json:"body_html"`
-	Status             string             `json:"status"`
-	Visibility         string             `json:"visibility"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	PublishedAt        pgtype.Timestamptz `json:"published_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	MetaID             pgtype.UUID        `json:"meta_id"`
-	OrgID              pgtype.UUID        `json:"org_id"`
-	OrgName            *string            `json:"org_name"`
-	OrgSlug            *string            `json:"org_slug"`
-	ServiceCategory    string             `json:"service_category"`
-	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName      *string            `json:"dest_space_name"`
-	DestSpaceCode      *string            `json:"dest_space_code"`
-	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName      *string            `json:"city_space_name"`
-	CitySpaceCode      *string            `json:"city_space_code"`
-	OriginCommunities  []string           `json:"origin_communities"`
-	IsRemote           bool               `json:"is_remote"`
-	WebsiteUrl         *string            `json:"website_url"`
-	BookingUrl         *string            `json:"booking_url"`
-	PriceRange         *string            `json:"price_range"`
-	IsVerified         bool               `json:"is_verified"`
-	VerificationType   *string            `json:"verification_type"`
-	ClaimStatus        string             `json:"claim_status"`
-	ClaimedByOrgID     pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName     *string            `json:"claimed_org_name"`
-	VerifiedBy         pgtype.UUID        `json:"verified_by"`
-	VerifiedAt         pgtype.Timestamptz `json:"verified_at"`
-	ListingKind        string             `json:"listing_kind"`
-	PriceAmount        *int64             `json:"price_amount"`
-	PriceCurrency      *string            `json:"price_currency"`
-	PricePer           *string            `json:"price_per"`
-	PurchaseMode       string             `json:"purchase_mode"`
-	Capacity           *int32             `json:"capacity"`
-	AvailableFrom      pgtype.Date        `json:"available_from"`
-	AvailableUntil     pgtype.Date        `json:"available_until"`
-	AuthorName         *string            `json:"author_name"`
-	AuthorAvatar       *string            `json:"author_avatar"`
-	MinPrice           *int64             `json:"min_price"`
-	HasCoupon          bool               `json:"has_coupon"`
+	ID                    pgtype.UUID        `json:"id"`
+	AuthorID              pgtype.UUID        `json:"author_id"`
+	Title                 string             `json:"title"`
+	Slug                  string             `json:"slug"`
+	Body                  string             `json:"body"`
+	BodyHtml              string             `json:"body_html"`
+	Status                string             `json:"status"`
+	Visibility            string             `json:"visibility"`
+	ViewCount             int32              `json:"view_count"`
+	CommentCount          int32              `json:"comment_count"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
+	MetaID                pgtype.UUID        `json:"meta_id"`
+	OrgID                 pgtype.UUID        `json:"org_id"`
+	OrgName               *string            `json:"org_name"`
+	OrgSlug               *string            `json:"org_slug"`
+	ServiceCategory       string             `json:"service_category"`
+	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName         *string            `json:"dest_space_name"`
+	DestSpaceCode         *string            `json:"dest_space_code"`
+	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName         *string            `json:"city_space_name"`
+	CitySpaceCode         *string            `json:"city_space_code"`
+	OriginCommunities     []string           `json:"origin_communities"`
+	IsRemote              bool               `json:"is_remote"`
+	WebsiteUrl            *string            `json:"website_url"`
+	BookingUrl            *string            `json:"booking_url"`
+	PriceRange            *string            `json:"price_range"`
+	IsVerified            bool               `json:"is_verified"`
+	VerificationType      *string            `json:"verification_type"`
+	ClaimStatus           string             `json:"claim_status"`
+	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName        *string            `json:"claimed_org_name"`
+	VerifiedBy            pgtype.UUID        `json:"verified_by"`
+	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
+	ListingKind           string             `json:"listing_kind"`
+	PriceAmount           *int64             `json:"price_amount"`
+	PriceCurrency         *string            `json:"price_currency"`
+	PricePer              *string            `json:"price_per"`
+	PurchaseMode          string             `json:"purchase_mode"`
+	Capacity              *int32             `json:"capacity"`
+	AvailableFrom         pgtype.Date        `json:"available_from"`
+	AvailableUntil        pgtype.Date        `json:"available_until"`
+	AuthorName            *string            `json:"author_name"`
+	AuthorAvatar          *string            `json:"author_avatar"`
+	MinPrice              *int64             `json:"min_price"`
+	HasCoupon             bool               `json:"has_coupon"`
+	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath   *string            `json:"featured_storage_path"`
+	RatingCount           *int32             `json:"rating_count"`
+	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
 }
 
 // Public filtered list. Optional filters are sqlc.narg — NULL means
@@ -3517,6 +3560,7 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.FeaturedImageID,
 			&i.MetaID,
 			&i.OrgID,
 			&i.OrgName,
@@ -3552,6 +3596,10 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 			&i.AuthorAvatar,
 			&i.MinPrice,
 			&i.HasCoupon,
+			&i.FeaturedStorageBucket,
+			&i.FeaturedStoragePath,
+			&i.RatingCount,
+			&i.RatingAvg,
 		); err != nil {
 			return nil, err
 		}
@@ -3566,7 +3614,7 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 const listServiceListingsByOrg = `-- name: ListServiceListingsByOrg :many
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -3591,7 +3639,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
              AND cp.status = 'active'
              AND (cp.valid_from IS NULL OR cp.valid_from <= now())
              AND (cp.expires_at IS NULL OR cp.expires_at > now())
-       ) AS has_coupon
+       ) AS has_coupon,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -3600,6 +3652,8 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND sm.org_id = $1
@@ -3618,54 +3672,59 @@ type ListServiceListingsByOrgParams struct {
 }
 
 type ListServiceListingsByOrgRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	AuthorID           pgtype.UUID        `json:"author_id"`
-	Title              string             `json:"title"`
-	Slug               string             `json:"slug"`
-	Body               string             `json:"body"`
-	BodyHtml           string             `json:"body_html"`
-	Status             string             `json:"status"`
-	Visibility         string             `json:"visibility"`
-	ViewCount          int32              `json:"view_count"`
-	CommentCount       int32              `json:"comment_count"`
-	PublishedAt        pgtype.Timestamptz `json:"published_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	MetaID             pgtype.UUID        `json:"meta_id"`
-	OrgID              pgtype.UUID        `json:"org_id"`
-	OrgName            *string            `json:"org_name"`
-	OrgSlug            *string            `json:"org_slug"`
-	ServiceCategory    string             `json:"service_category"`
-	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
-	DestSpaceName      *string            `json:"dest_space_name"`
-	DestSpaceCode      *string            `json:"dest_space_code"`
-	CitySpaceID        pgtype.UUID        `json:"city_space_id"`
-	CitySpaceName      *string            `json:"city_space_name"`
-	CitySpaceCode      *string            `json:"city_space_code"`
-	OriginCommunities  []string           `json:"origin_communities"`
-	IsRemote           bool               `json:"is_remote"`
-	WebsiteUrl         *string            `json:"website_url"`
-	BookingUrl         *string            `json:"booking_url"`
-	PriceRange         *string            `json:"price_range"`
-	IsVerified         bool               `json:"is_verified"`
-	VerificationType   *string            `json:"verification_type"`
-	ClaimStatus        string             `json:"claim_status"`
-	ClaimedByOrgID     pgtype.UUID        `json:"claimed_by_org_id"`
-	ClaimedOrgName     *string            `json:"claimed_org_name"`
-	VerifiedBy         pgtype.UUID        `json:"verified_by"`
-	VerifiedAt         pgtype.Timestamptz `json:"verified_at"`
-	ListingKind        string             `json:"listing_kind"`
-	PriceAmount        *int64             `json:"price_amount"`
-	PriceCurrency      *string            `json:"price_currency"`
-	PricePer           *string            `json:"price_per"`
-	PurchaseMode       string             `json:"purchase_mode"`
-	Capacity           *int32             `json:"capacity"`
-	AvailableFrom      pgtype.Date        `json:"available_from"`
-	AvailableUntil     pgtype.Date        `json:"available_until"`
-	AuthorName         *string            `json:"author_name"`
-	AuthorAvatar       *string            `json:"author_avatar"`
-	MinPrice           *int64             `json:"min_price"`
-	HasCoupon          bool               `json:"has_coupon"`
+	ID                    pgtype.UUID        `json:"id"`
+	AuthorID              pgtype.UUID        `json:"author_id"`
+	Title                 string             `json:"title"`
+	Slug                  string             `json:"slug"`
+	Body                  string             `json:"body"`
+	BodyHtml              string             `json:"body_html"`
+	Status                string             `json:"status"`
+	Visibility            string             `json:"visibility"`
+	ViewCount             int32              `json:"view_count"`
+	CommentCount          int32              `json:"comment_count"`
+	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	CreatedAt             pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
+	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
+	MetaID                pgtype.UUID        `json:"meta_id"`
+	OrgID                 pgtype.UUID        `json:"org_id"`
+	OrgName               *string            `json:"org_name"`
+	OrgSlug               *string            `json:"org_slug"`
+	ServiceCategory       string             `json:"service_category"`
+	DestinationSpaceID    pgtype.UUID        `json:"destination_space_id"`
+	DestSpaceName         *string            `json:"dest_space_name"`
+	DestSpaceCode         *string            `json:"dest_space_code"`
+	CitySpaceID           pgtype.UUID        `json:"city_space_id"`
+	CitySpaceName         *string            `json:"city_space_name"`
+	CitySpaceCode         *string            `json:"city_space_code"`
+	OriginCommunities     []string           `json:"origin_communities"`
+	IsRemote              bool               `json:"is_remote"`
+	WebsiteUrl            *string            `json:"website_url"`
+	BookingUrl            *string            `json:"booking_url"`
+	PriceRange            *string            `json:"price_range"`
+	IsVerified            bool               `json:"is_verified"`
+	VerificationType      *string            `json:"verification_type"`
+	ClaimStatus           string             `json:"claim_status"`
+	ClaimedByOrgID        pgtype.UUID        `json:"claimed_by_org_id"`
+	ClaimedOrgName        *string            `json:"claimed_org_name"`
+	VerifiedBy            pgtype.UUID        `json:"verified_by"`
+	VerifiedAt            pgtype.Timestamptz `json:"verified_at"`
+	ListingKind           string             `json:"listing_kind"`
+	PriceAmount           *int64             `json:"price_amount"`
+	PriceCurrency         *string            `json:"price_currency"`
+	PricePer              *string            `json:"price_per"`
+	PurchaseMode          string             `json:"purchase_mode"`
+	Capacity              *int32             `json:"capacity"`
+	AvailableFrom         pgtype.Date        `json:"available_from"`
+	AvailableUntil        pgtype.Date        `json:"available_until"`
+	AuthorName            *string            `json:"author_name"`
+	AuthorAvatar          *string            `json:"author_avatar"`
+	MinPrice              *int64             `json:"min_price"`
+	HasCoupon             bool               `json:"has_coupon"`
+	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath   *string            `json:"featured_storage_path"`
+	RatingCount           *int32             `json:"rating_count"`
+	RatingAvg             pgtype.Numeric     `json:"rating_avg"`
 }
 
 // Org's listings. ?status= filters; the public /org/:org_id/packages
@@ -3699,6 +3758,7 @@ func (q *Queries) ListServiceListingsByOrg(ctx context.Context, arg ListServiceL
 			&i.PublishedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.FeaturedImageID,
 			&i.MetaID,
 			&i.OrgID,
 			&i.OrgName,
@@ -3734,6 +3794,10 @@ func (q *Queries) ListServiceListingsByOrg(ctx context.Context, arg ListServiceL
 			&i.AuthorAvatar,
 			&i.MinPrice,
 			&i.HasCoupon,
+			&i.FeaturedStorageBucket,
+			&i.FeaturedStoragePath,
+			&i.RatingCount,
+			&i.RatingAvg,
 		); err != nil {
 			return nil, err
 		}

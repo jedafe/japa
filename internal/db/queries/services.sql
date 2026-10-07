@@ -71,7 +71,7 @@ RETURNING *;
 -- name: GetServiceListingBySlug :one
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -83,7 +83,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -92,6 +96,8 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.slug = @slug AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
 LIMIT 1;
@@ -99,7 +105,7 @@ LIMIT 1;
 -- name: GetServiceListingByContentID :one
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -111,7 +117,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -120,6 +130,8 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.id = @content_id AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
 LIMIT 1;
@@ -133,7 +145,7 @@ LIMIT 1;
 -- name: ListServiceListings :many
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -158,7 +170,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
              AND cp.status = 'active'
              AND (cp.valid_from IS NULL OR cp.valid_from <= now())
              AND (cp.expires_at IS NULL OR cp.expires_at > now())
-       ) AS has_coupon
+       ) AS has_coupon,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -167,6 +183,8 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND c.status = COALESCE(sqlc.narg(status), 'published')
@@ -259,7 +277,7 @@ WHERE c.content_type = 'service_listing'
 -- name: ListServiceListingsByOrg :many
 SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        c.status, c.visibility, c.view_count, c.comment_count,
-       c.published_at, c.created_at, c.updated_at,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
        sm.id AS meta_id,
        sm.org_id, o.name AS org_name, o.slug AS org_slug,
        sm.service_category,
@@ -284,7 +302,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
              AND cp.status = 'active'
              AND (cp.valid_from IS NULL OR cp.valid_from <= now())
              AND (cp.expires_at IS NULL OR cp.expires_at > now())
-       ) AS has_coupon
+       ) AS has_coupon,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -293,6 +315,8 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND sm.org_id = @org_id

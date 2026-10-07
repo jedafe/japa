@@ -199,6 +199,21 @@ type ServiceRow struct {
 	PublishedAt       pgtype.Timestamptz
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
+
+	// Featured image refs — resolved from contents.featured_image_id via
+	// the media LEFT JOIN (pattern from contents.sql GetContentDetailBySlug).
+	// Nil storage refs mean no live media row; the DTO omits the URL.
+	FeaturedImageID       pgtype.UUID
+	FeaturedStorageBucket *string
+	FeaturedStoragePath   *string
+
+	// Review aggregate rollup (§29 review_aggregates,
+	// entity_type='service_listing', entity_id=contents.id). Populated by
+	// the joined list/detail queries; a NULL aggregate row (no reviews
+	// yet) leaves RatingCount nil and RatingAvg invalid.
+	RatingCount *int32
+	RatingAvg   pgtype.Numeric
+
 	MetaID            pgtype.UUID
 	OrgID             pgtype.UUID
 	OrgName           *string
@@ -256,6 +271,11 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		Visibility: r.Visibility, ViewCount: r.ViewCount,
 		CommentCount: r.CommentCount, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		FeaturedImageID:       r.FeaturedImageID,
+		FeaturedStorageBucket: r.FeaturedStorageBucket,
+		FeaturedStoragePath:   r.FeaturedStoragePath,
+		RatingCount:           r.RatingCount,
+		RatingAvg:             r.RatingAvg,
 		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
@@ -283,6 +303,11 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		Visibility: r.Visibility, ViewCount: r.ViewCount,
 		CommentCount: r.CommentCount, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		FeaturedImageID:       r.FeaturedImageID,
+		FeaturedStorageBucket: r.FeaturedStorageBucket,
+		FeaturedStoragePath:   r.FeaturedStoragePath,
+		RatingCount:           r.RatingCount,
+		RatingAvg:             r.RatingAvg,
 		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
@@ -310,6 +335,11 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		Visibility: r.Visibility, ViewCount: r.ViewCount,
 		CommentCount: r.CommentCount, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		FeaturedImageID:       r.FeaturedImageID,
+		FeaturedStorageBucket: r.FeaturedStorageBucket,
+		FeaturedStoragePath:   r.FeaturedStoragePath,
+		RatingCount:           r.RatingCount,
+		RatingAvg:             r.RatingAvg,
 		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
@@ -362,6 +392,11 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		Visibility: r.Visibility, ViewCount: r.ViewCount,
 		CommentCount: r.CommentCount, PublishedAt: r.PublishedAt,
 		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		FeaturedImageID:       r.FeaturedImageID,
+		FeaturedStorageBucket: r.FeaturedStorageBucket,
+		FeaturedStoragePath:   r.FeaturedStoragePath,
+		RatingCount:           r.RatingCount,
+		RatingAvg:             r.RatingAvg,
 		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
