@@ -53,8 +53,8 @@
 	const bookmarksEnabled = $derived(features['feature.bookmarks'] ?? true);
 
 	const isHorizontal = $derived(horizontal || bottom);
-	const reactionPopoverPosition = $derived(bottom ? 'left-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
-	const sharePopoverPosition = $derived(bottom ? 'right-0 bottom-[calc(100%+0.5rem)]' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
+	const reactionPopoverPosition = $derived(bottom ? 'left-0 bottom-[calc(100%+0.5rem)] sm:bottom-auto sm:left-1/2 sm:top-10 sm:-translate-x-1/2' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
+	const sharePopoverPosition = $derived(bottom ? 'right-0 bottom-[calc(100%+0.5rem)] sm:bottom-auto sm:left-1/2 sm:right-auto sm:top-10 sm:-translate-x-1/2' : (isHorizontal ? 'left-1/2 top-10 -translate-x-1/2' : 'left-12 top-0'));
 
 	let isBookmarked = $state(untrack(() => bookmarked));
 	let activeReactions = $state<Set<string>>(new Set());
@@ -304,12 +304,13 @@
 <!--
 	ADR-058 Exception #1 (vertical rail): borderless, transparent vertical strip in the article's
 	LEFT margin, distinct from the 72px nav. `horizontal` re-uses the same controls in a compact
-	row for a bottom action bar under the article body. `bottom` renders a fixed bottom bar with
-	popovers opening upward, like the shell's mobile menu.
+	row for a bottom action bar under the article body. `bottom` renders a fixed bottom bar
+	below sm (popovers opening upward, like the shell's mobile menu) and falls back to the
+	horizontal strip on sm+.
 -->
 <div
 	class="{bottom
-		? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur'
+		? 'fixed bottom-0 left-0 right-0 z-50 flex flex-row items-center justify-evenly gap-4 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] backdrop-blur sm:static sm:z-30 sm:w-full sm:items-stretch sm:justify-start sm:gap-2 sm:rounded-[var(--radius-card)] sm:border sm:bg-[var(--color-surface)] sm:px-3 sm:py-2 sm:pb-2 sm:backdrop-blur-none'
 		: horizontal
 			? 'relative z-30 flex w-full flex-row items-stretch gap-2 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2'
 			: 'sticky top-24 z-40 flex flex-col items-center gap-1.5 py-4'}"

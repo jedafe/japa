@@ -283,13 +283,15 @@
 		</section>
 	{/if}
 
-	<!-- Horizontal reaction/action bar under the article body. -->
+	<!-- Reaction/action bar: fixed bottom bar on mobile (this route is an
+	     ADR-058 exception, so the shell's mobile tab bar is absent), falling
+	     back to the horizontal strip under the body on sm+. -->
 	<div class="mt-8">
 		<ReactionRail
 			contentId={comparison.content.id}
 			commentCount={comparison.content.comment_count}
 			authed={data.authed}
-			horizontal
+			bottom
 		/>
 	</div>
 
