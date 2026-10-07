@@ -6,7 +6,7 @@
 	import GuestFooter from '$lib/components/shell/GuestFooter.svelte';
 	import MobileBottomTabBar from '$lib/components/shell/MobileBottomTabBar.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
-	import { isExceptionRoute } from '$lib/components/create/gate';
+	import { isExceptionRoute, isNoTabBarRoute } from '$lib/components/create/gate';
 	import { api } from '$lib/api/client';
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
@@ -21,6 +21,9 @@
 	// ADR-058 Exception #2: the /studio surface collapses the nav and hides
 	// the right sidebar — every tab renders in composer chrome.
 	const exception = $derived(isExceptionRoute(page.route.id));
+	// Routes that render their own fixed mobile action bar instead of the
+	// shell's tab bar (see gate.isNoTabBarRoute).
+	const noTabBar = $derived(isNoTabBarRoute(page.route.id));
 
 	// Section 09 Product Tour: ?tour=1 triggers the contextual walkthrough
 	// after onboarding completion. The tour starts once the app shell renders.
@@ -232,7 +235,7 @@
 	>
 		{@render children()}
 	</AppShell>
-	{#if !exception}
+	{#if !exception && !noTabBar}
 		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
 	{/if}
 	{#if showChatFab}

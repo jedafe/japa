@@ -48,3 +48,13 @@ export function isExceptionRoute(routeId: string | null): boolean {
 	// /studio/create but is kept here for safety.)
 	return routeId === '/(app)/create' || routeId === '/(app)/blog/[slug]' || routeId === '/(app)/content/[slug]' || routeId === '/(app)/guide/[slug]' || routeId === '/(app)/story/[slug]' || routeId === '/(app)/comparisons/[slug]' || routeId === '/(app)/video/[slug]' || routeId === '/(app)/list/[slug]' || routeId?.startsWith('/(app)/studio') === true;
 }
+
+// Routes that replace the shell's mobile tab bar with a page-owned
+// fixed action bar (e.g. the forum thread's vote/bookmark/share strip).
+// Kept separate from isExceptionRoute — these routes keep the normal
+// left nav, right sidebar, and compose chrome on desktop.
+const NO_TAB_BAR_ROUTES = new Set(['/(app)/forum/[slug]']);
+
+export function isNoTabBarRoute(routeId: string | null): boolean {
+	return routeId !== null && NO_TAB_BAR_ROUTES.has(routeId);
+}
