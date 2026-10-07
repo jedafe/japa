@@ -80,7 +80,15 @@
 
 	let query = $state(initialQuery);
 	let sortBy = $state(initialSort);
-	let pageSize = $state(0);
+	// SSR-safe initial value — mirrors the $effect.pre correction below so the
+	// first render already shows items instead of an empty grid.
+	function initialPageSize() {
+		const requested = parseInt(searchParams.get('page_size') ?? '', 10) || 0;
+		if (pageSizeOptions.includes(requested)) return requested;
+		if (pageSizeOptions.includes(defaultPageSize)) return defaultPageSize;
+		return pageSizeOptions[0] ?? defaultPageSize;
+	}
+	let pageSize = $state(initialPageSize());
 	$effect.pre(() => {
 		const next =
 			parseInt(page.url.searchParams.get('page_size') ?? String(defaultPageSize), 10) || defaultPageSize;
@@ -133,8 +141,11 @@
 		sortValues.map((value) => ({ value, label: t(`jce.compare.sort.${value}`) }))
 	);
 
+	let lastPreselect = $state<ResolvedItem[] | null>(null);
 	$effect.pre(() => {
-		if (selectedItems.length === 0 && preselectedItems.length > 0) {
+		if (selectedItems.length === 0 && preselectedItems.length > 0 &&
+				lastPreselect !== preselectedItems) {
+			lastPreselect = preselectedItems;
 			selectedItems = [...preselectedItems];
 		}
 	});
@@ -203,6 +214,7 @@
 		const url = new URL(page.url);
 		url.searchParams.set('type', nextType.slug);
 		url.searchParams.delete('mine');
+		url.searchParams.delete('preselect');
 		url.searchParams.delete('q');
 		url.searchParams.delete('sort');
 		url.searchParams.delete('page_size');
@@ -228,6 +240,7 @@
 		nestedType = '';
 		const url = new URL(page.url);
 		url.searchParams.set('source', next);
+		url.searchParams.delete('preselect');
 		url.searchParams.delete('nested_type');
 		url.searchParams.delete('q');
 		url.searchParams.delete('sort');
@@ -324,6 +337,7 @@
 	function backToLanding() {
 		const url = new URL(page.url);
 		url.searchParams.delete('type');
+		url.searchParams.delete('preselect');
 		url.searchParams.delete('source');
 		url.searchParams.delete('nested_type');
 		url.searchParams.delete('q');

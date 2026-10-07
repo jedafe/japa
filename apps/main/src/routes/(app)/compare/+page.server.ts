@@ -110,10 +110,8 @@ export const load: PageServerLoad = async (event) => {
 	if (typeSlug) {
 		selectedType = types.find((t) => t.slug === typeSlug);
 	}
-	if (!selectedType && types.length > 0) {
-		// Default to the type with the most existing comparisons (heuristic for a populated initial view).
-		selectedType = [...types].sort((a, b) => (b.item_count ?? 0) - (a.item_count ?? 0))[0];
-	}
+	// No ?type= (or an unknown slug) → landing mode: the page renders the
+	// type-card grid + popular comparisons instead of a picker workspace.
 
 	const configuredItemRefTypes = selectedType?.config?.item_ref_types as string[] | undefined;
 	const defaultItemRefTypes = parseDefaultItemRefTypes();

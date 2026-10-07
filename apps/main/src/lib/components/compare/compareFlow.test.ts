@@ -47,6 +47,13 @@ describe('compareFlow', () => {
 		expect(scopeSummary(chain, {}, {})).toBe('');
 	});
 
+	it('scopeSummary falls back to raw value for string scopes, omits unlabeled id steps', () => {
+		const chain = ['region', 'subregion', 'country'];
+		expect(scopeSummary(chain, { region: 'Africa', subregion: 'West' }, {})).toBe('Africa · West');
+		expect(scopeSummary(chain, { region: 'Africa', country: 'u1' }, {})).toBe('Africa');
+		expect(scopeSummary(chain, { region: 'Africa' }, { region: 'Labeled' })).toBe('Labeled');
+	});
+
 	it('sourceOptions maps item_ref_types to labelled options', () => {
 		const opts = sourceOptions(['col_city', 'comparison'], (k) => `L:${k}`);
 		expect(opts).toEqual([

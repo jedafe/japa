@@ -26,14 +26,17 @@ export function missingRequiredScope(
 	return null;
 }
 
+const STRING_SCOPE_STEPS = new Set(['region', 'subregion']);
+
 export function scopeSummary(
 	chain: string[],
 	selections: Record<string, string>,
 	labels: Record<string, string>
 ): string {
 	return chain
-		.filter((step) => selections[step] && labels[step])
-		.map((step) => labels[step])
+		.filter((step) => selections[step])
+		.map((step) => labels[step] ?? (STRING_SCOPE_STEPS.has(step) ? selections[step] : ''))
+		.filter(Boolean)
 		.join(' · ');
 }
 
