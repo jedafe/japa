@@ -130,7 +130,11 @@ func couponQuoteErrorCode(err error) string {
 //
 //	base     = tier price when tierID selects an active tier of this
 //	           listing (else ErrInvalidTier), otherwise the listing's
-//	           price_amount (ErrMissingPackagePrice when unset)
+//	           price_amount (ErrMissingPackagePrice when unset). Any
+//	           tier_id reference is ErrInvalidTier while the
+//	           service_packages.tiers_enabled flag is off — the flag
+//	           gates the booking-time reference too, not just the
+//	           editor/detail payloads (service_tiers.go).
 //	coupon   = attached coupon resolved by code, checked in order:
 //	           status+validity window → org ownership → applies_to →
 //	           min_spend → max_redemptions → per_user_limit →
@@ -143,6 +147,14 @@ func (s *Service) priceQuote(ctx context.Context, listing ServiceRow, bookerID p
 	var q Quote
 
 	if tierIDRaw != "" {
+		// The tiers flag gates the booking tier_id reference: with tiers
+		// dark-launched a tier reference is invalid, not silently ignored.
+		// Checked before the store lookup so a flag-off request never
+		// reaches the database.
+		if !s.TiersEnabled(ctx) {
+			return Quote{}, ErrInvalidTier
+		}
+
 		var tierID pgtype.UUID
 		if err := tierID.Scan(tierIDRaw); err != nil {
 			return Quote{}, ErrInvalidTier

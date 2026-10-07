@@ -7,9 +7,12 @@
 package servicedir
 
 import (
+	"context"
 	"errors"
 	"math"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestApplyDiscount(t *testing.T) {
@@ -101,6 +104,50 @@ func TestCouponQuoteErrorCode(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The tiers flag gates the booking tier_id reference (service_tiers.go):
+// with the flag off a tier reference is ErrInvalidTier, and the check runs
+// before the store lookup — these Services carry a nil store, so reaching
+// getPackageTier would panic rather than pass.
+func TestPriceQuoteTiersFlagGate(t *testing.T) {
+	ctx := context.Background()
+	tierID := "00000000-0000-0000-0000-000000000001"
+
+	t.Run("flag off rejects tier before store lookup", func(t *testing.T) {
+		s := &Service{settings: fakeSettings{}} // flag unset = off
+		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, tierID, "")
+		if !errors.Is(err, ErrInvalidTier) {
+			t.Fatalf("expected ErrInvalidTier, got %v", err)
+		}
+	})
+
+	t.Run("nil settings rejects tier", func(t *testing.T) {
+		s := &Service{}
+		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, tierID, "")
+		if !errors.Is(err, ErrInvalidTier) {
+			t.Fatalf("expected ErrInvalidTier, got %v", err)
+		}
+	})
+
+	t.Run("checker-off wins over settings-on", func(t *testing.T) {
+		s := &Service{
+			settings: fakeSettings{"service_packages.tiers_enabled": "true"},
+			checker:  fakeChecker{"service_packages.tiers_enabled": false},
+		}
+		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, tierID, "")
+		if !errors.Is(err, ErrInvalidTier) {
+			t.Fatalf("expected ErrInvalidTier, got %v", err)
+		}
+	})
+
+	t.Run("flag off rejects even a malformed tier id", func(t *testing.T) {
+		s := &Service{settings: fakeSettings{}}
+		_, err := s.priceQuote(ctx, ServiceRow{}, pgtype.UUID{}, "not-a-uuid", "")
+		if !errors.Is(err, ErrInvalidTier) {
+			t.Fatalf("expected ErrInvalidTier, got %v", err)
+		}
+	})
 }
 
 func TestIsCouponQuoteError(t *testing.T) {

@@ -24,6 +24,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -161,7 +162,9 @@ func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toDTO(quote, true, "")})
+	// coupon_valid is only meaningful when a coupon code was supplied —
+	// a bare quote reports false rather than implying a check ran.
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": toDTO(quote, strings.TrimSpace(couponCode) != "", "")})
 }
 
 // HandleMyBookings handles GET /me/service-bookings — caller's booking

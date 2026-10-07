@@ -387,16 +387,6 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 // Bookings
 // ---------------------------------------------------------------------------
 
-// CreateBooking inserts a service_bookings row.
-func (s *Store) CreateBooking(ctx context.Context, p gen.CreateServiceBookingParams) (gen.ServiceBooking, error) {
-	row, err := s.write.CreateServiceBooking(ctx, p)
-	if err != nil {
-		return gen.ServiceBooking{}, fmt.Errorf("servicedir: create booking: %w", err)
-	}
-
-	return row, nil
-}
-
 // createBookingWithRedemption inserts the booking and — when redemption is
 // non-nil — its coupon_redemptions row in one transaction (spec §2.3: the
 // redemption is the authoritative record, so a failed insert must roll the
