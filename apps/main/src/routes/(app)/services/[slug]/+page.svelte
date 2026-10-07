@@ -182,9 +182,11 @@
 	let bookingResult = $state<{ ok?: boolean; error?: string } | null>(null);
 	let bookingProviders = $state<{ id: string; name: string; enabled: boolean }[]>([]);
 	let providersLoaded = $state(false);
-	// §111/Rule 9 — paid bookings pass through IdempotencyMiddleware and
-	// require the header. One key per form-open so a retry replays the
-	// cached response instead of double-booking; regenerated after success.
+	// §111/Rule 9 — the backend requires the Idempotency-Key header on
+	// every booking (intent='booking' → 400 idempotency_key_required),
+	// so this form sends it on every submit — paid or inquiry. One key
+	// per form-open so a retry replays the cached response instead of
+	// double-booking; regenerated after success.
 	let bookingIdemKey = $state('');
 
 	const inputCls =
