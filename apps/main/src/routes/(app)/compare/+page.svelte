@@ -793,7 +793,7 @@
 					{#each popularComparisons as item (item.id)}
 						<a
 							href="/comparisons/{item.slug}"
-							class="rounded-[var(--radius-card)] border p-4 transition-colors hover:border-[var(--color-text)]"
+							class="min-w-0 rounded-[var(--radius-card)] border p-4 transition-colors hover:border-[var(--color-text)]"
 							style="background-color: var(--color-surface); border-color: var(--color-border)"
 						>
 							<p class="font-medium truncate" style="color: var(--color-text)">{item.title}</p>

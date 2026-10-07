@@ -140,7 +140,7 @@
 		{@const parentKey = chain[index - 1]}
 		{@const disabled = index > 0 && !selections[parentKey]}
 		<AutocompleteSelect
-			class="w-56"
+			class="w-full sm:w-56"
 			value={selections[step] ?? ''}
 			options={[
 				{ value: '', label: labelFor(step) },
