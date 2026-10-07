@@ -71,6 +71,8 @@ var Registry = []Feature{
 	{Key: "achievement.enabled", Label: "Community Achievement Feed", Default: false},
 	{Key: "service_directory.enabled", Label: "Service Directory", Default: false},
 	{Key: "service_packages.enabled", Label: "Service Packages & Bookings", Default: false},
+	{Key: "service_coupons.enabled", Label: "Service Listing Coupons", Default: false},
+	{Key: "service_packages.tiers_enabled", Label: "Service Package Tiers", Default: false},
 	// §113 Public Product Roadmap (ADR-127) — community-votable board +
 	// changelog. Default on; all routes 404 via features.Gate when off.
 	{Key: "roadmap.enabled", Label: "Public Product Roadmap", Default: true},
