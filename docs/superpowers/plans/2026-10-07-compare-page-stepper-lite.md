@@ -482,6 +482,7 @@ interface Props {
 		labels?: Record<string, string>;
 		required: boolean;
 		requiredStepLabel?: string;
+		requiredItemLabel?: string;
 		onChange: (step: string, value: string) => void;
 		onSkip: () => void;
 		onDone: () => void;
