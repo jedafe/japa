@@ -210,6 +210,9 @@
 	let initialTierId = $state('');
 
 	function openBookingDialog() {
+		// Non-tier open path — consume any prior "Choose X" preselection so
+		// reopening via the card/sticky CTA doesn't resurrect a removed tier.
+		initialTierId = '';
 		bookingOpen = true;
 	}
 
