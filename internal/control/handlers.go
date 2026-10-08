@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -3331,9 +3333,17 @@ func (h *Handlers) saveOAuthClients(r *http.Request, clients []oauthClientEntry)
 }
 
 // ---------------------------------------------------------------------------
-// Extensions Handlers (stored in system_settings under "extensions.*")
+// Extensions Handlers — the /control/extensions catalog is the single manager
+// for ALL feature flags: the union of features.Registry keys and every
+// feature_flags row (admin-created keys outside the Registry list under
+// category "Custom"). All enabled/disabled state lives in feature_flags —
+// the old system_settings "extensions.*" fallback is gone.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §6.3.
 // ---------------------------------------------------------------------------
 
+// extensionEntry is the per-item shape returned by GET /control/extensions.
+// The control panel is privileged — Surfaces carries the full per-surface
+// rules (state/audience/geo) that the public details endpoint omits.
 type extensionEntry struct {
 	Key              string `json:"key"`
 	Name             string `json:"name"`
@@ -3342,106 +3352,308 @@ type extensionEntry struct {
 	Version          string `json:"version"`
 	SettingKey       string `json:"setting_key"`
 	SettingsCategory string `json:"settings_category"`
-	// Category is used for grouping in the UI (e.g. "Content", "Social", "AI").
+	// Category groups entries in the UI (e.g. "Content", "Social", "AI").
+	// Flags created outside the Registry land in "Custom".
 	Category string `json:"category"`
-	// FeatureFlagKey is the feature_flags table key that controls this
-	// extension's enabled/disabled state. When non-empty, the extension
-	// reads/writes feature_flags (the single source of truth). When empty,
-	// the extension falls back to system_settings via SettingKey (legacy).
-	FeatureFlagKey string `json:"-"`
 	// RolloutPercentage is the gradual rollout percentage (0-100) from the
 	// feature_flags config blob. 100 = fully on, 0 = off, 1-99 = deterministic
 	// per-platform hash bucketing (BL-013 / Section 42).
 	RolloutPercentage int `json:"rollout_percentage"`
+	// Phase is the rollout phase — the stored config value when set, else
+	// derived ("shipped" for enabled flags, "planned" for disabled ones).
+	Phase         string                          `json:"phase"`
+	ShowOnRoadmap bool                            `json:"show_on_roadmap"`
+	Surfaces      map[string]features.SurfaceRule `json:"surfaces"`
+	// LinkedRoadmapSlug is the slug of the roadmap_items row linked via
+	// feature_flag_key. Omitted when no item is linked.
+	LinkedRoadmapSlug string `json:"linked_roadmap_slug,omitempty"`
 }
 
-// knownExtensions is the unified catalog of all extensions and tools
-// recognized by the control panel. Each entry's enabled/disabled state is
-// persisted in the feature_flags table under the key specified by
-// FeatureFlagKey (the single source of truth). SettingKey is retained for
-// backward-compatible system_settings lookups of non-enabled configuration
-// (subdomain, quotas, etc.). SettingsCategory is the control-panel settings
-// category the entry's title links to (empty = no settings page). This
-// catalog is the single source of truth for all extension/tool on/off
-// switches — the /extensions page is the canonical place to toggle them.
-var knownExtensions = []extensionEntry{
-	// Legacy extensions
-	{Key: "blog", Name: "Blog", Description: "Blog series, content reviews, and featured posts", Version: "1.0.0", SettingKey: "extensions.blog.enabled", SettingsCategory: "content", Category: "Content", FeatureFlagKey: "feature.blog"},
-	{Key: "webhooks", Name: "Webhooks", Description: "Outgoing webhook delivery system", Version: "1.0.0", SettingKey: "extensions.webhooks.enabled", SettingsCategory: "", Category: "Integrations", FeatureFlagKey: "webhooks.enabled"},
-	{Key: "ai", Name: "AI Assistant", Description: "AI-powered content assistance and moderation", Version: "1.0.0", SettingKey: "extensions.ai.enabled", SettingsCategory: "rag", Category: "AI", FeatureFlagKey: "feature.ai_content_gen"},
-	{Key: "affiliate", Name: "Affiliate Program", Description: "Affiliate tracking and commission management", Version: "1.0.0", SettingKey: "extensions.affiliate.enabled", SettingsCategory: "", Category: "Commerce", FeatureFlagKey: "feature.affiliate_program"},
+// Derived phases shown for flags whose config carries no explicit phase —
+// the same derivation eval applies to absent phases (spec §4.1).
+const (
+	extPhaseShipped = "shipped"
+	extPhasePlanned = "planned"
+)
 
-	// V2 tools — each uses its own feature_flags key (JEOS §§60–78, ADRs 061–086)
-	{Key: "rag", Name: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Version: "2.0.0", SettingKey: "rag.enabled", SettingsCategory: "rag", Category: "AI", FeatureFlagKey: "rag.enabled"},
-	{Key: "studio", Name: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Version: "2.0.0", SettingKey: "studio.enabled", SettingsCategory: "studio", Category: "AI", FeatureFlagKey: "studio.enabled"},
-	{Key: "participation", Name: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Version: "2.0.0", SettingKey: "participation.enabled", SettingsCategory: "participation", Category: "AI", FeatureFlagKey: "participation.enabled"},
-	{Key: "checklist", Name: "Visa Document Checklist", Description: "Interactive visa document checklist tool for immigrants", Version: "2.0.0", SettingKey: "checklist.enabled", SettingsCategory: "checklist", Category: "Tools", FeatureFlagKey: "checklist.enabled"},
-	{Key: "assessment", Name: "Japa Readiness Assessment", Description: "AI-assisted readiness assessment with personalized roadmap", Version: "2.0.0", SettingKey: "assessment.enabled", SettingsCategory: "assessment", Category: "Tools", FeatureFlagKey: "assessment.enabled"},
-	{Key: "col_calculator", Name: "Cost of Living Calculator", Description: "Compare cost of living across destination cities", Version: "2.0.0", SettingKey: "col_calculator.enabled", SettingsCategory: "col_calculator", Category: "Tools", FeatureFlagKey: "col_calculator.enabled"},
-	{Key: "scholarship_finder", Name: "Scholarship Finder", Description: "Search and track scholarships with deadline reminders", Version: "2.0.0", SettingKey: "scholarship_finder.enabled", SettingsCategory: "scholarship_finder", Category: "Tools", FeatureFlagKey: "scholarship_finder.enabled"},
-	{Key: "remittance", Name: "Remittance Rate Tracker", Description: "Track and compare remittance exchange rates over time", Version: "2.0.0", SettingKey: "remittance.enabled", SettingsCategory: "remittance", Category: "Tools", FeatureFlagKey: "remittance.enabled"},
-	{Key: "referral", Name: "Referral System", Description: "User referral program with credit rewards and attribution tracking", Version: "2.0.0", SettingKey: "referral.enabled", SettingsCategory: "referral", Category: "Commerce", FeatureFlagKey: "feature.referral"},
-	{Key: "ads", Name: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Version: "2.0.0", SettingKey: "ads.self_serve_enabled", SettingsCategory: "ads", Category: "Commerce", FeatureFlagKey: "feature.ads"},
-	{Key: "newsletter", Name: "Newsletter & Digest", Description: "Email newsletter subscriber management with weekly digests", Version: "2.0.0", SettingKey: "newsletter.enabled", SettingsCategory: "newsletter", Category: "Content", FeatureFlagKey: "feature.newsletter"},
-	{Key: "jobs", Name: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Version: "2.0.0", SettingKey: "jobs.enabled", SettingsCategory: "jobs", Category: "Commerce", FeatureFlagKey: "jobs.enabled"},
-	{Key: "gamification", Name: "Gamification", Description: "Badges, challenges, and leaderboards for user engagement", Version: "2.0.0", SettingKey: "gamification.badges_enabled", SettingsCategory: "gamification", Category: "Engagement", FeatureFlagKey: "gamification.enabled"},
-	{Key: "travel", Name: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Version: "2.0.0", SettingKey: "travel.enabled", SettingsCategory: "travel", Category: "Tools", FeatureFlagKey: "travel.enabled"},
-	{Key: "push", Name: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Version: "2.0.0", SettingKey: "push.enabled", SettingsCategory: "push", Category: "Integrations", FeatureFlagKey: "push.enabled"},
-	{Key: "geo_personalization", Name: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Version: "2.0.0", SettingKey: "geo_personalization.enabled", SettingsCategory: "geo_personalization", Category: "Integrations", FeatureFlagKey: "geo_personalization.enabled"},
-
-	// V2 functional tools (§§90–97, §§99–101) — geo-aware tool pattern
-	// (ADR-088). Each tool lives on the Tools web surface (§78, ADR-086)
-	// and is toggled via its own feature_flags key. These mirror the
-	// apps/tools registry (apps/tools/src/lib/tools/registry.ts) so the
-	// /extensions Tools tab is the canonical on/off switch for every tool
-	// on the surface.
-	{Key: "japabot", Name: "JapaBot", Description: "RAG-grounded AI japa guide chatbot on the Tools surface", Version: "2.0.0", SettingKey: "ai.japabot_enabled", SettingsCategory: "japabot", Category: "AI", FeatureFlagKey: "feature.japabot"},
-	{Key: "visa_routes", Name: "Visa Route Comparison", Description: "Compare visa routes side by side — eligibility, fees, path to PR, and renewal terms", Version: "2.0.0", SettingKey: "visa_routes.enabled", SettingsCategory: "visa_routes", Category: "Tools", FeatureFlagKey: "visa_routes.enabled"},
-	{Key: "appointment_alert", Name: "Embassy Appointment Alerter", Description: "Subscribe to embassy appointment availability alerts and get notified when slots open", Version: "2.0.0", SettingKey: "appointment_alert.enabled", SettingsCategory: "appointment_alert", Category: "Tools", FeatureFlagKey: "appointment_alert.enabled"},
-	{Key: "arrival_checklist", Name: "Arrival Checklist", Description: "Phased post-arrival task checklist — registration, banking, and settling-in steps", Version: "2.0.0", SettingKey: "arrival_checklist.enabled", SettingsCategory: "arrival_checklist", Category: "Tools", FeatureFlagKey: "arrival_checklist.enabled"},
-	{Key: "visa_timeline", Name: "Visa Processing Time Tracker", Description: "Visa processing time statistics and trends — average, median, and percentile wait times", Version: "2.0.0", SettingKey: "visa_timeline.enabled", SettingsCategory: "visa_timeline", Category: "Tools", FeatureFlagKey: "visa_timeline.enabled"},
-	{Key: "credential_checker", Name: "Professional Credential Checker", Description: "Credential recognition pathways — regulatory body, timeline, cost, and steps", Version: "2.0.0", SettingKey: "credential_checker.enabled", SettingsCategory: "credential_checker", Category: "Tools", FeatureFlagKey: "credential_checker.enabled"},
-	{Key: "cv_formatter", Name: "CV Formatter", Description: "Destination-specific CV standards and AI-assisted formatting", Version: "2.0.0", SettingKey: "cv_formatter.enabled", SettingsCategory: "cv_formatter", Category: "Tools", FeatureFlagKey: "cv_formatter.enabled"},
-	{Key: "housing_guide", Name: "Housing Guide", Description: "Destination-specific housing guides — platforms, landlord requirements, rent ranges, and scam categories", Version: "2.0.0", SettingKey: "housing_guide.enabled", SettingsCategory: "housing_guide", Category: "Tools", FeatureFlagKey: "housing_guide.enabled"},
-	{Key: "attestation_guide", Name: "Attestation Guide", Description: "Step-by-step document attestation pathways — apostille requirements, steps, and fees", Version: "2.0.0", SettingKey: "attestation_guide.enabled", SettingsCategory: "attestation_guide", Category: "Tools", FeatureFlagKey: "attestation_guide.enabled"},
-	{Key: "language_test_hub", Name: "Language Test Hub", Description: "Required language tests for your visa — minimum scores, prep resources, and community score stories", Version: "2.0.0", SettingKey: "language_test_hub.enabled", SettingsCategory: "language_test_hub", Category: "Tools", FeatureFlagKey: "language_test_hub.enabled"},
-	{Key: "tax_calculator", Name: "Tax Calculator", Description: "Destination-specific tax guides — residency triggers, worldwide income rules, and double taxation treaties", Version: "2.0.0", SettingKey: "tax_calculator.enabled", SettingsCategory: "tax_calculator", Category: "Tools", FeatureFlagKey: "tax_calculator.enabled"},
-	{Key: "community_locator", Name: "Diaspora Community Locator", Description: "Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs", Version: "2.0.0", SettingKey: "community_locator.enabled", SettingsCategory: "community_locator", Category: "Tools", FeatureFlagKey: "community_locator.enabled"},
-}
-
-// ListExtensions is an exported method.
+// ListExtensions handles GET /control/extensions. Every flag the control
+// panel manages appears exactly once — Registry keys in curated order first,
+// then admin-created rows not in the Registry (sorted by key). The page
+// polls every 30s over ~60 flags, so reads are batched: one AllFlagRows
+// aggregate call (jc:flags:_all cache — no per-request Postgres hit) plus
+// one ListRoadmapItemsByFlagKeys query, merged in Go. Per-flag
+// IsEnabled/GetFlagConfig/roadmap lookups are deliberately avoided (N+1).
 func (h *Handlers) ListExtensions(w http.ResponseWriter, r *http.Request) {
-	result := make([]extensionEntry, 0, len(knownExtensions))
+	ctx := r.Context()
 
-	for _, ext := range knownExtensions {
-		enabled := extensionDefaultEnabled(ext)
-		rollout := 100
+	var rows []features.FlagRow
+	if h.FeatureChecker != nil {
+		rows = h.FeatureChecker.AllFlagRows(ctx)
+	}
 
-		if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
-			enabled = h.FeatureChecker.IsEnabled(r.Context(), ext.FeatureFlagKey)
+	rowsByKey := make(map[string]features.FlagRow, len(rows))
+	for _, row := range rows {
+		rowsByKey[row.Key] = row
+	}
 
-			if cfg, err := h.FeatureChecker.GetFlagConfig(r.Context(), ext.FeatureFlagKey); err == nil && cfg.RolloutPercentage > 0 {
-				rollout = cfg.RolloutPercentage
-			}
-		} else if ext.SettingKey != "" && h.Settings != nil {
-			// Legacy fallback for extensions without a feature_flags key.
-			settingKey := ext.SettingKey
-			if settingKey == "" {
-				settingKey = "extensions." + ext.Key + ".enabled"
-			}
+	// Union: every Registry key, then stored rows for keys not registered.
+	keys := make([]string, 0, len(features.Registry)+len(rows))
+	seen := make(map[string]bool, len(features.Registry)+len(rows))
 
-			enabled = h.Settings.GetBoolOr(r.Context(), settingKey, enabled)
+	for _, f := range features.Registry {
+		keys = append(keys, f.Key)
+		seen[f.Key] = true
+	}
+
+	customKeys := make([]string, 0, 8)
+
+	for _, row := range rows {
+		if !seen[row.Key] {
+			customKeys = append(customKeys, row.Key)
+			seen[row.Key] = true
 		}
+	}
 
-		ext.Enabled = enabled
-		ext.RolloutPercentage = rollout
-		result = append(result, ext)
+	sort.Strings(customKeys)
+
+	keys = append(keys, customKeys...)
+
+	// One batched roadmap lookup — unlinked flags simply have no map entry.
+	slugByFlag := h.linkedRoadmapSlugs(ctx, keys)
+
+	result := make([]extensionEntry, 0, len(keys))
+
+	for _, key := range keys {
+		result = append(result, buildExtensionEntry(key, rowsByKey[key], slugByFlag[key]))
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 
-// UpdateExtension is an exported method.
+// buildExtensionEntry merges a flag key's Registry defaults with its stored
+// feature_flags row (when present) into the extensions-list item. The stored
+// row's enabled state is the raw column value — not the rollout-bucketed
+// eval result — so the admin sees the flag's actual on/off alongside its
+// rollout percentage. Keys outside the Registry list as category "Custom".
+func buildExtensionEntry(key string, row features.FlagRow, roadmapSlug string) extensionEntry {
+	entry := extensionEntry{
+		Key:               key,
+		SettingKey:        key, // the feature_flags key is the storage key now
+		Version:           "1.0.0",
+		RolloutPercentage: 100,
+		Surfaces:          map[string]features.SurfaceRule{},
+	}
+
+	if f, ok := features.RegistryLookup(key); ok {
+		entry.Name = f.Label
+		entry.Description = f.Description
+		entry.Category = f.Category
+		entry.SettingsCategory = f.SettingsCategory
+		entry.Enabled = f.Default
+
+		for surface, state := range f.DefaultSurfaces {
+			entry.Surfaces[surface] = features.SurfaceRule{State: state}
+		}
+	} else {
+		entry.Name = humanizeExtensionKey(key)
+		entry.Category = "Custom"
+	}
+
+	var cfg features.FlagConfig
+
+	if row.Key != "" {
+		entry.Enabled = row.Enabled
+		cfg = decodeFlagConfig(row.Config)
+	}
+
+	if cfg.Name != "" {
+		entry.Name = cfg.Name
+	}
+
+	if cfg.Description != "" {
+		entry.Description = cfg.Description
+	}
+
+	if cfg.RolloutPercentage != 0 {
+		entry.RolloutPercentage = cfg.RolloutPercentage
+	}
+
+	entry.ShowOnRoadmap = cfg.ShowOnRoadmap
+	entry.Phase = extensionPhase(entry.Enabled, cfg)
+
+	for surface, rule := range cfg.Surfaces {
+		entry.Surfaces[surface] = rule
+	}
+
+	if roadmapSlug != "" {
+		entry.LinkedRoadmapSlug = roadmapSlug
+	}
+
+	return entry
+}
+
+// linkedRoadmapSlugs batch-resolves roadmap_items.feature_flag_key → slug
+// for the whole catalog in one query — the linked_roadmap_slug join for the
+// extensions list. Returns an empty map when the read pool is unavailable or
+// the query fails: the list must still render without roadmap links.
+func (h *Handlers) linkedRoadmapSlugs(ctx context.Context, keys []string) map[string]string {
+	slugs := make(map[string]string)
+	if h.DB == nil || h.DB.Reader == nil || len(keys) == 0 {
+		return slugs
+	}
+
+	items, err := gen.New(h.DB.Reader).ListRoadmapItemsByFlagKeys(ctx, keys)
+	if err != nil {
+		slog.Warn("control: roadmap link lookup failed", "error", err)
+		return slugs
+	}
+
+	for _, item := range items {
+		if item.FeatureFlagKey != nil {
+			slugs[*item.FeatureFlagKey] = item.Slug
+		}
+	}
+
+	return slugs
+}
+
+// decodeFlagConfig parses a feature_flags.config jsonb blob. Malformed or
+// absent blobs decode to a zero config — the same tolerance GetFlagConfig
+// applies.
+func decodeFlagConfig(raw []byte) features.FlagConfig {
+	if len(raw) == 0 {
+		return features.FlagConfig{}
+	}
+
+	var cfg features.FlagConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return features.FlagConfig{}
+	}
+
+	return cfg
+}
+
+// extensionPhase derives the displayed phase: the config's explicit phase
+// when set, else "shipped" for enabled flags and "planned" for disabled
+// ones — the same derivation eval applies to absent phases.
+func extensionPhase(enabled bool, cfg features.FlagConfig) string {
+	if cfg.Phase != "" {
+		return cfg.Phase
+	}
+
+	if enabled {
+		return extPhaseShipped
+	}
+
+	return extPhasePlanned
+}
+
+// humanizeExtensionKey turns a dotted/snake_case flag key into a readable
+// label for admin-created flags that carry no config name (mirrors the
+// humanizeFlagName helper in the features package).
+func humanizeExtensionKey(key string) string {
+	key = strings.ReplaceAll(key, ".", "_")
+
+	parts := strings.Split(key, "_")
+	for i, p := range parts {
+		if p == "" {
+			continue
+		}
+
+		parts[i] = strings.ToUpper(p[:1]) + p[1:]
+	}
+
+	return strings.Join(parts, " ")
+}
+
+// extensionRow reads the stored feature_flags row for key — the write paths'
+// pre-merge view (enabled state + stored config). exists reports whether a
+// row exists at all; on a read miss or transient error it returns the
+// registry default and an empty config so callers can distinguish "unknown"
+// (no Registry entry AND no row → 404) from "registered but never stored".
+func (h *Handlers) extensionRow(ctx context.Context, key string) (enabled bool, cfg features.FlagConfig, exists bool) {
+	if h.DB == nil || h.DB.Reader == nil {
+		return features.DefaultFor(key), features.FlagConfig{}, false
+	}
+
+	row, err := gen.New(h.DB.Reader).GetFeatureFlagRowByKey(ctx, key)
+	if err != nil {
+		return features.DefaultFor(key), features.FlagConfig{}, false
+	}
+
+	return row.Enabled, decodeFlagConfig(row.Config), true
+}
+
+// extensionKnown reports whether key is manageable through the extensions
+// endpoints — a Registry key or an existing feature_flags row (the same
+// union ListExtensions returns).
+func (h *Handlers) extensionKnown(ctx context.Context, key string) (exists bool, enabled bool, cfg features.FlagConfig) {
+	storedEnabled, storedCfg, hasRow := h.extensionRow(ctx, key)
+	if _, ok := features.RegistryLookup(key); !ok && !hasRow {
+		return false, false, features.FlagConfig{}
+	}
+
+	return true, storedEnabled, storedCfg
+}
+
+// extensionPatchInput is the PATCH /control/extensions/{key} body. Every
+// field is optional; only fields present in the body are merged into the
+// stored FlagConfig (enabled merges into the row's enabled column).
+type extensionPatchInput struct {
+	Enabled           *bool                            `json:"enabled"`
+	Version           *string                          `json:"version"` // accepted for back-compat; not persisted
+	Phase             *string                          `json:"phase"`
+	ShowOnRoadmap     *bool                            `json:"show_on_roadmap"`
+	Surfaces          *map[string]features.SurfaceRule `json:"surfaces"`
+	Name              *string                          `json:"name"`
+	Description       *string                          `json:"description"`
+	RolloutPercentage *int                             `json:"rollout_percentage"`
+}
+
+// mergeExtensionPatch applies only the fields present in the PATCH body to
+// cfg (a copy of the stored config). Surfaces replaces the whole map when
+// present — the manage UI always sends the complete rule set. Rollout is
+// clamped to 0-100, matching the dedicated rollout endpoint.
+func mergeExtensionPatch(cfg *features.FlagConfig, input *extensionPatchInput) {
+	if input.Phase != nil {
+		cfg.Phase = strings.TrimSpace(*input.Phase)
+	}
+
+	if input.ShowOnRoadmap != nil {
+		cfg.ShowOnRoadmap = *input.ShowOnRoadmap
+	}
+
+	if input.Surfaces != nil {
+		cfg.Surfaces = *input.Surfaces
+	}
+
+	if input.Name != nil {
+		cfg.Name = strings.TrimSpace(*input.Name)
+	}
+
+	if input.Description != nil {
+		cfg.Description = strings.TrimSpace(*input.Description)
+	}
+
+	if input.RolloutPercentage != nil {
+		cfg.RolloutPercentage = *input.RolloutPercentage
+	}
+
+	if cfg.RolloutPercentage < 0 {
+		cfg.RolloutPercentage = 0
+	}
+
+	if cfg.RolloutPercentage > 100 {
+		cfg.RolloutPercentage = 100
+	}
+}
+
+// UpdateExtension handles PATCH /control/extensions/{key}. The decoded body
+// is merged into the stored FlagConfig — only present fields change — then
+// validated (ValidateConfig) and persisted via Checker.UpdateFlag, which
+// upserts enabled + config, invalidates the flag cache, and fires the
+// config-change hook automatically. Unknown keys → 404 extension_not_found;
+// invalid phase/surface values → 400 validation_error.
 func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
@@ -3449,82 +3661,119 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ext := findExtension(key)
-	if ext == nil {
+	if h.FeatureChecker == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "flags_unavailable", "Feature flag store is not available")
+		return
+	}
+
+	exists, storedEnabled, cfg := h.extensionKnown(r.Context(), key)
+	if !exists {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-	var input struct {
-		Enabled *bool   `json:"enabled"`
-		Version *string `json:"version"`
-	}
 
+	var input extensionPatchInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
 
+	enabled := storedEnabled
 	if input.Enabled != nil {
-		if err := h.setExtensionEnabled(r, ext, *input.Enabled); err != nil {
-			slog.Error("control: update extension", "error", err)
-			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
-
-			return
-		}
+		enabled = *input.Enabled
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "updated"}})
+	mergeExtensionPatch(&cfg, &input)
+
+	// Phase/surface/audience/geo vocabularies are validated before the
+	// write; ErrInvalid maps to 400 validation_error.
+	if err := features.ValidateConfig(cfg); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	// Uncached pre-write snapshot doubles as the audit row's "before" image.
+	before := h.snapshotFlag(r.Context(), key)
+	updatedBy := authUserFromContext(r)
+
+	if err := h.FeatureChecker.UpdateFlag(r.Context(), key, enabled, cfg, updatedBy); err != nil {
+		slog.Error("control: update extension", "error", err, "key", key)
+		errpkg.HandleServiceError(w, err)
+
+		return
+	}
+
+	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.update", key,
+		before, &flagAuditSnapshot{Enabled: enabled, Config: cfg})
+
+	data := map[string]any{"key": key, "status": "updated", "enabled": enabled}
+
+	// Spec §6.3: show_on_roadmap=true while roadmap.enabled resolves off is
+	// allowed, but the response carries the warning so the UI can flag it.
+	if cfg.ShowOnRoadmap && !h.FeatureChecker.IsEnabled(r.Context(), "roadmap.enabled") {
+		data["warning"] = "roadmap_disabled"
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
+// EnableExtension handles POST /control/extensions/{key}/enable.
 func (h *Handlers) EnableExtension(w http.ResponseWriter, r *http.Request) {
-	key := chi.URLParam(r, "key")
-	if key == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
-		return
-	}
-
-	ext := findExtension(key)
-	if ext == nil {
-		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
-		return
-	}
-	if err := h.setExtensionEnabled(r, ext, true); err != nil {
-		slog.Error("control: enable extension", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to enable extension")
-
-		return
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "enabled"}})
+	h.setExtensionEnabled(w, r, true)
 }
 
+// DisableExtension handles POST /control/extensions/{key}/disable.
 func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
+	h.setExtensionEnabled(w, r, false)
+}
+
+// setExtensionEnabled backs the enable/disable endpoints. The flag key is
+// validated against the Registry ∪ feature_rows union (404 for unknown
+// keys), written via Checker.SetEnabled (which invalidates the flag cache
+// and fires the config-change hook), and audit-logged.
+func (h *Handlers) setExtensionEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
 		return
 	}
 
-	ext := findExtension(key)
-	if ext == nil {
+	if h.FeatureChecker == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "flags_unavailable", "Feature flag store is not available")
+		return
+	}
+
+	exists, _, _ := h.extensionKnown(r.Context(), key)
+	if !exists {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
-	if err := h.setExtensionEnabled(r, ext, false); err != nil {
-		slog.Error("control: disable extension", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to disable extension")
+
+	before := h.snapshotFlag(r.Context(), key)
+	updatedBy := authUserFromContext(r)
+
+	if err := h.FeatureChecker.SetEnabled(r.Context(), key, enabled, updatedBy); err != nil {
+		slog.Error("control: set extension enabled", "error", err, "key", key)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update extension")
 
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "disabled"}})
+	status := "disabled"
+	if enabled {
+		status = "enabled"
+	}
+
+	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.update", key,
+		before, &flagAuditSnapshot{Enabled: enabled, Config: before.Config})
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": status}})
 }
 
-// UpdateExtensionRollout updates the rollout percentage for a feature-flagged
-// extension. Only applies to extensions with a FeatureFlagKey. The percentage
-// is clamped to 0-100. A value of 100 means fully on (no hash bucketing),
-// 0 means off, and 1-99 enables deterministic per-platform gradual rollout
-// (BL-013 / Section 42).
+// UpdateExtensionRollout updates the rollout percentage for a feature flag
+// via the extensions catalog. The percentage is clamped to 0-100. A value of
+// 100 means fully on (no hash bucketing), 0 means off, and 1-99 enables
+// deterministic per-platform gradual rollout (BL-013 / Section 42).
 func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
@@ -3532,16 +3781,17 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ext := findExtension(key)
-	if ext == nil {
+	if h.FeatureChecker == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "flags_unavailable", "Feature flag store is not available")
+		return
+	}
+
+	exists, _, _ := h.extensionKnown(r.Context(), key)
+	if !exists {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
 	}
 
-	if ext.FeatureFlagKey == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "no_feature_flag", "This extension does not support rollout percentage")
-		return
-	}
 	var input struct {
 		RolloutPercentage *int `json:"rollout_percentage"`
 	}
@@ -3565,94 +3815,85 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 		percentage = 100
 	}
 
+	before := h.snapshotFlag(r.Context(), key)
 	updatedBy := authUserFromContext(r)
-	if err := h.FeatureChecker.SetRolloutPercentage(r.Context(), ext.FeatureFlagKey, percentage, updatedBy); err != nil {
-		slog.Error("control: update rollout", "error", err, "key", ext.FeatureFlagKey)
+
+	if err := h.FeatureChecker.SetRolloutPercentage(r.Context(), key, percentage, updatedBy); err != nil {
+		slog.Error("control: update rollout", "error", err, "key", key)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update rollout percentage")
 
 		return
 	}
 
+	afterCfg := before.Config
+	afterCfg.RolloutPercentage = percentage
+	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.update", key,
+		before, &flagAuditSnapshot{Enabled: before.Enabled, Config: afterCfg})
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"key": key, "rollout_percentage": percentage}})
 }
 
-// setExtensionEnabled persists the enabled/disabled state for an extension.
-// When the extension has a FeatureFlagKey, it writes to the feature_flags
-// table (the single source of truth) via FeatureChecker.SetEnabled and
-// invalidates the feature flag cache. When it does not (legacy extensions
-// without a feature_flags mapping), it falls back to writing system_settings
-// via the SettingKey and invalidating the settings cache.
-func (h *Handlers) setExtensionEnabled(r *http.Request, ext *extensionEntry, enabled bool) error {
-	if ext.FeatureFlagKey != "" && h.FeatureChecker != nil {
-		updatedBy := authUserFromContext(r)
-		if err := h.FeatureChecker.SetEnabled(r.Context(), ext.FeatureFlagKey, enabled, updatedBy); err != nil {
-			return fmt.Errorf("setting feature flag %s: %w", ext.FeatureFlagKey, err)
-		}
-
-		h.FeatureChecker.ClearCache()
-
-		return nil
-	}
-	// Legacy fallback: write to system_settings.
-	settingKey := extensionSettingKey(ext)
-
-	val := "false"
-	if enabled {
-		val = "true"
-	}
-
-	if _, err := h.DB.Writer.Exec(r.Context(), `INSERT INTO system_settings (key, value, updated_at) VALUES ($1, $2, NOW()) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`, settingKey, val); err != nil {
-		return fmt.Errorf("writing system_setting %s: %w", settingKey, err)
-	}
-
-	if h.Settings != nil {
-		h.Settings.InvalidateSettings(r.Context())
-	}
-
-	return nil
+// flagAuditSnapshot is the before/after image stored in an audit_logs row's
+// metadata for a flag write — mirrors flagAuditSnapshot in the features
+// package (unexported there, so control keeps its own copy).
+type flagAuditSnapshot struct {
+	Enabled bool                `json:"enabled"`
+	Config  features.FlagConfig `json:"config"`
 }
 
-// extensionDefaultEnabled resolves the default enabled state for an extension
-// from the feature_flags registry (authoritative) or the settings catalog
-// DefaultValue (legacy fallback).
-func extensionDefaultEnabled(ext extensionEntry) bool {
-	if ext.FeatureFlagKey != "" {
-		return features.DefaultFor(ext.FeatureFlagKey)
+// snapshotFlag reads the flag's current enabled state + stored config for an
+// audit row's "before" image. QueryEnabled bypasses the L1/L2 caches so a
+// stale cached value never misstates the pre-write state. Returns zero
+// values when the checker or DB isn't wired or the row doesn't exist.
+func (h *Handlers) snapshotFlag(ctx context.Context, key string) *flagAuditSnapshot {
+	if h.FeatureChecker == nil {
+		return &flagAuditSnapshot{}
 	}
 
-	settingKey := ext.SettingKey
-	if settingKey == "" {
-		settingKey = "extensions." + ext.Key + ".enabled"
-	}
+	cfg, _ := h.FeatureChecker.GetFlagConfig(ctx, key)
 
-	defaultEnabled := ext.Version == "2.0.0"
-	if meta, ok := settingsCatalog[settingKey]; ok && meta.Type == "bool" {
-		defaultEnabled = meta.DefaultValue == "true"
-	}
-
-	return defaultEnabled
+	return &flagAuditSnapshot{Enabled: h.FeatureChecker.QueryEnabled(ctx, key), Config: cfg}
 }
 
-// findExtension returns the knownExtensions entry for the given key, or nil.
-func findExtension(key string) *extensionEntry {
-	for i := range knownExtensions {
-		if knownExtensions[i].Key == key {
-			return &knownExtensions[i]
-		}
+// auditFlagWrite appends an audit_logs row for an extension flag write,
+// following the same insert pattern as the features package's admin flag
+// handlers. target_id stays NULL — flag keys aren't UUIDs — so the key rides
+// in metadata alongside the before/after snapshots. A nil actor or empty IP
+// is written as NULL. Audit failure is logged but never fails the request:
+// the flag write already committed, so returning an error would invite a
+// retry of a succeeded mutation.
+func (h *Handlers) auditFlagWrite(ctx context.Context, actor pgtype.UUID, ip, action, key string, before, after *flagAuditSnapshot) {
+	if h.DB == nil || h.DB.Writer == nil {
+		return
 	}
 
-	return nil
-}
-
-// extensionSettingKey returns the system_settings key that controls the
-// enabled/disabled state for the given extension entry (legacy fallback
-// when FeatureFlagKey is empty).
-func extensionSettingKey(ext *extensionEntry) string {
-	if ext.SettingKey != "" {
-		return ext.SettingKey
+	metaJSON, err := json.Marshal(map[string]any{
+		"key":    key,
+		"before": before,
+		"after":  after,
+	})
+	if err != nil {
+		slog.Error("control: audit metadata marshal failed", "action", action, "key", key, "error", err)
+		return
 	}
 
-	return "extensions." + ext.Key + ".enabled"
+	var actorArg any
+	if actor.Valid {
+		actorArg = actor
+	}
+
+	// Pass nil for empty ip so PostgreSQL doesn't reject ''::inet.
+	var ipArg any
+	if ip != "" {
+		ipArg = ip
+	}
+
+	if _, err := h.DB.Writer.Exec(ctx, `
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, metadata, ip_address)
+		VALUES ($1, $2, 'feature_flag', $3::jsonb, $4::inet)
+	`, actorArg, action, metaJSON, ipArg); err != nil {
+		slog.Error("control: audit log insert failed", "action", action, "key", key, "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------------
