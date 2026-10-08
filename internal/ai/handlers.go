@@ -85,7 +85,8 @@ type Handlers struct {
 	Store                *Store
 	Honcho               *honcho.Client
 	AsynqClient          TaskEnqueueClient
-	Settings             SettingsReader // hot-reloadable system_settings (ai.japabot_enabled, etc.)
+	Settings             SettingsReader // hot-reloadable system_settings (sub-toggles, quotas)
+	checker              FeatureChecker // feature_flags reachability (feature.japabot); nil → settings fallback
 	Perms                PermissionChecker
 	consents             ConsentChecker      // §19: ai_processing consent gate (nil = skip check)
 	ragService           RAGRetriever        // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
@@ -254,11 +255,39 @@ func (h *Handlers) SetHonchoClient(c *honcho.Client) {
 	h.Honcho = c
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability (feature.japabot).
+// *features.Checker satisfies it structurally.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // SetSettings injects the hot-reloadable system_settings reader (Rule 3).
-// Used by HandleChat to honor the `ai.japabot_enabled` global toggle.
 func (h *Handlers) SetSettings(s SettingsReader) {
 	h.Settings = s
 	h.costs = NewCostEstimator(s)
+}
+
+// SetFeatureChecker injects the feature flag checker so JapaBot reachability
+// reads the same feature.japabot flag the route gate enforces instead of the
+// legacy ai.japabot_enabled system_setting (kept as the nil-checker fallback).
+func (h *Handlers) SetFeatureChecker(c FeatureChecker) {
+	h.checker = c
+}
+
+// japaBotEnabled resolves the feature.japabot flag; the legacy
+// ai.japabot_enabled system_setting is consulted only when no checker is
+// injected.
+func (h *Handlers) japaBotEnabled(ctx context.Context) bool {
+	if h.checker != nil {
+		return h.checker.IsEnabled(ctx, "feature.japabot")
+	}
+
+	if h.Settings == nil {
+		return true
+	}
+
+	return h.Settings.GetBoolOr(ctx, "ai.japabot_enabled", true)
 }
 
 // SetCacheClient injects the Valkey cache client used for the
@@ -895,9 +924,11 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Honor the global JapaBot toggle (system_settings 'ai.japabot_enabled',
-	// default true). A disabled toggle short-circuits before any provider call.
-	if h.Settings != nil && !h.Settings.GetBoolOr(r.Context(), "ai.japabot_enabled", true) {
+	// Honor the global JapaBot toggle (feature_flags 'feature.japabot' — the
+	// same key the route gate enforces; the legacy ai.japabot_enabled setting
+	// is the nil-checker fallback). Disabled short-circuits before any
+	// provider call.
+	if !h.japaBotEnabled(r.Context()) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
 		return
 	}

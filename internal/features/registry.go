@@ -74,6 +74,10 @@ var Registry = []Feature{
 	// V2 Community Features (§79–§89, §98) — keys renamed by migration 000404
 	// from feature.{name} to {domain}.enabled per conventions/feature-flag-naming.md.
 	{Key: "story.enabled", Label: "Community Story Wall", Description: "Member-submitted immigration journey stories", Default: false, Category: "Social"},
+	// Content-type killswitches — previously admin system_settings toggles;
+	// unified under feature_flags so /extensions is the single control point.
+	{Key: "video.enabled", Label: "Video Content", Description: "Video content type, channel import, and the /create composer", Default: true, Category: "Content"},
+	{Key: "list.enabled", Label: "Listicles", Description: "List content type, /lists index, and the /create composer", Default: true, Category: "Content"},
 	{Key: "wiki.enabled", Label: "Destination Wiki", Description: "Community-maintained destination knowledge wiki", Default: false, Category: "Content"},
 	// §80 Community Field Ops — structured entity-field edits riding the
 	// wiki revision queue. Requires wiki.enabled (routes nest inside its gate).
@@ -120,12 +124,17 @@ var Registry = []Feature{
 	{Key: "fx.enabled", Label: "Currency Converter", Description: "Live currency conversion with NGN and destination-currency pairs", Default: true, Category: "Tools"},
 	{Key: "travel.enabled", Label: "Travel Search", Description: "Travel search and booking integration for immigration journeys", Default: true, Category: "Tools", SettingsCategory: "travel"},
 	{Key: "gamification.enabled", Label: "Gamification", Description: "Badges, challenges, and leaderboards for user engagement", Default: true, Category: "Engagement", SettingsCategory: "gamification"},
-	{Key: "push.enabled", Label: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Default: true, Category: "Integrations", SettingsCategory: "push"},
+	// push.enabled default is false to match the legacy system_settings
+	// semantics (off until FCM/APNs credentials are configured); migration
+	// 000811 seeds an explicit row preserving the operator's setting.
+	{Key: "push.enabled", Label: "Mobile Push Notifications", Description: "FCM and APNs push notification delivery for mobile apps", Default: false, Category: "Integrations", SettingsCategory: "push"},
 	{Key: "geo_personalization.enabled", Label: "Geo Personalization", Description: "Geo-aware feed, search, and discovery ranking based on user location", Default: true, Category: "Integrations", SettingsCategory: "geo_personalization"},
 	// V2 AI / Infrastructure extensions
 	{Key: "rag.enabled", Label: "RAG / JapaBot Knowledge", Description: "Retrieval-augmented generation knowledge layer for JapaBot grounding", Default: false, Category: "AI", SettingsCategory: "rag"},
 	{Key: "studio.enabled", Label: "AI Content Studio", Description: "AI-powered content generation studio with persona-driven jobs", Default: false, Category: "AI", SettingsCategory: "studio"},
 	{Key: "participation.enabled", Label: "Participation Orchestration", Description: "Persona-driven participation orchestration engine", Default: false, Category: "AI", SettingsCategory: "participation"},
+	{Key: "campaign.enabled", Label: "AI Content Campaigns", Description: "Admin-run AI content campaign planning and execution (§104)", Default: true, Category: "AI"},
+	{Key: "intel.enabled", Label: "Intelligence System", Description: "Global toggle for the intelligence pipeline — radar feeds, source crawling, and promotion", Default: true, Category: "AI"},
 	{Key: "webhooks.enabled", Label: "Webhooks", Description: "Outgoing webhook delivery system", Default: false, Category: "Integrations"},
 	// Japa Comparison Engine (JCE) — Sub-spec 1
 	{Key: "feature.jce", Label: "Japa Comparison Engine", Description: "Generic comparison engine powering side-by-side entity comparisons", Default: true, Category: "Tools", SettingsCategory: "jce"},

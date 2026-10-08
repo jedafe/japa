@@ -96,10 +96,17 @@ type AssessmentChecker interface {
 	CountUserAssessmentResults(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for Japa Stage Progress Profiles.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	checker  FeatureChecker
 	notifier Notifier
 	honcho   *honcho.Client
 	assess   AssessmentChecker
@@ -127,13 +134,38 @@ func (s *Service) WithHoncho(c *honcho.Client) *Service { s.honcho = c; return s
 // decide whether to prompt a planning-stage member for an assessment (§87).
 func (s *Service) WithAssessmentChecker(a AssessmentChecker) *Service { s.assess = a; return s }
 
-// Enabled reads the japa_stage.enabled system_setting toggle (§87 feature flag).
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the japa_stage.enabled feature flag (§87); system_settings
+// is consulted only as a fallback when no checker is injected.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "japa_stage.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}
 
 	return s.settings.GetBoolOr(ctx, "japa_stage.enabled", false)
+}
+
+// achievementFeedEnabled resolves the achievement.enabled feature flag —
+// used by the §87 integration prompt that suggests posting to the §89
+// Achievement Feed when an arrival milestone is reached.
+func (s *Service) achievementFeedEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "achievement.enabled")
+	}
+
+	if s.settings == nil {
+		return false
+	}
+
+	return s.settings.GetBoolOr(ctx, "achievement.enabled", false)
 }
 
 // Option is a single selectable value exposed by the option endpoints.
@@ -398,7 +430,7 @@ func (s *Service) RecommendForStage(ctx context.Context, userID pgtype.UUID, sta
 	// Ref: §87 Integration — "stage advance to relocated, settled, or
 	// traveled triggers an opt-in prompt to post to the achievement feed."
 	if (stage == "relocated" || stage == "settled" || stage == "traveled") && s.notifier != nil &&
-		s.settings.GetBoolOr(ctx, "achievement.enabled", false) {
+		s.achievementFeedEnabled(ctx) {
 		zero := pgtype.UUID{}
 		title := "Share your milestone in the Achievement Feed"
 		body := "You've reached a major journey milestone. Share your win with the community to inspire others on the same journey."

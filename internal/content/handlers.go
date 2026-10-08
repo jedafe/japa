@@ -77,6 +77,7 @@ type Handlers struct {
 	AsynqClient         TaskEnqueueClient
 	SpamPipeline        *spam.SpamPipeline
 	settings            *config.Settings
+	checker             FeatureChecker       // nil falls back to system_settings
 	notifier            MentionNotifier      // nil disables mention notifications (test-only)
 	spaceChecker        SpacePostChecker     // nil disables space posting-perm checks (BUG-003)
 	spaceMatcher        SpaceKeywordMatcher  // nil disables auto-assign by keyword matching
@@ -110,6 +111,13 @@ type SpaceKeywordMatcher interface {
 	FindSpacesByKeywords(ctx context.Context, keywords []string) ([]gen.FindSpacesByKeywordsRow, error)
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for content-type reachability (e.g.
+// list.enabled). *features.Checker satisfies it structurally.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // SetSpacePostChecker injects the space posting-permission checker so the
 // content creation handler can enforce the space's posting_perm axis.
 func (h *Handlers) SetSpacePostChecker(c SpacePostChecker) {
@@ -125,6 +133,27 @@ func (h *Handlers) SetSpaceMatcher(m SpaceKeywordMatcher) {
 // SetTagResolver injects the tag slug resolver for bulk tag_slugs support (BUG-006).
 func (h *Handlers) SetTagResolver(r TagSlugResolver) {
 	h.tagResolver = r
+}
+
+// SetFeatureChecker injects the feature flag checker so content-type
+// killswitches (list.enabled) read feature_flags instead of system_settings.
+func (h *Handlers) SetFeatureChecker(c FeatureChecker) {
+	h.checker = c
+}
+
+// listContentEnabled resolves the list.enabled flag — the killswitch for the
+// list content type. system_settings is consulted only as a fallback when no
+// checker is wired.
+func (h *Handlers) listContentEnabled(ctx context.Context) bool {
+	if h.checker != nil {
+		return h.checker.IsEnabled(ctx, "list.enabled")
+	}
+
+	if h.settings == nil {
+		return true
+	}
+
+	return h.settings.GetBoolOr(ctx, "list.enabled", true)
 }
 
 // GuideCategory is a evergreen guide category (Visa, Travel, Scholarship, etc.)
@@ -925,7 +954,7 @@ func (h *Handlers) CreateContent(w http.ResponseWriter, r *http.Request) {
 	// (super_admin wildcard or explicit grant) and respects the public
 	// list.enabled killswitch.
 	if input.ContentType == TypeList {
-		if h.settings != nil && !h.settings.GetBoolOr(r.Context(), "list.enabled", true) {
+		if !h.listContentEnabled(r.Context()) {
 			errpkg.WriteError(w, http.StatusForbidden, "list_feature_disabled",
 				"List creation is currently disabled")
 			return

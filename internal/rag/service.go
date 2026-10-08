@@ -40,10 +40,17 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability (rag.enabled).
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for the RAG knowledge layer.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	checker  FeatureChecker
 	embedder EmbeddingGenerator
 	enqueuer TaskEnqueuer
 	cache    ValkeyCache // nil = caching disabled
@@ -55,6 +62,25 @@ func NewService(store *Store, settings *config.Settings) *Service {
 		store:    store,
 		settings: settings,
 	}
+}
+
+// SetFeatureChecker injects the feature flag checker so the rag.enabled
+// reachability check reads feature_flags instead of system_settings.
+// Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// ragEnabled resolves the rag.enabled feature flag; system_settings is
+// consulted only as a fallback when no checker is wired.
+func (s *Service) ragEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "rag.enabled")
+	}
+
+	if s.settings == nil {
+		return true
+	}
+
+	return s.settings.GetBoolOr(ctx, "rag.enabled", true)
 }
 
 // SetEmbedder injects the embedding generator (AI gateway adapter).
@@ -310,10 +336,8 @@ func (s *Service) PurgeEntityType(ctx context.Context, entityType string) error 
 // // If rag.enabled is false, returns nil (the chat handler falls back to
 // non-RAG LLM call).
 func (s *Service) Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]RetrievedChunk, error) {
-	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, "rag.enabled", true); !enabled {
-			return nil, nil
-		}
+	if !s.ragEnabled(ctx) {
+		return nil, nil
 	}
 
 	if s.embedder == nil {

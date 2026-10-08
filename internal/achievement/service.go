@@ -115,11 +115,18 @@ type ActivityEvent struct {
 	ID pgtype.UUID
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for the Community Achievement Feed.
 type Service struct {
 	store    *Store
 	content  ContentService
 	settings *config.Settings
+	checker  FeatureChecker
 	emitter  ActivityEmitter
 }
 
@@ -136,9 +143,18 @@ func NewService(store *Store, contentSvc ContentService, settings *config.Settin
 // achievement.created events for gamification badge counting (§64/§89).
 func (s *Service) WithActivityEmitter(e ActivityEmitter) *Service { s.emitter = e; return s }
 
-// Enabled reads the achievement.enabled system_setting toggle (§89 feature
-// flag).
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the achievement.enabled feature flag (§89); system_settings
+// is consulted only as a fallback when no checker is injected.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "achievement.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}

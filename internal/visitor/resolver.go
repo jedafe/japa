@@ -192,15 +192,44 @@ const (
 //   - a Redis client for caching
 //   - a settings reader for the geo_personalization.enabled killswitch and
 //     the config-driven origin/destination market lists
+//
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability (the
+// geo_personalization.enabled killswitch). *features.Checker satisfies it.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 type Resolver struct {
 	read     *gen.Queries
 	rdb      valkeycompat.Cmdable
 	settings *config.Settings
+	checker  FeatureChecker
 }
 
 // NewResolver creates a VisitorContext resolver.
 func NewResolver(read *gen.Queries, rdb valkeycompat.Cmdable, settings *config.Settings) *Resolver {
 	return &Resolver{read: read, rdb: rdb, settings: settings}
+}
+
+// SetFeatureChecker injects the feature flag checker so the
+// geo_personalization.enabled killswitch reads feature_flags instead of
+// system_settings. Falls back to system_settings when nil.
+func (res *Resolver) SetFeatureChecker(c FeatureChecker) { res.checker = c }
+
+// geoPersonalizationEnabled resolves the geo_personalization.enabled feature
+// flag; system_settings is consulted only as a fallback when no checker is
+// wired.
+func (res *Resolver) geoPersonalizationEnabled(ctx context.Context) bool {
+	if res.checker != nil {
+		return res.checker.IsEnabled(ctx, "geo_personalization.enabled")
+	}
+
+	if res.settings == nil {
+		return true
+	}
+
+	return res.settings.GetBoolOr(ctx, "geo_personalization.enabled", true)
 }
 
 // Middleware returns an HTTP middleware that resolves the VisitorContext for
@@ -242,18 +271,16 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 	// (trending, recommendations, search) treat it as global — empty/NULL
 	// in the trending SQL means "no geo filter", while "NG" would filter
 	// to Nigeria only (BUG-VIS-001).
-	if res.settings != nil {
-		if !res.settings.GetBoolOr(r.Context(), "geo_personalization.enabled", true) {
-			if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
-				vc.ContentCountry = q
-				vc.Source = "query"
-			} else {
-				vc.ContentCountry = ""
-				vc.Source = "default"
-			}
-
-			return vc
+	if !res.geoPersonalizationEnabled(r.Context()) {
+		if q := normalizeCountry(r.URL.Query().Get("geo")); q != "" {
+			vc.ContentCountry = q
+			vc.Source = "query"
+		} else {
+			vc.ContentCountry = ""
+			vc.Source = "default"
 		}
+
+		return vc
 	}
 
 	// 1. Explicit ?geo= query parameter — always wins when present.

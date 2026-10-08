@@ -81,6 +81,13 @@ func HandleIntelHarvestOutbound(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:intel:harvest_outbound: stores not wired, skipping")
 		return nil
 	}
+	// intel.enabled is a feature flag (Task 13); intel.discovery.enabled
+	// stays a system_setting — it gates a sub-behavior of the intel
+	// pipeline, not whole-feature reachability.
+	if !intelEnabled(ctx) {
+		slog.Info("task:intel:harvest_outbound: intel.enabled=false, skipping")
+		return nil
+	}
 	if appSettings != nil && !appSettings.GetBoolOr(ctx, "intel.discovery.enabled", true) {
 		slog.Info("task:intel:harvest_outbound: intel.discovery.enabled=false, skipping")
 		return nil

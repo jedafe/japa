@@ -648,10 +648,17 @@ func (c *DefaultAPIClient) FetchHotelDirectory(ctx context.Context, apiConfig js
 // Service
 // ---------------------------------------------------------------------------
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for the Travel Search surface.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	checker  FeatureChecker
 	cache    valkeycompat.Cmdable // nil = caching disabled
 	api      TravelAPIClient
 	// searchGroup dedupes concurrent identical provider calls (§67 quota
@@ -677,10 +684,20 @@ func (s *Service) SetCache(c valkeycompat.Cmdable) { s.cache = c }
 // substitute a fake implementation.
 func (s *Service) SetAPIClient(c TravelAPIClient) { s.api = c }
 
-// IsEnabled returns whether the travel surface is globally enabled. Reads
-// the travel.enabled system_setting (default false — off until a provider is
-// configured, per ADR-085 §4).
+// SetFeatureChecker injects the feature flag checker so IsEnabled reads the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// IsEnabled returns whether the travel surface is globally enabled. Reads the
+// travel.enabled feature flag (default false — off until a provider is
+// configured, per ADR-085 §4); system_settings is consulted only as a
+// fallback when no checker is injected.
 func (s *Service) IsEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "travel.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}

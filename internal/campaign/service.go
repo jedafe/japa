@@ -72,6 +72,12 @@ type settingsReader interface {
 	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service implements the content campaign business logic.
 type Service struct {
 	store    storer
@@ -80,6 +86,7 @@ type Service struct {
 	studio   studioService
 	perms    permissionChecker
 	settings settingsReader
+	checker  FeatureChecker
 }
 
 // NewService creates a campaign service backed by the given dependencies.
@@ -800,7 +807,18 @@ func (s *Service) failCampaign(ctx context.Context, campaign gen.ContentCampaign
 	return err
 }
 
+// SetFeatureChecker injects the feature flag checker so isEnabled reads the
+// feature_flags table instead of system_settings. Falls back to
+// system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// isEnabled checks the campaign.enabled feature flag (feature_flags is the
+// single source of truth; system_settings is the nil-checker fallback).
 func (s *Service) isEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "campaign.enabled")
+	}
+
 	if s.settings == nil {
 		return true
 	}

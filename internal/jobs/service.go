@@ -209,10 +209,17 @@ type ApplicationResult struct {
 	Submission map[string]any `json:"submission,omitempty"`
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for the Jobs Board.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	checker  FeatureChecker
 	enqueuer TaskEnqueuer
 }
 
@@ -227,8 +234,17 @@ func NewService(store *Store, settings *config.Settings) *Service {
 // SetEnqueuer injects the Asynq task enqueuer for notification tasks.
 func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
-// IsEnabled reads the jobs.enabled system_setting (default true).
+// SetFeatureChecker injects the feature flag checker so IsEnabled reads the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// IsEnabled reads the jobs.enabled feature flag (default true).
 func (s *Service) IsEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "jobs.enabled")
+	}
+
 	if s.settings == nil {
 		return true
 	}

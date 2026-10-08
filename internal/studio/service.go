@@ -74,6 +74,7 @@ type RegenDraftMerger interface {
 type Service struct {
 	store        *Store
 	settings     *config.Settings
+	checker      FeatureChecker
 	enqueuer     TaskEnqueuer
 	intelUpdater IntelRecordStatusUpdater
 	contentPub   ContentPublisher
@@ -507,8 +508,24 @@ func (s *Service) enqueueRetryFailed(ctx context.Context, batchID pgtype.UUID) e
 	return nil
 }
 
-// isEnabled checks the studio.enabled system setting.
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the feature flag checker so isEnabled reads the
+// feature_flags table instead of system_settings. Falls back to
+// system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// isEnabled checks the studio.enabled feature flag (feature_flags is the
+// single source of truth; system_settings is the nil-checker fallback).
 func (s *Service) isEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "studio.enabled")
+	}
+
 	if s.settings == nil {
 		return true
 	}

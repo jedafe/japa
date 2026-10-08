@@ -135,10 +135,17 @@ type permissionChecker interface {
 	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for the Community Calendar.
 type Service struct {
 	store      *Store
 	settings   *config.Settings
+	checker    FeatureChecker
 	notifier   Notifier
 	dispatcher AIDispatcher
 	rbac       permissionChecker
@@ -163,8 +170,18 @@ func (s *Service) SetDispatcher(d AIDispatcher) { s.dispatcher = d }
 // (calendar.edit_own / calendar.edit_any).
 func (s *Service) SetRBAC(r permissionChecker) { s.rbac = r }
 
-// Enabled reads the calendar.enabled system_setting toggle.
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the calendar.enabled feature flag; system_settings is
+// consulted only as a fallback when no checker is injected.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "calendar.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}

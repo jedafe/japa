@@ -451,14 +451,13 @@ func HandleIntelScheduleCrawls(ctx context.Context, _ *asynq.Task) error {
 		return nil
 	}
 
-	// BUG-12 fix: check intel.enabled toggle. Settings are platform-scoped
+	// BUG-12 fix: check intel.enabled toggle. Since Task 13 this is a
+	// feature flag — read from feature_flags when a checker is registered
+	// (system_settings read is the fallback). Flags are platform-scoped
 	// per ADR-112 Amendment 2; the default platform is used for the cron.
-	if appSettings != nil {
-		enabled := appSettings.GetBoolOr(ctx, "intel.enabled", true)
-		if !enabled {
-			slog.Info("task:intel:schedule_crawls: intel.enabled=false, skipping")
-			return nil
-		}
+	if !intelEnabled(ctx) {
+		slog.Info("task:intel:schedule_crawls: intel.enabled=false, skipping")
+		return nil
 	}
 
 	// BUG-13 fix: acquire leader lock to prevent duplicate cron runs across

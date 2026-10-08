@@ -205,13 +205,47 @@ type settingsReader interface {
 	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability. Declared as a local
+// interface so the worker package does not import internal/features;
+// *features.Checker satisfies it structurally.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // appSettings holds the injected settings reader. Nil until RegisterSettings is
 // called, in which case handlers fall back to their compiled-in defaults.
 var appSettings settingsReader
 
+// featureChecker holds the injected feature flag checker. Nil until
+// RegisterFeatureChecker is called, in which case reachability checks fall
+// back to the legacy system_settings reads.
+var featureChecker FeatureChecker
+
 // RegisterSettings injects the hot-reloadable settings reader for worker handlers.
 func RegisterSettings(s settingsReader) {
 	appSettings = s
+}
+
+// RegisterFeatureChecker injects the feature flag checker so worker-side
+// reachability toggles (intel.enabled) read from feature_flags instead of
+// system_settings. Called once at startup by server.go.
+func RegisterFeatureChecker(c FeatureChecker) {
+	featureChecker = c
+}
+
+// intelEnabled resolves the intel.enabled feature flag; the legacy
+// system_settings read is the fallback when no checker is registered.
+func intelEnabled(ctx context.Context) bool {
+	if featureChecker != nil {
+		return featureChecker.IsEnabled(ctx, "intel.enabled")
+	}
+
+	if appSettings == nil {
+		return true
+	}
+
+	return appSettings.GetBoolOr(ctx, "intel.enabled", true)
 }
 
 // ScholarshipSyncer derives or updates a scholarships projection row from a
@@ -1423,7 +1457,7 @@ var entityTypeIndexNames = map[string]string{
 	"user":                      "users",
 	"tag":                       "tags",
 	"directory_tag":             "tags",
-	"academy_track":            "academy_tracks",
+	"academy_track":             "academy_tracks",
 	"doc_page":                  "doc_pages",
 	"organization":              "organizations",
 	"language_test_requirement": "language_test_requirements",
@@ -1443,7 +1477,7 @@ func entityIndexers(ix SearchIndexer) map[string]func(context.Context, [16]byte)
 		"user":                      ix.IndexUser,
 		"tag":                       ix.IndexTag,
 		"directory_tag":             ix.IndexDirectoryTag,
-		"academy_track":            ix.IndexAcademyTrack,
+		"academy_track":             ix.IndexAcademyTrack,
 		"doc_page":                  ix.IndexDocPage,
 		"organization":              ix.IndexOrganization,
 		"language_test_requirement": ix.IndexLanguageTestRequirement,

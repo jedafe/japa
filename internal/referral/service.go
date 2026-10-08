@@ -65,6 +65,12 @@ type Program struct {
 	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service coordinates referral program configuration, referral tracking,
 // referral codes, attribution, and fraud-controlled credit awards.
 type Service struct {
@@ -72,6 +78,7 @@ type Service struct {
 	queries      *gen.Queries
 	writeQueries *gen.Queries
 	settings     *config.Settings
+	checker      FeatureChecker
 	valkey       valkeycompat.Cmdable
 	enqueuer     TaskEnqueuer
 }
@@ -88,9 +95,20 @@ func NewService(database *db.DB) *Service {
 // SetSettings injects the config.Settings provider.
 func (s *Service) SetSettings(settings *config.Settings) { s.settings = settings }
 
-// Enabled reads the referral.enabled system_settings toggle (ADR-078, §60).
-// Defaults to true when unset or when settings are not injected.
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table (the single source of truth for feature reachability,
+// matching the feature.referral route gate) instead of system_settings.
+// Falls back to the legacy referral.enabled system_setting when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the feature.referral flag (ADR-078, §60) — the same key the
+// route gate enforces. Falls back to the legacy referral.enabled
+// system_setting when no checker is injected; defaults to true.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "feature.referral")
+	}
+
 	if s.settings == nil {
 		return true
 	}

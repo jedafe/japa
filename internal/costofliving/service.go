@@ -112,15 +112,42 @@ type AdminStatsResponse struct {
 	Limit  int              `json:"limit"`
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for the cost-of-living calculator.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	checker  FeatureChecker
 }
 
 // NewService creates a cost-of-living service.
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
+}
+
+// SetFeatureChecker injects the feature flag checker so the
+// col_calculator.enabled reachability check reads the feature_flags table
+// (the single source of truth) instead of system_settings. Falls back to
+// system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// calculatorEnabled resolves the col_calculator.enabled feature flag.
+// system_settings is consulted only as a fallback when no checker is wired.
+func (s *Service) calculatorEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "col_calculator.enabled")
+	}
+
+	if s.settings == nil {
+		return defaultEnabled
+	}
+
+	return s.settings.GetBoolOr(ctx, "col_calculator.enabled", defaultEnabled)
 }
 
 // IsStale reports whether the given last_updated_at timestamp is older than
@@ -157,10 +184,8 @@ func (s *Service) maxCities(ctx context.Context) int {
 // The optional countryCode is an ISO 3166-1 alpha-2 country code used to
 // filter cities to those in the selected primary geo space.
 func (s *Service) ListCities(ctx context.Context, search, countryCode string, page, limit int) (CitiesListResponse, error) {
-	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, "col_calculator.enabled", defaultEnabled); !enabled {
-			return CitiesListResponse{}, ErrCalculatorDisabled
-		}
+	if !s.calculatorEnabled(ctx) {
+		return CitiesListResponse{}, ErrCalculatorDisabled
 	}
 
 	if limit <= 0 {
@@ -295,10 +320,8 @@ func (s *Service) resolveBaseline(ctx context.Context, typeID, requested pgtype.
 //
 // The baseline city is always included in the result even if not in cityIDs.
 func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, baselineID pgtype.UUID) (ComparisonMatrix, error) {
-	if s.settings != nil {
-		if enabled := s.settings.GetBoolOr(ctx, "col_calculator.enabled", defaultEnabled); !enabled {
-			return ComparisonMatrix{}, ErrCalculatorDisabled
-		}
+	if !s.calculatorEnabled(ctx) {
+		return ComparisonMatrix{}, ErrCalculatorDisabled
 	}
 
 	maxCities := s.maxCities(ctx)

@@ -1220,11 +1220,9 @@ func (s *Service) GetForYouFeed(
 
 	// BUG-007: honor geo_personalization.enabled. When disabled, clear
 	// contentCountry/contentRegion so no geo boost is applied. Ref: Section 32 L147–149.
-	if s.settings != nil && (contentCountry != "" || contentRegion != "") {
-		if !s.settings.GetBoolOr(ctx, "geo_personalization.enabled", true) {
-			contentCountry = ""
-			contentRegion = ""
-		}
+	if (contentCountry != "" || contentRegion != "") && !s.geoPersonalizationEnabled(ctx) {
+		contentCountry = ""
+		contentRegion = ""
 	}
 
 	// Build the lookup map for readiness roadmap slug boosts.

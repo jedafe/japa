@@ -523,6 +523,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	contentHandlers := content.NewHandlers(contentService)
 	contentHandlers.SetSpamPipeline(spamPipeline)
 	contentHandlers.SetSettings(settingsService)
+	contentHandlers.SetFeatureChecker(featureChecker) // list.enabled reads feature_flags
 
 	// Renderer subsystem (Section 15 — Block Editor SSR).
 	// The script path is validated against the allowlist root
@@ -648,7 +649,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	interactionsHandlers := interactions.NewHandlers(interactionsService)
 
 	worker.RegisterSettings(settingsService)
-	worker.RegisterRedis(vkClient.Redis()) // TASK-003: RSS feed caching in Valkey
+	worker.RegisterFeatureChecker(featureChecker) // intel.enabled + future worker-side reachability reads feature_flags
+	worker.RegisterRedis(vkClient.Redis())        // TASK-003: RSS feed caching in Valkey
 	// §14: resolve {{...}} literals in worker-generated output (cached RSS
 	// feeds, digest emails). The adapter binds a request-independent render
 	// context — the worker package can't import literals (import cycle).
@@ -711,7 +713,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Feed System subsystem (Section 32 — Activity Feed / Timeline).
 	feedService := feed.NewService(database, vkClient.Redis())
-	feedService.SetSettings(settingsService) // BUG-FEED-004: For-You feed reads feed.for_you_window_days, feed.max_followed_spaces_in_feed, and geo_personalization.enabled from system_settings (Rule 3).
+	feedService.SetSettings(settingsService)      // BUG-FEED-004: For-You feed reads feed.for_you_window_days, feed.max_followed_spaces_in_feed, and geo_personalization.enabled from system_settings (Rule 3).
+	feedService.SetFeatureChecker(featureChecker) // geo_personalization.enabled reads feature_flags
 	feedHandlers := feed.NewHandlers(feedService)
 	feedHandlers.SetSettings(settingsService)
 	feedHandlers.SetCache(vkClient.Valkey())        // BUG-006: explore feed caching
@@ -1194,14 +1197,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	newsletterService := newsletter.NewService(database)
 	newsletterService.SetAsynqClient(asynqClient)
 	newsletterService.SetSettings(settingsService)
+	newsletterService.SetFeatureChecker(featureChecker) // feature.newsletter reads feature_flags
 	newsletterHandlers := newsletter.NewHandlers(newsletterService)
 	newsletterHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in newsletter responses
 
 	// Referral Program subsystem (Section 34 / §60, ADR-078).
 	referralService := referral.NewService(database)
 	referralService.SetSettings(settingsService)
-	referralService.SetValkey(vkClient.Redis()) // jc:referral_attr attribution key
-	referralService.SetEnqueuer(taskEnqueuer)   // referral:record_click + wallet:award_points
+	referralService.SetFeatureChecker(featureChecker) // feature.referral reads feature_flags
+	referralService.SetValkey(vkClient.Redis())       // jc:referral_attr attribution key
+	referralService.SetEnqueuer(taskEnqueuer)         // referral:record_click + wallet:award_points
 	referralHandlers := referral.NewHandlers(referralService)
 	// Wire referral capture into the auth signup flow (§60 — ?ref=CODE at
 	// registration creates a pending referrals row). Injected here because
@@ -1213,7 +1218,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/63-jobs-board.md (ADR-081)
 	jobsStore := jobs.NewStore(database)
 	jobsService := jobs.NewService(jobsStore, settingsService)
-	jobsService.SetEnqueuer(taskEnqueuer) // jobs:notify_application_status (§63, ADR-081)
+	jobsService.SetFeatureChecker(featureChecker) // jobs.enabled reads feature_flags
+	jobsService.SetEnqueuer(taskEnqueuer)         // jobs:notify_application_status (§63, ADR-081)
 	jobsHandlers := jobs.NewHandlers(jobsService, settingsService)
 	jobsHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in job titles/descriptions
 
@@ -1275,7 +1281,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/67-travel-search.md (ADR-085)
 	travelStore := travel.NewStore(database)
 	travelService := travel.NewService(travelStore, settingsService)
-	travelService.SetCache(vkClient.Redis()) // VALKEY-006: jc:travel:search:{hash} result cache (§67)
+	travelService.SetFeatureChecker(featureChecker) // travel.enabled reads feature_flags
+	travelService.SetCache(vkClient.Redis())        // VALKEY-006: jc:travel:search:{hash} result cache (§67)
 	travelHandlers := travel.NewHandlers(travelService, settingsService)
 	travelHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in travel responses
 	worker.RegisterHotelDirectorySyncer(travelService) // §67, ADR-124: travel:sync_hotel_directory
@@ -1373,6 +1380,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	planningGroupStore := planninggroups.NewStore(database)
 	planningGroupService := planninggroups.NewService(planningGroupStore, settingsService).
 		WithNotifier(notificationService)
+	planningGroupService.SetFeatureChecker(featureChecker) // planning_group.enabled + achievement.enabled read feature_flags
 	planningGroupHandlers := planninggroups.NewHandlers(planningGroupService, settingsService)
 	planningGroupHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in group/milestone text
 	// Register the service as the planning_group:expire /
@@ -1425,6 +1433,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/86-community-calendar.md (ADR-094)
 	calendarStore := calendar.NewStore(database)
 	calendarService := calendar.NewService(calendarStore, settingsService)
+	calendarService.SetFeatureChecker(featureChecker) // calendar.enabled reads feature_flags
 	calendarService.SetRBAC(rbacResolver)
 	calendarService.SetNotifier(notificationService)
 	calendarHandlers := calendar.NewHandlers(calendarService, settingsService)
@@ -1443,6 +1452,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	japaStageService := japastage.NewService(japaStageStore, settingsService).
 		WithNotifier(notificationService).
 		WithHoncho(honcho.NewClient(cfg.HonchoURL))
+	japaStageService.SetFeatureChecker(featureChecker) // japa_stage.enabled + achievement.enabled read feature_flags
 	japaStageHandlers := japastage.NewHandlers(japaStageService, settingsService, asynqClient).WithRedis(vkClient.Redis())
 	japaStageHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in japastage responses
 
@@ -1460,6 +1470,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	achievementStore := achievement.NewStore(database)
 	achievementService := achievement.NewService(achievementStore, contentService, settingsService).
 		WithActivityEmitter(&achievementActivityEmitter{svc: walletService})
+	achievementService.SetFeatureChecker(featureChecker) // achievement.enabled reads feature_flags
 	achievementHandlers := achievement.NewHandlers(achievementService, settingsService)
 	achievementHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in achievement titles/bodies
 
@@ -1579,6 +1590,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Ref: japaconnect-engineering/sections/72-cost-of-living.md (ADR-072)
 	costOfLivingStore := costofliving.NewStore(database)
 	costOfLivingService := costofliving.NewService(costOfLivingStore, settingsService)
+	costOfLivingService.SetFeatureChecker(featureChecker) // col_calculator.enabled reads feature_flags
 	costOfLivingHandlers := costofliving.NewHandlers(costOfLivingService, settingsService)
 	costOfLivingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in costofliving responses
 
@@ -1643,6 +1655,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Mobile push device registration + admin push test.
 	devicesStore := devices.NewStore(database)
 	devicesService := devices.NewService(devicesStore, settingsService)
+	devicesService.SetFeatureChecker(featureChecker) // push.enabled reads feature_flags
 	// Wire the FCM/APNs CompositeDispatcher. It reads credentials per-platform
 	// from system_settings (hot-reloadable per Rule 3). When credentials are
 	// not configured, Dispatch returns a clear error per-token (§77).
@@ -1671,6 +1684,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// AI Content Studio (Section 75, ADR-076).
 	studioStore := studio.NewStore(database)
 	studioService := studio.NewService(studioStore, settingsService)
+	studioService.SetFeatureChecker(featureChecker) // studio.enabled reads feature_flags
 	studioService.SetEnqueuer(taskEnqueuer)
 	studioHandlers := studio.NewHandlers(studioService)
 	studioHandlers.SetPersonaService(personasService)
@@ -1680,6 +1694,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// Participation Orchestration Engine (Section 76, ADR-077).
 	participationService := participation.NewService(database, settingsService, vkClient.Redis())
+	participationService.SetFeatureChecker(featureChecker) // participation.enabled reads feature_flags
 	participationService.SetEnqueuer(taskEnqueuer)
 	participationService.SetEventTracker(analyticsService)        // ADR-068 §4: synthetic event tracking
 	personas.SetHighStakesGate(participation.IsHighStakesContent) // single canonical gate
@@ -1730,6 +1745,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	campaignStore := campaign.NewStore(database)
 	campaignPlanner := campaign.NewDefaultPlanner(aiDispatcher)
 	campaignService := campaign.NewService(campaignStore, campaignPlanner, personasService, studioService, rbacResolver, settingsService)
+	campaignService.SetFeatureChecker(featureChecker) // campaign.enabled reads feature_flags
 	campaignHandlers := campaign.NewHandlers(campaignService)
 
 	// §102: wire the AI embedder into the mentorship service for
@@ -1953,8 +1969,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	aiHandlers := ai.NewHandlers(aiDispatcher, aiStore)
 	aiHandlers.SetHonchoClient(honchoClient)
-	aiHandlers.SetSettings(settingsService) // Rule 3: ai.japabot_enabled global toggle
-	aiHandlers.SetRBAC(rbacResolver)        // ADR-025: ai.context.* category node checks
+	aiHandlers.SetSettings(settingsService)
+	aiHandlers.SetFeatureChecker(featureChecker) // feature.japabot reads feature_flags (same key as the route gate)
+	aiHandlers.SetRBAC(rbacResolver)             // ADR-025: ai.context.* category node checks
 	aiHandlers.SetStudioReviewHook(studioReviewHook)
 	// §103 "Approve → publish": non-studio HITL reviews carrying a content_id
 	// (agent_draft_request drafts, manual submissions) publish their target
@@ -1988,7 +2005,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ragService.SetEmbedder(ai.NewRAGEmbedder(aiDispatcher))
 	ragService.SetEnqueuer(taskEnqueuer)
 	ragService.SetCache(vkClient.Redis())
+	ragService.SetFeatureChecker(featureChecker) // rag.enabled reads feature_flags
 	ragHandlers := rag.NewHandlers(ragService, settingsService)
+	ragHandlers.SetFeatureChecker(featureChecker) // rag.enabled read/write-through to feature_flags
 	// Inject the RAG service into the AI handlers so HandleChat can run the
 	// retrieval step before the LLM call when rag.enabled is true.
 	aiHandlers.SetRAGService(ragService)
@@ -2163,6 +2182,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		aiDispatcher, agentExecutor, agentRegistry, agentPreSearcher,
 		ai.WithAgentPerms(rbacResolver),
 		ai.WithAgentSettings(settingsService),
+		ai.WithAgentFeatureChecker(featureChecker), // feature.ai_agent reads feature_flags
 		ai.WithAgentSessions(gen.New(database.Writer)),
 		ai.WithAgentGeoResolver(gen.New(database.Reader)),
 		ai.WithAgentRateLimiter(agentRateLimiter),
@@ -2677,6 +2697,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	tiktokProvider := video.NewTikTokProvider()
 	instagramProvider := video.NewInstagramProvider()
 	videoService := video.NewService(videoStore, usersService, mediaService, video.NewResolver(ytProvider, vimeoProvider, tiktokProvider, instagramProvider))
+	videoService.SetFeatureChecker(featureChecker) // video.enabled reads feature_flags
 	videoService.SetSourceRegistry(intelSourcesService)
 	videoService.SetEnqueuer(taskEnqueuer)
 	videoService.SetSettings(settingsService)
@@ -3023,6 +3044,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// without a JTI, or jc:visitor:ctx:ip:{ip} for anonymous visitors).
 			// Honors the geo_personalization.enabled killswitch.
 			visitorResolver := visitor.NewResolver(gen.New(database.Reader), vkClient.Redis(), settingsService)
+			visitorResolver.SetFeatureChecker(featureChecker) // geo_personalization.enabled reads feature_flags
 			r.Use(visitorResolver.Middleware)
 
 			// CSRF token bootstrap endpoint — issues the double-submit cookie and

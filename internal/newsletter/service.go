@@ -102,6 +102,12 @@ type Campaign struct {
 	UpdatedAt      pgtype.Timestamptz  `json:"updated_at"`
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service coordinates newsletter subscriber and campaign management,
 // unsubscribe tokens, subscriber preferences, and weekly digest support.
 type Service struct {
@@ -110,6 +116,7 @@ type Service struct {
 	writeQueries *gen.Queries
 	client       *asynq.Client
 	settings     *config.Settings
+	checker      FeatureChecker
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -129,9 +136,20 @@ func (s *Service) SetAsynqClient(client *asynq.Client) {
 // SetSettings injects the config.Settings provider.
 func (s *Service) SetSettings(settings *config.Settings) { s.settings = settings }
 
-// Enabled reads the newsletter.enabled system_settings toggle (ADR-080, §62).
-// Defaults to true when unset or when settings are not injected.
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table (the single source of truth for feature reachability,
+// matching the feature.newsletter route gate) instead of system_settings.
+// Falls back to the legacy newsletter.enabled system_setting when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// Enabled reads the feature.newsletter flag (ADR-080, §62) — the same key the
+// route gate enforces. Falls back to the legacy newsletter.enabled
+// system_setting when no checker is injected; defaults to true.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "feature.newsletter")
+	}
+
 	if s.settings == nil {
 		return true
 	}

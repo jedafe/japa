@@ -120,10 +120,17 @@ type Notifier interface {
 	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for Japa Planning Groups.
 type Service struct {
 	store    *Store
 	settings *config.Settings
+	checker  FeatureChecker
 	notifier Notifier
 }
 
@@ -132,17 +139,42 @@ func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
 
+// SetFeatureChecker injects the feature flag checker so Enabled reads the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
 // WithNotifier attaches the notification dispatcher used by the
 // mission-complete celebration (§82 Integration with §89 Achievement Feed).
 func (s *Service) WithNotifier(n Notifier) *Service { s.notifier = n; return s }
 
-// Enabled reads the planning_group.enabled system_setting toggle (§82).
+// Enabled reads the planning_group.enabled feature flag (§82);
+// system_settings is consulted only as a fallback when no checker is wired.
 func (s *Service) Enabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "planning_group.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}
 
 	return s.settings.GetBoolOr(ctx, "planning_group.enabled", false)
+}
+
+// achievementFeedEnabled resolves the achievement.enabled feature flag —
+// the §82 milestone-complete celebration suggests posting to the §89
+// Achievement Feed only when that feature is reachable.
+func (s *Service) achievementFeedEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "achievement.enabled")
+	}
+
+	if s.settings == nil {
+		return false
+	}
+
+	return s.settings.GetBoolOr(ctx, "achievement.enabled", false)
 }
 
 // Create creates a new planning group owned by the requesting user. The
@@ -497,7 +529,7 @@ func (s *Service) UpdateMilestone(ctx context.Context, milestoneID, groupID, use
 	// to share in Achievement Feed (§89). Only fires when the milestone was
 	// just marked complete and the achievement feature is enabled.
 	if completed && s.notifier != nil &&
-		s.settings.GetBoolOr(ctx, "achievement.enabled", false) {
+		s.achievementFeedEnabled(ctx) {
 		remaining, err := s.store.CountIncompleteMilestones(ctx, groupID, userID)
 		if err != nil {
 			slog.Warn("planninggroups: count incomplete milestones failed", "error", err)

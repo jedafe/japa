@@ -122,6 +122,7 @@ type AgentHandler struct {
 	presearch   *PreSearcher
 	perms       PermissionChecker
 	settings    SettingsReader
+	checker     FeatureChecker // feature_flags reachability (feature.ai_agent); nil → settings fallback
 	sessions    SessionStore
 	geo         GeoSpaceResolver
 	rateLimiter RateLimiter
@@ -163,6 +164,12 @@ func NewAgentHandler(gateway *Dispatcher, executor *Executor, registry *ToolHand
 // WithAgentPerms injects the RBAC permission checker.
 func WithAgentPerms(p PermissionChecker) AgentOption {
 	return func(h *AgentHandler) { h.perms = p }
+}
+
+// WithAgentFeatureChecker injects the feature flag checker so agent.enabled
+// reads from feature_flags instead of system_settings (kept as fallback).
+func WithAgentFeatureChecker(c FeatureChecker) AgentOption {
+	return func(h *AgentHandler) { h.checker = c }
 }
 
 // WithAgentSettings injects the hot-reloadable settings reader.
@@ -258,8 +265,10 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 		return nil, errAgentEmptyPrompt
 	}
 
-	// --- Task 5.10: agent.enabled toggle ---
-	if !h.getBoolSetting(ctx, "agent.enabled", true) {
+	// --- Task 5.10: feature.ai_agent toggle (feature_flags is authoritative;
+	// the legacy agent.enabled system_settings read is the nil-checker
+	// fallback) ---
+	if !h.agentEnabled(ctx) {
 		return nil, errAgentDisabled
 	}
 
@@ -675,6 +684,17 @@ func (h *AgentHandler) getFloatSetting(ctx context.Context, key string, fallback
 	}
 
 	return h.settings.GetFloatOr(ctx, key, fallback)
+}
+
+// agentEnabled resolves the feature.ai_agent flag (the §103 executor's
+// registered feature key); the legacy agent.enabled system_setting is
+// consulted only when no checker is injected.
+func (h *AgentHandler) agentEnabled(ctx context.Context) bool {
+	if h.checker != nil {
+		return h.checker.IsEnabled(ctx, "feature.ai_agent")
+	}
+
+	return h.getBoolSetting(ctx, "agent.enabled", true)
 }
 
 // getBoolSetting reads a bool setting with fallback.

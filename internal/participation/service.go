@@ -78,10 +78,17 @@ type ActionDispatcher interface {
 	SubmitForm(ctx context.Context, personaUserID, formID pgtype.UUID, fieldValues map[string]any) (pgtype.UUID, error)
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // Service holds the business logic for the Participation Orchestration Engine.
 type Service struct {
 	db         *db.DB
 	settings   *config.Settings
+	checker    FeatureChecker
 	vk         valkeycompat.Cmdable
 	enqueuer   TaskEnqueuer
 	tracker    EventTracker
@@ -1051,7 +1058,18 @@ func (s *Service) getGlobalDailyCap(ctx context.Context) int {
 	return s.settings.GetIntOr(ctx, "participation.global_daily_cap", 500)
 }
 
+// SetFeatureChecker injects the feature flag checker so isEnabled reads the
+// feature_flags table instead of system_settings. Falls back to
+// system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
+
+// isEnabled resolves the participation.enabled feature flag;
+// system_settings is consulted only as a fallback when no checker is wired.
 func (s *Service) isEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "participation.enabled")
+	}
+
 	if s.settings == nil {
 		return true
 	}

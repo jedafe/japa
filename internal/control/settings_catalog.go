@@ -27,6 +27,11 @@ type settingMeta struct {
 	// "control" = infrastructure/system-level settings managed by super admins.
 	// Empty string = shown in both panels (legacy/unclassified).
 	Panel string `json:"-"`
+	// Deprecated marks settings superseded by a feature_flags row (unified
+	// rollout — see deprecatedReachabilitySettings). They remain valid reads
+	// (services consult them only as a nil-checker fallback) but are excluded
+	// from the editable settings list; manage them via /extensions.
+	Deprecated bool `json:"-"`
 }
 
 // landingToolsDefault is the public landing-page tool card registry
@@ -687,30 +692,30 @@ var settingsCatalog = map[string]settingMeta{
 	// Public Product Roadmap (§113, ADR-127). submissions_enabled and
 	// custom_domain are Public so apps/main can gate the submit form and run
 	// host detection off /site/settings/public (fx.custom_domain precedent).
-	"roadmap.submissions_enabled":   {Type: "bool", DefaultValue: "true", Public: true, Description: "Public feature-request submissions open (§113).", Panel: "control"},
-	"roadmap.custom_domain":         {Type: "string", DefaultValue: "", Public: true, Description: "Extra hostnames that render the roadmap surface (comma-separated; checked by apps/main host detection).", Panel: "control"},
+	"roadmap.submissions_enabled":     {Type: "bool", DefaultValue: "true", Public: true, Description: "Public feature-request submissions open (§113).", Panel: "control"},
+	"roadmap.custom_domain":           {Type: "string", DefaultValue: "", Public: true, Description: "Extra hostnames that render the roadmap surface (comma-separated; checked by apps/main host detection).", Panel: "control"},
 	"roadmap.board_cache_ttl_seconds": {Type: "int", DefaultValue: "60", Description: `TTL for the public board Valkey cache (` + "`" + `jc:roadmap:board` + "`" + `).`, Panel: "control"},
-	"roadmap.shipped_window_days":   {Type: "int", DefaultValue: "90", Description: "Days a shipped item stays on the public board before only appearing on the changelog.", Panel: "control"},
-	"site.custom_css":                         {Type: "string", DefaultValue: "", Description: `Raw CSS injected inside ` + "`" + `<style id="jc-custom-css">` + "`" + ` in ` + "`" + `<head>` + "`" + `. Max 50 KB.`, Panel: "admin"},
-	"site.custom_js":                          {Type: "string", DefaultValue: "", Description: `Raw JS injected as ` + "`" + `<script id="jc-custom-js">` + "`" + ` before ` + "`" + `</body>` + "`" + `. Max 100 KB.`, Panel: "admin"},
-	"trending.expiry.24h_hours":               {Type: "int", DefaultValue: "2", Description: "TTL (hours) for 24h trending snapshots", Panel: "admin"},
-	"trending.expiry.30d_hours":               {Type: "int", DefaultValue: "32", Description: "TTL (hours) for 30d trending snapshots", Panel: "admin"},
-	"trending.expiry.7d_hours":                {Type: "int", DefaultValue: "8", Description: "TTL (hours) for 7d trending snapshots", Panel: "admin"},
-	"trending.gravity":                        {Type: "float", DefaultValue: "1.8", Description: "HN gravity exponent for trending velocity (ADR-032)", Panel: "admin"},
-	"trending.weight.bookmarks":               {Type: "float", DefaultValue: "3", Description: "Content/user velocity: bookmarks multiplier", Panel: "admin"},
-	"trending.weight.comments":                {Type: "float", DefaultValue: "5", Description: "Content/user velocity: comments multiplier", Panel: "admin"},
-	"trending.weight.shares":                  {Type: "float", DefaultValue: "8", Description: "Content/user velocity: shares multiplier", Panel: "admin"},
-	"trending.weight.space_member":            {Type: "float", DefaultValue: "1", Description: "Space trending: member count multiplier", Panel: "admin"},
-	"trending.weight.space_post":              {Type: "float", DefaultValue: "2", Description: "Space trending: post count multiplier", Panel: "admin"},
-	"trending.weight.space_recent":            {Type: "float", DefaultValue: "5", Description: "Space trending: recent post count multiplier", Panel: "admin"},
-	"trending.weight.tag_content":             {Type: "float", DefaultValue: "3", Description: "Tag trending: recent content count multiplier", Panel: "admin"},
-	"trending.weight.tag_follower":            {Type: "float", DefaultValue: "1", Description: "Tag trending: follower count multiplier", Panel: "admin"},
-	"trending.weight.views":                   {Type: "float", DefaultValue: "1", Description: "Content/user velocity: views multiplier", Panel: "admin"},
-	"trending.weight.votes":                   {Type: "float", DefaultValue: "10", Description: "Content/user velocity: votes multiplier", Panel: "admin"},
-	"users.username_cooldown_days":            {Type: "int", DefaultValue: "30", Description: "Minimum days between username changes (\u00a750)", Panel: "admin"},
-	"wallet.credit_purchase_enabled":          {Type: "bool", DefaultValue: "true", Description: `Killswitch for credit purchasing. When false, ` + "`" + `POST /wallet/purchase-credits` + "`" + ` returns 403; spending existing credits still works. Ref: Section 58.`, Panel: "admin"},
-	"wallet.default_currency":                 {Type: "string", DefaultValue: "USD", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Panel: "admin"},
-	"wallet.min_purchase_credits":             {Type: "int", DefaultValue: "100", Description: "Minimum credits for a custom-amount credit purchase. Ref: Section 58.", Panel: "admin"},
+	"roadmap.shipped_window_days":     {Type: "int", DefaultValue: "90", Description: "Days a shipped item stays on the public board before only appearing on the changelog.", Panel: "control"},
+	"site.custom_css":                 {Type: "string", DefaultValue: "", Description: `Raw CSS injected inside ` + "`" + `<style id="jc-custom-css">` + "`" + ` in ` + "`" + `<head>` + "`" + `. Max 50 KB.`, Panel: "admin"},
+	"site.custom_js":                  {Type: "string", DefaultValue: "", Description: `Raw JS injected as ` + "`" + `<script id="jc-custom-js">` + "`" + ` before ` + "`" + `</body>` + "`" + `. Max 100 KB.`, Panel: "admin"},
+	"trending.expiry.24h_hours":       {Type: "int", DefaultValue: "2", Description: "TTL (hours) for 24h trending snapshots", Panel: "admin"},
+	"trending.expiry.30d_hours":       {Type: "int", DefaultValue: "32", Description: "TTL (hours) for 30d trending snapshots", Panel: "admin"},
+	"trending.expiry.7d_hours":        {Type: "int", DefaultValue: "8", Description: "TTL (hours) for 7d trending snapshots", Panel: "admin"},
+	"trending.gravity":                {Type: "float", DefaultValue: "1.8", Description: "HN gravity exponent for trending velocity (ADR-032)", Panel: "admin"},
+	"trending.weight.bookmarks":       {Type: "float", DefaultValue: "3", Description: "Content/user velocity: bookmarks multiplier", Panel: "admin"},
+	"trending.weight.comments":        {Type: "float", DefaultValue: "5", Description: "Content/user velocity: comments multiplier", Panel: "admin"},
+	"trending.weight.shares":          {Type: "float", DefaultValue: "8", Description: "Content/user velocity: shares multiplier", Panel: "admin"},
+	"trending.weight.space_member":    {Type: "float", DefaultValue: "1", Description: "Space trending: member count multiplier", Panel: "admin"},
+	"trending.weight.space_post":      {Type: "float", DefaultValue: "2", Description: "Space trending: post count multiplier", Panel: "admin"},
+	"trending.weight.space_recent":    {Type: "float", DefaultValue: "5", Description: "Space trending: recent post count multiplier", Panel: "admin"},
+	"trending.weight.tag_content":     {Type: "float", DefaultValue: "3", Description: "Tag trending: recent content count multiplier", Panel: "admin"},
+	"trending.weight.tag_follower":    {Type: "float", DefaultValue: "1", Description: "Tag trending: follower count multiplier", Panel: "admin"},
+	"trending.weight.views":           {Type: "float", DefaultValue: "1", Description: "Content/user velocity: views multiplier", Panel: "admin"},
+	"trending.weight.votes":           {Type: "float", DefaultValue: "10", Description: "Content/user velocity: votes multiplier", Panel: "admin"},
+	"users.username_cooldown_days":    {Type: "int", DefaultValue: "30", Description: "Minimum days between username changes (\u00a750)", Panel: "admin"},
+	"wallet.credit_purchase_enabled":  {Type: "bool", DefaultValue: "true", Description: `Killswitch for credit purchasing. When false, ` + "`" + `POST /wallet/purchase-credits` + "`" + ` returns 403; spending existing credits still works. Ref: Section 58.`, Panel: "admin"},
+	"wallet.default_currency":         {Type: "string", DefaultValue: "USD", Description: "Fallback currency code when user has no country/preference (ISO 4217). Ref: Section 58, ADR-065.", Panel: "admin"},
+	"wallet.min_purchase_credits":     {Type: "int", DefaultValue: "100", Description: "Minimum credits for a custom-amount credit purchase. Ref: Section 58.", Panel: "admin"},
 	// Video (§106, ADR-117)
 	// Public because the main /create composer and studio surfaces gate
 	// themselves on this setting (Rule 16).
@@ -752,11 +757,72 @@ func getSettingPanel(key string) string {
 	return ""
 }
 
+// deprecatedReachabilitySettings maps system_settings reachability toggles
+// migrated to feature_flags (Task 13 — unified rollout) to the flag key that
+// now owns them. These keys remain catalogued for backward-compatible reads
+// but are excluded from the editable settings list and carry a DEPRECATED
+// description prefix pointing at the owning flag.
+var deprecatedReachabilitySettings = map[string]string{
+	"ai.japabot_enabled":          "feature.japabot",
+	"agent.enabled":               "feature.ai_agent",
+	"achievement.enabled":         "achievement.enabled",
+	"appointment_alert.enabled":   "appointment_alert.enabled",
+	"arrival_checklist.enabled":   "arrival_checklist.enabled",
+	"assessment.enabled":          "assessment.enabled",
+	"attestation_guide.enabled":   "attestation_guide.enabled",
+	"calendar.enabled":            "calendar.enabled",
+	"campaign.enabled":            "campaign.enabled",
+	"checklist.enabled":           "checklist.enabled",
+	"col_calculator.enabled":      "col_calculator.enabled",
+	"community_locator.enabled":   "community_locator.enabled",
+	"credential_checker.enabled":  "credential_checker.enabled",
+	"crs_calculator.enabled":      "crs_calculator.enabled",
+	"cv_formatter.enabled":        "cv_formatter.enabled",
+	"digest.enabled":              "digest.enabled",
+	"eca_guide.enabled":           "eca_guide.enabled",
+	"forum.ama.enabled":           "forum.ama.enabled",
+	"fx.enabled":                  "fx.enabled",
+	"geo_personalization.enabled": "geo_personalization.enabled",
+	"housing_guide.enabled":       "housing_guide.enabled",
+	"intel.enabled":               "intel.enabled",
+	"japa_stage.enabled":          "japa_stage.enabled",
+	"jobs.enabled":                "jobs.enabled",
+	"language_test_hub.enabled":   "language_test_hub.enabled",
+	"list.enabled":                "list.enabled",
+	"mutual_aid.enabled":          "mutual_aid.enabled",
+	"newsletter.enabled":          "feature.newsletter",
+	"participation.enabled":       "participation.enabled",
+	"planning_group.enabled":      "planning_group.enabled",
+	"pof_calculator.enabled":      "pof_calculator.enabled",
+	"push.enabled":                "push.enabled",
+	"rag.enabled":                 "rag.enabled",
+	"referral.enabled":            "feature.referral",
+	"remittance.enabled":          "remittance.enabled",
+	"scam_alert.enabled":          "scam_alert.enabled",
+	"scholarship_finder.enabled":  "scholarship_finder.enabled",
+	"service_coupons.enabled":     "service_coupons.enabled",
+	"service_directory.enabled":   "service_directory.enabled",
+	"service_packages.enabled":    "service_packages.enabled",
+	"sop_generator.enabled":       "sop_generator.enabled",
+	"story.enabled":               "story.enabled",
+	"studio.enabled":              "studio.enabled",
+	"tax_calculator.enabled":      "tax_calculator.enabled",
+	"travel.enabled":              "travel.enabled",
+	"video.enabled":               "video.enabled",
+	"visa_routes.enabled":         "visa_routes.enabled",
+	"visa_timeline.enabled":       "visa_timeline.enabled",
+}
+
 // getSettingMeta returns the metadata for a given dot-notation key.
 // If the key is not in the catalog, it returns a best-effort guess based on
 // the value content (bool-like, number-like, etc.) or falls back to "string".
 func getSettingMeta(key, currentValue string) settingMeta {
 	if meta, ok := settingsCatalog[key]; ok {
+		if flagKey, dep := deprecatedReachabilitySettings[key]; dep {
+			meta.Deprecated = true
+			meta.Description = "DEPRECATED — managed via feature_flags/" + flagKey + " — " + meta.Description
+		}
+
 		return meta
 	}
 	// No catalog entry — return a minimal fallback with no type.

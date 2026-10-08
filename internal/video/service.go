@@ -69,6 +69,12 @@ type settingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // AIDispatcher is the subset of the AI Gateway the video service needs to
 // generate draft summaries (content_generation category, §106 / ADR-117).
 type AIDispatcher interface {
@@ -100,6 +106,7 @@ type Service struct {
 	media       MediaManager
 	enqueuer    TaskEnqueuer
 	settings    settingsReader
+	checker     FeatureChecker
 	content     ContentCreator
 	dispatcher  AIDispatcher
 	ytProvider  *YouTubeProvider
@@ -122,6 +129,11 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 
 // SetSettings injects the hot-reloadable settings reader.
 func (s *Service) SetSettings(r settingsReader) { s.settings = r }
+
+// SetFeatureChecker injects the feature flag checker so IsEnabled reads the
+// feature_flags table (the single source of truth for feature reachability)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 
 // SetContentService injects the content creator used to publish imported
 // videos as content_type='video' rows.
@@ -158,7 +170,13 @@ const (
 )
 
 // IsEnabled returns true when the video feature is enabled for the platform.
+// Reads the video.enabled feature flag; system_settings is consulted only as
+// a fallback when no checker is injected.
 func (s *Service) IsEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "video.enabled")
+	}
+
 	if s.settings == nil {
 		return false
 	}

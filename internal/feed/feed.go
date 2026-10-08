@@ -38,6 +38,7 @@ type Service struct {
 	enqueuer feedEnqueuer
 	vk       valkeycompat.Cmdable
 	settings feedSettingsReader
+	checker  FeatureChecker
 }
 
 // feedSettingsReader is the subset of config.Settings the feed service uses
@@ -47,6 +48,14 @@ type feedSettingsReader interface {
 	GetIntOr(ctx context.Context, key string, fallback int) int
 	GetFloatOr(ctx context.Context, key string, fallback float64) float64
 	GetBoolOr(ctx context.Context, key string, fallback bool) bool
+}
+
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for feature reachability (e.g.
+// geo_personalization.enabled). Defined locally to keep the dependency
+// graph clean; *features.Checker satisfies it structurally.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
 }
 
 // feedEnqueuer is the subset of worker.Enqueuer that feed needs.
@@ -76,4 +85,27 @@ func (s *Service) SetEnqueuer(e feedEnqueuer) {
 // SetSettings injects the hot-reloadable settings reader for feed limits.
 func (s *Service) SetSettings(sr feedSettingsReader) {
 	s.settings = sr
+}
+
+// SetFeatureChecker injects the feature flag checker so geo-personalization
+// reachability reads the feature_flags table (the single source of truth)
+// instead of system_settings. Falls back to system_settings when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) {
+	s.checker = c
+}
+
+// geoPersonalizationEnabled resolves the geo_personalization.enabled feature
+// flag. When disabled, feed ranking falls back to global order with no geo
+// boost (BUG-007). system_settings is consulted only when no checker is
+// injected.
+func (s *Service) geoPersonalizationEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "geo_personalization.enabled")
+	}
+
+	if s.settings == nil {
+		return true
+	}
+
+	return s.settings.GetBoolOr(ctx, "geo_personalization.enabled", true)
 }

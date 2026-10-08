@@ -91,6 +91,13 @@ type settingReader interface {
 	GetSettingBool(ctx context.Context, key string) (bool, error)
 }
 
+// FeatureChecker resolves feature flag state from the feature_flags table —
+// the single source of truth for the push.enabled reachability toggle.
+// *features.Checker satisfies it structurally.
+type FeatureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
 // IsValidPlatform checks if a platform value is valid.
 func IsValidPlatform(platform string) bool {
 	switch platform {
@@ -105,6 +112,7 @@ func IsValidPlatform(platform string) bool {
 type Service struct {
 	store      *Store
 	settings   settingReader
+	checker    FeatureChecker
 	dispatcher PushDispatcher
 }
 
@@ -112,6 +120,11 @@ type Service struct {
 func NewService(store *Store, settings *config.Settings) *Service {
 	return &Service{store: store, settings: settings}
 }
+
+// SetFeatureChecker injects the feature flag checker so push reachability
+// reads the feature_flags table instead of system_settings. Falls back to
+// the legacy push.enabled setting read when nil.
+func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 
 // SetDispatcher injects the FCM/APNs push dispatcher. Without a dispatcher,
 // SendPush/SendTestPush return ErrNoDispatcher (BE-006: never silently no-op).
@@ -187,13 +200,22 @@ func (s *Service) ListDevices(ctx context.Context, userID pgtype.UUID) ([]Device
 // This is the terminal dispatch step called by the notification:send_push
 // worker via PushAdapter (BE-007: it does NOT re-enqueue notification:send_push).
 func (s *Service) SendPush(ctx context.Context, userID pgtype.UUID, payload PushPayload) error {
-	enabled, err := s.settings.GetSettingBool(ctx, "push.enabled")
-	if err != nil {
-		// BE-008: surface config errors distinctly from the disabled state.
-		return fmt.Errorf("devices: read push.enabled setting: %w", err)
+	// push.enabled is a feature flag — read it from feature_flags when a
+	// checker is wired; the legacy system_settings read is the fallback.
+	pushEnabled := false
+	if s.checker != nil {
+		pushEnabled = s.checker.IsEnabled(ctx, "push.enabled")
+	} else if s.settings != nil {
+		enabled, err := s.settings.GetSettingBool(ctx, "push.enabled")
+		if err != nil {
+			// BE-008: surface config errors distinctly from the disabled state.
+			return fmt.Errorf("devices: read push.enabled setting: %w", err)
+		}
+
+		pushEnabled = enabled
 	}
 
-	if !enabled {
+	if !pushEnabled {
 		return ErrPushDisabled
 	}
 

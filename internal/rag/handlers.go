@@ -15,6 +15,7 @@
 package rag
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -30,11 +31,39 @@ import (
 type Handlers struct {
 	service  *Service
 	settings *config.Settings
+	checker  FeatureChecker
+}
+
+// featureFlagWriter is the write half of the feature flag API used to keep
+// the legacy rag.enabled admin settings toggle in sync with the flag row —
+// *features.Checker satisfies it. Defined locally so this package does not
+// import features.
+type featureFlagWriter interface {
+	SetEnabled(ctx context.Context, key string, enabled bool, updatedBy pgtype.UUID) error
 }
 
 // NewHandlers creates RAG handlers bound to the provided service.
 func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 	return &Handlers{service: service, settings: settings}
+}
+
+// SetFeatureChecker injects the feature flag checker so rag.enabled is read
+// from and written to the feature_flags table (the single source of truth)
+// instead of system_settings.
+func (h *Handlers) SetFeatureChecker(c FeatureChecker) { h.checker = c }
+
+// ragEnabled resolves the rag.enabled feature flag; system_settings is
+// consulted only as a fallback when no checker is wired.
+func (h *Handlers) ragEnabled(ctx context.Context) bool {
+	if h.checker != nil {
+		return h.checker.IsEnabled(ctx, "rag.enabled")
+	}
+
+	if h.settings == nil {
+		return true
+	}
+
+	return h.settings.GetBoolOr(ctx, "rag.enabled", true)
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +223,7 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	settings := map[string]any{
-		"rag.enabled":          h.settings.GetBoolOr(ctx, "rag.enabled", true),
+		"rag.enabled":          h.ragEnabled(ctx),
 		"rag.embedding_model":  h.settings.GetStringOr(ctx, "rag.embedding_model", "text-embedding-3-small"),
 		"rag.retrieval_top_k":  h.settings.GetIntOr(ctx, "rag.retrieval_top_k", 5),
 		"rag.chunk_max_tokens": h.settings.GetIntOr(ctx, "rag.chunk_max_tokens", 400),
@@ -215,7 +244,8 @@ func (h *Handlers) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 //
 //	japaconnect-engineering/conventions/system-settings-catalog.md
 func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	user, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -295,6 +325,23 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 
+		// rag.enabled is deprecated as a system_setting — when a feature flag
+		// checker is wired the enabled toggle writes through to the
+		// feature_flags row instead (single source of truth).
+		if key == "enabled" {
+			if fw, ok := h.checker.(featureFlagWriter); ok {
+				flagValue := value.(bool) // validated above
+				if err := fw.SetEnabled(ctx, "rag.enabled", flagValue, user.UserID); err != nil {
+					slog.Error("rag: failed to write rag.enabled feature flag", "error", err)
+					errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
+
+					return
+				}
+
+				continue
+			}
+		}
+
 		valueJSON, err := json.Marshal(value)
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", "Cannot serialize value for key: "+key)
@@ -304,11 +351,13 @@ func (h *Handlers) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) 
 		pending["rag."+key] = valueJSON
 	}
 
-	if err := h.settings.UpdateSettingsBatch(ctx, pending); err != nil {
-		slog.Error("rag: failed to save settings", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
+	if len(pending) > 0 {
+		if err := h.settings.UpdateSettingsBatch(ctx, pending); err != nil {
+			slog.Error("rag: failed to save settings", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to save settings")
 
-		return
+			return
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": nil})
