@@ -13,9 +13,14 @@
 		tiers: PackageTier[];
 		currencies: CurrencyInfo[];
 		perLabel?: string;
+		/** False when this viewer has no booking surface (owner, or authed
+		 *  without service.booking.create) — the Choose button hides rather
+		 *  than scrolling to an absent #book section. Guests stay enabled:
+		 *  #book renders their login prompt. */
+		ctaEnabled?: boolean;
 		onSelect: (tier: PackageTier) => void;
 	}
-	let { tiers, currencies, perLabel = '', onSelect }: Props = $props();
+	let { tiers, currencies, perLabel = '', ctaEnabled = true, onSelect }: Props = $props();
 
 	// Position order is server-side (ORDER BY position) — copy before sort
 	// so the prop array is never mutated.
@@ -77,15 +82,17 @@
 							{/each}
 						</ul>
 					{/if}
-					<button
-						type="button"
-						onclick={() => onSelect(tier)}
-						class="mt-5 inline-flex items-center justify-center rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {tier.is_featured
-							? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'
-							: 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
-					>
-						{t('services.tier_choose', 'Choose {name}', { name: tier.name })}
-					</button>
+					{#if ctaEnabled}
+						<button
+							type="button"
+							onclick={() => onSelect(tier)}
+							class="mt-5 inline-flex items-center justify-center rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {tier.is_featured
+								? 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'
+								: 'border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]'}"
+						>
+							{t('services.tier_choose', 'Choose {name}', { name: tier.name })}
+						</button>
+					{/if}
 				</article>
 			{/each}
 		</div>

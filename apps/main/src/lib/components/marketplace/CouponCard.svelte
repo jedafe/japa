@@ -53,24 +53,26 @@
 	</div>
 
 	<div class="mt-3 flex flex-wrap items-center gap-2">
-		<code
-			class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-mono text-sm font-semibold tracking-wider text-[var(--color-text)]"
-		>
-			{coupon.code}
-		</code>
-		<button
-			type="button"
-			onclick={copyCode}
-			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-		>
-			{#if copied}
-				<Check size={13} class="text-[var(--color-success)]" aria-hidden="true" />
-				{t('common.copied', 'Copied!')}
-			{:else}
-				<Copy size={13} aria-hidden="true" />
-				{t('common.copy', 'Copy')}
-			{/if}
-		</button>
+		{#if coupon.code}
+			<code
+				class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-mono text-sm font-semibold tracking-wider text-[var(--color-text)]"
+			>
+				{coupon.code}
+			</code>
+			<button
+				type="button"
+				onclick={copyCode}
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{#if copied}
+					<Check size={13} class="text-[var(--color-success)]" aria-hidden="true" />
+					{t('common.copied', 'Copied!')}
+				{:else}
+					<Copy size={13} aria-hidden="true" />
+					{t('common.copy', 'Copy')}
+				{/if}
+			</button>
+		{/if}
 		{#if expiryLabel}
 			<span class="text-xs text-[var(--color-muted)]">{expiryLabel}</span>
 		{/if}

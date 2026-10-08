@@ -196,6 +196,10 @@
 			(data.user?.permissions ?? []).includes('service.booking.create')
 	);
 	const guestBooking = $derived(packagesEnabled && !data.authed && !!service && !!service.org_id);
+	// TierGrid "Choose" only makes sense when a booking surface exists for
+	// this viewer — owners and authed users without service.booking.create
+	// would scroll to an absent #book section.
+	const tierCtaEnabled = $derived(canBook || guestBooking);
 
 	let bookingOpen = $state(false);
 	let partySize = $state('1');
@@ -348,15 +352,24 @@
 			(canBook || guestBooking || !!bookingResult?.ok)
 	);
 
+	// booking_url is stored per-listing and the create form exposes it for
+	// every kind — any listing with no internal booking mode (external or
+	// plain services, the dominant case) uses it as the outbound CTA. Paid
+	// and inquiry listings keep the internal #book surface as the primary
+	// action even when a booking_url also exists.
+	const bookingOutbound = $derived(
+		!!service?.booking_url && (service.purchase_mode === 'external' || !service.purchase_mode)
+	);
+
 	// Hero CTAs — mode-aware. Primary: paid/inquiry scroll to #book,
-	// external links out to booking_url, plain services fall back to the
+	// external/mode-less listings link out to booking_url, then the
 	// provider's website (or the provider card). Secondary "Talk to an
 	// expert" reuses the inquiry path (#book) or the org profile.
 	const primaryCta = $derived.by(():
 		| { label: string; href: string; external: boolean }
 		| null => {
 		if (!service) return null;
-		if (service.purchase_mode === 'external' && service.booking_url) {
+		if (bookingOutbound && service.booking_url) {
 			return {
 				label: isPackage
 					? t('services.book_partner', 'Book on partner site')
@@ -386,10 +399,8 @@
 
 	const secondaryCta = $derived.by((): { label: string; href: string } | null => {
 		if (!service) return null;
-		if (bookSurface && service.purchase_mode === 'inquiry') {
-			return { label: t('services.talk_to_expert', 'Talk to an expert'), href: '#book' };
-		}
-		if (service.org_slug) {
+		if (service.org_slug && primaryCta?.href !== `/org/${service.org_slug}`) {
+			// Skip when the primary already resolves to the same destination.
 			return {
 				label: t('services.talk_to_expert', 'Talk to an expert'),
 				href: `/org/${service.org_slug}`
@@ -402,7 +413,7 @@
 	// owners manage the listing instead of booking it.
 	const stickyCta = $derived.by(() => {
 		if (!service || canEdit) return null;
-		if (service.purchase_mode === 'external' && service.booking_url) {
+		if (bookingOutbound && service.booking_url) {
 			return {
 				label: isPackage
 					? t('services.book_partner', 'Book on partner site')
@@ -481,13 +492,22 @@
 						? { areaServed: service.destination_space_name }
 						: {}),
 					...(service.price_range ? { priceRange: service.price_range } : {}),
+					// Tiered listings expose a price spread — AggregateOffer w/
+					// lowPrice (min tier) matches the "From $X" card semantics.
 					...((service.min_price ?? service.price_amount) != null && service.price_currency
 						? {
-								offers: {
-									'@type': 'Offer',
-									price: ((service.min_price ?? service.price_amount) as number) / 100,
-									priceCurrency: service.price_currency
-								}
+								offers: (service.tiers?.length ?? 0) > 0
+									? {
+											'@type': 'AggregateOffer',
+											lowPrice: ((service.min_price ?? service.price_amount) as number) / 100,
+											priceCurrency: service.price_currency,
+											offerCount: service.tiers?.length
+										}
+									: {
+											'@type': 'Offer',
+											price: ((service.min_price ?? service.price_amount) as number) / 100,
+											priceCurrency: service.price_currency
+										}
 							}
 						: {}),
 					...(ratingCount > 0
@@ -593,10 +613,11 @@
 					</p>
 				{/if}
 
-				<!-- Rating + social proof -->
+				<!-- Rating + social proof — the #reviews anchor only mounts when
+				     hasReviews, so the stars link only when the section exists. -->
 				<div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
 					{#if ratingCount > 0}
-						<a href="#reviews" class="flex items-center gap-1.5">
+						{#snippet ratingRow()}
 							<span
 								class="flex items-center gap-0.5"
 								aria-label={t('services.rating_aria', '{avg} out of 5 stars', {
@@ -617,7 +638,16 @@
 							<span class="text-[var(--color-muted)]"
 								>({t('services.reviews_summary', '{count} reviews', { count: ratingCount })})</span
 							>
-						</a>
+						{/snippet}
+						{#if hasReviews}
+							<a href="#reviews" class="flex items-center gap-1.5">
+								{@render ratingRow()}
+							</a>
+						{:else}
+							<span class="flex items-center gap-1.5">
+								{@render ratingRow()}
+							</span>
+						{/if}
 					{/if}
 					{#if service.view_count > 0}
 						<span class="flex items-center gap-1 text-[var(--color-muted)]">
@@ -852,6 +882,7 @@
 					tiers={service.tiers ?? []}
 					{currencies}
 					perLabel={pricePerLabel}
+					ctaEnabled={tierCtaEnabled}
 					onSelect={selectTier}
 				/>
 			{:else if isPackage || heroPrice || service.price_range}
@@ -881,33 +912,39 @@
 							>
 						{/if}
 					</div>
-					<!-- Action links -->
-					<div class="mt-4 flex flex-wrap gap-3">
-						{#if service.website_url}
-							<a
-								href={service.website_url}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-							>
-								<Globe size={16} aria-hidden="true" /> {t('services.visit_website', 'Visit website')}
-							</a>
-						{/if}
-						{#if service.purchase_mode === 'external' && service.booking_url}
-							<a
-								href={service.booking_url}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-							>
-								<ExternalLink size={16} aria-hidden="true" />
-								{isPackage
-									? t('services.book_partner', 'Book on partner site')
-									: t('services.book_now', 'Book now')}
-							</a>
-						{/if}
-					</div>
 				</section>
+			{/if}
+
+			<!-- Action links — booking_url + website_url render for ANY
+				listing that sets them (the create form exposes both outside the
+				package-only block); internal paid/inquiry booking still lives in
+				#book. -->
+			{#if service.website_url || service.booking_url}
+				<div class="flex flex-wrap gap-3">
+					{#if service.website_url}
+						<a
+							href={service.website_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Globe size={16} aria-hidden="true" /> {t('services.visit_website', 'Visit website')}
+						</a>
+					{/if}
+					{#if service.booking_url}
+						<a
+							href={service.booking_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+						>
+							<ExternalLink size={16} aria-hidden="true" />
+							{isPackage && service.purchase_mode === 'external'
+								? t('services.book_partner', 'Book on partner site')
+								: t('services.book_now', 'Book now')}
+						</a>
+					{/if}
+				</div>
 			{/if}
 
 			<!-- Coupons (§114) -->
