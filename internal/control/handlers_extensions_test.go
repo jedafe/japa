@@ -10,6 +10,8 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/features"
 	"github.com/valkey-io/valkey-go"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -346,6 +348,66 @@ func TestUpdateExtension_UnknownKey(t *testing.T) {
 	code, body := callExtensionWrite(t, h.UpdateExtension, http.MethodPatch, "does.not.exist", `{"enabled":true}`)
 	if code != http.StatusNotFound || errorCode(t, body) != errExtensionNotFound {
 		t.Fatalf("status=%d code=%q, want 404 extension_not_found", code, errorCode(t, body))
+	}
+}
+
+// deadFlagPool returns a *db.DB whose pools point at a refused address —
+// queries fail fast with a connect error (not pgx.ErrNoRows), simulating a
+// transient read failure on the feature_flags table.
+func deadFlagPool(t *testing.T) *db.DB {
+	t.Helper()
+
+	// pgxpool.New is lazy — the pool is returned without connecting and
+	// queries fail fast at Acquire time (127.0.0.1:1 refuses instantly).
+	pool, err := pgxpool.New(t.Context(), "postgres://127.0.0.1:1/postgres")
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+
+	t.Cleanup(pool.Close)
+
+	return &db.DB{Reader: pool, Writer: pool}
+}
+
+// TestUpdateExtension_ReadErrorNotNotFound verifies a transient feature_flags
+// read failure is NOT conflated with "no row": a custom key must get 500
+// (previously it silently returned 404 extension_not_found), and a registry
+// key must fail before the merge rather than overwriting a stored config
+// that was never read.
+func TestUpdateExtension_ReadErrorNotNotFound(t *testing.T) {
+	t.Parallel()
+
+	checker := features.New(nil, nil)
+	t.Cleanup(checker.Close)
+
+	h := &Handlers{DB: deadFlagPool(t), FeatureChecker: checker}
+
+	// Custom (non-registry) key: read error must surface as 500, not 404.
+	code, body := callExtensionWrite(t, h.UpdateExtension, http.MethodPatch, "ops.kill_switch", `{"enabled":true}`)
+
+	if code != http.StatusInternalServerError {
+		t.Fatalf("custom key on read error: status=%d, want 500 (body: %v)", code, body)
+	}
+
+	if c := errorCode(t, body); c != "internal_error" {
+		t.Fatalf("error code = %q, want internal_error", c)
+	}
+
+	// Registry key: same — the merge must not run against an empty config.
+	code, _ = callExtensionWrite(t, h.UpdateExtension, http.MethodPatch, "feature.blog", `{"phase":"testing"}`)
+	if code != http.StatusInternalServerError {
+		t.Fatalf("registry key on read error: status=%d, want 500", code)
+	}
+
+	// Enable/disable and rollout share the same read precondition.
+	code, _ = callExtensionWrite(t, h.EnableExtension, http.MethodPost, "feature.blog", "")
+	if code != http.StatusInternalServerError {
+		t.Fatalf("enable on read error: status=%d, want 500", code)
+	}
+
+	code, _ = callExtensionWrite(t, h.UpdateExtensionRollout, http.MethodPatch, "feature.blog", `{"rollout_percentage":50}`)
+	if code != http.StatusInternalServerError {
+		t.Fatalf("rollout on read error: status=%d, want 500", code)
 	}
 }
 

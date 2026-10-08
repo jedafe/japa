@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -3568,32 +3569,52 @@ func humanizeExtensionKey(key string) string {
 
 // extensionRow reads the stored feature_flags row for key — the write paths'
 // pre-merge view (enabled state + stored config). exists reports whether a
-// row exists at all; on a read miss or transient error it returns the
-// registry default and an empty config so callers can distinguish "unknown"
-// (no Registry entry AND no row → 404) from "registered but never stored".
-func (h *Handlers) extensionRow(ctx context.Context, key string) (enabled bool, cfg features.FlagConfig, exists bool) {
+// row exists at all: pgx.ErrNoRows maps to (registry default, empty config,
+// exists=false, nil error) so callers can distinguish "unknown" (no Registry
+// entry AND no row → 404) from "registered but never stored". Any other read
+// error is returned — a silent exists=false here would let a PATCH merge
+// onto an empty config and overwrite the stored row, destroying surface/
+// phase/name data it never saw.
+func (h *Handlers) extensionRow(ctx context.Context, key string) (enabled bool, cfg features.FlagConfig, exists bool, err error) {
 	if h.DB == nil || h.DB.Reader == nil {
-		return features.DefaultFor(key), features.FlagConfig{}, false
+		return features.DefaultFor(key), features.FlagConfig{}, false, nil
 	}
 
 	row, err := gen.New(h.DB.Reader).GetFeatureFlagRowByKey(ctx, key)
 	if err != nil {
-		return features.DefaultFor(key), features.FlagConfig{}, false
+		if errors.Is(err, pgx.ErrNoRows) {
+			return features.DefaultFor(key), features.FlagConfig{}, false, nil
+		}
+
+		return false, features.FlagConfig{}, false, fmt.Errorf("reading feature flag row %s: %w", key, err)
 	}
 
-	return row.Enabled, decodeFlagConfig(row.Config), true
+	return row.Enabled, decodeFlagConfig(row.Config), true, nil
 }
 
 // extensionKnown reports whether key is manageable through the extensions
 // endpoints — a Registry key or an existing feature_flags row (the same
-// union ListExtensions returns).
-func (h *Handlers) extensionKnown(ctx context.Context, key string) (exists bool, enabled bool, cfg features.FlagConfig) {
-	storedEnabled, storedCfg, hasRow := h.extensionRow(ctx, key)
-	if _, ok := features.RegistryLookup(key); !ok && !hasRow {
-		return false, false, features.FlagConfig{}
+// union ListExtensions returns). A row read error propagates so write
+// handlers fail the request (500) instead of merging onto an empty config
+// or misreporting a stored-but-unreadable custom key as not found (404).
+func (h *Handlers) extensionKnown(ctx context.Context, key string) (exists bool, enabled bool, cfg features.FlagConfig, err error) {
+	storedEnabled, storedCfg, hasRow, err := h.extensionRow(ctx, key)
+	if err != nil {
+		return false, false, features.FlagConfig{}, err
 	}
 
-	return true, storedEnabled, storedCfg
+	if _, ok := features.RegistryLookup(key); !ok && !hasRow {
+		return false, false, features.FlagConfig{}, nil
+	}
+
+	return true, storedEnabled, storedCfg, nil
+}
+
+// writeExtensionReadErr maps an extensionRow read failure to the standard
+// error envelope — the row read is a precondition for every extension write.
+func (h *Handlers) writeExtensionReadErr(w http.ResponseWriter, err error, key string) {
+	slog.Error("control: extension row read failed", "error", err, "key", key)
+	errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to read extension")
 }
 
 // extensionPatchInput is the PATCH /control/extensions/{key} body. Every
@@ -3666,7 +3687,12 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, storedEnabled, cfg := h.extensionKnown(r.Context(), key)
+	exists, storedEnabled, cfg, err := h.extensionKnown(r.Context(), key)
+	if err != nil {
+		h.writeExtensionReadErr(w, err, key)
+		return
+	}
+
 	if !exists {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
@@ -3743,7 +3769,12 @@ func (h *Handlers) setExtensionEnabled(w http.ResponseWriter, r *http.Request, e
 		return
 	}
 
-	exists, _, _ := h.extensionKnown(r.Context(), key)
+	exists, _, _, err := h.extensionKnown(r.Context(), key)
+	if err != nil {
+		h.writeExtensionReadErr(w, err, key)
+		return
+	}
+
 	if !exists {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
@@ -3786,7 +3817,12 @@ func (h *Handlers) UpdateExtensionRollout(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	exists, _, _ := h.extensionKnown(r.Context(), key)
+	exists, _, _, err := h.extensionKnown(r.Context(), key)
+	if err != nil {
+		h.writeExtensionReadErr(w, err, key)
+		return
+	}
+
 	if !exists {
 		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
 		return
