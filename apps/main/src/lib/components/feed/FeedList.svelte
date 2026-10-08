@@ -165,7 +165,7 @@
 			{#each items as item, i (item.id)}
 				<FeedCard {item} style="daily" layout="stream" />
 				{#if adSlot && adInterval > 0 && (i + 1) % adInterval === 0 && i < items.length - 1 && i / adInterval < 2}
-					<NativeAd slot={adSlot} {spaceId} />
+					<NativeAd slot={adSlot} {spaceId} pickIndex={Math.floor(i / adInterval)} />
 				{/if}
 			{/each}
 		</div>

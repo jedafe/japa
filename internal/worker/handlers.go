@@ -3653,6 +3653,13 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 		EventType:  payload.EventType,
 		OccurredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
 	}); err != nil {
+		// FK violation (deleted or bogus campaign_id) — dropping is correct;
+		// retrying can never succeed and only fills the dead-letter queue.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			slog.Warn("task:ad:ingest_event_batch: dropping event for unknown campaign", "campaign_id", payload.CampaignID)
+			return nil
+		}
 		slog.Error("task:ad:ingest_event_batch: failed to insert event", "campaign_id", payload.CampaignID, "error", err)
 		return err
 	}

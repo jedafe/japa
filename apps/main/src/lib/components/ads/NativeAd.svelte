@@ -14,9 +14,12 @@
 		slot: string;
 		/** Space context for space-targeted campaigns. */
 		spaceId?: string;
+		/** Nth-best campaign to render when several units share the slot on
+		 *  one page — prevents two feed units showing the same creative. */
+		pickIndex?: number;
 	}
 
-	let { slot, spaceId = '' }: Props = $props();
+	let { slot, spaceId = '', pickIndex = 0 }: Props = $props();
 
 	interface AdContent {
 		headline?: string;
@@ -50,7 +53,7 @@
 				return;
 			}
 			campaigns.sort((a, b) => b.priority - a.priority);
-			campaign = campaigns[0];
+			campaign = campaigns[pickIndex % campaigns.length];
 		} catch {
 			campaign = null;
 		} finally {

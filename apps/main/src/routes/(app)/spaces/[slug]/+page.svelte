@@ -685,7 +685,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<div class="flex flex-col gap-3">
 					{#each feedItems as item, i (item.id)}
 						{#if adInterval > 0 && i > 0 && i % adInterval === 0 && i / adInterval <= 2}
-							<NativeAd slot="native_space_feed" spaceId={space.id} />
+							<NativeAd slot="native_space_feed" spaceId={space.id} pickIndex={Math.floor(i / adInterval) - 1} />
 						{/if}
 						<div class="group relative block">
 							<FeedCard

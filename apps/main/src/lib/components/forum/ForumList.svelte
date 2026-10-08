@@ -156,7 +156,7 @@
 			     up/down voting) — same card they get in unified feeds. -->
 			<FeedCard item={toFeedItem(thread)} style="daily" layout="stream" />
 			{#if adSlot && adInterval > 0 && (i + 1) % adInterval === 0 && i < threads.length - 1 && i / adInterval < 2}
-				<NativeAd slot={adSlot} />
+				<NativeAd slot={adSlot} pickIndex={Math.floor(i / adInterval)} />
 			{/if}
 		{/each}
 	</div>

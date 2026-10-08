@@ -19,7 +19,7 @@
 
 	let { html, slot = 'article_inline', spaceId = '' }: Props = $props();
 
-	type Segment = { type: 'html'; frag: string } | { type: 'ad' };
+	type Segment = { type: 'html'; frag: string } | { type: 'ad'; pick: number };
 
 	const TAG = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g;
 	// Elements whose children are not paragraph-boundaries — a </p> inside a
@@ -71,7 +71,7 @@
 				blockIdx === after + (adsInserted === 0 ? 0 : adsInserted * every);
 			if (shouldAd) {
 				segs.push({ type: 'html', frag: s.slice(pos, boundary) });
-				segs.push({ type: 'ad' });
+				segs.push({ type: 'ad', pick: adsInserted });
 				adsInserted++;
 				pos = boundary;
 				if (every <= 0) break;
@@ -100,7 +100,7 @@
 		{@html seg.frag}
 	{:else}
 		<div class="not-prose my-6 flex justify-center">
-			<AdSlot {slot} format="inline" {spaceId} />
+			<AdSlot {slot} format="inline" {spaceId} pickIndex={seg.pick} />
 		</div>
 	{/if}
 {/each}

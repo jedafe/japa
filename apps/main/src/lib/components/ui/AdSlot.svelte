@@ -10,9 +10,13 @@
 		format?: 'banner' | 'square' | 'inline' | 'skyscraper';
 		/** Space context for space-targeted campaigns (§25 targeting). */
 		spaceId?: string;
+		/** When several units share one slot on a page, each passes a
+		 *  different index so they show different creatives — the server
+		 *  returns up to max_display_per_page campaigns in priority order. */
+		pickIndex?: number;
 	}
 
-	let { slot, format = 'banner', spaceId = '' }: Props = $props();
+	let { slot, format = 'banner', spaceId = '', pickIndex = 0 }: Props = $props();
 
 	interface AdContent {
 		headline?: string;
@@ -61,9 +65,10 @@
 				campaign = null;
 				return;
 			}
-			// Pick the highest-priority ad (descending); first in array wins ties.
+			// Pick by priority (descending); pickIndex selects the nth best
+			// when several same-slot units share the page.
 			campaigns.sort((a, b) => b.priority - a.priority);
-			campaign = campaigns[0];
+			campaign = campaigns[pickIndex % campaigns.length];
 		} catch {
 			campaign = null;
 		} finally {
