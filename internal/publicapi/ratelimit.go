@@ -59,7 +59,7 @@ func SlidingWindowRateLimitWithSettings(rdb valkeycompat.Cmdable, sr rateLimitSe
 			// user tier. A user tier of "unlimited" is not part of the tier
 			// model, so unlimited keys are still capped at the highest user
 			// tier (business -> premium).
-			effectiveTier := capRateLimitTier(r.Context(), tr, key.UserID, key.RateLimitTier)
+			effectiveTier := CapRateLimitTier(r.Context(), tr, key.UserID, key.RateLimitTier)
 			if effectiveTier == "" {
 				next.ServeHTTP(w, r)
 				return

@@ -1,8 +1,10 @@
 import { browser } from 'wxt/browser';
 import { SITE_ORIGIN } from './links';
 import {
+	clearOAuthClientID,
 	clearOAuthSession,
 	getApiKey,
+	getInstallId,
 	getOAuthClientID,
 	getOAuthSession,
 	getOAuthUser,
@@ -73,11 +75,14 @@ async function ensureClientID(): Promise<string> {
 	const existing = await getOAuthClientID();
 	if (existing) return existing;
 
+	// The install id suffix lets the user tell browsers apart on the
+	// Connected apps screen — every install is its own DCR client.
+	const installSuffix = (await getInstallId()).slice(0, 8);
 	const res = await fetch(`${SITE_ORIGIN}/oauth/register`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
 		body: JSON.stringify({
-			client_name: OAUTH_CLIENT_NAME,
+			client_name: `${OAUTH_CLIENT_NAME} (${installSuffix})`,
 			redirect_uris: [redirectURI()],
 			scope: OAUTH_SCOPES,
 		}),
@@ -139,6 +144,19 @@ async function fetchUserinfo(accessToken: string): Promise<OAuthUser | null> {
 // Throws LoginCancelledError when the user aborts the flow.
 export async function login(): Promise<void> {
 	const clientID = await ensureClientID();
+	try {
+		await runAuthFlow(clientID);
+	} catch (e) {
+		// If the server-side client row is gone (idle-client sweep), the
+		// authorize page renders "unknown client_id" inside the auth window —
+		// the extension cannot observe that, so drop the stored id on ANY
+		// failure and let the next attempt re-register fresh.
+		await clearOAuthClientID();
+		throw e;
+	}
+}
+
+async function runAuthFlow(clientID: string): Promise<void> {
 	const { verifier, challenge } = await pkcePair();
 	const state = randomToken(16);
 
@@ -164,6 +182,11 @@ export async function login(): Promise<void> {
 
 	const params = new URL(redirectTo).searchParams;
 	if (params.get('error')) {
+		// A consent-screen "Deny" lands here as access_denied — treat it
+		// like closing the window: user-initiated, no error to show.
+		if (params.get('error') === 'access_denied') {
+			throw new LoginCancelledError('Sign-in was cancelled');
+		}
 		throw new OAuthError(params.get('error')!, params.get('error_description') ?? 'Authorization failed');
 	}
 	if (params.get('state') !== state || !params.get('code')) {
@@ -184,66 +207,100 @@ let refreshing: Promise<OAuthSession | null> | null = null;
 
 // refreshSession rotates the refresh token. Concurrent callers share one
 // in-flight rotation — a second rotate on the same token would hit the
-// server's reuse detection. A failed rotation clears the session.
+// server's reuse detection. Only a definitive server rejection
+// (invalid_grant / invalid_client) clears the session; a transient network
+// or 5xx failure leaves it alone — the user stays signed in through flaky
+// connectivity and the next attempt retries the rotation.
 function refreshSession(session: OAuthSession): Promise<OAuthSession | null> {
-	if (!session.refreshToken) {
+	const refreshToken = session.refreshToken;
+	if (!refreshToken) {
 		// No refresh token — the session can't renew; drop it so the user
 		// is asked to sign in again.
 		return clearOAuthSession().then(() => null);
 	}
-	refreshing ??= tokenRequest(session.clientID, {
-		grant_type: 'refresh_token',
-		refresh_token: session.refreshToken,
-		client_id: session.clientID,
-	})
-		.catch(() => null)
-		.then(async (s) => {
-			if (!s) await clearOAuthSession();
-			return s;
-		})
-		.finally(() => {
-			refreshing = null;
-		});
+	refreshing ??= (async () => {
+		// Re-read the stored session: a concurrent caller may have already
+		// rotated since `session` was fetched. Re-sending the consumed
+		// token past the server's grace window trips reuse detection
+		// (RFC 6819 §5.2.2.3) and revokes the fresh family — a session
+		// whose refresh token moved on is already refreshed.
+		const current = await getOAuthSession();
+		if (!current) return null;
+		if (current.refreshToken !== refreshToken) return current;
+		try {
+			return await tokenRequest(current.clientID, {
+				grant_type: 'refresh_token',
+				refresh_token: refreshToken,
+				client_id: current.clientID,
+			});
+		} catch (e) {
+			if (e instanceof OAuthError && (e.code === 'invalid_grant' || e.code === 'invalid_client')) {
+				await clearOAuthSession();
+			}
+			return null;
+		}
+	})().finally(() => {
+		refreshing = null;
+	});
 	return refreshing;
 }
 
 // getValidAccessToken returns a live access token, refreshing when the
 // stored one is inside the expiry skew (or when force is set — the 401
-// retry path). Returns null when no OAuth session exists or refresh fails.
+// retry path). Returns null when no OAuth session exists. When a refresh
+// fails transiently the stored token is returned anyway — let the API be
+// the judge rather than logging the user out over a network blip.
 export async function getValidAccessToken(force = false): Promise<string | null> {
 	let session = await getOAuthSession();
 	if (!session) return null;
 	if (force || session.expiresAt - EXPIRY_SKEW_MS <= Date.now()) {
-		session = await refreshSession(session);
+		const renewed = await refreshSession(session);
+		if (!renewed) {
+			// Session cleared → grant is dead → null. Session intact →
+			// transient failure → keep the stored token in play.
+			session = await getOAuthSession();
+			return session?.accessToken ?? null;
+		}
+		session = renewed;
 	}
-	return session?.accessToken ?? null;
+	return session.accessToken;
 }
 
 // getCredential resolves whichever credential the calls should carry:
-// an OAuth bearer takes precedence over a pasted extension key.
+// an OAuth bearer takes precedence over a pasted extension key. When an
+// OAuth session is live but the cached identity is missing (userinfo
+// failed during login), it re-fetches opportunistically so the settings
+// panel heals without a reconnect.
 export async function getCredential(): Promise<Credential> {
 	const token = await getValidAccessToken();
-	if (token) return { kind: 'oauth', token };
+	if (token) {
+		if (!(await getOAuthUser())) await fetchUserinfo(token);
+		return { kind: 'oauth', token };
+	}
 	const key = await getApiKey();
 	return key ? { kind: 'apikey', token: key } : null;
 }
 
 export { getOAuthUser };
 
-// logout revokes the refresh token (RFC 7009 — kills renewal; the access
-// token expires within its TTL) and clears local auth state.
+// logout revokes both tokens (RFC 7009): the refresh token kills renewal,
+// the access token ends the grant now rather than at its ≤1h TTL.
 export async function logout(): Promise<void> {
 	const session = await getOAuthSession();
-	if (session?.refreshToken) {
-		try {
-			await fetch(`${SITE_ORIGIN}/oauth/revoke`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-				body: new URLSearchParams({ token: session.refreshToken, client_id: session.clientID }).toString(),
-			});
-		} catch {
-			// best-effort — the token dies with its TTL regardless
-		}
+	if (session) {
+		const tokens = [session.refreshToken, session.accessToken].filter(
+			(t): t is string => Boolean(t),
+		);
+		// Best-effort — revoked or not, the tokens die with their TTLs.
+		await Promise.allSettled(
+			tokens.map((token) =>
+				fetch(`${SITE_ORIGIN}/oauth/revoke`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+					body: new URLSearchParams({ token, client_id: session.clientID }).toString(),
+				}),
+			),
+		);
 	}
 	await clearOAuthSession();
 }

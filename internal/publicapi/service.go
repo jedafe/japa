@@ -567,7 +567,7 @@ func (s *Service) CreateAPIKeyForUser(ctx context.Context, callerID, ownerID pgt
 
 	// Cap the requested rate limit tier by the key owner's unified user tier.
 	// regular -> basic, pro -> standard, business -> premium.
-	tier = capRateLimitTier(ctx, s.tierResolver, ownerID, tier)
+	tier = CapRateLimitTier(ctx, s.tierResolver, ownerID, tier)
 
 	id, err := s.store.create(ctx, createParams{
 		UserID:        ownerID,

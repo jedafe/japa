@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -388,7 +389,10 @@ func TestAuthorizeUnauthenticatedRedirectsToLogin(t *testing.T) {
 		"code_challenge_method": {"S256"},
 	}.Encode()
 
+	// API-host request (MCP connectors): the post-login target is the
+	// issuer-absolute authorize URL.
 	req := httptest.NewRequest(http.MethodGet, u, nil)
+	req.Host = "api.example.com"
 	rec := httptest.NewRecorder()
 	h.HandleAuthorize(rec, req)
 
@@ -401,6 +405,19 @@ func TestAuthorizeUnauthenticatedRedirectsToLogin(t *testing.T) {
 	}
 	if !strings.Contains(loc, url.QueryEscape("https://api.example.com/oauth/authorize")) {
 		t.Fatalf("redirect target missing authorize URL: %q", loc)
+	}
+
+	// Site-host request (the §47 extension hits {site}/oauth/*, proxied):
+	// the target stays site-relative so the post-login bounce returns to
+	// the host where the jc_token cookie is in scope.
+	req = httptest.NewRequest(http.MethodGet, u, nil)
+	req.Host = "example.com"
+	rec = httptest.NewRecorder()
+	h.HandleAuthorize(rec, req)
+
+	loc = rec.Header().Get("Location")
+	if !strings.HasPrefix(loc, "https://example.com/login?redirect=%2Foauth%2Fauthorize") {
+		t.Fatalf("site-host request should emit a site-relative redirect target, got %q", loc)
 	}
 }
 
@@ -516,7 +533,7 @@ func TestRefreshTokenRotationAndReuse(t *testing.T) {
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 
-	pair, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test")
+	pair, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", nil)
 	if err != nil {
 		t.Fatalf("rotation failed: %v", err)
 	}
@@ -526,13 +543,13 @@ func TestRefreshTokenRotationAndReuse(t *testing.T) {
 
 	// Immediate retry (lost response / concurrent rotation) — within the
 	// grace window this is a plain invalid_grant, NOT a family revoke.
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test"); err == nil {
+	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", nil); err == nil {
 		t.Fatal("reused rotated token accepted")
 	}
 
 	// The new pair must keep working — rotating the fresh refresh token
 	// proves the family was not revoked by the grace-window retry.
-	pair2, err := svc.RotateRefreshToken(context.Background(), pair.RefreshToken, "jcmc_test")
+	pair2, err := svc.RotateRefreshToken(context.Background(), pair.RefreshToken, "jcmc_test", nil)
 	if err != nil {
 		t.Fatalf("rotation of new token failed after grace-window retry: %v", err)
 	}
@@ -567,7 +584,7 @@ func TestRefreshTokenStaleReuseRevokesFamily(t *testing.T) {
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 
-	if _, err := svc.RotateRefreshToken(context.Background(), old, "jcmc_test"); err == nil {
+	if _, err := svc.RotateRefreshToken(context.Background(), old, "jcmc_test", nil); err == nil {
 		t.Fatal("stale replay accepted")
 	}
 	for _, other := range store.tokens {
@@ -593,13 +610,44 @@ func TestRefreshTokenCrossClientNotConsumed(t *testing.T) {
 		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 	})
 
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_attacker"); err == nil {
+	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_attacker", nil); err == nil {
 		t.Fatal("cross-client refresh token accepted")
 	}
 
 	// The victim's token must still be live and consumable.
-	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_victim"); err != nil {
+	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_victim", nil); err != nil {
 		t.Fatalf("victim token was burned by the rejected request: %v", err)
+	}
+}
+
+// §120 v1.4: the resource owner's capability is re-checked on every
+// rotation — a user whose agent.use node was revoked since consent must
+// not keep renewing agent grants. The rejection must not consume or
+// revoke the token: the capability may be restored, and the chain dies
+// naturally at refresh-token expiry either way.
+func TestRefreshTokenRechecksUserCapability(t *testing.T) {
+	svc := NewOAuthService(newFakeOAuthStore(), nil, nil)
+	store := svc.store.(*fakeOAuthStore)
+
+	tok := "jcprt_" + strings.Repeat("c", 64)
+	store.seedToken(hashToken(tok), OAuthToken{
+		ClientID:  "jcmc_test",
+		UserID:    testUserID,
+		Scope:     "agent.use api.read.content",
+		TokenType: "refresh",
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+
+	deny := func(context.Context, pgtype.UUID, string) error {
+		return errors.New("this application requires agent access, which is not enabled on your account")
+	}
+	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", deny); err == nil {
+		t.Fatal("rotation succeeded despite revoked user capability")
+	}
+	// The token was NOT consumed — a denied capability is not evidence of
+	// compromise and must not burn the chain.
+	if _, err := svc.RotateRefreshToken(context.Background(), tok, "jcmc_test", nil); err != nil {
+		t.Fatalf("token was consumed by the rejected rotation: %v", err)
 	}
 }
 
@@ -821,11 +869,18 @@ func TestAuthorizeAgentClientRequiresAgentUse(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.HandleAuthorize(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	// client_id + redirect_uri validated → RFC 6749 error redirect, not a
+	// page: the client learns the grant was rejected and why.
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 error redirect", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "agent.use") {
-		t.Fatal("expected agent.use in error message")
+	loc := rec.Header().Get("Location")
+	if !strings.HasPrefix(loc, "https://agent.example.com/cb?") ||
+		!strings.Contains(loc, "error=invalid_scope") {
+		t.Fatalf("expected invalid_scope redirect, got %q", loc)
+	}
+	if !strings.Contains(loc, "error_description=") {
+		t.Fatalf("expected error_description, got %q", loc)
 	}
 }
 

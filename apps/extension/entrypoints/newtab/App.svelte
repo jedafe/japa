@@ -12,6 +12,7 @@
 	import {
 		clearAuth,
 		getCachedDigest,
+		getOAuthSession,
 		getOAuthUser,
 		setApiKey,
 		setCachedDigest,
@@ -63,21 +64,30 @@
 			digest = cached.digest;
 			stale = true;
 			loading = false;
+			if (communityTab === 'popular') communityItems = digest.community.popular;
 		}
 
 		try {
 			digest = await getDigest(credential);
 			await setCachedDigest(digest);
 			stale = false;
+			if (communityTab === 'popular') communityItems = digest.community.popular;
 		} catch (e) {
 			if (e instanceof ApiError && e.status === 401) {
 				// OAuth: force one refresh + retry — the access token may have
 				// been revoked/expired since the session was stored.
 				if (!retried && credential?.kind === 'oauth') {
 					const token = await getValidAccessToken(true);
-					if (token) {
+					if (token && token !== credential.token) {
 						credential = { kind: 'oauth', token };
 						return refresh(true);
+					}
+					// Same token or null: if the session survived, the refresh
+					// failed transiently — keep the credential and surface an
+					// error instead of logging the user out over a blip.
+					if (await getOAuthSession()) {
+						if (!cached) error = 'Could not refresh your session — try again shortly';
+						return;
 					}
 				}
 				// Dead credential (revoked grant or key) — drop it and fall
@@ -143,7 +153,6 @@
 		credential = await getCredential();
 		if (credential?.kind === 'oauth') user = await getOAuthUser();
 		await refresh();
-		if (digest) communityItems = digest.community.popular;
 	});
 </script>
 

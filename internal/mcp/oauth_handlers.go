@@ -318,11 +318,18 @@ type authorizeParams struct {
 // HandleAuthorize serves GET (validate + render consent, or redirect to
 // login) and POST (consent decision → code grant → client redirect).
 func (h *OAuthHandlers) HandleAuthorize(w http.ResponseWriter, r *http.Request) {
-	p, err := h.validateAuthorizeRequest(r)
-	if err != nil {
-		// Never redirect on a failed request — render an error page so an
-		// attacker cannot smuggle an unvalidated redirect_uri.
-		renderOAuthErrorPage(w, h.siteName, err.Error())
+	p, verr := h.validateAuthorizeRequest(r)
+	if verr != nil {
+		// RFC 6749 §4.1.2.1: once client_id + redirect_uri have been
+		// proven against the registered set, rejections go back to the
+		// client as error params. Before that point an error page is the
+		// only safe channel — redirecting would hand control to an
+		// unvalidated URI.
+		if verr.fatal || p == nil {
+			renderOAuthErrorPage(w, h.siteName, verr.desc)
+			return
+		}
+		h.redirectWithError(w, r, p, verr.code, verr.desc)
 		return
 	}
 
@@ -340,7 +347,9 @@ func (h *OAuthHandlers) HandleAuthorize(w http.ResponseWriter, r *http.Request) 
 	// agent.use requires the user to hold the agent.use RBAC node. Fail at
 	// consent rather than issuing a token that 403s on every call.
 	if err := h.checkUserCapability(r.Context(), p.Scope, user.UserID); err != nil {
-		renderOAuthErrorPage(w, h.siteName, err.Error())
+		// access_denied — the AS denied the grant on capability grounds;
+		// the client gets a normal error redirect, not a dead-end page.
+		h.redirectWithError(w, r, p, "access_denied", err.Error())
 		return
 	}
 
@@ -355,50 +364,55 @@ func (h *OAuthHandlers) HandleAuthorize(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// oauthReqError carries an RFC 6749 authorization error. fatal marks the
+// cases §4.1.2.1 forbids redirecting on — an unparseable request, an
+// unknown client_id, or a redirect_uri outside the registered set — where
+// redirecting would hand control to an unvalidated URI.
+type oauthReqError struct {
+	code  string
+	desc  string
+	fatal bool
+}
+
+func reqErr(code, desc string) *oauthReqError {
+	return &oauthReqError{code: code, desc: desc}
+}
+
+func fatalReqErr(desc string) *oauthReqError {
+	return &oauthReqError{code: "invalid_request", desc: desc, fatal: true}
+}
+
 // validateAuthorizeRequest checks the OAuth params on GET (query) or POST
-// (form) and returns the canonical request. Returns an error rendered to
-// the user — callers must not redirect.
-func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizeParams, error) {
+// (form) and returns the canonical request. On failure the error says
+// whether the client may be redirected: once client_id + redirect_uri are
+// proven (p non-nil), rejections are redirectable RFC 6749 error params.
+func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizeParams, *oauthReqError) {
 	var q url.Values
 	if r.Method == http.MethodPost {
 		r.Body = http.MaxBytesReader(nil, r.Body, maxOAuthFormBytes)
 		if err := r.ParseForm(); err != nil {
-			return nil, errors.New("invalid request body")
+			return nil, fatalReqErr("invalid request body")
 		}
 		q = r.PostForm
 	} else {
 		q = r.URL.Query()
 	}
 
-	if len(q.Get("state")) > maxOAuthStateLen {
-		return nil, errors.New("state is too long")
-	}
-	if len(q.Get("scope")) > maxOAuthScopeField || len(q.Get("code_challenge")) > 512 ||
-		len(q.Get("client_id")) > 128 || len(q.Get("redirect_uri")) > maxRedirectURILen {
-		return nil, errors.New("request field too long")
-	}
-
-	if q.Get("response_type") != "code" {
-		return nil, errors.New("unsupported response_type — only \"code\" is supported")
-	}
-	if q.Get("code_challenge_method") != "S256" {
-		return nil, errors.New("code_challenge_method must be S256")
-	}
-	if q.Get("code_challenge") == "" {
-		return nil, errors.New("code_challenge is required")
-	}
-
+	// Fatal phase: nothing may redirect until client_id + redirect_uri
+	// are proven against the registered set.
 	clientID := q.Get("client_id")
 	redirectURI := q.Get("redirect_uri")
 	if clientID == "" || redirectURI == "" {
-		return nil, errors.New("client_id and redirect_uri are required")
+		return nil, fatalReqErr("client_id and redirect_uri are required")
+	}
+	if len(clientID) > 128 || len(redirectURI) > maxRedirectURILen {
+		return nil, fatalReqErr("client_id or redirect_uri is too long")
 	}
 
 	client, err := h.svc.store.GetClientByClientID(r.Context(), clientID)
 	if err != nil {
-		return nil, errors.New("unknown client_id")
+		return nil, fatalReqErr("unknown client_id")
 	}
-
 	matched := false
 	for _, ru := range client.RedirectURIs {
 		if ru == redirectURI {
@@ -407,7 +421,29 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 		}
 	}
 	if !matched {
-		return nil, errors.New("redirect_uri does not match the registered URIs for this client")
+		return nil, fatalReqErr("redirect_uri does not match the registered URIs for this client")
+	}
+
+	p := &authorizeParams{
+		ClientID:    clientID,
+		RedirectURI: redirectURI,
+		State:       q.Get("state"),
+	}
+
+	if len(p.State) > maxOAuthStateLen {
+		return p, reqErr("invalid_request", "state is too long")
+	}
+	if q.Get("response_type") != "code" {
+		return p, reqErr("unsupported_response_type", `only response_type "code" is supported`)
+	}
+	if q.Get("code_challenge_method") != "S256" {
+		return p, reqErr("invalid_request", "code_challenge_method must be S256")
+	}
+	if q.Get("code_challenge") == "" {
+		return p, reqErr("invalid_request", "code_challenge is required")
+	}
+	if len(q.Get("code_challenge")) > 512 || len(q.Get("scope")) > maxOAuthScopeField {
+		return p, reqErr("invalid_request", "request field too long")
 	}
 
 	// §120: a client registered without authorization_code (e.g. refresh-only)
@@ -420,7 +456,7 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 		}
 	}
 	if !grantOK {
-		return nil, errors.New("client is not registered for the authorization_code grant")
+		return p, reqErr("unauthorized_client", "client is not registered for the authorization_code grant")
 	}
 
 	scope := q.Get("scope")
@@ -434,7 +470,7 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 		}
 		for _, s := range strings.Fields(scope) {
 			if _, ok := clientSet[s]; !ok {
-				return nil, errors.New("requested scope exceeds what this client registered for")
+				return p, reqErr("invalid_scope", "requested scope exceeds what this client registered for")
 			}
 		}
 	}
@@ -445,17 +481,14 @@ func (h *OAuthHandlers) validateAuthorizeRequest(r *http.Request) (*authorizePar
 	// consent-time check in HandleAuthorize, not a request-shape check.
 	if publicapi.HasScope(client.Scopes, agentUsePermission) &&
 		!publicapi.HasScope(strings.Fields(scope), agentUsePermission) {
-		return nil, errors.New("the agent.use scope is required for MCP access")
+		return p, reqErr("invalid_scope", "the agent.use scope is required for MCP access")
 	}
 
-	return &authorizeParams{
-		ClientID:            clientID,
-		RedirectURI:         redirectURI,
-		Scope:               scope,
-		State:               q.Get("state"),
-		CodeChallenge:       q.Get("code_challenge"),
-		CodeChallengeMethod: "S256",
-	}, nil
+	p.Scope = scope
+	p.CodeChallenge = q.Get("code_challenge")
+	p.CodeChallengeMethod = "S256"
+
+	return p, nil
 }
 
 // checkUserCapability intersects the effective grant scope with the user's
@@ -513,8 +546,18 @@ func (h *OAuthHandlers) authorizeUser(r *http.Request) *auth.AuthenticatedUser {
 // redirectToLogin sends an unauthenticated user to the main-site login page
 // with the full authorize URL as the post-login target. The login form reads
 // the `redirect` query param and navigates to it after sign-in.
+//
+// When the authorize request arrived on the site host itself (the §47
+// browser extension path — nginx proxies /oauth/* to the API on the site
+// domain), the target stays site-relative: the login page allows relative
+// paths unconditionally, and keeping the bounce on the site host guarantees
+// the jc_token cookie is in scope regardless of the cookie domain or API
+// hostname.
 func (h *OAuthHandlers) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	target := h.issuer + r.URL.RequestURI()
+	if u, err := url.Parse(h.siteURL); err == nil && u.Host != "" && strings.EqualFold(u.Host, r.Host) {
+		target = r.URL.RequestURI()
+	}
 	login := h.siteURL + "/login?redirect=" + url.QueryEscape(target)
 	http.Redirect(w, r, login, http.StatusFound)
 }
@@ -682,8 +725,14 @@ func (h *OAuthHandlers) HandleToken(w http.ResponseWriter, r *http.Request) {
 			r.PostForm.Get("code"), clientID,
 			r.PostForm.Get("redirect_uri"), r.PostForm.Get("code_verifier"))
 	case "refresh_token":
+		// §120 v1.4: re-check the resource owner's capability on every
+		// rotation — consent ran at authorize time, but a rotating refresh
+		// chain must not outlive a revoked agent.use node forever.
 		resp, err = h.svc.RotateRefreshToken(r.Context(),
-			r.PostForm.Get("refresh_token"), clientID)
+			r.PostForm.Get("refresh_token"), clientID,
+			func(ctx context.Context, userID pgtype.UUID, scope string) error {
+				return h.checkUserCapability(ctx, scope, userID)
+			})
 	default:
 		writeOAuthError(w, http.StatusBadRequest, "unsupported_grant_type", "grant_type must be authorization_code or refresh_token")
 		return
@@ -808,6 +857,7 @@ func (h *OAuthHandlers) HandleUserinfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !publicapi.HasScope(scopes, oauthScopeOpenID) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="userinfo", error="insufficient_scope"`)
 		writeOAuthError(w, http.StatusForbidden, "insufficient_scope", "the openid scope is required")
 		return
 	}

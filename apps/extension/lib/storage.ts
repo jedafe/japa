@@ -62,6 +62,13 @@ export async function setOAuthClientID(clientID: string): Promise<void> {
 	await browser.storage.local.set({ [KEY_OAUTH_CLIENT]: clientID });
 }
 
+// clearOAuthClientID drops the registered client id — used when the
+// server-side client row may be gone (idle sweep), so the next login
+// re-registers instead of looping on a dead client.
+export async function clearOAuthClientID(): Promise<void> {
+	await browser.storage.local.remove(KEY_OAUTH_CLIENT);
+}
+
 export async function getOAuthSession(): Promise<OAuthSession | null> {
 	const res = await browser.storage.local.get(KEY_OAUTH_SESSION);
 	return (res[KEY_OAUTH_SESSION] as OAuthSession | undefined) ?? null;

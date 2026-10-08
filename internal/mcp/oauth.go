@@ -31,6 +31,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jedafe/japa/internal/publicapi"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -401,15 +402,24 @@ func (s *oauthPGXStore) GetUserIdentity(ctx context.Context, userID pgtype.UUID)
 // OAuthService wraps the store with token issuance, PKCE verification, and
 // the Valkey-cached access-token lookup the MCP auth middleware uses.
 type OAuthService struct {
-	store    OAuthStore
-	settings oauthSettingsReader
-	cache    valkeycompat.Cmdable
+	store        OAuthStore
+	settings     oauthSettingsReader
+	cache        valkeycompat.Cmdable
+	tierResolver publicapi.TierResolver
 }
 
 // NewOAuthService creates the OAuth service. cache may be nil (lookups then
 // always hit Postgres).
 func NewOAuthService(store OAuthStore, settings oauthSettingsReader, cache valkeycompat.Cmdable) *OAuthService {
 	return &OAuthService{store: store, settings: settings, cache: cache}
+}
+
+// SetTierResolver injects the unified user-tier resolver so OAuth bearer
+// tokens get the same rate-tier ceiling as an API key owned by the same
+// user (§120 v1.4 — a pro user's extension should not sit on the basic
+// tier). Nil-safe: unresolved tiers fall back to "basic".
+func (s *OAuthService) SetTierResolver(tr publicapi.TierResolver) {
+	s.tierResolver = tr
 }
 
 func newRandomToken(prefix string, bytes int) (string, error) {
@@ -710,7 +720,14 @@ func (s *OAuthService) ExchangeAuthorizationCode(ctx context.Context, code, clie
 // The client binding is checked BEFORE the consume: presenting another
 // client's live refresh token must neither burn the victim's token nor
 // reach the reuse-detection path (the token is simply rejected).
-func (s *OAuthService) RotateRefreshToken(ctx context.Context, refreshToken, clientID string) (*tokenResponse, error) {
+//
+// checkGrant (may be nil) re-validates the grant against the resource
+// owner's current capability — consent ran at authorize time, but a
+// rotating refresh chain would otherwise outlive a revoked RBAC node
+// forever (§120 v1.4). A failed check rejects the grant without consuming
+// or revoking the token — the user may regain the capability, and the
+// chain dies naturally at refresh-token expiry either way.
+func (s *OAuthService) RotateRefreshToken(ctx context.Context, refreshToken, clientID string, checkGrant func(ctx context.Context, userID pgtype.UUID, scope string) error) (*tokenResponse, error) {
 	if !strings.HasPrefix(refreshToken, oauthRefreshTokenPrefix) {
 		return nil, errors.New("invalid grant")
 	}
@@ -742,12 +759,17 @@ func (s *OAuthService) RotateRefreshToken(ctx context.Context, refreshToken, cli
 	if !prev.ExpiresAt.Valid || prev.ExpiresAt.Time.Before(time.Now()) {
 		return nil, errors.New("invalid grant")
 	}
+	if checkGrant != nil {
+		if err := checkGrant(ctx, prev.UserID, prev.Scope); err != nil {
+			return nil, err
+		}
+	}
 
 	tok, err := s.store.ConsumeRefreshToken(ctx, hash)
 	if err != nil {
 		// Lost the race to a concurrent rotation — the token went from live
-		// to revoked between our read and consume. Re-read once to catch the
-		// boundary and treat it as a grace-window retry.
+		// to revoked between our read and consume. The next presentation
+		// lands in the grace window above and gets plain invalid_grant.
 		return nil, errors.New("invalid grant")
 	}
 

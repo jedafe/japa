@@ -144,8 +144,11 @@ func (s *OAuthService) ResolveBearer(ctx context.Context, token string) (*public
 		// Without the user id, every user of one client (e.g. all claude.ai
 		// users of the registered connector) would share a single rate
 		// bucket and throttle each other.
-		KeyPrefix:     "oauth:" + clientID + ":" + userID.String(),
-		RateLimitTier: "basic",
+		KeyPrefix: "oauth:" + clientID + ":" + userID.String(),
+		// OAuth tokens don't carry a stored tier; the effective tier is the
+		// owner's unified-tier cap (premium ask → per-user ceiling), which
+		// falls back to "basic" when the resolver is unwired or errors.
+		RateLimitTier: publicapi.CapRateLimitTier(ctx, s.tierResolver, userID, "premium"),
 	}, nil
 }
 

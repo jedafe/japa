@@ -36,6 +36,12 @@
 		return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString();
 	}
 
+	// Friendly labels for scopes whose raw value isn't self-explanatory.
+	const scopeLabels: Record<string, string> = {
+		openid: 'profile',
+	};
+	const scopeLabel = (s: string) => scopeLabels[s] ?? s;
+
 	async function doRevoke(clientId: string) {
 		const idx = grants.findIndex((g) => g.client_id === clientId);
 		if (idx < 0) return;
@@ -78,7 +84,7 @@
 					{#if grant.scopes?.length}
 						<ul class="mt-2 flex flex-wrap gap-1">
 							{#each grant.scopes as scope (scope)}
-								<li class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">{scope}</li>
+								<li class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-muted)]">{scopeLabel(scope)}</li>
 							{/each}
 						</ul>
 					{/if}

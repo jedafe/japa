@@ -14,6 +14,13 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
+// oauthBearerTokenPrefix is the §120 access-token prefix ("jcpat_"). It is
+// a wire contract, not an implementation detail: the middleware gates the
+// resolver call on it so foreign Bearer tokens (platform JWTs, other
+// schemes, garbage) fall through to the anonymous path exactly as before
+// instead of 401ing through the OAuth resolver.
+const oauthBearerTokenPrefix = "jcpat_"
+
 // BearerTokenResolver resolves a non-API-key bearer credential (a §120
 // OAuth access token) into the synthetic key context RequireScope enforces.
 // Implemented by mcp.OAuthService.ResolveBearer; nil disables bearer auth.
@@ -31,9 +38,13 @@ func APIKeyMiddleware(service *Service, resolveBearer BearerTokenResolver) func(
 			apiKey := r.Header.Get("X-API-Key")
 			if apiKey == "" {
 				// §120 v1.4: OAuth bearer fallback — a resolved token
-				// produces the same APIKeyContext an API key would.
+				// produces the same APIKeyContext an API key would. Only
+				// jcpat_-prefixed tokens go to the resolver; any other
+				// Bearer value leaves the request unauthenticated, so
+				// anonymous-allowed routes (OptionalScope) keep working
+				// for callers carrying unrelated Authorization headers.
 				if resolveBearer != nil {
-					if bearer := bearerToken(r); bearer != "" {
+					if bearer := bearerToken(r); strings.HasPrefix(bearer, oauthBearerTokenPrefix) {
 						keyCtx, err := resolveBearer(r.Context(), bearer)
 						if err != nil {
 							errpkg.WriteError(w, http.StatusUnauthorized, "invalid_bearer_token", "Invalid or expired bearer token")
@@ -112,12 +123,12 @@ func RequireScope(scope string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			keyCtx := APIKeyFromContext(r.Context())
 			if keyCtx == nil {
-				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "An X-API-Key header or OAuth Bearer access token is required")
 				return
 			}
 
 			if !HasScope(keyCtx.Scopes, scope) {
-				errpkg.WriteError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
+				errpkg.WriteError(w, http.StatusForbidden, "insufficient_scope", "credential lacks required scope: "+scope)
 				return
 			}
 
@@ -146,12 +157,12 @@ func OptionalScope(scope string, anonNames ...string) func(http.Handler) http.Ha
 						return
 					}
 				}
-				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "X-API-Key header is required")
+				errpkg.WriteError(w, http.StatusUnauthorized, "api_key_required", "An X-API-Key header or OAuth Bearer access token is required")
 				return
 			}
 
 			if !HasScope(keyCtx.Scopes, scope) {
-				errpkg.WriteError(w, http.StatusForbidden, "insufficient_scope", "API key lacks required scope: "+scope)
+				errpkg.WriteError(w, http.StatusForbidden, "insufficient_scope", "credential lacks required scope: "+scope)
 				return
 			}
 
@@ -269,10 +280,12 @@ var rateLimitRankToTier = map[int]string{
 	4: "unlimited",
 }
 
-// capRateLimitTier resolves the user's unified tier and returns the lower of
+// CapRateLimitTier resolves the user's unified tier and returns the lower of
 // the API key's rate_limit_tier and the user's cap tier. If the user tier
-// resolver fails, the cap falls back to "basic" for safety.
-func capRateLimitTier(ctx context.Context, tr TierResolver, userID pgtype.UUID, keyTier string) string {
+// resolver fails, the cap falls back to "basic" for safety. Exported for
+// credential resolvers (§120 OAuth bearer tokens) that mint a synthetic
+// key context rather than reading a stored key tier.
+func CapRateLimitTier(ctx context.Context, tr TierResolver, userID pgtype.UUID, keyTier string) string {
 	userTier := "regular"
 
 	if tr != nil {

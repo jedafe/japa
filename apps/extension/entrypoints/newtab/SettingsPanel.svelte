@@ -93,9 +93,9 @@
 		<button class="danger" onclick={onDisconnected}>Disconnect this browser</button>
 		<p class="hint">
 			Manage or revoke connected apps under
-			<a href={siteUrl('/settings')}>Settings → Connected apps</a> on the web — extension sessions
-			are listed as <code>JapaConnect Browser Extension</code> grants; pasted keys appear under
-			API keys named <code>extension:*</code>.
+			<a href={siteUrl('/settings')}>Settings → Connected apps</a> on the web — each browser's
+			session shows as a <code>JapaConnect Browser Extension (…)</code> grant; pasted keys appear
+			under API keys named <code>extension:*</code>.
 		</p>
 	{:else}
 		<button class="primary" onclick={signIn} disabled={signingIn}>
