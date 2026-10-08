@@ -9,6 +9,7 @@
 	import { t } from '$lib/i18n';
 	import type { FeedItem } from '$lib/types';
 	import FeedCard from './FeedCard.svelte';
+	import NativeAd from '$lib/components/ads/NativeAd.svelte';
 
 	interface Props {
 		items: FeedItem[];
@@ -18,8 +19,13 @@
 		config: CardStyleConfig;
 		loadError: boolean;
 		hasMore?: boolean;
+		/** Native ad slot name — when set, a NativeAd is interleaved every
+		    ads.native_feed_interval items (max 2 per list, §25). */
+		adSlot?: string;
+		/** Space context forwarded to the native ad for targeted campaigns. */
+		spaceId?: string;
 	}
-	let { items: initial, tab, sort, pageSize, config, loadError, hasMore: initialHasMore }: Props = $props();
+	let { items: initial, tab, sort, pageSize, config, loadError, hasMore: initialHasMore, adSlot = '', spaceId = '' }: Props = $props();
 
 	// Geo re-weight from the user's content_country_preference or ?geo= param
 	// (ADR-064). Forwarded on load-more so paginated results stay geo-consistent.
@@ -43,6 +49,12 @@
 	// Ref: conventions/system-settings-catalog.md (content.pagination.style)
 	const paginationStyle = $derived(
 		(page.data.siteSettings?.['content.pagination.style'] as string | undefined) ?? 'infinite_scroll'
+	);
+
+	// Native ad insertion interval — public system setting (Rule 3,
+	// conventions/system-settings-catalog.md). 0 disables injection.
+	const adInterval = $derived(
+		Math.max(0, Number(page.data.siteSettings?.['ads.native_feed_interval'] ?? 5) || 0)
 	);
 
 	// Re-seed on a new SSR payload (tab/sort change) — replace, never append.
@@ -150,8 +162,11 @@
 		</div>
 	{:else}
 		<div class="flex flex-col gap-3">
-			{#each items as item (item.id)}
+			{#each items as item, i (item.id)}
 				<FeedCard {item} style="daily" layout="stream" />
+				{#if adSlot && adInterval > 0 && (i + 1) % adInterval === 0 && i < items.length - 1 && i / adInterval < 2}
+					<NativeAd slot={adSlot} {spaceId} />
+				{/if}
 			{/each}
 		</div>
 	{/if}

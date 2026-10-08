@@ -7,9 +7,11 @@
 		/** Ad slot identifier, surfaced as the label. */
 		slot: string;
 		format?: 'banner' | 'square' | 'inline' | 'skyscraper';
+		/** Space context for space-targeted campaigns (§25 targeting). */
+		spaceId?: string;
 	}
 
-	let { slot, format = 'banner' }: Props = $props();
+	let { slot, format = 'banner', spaceId = '' }: Props = $props();
 
 	interface AdContent {
 		headline?: string;
@@ -51,7 +53,8 @@
 	async function fetchAds(): Promise<void> {
 		loading = true;
 		try {
-			const result = await api.get<AdCampaign[]>(`/ads/serve?slot=${encodeURIComponent(slot)}`);
+			const qs = spaceId ? `&space_id=${encodeURIComponent(spaceId)}` : '';
+			const result = await api.get<AdCampaign[]>(`/ads/serve?slot=${encodeURIComponent(slot)}${qs}`);
 			const campaigns = result.data;
 			if (!campaigns || campaigns.length === 0) {
 				campaign = null;
@@ -100,8 +103,9 @@
 	// The returned cleanup function disconnects the IntersectionObserver when
 	// the component unmounts or the effect re-runs.
 	$effect(() => {
-		if (fetchedSlot !== slot) {
-			fetchedSlot = slot;
+		const fetchKey = `${slot}|${spaceId}`;
+		if (fetchedSlot !== fetchKey) {
+			fetchedSlot = fetchKey;
 			void fetchAds();
 		}
 

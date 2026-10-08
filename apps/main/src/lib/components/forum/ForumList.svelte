@@ -9,6 +9,7 @@
 	import type { ForumThread, FeedItem } from '$lib/types';
 	import { tiptapFirstImageSrc } from '$lib/tiptap/serialize';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import NativeAd from '$lib/components/ads/NativeAd.svelte';
 	import type { CardStyleConfig } from '$lib/feed/cardStyle';
 
 	interface Props {
@@ -16,8 +17,16 @@
 		pageSize: number;
 		loadError: boolean;
 		config?: CardStyleConfig;
+		/** Native ad slot name — when set, a NativeAd is interleaved every
+		    ads.native_feed_interval threads (max 2 per list, §25). */
+		adSlot?: string;
 	}
-	let { threads: initial, pageSize, loadError }: Props = $props();
+	let { threads: initial, pageSize, loadError, adSlot = '' }: Props = $props();
+
+	// Native ad insertion interval — public system setting (Rule 3).
+	const adInterval = $derived(
+		Math.max(0, Number(page.data.siteSettings?.['ads.native_feed_interval'] ?? 5) || 0)
+	);
 
 	let threads = $state<ForumThread[]>(untrack(() => initial));
 	let atEnd = $state(false);
@@ -142,10 +151,13 @@
 	{/if}
 
 	<div class="flex flex-col gap-3">
-		{#each threads as thread (thread.id)}
+		{#each threads as thread, i (thread.id)}
 			<!-- Forum threads always render on the forum card (daily style with
 			     up/down voting) — same card they get in unified feeds. -->
 			<FeedCard item={toFeedItem(thread)} style="daily" layout="stream" />
+			{#if adSlot && adInterval > 0 && (i + 1) % adInterval === 0 && i < threads.length - 1 && i / adInterval < 2}
+				<NativeAd slot={adSlot} />
+			{/if}
 		{/each}
 	</div>
 

@@ -185,6 +185,7 @@
 				pageSize={data.pageSize}
 				loadError={data.loadError}
 				config={cardStyleConfig}
+				adSlot="native_forum"
 			/>
 		{/if}
 	</div>

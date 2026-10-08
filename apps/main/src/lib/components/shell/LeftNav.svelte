@@ -31,10 +31,14 @@
 		/** Feature flags from /feature-flags — used to hide nav items for
 		 *  disabled features so no trace of a toggled-off feature leaks. */
 		features?: Record<string, boolean>;
+		/** Render the brand row at the top of the nav. The marketplace chrome
+		 *  (ADR-058 exception) already carries the logo in MarketplaceHeader,
+		 *  so it mounts the nav with showBrand={false}. */
+		showBrand?: boolean;
 		onToggle: () => void;
 	}
 
-	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', features = {}, onToggle }: Props = $props();
+	let { menu, user, collapsed, userSpaces = [], logoUrl = '', logoDarkUrl = '', features = {}, showBrand = true, onToggle }: Props = $props();
 
 	// The API already filters by auth/permissions, but guard against visibility
 	// drift so an 'authenticated' item never leaks to a guest and vice-versa.
@@ -133,22 +137,38 @@
 	class="flex h-full w-full flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]"
 	aria-label={t('a11y.main_nav')}
 >
-	<!-- Logo + collapse toggle -->
-	<div class={clsx('flex h-[var(--nav-height)] shrink-0 items-center gap-2 px-3', collapsed && 'justify-center')}>
-		<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-			<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
-		</a>
-		{#if !collapsed}
-			<button
-				type="button"
-				onclick={onToggle}
-				class="ml-auto grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]"
-				aria-label={t('nav.collapse')}
-			>
-				<PanelLeftClose size={18} />
-			</button>
-		{/if}
-	</div>
+	<!-- Logo + collapse toggle. With showBrand=false (marketplace chrome)
+	     the row shrinks to just the collapse control; in the collapsed rail
+	     it's skipped entirely — the standalone expand button below covers it. -->
+	{#if showBrand || !collapsed}
+		<div
+			class={clsx(
+				'flex shrink-0 items-center gap-2 px-3',
+				showBrand ? 'h-[var(--nav-height)]' : 'h-10',
+				collapsed && 'justify-center',
+				!showBrand && 'justify-end'
+			)}
+		>
+			{#if showBrand}
+				<a href="/" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
+					<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-8 w-auto max-w-[140px] shrink-0 object-contain" />
+				</a>
+			{/if}
+			{#if !collapsed}
+				<button
+					type="button"
+					onclick={onToggle}
+					class={clsx(
+						'grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]',
+						showBrand && 'ml-auto'
+					)}
+					aria-label={t('nav.collapse')}
+				>
+					<PanelLeftClose size={18} />
+				</button>
+			{/if}
+		</div>
+	{/if}
 
 	{#if collapsed}
 		<button

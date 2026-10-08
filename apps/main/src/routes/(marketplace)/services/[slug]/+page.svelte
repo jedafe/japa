@@ -978,8 +978,11 @@
 									<span class="text-xs text-[var(--color-muted)]"
 										>{t('services.price_from', 'From')}</span
 									>
+									<!-- heroPrice already carries the price_per suffix
+									     (priceLabel in $lib/marketplace) — appending
+									     pricePerLabel here duplicated it ("per person
+									     per person"). -->
 									<span class="text-xl font-bold text-[var(--color-text)]">{heroPrice}</span>
-									<span class="text-xs text-[var(--color-muted)]">{pricePerLabel}</span>
 								</p>
 							{:else}
 								<p class="text-sm text-[var(--color-muted)]">

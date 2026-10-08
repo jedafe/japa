@@ -140,6 +140,7 @@
 				{config}
 				loadError={data.loadError}
 				hasMore={data.hasMore}
+				adSlot="native_feed"
 			/>
 		</div>
 	</div>

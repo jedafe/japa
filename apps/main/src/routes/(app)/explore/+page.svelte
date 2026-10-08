@@ -41,6 +41,7 @@
 			{config}
 			loadError={data.loadError}
 			hasMore={data.hasMore}
+			adSlot="native_discover"
 		/>
 	</div>
 </div>

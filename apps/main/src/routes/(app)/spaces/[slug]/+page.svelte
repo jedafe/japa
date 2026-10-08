@@ -21,6 +21,7 @@
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
 	import type { FeedItem } from '$lib/types';
 	import FeedCard from '$lib/components/feed/FeedCard.svelte';
+	import NativeAd from '$lib/components/ads/NativeAd.svelte';
 	import DigestWidget from '$lib/components/digest/DigestWidget.svelte';
 	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type {
@@ -34,6 +35,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	const space = $derived(data.space);
 	const authed = $derived(!!page.data.user);
+	// Native ad insertion interval — public system setting (§25, Rule 3).
+	const adInterval = $derived(
+		Math.max(0, Number(page.data.siteSettings?.['ads.native_feed_interval'] ?? 5) || 0)
+	);
 	const wikiEnabled = $derived(!!data.wikiEnabled);
 	const wikiPages = $derived<WikiPageIndex[]>(data.wikiPages ?? []);
 	const isUniversity = $derived(data.isUniversity ?? false);
@@ -678,7 +683,10 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<EmptyState icon={Rss} title={t('space.feed_empty', 'No posts yet')} />
 			{:else}
 				<div class="flex flex-col gap-3">
-					{#each feedItems as item (item.id)}
+					{#each feedItems as item, i (item.id)}
+						{#if adInterval > 0 && i > 0 && i % adInterval === 0 && i / adInterval <= 2}
+							<NativeAd slot="native_space_feed" spaceId={space.id} />
+						{/if}
 						<div class="group relative block">
 							<FeedCard
 								item={toFeedItem(item)}
