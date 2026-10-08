@@ -456,11 +456,25 @@ func HandleAdsAccrueSpend(ctx context.Context, t *asynq.Task) error {
 		slog.Warn("task:ad:accrue_spend_daily: no database, skipping", "error", err)
 		return nil
 	}
+	now := time.Now().UTC()
+	// §25: same-day idempotency — Valkey leader lock `jc:ad_accrue:{YYYY-MM-DD}`
+	// (cataloged in conventions/valkey-keys-catalog.md). SET NX EX 172800; a
+	// duplicate run today exits silently.
+	dateKey := valkey.MustKey("ad_accrue:%s", now.Format("2006-01-02"))
+	if rdb != nil {
+		ok, err := rdb.SetNX(ctx, dateKey, "1", 48*time.Hour).Result()
+		if err != nil {
+			slog.Warn("task:ad:accrue_spend_daily: lock check failed, skipping", "error", err)
+			return nil
+		}
+		if !ok {
+			return nil // already accrued today
+		}
+	}
 	campaigns, err := queries.ListActiveFlatRateCampaigns(ctx)
 	if err != nil {
 		return fmt.Errorf("task:ad:accrue_spend_daily: %w", err)
 	}
-	now := time.Now().UTC()
 	for _, c := range campaigns {
 		updated, err := queries.AccrueCampaignSpend(ctx, c.ID)
 		if err != nil {
