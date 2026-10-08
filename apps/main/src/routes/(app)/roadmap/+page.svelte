@@ -198,13 +198,17 @@
 				action={{ label: t('roadmap.submit_cta', 'Submit a request'), href: '/roadmap/submit' }}
 			/>
 		{:else}
-			<!-- Status columns; horizontal scroll on narrow viewports. -->
-			<div class="flex gap-4 overflow-x-auto pb-2 lg:grid lg:grid-cols-4 lg:overflow-visible">
+			<!-- Status columns; horizontal scroll on narrow viewports. Column
+			     order + labels come from board.columns (the backend ships the
+			     Testing column between In Progress and Recently Shipped); the
+			     aria-label mirrors the rendered heading. -->
+			<div class="flex gap-4 overflow-x-auto pb-2 lg:grid lg:grid-cols-5 lg:overflow-visible">
 				{#each board.columns as column (column.status)}
 					{@const items = columnItems(column.items)}
-					<section class="min-w-[16rem] flex-1 lg:min-w-0" aria-label={column.label}>
+					{@const label = t(`roadmap.col_${column.status}`, column.label)}
+					<section class="min-w-[16rem] flex-1 lg:min-w-0" aria-label={label}>
 						<header class="mb-3 flex items-center justify-between px-1">
-							<h2 class="text-sm font-semibold text-[var(--color-text)]">{column.label}</h2>
+							<h2 class="text-sm font-semibold text-[var(--color-text)]">{label}</h2>
 							<span
 								class="rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)] [font-variant-numeric:tabular-nums]"
 							>

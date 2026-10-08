@@ -18,6 +18,8 @@
 				return 'bg-sky-500/10 text-sky-600 border-sky-500/30';
 			case 'in_progress':
 				return 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30';
+			case 'testing':
+				return 'bg-violet-500/10 text-violet-600 border-violet-500/30';
 			case 'shipped':
 				return 'bg-green-500/10 text-green-600 border-green-500/30';
 			case 'declined':

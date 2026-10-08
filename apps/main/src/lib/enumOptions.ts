@@ -188,7 +188,8 @@ export function trendingTabs(t: Translator): { id: 'content' | 'tags' | 'spaces'
 export const roadmapVotableStatuses: RoadmapStatus[] = [
 	'under_review',
 	'planned',
-	'in_progress'
+	'in_progress',
+	'testing'
 ];
 
 /** Statuses rendered on the public board / reachable via /roadmap/[slug]. */
@@ -196,6 +197,7 @@ export const roadmapPublicStatuses: RoadmapStatus[] = [
 	'under_review',
 	'planned',
 	'in_progress',
+	'testing',
 	'shipped'
 ];
 
@@ -211,9 +213,10 @@ export function roadmapStatusLabel(t: Translator, value: RoadmapStatus | string)
  */
 const roadmapTransitions: Record<RoadmapStatus, RoadmapStatus[]> = {
 	pending: ['under_review', 'declined'],
-	under_review: ['planned', 'declined', 'archived'],
-	planned: ['in_progress', 'under_review', 'declined', 'archived'],
-	in_progress: ['shipped', 'planned', 'archived'],
+	under_review: ['planned', 'testing', 'declined', 'archived'],
+	planned: ['in_progress', 'testing', 'under_review', 'declined', 'archived'],
+	in_progress: ['testing', 'shipped', 'planned', 'archived'],
+	testing: ['shipped', 'in_progress', 'archived'],
 	shipped: ['archived'],
 	declined: ['under_review', 'archived'],
 	archived: []

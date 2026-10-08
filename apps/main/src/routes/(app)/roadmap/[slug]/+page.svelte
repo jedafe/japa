@@ -36,6 +36,26 @@
 	);
 
 	const currentStep = $derived(roadmapPublicStatuses.indexOf(item.status));
+
+	// Enriched rollout badge for flag-linked items (unified-rollout spec §5.3):
+	// disabled → "Paused"; partial rollout → "Rolling out — {p}%"; fully rolled
+	// out or shipped phase → "Live"; otherwise the phase label. A missing
+	// flagDetail (endpoint failure or unknown key) degrades to the generic
+	// "Rolling out" badge rather than dropping it.
+	const flagBadgeLabel = $derived.by((): string | null => {
+		if (!item.feature_flag_key) return null;
+		const flag = data.flagDetail;
+		if (!flag) return t('roadmap.rolling_out', 'Rolling out');
+		if (!flag.enabled) return t('roadmap.rollout_paused', 'Paused');
+		const pct = flag.rolloutPercentage;
+		if (pct > 0 && pct < 100) {
+			return t('roadmap.rollout_partial', 'Rolling out — {percent}%', { percent: pct });
+		}
+		if (pct === 100 || flag.phase === 'shipped') {
+			return t('roadmap.rollout_live', 'Live');
+		}
+		return t(`roadmap.phase_${flag.phase}`, flag.phase.replace(/_/g, ' '));
+	});
 	const createdDate = $derived(
 		new Date(item.created_at).toLocaleDateString(undefined, {
 			year: 'numeric',
@@ -102,13 +122,13 @@
 							{t('roadmap.flagship', 'Now building')}
 						</span>
 					{/if}
-					{#if item.feature_flag_key}
+					{#if flagBadgeLabel}
 						<span
 							class="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)]"
 							title={item.feature_flag_key}
 						>
 							<Flag size={11} />
-							{t('roadmap.rolling_out', 'Rolling out')}
+							{flagBadgeLabel}
 						</span>
 					{/if}
 				</div>

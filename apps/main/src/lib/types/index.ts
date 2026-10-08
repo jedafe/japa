@@ -5067,6 +5067,7 @@ export type RoadmapStatus =
 	| 'under_review'
 	| 'planned'
 	| 'in_progress'
+	| 'testing'
 	| 'shipped'
 	| 'declined'
 	| 'archived';
@@ -5118,6 +5119,20 @@ export interface RoadmapBoard {
 export interface RoadmapItemDetail extends RoadmapBoardItem {
 	/** Base64 TipTap JSON (submitted via encodeReplyBody) or plain text. */
 	body: string | null;
+}
+
+/**
+ * GET /feature-flags/details row — the public per-flag projection used to
+ * enrich the roadmap rollout badge (key, scoped enabled/visible, rollout
+ * phase, rollout percentage). Internal rule detail is never exposed.
+ * Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.3
+ */
+export interface FeatureFlagDetail {
+	key: string;
+	enabled: boolean;
+	phase: string;
+	rolloutPercentage: number;
+	visible: boolean;
 }
 
 /** GET /roadmap/changelog row — shipped items ordered by shipped_at DESC. */

@@ -1,7 +1,13 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, ApiError } from '$lib/server/api';
-import type { Comment, RoadmapBoard, RoadmapBoardItem, RoadmapItemDetail } from '$lib/types';
+import type {
+	Comment,
+	FeatureFlagDetail,
+	RoadmapBoard,
+	RoadmapBoardItem,
+	RoadmapItemDetail
+} from '$lib/types';
 
 /**
  * Roadmap item detail — GET /api/v1/roadmap/items/{slug} (public).
@@ -40,6 +46,20 @@ export const load: PageServerLoad = async (event) => {
 			throw error(404, { code: 'not_found', message: 'Roadmap item not found' });
 		}
 		throw error(500, { code: 'internal_error', message: 'Failed to load roadmap item' });
+	}
+
+	// Flag-linked items get an enriched rollout badge driven by the flag's
+	// live phase/percentage (§113 + unified-rollout spec §5.3). The details
+	// endpoint is public; a fetch failure degrades to the generic badge —
+	// the item must still render.
+	let flagDetail: FeatureFlagDetail | null = null;
+	if (item.feature_flag_key) {
+		try {
+			const details = await apiGet<FeatureFlagDetail[]>(ctx, '/feature-flags/details');
+			flagDetail = details.find((d) => d.key === item.feature_flag_key) ?? null;
+		} catch {
+			flagDetail = null;
+		}
 	}
 
 	const currentUserId = event.locals.user?.id ?? null;
@@ -94,6 +114,7 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		item,
+		flagDetail,
 		authed,
 		currentUserId,
 		canModerate,
