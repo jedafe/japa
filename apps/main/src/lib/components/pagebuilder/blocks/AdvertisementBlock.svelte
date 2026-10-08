@@ -1,10 +1,21 @@
+<script module lang="ts">
+	// Provider script tags are injected once per page — multiple ad blocks
+	// (or the same provider in different placements) share one <script>.
+	// Module scope, keyed by URL so two networks with the same loader dedupe.
+	const injectedScripts = new Set<string>();
+</script>
+
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 
 	interface Props {
 		props: {
-			provider?: 'adsense' | 'ezoic' | 'media_net' | 'custom';
+			// §25 amendment: provider is one of the 25 values in the
+			// ad_networks provider enum (adsense, google_admanager, prebid,
+			// mediavine, …). Open string so admin-added providers need no
+			// frontend change — they render via the generic injector below.
+			provider?: string;
 			slot_id?: string;
 			format?: string;
 			custom_html?: string;
@@ -18,7 +29,7 @@
 	let container: HTMLDivElement;
 
 	interface AdNetwork {
-		provider: 'adsense' | 'ezoic' | 'media_net' | 'custom';
+		provider: string;
 		name: string;
 		// Backend GetAdNetworkConfig returns client_id as a nullable string
 		// (providers like Ezoic/custom may not use one).
@@ -45,6 +56,42 @@
 			if (mapped !== undefined) return String(mapped);
 		}
 		return props.slot_id ?? null;
+	}
+
+	function ensureScript(url: string, attrs?: Record<string, unknown>): void {
+		if (injectedScripts.has(url)) return;
+		if (document.querySelector(`script[data-jc-ad-network][src="${CSS.escape(url)}"]`)) {
+			injectedScripts.add(url);
+			return;
+		}
+		injectedScripts.add(url);
+		const script = document.createElement('script');
+		script.src = url;
+		script.async = true;
+		script.setAttribute('data-jc-ad-network', props.provider ?? '');
+		for (const [k, v] of Object.entries(attrs ?? {})) {
+			if (v !== null && v !== undefined) script.setAttribute(k, String(v));
+		}
+		document.head.appendChild(script);
+	}
+
+	function genericRender(network: AdNetwork, slotId: string | null): void {
+		// Config-driven renderer: the network's `config.script_url` is the
+		// loader (e.g. a header-bidding or managed-provider tag), and the
+		// placement is a plain div carrying the resolved slot id. No API
+		// keys are rendered — the backend never serializes them.
+		container.innerHTML = '';
+		const div = document.createElement('div');
+		div.id = `jc-ad-${network.provider}-${slotId ?? 'default'}`;
+		div.setAttribute('data-ad-network', network.provider);
+		if (slotId) div.setAttribute('data-ad-slot-id', slotId);
+		const placementId = network.config?.placement_id;
+		if (typeof placementId === 'string' && placementId) div.setAttribute('data-ad-placement', placementId);
+		container.appendChild(div);
+		const scriptUrl = typeof network.config?.script_url === 'string' ? network.config.script_url : null;
+		if (scriptUrl) {
+			ensureScript(scriptUrl, network.config?.script_attrs as Record<string, unknown> | undefined);
+		}
 	}
 
 	// Inject the ad script after mount so SSR doesn't break.
@@ -90,6 +137,15 @@
 			div.id = `media-net-${slotId}`;
 			container.innerHTML = '';
 			container.appendChild(div);
+			if (network) {
+				const scriptUrl = typeof network.config?.script_url === 'string' ? network.config.script_url : null;
+				if (scriptUrl) ensureScript(scriptUrl, network.config?.script_attrs as Record<string, unknown> | undefined);
+			}
+		} else if (network) {
+			// Every other provider (google_admanager, prebid, mediavine,
+			// raptive, amazon_aps, …) resolves through the config-driven
+			// renderer — active networks only, no script without config.
+			genericRender(network, slotId);
 		}
 	});
 
