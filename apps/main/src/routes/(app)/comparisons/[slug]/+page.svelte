@@ -20,6 +20,7 @@
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
+	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import ReactionRail from '$lib/components/blog/ReactionRail.svelte';
 	import CreatorCard from '$lib/components/blog/CreatorCard.svelte';
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
@@ -312,6 +313,9 @@
 		loadError={data.commentsLoadError}
 		deletedUserIds={deletedUserIds}
 	/>
+
+	<!-- §25: engagement-area ad slot. -->
+	<AdSlot slot="comments_below" format="banner" />
 
 	<!-- Same-type recommendations, ranked by embedding similarity. -->
 	<div class="mt-8">

@@ -11,6 +11,7 @@
 	import { realtime } from '$lib/realtime/realtime.svelte';
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
+	import StickyAnchorAd from '$lib/components/ads/StickyAnchorAd.svelte';
 	import { lightbox } from '$lib/lightbox.svelte';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
@@ -235,6 +236,11 @@
 	>
 		{@render children()}
 	</AppShell>
+	{#if !exception}
+		<!-- §25: dismissible sticky anchor ad — suppressed on exception
+		     surfaces (create/studio/settings/dashboard) like the sidebars. -->
+		<StickyAnchorAd />
+	{/if}
 	{#if !exception && !noTabBar}
 		<MobileBottomTabBar user={data.user} features={data.features} menu={data.mobileMenu} />
 	{/if}

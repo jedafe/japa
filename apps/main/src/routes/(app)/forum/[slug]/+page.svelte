@@ -11,6 +11,7 @@
 	import { api } from '$lib/api/client';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import VoteRail from '$lib/components/forum/VoteRail.svelte';
+	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import ReplyThread from '$lib/components/forum/ReplyThread.svelte';
 	import PollBlock from '$lib/components/forum/PollBlock.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
@@ -802,6 +803,9 @@ import { contentHref } from '$lib/utils/contentLink';
 		onMarkSolved={toggleSolve}
 	/>
 	</div>
+
+	<!-- §25: engagement-area ad slot. -->
+	<AdSlot slot="comments_below" format="banner" />
 
 	<!-- Related posts sidebar (Phase 05.14) -->
 	{#if data.related && data.related.length > 0}

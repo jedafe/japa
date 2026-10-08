@@ -18,6 +18,7 @@
 	import type { Menu, MenuItem, SessionUser, UserSpaceRef } from '$lib/types';
 	import { routeFeatureFlagForPath } from '$lib/components/shell/routeFeatureFlags';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
+	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 
 	interface Props {
 		menu: Menu | null;
@@ -53,6 +54,17 @@
 			return true;
 		})
 	);
+
+	// §25: menu items flagged is_ad_slot carry an ad_slot_config payload
+	// ({ slot, format }) instead of a navigable url — they render an AdSlot
+	// where the nav link would sit rather than a broken anchor.
+	function adSlotProps(item: MenuItem): { slot: string; format: 'banner' | 'square' | 'inline' | 'skyscraper' } {
+		const cfg = item.ad_slot_config ?? {};
+		const slot = typeof cfg.slot === 'string' && cfg.slot ? cfg.slot : 'left_rail';
+		const fmt = cfg.format;
+		const format = fmt === 'banner' || fmt === 'square' || fmt === 'inline' || fmt === 'skyscraper' ? fmt : 'skyscraper';
+		return { slot, format };
+	}
 
 	function isActive(url: string): boolean {
 		if (url === '/') return page.url.pathname === '/';
@@ -188,6 +200,17 @@
 	<!-- Nav items (from GET /menus/main_sidebar) -->
 	<ul class="flex-1 overflow-y-auto px-2 py-2" data-tour="primary-nav" onscroll={hideFlyout}>
 		{#each items as item (item.id)}
+			{#if item.is_ad_slot}
+				<!-- §25: ad-slot nav entries render the campaign slot; hidden in
+				     collapsed mode (LeftRail owns the rail ad there) and empty
+				     when no campaign fills — no placeholder space is reserved. -->
+				{#if !collapsed}
+					{@const adProps = adSlotProps(item)}
+					<li class="my-2 px-1">
+						<AdSlot slot={adProps.slot} format={adProps.format} />
+					</li>
+				{/if}
+			{:else}
 			{@const active = isActive(item.url)}
 			{@const badge = item.url === '/notifications' ? realtime.unreadNotifications : 0}
 			{@const isNotifications = item.url === '/notifications' && !!user}
@@ -239,6 +262,7 @@
 					</a>
 				{/if}
 			</li>
+			{/if}
 		{/each}
 	</ul>
 

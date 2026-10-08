@@ -11,6 +11,7 @@
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
+	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import VoteButton from '$lib/components/roadmap/VoteButton.svelte';
 	import StatusBadge from '$lib/components/roadmap/StatusBadge.svelte';
 	import StatusSelect from '$lib/components/roadmap/StatusSelect.svelte';
@@ -215,6 +216,8 @@
 			loadError={data.commentsLoadError}
 			{deletedUserIds}
 		/>
+		<!-- §25: engagement-area ad slot. -->
+		<AdSlot slot="comments_below" format="banner" />
 	{/if}
 
 	{#if data.related.length > 0}

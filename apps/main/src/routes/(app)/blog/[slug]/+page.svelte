@@ -11,6 +11,8 @@
 	import SidebarWidgetRenderer from '$lib/components/shell/SidebarWidgetRenderer.svelte';
 	import CommentThread from '$lib/components/comments/CommentThread.svelte';
 	import BlogSeriesNav from '$lib/components/blog/BlogSeriesNav.svelte';
+	import InArticleAd from '$lib/components/ads/InArticleAd.svelte';
+	import AdSlot from '$lib/components/ui/AdSlot.svelte';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { imgLightbox } from '$lib/lightbox.svelte';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
@@ -270,9 +272,11 @@
 			</div>
 		{/if}
 
-		<!-- Article body: prose TipTap HTML with serif reading font -->
+		<!-- Article body: prose TipTap HTML with serif reading font.
+		     InArticleAd splits the sanitized body on block boundaries and
+		     injects the article_inline ad slot (§25 amendment). -->
 		<div class="prose mt-8" use:hydrateLinkPreviews use:hydrateMentions use:hydrateVideoEmbeds use:imgLightbox>
-			{@html sanitizedBody}
+			<InArticleAd html={sanitizedBody} />
 		</div>
 
 		<!-- Reaction/action bar: fixed bottom bar on mobile (this route is an
@@ -305,6 +309,10 @@
 			loadError={data.commentsLoadError}
 			deletedUserIds={deletedUserIds}
 		/>
+
+		<!-- §25: engagement-area ad slots — hidden when no campaign fills them. -->
+		<AdSlot slot="comments_below" format="banner" />
+		<AdSlot slot="article_below_comments" format="banner" />
 
 		<!-- Same-type recommendations, ranked by embedding similarity. -->
 		<div class="mt-8">
