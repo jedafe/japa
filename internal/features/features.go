@@ -812,14 +812,21 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percenta
 	return nil
 }
 
-// Gate is HTTP middleware that checks if a feature is enabled.
-// If disabled, returns 404 with {"error":{"code":"feature_disabled","message":"..."}}.
+// Gate is HTTP middleware that checks if a feature is enabled for the
+// caller. It evaluates the caller's full scope — X-JC-Surface header, geo
+// context, and resolved audience — via EvalFlag, so a flag disabled on the
+// caller's surface, denied by geo rules, or outside the caller's audience
+// reads as disabled. If disabled, returns 404 with
+// {"error":{"code":"feature_disabled","message":"..."}} (ADR-042 — 404, not
+// 403, so a disabled feature's existence is not revealed).
 // This MUST be used inside the platform middleware group so platform
 // context is available.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.4.
 func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !checker.IsEnabled(r.Context(), key) {
+			sc := checker.BuildScope(r, SurfaceFrom(r))
+			if !checker.EvalFlag(r.Context(), key, sc).Enabled {
 				errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 				return
 			}

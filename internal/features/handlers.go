@@ -47,13 +47,106 @@ func (h *Handlers) fireOnEnabled(ctx context.Context, flagName string, wasEnable
 }
 
 // HandleGetFeatureFlags handles GET /api/v1/feature-flags.
-// Returns all feature flags and their enabled state for the current platform.
+// Returns all feature flags as key → Enabled && Visible for the caller's
+// scope (surface header, geo context, resolved audience — spec §5.3).
 // This endpoint is public (no auth required) because the frontend layout
-// needs flags before the user logs in to render navigation correctly.
+// needs flags before the user logs in to render navigation correctly;
+// OptionalAuth populates identity when a session exists, so signed-in
+// callers still get their audience/geo overlays.
 func (h *Handlers) HandleGetFeatureFlags(w http.ResponseWriter, r *http.Request) {
 
-	flags := h.checker.GetAllEnabled(r.Context())
+	sc := h.checker.BuildScope(r, SurfaceFrom(r))
+	flags := h.checker.EvalAll(r.Context(), sc)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": flags})
+}
+
+// FeatureFlagDetail is the public per-flag projection returned by
+// GET /api/v1/feature-flags/details. It deliberately exposes only the
+// fields a surface needs to render state badges ("Coming soon", "Beta",
+// rollout %). surfaces/audience/geo rules are internal config — group
+// slugs, permission nodes, and geo policy are never exposed publicly;
+// the full rule set is available only via /api/v1/control/extensions.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.3.
+type FeatureFlagDetail struct {
+	Key               string `json:"key"`
+	Enabled           bool   `json:"enabled"`
+	Phase             string `json:"phase"`
+	RolloutPercentage int    `json:"rolloutPercentage"`
+	Visible           bool   `json:"visible"`
+}
+
+// HandleGetFeatureFlagDetails handles GET /api/v1/feature-flags/details.
+// Same public/no-auth posture as the flags map endpoint — it reveals only
+// what an attacker could already probe via route 404s. Returns the
+// Registry + DB merge (same merge shape as ListFeatureFlags) with each
+// entry's enabled/visible evaluated for the caller's scope.
+func (h *Handlers) HandleGetFeatureFlagDetails(w http.ResponseWriter, r *http.Request) {
+
+	sc := h.checker.BuildScope(r, SurfaceFrom(r))
+
+	// Seed every registry key with its default, then overlay stored rows via
+	// the shared jc:flags:_all aggregate — no per-request Postgres hit.
+	merged := make(map[string]FlagRow, len(Registry))
+	for _, f := range Registry {
+		merged[f.Key] = FlagRow{Key: f.Key, Enabled: f.Default}
+	}
+
+	for _, row := range h.checker.AllFlagRows(r.Context()) {
+		merged[row.Key] = row
+	}
+
+	details := make([]FeatureFlagDetail, 0, len(merged))
+
+	for _, row := range merged {
+		res := evalScoped(effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+
+		var cfg FlagConfig
+		if len(row.Config) > 0 {
+			if err := json.Unmarshal(row.Config, &cfg); err != nil {
+				cfg = FlagConfig{}
+			}
+		}
+
+		details = append(details, FeatureFlagDetail{
+			Key:               row.Key,
+			Enabled:           res.Enabled,
+			Phase:             phaseFor(row.Enabled, cfg),
+			RolloutPercentage: rolloutFor(cfg),
+			Visible:           res.Visible,
+		})
+	}
+
+	sort.Slice(details, func(i, j int) bool { return details[i].Key < details[j].Key })
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": details})
+}
+
+// phaseFor derives the public rollout phase: the config's explicit phase
+// when set, else "shipped" for enabled flags and "planned" for disabled
+// ones — the same derivation eval applies to absent phases. It uses the
+// flag's global enabled state, not the caller-scoped result: a flag
+// geo-blocked or audience-gated for this caller is still "shipped", not
+// "planned".
+func phaseFor(enabled bool, cfg FlagConfig) string {
+	if cfg.Phase != "" {
+		return cfg.Phase
+	}
+
+	if enabled {
+		return "shipped"
+	}
+
+	return "planned"
+}
+
+// rolloutFor returns the public rollout percentage, defaulting to 100 when
+// the config is absent or stores 0 (same convention as applyFlagConfig).
+func rolloutFor(cfg FlagConfig) int {
+	if cfg.RolloutPercentage == 0 {
+		return 100
+	}
+
+	return cfg.RolloutPercentage
 }
 
 // HandleSetFeatureFlag handles PATCH /admin/feature-flags/{flag_name}.

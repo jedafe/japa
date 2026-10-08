@@ -445,6 +445,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Feature flags handlers — declared in the outer scope so both the
 	// /api/v1 and /control route groups can use them.
 	featureHandlers := features.NewHandlers(featureChecker)
+	// Caller-scoped flag resolution (unified rollout §5.1): RBAC-backed
+	// audience resolver so features.Gate and the flags endpoints can apply
+	// group/permission/super_admin overlays per caller.
+	featureChecker.SetAudienceResolver(audienceResolverAdapter{rbac: rbacResolver})
 
 	// Universities subsystem (Section 39) — read-view over spaces of the
 	// University space-type + their custom field values, no dedicated table.
@@ -3055,8 +3059,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Feature flags endpoint (public - frontend needs flags to
-			// render navigation, no auth required)
+			// render navigation, no auth required). /details is the same
+			// public posture — a richer per-flag projection (phase, rollout,
+			// visibility) for surfaces that render state badges (§5.3).
 			r.Get("/feature-flags", featureHandlers.HandleGetFeatureFlags)
+			r.Get("/feature-flags/details", featureHandlers.HandleGetFeatureFlagDetails)
 
 			// Public option catalog (Rule 16 — canonical option lists for
 			// Tools surface dropdowns, no auth required).
@@ -8005,6 +8012,31 @@ func (a literalResolverAdapter) ResolveFields(ctx context.Context, v any) {
 
 func (a literalResolverAdapter) ResolveText(ctx context.Context, s string) string {
 	return a.cat.ResolveText(ctx, s, literals.NewContext(ctx, ""))
+}
+
+// ---------------------------------------------------------------------------
+// Adapter: rbac.RBAC → features.AudienceResolver
+// ---------------------------------------------------------------------------
+
+// audienceResolverAdapter adapts rbac.RBAC to the features package's
+// AudienceResolver interface so caller-scoped flag evaluation (EvalFlag,
+// EvalAll via BuildScope) can apply group/permission/super_admin overlays
+// without internal/features importing internal/rbac.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.1.
+type audienceResolverAdapter struct{ rbac *rbac.RBAC }
+
+func (a audienceResolverAdapter) ResolveScope(ctx context.Context, userID pgtype.UUID) (map[string]bool, map[string]bool, bool, error) {
+	uc, err := a.rbac.GetUserContext(ctx, userID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	groups := make(map[string]bool, len(uc.Groups))
+	for _, g := range uc.Groups {
+		groups[g.Slug] = true
+	}
+
+	return groups, uc.Permissions, a.rbac.IsSuperAdmin(ctx, userID), nil
 }
 
 // ---------------------------------------------------------------------------
