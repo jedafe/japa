@@ -4027,6 +4027,19 @@ export interface ServiceListing {
 	departures?: PackageDeparture[];
 	platform_fee?: number | null;
 	agent_balance_due?: number | null;
+	// Marketplace card surfaces — joined from media + review_aggregates on
+	// the listing queries; all omitempty so absent means "no data", not zero.
+	featured_media_id?: string;
+	featured_image_url?: string;
+	rating_avg?: number;
+	review_count?: number;
+	// Coupon/tier surfaces — gated server-side on service_coupons.enabled /
+	// service_packages.tiers_enabled. has_coupon + min_price ride list rows
+	// only; tiers[] + coupons[] populate the detail payload.
+	has_coupon?: boolean;
+	min_price?: number | null; // minor units; falls back to price_amount server-side
+	tiers?: PackageTier[];
+	coupons?: ListingCoupon[];
 }
 
 /** One ordered component line item of a service package (§111). */
@@ -4048,6 +4061,60 @@ export interface PackageDeparture {
 	capacity?: number | null;
 	booked_count: number;
 	status: 'open' | 'full' | 'cancelled' | string;
+}
+
+/** §114 marketplace — one row of GET /services/categories (backend Option
+ *  struct). position is NOT serialized; the array arrives pre-sorted — do
+ *  not re-sort client-side. */
+export interface ServiceCategoryInfo {
+	value: string;
+	label: string;
+	description?: string;
+	icon?: string; // lucide icon name
+	accent_color?: string; // palette token name — see CategoryAccent in $lib/marketplace
+	applies_to?: 'service' | 'package' | 'both';
+}
+
+/** §114 marketplace — a coupon attached to a listing (public detail
+ *  payload; redemption internals are never serialized). */
+export interface ListingCoupon {
+	id: string;
+	title: string;
+	code: string;
+	discount_type: 'percent' | 'fixed' | string;
+	discount_value: number; // percent 0-100 or minor units per discount_type
+	currency?: string;
+	expires_at?: string;
+	terms_url?: string;
+	referral_url?: string;
+	applies_to?: 'service' | 'package' | 'both';
+}
+
+/** §114 marketplace — one pricing tier of a service package (active tiers
+ *  only, position order, on the package detail payload). */
+export interface PackageTier {
+	id: string;
+	name: string;
+	badge?: string;
+	description?: string;
+	price_amount: number; // minor units
+	price_currency?: string;
+	features: string[];
+	position: number;
+	is_featured: boolean;
+}
+
+/** §114 marketplace — GET /services/{id}/price-preview quote breakdown
+ *  (auth + rate-limited). coupon_valid:false rows carry error_code. */
+export interface ServicePricePreview {
+	base: number;
+	discount: number;
+	total: number;
+	fee: number;
+	balance_due: number;
+	currency: string;
+	coupon_valid: boolean;
+	error_code?: string;
 }
 
 /** A row of GET /me/service-bookings or /org/:id/service-bookings (§111). */
