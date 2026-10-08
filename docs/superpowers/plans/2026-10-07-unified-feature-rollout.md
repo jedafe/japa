@@ -16,17 +16,17 @@
 - **ADR-042:** disabled features return 404, never 403.
 - JSON field names in `feature_flags.config`: `name`, `description`, `environment`, `rolloutPercentage`, `phase`, `showOnRoadmap`, `surfaces` (map of `{state, audience[], geo_allow[], geo_deny[]}` — snake_case inside `SurfaceRule`, camelCase on `FlagConfig` as spec'd).
 - Audience entries are `group:<slug>` or `perm:<node>` prefixed strings.
-- `roadmap_items.status` CHECK must include `testing` after migration `000806`.
+- `roadmap_items.status` CHECK must include `testing` after migration `000807`.
 - Commits go to `main`. Tests: `go test ./internal/...`; frontend: `bun run check` / `bunx svelte-check` per app.
 - `features` package must NOT import `internal/rbac` or `internal/auth` in a way that creates a cycle — inject interfaces (the `literalResolverAdapter` pattern at `internal/server/server.go:7990` is the precedent).
 
 ---
 
-### Task 1: Migration `000806_unified_rollout` — `testing` status + settings→flags backfill
+### Task 1: Migration `000807_unified_rollout` — `testing` status + settings→flags backfill
 
 **Files:**
-- Create: `migrations/000806_unified_rollout.up.sql`
-- Create: `migrations/000806_unified_rollout.down.sql`
+- Create: `migrations/000807_unified_rollout.up.sql`
+- Create: `migrations/000807_unified_rollout.down.sql`
 
 **Interfaces:**
 - Produces: `roadmap_items.status` accepts `'testing'`; `feature_flags` rows exist for every gated-but-unseeded key.
@@ -34,7 +34,7 @@
 - [ ] **Step 1: Write the up migration**
 
 ```sql
--- 000806_unified_rollout.up.sql
+-- 000807_unified_rollout.up.sql
 -- Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.3, §7
 
 -- 1) Roadmap status gains 'testing' (§113 lifecycle extension).
@@ -91,7 +91,7 @@ ON CONFLICT (key) DO NOTHING;
 - [ ] **Step 2: Write the down migration**
 
 ```sql
--- 000806_unified_rollout.down.sql
+-- 000807_unified_rollout.down.sql
 -- Revert 'testing' from the roadmap status enum. Fail loudly if rows use it.
 DO $$
 BEGIN
@@ -121,7 +121,7 @@ Expected: insert succeeds, delete succeeds.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add migrations/000806_unified_rollout.*.sql
+git add migrations/000807_unified_rollout.*.sql
 git commit -m "migrate: roadmap testing status + settings->flags backfill (000806)"
 ```
 
