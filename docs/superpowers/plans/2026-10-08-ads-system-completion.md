@@ -47,7 +47,7 @@ directly in `active` status (admin-authored, no review gate).
 ## Serving Targeting
 
 `GET /ads/serve?slot=<name>&space_id=<uuid>` enforces `target_geo` (ISO codes)
-against `visitor.FromContext(ctx).ContentCountry` (GeoIP + profile, ADR-064a)
+against `visitor.FromContext(ctx).CurrentCountry` (GeoIP + profile, ADR-064a)
 and `target_space_ids` against the optional `space_id` param. Empty target
 arrays = untargeted. Visitors with no resolved country only see untargeted
 campaigns. Event type vocabulary: `impression`, `click`, `conversion`.
@@ -357,7 +357,7 @@ Note the behavior change: unknown slot name returns `[]` not an error — previo
 
 ```go
 vc := visitor.FromContext(r.Context())
-campaigns, err := h.Service.RenderSlot(r.Context(), userID, slotName, vc.ContentCountry, spaceID)
+campaigns, err := h.Service.RenderSlot(r.Context(), userID, slotName, vc.CurrentCountry, spaceID)
 ```
 
 Import `github.com/jedafe/japa/internal/visitor`. Also `campaignToWire`: add `"is_house": c.IsHouse`.

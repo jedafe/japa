@@ -442,7 +442,7 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 // Returns eligible campaigns for the given slot. Empty result when no match
 // — never a placeholder. Public (catalog: GET /ads/serve) — guests are served
 // the untargeted/default eligible set. Geo targeting uses the visitor
-// context's ContentCountry (enriched upstream by the visitor middleware);
+// context's CurrentCountry (enriched upstream by the visitor middleware);
 // space targeting uses the optional space_id query param. Paid campaigns are
 // served first; house ads fill the slot when none are eligible (§25).
 func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
@@ -469,7 +469,12 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	country := visitor.FromContext(r.Context()).ContentCountry
+	// CurrentCountry (GeoIP / space-hierarchy enriched) is the visitor's
+	// actual location — the field advertisers target. ContentCountry would
+	// be wrong here: it's the content locale being browsed (an NG visitor
+	// reading DE-space content resolves DE) and it never empties, which
+	// would silently mistarget country-less visitors to the default.
+	country := visitor.FromContext(r.Context()).CurrentCountry
 
 	campaigns, err := h.Service.RenderSlot(r.Context(), userID, slotName, country, spaceID)
 	if err != nil {

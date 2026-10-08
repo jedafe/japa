@@ -87,8 +87,8 @@
 	}
 
 	async function handleClick(e: MouseEvent): Promise<void> {
-		if (!campaign?.target_url) return;
 		e.preventDefault();
+		if (!campaign?.target_url) return;
 		// Track click event (fire-and-forget). Same {events: [...]} shape.
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]

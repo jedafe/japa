@@ -37,7 +37,7 @@ gaps, no house-ad concept, and a provider list limited to four networks:
 |---|---|
 | **Paid tier** | Campaigns with `is_house = false` — admin-managed and self-serve. Served first. |
 | **House tier** | Campaigns with `is_house = true` — admin-only, free, serves only when no paid campaign is eligible for a slot. |
-| **Serve context** | `slot` (required), `space_id` (optional), visitor's resolved `ContentCountry` (from `internal/visitor` middleware). |
+| **Serve context** | `slot` (required), `space_id` (optional), visitor's `CurrentCountry` (from `internal/visitor` middleware). |
 | **Native ad** | A campaign rendered by `NativeAd.svelte` styled like a feed card, labeled "Sponsored". |
 | **In-article ad** | A campaign injected inside sanitized article HTML at a paragraph boundary by `InArticleAd.svelte`. |
 
@@ -49,8 +49,8 @@ gaps, no house-ad concept, and a provider list limited to four networks:
 
 **Targeting.** `GET /ads/serve` accepts `?space_id=` (UUID, optional) in addition to
 `?slot=`. `RenderSlot` resolves the visitor's country via
-`visitor.FromContext(ctx).ContentCountry` — the visitor middleware is already mounted
-upstream of the ads routes and enriches `ContentCountry` from GeoIP plus the signed-in
+`visitor.FromContext(ctx).CurrentCountry` — the visitor middleware is already mounted
+upstream of the ads routes and enriches `CurrentCountry` from GeoIP plus the signed-in
 user's profile. When empty (no GeoIP DB, anonymous), only untargeted campaigns match.
 
 New sqlc query `ListEligibleCampaignsForServing(slot_type_id, user_country, space_id, is_house)`:

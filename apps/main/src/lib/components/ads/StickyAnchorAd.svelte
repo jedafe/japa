@@ -69,8 +69,8 @@
 	}
 
 	function handleClick(e: MouseEvent): void {
-		if (!campaign?.target_url) return;
 		e.preventDefault();
+		if (!campaign?.target_url) return;
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
 		});

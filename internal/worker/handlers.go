@@ -3623,6 +3623,15 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 		return err
 	}
 
+	// Drop unknown event types instead of letting them fail the
+	// ad_events_event_type_check constraint and retry to dead-letter.
+	switch payload.EventType {
+	case "impression", "click", "conversion":
+	default:
+		slog.Warn("task:ad:ingest_event_batch: unknown event_type, dropping", "event_type", payload.EventType)
+		return nil
+	}
+
 	campaignID, err := scanUUID(payload.CampaignID)
 	if err != nil {
 		return fmt.Errorf("task:ad:ingest_event_batch: %w", err)
@@ -3714,6 +3723,12 @@ func HandleAdsAccrueSpendDaily(ctx context.Context, t *asynq.Task) error {
 
 	campaigns, err := queries.ListActiveFlatRateCampaigns(ctx)
 	if err != nil {
+		// Release the day lock so the asynq retry can actually run — holding
+		// it after a failure would no-op every retry and skip the day's
+		// accrual entirely.
+		if rdb != nil {
+			rdb.Del(ctx, dateKey)
+		}
 		return fmt.Errorf("task:ad:accrue_spend_daily: %w", err)
 	}
 
