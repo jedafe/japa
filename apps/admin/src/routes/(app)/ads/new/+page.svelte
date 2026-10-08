@@ -32,6 +32,7 @@
 	let name = $state('');
 	let slotTypeName = $state('');
 	let targetUrl = $state('');
+	let isHouse = $state(false);
 	let budget = $state('');
 	let priority = $state(0);
 	let frequencyCap = $state('');
@@ -174,7 +175,8 @@
 				priority: Number(priority) || 0
 			};
 			if (targetUrl) body.target_url = targetUrl;
-			if (budget) body.budget = Number(budget);
+			if (isHouse) body.is_house = true;
+			if (budget && !isHouse) body.budget = Number(budget);
 			if (frequencyCap) body.frequency_cap_per_user = Number(frequencyCap);
 			if (startDate) body.start_date = new Date(startDate).toISOString();
 			if (endDate) body.end_date = new Date(endDate).toISOString();
@@ -389,11 +391,21 @@
 		<div class="rounded-lg border p-6 space-y-4" style="border-color: var(--color-border); background-color: var(--color-surface)">
 			<h2 class="text-sm font-semibold uppercase tracking-wider" style="color: var(--color-muted)">{t('ads.budget_schedule', 'Budget & Schedule')}</h2>
 
+			<!-- §25 amendment: house ads fill a slot only when no paid/self-serve
+			     campaign is eligible — they carry no budget and need no review. -->
+			<label class="flex items-start gap-3 rounded-md border px-3 py-2.5 text-sm" style="border-color: var(--color-border)">
+				<input type="checkbox" class="mt-0.5" bind:checked={isHouse} />
+				<span>
+					<span class="block font-medium">{t('ads.is_house', 'House ad (fallback fill)')}</span>
+					<span class="block text-xs" style="color: var(--color-muted)">{t('ads.is_house_helper', 'Shown only when no paid campaign fills the slot. No budget required.')}</span>
+				</span>
+			</label>
+
 			<div class="grid grid-cols-2 gap-4">
 				<div>
 					<label for="ad-budget" class="mb-1 block text-sm font-medium">{t('ads.budget', 'Budget (credits)')}</label>
-					<input id="ad-budget" type="number" min="0" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={budget} placeholder="1000" />
-					<p class="mt-1 text-xs" style="color: var(--color-muted)">{t('ads.budget_helper', 'Minimum 10 credits if specified')}</p>
+					<input id="ad-budget" type="number" min="0" disabled={isHouse} class="w-full rounded-md border px-3 py-2 text-sm disabled:opacity-50" style="border-color: var(--color-border); background-color: var(--color-background)" bind:value={budget} placeholder={isHouse ? '—' : '1000'} />
+					<p class="mt-1 text-xs" style="color: var(--color-muted)">{isHouse ? t('ads.budget_house_helper', 'Not applicable for house ads') : t('ads.budget_helper', 'Minimum 10 credits if specified')}</p>
 				</div>
 				<div>
 					<label for="ad-priority" class="mb-1 block text-sm font-medium">{t('ads.priority', 'Priority')}</label>

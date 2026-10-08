@@ -23,6 +23,7 @@
 		impressions: number;
 		clicks: number;
 		budget: number;
+		is_house?: boolean;
 		start_date: string;
 		end_date: string;
 		created_at: string;
@@ -76,6 +77,14 @@
 	let rejectCampaignTarget = $state<Campaign | null>(null);
 
 	let searchQuery = $state('');
+	// §25 amendment: house ads are the admin-owned fallback tier — filter the
+	// campaign list to isolate them ('paid' = self-serve + regular campaigns).
+	let houseFilter = $state<'all' | 'paid' | 'house'>('all');
+	const filteredCampaigns = $derived(
+		houseFilter === 'all'
+			? campaigns
+			: campaigns.filter((c) => (houseFilter === 'house') === !!c.is_house)
+	);
 
 	let selectedCampaignIds = $state<Set<string>>(new Set());
 	let selectedBoostIds = $state<Set<string>>(new Set());
@@ -107,6 +116,7 @@
 			render: (_: any, row: any) => `
 				<div>
 					<a href="/ads/${row.id}" class="font-medium text-foreground hover:underline">${row.name}</a>
+					${row.is_house ? '<span class="ml-1 inline-flex items-center rounded-full border border-info bg-info/15 px-2 py-0.5 text-[10px] font-semibold text-info">house</span>' : ''}
 					<p class="text-xs text-muted">${row.start_date ?? ''} &mdash; ${row.end_date ?? 'ongoing'}</p>
 				</div>
 			`
@@ -115,7 +125,7 @@
 		{ key: 'impressions', label: t('ads.col_impressions', 'Impressions'), sortable: true, render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>` },
 		{ key: 'clicks', label: t('ads.col_clicks', 'Clicks'), sortable: true, render: (value: number) => `<span class="font-medium">${(value ?? 0).toLocaleString()}</span>` },
 		{ key: 'ctr', label: t('ads.col_ctr', 'CTR'), render: (_: any, row: any) => `<span class="text-sm">${row.impressions > 0 ? ((row.clicks / row.impressions) * 100).toFixed(1) : '0.0'}%</span>` },
-		{ key: 'budget', label: t('ads.col_budget', 'Budget'), sortable: true, render: (value: number) => `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>` }
+		{ key: 'budget', label: t('ads.col_budget', 'Budget'), sortable: true, render: (value: number, row: any) => row.is_house ? '<span class="text-sm text-muted">—</span>' : `<span class="text-sm font-medium">${(value ?? 0).toLocaleString()}</span>` }
 	]);
 
 	const boostColumns = $derived([
@@ -420,11 +430,26 @@
 	{#if loading}
 		<p class="py-8 text-center text-sm text-muted">{t('common.loading')}</p>
 	{:else if activeTab === 'campaigns'}
+		<div class="flex items-center gap-1">
+			{#each [
+				{ value: 'all', label: t('ads.filter_all', 'All') },
+				{ value: 'paid', label: t('ads.filter_paid', 'Paid') },
+				{ value: 'house', label: t('ads.filter_house', 'House') }
+			] as opt (opt.value)}
+				<button
+					type="button"
+					class="rounded-full border px-3 py-1 text-xs font-medium transition-colors {houseFilter === opt.value ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted hover:text-foreground'}"
+					onclick={() => (houseFilter = opt.value as typeof houseFilter)}
+				>
+					{opt.label}
+				</button>
+			{/each}
+		</div>
 		<Card>
 			<CardContent class="p-0">
 				<DataTable
 					columns={campaignColumns}
-					data={campaigns}
+					data={filteredCampaigns}
 					pageSize={20}
 					emptyMessage={t('ads.empty')}
 					searchable
