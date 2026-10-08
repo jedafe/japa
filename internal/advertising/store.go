@@ -146,6 +146,36 @@ func (s *Store) listActiveCampaignsBySlot(ctx context.Context, slotTypeID pgtype
 	})
 }
 
+// listEligibleCampaigns returns active campaigns for a slot filtered by the
+// is_house tier plus geo/space targeting. Empty userCountry/spaceID resolve
+// to NULL params — NULL = ANY(array) yields NULL, so targeted campaigns are
+// excluded for country-less visitors and untargeted space requests, which is
+// the documented §25 semantics.
+func (s *Store) listEligibleCampaigns(ctx context.Context, slotTypeID pgtype.UUID, userCountry, spaceID string, isHouse bool, limit int32) ([]AdCampaign, error) {
+	if limit <= 0 || limit > MaxPageSize {
+		limit = DefaultPageSize
+	}
+
+	var country *string
+	if userCountry != "" {
+		country = &userCountry
+	}
+
+	var space pgtype.UUID
+	if spaceID != "" {
+		_ = space.Scan(spaceID)
+	}
+
+	return s.queries.ListEligibleCampaignsForServing(ctx, gen.ListEligibleCampaignsForServingParams{
+		SlotTypeID:  slotTypeID,
+		IsHouse:     isHouse,
+		UserCountry: country,
+		SpaceID:     space,
+		PageLimit:   limit,
+		PageOffset:  0,
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Ad Events (batched ingestion)
 // ---------------------------------------------------------------------------

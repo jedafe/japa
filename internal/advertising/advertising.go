@@ -17,6 +17,18 @@ const (
 	SlotSearchSponsored     = "search_sponsored"
 	SlotComparisonSponsored = "comparison_sponsored"
 	SlotForumInline         = "forum_inline"
+
+	// §25 amendment — house-fallback + new placements (migration 000814).
+	SlotLeftRail             = "left_rail"
+	SlotArticleInline        = "article_inline"
+	SlotArticleBelowComments = "article_below_comments"
+	SlotCommentsBelow        = "comments_below"
+	SlotNativeFeed           = "native_feed"
+	SlotNativeDiscover       = "native_discover"
+	SlotNativeSpaceFeed      = "native_space_feed"
+	SlotNativeForum          = "native_forum"
+	SlotStickyAnchor         = "sticky_anchor"
+	SlotSidebarSticky        = "sidebar_sticky"
 )
 
 // Campaign statuses.
@@ -33,6 +45,7 @@ const (
 const (
 	EventTypeImpression = "impression"
 	EventTypeClick      = "click"
+	EventTypeConversion = "conversion"
 )
 
 // Organization boost statuses.

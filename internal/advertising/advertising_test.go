@@ -2,6 +2,8 @@ package advertising
 
 import (
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestSlotConstants(t *testing.T) {
@@ -120,5 +122,66 @@ func TestNewHandlers(t *testing.T) {
 
 	if handlers.Service != service {
 		t.Error("NewHandlers.Service does not match")
+	}
+}
+
+func TestSlotConstants_NewPlacements(t *testing.T) {
+	t.Parallel()
+
+	slots := map[string]string{
+		"left_rail":              SlotLeftRail,
+		"article_inline":         SlotArticleInline,
+		"article_below_comments": SlotArticleBelowComments,
+		"comments_below":         SlotCommentsBelow,
+		"native_feed":            SlotNativeFeed,
+		"native_discover":        SlotNativeDiscover,
+		"native_space_feed":      SlotNativeSpaceFeed,
+		"native_forum":           SlotNativeForum,
+		"sticky_anchor":          SlotStickyAnchor,
+		"sidebar_sticky":         SlotSidebarSticky,
+	}
+
+	for want, got := range slots {
+		if got != want {
+			t.Errorf("slot constant = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestEventTypeConversion(t *testing.T) {
+	t.Parallel()
+
+	if EventTypeConversion != "conversion" {
+		t.Errorf("EventTypeConversion = %s, want conversion", EventTypeConversion)
+	}
+}
+
+// House campaigns must never enter the self-serve review queue — the check
+// returns before any store access, so a nil-store Service is safe here.
+func TestCreateCampaign_HouseRejectsPendingReview(t *testing.T) {
+	t.Parallel()
+
+	svc := &Service{}
+	_, err := svc.CreateCampaign(t.Context(), pgtype.UUID{}, CreateCampaignInput{
+		Name:         "House fallback",
+		SlotTypeName: "sidebar",
+		IsHouse:      true,
+		Status:       CampaignStatusPendingReview,
+	})
+	if err == nil {
+		t.Fatal("expected error for house + pending_review, got nil")
+	}
+}
+
+func TestCreateCampaign_RequiresNameAndSlot(t *testing.T) {
+	t.Parallel()
+
+	svc := &Service{}
+
+	if _, err := svc.CreateCampaign(t.Context(), pgtype.UUID{}, CreateCampaignInput{SlotTypeName: "sidebar"}); err == nil {
+		t.Error("expected error for missing name")
+	}
+	if _, err := svc.CreateCampaign(t.Context(), pgtype.UUID{}, CreateCampaignInput{Name: "x"}); err == nil {
+		t.Error("expected error for missing slot_type_name")
 	}
 }

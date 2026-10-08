@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -173,6 +174,8 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		EndDate             string                 `json:"end_date"`
 		TargetGeo           []string               `json:"target_geo"`
 		TargetSpaceIDs      []string               `json:"target_space_ids"`
+		IsHouse             bool                   `json:"is_house"`
+		Status              string                 `json:"status"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -244,6 +247,8 @@ func (h *Handlers) CreateCampaign(w http.ResponseWriter, r *http.Request) {
 		EndDate:             endDate,
 		TargetGeo:           input.TargetGeo,
 		TargetSpaceIDs:      targetSpaceIDs,
+		IsHouse:             input.IsHouse,
+		Status:              input.Status,
 	})
 	if err != nil {
 		handleServiceError(w, err)
@@ -433,11 +438,13 @@ func (h *Handlers) RejectCampaign(w http.ResponseWriter, r *http.Request) {
 // Ad Rendering Handler
 // ---------------------------------------------------------------------------
 
-// RenderSlot handles GET /api/v1/ads/serve?slot={slot_name}.
+// RenderSlot handles GET /api/v1/ads/serve?slot={slot_name}&space_id={uuid}.
 // Returns eligible campaigns for the given slot. Empty result when no match
 // — never a placeholder. Public (catalog: GET /ads/serve) — guests are served
-// the untargeted/default eligible set; usergroup-based targeting is not yet
-// implemented (no targeting column on ad_campaigns — deferred, see plan P5).
+// the untargeted/default eligible set. Geo targeting uses the visitor
+// context's ContentCountry (enriched upstream by the visitor middleware);
+// space targeting uses the optional space_id query param. Paid campaigns are
+// served first; house ads fill the slot when none are eligible (§25).
 func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 
 	slotName := r.URL.Query().Get("slot")
@@ -454,7 +461,17 @@ func (h *Handlers) RenderSlot(w http.ResponseWriter, r *http.Request) {
 		userID = user.UserID
 	}
 
-	campaigns, err := h.Service.RenderSlot(r.Context(), userID, slotName)
+	var spaceID string
+	if raw := r.URL.Query().Get("space_id"); raw != "" {
+		var u pgtype.UUID
+		if err := u.Scan(raw); err == nil {
+			spaceID = raw
+		}
+	}
+
+	country := visitor.FromContext(r.Context()).ContentCountry
+
+	campaigns, err := h.Service.RenderSlot(r.Context(), userID, slotName, country, spaceID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -495,6 +512,7 @@ func campaignToWire(c AdCampaign) map[string]any {
 		"organization_id":        c.OrganizationID,
 		"flat_rate":              c.FlatRate,
 		"budget_credits":         c.BudgetCredits,
+		"is_house":               c.IsHouse,
 	}
 }
 
@@ -534,7 +552,7 @@ func (h *Handlers) IngestEvents(w http.ResponseWriter, r *http.Request) {
 	ingested := 0
 
 	for _, e := range input.Events {
-		if e.EventType != EventTypeImpression && e.EventType != EventTypeClick {
+		if e.EventType != EventTypeImpression && e.EventType != EventTypeClick && e.EventType != EventTypeConversion {
 			continue
 		}
 
@@ -950,8 +968,9 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input struct {
-		Name   string `json:"name"`
-		Budget *int64 `json:"budget"`
+		Name    string `json:"name"`
+		Budget  *int64 `json:"budget"`
+		IsHouse *bool  `json:"is_house"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -959,7 +978,7 @@ func (h *Handlers) UpdateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	campaign, err := h.Service.UpdateCampaignDetails(r.Context(), id, input.Name, input.Budget)
+	campaign, err := h.Service.UpdateCampaignDetails(r.Context(), id, input.Name, input.Budget, input.IsHouse)
 	if err != nil {
 		handleServiceError(w, err)
 		return

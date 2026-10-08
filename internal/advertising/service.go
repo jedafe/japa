@@ -28,6 +28,13 @@ type CreateCampaignInput struct {
 	EndDate             *time.Time
 	TargetGeo           []string
 	TargetSpaceIDs      []pgtype.UUID
+	// IsHouse marks the campaign as a house ad (fallback fill tier, §25
+	// amendment). House ads are admin-only (organization_id stays NULL),
+	// skip the minimum-budget check, and may be created directly 'active'.
+	IsHouse bool
+	// Status optionally overrides the default 'draft' status. Only honored
+	// for house ads — paid/admin campaigns always start as 'draft'.
+	Status string
 }
 
 // CreateCampaign creates a new ad campaign (admin-only in V1).
@@ -40,7 +47,18 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, inp
 		return AdCampaign{}, errors.New("slot_type_name is required")
 	}
 
-	if input.Budget != nil {
+	status := CampaignStatusDraft
+
+	// House ads skip the review gate and budget floor — they are the
+	// platform's own fallback inventory, not sellable placements.
+	if input.IsHouse {
+		if input.Status == CampaignStatusPendingReview {
+			return AdCampaign{}, errors.New("house campaigns cannot enter pending_review")
+		}
+		if input.Status == CampaignStatusActive {
+			status = CampaignStatusActive
+		}
+	} else if input.Budget != nil {
 		minBudget := float64(10)
 		if s.settings != nil {
 			minBudget = s.settings.GetFloatOr(ctx, "ads.min_campaign_budget", minBudget)
@@ -86,7 +104,8 @@ func (s *Service) CreateCampaign(ctx context.Context, createdBy pgtype.UUID, inp
 		Content:             content,
 		TargetUrl:           targetURL,
 		Budget:              input.Budget,
-		Status:              CampaignStatusDraft,
+		Status:              status,
+		IsHouse:             input.IsHouse,
 		Priority:            input.Priority,
 		FrequencyCapPerUser: input.FrequencyCapPerUser,
 		StartDate:           startDate,
@@ -197,15 +216,16 @@ func (s *Service) EndCampaign(ctx context.Context, id pgtype.UUID) (AdCampaign, 
 }
 
 // UpdateCampaignDetails partially updates a campaign's editable fields
-// (name and budget). ad_campaigns has no description column; the previous
-// raw-SQL handler referenced one and would 500. Uses the generated
+// (name, budget, is_house). ad_campaigns has no description column; the
+// previous raw-SQL handler referenced one and would 500. Uses the generated
 // UpdateAdCampaignDetails query (COALESCE-based partial update).
-func (s *Service) UpdateCampaignDetails(ctx context.Context, id pgtype.UUID, name string, budget *int64) (AdCampaign, error) {
+func (s *Service) UpdateCampaignDetails(ctx context.Context, id pgtype.UUID, name string, budget *int64, isHouse *bool) (AdCampaign, error) {
 	return s.store.Queries().UpdateAdCampaignDetails(ctx, gen.UpdateAdCampaignDetailsParams{
 		ID: id,
 
-		Name:   name,
-		Budget: budget,
+		Name:    name,
+		Budget:  budget,
+		IsHouse: isHouse,
 	})
 }
 
@@ -218,29 +238,52 @@ func (s *Service) GetSlotType(ctx context.Context, id pgtype.UUID) (AdSlotType, 
 	)
 }
 
-// RenderSlot returns eligible campaigns for a slot.
-// Returns empty slice (never an error with nil campaigns) when no match.
-func (s *Service) RenderSlot(ctx context.Context, userID pgtype.UUID, slotName string) ([]AdCampaign, error) {
+// RenderSlot returns eligible campaigns for a slot, filtered by geo/space
+// targeting. Paid/self-serve campaigns (is_house=false) are tried first; when
+// none are eligible the house tier (is_house=true) fills the slot as
+// fallback inventory. Returns an empty slice (never an error) when nothing
+// matches — including for unknown slot names.
+// Ref: sections/25-ad-placement.md (Amendment — serving targeting + house tier).
+func (s *Service) RenderSlot(ctx context.Context, userID pgtype.UUID, slotName, userCountry, spaceID string) ([]AdCampaign, error) {
 	slotType, err := s.store.Queries().GetAdSlotTypeByName(ctx,
 
 		slotName,
 	)
 	if err != nil {
-		return []AdCampaign{}, fmt.Errorf("resolving slot type: %w", err)
+		return []AdCampaign{}, nil // unknown slot → empty, never an error to the caller
 	}
 
-	campaigns, err := s.store.listActiveCampaignsBySlot(ctx, slotType.ID,
-		slotType.MaxDisplayPerPage, 0)
+	// Paid/self-serve tier first.
+	campaigns, err := s.store.listEligibleCampaigns(ctx, slotType.ID, userCountry, spaceID, false, slotType.MaxDisplayPerPage)
 	if err != nil {
-		return nil, fmt.Errorf("listing active campaigns: %w", err)
+		return nil, fmt.Errorf("listing eligible campaigns: %w", err)
 	}
 
-	// If no campaigns exist or none are active, return empty — never a placeholder.
-	if len(campaigns) == 0 {
-		return []AdCampaign{}, nil
+	filtered, err := s.filterByFrequencyCap(ctx, campaigns, userID)
+	if err != nil {
+		return nil, err
 	}
 
-	// Apply frequency capping per user/day.
+	if len(filtered) == 0 {
+		// House tier — fill unsold inventory when no paid/self-serve
+		// campaign survives eligibility + frequency capping.
+		campaigns, err = s.store.listEligibleCampaigns(ctx, slotType.ID, userCountry, spaceID, true, slotType.MaxDisplayPerPage)
+		if err != nil {
+			return nil, fmt.Errorf("listing house campaigns: %w", err)
+		}
+		filtered, err = s.filterByFrequencyCap(ctx, campaigns, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return filtered, nil
+}
+
+// filterByFrequencyCap applies the per-user/day impression cap
+// (per-campaign override or the ads.frequency_cap_per_day setting) to a
+// candidate campaign list.
+func (s *Service) filterByFrequencyCap(ctx context.Context, campaigns []AdCampaign, userID pgtype.UUID) ([]AdCampaign, error) {
 	filtered := []AdCampaign{}
 
 	globalFreqCap := 0
@@ -301,7 +344,7 @@ func (s *Service) IngestAdEvents(ctx context.Context, events []IngestAdEventInpu
 	ingested := 0
 
 	for _, event := range events {
-		if event.EventType != EventTypeImpression && event.EventType != EventTypeClick {
+		if event.EventType != EventTypeImpression && event.EventType != EventTypeClick && event.EventType != EventTypeConversion {
 			continue
 		}
 
