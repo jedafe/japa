@@ -36,6 +36,16 @@ func (f fakeSettings) GetIntOr(_ context.Context, key string, fallback int) int 
 	return fallback
 }
 
+func (f fakeSettings) GetFloatOr(_ context.Context, key string, fallback float64) float64 {
+	if v, ok := f[key]; ok {
+		if n, err := strconv.ParseFloat(v, 64); err == nil {
+			return n
+		}
+	}
+
+	return fallback
+}
+
 func (f fakeSettings) GetStringOr(_ context.Context, key, fallback string) string {
 	if v, ok := f[key]; ok {
 		return v

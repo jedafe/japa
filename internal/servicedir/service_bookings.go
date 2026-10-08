@@ -804,6 +804,9 @@ func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UU
 			dto.MinPrice = r.PriceAmount
 		}
 
+		// §114 derived ribbon — has_coupon is already flag-gated above.
+		dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, dto.HasCoupon)
+
 		out = append(out, dto)
 	}
 

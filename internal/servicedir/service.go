@@ -126,6 +126,47 @@ type ServiceDTO struct {
 	// price (lowest active tier, fallback price_amount).
 	Tiers    []PackageTierDTO `json:"tiers,omitempty"`
 	MinPrice *int64           `json:"min_price,omitempty"`
+
+	// §114 structured content — faqs[]/steps[] ride the listing payloads
+	// (detail + list rows); omitted when the stored set is empty.
+	Faqs  []ServiceFaqDTO  `json:"faqs,omitempty"`
+	Steps []ServiceStepDTO `json:"steps,omitempty"`
+
+	// §114 derived status ribbon — 'popular' once the listing clears
+	// service_marketplace.badges.min_reviews, else 'best_value' when it
+	// carries a live coupon and clears service_marketplace.badges.min_rating.
+	// 'popular' wins; omitted when neither threshold is met. Stamped on
+	// list rows and the detail payload by the call sites that already
+	// stamp has_coupon/min_price (rowToDTO has no settings context).
+	Badge string `json:"badge,omitempty"`
+}
+
+// ServiceFaqDTO is one FAQ entry stored in service_listing_meta.faqs (§114).
+type ServiceFaqDTO struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+// ServiceStepDTO is one "how it works" step stored in
+// service_listing_meta.steps (§114).
+type ServiceStepDTO struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// ServiceFaqInput / ServiceStepInput are the write-side shapes for the
+// faqs[]/steps[] payloads. On PATCH a nil slice pointer means "keep the
+// stored set", an empty array clears it — the same replace-on-save
+// semantics as items[]/tiers[] (§111).
+type ServiceFaqInput struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+// ServiceStepInput — see ServiceFaqInput for the replace-on-save contract.
+type ServiceStepInput struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
 }
 
 // PackageItemDTO is one ordered component line item of a package (§111).
@@ -201,6 +242,10 @@ type CreateServiceInput struct {
 	Items          []PackageItemInput      `json:"items"`
 	Departures     []PackageDepartureInput `json:"departures"`
 	Tiers          []TierInput             `json:"tiers"`
+
+	// §114 structured content (all listing kinds).
+	Faqs  []ServiceFaqInput  `json:"faqs"`
+	Steps []ServiceStepInput `json:"steps"`
 }
 
 // EditServiceInput is the request body for PATCH /services/:id.
@@ -233,6 +278,11 @@ type EditServiceInput struct {
 	Items          *[]PackageItemInput      `json:"items"`
 	Departures     *[]PackageDepartureInput `json:"departures"`
 	Tiers          *[]TierInput             `json:"tiers"`
+
+	// §114 structured content — replace-on-save: nil keeps the stored set,
+	// an empty array clears it. Available on all listing kinds.
+	Faqs  *[]ServiceFaqInput  `json:"faqs"`
+	Steps *[]ServiceStepInput `json:"steps"`
 }
 
 // SettingsReader is the narrow settings contract servicedir needs
@@ -241,6 +291,7 @@ type EditServiceInput struct {
 type SettingsReader interface {
 	GetBoolOr(ctx context.Context, key string, fallback bool) bool
 	GetIntOr(ctx context.Context, key string, fallback int) int
+	GetFloatOr(ctx context.Context, key string, fallback float64) float64
 	GetStringOr(ctx context.Context, key, fallback string) string
 }
 
@@ -529,6 +580,21 @@ var (
 	// ErrInvalidFeaturedMedia — featured_media_id failed UUID parsing on a
 	// create/edit payload (400 invalid_featured_media_id).
 	ErrInvalidFeaturedMedia = errors.New("invalid featured_media_id")
+)
+
+// §114 structured-content sentinels — faqs[]/steps[] write validation
+// (400 too_many_faqs / invalid_faq / too_many_steps / invalid_step).
+var (
+	// ErrTooManyFaqs — exceeds service_marketplace.content.max_faqs.
+	ErrTooManyFaqs = errors.New("too many faqs")
+	// ErrInvalidFaq — malformed faq entry (empty/oversized question,
+	// oversized answer).
+	ErrInvalidFaq = errors.New("invalid faq")
+	// ErrTooManySteps — exceeds service_marketplace.content.max_steps.
+	ErrTooManySteps = errors.New("too many steps")
+	// ErrInvalidStep — malformed step entry (empty/oversized title,
+	// oversized description).
+	ErrInvalidStep = errors.New("invalid step")
 )
 
 // ---------------------------------------------------------------------------
@@ -914,6 +980,18 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		return ServiceDTO{}, err
 	}
 
+	// §114: faqs[]/steps[] apply to all listing kinds — validate + encode
+	// to the jsonb column shape before any write.
+	faqsJSON, err := s.encodeListingFaqs(ctx, input.Faqs)
+	if err != nil {
+		return ServiceDTO{}, err
+	}
+
+	stepsJSON, err := s.encodeListingSteps(ctx, input.Steps)
+	if err != nil {
+		return ServiceDTO{}, err
+	}
+
 	// tiers[] is gated on service_packages.tiers_enabled — with the flag
 	// off the field is silently ignored (no validation, no write).
 	var tierParams []gen.CreateServicePackageTierParams
@@ -965,6 +1043,8 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		Capacity:           input.Capacity,
 		AvailableFrom:      availableFrom,
 		AvailableUntil:     availableUntil,
+		Faqs:               faqsJSON,
+		Steps:              stepsJSON,
 	}
 
 	// §111: packages are org-authored only — they never enter the §98
@@ -1104,6 +1184,147 @@ func (s *Service) validatePackageItems(ctx context.Context, orgID pgtype.UUID, i
 	return params, nil
 }
 
+// §114 badge values — the derived status ribbon on listing payloads.
+const (
+	BadgePopular   = "popular"
+	BadgeBestValue = "best_value"
+)
+
+// deriveBadge computes the §114 marketplace ribbon: 'popular' once the
+// listing's review count clears service_marketplace.badges.min_reviews
+// (default 10), else 'best_value' when it carries a live coupon and its
+// rating clears service_marketplace.badges.min_rating (default 4.0).
+// 'popular' takes precedence; "" means no badge. hasCoupon must already
+// reflect the service_coupons.enabled gate (call sites that suppress
+// has_coupon when the flag is off pass the gated value through).
+func (s *Service) deriveBadge(ctx context.Context, reviewCount int32, ratingAvg float64, hasCoupon bool) string {
+	if s.settings == nil {
+		return ""
+	}
+
+	minReviews := s.settings.GetIntOr(ctx, "service_marketplace.badges.min_reviews", 10)
+	if minReviews > 0 && int64(reviewCount) >= int64(minReviews) {
+		return BadgePopular
+	}
+
+	minRating := s.settings.GetFloatOr(ctx, "service_marketplace.badges.min_rating", 4.0)
+	if hasCoupon && ratingAvg >= minRating {
+		return BadgeBestValue
+	}
+
+	return ""
+}
+
+// §114 faqs[]/steps[] field length caps (system_settings cap the count;
+// these bound the per-entry text — same convention as the §98 label
+// length checks).
+const (
+	maxFaqStepTitleLen = 300  // question / step title
+	maxFaqStepBodyLen  = 2000 // answer / step description
+)
+
+// encodeListingFaqs validates the faqs[] write payload against
+// service_marketplace.content.max_faqs and the per-entry field caps, then
+// marshals to the jsonb column shape. An empty (or nil) set encodes '[]'
+// — callers clearing the field on PATCH rely on that.
+func (s *Service) encodeListingFaqs(ctx context.Context, faqs []ServiceFaqInput) ([]byte, error) {
+	maxFaqs := 12
+	if s.settings != nil {
+		maxFaqs = s.settings.GetIntOr(ctx, "service_marketplace.content.max_faqs", 12)
+	}
+
+	if len(faqs) > maxFaqs {
+		return nil, ErrTooManyFaqs
+	}
+
+	out := make([]ServiceFaqDTO, 0, len(faqs))
+
+	for i, f := range faqs {
+		q := strings.TrimSpace(f.Question)
+		if q == "" || len(q) > maxFaqStepTitleLen {
+			return nil, fmt.Errorf("faqs[%d]: question must be 1-%d characters: %w", i, maxFaqStepTitleLen, ErrInvalidFaq)
+		}
+
+		if len(f.Answer) > maxFaqStepBodyLen {
+			return nil, fmt.Errorf("faqs[%d]: answer must be %d characters or fewer: %w", i, maxFaqStepBodyLen, ErrInvalidFaq)
+		}
+
+		out = append(out, ServiceFaqDTO{Question: q, Answer: f.Answer})
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: marshal faqs: %w", err)
+	}
+
+	return b, nil
+}
+
+// encodeListingSteps validates the steps[] write payload against
+// service_marketplace.content.max_steps and the per-entry field caps,
+// then marshals to the jsonb column shape.
+func (s *Service) encodeListingSteps(ctx context.Context, steps []ServiceStepInput) ([]byte, error) {
+	maxSteps := 8
+	if s.settings != nil {
+		maxSteps = s.settings.GetIntOr(ctx, "service_marketplace.content.max_steps", 8)
+	}
+
+	if len(steps) > maxSteps {
+		return nil, ErrTooManySteps
+	}
+
+	out := make([]ServiceStepDTO, 0, len(steps))
+
+	for i, st := range steps {
+		title := strings.TrimSpace(st.Title)
+		if title == "" || len(title) > maxFaqStepTitleLen {
+			return nil, fmt.Errorf("steps[%d]: title must be 1-%d characters: %w", i, maxFaqStepTitleLen, ErrInvalidStep)
+		}
+
+		if len(st.Description) > maxFaqStepBodyLen {
+			return nil, fmt.Errorf("steps[%d]: description must be %d characters or fewer: %w", i, maxFaqStepBodyLen, ErrInvalidStep)
+		}
+
+		out = append(out, ServiceStepDTO{Title: title, Description: st.Description})
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: marshal steps: %w", err)
+	}
+
+	return b, nil
+}
+
+// decodeListingFaqs / decodeListingSteps read the jsonb columns back into
+// DTO slices — malformed or empty payloads produce nil (omitted from the
+// response) rather than failing the read.
+func decodeListingFaqs(raw []byte) []ServiceFaqDTO {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var out []ServiceFaqDTO
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+
+	return out
+}
+
+func decodeListingSteps(raw []byte) []ServiceStepDTO {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var out []ServiceStepDTO
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+
+	return out
+}
+
 // validatePackageDepartures validates the §111 departures[] payload.
 func validatePackageDepartures(deps []PackageDepartureInput) ([]gen.CreateServicePackageDepartureParams, error) {
 	if len(deps) == 0 {
@@ -1219,7 +1440,38 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 		}
 	}
 
+	// §114: stamp the derived ribbon on the detail payload too — the
+	// detail row carries no has_coupon column, so the attached (flag-gated)
+	// coupons set stands in for it.
+	dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, dto.HasCoupon || len(dto.Coupons) > 0)
+
 	return dto, nil
+}
+
+// EnsurePublishedListing applies the same public-visibility gate GetBySlug
+// enforces — published status, non-deleted, and the packages flag for
+// listing_kind='package' — for the id-keyed public subroutes
+// (GET /services/:id/reviews). Returns pgx.ErrNoRows when the listing is
+// not publicly visible.
+func (s *Service) EnsurePublishedListing(ctx context.Context, contentID pgtype.UUID) error {
+	row, err := s.store.GetByContentID(ctx, contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("servicedir: get by content id: %w", err)
+	}
+
+	if row.Status != content.StatusPublished {
+		return pgx.ErrNoRows
+	}
+
+	if row.ListingKind == ListingKindPackage && !s.PackagesEnabled(ctx) {
+		return pgx.ErrNoRows
+	}
+
+	return nil
 }
 
 // GetBySlugEditor returns a listing by slug without the published-status
@@ -1275,6 +1527,15 @@ func (s *Service) GetBySlugEditor(ctx context.Context, slug string, userID pgtyp
 			slog.Warn("servicedir: attach package data failed", "content_id", row.ID, "error", err)
 		}
 	}
+
+	// §114: same coupon + badge surface as the public detail so the editor
+	// sees the ribbon its listing earned. Best-effort like GetBySlug.
+	if s.CouponsEnabled(ctx) {
+		if coupons, err := s.ListingCouponsDTO(ctx, row.MetaID, true); err == nil {
+			dto.Coupons = coupons
+		}
+	}
+	dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, dto.HasCoupon || len(dto.Coupons) > 0)
 
 	return dto, nil
 }
@@ -1551,6 +1812,9 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 			dto.MinPrice = r.PriceAmount
 		}
 
+		// §114 derived ribbon — has_coupon is already flag-gated above.
+		dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, dto.HasCoupon)
+
 		dtos = append(dtos, dto)
 	}
 
@@ -1613,6 +1877,8 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		Capacity:           meta.Capacity,
 		AvailableFrom:      meta.AvailableFrom,
 		AvailableUntil:     meta.AvailableUntil,
+		Faqs:               meta.Faqs,
+		Steps:              meta.Steps,
 	}
 
 	if input.OrgID != nil && *input.OrgID != "" {
@@ -1766,6 +2032,23 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 			if !s.settings.GetBoolOr(ctx, "service_packages.fee_enabled", true) {
 				return ServiceDTO{}, ErrPurchaseModeUnavailable
 			}
+		}
+	}
+
+	// §114 faqs[]/steps[] — replace-on-save like items[]: nil keeps the
+	// stored set (carried into params above), [] clears it. Not
+	// package-gated — plain service listings carry these too.
+	if input.Faqs != nil {
+		params.Faqs, err = s.encodeListingFaqs(ctx, *input.Faqs)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
+	if input.Steps != nil {
+		params.Steps, err = s.encodeListingSteps(ctx, *input.Steps)
+		if err != nil {
+			return ServiceDTO{}, err
 		}
 	}
 
@@ -2272,6 +2555,10 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 		dto.AvailableUntil = r.AvailableUntil.Time.Format("2006-01-02")
 	}
 
+	// §114 structured content (jsonb arrays on service_listing_meta).
+	dto.Faqs = decodeListingFaqs(r.Faqs)
+	dto.Steps = decodeListingSteps(r.Steps)
+
 	return dto
 }
 
@@ -2366,6 +2653,10 @@ func metaToDTO(c gen.GetContentByIDRow, m gen.ServiceListingMetum) ServiceDTO {
 	if m.AvailableUntil.Valid {
 		dto.AvailableUntil = m.AvailableUntil.Time.Format("2006-01-02")
 	}
+
+	// §114 structured content.
+	dto.Faqs = decodeListingFaqs(m.Faqs)
+	dto.Steps = decodeListingSteps(m.Steps)
 
 	return dto
 }

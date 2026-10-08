@@ -242,6 +242,14 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "package_org_immutable", "A package's selling organization cannot change after creation")
 	case errors.Is(err, ErrInvalidFeaturedMedia):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_featured_media_id", "Invalid featured_media_id format")
+	case errors.Is(err, ErrTooManyFaqs):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_faqs", "Listing exceeds the maximum number of FAQs")
+	case errors.Is(err, ErrInvalidFaq):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_faq", "An FAQ entry is invalid")
+	case errors.Is(err, ErrTooManySteps):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_steps", "Listing exceeds the maximum number of steps")
+	case errors.Is(err, ErrInvalidStep):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step", "A step entry is invalid")
 	case errors.Is(err, ErrInvalidID):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid id")
 	case errors.Is(err, content.ErrEditWindowExpired):
@@ -445,6 +453,93 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 				resp["review_aggregate"] = agg
 			}
 		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, resp)
+}
+
+// parseReviewPageParams parses ?page=&limit= for the reviews subroute —
+// tighter clamp than the listing default (limit 10, max 50).
+func parseReviewPageParams(r *http.Request) (page, limit int32) {
+	page = 1
+	limit = 10
+
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
+		}
+	}
+
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > 50 {
+				n = 50
+			}
+
+			limit = int32(n) // #nosec
+		}
+	}
+
+	return page, limit
+}
+
+// HandleListReviews handles GET /services/:id/reviews — paginated public
+// reviews for a listing. {id} is the listing's contents id (the same param
+// shape as price-preview); the entity is the §29 polymorphic reviews table
+// with entity_type='service_listing'. Anonymous-readable like
+// /spaces/:id/reviews; the published-listing gate mirrors GetBySlug so
+// reviews never leak for in_review/draft rows. When the reviews fetcher
+// is unwired the response carries meta only (no data key) — the same
+// nil-fallback the detail payload uses.
+func (h *Handlers) HandleListReviews(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil || !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.EnsurePublishedListing(r.Context(), contentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		slog.Error("servicedir: reviews listing lookup failed", "content_id", contentID, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reviews_failed", "Failed to list reviews")
+
+		return
+	}
+
+	page, limit := parseReviewPageParams(r)
+	offset := (page - 1) * limit
+
+	var total int32
+	meta := map[string]any{"page": page, "limit": limit, "total": total}
+	resp := map[string]any{"meta": meta}
+
+	if h.reviews != nil {
+		// The aggregate doubles as the total — one fetch serves both.
+		if agg, aggErr := h.reviews.Aggregate(r.Context(), "service_listing", contentID); aggErr != nil {
+			slog.Warn("servicedir: fetch review aggregate for reviews list", "content_id", contentID, "error", aggErr)
+		} else {
+			total = agg.Count
+			meta["total"] = total
+		}
+
+		reviews, revErr := h.reviews.ListByEntity(r.Context(), "service_listing", contentID, limit, offset, "latest")
+		if revErr != nil {
+			slog.Error("servicedir: list reviews failed", "content_id", contentID, "error", revErr)
+			errpkg.WriteError(w, http.StatusInternalServerError, "reviews_failed", "Failed to list reviews")
+
+			return
+		}
+
+		h.resolveLiterals(r, &reviews)
+		resp["data"] = reviews
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, resp)

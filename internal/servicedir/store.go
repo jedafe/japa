@@ -250,6 +250,11 @@ type ServiceRow struct {
 	AvailableFrom  pgtype.Date
 	AvailableUntil pgtype.Date
 
+	// §114 structured content — raw jsonb arrays decoded by the DTO layer
+	// (decodeListingFaqs/decodeListingSteps).
+	Faqs  []byte
+	Steps []byte
+
 	// HasCoupon is the list-query badge column — true when the listing has
 	// at least one currently-active attached coupon. Populated only by the
 	// list/org-list queries (the EXISTS projection); detail rows leave it
@@ -291,6 +296,7 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
+		Faqs: r.Faqs, Steps: r.Steps,
 		HasCoupon: r.HasCoupon, MinPrice: r.MinPrice,
 	}
 }
@@ -323,6 +329,7 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
+		Faqs: r.Faqs, Steps: r.Steps,
 	}
 }
 
@@ -355,6 +362,7 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
+		Faqs: r.Faqs, Steps: r.Steps,
 	}
 }
 
@@ -381,6 +389,7 @@ func rowFromAdmin(r gen.AdminListServiceListingsRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
+		Faqs: r.Faqs, Steps: r.Steps,
 	}
 }
 
@@ -412,6 +421,7 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
+		Faqs: r.Faqs, Steps: r.Steps,
 		HasCoupon: r.HasCoupon, MinPrice: r.MinPrice,
 	}
 }

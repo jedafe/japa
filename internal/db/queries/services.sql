@@ -17,7 +17,7 @@ INSERT INTO service_listing_meta (
     city_space_id, origin_communities, is_remote, website_url, booking_url,
     price_range, is_verified, verification_type, claim_status, claimed_by_org_id,
     listing_kind, price_amount, price_currency, price_per, purchase_mode,
-    capacity, available_from, available_until
+    capacity, available_from, available_until, faqs, steps
 ) VALUES (
     @content_id, sqlc.narg(org_id), sqlc.narg(service_category),
     sqlc.narg(destination_space_id), sqlc.narg(city_space_id),
@@ -27,7 +27,8 @@ INSERT INTO service_listing_meta (
     COALESCE(sqlc.narg(claim_status), 'unclaimed'), sqlc.narg(claimed_by_org_id),
     COALESCE(sqlc.narg(listing_kind), 'service'), sqlc.narg(price_amount), sqlc.narg(price_currency),
     sqlc.narg(price_per), COALESCE(sqlc.narg(purchase_mode), 'inquiry'), sqlc.narg(capacity),
-    sqlc.narg(available_from), sqlc.narg(available_until)
+    sqlc.narg(available_from), sqlc.narg(available_until),
+    COALESCE(sqlc.narg(faqs), '[]'::jsonb), COALESCE(sqlc.narg(steps), '[]'::jsonb)
 ) RETURNING *;
 
 -- name: GetServiceListingMetaByContentID :one
@@ -60,6 +61,10 @@ SET org_id = sqlc.narg(org_id),
     capacity = sqlc.narg(capacity),
     available_from = sqlc.narg(available_from),
     available_until = sqlc.narg(available_until),
+    -- faqs/steps are replace-set jsonb arrays (nil keeps the stored set —
+    -- the service layer merges the patch over the row before calling).
+    faqs = COALESCE(sqlc.narg(faqs), faqs),
+    steps = COALESCE(sqlc.narg(steps), steps),
     updated_at = now()
 WHERE content_id = @content_id
 RETURNING *;
@@ -83,6 +88,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
@@ -117,6 +123,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
@@ -157,6 +164,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        COALESCE(
            (SELECT MIN(t.price_amount) FROM service_package_tiers t
@@ -237,6 +245,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
@@ -289,6 +298,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        COALESCE(
            (SELECT MIN(t.price_amount) FROM service_package_tiers t

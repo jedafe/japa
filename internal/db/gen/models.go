@@ -3520,6 +3520,8 @@ type ServiceListingMetum struct {
 	Capacity           *int32             `json:"capacity"`
 	AvailableFrom      pgtype.Date        `json:"available_from"`
 	AvailableUntil     pgtype.Date        `json:"available_until"`
+	Faqs               []byte             `json:"faqs"`
+	Steps              []byte             `json:"steps"`
 }
 
 type ServicePackageDeparture struct {
@@ -3630,6 +3632,15 @@ type SopDraft struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
+type SopField struct {
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	IsActive  bool               `json:"is_active"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 type SopSample struct {

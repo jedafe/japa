@@ -6979,6 +6979,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// Global OptionalAuth already populates the viewer context —
 				// ?raw=1 (editor view) reads it; guests get the published-only path.
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)
+				// Public paginated reviews for a listing (§114) — same
+				// anonymous-readable shape as /spaces/{id}/reviews; {id} is
+				// the listing's contents id.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
+					Get("/services/{id}/reviews", serviceDirHandlers.HandleListReviews)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.create")).
 					Post("/services", serviceDirHandlers.HandleCreate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).

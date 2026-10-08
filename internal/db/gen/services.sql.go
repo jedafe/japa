@@ -233,6 +233,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
@@ -312,6 +313,8 @@ type AdminListServiceListingsRow struct {
 	Capacity           *int32             `json:"capacity"`
 	AvailableFrom      pgtype.Date        `json:"available_from"`
 	AvailableUntil     pgtype.Date        `json:"available_until"`
+	Faqs               []byte             `json:"faqs"`
+	Steps              []byte             `json:"steps"`
 	AuthorName         *string            `json:"author_name"`
 	AuthorAvatar       *string            `json:"author_avatar"`
 }
@@ -382,6 +385,8 @@ func (q *Queries) AdminListServiceListings(ctx context.Context, arg AdminListSer
 			&i.Capacity,
 			&i.AvailableFrom,
 			&i.AvailableUntil,
+			&i.Faqs,
+			&i.Steps,
 			&i.AuthorName,
 			&i.AuthorAvatar,
 		); err != nil {
@@ -1169,7 +1174,7 @@ INSERT INTO service_listing_meta (
     city_space_id, origin_communities, is_remote, website_url, booking_url,
     price_range, is_verified, verification_type, claim_status, claimed_by_org_id,
     listing_kind, price_amount, price_currency, price_per, purchase_mode,
-    capacity, available_from, available_until
+    capacity, available_from, available_until, faqs, steps
 ) VALUES (
     $1, $2, $3,
     $4, $5,
@@ -1179,8 +1184,9 @@ INSERT INTO service_listing_meta (
     COALESCE($13, 'unclaimed'), $14,
     COALESCE($15, 'service'), $16, $17,
     $18, COALESCE($19, 'inquiry'), $20,
-    $21, $22
-) RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until
+    $21, $22,
+    COALESCE($23, '[]'::jsonb), COALESCE($24, '[]'::jsonb)
+) RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps
 `
 
 type CreateServiceListingMetaParams struct {
@@ -1206,6 +1212,8 @@ type CreateServiceListingMetaParams struct {
 	Capacity           *int32      `json:"capacity"`
 	AvailableFrom      pgtype.Date `json:"available_from"`
 	AvailableUntil     pgtype.Date `json:"available_until"`
+	Faqs               interface{} `json:"faqs"`
+	Steps              interface{} `json:"steps"`
 }
 
 // =====================================================================
@@ -1243,6 +1251,8 @@ func (q *Queries) CreateServiceListingMeta(ctx context.Context, arg CreateServic
 		arg.Capacity,
 		arg.AvailableFrom,
 		arg.AvailableUntil,
+		arg.Faqs,
+		arg.Steps,
 	)
 	var i ServiceListingMetum
 	err := row.Scan(
@@ -1273,6 +1283,8 @@ func (q *Queries) CreateServiceListingMeta(ctx context.Context, arg CreateServic
 		&i.Capacity,
 		&i.AvailableFrom,
 		&i.AvailableUntil,
+		&i.Faqs,
+		&i.Steps,
 	)
 	return i, err
 }
@@ -2034,6 +2046,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
@@ -2100,6 +2113,8 @@ type GetServiceListingByContentIDRow struct {
 	Capacity              *int32             `json:"capacity"`
 	AvailableFrom         pgtype.Date        `json:"available_from"`
 	AvailableUntil        pgtype.Date        `json:"available_until"`
+	Faqs                  []byte             `json:"faqs"`
+	Steps                 []byte             `json:"steps"`
 	AuthorName            *string            `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
@@ -2157,6 +2172,8 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.Capacity,
 		&i.AvailableFrom,
 		&i.AvailableUntil,
+		&i.Faqs,
+		&i.Steps,
 		&i.AuthorName,
 		&i.AuthorAvatar,
 		&i.FeaturedStorageBucket,
@@ -2183,6 +2200,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
@@ -2249,6 +2267,8 @@ type GetServiceListingBySlugRow struct {
 	Capacity              *int32             `json:"capacity"`
 	AvailableFrom         pgtype.Date        `json:"available_from"`
 	AvailableUntil        pgtype.Date        `json:"available_until"`
+	Faqs                  []byte             `json:"faqs"`
+	Steps                 []byte             `json:"steps"`
 	AuthorName            *string            `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
@@ -2309,6 +2329,8 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.Capacity,
 		&i.AvailableFrom,
 		&i.AvailableUntil,
+		&i.Faqs,
+		&i.Steps,
 		&i.AuthorName,
 		&i.AuthorAvatar,
 		&i.FeaturedStorageBucket,
@@ -2320,7 +2342,7 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 }
 
 const getServiceListingMetaByContentID = `-- name: GetServiceListingMetaByContentID :one
-SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until FROM service_listing_meta
+SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps FROM service_listing_meta
 WHERE content_id = $1
 `
 
@@ -2355,12 +2377,14 @@ func (q *Queries) GetServiceListingMetaByContentID(ctx context.Context, contentI
 		&i.Capacity,
 		&i.AvailableFrom,
 		&i.AvailableUntil,
+		&i.Faqs,
+		&i.Steps,
 	)
 	return i, err
 }
 
 const getServiceListingMetaByID = `-- name: GetServiceListingMetaByID :one
-SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until FROM service_listing_meta
+SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps FROM service_listing_meta
 WHERE id = $1
 `
 
@@ -2395,6 +2419,8 @@ func (q *Queries) GetServiceListingMetaByID(ctx context.Context, id pgtype.UUID)
 		&i.Capacity,
 		&i.AvailableFrom,
 		&i.AvailableUntil,
+		&i.Faqs,
+		&i.Steps,
 	)
 	return i, err
 }
@@ -3398,6 +3424,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        COALESCE(
            (SELECT MIN(t.price_amount) FROM service_package_tiers t
@@ -3507,6 +3534,8 @@ type ListServiceListingsRow struct {
 	Capacity              *int32             `json:"capacity"`
 	AvailableFrom         pgtype.Date        `json:"available_from"`
 	AvailableUntil        pgtype.Date        `json:"available_until"`
+	Faqs                  []byte             `json:"faqs"`
+	Steps                 []byte             `json:"steps"`
 	AuthorName            *string            `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	MinPrice              *int64             `json:"min_price"`
@@ -3592,6 +3621,8 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 			&i.Capacity,
 			&i.AvailableFrom,
 			&i.AvailableUntil,
+			&i.Faqs,
+			&i.Steps,
 			&i.AuthorName,
 			&i.AuthorAvatar,
 			&i.MinPrice,
@@ -3626,6 +3657,7 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.verified_by, sm.verified_at,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
        COALESCE(
            (SELECT MIN(t.price_amount) FROM service_package_tiers t
@@ -3717,6 +3749,8 @@ type ListServiceListingsByOrgRow struct {
 	Capacity              *int32             `json:"capacity"`
 	AvailableFrom         pgtype.Date        `json:"available_from"`
 	AvailableUntil        pgtype.Date        `json:"available_until"`
+	Faqs                  []byte             `json:"faqs"`
+	Steps                 []byte             `json:"steps"`
 	AuthorName            *string            `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	MinPrice              *int64             `json:"min_price"`
@@ -3790,6 +3824,8 @@ func (q *Queries) ListServiceListingsByOrg(ctx context.Context, arg ListServiceL
 			&i.Capacity,
 			&i.AvailableFrom,
 			&i.AvailableUntil,
+			&i.Faqs,
+			&i.Steps,
 			&i.AuthorName,
 			&i.AuthorAvatar,
 			&i.MinPrice,
@@ -4248,9 +4284,13 @@ SET org_id = $1,
     capacity = $15,
     available_from = $16,
     available_until = $17,
+    -- faqs/steps are replace-set jsonb arrays (nil keeps the stored set —
+    -- the service layer merges the patch over the row before calling).
+    faqs = COALESCE($18, faqs),
+    steps = COALESCE($19, steps),
     updated_at = now()
-WHERE content_id = $18
-RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until
+WHERE content_id = $20
+RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps
 `
 
 type UpdateServiceListingMetaParams struct {
@@ -4271,6 +4311,8 @@ type UpdateServiceListingMetaParams struct {
 	Capacity           *int32      `json:"capacity"`
 	AvailableFrom      pgtype.Date `json:"available_from"`
 	AvailableUntil     pgtype.Date `json:"available_until"`
+	Faqs               []byte      `json:"faqs"`
+	Steps              []byte      `json:"steps"`
 	ContentID          pgtype.UUID `json:"content_id"`
 }
 
@@ -4296,6 +4338,8 @@ func (q *Queries) UpdateServiceListingMeta(ctx context.Context, arg UpdateServic
 		arg.Capacity,
 		arg.AvailableFrom,
 		arg.AvailableUntil,
+		arg.Faqs,
+		arg.Steps,
 		arg.ContentID,
 	)
 	var i ServiceListingMetum
@@ -4327,6 +4371,8 @@ func (q *Queries) UpdateServiceListingMeta(ctx context.Context, arg UpdateServic
 		&i.Capacity,
 		&i.AvailableFrom,
 		&i.AvailableUntil,
+		&i.Faqs,
+		&i.Steps,
 	)
 	return i, err
 }
