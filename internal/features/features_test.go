@@ -1,6 +1,9 @@
 package features
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 )
@@ -110,8 +113,51 @@ func TestRegistryHasNoDuplicates(t *testing.T) {
 func TestRegistryHasChecklistEnabled(t *testing.T) {
 	t.Parallel()
 
-	if _, ok := registryLookup("checklist.enabled"); !ok {
+	if _, ok := RegistryLookup("checklist.enabled"); !ok {
 		t.Error("checklist.enabled must be in the registry — it is used by features.Gate in the server")
+	}
+}
+
+// TestRegistryCoversAllGatedKeys parses server.go for
+// features.Gate(featureChecker, "key") literals and asserts each key exists in
+// Registry. This keeps the registry from drifting out of sync with the routes
+// it gates — a new Gate call without a Registry entry fails this test.
+func TestRegistryCoversAllGatedKeys(t *testing.T) {
+	t.Parallel()
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "../server/server.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse server.go: %v", err)
+	}
+
+	var gated []string
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Gate" {
+			return true
+		}
+		if len(call.Args) < 2 {
+			return true
+		}
+		if lit, ok := call.Args[1].(*ast.BasicLit); ok {
+			gated = append(gated, strings.Trim(lit.Value, `"`))
+		}
+		return true
+	})
+
+	if len(gated) == 0 {
+		t.Fatal("no features.Gate calls found in server.go — test may be broken")
+	}
+
+	for _, key := range gated {
+		if _, ok := RegistryLookup(key); !ok {
+			t.Errorf("gated flag %q missing from Registry", key)
+		}
 	}
 }
 
