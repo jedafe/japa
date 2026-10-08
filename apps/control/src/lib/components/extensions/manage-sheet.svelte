@@ -1,0 +1,710 @@
+<script lang="ts">
+	// Manage slide-over for an extensions-catalog entry — edits the flag's
+	// config blob (name, description, phase, rollout %, per-surface
+	// visibility/audience/geo rules, show_on_roadmap) via PATCH
+	// /control/extensions/{key}. The surfaces map is a whole-map replace on
+	// the backend, so the draft always carries all eight surfaces.
+	// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §6.2.
+	import { Dialog } from 'bits-ui';
+	import { X, Loader2, ChevronDown, ChevronUp, Route, Globe, Users } from 'lucide-svelte';
+	import Switch from '$lib/components/ui/Switch.svelte';
+	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { api } from '$lib/api';
+	import { t, translations } from '$lib/stores/i18n.svelte';
+	import {
+		SURFACES,
+		PHASES,
+		SURFACE_STATES,
+		type Extension,
+		type SurfaceName,
+		type SurfaceState
+	} from './types';
+
+	interface Props {
+		open?: boolean;
+		ext: Extension | null;
+		/** Delegates the enabled switch — the page owns the destructive
+		 * disable confirmation flow. */
+		onToggle?: (ext: Extension, checked: boolean) => void;
+		/** Optimistically merge these fields into the card before the PATCH
+		 * resolves (matches the page's setEnabled optimistic pattern). */
+		onOptimistic?: (key: string, patch: Partial<Extension>) => void;
+		/** Revert the card to the pre-save snapshot when the PATCH fails. */
+		onRevert?: (key: string, prev: Partial<Extension>) => void;
+		/** Fired after a successful save; warning is the API's optional
+		 * "roadmap_disabled" flag (spec §6.3). */
+		onSaved?: (key: string, warning?: string) => void;
+	}
+
+	let {
+		open = $bindable(false),
+		ext,
+		onToggle,
+		onOptimistic,
+		onRevert,
+		onSaved
+	}: Props = $props();
+
+	interface DraftSurface {
+		state: SurfaceState;
+		audience: string[];
+		geo_allow: string[];
+		geo_deny: string[];
+	}
+
+	interface Draft {
+		name: string;
+		description: string;
+		phase: string;
+		rollout: number;
+		showOnRoadmap: boolean;
+		surfaces: Record<SurfaceName, DraftSurface>;
+	}
+
+	let draft = $state<Draft | null>(null);
+	let seededKey = $state('');
+	let saving = $state(false);
+	let saveError = $state('');
+	let expanded = $state<Set<string>>(new Set());
+
+	// Option lists — fetched once (Rule 16: audience/geo vocabularies come
+	// from the API, never hardcoded). Groups require admin.rbac.manage on
+	// /api/v1; the control panel is super_admin-only so it resolves for the
+	// operators who can open this page.
+	interface Option {
+		value: string;
+		label: string;
+		sublabel?: string;
+	}
+
+	let groupOptions = $state<Option[]>([]);
+	let permOptions = $state<Option[]>([]);
+	let countryOptions = $state<Option[]>([]);
+	let optionsRequested = false;
+
+	let audienceOptions = $derived<Option[]>([...groupOptions, ...permOptions]);
+
+	async function loadOptions() {
+		if (optionsRequested) return;
+		optionsRequested = true;
+		const [groups, perms, countries] = await Promise.all([
+			api<{ groups: { id: string; name: string; slug: string }[]; total: number }>(
+				'/api/v1/admin/user-groups'
+			),
+			api<{ key: string; description: string }[]>('/control/permission-nodes'),
+			api<{ geo_code?: string; name: string }[]>('/api/v1/geo/countries')
+		]);
+		if (groups.ok) {
+			groupOptions = (groups.data?.groups ?? []).map((g) => ({
+				value: `group:${g.slug}`,
+				label: g.name,
+				sublabel: `group:${g.slug}`
+			}));
+		}
+		if (perms.ok) {
+			permOptions = (perms.data ?? []).map((p) => ({
+				value: `perm:${p.key}`,
+				label: p.key,
+				sublabel: p.description
+			}));
+		}
+		if (countries.ok) {
+			countryOptions = (countries.data ?? [])
+				.filter((c) => !!c.geo_code)
+				.map((c) => ({ value: c.geo_code!, label: c.name, sublabel: c.geo_code }));
+		}
+		// If every source failed, allow a retry on the next open.
+		if (!groups.ok && !perms.ok && !countries.ok) optionsRequested = false;
+	}
+
+	function seed(e: Extension) {
+		const surfaces = {} as Record<SurfaceName, DraftSurface>;
+		for (const s of SURFACES) {
+			const r = e.surfaces?.[s];
+			surfaces[s] = {
+				state: (r?.state as SurfaceState) ?? 'visible',
+				audience: [...(r?.audience ?? [])],
+				geo_allow: [...(r?.geo_allow ?? [])],
+				geo_deny: [...(r?.geo_deny ?? [])]
+			};
+		}
+		draft = {
+			name: e.name,
+			description: e.description,
+			phase: e.phase ?? (e.enabled ? 'shipped' : 'planned'),
+			rollout: e.rollout_percentage ?? 100,
+			showOnRoadmap: !!e.show_on_roadmap,
+			surfaces
+		};
+		saveError = '';
+		expanded = new Set();
+	}
+
+	// Seed the draft when the sheet opens for an extension (or when a
+	// different extension is picked while open). Poll-driven updates to the
+	// same key must NOT reseed — they'd clobber in-progress edits.
+	$effect(() => {
+		if (open && ext && seededKey !== ext.key) {
+			seededKey = ext.key;
+			seed(ext);
+		}
+	});
+
+	$effect(() => {
+		if (open) loadOptions();
+	});
+
+	function handleOpenChange(o: boolean) {
+		open = o;
+		if (!o) {
+			seededKey = '';
+			saveError = '';
+		}
+	}
+
+	// closeSheet goes through handleOpenChange so seededKey resets and the
+	// next open reseeds the draft — setting `open = false` directly would
+	// leave a stale draft behind for the same key.
+	function closeSheet() {
+		if (saving) return;
+		handleOpenChange(false);
+	}
+
+	let phaseOptions = $derived.by(() => {
+		translations();
+		return PHASES.map((p) => ({ value: p, label: phaseLabel(p) }));
+	});
+
+	function phaseLabel(p: string): string {
+		return t(`extensions.phase_${p}`, p);
+	}
+
+	function toggleExpanded(surface: string) {
+		const next = new Set(expanded);
+		if (next.has(surface)) next.delete(surface);
+		else next.add(surface);
+		expanded = next;
+	}
+
+	function ruleFor(surface: string): DraftSurface | null {
+		return draft?.surfaces[surface as SurfaceName] ?? null;
+	}
+
+	function setState(surface: string, state: SurfaceState) {
+		const r = ruleFor(surface);
+		if (r) r.state = state;
+	}
+
+	function addAudience(surface: string, item: AutocompleteItem) {
+		const r = ruleFor(surface);
+		if (!r || r.audience.includes(item.id)) return;
+		r.audience = [...r.audience, item.id];
+	}
+
+	function removeAudience(surface: string, entry: string) {
+		const r = ruleFor(surface);
+		if (!r) return;
+		r.audience = r.audience.filter((a) => a !== entry);
+	}
+
+	function addGeo(surface: string, field: 'geo_allow' | 'geo_deny', item: AutocompleteItem) {
+		const r = ruleFor(surface);
+		if (!r) return;
+		const code = item.id.trim().toUpperCase();
+		if (!/^[A-Z]{2}$/.test(code) || r[field].includes(code)) return;
+		r[field] = [...r[field], code];
+	}
+
+	function removeGeo(surface: string, field: 'geo_allow' | 'geo_deny', code: string) {
+		const r = ruleFor(surface);
+		if (!r) return;
+		r[field] = r[field].filter((c) => c !== code);
+	}
+
+	function optionLabel(options: Option[], value: string): string {
+		return options.find((o) => o.value === value)?.label ?? value;
+	}
+
+	// --- Autocomplete fetchers (chips multi-select, same pattern as
+	// api-keys scopes): local filters over the fetched option lists,
+	// excluding already-selected entries. ---
+	function fetchAudience(q: string, selected: string[]): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return Promise.resolve(
+			audienceOptions
+				.filter((o) => !selected.includes(o.value))
+				.filter(
+					(o) =>
+						o.label.toLowerCase().includes(query) ||
+						o.value.toLowerCase().includes(query) ||
+						(o.sublabel ?? '').toLowerCase().includes(query)
+				)
+				.map((o) => ({ id: o.value, label: o.label, sublabel: o.sublabel }))
+		);
+	}
+
+	function fetchAudienceInitial(selected: string[]): Promise<AutocompleteItem[]> {
+		return fetchAudience('', selected);
+	}
+
+	function fetchCountries(q: string, selected: string[]): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		return Promise.resolve(
+			countryOptions
+				.filter((o) => !selected.includes(o.value))
+				.filter((o) => o.label.toLowerCase().includes(query) || o.value.toLowerCase().includes(query))
+				.map((o) => ({ id: o.value, label: o.label, sublabel: o.sublabel }))
+		);
+	}
+
+	function fetchCountriesInitial(selected: string[]): Promise<AutocompleteItem[]> {
+		return fetchCountries('', selected);
+	}
+
+	// Presets (spec §6.2): "Beta testers + staff" scopes the current surface
+	// to the beta/staff groups; "Apply to all surfaces" copies the current
+	// surface's full rule to every surface.
+	function presetBetaStaff(surface: string) {
+		const r = ruleFor(surface);
+		if (!r) return;
+		r.audience = ['group:beta_testers', 'group:admin'];
+	}
+
+	function presetApplyAll(surface: string) {
+		if (!draft) return;
+		const src = draft.surfaces[surface as SurfaceName];
+		if (!src) return;
+		for (const s of SURFACES) {
+			draft.surfaces[s] = {
+				state: src.state,
+				audience: [...src.audience],
+				geo_allow: [...src.geo_allow],
+				geo_deny: [...src.geo_deny]
+			};
+		}
+	}
+
+	function restrictionSummary(r: DraftSurface): string {
+		const parts: string[] = [];
+		if (r.audience.length) parts.push(`${r.audience.length} ${t('extensions.audience_count', 'audience')}`);
+		if (r.geo_allow.length) parts.push(`${t('extensions.geo_allow_short', 'allow')}: ${r.geo_allow.join(', ')}`);
+		if (r.geo_deny.length) parts.push(`${t('extensions.geo_deny_short', 'deny')}: ${r.geo_deny.join(', ')}`);
+		return parts.join(' · ');
+	}
+
+	async function save() {
+		if (!ext || !draft || saving) return;
+		saving = true;
+		saveError = '';
+
+		const surfaces: Record<string, { state: string; audience?: string[]; geo_allow?: string[]; geo_deny?: string[] }> = {};
+		for (const s of SURFACES) {
+			const r = draft.surfaces[s];
+			surfaces[s] = {
+				state: r.state,
+				...(r.audience.length ? { audience: r.audience } : {}),
+				...(r.geo_allow.length ? { geo_allow: r.geo_allow } : {}),
+				...(r.geo_deny.length ? { geo_deny: r.geo_deny } : {})
+			};
+		}
+
+		const patch: Partial<Extension> = {
+			name: draft.name.trim(),
+			description: draft.description.trim(),
+			phase: draft.phase,
+			show_on_roadmap: draft.showOnRoadmap,
+			rollout_percentage: draft.rollout,
+			surfaces: surfaces as Extension['surfaces']
+		};
+
+		const prev: Partial<Extension> = {
+			name: ext.name,
+			description: ext.description,
+			phase: ext.phase,
+			show_on_roadmap: ext.show_on_roadmap,
+			rollout_percentage: ext.rollout_percentage,
+			surfaces: ext.surfaces
+		};
+
+		onOptimistic?.(ext.key, patch);
+
+		try {
+			const result = await api<{ key: string; status: string; enabled: boolean; warning?: string }>(
+				`/control/extensions/${ext.key}`,
+				{ method: 'PATCH', body: patch }
+			);
+			if (result.ok) {
+				saving = false;
+				handleOpenChange(false);
+				onSaved?.(ext.key, result.data?.warning);
+			} else {
+				onRevert?.(ext.key, prev);
+				saveError = result.error || t('extensions.save_error', 'Failed to save changes.');
+				saving = false;
+			}
+		} catch {
+			onRevert?.(ext.key, prev);
+			saveError = t('extensions.save_error', 'Failed to save changes.');
+			saving = false;
+		}
+	}
+</script>
+
+<Dialog.Root bind:open onOpenChange={handleOpenChange}>
+	<Dialog.Portal>
+		<Dialog.Overlay
+			class="data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 fixed inset-0 z-50 bg-black/60"
+		/>
+		<Dialog.Content
+			class="border-border-card bg-background-alt data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[560px] flex-col border-l shadow-xl duration-300"
+			onInteractOutside={(e) => {
+				// Autocomplete dropdowns portal to document.body to escape this
+				// panel's overflow clipping — don't let option clicks dismiss it.
+				if ((e.target as HTMLElement | null)?.closest?.('.autocomplete-dropdown')) {
+					e.preventDefault();
+				}
+			}}
+		>
+			<div class="border-border-card flex items-start justify-between border-b px-5 py-4">
+				<div class="min-w-0 pr-6">
+					<Dialog.Title class="text-foreground text-base font-semibold">
+						{t('extensions.manage_title', 'Manage extension')}
+					</Dialog.Title>
+					<Dialog.Description class="text-muted-foreground mt-1 truncate text-sm">
+						{ext?.name}
+						<span class="font-mono text-xs">({ext?.key})</span>
+					</Dialog.Description>
+				</div>
+				<Dialog.Close
+					class="text-muted-foreground hover:bg-muted rounded-md p-1 transition-colors"
+					aria-label={t('common.close', 'Close')}
+				>
+					<X class="size-4" />
+				</Dialog.Close>
+			</div>
+
+			{#if draft && ext}
+				<div class="flex-1 overflow-y-auto px-5 py-4">
+					<!-- General -->
+					<section class="mb-6">
+						<h4 class="text-muted-foreground mb-3 text-xs font-semibold uppercase tracking-wide">
+							{t('extensions.section_general', 'General')}
+						</h4>
+						<div class="flex items-center justify-between">
+							<span class="text-foreground text-sm font-medium">
+								{ext.enabled ? t('extensions.status_enabled', 'Enabled') : t('extensions.status_disabled', 'Disabled')}
+							</span>
+							<Switch
+								id="ext-manage-{ext.key}"
+								checked={ext.enabled}
+								onCheckedChange={(checked) => onToggle?.(ext, checked)}
+							/>
+						</div>
+						<div class="mt-4">
+							<label for="ext-manage-name" class="text-foreground block text-sm font-medium">
+								{t('extensions.field_name', 'Name')}
+							</label>
+							<input
+								id="ext-manage-name"
+								type="text"
+								bind:value={draft.name}
+								class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors"
+							/>
+						</div>
+						<div class="mt-4">
+							<label for="ext-manage-desc" class="text-foreground block text-sm font-medium">
+								{t('extensions.field_description', 'Description')}
+							</label>
+							<textarea
+								id="ext-manage-desc"
+								bind:value={draft.description}
+								rows="3"
+								class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus mt-1 block w-full rounded-9px border px-3 py-2 text-sm transition-colors"
+							></textarea>
+						</div>
+						<p class="text-muted-foreground mt-3 text-xs">
+							{ext.category}
+						</p>
+					</section>
+
+					<!-- Rollout -->
+					<section class="border-border-card mb-6 border-t pt-5">
+						<h4 class="text-muted-foreground mb-3 text-xs font-semibold uppercase tracking-wide">
+							{t('extensions.section_rollout', 'Rollout')}
+						</h4>
+						<div>
+							<span class="text-foreground block text-sm font-medium">
+								{t('extensions.phase', 'Phase')}
+							</span>
+							<AutocompleteSelect
+								bind:value={draft.phase}
+								options={phaseOptions}
+								placeholder={t('extensions.phase', 'Phase')}
+								ariaLabel={t('extensions.phase', 'Phase')}
+								class="mt-1 w-full"
+							/>
+						</div>
+						<div class="mt-4">
+							<label for="ext-manage-rollout" class="text-foreground block text-sm font-medium">
+								{t('extensions.rollout', 'Rollout')} %
+							</label>
+							<input
+								id="ext-manage-rollout"
+								type="number"
+								min="0"
+								max="100"
+								bind:value={draft.rollout}
+								class="border-border-input bg-background text-foreground placeholder:text-muted-foreground/50 hover:border-border-input-hover focus:border-border-input-hover focus:shadow-date-field-focus mt-1 block w-28 rounded-9px border px-3 py-2 text-sm transition-colors"
+							/>
+							<p class="text-muted-foreground mt-1 text-xs">
+								{t('extensions.rollout_hint', '100 = fully on, 0 = off, 1-99 = gradual rollout.')}
+							</p>
+						</div>
+					</section>
+
+					<!-- Visibility -->
+					<section class="border-border-card mb-6 border-t pt-5">
+						<h4 class="text-muted-foreground mb-1 text-xs font-semibold uppercase tracking-wide">
+							{t('extensions.section_visibility', 'Visibility')}
+						</h4>
+						<p class="text-muted-foreground mb-3 text-xs">
+							{t('extensions.visibility_hint', 'Per-surface visibility and optional audience/geo restrictions.')}
+						</p>
+						<div class="space-y-2">
+							{#each SURFACES as surface (surface)}
+								{@const rule = draft.surfaces[surface]}
+								{@const summary = restrictionSummary(rule)}
+								<div class="border-border-card rounded-9px border">
+									<div class="flex flex-wrap items-center gap-2 px-3 py-2.5">
+										<span class="text-foreground w-20 shrink-0 font-mono text-sm font-medium">
+											{surface}
+										</span>
+										<div class="bg-muted inline-flex rounded-7px p-0.5">
+											{#each SURFACE_STATES as st (st)}
+												<button
+													type="button"
+													class="rounded-5px px-2.5 py-1 text-xs font-medium transition-all {rule.state === st
+														? 'bg-background text-foreground shadow-mini'
+														: 'text-muted-foreground hover:text-foreground'}"
+													onclick={() => setState(surface, st)}
+												>
+													{t(`extensions.surface_${st}`, st)}
+												</button>
+											{/each}
+										</div>
+										<div class="flex-1"></div>
+										<button
+											type="button"
+											class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
+											onclick={() => toggleExpanded(surface)}
+											aria-expanded={expanded.has(surface)}
+										>
+											{t('extensions.surface_restrictions', 'Restrictions')}
+											{#if expanded.has(surface)}
+												<ChevronUp class="size-3.5" />
+											{:else}
+												<ChevronDown class="size-3.5" />
+											{/if}
+										</button>
+									</div>
+									{#if !expanded.has(surface) && summary}
+										<p class="text-muted-foreground border-border-card border-t px-3 py-1.5 text-xs">
+											{summary}
+										</p>
+									{/if}
+									{#if expanded.has(surface)}
+										<div class="border-border-card space-y-4 border-t px-3 py-3">
+											<div>
+												<span class="text-foreground flex items-center gap-1.5 text-xs font-medium">
+													<Users class="size-3.5" />
+													{t('extensions.audience', 'Audience')}
+												</span>
+												{#if rule.audience.length > 0}
+													<div class="mt-1.5 flex flex-wrap gap-1.5">
+														{#each rule.audience as entry (entry)}
+															<span class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
+																{optionLabel(audienceOptions, entry)}
+																<button
+																	type="button"
+																	class="hover:text-destructive ml-0.5 rounded"
+																	onclick={() => removeAudience(surface, entry)}
+																	aria-label={t('common.remove', 'Remove')}
+																>×</button>
+															</span>
+														{/each}
+													</div>
+												{/if}
+												<div class="mt-1.5">
+													<Autocomplete
+														placeholder={t('extensions.audience_add', 'Add group or permission...')}
+														emptyMessage={t('common.no_results', 'No results')}
+														fetcher={(q) => fetchAudience(q, rule.audience)}
+														initialFetcher={() => fetchAudienceInitial(rule.audience)}
+														selectedId={null}
+														onSelect={(item) => addAudience(surface, item)}
+														compact
+													/>
+												</div>
+												<p class="text-muted-foreground mt-1 text-xs">
+													{t('extensions.audience_hint', 'Restrict to user groups (group:slug) or permission nodes (perm:node). Empty = everyone.')}
+												</p>
+											</div>
+
+											<div>
+												<span class="text-foreground flex items-center gap-1.5 text-xs font-medium">
+													<Globe class="size-3.5" />
+													{t('extensions.geo_allow', 'Only in countries')}
+												</span>
+												{#if rule.geo_allow.length > 0}
+													<div class="mt-1.5 flex flex-wrap gap-1.5">
+														{#each rule.geo_allow as code (code)}
+															<span class="bg-muted text-foreground inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
+																{optionLabel(countryOptions, code)} ({code})
+																<button
+																	type="button"
+																	class="hover:text-destructive ml-0.5 rounded"
+																	onclick={() => removeGeo(surface, 'geo_allow', code)}
+																	aria-label={t('common.remove', 'Remove')}
+																>×</button>
+															</span>
+														{/each}
+													</div>
+												{/if}
+												<div class="mt-1.5">
+													<Autocomplete
+														placeholder={t('extensions.geo_add', 'Add country...')}
+														emptyMessage={t('common.no_results', 'No results')}
+														fetcher={(q) => fetchCountries(q, rule.geo_allow)}
+														initialFetcher={() => fetchCountriesInitial(rule.geo_allow)}
+														selectedId={null}
+														onSelect={(item) => addGeo(surface, 'geo_allow', item)}
+														allowFreeText
+														compact
+													/>
+												</div>
+											</div>
+
+											<div>
+												<span class="text-foreground flex items-center gap-1.5 text-xs font-medium">
+													<Globe class="size-3.5" />
+													{t('extensions.geo_deny', 'Blocked in countries')}
+												</span>
+												{#if rule.geo_deny.length > 0}
+													<div class="mt-1.5 flex flex-wrap gap-1.5">
+														{#each rule.geo_deny as code (code)}
+															<span class="bg-destructive/10 text-destructive inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium">
+																{optionLabel(countryOptions, code)} ({code})
+																<button
+																	type="button"
+																	class="hover:text-destructive ml-0.5 rounded"
+																	onclick={() => removeGeo(surface, 'geo_deny', code)}
+																	aria-label={t('common.remove', 'Remove')}
+																>×</button>
+															</span>
+														{/each}
+													</div>
+												{/if}
+												<div class="mt-1.5">
+													<Autocomplete
+														placeholder={t('extensions.geo_add', 'Add country...')}
+														emptyMessage={t('common.no_results', 'No results')}
+														fetcher={(q) => fetchCountries(q, rule.geo_deny)}
+														initialFetcher={() => fetchCountriesInitial(rule.geo_deny)}
+														selectedId={null}
+														onSelect={(item) => addGeo(surface, 'geo_deny', item)}
+														allowFreeText
+														compact
+													/>
+												</div>
+												<p class="text-muted-foreground mt-1 text-xs">
+													{t('extensions.geo_hint', 'ISO alpha-2 codes. Empty allow-list = all countries; deny always wins.')}
+												</p>
+											</div>
+
+											<div class="border-border-card flex flex-wrap gap-2 border-t pt-3">
+												<button
+													type="button"
+													class="border-border-input bg-background hover:bg-muted text-foreground rounded-7px border px-2.5 py-1 text-xs font-medium transition-colors"
+													onclick={() => presetBetaStaff(surface)}
+												>
+													{t('extensions.preset_beta_staff', 'Beta testers + staff')}
+												</button>
+												<button
+													type="button"
+													class="border-border-input bg-background hover:bg-muted text-foreground rounded-7px border px-2.5 py-1 text-xs font-medium transition-colors"
+													onclick={() => presetApplyAll(surface)}
+												>
+													{t('extensions.preset_apply_all', 'Apply to all surfaces')}
+												</button>
+											</div>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</section>
+
+					<!-- Roadmap -->
+					<section class="border-border-card mb-2 border-t pt-5">
+						<h4 class="text-muted-foreground mb-3 text-xs font-semibold uppercase tracking-wide">
+							{t('extensions.section_roadmap', 'Roadmap')}
+						</h4>
+						<div class="flex items-center justify-between">
+							<span class="text-foreground text-sm font-medium">
+								{t('extensions.show_on_roadmap', 'Show on roadmap')}
+							</span>
+							<Switch id="ext-manage-roadmap" bind:checked={draft.showOnRoadmap} />
+						</div>
+						<p class="text-muted-foreground mt-1 text-xs">
+							{t('extensions.show_on_roadmap_hint', 'List this feature on the public roadmap board.')}
+						</p>
+						<div class="mt-3 flex items-center gap-2 text-sm">
+							<Route class="text-muted-foreground size-4" />
+							{#if ext.linked_roadmap_slug}
+								<span class="text-muted-foreground">{t('extensions.linked_roadmap', 'Linked roadmap item')}:</span>
+								<code class="bg-muted text-foreground rounded-5px px-1.5 py-0.5 font-mono text-xs">
+									{ext.linked_roadmap_slug}
+								</code>
+							{:else}
+								<span class="text-muted-foreground">{t('extensions.no_roadmap_link', 'No roadmap item linked')}</span>
+							{/if}
+						</div>
+						<p class="text-muted-foreground mt-1 text-xs">
+							{t('extensions.roadmap_link_hint', 'Link or unlink items from the admin roadmap editor.')}
+						</p>
+					</section>
+				</div>
+
+				<div class="border-border-card border-t px-5 py-3">
+					{#if saveError}
+						<p class="text-destructive mb-2 text-sm">{saveError}</p>
+					{/if}
+					<div class="flex items-center justify-end gap-3">
+						<button
+							type="button"
+							class="border-border-input bg-background hover:bg-muted text-foreground rounded-md border px-4 py-2 text-sm font-medium transition-colors"
+							disabled={saving}
+							onclick={closeSheet}
+						>
+							{t('common.cancel', 'Cancel')}
+						</button>
+						<button
+							type="button"
+							class="bg-foreground text-background flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors hover:opacity-90 disabled:opacity-50"
+							disabled={saving}
+							onclick={save}
+						>
+							{#if saving}
+								<Loader2 class="size-4 animate-spin" />
+								{t('common.saving', 'Saving...')}
+							{:else}
+								{t('common.save', 'Save')}
+							{/if}
+						</button>
+					</div>
+				</div>
+			{/if}
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>

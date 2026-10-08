@@ -2,6 +2,8 @@
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import Switch from '$lib/components/ui/Switch.svelte';
+	import ManageSheet from '$lib/components/extensions/manage-sheet.svelte';
+	import { SURFACES, type Extension } from '$lib/components/extensions/types';
 	import { api } from '$lib/api';
 	import { t, translations } from '$lib/stores/i18n.svelte';
 	import {
@@ -12,20 +14,10 @@
 		AlertTriangle,
 		Loader2,
 		Package,
-		Settings
+		Settings,
+		SlidersHorizontal,
+		Route
 	} from 'lucide-svelte';
-
-	interface Extension {
-		key: string;
-		name: string;
-		description: string;
-		enabled: boolean;
-		version: string;
-		setting_key: string;
-		settings_category: string;
-		category: string;
-		rollout_percentage?: number;
-	}
 
 	let extensions = $state<Extension[]>([]);
 	let loading = $state(true);
@@ -69,7 +61,13 @@
 				setting_key: e.setting_key ?? '',
 				settings_category: e.settings_category ?? '',
 				category: e.category ?? 'Other',
-				rollout_percentage: e.rollout_percentage ?? 100
+				rollout_percentage: e.rollout_percentage ?? 100,
+				// Task-9 unified rollout fields — phase derives to shipped/planned
+				// server-side when the config blob carries no explicit value.
+				phase: e.phase ?? (e.enabled ? 'shipped' : 'planned'),
+				show_on_roadmap: !!e.show_on_roadmap,
+				surfaces: e.surfaces ?? {},
+				linked_roadmap_slug: e.linked_roadmap_slug
 			}));
 		} else {
 			error = result.error || t('extensions.load_error', 'Failed to load extensions.');
@@ -211,6 +209,78 @@
 			}
 		}
 	}
+
+	// Manage slide-over — edits the flag's full config blob via PATCH
+	// /control/extensions/{key}. The card merges the saved patch
+	// optimistically (same rollback contract as setEnabled): onRevert restores
+	// the pre-save snapshot if the API rejects.
+	let manageOpen = $state(false);
+	let managingKey = $state<string | null>(null);
+	let managingExt = $derived(extensions.find((e) => e.key === managingKey) ?? null);
+
+	function openManage(ext: Extension) {
+		managingKey = ext.key;
+		manageOpen = true;
+	}
+
+	function applyExtPatch(key: string, patch: Partial<Extension>) {
+		extensions = extensions.map((e) => (e.key === key ? { ...e, ...patch } : e));
+	}
+
+	function handleExtSaved(key: string, warning?: string) {
+		messageType = 'success';
+		message =
+			warning === 'roadmap_disabled'
+				? t(
+						'extensions.roadmap_disabled_warning',
+						'Saved, but the roadmap feature is disabled — the item will not appear on the board until roadmap.enabled is on.'
+					)
+				: t('extensions.saved', 'Extension updated.');
+		setTimeout(() => {
+			message = '';
+			messageType = '';
+		}, 4000);
+	}
+
+	// Phase chip — labels/colors follow features.Phases. Unknown/absent
+	// phases render with the neutral style.
+	const PHASE_FALLBACKS: Record<string, string> = {
+		planned: 'Planned',
+		in_progress: 'In progress',
+		testing: 'Testing',
+		shipped: 'Shipped',
+		archived: 'Archived'
+	};
+
+	function phaseLabel(phase: string | undefined): string {
+		const p = phase ?? 'planned';
+		return t(`extensions.phase_${p}`, PHASE_FALLBACKS[p] ?? p);
+	}
+
+	function phaseChipClass(phase: string | undefined): string {
+		switch (phase) {
+			case 'testing':
+				return 'bg-amber-500/10 text-amber-600';
+			case 'in_progress':
+				return 'bg-blue-500/10 text-blue-600';
+			case 'shipped':
+				return 'bg-emerald-500/10 text-emerald-600';
+			case 'archived':
+				return 'bg-muted text-muted-foreground line-through';
+			default:
+				return 'bg-muted text-muted-foreground';
+		}
+	}
+
+	// Surface visibility summary, e.g. "main ✓ · tools hidden · admin ✓".
+	// Absent surfaces default to visible per the eval rules.
+	function surfaceSummary(ext: Extension): string {
+		return SURFACES.map((s) => {
+			const state = ext.surfaces?.[s]?.state ?? 'visible';
+			if (state === 'visible') return `${s} ✓`;
+			return `${s} ${t(`extensions.surface_${state}`, state).toLowerCase()}`;
+		}).join(' · ');
+	}
 </script>
 
 <!-- RBAC CRUD: Extensions management -->
@@ -350,6 +420,38 @@
 					{ext.description || t('extensions.no_description', 'No description provided.')}
 				</p>
 
+				<!-- Phase chip + roadmap badge + surface visibility summary
+				     (unified rollout — spec §6.1). -->
+				<div class="mt-3 flex flex-wrap items-center gap-1.5">
+					<span
+						class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {phaseChipClass(ext.phase)}"
+					>
+						{phaseLabel(ext.phase)}
+					</span>
+					{#if ext.linked_roadmap_slug}
+						<span
+							class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+							title="{t('extensions.linked_roadmap', 'Linked roadmap item')}: {ext.linked_roadmap_slug}"
+						>
+							<Route class="size-3" />
+							{ext.linked_roadmap_slug}
+						</span>
+					{:else if ext.show_on_roadmap}
+						<span
+							class="bg-accent text-accent-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+						>
+							<Route class="size-3" />
+							{t('extensions.roadmap_badge', 'Roadmap')}
+						</span>
+					{/if}
+				</div>
+				<p
+					class="text-muted-foreground mt-2 truncate text-xs"
+					title={surfaceSummary(ext)}
+				>
+					{surfaceSummary(ext)}
+				</p>
+
 				<div class="mt-4 flex items-center justify-between border-t border-border-card pt-4">
 					<div class="flex items-center gap-2">
 						<span
@@ -372,6 +474,13 @@
 								{t('extensions.configure_short', 'Configure')}
 							</a>
 						{/if}
+						<button
+							class="text-muted-foreground hover:text-primary inline-flex items-center gap-1 text-xs font-medium transition-colors"
+							onclick={() => openManage(ext)}
+						>
+							<SlidersHorizontal class="size-3.5" />
+							{t('extensions.manage', 'Manage')}
+						</button>
 					</div>
 
 					<div class="flex items-center gap-2">
@@ -444,4 +553,13 @@
 		confirmDisableOpen = false;
 		pendingDisable = null;
 	}}
+/>
+
+<ManageSheet
+	bind:open={manageOpen}
+	ext={managingExt}
+	onToggle={handleToggle}
+	onOptimistic={applyExtPatch}
+	onRevert={applyExtPatch}
+	onSaved={handleExtSaved}
 />
