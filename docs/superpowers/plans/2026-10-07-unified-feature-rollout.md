@@ -122,7 +122,7 @@ Expected: insert succeeds, delete succeeds.
 
 ```bash
 git add migrations/000807_unified_rollout.*.sql
-git commit -m "migrate: roadmap testing status + settings->flags backfill (000806)"
+git commit -m "migrate: roadmap testing status + settings->flags backfill (000807)"
 ```
 
 ---
