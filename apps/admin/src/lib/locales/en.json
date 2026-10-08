@@ -3166,6 +3166,8 @@
 	"reviews.type_organization": "Organization",
 	"reviews.type_service": "Service",
 	"reviews.type_university": "University",
+	"roadmap.status_derived_hint": "Status is derived from the linked feature flag — change the flag's phase to move it.",
+	"roadmap.status_testing": "Testing",
 	"search.avg_results": "Avg Results",
 	"search.clicks": "Clicks",
 	"search.daily_volume": "Daily Volume",

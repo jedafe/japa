@@ -54,6 +54,8 @@
 
 <form class={clsx('flex flex-col gap-4', className)} onsubmit={handleSubmit}>
 	{#each visibleFields as field (field.key)}
+		{@const fieldDisabled = disabled || (editing != null && (field.disabledWhen?.(editing) ?? false))}
+		{@const helpText = fieldDisabled && field.lockedHelp ? field.lockedHelp : field.help}
 		<div class="flex flex-col gap-1">
 			<label for={field.key} class="text-sm font-medium" style="color: var(--color-foreground)">
 				{field.label}{#if field.required}<span style="color: var(--color-danger)">*</span>{/if}
@@ -64,7 +66,7 @@
 					id={field.key}
 					aria-label={field.label}
 					placeholder={field.placeholder}
-					disabled={disabled}
+					disabled={fieldDisabled}
 					readonly={field.readonlyInEdit && editing}
 					value={value[field.key] ?? ''}
 					oninput={(e) => value[field.key] = e.currentTarget.value}
@@ -76,9 +78,10 @@
 				     client-side) — every dropdown uses the shared Autocomplete. -->
 				{@const opts = field.options ?? []}
 				{@const selVal = (value[field.key] ?? '') as string}
-				<div class:opacity-50={disabled} class:pointer-events-none={disabled}>
+				<div class:opacity-50={fieldDisabled} class:pointer-events-none={fieldDisabled}>
 					<Autocomplete
 						id={field.key}
+						disabled={fieldDisabled}
 						placeholder={field.placeholder ?? field.label}
 						emptyMessage={t('common.no_results', 'No results found')}
 						fetcher={async (q: string) => {
@@ -98,6 +101,7 @@
 				{@const acVal = value[field.key] as string | undefined}
 				<Autocomplete
 					id={field.key}
+					disabled={fieldDisabled}
 					placeholder={field.placeholder}
 					emptyMessage={field.emptyMessage}
 					fetcher={async (q: string) => filterSelf(field, await field.fetcher(q))}
@@ -112,7 +116,7 @@
 					id={field.key}
 					type="checkbox"
 					aria-label={field.label}
-					disabled={disabled}
+					disabled={fieldDisabled}
 					checked={value[field.key] ?? false}
 					onchange={(e) => value[field.key] = e.currentTarget.checked}
 					class="h-4 w-4 rounded disabled:cursor-not-allowed disabled:opacity-50"
@@ -123,7 +127,7 @@
 					id={field.key}
 					type="color"
 					aria-label={field.label}
-					disabled={disabled}
+					disabled={fieldDisabled}
 					value={value[field.key] ?? ''}
 					oninput={(e) => value[field.key] = e.currentTarget.value}
 					class="h-10 w-full cursor-pointer rounded-lg border p-1 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -135,7 +139,7 @@
 					type={field.type}
 					aria-label={field.label}
 					placeholder={field.placeholder}
-					disabled={disabled}
+					disabled={fieldDisabled}
 					readonly={field.readonlyInEdit && editing}
 					min={field.min}
 					max={field.max}
@@ -147,8 +151,8 @@
 				/>
 			{/if}
 
-			{#if field.help}
-				<span class="text-xs" style="color: var(--color-muted)">{field.help}</span>
+			{#if helpText}
+				<span class="text-xs" style="color: var(--color-muted)">{helpText}</span>
 			{/if}
 
 			{#if errors[field.key]}

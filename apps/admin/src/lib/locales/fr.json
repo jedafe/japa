@@ -3167,6 +3167,8 @@
 	"reviews.type_organization": "Organisation",
 	"reviews.type_service": "Service",
 	"reviews.type_university": "Université",
+	"roadmap.status_derived_hint": "Le statut découle de l'indicateur de fonctionnalité associé — modifiez la phase de l'indicateur pour le faire évoluer.",
+	"roadmap.status_testing": "En test",
 	"search.avg_results": "Résultats moyens",
 	"search.clicks": "Clics",
 	"search.daily_volume": "Volume quotidien",

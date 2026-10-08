@@ -6,7 +6,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import Autocomplete, { type AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import { roadmapAdminApi, roadmapCategoriesAdminApi } from '$lib/api';
+	import { roadmapAdminApi, roadmapCategoriesAdminApi, featureFlagsAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Eye, Pencil, Trash2, Trash, RotateCcw, ArrowRightLeft } from 'lucide-svelte';
@@ -39,6 +39,7 @@
 		{ value: 'under_review', label: t('roadmap.status.under_review', 'Under Review') },
 		{ value: 'planned', label: t('roadmap.status.planned', 'Planned') },
 		{ value: 'in_progress', label: t('roadmap.status.in_progress', 'In Progress') },
+		{ value: 'testing', label: t('roadmap.status_testing', 'Testing') },
 		{ value: 'shipped', label: t('roadmap.status.shipped', 'Shipped') },
 		{ value: 'declined', label: t('roadmap.status.declined', 'Declined') },
 		{ value: 'archived', label: t('roadmap.status.archived', 'Archived') }
@@ -49,6 +50,7 @@
 		under_review: 'bg-info/15 text-info',
 		planned: 'bg-info/15 text-info',
 		in_progress: 'bg-primary/15 text-primary',
+		testing: 'bg-accent/15 text-accent-foreground',
 		shipped: 'bg-success/15 text-success',
 		declined: 'bg-danger/15 text-danger',
 		archived: 'bg-muted/30 text-muted'
@@ -82,8 +84,35 @@
 		}
 	}
 
+	// Feature-flag options feed the feature_flag_key select (Rule 16 — the
+	// list must come from the API). Viewers holding admin.feature_flags.manage
+	// get the admin list (key + human label); other roadmap editors fall back
+	// to the public /feature-flags/details endpoint so the picker still works.
+	let flagOptions = $state<Array<{ value: string; label: string }>>([]);
+
+	async function loadFlagOptions() {
+		if (hasPermission('admin.feature_flags.manage')) {
+			const res = await featureFlagsAdminApi.list();
+			if (res.ok) {
+				flagOptions = ((res.data as Array<{ key: string; name?: string }>) ?? []).map((f) => ({
+					value: f.key,
+					label: f.name ? `${f.name} (${f.key})` : f.key
+				}));
+				return;
+			}
+		}
+		const res = await featureFlagsAdminApi.listDetails();
+		if (res.ok) {
+			flagOptions = ((res.data as Array<{ key: string }>) ?? []).map((f) => ({
+				value: f.key,
+				label: f.key
+			}));
+		}
+	}
+
 	$effect(() => {
 		loadCategoryOptions();
+		loadFlagOptions();
 	});
 
 	// ── State-action confirmation modals ───────────────────────────────────
@@ -125,7 +154,15 @@
 				showStatusModal = false;
 				entityController?.reload();
 			} else {
-				pageError = result.error ?? t('common.error', 'Failed to update status');
+				// Linked items reject manual transitions with 409 status_derived —
+				// surface the derived-status hint instead of the raw message.
+				pageError =
+					result.code === 'status_derived'
+						? t(
+								'roadmap.status_derived_hint',
+								'Status is derived from the linked feature flag — change the flag’s phase to move it.'
+							)
+						: (result.error ?? t('common.error', 'Failed to update status'));
 			}
 		} catch {
 			pageError = t('common.error', 'Failed to update status');
@@ -246,7 +283,20 @@
 			options: categoryOptions,
 			placeholder: t('roadmap.no_category', 'No category')
 		},
-		{ key: 'status', label: t('common.status', 'Status'), type: 'select', options: STATUS_OPTIONS },
+		{
+			key: 'status',
+			label: t('common.status', 'Status'),
+			type: 'select',
+			options: STATUS_OPTIONS,
+			// Linked items derive status from the flag's rollout phase (§4.2) —
+			// lock the control and explain why; the backend returns
+			// 409 status_derived if a manual transition is attempted anyway.
+			disabledWhen: (row) => !!row?.feature_flag_key,
+			lockedHelp: t(
+				'roadmap.status_derived_hint',
+				'Status is derived from the linked feature flag — change the flag’s phase to move it.'
+			)
+		},
 		{ key: 'sort_order', label: t('roadmap.sort_order', 'Sort Order'), type: 'number' },
 		{ key: 'is_flagship', label: t('roadmap.is_flagship', 'Flagship'), type: 'checkbox' },
 		{
@@ -258,8 +308,18 @@
 		{
 			key: 'feature_flag_key',
 			label: t('roadmap.feature_flag_key', 'Feature Flag Key'),
-			type: 'text',
-			placeholder: 'feature.example'
+			type: 'select',
+			// "" is the explicit no-link choice; the Autocomplete clear button
+			// also writes "" which unlinks on PATCH (empty value unlinks, §4.2).
+			options: [
+				{ value: '', label: t('roadmap.no_flag_link', 'No flag link') },
+				...flagOptions
+			],
+			placeholder: t('roadmap.no_flag_link', 'No flag link'),
+			help: t(
+				'roadmap.feature_flag_hint',
+				'Link a feature flag to derive this item’s status from the flag’s rollout phase.'
+			)
 		}
 	]);
 
@@ -375,11 +435,26 @@
 			// Status is not part of the PATCH contract — the backend ignores it
 			// there and only mutates it through the lifecycle endpoint. Route a
 			// changed status through setStatus first so invalid transitions
-			// surface their 409 instead of being silently dropped.
+			// surface their 409 instead of being silently dropped. Skip the
+			// call entirely when the row is (or is being) flag-linked: the flag
+			// derives status, so a manual write would either 409 status_derived
+			// or be overridden by the link in the same save.
 			const nextStatus = String(body.status ?? '');
-			if (nextStatus && row && nextStatus !== row.status) {
+			const linking = String(body.feature_flag_key ?? '').trim() !== '';
+			if (nextStatus && row && nextStatus !== row.status && !linking && !row.feature_flag_key) {
 				const statusRes = await roadmapAdminApi.setStatus(id, nextStatus);
-				if (!statusRes.ok) return { ok: false, error: statusRes.error };
+				if (!statusRes.ok) {
+					return {
+						ok: false,
+						error:
+							statusRes.code === 'status_derived'
+								? t(
+										'roadmap.status_derived_hint',
+										'Status is derived from the linked feature flag — change the flag’s phase to move it.'
+									)
+								: statusRes.error
+					};
+				}
 			}
 			const res = await roadmapAdminApi.update(id, itemBody(body));
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
@@ -419,6 +494,7 @@
 			</label>
 			<Autocomplete
 				id="roadmap-status"
+				disabled={!!actionTarget.feature_flag_key}
 				placeholder={t('common.status', 'Status')}
 				emptyMessage={t('common.no_results', 'No results found')}
 				fetcher={async (q: string) => {
@@ -434,7 +510,11 @@
 				onClear={() => { statusChoice = ''; }}
 			/>
 			<p class="mt-1 text-xs" style="color: var(--color-muted)">
-				{t('roadmap.status_hint', 'Only valid lifecycle transitions are accepted.')}
+				{#if actionTarget.feature_flag_key}
+					{t('roadmap.status_derived_hint', 'Status is derived from the linked feature flag — change the flag’s phase to move it.')}
+				{:else}
+					{t('roadmap.status_hint', 'Only valid lifecycle transitions are accepted.')}
+				{/if}
 			</p>
 		</div>
 	{/if}
@@ -442,7 +522,7 @@
 		<Button variant="ghost" onclick={() => (showStatusModal = false)} disabled={acting}>
 			{t('common.cancel', 'Cancel')}
 		</Button>
-		<Button onclick={confirmStatusChange} disabled={acting || !statusChoice || statusChoice === actionTarget?.status}>
+		<Button onclick={confirmStatusChange} disabled={acting || !statusChoice || statusChoice === actionTarget?.status || !!actionTarget?.feature_flag_key}>
 			{t('common.save', 'Save Changes')}
 		</Button>
 	</div>
@@ -498,6 +578,11 @@
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">
 				{STATUS_OPTIONS.find((s) => s.value === row.status)?.label ?? row.status}
 			</p>
+			{#if row.feature_flag_key}
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">
+					{t('roadmap.status_derived_hint', 'Status is derived from the linked feature flag — change the flag’s phase to move it.')}
+				</p>
+			{/if}
 		</div>
 		{#if row.summary}
 			<div>

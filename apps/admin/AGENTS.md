@@ -188,6 +188,13 @@ Defined in `src/lib/components/entity/index.ts`. Supported `type` values:
 `url`, `checkbox`, `color` (native color picker), `select` (requires
 `options: Array<{ value; label }>`).
 
+Every variant also accepts the per-row lock props `disabledWhen` and
+`lockedHelp`. `disabledWhen(editing)` is evaluated against the row being
+edited (never called on create, where `editing` is null); when it returns
+`true` the control renders disabled and `lockedHelp` replaces `help`, so a
+field whose value is derived elsewhere (e.g. a roadmap item's status while
+a `feature_flag_key` is linked) can be locked with an explanatory hint.
+
 ---
 
 ## `ActionItem` pattern for state actions

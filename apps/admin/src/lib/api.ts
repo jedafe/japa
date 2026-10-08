@@ -2573,6 +2573,17 @@ export const roadmapAdminApi = {
 		api<unknown>(`/admin/roadmap/submissions${params ? `?${params}` : ''}`),
 };
 
+// ── Feature flags ───────────────────────────────────────────────────────
+// GET /admin/feature-flags is gated by admin.feature_flags.manage and
+// returns {key, name, isEnabled, phase, …}. Roadmap editors may not hold
+// that node, so callers without it fall back to the public
+// /feature-flags/details endpoint, which exposes {key, enabled, phase}.
+export const featureFlagsAdminApi = {
+	list: () => api<Array<{ key: string; name?: string }>>('/admin/feature-flags'),
+	listDetails: () =>
+		api<Array<{ key: string; enabled: boolean; phase: string }>>('/feature-flags/details'),
+};
+
 export const roadmapCategoriesAdminApi = {
 	list: (params?: string) =>
 		api<unknown>(`/admin/roadmap/categories${params ? `?${params}` : ''}`),
