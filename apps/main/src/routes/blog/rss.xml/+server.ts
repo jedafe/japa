@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { buildApiUrl } from '@japaconnect/api-url';
+import { JC_SURFACE } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
 /**
@@ -11,14 +12,19 @@ import type { RequestHandler } from './$types';
  *
  * Ref: japaconnect-engineering/sections/24-blog-extension.md
  */
-export const GET: RequestHandler = async ({ fetch, url }) => {
+export const GET: RequestHandler = async ({ fetch, url, getClientAddress }) => {
 	const apiBase = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
-	const res = await fetch(buildApiUrl('/blog/feed.xml', apiBase), {
-		headers: {
-			'x-forwarded-host': url.host,
-			host: url.host
-		}
-	});
+	const headers: Record<string, string> = {
+		'x-forwarded-host': url.host,
+		host: url.host,
+		// Identify this surface for scoped feature-flag resolution.
+		'x-jc-surface': JC_SURFACE
+	};
+	// Forward the real client IP so the backend's GeoIP middleware can
+	// resolve the visitor's country for geo-aware personalization (ADR-064).
+	const clientIP = getClientAddress();
+	if (clientIP) headers['x-forwarded-for'] = clientIP;
+	const res = await fetch(buildApiUrl('/blog/feed.xml', apiBase), { headers });
 
 	if (!res.ok) {
 		return new Response('RSS feed temporarily unavailable', { status: 502 });

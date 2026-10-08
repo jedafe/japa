@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { buildApiUrl } from '@japaconnect/api-url';
+import { JC_SURFACE } from '$lib/server/api';
 import type { RequestHandler } from './$types';
 
 /**
@@ -13,16 +14,21 @@ import type { RequestHandler } from './$types';
  *
  * Ref: japaconnect-engineering/sections/26-seo-performance.md
  */
-export const GET: RequestHandler = async ({ fetch, params, url }) => {
+export const GET: RequestHandler = async ({ fetch, params, url, getClientAddress }) => {
 	const apiBase = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
+	const headers: Record<string, string> = {
+		'x-forwarded-host': url.host,
+		host: url.host,
+		// Identify this surface for scoped feature-flag resolution.
+		'x-jc-surface': JC_SURFACE
+	};
+	// Forward the real client IP so the backend's GeoIP middleware can
+	// resolve the visitor's country for geo-aware personalization (ADR-064).
+	const clientIP = getClientAddress();
+	if (clientIP) headers['x-forwarded-for'] = clientIP;
 	const res = await fetch(
 		buildApiUrl(`/tags/${encodeURIComponent(params.slug)}/feed.xml`, apiBase, { version: '' }),
-		{
-			headers: {
-				'x-forwarded-host': url.host,
-				host: url.host
-			}
-		}
+		{ headers }
 	);
 
 	if (!res.ok) {

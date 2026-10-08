@@ -6,19 +6,26 @@
 //
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md
 import type { RequestHandler } from './$types';
-import { API_BASE } from '$lib/server/api';
+import { API_BASE, JC_SURFACE } from '$lib/server/api';
 
 const FALLBACK = 'User-agent: *\nDisallow: /admin/\nDisallow: /api/\n\nSitemap: /sitemap.xml\n';
 
-export const GET: RequestHandler = async ({ request, url }) => {
+export const GET: RequestHandler = async ({ request, url, getClientAddress }) => {
 	try {
 		const backendURL = `${API_BASE}/robots.txt`;
+		const headers: Record<string, string> = {
+			// Forward the request host so the backend's host middleware can
+			// resolve the correct bot registry for deployments.
+			'X-Forwarded-Host': url.hostname,
+			// Identify this surface for scoped feature-flag resolution.
+			'x-jc-surface': JC_SURFACE
+		};
+		// Forward the real client IP so the backend's GeoIP middleware can
+		// resolve the visitor's country for geo-aware personalization (ADR-064).
+		const clientIP = getClientAddress();
+		if (clientIP) headers['x-forwarded-for'] = clientIP;
 		const res = await fetch(backendURL, {
-			headers: {
-				// Forward the request host so the backend's host middleware can
-				// resolve the correct bot registry for deployments.
-				'X-Forwarded-Host': url.hostname
-			},
+			headers,
 			signal: request.signal
 		});
 
