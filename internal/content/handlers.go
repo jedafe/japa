@@ -1635,7 +1635,23 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		TargetCountry *string `json:"target_country"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if err := json.Unmarshal(bodyBytes, &input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	// Second pass over the raw object: a literal JSON null is an explicit
+	// clear for the nullable columns, while an absent key keeps the stored
+	// value. encoding/json decodes both into nil pointers, so the raw map is
+	// needed to tell them apart (ApplyExplicitNullClears below).
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &rawFields); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
@@ -1740,6 +1756,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		TargetCountry:   input.TargetCountry,
 	}
 
+	// A literal JSON null on a nullable key is an explicit clear; an absent
+	// key is already preserved by buildUpdateContentParams.
+	ApplyExplicitNullClears(rawFields, &updateInput)
+
 	if input.SpaceID != nil && *input.SpaceID != "" {
 		if err := updateInput.SpaceID.Scan(*input.SpaceID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_space_id", "Invalid space_id format")
@@ -1772,8 +1792,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if input.OrganizationID != nil && *input.OrganizationID != "" {
-		if err := updateInput.OrganizationID.Scan(*input.OrganizationID); err != nil {
+	if input.OrganizationID != nil {
+		if *input.OrganizationID == "" {
+			updateInput.ClearOrganizationID = true
+		} else if err := updateInput.OrganizationID.Scan(*input.OrganizationID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
 			return
 		}

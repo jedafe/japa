@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-chi/chi/v5"
@@ -314,6 +315,234 @@ func TestUpdateContentListTooManyItems(t *testing.T) {
 	if code := responseErrorCode(t, rr); code != "too_many_items" {
 		t.Fatalf("error code = %q, want too_many_items", code)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// UpdateContent — explicit-null clears vs preserve-on-omit
+// ---------------------------------------------------------------------------
+
+// captureUpdateDBTX answers the two writes UpdateContent performs (the UPDATE
+// contents call — whose args are recorded for assertion — and the revision
+// INSERT), dispatching on the sqlc name comment embedded in each query const.
+// Any other query fails loudly so newly added writes surface in tests.
+type captureUpdateDBTX struct {
+	updateArgs []any
+	updateRow  *gen.UpdateContentRow
+}
+
+func (d *captureUpdateDBTX) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, errors.New("unexpected Exec in test")
+}
+
+func (d *captureUpdateDBTX) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, errors.New("unexpected Query in test")
+}
+
+func (d *captureUpdateDBTX) QueryRow(_ context.Context, query string, args ...interface{}) pgx.Row {
+	switch {
+	case strings.Contains(query, "-- name: UpdateContent :one"):
+		d.updateArgs = args
+		return structRow{src: d.updateRow}
+	case strings.Contains(query, "-- name: CreateContentRevision"):
+		return structRow{src: &gen.ContentRevision{}}
+	default:
+		return errRow{err: fmt.Errorf("unexpected QueryRow in test: %.80s", query)}
+	}
+}
+
+func (d *captureUpdateDBTX) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
+	return 0, errors.New("unexpected CopyFrom in test")
+}
+
+// Arg positions mirror the UpdateContentParams field order in the generated
+// QueryRow call (internal/db/gen/contents.sql.go).
+const (
+	argCanonicalUrl    = 7  //nolint:revive // matches sqlc-generated field name
+	argHeaderImageID   = 8
+	argFeaturedImageID = 9
+	argMetaTitle       = 10
+	argMetaDescription = 11
+	argOgImageUrl      = 12 //nolint:revive // matches sqlc-generated field name
+	argPublishAt       = 17
+	argOrganizationID  = 21
+)
+
+func argStringPtr(t *testing.T, args []any, i int) *string {
+	t.Helper()
+	v, ok := args[i].(*string)
+	if !ok {
+		t.Fatalf("arg %d is %T, want *string", i, args[i])
+	}
+	return v
+}
+
+func argUUID(t *testing.T, args []any, i int) pgtype.UUID {
+	t.Helper()
+	v, ok := args[i].(pgtype.UUID)
+	if !ok {
+		t.Fatalf("arg %d is %T, want pgtype.UUID", i, args[i])
+	}
+	return v
+}
+
+func argTimestamptz(t *testing.T, args []any, i int) pgtype.Timestamptz {
+	t.Helper()
+	v, ok := args[i].(pgtype.Timestamptz)
+	if !ok {
+		t.Fatalf("arg %d is %T, want pgtype.Timestamptz", i, args[i])
+	}
+	return v
+}
+
+// PATCH /content/{id} sends literal JSON nulls to clear nullable columns
+// (the composer relies on this for cover removal, "post as yourself", SEO
+// resets and unscheduling). These tests run the real handler into a stubbed
+// write layer and assert the UPDATE args actually carry NULL — while an
+// omitted key must still preserve the stored value.
+func TestUpdateContentExplicitNullClears(t *testing.T) {
+	userID := newUUID(t)
+	contentID := newUUID(t)
+
+	orgID := newUUID(t)
+	headerID := newUUID(t)
+	featuredID := newUUID(t)
+	storedPublishAt := pgtype.Timestamptz{Time: time.Now().Add(48 * time.Hour).UTC(), Valid: true}
+	storedCanonical := strPtr("https://example.com/canonical")
+	storedMetaTitle := strPtr("stored meta title")
+	storedMetaDesc := strPtr("stored meta description")
+	storedOgImage := strPtr("https://example.com/og.png")
+
+	prev := gen.GetContentByIDRow{
+		ID:              contentID,
+		AuthorID:        userID,
+		ContentType:     TypeDiscussion,
+		Title:           "Stored title",
+		Slug:            "stored-slug",
+		Body:            "stored body",
+		BodyHtml:        "<p>stored body</p>",
+		OrganizationID:  orgID,
+		HeaderImageID:   headerID,
+		FeaturedImageID: featuredID,
+		CanonicalUrl:    storedCanonical,
+		MetaTitle:       storedMetaTitle,
+		MetaDescription: storedMetaDesc,
+		OgImageUrl:      storedOgImage,
+		Status:          StatusDraft,
+		Visibility:      VisibilityPublic,
+		PublishAt:       storedPublishAt,
+	}
+
+	updated := &gen.UpdateContentRow{
+		ID:          contentID,
+		AuthorID:    userID,
+		ContentType: TypeDiscussion,
+		Title:       "x",
+		Slug:        "stored-slug",
+		Body:        "stored body",
+		BodyHtml:    "<p>stored body</p>",
+		Status:      StatusDraft,
+		Visibility:  VisibilityPublic,
+	}
+
+	patch := func(t *testing.T, write *captureUpdateDBTX, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		h := &Handlers{Service: &Service{
+			read:  gen.New(rowDBTX{src: &prev}),
+			write: gen.New(write),
+		}}
+		rr := httptest.NewRecorder()
+		req := listRequest(t, http.MethodPatch, "/api/v1/content/"+contentID.String(), body, userID, nil,
+			map[string]string{"id": contentID.String()})
+		h.UpdateContent(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+		}
+		if len(write.updateArgs) == 0 {
+			t.Fatal("UpdateContent write was not reached")
+		}
+		return rr
+	}
+
+	t.Run("explicit nulls write NULL", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		patch(t, write, `{"title":"x","featured_image_id":null,"header_image_id":null,"organization_id":null,"canonical_url":null,"meta_title":null,"meta_description":null,"og_image_url":null,"publish_at":null}`)
+
+		if v := argStringPtr(t, write.updateArgs, argCanonicalUrl); v != nil {
+			t.Errorf("canonical_url arg = %q, want nil (NULL write)", *v)
+		}
+		if v := argStringPtr(t, write.updateArgs, argMetaTitle); v != nil {
+			t.Errorf("meta_title arg = %q, want nil (NULL write)", *v)
+		}
+		if v := argStringPtr(t, write.updateArgs, argMetaDescription); v != nil {
+			t.Errorf("meta_description arg = %q, want nil (NULL write)", *v)
+		}
+		if v := argStringPtr(t, write.updateArgs, argOgImageUrl); v != nil {
+			t.Errorf("og_image_url arg = %q, want nil (NULL write)", *v)
+		}
+		if v := argUUID(t, write.updateArgs, argFeaturedImageID); v.Valid {
+			t.Errorf("featured_image_id arg = %v, want invalid (NULL write)", v)
+		}
+		if v := argUUID(t, write.updateArgs, argHeaderImageID); v.Valid {
+			t.Errorf("header_image_id arg = %v, want invalid (NULL write)", v)
+		}
+		if v := argUUID(t, write.updateArgs, argOrganizationID); v.Valid {
+			t.Errorf("organization_id arg = %v, want invalid (NULL write)", v)
+		}
+		if v := argTimestamptz(t, write.updateArgs, argPublishAt); v.Valid {
+			t.Errorf("publish_at arg = %v, want invalid (NULL write)", v)
+		}
+	})
+
+	t.Run("absent keys preserve stored values", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		patch(t, write, `{"title":"x"}`)
+
+		if v := argStringPtr(t, write.updateArgs, argCanonicalUrl); v != storedCanonical {
+			t.Errorf("canonical_url arg = %v, want stored %q", v, *storedCanonical)
+		}
+		if v := argStringPtr(t, write.updateArgs, argMetaTitle); v != storedMetaTitle {
+			t.Errorf("meta_title arg = %v, want stored %q", v, *storedMetaTitle)
+		}
+		if v := argStringPtr(t, write.updateArgs, argMetaDescription); v != storedMetaDesc {
+			t.Errorf("meta_description arg = %v, want stored %q", v, *storedMetaDesc)
+		}
+		if v := argStringPtr(t, write.updateArgs, argOgImageUrl); v != storedOgImage {
+			t.Errorf("og_image_url arg = %v, want stored %q", v, *storedOgImage)
+		}
+		if v := argUUID(t, write.updateArgs, argFeaturedImageID); v != featuredID {
+			t.Errorf("featured_image_id arg = %v, want stored %v", v, featuredID)
+		}
+		if v := argUUID(t, write.updateArgs, argHeaderImageID); v != headerID {
+			t.Errorf("header_image_id arg = %v, want stored %v", v, headerID)
+		}
+		if v := argUUID(t, write.updateArgs, argOrganizationID); v != orgID {
+			t.Errorf("organization_id arg = %v, want stored %v", v, orgID)
+		}
+		if v := argTimestamptz(t, write.updateArgs, argPublishAt); v != storedPublishAt {
+			t.Errorf("publish_at arg = %v, want stored %v", v, storedPublishAt)
+		}
+	})
+
+	t.Run("empty strings still clear uuid and schedule fields", func(t *testing.T) {
+		write := &captureUpdateDBTX{updateRow: updated}
+		patch(t, write, `{"title":"x","featured_image_id":"","organization_id":"","canonical_url":"","publish_at":""}`)
+
+		if v := argUUID(t, write.updateArgs, argFeaturedImageID); v.Valid {
+			t.Errorf("featured_image_id arg = %v, want invalid for empty-string clear", v)
+		}
+		if v := argUUID(t, write.updateArgs, argOrganizationID); v.Valid {
+			t.Errorf("organization_id arg = %v, want invalid for empty-string clear", v)
+		}
+		if v := argTimestamptz(t, write.updateArgs, argPublishAt); v.Valid {
+			t.Errorf("publish_at arg = %v, want invalid for empty-string clear", v)
+		}
+		// canonical_url "" stays an empty-string write (pre-existing contract —
+		// only a literal null produces NULL).
+		if v := argStringPtr(t, write.updateArgs, argCanonicalUrl); v == nil || *v != "" {
+			t.Errorf("canonical_url arg = %v, want non-nil empty string", v)
+		}
+	})
 }
 
 // A PATCH with an oversized items array on a NON-list row must not trip the

@@ -966,10 +966,21 @@ type UpdateContentInput struct {
 	IsLocked       *bool
 	IsPinned       *bool
 	OrganizationID pgtype.UUID
+	// ClearOrganizationID NULLs organization_id ("post as yourself"). An
+	// invalid UUID alone now means "keep the stored attribution".
+	ClearOrganizationID bool
 	// ClearFeaturedImageID/ClearHeaderImageID NULL the image columns when
 	// set. An invalid UUID alone now means "keep the stored image".
 	ClearFeaturedImageID bool
 	ClearHeaderImageID   bool
+	// ClearCanonicalUrl/ClearMetaTitle/ClearMetaDescription/ClearOgImageUrl
+	// write NULL to the nullable SEO columns. A nil *string alone now means
+	// "keep the stored value" — these flags restore the explicit JSON null
+	// clear semantics.
+	ClearCanonicalUrl    bool
+	ClearMetaTitle       bool
+	ClearMetaDescription bool
+	ClearOgImageUrl      bool
 	GuideCategory        *string
 	AIGeneratedAt        pgtype.Timestamptz
 	AIModel              *string
@@ -1126,8 +1137,11 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 		input.BodyHtml = SanitizeHTML(RenderBodyHTML(input.Body))
 	}
 
-	// Post-as-org (ADR-062): attributing/keeping an org on this post requires the
+	// Post-as-org (ADR-062): attributing an org on this post requires the
 	// editor be an owner/admin/editor of that org. Symmetric with CreateContent.
+	// The guard only runs when the input sets an org — OrganizationID persists
+	// when omitted, and removal is an explicit org-admin action (or an
+	// explicit organization_id null clear), not a side effect of edits.
 	if input.OrganizationID.Valid {
 		role, err := s.read.GetOrganizationMemberRole(ctx, gen.GetOrganizationMemberRoleParams{
 			OrganizationID: input.OrganizationID,
@@ -1270,10 +1284,12 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 // Rules:
 //   - published_at is never writable here; it is stamped by
 //     UpdateContentStatus, so the stored value always passes through.
-//   - organization_id has no clear path (the org role-guard only runs when
-//     setting one), so an invalid input always keeps the stored value.
+//   - organization_id: an invalid input keeps the stored attribution unless
+//     ClearOrganizationID requests an explicit NULL ("post as yourself").
+//     The org role-guard only runs when setting an org.
 //   - *string fields (canonical_url, meta_title, meta_description,
-//     og_image_url): nil keeps the stored value, non-nil writes as-is.
+//     og_image_url): nil keeps the stored value, non-nil writes as-is, and
+//     the matching Clear* flag writes an explicit NULL (JSON null clear).
 //   - publish_at, header_image_id, featured_image_id: invalid keeps the
 //     stored value unless the matching Clear* flag requests an explicit NULL.
 //   - is_locked / is_pinned: nil keeps the stored flag; non-nil writes the
@@ -1325,20 +1341,40 @@ func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing
 		params.OrganizationID = existing.OrganizationID
 	}
 
+	if input.ClearOrganizationID && !input.OrganizationID.Valid {
+		params.OrganizationID = pgtype.UUID{}
+	}
+
 	if input.CanonicalUrl == nil {
 		params.CanonicalUrl = existing.CanonicalUrl
+	}
+
+	if input.ClearCanonicalUrl && input.CanonicalUrl == nil {
+		params.CanonicalUrl = nil
 	}
 
 	if input.MetaTitle == nil {
 		params.MetaTitle = existing.MetaTitle
 	}
 
+	if input.ClearMetaTitle && input.MetaTitle == nil {
+		params.MetaTitle = nil
+	}
+
 	if input.MetaDescription == nil {
 		params.MetaDescription = existing.MetaDescription
 	}
 
+	if input.ClearMetaDescription && input.MetaDescription == nil {
+		params.MetaDescription = nil
+	}
+
 	if input.OgImageUrl == nil {
 		params.OgImageUrl = existing.OgImageUrl
+	}
+
+	if input.ClearOgImageUrl && input.OgImageUrl == nil {
+		params.OgImageUrl = nil
 	}
 
 	if !input.PublishAt.Valid {
@@ -1374,6 +1410,46 @@ func buildUpdateContentParams(id pgtype.UUID, input UpdateContentInput, existing
 	}
 
 	return params
+}
+
+// ApplyExplicitNullClears marks the Clear* flags on input for each nullable
+// PATCH key the raw request body set to a literal JSON null. encoding/json
+// decodes null into a nil pointer exactly like an absent key, so handlers
+// re-scan the raw object to distinguish "clear this column" from "not sent"
+// (preserve-on-omit). Empty-string clears are handled separately at decode
+// time and are unaffected.
+func ApplyExplicitNullClears(raw map[string]json.RawMessage, input *UpdateContentInput) {
+	if isExplicitNull(raw, "featured_image_id") {
+		input.ClearFeaturedImageID = true
+	}
+	if isExplicitNull(raw, "header_image_id") {
+		input.ClearHeaderImageID = true
+	}
+	if isExplicitNull(raw, "organization_id") {
+		input.ClearOrganizationID = true
+	}
+	if isExplicitNull(raw, "publish_at") {
+		input.ClearPublishAt = true
+	}
+	if isExplicitNull(raw, "canonical_url") {
+		input.ClearCanonicalUrl = true
+	}
+	if isExplicitNull(raw, "meta_title") {
+		input.ClearMetaTitle = true
+	}
+	if isExplicitNull(raw, "meta_description") {
+		input.ClearMetaDescription = true
+	}
+	if isExplicitNull(raw, "og_image_url") {
+		input.ClearOgImageUrl = true
+	}
+}
+
+// isExplicitNull reports whether key is present in the raw JSON object with
+// a literal null value.
+func isExplicitNull(raw map[string]json.RawMessage, key string) bool {
+	v, ok := raw[key]
+	return ok && strings.TrimSpace(string(v)) == "null"
 }
 
 // UpdateContentStatus changes the status of a content row (e.g. draft to

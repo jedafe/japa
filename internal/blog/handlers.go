@@ -2124,7 +2124,23 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		GuideCategory   *string         `json:"guide_category"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	// Second pass over the raw object: a literal JSON null is an explicit
+	// clear for the nullable columns, while an absent key keeps the stored
+	// value. encoding/json decodes both into nil pointers, so the raw map is
+	// needed to tell them apart (content.ApplyExplicitNullClears below).
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &rawFields); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
@@ -2164,6 +2180,10 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		GuideCategory:   raw.GuideCategory,
 	}
 
+	// A literal JSON null on a nullable key is an explicit clear; an absent
+	// key is already preserved by the content service's param builder.
+	content.ApplyExplicitNullClears(rawFields, &input)
+
 	if strings.TrimSpace(body) != "" {
 		hash := content.ComputeContentHash(body)
 		input.ContentHash = &hash
@@ -2176,8 +2196,10 @@ func (h *Handlers) UpdatePost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if raw.OrganizationID != nil && *raw.OrganizationID != "" {
-		if err := input.OrganizationID.Scan(*raw.OrganizationID); err != nil {
+	if raw.OrganizationID != nil {
+		if *raw.OrganizationID == "" {
+			input.ClearOrganizationID = true
+		} else if err := input.OrganizationID.Scan(*raw.OrganizationID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_organization_id", "Invalid organization_id format")
 			return
 		}

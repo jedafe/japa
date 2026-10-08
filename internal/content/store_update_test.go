@@ -1,6 +1,7 @@
 package content
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -217,6 +218,60 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 		}
 	})
 
+	t.Run("explicit null clear flags NULL the nullable columns", func(t *testing.T) {
+		t.Parallel()
+
+		params := buildUpdateContentParams(contentID, UpdateContentInput{
+			Title:                "New title",
+			Status:               StatusDraft,
+			Visibility:           VisibilityPublic,
+			ClearOrganizationID:  true,
+			ClearCanonicalUrl:    true,
+			ClearMetaTitle:       true,
+			ClearMetaDescription: true,
+			ClearOgImageUrl:      true,
+		}, existing, "new-slug", spaceID)
+
+		if params.OrganizationID.Valid {
+			t.Errorf("OrganizationID = %v, want NULL after ClearOrganizationID", params.OrganizationID)
+		}
+		if params.CanonicalUrl != nil {
+			t.Errorf("CanonicalUrl = %v, want NULL after ClearCanonicalUrl", params.CanonicalUrl)
+		}
+		if params.MetaTitle != nil {
+			t.Errorf("MetaTitle = %v, want NULL after ClearMetaTitle", params.MetaTitle)
+		}
+		if params.MetaDescription != nil {
+			t.Errorf("MetaDescription = %v, want NULL after ClearMetaDescription", params.MetaDescription)
+		}
+		if params.OgImageUrl != nil {
+			t.Errorf("OgImageUrl = %v, want NULL after ClearOgImageUrl", params.OgImageUrl)
+		}
+		// Untouched clears still preserve their stored values.
+		if params.HeaderImageID != headerID {
+			t.Errorf("HeaderImageID = %v, want stored %v", params.HeaderImageID, headerID)
+		}
+		if params.PublishAt != storedPublishAt {
+			t.Errorf("PublishAt = %v, want stored %v", params.PublishAt, storedPublishAt)
+		}
+	})
+
+	t.Run("clear flag does not override an explicit string set", func(t *testing.T) {
+		t.Parallel()
+
+		params := buildUpdateContentParams(contentID, UpdateContentInput{
+			Title:             "New title",
+			Status:            StatusDraft,
+			Visibility:        VisibilityPublic,
+			CanonicalUrl:      strPtr("https://example.com/new"),
+			ClearCanonicalUrl: true,
+		}, existing, "new-slug", spaceID)
+
+		if params.CanonicalUrl == nil || *params.CanonicalUrl != "https://example.com/new" {
+			t.Errorf("CanonicalUrl = %v, want explicit value (set wins over clear)", params.CanonicalUrl)
+		}
+	})
+
 	t.Run("published_at passes through even when stored NULL", func(t *testing.T) {
 		t.Parallel()
 
@@ -231,6 +286,86 @@ func TestBuildUpdateContentParams_PreservesOmittedFields(t *testing.T) {
 
 		if params.PublishedAt.Valid {
 			t.Errorf("PublishedAt = %v, want NULL passthrough for a draft", params.PublishedAt)
+		}
+	})
+}
+
+// ApplyExplicitNullClears must flag only the keys present in the raw body
+// with a literal null — absent keys and non-null values leave the Clear*
+// flags alone.
+func TestApplyExplicitNullClears(t *testing.T) {
+	t.Parallel()
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(`{
+		"featured_image_id": null,
+		"header_image_id": null,
+		"organization_id": null,
+		"publish_at": null,
+		"canonical_url": null,
+		"meta_title": null,
+		"meta_description": null,
+		"og_image_url": null,
+		"title": "kept",
+		"is_locked": false
+	}`), &raw); err != nil {
+		t.Fatalf("unmarshal raw body: %v", err)
+	}
+
+	var input UpdateContentInput
+	ApplyExplicitNullClears(raw, &input)
+
+	if !input.ClearFeaturedImageID {
+		t.Error("ClearFeaturedImageID = false, want true for featured_image_id:null")
+	}
+	if !input.ClearHeaderImageID {
+		t.Error("ClearHeaderImageID = false, want true for header_image_id:null")
+	}
+	if !input.ClearOrganizationID {
+		t.Error("ClearOrganizationID = false, want true for organization_id:null")
+	}
+	if !input.ClearPublishAt {
+		t.Error("ClearPublishAt = false, want true for publish_at:null")
+	}
+	if !input.ClearCanonicalUrl {
+		t.Error("ClearCanonicalUrl = false, want true for canonical_url:null")
+	}
+	if !input.ClearMetaTitle {
+		t.Error("ClearMetaTitle = false, want true for meta_title:null")
+	}
+	if !input.ClearMetaDescription {
+		t.Error("ClearMetaDescription = false, want true for meta_description:null")
+	}
+	if !input.ClearOgImageUrl {
+		t.Error("ClearOgImageUrl = false, want true for og_image_url:null")
+	}
+
+	t.Run("absent keys and non-null values set no flags", func(t *testing.T) {
+		t.Parallel()
+
+		var sparse map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(`{"title":"x","canonical_url":"https://example.com"}`), &sparse); err != nil {
+			t.Fatalf("unmarshal sparse body: %v", err)
+		}
+
+		var in UpdateContentInput
+		ApplyExplicitNullClears(sparse, &in)
+
+		if in.ClearFeaturedImageID || in.ClearHeaderImageID || in.ClearOrganizationID ||
+			in.ClearPublishAt || in.ClearCanonicalUrl || in.ClearMetaTitle ||
+			in.ClearMetaDescription || in.ClearOgImageUrl {
+			t.Errorf("unexpected clear flags on %+v", in)
+		}
+	})
+
+	t.Run("nil raw map is a no-op", func(t *testing.T) {
+		t.Parallel()
+
+		var in UpdateContentInput
+		ApplyExplicitNullClears(nil, &in)
+
+		if in.ClearPublishAt || in.ClearFeaturedImageID || in.ClearCanonicalUrl {
+			t.Errorf("unexpected clear flags on %+v", in)
 		}
 	})
 }
