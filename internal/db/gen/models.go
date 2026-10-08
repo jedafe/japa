@@ -301,11 +301,12 @@ type AdCampaign struct {
 	// ISO country codes for geo-targeted serving (e.g., {NG,CA,GB}). Empty = all countries.
 	TargetGeo []string `json:"target_geo"`
 	// Specific space UUIDs for fine-grained targeting. Empty = all spaces.
-	TargetSpaceIds []pgtype.UUID `json:"target_space_ids"`
-	OrganizationID pgtype.UUID   `json:"organization_id"`
-	FlatRate       int32         `json:"flat_rate"`
-	BudgetCredits  int32         `json:"budget_credits"`
-	IsHouse        bool          `json:"is_house"`
+	TargetSpaceIds  []pgtype.UUID `json:"target_space_ids"`
+	OrganizationID  pgtype.UUID   `json:"organization_id"`
+	FlatRate        int32         `json:"flat_rate"`
+	BudgetCredits   int32         `json:"budget_credits"`
+	IsHouse         bool          `json:"is_house"`
+	LastAccrualDate pgtype.Date   `json:"last_accrual_date"`
 }
 
 type AdEvent struct {

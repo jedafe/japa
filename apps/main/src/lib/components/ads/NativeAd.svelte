@@ -7,6 +7,7 @@
 	// never leave a "Sponsored" shell with no ad inside.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { trackedAdUrl } from '$lib/ads/trackedUrl';
 
 	interface Props {
 		/** Ad slot name (native_feed, native_discover, native_space_feed, native_forum). */
@@ -75,7 +76,7 @@
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
 		});
-		window.open(campaign.target_url, '_blank', 'noopener,noreferrer');
+		window.open(trackedAdUrl(campaign.target_url, campaign.id), '_blank', 'noopener,noreferrer');
 	}
 
 	$effect(() => {

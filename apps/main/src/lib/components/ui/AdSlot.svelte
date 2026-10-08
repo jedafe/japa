@@ -2,6 +2,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { trackedAdUrl } from '$lib/ads/trackedUrl';
 
 	interface Props {
 		/** Ad slot identifier, surfaced as the label. */
@@ -93,8 +94,9 @@
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
 		});
-		// Navigate to the target URL.
-		window.open(campaign.target_url, '_blank', 'noopener,noreferrer');
+		// Navigate to the target URL — same-origin destinations carry the
+		// attribution param so the landing page fires the conversion event.
+		window.open(trackedAdUrl(campaign.target_url, campaign.id), '_blank', 'noopener,noreferrer');
 	}
 
 	// Ref: japaconnect-engineering/sections/23-main-site-frontend.md (Svelte 5 runes)

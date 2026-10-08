@@ -12,6 +12,7 @@
 	import ProductTour from '$lib/components/onboarding/ProductTour.svelte';
 	import MediaLightbox from '$lib/components/ui/MediaLightbox.svelte';
 	import StickyAnchorAd from '$lib/components/ads/StickyAnchorAd.svelte';
+	import AdConversionTracker from '$lib/components/ads/AdConversionTracker.svelte';
 	import { lightbox } from '$lib/lightbox.svelte';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
@@ -264,6 +265,11 @@
 
 <!-- Shared fullscreen media viewer — any surface opens it via openLightbox() -->
 <MediaLightbox bind:open={lightbox.open} bind:index={lightbox.index} items={lightbox.items} />
+
+<!-- §25: fires the conversion ad event when a navigation lands with the
+     same-origin attribution param (jc_ad_cid). Covers guests and authed
+     users — ad serving is optional-auth. -->
+<AdConversionTracker />
 
 <style>
 	/* ADR-127 minimal roadmap shell */

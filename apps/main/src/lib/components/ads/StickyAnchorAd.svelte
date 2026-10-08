@@ -7,6 +7,7 @@
 	import { browser } from '$app/environment';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { trackedAdUrl } from '$lib/ads/trackedUrl';
 	import { X } from 'lucide-svelte';
 
 	const DISMISS_KEY = 'jc.ad.anchor.dismissed';
@@ -74,7 +75,7 @@
 		api.post('/ads/events', {
 			events: [{ campaign_id: campaign.id, event_type: 'click' }]
 		});
-		window.open(campaign.target_url, '_blank', 'noopener,noreferrer');
+		window.open(trackedAdUrl(campaign.target_url, campaign.id), '_blank', 'noopener,noreferrer');
 	}
 
 	function dismiss(): void {

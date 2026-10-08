@@ -21,25 +21,51 @@
 
 	type Segment = { type: 'html'; frag: string } | { type: 'ad' };
 
-	const BLOCK_END = /<\/(p|h2|h3|h4|figure|blockquote|ul|ol)>/gi;
+	const TAG = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g;
+	// Elements whose children are not paragraph-boundaries — a </p> inside a
+	// <blockquote> or an <li> inside a <ul> must not split the fragment, or
+	// the ad would land inside an unclosed element and break the layout.
+	const CONTAINERS = new Set([
+		'blockquote', 'ul', 'ol', 'dl', 'figure', 'pre', 'table',
+		'div', 'section', 'article', 'aside', 'details', 'nav'
+	]);
+	const LEAF_BLOCKS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 
-	// Paragraph = a full block element. Positions are block indexes.
-	function countBlocks(s: string): number {
-		return (s.match(BLOCK_END) ?? []).length;
+	// End offsets of each top-level block element. Depth is tracked so
+	// closing tags inside nested containers are not treated as boundaries;
+	// a container's own close only counts when it returns to depth 0.
+	function blockEnds(s: string): number[] {
+		const ends: number[] = [];
+		let depth = 0;
+		for (const m of s.matchAll(TAG)) {
+			const tag = m[1].toLowerCase();
+			const text = m[0];
+			const end = (m.index ?? 0) + text.length;
+			if (!text.startsWith('</')) {
+				if (CONTAINERS.has(tag) && !text.endsWith('/>')) depth++;
+				continue;
+			}
+			if (CONTAINERS.has(tag)) {
+				if (depth > 0) depth--;
+				if (depth === 0) ends.push(end);
+			} else if (LEAF_BLOCKS.has(tag) && depth === 0) {
+				ends.push(end);
+			}
+		}
+		return ends;
 	}
 
 	// Split html into segments; an { type:'ad' } marker is inserted after
 	// block `after` and then every `every` blocks (0 = once).
 	function buildSegments(s: string, after: number, every: number): Segment[] {
 		const segs: Segment[] = [];
-		let blockIdx = 0;
+		const ends = blockEnds(s);
 		let adsInserted = 0;
 		let pos = 0;
 		const maxAds = 2; // slot max_display_per_page=2 — never exceed.
 
-		for (const m of s.matchAll(BLOCK_END)) {
-			blockIdx++;
-			const boundary = (m.index ?? 0) + m[0].length;
+		for (const [i, boundary] of ends.entries()) {
+			const blockIdx = i + 1;
 			const shouldAd =
 				adsInserted < maxAds &&
 				blockIdx === after + (adsInserted === 0 ? 0 : adsInserted * every);
@@ -65,7 +91,7 @@
 	);
 
 	const segments = $derived<Segment[]>(
-		countBlocks(html) >= firstAt + 1 ? buildSegments(html, firstAt, everyN) : [{ type: 'html', frag: html }]
+		blockEnds(html).length >= firstAt + 1 ? buildSegments(html, firstAt, everyN) : [{ type: 'html', frag: html }]
 	);
 </script>
 

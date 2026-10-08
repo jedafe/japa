@@ -65,6 +65,9 @@
 	// existed in ad_slot_types, so widgets without a slot prop must fall
 	// back to 'sidebar' to actually serve.
 	const adSlot = $derived(typeof widgetProps.slot === 'string' ? widgetProps.slot : 'sidebar');
+	// §25: the sidebar_sticky slot (or an explicit `sticky: true` prop) keeps
+	// the ad visible while the widget column scrolls.
+	const adSticky = $derived(adSlot === 'sidebar_sticky' || widgetProps.sticky === true);
 	const adFormat = $derived(
 		(typeof widgetProps.format === 'string' && ['square', 'banner', 'inline'].includes(widgetProps.format))
 			? widgetProps.format as 'square' | 'banner' | 'inline'
@@ -929,7 +932,13 @@
 	</div>
 {:else if widget.widget_type === 'ad_slot'}
 	{#if !isDashboard}
-		<AdSlot slot={adSlot} format={adFormat} />
+		{#if adSticky}
+			<div class="sticky top-4 z-10">
+				<AdSlot slot={adSlot} format={adFormat} />
+			</div>
+		{:else}
+			<AdSlot slot={adSlot} format={adFormat} />
+		{/if}
 	{/if}
 {:else if widget.widget_type === 'trending_tags'}
 	{#if trendingTags.length > 0}

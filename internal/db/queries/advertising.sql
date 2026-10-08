@@ -95,11 +95,17 @@ WHERE status = 'active'
  AND (flat_rate > 0 OR end_date IS NOT NULL);
 
 -- name: AccrueCampaignSpend :one
--- spent += flat_rate; no flat_rate>0 filter so the RETURNING row is always
--- available for the end-of-campaign check (flat_rate=0 accrues nothing).
+-- spent += flat_rate. Per-campaign idempotency (§25): campaigns with
+-- flat_rate>0 accrue at most once per UTC day via last_accrual_date —
+-- ErrNoRows means "already accrued today". flat_rate=0 rows always
+-- return (the +0 write is a no-op) so the end-of-campaign sweep still
+-- sees them on every run, including retries.
 UPDATE ad_campaigns
-SET spent = spent + flat_rate, updated_at = now()
+SET spent = spent + flat_rate,
+    last_accrual_date = CURRENT_DATE,
+    updated_at = now()
 WHERE id = @id
+ AND (flat_rate = 0 OR last_accrual_date IS NULL OR last_accrual_date < CURRENT_DATE)
 RETURNING *;
 
 -- name: UpdateAdCampaignStatus :one

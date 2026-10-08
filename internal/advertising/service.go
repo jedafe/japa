@@ -322,66 +322,11 @@ func (s *Service) filterByFrequencyCap(ctx context.Context, campaigns []AdCampai
 }
 
 // ---------------------------------------------------------------------------
-// Ad Events — batched ingestion
+// Ad Events
 // ---------------------------------------------------------------------------
-
-// IngestAdEventInput holds parameters for a single ad event.
-type IngestAdEventInput struct {
-	CampaignID string
-	UserID     string
-	EventType  string
-	OccurredAt time.Time
-}
-
-// IngestAdEvents records a batch of ad events. This should be called from a
-// background worker, not synchronously on every page view. Guest events
-// (empty UserID) are supported — user_id is nullable in ad_events.
-func (s *Service) IngestAdEvents(ctx context.Context, events []IngestAdEventInput) (int, error) {
-	if len(events) == 0 {
-		return 0, nil
-	}
-
-	ingested := 0
-
-	for _, event := range events {
-		if event.EventType != EventTypeImpression && event.EventType != EventTypeClick && event.EventType != EventTypeConversion {
-			continue
-		}
-
-		var campaignID pgtype.UUID
-		if err := campaignID.Scan(event.CampaignID); err != nil {
-			continue
-		}
-
-		// user_id is nullable — skip scan for empty strings (guest events).
-		var userID pgtype.UUID
-		if event.UserID != "" {
-			if err := userID.Scan(event.UserID); err != nil {
-				continue
-			}
-		}
-
-		occurredAt := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
-		if !event.OccurredAt.IsZero() {
-			occurredAt = pgtype.Timestamptz{Time: event.OccurredAt, Valid: true}
-		}
-
-		_, err := s.store.Queries().InsertAdEvent(ctx, gen.InsertAdEventParams{
-
-			CampaignID: campaignID,
-			UserID:     userID,
-			EventType:  event.EventType,
-			OccurredAt: occurredAt,
-		})
-		if err != nil {
-			return ingested, fmt.Errorf("inserting ad event at index %d: %w", ingested, err)
-		}
-
-		ingested++
-	}
-
-	return ingested, nil
-}
+// Events are validated in the HTTP handler (POST /ads/events) and inserted by
+// the ad:ingest_event_batch Asynq worker (internal/worker/handlers.go), which
+// also writes the ad_analytics_daily rollup. No synchronous insert path exists.
 
 // ---------------------------------------------------------------------------
 // List Slot Types
