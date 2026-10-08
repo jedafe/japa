@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { CalendarDays, Users, Inbox, AlertCircle } from 'lucide-svelte';
+	import { CalendarDays, Users, Inbox, AlertCircle, Layers, BadgePercent } from 'lucide-svelte';
 	import { EmptyState, PaginationControls, RelativeTime } from '$lib/components/ui';
 	import { formatMoney } from '$lib/utils/currency';
 	import type { ServiceBooking } from '$lib/types';
@@ -191,6 +191,15 @@
 									</span>
 									{#if b.total_price != null && b.fee_currency}
 										<span>{formatMoney(b.total_price, b.fee_currency, null, { minor: true })}</span>
+									{/if}
+									{#if b.tier_name}
+										<span class="inline-flex items-center gap-1"><Layers size={12} /> {b.tier_name}</span>
+									{/if}
+									{#if b.coupon_code}
+										<span class="inline-flex items-center gap-1 text-[var(--color-primary)]">
+											<BadgePercent size={12} /> {b.coupon_code}{#if b.discount_amount != null}
+												&nbsp;−{formatMoney(b.discount_amount, b.fee_currency, null, { minor: true })}{/if}
+										</span>
 									{/if}
 									<span><RelativeTime iso={b.created_at} /></span>
 								</div>

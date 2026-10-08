@@ -221,6 +221,24 @@
 						<dt class="text-xs font-medium text-[var(--color-muted)]">{t('bookings.col_fee', 'Platform fee paid')}</dt>
 						<dd class="mt-0.5 text-[var(--color-text)]">{formatMoney(b.fee_amount, b.fee_currency, null, { minor: true }) || '—'}</dd>
 					</div>
+					{#if b.tier_name}
+						<div>
+							<dt class="text-xs font-medium text-[var(--color-muted)]">{t('bookings.col_tier', 'Tier')}</dt>
+							<dd class="mt-0.5 text-[var(--color-text)]">{b.tier_name}</dd>
+						</div>
+					{/if}
+					{#if b.coupon_code}
+						<div>
+							<dt class="text-xs font-medium text-[var(--color-muted)]">{t('bookings.col_coupon', 'Coupon')}</dt>
+							<dd class="mt-0.5 font-mono text-[var(--color-text)]">{b.coupon_code}</dd>
+						</div>
+					{/if}
+					{#if b.discount_amount != null && b.discount_amount > 0}
+						<div>
+							<dt class="text-xs font-medium text-[var(--color-muted)]">{t('bookings.col_discount', 'Coupon discount')}</dt>
+							<dd class="mt-0.5 text-[var(--color-success)]">−{formatMoney(b.discount_amount, b.fee_currency, null, { minor: true })}</dd>
+						</div>
+					{/if}
 					{#if b.payment_status}
 						<div>
 							<dt class="text-xs font-medium text-[var(--color-muted)]">{t('bookings.col_payment_status', 'Payment status')}</dt>

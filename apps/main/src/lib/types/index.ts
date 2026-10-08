@@ -4109,6 +4109,53 @@ export interface ListingCoupon {
 	applies_to?: 'service' | 'package' | 'both';
 }
 
+/** §114 marketplace — one row of GET /organizations/{id}/coupons
+ *  (editor-scoped list; status + rollup counts unlike the public DTO). */
+export interface OrgCoupon {
+	id: string;
+	title: string;
+	slug: string;
+	code?: string | null;
+	discount_type?: 'percent' | 'fixed' | string | null;
+	discount_value?: number | null; // percent 0-100 or minor units per discount_type
+	currency?: string | null;
+	status: 'active' | 'suspended' | 'expired' | string;
+	valid_from?: string | null;
+	expires_at?: string | null;
+	applies_to?: 'service' | 'package' | 'both' | string;
+	max_redemptions?: number | null;
+	per_user_limit?: number | null;
+	min_spend?: number | null; // minor units
+	first_time_only?: boolean;
+	terms_url?: string | null;
+	referral_url?: string | null;
+	created_at?: string | null;
+	redemption_count?: number;
+	listing_count?: number;
+}
+
+/** §114 — POST/PATCH /organizations/{id}/coupons body. On PATCH every
+ *  omitted field preserves the stored value (mergeOrgCouponInput). */
+export interface OrgCouponInput {
+	title: string;
+	slug?: string;
+	code?: string;
+	status?: 'active' | 'suspended' | string;
+	description?: string;
+	discount_type?: 'percent' | 'fixed' | string;
+	discount_value?: number;
+	currency?: string;
+	terms_url?: string;
+	referral_url?: string;
+	valid_from?: string;
+	expires_at?: string;
+	max_redemptions?: number;
+	per_user_limit?: number;
+	min_spend?: number; // minor units
+	first_time_only?: boolean;
+	applies_to?: 'service' | 'package' | 'both' | string;
+}
+
 /** §114 marketplace — one pricing tier of a service package (active tiers
  *  only, position order, on the package detail payload). */
 export interface PackageTier {

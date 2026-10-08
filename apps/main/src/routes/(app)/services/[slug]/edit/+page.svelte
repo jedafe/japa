@@ -13,6 +13,11 @@
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import CoverUploader from '$lib/components/create/CoverUploader.svelte';
+	import ServiceTierEditor from '$lib/components/services/ServiceTierEditor.svelte';
+	import ServiceCouponSelector from '$lib/components/services/ServiceCouponSelector.svelte';
+	import { tiersToPayload, type EditableTier } from '$lib/components/services/serviceForm';
+	import type { CurrencyInfo } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
 
@@ -103,6 +108,36 @@
 	// Open the optional section when the listing already carries content —
 	// otherwise a seeded set would be invisible behind the collapsed details.
 	let detailsOpen = $state(untrack(() => (svc.faqs?.length ?? 0) > 0 || (svc.steps?.length ?? 0) > 0));
+
+	// §114 marketplace fields — featured image on all listing kinds;
+	// tiers + coupon attach are package-only and flag-gated. The tier seed
+	// comes from the detail payload's ACTIVE set — no editor-scoped tier
+	// list exists yet, so suspended tiers are outside the editor's reach
+	// (a replace-save would drop them; is_active is omitted on write so
+	// every submitted tier stays active).
+	const tiersEnabled = $derived(!!data.features?.['service_packages.tiers_enabled']);
+	const couponsEnabled = $derived(!!data.features?.['service_coupons.enabled']);
+	let featuredMediaId = $state(untrack(() => svc.featured_media_id ?? ''));
+	let featuredPreview = $state(untrack(() => svc.featured_image_url ?? ''));
+	let tiers = $state<EditableTier[]>(
+		untrack(() =>
+			(svc.tiers ?? []).map((tr) => ({
+				name: tr.name,
+				badge: tr.badge ?? '',
+				description: tr.description ?? '',
+				priceAmount: tr.price_amount != null ? String(tr.price_amount / 100) : '',
+				currency: tr.price_currency ?? '',
+				featuresText: (tr.features ?? []).join('\n'),
+				isFeatured: tr.is_featured
+			}))
+		)
+	);
+	// couponIds is seeded inside ServiceCouponSelector from the
+	// editor-scoped GET /services/{id}/coupons (all statuses). The PUT only
+	// runs once that seed resolved — sending [] early would detach all.
+	let couponIds = $state<string[]>([]);
+	let couponsReady = $state(false);
+	const currenciesList = $derived((page.data.currencies ?? []) as CurrencyInfo[]);
 
 	let submitting = $state(false);
 	let errorMsg = $state('');
@@ -222,6 +257,10 @@
 				errorMsg = t('services.errors.pkg_departure_start_required', 'Every departure needs a start date');
 				return false;
 			}
+			if (tiersEnabled && tiers.some((tr) => !tr.name.trim())) {
+				errorMsg = t('services.errors.tier_name_required', 'Every pricing tier needs a name');
+				return false;
+			}
 		}
 		return true;
 	}
@@ -254,6 +293,12 @@
 			faqs: faqs.map((f) => ({ question: f.question.trim(), answer: f.answer.trim() })),
 			steps: steps.map((s) => ({ title: s.title.trim(), description: s.description.trim() }))
 		};
+
+		// §114 — featured_media_id semantics: absent preserves, '' clears,
+		// a UUID replaces. Only send when the pick actually changed.
+		if (featuredMediaId !== (svc.featured_media_id ?? '')) {
+			payload.featured_media_id = featuredMediaId;
+		}
 
 		// §111 packages — items[]/departures[] are replace-on-save: always
 		// send the arrays so removed rows actually delete. listing_kind and
@@ -289,6 +334,11 @@
 					status: d.status || 'open'
 				};
 			});
+			// §114 tiers are replace-on-save like items[]/departures[] —
+			// always sent while the flag is on so removals clear.
+			if (tiersEnabled) {
+				payload.tiers = tiersToPayload(tiers);
+			}
 		}
 
 		submitting = true;
@@ -296,6 +346,19 @@
 		submitting = false;
 
 		if (res.data) {
+			// §114: coupon attachment lives on its own replace-on-save
+			// endpoint — PUT every save while the flag is on so unchecking
+			// the last coupon detaches it. A failed attach keeps the edit.
+			if (isPackage && couponsEnabled && couponsReady) {
+				const attach = await api.put(`/services/${svc.id}/coupons`, { coupon_ids: couponIds });
+				if (attach.error) {
+					errorMsg = t(
+						'services.errors.coupon_attach_failed_edit',
+						'Changes saved, but updating coupons failed — save again to retry.'
+					);
+					return;
+				}
+			}
 			// §111: commercial package edits bounce the listing back to
 			// in_review, and the public detail URL only serves published
 			// rows — land on the directory banner instead of a 404.
@@ -511,6 +574,26 @@
 					bind:value={priceRange}
 					placeholder={t('services.price_placeholder', 'e.g. £50–£150/hr')}
 					class={inputClass}
+				/>
+			</div>
+
+			<!-- §114 featured image — contents.featured_image_id via
+				featured_media_id on the service payload; all listing kinds. -->
+			<div>
+				<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+					{t('services.featured_image', 'Featured image')}
+				</span>
+				<CoverUploader
+					mediaId={featuredMediaId}
+					previewUrl={featuredPreview}
+					onUploaded={(a) => {
+						featuredMediaId = a.id;
+						featuredPreview = a.url;
+					}}
+					onRemove={() => {
+						featuredMediaId = '';
+						featuredPreview = '';
+					}}
 				/>
 			</div>
 
@@ -790,6 +873,24 @@
 							<Plus size={14} /> {t('services.pkg_add_departure', 'Add departure')}
 						</button>
 					</div>
+
+					<!-- §114 pricing tiers — service_packages.tiers_enabled -->
+					{#if tiersEnabled}
+						<ServiceTierEditor bind:tiers {inputClass} currencies={currenciesList} />
+					{/if}
+
+					<!-- §114 coupon attach — service_coupons.enabled; seeds from
+						the editor-scoped coupon list so suspended attachments
+						stay attached. -->
+					{#if couponsEnabled}
+						<ServiceCouponSelector
+							bind:selectedIds={couponIds}
+							bind:ready={couponsReady}
+							orgId={svc.org_id ?? ''}
+							listingContentId={svc.id}
+							listingKind="package"
+						/>
+					{/if}
 				</div>
 			{/if}
 

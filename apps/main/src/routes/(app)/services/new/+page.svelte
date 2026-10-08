@@ -13,6 +13,11 @@
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
+	import CoverUploader from '$lib/components/create/CoverUploader.svelte';
+	import ServiceTierEditor from '$lib/components/services/ServiceTierEditor.svelte';
+	import ServiceCouponSelector from '$lib/components/services/ServiceCouponSelector.svelte';
+	import { tiersToPayload, type EditableTier } from '$lib/components/services/serviceForm';
+	import type { CurrencyInfo } from '$lib/utils/currency';
 
 	let { data }: { data: PageData } = $props();
 
@@ -56,6 +61,16 @@
 	let availableUntil = $state('');
 	let pkgItems = $state<{ title: string; description: string; included: boolean; optional: boolean }[]>([]);
 	let departures = $state<{ starts_on: string; ends_on: string; capacity: string }[]>([]);
+
+	// §114 marketplace fields — featured image on all listing kinds;
+	// tiers + coupon attach are package-only and flag-gated.
+	const tiersEnabled = $derived(!!data.features?.['service_packages.tiers_enabled']);
+	const couponsEnabled = $derived(!!data.features?.['service_coupons.enabled']);
+	let featuredMediaId = $state('');
+	let featuredPreview = $state('');
+	let tiers = $state<EditableTier[]>([]);
+	let couponIds = $state<string[]>([]);
+	const currenciesList = $derived((page.data.currencies ?? []) as CurrencyInfo[]);
 
 	// §114 structured content — faqs[]/steps[] apply to ALL listing kinds.
 	// The client caps mirror the seeded system_settings
@@ -212,6 +227,10 @@
 				errorMsg = t('services.errors.pkg_departure_start_required', 'Every departure needs a start date');
 				return false;
 			}
+			if (tiersEnabled && tiers.some((tr) => !tr.name.trim())) {
+				errorMsg = t('services.errors.tier_name_required', 'Every pricing tier needs a name');
+				return false;
+			}
 		}
 		return true;
 	}
@@ -239,6 +258,7 @@
 		if (websiteUrl.trim()) payload.website_url = websiteUrl.trim();
 		if (bookingUrl.trim()) payload.booking_url = bookingUrl.trim();
 		if (priceRange.trim()) payload.price_range = priceRange.trim();
+		if (featuredMediaId) payload.featured_media_id = featuredMediaId;
 
 		// §114 structured content — all listing kinds. Only non-empty sets
 		// are sent on create (the columns default to '[]' either way).
@@ -298,6 +318,9 @@
 					};
 				});
 			}
+			if (tiersEnabled && tiers.length > 0) {
+				payload.tiers = tiersToPayload(tiers);
+			}
 		}
 
 		submitting = true;
@@ -305,6 +328,19 @@
 		submitting = false;
 
 		if (res.data) {
+			// §114: coupon attachment is a separate endpoint — the listing has
+			// to exist before PUT /services/{id}/coupons can reference it. A
+			// failed attach keeps the listing; the editor retries from edit.
+			if (couponsEnabled && couponIds.length > 0) {
+				const attach = await api.put(`/services/${res.data.id}/coupons`, { coupon_ids: couponIds });
+				if (attach.error) {
+					errorMsg = t(
+						'services.errors.coupon_attach_failed',
+						'Listing created, but attaching coupons failed — retry from the edit page.'
+					);
+					return;
+				}
+			}
 			// §111: new listings enter `in_review` unless review_before_publish
 			// is off — land on the detail page when the listing went live,
 			// else the directory with a "submitted for review" banner (the
@@ -559,6 +595,26 @@
 					bind:value={priceRange}
 					placeholder={t('services.price_placeholder', 'e.g. £50–£150/hr')}
 					class={inputClass}
+				/>
+			</div>
+
+			<!-- §114 featured image — contents.featured_image_id via
+				featured_media_id on the service payload; all listing kinds. -->
+			<div>
+				<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+					{t('services.featured_image', 'Featured image')}
+				</span>
+				<CoverUploader
+					mediaId={featuredMediaId}
+					previewUrl={featuredPreview}
+					onUploaded={(a) => {
+						featuredMediaId = a.id;
+						featuredPreview = a.url;
+					}}
+					onRemove={() => {
+						featuredMediaId = '';
+						featuredPreview = '';
+					}}
 				/>
 			</div>
 
@@ -899,6 +955,17 @@
 							<Plus size={14} /> {t('services.pkg_add_departure', 'Add departure')}
 						</button>
 					</div>
+
+					<!-- §114 pricing tiers — service_packages.tiers_enabled -->
+					{#if tiersEnabled}
+						<ServiceTierEditor bind:tiers {inputClass} currencies={currenciesList} />
+					{/if}
+
+					<!-- §114 coupon attach — service_coupons.enabled; needs the
+						selling org picked first (coupons are org-owned). -->
+					{#if couponsEnabled}
+						<ServiceCouponSelector bind:selectedIds={couponIds} {orgId} listingKind="package" />
+					{/if}
 				</div>
 			{/if}
 

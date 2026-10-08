@@ -6,7 +6,7 @@
 
 import { t } from '$lib/i18n';
 import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
-import type { ListingCoupon, ServiceCategoryInfo, ServiceListing } from '$lib/types';
+import type { ServiceCategoryInfo, ServiceListing } from '$lib/types';
 
 /**
  * The fixed accent palette admins pick from for service categories
@@ -98,8 +98,13 @@ export function priceLabel(
  * Short discount label for a coupon badge: "-10%" for percent coupons,
  * "-₦250" for fixed ones (discount_value is minor units in the coupon's
  * currency). Unknown types render empty so callers can skip the badge.
+ * Structural param so both the public ListingCoupon and the editor-scoped
+ * OrgCoupon row fit.
  */
-export function discountLabel(c: ListingCoupon, currencies: CurrencyInfo[]): string {
+export function discountLabel(
+	c: { discount_type?: string | null; discount_value?: number | null; currency?: string | null },
+	currencies: CurrencyInfo[]
+): string {
 	if (c.discount_type === 'percent') return `-${c.discount_value}%`;
 	if (c.discount_type === 'fixed') {
 		const money = formatMoney(c.discount_value, c.currency, currencies, { minor: true });
