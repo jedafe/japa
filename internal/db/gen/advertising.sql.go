@@ -11,6 +11,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const accrueCampaignSpend = `-- name: AccrueCampaignSpend :one
+UPDATE ad_campaigns
+SET spent = spent + flat_rate, updated_at = now()
+WHERE id = $1
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house
+`
+
+// spent += flat_rate; no flat_rate>0 filter so the RETURNING row is always
+// available for the end-of-campaign check (flat_rate=0 accrues nothing).
+func (q *Queries) AccrueCampaignSpend(ctx context.Context, id pgtype.UUID) (AdCampaign, error) {
+	row := q.db.QueryRow(ctx, accrueCampaignSpend, id)
+	var i AdCampaign
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.SlotTypeID,
+		&i.Content,
+		&i.TargetUrl,
+		&i.Budget,
+		&i.Spent,
+		&i.Status,
+		&i.Priority,
+		&i.FrequencyCapPerUser,
+		&i.StartDate,
+		&i.EndDate,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TargetGeo,
+		&i.TargetSpaceIds,
+		&i.OrganizationID,
+		&i.FlatRate,
+		&i.BudgetCredits,
+		&i.IsHouse,
+	)
+	return i, err
+}
+
 type BatchInsertAdEventsParams struct {
 	CampaignID pgtype.UUID        `json:"campaign_id"`
 	UserID     pgtype.UUID        `json:"user_id"`
@@ -51,8 +89,8 @@ func (q *Queries) CountImpressionsForUserToday(ctx context.Context, arg CountImp
 
 const createAdCampaign = `-- name: CreateAdCampaign :one
 
-INSERT INTO ad_campaigns (name, slot_type_id, content, target_url, budget, status, priority, frequency_cap_per_user, start_date, end_date, created_by, target_geo, target_space_ids) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+INSERT INTO ad_campaigns (name, slot_type_id, content, target_url, budget, status, priority, frequency_cap_per_user, start_date, end_date, created_by, target_geo, target_space_ids, is_house) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house
 `
 
 type CreateAdCampaignParams struct {
@@ -69,6 +107,7 @@ type CreateAdCampaignParams struct {
 	CreatedBy           pgtype.UUID        `json:"created_by"`
 	TargetGeo           []string           `json:"target_geo"`
 	TargetSpaceIds      []pgtype.UUID      `json:"target_space_ids"`
+	IsHouse             bool               `json:"is_house"`
 }
 
 // =====================
@@ -89,6 +128,7 @@ func (q *Queries) CreateAdCampaign(ctx context.Context, arg CreateAdCampaignPara
 		arg.CreatedBy,
 		arg.TargetGeo,
 		arg.TargetSpaceIds,
+		arg.IsHouse,
 	)
 	var i AdCampaign
 	err := row.Scan(
@@ -112,6 +152,7 @@ func (q *Queries) CreateAdCampaign(ctx context.Context, arg CreateAdCampaignPara
 		&i.OrganizationID,
 		&i.FlatRate,
 		&i.BudgetCredits,
+		&i.IsHouse,
 	)
 	return i, err
 }
@@ -383,7 +424,7 @@ func (q *Queries) GetAdAnalyticsBySlot(ctx context.Context, arg GetAdAnalyticsBy
 }
 
 const getAdCampaignByID = `-- name: GetAdCampaignByID :one
-SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house FROM ad_campaigns
 WHERE id = $1
 `
 
@@ -411,6 +452,7 @@ func (q *Queries) GetAdCampaignByID(ctx context.Context, id pgtype.UUID) (AdCamp
 		&i.OrganizationID,
 		&i.FlatRate,
 		&i.BudgetCredits,
+		&i.IsHouse,
 	)
 	return i, err
 }
@@ -506,7 +548,7 @@ SELECT
  COUNT(*) FILTER (WHERE e.event_type = 'impression')::bigint AS impressions,
  COUNT(*) FILTER (WHERE e.event_type = 'click')::bigint AS clicks,
  COUNT(DISTINCT e.user_id)::bigint AS unique_users,
- 0::bigint AS conversions,
+ COUNT(*) FILTER (WHERE e.event_type = 'conversion')::bigint AS conversions,
  COALESCE(c.spent, 0)::bigint AS spent
 FROM ad_events e
 LEFT JOIN ad_campaigns c ON c.id = e.campaign_id
@@ -737,7 +779,7 @@ func (q *Queries) ListActiveBoosts(ctx context.Context) ([]ListActiveBoostsRow, 
 }
 
 const listActiveCampaignsBySlot = `-- name: ListActiveCampaignsBySlot :many
-SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house FROM ad_campaigns
 WHERE slot_type_id = $1
  AND status = 'active'
  AND (start_date IS NULL OR start_date <= now())
@@ -782,6 +824,58 @@ func (q *Queries) ListActiveCampaignsBySlot(ctx context.Context, arg ListActiveC
 			&i.OrganizationID,
 			&i.FlatRate,
 			&i.BudgetCredits,
+			&i.IsHouse,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveFlatRateCampaigns = `-- name: ListActiveFlatRateCampaigns :many
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house FROM ad_campaigns
+WHERE status = 'active'
+ AND (flat_rate > 0 OR end_date IS NOT NULL)
+`
+
+// For ad:accrue_spend_daily — active campaigns that accrue daily spend
+// (flat_rate > 0) plus any active campaign with an end_date so the sweep can
+// still auto-end flat_rate=0 stragglers.
+func (q *Queries) ListActiveFlatRateCampaigns(ctx context.Context) ([]AdCampaign, error) {
+	rows, err := q.db.Query(ctx, listActiveFlatRateCampaigns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdCampaign
+	for rows.Next() {
+		var i AdCampaign
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.SlotTypeID,
+			&i.Content,
+			&i.TargetUrl,
+			&i.Budget,
+			&i.Spent,
+			&i.Status,
+			&i.Priority,
+			&i.FrequencyCapPerUser,
+			&i.StartDate,
+			&i.EndDate,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TargetGeo,
+			&i.TargetSpaceIds,
+			&i.OrganizationID,
+			&i.FlatRate,
+			&i.BudgetCredits,
+			&i.IsHouse,
 		); err != nil {
 			return nil, err
 		}
@@ -794,7 +888,7 @@ func (q *Queries) ListActiveCampaignsBySlot(ctx context.Context, arg ListActiveC
 }
 
 const listAdCampaigns = `-- name: ListAdCampaigns :many
-SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits FROM ad_campaigns
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house FROM ad_campaigns
 
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $1
@@ -835,6 +929,7 @@ func (q *Queries) ListAdCampaigns(ctx context.Context, arg ListAdCampaignsParams
 			&i.OrganizationID,
 			&i.FlatRate,
 			&i.BudgetCredits,
+			&i.IsHouse,
 		); err != nil {
 			return nil, err
 		}
@@ -968,6 +1063,81 @@ func (q *Queries) ListAdSlotTypes(ctx context.Context, arg ListAdSlotTypesParams
 	return items, nil
 }
 
+const listEligibleCampaignsForServing = `-- name: ListEligibleCampaignsForServing :many
+SELECT id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house FROM ad_campaigns
+WHERE slot_type_id = $1
+ AND status = 'active'
+ AND is_house = $2
+ AND (start_date IS NULL OR start_date <= now())
+ AND (end_date IS NULL OR end_date >= now())
+ AND (coalesce(cardinality(target_geo), 0) = 0 OR $3::text = ANY(target_geo))
+ AND (coalesce(cardinality(target_space_ids), 0) = 0 OR $4::uuid = ANY(target_space_ids))
+ORDER BY priority DESC, created_at ASC
+LIMIT $6 OFFSET $5
+`
+
+type ListEligibleCampaignsForServingParams struct {
+	SlotTypeID  pgtype.UUID `json:"slot_type_id"`
+	IsHouse     bool        `json:"is_house"`
+	UserCountry *string     `json:"user_country"`
+	SpaceID     pgtype.UUID `json:"space_id"`
+	PageOffset  int32       `json:"page_offset"`
+	PageLimit   int32       `json:"page_limit"`
+}
+
+// Ref: sections/25-ad-placement.md (Amendment — serving targeting + house tier).
+// Two-pass serving calls this twice per request: is_house=false first, then
+// is_house=true as fallback fill when no paid/self-serve campaign is eligible.
+// NULL user_country / space_id params exclude geo- and space-targeted rows.
+func (q *Queries) ListEligibleCampaignsForServing(ctx context.Context, arg ListEligibleCampaignsForServingParams) ([]AdCampaign, error) {
+	rows, err := q.db.Query(ctx, listEligibleCampaignsForServing,
+		arg.SlotTypeID,
+		arg.IsHouse,
+		arg.UserCountry,
+		arg.SpaceID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdCampaign
+	for rows.Next() {
+		var i AdCampaign
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.SlotTypeID,
+			&i.Content,
+			&i.TargetUrl,
+			&i.Budget,
+			&i.Spent,
+			&i.Status,
+			&i.Priority,
+			&i.FrequencyCapPerUser,
+			&i.StartDate,
+			&i.EndDate,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TargetGeo,
+			&i.TargetSpaceIds,
+			&i.OrganizationID,
+			&i.FlatRate,
+			&i.BudgetCredits,
+			&i.IsHouse,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizationBoosts = `-- name: ListOrganizationBoosts :many
 SELECT id, organization_id, campaign_id, boost_type, status, start_date, end_date, created_at FROM organization_boosts
 WHERE organization_id = $1
@@ -1016,7 +1186,7 @@ SET name = $1,
  target_space_ids = $9,
  updated_at = now()
 WHERE id = $10
-RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house
 `
 
 type UpdateAdCampaignParams struct {
@@ -1067,6 +1237,7 @@ func (q *Queries) UpdateAdCampaign(ctx context.Context, arg UpdateAdCampaignPara
 		&i.OrganizationID,
 		&i.FlatRate,
 		&i.BudgetCredits,
+		&i.IsHouse,
 	)
 	return i, err
 }
@@ -1075,22 +1246,29 @@ const updateAdCampaignDetails = `-- name: UpdateAdCampaignDetails :one
 UPDATE ad_campaigns
 SET name = COALESCE(NULLIF($1::text, ''), name),
  budget = COALESCE($2, budget),
+ is_house = COALESCE($3, is_house),
  updated_at = now()
-WHERE id = $3
-RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+WHERE id = $4
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house
 `
 
 type UpdateAdCampaignDetailsParams struct {
-	Name   string      `json:"name"`
-	Budget *int64      `json:"budget"`
-	ID     pgtype.UUID `json:"id"`
+	Name    string      `json:"name"`
+	Budget  *int64      `json:"budget"`
+	IsHouse *bool       `json:"is_house"`
+	ID      pgtype.UUID `json:"id"`
 }
 
 // Partial PATCH for the admin UI: only name and budget are editable from
 // the campaign row. ad_campaigns has no description column, so it is
 // intentionally omitted. Fields use COALESCE so callers can omit either.
 func (q *Queries) UpdateAdCampaignDetails(ctx context.Context, arg UpdateAdCampaignDetailsParams) (AdCampaign, error) {
-	row := q.db.QueryRow(ctx, updateAdCampaignDetails, arg.Name, arg.Budget, arg.ID)
+	row := q.db.QueryRow(ctx, updateAdCampaignDetails,
+		arg.Name,
+		arg.Budget,
+		arg.IsHouse,
+		arg.ID,
+	)
 	var i AdCampaign
 	err := row.Scan(
 		&i.ID,
@@ -1113,6 +1291,7 @@ func (q *Queries) UpdateAdCampaignDetails(ctx context.Context, arg UpdateAdCampa
 		&i.OrganizationID,
 		&i.FlatRate,
 		&i.BudgetCredits,
+		&i.IsHouse,
 	)
 	return i, err
 }
@@ -1121,7 +1300,7 @@ const updateAdCampaignStatus = `-- name: UpdateAdCampaignStatus :one
 UPDATE ad_campaigns
 SET status = $1, updated_at = now()
 WHERE id = $2
-RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits
+RETURNING id, name, slot_type_id, content, target_url, budget, spent, status, priority, frequency_cap_per_user, start_date, end_date, created_by, created_at, updated_at, target_geo, target_space_ids, organization_id, flat_rate, budget_credits, is_house
 `
 
 type UpdateAdCampaignStatusParams struct {
@@ -1153,6 +1332,7 @@ func (q *Queries) UpdateAdCampaignStatus(ctx context.Context, arg UpdateAdCampai
 		&i.OrganizationID,
 		&i.FlatRate,
 		&i.BudgetCredits,
+		&i.IsHouse,
 	)
 	return i, err
 }

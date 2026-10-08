@@ -305,6 +305,7 @@ type AdCampaign struct {
 	OrganizationID pgtype.UUID   `json:"organization_id"`
 	FlatRate       int32         `json:"flat_rate"`
 	BudgetCredits  int32         `json:"budget_credits"`
+	IsHouse        bool          `json:"is_house"`
 }
 
 type AdEvent struct {

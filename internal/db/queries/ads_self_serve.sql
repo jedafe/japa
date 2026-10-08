@@ -90,6 +90,7 @@ RETURNING *;
 SELECT
  COUNT(*) FILTER (WHERE ae.event_type = 'impression') AS impressions,
  COUNT(*) FILTER (WHERE ae.event_type = 'click') AS clicks,
+ COUNT(*) FILTER (WHERE ae.event_type = 'conversion') AS conversions,
  ac.spent,
  ac.budget_credits
 FROM ad_campaigns ac

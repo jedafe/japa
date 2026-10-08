@@ -48,7 +48,7 @@ DELETE FROM ad_slot_types WHERE id = @id;
 -- =====================
 
 -- name: CreateAdCampaign :one
-INSERT INTO ad_campaigns (name, slot_type_id, content, target_url, budget, status, priority, frequency_cap_per_user, start_date, end_date, created_by, target_geo, target_space_ids) VALUES (@name, @slot_type_id, @content, sqlc.narg(target_url), sqlc.narg(budget), @status, @priority, sqlc.narg(frequency_cap_per_user), sqlc.narg(start_date), sqlc.narg(end_date), sqlc.narg(created_by), sqlc.narg(target_geo), sqlc.narg(target_space_ids))
+INSERT INTO ad_campaigns (name, slot_type_id, content, target_url, budget, status, priority, frequency_cap_per_user, start_date, end_date, created_by, target_geo, target_space_ids, is_house) VALUES (@name, @slot_type_id, @content, sqlc.narg(target_url), sqlc.narg(budget), @status, @priority, sqlc.narg(frequency_cap_per_user), sqlc.narg(start_date), sqlc.narg(end_date), sqlc.narg(created_by), sqlc.narg(target_geo), sqlc.narg(target_space_ids), @is_house)
 RETURNING *;
 
 -- name: GetAdCampaignByID :one
@@ -70,6 +70,38 @@ WHERE slot_type_id = @slot_type_id
 ORDER BY priority DESC, created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
+-- name: ListEligibleCampaignsForServing :many
+-- Ref: sections/25-ad-placement.md (Amendment — serving targeting + house tier).
+-- Two-pass serving calls this twice per request: is_house=false first, then
+-- is_house=true as fallback fill when no paid/self-serve campaign is eligible.
+-- NULL user_country / space_id params exclude geo- and space-targeted rows.
+SELECT * FROM ad_campaigns
+WHERE slot_type_id = @slot_type_id
+ AND status = 'active'
+ AND is_house = @is_house
+ AND (start_date IS NULL OR start_date <= now())
+ AND (end_date IS NULL OR end_date >= now())
+ AND (coalesce(cardinality(target_geo), 0) = 0 OR sqlc.narg(user_country)::text = ANY(target_geo))
+ AND (coalesce(cardinality(target_space_ids), 0) = 0 OR sqlc.narg(space_id)::uuid = ANY(target_space_ids))
+ORDER BY priority DESC, created_at ASC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: ListActiveFlatRateCampaigns :many
+-- For ad:accrue_spend_daily — active campaigns that accrue daily spend
+-- (flat_rate > 0) plus any active campaign with an end_date so the sweep can
+-- still auto-end flat_rate=0 stragglers.
+SELECT * FROM ad_campaigns
+WHERE status = 'active'
+ AND (flat_rate > 0 OR end_date IS NOT NULL);
+
+-- name: AccrueCampaignSpend :one
+-- spent += flat_rate; no flat_rate>0 filter so the RETURNING row is always
+-- available for the end-of-campaign check (flat_rate=0 accrues nothing).
+UPDATE ad_campaigns
+SET spent = spent + flat_rate, updated_at = now()
+WHERE id = @id
+RETURNING *;
+
 -- name: UpdateAdCampaignStatus :one
 UPDATE ad_campaigns
 SET status = @status, updated_at = now()
@@ -83,6 +115,7 @@ RETURNING *;
 UPDATE ad_campaigns
 SET name = COALESCE(NULLIF(@name::text, ''), name),
  budget = COALESCE(@budget, budget),
+ is_house = COALESCE(sqlc.narg(is_house), is_house),
  updated_at = now()
 WHERE id = @id
 RETURNING *;
@@ -120,7 +153,7 @@ SELECT
  COUNT(*) FILTER (WHERE e.event_type = 'impression')::bigint AS impressions,
  COUNT(*) FILTER (WHERE e.event_type = 'click')::bigint AS clicks,
  COUNT(DISTINCT e.user_id)::bigint AS unique_users,
- 0::bigint AS conversions,
+ COUNT(*) FILTER (WHERE e.event_type = 'conversion')::bigint AS conversions,
  COALESCE(c.spent, 0)::bigint AS spent
 FROM ad_events e
 LEFT JOIN ad_campaigns c ON c.id = e.campaign_id
