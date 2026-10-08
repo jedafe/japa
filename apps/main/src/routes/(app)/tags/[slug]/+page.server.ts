@@ -26,12 +26,23 @@ interface TagFieldDef {
 }
 
 interface TagFollower {
+	// `id` is the follow row's id — `follower_id` is the actual user id the
+	// hover card's FollowButton and follow-status lookup need.
 	id: string;
+	follower_id?: string;
 	username: string;
 	display_name: string;
 	avatar_url?: string | null;
 	bio?: string | null;
 	is_following?: boolean;
+}
+
+interface TagModerator {
+	user_id: string;
+	username: string;
+	display_name: string;
+	avatar_url?: string | null;
+	added_at?: string;
 }
 
 export const load: PageServerLoad = async (event) => {
@@ -40,7 +51,10 @@ export const load: PageServerLoad = async (event) => {
 	const rawTab = event.url.searchParams.get('tab') ?? 'content';
 	// Only known tabs — an arbitrary ?tab= value would leave UrlTabs with a
 	// value matching no trigger (no active state) while rendering content.
-	const tab = rawTab === 'search' || rawTab === 'followers' ? rawTab : 'content';
+	const tab =
+		rawTab === 'search' || rawTab === 'followers' || rawTab === 'moderators'
+			? rawTab
+			: 'content';
 	const query = event.url.searchParams.get('q') ?? '';
 
 	// Tag detail — 404 propagates as a SvelteKit error.
@@ -55,6 +69,22 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
+	// Tag moderators — fetched on every load because the list drives tab
+	// visibility: the Moderators tab renders only when the tag has at least
+	// one assigned moderator. GET /tags/{slug}/moderators is public, so this
+	// also works for guests. Best-effort: a failure degrades to no tab.
+	let moderators: TagModerator[] = [];
+	try {
+		moderators = (await apiGet<TagModerator[]>(ctx, `/tags/${slug}/moderators`)) ?? [];
+	} catch {
+		moderators = [];
+	}
+
+	// A manual ?tab=moderators on a tag with no moderators falls back to the
+	// content tab — the tab isn't rendered, so showing its pane would leave
+	// the tab bar with no active trigger.
+	const activeTab = tab === 'moderators' && moderators.length === 0 ? 'content' : tab;
+
 	// Tab-specific data. Content is the default; search and followers are
 	// loaded on demand. Keep failures per-tab so one failed tab doesn't blank
 	// the tag header.
@@ -67,7 +97,7 @@ export const load: PageServerLoad = async (event) => {
 	let followers: TagFollower[] = [];
 	let followersAuthRequired = false;
 
-	if (tab === 'search') {
+	if (activeTab === 'search') {
 		if (!event.locals.user) {
 			searchAuthRequired = true;
 		} else if (query) {
@@ -81,7 +111,7 @@ export const load: PageServerLoad = async (event) => {
 				searchResults = [];
 			}
 		}
-	} else if (tab === 'followers') {
+	} else if (activeTab === 'followers') {
 		// GET /tags/{slug}/followers is auth-gated. For guests, skip the call
 		// and surface a sign-in prompt instead of a misleading "No followers
 		// yet" empty state.
@@ -94,7 +124,7 @@ export const load: PageServerLoad = async (event) => {
 				followers = [];
 			}
 		}
-	} else {
+	} else if (activeTab === 'content') {
 		// Tagged content — degrades to an empty list on failure so a missing feed
 		// never blanks the whole tag view. Supports composite cursor-based
 		// pagination (Section 14): the initial SSR load fetches the first page;
@@ -162,7 +192,7 @@ export const load: PageServerLoad = async (event) => {
 
 	return {
 		tag,
-		tab,
+		tab: activeTab,
 		query,
 		items,
 		pageSize: PAGE_SIZE,
@@ -175,6 +205,7 @@ export const load: PageServerLoad = async (event) => {
 		searchResults,
 		searchAuthRequired,
 		followers,
-		followersAuthRequired
+		followersAuthRequired,
+		moderators
 	};
 };

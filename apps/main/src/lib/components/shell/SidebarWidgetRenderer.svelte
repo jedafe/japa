@@ -177,6 +177,9 @@
 	interface BookmarkFolderItem { id: string; name: string; bookmark_count?: number; }
 	interface LeaderboardUser { id: string; username: string; display_name?: string; avatar_url?: string; score: number; }
 	interface EventItem { id: string; title: string; starts_at?: string; url?: string; }
+	// GET /tags item — a subset of TagDetail; the tag_cloud widget only needs
+	// id/name/slug for its links.
+	interface PopularTagItem { id: string; name: string; slug: string; follower_count?: number; }
 
 	let featuredPosts = $state<FeaturedPost[]>([]);
 	let spaces = $state<SpaceItem[]>([]);
@@ -192,6 +195,7 @@
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
 	let spaceTypes = $state<SpaceTypeItem[]>([]);
+	let popularTags = $state<PopularTagItem[]>([]);
 	// Last URL for which the context widgets resolved, so they recompute on
 	// client navigation without depending on this state directly. Includes the
 	// query string — upcoming_events reads ?dest= from search params.
@@ -678,6 +682,16 @@
 			}));
 			dataLoaded = { ...dataLoaded, upcoming_events: true };
 		}
+		// tag_cloud ("Popular Tags") fetches the most-followed tags from
+		// GET /tags?sort=popular — a different data source than trending_tags,
+		// which renders the /trending/tags snapshot feed passed via the
+		// trendingTags prop. Before this split both widgets showed the same
+		// list.
+		async function fetchPopularTags() {
+			const res = await api.get<PopularTagItem[]>(`/tags?sort=popular&page_size=${limit}`);
+			popularTags = res.data ?? [];
+			dataLoaded = { ...dataLoaded, tag_cloud: true };
+		}
 		// space_categories fetches the platform's space types (Section 05/39) —
 		// the widget links each type to the filtered /spaces directory.
 		async function fetchSpaceCategories() {
@@ -860,6 +874,7 @@
 		else if (wt === 'user_card') void fetchUserCard().finally(settled);
 		else if (wt === 'related_discussions') void fetchRelatedDiscussions().finally(settled);
 		else if (wt === 'space_categories') void fetchSpaceCategories().finally(settled);
+		else if (wt === 'tag_cloud') void fetchPopularTags().finally(settled);
 		else if (wt === 'configured_widget') void fetchConfiguredWidget().finally(settled);
 		else settled();
 	});
@@ -1124,11 +1139,11 @@
 		</a>
 	</section>
 {:else if widget.widget_type === 'tag_cloud'}
-	{#if trendingTags.length > 0}
+	{#if popularTags.length > 0}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">{title || t('sidebar.popular_tags')}</h2>
 			<div class="flex flex-wrap gap-1.5">
-				{#each trendingTags.slice(0, limit) as tag, i (tag.id)}
+				{#each popularTags.slice(0, limit) as tag, i (tag.id)}
 					<a
 						href={`/tags/${tag.slug}`}
 						class="inline-block rounded-full bg-[var(--color-surface-subtle)] px-2.5 py-1 text-[var(--color-text-subtle)] hover:text-[var(--color-primary)]"

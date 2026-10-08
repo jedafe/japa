@@ -902,6 +902,37 @@ func isValidHexColor(s string) bool {
 	return true
 }
 
+// GetTagModerators handles GET /api/v1/tags/{slug}/moderators — public list
+// of the tag's assigned moderators (Section 08). The frontend uses it to
+// decide whether the tag hub renders its Moderators tab (shown only when at
+// least one moderator is assigned) and to populate that tab's list.
+func (h *Handlers) GetTagModerators(w http.ResponseWriter, r *http.Request) {
+
+	tag, ok := h.resolveTag(w, r)
+	if !ok {
+		return
+	}
+
+	rows, err := h.service.ListTagModerators(r.Context(), tag.ID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list tag moderators")
+		return
+	}
+
+	moderators := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		moderators = append(moderators, map[string]any{
+			"user_id":      row.UserID,
+			"username":     row.Username,
+			"display_name": row.DisplayName,
+			"avatar_url":   row.AvatarUrl,
+			"added_at":     row.CreatedAt,
+		})
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": moderators})
+}
+
 // ListTagModerators handles GET /api/v1/admin/tags/:id/moderators.
 func (h *Handlers) ListTagModerators(w http.ResponseWriter, r *http.Request) {
 

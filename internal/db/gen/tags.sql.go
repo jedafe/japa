@@ -460,17 +460,22 @@ func (q *Queries) ListFirstTagModerators(ctx context.Context, tagIds []pgtype.UU
 
 const listTagModerators = `-- name: ListTagModerators :many
 
-SELECT tm.user_id, u.username, tm.created_at
+SELECT tm.user_id, u.username, tm.created_at,
+ COALESCE(up.display_name, '') AS display_name,
+ COALESCE(up.avatar_url, '') AS avatar_url
 FROM tag_moderators tm
 JOIN users u ON u.id = tm.user_id
+LEFT JOIN user_profiles up ON up.user_id = u.id
 WHERE tm.tag_id = $1
 ORDER BY tm.created_at ASC
 `
 
 type ListTagModeratorsRow struct {
-	UserID    pgtype.UUID        `json:"user_id"`
-	Username  string             `json:"username"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Username    string             `json:"username"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	DisplayName string             `json:"display_name"`
+	AvatarUrl   string             `json:"avatar_url"`
 }
 
 // =====================
@@ -486,7 +491,13 @@ func (q *Queries) ListTagModerators(ctx context.Context, tagID pgtype.UUID) ([]L
 	var items []ListTagModeratorsRow
 	for rows.Next() {
 		var i ListTagModeratorsRow
-		if err := rows.Scan(&i.UserID, &i.Username, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.CreatedAt,
+			&i.DisplayName,
+			&i.AvatarUrl,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

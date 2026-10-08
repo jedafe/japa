@@ -5,7 +5,7 @@
 	import { t } from '$lib/i18n';
 	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
 	import { Modal } from '$lib/components/ui';
-	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon, Search, UserCircle } from 'lucide-svelte';
+	import { Hash, ArrowLeft, UserPlus, UserCheck, ExternalLink, BookOpen, Pencil, X, Loader2, Image as ImageIcon, Search, UserCircle, ShieldCheck } from 'lucide-svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { EmptyState, UrlTabs, type UrlTab } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
@@ -105,12 +105,18 @@
 	const fieldDefs = $derived(data.fieldDefs ?? []);
 	const fieldValues = $derived(tag.field_values ?? {});
 
-	// Tab state for the tag hub: content (default), search, followers.
+	// Tab state for the tag hub: content (default), search, followers, and
+	// moderators (only when the tag has at least one assigned moderator —
+	// an always-visible empty tab would be dead weight on unmoderated tags).
 	const tab = $derived(data.tab ?? 'content');
+	const moderators = $derived(data.moderators ?? []);
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'content', label: t('tag.tab_content', 'Content') },
 		{ value: 'search', label: t('tag.tab_search', 'Search') },
-		{ value: 'followers', label: t('tag.tab_followers', 'Followers') }
+		{ value: 'followers', label: t('tag.tab_followers', 'Followers') },
+		...(moderators.length > 0
+			? [{ value: 'moderators', label: t('tag.tab_moderators', 'Moderators') }]
+			: [])
 	]);
 
 	// Search state. Use untrack() so the $state() initializer intentionally
@@ -526,7 +532,7 @@
 					{#each data.followers as f (f.id)}
 						<li>
 							<UserHoverCard
-								id={f.id}
+								id={f.follower_id ?? f.id}
 								slug={f.username}
 								name={f.display_name}
 								avatar={f.avatar_url}
@@ -544,6 +550,39 @@
 										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{f.display_name}</span>
 										<span class="block truncate text-xs text-[var(--color-muted)]">@{f.username}</span>
 									</span>
+								{/snippet}
+							</UserHoverCard>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{:else if tab === 'moderators'}
+			{#if moderators.length === 0}
+				<EmptyState icon={ShieldCheck} title={t('tag.no_moderators', 'No moderators assigned')} />
+			{:else}
+				<ul class="space-y-0.5">
+					{#each moderators as m (m.user_id)}
+						<li>
+							<UserHoverCard
+								id={m.user_id}
+								slug={m.username}
+								name={m.display_name || m.username}
+								avatar={m.avatar_url}
+								class="inline-flex w-full min-w-0 max-w-full items-center gap-3 rounded-[var(--radius)] p-2 text-left transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								{#snippet trigger()}
+									{#if m.avatar_url}
+										<img src={m.avatar_url} alt={m.display_name || m.username} class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy" />
+									{:else}
+										<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-sm font-medium text-[var(--color-primary)]">
+											{initials(m.display_name || m.username)}
+										</span>
+									{/if}
+									<span class="min-w-0 flex-1">
+										<span class="block truncate text-sm font-medium text-[var(--color-text)]">{m.display_name || m.username}</span>
+										<span class="block truncate text-xs text-[var(--color-muted)]">@{m.username}</span>
+									</span>
+									<ShieldCheck size={16} class="shrink-0 text-[var(--color-primary)]" />
 								{/snippet}
 							</UserHoverCard>
 						</li>
