@@ -70,12 +70,16 @@ var defaultCORSHeaders = []string{
 	"X-CSRF-Token",
 	"X-API-Key",
 	"X-Device-Id",
+	"X-JC-Surface",
 }
 
 // AllowedCORSHeaders returns the Access-Control-Allow-Headers value used by
 // the CORS middleware. The default list covers the standard headers used by
 // the web and mobile clients plus the desktop studio's X-API-Key and
-// X-Device-Id headers. Additional headers can be added with JC_CORS_HEADERS.
+// X-Device-Id headers and the X-JC-Surface surface identifier sent by every
+// JapaConnect client for scoped feature-flag resolution. Additional headers
+// can be added with JC_CORS_HEADERS; the env list merges with (never
+// replaces) the defaults.
 func AllowedCORSHeaders() string {
 	if env := os.Getenv("JC_CORS_HEADERS"); env != "" {
 		extras := strings.Split(env, ",")
