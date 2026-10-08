@@ -33,6 +33,8 @@
 	import IncludedGrid from '$lib/components/marketplace/IncludedGrid.svelte';
 	import TierGrid from '$lib/components/marketplace/TierGrid.svelte';
 	import CouponCard from '$lib/components/marketplace/CouponCard.svelte';
+	import HowItWorks from '$lib/components/marketplace/HowItWorks.svelte';
+	import ServiceFaq from '$lib/components/marketplace/ServiceFaq.svelte';
 	import ServiceReviews from '$lib/components/marketplace/ServiceReviews.svelte';
 	import ProviderCard from '$lib/components/marketplace/ProviderCard.svelte';
 	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
@@ -442,6 +444,23 @@
 				})
 			: ''
 	);
+
+	// §114: FAQPage JSON-LD accompanies the Service schema only when the
+	// listing carries authored faqs[] — the accordion is hidden without
+	// them, so emitting an empty FAQPage would be a rich-result lie.
+	const faqJsonLd = $derived(
+		service?.faqs?.length
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'FAQPage',
+					mainEntity: service.faqs.map((f) => ({
+						'@type': 'Question',
+						name: f.question,
+						acceptedAnswer: { '@type': 'Answer', text: f.answer }
+					}))
+				})
+			: ''
+	);
 </script>
 
 <svelte:head>
@@ -460,6 +479,9 @@
 	<meta name="twitter:description" content={description} />
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
+	{/if}
+	{#if faqJsonLd}
+		{@html safeJsonLdScript(faqJsonLd)}
 	{/if}
 </svelte:head>
 
@@ -776,6 +798,11 @@
 				</div>
 			{/if}
 
+			<!-- How it works (§114 — listing-authored steps[]; hidden when empty) -->
+			{#if service.steps && service.steps.length > 0}
+				<HowItWorks steps={service.steps} />
+			{/if}
+
 			<!-- Open departures -->
 			{#if openDepartures.length > 0}
 				<section aria-labelledby="departures-heading">
@@ -898,11 +925,22 @@
 				</section>
 			{/if}
 
-			<!-- Reviews (§29 sidecar — BUG-014) -->
+			<!-- Reviews (§29 sidecar — BUG-014). The "View all reviews" footer
+			     links to the §114 paginated reviews page when the aggregate
+			     outgrows the embedded rows. -->
 			{#if hasReviews}
 				<div id="reviews" class="scroll-mt-20">
-					<ServiceReviews {reviews} aggregate={reviewAggregate} />
+					<ServiceReviews
+						{reviews}
+						aggregate={reviewAggregate}
+						viewAllHref="/services/{service.slug}/reviews"
+					/>
 				</div>
+			{/if}
+
+			<!-- FAQs (§114 — listing-authored faqs[]; hidden when empty) -->
+			{#if service.faqs && service.faqs.length > 0}
+				<ServiceFaq faqs={service.faqs} />
 			{/if}
 
 			<!-- Provider -->

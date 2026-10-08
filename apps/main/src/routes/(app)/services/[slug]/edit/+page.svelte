@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { Briefcase, Save, Loader2, AlertCircle, Package, Trash2, Plus } from 'lucide-svelte';
+	import { Briefcase, Save, Loader2, AlertCircle, Package, Trash2, Plus, ChevronDown } from 'lucide-svelte';
 	import { serviceCategoryOptions } from '$lib/enumOptions';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
@@ -85,6 +85,24 @@
 			}))
 		)
 	);
+
+	// §114 structured content — faqs[]/steps[] are replace-on-save like
+	// items[]/departures[]: the edit payload always sends both arrays so
+	// removed rows actually clear (absent preserves on PATCH). The client
+	// caps mirror the seeded system_settings
+	// (service_marketplace.content.max_faqs=12 / max_steps=8); the backend
+	// re-validates against the live settings.
+	const MAX_FAQS = 12;
+	const MAX_STEPS = 8;
+	let faqs = $state(
+		untrack(() => (svc.faqs ?? []).map((f) => ({ question: f.question, answer: f.answer })))
+	);
+	let steps = $state(
+		untrack(() => (svc.steps ?? []).map((s) => ({ title: s.title, description: s.description })))
+	);
+	// Open the optional section when the listing already carries content —
+	// otherwise a seeded set would be invisible behind the collapsed details.
+	let detailsOpen = $state(untrack(() => (svc.faqs?.length ?? 0) > 0 || (svc.steps?.length ?? 0) > 0));
 
 	let submitting = $state(false);
 	let errorMsg = $state('');
@@ -177,6 +195,16 @@
 			errorMsg = t('services.errors.dest_required', 'Destination country is required');
 			return false;
 		}
+		// §114 — the backend rejects blank questions/titles (invalid_faq /
+		// invalid_step); catch them here so the row can be fixed in place.
+		if (faqs.some((f) => !f.question.trim())) {
+			errorMsg = t('services.errors.faq_question_required', 'Every FAQ needs a question');
+			return false;
+		}
+		if (steps.some((s) => !s.title.trim())) {
+			errorMsg = t('services.errors.step_title_required', 'Every step needs a title');
+			return false;
+		}
 		if (isPackage) {
 			if (purchaseMode === 'paid' && (!String(priceAmount ?? '').trim() || !priceCurrency)) {
 				errorMsg = t('services.errors.pkg_price_required', 'Paid packages require a price and currency');
@@ -220,7 +248,11 @@
 			is_remote: isRemote,
 			website_url: websiteUrl.trim(),
 			booking_url: bookingUrl.trim(),
-			price_range: priceRange.trim()
+			price_range: priceRange.trim(),
+			// §114 — replace-on-save for all listing kinds: always send both
+			// arrays; an empty array clears the stored set.
+			faqs: faqs.map((f) => ({ question: f.question.trim(), answer: f.answer.trim() })),
+			steps: steps.map((s) => ({ title: s.title.trim(), description: s.description.trim() }))
 		};
 
 		// §111 packages — items[]/departures[] are replace-on-save: always
@@ -481,6 +513,118 @@
 					class={inputClass}
 				/>
 			</div>
+
+			<!-- §114 structured content — FAQs + how-it-works steps apply to
+				all listing kinds; collapsed unless the listing already has some. -->
+			<details class="group rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40" bind:open={detailsOpen}>
+				<summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
+					{t('services.content_details_section', 'Content details (optional)')}
+					<ChevronDown size={16} class="ml-auto shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-180" />
+				</summary>
+				<div class="space-y-4 border-t border-[var(--color-border)] px-4 py-4">
+					<!-- FAQs repeater -->
+					<div>
+						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+							{t('services.faq_items', 'FAQs')}
+						</span>
+						<p class="mb-2 text-xs text-[var(--color-muted)]">
+							{t('services.faq_hint', 'Answer the questions travellers ask most — shown as an accordion on your listing.')}
+						</p>
+						<div class="space-y-2">
+							{#each faqs as faq, idx (idx)}
+								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+									<div class="flex items-start gap-2">
+										<div class="flex-1 space-y-2">
+											<input
+												type="text"
+												bind:value={faq.question}
+												placeholder={t('services.faq_question_ph', 'Question (e.g. How long does processing take?)')}
+												class={inputClass}
+												aria-label={t('services.faq_question_ph', 'Question')}
+											/>
+											<textarea
+												bind:value={faq.answer}
+												rows={2}
+												placeholder={t('services.faq_answer_ph', 'Answer')}
+												class="{inputClass} resize-y"
+												aria-label={t('services.faq_answer_ph', 'Answer')}
+											></textarea>
+										</div>
+										<button
+											type="button"
+											onclick={() => (faqs = faqs.filter((_, i) => i !== idx))}
+											class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+											aria-label={t('common.remove', 'Remove')}
+										>
+											<Trash2 size={16} />
+										</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+						{#if faqs.length < MAX_FAQS}
+							<button
+								type="button"
+								onclick={() => (faqs = [...faqs, { question: '', answer: '' }])}
+								class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<Plus size={14} /> {t('services.faq_add', 'Add question')}
+							</button>
+						{/if}
+					</div>
+
+					<!-- Steps repeater -->
+					<div>
+						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+							{t('services.steps_items', 'How it works')}
+						</span>
+						<p class="mb-2 text-xs text-[var(--color-muted)]">
+							{t('services.steps_hint', 'Walk travellers through the process — rendered as numbered steps on your listing.')}
+						</p>
+						<div class="space-y-2">
+							{#each steps as step, idx (idx)}
+								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+									<div class="flex items-start gap-2">
+										<div class="flex-1 space-y-2">
+											<input
+												type="text"
+												bind:value={step.title}
+												placeholder={t('services.step_title_ph', 'Step title (e.g. Initial consultation)')}
+												class={inputClass}
+												aria-label={t('services.step_title_ph', 'Step title')}
+											/>
+											<input
+												type="text"
+												bind:value={step.description}
+												placeholder={t('services.step_desc_ph', 'Short description (optional)')}
+												class={inputClass}
+												aria-label={t('services.step_desc_ph', 'Short description')}
+											/>
+										</div>
+										<button
+											type="button"
+											onclick={() => (steps = steps.filter((_, i) => i !== idx))}
+											class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+											aria-label={t('common.remove', 'Remove')}
+										>
+											<Trash2 size={16} />
+										</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+						{#if steps.length < MAX_STEPS}
+							<button
+								type="button"
+								onclick={() => (steps = [...steps, { title: '', description: '' }])}
+								class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<Plus size={14} /> {t('services.steps_add', 'Add step')}
+							</button>
+						{/if}
+					</div>
+				</div>
+			</details>
 
 			<!-- §111 package fields — the selling org is immutable after
 				creation (package_org_immutable); shown read-only. -->

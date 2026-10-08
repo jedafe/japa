@@ -4040,6 +4040,25 @@ export interface ServiceListing {
 	min_price?: number | null; // minor units; falls back to price_amount server-side
 	tiers?: PackageTier[];
 	coupons?: ListingCoupon[];
+	// §114 structured content + derived ribbon (migration 000810). faqs[] /
+	// steps[] are omitted when empty; badge is 'popular' (review_count ≥
+	// service_marketplace.badges.min_reviews) or 'best_value' (live coupon +
+	// rating_avg ≥ service_marketplace.badges.min_rating), omitted otherwise.
+	badge?: 'popular' | 'best_value' | string;
+	faqs?: ServiceFaq[];
+	steps?: ServiceStep[];
+}
+
+/** §114 marketplace — one FAQ entry on a service listing (question/answer). */
+export interface ServiceFaq {
+	question: string;
+	answer: string;
+}
+
+/** §114 marketplace — one "how it works" step on a service listing. */
+export interface ServiceStep {
+	title: string;
+	description: string;
 }
 
 /** One ordered component line item of a service package (§111). */

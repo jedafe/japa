@@ -10,6 +10,7 @@
 		ArrowRight,
 		BadgeCheck,
 		BadgePercent,
+		Flame,
 		Heart,
 		MapPin,
 		Star,
@@ -109,9 +110,26 @@
 			</div>
 		{/if}
 
-		<!-- Ribbons -->
+		<!-- Ribbons — the §114 derived badge leads the cluster. 'best_value'
+		     already implies a live coupon (it requires has_coupon), so the
+		     generic Deal chip is suppressed to keep the ribbon readable. -->
 		<div class="absolute left-3 top-3 flex flex-wrap gap-1.5">
-			{#if listing.has_coupon}
+			{#if listing.badge === 'popular'}
+				<span
+					class="inline-flex items-center gap-1 rounded-full bg-[var(--color-warning)]/95 px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-contrast)] shadow-sm"
+				>
+					<Flame size={12} />
+					{t('services.badge_popular', 'Popular')}
+				</span>
+			{:else if listing.badge === 'best_value'}
+				<span
+					class="inline-flex items-center gap-1 rounded-full bg-[var(--color-success)]/95 px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-contrast)] shadow-sm"
+				>
+					<BadgeCheck size={12} />
+					{t('services.badge_best_value', 'Best value')}
+				</span>
+			{/if}
+			{#if listing.has_coupon && listing.badge !== 'best_value'}
 				<span
 					class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface)]/95 px-2 py-0.5 text-[11px] font-semibold shadow-sm {accent.icon}"
 				>

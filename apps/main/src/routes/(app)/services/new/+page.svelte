@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { Briefcase, Plus, Loader2, AlertCircle, Package, Trash2 } from 'lucide-svelte';
+	import { Briefcase, Plus, Loader2, AlertCircle, Package, Trash2, ChevronDown } from 'lucide-svelte';
 	import { serviceCategoryOptions } from '$lib/enumOptions';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
@@ -56,6 +56,16 @@
 	let availableUntil = $state('');
 	let pkgItems = $state<{ title: string; description: string; included: boolean; optional: boolean }[]>([]);
 	let departures = $state<{ starts_on: string; ends_on: string; capacity: string }[]>([]);
+
+	// §114 structured content — faqs[]/steps[] apply to ALL listing kinds.
+	// The client caps mirror the seeded system_settings
+	// (service_marketplace.content.max_faqs=12 / max_steps=8); the backend
+	// re-validates against the live settings, so these constants exist only
+	// to hide the "add" button early (settings are not exposed to the form).
+	const MAX_FAQS = 12;
+	const MAX_STEPS = 8;
+	let faqs = $state<{ question: string; answer: string }[]>([]);
+	let steps = $state<{ title: string; description: string }[]>([]);
 
 	let submitting = $state(false);
 	let errorMsg = $state('');
@@ -166,6 +176,16 @@
 			errorMsg = t('services.errors.category_required', 'Service category is required');
 			return false;
 		}
+		// §114 — the backend rejects blank questions/titles (invalid_faq /
+		// invalid_step); catch them here so the row can be fixed in place.
+		if (faqs.some((f) => !f.question.trim())) {
+			errorMsg = t('services.errors.faq_question_required', 'Every FAQ needs a question');
+			return false;
+		}
+		if (steps.some((s) => !s.title.trim())) {
+			errorMsg = t('services.errors.step_title_required', 'Every step needs a title');
+			return false;
+		}
 		if (listingKind === 'package') {
 			if (!orgId) {
 				errorMsg = t('services.errors.pkg_org_required', 'Select the organization selling this package');
@@ -219,6 +239,21 @@
 		if (websiteUrl.trim()) payload.website_url = websiteUrl.trim();
 		if (bookingUrl.trim()) payload.booking_url = bookingUrl.trim();
 		if (priceRange.trim()) payload.price_range = priceRange.trim();
+
+		// §114 structured content — all listing kinds. Only non-empty sets
+		// are sent on create (the columns default to '[]' either way).
+		if (faqs.length > 0) {
+			payload.faqs = faqs.map((f) => ({
+				question: f.question.trim(),
+				answer: f.answer.trim()
+			}));
+		}
+		if (steps.length > 0) {
+			payload.steps = steps.map((s) => ({
+				title: s.title.trim(),
+				description: s.description.trim()
+			}));
+		}
 
 		// §111 package payload — backend ignores these fields when
 		// listing_kind='service', so they're only sent for packages.
@@ -526,6 +561,118 @@
 					class={inputClass}
 				/>
 			</div>
+
+			<!-- §114 structured content — FAQs + how-it-works steps apply to
+				all listing kinds; collapsed by default so the form stays lean. -->
+			<details class="group rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40">
+				<summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
+					{t('services.content_details_section', 'Content details (optional)')}
+					<ChevronDown size={16} class="ml-auto shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-180" />
+				</summary>
+				<div class="space-y-4 border-t border-[var(--color-border)] px-4 py-4">
+					<!-- FAQs repeater -->
+					<div>
+						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+							{t('services.faq_items', 'FAQs')}
+						</span>
+						<p class="mb-2 text-xs text-[var(--color-muted)]">
+							{t('services.faq_hint', 'Answer the questions travellers ask most — shown as an accordion on your listing.')}
+						</p>
+						<div class="space-y-2">
+							{#each faqs as faq, idx (idx)}
+								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+									<div class="flex items-start gap-2">
+										<div class="flex-1 space-y-2">
+											<input
+												type="text"
+												bind:value={faq.question}
+												placeholder={t('services.faq_question_ph', 'Question (e.g. How long does processing take?)')}
+												class={inputClass}
+												aria-label={t('services.faq_question_ph', 'Question')}
+											/>
+											<textarea
+												bind:value={faq.answer}
+												rows={2}
+												placeholder={t('services.faq_answer_ph', 'Answer')}
+												class="{inputClass} resize-y"
+												aria-label={t('services.faq_answer_ph', 'Answer')}
+											></textarea>
+										</div>
+										<button
+											type="button"
+											onclick={() => (faqs = faqs.filter((_, i) => i !== idx))}
+											class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+											aria-label={t('common.remove', 'Remove')}
+										>
+											<Trash2 size={16} />
+										</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+						{#if faqs.length < MAX_FAQS}
+							<button
+								type="button"
+								onclick={() => (faqs = [...faqs, { question: '', answer: '' }])}
+								class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<Plus size={14} /> {t('services.faq_add', 'Add question')}
+							</button>
+						{/if}
+					</div>
+
+					<!-- Steps repeater -->
+					<div>
+						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+							{t('services.steps_items', 'How it works')}
+						</span>
+						<p class="mb-2 text-xs text-[var(--color-muted)]">
+							{t('services.steps_hint', 'Walk travellers through the process — rendered as numbered steps on your listing.')}
+						</p>
+						<div class="space-y-2">
+							{#each steps as step, idx (idx)}
+								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+									<div class="flex items-start gap-2">
+										<div class="flex-1 space-y-2">
+											<input
+												type="text"
+												bind:value={step.title}
+												placeholder={t('services.step_title_ph', 'Step title (e.g. Initial consultation)')}
+												class={inputClass}
+												aria-label={t('services.step_title_ph', 'Step title')}
+											/>
+											<input
+												type="text"
+												bind:value={step.description}
+												placeholder={t('services.step_desc_ph', 'Short description (optional)')}
+												class={inputClass}
+												aria-label={t('services.step_desc_ph', 'Short description')}
+											/>
+										</div>
+										<button
+											type="button"
+											onclick={() => (steps = steps.filter((_, i) => i !== idx))}
+											class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+											aria-label={t('common.remove', 'Remove')}
+										>
+											<Trash2 size={16} />
+										</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+						{#if steps.length < MAX_STEPS}
+							<button
+								type="button"
+								onclick={() => (steps = [...steps, { title: '', description: '' }])}
+								class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<Plus size={14} /> {t('services.steps_add', 'Add step')}
+							</button>
+						{/if}
+					</div>
+				</div>
+			</details>
 
 			<!-- §111 package fields -->
 			{#if packagesEnabled && listingKind === 'package'}

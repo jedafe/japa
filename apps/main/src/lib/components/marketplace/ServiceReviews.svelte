@@ -2,35 +2,26 @@
 	// Reviews section — aggregate header (avg stars + count) plus the review
 	// list from the §29 sidecar on GET /services/:slug. Same data contract
 	// as the previous inline block (BUG-014); featured/first review renders
-	// as a highlighted card above the rest.
+	// as a highlighted card above the rest. When the aggregate reports more
+	// reviews than the detail payload embeds, a "View all reviews" footer
+	// links to /services/[slug]/reviews (§114 paginated route).
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
-	import { Star } from 'lucide-svelte';
-	import UserHoverCard from '$lib/components/ui/UserHoverCard.svelte';
+	import { ArrowRight, Star } from 'lucide-svelte';
+	import ReviewListItem from './ReviewListItem.svelte';
 	import { t } from '$lib/i18n';
 	import type { ServiceReview, ServiceReviewAggregate } from '$lib/types';
 
 	interface Props {
 		reviews: ServiceReview[];
 		aggregate: ServiceReviewAggregate;
+		/** §114 — link to the standalone reviews page; the footer shows only
+		 *  when the aggregate count exceeds the embedded rows. */
+		viewAllHref?: string;
 	}
-	let { reviews, aggregate }: Props = $props();
+	let { reviews, aggregate, viewAllHref }: Props = $props();
 
 	const featured = $derived<ServiceReview | null>(reviews[0] ?? null);
 	const rest = $derived(reviews.slice(1));
-
-	function authorName(r: ServiceReview): string {
-		return (
-			r.author_display_name ?? r.author_username ?? t('services.anonymous_reviewer', 'Anonymous')
-		);
-	}
-
-	function formatDate(iso: string): string {
-		try {
-			return new Date(iso).toLocaleDateString();
-		} catch {
-			return iso;
-		}
-	}
 </script>
 
 <section aria-labelledby="reviews-heading">
@@ -74,59 +65,22 @@
 		</p>
 	{:else}
 		<ul class="mt-4 space-y-4">
-			{#snippet reviewCard(review: ServiceReview, highlight: boolean)}
-				<li
-					class="rounded-[var(--radius-card)] border bg-[var(--color-surface)] p-4 {highlight
-						? 'border-[var(--color-primary)]/30'
-						: 'border-[var(--color-border)]'}"
-				>
-					<div class="flex items-center justify-between gap-2">
-						<div class="flex items-center gap-2">
-							{#if review.author_username}
-								<UserHoverCard
-									id={review.author_id}
-									slug={review.author_username}
-									name={review.author_display_name ?? review.author_username}
-									avatar={review.author_avatar_url}
-									variant="row"
-									class="inline-flex max-w-full items-center text-left text-sm font-medium text-[var(--color-text)] hover:underline"
-								>
-									{#snippet trigger()}
-										<span>{authorName(review)}</span>
-									{/snippet}
-								</UserHoverCard>
-							{:else}
-								<span class="text-sm font-medium text-[var(--color-text)]"
-									>{authorName(review)}</span
-								>
-							{/if}
-							<span class="flex items-center gap-0.5 text-[var(--color-warning)]">
-								{#each Array(5) as _, i (i)}
-									<Star
-										size={12}
-										fill={i < review.rating ? 'currentColor' : 'none'}
-										class={i < review.rating ? '' : 'text-[var(--color-muted)]'}
-										aria-hidden="true"
-									/>
-								{/each}
-							</span>
-						</div>
-						<span class="text-xs text-[var(--color-muted)]">{formatDate(review.created_at)}</span>
-					</div>
-					{#if review.title}
-						<p class="mt-2 text-sm font-medium text-[var(--color-text)]">{review.title}</p>
-					{/if}
-					{#if review.body}
-						<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{review.body}</p>
-					{/if}
-				</li>
-			{/snippet}
 			{#if featured}
-				{@render reviewCard(featured, true)}
+				<ReviewListItem review={featured} highlight />
 			{/if}
 			{#each rest as review (review.id)}
-				{@render reviewCard(review, false)}
+				<ReviewListItem {review} />
 			{/each}
 		</ul>
+	{/if}
+
+	{#if viewAllHref && aggregate.count > reviews.length}
+		<a
+			href={viewAllHref}
+			class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-[var(--color-primary)] transition-colors hover:underline"
+		>
+			{t('services.reviews_view_all', 'View all {count} reviews', { count: aggregate.count })}
+			<ArrowRight size={14} aria-hidden="true" />
+		</a>
 	{/if}
 </section>
