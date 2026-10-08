@@ -179,6 +179,51 @@ func TestPriceQuoteTiersFlagGate(t *testing.T) {
 	})
 }
 
+// The coupons flag gates redemption at quote time (coupons.go): with the
+// flag off a coupon_code is ErrInvalidCoupon, and the check runs before
+// the store lookup — these Services carry a nil store, so reaching
+// getListingCouponByCode would panic rather than pass.
+func TestPriceQuoteCouponsFlagGate(t *testing.T) {
+	ctx := context.Background()
+	price := int64(100_000)
+	listing := ServiceRow{PriceAmount: &price}
+
+	t.Run("flag off rejects coupon before store lookup", func(t *testing.T) {
+		s := &Service{settings: fakeSettings{}} // flag unset = off
+		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "SAVE10")
+		if !errors.Is(err, ErrInvalidCoupon) {
+			t.Fatalf("expected ErrInvalidCoupon, got %v", err)
+		}
+	})
+
+	t.Run("nil settings rejects coupon", func(t *testing.T) {
+		s := &Service{}
+		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "SAVE10")
+		if !errors.Is(err, ErrInvalidCoupon) {
+			t.Fatalf("expected ErrInvalidCoupon, got %v", err)
+		}
+	})
+
+	t.Run("checker-off wins over settings-on", func(t *testing.T) {
+		s := &Service{
+			settings: fakeSettings{"service_coupons.enabled": "true"},
+			checker:  fakeChecker{"service_coupons.enabled": false},
+		}
+		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "SAVE10")
+		if !errors.Is(err, ErrInvalidCoupon) {
+			t.Fatalf("expected ErrInvalidCoupon, got %v", err)
+		}
+	})
+
+	t.Run("flag off rejects a whitespace-padded code", func(t *testing.T) {
+		s := &Service{settings: fakeSettings{}}
+		_, err := s.priceQuote(ctx, listing, pgtype.UUID{}, "", "  SAVE10  ")
+		if !errors.Is(err, ErrInvalidCoupon) {
+			t.Fatalf("expected ErrInvalidCoupon, got %v", err)
+		}
+	})
+}
+
 func TestIsCouponQuoteError(t *testing.T) {
 	for _, err := range []error{
 		ErrInvalidCoupon, ErrCouponNotApplicable, ErrCouponMinSpend,

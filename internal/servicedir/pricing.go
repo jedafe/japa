@@ -153,7 +153,10 @@ func couponQuoteErrorCode(err error) string {
 //	coupon   = attached coupon resolved by code, checked in order:
 //	           status+validity window → org ownership → applies_to →
 //	           min_spend → max_redemptions → per_user_limit →
-//	           first_time_only → discount
+//	           first_time_only → discount. Any coupon_code is
+//	           ErrInvalidCoupon while the service_coupons.enabled
+//	           flag is off — the flag gates redemption too, not just
+//	           the attach API and public payloads (coupons.go).
 //	total    = base - discount (floored at 0)
 //	fee      = computeFee(total); balance = total - fee
 //
@@ -206,6 +209,14 @@ func (s *Service) priceQuote(ctx context.Context, listing ServiceRow, bookerID p
 
 	couponCode = strings.TrimSpace(couponCode)
 	if couponCode != "" {
+		// The coupons flag gates redemption, not just the attach API and
+		// public payloads: with coupons dark-launched a coupon_code is
+		// invalid, not silently ignored. Checked before the store lookup
+		// so a flag-off request never reaches the database.
+		if !s.CouponsEnabled(ctx) {
+			return Quote{}, ErrInvalidCoupon
+		}
+
 		lc, err := s.store.getListingCouponByCode(ctx, listing.MetaID, couponCode)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
