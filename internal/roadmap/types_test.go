@@ -16,6 +16,7 @@ func TestItemStatusConstants(t *testing.T) {
 		StatusUnderReview: "under_review",
 		StatusPlanned:     "planned",
 		StatusInProgress:  "in_progress",
+		StatusTesting:     "testing",
 		StatusShipped:     "shipped",
 		StatusDeclined:    "declined",
 		StatusArchived:    "archived",
@@ -30,7 +31,7 @@ func TestItemStatusConstants(t *testing.T) {
 func TestPublicStatuses(t *testing.T) {
 	t.Parallel()
 
-	want := []string{"under_review", "planned", "in_progress", "shipped"}
+	want := []string{"under_review", "planned", "in_progress", "testing", "shipped"}
 	if len(PublicStatuses) != len(want) {
 		t.Fatalf("PublicStatuses has %d entries, want %d", len(PublicStatuses), len(want))
 	}
@@ -45,7 +46,7 @@ func TestPublicStatuses(t *testing.T) {
 func TestVotableStatuses(t *testing.T) {
 	t.Parallel()
 
-	want := []string{"under_review", "planned", "in_progress"}
+	want := []string{"under_review", "planned", "in_progress", "testing"}
 	if len(VotableStatuses) != len(want) {
 		t.Fatalf("VotableStatuses has %d entries, want %d", len(VotableStatuses), len(want))
 	}
@@ -60,7 +61,7 @@ func TestVotableStatuses(t *testing.T) {
 func TestIsVotableStatus(t *testing.T) {
 	t.Parallel()
 
-	votable := []ItemStatus{StatusUnderReview, StatusPlanned, StatusInProgress}
+	votable := []ItemStatus{StatusUnderReview, StatusPlanned, StatusInProgress, StatusTesting}
 	for _, s := range votable {
 		if !IsVotableStatus(s) {
 			t.Errorf("expected status %q to be votable", s)
@@ -78,7 +79,7 @@ func TestIsVotableStatus(t *testing.T) {
 func TestIsPublicStatus(t *testing.T) {
 	t.Parallel()
 
-	public := []ItemStatus{StatusUnderReview, StatusPlanned, StatusInProgress, StatusShipped}
+	public := []ItemStatus{StatusUnderReview, StatusPlanned, StatusInProgress, StatusTesting, StatusShipped}
 	for _, s := range public {
 		if !IsPublicStatus(s) {
 			t.Errorf("expected status %q to be public", s)
@@ -121,18 +122,25 @@ func TestIsValidTransition(t *testing.T) {
 		{StatusUnderReview, StatusPlanned},
 		{StatusUnderReview, StatusDeclined},
 		{StatusUnderReview, StatusArchived},
+		{StatusUnderReview, StatusTesting},
 		{StatusPlanned, StatusInProgress},
 		{StatusPlanned, StatusUnderReview},
 		{StatusPlanned, StatusDeclined},
 		{StatusPlanned, StatusArchived},
+		{StatusPlanned, StatusTesting},
 		{StatusInProgress, StatusShipped},
 		{StatusInProgress, StatusPlanned},
 		{StatusInProgress, StatusArchived},
+		{StatusInProgress, StatusTesting},
+		{StatusTesting, StatusShipped},
+		{StatusTesting, StatusInProgress},
+		{StatusTesting, StatusArchived},
 		{StatusShipped, StatusArchived},
 		{StatusDeclined, StatusUnderReview},
 		{StatusDeclined, StatusArchived},
 		// No-op transitions are permitted for idempotent PATCHes.
 		{StatusPlanned, StatusPlanned},
+		{StatusTesting, StatusTesting},
 		{StatusShipped, StatusShipped},
 	}
 
@@ -148,6 +156,7 @@ func TestIsValidTransition(t *testing.T) {
 	}{
 		{StatusPending, StatusPlanned},
 		{StatusPending, StatusInProgress},
+		{StatusPending, StatusTesting},
 		{StatusPending, StatusShipped},
 		{StatusPending, StatusArchived},
 		{StatusUnderReview, StatusInProgress},
@@ -155,10 +164,16 @@ func TestIsValidTransition(t *testing.T) {
 		{StatusPlanned, StatusShipped},
 		{StatusInProgress, StatusUnderReview},
 		{StatusInProgress, StatusDeclined},
+		{StatusTesting, StatusUnderReview},
+		{StatusTesting, StatusPlanned},
+		{StatusTesting, StatusDeclined},
 		{StatusShipped, StatusPlanned},
 		{StatusShipped, StatusInProgress},
+		{StatusShipped, StatusTesting},
+		{StatusDeclined, StatusTesting},
 		{StatusArchived, StatusUnderReview},
 		{StatusArchived, StatusPlanned},
+		{StatusArchived, StatusTesting},
 		{StatusArchived, StatusShipped},
 	}
 
@@ -182,7 +197,11 @@ func TestValidStatus(t *testing.T) {
 		t.Error("expected \"bogus\" to be an invalid status")
 	}
 
-	if len(AllStatuses()) != 7 {
-		t.Errorf("AllStatuses() returned %d items, want 7", len(AllStatuses()))
+	if !ValidStatus("testing") {
+		t.Error("expected \"testing\" to be a valid status")
+	}
+
+	if len(AllStatuses()) != 8 {
+		t.Errorf("AllStatuses() returned %d items, want 8", len(AllStatuses()))
 	}
 }

@@ -21,7 +21,7 @@ import (
 type ItemStatus string
 
 // Roadmap item statuses. pending holds community submissions awaiting
-// triage; under_review/planned/in_progress are public and votable;
+// triage; under_review/planned/in_progress/testing are public and votable;
 // shipped items stay on the board inside roadmap.shipped_window_days and
 // live permanently on the changelog; declined/archived are admin-only.
 const (
@@ -29,6 +29,7 @@ const (
 	StatusUnderReview ItemStatus = "under_review"
 	StatusPlanned     ItemStatus = "planned"
 	StatusInProgress  ItemStatus = "in_progress"
+	StatusTesting     ItemStatus = "testing"
 	StatusShipped     ItemStatus = "shipped"
 	StatusDeclined    ItemStatus = "declined"
 	StatusArchived    ItemStatus = "archived"
@@ -40,6 +41,7 @@ var PublicStatuses = []string{
 	string(StatusUnderReview),
 	string(StatusPlanned),
 	string(StatusInProgress),
+	string(StatusTesting),
 	string(StatusShipped),
 }
 
@@ -50,6 +52,7 @@ var VotableStatuses = []string{
 	string(StatusUnderReview),
 	string(StatusPlanned),
 	string(StatusInProgress),
+	string(StatusTesting),
 }
 
 // IsVotableStatus reports whether an item in the given status accepts votes.
@@ -82,13 +85,14 @@ func AllStatuses() []ItemStatus {
 		StatusUnderReview,
 		StatusPlanned,
 		StatusInProgress,
+		StatusTesting,
 		StatusShipped,
 		StatusDeclined,
 		StatusArchived,
 	}
 }
 
-// ValidStatus reports whether s is one of the seven lifecycle statuses.
+// ValidStatus reports whether s is one of the eight lifecycle statuses.
 func ValidStatus(s string) bool {
 	for _, v := range AllStatuses() {
 		if string(v) == s {
@@ -103,9 +107,10 @@ func ValidStatus(s string) bool {
 // Ref: §113 (Status Lifecycle).
 var validTransitions = map[ItemStatus][]ItemStatus{
 	StatusPending:     {StatusUnderReview, StatusDeclined},
-	StatusUnderReview: {StatusPlanned, StatusDeclined, StatusArchived},
-	StatusPlanned:     {StatusInProgress, StatusUnderReview, StatusDeclined, StatusArchived},
-	StatusInProgress:  {StatusShipped, StatusPlanned, StatusArchived},
+	StatusUnderReview: {StatusPlanned, StatusTesting, StatusDeclined, StatusArchived},
+	StatusPlanned:     {StatusInProgress, StatusTesting, StatusUnderReview, StatusDeclined, StatusArchived},
+	StatusInProgress:  {StatusTesting, StatusShipped, StatusPlanned, StatusArchived},
+	StatusTesting:     {StatusShipped, StatusInProgress, StatusArchived},
 	StatusShipped:     {StatusArchived},
 	StatusDeclined:    {StatusUnderReview, StatusArchived},
 	StatusArchived:    {},
@@ -154,6 +159,7 @@ var boardColumnOrder = []struct {
 	{StatusUnderReview, "Under Consideration"},
 	{StatusPlanned, "Planned"},
 	{StatusInProgress, "In Progress"},
+	{StatusTesting, "Testing"},
 	{StatusShipped, "Recently Shipped"},
 }
 

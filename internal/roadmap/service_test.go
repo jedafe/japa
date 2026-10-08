@@ -221,7 +221,7 @@ func TestBuildBoardColumns(t *testing.T) {
 	rows, cats := boardFixture(t)
 	board := buildBoard(rows, cats)
 
-	// All four columns must render in order, even the empty ones.
+	// All five columns must render in order, even the empty ones.
 	wantOrder := []struct {
 		status string
 		label  string
@@ -230,6 +230,7 @@ func TestBuildBoardColumns(t *testing.T) {
 		{"under_review", "Under Consideration", 0},
 		{"planned", "Planned", 1},
 		{"in_progress", "In Progress", 0},
+		{"testing", "Testing", 0},
 		{"shipped", "Recently Shipped", 1},
 	}
 
@@ -261,7 +262,7 @@ func TestBuildBoardItemMapping(t *testing.T) {
 		t.Error("expected content_id pointer for valid ContentID")
 	}
 
-	shipped := board.Columns[3].Items[0]
+	shipped := board.Columns[4].Items[0]
 	if shipped.ShippedAt == nil {
 		t.Error("expected shipped_at pointer for valid ShippedAt")
 	}
