@@ -34,8 +34,14 @@ type Feature struct {
 // control panel extensions catalog — it absorbed the hardcoded
 // knownExtensions list previously kept in internal/control/handlers.go.
 //
-// A missing entry in the DB for a registered feature means it uses
-// the Default value defined here.
+// Default is the fresh-install default: it applies only when no
+// feature_flags row exists. A stored row always wins, so operator installs
+// keep whatever the baseline seed (000735 — a live-DB snapshot) or a later
+// migration wrote. Several features are therefore seeded enabled while
+// Default is false — deliberate divergence, pinned and documented by
+// seedDefaultOverrides and TestRegistryMatchesBaselineSeed
+// (registry_seed_test.go). Do not "fix" the drift by flipping a Default;
+// decide which side is correct for fresh installs and update the allowlist.
 var Registry = []Feature{
 	// Content features
 	{Key: "feature.blog", Label: "Blog", Description: "Blog series, content reviews, and featured posts", Default: true, Category: "Content", SettingsCategory: "content"},
