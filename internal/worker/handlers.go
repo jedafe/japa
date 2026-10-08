@@ -3615,7 +3615,7 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	var payload struct {
 		CampaignID string `json:"campaign_id"`
 		UserID     string `json:"user_id"`    // may be empty for guest events
-		EventType  string `json:"event_type"` // "impression", "click"
+		EventType  string `json:"event_type"` // "impression", "click", "conversion"
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -3646,6 +3646,36 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	}); err != nil {
 		slog.Error("task:ad:ingest_event_batch: failed to insert event", "campaign_id", payload.CampaignID, "error", err)
 		return err
+	}
+
+	// Ref: sections/25-ad-placement.md (Amendment) — daily rollup written at
+	// ingest time so ad_analytics_daily is populated. Conversion events stay
+	// in ad_events only (ad_analytics_daily has no conversions column; they
+	// are counted by GetCampaignStats). Rollup failures are logged, never
+	// fatal — the raw event is already stored.
+	if payload.EventType == "impression" || payload.EventType == "click" {
+		campaign, err := queries.GetAdCampaignByID(ctx, campaignID)
+		if err != nil {
+			slog.Warn("task:ad:ingest_event_batch: campaign lookup for rollup failed", "campaign_id", payload.CampaignID, "error", err)
+			return nil
+		}
+		var impressions, clicks int32
+		switch payload.EventType {
+		case "impression":
+			impressions = 1
+		case "click":
+			clicks = 1
+		}
+		if _, err := queries.UpsertAdAnalyticsDaily(ctx, gen.UpsertAdAnalyticsDailyParams{
+			CampaignID:  campaignID,
+			SlotTypeID:  campaign.SlotTypeID,
+			Date:        pgtype.Date{Time: time.Now().UTC(), Valid: true},
+			Impressions: impressions,
+			Clicks:      clicks,
+			Spent:       0,
+		}); err != nil {
+			slog.Warn("task:ad:ingest_event_batch: rollup upsert failed", "campaign_id", payload.CampaignID, "error", err)
+		}
 	}
 
 	slog.Info("task:ad:ingest_event_batch: event recorded", "campaign_id", payload.CampaignID, "event_type", payload.EventType)
