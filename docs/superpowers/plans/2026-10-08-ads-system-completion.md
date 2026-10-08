@@ -102,7 +102,7 @@ GET    /ads/networks/config                    [public] active ad networks (api_
 and in the admin campaigns section note `is_house` (bool) on
 `POST /admin/ads/campaigns` and `PATCH /admin/ads/campaigns/{id}`.
 
-- [ ] **Step 5: system-settings-catalog.md** — add:
+- [ ] **Step 5: system-settings-catalog.md** — add (all three must also land in `internal/control/settings_catalog.go` with `Public: true`, else `/site/settings/public` filters them out and `page.data.siteSettings` never sees them — that's Task 7 Step 3b):
 
 ```markdown
 | `ads.native_feed_interval` | int | `5` | Insert a native ad after every N feed items (0 disables). |
@@ -228,8 +228,8 @@ WHERE slot_type_id = @slot_type_id
  AND is_house = @is_house
  AND (start_date IS NULL OR start_date <= now())
  AND (end_date IS NULL OR end_date >= now())
- AND (cardinality(target_geo) = 0 OR @user_country::text = ANY(target_geo))
- AND (cardinality(target_space_ids) = 0 OR @space_id::uuid = ANY(target_space_ids))
+ AND (cardinality(target_geo) = 0 OR sqlc.narg(user_country)::text = ANY(target_geo))
+ AND (cardinality(target_space_ids) = 0 OR sqlc.narg(space_id)::uuid = ANY(target_space_ids))
 ORDER BY priority DESC, created_at ASC
 LIMIT @page_limit OFFSET @page_offset;
 
@@ -250,6 +250,16 @@ Also update the two campaign-write queries so `is_house` is persisted:
 
 - `CreateAdCampaign` — add `is_house` to the column list with `@is_house` param.
 - `UpdateAdCampaignDetails` — add `is_house = COALESCE(sqlc.narg(is_house), is_house)` to the SET clause.
+
+And in `internal/db/queries/ads_self_serve.sql`, add a conversions count to `GetAdCampaignStats` (org-scoped):
+
+```sql
+ COUNT(*) FILTER (WHERE ae.event_type = 'conversion') AS conversions,
+```
+
+with a matching `Conversions int64` field on `adsselfserve.CampaignStats` (service.go:96) and the handler output.
+
+`sqlc.narg` conventions (verified against generated code): `narg` on `text` → `*string` param (nil → NULL); `narg` on `uuid` → `pgtype.UUID` (invalid → NULL); `narg` on `bool` → `*bool`. The `= ANY(array)` form with NULL yields NULL → row excluded, which is exactly the targeting semantics wanted (country-less visitors only see untargeted campaigns).
 
 - [ ] **Step 1b: `ad_analytics_daily` conflict target** — already verified: the baseline ships unique index `ad_analytics_daily_campaign_id_slot_type_id_date_key` on `(campaign_id, slot_type_id, date)`, so `UpsertAdAnalyticsDaily`'s `ON CONFLICT` works. No migration needed — this step is informational; remove nothing.
 
@@ -457,6 +467,19 @@ func HandleAdsAccrueSpend(ctx context.Context, t *asynq.Task) error {
 			slog.Warn("task:ad:accrue_spend_daily: accrual failed", "campaign_id", c.ID.String(), "error", err)
 			continue
 		}
+		// Record the accrued spend in the daily rollup so
+		// ad_analytics_daily.spent reflects real daily spend (applies to
+		// every accruing campaign, not just ended ones).
+		// NOTE: only call this when updated.FlatRate > 0 — AccrueCampaignSpend
+		// is a no-op (RETURNING the row unchanged) for flat_rate=0 campaigns,
+		// which ListActiveFlatRateCampaigns may return for end_date sweeps.
+		if updated.FlatRate > 0 {
+			_, _ = queries.UpsertAdAnalyticsDaily(ctx, gen.UpsertAdAnalyticsDailyParams{
+				CampaignID: c.ID, SlotTypeID: updated.SlotTypeID,
+				Date: pgtype.Date{Time: now, Valid: true},
+				Impressions: 0, Clicks: 0, Spent: int64(updated.FlatRate),
+			})
+		}
 		expired := updated.EndDate.Valid && updated.EndDate.Time.Before(now)
 		exhausted := (updated.BudgetCredits > 0 && updated.Spent >= int64(updated.BudgetCredits)) ||
 			(updated.Budget != nil && updated.Spent >= *updated.Budget)
@@ -469,7 +492,9 @@ func HandleAdsAccrueSpend(ctx context.Context, t *asynq.Task) error {
 			if updated.OrganizationID.Valid {
 				payload, _ := json.Marshal(map[string]string{"campaign_id": c.ID.String()})
 				if taskEnqueuer != nil {
-					_ = taskEnqueuer.Enqueue(asynq.NewTask(TypeAdsRefundCampaignCredits, payload), asynq.Queue(QueueForTask(TypeAdsRefundCampaignCredits)))
+					// Enqueuer.Enqueue(taskType string, payload []byte) — queue
+					// tier is resolved internally via QueueForTask.
+					_ = taskEnqueuer.Enqueue(TypeAdsRefundCampaignCredits, payload)
 				}
 			}
 		}
@@ -478,7 +503,7 @@ func HandleAdsAccrueSpend(ctx context.Context, t *asynq.Task) error {
 }
 ```
 
-(Adjust to the worker file's actual enqueue/idempotency conventions — check how other handlers in `handlers.go` enqueue: some use a package-level `enqueuer` var; mirror it.)
+(Verified: worker handlers use the package-level `taskEnqueuer *Enqueuer` var — `Enqueue(taskType string, payload []byte, opts ...interface{})`. Never construct `asynq.NewTask` inside handlers.)
 
 - [ ] **Step 3: Scheduler registration** in `NewScheduler`, with the other daily entries:
 
@@ -505,6 +530,14 @@ schedule("0 4 * * *", TypeAdsAccrueSpend, 24*time.Hour)
 - [ ] **Step 2: `feature.ads` `Default: true`.**
 
 - [ ] **Step 3: widget default** — `"slot": "sidebar"` in `ad_slot` widget `DefaultProps`; check `academy`/`docs` `AdSlot`/`LeftRail` fallbacks — LeftRail's `'left_rail'` fallback is now a real slot, keep it.
+
+- [ ] **Step 3b: settings catalog** — add the three new keys to `internal/control/settings_catalog.go` in the `// Self-Serve Advertising` block, each with `Public: true` (required — `/site/settings/public` only returns `is_public` rows and `is_public` is driven by this catalog flag; without it `page.data.siteSettings` never receives them). Keep `Panel: "control"`:
+
+```go
+"ads.native_feed_interval":        {Type: "int", DefaultValue: "5", Public: true, Description: "Insert a native ad after every N feed items (0 disables).", Panel: "control"},
+"ads.in_article_after_paragraph":  {Type: "int", DefaultValue: "3", Public: true, Description: "Paragraph index for the first in-article ad.", Panel: "control"},
+"ads.in_article_every":            {Type: "int", DefaultValue: "6", Public: true, Description: "Repeat in-article ad every N paragraphs (0 = once).", Panel: "control"},
+```
 
 - [ ] **Step 4: Test + commit** — `go test ./internal/advertising/ ./internal/features/`; commit `feat(ads): 25-provider enum, feature.ads on by default, canonical widget slot names`.
 
@@ -626,6 +659,8 @@ Remove `is_ad_slot` items from the `items` filter exclusion if present (check li
 **Files:**
 - Modify: `apps/admin/src/routes/(app)/ads/new/+page.svelte` (house checkbox)
 - Modify: `apps/admin/src/routes/(app)/ads/+page.svelte` (badge + filter)
+
+(`adsAdminApi.createCampaign`/`updateCampaign` in `apps/admin/src/lib/api.ts` take `Record<string, unknown>` — no client signature change needed, just send `is_house` in the body.)
 
 - [ ] **Step 1:** `/ads/new` — add `is_house` checkbox labeled "House ad (fallback fill)"; when checked, hide/disable the budget field and send `is_house: true` in the create body; send `status` field if the form already exposes one (house ads may be created active — check the form's status select; if absent, leave default `draft` + existing Activate action).
 
