@@ -813,6 +813,16 @@ var deprecatedReachabilitySettings = map[string]string{
 	"visa_timeline.enabled":       "visa_timeline.enabled",
 }
 
+// isDeprecatedSettingKey reports whether key is a migrated reachability
+// toggle superseded by a feature_flags row. Unlike the Deprecated flag on
+// settingMeta — which only fires for catalogued keys — this covers every
+// entry in deprecatedReachabilitySettings, including keys with no catalog
+// entry (a stored system_settings row still exists for some of them).
+func isDeprecatedSettingKey(key string) bool {
+	_, dep := deprecatedReachabilitySettings[key]
+	return dep
+}
+
 // getSettingMeta returns the metadata for a given dot-notation key.
 // If the key is not in the catalog, it returns a best-effort guess based on
 // the value content (bool-like, number-like, etc.) or falls back to "string".

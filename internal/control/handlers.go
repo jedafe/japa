@@ -225,8 +225,11 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 		// Enrich with authoritative metadata from the settings catalog.
 		meta := getSettingMeta(s.Key, s.Value)
 		// Reachability toggles migrated to feature_flags are hidden from the
-		// editable list — manage them via /extensions (Task 13).
-		if meta.Deprecated {
+		// editable list — manage them via /extensions (Task 13). The check
+		// consults deprecatedReachabilitySettings directly so stored rows
+		// for deprecated keys WITHOUT a catalog entry (service_packages.
+		// enabled, sop_generator.enabled, …) are excluded too.
+		if isDeprecatedSettingKey(s.Key) {
 			continue
 		}
 		s.Type = meta.Type
@@ -265,7 +268,7 @@ func (h *Handlers) ListSystemSettings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		// Skip deprecated reachability toggles (feature_flags is authoritative).
-		if _, dep := deprecatedReachabilitySettings[key]; dep {
+		if isDeprecatedSettingKey(key) {
 			continue
 		}
 
