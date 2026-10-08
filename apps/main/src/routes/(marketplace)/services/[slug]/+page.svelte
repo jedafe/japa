@@ -103,6 +103,11 @@
 	);
 	const description = $derived(service?.body ?? service?.title ?? '');
 	const heroExcerpt = $derived(excerpt(service?.body_html || service?.body || '', 180));
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(
+		service ? `${page.url.origin}/services/${service.slug}` : `${page.url.origin}/services`
+	);
 	const ogImage = $derived(
 		service?.featured_image_url
 			? service.featured_image_url.startsWith('http')
@@ -417,6 +422,7 @@
 <svelte:head>
 	<title>{title}</title>
 	<meta name="description" content={description} />
+	<link rel="canonical" href={canonical} />
 	<meta property="og:title" content={service?.title ?? title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
@@ -424,6 +430,9 @@
 	{#if ogImage}
 		<meta property="og:image" content={ogImage} />
 	{/if}
+	<meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+	<meta name="twitter:title" content={service?.title ?? title} />
+	<meta name="twitter:description" content={description} />
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}
@@ -999,7 +1008,7 @@
 									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 								>
 									{#if claiming}
-										<Loader2 size={16} class="animate-spin" aria-hidden="true" />
+										<Loader2 size={16} class="motion-safe:animate-spin" aria-hidden="true" />
 									{:else}
 										<BadgeCheck size={16} aria-hidden="true" />
 									{/if}
@@ -1039,7 +1048,7 @@
 						{#each (data.recommendedContent ?? []) as item (item.id)}
 							<a
 								href={contentHref(item)}
-								class="group flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+								class="group flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] motion-safe:hover:-translate-y-0.5"
 							>
 								{#if item.featured_image_url}
 									<div class="aspect-[16/9] w-full overflow-hidden">
@@ -1047,7 +1056,7 @@
 											src={item.featured_image_url}
 											alt=""
 											loading="lazy"
-											class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+											class="h-full w-full object-cover transition-transform duration-500 motion-safe:group-hover:scale-105"
 										/>
 									</div>
 								{/if}

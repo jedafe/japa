@@ -498,7 +498,7 @@
 							class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 						>
 							{#if couponBusy}
-								<Loader2 size={14} class="animate-spin" aria-hidden="true" />
+								<Loader2 size={14} class="motion-safe:animate-spin" aria-hidden="true" />
 							{:else}
 								<TicketPercent size={14} aria-hidden="true" />
 							{/if}
@@ -635,7 +635,7 @@
 				>
 					{#if bookingBusy}<Loader2
 							size={16}
-							class="animate-spin"
+							class="motion-safe:animate-spin"
 							aria-hidden="true"
 						/>{:else}<Send size={16} aria-hidden="true" />{/if}
 					{isPaid ? t('services.book_pay_reserve', 'Pay & reserve') : t('services.book_send', 'Send inquiry')}

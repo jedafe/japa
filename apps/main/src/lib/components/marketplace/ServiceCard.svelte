@@ -90,7 +90,7 @@
 </script>
 
 <article
-	class="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:-translate-y-0.5 hover:shadow-lg"
+	class="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] transition-all hover:shadow-lg motion-safe:hover:-translate-y-0.5"
 >
 	<!-- Image area -->
 	<div class="relative aspect-[16/10] w-full overflow-hidden">
@@ -99,7 +99,7 @@
 				src={listing.featured_image_url}
 				alt={listing.title}
 				loading="lazy"
-				class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+				class="h-full w-full object-cover transition-transform duration-500 motion-safe:group-hover:scale-105"
 			/>
 		{:else}
 			<!-- Category-tinted placeholder tile (accent palette from

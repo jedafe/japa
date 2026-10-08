@@ -87,7 +87,7 @@
 								disabled={newsletterSubmitting}
 								class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 							>
-								{#if newsletterSubmitting}<Loader2 size={14} class="animate-spin" />{:else}<Send size={14} />{/if}
+								{#if newsletterSubmitting}<Loader2 size={14} class="motion-safe:animate-spin" />{:else}<Send size={14} />{/if}
 								{t('landing.newsletter_subscribe', 'Subscribe')}
 							</button>
 						</div>

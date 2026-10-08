@@ -304,6 +304,9 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={title} />
+	<meta name="twitter:description" content={description} />
 </svelte:head>
 
 <MarketplaceHero q={data.filters.q} fetcher={fetchServiceSuggestions} onSearch={onHeroSearch} />
