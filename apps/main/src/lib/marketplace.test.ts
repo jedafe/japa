@@ -143,7 +143,7 @@ describe('accentClasses', () => {
 	it('maps known palette accents to chip + icon classes', () => {
 		const cyan = accentClasses('cyan');
 		expect(cyan.chip).toContain('bg-cyan-500/10');
-		expect(cyan.chip).toContain('text-cyan-700');
+		expect(cyan.chip).toContain('text-cyan-600');
 		expect(cyan.icon).toBe('text-cyan-600');
 
 		const violet = accentClasses('violet');

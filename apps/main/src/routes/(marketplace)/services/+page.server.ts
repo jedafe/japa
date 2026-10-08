@@ -2,7 +2,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { ServiceListing, ServiceCategory, GeoCountry, Space } from '$lib/types';
+import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '$lib/types';
 
 /**
  * Service Directory list at /services — geo-indexed directory of
@@ -130,13 +130,15 @@ export const load: PageServerLoad = async (event) => {
 
 	const [countriesRes, categoriesRes] = await Promise.allSettled([
 		apiList<GeoCountry>(ctx, '/geo/countries'),
-		apiGet<{ value: string; label: string }[]>(ctx, '/services/categories')
+		// §114: the endpoint returns the full taxonomy Option row
+		// (icon/accent_color/description/applies_to) — keep the whole object
+		// so the marketplace UI can render accent chips + icons.
+		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories')
 	]);
 
 	const countries = countriesRes.status === 'fulfilled' ? countriesRes.value.items : [];
-	const serviceCategories = (
-		categoriesRes.status === 'fulfilled' ? categoriesRes.value ?? [] : []
-	).map((o) => o.value as ServiceCategory);
+	const serviceCategories: ServiceCategoryInfo[] =
+		categoriesRes.status === 'fulfilled' ? (categoriesRes.value ?? []) : [];
 
 	try {
 		const { items, meta } = await apiList<ServiceListing>(ctx, `/services?${params.toString()}`);

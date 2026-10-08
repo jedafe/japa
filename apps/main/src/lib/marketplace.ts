@@ -30,18 +30,18 @@ export type CategoryAccent =
 // Class strings must stay literal — Tailwind's scanner picks them up from
 // this file; dynamically concatenated names would be purged from the build.
 const ACCENT_CLASSES: Record<CategoryAccent, { chip: string; icon: string }> = {
-	violet: { chip: 'bg-violet-500/10 text-violet-700 border-violet-500/30', icon: 'text-violet-600' },
-	green: { chip: 'bg-green-500/10 text-green-700 border-green-500/30', icon: 'text-green-600' },
-	amber: { chip: 'bg-amber-500/10 text-amber-700 border-amber-500/30', icon: 'text-amber-600' },
-	blue: { chip: 'bg-blue-500/10 text-blue-700 border-blue-500/30', icon: 'text-blue-600' },
-	sky: { chip: 'bg-sky-500/10 text-sky-700 border-sky-500/30', icon: 'text-sky-600' },
-	emerald: { chip: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30', icon: 'text-emerald-600' },
-	rose: { chip: 'bg-rose-500/10 text-rose-700 border-rose-500/30', icon: 'text-rose-600' },
-	orange: { chip: 'bg-orange-500/10 text-orange-700 border-orange-500/30', icon: 'text-orange-600' },
-	slate: { chip: 'bg-slate-500/10 text-slate-700 border-slate-500/30', icon: 'text-slate-600' },
-	indigo: { chip: 'bg-indigo-500/10 text-indigo-700 border-indigo-500/30', icon: 'text-indigo-600' },
-	gray: { chip: 'bg-gray-500/10 text-gray-700 border-gray-500/30', icon: 'text-gray-600' },
-	cyan: { chip: 'bg-cyan-500/10 text-cyan-700 border-cyan-500/30', icon: 'text-cyan-600' }
+	violet: { chip: 'bg-violet-500/10 text-violet-600 border-violet-500/30', icon: 'text-violet-600' },
+	green: { chip: 'bg-green-500/10 text-green-600 border-green-500/30', icon: 'text-green-600' },
+	amber: { chip: 'bg-amber-500/10 text-amber-600 border-amber-500/30', icon: 'text-amber-600' },
+	blue: { chip: 'bg-blue-500/10 text-blue-600 border-blue-500/30', icon: 'text-blue-600' },
+	sky: { chip: 'bg-sky-500/10 text-sky-600 border-sky-500/30', icon: 'text-sky-600' },
+	emerald: { chip: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30', icon: 'text-emerald-600' },
+	rose: { chip: 'bg-rose-500/10 text-rose-600 border-rose-500/30', icon: 'text-rose-600' },
+	orange: { chip: 'bg-orange-500/10 text-orange-600 border-orange-500/30', icon: 'text-orange-600' },
+	slate: { chip: 'bg-slate-500/10 text-slate-600 border-slate-500/30', icon: 'text-slate-600' },
+	indigo: { chip: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/30', icon: 'text-indigo-600' },
+	gray: { chip: 'bg-gray-500/10 text-gray-600 border-gray-500/30', icon: 'text-gray-600' },
+	cyan: { chip: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/30', icon: 'text-cyan-600' }
 };
 
 /**
