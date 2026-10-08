@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError, API_BASE } from '$lib/server/api';
+import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
 import { renderDocContent, ensureHeadingIds, extractTocHeadings } from '$lib/tiptap/serialize';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPage } from '$lib/types';
@@ -25,7 +25,9 @@ async function getOpenApiSpec(): Promise<Record<string, unknown> | null> {
 		return specCache.spec;
 	}
 	try {
-		const res = await fetch(`${API_BASE}/docs/openapi.json`);
+		const res = await fetch(`${API_BASE}/docs/openapi.json`, {
+			headers: { 'X-JC-Surface': JC_SURFACE }
+		});
 		if (!res.ok) return null;
 		const spec = (await res.json()) as Record<string, unknown>;
 		specCache = { ts: now, spec };

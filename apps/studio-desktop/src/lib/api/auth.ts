@@ -31,7 +31,10 @@ function deviceId(): string {
 function headers(): Record<string, string> {
 	return {
 		'Content-Type': 'application/json',
-		'X-Device-Id': deviceId()
+		'X-Device-Id': deviceId(),
+		// Identify the desktop surface for scoped feature-flag resolution
+		// (X-JC-Surface; valid values in internal/features/eval.go).
+		'X-JC-Surface': 'desktop'
 	};
 }
 

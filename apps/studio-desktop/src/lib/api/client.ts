@@ -27,6 +27,9 @@ export function createClient(baseUrl: string) {
 			...options,
 			headers: {
 				'Content-Type': 'application/json',
+				// Identify the desktop surface for scoped feature-flag resolution
+				// (X-JC-Surface; valid values in internal/features/eval.go).
+				'X-JC-Surface': 'desktop',
 				...(token ? { Authorization: `Bearer ${token}` } : {}),
 				...options.headers
 			}

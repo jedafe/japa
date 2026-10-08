@@ -31,6 +31,13 @@ export interface ApiResult<T> {
 	status: number;
 }
 
+/**
+ * Surface identifier sent on every backend call (X-JC-Surface). The backend
+ * resolves feature flags and geo rules per surface — the valid values are
+ * defined in internal/features/eval.go (ValidSurface).
+ */
+const JC_SURFACE = 'admin';
+
 let refreshPromise: Promise<boolean> | null = null;
 
 // isCsrfRejection reports whether an error envelope denotes a CSRF token failure
@@ -66,7 +73,7 @@ async function attemptRefresh(): Promise<boolean> {
 			const res = await fetch(buildApiUrl('/auth/refresh', PUBLIC_JC_API_URL), {
 				method: 'POST',
 				credentials: 'include',
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', 'X-JC-Surface': JC_SURFACE },
 			});
 			if (res.ok) {
 				const body = await res.json();
@@ -113,6 +120,8 @@ async function dispatch<T>(
 		headers: {
 			...jsonHeader,
 			...authHeader,
+			// Identify this surface for scoped feature-flag resolution.
+			'X-JC-Surface': JC_SURFACE,
 			...(headers ?? {}),
 		},
 	});
@@ -130,6 +139,7 @@ async function dispatch<T>(
 				headers: {
 					...jsonHeader,
 					...retryAuth,
+					'X-JC-Surface': JC_SURFACE,
 					...await csrfHeaders(options.method, headers),
 				},
 			});

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { API_BASE } from '$lib/server/api';
+import { API_BASE, JC_SURFACE } from '$lib/server/api';
 
 /**
  * Proxy the canonical OpenAPI 3.0.3 spec from the Go backend
@@ -12,7 +12,9 @@ import { API_BASE } from '$lib/server/api';
  */
 export const GET: RequestHandler = async ({ fetch }) => {
 	try {
-		const res = await fetch(`${API_BASE}/docs/openapi.json`);
+		const res = await fetch(`${API_BASE}/docs/openapi.json`, {
+			headers: { 'X-JC-Surface': JC_SURFACE }
+		});
 		if (!res.ok) {
 			return json(
 				{ error: { code: 'spec_unavailable', message: 'OpenAPI spec could not be loaded' } },

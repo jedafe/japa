@@ -35,7 +35,10 @@ export async function refreshCsrfToken(): Promise<string | null> {
 	if (fetching) return fetching;
 	fetching = (async () => {
 		try {
-			const res = await fetch(buildApiUrl('/csrf', PUBLIC_JC_API_URL), { credentials: 'include' });
+			const res = await fetch(buildApiUrl('/csrf', PUBLIC_JC_API_URL), {
+				credentials: 'include',
+				headers: { 'x-jc-surface': 'main' }
+			});
 			if (!res.ok) return token;
 			const body = (await res.json()) as { data?: { csrfToken?: string } };
 			const next = body?.data?.csrfToken ?? null;

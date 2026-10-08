@@ -2,7 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/public';
 import type { PageServerLoad } from './$types';
 import { buildMeta } from '$lib/seo/meta';
-import { API_BASE, apiContext, apiGet } from '$lib/server/api';
+import { API_BASE, JC_SURFACE, apiContext, apiGet } from '$lib/server/api';
 import type { OpenAPISpec, ApiKeySummary } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
 
@@ -22,7 +22,9 @@ export const load: PageServerLoad = async (event) => {
 
 	let spec: OpenAPISpec | null = null;
 	try {
-		const res = await event.fetch(`${API_BASE}/docs/openapi.json`);
+		const res = await event.fetch(`${API_BASE}/docs/openapi.json`, {
+			headers: { 'X-JC-Surface': JC_SURFACE }
+		});
 		if (res.ok) spec = (await res.json()) as OpenAPISpec;
 	} catch {
 		spec = null;

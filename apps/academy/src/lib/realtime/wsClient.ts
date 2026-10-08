@@ -41,7 +41,7 @@ async function mintTicket(): Promise<MintResult> {
 		const res = await fetch('/api/v1/auth/ws-ticket', {
 			method: 'POST',
 			credentials: 'include',
-			headers: { 'content-type': 'application/json' }
+			headers: { 'content-type': 'application/json', 'x-jc-surface': 'academy' }
 		});
 		if (!res.ok) return { ticket: null, status: res.status };
 		// Standard envelope: { "data": { "ticket": "..." } }

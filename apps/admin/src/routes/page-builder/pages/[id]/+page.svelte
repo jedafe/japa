@@ -198,7 +198,11 @@
 	// entity_feature, live_rate_ticker, map). Without it they render their
 	// empty state, so the preview diverges from the published page.
 	const fetchCtx: FetchContext | undefined = $derived(
-		browser ? { fetch, apiBase: PUBLIC_JC_API_URL, token: getAccessToken() } : undefined
+		browser
+			? // X-JC-Surface for scoped feature-flag resolution on block-level
+				// backend fetches inside the preview renderer.
+				{ fetch, apiBase: PUBLIC_JC_API_URL, token: getAccessToken(), surface: 'admin' }
+			: undefined
 	);
 	const resolvedBlocks = $derived(resolveSiteAssets(resolveGeoCopy(visibleBlocks, previewCtx)));
 	const deviceWidth = $derived(deviceMode === 'desktop' ? 1280 : deviceMode === 'tablet' ? 768 : 375);

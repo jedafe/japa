@@ -50,7 +50,9 @@ export async function* streamAgent(
 	const csrfToken = getCsrfToken();
 	const headers: Record<string, string> = {
 		'content-type': 'application/json',
-		accept: 'text/event-stream'
+		accept: 'text/event-stream',
+		// Identify this surface for scoped feature-flag resolution (X-JC-Surface).
+		'x-jc-surface': 'main'
 	};
 	if (csrfToken) headers['x-csrf-token'] = csrfToken;
 

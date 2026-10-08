@@ -8,6 +8,13 @@ import { buildApiUrl } from '@japaconnect/api-url';
 
 const API_BASE = (env.PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
+/**
+ * Surface identifier sent on every backend call (X-JC-Surface). The backend
+ * resolves feature flags and geo rules per surface — the valid values are
+ * defined in internal/features/eval.go (ValidSurface).
+ */
+const JC_SURFACE = 'docs';
+
 function apiUrl(path: string): string {
 	return path.startsWith('http') ? path : buildApiUrl(path, API_BASE);
 }
@@ -24,7 +31,7 @@ export async function apiGet<T>(path: string): Promise<T | null> {
 		const url = apiUrl(path);
 		const res = await fetch(url, {
 			credentials: 'include',
-			headers: { Accept: 'application/json' }
+			headers: { Accept: 'application/json', 'X-JC-Surface': JC_SURFACE }
 		});
 		if (!res.ok) return null;
 		const json = await res.json();
@@ -57,7 +64,8 @@ export async function apiPost<T = unknown>(path: string, body?: unknown): Promis
 	const url = apiUrl(path);
 	const headers: Record<string, string> = {
 		Accept: 'application/json',
-		'Content-Type': 'application/json'
+		'Content-Type': 'application/json',
+		'X-JC-Surface': JC_SURFACE
 	};
 	if (token) headers['Authorization'] = `Bearer ${token}`;
 	if (csrf) headers['X-CSRF-Token'] = csrf;

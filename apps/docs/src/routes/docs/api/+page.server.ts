@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError, API_BASE } from '$lib/server/api';
+import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPageSummary } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
@@ -41,7 +41,9 @@ export const load: PageServerLoad = async (event) => {
 	let endpoints: ApiEndpoint[] = [];
 	if (pages.length === 0) {
 		try {
-			const res = await event.fetch(`${API_BASE}/docs/openapi.json`);
+			const res = await event.fetch(`${API_BASE}/docs/openapi.json`, {
+				headers: { 'X-JC-Surface': JC_SURFACE }
+			});
 			if (res.ok) {
 				const spec = (await res.json()) as Record<string, any>;
 				const paths: Record<string, Record<string, any>> = spec.paths ?? {};

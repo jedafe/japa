@@ -26,6 +26,13 @@ export interface ClientResult<T> {
 
 const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
+/**
+ * Surface identifier sent on every backend call (X-JC-Surface). The backend
+ * resolves feature flags and geo rules per surface — the valid values are
+ * defined in internal/features/eval.go (ValidSurface).
+ */
+const JC_SURFACE = 'academy';
+
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 // Guard against repeated 401 redirects — once a redirect to login has been
@@ -61,6 +68,8 @@ async function clientFetch<T>(
 	const method = (init.method ?? 'GET').toString().toUpperCase();
 	const baseHeaders: Record<string, string> = {
 		'content-type': 'application/json',
+		// Identify this surface for scoped feature-flag resolution.
+		'x-jc-surface': JC_SURFACE,
 		...((init.headers as Record<string, string>) ?? {})
 	};
 

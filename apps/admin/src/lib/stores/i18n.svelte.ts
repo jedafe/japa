@@ -43,7 +43,9 @@ export async function loadTranslations(localeCode: string): Promise<Record<strin
 		return loaded[localeCode];
 	}
 	try {
-		const res = await fetch(buildApiUrl(`/i18n/packs/${localeCode}`, PUBLIC_JC_API_URL));
+		const res = await fetch(buildApiUrl(`/i18n/packs/${localeCode}`, PUBLIC_JC_API_URL), {
+			headers: { 'X-JC-Surface': 'admin' }
+		});
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const body = await res.json();
 		const data = body?.data ?? body ?? {};

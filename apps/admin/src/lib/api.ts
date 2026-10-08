@@ -29,7 +29,8 @@ async function fetchRaw(path: string): Promise<ApiResult<string>> {
 		const res = await fetch(url, {
 			method: 'GET',
 			credentials: 'include',
-			headers: authHeader,
+			// X-JC-Surface identifies this surface for scoped feature-flag resolution.
+			headers: { ...authHeader, 'X-JC-Surface': 'admin' },
 		});
 		if (!res.ok) {
 			const text = await res.text();

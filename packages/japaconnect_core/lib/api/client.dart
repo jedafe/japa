@@ -38,6 +38,11 @@ class JcApiClient {
   final TokenStore tokenStore;
   final DeviceId deviceId;
   final VoidCallback? onUnauthenticated;
+
+  /// Surface identifier sent on every backend call (X-JC-Surface). The
+  /// backend resolves feature flags and geo rules per surface — valid
+  /// values are defined in internal/features/eval.go (ValidSurface).
+  final String surface;
   String? _accessToken;
   final http.Client _http = http.Client();
 
@@ -47,6 +52,7 @@ class JcApiClient {
     required this.tokenStore,
     required this.deviceId,
     this.onUnauthenticated,
+    this.surface = 'mobile',
   });
 
   String get effectiveWsUrl {
@@ -70,6 +76,7 @@ class JcApiClient {
   }) async {
     final headers = <String, String>{
       'X-Device-Id': await deviceId.value,
+      'X-JC-Surface': surface,
     };
     if (includeAuth && _accessToken != null) {
       headers['Authorization'] = 'Bearer $_accessToken';

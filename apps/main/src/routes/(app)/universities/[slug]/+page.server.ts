@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError, API_BASE } from '$lib/server/api';
+import { apiContext, apiGet, apiList, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type { UniversityDetail, ProfilePost, SpaceMember, Review, ReviewAggregate, CourseOffering, WikiPageIndex } from '$lib/types';
 
@@ -40,7 +40,9 @@ export const load: PageServerLoad = async (event) => {
 			method: 'GET',
 			headers: {
 				host: ctx.host,
-				'x-forwarded-host': ctx.host
+				'x-forwarded-host': ctx.host,
+				'x-jc-surface': JC_SURFACE,
+				...(ctx.clientIP ? { 'x-forwarded-for': ctx.clientIP } : {})
 			},
 			redirect: 'manual'
 		});

@@ -8,6 +8,13 @@ export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 export const API_V1 = `${API_BASE}/api/v1`;
 
 /**
+ * Surface identifier sent on every backend call (X-JC-Surface). The backend
+ * resolves feature flags and geo rules per surface — the valid values are
+ * defined in internal/features/eval.go (ValidSurface).
+ */
+export const JC_SURFACE = 'main';
+
+/**
  * Per-request timeout (ms) for backend calls originating from the SSR server.
  * Without an explicit timeout a slow/stuck backend hangs the page indefinitely
  * and the swallowing catch blocks in hooks.server.ts hide the failure. 5s is
@@ -82,7 +89,9 @@ async function request<T>(
 		// Forward the host header to the backend for reverse-proxy correctness.
 		// X-Forwarded-Host is the portable channel; Host is set too for direct-fetch environments.
 		host: ctx.host,
-		'x-forwarded-host': ctx.host
+		'x-forwarded-host': ctx.host,
+		// Identify this surface for scoped feature-flag resolution.
+		'x-jc-surface': JC_SURFACE
 	};
 	// Forward the real client IP so the backend's GeoIP middleware can
 	// resolve the visitor's country for geo-aware personalization (ADR-064).

@@ -28,6 +28,13 @@ export interface ClientResult<T> {
 
 const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
+/**
+ * Surface identifier sent on every backend call (X-JC-Surface). The backend
+ * resolves feature flags and geo rules per surface — the valid values are
+ * defined in internal/features/eval.go (ValidSurface).
+ */
+const JC_SURFACE = 'tools';
+
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 function withCsrfHeader(method: string, headers: Record<string, string>): Record<string, string> {
@@ -42,6 +49,8 @@ async function clientFetch<T>(path: string, init: RequestInit = {}): Promise<Cli
 	const method = (init.method ?? 'GET').toString().toUpperCase();
 	const baseHeaders: Record<string, string> = {
 		'content-type': 'application/json',
+		// Identify this surface for scoped feature-flag resolution.
+		'x-jc-surface': JC_SURFACE,
 		...((init.headers as Record<string, string>) ?? {})
 	};
 

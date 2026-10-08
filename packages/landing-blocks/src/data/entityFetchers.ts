@@ -15,6 +15,17 @@ export const TOOL_REGISTRY: ToolSummary[] = [
   { id: 'travel-search', name: 'Travel Search', slug: 'travel-search', description: 'Search and compare flights and hotels.', href: '/tools/travel', icon: 'Plane', accent: 'var(--chart-2)' },
 ];
 
+/** Shared request headers for backend fetches: auth, host forwarding, and
+ * the consuming app's surface (X-JC-Surface) for scoped feature-flag
+ * resolution. */
+function ctxHeaders(ctx: FetchContext): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
+  if (ctx.host) { headers.host = ctx.host; headers['x-forwarded-host'] = ctx.host; }
+  if (ctx.surface) headers['x-jc-surface'] = ctx.surface;
+  return headers;
+}
+
 /** Build query string from a filters object. */
 function qs(filters: Record<string, string> | undefined, extra: Record<string, string | number | undefined> = {}): string {
   const params = new URLSearchParams();
@@ -34,9 +45,7 @@ export async function fetchEntityCollection(
   const limit = query.limit ?? 6;
   const geoParam = query.geo && geoCountry ? { geo: geoCountry } : {};
   const sortParam = query.sort ? { sort: query.sort } : {};
-  const headers: Record<string, string> = {};
-  if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
-  if (ctx.host) { headers.host = ctx.host; headers['x-forwarded-host'] = ctx.host; }
+  const headers = ctxHeaders(ctx);
 
   // Tool cards are now configurable via the public site settings endpoint
   // (landing.tools). Rule 16: no hardcoded data in production pages.
@@ -97,9 +106,7 @@ export async function fetchEntityFeature(
   ctx: FetchContext
 ): Promise<unknown | null> {
   if (!ref?.id && !ref?.slug) return null;
-  const headers: Record<string, string> = {};
-  if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
-  if (ctx.host) { headers.host = ctx.host; headers['x-forwarded-host'] = ctx.host; }
+  const headers = ctxHeaders(ctx);
 
   const id = ref.id ?? ref.slug;
   const pathMap: Partial<Record<EntityType, string>> = {
@@ -137,9 +144,7 @@ export async function fetchRemittanceRates(
   const params = new URLSearchParams();
   if (corridors) for (const c of corridors) params.append('corridor', c);
   params.set('limit', String(limit));
-  const headers: Record<string, string> = {};
-  if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
-  if (ctx.host) { headers.host = ctx.host; headers['x-forwarded-host'] = ctx.host; }
+  const headers = ctxHeaders(ctx);
   try {
     const res = await ctx.fetch(buildApiUrl(`/remittance/rates?${params}`, ctx.apiBase), { headers });
     if (!res.ok) {

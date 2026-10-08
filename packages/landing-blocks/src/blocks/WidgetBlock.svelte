@@ -37,6 +37,7 @@
     const headers: Record<string, string> = {};
     if (fetchCtx.token) headers.authorization = `Bearer ${fetchCtx.token}`;
     if (fetchCtx.host) { headers.host = fetchCtx.host; headers['x-forwarded-host'] = fetchCtx.host; }
+    if (fetchCtx.surface) headers['x-jc-surface'] = fetchCtx.surface;
     fetch(buildApiUrl(`/widgets/${props.widget_id}`, fetchCtx.apiBase), { headers })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

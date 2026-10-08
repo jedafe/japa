@@ -129,6 +129,7 @@
     try {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (fetchCtx?.csrfToken) headers['x-csrf-token'] = fetchCtx.csrfToken;
+      if (fetchCtx?.surface) headers['x-jc-surface'] = fetchCtx.surface;
       const res = await (fetchCtx?.fetch ?? fetch)(endpoint, {
         method: 'POST',
         headers,

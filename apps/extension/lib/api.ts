@@ -21,7 +21,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, cred: Credential): Promise<T> {
-	const headers: Record<string, string> = { Accept: 'application/json' };
+	// X-JC-Surface identifies the extension surface to the backend's scoped
+	// feature-flag resolution (valid values: internal/features/eval.go).
+	const headers: Record<string, string> = {
+		Accept: 'application/json',
+		'X-JC-Surface': 'extension',
+	};
 	if (cred?.kind === 'apikey') headers['X-API-Key'] = cred.token;
 	if (cred?.kind === 'oauth') headers['Authorization'] = `Bearer ${cred.token}`;
 

@@ -62,7 +62,10 @@
 			? {
 					fetch,
 					apiBase: apiBaseUrl,
-					csrfToken: data.csrfToken ?? getCsrfToken() ?? null
+					csrfToken: data.csrfToken ?? getCsrfToken() ?? null,
+					// X-JC-Surface for scoped feature-flag resolution on
+					// block-level backend fetches.
+					surface: 'main'
 			  }
 			: undefined
 	);

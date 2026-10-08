@@ -27,7 +27,10 @@ export function seedCsrfToken(token: string | null): void {
 export async function refreshCsrfToken(): Promise<boolean> {
 	if (!browser) return false;
 	try {
-		const res = await fetch(buildApiUrl('/csrf', PUBLIC_JC_API_URL), { credentials: 'include' });
+		const res = await fetch(buildApiUrl('/csrf', PUBLIC_JC_API_URL), {
+			credentials: 'include',
+			headers: { 'x-jc-surface': 'tools' }
+		});
 		if (!res.ok) return false;
 		const body = await res.json();
 		const token = body?.data?.csrfToken ?? body?.csrfToken ?? null;

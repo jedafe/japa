@@ -7,6 +7,13 @@ import type { ApiErr, ApiOk, ListMeta } from '$lib/types';
 export const API_BASE = env.PRIVATE_API_BASE_URL ?? 'http://localhost:8080';
 export const API_V1 = `${API_BASE}/api/v1`;
 
+/**
+ * Surface identifier sent on every backend call (X-JC-Surface). The backend
+ * resolves feature flags and geo rules per surface — the valid values are
+ * defined in internal/features/eval.go (ValidSurface).
+ */
+export const JC_SURFACE = 'tools';
+
 /** Typed transport error; carries the backend's status + error code. */
 export class ApiError extends Error {
 	constructor(
@@ -25,6 +32,12 @@ export interface ApiContext {
 	/** Hostname with the port stripped — forwarded to the backend for host-based routing. */
 	host: string;
 	/**
+	 * The real client IP address (from event.getClientAddress()). Forwarded
+	 * as X-Forwarded-For so the backend's GeoIP middleware can resolve the
+	 * visitor's country for geo-aware feature rules (ADR-064).
+	 */
+	clientIP: string | null;
+	/**
 	 * Double-submit CSRF token (Ref: §5.2). Attached as X-CSRF-Token on every
 	 * non-GET request so the backend's csrf.Middleware accepts the mutation.
 	 * Null for guests (no mutations) or when the token could not be fetched.
@@ -38,6 +51,7 @@ export function apiContext(event: RequestEvent): ApiContext {
 		fetch: event.fetch,
 		token: event.locals.token,
 		host: event.locals.requestHost,
+		clientIP: event.getClientAddress() ?? null,
 		csrfToken: event.locals.csrfToken ?? null
 	};
 }
@@ -53,8 +67,13 @@ async function request<T>(
 		// Forward the host header to the backend for reverse-proxy correctness. X-Forwarded-Host is the
 		// portable channel (the Fetch API silently ignores any `host` header set
 		// here, so we only send x-forwarded-host).
-		'x-forwarded-host': ctx.host
+		'x-forwarded-host': ctx.host,
+		// Identify this surface for scoped feature-flag resolution.
+		'x-jc-surface': JC_SURFACE
 	};
+	// Forward the real client IP so the backend's GeoIP middleware resolves
+	// the visitor's country, not the app server's egress IP (ADR-064).
+	if (ctx.clientIP) headers['x-forwarded-for'] = ctx.clientIP;
 	if (ctx.token) headers.authorization = `Bearer ${ctx.token}`;
 	// Attach the double-submit CSRF token on every mutating request so the
 	// backend's csrf.Middleware (Ref: §5.2) accepts it. GETs are exempt.

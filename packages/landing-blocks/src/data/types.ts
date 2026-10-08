@@ -10,6 +10,12 @@ export interface FetchContext {
   csrfToken?: string | null;
   /** Request host header. */
   host?: string;
+  /**
+   * Consuming app's surface identifier, sent as X-JC-Surface so the backend
+   * resolves feature flags and geo rules for the correct surface (valid
+   * values: internal/features/eval.go).
+   */
+  surface?: string;
 }
 
 // API response shapes (derived from backend struct tags — no `any`).

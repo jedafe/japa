@@ -5,7 +5,7 @@
 
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
-import { API_BASE, ApiError, apiContext, type ApiContext } from '$lib/server/api';
+import { API_BASE, ApiError, apiContext, JC_SURFACE, type ApiContext } from '$lib/server/api';
 import { buildApiUrl } from '@japaconnect/api-url';
 import type { AuthSession, AuthTotpChallenge, AuthUser, OnboardingStatus } from '$lib/types';
 import type { RequestEvent } from '@sveltejs/kit';
@@ -87,6 +87,24 @@ function extractRefreshToken(res: Response): string | null {
 	return null;
 }
 
+/**
+ * Shared request headers for the direct backend auth calls below. Mirrors the
+ * transport headers request() in $lib/server/api.ts builds: host forwarding,
+ * X-JC-Surface for scoped feature-flag resolution, and X-Forwarded-For so the
+ * backend's GeoIP middleware resolves the visitor's country rather than the
+ * app server's egress IP (ADR-064). Pass `json: false` for calls with no body.
+ */
+function authHeaders(ctx: ApiContext, opts: { json?: boolean } = {}): Record<string, string> {
+	const headers: Record<string, string> = {
+		host: ctx.host,
+		'x-forwarded-host': ctx.host,
+		'x-jc-surface': JC_SURFACE
+	};
+	if (opts.json !== false) headers['content-type'] = 'application/json';
+	if (ctx.clientIP) headers['x-forwarded-for'] = ctx.clientIP;
+	return headers;
+}
+
 /** POST /auth/login — returns { access_token, user, refresh_token } or, when
  * the account has TOTP enabled, { totp_required, challenge_token, user }.
  * Throws ApiError. The refresh_token is extracted from the backend's
@@ -99,7 +117,7 @@ export async function authenticateLogin(
 ): Promise<AuthSession | AuthTotpChallenge> {
 	const res = await fetch(buildApiUrl('/auth/login', API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ email: email.toLowerCase().trim(), password, website: website ?? '' })
 	});
 	const payload = await res.json();
@@ -126,7 +144,7 @@ export async function authenticateSignup(
 ): Promise<AuthSession> {
 	const res = await fetch(buildApiUrl('/auth/register', API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ email: email.toLowerCase().trim(), username: username.trim(), password, website: website ?? '' })
 	});
 	const payload = await res.json();
@@ -145,7 +163,7 @@ export async function backendLogout(ctx: ApiContext): Promise<void> {
 	try {
 		await fetch(buildApiUrl('/auth/logout', API_BASE), {
 			method: 'POST',
-			headers: { host: ctx.host, 'x-forwarded-host': ctx.host }
+			headers: authHeaders(ctx, { json: false })
 		});
 	} catch {
 		// Best-effort — the cookie is cleared locally regardless.
@@ -163,12 +181,7 @@ export interface RefreshSessionResult {
  * this must be used sparingly and only when the access token is known to be
  * expired. Throws ApiError on failure. */
 export async function refreshSession(ctx: ApiContext): Promise<RefreshSessionResult> {
-	const headers: Record<string, string> = {
-		'content-type': 'application/json',
-		host: ctx.host,
-		'x-forwarded-host': ctx.host
-	};
-	if (ctx.clientIP) headers['x-forwarded-for'] = ctx.clientIP;
+	const headers = authHeaders(ctx);
 
 	const cookies: string[] = [];
 	if (ctx.refreshCookie) cookies.push(`${REFRESH_COOKIE}=${ctx.refreshCookie}`);
@@ -202,8 +215,7 @@ export async function getOnboardingStatus(ctx: ApiContext): Promise<OnboardingSt
 	try {
 		const res = await fetch(buildApiUrl('/onboarding/status', API_BASE), {
 			headers: {
-				host: ctx.host,
-				'x-forwarded-host': ctx.host,
+				...authHeaders(ctx, { json: false }),
 				...(ctx.token ? { authorization: `Bearer ${ctx.token}` } : {})
 			}
 		});
@@ -219,7 +231,7 @@ export async function getOnboardingStatus(ctx: ApiContext): Promise<OnboardingSt
 export async function requestPasswordReset(ctx: ApiContext, email: string, website?: string): Promise<void> {
 	const res = await fetch(buildApiUrl('/auth/forgot-password', API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ email: email.toLowerCase().trim(), website: website ?? '' })
 	});
 	if (!res.ok) {
@@ -238,7 +250,7 @@ export async function resetPassword(
 ): Promise<void> {
 	const res = await fetch(buildApiUrl('/auth/reset-password', API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ token, new_password: newPassword, website: website ?? '' })
 	});
 	if (!res.ok) {
@@ -251,7 +263,7 @@ export async function resetPassword(
 /** GET /auth/verify-email?token= — verifies an email token. Throws ApiError. */
 export async function verifyEmail(ctx: ApiContext, token: string): Promise<void> {
 	const res = await fetch(buildApiUrl(`/auth/verify-email?token=${encodeURIComponent(token)}`, API_BASE), {
-		headers: { host: ctx.host, 'x-forwarded-host': ctx.host }
+		headers: authHeaders(ctx, { json: false })
 	});
 	if (!res.ok) {
 		const payload = await res.json().catch(() => null);
@@ -264,7 +276,7 @@ export async function verifyEmail(ctx: ApiContext, token: string): Promise<void>
 export async function resendVerification(ctx: ApiContext, email: string): Promise<void> {
 	const res = await fetch(buildApiUrl('/auth/resend-verification', API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ email: email.toLowerCase().trim() })
 	});
 	if (!res.ok) {
@@ -291,7 +303,7 @@ export async function verifyTotpChallenge(
 ): Promise<TotpAuthResult> {
 	const res = await fetch(buildApiUrl('/auth/totp/verify-challenge', API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ challenge_token: challengeToken, code })
 	});
 	const payload = await res.json();
@@ -315,7 +327,7 @@ export async function consumeTotpBackup(
 ): Promise<TotpAuthResult> {
 	const res = await fetch(buildApiUrl('/auth/totp/backup', API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ challenge_token: challengeToken, backup_code: backupCode })
 	});
 	const payload = await res.json();
@@ -338,7 +350,7 @@ export async function initiateOAuth(
 ): Promise<string> {
 	const res = await fetch(buildApiUrl(`/auth/oauth/${provider}/initiate`, API_BASE), {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', host: ctx.host, 'x-forwarded-host': ctx.host },
+		headers: authHeaders(ctx),
 		body: JSON.stringify({ redirect })
 	});
 	const payload = await res.json();

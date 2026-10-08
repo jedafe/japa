@@ -29,6 +29,13 @@ const API_BASE = (PUBLIC_JC_API_URL ?? '/api/v1').replace(/\/+$/, '');
 
 export const apiBaseUrl = API_BASE;
 
+/**
+ * Surface identifier sent on every backend call (X-JC-Surface). The backend
+ * resolves feature flags and geo rules per surface — the valid values are
+ * defined in internal/features/eval.go (ValidSurface).
+ */
+const JC_SURFACE = 'main';
+
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 /** In-flight browser refresh; shared so concurrent 401s coalesce into one call. */
@@ -96,6 +103,8 @@ async function clientFetchRaw<T>(
 	const baseHeaders: Record<string, string> = {
 		// For FormData, let the browser set the multipart boundary.
 		...(isFormData ? {} : { 'content-type': 'application/json' }),
+		// Identify this surface for scoped feature-flag resolution.
+		'x-jc-surface': JC_SURFACE,
 		...((init.headers as Record<string, string>) ?? {})
 	};
 
