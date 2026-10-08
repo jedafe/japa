@@ -132,8 +132,9 @@
 		{#if bookmarksEnabled}
 			<button
 				type="button"
-				class="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50"
-				class:text-[var(--color-primary)]={bookmarked}
+				class="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-black/40 backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50 {bookmarked
+					? 'text-[var(--color-primary)]'
+					: 'text-white'}"
 				aria-label={bookmarked
 					? t('bookmarks.remove', 'Remove bookmark')
 					: t('bookmarks.toggle', 'Bookmark')}
@@ -241,6 +242,13 @@
 	</div>
 
 	<!-- Stretched link — last child so it paints above the decorative body
-	     but below z-10 interactive siblings. -->
-	<a href="/services/{listing.slug}" class="absolute inset-0 z-0" aria-label={listing.title}></a>
+	     but below z-10 interactive siblings. Focus ring mirrors
+	     SourceDailyCard's covering anchor. -->
+	<a
+		href="/services/{listing.slug}"
+		class="absolute inset-0 z-0 rounded-[var(--radius-card)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+		aria-label={listing.title}
+	>
+		<span class="sr-only">{listing.title}</span>
+	</a>
 </article>

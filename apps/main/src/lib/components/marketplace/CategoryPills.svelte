@@ -48,12 +48,14 @@
 	const overflow = $derived(filtered.filter((c) => !visible.includes(c)));
 
 	// Build a pill href off the live URL so sort/kind/geo filters survive a
-	// category change; pagination always resets.
+	// category change; pagination always resets and the one-shot
+	// ?submitted=1 notice never propagates into new URLs.
 	function categoryHref(slug: string): string {
 		const params = new URLSearchParams(page.url.searchParams);
 		if (slug) params.set('category', slug);
 		else params.delete('category');
 		params.delete('page');
+		params.delete('submitted');
 		const qs = params.toString();
 		return `/services${qs ? `?${qs}` : ''}`;
 	}

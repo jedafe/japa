@@ -11,6 +11,7 @@
 	import {
 		Briefcase,
 		Plus,
+		Package,
 		ChevronRight,
 		X,
 		Check,
@@ -151,12 +152,14 @@
 	/**
 	 * Build a /services URL from the *current* query string with a mutation
 	 * applied — every control (pills, tabs, sort, filters, search) preserves
-	 * params it does not own. Pagination always resets on a filter change.
+	 * params it does not own. Pagination always resets on a filter change,
+	 * and the one-shot ?submitted=1 notice never propagates into new URLs.
 	 */
 	function paramsWith(mutate: (p: URLSearchParams) => void): string {
 		const params = new URLSearchParams(page.url.searchParams);
 		mutate(params);
 		params.delete('page');
+		params.delete('submitted');
 		const qs = params.toString();
 		return `/services${qs ? `?${qs}` : ''}`;
 	}
@@ -241,9 +244,10 @@
 		goto('/services');
 	}
 
+	// q is intentionally excluded — the hero search writes ?q= but has no
+	// control inside the panel, so a bare search must not auto-open it.
 	const hasActiveFilters = $derived(
-		!!data.filters.q ||
-			!!data.filters.dest ||
+		!!data.filters.dest ||
 			!!data.filters.city ||
 			!!data.filters.category ||
 			!!data.filters.origin ||
@@ -342,6 +346,15 @@
 				onValueChange={selectSort}
 				class="w-36"
 			/>
+			{#if data.authed && data.packagesEnabled}
+				<PageAction
+					href="/me/service-bookings"
+					icon={Package}
+					label={t('bookings.my_title', 'Service Bookings')}
+					secondary
+					fabIndex={1}
+				/>
+			{/if}
 			<PageAction
 				href={data.authed ? '/services/new' : '/login?redirect=/services/new'}
 				icon={Plus}
