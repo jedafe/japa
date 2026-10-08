@@ -95,6 +95,26 @@ type Handlers struct {
 	AIDispatcher      *ai.Dispatcher
 	StartTime         time.Time
 	DeploymentVersion string
+	// onFlagEnabled fires when a flag transitions off→on via the extension
+	// write endpoints (enable/disable, PATCH) — mirrors the activation hook
+	// on features.Handlers so enabling e.g. wiki.enabled from /extensions
+	// seeds stub pages exactly as the admin flag endpoints do. Optional.
+	onFlagEnabled func(ctx context.Context, key string)
+}
+
+// SetOnFlagEnabled registers the off→on activation hook. Wired in server.go
+// to the same callback as features.Handlers.SetOnFlagEnabled.
+func (h *Handlers) SetOnFlagEnabled(fn func(ctx context.Context, key string)) {
+	h.onFlagEnabled = fn
+}
+
+// fireFlagEnabled runs the activation hook when a write transitioned the
+// flag from off to on. Fire-and-forget on a detached context (Rule 8).
+func (h *Handlers) fireFlagEnabled(ctx context.Context, key string, wasEnabled, nowEnabled bool) {
+	if h.onFlagEnabled == nil || wasEnabled || !nowEnabled {
+		return
+	}
+	go h.onFlagEnabled(context.WithoutCancel(ctx), key)
 }
 
 // NewHandlers creates a new Handlers.
@@ -3764,6 +3784,7 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.fireFlagEnabled(r.Context(), key, before.Enabled, enabled)
 	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.update", key,
 		before, &flagAuditSnapshot{Enabled: enabled, Config: merged})
 
@@ -3830,6 +3851,7 @@ func (h *Handlers) setExtensionEnabled(w http.ResponseWriter, r *http.Request, e
 		status = "enabled"
 	}
 
+	h.fireFlagEnabled(r.Context(), key, before.Enabled, enabled)
 	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.update", key,
 		before, &flagAuditSnapshot{Enabled: enabled, Config: before.Config})
 

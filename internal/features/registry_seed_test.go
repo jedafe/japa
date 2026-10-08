@@ -128,3 +128,24 @@ func TestRegistryMatchesBaselineSeed(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryDefaultSurfacesValid guards the eval path: DefaultSurfaces is
+// now applied by surfaceRuleFor for flags without a stored surface rule, so
+// a typo'd surface name or state would silently resolve as visible. Every
+// entry must use a known surface and a valid state.
+func TestRegistryDefaultSurfacesValid(t *testing.T) {
+	t.Parallel()
+
+	for _, f := range Registry {
+		for surface, state := range f.DefaultSurfaces {
+			if !ValidSurface(surface) {
+				t.Errorf("%s: DefaultSurfaces surface %q is not a known client surface", f.Key, surface)
+			}
+			switch state {
+			case "visible", "hidden", "disabled":
+			default:
+				t.Errorf("%s: DefaultSurfaces[%q] state %q is invalid (visible|hidden|disabled)", f.Key, surface, state)
+			}
+		}
+	}
+}

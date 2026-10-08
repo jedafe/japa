@@ -2818,6 +2818,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	controlHandlers.SetSearchEngine(searchEngine)
 	controlHandlers.SetHoncho(honcho.NewClient(cfg.HonchoURL)) // ADR-027: infra health
 	controlHandlers.SetAIStore(aiStore)                        // AI budget dashboard aggregation
+	// Same off→on activation hook as the admin flag endpoints — /extensions
+	// is the primary manage surface, so enabling a flag there must not skip
+	// the activation fan-out (§80 wiki stub seeding).
+	controlHandlers.SetOnFlagEnabled(func(ctx context.Context, flagName string) {
+		if flagName == "wiki.enabled" {
+			wikiService.EnqueueStubSeedFanOut(ctx)
+		}
+	})
 
 	// AI Provider management — DB-backed provider configs with hot-reload.
 	// The ProviderStore reads/writes the ai_providers table (migration 000269);
