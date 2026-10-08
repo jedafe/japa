@@ -71,7 +71,11 @@
 	const openDepartures = $derived(
 		(service.departures ?? []).filter((d) => d.status === 'open')
 	);
-	const loginHref = $derived(`/login?redirect=${encodeURIComponent(page.url.pathname)}`);
+	// Preserve the query string so a post-login return lands on the same
+	// filtered/paginated URL (same pattern as ServiceCard's guest guard).
+	const loginHref = $derived(
+		`/login?redirect=${encodeURIComponent(page.url.pathname + page.url.search)}`
+	);
 
 	function formatDate(iso: string): string {
 		try {

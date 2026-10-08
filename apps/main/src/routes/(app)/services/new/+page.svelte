@@ -32,7 +32,9 @@
 	// Form state.
 	let title = $state('');
 	let body = $state('');
-	let serviceCategory = $state<ServiceCategory>(untrack(() => data.serviceCategories[0] ?? 'immigration_legal'));
+	let serviceCategory = $state<ServiceCategory>(
+		untrack(() => (data.serviceCategories[0]?.value as ServiceCategory | undefined) ?? 'immigration_legal')
+	);
 	let destinationSpaceId = $state('');
 	let citySpaceId = $state('');
 	let cityLabel = $state('');
@@ -174,7 +176,7 @@
 				errorMsg = t('services.errors.pkg_org_ineligible', 'Only verified organizations (business or professional body) can publish packages');
 				return false;
 			}
-			if (purchaseMode === 'paid' && (!priceAmount.trim() || !priceCurrency)) {
+			if (purchaseMode === 'paid' && (!String(priceAmount ?? '').trim() || !priceCurrency)) {
 				errorMsg = t('services.errors.pkg_price_required', 'Paid packages require a price and currency');
 				return false;
 			}
@@ -225,14 +227,18 @@
 			payload.org_id = orgId;
 			payload.purchase_mode = purchaseMode;
 			payload.price_per = pricePer;
-			if (priceAmount.trim()) {
+			// bind:value on type="number" yields number|null — coerce
+			// back to string before trimming.
+			const amountStr = String(priceAmount ?? '').trim();
+			if (amountStr) {
 				// UI collects major units; the API stores minor units.
-				const major = Number(priceAmount);
+				const major = Number(amountStr);
 				if (!Number.isNaN(major)) payload.price_amount = Math.round(major * 100);
 			}
 			if (priceCurrency) payload.price_currency = priceCurrency;
-			if (capacity.trim()) {
-				const cap = Number(capacity);
+			const capStr = String(capacity ?? '').trim();
+			if (capStr) {
+				const cap = Number(capStr);
 				if (Number.isInteger(cap) && cap > 0) payload.capacity = cap;
 			}
 			if (availableFrom) payload.available_from = availableFrom;
@@ -246,12 +252,16 @@
 				}));
 			}
 			if (departures.length > 0) {
-				payload.departures = departures.map((d) => ({
-					starts_on: d.starts_on,
-					ends_on: d.ends_on || undefined,
-					capacity: d.capacity.trim() && Number.isInteger(Number(d.capacity)) ? Number(d.capacity) : null,
-					status: 'open'
-				}));
+				payload.departures = departures.map((d) => {
+					// bind:value on type="number" yields number|null.
+					const depCap = String(d.capacity ?? '').trim();
+					return {
+						starts_on: d.starts_on,
+						ends_on: d.ends_on || undefined,
+						capacity: depCap && Number.isInteger(Number(depCap)) ? Number(depCap) : null,
+						status: 'open'
+					};
+				});
 			}
 		}
 

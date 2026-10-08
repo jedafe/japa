@@ -101,7 +101,11 @@
 			? `${service.title} — ${t('services.heading', 'Service Directory')}`
 			: t('services.heading', 'Service Directory')
 	);
-	const description = $derived(service?.body ?? service?.title ?? '');
+	// Meta description — bounded excerpt of the (markdown) body, not the
+	// raw field; falls back to the title when the body is empty.
+	const description = $derived(
+		service ? excerpt(service.body ?? '', 160) || service.title : ''
+	);
 	const heroExcerpt = $derived(excerpt(service?.body_html || service?.body || '', 180));
 	// Section 26 — self-referencing canonical on the clean slug URL (never
 	// the query-string form) so filtered/paginated hits consolidate.
@@ -287,17 +291,27 @@
 		return null;
 	});
 
-	const secondaryCta = $derived.by((): { label: string; href: string } | null => {
-		if (!service) return null;
-		if (service.org_slug && primaryCta?.href !== `/org/${service.org_slug}`) {
-			// Skip when the primary already resolves to the same destination.
-			return {
-				label: t('services.talk_to_expert', 'Talk to an expert'),
-				href: `/org/${service.org_slug}`
-			};
+	const secondaryCta = $derived.by(
+		(): { label: string; href: string; dialog?: boolean } | null => {
+			if (!service) return null;
+			// Inquiry intent IS the expert-contact path — open the booking
+			// dialog directly instead of bouncing through the org profile.
+			if (service.purchase_mode === 'inquiry' && (canBook || guestBooking)) {
+				return {
+					label: t('services.talk_to_expert', 'Talk to an expert'),
+					href: '#book',
+					dialog: true
+				};
+			}
+			if (service.org_slug) {
+				return {
+					label: t('services.talk_to_expert', 'Talk to an expert'),
+					href: `/org/${service.org_slug}`
+				};
+			}
+			return null;
 		}
-		return null;
-	});
+	);
 
 	// The mobile sticky bar only makes sense where a booking surface exists —
 	// owners manage the listing instead of booking it.
@@ -360,6 +374,15 @@
 		}
 	}
 
+	// §114: the detail payload omits min_price — derive the low price
+	// from the tier list when tiers exist, else fall back to the
+	// listing's own min_price/price_amount (all minor units).
+	const offerPriceMinor = $derived(
+		service?.tiers?.length
+			? Math.min(...service.tiers.map((t) => t.price_amount))
+			: (service?.min_price ?? service?.price_amount ?? null)
+	);
+
 	// JSON-LD — schema.org Service + provider/offer/aggregateRating so
 	// marketplace listings qualify for rich results (§3.3 SEO).
 	const jsonLd = $derived(
@@ -369,7 +392,7 @@
 					'@type': 'Service',
 					name: service.title,
 					description: service.body ?? '',
-					url: page.url.href,
+					url: canonical,
 					...(ogImage ? { image: ogImage } : {}),
 					...(service.website_url ? { sameAs: service.website_url } : {}),
 					...(service.org_name
@@ -389,18 +412,18 @@
 					...(service.price_range ? { priceRange: service.price_range } : {}),
 					// Tiered listings expose a price spread — AggregateOffer w/
 					// lowPrice (min tier) matches the "From $X" card semantics.
-					...((service.min_price ?? service.price_amount) != null && service.price_currency
+					...(offerPriceMinor != null && service.price_currency
 						? {
 								offers: (service.tiers?.length ?? 0) > 0
 									? {
 											'@type': 'AggregateOffer',
-											lowPrice: ((service.min_price ?? service.price_amount) as number) / 100,
+											lowPrice: offerPriceMinor / 100,
 											priceCurrency: service.price_currency,
 											offerCount: service.tiers?.length
 										}
 									: {
 											'@type': 'Offer',
-											price: ((service.min_price ?? service.price_amount) as number) / 100,
+											price: offerPriceMinor / 100,
 											priceCurrency: service.price_currency
 										}
 							}
@@ -426,7 +449,7 @@
 	<meta property="og:title" content={service?.title ?? title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<meta property="og:url" content={canonical} />
 	{#if ogImage}
 		<meta property="og:image" content={ogImage} />
 	{/if}
@@ -609,12 +632,22 @@
 						</a>
 					{/if}
 					{#if secondaryCta}
-						<a
-							href={secondaryCta.href}
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							{secondaryCta.label}
-						</a>
+						{#if secondaryCta.dialog}
+							<button
+								type="button"
+								onclick={openBookingDialog}
+								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								{secondaryCta.label}
+							</button>
+						{:else}
+							<a
+								href={secondaryCta.href}
+								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								{secondaryCta.label}
+							</a>
+						{/if}
 					{/if}
 				</div>
 			</div>
@@ -878,7 +911,10 @@
 			<!-- Booking / inquiry — id anchor for hero + tier CTAs. Only
 				rendered when a booking surface exists (bookSurface). -->
 			{#if bookSurface}
-				<section id="book" aria-labelledby="book-heading" class="scroll-mt-20">
+				<!-- Plan Task 4.10: mobile gets the StickyBookBar; on desktop the
+				     summary card itself sticks below the marketplace header while
+				     the sections after it scroll underneath. -->
+				<section id="book" aria-labelledby="book-heading" class="scroll-mt-20 lg:sticky lg:top-24 lg:z-10">
 					<h2
 						id="book-heading"
 						class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
@@ -1015,7 +1051,7 @@
 									{t('services.claim_listing', 'Claim this listing')}
 								</button>
 								{#if claimResult?.error}
-									<span class="flex items-center gap-1 text-sm text-[var(--color-danger)]">
+									<span role="alert" class="flex items-center gap-1 text-sm text-[var(--color-danger)]">
 										<AlertCircle size={14} aria-hidden="true" /> {claimResult.error}
 									</span>
 								{/if}

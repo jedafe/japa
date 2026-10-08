@@ -63,7 +63,11 @@ export const load: PageServerLoad = async (event) => {
 	const city = get('city');
 	const category = get('category');
 	const origin = get('origin');
-	const verified = get('verified');
+	// Normalize truthy spellings — the filter-panel checkbox binds
+	// filters.verified === 'true', so echoing a raw '1' would leave the
+	// box unchecked while the results are filtered.
+	const verifiedRaw = get('verified');
+	const verified = verifiedRaw === '1' ? 'true' : verifiedRaw;
 	const sortRaw = get('sort');
 	const sort = VALID_SORTS.has(sortRaw) ? sortRaw : 'latest';
 	const kindRaw = get('kind');
@@ -117,7 +121,7 @@ export const load: PageServerLoad = async (event) => {
 	if (cityId) params.set('city', cityId);
 	if (category) params.set('category', category);
 	if (origin) params.set('origin', origin);
-	if (verified === 'true' || verified === '1') params.set('verified', 'true');
+	if (verified === 'true') params.set('verified', 'true');
 	if (sort !== 'latest') params.set('sort', sort);
 	if (kind) params.set('kind', kind);
 	if (priceMax) params.set('price_max', priceMax);

@@ -27,23 +27,22 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 	const currentUserId = event.locals.user?.id ?? null;
 
-	let myOrgs: { id: string; name: string; slug: string }[] = [];
-	if (authed) {
-		try {
-			const { items } = await apiList<{ id: string; name: string; slug: string }>(
-				ctx,
-				'/me/organizations'
-			);
-			myOrgs = items;
-		} catch {
-			myOrgs = [];
-		}
-	}
+	// Independent of the service fetch — start it now so both run in
+	// parallel. Best-effort and authed-only: failures resolve to [] so
+	// the promise never rejects into the Promise.all below.
+	const myOrgsPromise: Promise<{ id: string; name: string; slug: string }[]> = authed
+		? apiList<{ id: string; name: string; slug: string }>(ctx, '/me/organizations')
+				.then(({ items }) => items)
+				.catch(() => [])
+		: Promise.resolve([]);
 
 	try {
 		// Use apiGetEnvelope to access the sidecar `reviews` and
 		// `review_aggregate` fields emitted by GET /services/:slug (BUG-014).
-		const envelope = await apiGetEnvelope<ServiceListing>(ctx, `/services/${slug}`);
+		const [envelope, myOrgs] = await Promise.all([
+			apiGetEnvelope<ServiceListing>(ctx, `/services/${slug}`),
+			myOrgsPromise
+		]);
 		const service = envelope.data;
 		const reviews = (envelope as unknown as { reviews?: ServiceReview[] }).reviews ?? [];
 		const reviewAggregate = (envelope as unknown as { review_aggregate?: ServiceReviewAggregate })
@@ -79,6 +78,9 @@ export const load: PageServerLoad = async (event) => {
 			loadError: false
 		};
 	} catch (err) {
+		// The org fetch is already settled-or-resolving; collect it so the
+		// degraded payload keeps whatever it produced.
+		const myOrgs = await myOrgsPromise;
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Service not found' });
 		}

@@ -6,7 +6,7 @@ import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
 import type {
 	ServiceListing,
 	GeoCountry,
-	ServiceCategory,
+	ServiceCategoryInfo,
 	PackageDeparture,
 	MyOrganization
 } from '$lib/types';
@@ -90,13 +90,14 @@ export const load: PageServerLoad = async (event) => {
 
 	const [countriesRes, categoriesRes] = await Promise.allSettled([
 		apiList<GeoCountry>(ctx, '/geo/countries'),
-		apiGet<{ value: string; label: string }[]>(ctx, '/services/categories')
+		apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories')
 	]);
 
 	const countries = countriesRes.status === 'fulfilled' ? countriesRes.value.items : [];
-	const serviceCategories = (
-		categoriesRes.status === 'fulfilled' ? categoriesRes.value ?? [] : []
-	).map((o) => o.value as ServiceCategory);
+	// §114: keep the taxonomy label — the category dropdown renders the
+	// API label (dynamic slugs have no i18n cat_* key to re-derive it).
+	const serviceCategories: ServiceCategoryInfo[] =
+		categoriesRes.status === 'fulfilled' ? (categoriesRes.value ?? []) : [];
 
 	return {
 		service,

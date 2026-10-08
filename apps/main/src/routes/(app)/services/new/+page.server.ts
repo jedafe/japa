@@ -2,7 +2,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, MyOrganization, ServiceCategory } from '$lib/types';
+import type { GeoCountry, MyOrganization, ServiceCategoryInfo } from '$lib/types';
 
 /**
  * Create-service form at /services/new — auth-gated. Guests are
@@ -32,10 +32,12 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	let serviceCategories: ServiceCategory[] = [];
+	// §114: keep the taxonomy label — the category dropdown renders the
+	// API label (dynamic slugs have no i18n cat_* key to re-derive it).
+	let serviceCategories: ServiceCategoryInfo[] = [];
 	try {
-		const cat = await apiGet<{ value: string; label: string }[]>(ctx, '/services/categories');
-		serviceCategories = (cat ?? []).map((o) => o.value as ServiceCategory);
+		const cat = await apiGet<ServiceCategoryInfo[]>(ctx, '/services/categories');
+		serviceCategories = cat ?? [];
 	} catch {
 		serviceCategories = [];
 	}

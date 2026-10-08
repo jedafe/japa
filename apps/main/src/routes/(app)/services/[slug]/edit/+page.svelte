@@ -28,9 +28,9 @@
 	let body = $state(untrack(() => svc.body ?? ''));
 	let serviceCategory = $state<ServiceCategory>(
 		untrack(() =>
-			(data.serviceCategories.includes(svc.service_category as ServiceCategory)
+			(data.serviceCategories.some((o) => o.value === svc.service_category)
 				? (svc.service_category as ServiceCategory)
-				: data.serviceCategories[0]) ?? 'other'
+				: (data.serviceCategories[0]?.value as ServiceCategory | undefined)) ?? 'other'
 		)
 	);
 	let destinationSpaceId = $state(untrack(() => svc.destination_space_id ?? ''));
@@ -178,7 +178,7 @@
 			return false;
 		}
 		if (isPackage) {
-			if (purchaseMode === 'paid' && (!priceAmount.trim() || !priceCurrency)) {
+			if (purchaseMode === 'paid' && (!String(priceAmount ?? '').trim() || !priceCurrency)) {
 				errorMsg = t('services.errors.pkg_price_required', 'Paid packages require a price and currency');
 				return false;
 			}
@@ -231,9 +231,13 @@
 		if (isPackage) {
 			payload.purchase_mode = purchaseMode;
 			payload.price_per = pricePer;
-			payload.price_amount = priceAmount.trim() ? Math.round(Number(priceAmount) * 100) : 0;
+			// bind:value on type="number" yields number|null — coerce
+			// back to string before trimming.
+			const amountStr = String(priceAmount ?? '').trim();
+			payload.price_amount = amountStr ? Math.round(Number(amountStr) * 100) : 0;
 			payload.price_currency = priceCurrency;
-			payload.capacity = capacity.trim() ? Number(capacity) : 0;
+			const capStr = String(capacity ?? '').trim();
+			payload.capacity = capStr ? Number(capStr) : 0;
 			payload.available_from = availableFrom;
 			payload.available_until = availableUntil;
 			payload.items = pkgItems.map((i) => ({
@@ -242,13 +246,17 @@
 				included: i.included,
 				optional: i.optional
 			}));
-			payload.departures = departures.map((d) => ({
-				...(d.id ? { id: d.id } : {}),
-				starts_on: d.starts_on,
-				ends_on: d.ends_on || '',
-				capacity: d.capacity.trim() && Number(d.capacity) > 0 ? Number(d.capacity) : null,
-				status: d.status || 'open'
-			}));
+			payload.departures = departures.map((d) => {
+				// bind:value on type="number" yields number|null.
+				const depCap = String(d.capacity ?? '').trim();
+				return {
+					...(d.id ? { id: d.id } : {}),
+					starts_on: d.starts_on,
+					ends_on: d.ends_on || '',
+					capacity: depCap && Number(depCap) > 0 ? Number(depCap) : null,
+					status: d.status || 'open'
+				};
+			});
 		}
 
 		submitting = true;

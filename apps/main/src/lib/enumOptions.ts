@@ -95,9 +95,15 @@ export function serviceCategoryLabel(t: Translator, value: ServiceCategory): str
 
 export function serviceCategoryOptions(
 	t: Translator,
-	categories: ServiceCategory[] = []
-): { value: ServiceCategory; label: string }[] {
-	return categories.map((value) => ({ value, label: serviceCategoryLabel(t, value) }));
+	categories: { value: string; label?: string }[] = []
+): { value: string; label: string }[] {
+	// §114: /services/categories rows carry admin-managed labels — prefer
+	// them and fall back to the i18n cat_* keys (dynamic slugs seeded
+	// after launch have no cat_* entry and would render raw lowercase).
+	return categories.map((o) => ({
+		value: o.value,
+		label: o.label || serviceCategoryLabel(t, o.value as ServiceCategory)
+	}));
 }
 
 // --- Japa stage ---

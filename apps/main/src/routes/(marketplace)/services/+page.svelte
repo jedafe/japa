@@ -215,8 +215,11 @@
 				// §111 package-only filters — the API takes price_max in minor
 				// units; the input collects major units like the create form.
 				if (data.filters.kind === 'package') {
-					const major = Number(priceMaxInput);
-					if (priceMaxInput.trim() && Number.isFinite(major) && major >= 0) {
+					// bind:value on type="number" yields number|null — coerce
+					// back to string before trimming.
+					const priceMaxStr = String(priceMaxInput ?? '').trim();
+					const major = Number(priceMaxStr);
+					if (priceMaxStr && Number.isFinite(major) && major >= 0) {
 						p.set('price_max', String(Math.round(major * 100)));
 					} else {
 						p.delete('price_max');
@@ -274,6 +277,9 @@
 	function gotoPage(p: number) {
 		const params = new URLSearchParams(page.url.searchParams);
 		params.set('page', String(p));
+		// The one-shot ?submitted=1 notice never propagates (same as
+		// paramsWith).
+		params.delete('submitted');
 		goto(`/services?${params.toString()}`);
 	}
 
@@ -303,7 +309,7 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<meta property="og:url" content={canonical} />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
