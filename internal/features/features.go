@@ -25,6 +25,12 @@ const flagCacheTTL = 5 * time.Minute
 // flagCacheKeyPrefix namespaces all feature flag cache keys in Valkey.
 const flagCacheKeyPrefix = "jc:flags:"
 
+// flagAllCacheKey is the Valkey/L1 key for the aggregate snapshot of every
+// feature_flags row (JSON array of FlagRow). It lives under the jc:flags:
+// prefix so the SCAN-based flush in valkeyFlushAll invalidates it alongside
+// per-key entries. Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.3.
+const flagAllCacheKey = "_all"
+
 // FeatureChecker is the interface for checking whether a feature flag is
 // enabled for a given platform. Services that need to verify their own feature
 // flag (e.g. story.Service.Enabled) should accept this interface rather than
@@ -43,11 +49,27 @@ type Checker struct {
 	cache     *flagCache
 	vk        valkeycompat.Cmdable // nil when Valkey is unavailable (graceful degradation)
 	closeOnce sync.Once
+	// audienceResolver supplies caller group/permission data for EvalFlag.
+	// Optional — set once at startup via SetAudienceResolver before serving
+	// traffic; nil means every caller evaluates as anonymous (audience-scoped
+	// flags are off for them).
+	audienceResolver AudienceResolver
 }
 
-// flagCacheEntry wraps a flag value with its creation time for TTL eviction.
+// flagCacheEntry wraps a flag's resolved enabled state and raw config blob
+// with its creation time for TTL eviction. Config is cached alongside the
+// bool because scoped evaluation (EvalFlag) needs the per-surface rules —
+// without it every gated request would hit Postgres.
 type flagCacheEntry struct {
 	enabled   bool
+	config    []byte
+	createdAt time.Time
+}
+
+// flagAllEntry snapshots the full feature_flags table for EvalAll and
+// ListExtensions so neither runs ListFlagRows per request.
+type flagAllEntry struct {
+	rows      []FlagRow
 	createdAt time.Time
 }
 
@@ -55,6 +77,7 @@ type flagCacheEntry struct {
 type flagCache struct {
 	mu      sync.RWMutex
 	entries map[string]*flagCacheEntry // flag key -> entry
+	all     *flagAllEntry              // aggregate row snapshot (jc:flags:_all)
 	done    chan struct{}
 }
 
@@ -97,33 +120,51 @@ func (c *Checker) Close() {
 // but NOT cached — the next request retries the DB.
 func (c *Checker) IsEnabled(ctx context.Context, key string) bool {
 	// Ref: .jeos/sections/42-feature-flags.md (removal in progress).
-	// ID is kept in the public signature for Phase 1 compatibility and is ignored.
+	// Global resolution only — surface/geo/audience overlays live in EvalFlag.
+	enabled, _ := c.resolveFlag(ctx, key)
+
+	return enabled
+}
+
+// resolveFlag is the shared L1 → L2 → DB lookup behind IsEnabled and EvalFlag.
+// It returns the rollout-effective enabled bool plus the raw config blob the
+// scoped evaluator needs for surface/geo/audience rules. On transient DB
+// errors the registry default is returned but NOT cached — the next request
+// retries the DB.
+func (c *Checker) resolveFlag(ctx context.Context, key string) (bool, []byte) {
+	// L1 — in-memory (hot path)
 	if cached := c.cacheGet(key); cached != nil {
-		return *cached
+		return cached.enabled, cached.config
 	}
 
 	// L2 — Valkey (shared across server instances)
 	if cached := c.valkeyGet(ctx, key); cached != nil {
-		c.cacheSet(key, *cached)
-		return *cached
+		c.cacheSet(key, cached.enabled, cached.config)
+		return cached.enabled, cached.config
 	}
 
 	// DB — source of truth
-	enabled, err := c.queryEnabled(ctx, key)
+	if c.db == nil {
+		return DefaultFor(key), nil
+	}
+
+	enabled, config, err := c.queryFlagRow(ctx, key)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		// Transient DB error (connection failure, context cancellation, etc.).
 		// Return the registry default for this request but do NOT cache it —
 		// caching a default from a failed query would poison the cache for
 		// up to 5 minutes (L2), silently flipping features on or off.
-		return enabled
+		return enabled, nil
 	}
 
 	// Success or ErrNoRows (legitimate "flag not set" → use default).
-	// Safe to cache at both layers.
-	c.cacheSet(key, enabled)
-	c.valkeySet(ctx, key, enabled)
+	// The cached enabled value is rollout-effective; config stays raw so
+	// EvalFlag can apply surface/geo/audience rules on top.
+	effective := effectiveEnabled(key, enabled, config)
+	c.cacheSet(key, effective, config)
+	c.valkeySet(ctx, key, effective, config)
 
-	return enabled
+	return effective, config
 }
 
 // QueryEnabled reads the flag's effective enabled state straight from the DB,
@@ -149,6 +190,18 @@ func (c *Checker) QueryEnabled(ctx context.Context, key string) bool {
 // Returns (default, ErrNoRows) when the flag is not set so the caller can
 // distinguish "not set" from a real DB error.
 func (c *Checker) queryEnabled(ctx context.Context, key string) (bool, error) {
+	enabled, config, err := c.queryFlagRow(ctx, key)
+	if err != nil {
+		return enabled, err
+	}
+
+	return effectiveEnabled(key, enabled, config), nil
+}
+
+// queryFlagRow reads the raw feature_flags row for a key. Returns
+// (DefaultFor(key), nil, err) on failure so callers can distinguish
+// "not set" (ErrNoRows → registry default) from a real DB error.
+func (c *Checker) queryFlagRow(ctx context.Context, key string) (bool, []byte, error) {
 	var enabled bool
 
 	var configBytes []byte
@@ -162,25 +215,32 @@ func (c *Checker) queryEnabled(ctx context.Context, key string) (bool, error) {
 			slog.Warn("features: query failed, using registry default", "key", key, "error", err)
 		}
 
-		return DefaultFor(key), err
+		return DefaultFor(key), nil, err
 	}
 
+	return enabled, configBytes, nil
+}
+
+// effectiveEnabled applies the BL-013 / Section 42 gradual-rollout rule to a
+// raw (enabled, config) pair: when enabled and rollout_percentage is between
+// 0 and 100 (exclusive), a deterministic hash decides whether this platform
+// falls inside the rollout cohort. The same flag always sees the same outcome
+// until the percentage or enabled state changes.
+func effectiveEnabled(key string, enabled bool, config []byte) bool {
 	if !enabled {
-		return false, nil
+		return false
 	}
 
-	// BL-013 / Section 42: gradual rollout. Parse the config blob for a
-	// rollout_percentage. 0 or 100 means "off" or "fully on" — no hash needed.
 	var cfg FlagConfig
-	if len(configBytes) > 0 {
-		if jsonErr := json.Unmarshal(configBytes, &cfg); jsonErr == nil {
+	if len(config) > 0 {
+		if jsonErr := json.Unmarshal(config, &cfg); jsonErr == nil {
 			if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
-				return hashInRollout(key, cfg.RolloutPercentage), nil
+				return hashInRollout(key, cfg.RolloutPercentage)
 			}
 		}
 	}
 
-	return true, nil
+	return true
 }
 
 // hashInRollout deterministically decides whether a (ID, key) pair falls
@@ -211,40 +271,79 @@ func fnvHash64(s string) uint64 {
 	return h
 }
 
-// cacheGet retrieves a cached flag value if still valid.
-func (c *Checker) cacheGet(flagKey string) *bool {
+// cacheGet retrieves a cached flag entry (enabled + config) if still valid.
+func (c *Checker) cacheGet(flagKey string) *flagCacheEntry {
 	c.cache.mu.RLock()
 	defer c.cache.mu.RUnlock()
 
 	if entry, ok := c.cache.entries[flagKey]; ok {
-		return &entry.enabled
+		return entry
 	}
 
 	return nil
 }
 
 // cacheSet stores a flag value in the cache with current timestamp.
-func (c *Checker) cacheSet(flagKey string, enabled bool) {
+func (c *Checker) cacheSet(flagKey string, enabled bool, config []byte) {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
 
 	c.cache.entries[flagKey] = &flagCacheEntry{
 		enabled:   enabled,
+		config:    config,
 		createdAt: time.Now(),
 	}
 }
 
-// ClearCache clears all cached flag values (in-memory and Valkey).
-func (c *Checker) ClearCache() {
+// cacheAllSet stores the aggregate feature_flags snapshot in L1.
+func (c *Checker) cacheAllSet(rows []FlagRow) {
 	c.cache.mu.Lock()
 	defer c.cache.mu.Unlock()
+
+	c.cache.all = &flagAllEntry{rows: rows, createdAt: time.Now()}
+}
+
+// ClearCache clears all cached flag values (in-memory and Valkey), including
+// the jc:flags:_all aggregate — the SCAN pattern covers it.
+func (c *Checker) ClearCache() {
+	c.cache.mu.Lock()
 	c.cache.entries = make(map[string]*flagCacheEntry)
+	c.cache.all = nil
+	c.cache.mu.Unlock()
 	c.valkeyFlushAll(context.Background())
 }
 
-// valkeyGet retrieves a cached flag value from Valkey (L2).
-// Returns nil on cache miss or when Valkey is unavailable.
-func (c *Checker) valkeyGet(ctx context.Context, flagKey string) *bool {
+// InvalidateFlag drops a single flag's cached resolution plus the shared
+// aggregate snapshot (which contains that flag's row). Write paths that know
+// the affected key should prefer this over ClearCache.
+func (c *Checker) InvalidateFlag(ctx context.Context, flagKey string) {
+	c.cache.mu.Lock()
+	delete(c.cache.entries, flagKey)
+	c.cache.all = nil
+	c.cache.mu.Unlock()
+
+	if c.vk == nil {
+		return
+	}
+
+	if err := c.vk.Del(ctx, flagCacheKeyPrefix+flagKey, flagCacheKeyPrefix+flagAllCacheKey).Err(); err != nil {
+		slog.Warn("features: failed to invalidate valkey cache", "key", flagKey, "error", err)
+	}
+}
+
+// flagCacheValue is the L2 wire format stored at jc:flags:<key>. The raw
+// config rides alongside the resolved bool so scoped evaluation never needs
+// a Postgres round-trip on a cache hit.
+type flagCacheValue struct {
+	Enabled bool            `json:"enabled"`
+	Config  json.RawMessage `json:"config,omitempty"`
+}
+
+// valkeyGet retrieves a cached flag entry from Valkey (L2).
+// Returns nil on cache miss, decode failure, or when Valkey is unavailable.
+// Accepts the current JSON {enabled, config} value and the legacy bare
+// "0"/"1"/"true"/"false" forms (decoded with an empty config).
+func (c *Checker) valkeyGet(ctx context.Context, flagKey string) *flagCacheEntry {
 	if c.vk == nil {
 		return nil
 	}
@@ -254,26 +353,102 @@ func (c *Checker) valkeyGet(ctx context.Context, flagKey string) *bool {
 		return nil
 	}
 
-	enabled := val == "1"
+	switch val {
+	case "1", "true":
+		return &flagCacheEntry{enabled: true}
+	case "0", "false":
+		return &flagCacheEntry{enabled: false}
+	}
 
-	return &enabled
+	var v flagCacheValue
+	if err := json.Unmarshal([]byte(val), &v); err != nil {
+		return nil
+	}
+
+	return &flagCacheEntry{enabled: v.Enabled, config: []byte(v.Config)}
 }
 
 // valkeySet stores a flag value in Valkey with a 5-minute TTL.
 // Failures are logged but never propagated — the L1 cache + DB remain
 // authoritative.
-func (c *Checker) valkeySet(ctx context.Context, flagKey string, enabled bool) {
+func (c *Checker) valkeySet(ctx context.Context, flagKey string, enabled bool, config []byte) {
 	if c.vk == nil {
 		return
 	}
 
-	val := "0"
-	if enabled {
-		val = "1"
+	payload := flagCacheValue{Enabled: enabled, Config: json.RawMessage(config)}
+	if len(payload.Config) == 0 {
+		payload.Config = json.RawMessage(`{}`)
 	}
 
-	if err := c.vk.Set(ctx, flagCacheKeyPrefix+flagKey, val, flagCacheTTL).Err(); err != nil {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		slog.Warn("features: failed to marshal valkey cache value", "key", flagKey, "error", err)
+		return
+	}
+
+	if err := c.vk.Set(ctx, flagCacheKeyPrefix+flagKey, string(raw), flagCacheTTL).Err(); err != nil {
 		slog.Warn("features: failed to write valkey cache", "key", flagKey, "error", err)
+	}
+}
+
+// AllFlagRows returns every feature_flags row through the L1 → L2 → DB
+// cascade backed by the jc:flags:_all aggregate. EvalAll and the control
+// panel's ListExtensions both need every row's config; this keeps them off
+// ListFlagRows' per-request Postgres query. On DB error it returns nil so
+// callers can fall back to registry defaults — failures are never cached.
+func (c *Checker) AllFlagRows(ctx context.Context) []FlagRow {
+	c.cache.mu.RLock()
+	cached := c.cache.all
+	c.cache.mu.RUnlock()
+
+	if cached != nil {
+		return cached.rows
+	}
+
+	// L2 — Valkey aggregate (JSON array of FlagRow)
+	if c.vk != nil {
+		if val, err := c.vk.Get(ctx, flagCacheKeyPrefix+flagAllCacheKey).Result(); err == nil && val != "" {
+			var rows []FlagRow
+			if jsonErr := json.Unmarshal([]byte(val), &rows); jsonErr == nil {
+				c.cacheAllSet(rows)
+				return rows
+			}
+		}
+	}
+
+	// DB — source of truth
+	if c.db == nil {
+		return nil
+	}
+
+	rows, err := c.ListFlagRows(ctx)
+	if err != nil {
+		slog.Warn("features: aggregate row query failed", "error", err)
+		return nil
+	}
+
+	c.cacheAllSet(rows)
+	c.valkeySetAll(ctx, rows)
+
+	return rows
+}
+
+// valkeySetAll stores the aggregate FlagRow snapshot in Valkey with a
+// 5-minute TTL. Failures are logged but never propagated.
+func (c *Checker) valkeySetAll(ctx context.Context, rows []FlagRow) {
+	if c.vk == nil {
+		return
+	}
+
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		slog.Warn("features: failed to marshal flag rows aggregate", "error", err)
+		return
+	}
+
+	if err := c.vk.Set(ctx, flagCacheKeyPrefix+flagAllCacheKey, string(raw), flagCacheTTL).Err(); err != nil {
+		slog.Warn("features: failed to write valkey aggregate cache", "error", err)
 	}
 }
 
@@ -327,6 +502,10 @@ func (fc *flagCache) cleanupLoop(maxAge time.Duration) {
 					delete(fc.entries, key)
 				}
 			}
+
+			if fc.all != nil && now.Sub(fc.all.createdAt) > maxAge {
+				fc.all = nil
+			}
 			fc.mu.Unlock()
 		}
 	}
@@ -344,46 +523,11 @@ func (c *Checker) GetAllEnabled(ctx context.Context) map[string]bool {
 		result[f.Key] = f.Default
 	}
 
-	// Batch-fetch all overrides in one round-trip, then overlay.
-	rows, err := c.db.Reader.Query(ctx, `
-		SELECT key, enabled, config FROM feature_flags
-	`)
-	if err != nil {
-		// On DB error, fall back to defaults (already set above).
-		slog.Warn("features: batch query failed, using registry defaults", "error", err)
-		return result
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var r struct {
-			Key     string
-			Enabled bool
-			Config  []byte
-		}
-
-		if err := rows.Scan(&r.Key, &r.Enabled, &r.Config); err != nil {
-			slog.Warn("features: scanning batch row", "error", err)
-			continue
-		}
-
-		if !r.Enabled {
-			result[r.Key] = false
-			continue
-		}
-
-		// Check rollout percentage in the config blob.
-		var cfg FlagConfig
-		if len(r.Config) > 0 {
-			if jsonErr := json.Unmarshal(r.Config, &cfg); jsonErr == nil {
-				if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
-					result[r.Key] = hashInRollout(r.Key, cfg.RolloutPercentage)
-					continue
-				}
-			}
-		}
-
-		result[r.Key] = true
+	// Overlay stored rows via the shared aggregate cache (no per-request
+	// Postgres hit). On DB error AllFlagRows returns nil and the defaults
+	// above stand — same fallback as the old inline batch query.
+	for _, row := range c.AllFlagRows(ctx) {
+		result[row.Key] = effectiveEnabled(row.Key, row.Enabled, row.Config)
 	}
 
 	return result
@@ -428,7 +572,7 @@ type FlagConfig struct {
 
 // SurfaceRule is the per-surface visibility, audience, and geo policy for a
 // flag, stored inside FlagConfig.Surfaces.
-// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.1
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.1.
 type SurfaceRule struct {
 	State    string   `json:"state"`               // visible|hidden|disabled
 	Audience []string `json:"audience,omitempty"`  // group:<slug>|perm:<node>; empty = everyone
@@ -439,7 +583,7 @@ type SurfaceRule struct {
 // Phases enumerates the rollout phases a flag's config may carry. Phases are
 // operational metadata — transitions are free (no state machine) and the
 // write path audit-logs every change.
-// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §4.1
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §4.1.
 var Phases = []string{"planned", "in_progress", "testing", "shipped", "archived"}
 
 // Surfaces enumerates the client surfaces a flag may carry per-surface rules
@@ -477,7 +621,7 @@ func ValidSurface(s string) bool {
 // GeoAllow and GeoDeny is valid — deny wins at evaluation. Every failure
 // wraps errpkg.ErrInvalid so HandleServiceError maps it to 400
 // validation_error.
-// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.1
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.1.
 func ValidateConfig(cfg FlagConfig) error {
 	if cfg.Phase != "" && !ValidPhase(cfg.Phase) {
 		return fmt.Errorf("%w: invalid_phase %q", errpkg.ErrInvalid, cfg.Phase)
@@ -591,12 +735,14 @@ func (c *Checker) ListFlagRows(ctx context.Context) ([]FlagRow, error) {
 	return out, rows.Err()
 }
 
-// FlagRow is a raw feature_flags table row for a platform.
+// FlagRow is a raw feature_flags table row for a platform. JSON tags are the
+// wire form for the jc:flags:_all aggregate snapshot (Config is the raw
+// jsonb blob, base64-encoded by encoding/json).
 type FlagRow struct {
-	Key       string
-	Enabled   bool
-	Config    []byte
-	UpdatedAt time.Time
+	Key       string    `json:"key"`
+	Enabled   bool      `json:"enabled"`
+	Config    []byte    `json:"config,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // GetFlagConfig returns the stored FlagConfig for a feature flag, or a
@@ -673,7 +819,6 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percenta
 func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			if !checker.IsEnabled(r.Context(), key) {
 				errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
 				return

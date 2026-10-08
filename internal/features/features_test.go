@@ -83,14 +83,14 @@ func TestChecker_CacheGetSet(t *testing.T) {
 		},
 	}
 
-	c.cacheSet("feature.blog", true)
+	c.cacheSet("feature.blog", true, nil)
 
 	val := c.cacheGet("feature.blog")
 	if val == nil {
 		t.Fatal("expected cached value, got nil")
 	}
 
-	if !*val {
+	if !val.enabled {
 		t.Error("expected true, got false")
 	}
 
