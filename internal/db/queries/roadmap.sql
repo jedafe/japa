@@ -193,8 +193,37 @@ SELECT user_id FROM roadmap_votes WHERE item_id = @item_id;
 
 -- name: ListRoadmapSitemapItems :many
 SELECT slug, updated_at FROM roadmap_items
-WHERE status IN ('under_review','planned','in_progress','shipped') AND deleted_at IS NULL
+WHERE status IN ('under_review','planned','in_progress','testing','shipped') AND deleted_at IS NULL
 ORDER BY updated_at DESC;
+
+-- =====================
+-- Feature-flag linkage (unified rollout §4.2–§4.4)
+-- =====================
+
+-- name: GetRoadmapItemByFlagKey :one
+-- The item linked to a feature flag — the lookup behind SyncFlagPhase.
+SELECT * FROM roadmap_items WHERE feature_flag_key = @flag_key AND deleted_at IS NULL;
+
+-- name: ListRoadmapItemsByFlagKeys :many
+-- Batch variant for the control-panel extensions list (one query for the
+-- whole catalog, not N lookups).
+SELECT * FROM roadmap_items WHERE feature_flag_key = ANY(@flag_keys::text[]) AND deleted_at IS NULL;
+
+-- name: ClearRoadmapItemFlagKey :exec
+-- Flag deleted → unlink every linked item; items keep their last status
+-- and return to the manual lifecycle (§4.3).
+UPDATE roadmap_items SET feature_flag_key = NULL, updated_at = now() WHERE feature_flag_key = @flag_key;
+
+-- name: GetFeatureFlagRowByKey :one
+-- Flag row existence + config read for link validation, delete detection,
+-- and apply-current-phase on link. feature_flags lives outside the
+-- roadmap tables but is queried here to keep flag reads consistent.
+SELECT key, enabled, config FROM feature_flags WHERE key = @key;
+
+-- name: GetRoadmapShadowAuthorID :one
+-- Fallback author for shadow contents rows created by automated flag sync
+-- (no acting admin): the oldest account, mirroring the 000798 backfill.
+SELECT id FROM users ORDER BY created_at ASC LIMIT 1;
 
 -- name: CreateRoadmapShadowContent :one
 INSERT INTO contents (

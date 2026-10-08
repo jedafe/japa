@@ -567,7 +567,7 @@ func (h *SitemapHandler) latestRoadmapLastMod(ctx context.Context) string {
 // ServeRoadmapSitemap serves roadmap sitemap entries — the static /roadmap
 // board and /roadmap/changelog pages plus one URL per public-status item
 // (/roadmap/{slug}). ListRoadmapSitemapItems already restricts to the
-// public lifecycle statuses (under_review/planned/in_progress/shipped) and
+// public lifecycle statuses (under_review/planned/in_progress/testing/shipped) and
 // excludes soft-deleted rows, so pending/declined/archived items and user
 // submissions never reach the sitemap. /roadmap/submit is intentionally
 // excluded — it is an auth-required form, not indexable content.

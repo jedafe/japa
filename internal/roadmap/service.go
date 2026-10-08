@@ -25,6 +25,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
 	jcvalkey "github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -107,6 +108,301 @@ func (s *Service) settingsBool(ctx context.Context, key string, fallback bool) b
 	}
 
 	return s.settings.GetBoolOr(ctx, key, fallback)
+}
+
+// ---------------------------------------------------------------------------
+// Feature-flag sync (unified rollout §4.2–§4.4)
+// ---------------------------------------------------------------------------
+
+// flagPhaseStatus maps a rollout phase to the roadmap item status the flag
+// owns for linked items (spec §4.2) — the phase vocabulary maps 1:1 onto
+// item statuses. Unknown/empty phases degrade to planned — the flag has
+// not declared progress.
+func flagPhaseStatus(phase string) ItemStatus {
+	switch ItemStatus(phase) {
+	case StatusPlanned, StatusInProgress, StatusTesting, StatusShipped, StatusArchived:
+		return ItemStatus(phase)
+	case StatusPending, StatusUnderReview, StatusDeclined:
+		return StatusPlanned // submission-only statuses are never flag phases
+	default:
+		return StatusPlanned
+	}
+}
+
+// effectiveFlagPhase resolves an unset/invalid phase from the flag's
+// enabled state the same way eval does (§4.1 defaults): enabled flags
+// without a declared phase are live (shipped); disabled flags are planned.
+func effectiveFlagPhase(phase string, enabled bool) string {
+	if features.ValidPhase(phase) {
+		return phase
+	}
+
+	if enabled {
+		return string(StatusShipped)
+	}
+
+	return string(StatusPlanned)
+}
+
+// SyncFlagPhase reconciles the roadmap item linked to flagKey with the
+// flag's post-write config. Wired to Checker.SetOnConfigChanged in
+// server.go — fires after every flag write (SetEnabled, UpdateFlag,
+// SetRolloutPercentage, DeleteFlag), fire-and-forget via
+// context.WithoutCancel (Rule 8).
+//
+// Semantics (§4.3/§4.4):
+//   - flag row missing (deleted)      → unlink the item; last status kept
+//   - show_on_roadmap=false           → linked item archived (link kept)
+//   - show_on_roadmap=true, no item   → create item (title=name|label|key,
+//     slug=slugify+dedupe, summary=description, status=phase-derived)
+//   - show_on_roadmap=true, item      → write the phase-derived status
+//     directly, bypassing IsValidTransition — the flag's phase graph is
+//     the authority; →shipped fires roadmap:ship_notify only on a real
+//     transition into shipped.
+func (s *Service) SyncFlagPhase(ctx context.Context, flagKey string, cfg features.FlagConfig) error {
+	if strings.TrimSpace(flagKey) == "" {
+		return nil
+	}
+
+	// Read the flag row on the write pool: a missing row means the flag was
+	// deleted (the only write path that leaves no row), and reading the row
+	// post-write keeps the sync convergent under racing writes — the last
+	// hook to run applies the newest stored config, not a stale payload.
+	flagRow, err := s.store.getFlagRow(ctx, flagKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.unlinkFlagItems(ctx, flagKey)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	item, linked, err := s.linkedItem(ctx, flagKey)
+	if err != nil {
+		return err
+	}
+
+	eff := flagConfigFromRow(flagRow, cfg)
+
+	if !eff.ShowOnRoadmap {
+		return s.archiveLinkedItem(ctx, item, linked)
+	}
+
+	return s.applyFlagPhase(ctx, flagKey, item, linked, eff, flagRow.Enabled)
+}
+
+// flagConfigFromRow resolves the effective flag config for the sync: the
+// stored config blob is the truth the triggering write persisted; the hook
+// payload is the fallback for rows with no parseable config.
+func flagConfigFromRow(row gen.GetFeatureFlagRowByKeyRow, fallback features.FlagConfig) features.FlagConfig {
+	if len(row.Config) > 0 {
+		var stored features.FlagConfig
+		if err := json.Unmarshal(row.Config, &stored); err == nil {
+			return stored
+		}
+	}
+
+	return fallback
+}
+
+// linkedItem resolves the live roadmap item linked to a flag —
+// (item, true, nil) when linked, (zero, false, nil) when not.
+func (s *Service) linkedItem(ctx context.Context, flagKey string) (gen.RoadmapItem, bool, error) {
+	item, err := s.store.getItemByFlagKey(ctx, flagKey)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return gen.RoadmapItem{}, false, nil
+	}
+
+	if err != nil {
+		return gen.RoadmapItem{}, false, err
+	}
+
+	return item, true, nil
+}
+
+// unlinkFlagItems clears feature_flag_key on every item linked to a
+// deleted flag (§4.3) — items keep their last status and return to the
+// manual lifecycle.
+func (s *Service) unlinkFlagItems(ctx context.Context, flagKey string) error {
+	if err := s.store.clearItemFlagKey(ctx, flagKey); err != nil {
+		return err
+	}
+
+	s.invalidateBoard(ctx)
+
+	return nil
+}
+
+// archiveLinkedItem archives the flag's linked item when it is opted off
+// the roadmap (§4.4). The link is retained so re-enable restores it; no
+// link → nothing to do.
+func (s *Service) archiveLinkedItem(ctx context.Context, item gen.RoadmapItem, linked bool) error {
+	if linked && item.Status != string(StatusArchived) {
+		if _, err := s.store.updateItemStatus(ctx, item.ID, string(StatusArchived)); err != nil {
+			return err
+		}
+	}
+
+	s.invalidateBoard(ctx)
+
+	return nil
+}
+
+// applyFlagPhase drives the linked item to the flag's phase-derived
+// status — creating the item when none exists (§4.3) or writing the
+// status directly when it does, bypassing IsValidTransition because the
+// flag's phase graph is the authority (§4.4). →shipped fires
+// roadmap:ship_notify only on a real transition into shipped.
+func (s *Service) applyFlagPhase(ctx context.Context, flagKey string, item gen.RoadmapItem, linked bool, cfg features.FlagConfig, enabled bool) error {
+	desired := flagPhaseStatus(effectiveFlagPhase(cfg.Phase, enabled))
+
+	if !linked {
+		return s.createItemForFlag(ctx, flagKey, cfg, desired)
+	}
+
+	if from := ItemStatus(item.Status); from != desired {
+		updated, err := s.store.updateItemStatus(ctx, item.ID, string(desired))
+		if err != nil {
+			return err
+		}
+
+		item = updated
+
+		if desired == StatusShipped {
+			s.enqueueShipNotify(updated)
+		}
+	}
+
+	// A flag flipping a linked item from archived back to a public status
+	// needs the §49 shadow contents row — without it the item renders with
+	// no comments thread.
+	if IsPublicStatus(desired) {
+		s.ensureShadowContentSynced(ctx, item)
+	}
+
+	s.invalidateBoard(ctx)
+
+	return nil
+}
+
+// createItemForFlag inserts the roadmap row for an opted-in flag (§4.3).
+// Title falls back flag name → registry label → raw key; the slug dedupes
+// through uniqueItemSlug; summary carries the flag description.
+func (s *Service) createItemForFlag(ctx context.Context, flagKey string, cfg features.FlagConfig, status ItemStatus) error {
+	title := strings.TrimSpace(cfg.Name)
+	summary := strings.TrimSpace(cfg.Description)
+
+	if f, ok := features.RegistryLookup(flagKey); ok {
+		if title == "" {
+			title = f.Label
+		}
+
+		if summary == "" {
+			summary = f.Description
+		}
+	}
+
+	if title == "" {
+		title = flagKey
+	}
+
+	slug, err := s.uniqueItemSlug(ctx, content.Slugify(title))
+	if err != nil {
+		return err
+	}
+
+	item, err := s.store.createItem(ctx, gen.CreateRoadmapItemParams{
+		Title:          title,
+		Slug:           slug,
+		Summary:        strPtrOrNil(summary),
+		Status:         string(status),
+		FeatureFlagKey: &flagKey,
+	})
+	if err != nil {
+		return mapWriteErr(err)
+	}
+
+	if IsPublicStatus(status) {
+		s.ensureShadowContentSynced(ctx, item)
+	}
+
+	// A flag arriving on the board already shipped still needs the
+	// shipped_at stamp (the board column filters on it) and the voter
+	// fan-out — mirrors the create-into-shipped path in AdminCreateItem.
+	if status == StatusShipped {
+		if stamped, err := s.store.updateItemStatus(ctx, item.ID, string(StatusShipped)); err != nil {
+			slog.Error("roadmap shipped stamp failed on flag sync create", "item_id", item.ID, "error", err)
+		} else {
+			item = stamped
+		}
+
+		s.enqueueShipNotify(item)
+	}
+
+	s.invalidateBoard(ctx)
+
+	return nil
+}
+
+// ensureShadowContentSynced guarantees the §49 shadow contents row for a
+// flag-synced item. There is no acting admin, so the author falls back to
+// the oldest account (the 000798 backfill rule); an unresolvable author
+// skips the shadow — a later publishable save recreates it.
+func (s *Service) ensureShadowContentSynced(ctx context.Context, item gen.RoadmapItem) {
+	if item.ContentID.Valid {
+		return
+	}
+
+	author := item.SubmittedBy
+	if !author.Valid {
+		var err error
+		if author, err = s.store.shadowAuthorID(ctx); err != nil {
+			slog.Warn("roadmap shadow author lookup failed", "item_id", item.ID, "error", err)
+			return
+		}
+	}
+
+	if _, err := s.ensureShadowContent(ctx, item, author); err != nil {
+		slog.Error("roadmap shadow content create failed on flag sync", "item_id", item.ID, "error", err)
+	}
+}
+
+// flagLinkTarget validates a feature_flag_key link target and returns the
+// flag's current row state for phase application. Registry keys always
+// validate — a registered flag with no stored row derives its config from
+// the registry default; custom keys must own a feature_flags row.
+func (s *Service) flagLinkTarget(ctx context.Context, key string) (gen.GetFeatureFlagRowByKeyRow, error) {
+	row, err := s.store.getFlagRow(ctx, key)
+	if err == nil {
+		return row, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return gen.GetFeatureFlagRowByKeyRow{}, err
+	}
+
+	if _, ok := features.RegistryLookup(key); !ok {
+		return gen.GetFeatureFlagRowByKeyRow{}, fmt.Errorf("%w: %q", ErrUnknownFlagKey, key)
+	}
+
+	return gen.GetFeatureFlagRowByKeyRow{Key: key, Enabled: features.DefaultFor(key)}, nil
+}
+
+// derivedStatusForLink returns the status a linked flag currently owns —
+// applied immediately when feature_flag_key is set on an item (§4.2).
+func (s *Service) derivedStatusForLink(ctx context.Context, key string) (ItemStatus, error) {
+	row, err := s.flagLinkTarget(ctx, key)
+	if err != nil {
+		return "", err
+	}
+
+	var cfg features.FlagConfig
+	if len(row.Config) > 0 {
+		// Malformed config degrades to the enabled-derived phase.
+		_ = json.Unmarshal(row.Config, &cfg)
+	}
+
+	return flagPhaseStatus(effectiveFlagPhase(cfg.Phase, row.Enabled)), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -464,6 +760,23 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 		return gen.RoadmapItem{}, fmt.Errorf("%w: unknown status %q", errpkg.ErrInvalid, status)
 	}
 
+	// Linking a feature flag hands the item's lifecycle to the flag (§4.2):
+	// the stored status is replaced by the flag's current phase-derived
+	// status. Unknown keys are rejected with unknown_feature_flag.
+	var flagKey *string
+
+	if in.FeatureFlagKey != nil {
+		if key := strings.TrimSpace(*in.FeatureFlagKey); key != "" {
+			derived, err := s.derivedStatusForLink(ctx, key)
+			if err != nil {
+				return gen.RoadmapItem{}, err
+			}
+
+			status = string(derived)
+			flagKey = &key
+		}
+	}
+
 	base := in.Slug
 	if base == "" {
 		base = in.Title
@@ -503,7 +816,7 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 		SortOrder:      sortOrder,
 		IsFlagship:     isFlagship,
 		TargetWindow:   in.TargetWindow,
-		FeatureFlagKey: in.FeatureFlagKey,
+		FeatureFlagKey: flagKey,
 	})
 	if err != nil {
 		return gen.RoadmapItem{}, mapWriteErr(err)
@@ -557,7 +870,7 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 		return gen.RoadmapItem{}, fmt.Errorf("%w: item is deleted", ErrNotFound)
 	}
 
-	params, err := s.mergeItemPatch(ctx, current, in)
+	params, linkStatus, err := s.mergeItemPatch(ctx, current, in)
 	if err != nil {
 		return gen.RoadmapItem{}, err
 	}
@@ -565,6 +878,25 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 	item, err := s.store.updateItem(ctx, params)
 	if err != nil {
 		return gen.RoadmapItem{}, mapWriteErr(err)
+	}
+
+	// A link set by this PATCH hands the lifecycle to the flag — apply its
+	// current phase-derived status right away, bypassing the manual state
+	// machine (§4.2). updateItemStatus stamps shipped_at SQL-side; the
+	// voter fan-out only fires on a real transition into shipped.
+	if linkStatus != "" && ItemStatus(item.Status) != linkStatus {
+		prev := ItemStatus(item.Status)
+
+		updated, err := s.store.updateItemStatus(ctx, id, string(linkStatus))
+		if err != nil {
+			return gen.RoadmapItem{}, err
+		}
+
+		item = updated
+
+		if linkStatus == StatusShipped && prev != StatusShipped {
+			s.enqueueShipNotify(item)
+		}
 	}
 
 	s.syncShadowContent(ctx, item, in.ActorID)
@@ -575,8 +907,10 @@ func (s *Service) AdminUpdateItem(ctx context.Context, id pgtype.UUID, in AdminI
 
 // mergeItemPatch overlays a PATCH input onto the current row — scalar
 // pointers distinguish "absent" from "set to empty"; a changed slug is
-// re-slugified and de-duplicated.
-func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, in AdminItemInput) (gen.UpdateRoadmapItemParams, error) {
+// re-slugified and de-duplicated. The second return value carries the
+// flag-derived status to apply when the PATCH sets a feature_flag_key
+// link ("" = no status override).
+func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, in AdminItemInput) (gen.UpdateRoadmapItemParams, ItemStatus, error) {
 	params := gen.UpdateRoadmapItemParams{
 		ID:             current.ID,
 		Title:          current.Title,
@@ -595,19 +929,12 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 		params.Title = strings.TrimSpace(in.Title)
 	}
 
-	if in.Slug != "" {
-		// Compare the slugified candidate to the current slug — a raw-input
-		// comparison ("My Slug!" vs "my-slug") would churn the slug to
-		// "my-slug-2" every save.
-		if candidate := content.Slugify(in.Slug); candidate != "" && candidate != current.Slug {
-			slug, err := s.uniqueItemSlug(ctx, candidate)
-			if err != nil {
-				return gen.UpdateRoadmapItemParams{}, err
-			}
-
-			params.Slug = slug
-		}
+	slug, err := s.resolveSlugPatch(ctx, current.Slug, in.Slug)
+	if err != nil {
+		return gen.UpdateRoadmapItemParams{}, "", err
 	}
+
+	params.Slug = slug
 
 	if in.Summary != nil {
 		params.Summary = in.Summary
@@ -619,7 +946,7 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 
 	if in.CategoryID != nil {
 		if err := s.requireLiveCategory(ctx, *in.CategoryID); err != nil {
-			return gen.UpdateRoadmapItemParams{}, err
+			return gen.UpdateRoadmapItemParams{}, "", err
 		}
 
 		params.CategoryID = *in.CategoryID
@@ -637,11 +964,56 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 		params.TargetWindow = in.TargetWindow
 	}
 
+	var linkStatus ItemStatus
+
 	if in.FeatureFlagKey != nil {
-		params.FeatureFlagKey = in.FeatureFlagKey
+		key, derived, err := s.resolveFlagLink(ctx, *in.FeatureFlagKey)
+		if err != nil {
+			return gen.UpdateRoadmapItemParams{}, "", err
+		}
+
+		params.FeatureFlagKey = key // nil on explicit unlink
+		linkStatus = derived
 	}
 
-	return params, nil
+	return params, linkStatus, nil
+}
+
+// resolveSlugPatch picks the slug for an item update: an absent or empty
+// input keeps the current slug; a new input is slugified and de-duplicated.
+// The slugified candidate is compared to the current slug — a raw-input
+// comparison ("My Slug!" vs "my-slug") would churn the slug to
+// "my-slug-2" every save.
+func (s *Service) resolveSlugPatch(ctx context.Context, current, input string) (string, error) {
+	if input == "" {
+		return current, nil
+	}
+
+	candidate := content.Slugify(input)
+	if candidate == "" || candidate == current {
+		return current, nil
+	}
+
+	return s.uniqueItemSlug(ctx, candidate)
+}
+
+// resolveFlagLink resolves a feature_flag_key PATCH value: an empty value
+// unlinks (nil key, no status override — the item keeps its last status
+// and returns to the manual lifecycle, §4.2); a key is validated and
+// returned with the flag's phase-derived status for the caller to apply.
+// Unknown keys → unknown_feature_flag.
+func (s *Service) resolveFlagLink(ctx context.Context, value string) (*string, ItemStatus, error) {
+	key := strings.TrimSpace(value)
+	if key == "" {
+		return nil, "", nil
+	}
+
+	derived, err := s.derivedStatusForLink(ctx, key)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return &key, derived, nil
 }
 
 // AdminSetStatus drives the lifecycle state machine (§113). Approving a
@@ -669,6 +1041,14 @@ func (s *Service) AdminSetStatus(ctx context.Context, id pgtype.UUID, to ItemSta
 	}
 
 	from := ItemStatus(current.Status)
+
+	// Linked items derive status from the flag's rollout phase (§4.2) —
+	// manual transitions are locked. The operator changes the flag's phase
+	// instead; unlinking via PATCH returns the item to manual control.
+	if current.FeatureFlagKey != nil && *current.FeatureFlagKey != "" {
+		return gen.RoadmapItem{}, fmt.Errorf("%w: item status follows flag %q — change the flag's phase", ErrStatusDerived, *current.FeatureFlagKey)
+	}
+
 	if !IsValidTransition(from, to) {
 		return gen.RoadmapItem{}, fmt.Errorf("%w: %s → %s", ErrInvalidTransition, from, to)
 	}

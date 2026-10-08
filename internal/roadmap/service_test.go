@@ -2,15 +2,21 @@ package roadmap
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/features"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // ---------------------------------------------------------------------------
@@ -32,6 +38,10 @@ func TestSentinelAliases(t *testing.T) {
 
 	if !errors.Is(ErrSubmissionsDisabled, errpkg.ErrFeatureDisabled) {
 		t.Error("ErrSubmissionsDisabled must alias errpkg.ErrFeatureDisabled")
+	}
+
+	if !errors.Is(ErrStatusDerived, errpkg.ErrStatusDerived) {
+		t.Error("ErrStatusDerived must alias errpkg.ErrStatusDerived")
 	}
 }
 
@@ -328,5 +338,376 @@ func TestAdminListFilterDefaults(t *testing.T) {
 	f := AdminListFilter{}
 	if f.Status != "" || f.Search != "" || f.Sort != "" || f.IncludeDeleted {
 		t.Error("expected zero-value filter fields")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Flag phase → item status derivation (spec §4.2)
+// ---------------------------------------------------------------------------
+
+func TestFlagPhaseStatus(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		phase string
+		want  ItemStatus
+	}{
+		{"planned", StatusPlanned},
+		{"in_progress", StatusInProgress},
+		{"testing", StatusTesting},
+		{"shipped", StatusShipped},
+		{"archived", StatusArchived},
+		{"", StatusPlanned},      // undeclared → planned
+		{"bogus", StatusPlanned}, // unknown → planned
+	}
+
+	for _, tc := range cases {
+		if got := flagPhaseStatus(tc.phase); got != tc.want {
+			t.Errorf("flagPhaseStatus(%q) = %q, want %q", tc.phase, got, tc.want)
+		}
+	}
+}
+
+func TestEffectiveFlagPhase(t *testing.T) {
+	t.Parallel()
+
+	// §4.1 defaults: enabled flags without a phase are live (shipped);
+	// disabled flags without a phase are planned. Declared phases always win.
+	if got := effectiveFlagPhase("", true); got != string(StatusShipped) {
+		t.Errorf("effectiveFlagPhase(\"\", true) = %q, want shipped", got)
+	}
+
+	if got := effectiveFlagPhase("", false); got != string(StatusPlanned) {
+		t.Errorf("effectiveFlagPhase(\"\", false) = %q, want planned", got)
+	}
+
+	if got := effectiveFlagPhase("testing", true); got != string(StatusTesting) {
+		t.Errorf("effectiveFlagPhase(\"testing\", true) = %q, want testing", got)
+	}
+
+	if got := effectiveFlagPhase("bogus", false); got != string(StatusPlanned) {
+		t.Errorf("effectiveFlagPhase(\"bogus\", false) = %q, want planned", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SyncFlagPhase integration (skipped without JC_DATABASE_URL)
+// ---------------------------------------------------------------------------
+
+// recordingEnqueuer captures enqueued task types for assertions.
+type recordingEnqueuer struct {
+	mu    sync.Mutex
+	tasks []string
+}
+
+func (r *recordingEnqueuer) Enqueue(taskType string, _ []byte, _ ...interface{}) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.tasks = append(r.tasks, taskType)
+
+	return nil
+}
+
+func (r *recordingEnqueuer) count(taskType string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	n := 0
+
+	for _, tt := range r.tasks {
+		if tt == taskType {
+			n++
+		}
+	}
+
+	return n
+}
+
+// uniqueTestKey returns a collision-free feature flag key for tests.
+func uniqueTestKey(t *testing.T) string {
+	t.Helper()
+
+	return fmt.Sprintf("test.sync.%d", time.Now().UnixNano())
+}
+
+// flagSyncFixture bundles the live-DB state a SyncFlagPhase lifecycle test
+// needs: the service under test, a throwaway flag key, and the shadow
+// content slugs created along the way (for cleanup).
+type flagSyncFixture struct {
+	svc   *Service
+	db    *db.DB
+	enq   *recordingEnqueuer
+	key   string
+	slugs []string
+}
+
+func newFlagSyncFixture(t *testing.T, database *db.DB) *flagSyncFixture {
+	t.Helper()
+
+	enq := &recordingEnqueuer{}
+	f := &flagSyncFixture{
+		svc: NewServiceWithEnqueuer(database, enq),
+		db:  database,
+		enq: enq,
+		key: uniqueTestKey(t),
+	}
+
+	t.Cleanup(func() { f.cleanup(t) })
+
+	return f
+}
+
+// cleanup removes every row the fixture touched: shadow contents rows
+// first (roadmap_items.content_id FKs into contents), then items and flag
+// rows. Deletes ignore errors — the rows may already be gone.
+func (f *flagSyncFixture) cleanup(t *testing.T) {
+	t.Helper()
+
+	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM contents WHERE content_type='roadmap' AND slug = ANY($1::text[])`, f.slugs)
+	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM roadmap_items WHERE feature_flag_key = $1`, f.key)
+	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM roadmap_items WHERE slug = 'link-me'`)
+	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM feature_flags WHERE key = $1`, f.key)
+}
+
+// writeFlag upserts the fixture's feature_flags row so the row the sync
+// reads back matches the cfg the hook payload carries.
+func (f *flagSyncFixture) writeFlag(t *testing.T, cfg features.FlagConfig, enabled bool) {
+	t.Helper()
+
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal cfg: %v", err)
+	}
+
+	if _, err := f.db.Writer.Exec(t.Context(), `
+		INSERT INTO feature_flags (key, enabled, config) VALUES ($1, $2, $3)
+		ON CONFLICT (key) DO UPDATE SET enabled = $2, config = $3, updated_at = now()
+	`, f.key, enabled, raw); err != nil {
+		t.Fatalf("write flag row: %v", err)
+	}
+}
+
+func (f *flagSyncFixture) deleteFlag(t *testing.T) {
+	t.Helper()
+
+	if _, err := f.db.Writer.Exec(t.Context(), `DELETE FROM feature_flags WHERE key = $1`, f.key); err != nil {
+		t.Fatalf("delete flag row: %v", err)
+	}
+}
+
+func (f *flagSyncFixture) mustSync(t *testing.T, cfg features.FlagConfig) {
+	t.Helper()
+
+	if err := f.svc.SyncFlagPhase(t.Context(), f.key, cfg); err != nil {
+		t.Fatalf("SyncFlagPhase: %v", err)
+	}
+}
+
+// mustLinked returns the item linked to the fixture flag, asserting the
+// link exists and the status matches want.
+func (f *flagSyncFixture) mustLinked(t *testing.T, want ItemStatus) gen.RoadmapItem {
+	t.Helper()
+
+	item, err := f.svc.store.getItemByFlagKey(t.Context(), f.key)
+	if err != nil {
+		t.Fatalf("get linked item: %v", err)
+	}
+
+	if item.FeatureFlagKey == nil || *item.FeatureFlagKey != f.key {
+		t.Fatalf("feature_flag_key = %v, want %q", item.FeatureFlagKey, f.key)
+	}
+
+	if item.Status != string(want) {
+		t.Fatalf("status = %q, want %q", item.Status, want)
+	}
+
+	f.slugs = append(f.slugs, "roadmap-"+item.Slug)
+
+	return item
+}
+
+// mustItem fetches an item by ID — needed once the flag link is gone and
+// getItemByFlagKey can no longer find it.
+func (f *flagSyncFixture) mustItem(t *testing.T, id pgtype.UUID) gen.RoadmapItem {
+	t.Helper()
+
+	item, err := f.svc.store.getItemByIDOnWrite(t.Context(), id)
+	if err != nil {
+		t.Fatalf("get item: %v", err)
+	}
+
+	return item
+}
+
+func (f *flagSyncFixture) mustNotifyCount(t *testing.T, want int) {
+	t.Helper()
+
+	if n := f.enq.count(worker.TypeRoadmapShipNotify); n != want {
+		t.Fatalf("ship_notify enqueued %d times, want %d", n, want)
+	}
+}
+
+// syncTestDB connects to the dev database or skips.
+func syncTestDB(t *testing.T) *db.DB {
+	t.Helper()
+
+	dsn := os.Getenv("JC_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("JC_DATABASE_URL not set; skipping integration test")
+	}
+
+	database, err := db.New(t.Context(), dsn)
+	if err != nil {
+		t.Fatalf("connect db: %v", err)
+	}
+
+	t.Cleanup(func() {
+		database.Writer.Close()
+		database.Reader.Close()
+	})
+
+	return database
+}
+
+// TestSyncFlagPhaseIntegration exercises the full §4.3/§4.4 lifecycle
+// against a real Postgres: create-on-enable, phase moves, archive on
+// show_off, unlink on flag delete, the linked-status lock, and link
+// validation. Skipped unless JC_DATABASE_URL is set.
+func TestSyncFlagPhaseIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
+	database := syncTestDB(t)
+	f := newFlagSyncFixture(t, database)
+
+	cfg := features.FlagConfig{
+		Name:          "Sync Test Feature",
+		Description:   "Flag-synced roadmap entry",
+		Phase:         string(StatusInProgress),
+		ShowOnRoadmap: true,
+	}
+	f.writeFlag(t, cfg, true)
+
+	// show_on_roadmap=true with no linked item → create with the
+	// phase-derived status (§4.3).
+	f.mustSync(t, cfg)
+
+	item := f.mustLinked(t, StatusInProgress)
+
+	if item.Title != "Sync Test Feature" {
+		t.Errorf("title = %q, want flag name", item.Title)
+	}
+
+	// A phase write moves the linked item's status (§4.2).
+	cfg.Phase = string(StatusTesting)
+	f.writeFlag(t, cfg, true)
+	f.mustSync(t, cfg)
+	f.mustLinked(t, StatusTesting)
+
+	// →shipped stamps shipped_at (SQL-side CASE) and fans out
+	// roadmap:ship_notify exactly once (§4.4).
+	cfg.Phase = string(StatusShipped)
+	f.writeFlag(t, cfg, true)
+	f.mustSync(t, cfg)
+
+	item = f.mustLinked(t, StatusShipped)
+
+	if !item.ShippedAt.Valid {
+		t.Error("shipped_at not stamped on phase→shipped")
+	}
+
+	f.mustNotifyCount(t, 1)
+
+	// Idempotent re-sync must not re-notify.
+	f.mustSync(t, cfg)
+	f.mustNotifyCount(t, 1)
+
+	// Manual status changes on a linked item are locked — the flag's phase
+	// owns status (§4.2 → 409 status_derived).
+	if _, err := f.svc.AdminSetStatus(t.Context(), item.ID, StatusArchived, pgtype.UUID{}); !errors.Is(err, ErrStatusDerived) {
+		t.Errorf("AdminSetStatus on linked item = %v, want ErrStatusDerived", err)
+	}
+
+	// show_on_roadmap=false archives the item but retains the link for
+	// re-enable (§4.4).
+	cfg.ShowOnRoadmap = false
+	f.writeFlag(t, cfg, true)
+	f.mustSync(t, cfg)
+	f.mustLinked(t, StatusArchived)
+
+	// Re-enable un-archives and applies the new phase — bypassing the
+	// manual transition map (archived has no outgoing manual transitions).
+	cfg.ShowOnRoadmap = true
+	cfg.Phase = string(StatusPlanned)
+	f.writeFlag(t, cfg, true)
+	f.mustSync(t, cfg)
+	f.mustLinked(t, StatusPlanned)
+
+	// Deleting the flag row clears feature_flag_key; the item keeps its
+	// last status and returns to manual control (§4.3).
+	f.deleteFlag(t)
+	f.mustSync(t, features.FlagConfig{})
+
+	got := f.mustItem(t, item.ID)
+
+	if got.FeatureFlagKey != nil {
+		t.Errorf("feature_flag_key = %v after flag delete, want NULL", *got.FeatureFlagKey)
+	}
+
+	if got.Status != string(StatusPlanned) {
+		t.Errorf("status after unlink = %q, want last status kept", got.Status)
+	}
+
+	// Linking an unknown flag key is rejected.
+	bad := "test.nope.doesnotexist"
+
+	if _, err := f.svc.AdminCreateItem(t.Context(), AdminItemInput{
+		Title:          "Bad Link",
+		FeatureFlagKey: &bad,
+	}); !errors.Is(err, ErrUnknownFlagKey) {
+		t.Errorf("AdminCreateItem bad flag key = %v, want ErrUnknownFlagKey", err)
+	}
+}
+
+// TestFlagLinkLifecycleIntegration covers the admin-side link paths
+// (§4.2): PATCH feature_flag_key validates + applies the flag's current
+// phase immediately, "" unlinks, and manual transitions resume after
+// unlink. Skipped unless JC_DATABASE_URL is set.
+func TestFlagLinkLifecycleIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
+	f := newFlagSyncFixture(t, syncTestDB(t))
+	f.writeFlag(t, features.FlagConfig{Phase: string(StatusTesting)}, true)
+
+	manual, err := f.svc.AdminCreateItem(t.Context(), AdminItemInput{
+		Title: "Link Me",
+		Slug:  "link-me",
+	})
+	if err != nil {
+		t.Fatalf("AdminCreateItem manual: %v", err)
+	}
+
+	// Linking applies the flag's current phase immediately.
+	if _, err := f.svc.AdminUpdateItem(t.Context(), manual.ID, AdminItemInput{FeatureFlagKey: &f.key}); err != nil {
+		t.Fatalf("AdminUpdateItem link: %v", err)
+	}
+
+	f.mustLinked(t, StatusTesting)
+
+	// Explicit unlink keeps the last status and restores manual control.
+	empty := ""
+
+	if _, err := f.svc.AdminUpdateItem(t.Context(), manual.ID, AdminItemInput{FeatureFlagKey: &empty}); err != nil {
+		t.Fatalf("AdminUpdateItem unlink: %v", err)
+	}
+
+	got := f.mustItem(t, manual.ID)
+
+	if got.FeatureFlagKey != nil {
+		t.Errorf("feature_flag_key = %v after unlink, want NULL", *got.FeatureFlagKey)
+	}
+
+	if got.Status != string(StatusTesting) {
+		t.Errorf("status after unlink = %q, want testing kept", got.Status)
+	}
+
+	if _, err := f.svc.AdminSetStatus(t.Context(), manual.ID, StatusArchived, pgtype.UUID{}); err != nil {
+		t.Errorf("AdminSetStatus after unlink = %v, want nil", err)
 	}
 }

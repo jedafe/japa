@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearRoadmapItemFlagKey = `-- name: ClearRoadmapItemFlagKey :exec
+UPDATE roadmap_items SET feature_flag_key = NULL, updated_at = now() WHERE feature_flag_key = $1
+`
+
+// Flag deleted → unlink every linked item; items keep their last status
+// and return to the manual lifecycle (§4.3).
+func (q *Queries) ClearRoadmapItemFlagKey(ctx context.Context, flagKey *string) error {
+	_, err := q.db.Exec(ctx, clearRoadmapItemFlagKey, flagKey)
+	return err
+}
+
 const countAdminRoadmapItems = `-- name: CountAdminRoadmapItems :one
 SELECT count(*) FROM roadmap_items i
 WHERE ($1::text = '' OR i.status = $1::text)
@@ -202,6 +213,26 @@ func (q *Queries) DeleteRoadmapVote(ctx context.Context, arg DeleteRoadmapVotePa
 	return result.RowsAffected(), nil
 }
 
+const getFeatureFlagRowByKey = `-- name: GetFeatureFlagRowByKey :one
+SELECT key, enabled, config FROM feature_flags WHERE key = $1
+`
+
+type GetFeatureFlagRowByKeyRow struct {
+	Key     string `json:"key"`
+	Enabled bool   `json:"enabled"`
+	Config  []byte `json:"config"`
+}
+
+// Flag row existence + config read for link validation, delete detection,
+// and apply-current-phase on link. feature_flags lives outside the
+// roadmap tables but is queried here to keep flag reads consistent.
+func (q *Queries) GetFeatureFlagRowByKey(ctx context.Context, key string) (GetFeatureFlagRowByKeyRow, error) {
+	row := q.db.QueryRow(ctx, getFeatureFlagRowByKey, key)
+	var i GetFeatureFlagRowByKeyRow
+	err := row.Scan(&i.Key, &i.Enabled, &i.Config)
+	return i, err
+}
+
 const getRoadmapCategoryByID = `-- name: GetRoadmapCategoryByID :one
 SELECT id, slug, name, description, color, sort_order, created_at, updated_at, deleted_at FROM roadmap_categories WHERE id = $1
 `
@@ -235,6 +266,42 @@ func (q *Queries) GetRoadmapCategoryIDBySlug(ctx context.Context, slug string) (
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const getRoadmapItemByFlagKey = `-- name: GetRoadmapItemByFlagKey :one
+
+SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at FROM roadmap_items WHERE feature_flag_key = $1 AND deleted_at IS NULL
+`
+
+// =====================
+// Feature-flag linkage (unified rollout §4.2–§4.4)
+// =====================
+// The item linked to a feature flag — the lookup behind SyncFlagPhase.
+func (q *Queries) GetRoadmapItemByFlagKey(ctx context.Context, flagKey *string) (RoadmapItem, error) {
+	row := q.db.QueryRow(ctx, getRoadmapItemByFlagKey, flagKey)
+	var i RoadmapItem
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.Summary,
+		&i.Body,
+		&i.CategoryID,
+		&i.Status,
+		&i.SortOrder,
+		&i.IsFlagship,
+		&i.TargetWindow,
+		&i.FeatureFlagKey,
+		&i.ContentID,
+		&i.VoteCount,
+		&i.SubmittedBy,
+		&i.ApprovedBy,
+		&i.ShippedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const getRoadmapItemByID = `-- name: GetRoadmapItemByID :one
@@ -347,6 +414,19 @@ SELECT id FROM roadmap_items WHERE slug = $1
 // deleted rows too, so uniqueItemSlug must see them or create hits 23505.
 func (q *Queries) GetRoadmapItemIDBySlug(ctx context.Context, slug string) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, getRoadmapItemIDBySlug, slug)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getRoadmapShadowAuthorID = `-- name: GetRoadmapShadowAuthorID :one
+SELECT id FROM users ORDER BY created_at ASC LIMIT 1
+`
+
+// Fallback author for shadow contents rows created by automated flag sync
+// (no acting admin): the oldest account, mirroring the 000798 backfill.
+func (q *Queries) GetRoadmapShadowAuthorID(ctx context.Context) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getRoadmapShadowAuthorID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -714,10 +794,56 @@ func (q *Queries) ListRoadmapChangelog(ctx context.Context) ([]ListRoadmapChange
 	return items, nil
 }
 
+const listRoadmapItemsByFlagKeys = `-- name: ListRoadmapItemsByFlagKeys :many
+SELECT id, title, slug, summary, body, category_id, status, sort_order, is_flagship, target_window, feature_flag_key, content_id, vote_count, submitted_by, approved_by, shipped_at, created_at, updated_at, deleted_at FROM roadmap_items WHERE feature_flag_key = ANY($1::text[]) AND deleted_at IS NULL
+`
+
+// Batch variant for the control-panel extensions list (one query for the
+// whole catalog, not N lookups).
+func (q *Queries) ListRoadmapItemsByFlagKeys(ctx context.Context, flagKeys []string) ([]RoadmapItem, error) {
+	rows, err := q.db.Query(ctx, listRoadmapItemsByFlagKeys, flagKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoadmapItem
+	for rows.Next() {
+		var i RoadmapItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Summary,
+			&i.Body,
+			&i.CategoryID,
+			&i.Status,
+			&i.SortOrder,
+			&i.IsFlagship,
+			&i.TargetWindow,
+			&i.FeatureFlagKey,
+			&i.ContentID,
+			&i.VoteCount,
+			&i.SubmittedBy,
+			&i.ApprovedBy,
+			&i.ShippedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoadmapSitemapItems = `-- name: ListRoadmapSitemapItems :many
 
 SELECT slug, updated_at FROM roadmap_items
-WHERE status IN ('under_review','planned','in_progress','shipped') AND deleted_at IS NULL
+WHERE status IN ('under_review','planned','in_progress','testing','shipped') AND deleted_at IS NULL
 ORDER BY updated_at DESC
 `
 

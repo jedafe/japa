@@ -79,6 +79,68 @@ func (s *Store) getItemBySlug(ctx context.Context, slug string, viewerID pgtype.
 	return row, nil
 }
 
+// getItemByFlagKey returns the non-deleted item linked to a feature flag —
+// the lookup behind SyncFlagPhase and the control-panel extensions join.
+// Read through the write pool so a just-committed flag sync or admin link
+// is not masked by a lagging replica.
+func (s *Store) getItemByFlagKey(ctx context.Context, flagKey string) (gen.RoadmapItem, error) {
+	row, err := s.write.GetRoadmapItemByFlagKey(ctx, &flagKey)
+	if err != nil {
+		return gen.RoadmapItem{}, fmt.Errorf("getting roadmap item by flag key: %w", err)
+	}
+
+	return row, nil
+}
+
+// listItemsByFlagKeys batch-resolves linked items for a set of flag keys —
+// the control-panel extensions list calls it once for the whole catalog
+// instead of N getItemByFlagKey lookups.
+//
+//nolint:unused // consumed by the control /extensions linked_roadmap_slug join
+func (s *Store) listItemsByFlagKeys(ctx context.Context, flagKeys []string) ([]gen.RoadmapItem, error) {
+	rows, err := s.read.ListRoadmapItemsByFlagKeys(ctx, flagKeys)
+	if err != nil {
+		return nil, fmt.Errorf("listing roadmap items by flag keys: %w", err)
+	}
+
+	return rows, nil
+}
+
+// clearItemFlagKey unlinks every item pointing at flagKey — the flag-row
+// delete path (§4.3). Items keep their last status and return to the
+// manual lifecycle.
+func (s *Store) clearItemFlagKey(ctx context.Context, flagKey string) error {
+	if err := s.write.ClearRoadmapItemFlagKey(ctx, &flagKey); err != nil {
+		return fmt.Errorf("clearing roadmap item flag key: %w", err)
+	}
+
+	return nil
+}
+
+// getFlagRow reads the feature_flags row for key on the write pool —
+// row existence doubles as the flag-deleted signal for SyncFlagPhase and
+// the row's config/enabled drive link validation + phase derivation.
+func (s *Store) getFlagRow(ctx context.Context, key string) (gen.GetFeatureFlagRowByKeyRow, error) {
+	row, err := s.write.GetFeatureFlagRowByKey(ctx, key)
+	if err != nil {
+		return gen.GetFeatureFlagRowByKeyRow{}, fmt.Errorf("getting feature flag row: %w", err)
+	}
+
+	return row, nil
+}
+
+// shadowAuthorID resolves a fallback author for shadow contents rows
+// created without an acting admin (flag sync): the oldest account, the
+// same rule the 000798 backfill applied.
+func (s *Store) shadowAuthorID(ctx context.Context) (pgtype.UUID, error) {
+	id, err := s.read.GetRoadmapShadowAuthorID(ctx)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("getting roadmap shadow author: %w", err)
+	}
+
+	return id, nil
+}
+
 func (s *Store) listPublicItems(ctx context.Context, viewerID pgtype.UUID, categorySlug *string, shippedWindowDays int32) ([]gen.ListPublicRoadmapItemsRow, error) {
 	// The query's no-filter sentinel is an empty string
 	// (sqlc.narg(category_slug)::text = ''); a NULL would make the whole

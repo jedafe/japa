@@ -70,6 +70,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "already_voted", "You have already voted on this item")
 	case errors.Is(err, ErrNotVoted):
 		errpkg.WriteError(w, http.StatusConflict, "not_voted", "You have not voted on this item")
+	case errors.Is(err, ErrUnknownFlagKey):
+		errpkg.WriteError(w, http.StatusBadRequest, "unknown_feature_flag", "feature_flag_key does not match a known feature flag")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

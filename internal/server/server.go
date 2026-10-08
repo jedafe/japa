@@ -1330,6 +1330,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			wikiService.EnqueueStubSeedFanOut(ctx)
 		}
 	})
+	// Unified rollout §4.4: every flag write (phase, show_on_roadmap,
+	// surfaces, delete) fires the config-change hook; the roadmap service
+	// reconciles the linked item's status with the flag's phase. Runs
+	// fire-and-forget inside the Checker (context.WithoutCancel, Rule 8).
+	featureChecker.SetOnConfigChanged(func(ctx context.Context, key string, cfg features.FlagConfig) {
+		if err := roadmapService.SyncFlagPhase(ctx, key, cfg); err != nil {
+			slog.Error("roadmap sync flag phase failed", "key", key, "error", err)
+		}
+	})
 	// B4/B5: wire the reputation (points) checker and RBAC resolver so the
 	// wiki.edit submission gate can enforce wiki.min_reputation_to_edit and
 	// wiki.community_edits (§80 business-logic gates).

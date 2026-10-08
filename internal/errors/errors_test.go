@@ -128,6 +128,7 @@ func TestHandleServiceErrorMapping(t *testing.T) {
 		{"ErrExpired", ErrExpired, http.StatusUnauthorized, "expired"},
 		{"ErrMaxDepth", ErrMaxDepth, http.StatusBadRequest, "depth_exceeded"},
 		{"ErrInvalidStatusTransition", ErrInvalidStatusTransition, http.StatusConflict, "invalid_status_transition"},
+		{"ErrStatusDerived", ErrStatusDerived, http.StatusConflict, "status_derived"},
 		{"ErrInsufficientBalance", ErrInsufficientBalance, http.StatusUnprocessableEntity, "insufficient_balance"},
 		{"unknown error", stderrors.New("boom"), http.StatusInternalServerError, "internal_error"},
 		{"wrapped ErrInvalid", fmt.Errorf("%w: bad input", ErrInvalid), http.StatusBadRequest, "validation_error"},

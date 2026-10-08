@@ -65,6 +65,11 @@ var (
 
 	// ErrRateLimited indicates the caller exceeded a rate or quota limit.
 	ErrRateLimited = errors.New("rate_limited")
+
+	// ErrStatusDerived indicates the resource's status is owned by an
+	// external source of truth (e.g. a feature flag's rollout phase on a
+	// linked roadmap item) and cannot be changed directly.
+	ErrStatusDerived = errors.New("status_derived")
 )
 
 // WrapDuplicate wraps an error with the duplicate sentinel if it appears to be

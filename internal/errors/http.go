@@ -106,6 +106,7 @@ func stripSentinelPrefix(err, sentinel error) string {
 //	ErrExpired                         → 401 expired
 //	ErrMaxDepth                        → 400 depth_exceeded
 //	ErrInvalidStatusTransition         → 409 invalid_status_transition
+//	ErrStatusDerived                   → 409 status_derived
 //	ErrNotDeleted                      → 409 not_deleted
 //	ErrInsufficientBalance             → 422 insufficient_balance
 //	ErrRateLimited                     → 429 rate_limit_exceeded
@@ -124,6 +125,8 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 		WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
 	case errors.Is(err, ErrInvalidStatusTransition):
 		WriteError(w, http.StatusConflict, "invalid_status_transition", stripSentinelPrefix(err, ErrInvalidStatusTransition))
+	case errors.Is(err, ErrStatusDerived):
+		WriteError(w, http.StatusConflict, "status_derived", stripSentinelPrefix(err, ErrStatusDerived))
 	case errors.Is(err, ErrInUse):
 		WriteError(w, http.StatusConflict, "in_use", stripSentinelPrefix(err, ErrInUse))
 	case errors.Is(err, ErrNotDeleted):
