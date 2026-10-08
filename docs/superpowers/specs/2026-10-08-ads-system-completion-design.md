@@ -195,7 +195,7 @@ valueimpression, custom
 
 ## 4. Migration plan
 
-`000812_ads_completion.up/down.sql` — single pair:
+`000814_ads_completion.up/down.sql` — single pair:
 
 1. `ALTER TABLE ad_campaigns ADD COLUMN is_house boolean NOT NULL DEFAULT false` + partial index.
 2. Widen `ad_networks_provider_check` (drop + re-add CHECK with 25 values).

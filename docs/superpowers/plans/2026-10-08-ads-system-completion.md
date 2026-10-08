@@ -16,7 +16,7 @@
 - API errors use `errpkg.WriteError(w, status, "snake_case_code", "...")`.
 - All commits go to `main`. No AI attribution in commits/comments (Rule 17).
 - Frontend: bun only (`bun run check`, `bunx svelte-check`), Svelte 5 runes, no hardcoded data (Rule 16).
-- sqlc reads `migrations/` as schema — the 000812 `.up.sql` must exist before `make sqlc-gen`.
+- sqlc reads `migrations/` as schema — the 000814 `.up.sql` must exist before `make sqlc-gen`.
 
 ---
 
@@ -56,7 +56,7 @@ campaigns. Event type vocabulary: `impression`, `click`, `conversion`.
 
 `left_rail`, `article_inline`, `article_below_comments`, `comments_below`,
 `native_feed`, `native_discover`, `native_space_feed`, `native_forum`,
-`sticky_anchor`, `sidebar_sticky` — seeded in migration 000812.
+`sticky_anchor`, `sidebar_sticky` — seeded in migration 000814.
 
 ## Ad Network Providers
 
@@ -110,7 +110,7 @@ and in the admin campaigns section note `is_house` (bool) on
 | `ads.in_article_every` | int | `6` | Repeat in-article ad every N paragraphs (0 = once). |
 ```
 
-- [ ] **Step 6: MIGRATION-ORDER.md + ROADMAP-BACKEND.md** — add `000812_ads_completion` entry in order; mark backend roadmap task 24.05 (`ad:ingest_event_batch` → daily rollup) `[x]` with a note that rollup is now upserted at ingest time.
+- [ ] **Step 6: MIGRATION-ORDER.md + ROADMAP-BACKEND.md** — add `000814_ads_completion` entry in order; mark backend roadmap task 24.05 (`ad:ingest_event_batch` → daily rollup) `[x]` with a note that rollup is now upserted at ingest time.
 
 - [ ] **Step 7: Commit**
 
@@ -121,16 +121,16 @@ git commit -m "docs(jeos): ads completion — house tier, targeting, new slots, 
 
 ---
 
-### Task 2: Migration 000812
+### Task 2: Migration 000814
 
 **Files:**
-- Create: `migrations/000812_ads_completion.up.sql`
-- Create: `migrations/000812_ads_completion.down.sql`
+- Create: `migrations/000814_ads_completion.up.sql`
+- Create: `migrations/000814_ads_completion.down.sql`
 
 - [ ] **Step 1: Write the up migration**
 
 ```sql
--- 000812_ads_completion.up.sql — ads system completion (§25, design spec
+-- 000814_ads_completion.up.sql — ads system completion (§25, design spec
 -- docs/superpowers/specs/2026-10-08-ads-system-completion-design.md)
 
 -- 1. House-ad flag + serving index.
@@ -172,7 +172,7 @@ WHERE widget_type = 'ad_slot' AND props->>'slot' = 'sidebar_top';
 - [ ] **Step 2: Write the down migration**
 
 ```sql
--- 000812_ads_completion.down.sql
+-- 000814_ads_completion.down.sql
 
 UPDATE sidebar_widgets SET props = jsonb_set(props, '{slot}', '"sidebar_top"')
 WHERE widget_type = 'ad_slot' AND props->>'slot' = 'sidebar';
@@ -205,8 +205,8 @@ Expected: migration applies; `left_rail` row exists.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add migrations/000812_ads_completion.*.sql
-git commit -m "feat(migrations): 000812 ads completion — house flag, 25 providers, conversion events, new slots"
+git add migrations/000814_ads_completion.*.sql
+git commit -m "feat(migrations): 000814 ads completion — house flag, 25 providers, conversion events, new slots"
 ```
 
 ---
@@ -727,5 +727,5 @@ The `config` field already arrives on `AdNetwork.config` — type it `{ script_u
 ## Notes for the implementer
 
 - `sqlc.narg` may be needed on `user_country`/`space_id` in `ListEligibleCampaignsForServing` — check generated param types after `make sqlc-gen` and reconcile Task 3 SQL with Task 4 store code before building.
-- `ad_analytics_daily` upsert conflicts on `(campaign_id, slot_type_id, date)` — verify that unique constraint exists in the baseline (it's implied by the `ON CONFLICT` clause; if the constraint is missing, add it in 000812: `ALTER TABLE ad_analytics_daily ADD CONSTRAINT ad_analytics_daily_uniq UNIQUE (campaign_id, slot_type_id, date)` — check schema first).
+- `ad_analytics_daily` upsert conflicts on `(campaign_id, slot_type_id, date)` — verify that unique constraint exists in the baseline (it's implied by the `ON CONFLICT` clause; if the constraint is missing, add it in 000814: `ALTER TABLE ad_analytics_daily ADD CONSTRAINT ad_analytics_daily_uniq UNIQUE (campaign_id, slot_type_id, date)` — check schema first).
 - Academy (`apps/academy`) gets the new widget defaults automatically via the backend widget-type registry; no academy changes needed beyond the `AdSlot` spaceId prop if trivial.
