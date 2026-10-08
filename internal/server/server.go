@@ -3095,6 +3095,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// visibility) for surfaces that render state badges (§5.3).
 			r.Get("/feature-flags", featureHandlers.HandleGetFeatureFlags)
 			r.Get("/feature-flags/details", featureHandlers.HandleGetFeatureFlagDetails)
+			r.Get("/feature-flags/details/{key}", featureHandlers.HandleGetFeatureFlagDetail)
 
 			// Public option catalog (Rule 16 — canonical option lists for
 			// Tools surface dropdowns, no auth required).

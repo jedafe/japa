@@ -3686,7 +3686,9 @@ func mergeExtensionPatch(cfg *features.FlagConfig, input *extensionPatchInput) {
 // validated (ValidateConfig) and persisted via Checker.UpdateFlag, which
 // upserts enabled + config, invalidates the flag cache, and fires the
 // config-change hook automatically. Unknown keys → 404 extension_not_found;
-// invalid phase/surface values → 400 validation_error.
+// invalid phase/surface values → 400 with the ConfigError's machine-readable
+// code (invalid_phase, invalid_surface, invalid_surface_state,
+// invalid_audience, invalid_geo).
 func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if key == "" {
@@ -3724,9 +3726,10 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	mergeExtensionPatch(&cfg, &input)
 
 	// Phase/surface/audience/geo vocabularies are validated before the
-	// write; ErrInvalid maps to 400 validation_error.
+	// write; ConfigError carries the machine-readable code (invalid_phase,
+	// invalid_surface, …) emitted in the 400 error envelope.
 	if err := features.ValidateConfig(cfg); err != nil {
-		errpkg.HandleServiceError(w, err)
+		features.WriteConfigError(w, err)
 		return
 	}
 

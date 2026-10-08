@@ -297,8 +297,8 @@ func assertCustomEntry(t *testing.T, custom extensionEntry) {
 }
 
 // TestUpdateExtension_Validation covers the new PATCH fields: invalid phase,
-// empty surface state, and unknown surface all map to 400 validation_error
-// via ValidateConfig.
+// empty surface state, and unknown surface all map to 400 with the
+// ConfigError's machine-readable wire code via ValidateConfig.
 func TestUpdateExtension_Validation(t *testing.T) {
 	t.Parallel()
 
@@ -308,14 +308,15 @@ func TestUpdateExtension_Validation(t *testing.T) {
 	h := &Handlers{FeatureChecker: checker}
 
 	tests := []struct {
-		name string
-		body string
+		name     string
+		body     string
+		wantCode string
 	}{
-		{"bogus phase", `{"phase":"bogus"}`},
-		{"empty surface state", `{"surfaces":{"main":{"state":""}}}`},
-		{"unknown surface", `{"surfaces":{"nope":{"state":"visible"}}}`},
-		{"bad audience entry", `{"surfaces":{"main":{"state":"visible","audience":["admins"]}}}`},
-		{"lowercase geo code", `{"surfaces":{"main":{"state":"visible","geo_allow":["ng"]}}}`},
+		{"bogus phase", `{"phase":"bogus"}`, "invalid_phase"},
+		{"empty surface state", `{"surfaces":{"main":{"state":""}}}`, "invalid_surface_state"},
+		{"unknown surface", `{"surfaces":{"nope":{"state":"visible"}}}`, "invalid_surface"},
+		{"bad audience entry", `{"surfaces":{"main":{"state":"visible","audience":["admins"]}}}`, "invalid_audience"},
+		{"lowercase geo code", `{"surfaces":{"main":{"state":"visible","geo_allow":["ng"]}}}`, "invalid_geo"},
 	}
 
 	for _, tt := range tests {
@@ -328,8 +329,8 @@ func TestUpdateExtension_Validation(t *testing.T) {
 				t.Fatalf("status = %d, want 400 (body: %v)", code, body)
 			}
 
-			if c := errorCode(t, body); c != "validation_error" {
-				t.Fatalf("error code = %q, want validation_error", c)
+			if c := errorCode(t, body); c != tt.wantCode {
+				t.Fatalf("error code = %q, want %q", c, tt.wantCode)
 			}
 		})
 	}

@@ -190,6 +190,64 @@ func (h *Handlers) HandleGetFeatureFlagDetails(w http.ResponseWriter, r *http.Re
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": details})
 }
 
+// HandleGetFeatureFlagDetail handles GET /api/v1/feature-flags/details/{key}.
+// The single-flag form of the details list — same public/no-auth posture,
+// same FeatureFlagDetail projection, same caller-scoped evaluation. Used by
+// pages that only need one flag (e.g. the roadmap item's rollout badge) so
+// they don't pull the entire array to filter client-side. A key that is
+// neither a registry entry nor a stored feature_flags row 404s — returning
+// the registry-default projection for arbitrary keys would 200 typos.
+func (h *Handlers) HandleGetFeatureFlagDetail(w http.ResponseWriter, r *http.Request) {
+
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Feature flag not found")
+		return
+	}
+
+	// Same merge shape as HandleGetFeatureFlagDetails: seed the registry
+	// default, then overlay the stored row — read through the shared
+	// jc:flags:_all aggregate so the lookup stays off Postgres.
+	row, found := FlagRow{}, false
+
+	if f, ok := RegistryLookup(key); ok {
+		row = FlagRow{Key: f.Key, Enabled: f.Default}
+		found = true
+	}
+
+	for _, stored := range h.checker.AllFlagRows(r.Context()) {
+		if stored.Key == key {
+			row = stored
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Feature flag not found")
+		return
+	}
+
+	sc := h.checker.BuildScope(r, SurfaceFrom(r))
+	res := evalScoped(effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+
+	var cfg FlagConfig
+	if len(row.Config) > 0 {
+		if err := json.Unmarshal(row.Config, &cfg); err != nil {
+			cfg = FlagConfig{}
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": FeatureFlagDetail{
+		Key:               row.Key,
+		Enabled:           res.Enabled,
+		Phase:             phaseFor(row.Enabled, cfg),
+		RolloutPercentage: rolloutFor(cfg),
+		Visible:           res.Visible,
+	}})
+}
+
 // phaseFor derives the public rollout phase: the config's explicit phase
 // when set, else "shipped" for enabled flags and "planned" for disabled
 // ones — the same derivation eval applies to absent phases. It uses the
@@ -419,9 +477,10 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Phase/surface/audience/geo vocabularies are validated before the write;
-	// ErrInvalid maps to 400 validation_error.
+	// ConfigError carries the machine-readable code (invalid_phase,
+	// invalid_surface, …) emitted in the 400 error envelope.
 	if err := ValidateConfig(cfg); err != nil {
-		errpkg.HandleServiceError(w, err)
+		WriteConfigError(w, err)
 		return
 	}
 
@@ -499,9 +558,10 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Phase/surface/audience/geo vocabularies are validated before the write;
-	// ErrInvalid maps to 400 validation_error.
+	// ConfigError carries the machine-readable code (invalid_phase,
+	// invalid_surface, …) emitted in the 400 error envelope.
 	if err := ValidateConfig(cfg); err != nil {
-		errpkg.HandleServiceError(w, err)
+		WriteConfigError(w, err)
 		return
 	}
 

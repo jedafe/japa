@@ -666,51 +666,107 @@ func ValidSurface(s string) bool {
 	return false
 }
 
+// ConfigError is a FlagConfig validation failure. Code is the
+// machine-readable wire code emitted in the error envelope; Message is the
+// human-readable detail. It matches errpkg.ErrInvalid via Is so generic
+// handling still maps it to 400 when the specific code isn't used.
+type ConfigError struct {
+	Code    string
+	Message string
+}
+
+// Error returns "code: message" so the wire code stays visible in logs and
+// error strings.
+func (e *ConfigError) Error() string {
+	return e.Code + ": " + e.Message
+}
+
+// Is matches errpkg.ErrInvalid so errors.Is(err, errpkg.ErrInvalid) checks —
+// including HandleServiceError's generic 400 mapping — keep working for
+// callers that don't extract the specific code.
+func (e *ConfigError) Is(target error) bool {
+	return target == errpkg.ErrInvalid
+}
+
 // ValidateConfig checks a FlagConfig against the unified-rollout rules:
 // phase vocabulary, known surface keys, per-surface state vocabulary,
 // audience entry format, and uppercase ISO alpha-2 geo codes. An empty Phase
 // is allowed (eval derives it from the enabled state). A surface key present
 // in Surfaces must carry an explicit state. A country code appearing in both
-// GeoAllow and GeoDeny is valid — deny wins at evaluation. Every failure
-// wraps errpkg.ErrInvalid so HandleServiceError maps it to 400
-// validation_error.
+// GeoAllow and GeoDeny is valid — deny wins at evaluation. Failures return a
+// typed *ConfigError whose Code (invalid_phase, invalid_surface,
+// invalid_surface_state, invalid_audience, invalid_geo) is the
+// machine-readable wire code; the error still matches errpkg.ErrInvalid via
+// errors.Is for generic handling. HTTP write paths should respond via
+// WriteConfigError so the specific code reaches the error envelope.
 // Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.1.
 func ValidateConfig(cfg FlagConfig) error {
 	if cfg.Phase != "" && !ValidPhase(cfg.Phase) {
-		return fmt.Errorf("%w: invalid_phase %q", errpkg.ErrInvalid, cfg.Phase)
+		return &ConfigError{
+			Code:    "invalid_phase",
+			Message: fmt.Sprintf("phase %q is not a valid rollout phase (one of: %s)", cfg.Phase, strings.Join(Phases, ", ")),
+		}
 	}
 
 	for surface, rule := range cfg.Surfaces {
 		if !ValidSurface(surface) {
-			return fmt.Errorf("%w: invalid_surface %q", errpkg.ErrInvalid, surface)
+			return &ConfigError{
+				Code:    "invalid_surface",
+				Message: fmt.Sprintf("surface %q is not a known client surface (one of: %s)", surface, strings.Join(Surfaces, ", ")),
+			}
 		}
 
 		switch rule.State {
 		case "visible", "hidden", "disabled":
 		default:
-			return fmt.Errorf("%w: invalid_surface_state %q for surface %q", errpkg.ErrInvalid, rule.State, surface)
+			return &ConfigError{
+				Code:    "invalid_surface_state",
+				Message: fmt.Sprintf("state %q for surface %q is not a valid surface state (visible|hidden|disabled)", rule.State, surface),
+			}
 		}
 
 		for _, entry := range rule.Audience {
 			if !strings.HasPrefix(entry, "group:") && !strings.HasPrefix(entry, "perm:") {
-				return fmt.Errorf("%w: invalid_audience %q (must be group:<slug> or perm:<node>)", errpkg.ErrInvalid, entry)
+				return &ConfigError{
+					Code:    "invalid_audience",
+					Message: fmt.Sprintf("audience entry %q for surface %q must be group:<slug> or perm:<node>", entry, surface),
+				}
 			}
 		}
 
 		for _, code := range rule.GeoAllow {
 			if !isISOAlpha2(code) {
-				return fmt.Errorf("%w: invalid_geo %q (must be uppercase ISO alpha-2)", errpkg.ErrInvalid, code)
+				return &ConfigError{
+					Code:    "invalid_geo",
+					Message: fmt.Sprintf("geo_allow code %q for surface %q must be an uppercase ISO alpha-2 country code", code, surface),
+				}
 			}
 		}
 
 		for _, code := range rule.GeoDeny {
 			if !isISOAlpha2(code) {
-				return fmt.Errorf("%w: invalid_geo %q (must be uppercase ISO alpha-2)", errpkg.ErrInvalid, code)
+				return &ConfigError{
+					Code:    "invalid_geo",
+					Message: fmt.Sprintf("geo_deny code %q for surface %q must be an uppercase ISO alpha-2 country code", code, surface),
+				}
 			}
 		}
 	}
 
 	return nil
+}
+
+// WriteConfigError writes a validation failure using the ConfigError's
+// machine-readable code instead of the generic validation_error code.
+// Non-ConfigError values fall back to errpkg.HandleServiceError.
+func WriteConfigError(w http.ResponseWriter, err error) {
+	var ce *ConfigError
+	if errors.As(err, &ce) {
+		errpkg.WriteError(w, http.StatusBadRequest, ce.Code, ce.Message)
+		return
+	}
+
+	errpkg.HandleServiceError(w, err)
 }
 
 // isISOAlpha2 reports whether code is exactly two uppercase ASCII letters —
@@ -728,7 +784,8 @@ func isISOAlpha2(code string) bool {
 // the richer admin metadata. Unlike SetEnabled, it accepts the full config so
 // the admin UI can edit name/description/environment/rollout in one call.
 // The config is validated against the unified-rollout rules; invalid configs
-// return an ErrInvalid-wrapped error so HTTP layers map it to 400.
+// return a *ConfigError (errors.Is errpkg.ErrInvalid) so HTTP layers map it
+// to 400 with the specific machine-readable code via WriteConfigError.
 func (c *Checker) UpdateFlag(ctx context.Context, key string, enabled bool, cfg FlagConfig, updatedBy pgtype.UUID) error {
 	if err := ValidateConfig(cfg); err != nil {
 		return err

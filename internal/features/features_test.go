@@ -407,6 +407,15 @@ func TestValidateConfig(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("ValidateConfig() error %q missing code %q", err.Error(), tt.wantErr)
 			}
+
+			var ce *ConfigError
+			if !errors.As(err, &ce) {
+				t.Fatalf("ValidateConfig() error %T does not extract *ConfigError", err)
+			}
+
+			if ce.Code != tt.wantErr {
+				t.Errorf("ConfigError.Code = %q, want %q", ce.Code, tt.wantErr)
+			}
 		})
 	}
 }

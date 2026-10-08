@@ -225,6 +225,98 @@ func TestHandleGetFeatureFlagDetails_OtherSurface(t *testing.T) {
 	}
 }
 
+// flagDetailReq builds a GET request for the single-key details endpoint,
+// carrying the given X-JC-Surface value and the chi {key} URL param the
+// router would populate.
+func flagDetailReq(t *testing.T, surface, key string) *http.Request {
+	t.Helper()
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/feature-flags/details/"+key, nil)
+	if surface != "" {
+		r.Header.Set(SurfaceHeader, surface)
+	}
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("key", key)
+
+	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+}
+
+// TestHandleGetFeatureFlagDetail verifies the single-key form of the
+// details projection: registry + stored-row merge, caller-scoped
+// enabled/visible, derived phase — and the same internal-config embargo as
+// the list endpoint (surfaces/audience/geo never appear in the payload).
+func TestHandleGetFeatureFlagDetail(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(detailsChecker(t))
+
+	tests := []struct {
+		name    string
+		surface string
+		key     string
+		enabled bool
+		phase   string
+		rollout int
+		visible bool
+	}{
+		{"stored row with explicit phase + in-cohort rollout", "main", "feature.staged", true, "testing", stagedRollout(), true},
+		{"hidden on main → enabled but not visible", "main", "feature.hiddenmain", true, "shipped", 100, false},
+		{"audience-gated reads fully off for anonymous", "main", "feature.beta", false, "shipped", 100, false},
+		{"disabled flag derives planned phase", "main", "feature.off", false, "planned", 100, false},
+		{"registry seed with no stored row", "main", "feature.blog", true, "shipped", 100, true},
+		{"registry default-off seed", "main", "feature.wallet", false, "planned", 100, false},
+		{"main-only rule does not apply to tools caller", "tools", "feature.hiddenmain", true, "shipped", 100, true},
+		{"no surface header applies no rules", "", "feature.hiddenmain", true, "shipped", 100, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			h.HandleGetFeatureFlagDetail(rec, flagDetailReq(t, tt.surface, tt.key))
+
+			body := rec.Body.String()
+
+			for _, forbidden := range []string{`"surfaces"`, `"audience"`, `"geo_allow"`, `"geo_deny"`} {
+				if strings.Contains(body, forbidden) {
+					t.Errorf("response leaks internal config field %s: %s", forbidden, body)
+				}
+			}
+
+			var d FeatureFlagDetail
+			decodeData(t, rec, &d)
+
+			if d.Key != tt.key || d.Enabled != tt.enabled || d.Phase != tt.phase ||
+				d.RolloutPercentage != tt.rollout || d.Visible != tt.visible {
+				t.Errorf("%q = %+v, want key=%q enabled=%v phase=%q rollout=%d visible=%v",
+					tt.key, d, tt.key, tt.enabled, tt.phase, tt.rollout, tt.visible)
+			}
+		})
+	}
+}
+
+// TestHandleGetFeatureFlagDetail_UnknownKey verifies a key that is neither a
+// registry entry nor a stored feature_flags row 404s rather than returning
+// a registry-default projection.
+func TestHandleGetFeatureFlagDetail_UnknownKey(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(detailsChecker(t))
+
+	rec := httptest.NewRecorder()
+	h.HandleGetFeatureFlagDetail(rec, flagDetailReq(t, "main", "feature.nonexistent"))
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	if !strings.Contains(rec.Body.String(), `"not_found"`) {
+		t.Errorf("404 body must carry not_found code, got %s", rec.Body.String())
+	}
+}
+
 // TestGate_CallerScoped verifies the middleware evaluates the caller's full
 // scope: a flag enabled globally but disabled on the caller's surface 404s
 // with feature_disabled for that surface only; a globally disabled flag
@@ -428,22 +520,24 @@ func TestHandlersSetOnConfigChanged_Delegates(t *testing.T) {
 
 // TestFlagWriteHandlers_InvalidConfig verifies the unified-rollout config
 // fields on FeatureFlagInput (phase, surfaces, show_on_roadmap) are validated
-// by ValidateConfig before any write — invalid values must 400 with
-// validation_error, never persist.
+// by ValidateConfig before any write — invalid values must 400 with the
+// ConfigError's machine-readable wire code (invalid_phase, invalid_surface,
+// invalid_surface_state, invalid_audience, invalid_geo), never persist.
 func TestFlagWriteHandlers_InvalidConfig(t *testing.T) {
 	t.Parallel()
 
 	h := NewHandlers(newEvalTestChecker())
 
 	tests := []struct {
-		name  string
-		input FeatureFlagInput
+		name     string
+		input    FeatureFlagInput
+		wantCode string
 	}{
-		{"invalid phase", FeatureFlagInput{IsEnabled: true, Phase: "rolling"}},
-		{"unknown surface", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"web": {State: "visible"}}}},
-		{"invalid surface state", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "dimmed"}}}},
-		{"invalid audience entry", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "visible", Audience: []string{"beta"}}}}},
-		{"lowercase geo code", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "visible", GeoAllow: []string{"ng"}}}}},
+		{"invalid phase", FeatureFlagInput{IsEnabled: true, Phase: "rolling"}, "invalid_phase"},
+		{"unknown surface", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"web": {State: "visible"}}}, "invalid_surface"},
+		{"invalid surface state", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "dimmed"}}}, "invalid_surface_state"},
+		{"invalid audience entry", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "visible", Audience: []string{"beta"}}}}, "invalid_audience"},
+		{"lowercase geo code", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "visible", GeoAllow: []string{"ng"}}}}, "invalid_geo"},
 	}
 
 	for _, tt := range tests {
@@ -457,8 +551,8 @@ func TestFlagWriteHandlers_InvalidConfig(t *testing.T) {
 				t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
 			}
 
-			if !strings.Contains(rec.Body.String(), `"validation_error"`) {
-				t.Errorf("body must carry validation_error code, got %s", rec.Body.String())
+			if !strings.Contains(rec.Body.String(), `"`+tt.wantCode+`"`) {
+				t.Errorf("body must carry %s code, got %s", tt.wantCode, rec.Body.String())
 			}
 		})
 	}
@@ -472,6 +566,10 @@ func TestFlagWriteHandlers_InvalidConfig(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("create status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	if !strings.Contains(rec.Body.String(), `"invalid_phase"`) {
+		t.Errorf("create body must carry invalid_phase code, got %s", rec.Body.String())
 	}
 }
 

@@ -49,14 +49,16 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	// Flag-linked items get an enriched rollout badge driven by the flag's
-	// live phase/percentage (§113 + unified-rollout spec §5.3). The details
-	// endpoint is public; a fetch failure degrades to the generic badge —
-	// the item must still render.
+	// live phase/percentage (§113 + unified-rollout spec §5.3). The
+	// single-key details endpoint is public; a fetch failure degrades to
+	// the generic badge — the item must still render.
 	let flagDetail: FeatureFlagDetail | null = null;
 	if (item.feature_flag_key) {
 		try {
-			const details = await apiGet<FeatureFlagDetail[]>(ctx, '/feature-flags/details');
-			flagDetail = details.find((d) => d.key === item.feature_flag_key) ?? null;
+			flagDetail = await apiGet<FeatureFlagDetail>(
+				ctx,
+				'/feature-flags/details/' + encodeURIComponent(item.feature_flag_key)
+			);
 		} catch {
 			flagDetail = null;
 		}
