@@ -55,7 +55,7 @@ type Checker struct {
 	// flags are off for them).
 	audienceResolver AudienceResolver
 	// onConfigChanged fires after every successful flag write (SetEnabled,
-	// UpdateFlag, SetRolloutPercentage, DeleteFlag) with the flag's post-write
+	// PatchFlag, SetRolloutPercentage, DeleteFlag) with the flag's post-write
 	// config. The hook lives on Checker — not Handlers — because the
 	// /control/extensions write paths call SetEnabled/SetRolloutPercentage
 	// directly and would silently skip a handler-level hook. Optional — set
@@ -120,7 +120,7 @@ func (c *Checker) Close() {
 }
 
 // SetOnConfigChanged registers a callback fired after every successful flag
-// write — SetEnabled, UpdateFlag, SetRolloutPercentage, DeleteFlag — with the
+// write — SetEnabled, PatchFlag, SetRolloutPercentage, DeleteFlag — with the
 // flag's post-write config. DeleteFlag fires with an empty FlagConfig{} so
 // the consumer (roadmap sync) unlinks the flag's item per spec §4.3. Wired
 // in server.go to roadmap.Service.SyncFlagPhase.
@@ -566,39 +566,39 @@ func (c *Checker) GetAllEnabled(ctx context.Context) map[string]bool {
 	return result
 }
 
-// SetEnabled updates a feature flag in the database.
+// SetEnabled updates a feature flag's enabled state in the database,
+// preserving any stored config. RETURNING feeds the post-write config
+// straight to the change hook — no second read that could hit a lagged
+// replica and hand the roadmap sync a stale blob.
 func (c *Checker) SetEnabled(ctx context.Context, key string, enabled bool, updatedBy pgtype.UUID) error {
 	if c.db == nil {
 		return errors.New("features: SetEnabled called with no database")
 	}
 
-	_, err := c.db.Writer.Exec(ctx, `
+	var configBytes []byte
+
+	err := c.db.Writer.QueryRow(ctx, `
 		INSERT INTO feature_flags (key, enabled, updated_by)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (key)
 		DO UPDATE SET enabled = $2, updated_by = $3, updated_at = now()
-	`, key, enabled, updatedBy)
+		RETURNING config
+	`, key, enabled, updatedBy).Scan(&configBytes)
 	if err != nil {
 		return fmt.Errorf("updating feature flag %s: %w", key, err)
 	}
 
-	c.InvalidateFlag(ctx, key)
-	c.fireConfigChanged(ctx, key, c.currentConfig(ctx, key))
-
-	return nil
-}
-
-// currentConfig reads the stored FlagConfig for the config-change hook.
-// Read failures degrade to an empty config — consumers (roadmap sync) treat
-// an empty config as "no roadmap linkage" and no-op harmlessly.
-func (c *Checker) currentConfig(ctx context.Context, key string) FlagConfig {
-	cfg, err := c.GetFlagConfig(ctx, key)
-	if err != nil {
-		slog.Warn("features: post-write config read failed", "key", key, "error", err)
-		return FlagConfig{}
+	var cfg FlagConfig
+	if len(configBytes) > 0 {
+		if err := json.Unmarshal(configBytes, &cfg); err != nil {
+			slog.Warn("features: post-write config failed to decode", "key", key, "error", err)
+		}
 	}
 
-	return cfg
+	c.InvalidateFlag(ctx, key)
+	c.fireConfigChanged(ctx, key, cfg)
+
+	return nil
 }
 
 // FlagConfig is the richer admin-facing metadata stored alongside a flag's
@@ -935,42 +935,15 @@ func (c *Checker) GetFlagConfig(ctx context.Context, key string) (FlagConfig, er
 // extensions page to manage gradual rollout. A percentage of 0 or 100 means
 // "off" or "fully on" (no hash bucketing).
 func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percentage int, updatedBy pgtype.UUID) error {
-	if c.db == nil {
-		return errors.New("features: SetRolloutPercentage called with no database")
-	}
+	// Routes through PatchFlag so the percentage merge runs inside the
+	// upsert — a read-modify-write here would let a concurrent PATCH's
+	// fields get clobbered. PatchFlag's INSERT path already seeds enabled
+	// from the registry Default (a rollout write never enables a flag).
+	patch := fmt.Sprintf(`{"rolloutPercentage":%d}`, percentage)
 
-	cfg, err := c.GetFlagConfig(ctx, key)
-	if err != nil {
-		return fmt.Errorf("reading config for rollout update %s: %w", key, err)
-	}
+	_, _, err := c.PatchFlag(ctx, key, nil, []byte(patch), updatedBy)
 
-	cfg.RolloutPercentage = percentage
-
-	configJSON, err := json.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshaling config for %s: %w", key, err)
-	}
-
-	// Use the registry default for the INSERT case (new row) so we don't
-	// accidentally enable a disabled feature just by setting rollout. The
-	// ON CONFLICT clause only updates config, preserving the existing
-	// enabled state.
-	defaultEnabled := DefaultFor(key)
-
-	_, err = c.db.Writer.Exec(ctx, `
-		INSERT INTO feature_flags (key, enabled, config, updated_by)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (key)
-		DO UPDATE SET config = $3, updated_by = $4, updated_at = now()
-	`, key, defaultEnabled, configJSON, updatedBy)
-	if err != nil {
-		return fmt.Errorf("updating rollout for %s: %w", key, err)
-	}
-
-	c.InvalidateFlag(ctx, key)
-	c.fireConfigChanged(ctx, key, cfg)
-
-	return nil
+	return err
 }
 
 // Gate is HTTP middleware that checks if a feature is enabled for the
