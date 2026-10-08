@@ -96,8 +96,8 @@
 			<ThemeLogo {logoUrl} {logoDarkUrl} alt={t('app.name')} class="h-7 w-auto max-w-[140px] object-contain" />
 		</a>
 
-		<!-- Primary nav links -->
-		<nav class="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto md:flex" aria-label={t('marketplace.nav_aria', 'Marketplace navigation')}>
+		<!-- Primary nav links (the hamburger drawer covers them below lg) -->
+		<nav class="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:flex" aria-label={t('marketplace.nav_aria', 'Marketplace navigation')}>
 			<a href="/services" class={navLinkClass(servicesActive)} aria-current={servicesActive ? 'page' : undefined}>
 				<Briefcase size={15} />
 				{t('marketplace.nav_services', 'Services')}
@@ -114,14 +114,17 @@
 			</a>
 		</nav>
 
-		<!-- Directory search — compact, hidden below md (mobile uses the drawer) -->
-		<form class="hidden w-56 shrink-0 lg:block" role="search" onsubmit={submitSearch}>
+		<!-- Directory search — visible from md up; below md the drawer
+		     carries the same form. action/method keep a working no-JS GET
+		     submission; submitSearch preventDefaults for the SPA goto. -->
+		<form class="hidden w-56 shrink-0 md:block" role="search" action="/services" method="get" onsubmit={submitSearch}>
 			<label for="marketplace-search" class="sr-only">{t('marketplace.search_placeholder', 'Search services…')}</label>
 			<div class="relative">
 				<Search size={15} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 				<input
 					id="marketplace-search"
 					type="search"
+					name="q"
 					bind:value={searchTerm}
 					placeholder={t('marketplace.search_placeholder', 'Search services…')}
 					class="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] pl-8 pr-3 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
@@ -165,7 +168,7 @@
 
 			<button
 				type="button"
-				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] md:hidden"
+				class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-text-subtle)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)] lg:hidden"
 				onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
 				aria-label={mobileMenuOpen ? t('a11y.close_menu', 'Close menu') : t('a11y.open_menu', 'Open menu')}
 				aria-expanded={mobileMenuOpen}
@@ -178,14 +181,15 @@
 	<!-- Mobile dropdown nav — same links as the desktop bar plus the
 	     directory search (the header input hides below lg). -->
 	{#if mobileMenuOpen}
-		<div class="border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 md:hidden">
-			<form class="mb-3" role="search" onsubmit={(e) => { submitSearch(e); mobileMenuOpen = false; }}>
+		<div class="border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 lg:hidden">
+			<form class="mb-3" role="search" action="/services" method="get" onsubmit={(e) => { submitSearch(e); mobileMenuOpen = false; }}>
 				<label for="marketplace-search-mobile" class="sr-only">{t('marketplace.search_placeholder', 'Search services…')}</label>
 				<div class="relative">
 					<Search size={15} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
 					<input
 						id="marketplace-search-mobile"
 						type="search"
+						name="q"
 						bind:value={searchTerm}
 						placeholder={t('marketplace.search_placeholder', 'Search services…')}
 						class="h-9 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] pl-8 pr-3 text-sm text-[var(--color-text)] outline-none transition placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"

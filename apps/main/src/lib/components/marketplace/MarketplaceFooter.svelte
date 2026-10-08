@@ -41,7 +41,7 @@
 		e.preventDefault();
 		if (newsletterSubmitting) return;
 		const email = newsletterEmail.trim();
-		if (!email || !email.includes('@')) {
+		if (!email || !email.includes('@') || !email.includes('.')) {
 			newsletterMessage = { kind: 'error', text: t('sidebar.newsletter_invalid', 'Please enter a valid email.') };
 			return;
 		}
