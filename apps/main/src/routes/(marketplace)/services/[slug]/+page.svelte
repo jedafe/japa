@@ -101,10 +101,11 @@
 			? `${service.title} — ${t('services.heading', 'Service Directory')}`
 			: t('services.heading', 'Service Directory')
 	);
-	// Meta description — bounded excerpt of the (markdown) body, not the
-	// raw field; falls back to the title when the body is empty.
+	// Meta description — bounded excerpt of the rendered HTML body (clean
+	// text, no markdown artifacts), falling back to the raw body and then
+	// the title when both are empty.
 	const description = $derived(
-		service ? excerpt(service.body ?? '', 160) || service.title : ''
+		service ? excerpt(service.body_html || service.body || '', 160) || service.title : ''
 	);
 	const heroExcerpt = $derived(excerpt(service?.body_html || service?.body || '', 180));
 	// Section 26 — self-referencing canonical on the clean slug URL (never
@@ -178,7 +179,17 @@
 	const couponsVisible = $derived(
 		!!page.data.features?.['service_coupons.enabled'] && (service?.coupons?.length ?? 0) > 0
 	);
-	const heroPrice = $derived(service ? priceLabel(service, currencies) : null);
+	// §114: the detail payload omits min_price — derive the low price
+	// from the tier list when tiers exist, else fall back to the
+	// listing's own min_price/price_amount (all minor units). Feeds the
+	// "From $X" hero/book-card display AND the JSON-LD lowPrice so both
+	// agree on a tiers-only listing.
+	const offerPriceMinor = $derived(
+		service?.tiers?.length
+			? Math.min(...service.tiers.map((t) => t.price_amount))
+			: (service?.min_price ?? service?.price_amount ?? null)
+	);
+	const heroPrice = $derived(service ? priceLabel(service, currencies, offerPriceMinor) : null);
 	const pricePerLabel = $derived(
 		service?.price_per === 'person'
 			? t('services.pkg_per_person', 'per person')
@@ -373,15 +384,6 @@
 			claimResult = { error: res.error?.message ?? t('services.claim_failed', 'Claim failed') };
 		}
 	}
-
-	// §114: the detail payload omits min_price — derive the low price
-	// from the tier list when tiers exist, else fall back to the
-	// listing's own min_price/price_amount (all minor units).
-	const offerPriceMinor = $derived(
-		service?.tiers?.length
-			? Math.min(...service.tiers.map((t) => t.price_amount))
-			: (service?.min_price ?? service?.price_amount ?? null)
-	);
 
 	// JSON-LD — schema.org Service + provider/offer/aggregateRating so
 	// marketplace listings qualify for rich results (§3.3 SEO).
@@ -914,7 +916,11 @@
 				<!-- Plan Task 4.10: mobile gets the StickyBookBar; on desktop the
 				     summary card itself sticks below the marketplace header while
 				     the sections after it scroll underneath. -->
-				<section id="book" aria-labelledby="book-heading" class="scroll-mt-20 lg:sticky lg:top-24 lg:z-10">
+				<section
+					id="book"
+					aria-labelledby="book-heading"
+					class="scroll-mt-20 lg:sticky lg:top-24 lg:z-10 lg:bg-[var(--color-bg)]"
+				>
 					<h2
 						id="book-heading"
 						class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"

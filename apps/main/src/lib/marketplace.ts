@@ -76,9 +76,18 @@ const PRICE_PER_KEYS: Record<string, [string, string]> = {
  * units, matching the server-side fallback order. Appends the translated
  * per-unit suffix for package listings ("per person" etc.). Returns null
  * when the listing carries no price at all.
+ *
+ * `minOverride` lets detail surfaces pass a tier-derived low price when
+ * the payload omits min_price (§114 list-rows-only field) — a tiers-only
+ * listing would otherwise render "Price on request" while the JSON-LD
+ * AggregateOffer reports a real lowPrice.
  */
-export function priceLabel(listing: ServiceListing, currencies: CurrencyInfo[]): string | null {
-	const amount = listing.min_price ?? listing.price_amount;
+export function priceLabel(
+	listing: ServiceListing,
+	currencies: CurrencyInfo[],
+	minOverride?: number | null
+): string | null {
+	const amount = minOverride ?? listing.min_price ?? listing.price_amount;
 	const money = formatMoney(amount, listing.price_currency, currencies, { minor: true });
 	if (!money) return null;
 	const suffix = listing.price_per ? PRICE_PER_KEYS[listing.price_per] : undefined;

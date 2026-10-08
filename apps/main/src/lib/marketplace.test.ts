@@ -105,6 +105,28 @@ describe('priceLabel', () => {
 			'ZZZ 1,400'
 		);
 	});
+
+	// §114: the detail payload omits min_price — a tiers-only listing
+	// would render "Price on request" without the caller-derived override.
+	it('uses minOverride when the listing carries no price fields', () => {
+		expect(priceLabel(listing({ price_currency: 'NGN' }), ngn, 90000)).toBe('₦900');
+	});
+
+	it('minOverride wins over min_price and price_amount', () => {
+		expect(
+			priceLabel(
+				listing({ price_amount: 140000, min_price: 120000, price_currency: 'NGN' }),
+				ngn,
+				90000
+			)
+		).toBe('₦900');
+	});
+
+	it('falls back to listing fields when minOverride is null', () => {
+		expect(priceLabel(listing({ price_amount: 140000, price_currency: 'NGN' }), ngn, null)).toBe(
+			'₦1,400'
+		);
+	});
 });
 
 describe('discountLabel', () => {
