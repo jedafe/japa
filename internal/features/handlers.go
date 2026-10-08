@@ -3,6 +3,7 @@ package features
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -167,7 +168,7 @@ func (h *Handlers) HandleGetFeatureFlagDetails(w http.ResponseWriter, r *http.Re
 	details := make([]FeatureFlagDetail, 0, len(merged))
 
 	for _, row := range merged {
-		res := evalScoped(effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+		res := evalScoped(row.Key, effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
 
 		var cfg FlagConfig
 		if len(row.Config) > 0 {
@@ -230,7 +231,7 @@ func (h *Handlers) HandleGetFeatureFlagDetail(w http.ResponseWriter, r *http.Req
 	}
 
 	sc := h.checker.BuildScope(r, SurfaceFrom(r))
-	res := evalScoped(effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+	res := evalScoped(row.Key, effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
 
 	var cfg FlagConfig
 	if len(row.Config) > 0 {
@@ -437,8 +438,14 @@ func applyFlagConfig(flag *FeatureFlag, raw []byte) {
 // enabled state and metadata. Gated by admin.feature_flags.manage.
 func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
 	var input FeatureFlagInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := json.Unmarshal(body, &input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
@@ -475,6 +482,16 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if cfg.RolloutPercentage == 0 {
 		cfg.RolloutPercentage = 100
 	}
+
+	// UpdateFlag upserts — a POST that lands on an existing key must not wipe
+	// control-panel-managed rollout fields the caller never sent.
+	existing, err := h.checker.GetFlagConfig(r.Context(), key)
+	if err != nil {
+		slog.Error("features: create config read failed", "key", key, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
+		return
+	}
+	mergeAbsentRolloutFields(existing, body, &cfg)
 
 	// Phase/surface/audience/geo vocabularies are validated before the write;
 	// ConfigError carries the machine-readable code (invalid_phase,
@@ -524,8 +541,14 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
 	var input FeatureFlagInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	if err := json.Unmarshal(body, &input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
 	}
@@ -556,6 +579,19 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	if cfg.RolloutPercentage == 0 {
 		cfg.RolloutPercentage = 100
 	}
+
+	// Control Panel owns the rollout-visibility fields (phase, showOnRoadmap,
+	// surfaces) — a PUT that omits them (every caller that predates the
+	// unified-rollout contract) merges the stored values instead of wiping
+	// them. Fields present in the body — including explicit null/empty —
+	// still replace.
+	existing, err := h.checker.GetFlagConfig(r.Context(), flagName)
+	if err != nil {
+		slog.Error("features: update config read failed", "key", flagName, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
+		return
+	}
+	mergeAbsentRolloutFields(existing, body, &cfg)
 
 	// Phase/surface/audience/geo vocabularies are validated before the write;
 	// ConfigError carries the machine-readable code (invalid_phase,
@@ -625,6 +661,28 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"key": flagName, "deleted": true},
 	})
+}
+
+// mergeAbsentRolloutFields fills cfg.Phase/ShowOnRoadmap/Surfaces from the
+// stored config when the request body omits the field — so a create/update
+// that predates (or doesn't speak) the rollout contract can't wipe values set
+// via Control → Extensions. A field present in the body, even as explicit
+// null/empty, is authoritative and replaces.
+func mergeAbsentRolloutFields(existing FlagConfig, body []byte, cfg *FlagConfig) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return
+	}
+
+	if _, ok := fields["phase"]; !ok {
+		cfg.Phase = existing.Phase
+	}
+	if _, ok := fields["showOnRoadmap"]; !ok {
+		cfg.ShowOnRoadmap = existing.ShowOnRoadmap
+	}
+	if _, ok := fields["surfaces"]; !ok {
+		cfg.Surfaces = existing.Surfaces
+	}
 }
 
 // FeatureFlagInput is the request body shared by Create/Update handlers.

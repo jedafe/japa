@@ -573,6 +573,71 @@ func TestFlagWriteHandlers_InvalidConfig(t *testing.T) {
 	}
 }
 
+// TestMergeAbsentRolloutFields verifies the create/update merge contract:
+// phase, showOnRoadmap, and surfaces omitted from the body keep the stored
+// values; fields present in the body — even explicit null/empty — replace.
+func TestMergeAbsentRolloutFields(t *testing.T) {
+	t.Parallel()
+
+	stored := FlagConfig{
+		Phase:         "testing",
+		ShowOnRoadmap: true,
+		Surfaces:      map[string]SurfaceRule{"admin": {State: "hidden"}},
+	}
+
+	t.Run("absent fields preserve stored values", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := FlagConfig{}
+		mergeAbsentRolloutFields(stored, []byte(`{"isEnabled":false}`), &cfg)
+
+		if cfg.Phase != "testing" || !cfg.ShowOnRoadmap || cfg.Surfaces["admin"].State != "hidden" {
+			t.Errorf("merged cfg = %+v, want stored rollout fields preserved", cfg)
+		}
+	})
+
+	t.Run("present fields replace stored values", func(t *testing.T) {
+		t.Parallel()
+
+		// cfg is pre-populated from the decoded input, as the handlers do.
+		cfg := FlagConfig{
+			Phase:    "shipped",
+			Surfaces: map[string]SurfaceRule{"main": {State: "disabled"}},
+		}
+		mergeAbsentRolloutFields(stored,
+			[]byte(`{"phase":"shipped","showOnRoadmap":false,"surfaces":{"main":{"state":"disabled"}}}`), &cfg)
+
+		if cfg.Phase != "shipped" || cfg.ShowOnRoadmap || cfg.Surfaces["main"].State != "disabled" {
+			t.Errorf("merged cfg = %+v, want body values to win", cfg)
+		}
+	})
+
+	t.Run("explicit null surfaces clears the stored map", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := FlagConfig{}
+		mergeAbsentRolloutFields(stored, []byte(`{"surfaces":null}`), &cfg)
+
+		if cfg.Surfaces != nil {
+			t.Errorf("surfaces = %v, want nil — explicit null is authoritative", cfg.Surfaces)
+		}
+		if cfg.Phase != "testing" {
+			t.Errorf("phase = %q, want stored %q preserved", cfg.Phase, "testing")
+		}
+	})
+
+	t.Run("empty stored config leaves input values", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := FlagConfig{Phase: "in_progress", Surfaces: map[string]SurfaceRule{"main": {State: "hidden"}}}
+		mergeAbsentRolloutFields(FlagConfig{}, []byte(`{"phase":"in_progress","surfaces":{"main":{"state":"hidden"}}}`), &cfg)
+
+		if cfg.Phase != "in_progress" || cfg.Surfaces["main"].State != "hidden" {
+			t.Errorf("merged cfg = %+v, want input kept (nothing stored to merge)", cfg)
+		}
+	})
+}
+
 // TestFlagWriteHandlers_ValidConfigReachesDB verifies a fully valid config
 // passes validation (it can only fail at the DB layer with a nil-pool test
 // checker — a 500 proves the request reached the write, not a 400).

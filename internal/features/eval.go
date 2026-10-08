@@ -106,7 +106,7 @@ func (c *Checker) BuildScope(r *http.Request, surface string) CallerScope {
 func (c *Checker) EvalFlag(ctx context.Context, key string, sc CallerScope) EvalResult {
 	enabled, config := c.resolveFlag(ctx, key)
 
-	return evalScoped(enabled, config, sc)
+	return evalScoped(key, enabled, config, sc)
 }
 
 // EvalAll returns the caller-scoped flags map for GET /api/v1/feature-flags:
@@ -118,12 +118,12 @@ func (c *Checker) EvalAll(ctx context.Context, sc CallerScope) map[string]bool {
 	result := make(map[string]bool, len(Registry))
 
 	for _, f := range Registry {
-		r := evalScoped(f.Default, nil, sc)
+		r := evalScoped(f.Key, f.Default, nil, sc)
 		result[f.Key] = r.Enabled && r.Visible
 	}
 
 	for _, row := range c.AllFlagRows(ctx) {
-		r := evalScoped(effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+		r := evalScoped(row.Key, effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
 		result[row.Key] = r.Enabled && r.Visible
 	}
 
@@ -141,13 +141,16 @@ func (c *Checker) EvalAll(ctx context.Context, sc CallerScope) map[string]bool {
 //	surface state = hidden     → {true,false}
 //	otherwise                  → {true,true}
 //
-// An absent/unknown surface or a surface with no rule applies no scope.
-func evalScoped(enabled bool, config []byte, sc CallerScope) EvalResult {
+// An absent/unknown surface applies no scope. When the surface has no rule in
+// stored config, the registry's DefaultSurfaces applies (same merge Control →
+// Extensions displays), so registry-declared defaults are eval-effective even
+// before a flag's first write.
+func evalScoped(key string, enabled bool, config []byte, sc CallerScope) EvalResult {
 	if !enabled {
 		return EvalResult{}
 	}
 
-	rule, ok := surfaceRuleFor(config, sc.Surface)
+	rule, ok := surfaceRuleFor(key, config, sc.Surface)
 	if !ok {
 		return EvalResult{Enabled: true, Visible: true}
 	}
@@ -163,12 +166,14 @@ func evalScoped(enabled bool, config []byte, sc CallerScope) EvalResult {
 	return EvalResult{Enabled: true, Visible: true}
 }
 
-// surfaceRuleFor extracts the SurfaceRule for the caller's surface from a raw
-// config blob. It returns ok=false — meaning "global behavior applies" — when
-// the surface is empty/unknown, the config is absent or malformed (visibility
-// is a rollout control, not a security boundary, so malformed config fails
-// open), or the surface has no rule.
-func surfaceRuleFor(config []byte, surface string) (SurfaceRule, bool) {
+// surfaceRuleFor extracts the SurfaceRule for the caller's surface. Stored
+// config wins; when it has no entry for the surface the registry's
+// DefaultSurfaces applies — the same merge Control → Extensions displays via
+// buildExtensionEntry. It returns ok=false — meaning "global behavior
+// applies" — when the surface is empty/unknown, the config is malformed
+// (visibility is a rollout control, not a security boundary, so malformed
+// config fails open), and no stored or default rule covers the surface.
+func surfaceRuleFor(key string, config []byte, surface string) (SurfaceRule, bool) {
 	if !ValidSurface(surface) {
 		return SurfaceRule{}, false
 	}
@@ -180,9 +185,17 @@ func surfaceRuleFor(config []byte, surface string) (SurfaceRule, bool) {
 		}
 	}
 
-	rule, ok := cfg.Surfaces[surface]
+	if rule, ok := cfg.Surfaces[surface]; ok {
+		return rule, true
+	}
 
-	return rule, ok
+	if f, ok := RegistryLookup(key); ok {
+		if state, ok := f.DefaultSurfaces[surface]; ok {
+			return SurfaceRule{State: state}, true
+		}
+	}
+
+	return SurfaceRule{}, false
 }
 
 // geoPasses evaluates the geo overlay: geo_deny runs before geo_allow so a

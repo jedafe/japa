@@ -386,6 +386,54 @@ func TestEvalFlag_AudienceMatrix(t *testing.T) {
 	})
 }
 
+// TestEvalFlag_DefaultSurfaces verifies the registry's DefaultSurfaces apply
+// at eval time for flags without a stored surface rule — the same merge
+// Control → Extensions displays via buildExtensionEntry. A stored rule wins
+// per-surface; registry defaults fill the gaps.
+func TestEvalFlag_DefaultSurfaces(t *testing.T) {
+	// Mutates the package-level Registry — must NOT be parallel.
+	const key = "feature.testdefaults"
+	Registry = append(Registry, Feature{
+		Key:     key,
+		Default: true,
+		DefaultSurfaces: map[string]string{
+			"admin": "hidden",
+			"docs":  "disabled",
+		},
+	})
+	t.Cleanup(func() { Registry = Registry[:len(Registry)-1] })
+
+	c := newEvalTestChecker()
+	ctx := t.Context()
+
+	// No stored row — registry defaults drive the surface rules.
+	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "admin"}); got != (EvalResult{Enabled: true, Visible: false}) {
+		t.Errorf("admin scope (no row) = %+v, want {true false} — default hidden", got)
+	}
+	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "docs"}); got != (EvalResult{}) {
+		t.Errorf("docs scope (no row) = %+v, want {false false} — default disabled", got)
+	}
+	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "main"}); got != (EvalResult{Enabled: true, Visible: true}) {
+		t.Errorf("main scope (no row) = %+v, want {true true} — no default rule", got)
+	}
+
+	// A stored row overriding one surface leaves the other defaults intact.
+	c.cacheSet(key, true, surfacesConfig(t, map[string]SurfaceRule{
+		"admin": {State: "visible"},
+	}))
+	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "admin"}); got != (EvalResult{Enabled: true, Visible: true}) {
+		t.Errorf("admin scope (stored override) = %+v, want {true true} — stored wins", got)
+	}
+	if got := c.EvalFlag(ctx, key, CallerScope{Surface: "docs"}); got != (EvalResult{}) {
+		t.Errorf("docs scope (stored row) = %+v, want {false false} — default still applies", got)
+	}
+
+	// EvalAll applies the same merge for the registry-only seed path.
+	if got := c.EvalAll(ctx, CallerScope{Surface: "docs"}); got[key] {
+		t.Errorf("EvalAll[docs][%q] = true, want false — default disabled", key)
+	}
+}
+
 // TestEvalFlag_RegistryDefaults verifies EvalFlag falls back to the registry
 // default when the flag has no stored row — same fallback IsEnabled uses.
 func TestEvalFlag_RegistryDefaults(t *testing.T) {
