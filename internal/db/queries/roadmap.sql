@@ -204,6 +204,14 @@ ORDER BY updated_at DESC;
 -- The item linked to a feature flag — the lookup behind SyncFlagPhase.
 SELECT * FROM roadmap_items WHERE feature_flag_key = @flag_key AND deleted_at IS NULL;
 
+-- name: GetOtherRoadmapItemByFlagKey :one
+-- Friendly pre-check behind the 000808 partial unique index: is another
+-- live item already linked to this flag? exclude_id is the item being
+-- edited so a PATCH re-setting the same key does not trip; pass the zero
+-- UUID on create.
+SELECT id FROM roadmap_items
+WHERE feature_flag_key = @flag_key AND deleted_at IS NULL AND id <> @exclude_id;
+
 -- name: ListRoadmapItemsByFlagKeys :many
 -- Batch variant for the control-panel extensions list (one query for the
 -- whole catalog, not N lookups).

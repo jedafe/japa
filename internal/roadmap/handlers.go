@@ -72,6 +72,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "not_voted", "You have not voted on this item")
 	case errors.Is(err, ErrUnknownFlagKey):
 		errpkg.WriteError(w, http.StatusBadRequest, "unknown_feature_flag", "feature_flag_key does not match a known feature flag")
+	case errors.Is(err, ErrFlagAlreadyLinked):
+		errpkg.WriteError(w, http.StatusConflict, "flag_already_linked", "Another roadmap item is already linked to this feature flag")
 	default:
 		errpkg.HandleServiceError(w, err)
 	}

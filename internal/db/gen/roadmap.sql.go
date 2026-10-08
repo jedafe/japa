@@ -233,6 +233,27 @@ func (q *Queries) GetFeatureFlagRowByKey(ctx context.Context, key string) (GetFe
 	return i, err
 }
 
+const getOtherRoadmapItemByFlagKey = `-- name: GetOtherRoadmapItemByFlagKey :one
+SELECT id FROM roadmap_items
+WHERE feature_flag_key = $1 AND deleted_at IS NULL AND id <> $2
+`
+
+type GetOtherRoadmapItemByFlagKeyParams struct {
+	FlagKey   *string     `json:"flag_key"`
+	ExcludeID pgtype.UUID `json:"exclude_id"`
+}
+
+// Friendly pre-check behind the 000808 partial unique index: is another
+// live item already linked to this flag? exclude_id is the item being
+// edited so a PATCH re-setting the same key does not trip; pass the zero
+// UUID on create.
+func (q *Queries) GetOtherRoadmapItemByFlagKey(ctx context.Context, arg GetOtherRoadmapItemByFlagKeyParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getOtherRoadmapItemByFlagKey, arg.FlagKey, arg.ExcludeID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getRoadmapCategoryByID = `-- name: GetRoadmapCategoryByID :one
 SELECT id, slug, name, description, color, sort_order, created_at, updated_at, deleted_at FROM roadmap_categories WHERE id = $1
 `

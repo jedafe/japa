@@ -2,8 +2,10 @@ package roadmap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -90,6 +92,28 @@ func (s *Store) getItemByFlagKey(ctx context.Context, flagKey string) (gen.Roadm
 	}
 
 	return row, nil
+}
+
+// flagKeyTakenElsewhere reports whether another live item is already
+// linked to flagKey — the friendly pre-check behind the 000808 partial
+// unique index (roadmap_items_feature_flag_key_uniq). excludeID keeps a
+// PATCH re-setting the same key on the same item from tripping; pass the
+// zero UUID (pgtype.UUID{Valid: true}) on create. Read through the write
+// pool so a just-committed link is not masked by a lagging replica.
+func (s *Store) flagKeyTakenElsewhere(ctx context.Context, flagKey string, excludeID pgtype.UUID) (bool, error) {
+	_, err := s.write.GetOtherRoadmapItemByFlagKey(ctx, gen.GetOtherRoadmapItemByFlagKeyParams{
+		FlagKey:   &flagKey,
+		ExcludeID: excludeID,
+	})
+	if err == nil {
+		return true, nil
+	}
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+
+	return false, fmt.Errorf("checking flag key link: %w", err)
 }
 
 // listItemsByFlagKeys batch-resolves linked items for a set of flag keys —

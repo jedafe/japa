@@ -389,17 +389,39 @@ func (s *Service) flagLinkTarget(ctx context.Context, key string) (gen.GetFeatur
 }
 
 // derivedStatusForLink returns the status a linked flag currently owns —
-// applied immediately when feature_flag_key is set on an item (§4.2).
-func (s *Service) derivedStatusForLink(ctx context.Context, key string) (ItemStatus, error) {
+// applied immediately when feature_flag_key is set on an item (§4.2). It
+// enforces the one-flag-one-item rule (a second item would reconcile
+// wrongly under SyncFlagPhase's :one lookup while staying status-locked)
+// and the flag's opt-out intent: a flag with show_on_roadmap=false links
+// but keeps the item archived/hidden until it is opted in. excludeID is
+// the item being edited so re-setting the same key is a no-op; pass the
+// zero UUID on create.
+func (s *Service) derivedStatusForLink(ctx context.Context, key string, excludeID pgtype.UUID) (ItemStatus, error) {
 	row, err := s.flagLinkTarget(ctx, key)
 	if err != nil {
 		return "", err
+	}
+
+	taken, err := s.store.flagKeyTakenElsewhere(ctx, key, excludeID)
+	if err != nil {
+		return "", err
+	}
+
+	if taken {
+		return "", fmt.Errorf("%w: %q", ErrFlagAlreadyLinked, key)
 	}
 
 	var cfg features.FlagConfig
 	if len(row.Config) > 0 {
 		// Malformed config degrades to the enabled-derived phase.
 		_ = json.Unmarshal(row.Config, &cfg)
+	}
+
+	if !cfg.ShowOnRoadmap {
+		// Opted off the roadmap: keep the link but stay archived — matching
+		// SyncFlagPhase's show_off path — so the item is not publicly
+		// visible until the next flag write opts it in (§4.4).
+		return StatusArchived, nil
 	}
 
 	return flagPhaseStatus(effectiveFlagPhase(cfg.Phase, row.Enabled)), nil
@@ -767,7 +789,9 @@ func (s *Service) AdminCreateItem(ctx context.Context, in AdminItemInput) (gen.R
 
 	if in.FeatureFlagKey != nil {
 		if key := strings.TrimSpace(*in.FeatureFlagKey); key != "" {
-			derived, err := s.derivedStatusForLink(ctx, key)
+			// No item exists yet — the zero UUID excludes nothing in the
+			// flag-key taken check.
+			derived, err := s.derivedStatusForLink(ctx, key, pgtype.UUID{Valid: true})
 			if err != nil {
 				return gen.RoadmapItem{}, err
 			}
@@ -967,7 +991,7 @@ func (s *Service) mergeItemPatch(ctx context.Context, current gen.RoadmapItem, i
 	var linkStatus ItemStatus
 
 	if in.FeatureFlagKey != nil {
-		key, derived, err := s.resolveFlagLink(ctx, *in.FeatureFlagKey)
+		key, derived, err := s.resolveFlagLink(ctx, current.ID, *in.FeatureFlagKey)
 		if err != nil {
 			return gen.UpdateRoadmapItemParams{}, "", err
 		}
@@ -1000,15 +1024,18 @@ func (s *Service) resolveSlugPatch(ctx context.Context, current, input string) (
 // resolveFlagLink resolves a feature_flag_key PATCH value: an empty value
 // unlinks (nil key, no status override — the item keeps its last status
 // and returns to the manual lifecycle, §4.2); a key is validated and
-// returned with the flag's phase-derived status for the caller to apply.
-// Unknown keys → unknown_feature_flag.
-func (s *Service) resolveFlagLink(ctx context.Context, value string) (*string, ItemStatus, error) {
+// returned with the flag's current derived status for the caller to
+// apply. excludeID is the item being edited — it is passed to the
+// one-flag-one-item check so re-setting the same key does not self-trip.
+// Unknown keys → unknown_feature_flag; keys already linked to another
+// item → flag_already_linked.
+func (s *Service) resolveFlagLink(ctx context.Context, excludeID pgtype.UUID, value string) (*string, ItemStatus, error) {
 	key := strings.TrimSpace(value)
 	if key == "" {
 		return nil, "", nil
 	}
 
-	derived, err := s.derivedStatusForLink(ctx, key)
+	derived, err := s.derivedStatusForLink(ctx, key, excludeID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1492,7 +1519,8 @@ func isSlugConflict(err error) bool {
 
 // mapWriteErr translates Postgres constraint violations into sentinel
 // errors so handlers return a 4xx envelope instead of 500 (Rule 5):
-// 23505 → already_exists (slug collision that slipped past prechecks),
+// 23505 on the flag-key index → flag_already_linked (a link that raced
+// past the pre-check), other 23505 → already_exists (slug collision),
 // 23503 → invalid (a referenced row — e.g. category_id — does not exist).
 func mapWriteErr(err error) error {
 	var pgErr *pgconn.PgError
@@ -1502,6 +1530,10 @@ func mapWriteErr(err error) error {
 
 	switch pgErr.Code {
 	case "23505":
+		if pgErr.ConstraintName == "roadmap_items_feature_flag_key_uniq" {
+			return fmt.Errorf("%w: another item is linked to this flag", ErrFlagAlreadyLinked)
+		}
+
 		return fmt.Errorf("%w: slug or unique field already in use", errpkg.ErrAlreadyExists)
 	case "23503":
 		return fmt.Errorf("%w: a referenced record does not exist", errpkg.ErrInvalid)

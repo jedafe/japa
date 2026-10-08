@@ -440,6 +440,7 @@ type flagSyncFixture struct {
 	enq   *recordingEnqueuer
 	key   string
 	slugs []string
+	ids   []string
 }
 
 func newFlagSyncFixture(t *testing.T, database *db.DB) *flagSyncFixture {
@@ -459,14 +460,14 @@ func newFlagSyncFixture(t *testing.T, database *db.DB) *flagSyncFixture {
 }
 
 // cleanup removes every row the fixture touched: shadow contents rows
-// first (roadmap_items.content_id FKs into contents), then items and flag
-// rows. Deletes ignore errors — the rows may already be gone.
+// first (roadmap_items.content_id FKs into contents), then items (by flag
+// link and by tracked ID) and flag rows. Deletes ignore errors — the rows
+// may already be gone.
 func (f *flagSyncFixture) cleanup(t *testing.T) {
 	t.Helper()
 
 	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM contents WHERE content_type='roadmap' AND slug = ANY($1::text[])`, f.slugs)
-	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM roadmap_items WHERE feature_flag_key = $1`, f.key)
-	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM roadmap_items WHERE slug = 'link-me'`)
+	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM roadmap_items WHERE feature_flag_key = $1 OR id = ANY($2::uuid[])`, f.key, f.ids)
 	_, _ = f.db.Writer.Exec(t.Context(), `DELETE FROM feature_flags WHERE key = $1`, f.key)
 }
 
@@ -536,6 +537,22 @@ func (f *flagSyncFixture) mustItem(t *testing.T, id pgtype.UUID) gen.RoadmapItem
 	if err != nil {
 		t.Fatalf("get item: %v", err)
 	}
+
+	return item
+}
+
+// mustCreate runs AdminCreateItem and tracks the new item (ID + shadow
+// slug) for cleanup.
+func (f *flagSyncFixture) mustCreate(t *testing.T, in AdminItemInput) gen.RoadmapItem {
+	t.Helper()
+
+	item, err := f.svc.AdminCreateItem(t.Context(), in)
+	if err != nil {
+		t.Fatalf("AdminCreateItem %q: %v", in.Title, err)
+	}
+
+	f.ids = append(f.ids, item.ID.String())
+	f.slugs = append(f.slugs, "roadmap-"+item.Slug)
 
 	return item
 }
@@ -673,15 +690,12 @@ func TestSyncFlagPhaseIntegration(t *testing.T) { //nolint:paralleltest // seque
 // unlink. Skipped unless JC_DATABASE_URL is set.
 func TestFlagLinkLifecycleIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
 	f := newFlagSyncFixture(t, syncTestDB(t))
-	f.writeFlag(t, features.FlagConfig{Phase: string(StatusTesting)}, true)
+	f.writeFlag(t, features.FlagConfig{Phase: string(StatusTesting), ShowOnRoadmap: true}, true)
 
-	manual, err := f.svc.AdminCreateItem(t.Context(), AdminItemInput{
+	manual := f.mustCreate(t, AdminItemInput{
 		Title: "Link Me",
 		Slug:  "link-me",
 	})
-	if err != nil {
-		t.Fatalf("AdminCreateItem manual: %v", err)
-	}
 
 	// Linking applies the flag's current phase immediately.
 	if _, err := f.svc.AdminUpdateItem(t.Context(), manual.ID, AdminItemInput{FeatureFlagKey: &f.key}); err != nil {
@@ -710,4 +724,66 @@ func TestFlagLinkLifecycleIntegration(t *testing.T) { //nolint:paralleltest // s
 	if _, err := f.svc.AdminSetStatus(t.Context(), manual.ID, StatusArchived, pgtype.UUID{}); err != nil {
 		t.Errorf("AdminSetStatus after unlink = %v, want nil", err)
 	}
+}
+
+// TestFlagLinkGuardsIntegration covers the one-flag-one-item rule: a flag
+// key already linked to a live item cannot be linked again — neither at
+// create nor via PATCH — while re-setting the same key on the same item
+// stays a no-op. Skipped unless JC_DATABASE_URL is set.
+func TestFlagLinkGuardsIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
+	f := newFlagSyncFixture(t, syncTestDB(t))
+	f.writeFlag(t, features.FlagConfig{Phase: string(StatusInProgress), ShowOnRoadmap: true}, true)
+
+	first := f.mustCreate(t, AdminItemInput{Title: "Guard First", FeatureFlagKey: &f.key})
+
+	if first.Status != string(StatusInProgress) {
+		t.Errorf("linked create status = %q, want in_progress", first.Status)
+	}
+
+	// Creating a second item against the same flag is rejected.
+	if _, err := f.svc.AdminCreateItem(t.Context(), AdminItemInput{
+		Title:          "Guard Second",
+		FeatureFlagKey: &f.key,
+	}); !errors.Is(err, ErrFlagAlreadyLinked) {
+		t.Errorf("AdminCreateItem with taken flag key = %v, want ErrFlagAlreadyLinked", err)
+	}
+
+	// So is linking an existing item to it.
+	orphan := f.mustCreate(t, AdminItemInput{Title: "Guard Orphan"})
+
+	if _, err := f.svc.AdminUpdateItem(t.Context(), orphan.ID, AdminItemInput{FeatureFlagKey: &f.key}); !errors.Is(err, ErrFlagAlreadyLinked) {
+		t.Errorf("AdminUpdateItem to taken flag key = %v, want ErrFlagAlreadyLinked", err)
+	}
+
+	// Re-setting the same key on the already-linked item is a no-op, not a
+	// conflict — the item is excluded from the taken check.
+	if _, err := f.svc.AdminUpdateItem(t.Context(), first.ID, AdminItemInput{FeatureFlagKey: &f.key}); err != nil {
+		t.Errorf("re-link same key on same item = %v, want nil", err)
+	}
+}
+
+// TestFlagLinkHiddenFlagIntegration covers linking to a flag opted off the
+// roadmap: the link is kept but the item stays archived (hidden) rather
+// than taking the phase's public status — matching SyncFlagPhase's
+// show_off path. Skipped unless JC_DATABASE_URL is set.
+func TestFlagLinkHiddenFlagIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
+	f := newFlagSyncFixture(t, syncTestDB(t))
+	f.writeFlag(t, features.FlagConfig{Phase: string(StatusInProgress), ShowOnRoadmap: false}, true)
+
+	item := f.mustCreate(t, AdminItemInput{Title: "Hidden Link", FeatureFlagKey: &f.key})
+
+	if item.Status != string(StatusArchived) {
+		t.Errorf("status = %q on link to opted-out flag, want archived", item.Status)
+	}
+
+	if item.FeatureFlagKey == nil || *item.FeatureFlagKey != f.key {
+		t.Errorf("feature_flag_key = %v, want %q retained", item.FeatureFlagKey, f.key)
+	}
+
+	// Opting the flag in lifts the linked item out of archived on the next
+	// flag write — the retained link reconciles.
+	cfg := features.FlagConfig{Phase: string(StatusInProgress), ShowOnRoadmap: true}
+	f.writeFlag(t, cfg, true)
+	f.mustSync(t, cfg)
+	f.mustLinked(t, StatusInProgress)
 }

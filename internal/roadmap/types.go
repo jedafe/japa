@@ -136,8 +136,9 @@ func IsValidTransition(from, to ItemStatus) bool {
 // ErrStatusDerived, and ErrSubmissionsDisabled alias the shared errpkg
 // sentinels so errpkg.HandleServiceError maps them without a package-local
 // switch: not_found → 404, invalid_status_transition → 409,
-// status_derived → 409, feature_disabled → 404. ErrUnknownFlagKey is a
-// roadmap-local sentinel mapped in handleServiceError → 400.
+// status_derived → 409, feature_disabled → 404. ErrUnknownFlagKey and
+// ErrFlagAlreadyLinked are roadmap-local sentinels mapped in
+// handleServiceError → 400 unknown_feature_flag / 409 flag_already_linked.
 var (
 	ErrNotFound            = errpkg.ErrNotFound
 	ErrAlreadyVoted        = errors.New("already_voted")
@@ -146,6 +147,7 @@ var (
 	ErrStatusDerived       = errpkg.ErrStatusDerived
 	ErrSubmissionsDisabled = errpkg.ErrFeatureDisabled
 	ErrUnknownFlagKey      = errors.New("unknown_feature_flag")
+	ErrFlagAlreadyLinked   = errors.New("flag_already_linked")
 )
 
 // Pagination defaults shared with the admin list endpoints.
