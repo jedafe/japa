@@ -548,9 +548,17 @@ type UpdateAdNetworkInput struct {
 	Priority    *int32          `json:"priority,omitempty"`
 }
 
-// validProviders is the set of allowed ad network provider values.
+// validProviders is the set of allowed ad network provider values
+// (§25 amendment — must match the ad_networks_provider_check constraint in
+// migration 000814). Exposed to the admin UI via /admin/ads/networks/providers.
 var validProviders = map[string]bool{
-	"adsense": true, "ezoic": true, "media_net": true, "custom": true,
+	"adpushup": true, "adsense": true, "amazon_aps": true, "buysellads": true,
+	"carbon": true, "criteo": true, "custom": true, "ezoic": true,
+	"freestar": true, "google_admanager": true, "index_exchange": true,
+	"magnite": true, "media_net": true, "mediavine": true, "monumetric": true,
+	"openx": true, "prebid": true, "publift": true, "pubmatic": true,
+	"raptive": true, "setupad": true, "she_media": true, "snigel": true,
+	"sovrn": true, "valueimpression": true,
 }
 
 // ListAdNetworkProviders returns the sorted list of allowed ad network
@@ -663,7 +671,7 @@ func (s *Service) CreateAdNetwork(ctx context.Context, input CreateAdNetworkInpu
 	}
 
 	if !validProviders[input.Provider] {
-		return AdNetwork{}, fmt.Errorf("invalid provider: %s (allowed: adsense, ezoic, media_net, custom)", input.Provider)
+		return AdNetwork{}, fmt.Errorf("invalid provider: %s (see GET /admin/ads/networks/providers)", input.Provider)
 	}
 
 	if input.Name == "" {

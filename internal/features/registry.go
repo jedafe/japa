@@ -60,7 +60,7 @@ var Registry = []Feature{
 	// Commerce features
 	{Key: "feature.wallet", Label: "Wallet & Credits", Description: "Member credit wallet, balances, and credit purchases", Default: false, Category: "Commerce"},
 	{Key: "feature.withdraw", Label: "Credit Withdrawals", Description: "Enable user credit withdrawals and payouts", Default: true, Category: "Commerce"},
-	{Key: "feature.ads", Label: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Default: false, Category: "Commerce", SettingsCategory: "ads"},
+	{Key: "feature.ads", Label: "Self-Serve Advertising", Description: "Self-serve ad campaign creation and management platform", Default: true, Category: "Commerce", SettingsCategory: "ads"},
 	{Key: "feature.referral", Label: "Referral Program", Description: "User referral program with credit rewards and attribution tracking", Default: false, Category: "Commerce", SettingsCategory: "referral"},
 	{Key: "feature.affiliate_program", Label: "Affiliate Program", Description: "Affiliate tracking and commission management", Default: false, Category: "Commerce"},
 	{Key: "jobs.enabled", Label: "Jobs Board", Description: "Job listings board with featured placement and credit-based promotion", Default: true, Category: "Commerce", SettingsCategory: "jobs"},

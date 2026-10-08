@@ -256,11 +256,11 @@ var widgetRegistry = []WidgetType{
 		Category:    WidgetCategoryMonetization,
 		Apps:        appAll,
 		DefaultProps: map[string]any{
-			"slot":   "sidebar_top",
+			"slot":   "sidebar",
 			"format": "square",
 		},
 		PropSchema: []PropField{
-			textField("slot", "Ad slot", "Slot key passed to /ads/serve, e.g. sidebar_top"),
+			textField("slot", "Ad slot", "Slot key passed to /ads/serve, e.g. sidebar"),
 			selectField("format", "Format",
 				PropOption{Value: "square", Label: "Square"},
 				PropOption{Value: "banner", Label: "Banner"},
@@ -347,7 +347,7 @@ var widgetRegistry = []WidgetType{
 		// Learn renders its own hardcoded ContinueLearningCard route widget
 		// (Section 59), so this type is main-only — scoped otherwise it
 		// resolves on learn as a duplicate no-op.
-		Apps:        appMainOnly,
+		Apps: appMainOnly,
 		DefaultProps: map[string]any{
 			"title": "Continue Learning",
 		},

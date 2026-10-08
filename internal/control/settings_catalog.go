@@ -517,6 +517,12 @@ var settingsCatalog = map[string]settingMeta{
 	"ads.min_campaign_days":       {Type: "int", DefaultValue: "3", Description: "Minimum campaign duration (days).", Panel: "control"},
 	"ads.credit_refund_on_reject": {Type: "bool", DefaultValue: "true", Description: "Auto-refund credits on admin rejection.", Panel: "control"},
 
+	// Ad placement rendering (§25 amendment) — Public: frontend components
+	// (FeedList, InArticleAd) read these via /site/settings/public.
+	"ads.native_feed_interval":       {Type: "int", DefaultValue: "5", Public: true, Description: "Insert a native ad after every N feed items (0 disables).", Panel: "control"},
+	"ads.in_article_after_paragraph": {Type: "int", DefaultValue: "3", Public: true, Description: "Paragraph index for the first in-article ad.", Panel: "control"},
+	"ads.in_article_every":           {Type: "int", DefaultValue: "6", Public: true, Description: "Repeat in-article ad every N paragraphs (0 = once).", Panel: "control"},
+
 	// Newsletter & Digest (§62, ADR-080)
 	"newsletter.enabled":         {Type: "bool", DefaultValue: "true", Description: "Global toggle.", Panel: "control"},
 	"newsletter.digest_enabled":  {Type: "bool", DefaultValue: "true", Description: "Weekly digest toggle.", Panel: "control"},
