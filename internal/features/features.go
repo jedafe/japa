@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -413,6 +414,117 @@ type FlagConfig struct {
 	Description       string `json:"description"`
 	Environment       string `json:"environment"`
 	RolloutPercentage int    `json:"rolloutPercentage"`
+	// Phase is the rollout phase (one of Phases). Empty/absent is treated as
+	// "shipped" for enabled flags and "planned" for disabled ones at eval.
+	Phase string `json:"phase"`
+	// ShowOnRoadmap opts the flag into the public roadmap projection; the
+	// roadmap sync hook derives the linked item's status from Phase.
+	ShowOnRoadmap bool `json:"showOnRoadmap"`
+	// Surfaces maps a surface name (one of Surfaces) to its visibility rule.
+	// A surface absent from the map behaves as {state:"visible"} — everyone,
+	// all countries. A nil map means all surfaces visible.
+	Surfaces map[string]SurfaceRule `json:"surfaces"`
+}
+
+// SurfaceRule is the per-surface visibility, audience, and geo policy for a
+// flag, stored inside FlagConfig.Surfaces.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.1
+type SurfaceRule struct {
+	State    string   `json:"state"`               // visible|hidden|disabled
+	Audience []string `json:"audience,omitempty"`  // group:<slug>|perm:<node>; empty = everyone
+	GeoAllow []string `json:"geo_allow,omitempty"` // ISO 3166-1 alpha-2, uppercase; empty = all countries
+	GeoDeny  []string `json:"geo_deny,omitempty"`  // ISO alpha-2 denied even when also in GeoAllow
+}
+
+// Phases enumerates the rollout phases a flag's config may carry. Phases are
+// operational metadata — transitions are free (no state machine) and the
+// write path audit-logs every change.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §4.1
+var Phases = []string{"planned", "in_progress", "testing", "shipped", "archived"}
+
+// Surfaces enumerates the client surfaces a flag may carry per-surface rules
+// for. "extension" is the browser-extension surface, not the control-panel
+// extensions catalog.
+var Surfaces = []string{"main", "tools", "academy", "docs", "mobile", "admin", "extension", "desktop"}
+
+// ValidPhase reports whether p is a known rollout phase.
+func ValidPhase(p string) bool {
+	for _, phase := range Phases {
+		if p == phase {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ValidSurface reports whether s is a known surface name.
+func ValidSurface(s string) bool {
+	for _, surface := range Surfaces {
+		if s == surface {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ValidateConfig checks a FlagConfig against the unified-rollout rules:
+// phase vocabulary, known surface keys, per-surface state vocabulary,
+// audience entry format, and uppercase ISO alpha-2 geo codes. An empty Phase
+// is allowed (eval derives it from the enabled state). A surface key present
+// in Surfaces must carry an explicit state. A country code appearing in both
+// GeoAllow and GeoDeny is valid — deny wins at evaluation. Every failure
+// wraps errpkg.ErrInvalid so HandleServiceError maps it to 400
+// validation_error.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §3.1
+func ValidateConfig(cfg FlagConfig) error {
+	if cfg.Phase != "" && !ValidPhase(cfg.Phase) {
+		return fmt.Errorf("%w: invalid_phase %q", errpkg.ErrInvalid, cfg.Phase)
+	}
+
+	for surface, rule := range cfg.Surfaces {
+		if !ValidSurface(surface) {
+			return fmt.Errorf("%w: invalid_surface %q", errpkg.ErrInvalid, surface)
+		}
+
+		switch rule.State {
+		case "visible", "hidden", "disabled":
+		default:
+			return fmt.Errorf("%w: invalid_surface_state %q for surface %q", errpkg.ErrInvalid, rule.State, surface)
+		}
+
+		for _, entry := range rule.Audience {
+			if !strings.HasPrefix(entry, "group:") && !strings.HasPrefix(entry, "perm:") {
+				return fmt.Errorf("%w: invalid_audience %q (must be group:<slug> or perm:<node>)", errpkg.ErrInvalid, entry)
+			}
+		}
+
+		for _, code := range rule.GeoAllow {
+			if !isISOAlpha2(code) {
+				return fmt.Errorf("%w: invalid_geo %q (must be uppercase ISO alpha-2)", errpkg.ErrInvalid, code)
+			}
+		}
+
+		for _, code := range rule.GeoDeny {
+			if !isISOAlpha2(code) {
+				return fmt.Errorf("%w: invalid_geo %q (must be uppercase ISO alpha-2)", errpkg.ErrInvalid, code)
+			}
+		}
+	}
+
+	return nil
+}
+
+// isISOAlpha2 reports whether code is exactly two uppercase ASCII letters —
+// the stored form for ISO 3166-1 alpha-2 country codes. Lowercase codes are
+// rejected rather than normalized so malformed input never silently persists.
+func isISOAlpha2(code string) bool {
+	if len(code) != 2 {
+		return false
+	}
+
+	return code[0] >= 'A' && code[0] <= 'Z' && code[1] >= 'A' && code[1] <= 'Z'
 }
 
 // UpdateFlag upserts a feature flag row, persisting both its enabled state and

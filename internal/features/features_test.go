@@ -1,11 +1,14 @@
 package features
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"strings"
 	"testing"
+
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
 func TestDefaultFor(t *testing.T) {
@@ -199,6 +202,210 @@ func TestHumanizeFlagName(t *testing.T) {
 			got := humanizeFlagName(tt.input)
 			if got != tt.want {
 				t.Errorf("humanizeFlagName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidPhase(t *testing.T) {
+	t.Parallel()
+
+	for _, p := range Phases {
+		if !ValidPhase(p) {
+			t.Errorf("ValidPhase(%q) = false, want true (listed in Phases)", p)
+		}
+	}
+
+	for _, p := range []string{"", "beta", "SHIPPED", "in-progress", "released"} {
+		if ValidPhase(p) {
+			t.Errorf("ValidPhase(%q) = true, want false", p)
+		}
+	}
+}
+
+func TestValidSurface(t *testing.T) {
+	t.Parallel()
+
+	for _, s := range Surfaces {
+		if !ValidSurface(s) {
+			t.Errorf("ValidSurface(%q) = false, want true (listed in Surfaces)", s)
+		}
+	}
+
+	for _, s := range []string{"", "web", "MAIN", "api", "ios"} {
+		if ValidSurface(s) {
+			t.Errorf("ValidSurface(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestValidateConfig covers the FlagConfig validation rules from the
+// unified-feature-rollout spec §3.1: phase vocabulary, known surface keys,
+// per-surface state vocabulary, audience prefix format, and uppercase ISO
+// alpha-2 geo codes.
+func TestValidateConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		cfg     FlagConfig
+		wantErr string // expected invalid_* code substring; "" means valid
+	}{
+		{
+			name:    "empty config is valid",
+			cfg:     FlagConfig{},
+			wantErr: "",
+		},
+		{
+			name: "full valid config",
+			cfg: FlagConfig{
+				Name:              "Blog",
+				Phase:             "testing",
+				ShowOnRoadmap:     true,
+				RolloutPercentage: 25,
+				Surfaces: map[string]SurfaceRule{
+					"main": {
+						State:    "visible",
+						Audience: []string{"group:beta_testers", "perm:beta.access"},
+						GeoAllow: []string{"US", "CA"},
+					},
+					"tools":   {State: "hidden"},
+					"academy": {State: "disabled", GeoDeny: []string{"NG"}},
+				},
+			},
+			wantErr: "",
+		},
+		{
+			name:    "every phase value accepted",
+			cfg:     FlagConfig{Phase: "archived"},
+			wantErr: "",
+		},
+		{
+			name:    "invalid phase",
+			cfg:     FlagConfig{Phase: "beta"},
+			wantErr: "invalid_phase",
+		},
+		{
+			name: "unknown surface key",
+			cfg: FlagConfig{
+				Phase:    "planned",
+				Surfaces: map[string]SurfaceRule{"web": {State: "visible"}},
+			},
+			wantErr: "invalid_surface",
+		},
+		{
+			name: "unknown surface among valid keys",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible"},
+					"tv":   {State: "hidden"},
+				},
+			},
+			wantErr: "invalid_surface",
+		},
+		{
+			name: "invalid surface state",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{"main": {State: "gone"}},
+			},
+			wantErr: "invalid_surface_state",
+		},
+		{
+			name: "empty surface state rejected",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{"main": {Audience: []string{"group:x"}}},
+			},
+			wantErr: "invalid_surface_state",
+		},
+		{
+			name: "audience entry without prefix",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible", Audience: []string{"beta_testers"}},
+				},
+			},
+			wantErr: "invalid_audience",
+		},
+		{
+			name: "audience entry with wrong prefix",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible", Audience: []string{"user:123"}},
+				},
+			},
+			wantErr: "invalid_audience",
+		},
+		{
+			name: "lowercase geo_allow code rejected",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible", GeoAllow: []string{"us"}},
+				},
+			},
+			wantErr: "invalid_geo",
+		},
+		{
+			name: "lowercase geo_deny code rejected",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible", GeoDeny: []string{"ng"}},
+				},
+			},
+			wantErr: "invalid_geo",
+		},
+		{
+			name: "three-letter geo code rejected",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible", GeoAllow: []string{"USA"}},
+				},
+			},
+			wantErr: "invalid_geo",
+		},
+		{
+			name: "numeric geo code rejected",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible", GeoDeny: []string{"12"}},
+				},
+			},
+			wantErr: "invalid_geo",
+		},
+		{
+			name: "same code in geo_allow and geo_deny is valid (deny wins at eval)",
+			cfg: FlagConfig{
+				Surfaces: map[string]SurfaceRule{
+					"main": {State: "visible", GeoAllow: []string{"US"}, GeoDeny: []string{"US"}},
+				},
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateConfig(tt.cfg)
+
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("ValidateConfig() = %v, want nil", err)
+				}
+
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("ValidateConfig() = nil, want %q error", tt.wantErr)
+			}
+
+			if !errors.Is(err, errpkg.ErrInvalid) {
+				t.Errorf("ValidateConfig() error %v does not wrap ErrInvalid", err)
+			}
+
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("ValidateConfig() error %q missing code %q", err.Error(), tt.wantErr)
 			}
 		})
 	}
