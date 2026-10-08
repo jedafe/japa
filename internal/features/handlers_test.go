@@ -1,11 +1,19 @@
 package features
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/auth"
 )
 
 // flagReq builds a GET request carrying the given X-JC-Surface value (empty
@@ -308,5 +316,184 @@ func TestGate_ResolverUsed(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("out-of-audience status = %d, want 404", rec.Code)
+	}
+}
+
+// adminFlagWriteReq builds an authenticated admin write request carrying the
+// chi flag_name URL param, mirroring what the admin router hands the flag
+// write handlers.
+func adminFlagWriteReq(t *testing.T, method, flagName string, body any) *http.Request {
+	t.Helper()
+
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			t.Fatalf("encode body: %v", err)
+		}
+	}
+
+	r := httptest.NewRequest(method, "/api/v1/admin/feature-flags/"+flagName, &buf)
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("flag_name", flagName)
+
+	ctx := context.WithValue(r.Context(), chi.RouteCtxKey, rctx)
+	ctx = context.WithValue(ctx, auth.UserContextKey, &auth.AuthenticatedUser{
+		UserID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true},
+	})
+
+	return r.WithContext(ctx)
+}
+
+// TestFireConfigChanged verifies the checker-level hook: it fires
+// fire-and-forget with the detached context (Rule 8) and the exact
+// (key, cfg) payload handed to it — the payload DeleteFlag uses is an
+// empty FlagConfig{} so consumers unlink the roadmap item (spec §4.3).
+// DB-backed write methods can't run in unit tests (no pgx pool), so the
+// fire point is exercised directly; every write method calls it after a
+// successful write.
+func TestFireConfigChanged(t *testing.T) {
+	t.Parallel()
+
+	type fired struct {
+		key      string
+		cfg      FlagConfig
+		ctxAlive bool
+	}
+
+	ch := make(chan fired, 1)
+
+	c := newEvalTestChecker()
+	c.SetOnConfigChanged(func(ctx context.Context, key string, cfg FlagConfig) {
+		ch <- fired{key: key, cfg: cfg, ctxAlive: ctx.Err() == nil}
+	})
+
+	want := FlagConfig{Phase: "testing", ShowOnRoadmap: true, RolloutPercentage: 40}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel() // simulate the request context dying on response
+
+	c.fireConfigChanged(ctx, "feature.test", want)
+
+	select {
+	case got := <-ch:
+		if got.key != "feature.test" || !reflect.DeepEqual(got.cfg, want) {
+			t.Errorf("hook payload = %v, %+v — want feature.test, %+v", got.key, got.cfg, want)
+		}
+
+		if !got.ctxAlive {
+			t.Error("hook context was canceled — must be detached via context.WithoutCancel")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("config-change hook did not fire")
+	}
+}
+
+// TestFireConfigChanged_NoHook verifies a nil hook is a no-op (no panic) —
+// the checker must work before server.go wires the roadmap sync.
+func TestFireConfigChanged_NoHook(t *testing.T) {
+	t.Parallel()
+
+	c := newEvalTestChecker()
+	c.fireConfigChanged(t.Context(), "feature.test", FlagConfig{})
+}
+
+// TestHandlersSetOnConfigChanged_Delegates verifies the Handlers setter is a
+// thin delegate to the checker's registry — writes through /control/extensions
+// (which bypass Handlers) and writes through admin endpoints must hit the
+// same hook.
+func TestHandlersSetOnConfigChanged_Delegates(t *testing.T) {
+	t.Parallel()
+
+	c := newEvalTestChecker()
+	h := NewHandlers(c)
+
+	ch := make(chan string, 1)
+
+	h.SetOnConfigChanged(func(_ context.Context, key string, _ FlagConfig) {
+		ch <- key
+	})
+
+	c.fireConfigChanged(t.Context(), "feature.test", FlagConfig{})
+
+	select {
+	case key := <-ch:
+		if key != "feature.test" {
+			t.Errorf("hook key = %q, want feature.test", key)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("delegated config-change hook did not fire")
+	}
+}
+
+// TestFlagWriteHandlers_InvalidConfig verifies the unified-rollout config
+// fields on FeatureFlagInput (phase, surfaces, show_on_roadmap) are validated
+// by ValidateConfig before any write — invalid values must 400 with
+// validation_error, never persist.
+func TestFlagWriteHandlers_InvalidConfig(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(newEvalTestChecker())
+
+	tests := []struct {
+		name  string
+		input FeatureFlagInput
+	}{
+		{"invalid phase", FeatureFlagInput{IsEnabled: true, Phase: "rolling"}},
+		{"unknown surface", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"web": {State: "visible"}}}},
+		{"invalid surface state", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "dimmed"}}}},
+		{"invalid audience entry", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "visible", Audience: []string{"beta"}}}}},
+		{"lowercase geo code", FeatureFlagInput{IsEnabled: true, Surfaces: map[string]SurfaceRule{"main": {State: "visible", GeoAllow: []string{"ng"}}}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+" (update)", func(t *testing.T) {
+			t.Parallel()
+
+			rec := httptest.NewRecorder()
+			h.UpdateFeatureFlag(rec, adminFlagWriteReq(t, http.MethodPut, "feature.test", tt.input))
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
+			}
+
+			if !strings.Contains(rec.Body.String(), `"validation_error"`) {
+				t.Errorf("body must carry validation_error code, got %s", rec.Body.String())
+			}
+		})
+	}
+
+	// Create path — same validation contract.
+	rec := httptest.NewRecorder()
+	h.CreateFeatureFlag(rec, adminFlagWriteReq(t, http.MethodPost, "", FeatureFlagInput{
+		Key:   "feature.new",
+		Phase: "rolling",
+	}))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("create status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestFlagWriteHandlers_ValidConfigReachesDB verifies a fully valid config
+// passes validation (it can only fail at the DB layer with a nil-pool test
+// checker — a 500 proves the request reached the write, not a 400).
+func TestFlagWriteHandlers_ValidConfigReachesDB(t *testing.T) {
+	t.Parallel()
+
+	h := NewHandlers(newEvalTestChecker())
+
+	rec := httptest.NewRecorder()
+	h.UpdateFeatureFlag(rec, adminFlagWriteReq(t, http.MethodPut, "feature.test", FeatureFlagInput{
+		IsEnabled:     true,
+		Phase:         "testing",
+		ShowOnRoadmap: true,
+		Surfaces: map[string]SurfaceRule{
+			"main": {State: "visible", Audience: []string{"group:beta"}, GeoDeny: []string{"NG"}},
+		},
+	}))
+
+	if rec.Code == http.StatusBadRequest {
+		t.Fatalf("valid config got 400: %s", rec.Body.String())
 	}
 }

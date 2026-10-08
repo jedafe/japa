@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -32,6 +34,73 @@ func NewHandlers(checker *Checker) *Handlers {
 // Wired in server.go to trigger the wiki:seed_stub_pages fan-out (§80).
 func (h *Handlers) SetOnFlagEnabled(fn func(ctx context.Context, flagName string)) {
 	h.onEnabled = fn
+}
+
+// SetOnConfigChanged registers the post-write config hook. It delegates to
+// the Checker so the same hook also fires for write paths that never touch
+// these handlers (/control/extensions calling SetEnabled/SetRolloutPercentage
+// directly).
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §4.4.
+func (h *Handlers) SetOnConfigChanged(fn func(ctx context.Context, key string, cfg FlagConfig)) {
+	h.checker.SetOnConfigChanged(fn)
+}
+
+// flagAuditSnapshot is the before/after image stored in an audit_logs row's
+// metadata for a feature flag write — the resolved enabled state plus the
+// full stored config blob.
+type flagAuditSnapshot struct {
+	Enabled bool       `json:"enabled"`
+	Config  FlagConfig `json:"config"`
+}
+
+// snapshotFlag reads the flag's current enabled state + stored config for
+// an audit row's "before" image. Returns zero values when the DB isn't
+// wired or the row doesn't exist.
+func (h *Handlers) snapshotFlag(ctx context.Context, key string) *flagAuditSnapshot {
+	cfg, _ := h.checker.GetFlagConfig(ctx, key)
+
+	return &flagAuditSnapshot{Enabled: h.checker.QueryEnabled(ctx, key), Config: cfg}
+}
+
+// auditFlagWrite appends an audit_logs row for a flag admin write, following
+// the insert pattern used by the impersonation service (Rule: writes must be
+// auditable). target_id stays NULL — flag keys aren't UUIDs — so the key
+// rides in metadata alongside the before/after config snapshots. A nil actor
+// or empty IP is written as NULL. Audit failure is logged but never fails
+// the request: the flag write already committed, so returning an error would
+// invite a retry of a succeeded mutation.
+func (h *Handlers) auditFlagWrite(ctx context.Context, actor pgtype.UUID, ip, action, key string, before, after *flagAuditSnapshot) {
+	if h.checker == nil || h.checker.db == nil {
+		return
+	}
+
+	metaJSON, err := json.Marshal(map[string]any{
+		"key":    key,
+		"before": before,
+		"after":  after,
+	})
+	if err != nil {
+		slog.Error("features: audit metadata marshal failed", "action", action, "key", key, "error", err)
+		return
+	}
+
+	var actorArg any
+	if actor.Valid {
+		actorArg = actor
+	}
+
+	// Pass nil for empty ip so PostgreSQL doesn't reject ''::inet.
+	var ipArg any
+	if ip != "" {
+		ipArg = ip
+	}
+
+	if _, err := h.checker.db.Writer.Exec(ctx, `
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, metadata, ip_address)
+		VALUES ($1, $2, 'feature_flag', $3::jsonb, $4::inet)
+	`, actorArg, action, metaJSON, ipArg); err != nil {
+		slog.Error("features: audit log insert failed", "action", action, "key", key, "error", err)
+	}
 }
 
 // fireOnEnabled runs the activation hook when a write transitioned a flag
@@ -176,8 +245,9 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Uncached pre-write snapshot — a stale cached value would miss the
-	// off→on transition and silently skip the activation hook.
-	wasEnabled := h.checker.QueryEnabled(r.Context(), flagName)
+	// off→on transition and silently skip the activation hook. It doubles
+	// as the audit row's "before" image.
+	before := h.snapshotFlag(r.Context(), flagName)
 
 	if err := h.checker.SetEnabled(r.Context(), flagName, input.Enabled, user.UserID); err != nil {
 		slog.Error("features: set enabled failed", "flag", flagName, "error", err)
@@ -186,9 +256,11 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// STD-003: clear only the affected platform's cache, not all platforms.
-	h.checker.ClearCache()
-	h.fireOnEnabled(r.Context(), flagName, wasEnabled, input.Enabled)
+	// SetEnabled already invalidated the flag's cache entries and fired the
+	// config-change hook.
+	h.fireOnEnabled(r.Context(), flagName, before.Enabled, input.Enabled)
+	h.auditFlagWrite(r.Context(), user.UserID, clientip.FromRequest(r), "feature_flag.update", flagName,
+		before, &flagAuditSnapshot{Enabled: input.Enabled, Config: before.Config})
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
@@ -203,15 +275,18 @@ func (h *Handlers) HandleSetFeatureFlag(w http.ResponseWriter, r *http.Request) 
 // richer fields (name, description, environment, rolloutPercentage) are
 // derived with sensible defaults for the admin UI.
 type FeatureFlag struct {
-	ID                string `json:"id"`
-	Key               string `json:"key"`
-	Name              string `json:"name"`
-	Description       string `json:"description"`
-	IsEnabled         bool   `json:"isEnabled"`
-	Environment       string `json:"environment"`
-	RolloutPercentage int    `json:"rolloutPercentage"`
-	CreatedAt         string `json:"createdAt"`
-	UpdatedAt         string `json:"updatedAt"`
+	ID                string                 `json:"id"`
+	Key               string                 `json:"key"`
+	Name              string                 `json:"name"`
+	Description       string                 `json:"description"`
+	IsEnabled         bool                   `json:"isEnabled"`
+	Environment       string                 `json:"environment"`
+	RolloutPercentage int                    `json:"rolloutPercentage"`
+	Phase             string                 `json:"phase,omitempty"`
+	ShowOnRoadmap     bool                   `json:"showOnRoadmap"`
+	Surfaces          map[string]SurfaceRule `json:"surfaces,omitempty"`
+	CreatedAt         string                 `json:"createdAt"`
+	UpdatedAt         string                 `json:"updatedAt"`
 }
 
 // ListFeatureFlags handles GET /api/v1/admin/feature-flags.
@@ -290,6 +365,13 @@ func applyFlagConfig(flag *FeatureFlag, raw []byte) {
 	if cfg.RolloutPercentage != 0 {
 		flag.RolloutPercentage = cfg.RolloutPercentage
 	}
+
+	flag.Phase = cfg.Phase
+	flag.ShowOnRoadmap = cfg.ShowOnRoadmap
+
+	if cfg.Surfaces != nil {
+		flag.Surfaces = cfg.Surfaces
+	}
 }
 
 // CreateFeatureFlag handles POST /api/v1/admin/feature-flags.
@@ -320,6 +402,9 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		Description:       strings.TrimSpace(input.Description),
 		Environment:       strings.TrimSpace(input.Environment),
 		RolloutPercentage: input.RolloutPercentage,
+		Phase:             strings.TrimSpace(input.Phase),
+		ShowOnRoadmap:     input.ShowOnRoadmap,
+		Surfaces:          input.Surfaces,
 	}
 	if cfg.Name == "" {
 		cfg.Name = humanizeFlagName(key)
@@ -333,7 +418,14 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	wasEnabled := h.checker.QueryEnabled(r.Context(), key)
+	// Phase/surface/audience/geo vocabularies are validated before the write;
+	// ErrInvalid maps to 400 validation_error.
+	if err := ValidateConfig(cfg); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	before := h.snapshotFlag(r.Context(), key)
 
 	if err := h.checker.UpdateFlag(r.Context(), key, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
@@ -342,8 +434,9 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.checker.ClearCache()
-	h.fireOnEnabled(r.Context(), key, wasEnabled, input.IsEnabled)
+	h.fireOnEnabled(r.Context(), key, before.Enabled, input.IsEnabled)
+	h.auditFlagWrite(r.Context(), user.UserID, clientip.FromRequest(r), "feature_flag.create", key,
+		before, &flagAuditSnapshot{Enabled: input.IsEnabled, Config: cfg})
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": FeatureFlag{
 			ID:                key,
@@ -353,6 +446,9 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 			IsEnabled:         input.IsEnabled,
 			Environment:       cfg.Environment,
 			RolloutPercentage: cfg.RolloutPercentage,
+			Phase:             cfg.Phase,
+			ShowOnRoadmap:     cfg.ShowOnRoadmap,
+			Surfaces:          cfg.Surfaces,
 		},
 	})
 }
@@ -386,6 +482,9 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		Description:       strings.TrimSpace(input.Description),
 		Environment:       strings.TrimSpace(input.Environment),
 		RolloutPercentage: input.RolloutPercentage,
+		Phase:             strings.TrimSpace(input.Phase),
+		ShowOnRoadmap:     input.ShowOnRoadmap,
+		Surfaces:          input.Surfaces,
 	}
 	if cfg.Name == "" {
 		cfg.Name = humanizeFlagName(flagName)
@@ -399,7 +498,14 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	wasEnabled := h.checker.QueryEnabled(r.Context(), flagName)
+	// Phase/surface/audience/geo vocabularies are validated before the write;
+	// ErrInvalid maps to 400 validation_error.
+	if err := ValidateConfig(cfg); err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	before := h.snapshotFlag(r.Context(), flagName)
 
 	if err := h.checker.UpdateFlag(r.Context(), flagName, input.IsEnabled, cfg, user.UserID); err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
@@ -408,8 +514,9 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.checker.ClearCache()
-	h.fireOnEnabled(r.Context(), flagName, wasEnabled, input.IsEnabled)
+	h.fireOnEnabled(r.Context(), flagName, before.Enabled, input.IsEnabled)
+	h.auditFlagWrite(r.Context(), user.UserID, clientip.FromRequest(r), "feature_flag.update", flagName,
+		before, &flagAuditSnapshot{Enabled: input.IsEnabled, Config: cfg})
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": FeatureFlag{
 			ID:                flagName,
@@ -419,6 +526,9 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 			IsEnabled:         input.IsEnabled,
 			Environment:       cfg.Environment,
 			RolloutPercentage: cfg.RolloutPercentage,
+			Phase:             cfg.Phase,
+			ShowOnRoadmap:     cfg.ShowOnRoadmap,
+			Surfaces:          cfg.Surfaces,
 		},
 	})
 }
@@ -434,6 +544,13 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var actor pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		actor = user.UserID
+	}
+
+	before := h.snapshotFlag(r.Context(), flagName)
+
 	if err := h.checker.DeleteFlag(r.Context(), flagName); err != nil {
 		slog.Error("features: delete failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete feature flag")
@@ -441,20 +558,28 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.checker.ClearCache()
+	// DeleteFlag already invalidated the cache and fired the config-change
+	// hook with an empty config (roadmap unlink per spec §4.3).
+	h.auditFlagWrite(r.Context(), actor, clientip.FromRequest(r), "feature_flag.delete", flagName,
+		before, nil)
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{"key": flagName, "deleted": true},
 	})
 }
 
 // FeatureFlagInput is the request body shared by Create/Update handlers.
+// Phase/ShowOnRoadmap/Surfaces carry the unified-rollout config and are
+// validated by ValidateConfig before the write (invalid → 400).
 type FeatureFlagInput struct {
-	Name              string `json:"name"`
-	Key               string `json:"key"`
-	Description       string `json:"description"`
-	IsEnabled         bool   `json:"isEnabled"`
-	Environment       string `json:"environment"`
-	RolloutPercentage int    `json:"rolloutPercentage"`
+	Name              string                 `json:"name"`
+	Key               string                 `json:"key"`
+	Description       string                 `json:"description"`
+	IsEnabled         bool                   `json:"isEnabled"`
+	Environment       string                 `json:"environment"`
+	RolloutPercentage int                    `json:"rolloutPercentage"`
+	Phase             string                 `json:"phase"`
+	ShowOnRoadmap     bool                   `json:"showOnRoadmap"`
+	Surfaces          map[string]SurfaceRule `json:"surfaces"`
 }
 
 // humanizeFlagName turns a dotted/snake_case flag key into a readable Title

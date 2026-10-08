@@ -54,6 +54,13 @@ type Checker struct {
 	// traffic; nil means every caller evaluates as anonymous (audience-scoped
 	// flags are off for them).
 	audienceResolver AudienceResolver
+	// onConfigChanged fires after every successful flag write (SetEnabled,
+	// UpdateFlag, SetRolloutPercentage, DeleteFlag) with the flag's post-write
+	// config. The hook lives on Checker — not Handlers — because the
+	// /control/extensions write paths call SetEnabled/SetRolloutPercentage
+	// directly and would silently skip a handler-level hook. Optional — set
+	// once at startup via SetOnConfigChanged.
+	onConfigChanged func(ctx context.Context, key string, cfg FlagConfig)
 }
 
 // flagCacheEntry wraps a flag's resolved enabled state and raw config blob
@@ -110,6 +117,28 @@ func (c *Checker) Close() {
 			close(c.cache.done)
 		}
 	})
+}
+
+// SetOnConfigChanged registers a callback fired after every successful flag
+// write — SetEnabled, UpdateFlag, SetRolloutPercentage, DeleteFlag — with the
+// flag's post-write config. DeleteFlag fires with an empty FlagConfig{} so
+// the consumer (roadmap sync) unlinks the flag's item per spec §4.3. Wired
+// in server.go to roadmap.Service.SyncFlagPhase.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §4.4.
+func (c *Checker) SetOnConfigChanged(fn func(ctx context.Context, key string, cfg FlagConfig)) {
+	c.onConfigChanged = fn
+}
+
+// fireConfigChanged invokes the registered config-change hook fire-and-forget
+// (Rule 8): the goroutine detaches from the request context via
+// context.WithoutCancel so a slow consumer (roadmap sync, cache warmers)
+// never delays the write response.
+func (c *Checker) fireConfigChanged(ctx context.Context, key string, cfg FlagConfig) {
+	if c.onConfigChanged == nil {
+		return
+	}
+
+	go c.onConfigChanged(context.WithoutCancel(ctx), key, cfg)
 }
 
 // IsEnabled checks if a feature is enabled for the platform in context.
@@ -202,6 +231,10 @@ func (c *Checker) queryEnabled(ctx context.Context, key string) (bool, error) {
 // (DefaultFor(key), nil, err) on failure so callers can distinguish
 // "not set" (ErrNoRows → registry default) from a real DB error.
 func (c *Checker) queryFlagRow(ctx context.Context, key string) (bool, []byte, error) {
+	if c.db == nil {
+		return DefaultFor(key), nil, pgx.ErrNoRows
+	}
+
 	var enabled bool
 
 	var configBytes []byte
@@ -535,6 +568,10 @@ func (c *Checker) GetAllEnabled(ctx context.Context) map[string]bool {
 
 // SetEnabled updates a feature flag in the database.
 func (c *Checker) SetEnabled(ctx context.Context, key string, enabled bool, updatedBy pgtype.UUID) error {
+	if c.db == nil {
+		return errors.New("features: SetEnabled called with no database")
+	}
+
 	_, err := c.db.Writer.Exec(ctx, `
 		INSERT INTO feature_flags (key, enabled, updated_by)
 		VALUES ($1, $2, $3)
@@ -545,7 +582,23 @@ func (c *Checker) SetEnabled(ctx context.Context, key string, enabled bool, upda
 		return fmt.Errorf("updating feature flag %s: %w", key, err)
 	}
 
+	c.InvalidateFlag(ctx, key)
+	c.fireConfigChanged(ctx, key, c.currentConfig(ctx, key))
+
 	return nil
+}
+
+// currentConfig reads the stored FlagConfig for the config-change hook.
+// Read failures degrade to an empty config — consumers (roadmap sync) treat
+// an empty config as "no roadmap linkage" and no-op harmlessly.
+func (c *Checker) currentConfig(ctx context.Context, key string) FlagConfig {
+	cfg, err := c.GetFlagConfig(ctx, key)
+	if err != nil {
+		slog.Warn("features: post-write config read failed", "key", key, "error", err)
+		return FlagConfig{}
+	}
+
+	return cfg
 }
 
 // FlagConfig is the richer admin-facing metadata stored alongside a flag's
@@ -674,7 +727,17 @@ func isISOAlpha2(code string) bool {
 // UpdateFlag upserts a feature flag row, persisting both its enabled state and
 // the richer admin metadata. Unlike SetEnabled, it accepts the full config so
 // the admin UI can edit name/description/environment/rollout in one call.
+// The config is validated against the unified-rollout rules; invalid configs
+// return an ErrInvalid-wrapped error so HTTP layers map it to 400.
 func (c *Checker) UpdateFlag(ctx context.Context, key string, enabled bool, cfg FlagConfig, updatedBy pgtype.UUID) error {
+	if err := ValidateConfig(cfg); err != nil {
+		return err
+	}
+
+	if c.db == nil {
+		return errors.New("features: UpdateFlag called with no database")
+	}
+
 	configJSON, err := json.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshaling feature flag config %s: %w", key, err)
@@ -690,6 +753,9 @@ func (c *Checker) UpdateFlag(ctx context.Context, key string, enabled bool, cfg 
 		return fmt.Errorf("upserting feature flag %s: %w", key, err)
 	}
 
+	c.InvalidateFlag(ctx, key)
+	c.fireConfigChanged(ctx, key, cfg)
+
 	return nil
 }
 
@@ -697,6 +763,10 @@ func (c *Checker) UpdateFlag(ctx context.Context, key string, enabled bool, cfg 
 // flag falls back to its registry Default, exactly as if it had never been
 // set. The registry key itself is never removed.
 func (c *Checker) DeleteFlag(ctx context.Context, key string) error {
+	if c.db == nil {
+		return errors.New("features: DeleteFlag called with no database")
+	}
+
 	_, err := c.db.Writer.Exec(ctx, `
 		DELETE FROM feature_flags
 		WHERE key = $1
@@ -704,6 +774,12 @@ func (c *Checker) DeleteFlag(ctx context.Context, key string) error {
 	if err != nil {
 		return fmt.Errorf("deleting feature flag %s: %w", key, err)
 	}
+
+	c.InvalidateFlag(ctx, key)
+	// Empty config signals "flag row gone" — the roadmap sync unlinks the
+	// flag's item (clears feature_flag_key, returns it to manual lifecycle)
+	// per spec §4.3.
+	c.fireConfigChanged(ctx, key, FlagConfig{})
 
 	return nil
 }
@@ -748,6 +824,10 @@ type FlagRow struct {
 // GetFlagConfig returns the stored FlagConfig for a feature flag, or a
 // zero-value FlagConfig when the flag has no row or no config blob.
 func (c *Checker) GetFlagConfig(ctx context.Context, key string) (FlagConfig, error) {
+	if c.db == nil {
+		return FlagConfig{}, nil
+	}
+
 	var configBytes []byte
 
 	err := c.db.Reader.QueryRow(ctx, `
@@ -779,6 +859,10 @@ func (c *Checker) GetFlagConfig(ctx context.Context, key string) (FlagConfig, er
 // extensions page to manage gradual rollout. A percentage of 0 or 100 means
 // "off" or "fully on" (no hash bucketing).
 func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percentage int, updatedBy pgtype.UUID) error {
+	if c.db == nil {
+		return errors.New("features: SetRolloutPercentage called with no database")
+	}
+
 	cfg, err := c.GetFlagConfig(ctx, key)
 	if err != nil {
 		return fmt.Errorf("reading config for rollout update %s: %w", key, err)
@@ -807,7 +891,8 @@ func (c *Checker) SetRolloutPercentage(ctx context.Context, key string, percenta
 		return fmt.Errorf("updating rollout for %s: %w", key, err)
 	}
 
-	c.ClearCache()
+	c.InvalidateFlag(ctx, key)
+	c.fireConfigChanged(ctx, key, cfg)
 
 	return nil
 }
