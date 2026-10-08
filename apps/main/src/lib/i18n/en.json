@@ -5413,5 +5413,7 @@
 	"language_test.detail_error_title": "Could not load test",
 	"language_test.no_requirements_filtered": "No language test requirements for this visa category. Try a different category.",
 	"language_test.select_test_for_compare": "Select {name} for comparison",
-	"language_test.jce_error": "Could not create comparison"
+	"language_test.jce_error": "Could not create comparison",
+	"roadmap.errors.status_derived": "This item's status follows its linked feature flag — change the flag's phase instead.",
+	"roadmap.status_derived_hint": "Status is derived from the linked feature flag — change the flag's phase to move it."
 }

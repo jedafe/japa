@@ -58,7 +58,7 @@
 	<meta name="twitter:description" content={t('roadmap.subtitle', 'See what we are building and vote on what matters to you.')} />
 </svelte:head>
 
-<section class="mx-auto max-w-full space-y-6 px-4 py-8">
+<section class="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-10">
 	<header class="flex flex-wrap items-start justify-between gap-4">
 		<div class="flex items-center gap-3">
 			<div
@@ -141,7 +141,7 @@
 						{/if}
 						{#if canModerate}
 							<div class="mt-3 flex justify-end">
-								<StatusSelect itemId={flagship.id} status={flagship.status} />
+								<StatusSelect itemId={flagship.id} status={flagship.status} featureFlagKey={flagship.feature_flag_key} />
 							</div>
 						{/if}
 					</div>
@@ -198,15 +198,17 @@
 				action={{ label: t('roadmap.submit_cta', 'Submit a request'), href: '/roadmap/submit' }}
 			/>
 		{:else}
-			<!-- Status columns; horizontal scroll on narrow viewports. Column
-			     order + labels come from board.columns (the backend ships the
-			     Testing column between In Progress and Recently Shipped); the
-			     aria-label mirrors the rendered heading. -->
-			<div class="flex gap-4 overflow-x-auto pb-2 lg:grid lg:grid-cols-5 lg:overflow-visible">
+			<!-- Status columns; horizontal scroll until the container can fit
+			     five readable columns. The /roadmap group hides the shell's right
+			     sidebar, so the board owns roughly viewport-minus-nav width — xl
+			     guarantees ~190px+ per column. Column order + labels come from
+			     board.columns (the backend ships the Testing column between In
+			     Progress and Recently Shipped); the aria-label mirrors the heading. -->
+			<div class="flex gap-4 overflow-x-auto pb-2 xl:grid xl:grid-cols-5 xl:overflow-visible">
 				{#each board.columns as column (column.status)}
 					{@const items = columnItems(column.items)}
 					{@const label = t(`roadmap.col_${column.status}`, column.label)}
-					<section class="min-w-[16rem] flex-1 lg:min-w-0" aria-label={label}>
+					<section class="min-w-[16rem] flex-1 xl:min-w-0" aria-label={label}>
 						<header class="mb-3 flex items-center justify-between px-1">
 							<h2 class="text-sm font-semibold text-[var(--color-text)]">{label}</h2>
 							<span

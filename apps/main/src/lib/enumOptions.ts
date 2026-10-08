@@ -254,6 +254,8 @@ export function roadmapErrorKey(
 			return 'roadmap.errors.not_voted';
 		case 'invalid_status_transition':
 			return 'roadmap.errors.invalid_status_transition';
+		case 'status_derived':
+			return 'roadmap.errors.status_derived';
 		case 'feature_disabled':
 			return 'roadmap.errors.feature_disabled';
 		case 'rate_limit_exceeded':

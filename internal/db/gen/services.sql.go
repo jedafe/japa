@@ -37,7 +37,7 @@ FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
-  AND ($1 IS NULL OR c.status = $1)
+  AND ($1::text IS NULL OR c.status = $1::text)
   AND ($2::uuid IS NULL OR sm.destination_space_id = $2::uuid)
   AND ($3::bool IS NULL OR sm.is_verified = $3::bool)
   AND ($4::text IS NULL OR sm.claim_status = $4::text)
@@ -47,7 +47,7 @@ WHERE c.content_type = 'service_listing'
 `
 
 type AdminCountServiceListingsParams struct {
-	Status          interface{} `json:"status"`
+	Status          *string     `json:"status"`
 	DestSpaceID     pgtype.UUID `json:"dest_space_id"`
 	IsVerified      *bool       `json:"is_verified"`
 	ClaimStatus     *string     `json:"claim_status"`
@@ -245,7 +245,7 @@ LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
-  AND ($1 IS NULL OR c.status = $1)
+  AND ($1::text IS NULL OR c.status = $1::text)
   AND ($2::uuid IS NULL OR sm.destination_space_id = $2::uuid)
   AND ($3::bool IS NULL OR sm.is_verified = $3::bool)
   AND ($4::text IS NULL OR sm.claim_status = $4::text)
@@ -257,7 +257,7 @@ LIMIT $9 OFFSET $8
 `
 
 type AdminListServiceListingsParams struct {
-	Status          interface{} `json:"status"`
+	Status          *string     `json:"status"`
 	DestSpaceID     pgtype.UUID `json:"dest_space_id"`
 	IsVerified      *bool       `json:"is_verified"`
 	ClaimStatus     *string     `json:"claim_status"`
@@ -3689,7 +3689,7 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.enti
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND sm.org_id = $1
-  AND ($2 IS NULL OR c.status = $2)
+  AND ($2::text IS NULL OR c.status = $2::text)
   AND ($3::text IS NULL OR sm.listing_kind = $3::text)
 ORDER BY c.created_at DESC
 LIMIT $5 OFFSET $4
@@ -3697,7 +3697,7 @@ LIMIT $5 OFFSET $4
 
 type ListServiceListingsByOrgParams struct {
 	OrgID       pgtype.UUID `json:"org_id"`
-	Status      interface{} `json:"status"`
+	Status      *string     `json:"status"`
 	ListingKind *string     `json:"listing_kind"`
 	PageOffset  int32       `json:"page_offset"`
 	PageLimit   int32       `json:"page_limit"`

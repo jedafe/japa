@@ -5355,5 +5355,7 @@
 	"language_test.detail_error_title": "Impossible de charger le test",
 	"language_test.no_requirements_filtered": "Aucune exigence de test de langue pour cette catégorie de visa. Essayez une autre catégorie.",
 	"language_test.select_test_for_compare": "Sélectionner {name} pour la comparaison",
-	"language_test.jce_error": "Impossible de créer la comparaison"
+	"language_test.jce_error": "Impossible de créer la comparaison",
+	"roadmap.errors.status_derived": "Le statut de cet élément dépend de l'indicateur de fonctionnalité associé — modifiez la phase de l'indicateur pour le faire évoluer.",
+	"roadmap.status_derived_hint": "Le statut découle de l'indicateur de fonctionnalité associé — modifiez la phase de l'indicateur pour le faire évoluer."
 }

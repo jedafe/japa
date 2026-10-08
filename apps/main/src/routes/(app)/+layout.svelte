@@ -67,6 +67,11 @@
 	// left rails. The user can still expand via the toggle.
 	const isDashboard = $derived(page.route.id?.startsWith('/(app)/dashboard') ?? false);
 
+	// Roadmap board index: the §113 kanban needs horizontal room, so only
+	// /roadmap is an auto-collapse zone (nav → 72px icons, left rail
+	// hidden). Subpages (item detail, changelog, submit) keep the shell.
+	const isRoadmap = $derived(page.route.id === '/(app)/roadmap');
+
 	// ADR-058 Exception #1: content single pages (blog, content, guide,
 	// story, comparisons) still render the unified shell's left ad rail. The
 	// /studio surface is the exception exception: it owns its own layout
@@ -78,12 +83,12 @@
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
-	// Auto-collapse when entering settings or dashboard (once per transition).
-	// The user can still expand via the toggle — we only collapse on entry,
-	// not force.
+	// Auto-collapse when entering settings, dashboard or roadmap (once per
+	// transition). The user can still expand via the toggle — we only
+	// collapse on entry, not force.
 	let prevWasCollapsedZone = $state(false);
 	$effect(() => {
-		const inCollapsedZone = isSettings || isDashboard;
+		const inCollapsedZone = isSettings || isDashboard || isRoadmap;
 		if (inCollapsedZone && !prevWasCollapsedZone) {
 			collapsed = true;
 		}
@@ -230,7 +235,7 @@
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}
-		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard ? [] : data.leftSidebarWidgets}
+		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard || isRoadmap ? [] : data.leftSidebarWidgets}
 
 		composeEnabled={!exception && !!data.user}
 		features={data.features}

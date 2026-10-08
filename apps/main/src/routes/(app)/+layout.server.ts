@@ -56,13 +56,22 @@ export const load: LayoutServerLoad = async (event) => {
 	// their own in-page <aside> fed by rightSidebarWidgets — skipping the
 	// resolve left those permanently empty. (/video/[slug]'s lean
 	// sourceOnly player page has no aside and simply ignores the data.)
+	// /roadmap is a wide board surface: the §113 kanban columns cannot fit
+	// the ~600px center column, so the board index reclaims the sidebar
+	// column (same hideRightSidebar path as /studio) instead of fetching
+	// widgets that would never render. Roadmap subpages (item detail,
+	// changelog, submit) keep the normal shell.
 	const rid = event.route.id ?? '';
-	const hideRight = rid.startsWith('/(app)/studio') || rid === '/(app)/create';
+	const hideRight =
+		rid.startsWith('/(app)/studio') ||
+		rid === '/(app)/create' ||
+		rid === '/(app)/roadmap';
 	const hideLeft =
 		rid.startsWith('/(app)/studio') ||
 		rid === '/(app)/create' ||
 		rid.startsWith('/(app)/settings') ||
-		rid.startsWith('/(app)/dashboard');
+		rid.startsWith('/(app)/dashboard') ||
+		rid === '/(app)/roadmap';
 	const [sidebarData, leftSidebarData] = await Promise.all([
 		hideRight
 			? null

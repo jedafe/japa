@@ -161,7 +161,7 @@
 			</div>
 
 			{#if data.canModerate}
-				<StatusSelect itemId={item.id} status={item.status} />
+				<StatusSelect itemId={item.id} status={item.status} featureFlagKey={item.feature_flag_key} />
 			{/if}
 		</div>
 

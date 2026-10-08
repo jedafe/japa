@@ -257,7 +257,7 @@ LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
-  AND (sqlc.narg(status) IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status)::text)
   AND (sqlc.narg(dest_space_id)::uuid IS NULL OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid)
   AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
   AND (sqlc.narg(claim_status)::text IS NULL OR sm.claim_status = sqlc.narg(claim_status)::text)
@@ -273,7 +273,7 @@ FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
-  AND (sqlc.narg(status) IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status)::text)
   AND (sqlc.narg(dest_space_id)::uuid IS NULL OR sm.destination_space_id = sqlc.narg(dest_space_id)::uuid)
   AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
   AND (sqlc.narg(claim_status)::text IS NULL OR sm.claim_status = sqlc.narg(claim_status)::text)
@@ -330,7 +330,7 @@ LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.enti
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND sm.org_id = @org_id
-  AND (sqlc.narg(status) IS NULL OR c.status = sqlc.narg(status))
+  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status)::text)
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;

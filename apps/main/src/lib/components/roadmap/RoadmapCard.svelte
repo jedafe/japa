@@ -22,8 +22,6 @@
 	class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 transition-colors hover:border-[var(--color-primary)]/40"
 >
 	<div class="flex gap-3">
-		<VoteButton {item} {authed} />
-
 		<div class="min-w-0 flex-1">
 			<div class="flex items-start justify-between gap-2">
 				<a
@@ -69,11 +67,19 @@
 				{/if}
 			</div>
 		</div>
+
+		{#if !canModerate}
+			<!-- Regular viewers: vote pill pinned to the card's right edge. -->
+			<VoteButton {item} {authed} />
+		{/if}
 	</div>
 
 	{#if canModerate}
-		<div class="mt-2 flex justify-end border-t border-[var(--color-border)]/60 pt-2">
-			<StatusSelect itemId={item.id} status={item.status} />
+		<!-- Moderator footer: status dropdown pinned left, vote pill right —
+		     one action row under the card content. -->
+		<div class="mt-2 flex items-center justify-between gap-2 border-t border-[var(--color-border)]/60 pt-2">
+			<StatusSelect itemId={item.id} status={item.status} featureFlagKey={item.feature_flag_key} />
+			<VoteButton {item} {authed} />
 		</div>
 	{/if}
 </article>
