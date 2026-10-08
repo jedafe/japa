@@ -780,40 +780,59 @@ func isISOAlpha2(code string) bool {
 	return code[0] >= 'A' && code[0] <= 'Z' && code[1] >= 'A' && code[1] <= 'Z'
 }
 
-// UpdateFlag upserts a feature flag row, persisting both its enabled state and
-// the richer admin metadata. Unlike SetEnabled, it accepts the full config so
-// the admin UI can edit name/description/environment/rollout in one call.
-// The config is validated against the unified-rollout rules; invalid configs
-// return a *ConfigError (errors.Is errpkg.ErrInvalid) so HTTP layers map it
-// to 400 with the specific machine-readable code via WriteConfigError.
-func (c *Checker) UpdateFlag(ctx context.Context, key string, enabled bool, cfg FlagConfig, updatedBy pgtype.UUID) error {
-	if err := ValidateConfig(cfg); err != nil {
-		return err
-	}
-
+// PatchFlag upserts a feature flag row by atomically merging a JSON-object
+// patch into its config inside the INSERT/ON CONFLICT — no read-modify-write
+// window, so concurrent writes can't lose each other's fields. patch keys are
+// FlagConfig field names; top-level keys replace wholesale (surfaces is a
+// whole-map replace, matching the PATCH contract). enabled == nil leaves the
+// enabled column unchanged; on insert the row starts at the registry Default
+// for the key. Returns the persisted (enabled, config) so callers can audit
+// and respond with post-merge state rather than what they intended to write.
+// Callers validate the patch fields with ValidateConfig first — invalid
+// configs return a *ConfigError mapped to 400 via WriteConfigError.
+func (c *Checker) PatchFlag(ctx context.Context, key string, enabled *bool, patch []byte, updatedBy pgtype.UUID) (bool, FlagConfig, error) {
 	if c.db == nil {
-		return errors.New("features: UpdateFlag called with no database")
+		return false, FlagConfig{}, errors.New("features: PatchFlag called with no database")
 	}
 
-	configJSON, err := json.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshaling feature flag config %s: %w", key, err)
+	if len(patch) == 0 {
+		patch = []byte("{}")
 	}
 
-	_, err = c.db.Writer.Exec(ctx, `
+	var enabledParam pgtype.Bool
+	if enabled != nil {
+		enabledParam = pgtype.Bool{Bool: *enabled, Valid: true}
+	}
+
+	var rowEnabled bool
+
+	var configBytes []byte
+
+	err := c.db.Writer.QueryRow(ctx, `
 		INSERT INTO feature_flags (key, enabled, config, updated_by)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (key)
-		DO UPDATE SET enabled = $2, config = $3, updated_by = $4, updated_at = now()
-	`, key, enabled, configJSON, updatedBy)
+		VALUES ($1, COALESCE($2, $5), $3::jsonb, $4)
+		ON CONFLICT (key) DO UPDATE SET
+			enabled    = COALESCE($2, feature_flags.enabled),
+			config     = COALESCE(feature_flags.config, '{}'::jsonb) || $3::jsonb,
+			updated_by = $4,
+			updated_at = now()
+		RETURNING enabled, config
+	`, key, enabledParam, string(patch), updatedBy, DefaultFor(key)).Scan(&rowEnabled, &configBytes)
 	if err != nil {
-		return fmt.Errorf("upserting feature flag %s: %w", key, err)
+		return false, FlagConfig{}, fmt.Errorf("patching feature flag %s: %w", key, err)
+	}
+
+	var cfg FlagConfig
+	if len(configBytes) > 0 {
+		if err := json.Unmarshal(configBytes, &cfg); err != nil {
+			slog.Warn("features: patched config failed to decode", "key", key, "error", err)
+		}
 	}
 
 	c.InvalidateFlag(ctx, key)
 	c.fireConfigChanged(ctx, key, cfg)
 
-	return nil
+	return rowEnabled, cfg, nil
 }
 
 // DeleteFlag removes a feature flag row. After deletion the

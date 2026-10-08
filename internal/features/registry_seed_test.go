@@ -56,7 +56,6 @@ var seedDefaultOverrides = map[string]string{
 	"community_locator.enabled":  "V2 tool — opt-in for fresh installs",
 	// Commerce/AI/integrations enabled in production but off for fresh
 	// installs — they require credentials or operator setup to be useful.
-	"feature.ads":               "requires ad-ops configuration",
 	"feature.affiliate_program": "requires affiliate configuration",
 	"feature.ai_content_gen":    "requires AI provider credentials",
 	"feature.japabot":           "requires AI provider credentials",

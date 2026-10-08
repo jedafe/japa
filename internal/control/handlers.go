@@ -3643,49 +3643,70 @@ type extensionPatchInput struct {
 	RolloutPercentage *int                             `json:"rollout_percentage"`
 }
 
-// mergeExtensionPatch applies only the fields present in the PATCH body to
-// cfg (a copy of the stored config). Surfaces replaces the whole map when
-// present — the manage UI always sends the complete rule set. Rollout is
-// clamped to 0-100, matching the dedicated rollout endpoint.
-func mergeExtensionPatch(cfg *features.FlagConfig, input *extensionPatchInput) {
+// extensionPatchFields translates the PATCH body into (a) the jsonb patch
+// object PatchFlag merges into feature_flags.config — keys are FlagConfig
+// field names, so the wire's snake_case names map to the stored camelCase —
+// and (b) a FlagConfig carrying only the provided fields for ValidateConfig
+// (the checks are field-local, so validating the patch validates the write).
+// Surfaces is a whole-map replace when present — the manage UI always sends
+// the complete rule set. Rollout is clamped to 0-100, matching the dedicated
+// rollout endpoint.
+func extensionPatchFields(input *extensionPatchInput) ([]byte, features.FlagConfig) {
+	patch := map[string]any{}
+
+	var cfg features.FlagConfig
+
 	if input.Phase != nil {
 		cfg.Phase = strings.TrimSpace(*input.Phase)
+		patch["phase"] = cfg.Phase
 	}
 
 	if input.ShowOnRoadmap != nil {
 		cfg.ShowOnRoadmap = *input.ShowOnRoadmap
+		patch["showOnRoadmap"] = cfg.ShowOnRoadmap
 	}
 
 	if input.Surfaces != nil {
 		cfg.Surfaces = *input.Surfaces
+		patch["surfaces"] = cfg.Surfaces
 	}
 
 	if input.Name != nil {
 		cfg.Name = strings.TrimSpace(*input.Name)
+		patch["name"] = cfg.Name
 	}
 
 	if input.Description != nil {
 		cfg.Description = strings.TrimSpace(*input.Description)
+		patch["description"] = cfg.Description
 	}
 
 	if input.RolloutPercentage != nil {
-		cfg.RolloutPercentage = *input.RolloutPercentage
+		p := *input.RolloutPercentage
+		if p < 0 {
+			p = 0
+		}
+		if p > 100 {
+			p = 100
+		}
+		cfg.RolloutPercentage = p
+		patch["rolloutPercentage"] = p
 	}
 
-	if cfg.RolloutPercentage < 0 {
-		cfg.RolloutPercentage = 0
+	raw, err := json.Marshal(patch)
+	if err != nil {
+		return []byte("{}"), cfg
 	}
 
-	if cfg.RolloutPercentage > 100 {
-		cfg.RolloutPercentage = 100
-	}
+	return raw, cfg
 }
 
-// UpdateExtension handles PATCH /control/extensions/{key}. The decoded body
-// is merged into the stored FlagConfig — only present fields change — then
-// validated (ValidateConfig) and persisted via Checker.UpdateFlag, which
-// upserts enabled + config, invalidates the flag cache, and fires the
-// config-change hook automatically. Unknown keys → 404 extension_not_found;
+// UpdateExtension handles PATCH /control/extensions/{key}. Fields present in
+// the body are validated (ValidateConfig) then persisted via
+// Checker.PatchFlag, which merges them into feature_flags.config inside the
+// upsert — atomically, so concurrent PATCHes can't lose each other's fields —
+// and invalidates the flag cache + fires the config-change hook. Absent
+// fields keep their stored values. Unknown keys → 404 extension_not_found;
 // invalid phase/surface values → 400 with the ConfigError's machine-readable
 // code (invalid_phase, invalid_surface, invalid_surface_state,
 // invalid_audience, invalid_geo).
@@ -3701,7 +3722,7 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, storedEnabled, cfg, err := h.extensionKnown(r.Context(), key)
+	exists, _, _, err := h.extensionKnown(r.Context(), key)
 	if err != nil {
 		h.writeExtensionReadErr(w, err, key)
 		return
@@ -3718,17 +3739,12 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enabled := storedEnabled
-	if input.Enabled != nil {
-		enabled = *input.Enabled
-	}
-
-	mergeExtensionPatch(&cfg, &input)
+	patch, patchCfg := extensionPatchFields(&input)
 
 	// Phase/surface/audience/geo vocabularies are validated before the
 	// write; ConfigError carries the machine-readable code (invalid_phase,
 	// invalid_surface, …) emitted in the 400 error envelope.
-	if err := features.ValidateConfig(cfg); err != nil {
+	if err := features.ValidateConfig(patchCfg); err != nil {
 		features.WriteConfigError(w, err)
 		return
 	}
@@ -3737,7 +3753,11 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	before := h.snapshotFlag(r.Context(), key)
 	updatedBy := authUserFromContext(r)
 
-	if err := h.FeatureChecker.UpdateFlag(r.Context(), key, enabled, cfg, updatedBy); err != nil {
+	// PatchFlag merges inside the upsert — concurrent PATCHes can't lose each
+	// other's fields the way a read-modify-write would. The RETURNING values
+	// are the persisted state, used for the audit and response.
+	enabled, merged, err := h.FeatureChecker.PatchFlag(r.Context(), key, input.Enabled, patch, updatedBy)
+	if err != nil {
 		slog.Error("control: update extension", "error", err, "key", key)
 		errpkg.HandleServiceError(w, err)
 
@@ -3745,13 +3765,13 @@ func (h *Handlers) UpdateExtension(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.update", key,
-		before, &flagAuditSnapshot{Enabled: enabled, Config: cfg})
+		before, &flagAuditSnapshot{Enabled: enabled, Config: merged})
 
 	data := map[string]any{"key": key, "status": "updated", "enabled": enabled}
 
 	// Spec §6.3: show_on_roadmap=true while roadmap.enabled resolves off is
 	// allowed, but the response carries the warning so the UI can flag it.
-	if cfg.ShowOnRoadmap && !h.FeatureChecker.IsEnabled(r.Context(), "roadmap.enabled") {
+	if merged.ShowOnRoadmap && !h.FeatureChecker.IsEnabled(r.Context(), "roadmap.enabled") {
 		data["warning"] = "roadmap_disabled"
 	}
 

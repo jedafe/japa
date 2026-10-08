@@ -573,67 +573,78 @@ func TestFlagWriteHandlers_InvalidConfig(t *testing.T) {
 	}
 }
 
-// TestMergeAbsentRolloutFields verifies the create/update merge contract:
-// phase, showOnRoadmap, and surfaces omitted from the body keep the stored
-// values; fields present in the body — even explicit null/empty — replace.
-func TestMergeAbsentRolloutFields(t *testing.T) {
+// TestFlagConfigPatch verifies the patch object the admin write handlers hand
+// to PatchFlag: scalar fields always ride the patch (PUT replace semantics),
+// while phase/showOnRoadmap/surfaces appear only when present in the request
+// body — so `config || patch` preserves values set via Control → Extensions.
+func TestFlagConfigPatch(t *testing.T) {
 	t.Parallel()
 
-	stored := FlagConfig{
-		Phase:         "testing",
-		ShowOnRoadmap: true,
-		Surfaces:      map[string]SurfaceRule{"admin": {State: "hidden"}},
+	cfg := FlagConfig{
+		Name:              "Blog",
+		Description:       "desc",
+		Environment:       "production",
+		RolloutPercentage: 100,
+		Phase:             "shipped",
+		ShowOnRoadmap:     true,
+		Surfaces:          map[string]SurfaceRule{"main": {State: "hidden"}},
 	}
 
-	t.Run("absent fields preserve stored values", func(t *testing.T) {
+	patchKeys := func(t *testing.T, body string) map[string]json.RawMessage {
+		t.Helper()
+
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(flagConfigPatch(cfg, []byte(body)), &m); err != nil {
+			t.Fatalf("patch unmarshal: %v", err)
+		}
+
+		return m
+	}
+
+	t.Run("absent rollout fields stay out of the patch", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := FlagConfig{}
-		mergeAbsentRolloutFields(stored, []byte(`{"isEnabled":false}`), &cfg)
-
-		if cfg.Phase != "testing" || !cfg.ShowOnRoadmap || cfg.Surfaces["admin"].State != "hidden" {
-			t.Errorf("merged cfg = %+v, want stored rollout fields preserved", cfg)
+		m := patchKeys(t, `{"isEnabled":false,"name":"Blog"}`)
+		if _, ok := m["phase"]; ok {
+			t.Error("phase present in patch, want omitted")
+		}
+		if _, ok := m["showOnRoadmap"]; ok {
+			t.Error("showOnRoadmap present in patch, want omitted")
+		}
+		if _, ok := m["surfaces"]; ok {
+			t.Error("surfaces present in patch, want omitted")
+		}
+		if string(m["name"]) != `"Blog"` || string(m["rolloutPercentage"]) != `100` {
+			t.Errorf("scalar fields missing from patch: %v", m)
 		}
 	})
 
-	t.Run("present fields replace stored values", func(t *testing.T) {
+	t.Run("present rollout fields ride the patch", func(t *testing.T) {
 		t.Parallel()
 
-		// cfg is pre-populated from the decoded input, as the handlers do.
-		cfg := FlagConfig{
-			Phase:    "shipped",
-			Surfaces: map[string]SurfaceRule{"main": {State: "disabled"}},
+		m := patchKeys(t, `{"phase":"shipped","showOnRoadmap":false,"surfaces":{"main":{"state":"hidden"}}}`)
+		if string(m["phase"]) != `"shipped"` {
+			t.Errorf("phase = %s, want shipped", m["phase"])
 		}
-		mergeAbsentRolloutFields(stored,
-			[]byte(`{"phase":"shipped","showOnRoadmap":false,"surfaces":{"main":{"state":"disabled"}}}`), &cfg)
-
-		if cfg.Phase != "shipped" || cfg.ShowOnRoadmap || cfg.Surfaces["main"].State != "disabled" {
-			t.Errorf("merged cfg = %+v, want body values to win", cfg)
+		if string(m["showOnRoadmap"]) != `true` {
+			t.Errorf("showOnRoadmap = %s, want true (cfg value)", m["showOnRoadmap"])
+		}
+		if _, ok := m["surfaces"]; !ok {
+			t.Error("surfaces missing from patch")
 		}
 	})
 
-	t.Run("explicit null surfaces clears the stored map", func(t *testing.T) {
+	t.Run("explicit null surfaces clears via the patch", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := FlagConfig{}
-		mergeAbsentRolloutFields(stored, []byte(`{"surfaces":null}`), &cfg)
-
-		if cfg.Surfaces != nil {
-			t.Errorf("surfaces = %v, want nil — explicit null is authoritative", cfg.Surfaces)
+		nilCfg := FlagConfig{Name: "Blog"}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(flagConfigPatch(nilCfg, []byte(`{"surfaces":null}`)), &m); err != nil {
+			t.Fatalf("patch unmarshal: %v", err)
 		}
-		if cfg.Phase != "testing" {
-			t.Errorf("phase = %q, want stored %q preserved", cfg.Phase, "testing")
-		}
-	})
 
-	t.Run("empty stored config leaves input values", func(t *testing.T) {
-		t.Parallel()
-
-		cfg := FlagConfig{Phase: "in_progress", Surfaces: map[string]SurfaceRule{"main": {State: "hidden"}}}
-		mergeAbsentRolloutFields(FlagConfig{}, []byte(`{"phase":"in_progress","surfaces":{"main":{"state":"hidden"}}}`), &cfg)
-
-		if cfg.Phase != "in_progress" || cfg.Surfaces["main"].State != "hidden" {
-			t.Errorf("merged cfg = %+v, want input kept (nothing stored to merge)", cfg)
+		if string(m["surfaces"]) != `null` {
+			t.Errorf("surfaces = %s, want explicit null", m["surfaces"])
 		}
 	})
 }

@@ -453,76 +453,76 @@ func TestUpdateExtension_InvalidBody(t *testing.T) {
 	}
 }
 
-// TestMergeExtensionPatch verifies partial-merge semantics: only fields
-// present in the body change; absent fields keep the stored value; surfaces
-// replaces the map; rollout clamps to 0-100.
-func TestMergeExtensionPatch(t *testing.T) {
+// TestExtensionPatchFields verifies the PATCH-to-jsonb translation: only
+// fields present in the body appear in the patch (absent fields keep the
+// stored value inside PatchFlag's `config || patch` merge); surfaces replaces
+// the map; rollout clamps to 0-100; wire snake_case maps to stored camelCase.
+func TestExtensionPatchFields(t *testing.T) {
 	t.Parallel()
 
-	stored := features.FlagConfig{
-		Name:              "Stored Name",
-		Description:       "Stored desc",
-		Phase:             "in_progress",
-		ShowOnRoadmap:     true,
-		RolloutPercentage: 25,
-		Surfaces:          map[string]features.SurfaceRule{"main": {State: "hidden"}},
-	}
-
-	// Only phase present — everything else untouched.
+	// Only phase present — the patch carries just that stored-field key and
+	// the validation cfg carries only the provided value (stored fields are
+	// untouched inside the upsert's jsonb merge).
 	phase := phaseTesting
-	cfg := stored
-
-	mergeExtensionPatch(&cfg, &extensionPatchInput{Phase: &phase})
+	patch, cfg := extensionPatchFields(&extensionPatchInput{Phase: &phase})
 
 	if cfg.Phase != phaseTesting {
 		t.Fatalf("phase = %q, want testing", cfg.Phase)
 	}
 
-	if cfg.Name != "Stored Name" || cfg.Description != "Stored desc" || !cfg.ShowOnRoadmap || cfg.RolloutPercentage != 25 {
-		t.Fatalf("merge clobbered absent fields: %+v", cfg)
+	patchKeys := func(raw []byte) map[string]json.RawMessage {
+		t.Helper()
+
+		m := map[string]json.RawMessage{}
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("patch unmarshal: %v", err)
+		}
+
+		return m
 	}
 
-	if cfg.Surfaces["main"].State != "hidden" {
-		t.Fatalf("surfaces = %+v, want stored map preserved", cfg.Surfaces)
+	if patchMap := patchKeys(patch); len(patchMap) != 1 || string(patchMap["phase"]) != `"testing"` {
+		t.Fatalf("patch = %s, want only {phase: testing}", patch)
 	}
 
-	// Surfaces present → whole map replaced.
+	// Surfaces present → whole-map replace under the stored key.
 	newSurfaces := map[string]features.SurfaceRule{"tools": {State: "disabled"}}
-	cfg = stored
+	patch, cfg = extensionPatchFields(&extensionPatchInput{Surfaces: &newSurfaces})
 
-	mergeExtensionPatch(&cfg, &extensionPatchInput{Surfaces: &newSurfaces})
+	if cfg.Surfaces["tools"].State != "disabled" {
+		t.Fatalf("surfaces cfg = %+v, want disabled", cfg.Surfaces)
+	}
 
-	if len(cfg.Surfaces) != 1 || cfg.Surfaces["tools"].State != "disabled" {
-		t.Fatalf("surfaces = %+v, want replaced map", cfg.Surfaces)
+	if patchMap := patchKeys(patch); len(patchMap) != 1 || patchMap["surfaces"] == nil {
+		t.Fatalf("patch = %s, want only {surfaces: …}", patch)
 	}
 
 	// Rollout clamps both directions.
 	over := 150
-	cfg = stored
-
-	mergeExtensionPatch(&cfg, &extensionPatchInput{RolloutPercentage: &over})
+	_, cfg = extensionPatchFields(&extensionPatchInput{RolloutPercentage: &over})
 
 	if cfg.RolloutPercentage != 100 {
 		t.Fatalf("rollout = %d, want 100 (clamped)", cfg.RolloutPercentage)
 	}
 
 	under := -5
-	cfg = stored
-
-	mergeExtensionPatch(&cfg, &extensionPatchInput{RolloutPercentage: &under})
+	_, cfg = extensionPatchFields(&extensionPatchInput{RolloutPercentage: &under})
 
 	if cfg.RolloutPercentage != 0 {
 		t.Fatalf("rollout = %d, want 0 (clamped)", cfg.RolloutPercentage)
 	}
 
-	// Names are trimmed on merge.
+	// Names are trimmed; show_on_roadmap maps to the stored camelCase key.
 	name := "  Blog 2.0  "
-	cfg = stored
-
-	mergeExtensionPatch(&cfg, &extensionPatchInput{Name: &name})
+	show := true
+	patch, cfg = extensionPatchFields(&extensionPatchInput{Name: &name, ShowOnRoadmap: &show})
 
 	if cfg.Name != "Blog 2.0" {
 		t.Fatalf("name = %q, want trimmed", cfg.Name)
+	}
+
+	if patchMap := patchKeys(patch); string(patchMap["name"]) != `"Blog 2.0"` || string(patchMap["showOnRoadmap"]) != `true` {
+		t.Fatalf("patch = %s, want {name: Blog 2.0, showOnRoadmap: true}", patch)
 	}
 }
 

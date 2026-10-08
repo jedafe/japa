@@ -146,7 +146,7 @@ func effectiveFlagPhase(phase string, enabled bool) string {
 
 // SyncFlagPhase reconciles the roadmap item linked to flagKey with the
 // flag's post-write config. Wired to Checker.SetOnConfigChanged in
-// server.go — fires after every flag write (SetEnabled, UpdateFlag,
+// server.go — fires after every flag write (SetEnabled, PatchFlag,
 // SetRolloutPercentage, DeleteFlag), fire-and-forget via
 // context.WithoutCancel (Rule 8).
 //

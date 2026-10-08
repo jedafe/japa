@@ -483,16 +483,6 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	// UpdateFlag upserts — a POST that lands on an existing key must not wipe
-	// control-panel-managed rollout fields the caller never sent.
-	existing, err := h.checker.GetFlagConfig(r.Context(), key)
-	if err != nil {
-		slog.Error("features: create config read failed", "key", key, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
-		return
-	}
-	mergeAbsentRolloutFields(existing, body, &cfg)
-
 	// Phase/surface/audience/geo vocabularies are validated before the write;
 	// ConfigError carries the machine-readable code (invalid_phase,
 	// invalid_surface, …) emitted in the 400 error envelope.
@@ -503,28 +493,31 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 
 	before := h.snapshotFlag(r.Context(), key)
 
-	if err := h.checker.UpdateFlag(r.Context(), key, input.IsEnabled, cfg, user.UserID); err != nil {
+	// PatchFlag merges the config inside the upsert — absent rollout fields
+	// keep their stored values and concurrent writes can't lose fields.
+	mergedEnabled, merged, err := h.checker.PatchFlag(r.Context(), key, &input.IsEnabled, flagConfigPatch(cfg, body), user.UserID)
+	if err != nil {
 		slog.Error("features: create failed", "key", key, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create feature flag")
 
 		return
 	}
 
-	h.fireOnEnabled(r.Context(), key, before.Enabled, input.IsEnabled)
+	h.fireOnEnabled(r.Context(), key, before.Enabled, mergedEnabled)
 	h.auditFlagWrite(r.Context(), user.UserID, clientip.FromRequest(r), "feature_flag.create", key,
-		before, &flagAuditSnapshot{Enabled: input.IsEnabled, Config: cfg})
+		before, &flagAuditSnapshot{Enabled: mergedEnabled, Config: merged})
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": FeatureFlag{
 			ID:                key,
 			Key:               key,
-			Name:              cfg.Name,
-			Description:       cfg.Description,
-			IsEnabled:         input.IsEnabled,
-			Environment:       cfg.Environment,
-			RolloutPercentage: cfg.RolloutPercentage,
-			Phase:             cfg.Phase,
-			ShowOnRoadmap:     cfg.ShowOnRoadmap,
-			Surfaces:          cfg.Surfaces,
+			Name:              merged.Name,
+			Description:       merged.Description,
+			IsEnabled:         mergedEnabled,
+			Environment:       merged.Environment,
+			RolloutPercentage: merged.RolloutPercentage,
+			Phase:             merged.Phase,
+			ShowOnRoadmap:     merged.ShowOnRoadmap,
+			Surfaces:          merged.Surfaces,
 		},
 	})
 }
@@ -580,19 +573,6 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 		cfg.RolloutPercentage = 100
 	}
 
-	// Control Panel owns the rollout-visibility fields (phase, showOnRoadmap,
-	// surfaces) — a PUT that omits them (every caller that predates the
-	// unified-rollout contract) merges the stored values instead of wiping
-	// them. Fields present in the body — including explicit null/empty —
-	// still replace.
-	existing, err := h.checker.GetFlagConfig(r.Context(), flagName)
-	if err != nil {
-		slog.Error("features: update config read failed", "key", flagName, "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
-		return
-	}
-	mergeAbsentRolloutFields(existing, body, &cfg)
-
 	// Phase/surface/audience/geo vocabularies are validated before the write;
 	// ConfigError carries the machine-readable code (invalid_phase,
 	// invalid_surface, …) emitted in the 400 error envelope.
@@ -603,28 +583,34 @@ func (h *Handlers) UpdateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 
 	before := h.snapshotFlag(r.Context(), flagName)
 
-	if err := h.checker.UpdateFlag(r.Context(), flagName, input.IsEnabled, cfg, user.UserID); err != nil {
+	// Control Panel owns the rollout-visibility fields (phase, showOnRoadmap,
+	// surfaces): flagConfigPatch omits them when absent from the body and
+	// PatchFlag's in-upsert jsonb merge preserves the stored values — no
+	// read-modify-write window. Fields present in the body (including
+	// explicit null/empty) still replace.
+	mergedEnabled, merged, err := h.checker.PatchFlag(r.Context(), flagName, &input.IsEnabled, flagConfigPatch(cfg, body), user.UserID)
+	if err != nil {
 		slog.Error("features: update failed", "key", flagName, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update feature flag")
 
 		return
 	}
 
-	h.fireOnEnabled(r.Context(), flagName, before.Enabled, input.IsEnabled)
+	h.fireOnEnabled(r.Context(), flagName, before.Enabled, mergedEnabled)
 	h.auditFlagWrite(r.Context(), user.UserID, clientip.FromRequest(r), "feature_flag.update", flagName,
-		before, &flagAuditSnapshot{Enabled: input.IsEnabled, Config: cfg})
+		before, &flagAuditSnapshot{Enabled: mergedEnabled, Config: merged})
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": FeatureFlag{
 			ID:                flagName,
 			Key:               flagName,
-			Name:              cfg.Name,
-			Description:       cfg.Description,
-			IsEnabled:         input.IsEnabled,
-			Environment:       cfg.Environment,
-			RolloutPercentage: cfg.RolloutPercentage,
-			Phase:             cfg.Phase,
-			ShowOnRoadmap:     cfg.ShowOnRoadmap,
-			Surfaces:          cfg.Surfaces,
+			Name:              merged.Name,
+			Description:       merged.Description,
+			IsEnabled:         mergedEnabled,
+			Environment:       merged.Environment,
+			RolloutPercentage: merged.RolloutPercentage,
+			Phase:             merged.Phase,
+			ShowOnRoadmap:     merged.ShowOnRoadmap,
+			Surfaces:          merged.Surfaces,
 		},
 	})
 }
@@ -663,26 +649,40 @@ func (h *Handlers) DeleteFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// mergeAbsentRolloutFields fills cfg.Phase/ShowOnRoadmap/Surfaces from the
-// stored config when the request body omits the field — so a create/update
-// that predates (or doesn't speak) the rollout contract can't wipe values set
-// via Control → Extensions. A field present in the body, even as explicit
-// null/empty, is authoritative and replaces.
-func mergeAbsentRolloutFields(existing FlagConfig, body []byte, cfg *FlagConfig) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(body, &fields); err != nil {
-		return
+// flagConfigPatch builds the jsonb patch object for admin flag writes. Scalar
+// fields (name, description, environment, rolloutPercentage) are always
+// included — computed defaults applied — so a PUT/POST behaves as a replace
+// for them. The Control-Panel-owned rollout fields (phase, showOnRoadmap,
+// surfaces) are included only when present in the request body, so PatchFlag's
+// `config || patch` merge preserves values set via Control → Extensions; a
+// field present in the body, even as explicit null/empty, still replaces.
+func flagConfigPatch(cfg FlagConfig, body []byte) []byte {
+	patch := map[string]any{
+		"name":              cfg.Name,
+		"description":       cfg.Description,
+		"environment":       cfg.Environment,
+		"rolloutPercentage": cfg.RolloutPercentage,
 	}
 
-	if _, ok := fields["phase"]; !ok {
-		cfg.Phase = existing.Phase
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err == nil {
+		if _, ok := fields["phase"]; ok {
+			patch["phase"] = cfg.Phase
+		}
+		if _, ok := fields["showOnRoadmap"]; ok {
+			patch["showOnRoadmap"] = cfg.ShowOnRoadmap
+		}
+		if _, ok := fields["surfaces"]; ok {
+			patch["surfaces"] = cfg.Surfaces
+		}
 	}
-	if _, ok := fields["showOnRoadmap"]; !ok {
-		cfg.ShowOnRoadmap = existing.ShowOnRoadmap
+
+	raw, err := json.Marshal(patch)
+	if err != nil {
+		return []byte("{}")
 	}
-	if _, ok := fields["surfaces"]; !ok {
-		cfg.Surfaces = existing.Surfaces
-	}
+
+	return raw
 }
 
 // FeatureFlagInput is the request body shared by Create/Update handlers.
