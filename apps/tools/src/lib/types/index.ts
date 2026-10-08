@@ -1213,7 +1213,7 @@ export interface EcaGuide {
 export interface EcaPathwayStep {
 	step: number;
 	title: string;
-	detail: string;
+	detail?: string;
 	duration?: string;
 }
 
@@ -1235,11 +1235,10 @@ export interface EcaCommunityUpdate {
 	created_at: string;
 }
 
-/** GET /eca/compare — side-by-side provider comparison. */
-export interface EcaCompareResponse {
-	providers: EcaProvider[];
-	guides: EcaGuide[];
-}
+/** GET /eca/compare — side-by-side provider comparison. The envelope's
+ * `data` is a flat array of published guides for the destination across
+ * the requested provider ids (ordered by provider name, then purpose). */
+export type EcaCompareResponse = EcaGuide[];
 
 /** GET /sop/templates — a public SOP template. */
 export interface SopTemplate {
@@ -1247,13 +1246,20 @@ export interface SopTemplate {
 	destination_space_id?: string;
 	purpose: string;
 	title: string;
-	structure: SopTemplateSection[];
+	// §110 schema: [{section, prompt_hint, max_words}]. Legacy rows and AI
+	// drafts may carry older key names — normalize before rendering.
+	structure: SopTemplateSection[] | { sections?: unknown[] } | unknown;
+	status?: string;
+	is_active?: boolean;
+	ai_generated?: boolean;
+	created_at?: string;
+	updated_at?: string;
 }
 
 export interface SopTemplateSection {
 	section: string;
-	guidance: string;
-	min_words?: number;
+	prompt_hint?: string;
+	max_words?: number;
 }
 
 /** GET /sop/samples + /sop/samples/:id — a published SOP sample. */
@@ -1266,6 +1272,14 @@ export interface SopSample {
 	body: string;
 	word_count?: number;
 	ai_generated: boolean;
+}
+
+/** GET /sop/fields — a curated field-of-study option (sop_fields). */
+export interface SopField {
+	id: string;
+	name: string;
+	is_active: boolean;
+	sort_order: number;
 }
 
 /** GET /sop/drafts + /sop/drafts/:id — a user-owned draft. */

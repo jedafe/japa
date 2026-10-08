@@ -61,6 +61,11 @@ export type FieldDef =
 			 *  self-referential pickers (e.g. a parent select that must not
 			 *  offer the row itself). */
 			excludeSelf?: boolean;
+			/** Free-text mode: the typed query itself is a valid value —
+			 *  committed to the form on blur via the shared Autocomplete's
+			 *  onFreeTextBlur. Pair with allowFreeText for Enter-to-commit. */
+			freeText?: boolean;
+			allowFreeText?: boolean;
 			required?: boolean;
 			help?: string;
 			class?: string;

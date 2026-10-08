@@ -6,6 +6,14 @@ interface RendererConfig {
 	entityType?: string;
 	/** Localized "No results" text (Section 7 i18n). Defaults to English. */
 	noResultsText?: string;
+	/** Text shown while the typed query is still shorter than
+	 *  `minQueryLength` — the popup is open but the plugin has not
+	 *  started fetching yet, so "No results" would be misleading. */
+	startTypingText?: string;
+	/** Mirror of the suggestion plugin's `minQueryLength` option so the
+	 *  renderer knows when an empty item list means "keep typing" versus
+	 *  "the search ran and found nothing". Defaults to 0. */
+	minQueryLength?: number;
 }
 
 interface RenderReturn {
@@ -39,9 +47,22 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 	let lastSignature = '';
 	/** The items currently rendered in the popup. */
 	let currentItems: SearchHit[] = [];
+	/** The suggestion query as of the last render callback — used to pick
+	 *  between the "start typing" hint and "No results" on an empty list. */
+	let currentQuery = '';
 
 	function itemsSignature(items: SearchHit[]): string {
+		if (items.length === 0) {
+			// Include the empty-state mode so the signature changes (and the
+			// popup text updates) when the query crosses minQueryLength
+			// even though the item list stays empty.
+			return queryBelowMin() ? 'empty:start-typing' : 'empty:no-results';
+		}
 		return items.map((i) => `${i.id}:${i.label}`).join('|');
+	}
+
+	function queryBelowMin(): boolean {
+		return currentQuery.length < (cfg.minQueryLength ?? 0);
 	}
 
 	/**
@@ -54,7 +75,9 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 		lastSignature = itemsSignature(items);
 		popup.innerHTML = '';
 		if (items.length === 0) {
-			popup.textContent = cfg.noResultsText ?? 'No results';
+			popup.textContent = queryBelowMin()
+				? (cfg.startTypingText ?? 'Start typing…')
+				: (cfg.noResultsText ?? 'No results');
 			return;
 		}
 		items.forEach((hit, i) => {
@@ -164,12 +187,14 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 		index = 0;
 		lastSignature = '';
 		currentItems = [];
+		currentQuery = '';
 	}
 
 	return {
 		onBeforeStart: (props) => {
 			if (!editorIsVisible(props)) return;
 			command = props.command;
+			currentQuery = props.query ?? '';
 			popup = document.createElement('div');
 			popup.className = 'suggestion-popup';
 			positionPopup(props);
@@ -181,16 +206,19 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 		onStart: (props) => {
 			if (!editorIsVisible(props)) return;
 			command = props.command;
+			currentQuery = props.query ?? '';
 			positionPopup(props);
 			const items = props.items as SearchHit[];
 			rebuildList(items);
 		},
 		onBeforeUpdate: (props) => {
 			command = props.command;
+			currentQuery = props.query ?? '';
 			positionPopup(props);
 		},
 		onUpdate: (props) => {
 			command = props.command;
+			currentQuery = props.query ?? '';
 			positionPopup(props);
 			// Safety net: if the editor becomes hidden (e.g. user
 			// switched to markdown mode while a popup was open), close

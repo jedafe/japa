@@ -2,7 +2,7 @@
 	// Ref: japaconnect-engineering/sections/55-coupons-external-affiliates.md (Deal Pages)
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { t, i18n } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { Ticket, BadgeCheck, ExternalLink, Plus, Loader2, Search } from 'lucide-svelte';
@@ -34,8 +34,8 @@
 	// (Rule 16 — no hardcoded option lists); uncategorized deals only appear
 	// under "All". Values are trimmed and deduped case-insensitively (first-seen
 	// casing wins) so ' SaaS '/'saas' don't render as two pills. Selection
-	// syncs to ?category= via history.replaceState — a shallow URL update,
-	// not a SvelteKit navigation.
+	// syncs to ?category= via SvelteKit replaceState — a shallow URL update,
+	// not a navigation.
 	// Page 1 arrives via SSR; "Load more" appends /coupons?page=N client-side.
 	// The $effect re-seeds whenever route data changes (search/filter/sort
 	// navigation replaces data.coupons wholesale); untracked writes keep the
@@ -195,7 +195,7 @@
 		} else {
 			url.searchParams.delete('category');
 		}
-		history.replaceState(history.state, '', url);
+		replaceState(url, {});
 	}
 
 	// "Last updated" in the page bar — newest updated_at across the listing.

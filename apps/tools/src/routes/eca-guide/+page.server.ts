@@ -28,6 +28,7 @@ export const load: PageServerLoad = async (event) => {
 			destinations: [],
 			providers: [],
 			guides: [],
+			initialDestId: null,
 			user: event.locals.user
 		};
 	}
@@ -41,19 +42,27 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
+	// Optional SSR pre-fetch of guides when ?dest= is present. The id is
+	// validated against the loaded destination list so the selector
+	// reflects the active filter on deep links.
+	const destParam = event.url.searchParams.get('dest');
+	const initialDestId =
+		destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
+
+	// Provider directory + dropdown options — destination-scoped when a
+	// deep link pre-selects a destination (GET /eca/providers?dest=).
 	let providers: EcaProvider[] = [];
 	try {
-		providers = (await apiList<EcaProvider>(ctx, '/eca/providers')).items;
+		const path = initialDestId ? `/eca/providers?dest=${initialDestId}` : '/eca/providers';
+		providers = (await apiList<EcaProvider>(ctx, path)).items;
 	} catch {
 		providers = [];
 	}
 
-	// Optional SSR pre-fetch of guides when ?dest= is present.
 	let guides: EcaGuide[] = [];
-	const destParam = event.url.searchParams.get('dest');
-	if (destParam) {
+	if (initialDestId) {
 		try {
-			guides = (await apiList<EcaGuide>(ctx, `/eca/guides?dest=${destParam}`)).items;
+			guides = (await apiList<EcaGuide>(ctx, `/eca/guides?dest=${initialDestId}`)).items;
 		} catch {
 			guides = [];
 		}
@@ -65,6 +74,7 @@ export const load: PageServerLoad = async (event) => {
 		destinations,
 		providers,
 		guides,
+		initialDestId,
 		user: event.locals.user
 	};
 };

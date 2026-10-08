@@ -304,6 +304,13 @@ var toolCatalog = []toolCatalogDef{
 		readSQL:  "SELECT id, destination_space_id, program_level, field_of_study, title, word_count, status, ai_generated, created_at FROM sop_samples WHERE id = $1",
 	},
 	{
+		toolType: "sop_field",
+		label:    "SOP Fields of Study",
+		category: "immigration",
+		countSQL: "SELECT COUNT(*) FROM sop_fields",
+		readSQL:  "SELECT id, name, is_active, sort_order, created_at, updated_at FROM sop_fields WHERE id = $1",
+	},
+	{
 		toolType: "eca_guide",
 		label:    "ECA Guides",
 		category: "immigration",

@@ -42,6 +42,10 @@ func (c *sopQuotaCache) INCR(ctx context.Context, key string) (int64, error) {
 	return c.rdb.Incr(ctx, key).Result()
 }
 
+func (c *sopQuotaCache) DECR(ctx context.Context, key string) (int64, error) {
+	return c.rdb.Decr(ctx, key).Result()
+}
+
 func (c *sopQuotaCache) Expire(ctx context.Context, key string, ttl time.Duration) error {
 	return c.rdb.Expire(ctx, key, ttl).Err()
 }

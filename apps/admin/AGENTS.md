@@ -284,7 +284,7 @@ shareable/bookmarkable and a reload restores the exact view:
   (`urlSync` is enabled on the scaffold). The sort icon and search box are
   restored from the URL on load.
 - **`page`** (1-based), **`pageSize`** (only when != the configured default),
-  and **filters** are written by `EntityPage` via `history.replaceState`
+  and **filters** are written by `EntityPage` via SvelteKit `replaceState`
   (matching `Pagination.svelte`). Each filter key becomes its own query param
   (e.g. `?status=active&tier=partner`); the reserved names `page`, `pageSize`,
   `q`, `sort`, `dir` are never treated as filter keys.

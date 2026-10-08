@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
-import type { GeoCountry, GeoSpaceOption, SopTemplate, SopSample, SopDraft, SopQuota } from '$lib/types';
+import type { GeoCountry, GeoSpaceOption, SopTemplate, SopSample, SopField, SopDraft, SopQuota } from '$lib/types';
 
 /**
  * AI SOP Generator at /tools/sop-generator (§110, ADR-121).
@@ -11,6 +11,7 @@ import type { GeoCountry, GeoSpaceOption, SopTemplate, SopSample, SopDraft, SopQ
  *
  * API: GET /sop/templates — public templates.
  *      GET /sop/samples — public samples.
+ *      GET /sop/fields — curated field-of-study filter options.
  *      GET /sop/quota — remaining monthly generations (auth).
  *      POST /sop/generate — enqueue sop:generate (auth, 202).
  *      GET/PATCH/DELETE /sop/drafts/* — draft CRUD (auth owner).
@@ -48,6 +49,13 @@ export const load: PageServerLoad = async (event) => {
 		samples = [];
 	}
 
+	let fields: SopField[] = [];
+	try {
+		fields = (await apiList<SopField>(ctx, '/sop/fields')).items;
+	} catch {
+		fields = [];
+	}
+
 	let quota: SopQuota | null = null;
 	let drafts: SopDraft[] = [];
 	if (authed) {
@@ -63,5 +71,5 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { destinations, templates, samples, quota, drafts, authed };
+	return { destinations, templates, samples, fields, quota, drafts, authed };
 };

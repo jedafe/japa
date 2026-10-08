@@ -160,10 +160,31 @@ UPDATE public.ad_slot_types
     WHERE slot_name LIKE 'academy\_%' ESCAPE '\' AND description LIKE '%learning%';
 
 -- ── 10. Notification types ───────────────────────────────────────────────────
-UPDATE public.notification_types SET key = 'academy_instructor_approved'
-    WHERE key = 'university_instructor_approved';
-UPDATE public.notification_types SET key = 'academy_course_approved'
-    WHERE key = 'university_course_approved';
+-- notification_types.key is the PK and both notifications.notification_type
+-- and notification_preferences.notification_type FK to it WITHOUT
+-- ON UPDATE CASCADE — a bare key UPDATE violates the FK on any DB with
+-- notification/preference rows. Clone the rows under the new keys, repoint
+-- dependents, then delete the old keys.
+INSERT INTO public.notification_types (key, label, description, enabled, default_in_app, default_email, default_push, category)
+SELECT 'academy_instructor_approved', label, description, enabled, default_in_app, default_email, default_push, category
+FROM public.notification_types
+WHERE key = 'university_instructor_approved'
+ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.notification_types (key, label, description, enabled, default_in_app, default_email, default_push, category)
+SELECT 'academy_course_approved', label, description, enabled, default_in_app, default_email, default_push, category
+FROM public.notification_types
+WHERE key = 'university_course_approved'
+ON CONFLICT (key) DO NOTHING;
+UPDATE public.notifications SET notification_type = 'academy_instructor_approved'
+    WHERE notification_type = 'university_instructor_approved';
+UPDATE public.notifications SET notification_type = 'academy_course_approved'
+    WHERE notification_type = 'university_course_approved';
+UPDATE public.notification_preferences SET notification_type = 'academy_instructor_approved'
+    WHERE notification_type = 'university_instructor_approved';
+UPDATE public.notification_preferences SET notification_type = 'academy_course_approved'
+    WHERE notification_type = 'university_course_approved';
+DELETE FROM public.notification_types
+    WHERE key IN ('university_instructor_approved', 'university_course_approved');
 UPDATE public.notification_types
     SET description = replace(description, 'the marketplace', 'the Japa Academy catalog')
     WHERE key = 'academy_course_approved';

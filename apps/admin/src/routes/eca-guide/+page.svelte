@@ -4,11 +4,12 @@
 	//          GET/PATCH /admin/eca-guides/updates.
 	// Ref: sections/109-eca-guide.md, ADR-120.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
-	import { api } from '$lib/api';
+	import { api, apiRaw } from '$lib/api';
 	import { loadCurrencies, currencyOptions, currencyLabel, currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { initTabParam, bindTabParam } from '$lib/utils/url-sync.svelte';
 	import { CheckCircle, XCircle, Eye } from 'lucide-svelte';
+	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type Provider = {
 		id: string;
@@ -21,13 +22,18 @@
 
 	type Guide = {
 		id: string;
+		destination_space_id: string;
 		destination_space_name?: string;
+		provider_id: string;
 		provider_name?: string;
 		purpose: string;
 		pathway_steps?: unknown;
+		documents_required?: unknown;
+		accepted_for?: unknown;
 		fee_estimate?: string;
 		currency?: string;
 		timeline_estimate?: string;
+		official_url?: string;
 		status: string;
 		is_active?: boolean;
 		ai_generated?: boolean;
@@ -55,6 +61,21 @@
 	// §58 — managed currency list for the guide currency select.
 	let currencies = $state<CurrencyInfo[]>([]);
 	$effect(() => { loadCurrencies().then((list) => (currencies = list)); });
+
+	// Reference lists for select fields — destination countries (public
+	// /geo/countries) and ECA providers (/admin/eca-providers). Loaded once;
+	// empty lists degrade the fields to free-text ids.
+	type GeoOption = { id: string; name: string };
+	let geoOptions = $state<GeoOption[]>([]);
+	let providerOptions = $state<Provider[]>([]);
+	$effect(() => {
+		api<GeoOption[]>('/geo/countries').then((res) => {
+			if (res.ok) geoOptions = res.data ?? [];
+		});
+		api<Provider[]>('/admin/eca-providers').then((res) => {
+			if (res.ok) providerOptions = res.data ?? [];
+		});
+	});
 
 	// ── Providers tab ─────────────────────────────────────────────────────────
 
@@ -110,13 +131,21 @@
 	let guideController = $state<EntityPageController | undefined>(undefined);
 
 	const guideFields = $derived<FieldDef[]>([
-		{ key: 'destination_space_id', label: 'Destination space ID', type: 'text', required: true },
-		{ key: 'provider_id', label: 'Provider ID', type: 'text', required: true },
+		geoOptions.length > 0
+			? { key: 'destination_space_id', label: 'Destination', type: 'select', required: true,
+				options: geoOptions.map((g) => ({ value: g.id, label: g.name })) }
+			: { key: 'destination_space_id', label: 'Destination space ID', type: 'text', required: true },
+		providerOptions.length > 0
+			? { key: 'provider_id', label: 'Provider', type: 'select', required: true,
+				options: providerOptions.map((p) => ({ value: p.id, label: p.name })) }
+			: { key: 'provider_id', label: 'Provider ID', type: 'text', required: true },
 		{ key: 'purpose', label: 'Purpose', type: 'select', required: true, options: [
-			{ value: 'express_entry', label: 'Express Entry' }, { value: 'study_admission', label: 'Study Admission' },
-			{ value: 'employment', label: 'Employment' }, { value: 'licensing_support', label: 'Licensing Support' },
+			{ value: 'immigration', label: 'Immigration' }, { value: 'study', label: 'Study' },
+			{ value: 'employment', label: 'Employment' }, { value: 'professional_licensure', label: 'Professional licensure' },
 		]},
 		{ key: 'pathway_steps', label: 'Pathway steps (JSON)', type: 'textarea', required: true },
+		{ key: 'documents_required', label: 'Documents required (JSON)', type: 'textarea' },
+		{ key: 'accepted_for', label: 'Accepted for (JSON)', type: 'textarea' },
 		{ key: 'fee_estimate', label: 'Fee estimate', type: 'text' },
 		currencies.length > 0
 			? { key: 'currency', label: 'Currency', type: 'select', options: currencyOptions(currencies) }
@@ -125,17 +154,42 @@
 		{ key: 'official_url', label: 'Official URL', type: 'url' },
 	]);
 
+	// pathway_steps / documents_required / accepted_for are jsonb columns —
+	// the form submits textarea strings, so parse them back to real JSON
+	// before they hit the API (an unparseable value passes through and the
+	// backend validation reports it).
+	function parseJsonFields(body: Record<string, unknown>): Record<string, unknown> {
+		const out = { ...body };
+		for (const key of ['pathway_steps', 'documents_required', 'accepted_for'] as const) {
+			const v = out[key];
+			if (typeof v !== 'string') continue;
+			const s = v.trim();
+			if (!s) { delete out[key]; continue; }
+			try { out[key] = JSON.parse(s); } catch { /* leave as-is */ }
+		}
+		return out;
+	}
+
 	async function loadGuides(p: { page: number; pageSize: number; q: string; sort: string; filter: Record<string, string> }) {
 		const params = new URLSearchParams();
 		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		if (p.filter?.status) params.set('status', p.filter.status);
 		if (p.filter?.dest) params.set('dest', p.filter.dest);
-		const res = await api<{ data?: Guide[]; total?: number } | Guide[]>(`/admin/eca-guides?${params}`);
+		// apiRaw keeps the { data, pagination } envelope — api() would strip
+		// to body.data and lose the total needed for pagination.
+		const res = await apiRaw<{ data?: Guide[]; pagination?: { total: number } }>(`/admin/eca-guides?${params}`);
 		if (res.ok) {
-			const raw = res.data;
-			const data = Array.isArray(raw) ? raw : (raw?.data ?? []);
-			const total = Array.isArray(raw) ? data.length : (raw?.total ?? data.length);
+			// Stringify jsonb fields so the textarea inputs in EntityForm seed
+			// editable JSON instead of "[object Object]" (parseJsonFields
+			// converts them back on save).
+			const data = (res.data?.data ?? []).map((g) => ({
+				...g,
+				pathway_steps: g.pathway_steps ? JSON.stringify(g.pathway_steps, null, 2) : '',
+				documents_required: g.documents_required ? JSON.stringify(g.documents_required, null, 2) : '',
+				accepted_for: g.accepted_for ? JSON.stringify(g.accepted_for, null, 2) : ''
+			}));
+			const total = res.data?.pagination?.total ?? data.length;
 			return { data, total, totalPages: Math.max(1, Math.ceil(total / p.pageSize)) };
 		}
 		throw new Error(res.error ?? 'Failed to load guides');
@@ -153,10 +207,28 @@
 		guideController?.reload();
 	}
 
+	// POST /admin/eca-guides/generate requires destination_space_id +
+	// provider_id — the draft form collects them before enqueueing.
+	let showGenerateForm = $state(false);
+	let genDestId = $state('');
+	let genProviderId = $state('');
+	let generating = $state(false);
+
 	async function generateGuideDraft() {
-		const res = await api('/admin/eca-guides/generate', { method: 'POST', body: {} });
-		if (res.ok) { guideController?.reload(); }
-		else { pageError = res.error ?? 'Generate failed'; }
+		if (!genDestId || !genProviderId || generating) return;
+		generating = true;
+		pageError = '';
+		const res = await api('/admin/eca-guides/generate', {
+			method: 'POST',
+			body: { destination_space_id: genDestId, provider_id: genProviderId }
+		});
+		generating = false;
+		if (res.ok) {
+			showGenerateForm = false;
+			guideController?.reload();
+		} else {
+			pageError = res.error ?? 'Generate failed';
+		}
 	}
 
 	const guideConfig = $derived<EntityPageConfig>({
@@ -193,11 +265,11 @@
 		],
 		load: loadGuides,
 		create: async (body) => {
-			const res = await api('/admin/eca-guides', { method: 'POST', body });
+			const res = await api('/admin/eca-guides', { method: 'POST', body: parseJsonFields(body) });
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		update: async (id, body) => {
-			const res = await api(`/admin/eca-guides/${id}`, { method: 'PATCH', body });
+			const res = await api(`/admin/eca-guides/${id}`, { method: 'PATCH', body: parseJsonFields(body) });
 			return res.ok ? { ok: true } : { ok: false, error: res.error };
 		},
 		remove: async (id) => {
@@ -232,11 +304,12 @@
 		params.set('page', String(p.page + 1));
 		params.set('limit', String(p.pageSize));
 		if (p.filter?.status) params.set('status', p.filter.status);
-		const res = await api<{ data?: CommunityUpdate[]; pagination?: { total: number } } | CommunityUpdate[]>(`/admin/eca-guides/updates?${params}`);
+		// apiRaw keeps the { data, pagination } envelope — api() would strip
+		// to body.data and lose the total needed for pagination.
+		const res = await apiRaw<{ data?: CommunityUpdate[]; pagination?: { total: number } }>(`/admin/eca-guides/updates?${params}`);
 		if (res.ok) {
-			const raw = res.data;
-			const data = Array.isArray(raw) ? raw : (raw?.data ?? []);
-			const total = Array.isArray(raw) ? data.length : (raw?.pagination?.total ?? data.length);
+			const data = res.data?.data ?? [];
+			const total = res.data?.pagination?.total ?? data.length;
 			return { data, total, totalPages: Math.max(1, Math.ceil(total / p.pageSize)) };
 		}
 		throw new Error(res.error ?? 'Failed to load updates');
@@ -305,9 +378,40 @@
 		<button class="rounded px-3 py-1 text-sm font-medium" style="background:{activeTab===tab?'var(--color-primary)':'var(--color-muted-bg)'};color:{activeTab===tab?'white':'var(--color-foreground)'}" onclick={() => activeTab=tab as any}>{tab}</button>
 	{/each}
 	{#if canManage && activeTab === 'guides'}
-		<button class="ml-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={generateGuideDraft}>Generate AI Draft</button>
+		<button class="ml-auto rounded px-3 py-1 text-sm" style="background:var(--color-warning);color:white" onclick={() => (showGenerateForm = !showGenerateForm)}>Generate AI Draft</button>
 	{/if}
 </div>
+
+{#if canManage && activeTab === 'guides' && showGenerateForm}
+	<div class="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+		<div class="min-w-52 flex-1">
+			<label class="mb-1 block text-xs font-medium" for="gen-dest">Destination</label>
+			<AutocompleteSelect
+				id="gen-dest"
+				bind:value={genDestId}
+				options={geoOptions.map((g) => ({ value: g.id, label: g.name }))}
+				placeholder="Select destination…"
+			/>
+		</div>
+		<div class="min-w-52 flex-1">
+			<label class="mb-1 block text-xs font-medium" for="gen-provider">Provider</label>
+			<AutocompleteSelect
+				id="gen-provider"
+				bind:value={genProviderId}
+				options={providerOptions.map((p) => ({ value: p.id, label: p.name }))}
+				placeholder="Select provider…"
+			/>
+		</div>
+		<button
+			class="rounded px-3 py-2 text-sm font-medium text-white"
+			style="background:var(--color-primary);opacity:{!genDestId || !genProviderId || generating ? 0.5 : 1}"
+			disabled={!genDestId || !genProviderId || generating}
+			onclick={generateGuideDraft}
+		>
+			{generating ? 'Queueing…' : 'Queue draft'}
+		</button>
+	</div>
+{/if}
 
 {#if activeTab === 'providers'}
 	<EntityPage config={providerConfig} bind:controller={providerController} />

@@ -13,6 +13,7 @@ import { PluginKey } from '@tiptap/pm/state';
 import { Node, mergeAttributes, type Extensions } from '@tiptap/core';
 import type { SearchHit } from '$lib/types';
 import { searchHits } from '$lib/api/create';
+import { t } from '$lib/i18n';
 import { createSuggestionRenderer } from './suggestionRenderer';
 import { LinkPreviewNode } from './linkPreviewNode';
 import { VideoNode } from './nodes/VideoNode';
@@ -55,6 +56,20 @@ const hashtagPluginKey = new PluginKey('hashtag');
 const interlinkPluginKey = new PluginKey('interlink');
 const literalPluginKey = new PluginKey('literal');
 
+// Shared renderer config for the trigger-char pickers (@, #, [[).
+// minQueryLength must mirror the suggestion's option so the popup shows
+// "Start typing…" (not "No results") while the query is still too short
+// to have triggered a fetch.
+const TRIGGER_MIN_QUERY = 2;
+function triggerRenderer(entityType: string) {
+	return createSuggestionRenderer({
+		entityType,
+		minQueryLength: TRIGGER_MIN_QUERY,
+		startTypingText: t('create.editor.start_typing', 'Start typing…'),
+		noResultsText: t('common.no_results', 'No results found')
+	});
+}
+
 /**
  * Assemble the TipTap extension stack for the PostEditor.
  * Includes StarterKit (formatting), Image, Link, Placeholder,
@@ -70,9 +85,9 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 			char: '@',
 			allowSpaces: true,
 			pluginKey: mentionPluginKey,
-			minQueryLength: 2,
+			minQueryLength: TRIGGER_MIN_QUERY,
 			items: ({ query }) => search('users', query),
-			render: () => createSuggestionRenderer({ entityType: 'user' })
+			render: () => triggerRenderer('user')
 		}
 	}).extend({
 		name: 'mention',
@@ -134,9 +149,9 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 		suggestion: {
 			char: '#',
 			pluginKey: hashtagPluginKey,
-			minQueryLength: 2,
+			minQueryLength: TRIGGER_MIN_QUERY,
 			items: ({ query }) => search('tags', query),
-			render: () => createSuggestionRenderer({ entityType: 'tag' })
+			render: () => triggerRenderer('tag')
 		}
 	}).extend({
 		name: 'hashtag',
@@ -171,9 +186,9 @@ export function buildExtensions(opts: ExtensionOptions = {}): Extensions {
 			char: '[[',
 			allowSpaces: true,
 			pluginKey: interlinkPluginKey,
-			minQueryLength: 2,
+			minQueryLength: TRIGGER_MIN_QUERY,
 			items: ({ query }) => search('content', query),
-			render: () => createSuggestionRenderer({ entityType: 'content' })
+			render: () => triggerRenderer('content')
 		}
 	}).extend({
 		name: 'interlink',

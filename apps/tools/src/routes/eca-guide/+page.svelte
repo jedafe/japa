@@ -4,6 +4,7 @@
 	import { buildSeoMeta } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
@@ -42,11 +43,13 @@
 	let guides = $state<EcaGuide[]>(untrack(() => data.guides));
 	let user = $state(untrack(() => data.user));
 
-	let selectedDest = $state('');
+	// Deep-link restore: ?dest=<space id> pre-selects the destination and
+	// the SSR pre-fetch already populated `guides` (see +page.server.ts).
+	let selectedDest = $state(untrack(() => data.initialDestId ?? ''));
 	let selectedPurpose = $state('');
 	let selectedProvider = $state('');
 	let loadingGuides = $state(false);
-	let hasSearched = $state(false);
+	let hasSearched = $state(untrack(() => !!data.initialDestId));
 
 	// Detail state
 	let expandedId = $state<string | null>(null);
@@ -60,14 +63,36 @@
 	let submittingUpdate = $state(false);
 	let showRegisterPrompt = $state(false);
 	let updateSuccess = $state(false);
+	let updateError = $state('');
 
-	const purposeOptions = [
-		{ value: '', label: 'All purposes' },
-		{ value: 'immigration', label: 'Immigration' },
-		{ value: 'study', label: 'Study' },
-		{ value: 'employment', label: 'Employment' },
-		{ value: 'professional_licensure', label: 'Professional licensure' }
-	];
+	const purposeOptions = $derived([
+		{ value: '', label: t('eca_guide.all_purposes', 'All purposes') },
+		{ value: 'immigration', label: t('eca_guide.purpose_immigration', 'Immigration') },
+		{ value: 'study', label: t('eca_guide.purpose_study', 'Study') },
+		{ value: 'employment', label: t('eca_guide.purpose_employment', 'Employment') },
+		{
+			value: 'professional_licensure',
+			label: t('eca_guide.purpose_professional_licensure', 'Professional licensure')
+		}
+	]);
+
+	// Human label for a purpose enum value — falls back to the raw value
+	// so unknown backend values still render something readable.
+	function purposeLabel(purpose: string): string {
+		return purposeOptions.find((o) => o.value === purpose)?.label ?? purpose.replaceAll('_', ' ');
+	}
+
+	// documents_required is a plain string list per the API contract, but
+	// legacy/admin-authored rows may carry {document, notes} objects —
+	// render either shape without breaking.
+	function docLabel(doc: unknown): string {
+		if (typeof doc === 'string') return doc;
+		if (doc && typeof doc === 'object') {
+			const d = doc as { document?: string; notes?: string };
+			return [d.document, d.notes].filter(Boolean).join(' — ');
+		}
+		return '';
+	}
 
 	const seo = $derived(
 		buildSeoMeta({
@@ -97,6 +122,19 @@
 		})
 	);
 
+	// Keep the shareable ?dest=&purpose=&provider= deep link in sync without
+	// re-running the server load (replaceState does not trigger navigation).
+	function syncUrl() {
+		const url = new URL(page.url);
+		if (selectedDest) url.searchParams.set('dest', selectedDest);
+		else url.searchParams.delete('dest');
+		if (selectedPurpose) url.searchParams.set('purpose', selectedPurpose);
+		else url.searchParams.delete('purpose');
+		if (selectedProvider) url.searchParams.set('provider', selectedProvider);
+		else url.searchParams.delete('provider');
+		replaceState(url, {});
+	}
+
 	async function loadGuides() {
 		if (!selectedDest) return;
 		hasSearched = true;
@@ -109,6 +147,7 @@
 		const res = await api.get<EcaGuide[]>(`/eca/guides?${params.toString()}`);
 		loadingGuides = false;
 		guides = res.error ? [] : (res.data ?? []);
+		syncUrl();
 	}
 
 	function onSearch(e: Event) {
@@ -116,11 +155,20 @@
 		loadGuides();
 	}
 
-	function onDestChange() {
+	// Destination is the primary data axis — the provider dropdown re-scopes
+	// to providers with a published guide at the selected destination
+	// (GET /eca/providers?dest=), so a stale provider selection is cleared.
+	async function onDestChange() {
 		guides = [];
 		hasSearched = false;
 		expandedId = null;
 		detail = null;
+		selectedProvider = '';
+		const res = await api.get<EcaProvider[]>(
+			selectedDest ? `/eca/providers?dest=${selectedDest}` : '/eca/providers'
+		);
+		if (!res.error && res.data) providers = res.data;
+		syncUrl();
 	}
 
 	async function toggleDetail(guide: EcaGuide) {
@@ -132,6 +180,7 @@
 		expandedId = guide.id;
 		loadingDetail = true;
 		updateSuccess = false;
+		updateError = '';
 		const res = await api.get<EcaGuideDetail>(`/eca/guides/${guide.id}`);
 		loadingDetail = false;
 		if (!res.error && res.data) {
@@ -162,6 +211,8 @@
 			updateFee = '';
 			updateDays = '';
 			updateNote = '';
+		} else {
+			updateError = res.error.message || t('eca_guide.update_failed', 'Could not submit your report.');
 		}
 	}
 </script>
@@ -226,7 +277,7 @@
 						bind:value={selectedProvider}
 						options={[
 							{ value: '', label: t('eca_guide.all_providers', 'All providers') },
-							...providers.map((p) => ({ value: p.id, label: p.name }))
+							...providers.map((p) => ({ value: p.slug, label: p.name }))
 						]}
 						class="w-full"
 					/>
@@ -282,7 +333,7 @@
 						>
 							<div>
 								<div class="font-medium">
-									{guide.provider_name ?? guide.provider_slug ?? 'Guide'} — {guide.purpose}
+									{guide.provider_name ?? guide.provider_slug ?? 'Guide'} — {purposeLabel(guide.purpose)}
 								</div>
 								<div class="mt-1 flex items-center gap-3 text-xs text-muted">
 									{#if guide.fee_estimate}
@@ -311,7 +362,9 @@
 													</div>
 													<div>
 														<div class="text-sm font-medium">{step.title}</div>
-														<div class="text-xs text-muted mt-0.5">{step.detail}</div>
+														{#if step.detail}
+															<div class="text-xs text-muted mt-0.5">{step.detail}</div>
+														{/if}
 														{#if step.duration}
 															<div class="text-xs text-muted mt-0.5">⏱ {step.duration}</div>
 														{/if}
@@ -329,7 +382,22 @@
 											</div>
 											<div class="flex flex-wrap gap-1">
 												{#each detail.guide.documents_required as doc, i (i)}
-													<span class="rounded bg-surface px-2 py-0.5 text-xs">{doc}</span>
+													<span class="rounded bg-surface px-2 py-0.5 text-xs">{docLabel(doc)}</span>
+												{/each}
+											</div>
+										</div>
+									{/if}
+
+									<!-- Accepted-for programs (§109: which programs this provider
+									     is accepted for at the destination) -->
+									{#if detail.guide.accepted_for?.length}
+										<div class="mb-3">
+											<div class="text-xs font-semibold text-muted uppercase mb-1">
+												{t('eca_guide.accepted_for', 'Accepted for')}
+											</div>
+											<div class="flex flex-wrap gap-1">
+												{#each detail.guide.accepted_for as prog, i (i)}
+													<span class="rounded bg-surface px-2 py-0.5 text-xs">{prog}</span>
 												{/each}
 											</div>
 										</div>
@@ -349,12 +417,12 @@
 											</div>
 											{#each detail.updates as update (update.id)}
 												<div class="mb-2 text-xs">
-													<span class="font-medium">{update.user_name ?? 'Member'}</span>
+													<span class="font-medium">{update.user_name ?? t('eca_guide.anon_member', 'Member')}</span>
 													{#if update.fee_estimate}
-														· paid {update.fee_estimate}
+														· {t('eca_guide.paid_fmt', 'paid {fee}', { fee: update.fee_estimate })}
 													{/if}
 													{#if update.turnaround_days}
-														· {update.turnaround_days}d turnaround
+														· {t('eca_guide.turnaround_fmt', '{days}d turnaround', { days: update.turnaround_days })}
 													{/if}
 													{#if update.note}
 														<p class="text-muted mt-0.5">{update.note}</p>
@@ -403,6 +471,9 @@
 												>
 													{submittingUpdate ? t('eca_guide.submitting', 'Submitting…') : t('eca_guide.submit', 'Submit report')}
 												</button>
+												{#if updateError}
+													<p class="mt-2 text-xs text-red-600">{updateError}</p>
+												{/if}
 											</div>
 										{/if}
 									{:else}

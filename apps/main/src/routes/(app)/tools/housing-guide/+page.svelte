@@ -2,6 +2,7 @@
 	import { untrack, onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { Home, MapPin, ChevronDown, ChevronUp, Globe, AlertTriangle, Lock } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
@@ -54,11 +55,11 @@
 	function onDestChange(id: string) {
 		expandedId = null;
 		selectedDestId = id;
-		// Update URL for shareability (history.replaceState, not SvelteKit replaceState)
+		// Update URL for shareability (shallow — SvelteKit replaceState keeps page.url in sync)
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
-		history.replaceState({}, '', url);
+		replaceState(url, {});
 		loadGuides();
 	}
 

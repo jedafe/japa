@@ -2,6 +2,7 @@
 	import { untrack, onMount } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import { Route, MapPin, GitCompare, DollarSign, Map, ExternalLink, Lock, Loader2 } from 'lucide-svelte';
 	import { EmptyState, LoadingSkeleton } from '$lib/components/ui';
@@ -90,7 +91,7 @@
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
-		history.replaceState({}, '', url);
+		replaceState(url, {});
 		loadRoutes();
 	}
 

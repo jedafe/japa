@@ -55,6 +55,7 @@ type TemplateRow struct {
 	IsActive           pgtype.Bool
 	AIGenerated        bool
 	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
 }
 
 // SampleRow is a single sop_samples row.
@@ -96,7 +97,8 @@ type DraftRow struct {
 // generic NULL-destination templates) and purpose.
 func (s *Store) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, purpose string) ([]TemplateRow, error) {
 	q := `
-		SELECT id, destination_space_id, purpose, title, structure, status, is_active, created_at
+		SELECT id, destination_space_id, purpose, title, structure, status, is_active,
+		       ai_generated, created_at, updated_at
 		FROM sop_templates
 		WHERE status = 'published' AND is_active`
 	args := []any{}
@@ -120,7 +122,8 @@ func (s *Store) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, purp
 	for rows.Next() {
 		var t TemplateRow
 		if err := rows.Scan(&t.ID, &t.DestinationSpaceID, &t.Purpose, &t.Title,
-			&t.Structure, &t.Status, &t.IsActive, &t.CreatedAt); err != nil {
+			&t.Structure, &t.Status, &t.IsActive, &t.AIGenerated,
+			&t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -329,7 +332,8 @@ func (s *Store) AdminListTemplates(ctx context.Context, page, limit int32) ([]Te
 		return nil, 0, err
 	}
 	rows, err := s.pool.Reader.Query(ctx, `
-		SELECT id, destination_space_id, purpose, title, structure, status, is_active, created_at
+		SELECT id, destination_space_id, purpose, title, structure, status, is_active,
+		       ai_generated, created_at, updated_at
 		FROM sop_templates
 		ORDER BY updated_at DESC
 		LIMIT $1 OFFSET $2`, limit, (page-1)*limit)
@@ -342,7 +346,8 @@ func (s *Store) AdminListTemplates(ctx context.Context, page, limit int32) ([]Te
 	for rows.Next() {
 		var t TemplateRow
 		if err := rows.Scan(&t.ID, &t.DestinationSpaceID, &t.Purpose, &t.Title,
-			&t.Structure, &t.Status, &t.IsActive, &t.CreatedAt); err != nil {
+			&t.Structure, &t.Status, &t.IsActive, &t.AIGenerated,
+			&t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, t)
@@ -579,4 +584,133 @@ func nullBytes(b []byte) any {
 		return nil
 	}
 	return b
+}
+
+// ---------------------------------------------------------------------
+// Fields (sop_fields) — curated field-of-study dictionary
+// ---------------------------------------------------------------------
+
+// FieldRow is the internal sop_fields representation.
+type FieldRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	IsActive  bool               `json:"is_active"`
+	SortOrder int32              `json:"sort_order"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// ListActiveFields returns active field options for the public select,
+// ordered by sort_order then name.
+func (s *Store) ListActiveFields(ctx context.Context) ([]FieldRow, error) {
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT id, name, is_active, sort_order, created_at, updated_at
+		FROM sop_fields
+		WHERE is_active
+		ORDER BY sort_order, lower(name)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []FieldRow
+	for rows.Next() {
+		var r FieldRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.IsActive, &r.SortOrder, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// AdminListFields returns all field rows (any is_active) matching an
+// optional case-insensitive name search, with total count for pagination.
+func (s *Store) AdminListFields(ctx context.Context, q string, page, limit int32) ([]FieldRow, int64, error) {
+	where := ` WHERE true`
+	args := []any{}
+	if q != "" {
+		args = append(args, q)
+		where += ` AND name ILIKE '%' || $` + itoa(len(args)) + ` || '%'`
+	}
+
+	var total int64
+	if err := s.pool.Reader.QueryRow(ctx,
+		`SELECT count(*) FROM sop_fields`+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	args = append(args, limit, (page-1)*limit)
+	rows, err := s.pool.Reader.Query(ctx, `
+		SELECT id, name, is_active, sort_order, created_at, updated_at
+		FROM sop_fields`+
+		where+` ORDER BY sort_order, lower(name) LIMIT $`+itoa(len(args)-1)+` OFFSET $`+itoa(len(args)), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var out []FieldRow
+	for rows.Next() {
+		var r FieldRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.IsActive, &r.SortOrder, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, r)
+	}
+	return out, total, rows.Err()
+}
+
+// CreateField inserts a field row and returns its id.
+func (s *Store) CreateField(ctx context.Context, r FieldRow) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	err := s.pool.Writer.QueryRow(ctx, `
+		INSERT INTO sop_fields (name, is_active, sort_order)
+		VALUES ($1, $2, $3)
+		RETURNING id`,
+		r.Name, r.IsActive, r.SortOrder).Scan(&id)
+	return id, err
+}
+
+// UpdateField applies a partial update via COALESCE (admin).
+func (s *Store) UpdateField(ctx context.Context, id pgtype.UUID, name *string, isActive *bool, sortOrder *int32) error {
+	res, err := s.pool.Writer.Exec(ctx, `
+		UPDATE sop_fields SET
+		  name = COALESCE(NULLIF($2,''), name),
+		  is_active = COALESCE($3, is_active),
+		  sort_order = COALESCE($4, sort_order),
+		  updated_at = now()
+		WHERE id = $1`,
+		id, name, isActive, sortOrder)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// EnsureField inserts a field row when absent — auto-curates the
+// dictionary when a sample carries a field_of_study value not yet in the
+// managed list. ON CONFLICT DO NOTHING makes repeated writes idempotent.
+func (s *Store) EnsureField(ctx context.Context, name string) error {
+	_, err := s.pool.Writer.Exec(ctx, `
+		INSERT INTO sop_fields (name)
+		VALUES ($1)
+		ON CONFLICT DO NOTHING`, name)
+	return err
+}
+
+// DeleteField removes a field row. Samples keep their stored
+// field_of_study text — deleting a field only removes the option.
+func (s *Store) DeleteField(ctx context.Context, id pgtype.UUID) error {
+	res, err := s.pool.Writer.Exec(ctx, `DELETE FROM sop_fields WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }

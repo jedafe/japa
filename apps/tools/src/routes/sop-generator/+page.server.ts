@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { loadCountries } from '$lib/server/geo';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { GeoSpaceOption, SopTemplate, SopSample, SopDraft, SopQuota } from '$lib/types';
+import type { GeoSpaceOption, SopTemplate, SopSample, SopField, SopDraft, SopQuota } from '$lib/types';
 
 /**
  * AI SOP Generator — §110, ADR-121.
@@ -13,6 +13,7 @@ import type { GeoSpaceOption, SopTemplate, SopSample, SopDraft, SopQuota } from 
  * API: GET /sop/templates?dest=&purpose= — public templates.
  *      GET /sop/samples?dest=&level=&field= — public samples.
  *      GET /sop/samples/:id — sample detail (public).
+ *      GET /sop/fields — curated field-of-study filter options (public).
  *      GET /sop/quota — remaining monthly generations (auth).
  *      POST /sop/generate — enqueue sop:generate (auth, 202).
  *      GET/PATCH/DELETE /sop/drafts/* — draft CRUD (auth owner).
@@ -28,6 +29,7 @@ export const load: PageServerLoad = async (event) => {
 			destinations: [],
 			templates: [],
 			samples: [],
+			fields: [],
 			quota: null,
 			drafts: [],
 			user: event.locals.user
@@ -57,6 +59,13 @@ export const load: PageServerLoad = async (event) => {
 		samples = [];
 	}
 
+	let fields: SopField[] = [];
+	try {
+		fields = (await apiList<SopField>(ctx, '/sop/fields')).items;
+	} catch {
+		fields = [];
+	}
+
 	// Auth-only: quota + drafts.
 	let quota: SopQuota | null = null;
 	let drafts: SopDraft[] = [];
@@ -79,6 +88,7 @@ export const load: PageServerLoad = async (event) => {
 		destinations,
 		templates,
 		samples,
+		fields,
 		quota,
 		drafts,
 		user: event.locals.user

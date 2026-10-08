@@ -3,6 +3,7 @@
 	// (content is created by users, not from this page) with Remove/Restore/Feature
 	// state actions driven by a custom `actions` array + page-local confirm Modals.
 	import { page } from "$app/state";
+	import { replaceState } from "$app/navigation";
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from "$lib/components/entity";
 	import { Modal } from "$lib/components/ui/modal";
 	import { Button } from "$lib/components/ui/button";
@@ -120,7 +121,11 @@
 		const url = new URL(window.location.href);
 		if (!url.searchParams.has("view")) return;
 		url.searchParams.delete("view");
-		history.replaceState(history.state, "", url.toString());
+		try {
+			replaceState(url, {});
+		} catch {
+			// ignore URL sync failures in non-browser contexts
+		}
 	}
 
 	async function bulkRemove(ids: Set<string>) {

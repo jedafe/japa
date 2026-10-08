@@ -149,6 +149,21 @@ export const load: PageServerLoad = async (event) => {
 	if (source === 'course' && !scopeChain.includes('university')) {
 		scopeChain = [...scopeChain, 'university'];
 	}
+	// A chain whose leaf step matches the entity being listed is
+	// self-referential — filtering cities down to a single city, or states to
+	// a single state, leaves nothing to compare. Only the parent steps are
+	// meaningful, so the trailing self-step is dropped (e.g. the cities type
+	// shows country + state, not city).
+	const selfScopeStep: Record<string, string> = {
+		country: 'country',
+		state: 'state',
+		city: 'city',
+		col_city: 'city',
+		university: 'university'
+	};
+	if (scopeChain[scopeChain.length - 1] === selfScopeStep[source]) {
+		scopeChain = scopeChain.slice(0, -1);
+	}
 	const scopeParamMapping = (selectedType?.config?.scope_param_mapping as Record<string, string> | undefined) ?? {};
 
 	function defaultScopeParamKey(step: string): string {

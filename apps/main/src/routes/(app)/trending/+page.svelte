@@ -48,7 +48,7 @@
 
 	// Instant client-side tab switching — all tab data is loaded server-side
 	// regardless of ?tab=, so we switch without navigation (UrlTabs syncs the
-	// URL via history.replaceState, preserving other params like ?window=).
+	// URL via replaceState, preserving other params like ?window=).
 	let activeTab = $state(untrack(() => data.tab));
 
 	const windows = $derived(trendingWindowOptions(t));

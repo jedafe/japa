@@ -22,10 +22,28 @@ UPDATE public.translations SET key = 'learning' || substring(key from 8)
         'title', 'description', 'track_id', 'module_id', 'content_markdown', 'cancel');
 UPDATE public.translations SET key = 'learn' || substring(key from 8)
     WHERE key LIKE 'academy.%';
-UPDATE public.notification_types SET key = 'university_instructor_approved'
-    WHERE key = 'academy_instructor_approved';
-UPDATE public.notification_types SET key = 'university_course_approved'
-    WHERE key = 'academy_course_approved';
+-- Same FK constraint as the up path: clone under the old keys, repoint
+-- dependents, then delete the renamed rows (see up.sql section 10 note).
+INSERT INTO public.notification_types (key, label, description, enabled, default_in_app, default_email, default_push, category)
+SELECT 'university_instructor_approved', label, description, enabled, default_in_app, default_email, default_push, category
+FROM public.notification_types
+WHERE key = 'academy_instructor_approved'
+ON CONFLICT (key) DO NOTHING;
+INSERT INTO public.notification_types (key, label, description, enabled, default_in_app, default_email, default_push, category)
+SELECT 'university_course_approved', label, description, enabled, default_in_app, default_email, default_push, category
+FROM public.notification_types
+WHERE key = 'academy_course_approved'
+ON CONFLICT (key) DO NOTHING;
+UPDATE public.notifications SET notification_type = 'university_instructor_approved'
+    WHERE notification_type = 'academy_instructor_approved';
+UPDATE public.notifications SET notification_type = 'university_course_approved'
+    WHERE notification_type = 'academy_course_approved';
+UPDATE public.notification_preferences SET notification_type = 'university_instructor_approved'
+    WHERE notification_type = 'academy_instructor_approved';
+UPDATE public.notification_preferences SET notification_type = 'university_course_approved'
+    WHERE notification_type = 'academy_course_approved';
+DELETE FROM public.notification_types
+    WHERE key IN ('academy_instructor_approved', 'academy_course_approved');
 UPDATE public.notification_types
     SET description = replace(description, 'the Japa Academy catalog', 'the marketplace')
     WHERE key = 'university_course_approved';

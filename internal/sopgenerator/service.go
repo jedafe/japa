@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
@@ -30,6 +31,37 @@ var ErrQuotaExceeded = errors.New("sop_generator quota exceeded for this month")
 // ErrNotOwner is returned when a draft is accessed by a non-owner.
 var ErrNotOwner = errors.New("draft does not belong to this user")
 
+// ErrInvalidPurpose is returned when a purpose outside the §110 enum is
+// submitted (study_permit|student_visa|work_visa|visitor_visa).
+var ErrInvalidPurpose = errors.New("purpose must be one of study_permit|student_visa|work_visa|visitor_visa")
+
+// ErrInvalidProgramLevel is returned when a program_level outside the
+// §110 enum is submitted (diploma|bachelors|masters|mba|phd).
+var ErrInvalidProgramLevel = errors.New("program_level must be one of diploma|bachelors|masters|mba|phd")
+
+// ErrInvalidInput is returned for other malformed request payloads.
+var ErrInvalidInput = errors.New("invalid request input")
+
+// ErrDuplicateField is returned when a sop_fields name violates the
+// case-insensitive uniqueness index.
+var ErrDuplicateField = errors.New("a field of study with that name already exists")
+
+func validPurpose(p string) bool {
+	switch p {
+	case "study_permit", "student_visa", "work_visa", "visitor_visa":
+		return true
+	}
+	return false
+}
+
+func validProgramLevel(l string) bool {
+	switch l {
+	case "diploma", "bachelors", "masters", "mba", "phd":
+		return true
+	}
+	return false
+}
+
 // TaskEnqueuer is the minimal interface for enqueueing Asynq tasks.
 // Implemented by *worker.Enqueuer; a nil enqueuer makes dispatch a
 // graceful no-op (development/tests).
@@ -40,6 +72,7 @@ type TaskEnqueuer interface {
 // Cache is the minimal Valkey interface for the quota counter.
 type Cache interface {
 	INCR(ctx context.Context, key string) (int64, error)
+	DECR(ctx context.Context, key string) (int64, error)
 	Expire(ctx context.Context, key string, ttl time.Duration) error
 }
 
@@ -70,6 +103,10 @@ type TemplateDTO struct {
 	Title              string          `json:"title"`
 	Structure          json.RawMessage `json:"structure"`
 	Status             string          `json:"status,omitempty"`
+	IsActive           bool            `json:"is_active"`
+	AIGenerated        bool            `json:"ai_generated"`
+	CreatedAt          string          `json:"created_at,omitempty"`
+	UpdatedAt          string          `json:"updated_at,omitempty"`
 }
 
 // SampleDTO is the API shape for a published sample.
@@ -140,6 +177,25 @@ type SampleRequest struct {
 	WordCount          *int32 `json:"word_count"`
 }
 
+// FieldDTO is the API shape for a field-of-study option (sop_fields).
+type FieldDTO struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	IsActive  bool   `json:"is_active"`
+	SortOrder int32  `json:"sort_order"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// FieldRequest is the admin create/update body for a field option.
+// Pointer fields make PATCH partial — omitted keys leave the column
+// unchanged via the store's COALESCE update.
+type FieldRequest struct {
+	Name      string `json:"name"`
+	IsActive  *bool  `json:"is_active"`
+	SortOrder *int32 `json:"sort_order"`
+}
+
 // QuotaDTO is the GET /sop/quota response.
 type QuotaDTO struct {
 	Limit     int   `json:"limit"`
@@ -180,13 +236,7 @@ func (s *Service) ListTemplates(ctx context.Context, destSpaceID pgtype.UUID, pu
 	}
 	out := make([]TemplateDTO, 0, len(rows))
 	for _, t := range rows {
-		out = append(out, TemplateDTO{
-			ID:                 uuidStr(t.ID),
-			DestinationSpaceID: uuidStr(t.DestinationSpaceID),
-			Purpose:            t.Purpose,
-			Title:              t.Title,
-			Structure:          json.RawMessage(t.Structure),
-		})
+		out = append(out, templateDTO(t))
 	}
 	return out, nil
 }
@@ -226,11 +276,15 @@ func (s *Service) Quota(ctx context.Context, userID pgtype.UUID) (QuotaDTO, erro
 // Generate validates quota, creates a queued draft, and enqueues
 // sop:generate (fire-and-forget, Rule 8). Returns the draft id.
 func (s *Service) Generate(ctx context.Context, userID pgtype.UUID, in GenerateRequest) (string, error) {
-	if in.Purpose == "" || len(in.Inputs) == 0 {
-		return "", errors.New("purpose and inputs are required")
+	if !validPurpose(in.Purpose) {
+		return "", ErrInvalidPurpose
+	}
+	if len(in.Inputs) == 0 {
+		return "", ErrInvalidInput
 	}
 
-	if err := s.checkQuota(ctx, userID); err != nil {
+	release, err := s.consumeQuota(ctx, userID)
+	if err != nil {
 		return "", err
 	}
 
@@ -241,7 +295,7 @@ func (s *Service) Generate(ctx context.Context, userID pgtype.UUID, in GenerateR
 	}
 	if in.DestinationSpaceID != "" {
 		if err := row.DestinationSpaceID.Scan(in.DestinationSpaceID); err != nil {
-			return "", fmt.Errorf("invalid destination_space_id")
+			return "", fmt.Errorf("invalid destination_space_id: %w", ErrInvalidInput)
 		}
 	}
 	if in.Program != "" {
@@ -261,6 +315,8 @@ func (s *Service) Generate(ctx context.Context, userID pgtype.UUID, in GenerateR
 
 	id, err := s.store.CreateDraft(ctx, row)
 	if err != nil {
+		// Refund the reserved quota slot — the draft never materialized.
+		release()
 		return "", fmt.Errorf("sopgenerator: create draft: %w", err)
 	}
 
@@ -364,13 +420,7 @@ func (s *Service) AdminListTemplates(ctx context.Context, page, limit int32) ([]
 	}
 	out := make([]TemplateDTO, 0, len(rows))
 	for _, t := range rows {
-		out = append(out, TemplateDTO{
-			ID:                 uuidStr(t.ID),
-			DestinationSpaceID: uuidStr(t.DestinationSpaceID),
-			Purpose:            t.Purpose,
-			Title:              t.Title,
-			Structure:          json.RawMessage(t.Structure),
-		})
+		out = append(out, templateDTO(t))
 	}
 	return out, total, nil
 }
@@ -410,12 +460,16 @@ func (s *Service) quotaUsed(ctx context.Context, userID pgtype.UUID) (int64, err
 	return s.store.CountDraftsThisMonth(ctx, userID)
 }
 
-// checkQuota increments the monthly counter and rejects when over the
-// limit. Valkey INCR with end-of-month TTL; DB count fallback.
-func (s *Service) checkQuota(ctx context.Context, userID pgtype.UUID) error {
+// consumeQuota increments the monthly counter and rejects when over the
+// limit. Valkey INCR with end-of-month TTL; DB count fallback. It returns
+// a release function that refunds the reserved slot — callers invoke it
+// when the follow-up write fails so a transient insert error does not
+// burn a monthly generation.
+func (s *Service) consumeQuota(ctx context.Context, userID pgtype.UUID) (func(), error) {
+	noop := func() {}
 	limit := s.quotaLimit(ctx)
 	if limit <= 0 {
-		return nil
+		return noop, nil
 	}
 
 	if s.cache != nil {
@@ -424,30 +478,30 @@ func (s *Service) checkQuota(ctx context.Context, userID pgtype.UUID) error {
 		if err != nil {
 			count, err = s.store.CountDraftsThisMonth(ctx, userID)
 			if err != nil {
-				return fmt.Errorf("sopgenerator: check quota: %w", err)
+				return noop, fmt.Errorf("sopgenerator: check quota: %w", err)
 			}
 			if count >= int64(limit) {
-				return ErrQuotaExceeded
+				return noop, ErrQuotaExceeded
 			}
-			return nil
+			return noop, nil
 		}
 		if count == 1 {
 			_ = s.cache.Expire(ctx, key, timeUntilEndOfMonth())
 		}
 		if count > int64(limit) {
-			return ErrQuotaExceeded
+			return noop, ErrQuotaExceeded
 		}
-		return nil
+		return func() { _, _ = s.cache.DECR(ctx, key) }, nil
 	}
 
 	count, err := s.store.CountDraftsThisMonth(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("sopgenerator: check quota: %w", err)
+		return noop, fmt.Errorf("sopgenerator: check quota: %w", err)
 	}
 	if count >= int64(limit) {
-		return ErrQuotaExceeded
+		return noop, ErrQuotaExceeded
 	}
-	return nil
+	return noop, nil
 }
 
 // sopQuotaKey builds the cataloged key: jc:sop_quota:{user_id}:{YYYY-MM}.
@@ -487,6 +541,28 @@ func (s *Service) systemPrompt(ctx context.Context, d DraftRow) string {
 // ---------------------------------------------------------------------
 // DTO helpers
 // ---------------------------------------------------------------------
+
+func templateDTO(t TemplateRow) TemplateDTO {
+	out := TemplateDTO{
+		ID:                 uuidStr(t.ID),
+		DestinationSpaceID: uuidStr(t.DestinationSpaceID),
+		Purpose:            t.Purpose,
+		Title:              t.Title,
+		Status:             t.Status,
+		IsActive:           t.IsActive.Bool,
+		AIGenerated:        t.AIGenerated,
+	}
+	if len(t.Structure) > 0 {
+		out.Structure = json.RawMessage(t.Structure)
+	}
+	if t.CreatedAt.Valid {
+		out.CreatedAt = t.CreatedAt.Time.Format(time.RFC3339)
+	}
+	if t.UpdatedAt.Valid {
+		out.UpdatedAt = t.UpdatedAt.Time.Format(time.RFC3339)
+	}
+	return out
+}
 
 func sampleDTOs(rows []SampleRow) []SampleDTO {
 	out := make([]SampleDTO, 0, len(rows))
@@ -572,8 +648,11 @@ func (s *Service) RejectSample(ctx context.Context, id, reviewerID pgtype.UUID, 
 
 // CreateTemplate inserts a draft template (admin).
 func (s *Service) CreateTemplate(ctx context.Context, in TemplateRequest) (TemplateDTO, error) {
-	if in.Purpose == "" || in.Title == "" || len(in.Structure) == 0 {
-		return TemplateDTO{}, errors.New("purpose, title and structure are required")
+	if !validPurpose(in.Purpose) {
+		return TemplateDTO{}, ErrInvalidPurpose
+	}
+	if in.Title == "" || len(in.Structure) == 0 {
+		return TemplateDTO{}, fmt.Errorf("title and structure are required: %w", ErrInvalidInput)
 	}
 	row := TemplateRow{
 		Purpose: in.Purpose, Title: in.Title, Structure: in.Structure,
@@ -582,7 +661,7 @@ func (s *Service) CreateTemplate(ctx context.Context, in TemplateRequest) (Templ
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
-			return TemplateDTO{}, fmt.Errorf("invalid destination_space_id")
+			return TemplateDTO{}, fmt.Errorf("invalid destination_space_id: %w", ErrInvalidInput)
 		}
 		row.DestinationSpaceID = sid
 	}
@@ -590,16 +669,21 @@ func (s *Service) CreateTemplate(ctx context.Context, in TemplateRequest) (Templ
 	if err != nil {
 		return TemplateDTO{}, err
 	}
-	return TemplateDTO{ID: uuidStr(id), DestinationSpaceID: in.DestinationSpaceID, Purpose: in.Purpose, Title: in.Title, Structure: in.Structure, Status: StatusDraft}, nil
+	row.ID = id
+	row.IsActive = pgtype.Bool{Bool: true, Valid: true}
+	return templateDTO(row), nil
 }
 
 // UpdateTemplate applies a partial update (admin).
 func (s *Service) UpdateTemplate(ctx context.Context, id pgtype.UUID, in TemplateRequest) error {
+	if in.Purpose != "" && !validPurpose(in.Purpose) {
+		return ErrInvalidPurpose
+	}
 	row := TemplateRow{Purpose: in.Purpose, Title: in.Title, Structure: in.Structure}
 	if in.DestinationSpaceID != "" {
 		var sid pgtype.UUID
 		if err := sid.Scan(in.DestinationSpaceID); err != nil {
-			return fmt.Errorf("invalid destination_space_id")
+			return fmt.Errorf("invalid destination_space_id: %w", ErrInvalidInput)
 		}
 		row.DestinationSpaceID = sid
 	}
@@ -632,8 +716,11 @@ func (s *Service) AdminListSamples(ctx context.Context, destSpaceID pgtype.UUID,
 
 // CreateSample inserts a draft sample (admin).
 func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO, error) {
-	if in.ProgramLevel == "" || in.Title == "" || in.Body == "" {
-		return SampleDTO{}, errors.New("program_level, title and body are required")
+	if !validProgramLevel(in.ProgramLevel) {
+		return SampleDTO{}, ErrInvalidProgramLevel
+	}
+	if in.Title == "" || in.Body == "" {
+		return SampleDTO{}, fmt.Errorf("title and body are required: %w", ErrInvalidInput)
 	}
 	row := SampleRow{
 		ProgramLevel: in.ProgramLevel, Title: in.Title, Body: in.Body,
@@ -658,6 +745,7 @@ func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO
 	if err != nil {
 		return SampleDTO{}, err
 	}
+	s.ensureField(ctx, in.FieldOfStudy)
 	out := sampleDTOs([]SampleRow{row})[0]
 	out.ID = uuidStr(id)
 	out.Status = StatusDraft
@@ -666,6 +754,9 @@ func (s *Service) CreateSample(ctx context.Context, in SampleRequest) (SampleDTO
 
 // UpdateSample applies a partial update (admin).
 func (s *Service) UpdateSample(ctx context.Context, id pgtype.UUID, in SampleRequest) error {
+	if in.ProgramLevel != "" && !validProgramLevel(in.ProgramLevel) {
+		return ErrInvalidProgramLevel
+	}
 	row := SampleRow{ProgramLevel: in.ProgramLevel, Title: in.Title, Body: in.Body}
 	if in.FieldOfStudy != "" {
 		row.FieldOfStudy = &in.FieldOfStudy
@@ -680,12 +771,125 @@ func (s *Service) UpdateSample(ctx context.Context, id pgtype.UUID, in SampleReq
 		}
 		row.DestinationSpaceID = sid
 	}
-	return s.store.UpdateSample(ctx, id, row)
+	if err := s.store.UpdateSample(ctx, id, row); err != nil {
+		return err
+	}
+	s.ensureField(ctx, in.FieldOfStudy)
+	return nil
 }
 
 // DeleteSample removes a non-published sample.
 func (s *Service) DeleteSample(ctx context.Context, id pgtype.UUID) error {
 	return s.store.DeleteSample(ctx, id)
+}
+
+// ---------------------------------------------------------------------
+// Fields (sop_fields) — curated field-of-study dictionary
+// ---------------------------------------------------------------------
+
+func fieldDTO(r FieldRow) FieldDTO {
+	out := FieldDTO{
+		ID:        uuidStr(r.ID),
+		Name:      r.Name,
+		IsActive:  r.IsActive,
+		SortOrder: r.SortOrder,
+	}
+	if r.CreatedAt.Valid {
+		out.CreatedAt = r.CreatedAt.Time.Format(time.RFC3339)
+	}
+	if r.UpdatedAt.Valid {
+		out.UpdatedAt = r.UpdatedAt.Time.Format(time.RFC3339)
+	}
+	return out
+}
+
+// isUniqueViolation reports whether err is a Postgres unique_violation
+// (SQLSTATE 23505) — surfaces as ErrDuplicateField to the caller.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// ListFields returns the active field-of-study options (public select).
+func (s *Service) ListFields(ctx context.Context) ([]FieldDTO, error) {
+	rows, err := s.store.ListActiveFields(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FieldDTO, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, fieldDTO(r))
+	}
+	return out, nil
+}
+
+// AdminListFields returns all field rows with an optional name search
+// (admin table pagination).
+func (s *Service) AdminListFields(ctx context.Context, q string, page, limit int32) ([]FieldDTO, int64, error) {
+	rows, total, err := s.store.AdminListFields(ctx, q, page, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]FieldDTO, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, fieldDTO(r))
+	}
+	return out, total, nil
+}
+
+// CreateField inserts a field option (admin/MCP).
+func (s *Service) CreateField(ctx context.Context, in FieldRequest) (FieldDTO, error) {
+	name := strings.TrimSpace(in.Name)
+	if name == "" {
+		return FieldDTO{}, fmt.Errorf("name is required: %w", ErrInvalidInput)
+	}
+	row := FieldRow{Name: name, IsActive: true}
+	if in.IsActive != nil {
+		row.IsActive = *in.IsActive
+	}
+	if in.SortOrder != nil {
+		row.SortOrder = *in.SortOrder
+	}
+	id, err := s.store.CreateField(ctx, row)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return FieldDTO{}, ErrDuplicateField
+		}
+		return FieldDTO{}, err
+	}
+	row.ID = id
+	return fieldDTO(row), nil
+}
+
+// UpdateField applies a partial update (admin/MCP).
+func (s *Service) UpdateField(ctx context.Context, id pgtype.UUID, in FieldRequest) error {
+	var name *string
+	if n := strings.TrimSpace(in.Name); n != "" {
+		name = &n
+	}
+	err := s.store.UpdateField(ctx, id, name, in.IsActive, in.SortOrder)
+	if isUniqueViolation(err) {
+		return ErrDuplicateField
+	}
+	return err
+}
+
+// DeleteField removes a field option (admin/MCP).
+func (s *Service) DeleteField(ctx context.Context, id pgtype.UUID) error {
+	return s.store.DeleteField(ctx, id)
+}
+
+// ensureField auto-curates a new field_of_study value into sop_fields —
+// best-effort: the dictionary is a managed option list, not an FK target,
+// so a failed upsert must not fail the sample write itself.
+func (s *Service) ensureField(ctx context.Context, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	if err := s.store.EnsureField(ctx, name); err != nil {
+		slog.Warn("sopgenerator: ensure field failed", "name", name, "error", err)
+	}
 }
 
 // ---------------------------------------------------------------------
@@ -723,7 +927,7 @@ func (s *Service) GenerateTemplateDraft(ctx context.Context, params map[string]s
 		SystemPrompt: "You are the JapaConnect Content Agent. Produce an SOP template " +
 			"as STRICT JSON (no markdown fences): " +
 			`{"purpose":"study_permit|student_visa|work_visa|visitor_visa",` +
-			`"title":"...","structure":[{"section":"...","guidance":"...","min_words":0}]}. ` +
+			`"title":"...","structure":[{"section":"...","prompt_hint":"...","max_words":0}]}. ` +
 			"structure must order sections intro → academic fit → career plan → " +
 			"country/institution rationale → ties to home country → conclusion.",
 		UserPrompt: formatParams(params),
@@ -750,6 +954,9 @@ func (s *Service) GenerateTemplateDraft(ctx context.Context, params map[string]s
 		Structure:   *out.Structure,
 		Status:      StatusAIDraft,
 		AIGenerated: true,
+	}
+	if !validPurpose(out.Purpose) {
+		return fmt.Errorf("sopgenerator: generate draft: AI purpose %q outside the §110 enum", out.Purpose)
 	}
 	if v := params["destination_space_id"]; v != "" {
 		if err := row.DestinationSpaceID.Scan(v); err != nil {

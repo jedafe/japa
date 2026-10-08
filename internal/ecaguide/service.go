@@ -232,6 +232,18 @@ func (s *Service) CreateCommunityUpdate(ctx context.Context, guideID, userID pgt
 	if in.FeeEstimate == "" && in.TurnaroundDays == nil && in.Note == "" {
 		return "", errors.New("at least one of fee_estimate, turnaround_days or note is required")
 	}
+	if in.StepIndex != nil && *in.StepIndex < 0 {
+		return "", errors.New("step_index must be >= 0")
+	}
+	if in.TurnaroundDays != nil && *in.TurnaroundDays < 0 {
+		return "", errors.New("turnaround_days must be >= 0")
+	}
+	if len(in.FeeEstimate) > 100 {
+		return "", errors.New("fee_estimate is too long (max 100 chars)")
+	}
+	if len(in.Note) > 500 {
+		return "", errors.New("note is too long (max 500 chars)")
+	}
 	id, err := s.store.CreateCommunityUpdate(ctx, guideID, userID, in.StepIndex, in.FeeEstimate, in.TurnaroundDays, in.Note)
 	if err != nil {
 		return "", err

@@ -135,12 +135,12 @@
 	});
 </script>
 
-<div class="flex flex-wrap gap-3">
+<div class="flex flex-col gap-3 sm:flex-row">
 	{#each chain as step, index (step)}
 		{@const parentKey = chain[index - 1]}
 		{@const disabled = index > 0 && !selections[parentKey]}
 		<AutocompleteSelect
-			class="w-full sm:w-56"
+			class="w-full min-w-0 sm:flex-1"
 			value={selections[step] ?? ''}
 			options={[
 				{ value: '', label: labelFor(step) },

@@ -110,6 +110,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		"pof_requirement": svc.pofCalculator,
 		"sop_template":    svc.sopGenerator,
 		"sop_sample":      svc.sopGenerator,
+		"sop_field":       svc.sopGenerator,
 		"eca_guide":       svc.ecaGuide,
 		"eca_provider":    svc.ecaGuide,
 	}
@@ -148,6 +149,7 @@ func buildToolWriters(svc toolServiceSet) map[string]*toolWriter {
 		"pof_requirement":           {create: "CreateRequirement", update: "UpdateRequirement", delete: "DeleteRequirement"},
 		"sop_template":              {create: "CreateTemplate", update: "UpdateTemplate", delete: "DeleteTemplate"},
 		"sop_sample":                {create: "CreateSample", update: "UpdateSample", delete: "DeleteSample"},
+		"sop_field":                 {create: "CreateField", update: "UpdateField", delete: "DeleteField"},
 		"eca_guide":                 {create: "CreateGuide", update: "UpdateGuide", delete: "DeleteGuide"},
 		"eca_provider":              {create: "CreateProvider", update: "UpdateProvider", delete: "DeleteProvider"},
 	}

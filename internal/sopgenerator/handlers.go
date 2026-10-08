@@ -120,6 +120,14 @@ func serviceErr(w http.ResponseWriter, r *http.Request, err error, notFoundMsg s
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", notFoundMsg)
 	case errors.Is(err, ErrQuotaExceeded):
 		errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Monthly generation quota reached")
+	case errors.Is(err, ErrInvalidPurpose):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purpose", ErrInvalidPurpose.Error())
+	case errors.Is(err, ErrInvalidProgramLevel):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_program_level", ErrInvalidProgramLevel.Error())
+	case errors.Is(err, ErrInvalidInput):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_request", "Invalid request")
+	case errors.Is(err, ErrDuplicateField):
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_field", ErrDuplicateField.Error())
 	default:
 		slog.Error("sopgenerator: request failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "request_failed", "Request failed")
@@ -337,7 +345,14 @@ func (h *Handlers) HandleUpdateDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+	// Return the full updated draft — the client renders it directly as
+	// the active editor model (version bump, status, timestamps).
+	draft, err := h.service.GetDraft(r.Context(), id, user.UserID)
+	if err != nil {
+		serviceErr(w, r, err, "Draft not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": draft})
 }
 
 // HandleDeleteDraft handles DELETE /sop/drafts/:id — owner-only soft
@@ -465,7 +480,7 @@ func (h *Handlers) HandleAdminCreateTemplate(w http.ResponseWriter, r *http.Requ
 
 	tpl, err := h.service.CreateTemplate(r.Context(), input)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		serviceErr(w, r, err, "")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": tpl})
@@ -622,7 +637,7 @@ func (h *Handlers) HandleAdminCreateSample(w http.ResponseWriter, r *http.Reques
 
 	sample, err := h.service.CreateSample(r.Context(), input)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "create_failed", err.Error())
+		serviceErr(w, r, err, "")
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": sample})
@@ -707,4 +722,126 @@ func (h *Handlers) HandleAdminRejectSample(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": StatusRejected}})
+}
+
+// HandleListFields handles GET /sop/fields — active field-of-study
+// options for the public sample filter. Public.
+func (h *Handlers) HandleListFields(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	fields, err := h.service.ListFields(r.Context())
+	if err != nil {
+		slog.Error("sopgenerator: list fields failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list fields")
+		return
+	}
+
+	h.resolveLiterals(r, &fields)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": fields})
+}
+
+// HandleAdminListFields handles GET /admin/sop/fields — all field rows
+// with optional ?q= name search. Admin-only.
+func (h *Handlers) HandleAdminListFields(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	page, limit := parsePageParams(r)
+	fields, total, err := h.service.AdminListFields(r.Context(), r.URL.Query().Get("q"), page, limit)
+	if err != nil {
+		slog.Error("sopgenerator: admin list fields failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list fields")
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data":       fields,
+		"pagination": map[string]any{"page": page, "limit": limit, "total": total},
+	})
+}
+
+// HandleAdminCreateField handles POST /admin/sop/fields. Admin-only.
+func (h *Handlers) HandleAdminCreateField(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	var input FieldRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	field, err := h.service.CreateField(r.Context(), input)
+	if err != nil {
+		serviceErr(w, r, err, "")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": field})
+}
+
+// HandleAdminUpdateField handles PATCH /admin/sop/fields/:id — partial
+// update. Admin-only.
+func (h *Handlers) HandleAdminUpdateField(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input FieldRequest
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if err := h.service.UpdateField(r.Context(), id, input); err != nil {
+		serviceErr(w, r, err, "Field not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
+}
+
+// HandleAdminDeleteField handles DELETE /admin/sop/fields/:id. Removing a
+// field only removes the dropdown option — samples keep their stored
+// field_of_study text. Admin-only.
+func (h *Handlers) HandleAdminDeleteField(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if h.service == nil {
+		unavailable(w)
+		return
+	}
+
+	id, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteField(r.Context(), id); err != nil {
+		serviceErr(w, r, err, "Field not found")
+		return
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": chi.URLParam(r, "id")}})
 }

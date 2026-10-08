@@ -149,7 +149,9 @@ func (s *Store) ListProviders(ctx context.Context, destSpaceID pgtype.UUID) ([]P
 }
 
 // ListGuides returns published guides filtered by dest/purpose/provider.
-func (s *Store) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpose, providerSlug string) ([]GuideRow, error) {
+// The provider filter accepts either the provider slug ("wes") or the
+// provider UUID — both public surfaces send the UUID.
+func (s *Store) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpose, provider string) ([]GuideRow, error) {
 	q := guideSelect + ` WHERE g.status = 'published' AND g.is_active`
 	args := []any{}
 	add := func(cond string, v any) {
@@ -162,8 +164,13 @@ func (s *Store) ListGuides(ctx context.Context, destSpaceID pgtype.UUID, purpose
 	if purpose != "" {
 		add(`g.purpose`, purpose)
 	}
-	if providerSlug != "" {
-		add(`p.slug`, providerSlug)
+	if provider != "" {
+		var pid pgtype.UUID
+		if err := pid.Scan(provider); err == nil && pid.Valid {
+			add(`g.provider_id`, pid)
+		} else {
+			add(`p.slug`, provider)
+		}
 	}
 	q += ` ORDER BY s.name, p.name`
 

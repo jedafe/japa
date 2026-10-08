@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import {
 		Languages,
@@ -55,11 +56,13 @@
 
 	let destinations = $state<GeoCountry[]>(untrack(() => data.destinations));
 	let tests = $state<LanguageTest[]>(untrack(() => data.tests));
-	let requirements = $state<LanguageTestRequirementWithAi[]>(untrack(() => data.requirements));
+	let allRequirements = $state<LanguageTestRequirementWithAi[]>(untrack(() => data.requirements));
 
 	let selectedDestId = $state<string>(untrack(() => data.initialDestId ?? ''));
-	let visaCategory = $state<string>('');
+	let selectedVisaCategory = $state<string>('');
 	let loadingRequirements = $state(false);
+	// Race guard — stale responses must not overwrite a newer destination's data.
+	let requirementsToken = 0;
 
 	// Test detail mode
 	let selectedTestSlug = $state<string | null>(null);
@@ -67,12 +70,17 @@
 	let testResources = $state<LanguageTestResource[]>([]);
 	let testStories = $state<LanguageTestScoreStory[]>([]);
 	let loadingDetail = $state(false);
+	let detailError = $state<string | null>(null);
+	// Race guard — clicking two tests quickly must not let the slower
+	// response overwrite the newer test's detail.
+	let detailToken = 0;
 
 	// Story submission form
 	let showRegisterPrompt = $state(false);
+	let showStoryForm = $state(false);
 	let storyFinalScore = $state<string>('');
 	let storyStartingLevel = $state<string>('');
-	let storyPrepWeeks = $state<string>('');
+	let storyPrepWeeks = $state<number | null>(null);
 	let storyResourcesUsed = $state<string>('');
 	let storyAdvice = $state<string>('');
 	let submittingStory = $state(false);
@@ -84,35 +92,55 @@
 
 	const canCompare = $derived(selectedTestSlugs.size >= 2 && selectedTestSlugs.size <= 4);
 
+	// Visa categories available for the selected destination, derived from the
+	// loaded requirements (the API matches visa_category exactly — suggestions
+	// must come from real data, not free text).
+	const visaCategories = $derived(
+		Array.from(
+			new Set(
+				allRequirements
+					.map((r) => r.visa_category)
+					.filter((c): c is string => !!c)
+			)
+		).sort()
+	);
+
+	// Requirements shown in the list — the ?visa= filter is an exact match on
+	// the backend, so filtering client-side on the already-fetched set is
+	// equivalent and avoids a request per selection change.
+	const requirements = $derived(
+		selectedVisaCategory
+			? allRequirements.filter((r) => r.visa_category === selectedVisaCategory)
+			: allRequirements
+	);
+
 	async function loadRequirements() {
-		if (!selectedDestId) {
-			requirements = [];
+		const destId = selectedDestId;
+		const token = ++requirementsToken;
+		if (!destId) {
+			allRequirements = [];
+			loadingRequirements = false;
 			return;
 		}
 		loadingRequirements = true;
-		const params = new URLSearchParams();
-		params.set('dest', selectedDestId);
-		if (visaCategory) params.set('visa', visaCategory);
 		const res = await api.get<LanguageTestRequirementWithAi[]>(
-			`/language-tests/requirements?${params.toString()}`
+			`/language-tests/requirements?dest=${encodeURIComponent(destId)}`
 		);
+		if (token !== requirementsToken) return;
 		loadingRequirements = false;
-		if (!res.error) requirements = res.data ?? [];
-		else requirements = [];
+		allRequirements = res.error ? [] : (res.data ?? []);
 	}
 
 	function onDestChange(id: string) {
+		selectedDestId = id;
+		selectedVisaCategory = '';
 		selectedTestSlug = null;
 		selectedTestSlugs = new Set();
 		loadRequirements();
 		const url = new URL(page.url);
 		if (id) url.searchParams.set('dest', id);
 		else url.searchParams.delete('dest');
-		history.replaceState({}, '', url);
-	}
-
-	function onVisaInput() {
-		loadRequirements();
+		replaceState(url, {});
 	}
 
 	function toggleTestSelection(slug: string) {
@@ -129,37 +157,45 @@
 	/** Enter test detail mode — fetch test info, resources, and stories. */
 	async function selectTest(slug: string) {
 		selectedTestSlug = slug;
+		const token = ++detailToken;
 		loadingDetail = true;
+		detailError = null;
 		testDetail = null;
 		testResources = [];
 		testStories = [];
+		showStoryForm = false;
+		storyError = null;
 
 		// Fetch test detail (nested data object: { test, resources_summary, stories_summary })
 		const detailRes = await api.get<{
 			test: LanguageTest;
 			resources_summary: LanguageTestResource[];
 			stories_summary: LanguageTestScoreStory[];
-		}>(`/language-tests/${slug}`);
-		if (!detailRes.error && detailRes.data) {
-			testDetail = detailRes.data.test;
-			testResources = detailRes.data.resources_summary ?? [];
-			testStories = detailRes.data.stories_summary ?? [];
+		}>(`/language-tests/${encodeURIComponent(slug)}`);
+		if (token !== detailToken) return;
+		if (detailRes.error || !detailRes.data) {
+			detailError = detailRes.error?.message ?? t('language_test.detail_error', 'Could not load this test.');
+			loadingDetail = false;
+			return;
 		}
+		testDetail = detailRes.data.test;
+		testResources = detailRes.data.resources_summary ?? [];
+		testStories = detailRes.data.stories_summary ?? [];
 
-		// Fetch full resources list
-		const resRes = await api.get<LanguageTestResource[]>(
-			`/language-tests/${slug}/resources`
-		);
+		// Fetch the full resources list and stories (optionally filtered by
+		// destination) in parallel.
+		const storyParams = new URLSearchParams();
+		if (selectedDestId) storyParams.set('dest', selectedDestId);
+		const [resRes, storyRes] = await Promise.all([
+			api.get<LanguageTestResource[]>(`/language-tests/${encodeURIComponent(slug)}/resources`),
+			api.get<LanguageTestScoreStory[]>(
+				`/language-tests/${encodeURIComponent(slug)}/stories?${storyParams.toString()}`
+			)
+		]);
+		if (token !== detailToken) return;
 		if (!resRes.error && resRes.data) {
 			testResources = resRes.data;
 		}
-
-		// Fetch stories (optionally filtered by destination)
-		const storyParams = new URLSearchParams();
-		if (selectedDestId) storyParams.set('dest', selectedDestId);
-		const storyRes = await api.get<LanguageTestScoreStory[]>(
-			`/language-tests/${slug}/stories?${storyParams.toString()}`
-		);
 		if (!storyRes.error && storyRes.data) {
 			testStories = storyRes.data;
 		}
@@ -172,6 +208,8 @@
 		testDetail = null;
 		testResources = [];
 		testStories = [];
+		detailError = null;
+		showStoryForm = false;
 	}
 
 	function openStoryForm() {
@@ -179,11 +217,12 @@
 			showRegisterPrompt = true;
 			return;
 		}
-		storyFinalScore = '';
-		storyStartingLevel = '';
-		storyPrepWeeks = '';
-		storyResourcesUsed = '';
-		storyAdvice = '';
+		storyError = null;
+		showStoryForm = true;
+	}
+
+	function closeStoryForm() {
+		showStoryForm = false;
 		storyError = null;
 	}
 
@@ -192,11 +231,11 @@
 		submittingStory = true;
 		storyError = null;
 		const body: Record<string, unknown> = {
-			final_score: storyFinalScore
+			final_score: storyFinalScore.trim()
 		};
 		if (storyStartingLevel) body.starting_level = storyStartingLevel;
 		if (selectedDestId) body.destination_space_id = selectedDestId;
-		if (storyPrepWeeks) body.prep_duration_weeks = parseInt(storyPrepWeeks, 10);
+		if (storyPrepWeeks && storyPrepWeeks > 0) body.prep_duration_weeks = storyPrepWeeks;
 		if (storyResourcesUsed) {
 			body.resources_used = storyResourcesUsed
 				.split(',')
@@ -205,7 +244,7 @@
 		}
 		if (storyAdvice) body.advice = storyAdvice;
 		const res = await api.post<LanguageTestScoreStory>(
-			`/language-tests/${selectedTestSlug}/stories`,
+			`/language-tests/${encodeURIComponent(selectedTestSlug)}/stories`,
 			body
 		);
 		submittingStory = false;
@@ -218,9 +257,10 @@
 		}
 		storyFinalScore = '';
 		storyStartingLevel = '';
-		storyPrepWeeks = '';
+		storyPrepWeeks = null;
 		storyResourcesUsed = '';
 		storyAdvice = '';
+		showStoryForm = false;
 	}
 
 	/** Get score_breakdown entries from a JSON object field. */
@@ -231,18 +271,23 @@
 		return Object.entries(val);
 	}
 
+	/** Render a score_breakdown cell — nested values come through as JSON. */
+	function breakdownValue(v: unknown): string {
+		if (v == null) return '—';
+		if (typeof v === 'object') return JSON.stringify(v);
+		return String(v);
+	}
+
 	/** Format an ISO date string as a readable date. */
 	function formatDate(iso?: string | null): string {
 		if (!iso) return '';
-		try {
-			return new Date(iso).toLocaleDateString(undefined, {
-				year: 'numeric',
-				month: 'short',
-				day: 'numeric'
-			});
-		} catch {
-			return iso;
-		}
+		const d = new Date(iso);
+		if (isNaN(d.getTime())) return iso;
+		return d.toLocaleDateString(undefined, {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric'
+		});
 	}
 
 	// Autocomplete fetchers — filter the already-loaded destinations client-side.
@@ -250,12 +295,27 @@
 		const query = q.toLowerCase();
 		const filtered = query === ''
 			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query) || d.geo_code.toLowerCase().includes(query));
+			: destinations.filter((d) => d.name.toLowerCase().includes(query) || (d.geo_code ?? '').toLowerCase().includes(query));
 		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name, sublabel: d.geo_code })));
 	}
 	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
 		return fetchDestinations('');
 	}
+
+	// Visa category fetchers — suggestions come from the loaded requirements
+	// (exact-match filter, so only real categories are meaningful).
+	function fetchVisaCategories(q: string): Promise<AutocompleteItem[]> {
+		const query = q.toLowerCase();
+		const filtered =
+			query === ''
+				? visaCategories
+				: visaCategories.filter((c) => c.toLowerCase().includes(query));
+		return Promise.resolve(filtered.map((c) => ({ id: c, label: c })));
+	}
+	function fetchVisaCategoriesInitial(): Promise<AutocompleteItem[]> {
+		return fetchVisaCategories('');
+	}
+
 	const selectedDestLabel = $derived(
 		selectedDestId ? destinations.find((d) => d.id === selectedDestId)?.name ?? null : null
 	);
@@ -319,6 +379,12 @@
 					<LoadingSkeleton variant="lines" count={4} />
 					<LoadingSkeleton variant="lines" count={4} />
 				</div>
+			{:else if detailError}
+				<EmptyState
+					icon={Languages}
+					title={t('language_test.detail_error_title', 'Could not load test')}
+					body={detailError}
+				/>
 			{:else if testDetail}
 				<!-- Test info -->
 				<div class="p-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-card)]">
@@ -417,7 +483,7 @@
 					</div>
 
 					<!-- Story submission form -->
-					{#if authed && !showRegisterPrompt}
+					{#if authed && showStoryForm}
 						<div class="mb-4 p-4 bg-[var(--color-surface-subtle)] border border-[var(--color-border)] rounded-[var(--radius-card)] space-y-3">
 							{#if storyError}
 								<p class="text-sm text-[var(--color-danger)]">{storyError}</p>
@@ -486,16 +552,25 @@
 									features={data.features ?? {}}
 								/>
 							</div>
-							<button
-								type="button"
-								onclick={submitStory}
-								disabled={submittingStory || !storyFinalScore}
-								class="px-4 py-2 text-sm font-medium text-white bg-[var(--color-primary)] rounded-[var(--radius)] hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
-							>
-								{submittingStory
-									? t('common.submitting', 'Submitting...')
-									: t('common.submit', 'Submit')}
-							</button>
+							<div class="flex items-center gap-3">
+								<button
+									type="button"
+									onclick={submitStory}
+									disabled={submittingStory || !storyFinalScore.trim()}
+									class="px-4 py-2 text-sm font-medium text-white bg-[var(--color-primary)] rounded-[var(--radius)] hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
+								>
+									{submittingStory
+										? t('common.submitting', 'Submitting...')
+										: t('common.submit', 'Submit')}
+								</button>
+								<button
+									type="button"
+									onclick={closeStoryForm}
+									class="px-4 py-2 text-sm font-medium text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors"
+								>
+									{t('common.cancel', 'Cancel')}
+								</button>
+							</div>
 						</div>
 					{/if}
 
@@ -543,7 +618,7 @@
 									{#if story.resources_used && story.resources_used.length > 0}
 										<div class="flex items-center gap-1.5 flex-wrap mb-2">
 											<span class="text-xs text-[var(--color-muted)]">{t('language_test.resources', 'Resources:')}</span>
-											{#each story.resources_used as res (res)}
+											{#each story.resources_used as res, i (i)}
 												<span class="text-xs px-1.5 py-0.5 bg-[var(--color-surface-subtle)] rounded">{res}</span>
 											{/each}
 										</div>
@@ -567,6 +642,7 @@
 			</label>
 			<div class="mt-2">
 				<Autocomplete
+					id="lt-dest"
 					placeholder={t('language_test.select_destination', 'Select a destination country')}
 					emptyMessage={t('common.no_results', 'No results found')}
 					fetcher={fetchDestinations}
@@ -579,20 +655,26 @@
 			</div>
 		</div>
 
-		{#if selectedDestId}
+		{#if selectedDestId && visaCategories.length > 0}
 			<!-- Optional visa category filter -->
 			<div class="border-b border-[var(--color-border)] px-4 py-3 flex items-center gap-3">
 				<label for="visa-cat" class="text-sm font-medium text-[var(--color-text)] whitespace-nowrap">
 					{t('language_test.visa_category', 'Visa category:')}
 				</label>
-				<input
-					id="visa-cat"
-					type="text"
-					bind:value={visaCategory}
-					oninput={onVisaInput}
-					placeholder={t('language_test.visa_placeholder', 'e.g. skilled worker (optional)')}
-					class="flex-1 px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius)] text-[var(--color-text)] focus:border-[var(--color-primary)] focus:outline-none"
-				/>
+				<div class="flex-1">
+					<Autocomplete
+						id="visa-cat"
+						placeholder={t('language_test.visa_placeholder', 'Filter by visa category (optional)')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchVisaCategories}
+						initialFetcher={fetchVisaCategoriesInitial}
+						selectedId={selectedVisaCategory || null}
+						selectedLabel={selectedVisaCategory || null}
+						onSelect={(item) => (selectedVisaCategory = item.id)}
+						onClear={() => (selectedVisaCategory = '')}
+						compact
+					/>
+				</div>
 			</div>
 		{/if}
 
@@ -616,10 +698,15 @@
 				<EmptyState
 					icon={Languages}
 					title={t('language_test.no_requirements', 'No requirements')}
-					body={t(
-						'language_test.no_requirements_desc',
-						'No language test requirements have been published for this destination yet.'
-					)}
+					body={selectedVisaCategory
+						? t(
+								'language_test.no_requirements_filtered',
+								'No language test requirements for this visa category. Try a different category.'
+							)
+						: t(
+								'language_test.no_requirements_desc',
+								'No language test requirements have been published for this destination yet.'
+							)}
 				/>
 			</div>
 		{:else}
@@ -645,8 +732,14 @@
 						{/each}
 						<button
 							type="submit"
-							disabled={!canCompare || !data.authed}
-							title={data.authed
+							disabled={!canCompare}
+							onclick={(e) => {
+								if (!authed) {
+									e.preventDefault();
+									showRegisterPrompt = true;
+								}
+							}}
+							title={authed
 								? t('language_test.compare_in_jce_hint', 'Compare in JCE')
 								: t('language_test.sign_in_to_compare', 'Sign in to compare')}
 							class="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -675,6 +768,7 @@
 								checked={selectedTestSlugs.has(req.test_slug)}
 								onchange={() => toggleTestSelection(req.test_slug)}
 								disabled={selectedTestSlugs.size >= 4 && !selectedTestSlugs.has(req.test_slug)}
+								aria-label={t('language_test.select_test_for_compare', 'Select {name} for comparison').replace('{name}', req.test_name)}
 								class="mt-1 accent-[var(--color-primary)]"
 							/>
 							<div class="min-w-0 flex-1">
@@ -709,7 +803,7 @@
 								{#each breakdownEntries(req.score_breakdown) as [key, val] (key)}
 									<div class="flex items-start gap-2 text-sm">
 										<dt class="font-medium text-[var(--color-text)] flex-shrink-0">{key}:</dt>
-										<dd class="text-[var(--color-text-subtle)]">{String(val)}</dd>
+										<dd class="text-[var(--color-text-subtle)]">{breakdownValue(val)}</dd>
 									</div>
 								{/each}
 							</dl>
@@ -758,8 +852,14 @@
 						{/each}
 						<button
 							type="submit"
-							disabled={!canCompare || !data.authed}
-							title={data.authed
+							disabled={!canCompare}
+							onclick={(e) => {
+								if (!authed) {
+									e.preventDefault();
+									showRegisterPrompt = true;
+								}
+							}}
+							title={authed
 								? t('language_test.compare_in_jce_hint', 'Compare in JCE')
 								: t('language_test.sign_in_to_compare', 'Sign in to compare')}
 							class="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-[var(--radius)] text-sm font-medium hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -811,8 +911,13 @@
 	{/if}
 
 	{#if showRegisterPrompt}
-		<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
-			{t('language_test.sign_in_to_save', 'Sign in to save your progress.')}
+		<div class="p-4">
+			<div class="mb-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2 text-xs text-[var(--color-muted)]">
+				{t('language_test.sign_in_to_save', 'Create a free account to share your score story or save comparisons.')}
+				<a href="/login" class="ml-1 text-[var(--color-primary)] hover:underline"
+					>{t('common.sign_in', 'Sign in')}</a
+				>.
+			</div>
 		</div>
 	{/if}
 </div>

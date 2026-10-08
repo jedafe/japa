@@ -83,6 +83,7 @@
 				selectedLabel={selectedLabel}
 				onSelect={handleSelect}
 				onClear={() => onSelectOrg(null)}
+				openUp
 			/>
 		</div>
 	{:else}

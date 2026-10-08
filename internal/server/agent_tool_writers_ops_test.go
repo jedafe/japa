@@ -105,6 +105,7 @@ func TestToolWriterOpsMatrix(t *testing.T) {
 		"mutual_aid":            cud,
 		"remittance_provider":   cud,
 		"remittance_rate":       cud,
+		"sop_field":             cud,
 		"tax_obligation_guide":  cud,
 		"tax_treaty_pair":       cud,
 		"travel_provider":       cud,

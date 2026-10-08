@@ -34,22 +34,31 @@ export const load: PageServerLoad = async (event) => {
 		destinations = [];
 	}
 
+	// Optional SSR pre-fetch of guides when ?dest= is present — improves
+	// first paint for deep links. The id is validated against the loaded
+	// destination list so the selector reflects the active filter.
+	const destParam = event.url.searchParams.get('dest');
+	const initialDestId =
+		destParam && destinations.some((d) => d.id === destParam) ? destParam : null;
+
+	// Provider directory + dropdown options — destination-scoped when a
+	// deep link pre-selects a destination (GET /eca/providers?dest=).
 	let providers: EcaProvider[] = [];
 	try {
-		providers = (await apiList<EcaProvider>(ctx, '/eca/providers')).items;
+		const path = initialDestId ? `/eca/providers?dest=${initialDestId}` : '/eca/providers';
+		providers = (await apiList<EcaProvider>(ctx, path)).items;
 	} catch {
 		providers = [];
 	}
 
 	let guides: EcaGuide[] = [];
-	const destParam = event.url.searchParams.get('dest');
-	if (destParam) {
+	if (initialDestId) {
 		try {
-			guides = (await apiList<EcaGuide>(ctx, `/eca/guides?dest=${destParam}`)).items;
+			guides = (await apiList<EcaGuide>(ctx, `/eca/guides?dest=${initialDestId}`)).items;
 		} catch {
 			guides = [];
 		}
 	}
 
-	return { destinations, providers, guides, authed };
+	return { destinations, providers, guides, initialDestId, authed };
 };

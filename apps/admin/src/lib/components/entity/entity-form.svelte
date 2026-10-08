@@ -108,6 +108,9 @@
 					initialFetcher={field.initialFetcher ? async () => filterSelf(field, await field.initialFetcher!()) : undefined}
 					selectedId={acVal ?? null}
 					selectedLabel={acVal ? field.getSelectedLabel(acVal) : null}
+					freeText={field.freeText}
+					allowFreeText={field.allowFreeText}
+					onFreeTextBlur={(q: string) => { value[field.key] = q.trim(); }}
 					onSelect={(item: AutocompleteItem) => { value[field.key] = item.id; }}
 					onClear={() => { value[field.key] = ''; }}
 				/>

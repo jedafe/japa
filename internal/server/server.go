@@ -7558,6 +7558,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/sop/templates", sopGeneratorHandlers.HandleListTemplates)
 				r.Get("/sop/samples", sopGeneratorHandlers.HandleListSamples)
 				r.Get("/sop/samples/{id}", sopGeneratorHandlers.HandleGetSample)
+				r.Get("/sop/fields", sopGeneratorHandlers.HandleListFields)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
 					Get("/sop/quota", sopGeneratorHandlers.HandleQuota)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.generate")).
@@ -7596,6 +7597,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/admin/sop/samples/{id}", sopGeneratorHandlers.HandleAdminDeleteSample)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
 					Patch("/admin/sop/samples/{id}/reject", sopGeneratorHandlers.HandleAdminRejectSample)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Get("/admin/sop/fields", sopGeneratorHandlers.HandleAdminListFields)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Post("/admin/sop/fields", sopGeneratorHandlers.HandleAdminCreateField)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Patch("/admin/sop/fields/{id}", sopGeneratorHandlers.HandleAdminUpdateField)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "sop_generator.manage")).
+					Delete("/admin/sop/fields/{id}", sopGeneratorHandlers.HandleAdminDeleteField)
 			})
 
 			// §95 — CV Formatter (ADR-103)
