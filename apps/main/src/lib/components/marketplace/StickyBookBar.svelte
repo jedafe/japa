@@ -15,8 +15,19 @@
 		ctaLabel: string;
 		ctaHref: string;
 		external?: boolean;
+		/** When set (and not external), the CTA renders as a button that
+		 *  opens the booking dialog instead of an anchor to #book. */
+		onCta?: () => void;
 	}
-	let { price, ratingAvg, ratingCount, ctaLabel, ctaHref, external = false }: Props = $props();
+	let {
+		price,
+		ratingAvg,
+		ratingCount,
+		ctaLabel,
+		ctaHref,
+		external = false,
+		onCta
+	}: Props = $props();
 </script>
 
 <div
@@ -47,16 +58,26 @@
 				</p>
 			{/if}
 		</div>
-		<a
-			href={ctaHref}
-			target={external ? '_blank' : undefined}
-			rel={external ? 'noopener noreferrer' : undefined}
-			class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-		>
-			{ctaLabel}
-			{#if external}
-				<ExternalLink size={14} aria-hidden="true" />
-			{/if}
-		</a>
+		{#if onCta && !external}
+			<button
+				type="button"
+				onclick={onCta}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			>
+				{ctaLabel}
+			</button>
+		{:else}
+			<a
+				href={ctaHref}
+				target={external ? '_blank' : undefined}
+				rel={external ? 'noopener noreferrer' : undefined}
+				class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+			>
+				{ctaLabel}
+				{#if external}
+					<ExternalLink size={14} aria-hidden="true" />
+				{/if}
+			</a>
+		{/if}
 	</div>
 </div>

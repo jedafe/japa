@@ -2,7 +2,6 @@
 	// Ref: japaconnect-engineering/sections/98-service-directory.md
 	// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
-	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
@@ -37,6 +36,7 @@
 	import ServiceReviews from '$lib/components/marketplace/ServiceReviews.svelte';
 	import ProviderCard from '$lib/components/marketplace/ProviderCard.svelte';
 	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
+	import BookingDialog from '$lib/components/marketplace/BookingDialog.svelte';
 	import { serviceCategoryIcon } from '$lib/components/marketplace/serviceCategoryIcon';
 	import { accentClasses, priceLabel, serviceCategoryInfo } from '$lib/marketplace';
 	import { serviceCategoryLabel } from '$lib/enumOptions';
@@ -48,7 +48,6 @@
 		ServiceListing,
 		ServiceCategory,
 		ServiceReview,
-		ServiceBookingResult,
 		PackageTier
 	} from '$lib/types';
 	import type { PageData } from './$types';
@@ -201,155 +200,38 @@
 	// would scroll to an absent #book section.
 	const tierCtaEnabled = $derived(canBook || guestBooking);
 
+	// Booking dialog (spec §3.3) — the #book summary card, the TierGrid
+	// "Choose X" buttons and the sticky bar CTA all open it. Form state
+	// (departure, party size, dates, provider, idempotency key, tier and
+	// coupon preview) lives inside BookingDialog.
 	let bookingOpen = $state(false);
-	let partySize = $state('1');
-	let bookingDepartureId = $state('');
-	// §114 tier preselection — set by TierGrid's "Choose X"; submitted as
-	// tier_id on paid bookings and shown in the order summary. The backend
-	// rejects tier_id on inquiry intent, so inquiry submissions carry the
-	// tier name inside the note instead.
-	let selectedTier = $state<PackageTier | null>(null);
-	let prefStartOn = $state('');
-	let prefEndOn = $state('');
-	let prefFlexible = $state(false);
-	let bookingNote = $state('');
-	let bookingProvider = $state('');
-	let bookingEmail = $state(untrack(() => data.user?.email ?? ''));
-	let bookingBusy = $state(false);
-	let bookingResult = $state<{ ok?: boolean; error?: string } | null>(null);
-	let bookingProviders = $state<{ id: string; name: string; enabled: boolean }[]>([]);
-	let providersLoaded = $state(false);
-	// §111/Rule 9 — the backend requires the Idempotency-Key header on
-	// every booking (intent='booking' → 400 idempotency_key_required),
-	// so this form sends it on every submit — paid or inquiry. One key
-	// per form-open so a retry replays the cached response instead of
-	// double-booking; regenerated after success.
-	let bookingIdemKey = $state('');
+	// §114 tier preselection — set by TierGrid's "Choose X" and applied by
+	// the dialog when it opens; submitted as tier_id on paid bookings.
+	let initialTierId = $state('');
 
-	const inputCls =
-		'rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20';
-
-	const departureItems = $derived<AutocompleteItem[]>(
-		openDepartures.map((d) => ({
-			id: d.id,
-			label: formatDate(d.starts_on) + (d.ends_on ? ` → ${formatDate(d.ends_on)}` : ''),
-			sublabel:
-				d.capacity != null
-					? t('services.pkg_seats_left', '{n} seats left', {
-							n: Math.max(0, d.capacity - d.booked_count)
-						})
-					: t('services.pkg_unlimited', 'Unlimited seats')
-		}))
-	);
-	const departureFetcher = $derived(staticAutocompleteFetcher(departureItems));
-	const selectedDepartureLabel = $derived(
-		bookingDepartureId
-			? (departureItems.find((o) => o.id === bookingDepartureId)?.label ?? null)
-			: null
-	);
-
-	const providerItems = $derived<AutocompleteItem[]>(
-		bookingProviders.filter((p) => p.enabled).map((p) => ({ id: p.id, label: p.name }))
-	);
-	const providerFetcher = $derived(staticAutocompleteFetcher(providerItems));
-
-	async function loadProviders() {
-		if (providersLoaded) return;
-		const res = await api.get<{ id: string; name: string; enabled: boolean }[]>('/payment-providers');
-		if (res.error) return; // leave providersLoaded false so reopening retries
-		providersLoaded = true;
-		bookingProviders = res.data ?? [];
-	}
-
-	function openBookingForm() {
+	function openBookingDialog() {
 		bookingOpen = true;
-		bookingIdemKey = crypto.randomUUID();
-		if (service?.purchase_mode === 'paid') loadProviders();
 	}
 
-	function scrollToBook() {
-		document.getElementById('book')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	}
-
-	// TierGrid "Choose X" — preselect the tier, open the form, scroll to it.
+	// TierGrid "Choose X" — preselect the tier and open the dialog. The
+	// button only renders when tierCtaEnabled (a booking surface exists
+	// for this viewer), so no scroll-to-anchor fallback is needed.
 	function selectTier(tier: PackageTier) {
-		selectedTier = tier;
-		if (canBook) openBookingForm();
-		scrollToBook();
-	}
-
-	async function submitBooking() {
-		if (!service) return;
-		bookingResult = null;
-		const size = Number(partySize);
-		const isPaid = service.purchase_mode === 'paid';
-
-		if (!Number.isInteger(size) || size < 1) {
-			bookingResult = { error: t('services.book_party_size_invalid', 'Enter a valid party size') };
-			return;
-		}
-		if (isPaid && (!bookingProvider || !bookingEmail.trim())) {
-			bookingResult = { error: t('services.book_checkout_fields', 'Payment provider and email are required') };
-			return;
-		}
-
-		let note = bookingNote.trim();
-		// Inquiry intent rejects tier_id (ErrInvalidCoupon) — carry the
-		// selection in the note so the provider still sees it.
-		if (!isPaid && selectedTier) {
-			const tierLine = t('services.book_tier_note', 'Interested in the {name} tier.', {
-				name: selectedTier.name
-			});
-			note = note ? `${note}\n${tierLine}` : tierLine;
-		}
-
-		const body: Record<string, unknown> = {
-			intent: isPaid ? 'booking' : 'inquiry',
-			party_size: size,
-			note
-		};
-		if (isPaid && selectedTier) body.tier_id = selectedTier.id;
-		if (bookingDepartureId) body.departure_id = bookingDepartureId;
-		if (!bookingDepartureId && (prefStartOn || prefEndOn)) {
-			body.preferred_dates = { start_on: prefStartOn, end_on: prefEndOn || prefStartOn, flexible: prefFlexible };
-		}
-		if (isPaid) {
-			body.provider = bookingProvider;
-			body.email = bookingEmail.trim();
-			body.return_url = page.url.href;
-		}
-
-		bookingBusy = true;
-		const res = await api.post<ServiceBookingResult>(`/services/${service.id}/bookings`, body, {
-			'Idempotency-Key': bookingIdemKey || crypto.randomUUID()
-		});
-		bookingBusy = false;
-
-		if (res.data) {
-			// Paid mode opens the §17 fee checkout — send the booker off-site.
-			const checkout = res.data.payment?.checkout_url;
-			if (isPaid && checkout) {
-				window.location.href = checkout;
-				return;
-			}
-			bookingResult = { ok: true };
-			bookingOpen = false;
-			bookingIdemKey = '';
-		} else {
-			bookingResult = { error: res.error?.message ?? t('services.book_failed', 'Could not submit') };
-		}
+		if (!tierCtaEnabled) return;
+		initialTierId = tier.id;
+		bookingOpen = true;
 	}
 
 	// Whether the #book section has anything to render — paid/inquiry modes
-	// plus either an authed booker (canBook), a guest seeing the login
-	// prompt (guestBooking), or a success notice. Owners and viewers without
+	// plus either an authed booker (canBook) or a guest who can open the
+	// dialog's login prompt (guestBooking). Owners and viewers without
 	// service.booking.create get no booking surface, so the CTA must not
 	// point at an empty anchor.
 	const bookSurface = $derived(
 		!!service &&
 			service.purchase_mode !== 'external' &&
 			service.purchase_mode !== '' &&
-			(canBook || guestBooking || !!bookingResult?.ok)
+			(canBook || guestBooking)
 	);
 
 	// booking_url is stored per-listing and the create form exposes it for
@@ -411,32 +293,37 @@
 
 	// The mobile sticky bar only makes sense where a booking surface exists —
 	// owners manage the listing instead of booking it.
-	const stickyCta = $derived.by(() => {
-		if (!service || canEdit) return null;
-		if (bookingOutbound && service.booking_url) {
-			return {
-				label: isPackage
-					? t('services.book_partner', 'Book on partner site')
-					: t('services.book_now', 'Book now'),
-				href: service.booking_url,
-				external: true
-			};
+	const stickyCta = $derived.by(
+		(): { label: string; href: string; external: boolean; dialog?: boolean } | null => {
+			if (!service || canEdit) return null;
+			if (bookingOutbound && service.booking_url) {
+				return {
+					label: isPackage
+						? t('services.book_partner', 'Book on partner site')
+						: t('services.book_now', 'Book now'),
+					href: service.booking_url,
+					external: true
+				};
+			}
+			if (
+				(service.purchase_mode === 'paid' || service.purchase_mode === 'inquiry') &&
+				(canBook || guestBooking)
+			) {
+				return {
+					label:
+						service.purchase_mode === 'paid'
+							? t('services.book_now', 'Book now')
+							: t('services.book_inquiry', 'Send inquiry'),
+					href: '#book',
+					external: false,
+					// The booking form lives in BookingDialog now — the bar's CTA
+					// opens it directly instead of scrolling to the #book card.
+					dialog: true
+				};
+			}
+			return null;
 		}
-		if (
-			(service.purchase_mode === 'paid' || service.purchase_mode === 'inquiry') &&
-			(canBook || guestBooking)
-		) {
-			return {
-				label:
-					service.purchase_mode === 'paid'
-						? t('services.book_now', 'Book now')
-						: t('services.book_inquiry', 'Send inquiry'),
-				href: '#book',
-				external: false
-			};
-		}
-		return null;
-	});
+	);
 
 	const orgItems = $derived<AutocompleteItem[]>(
 		(data.myOrgs ?? []).map((o) => ({ id: o.id, label: o.name }))
@@ -988,263 +875,54 @@
 							? t('services.book_heading_paid', 'Book this package')
 							: t('services.book_heading_inquiry', 'Booking & inquiries')}
 					</h2>
-					{#if bookingResult?.ok}
-						<div
-							class="mt-4 flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-success)]/30 bg-[var(--color-success)]/10 px-4 py-3 text-sm text-[var(--color-success)]"
-							role="status"
-						>
-							<CheckCircle2 size={18} aria-hidden="true" />
-							{service.purchase_mode === 'paid'
-								? t('services.book_reserved', 'Booking created — complete payment to confirm.')
-								: t('services.book_inquiry_sent', 'Inquiry sent — the provider will respond through your bookings inbox.')}
-						</div>
-					{:else if canBook}
-						<div
-							class="mt-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
-						>
-							{#if !bookingOpen}
-								<button
-									type="button"
-									onclick={openBookingForm}
-									class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-								>
-									<Send size={16} aria-hidden="true" />
-									{#if service.purchase_mode === 'paid'}
-										{service.platform_fee != null
-											? t('services.book_reserve_fee', 'Reserve — {fee} platform fee', {
-													fee: formatMoney(service.platform_fee, service.price_currency, currencies, {
-														minor: true
-													})
-												})
-											: t('services.book_reserve', 'Reserve')}
-									{:else}
-										{t('services.book_inquiry', 'Send inquiry')}
-									{/if}
-								</button>
-								{#if service.purchase_mode === 'paid' && service.agent_balance_due != null}
-									<p class="mt-2 text-xs text-[var(--color-muted)]">
-										{t(
-											'services.book_balance_note',
-											'This fee secures your booking. Remaining {balance} is payable directly to {org}.',
-											{
-												balance: formatMoney(
-													service.agent_balance_due,
-													service.price_currency,
-													currencies,
-													{ minor: true }
-												),
-												org: service.org_name ?? ''
-											}
-										)}
-									</p>
-								{/if}
+					<!-- Order summary card — the CTA opens BookingDialog
+					     (form, tier picker, coupon preview all live there). -->
+					<div
+						class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
+					>
+						<div class="min-w-0">
+							{#if heroPrice}
+								<p class="flex flex-wrap items-baseline gap-x-2">
+									<span class="text-xs text-[var(--color-muted)]"
+										>{t('services.price_from', 'From')}</span
+									>
+									<span class="text-xl font-bold text-[var(--color-text)]">{heroPrice}</span>
+									<span class="text-xs text-[var(--color-muted)]">{pricePerLabel}</span>
+								</p>
 							{:else}
-								<h3 class="text-sm font-semibold text-[var(--color-text)]">
-									{service.purchase_mode === 'paid'
-										? t('services.book_reserve', 'Reserve')
-										: t('services.book_inquiry', 'Send inquiry')}
-								</h3>
-								<div class="mt-3 space-y-3">
-									<!-- Selected tier summary (§114) — cleared via Remove. -->
-									{#if selectedTier}
-										<div
-											class="flex items-center justify-between gap-2 rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-3 py-2 text-sm"
-										>
-											<span class="text-[var(--color-text)]">
-												<span class="text-xs text-[var(--color-muted)]"
-													>{t('services.book_tier_label', 'Package')}:</span
-												>
-												<span class="font-medium">{selectedTier.name}</span>
-												<span class="text-[var(--color-muted)]">
-													· {formatMoney(
-														selectedTier.price_amount,
-														selectedTier.price_currency,
-														currencies,
-														{ minor: true }
-													)}
-												</span>
-											</span>
-											<button
-												type="button"
-												onclick={() => (selectedTier = null)}
-												class="text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
-											>
-												{t('common.remove', 'Remove')}
-											</button>
-										</div>
-									{/if}
-									{#if openDepartures.length > 0}
-										<div>
-											<label
-												for="bk-dep"
-												class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
-											>
-												{t('services.book_departure', 'Departure')}
-											</label>
-											<Autocomplete
-												id="bk-dep"
-												placeholder={t('services.book_departure_ph', 'Choose a date')}
-												emptyMessage={t('common.no_results', 'No results found')}
-												fetcher={departureFetcher}
-												initialFetcher={departureFetcher}
-												selectedId={bookingDepartureId || null}
-												selectedLabel={selectedDepartureLabel}
-												onSelect={(item) => (bookingDepartureId = item.id)}
-												onClear={() => (bookingDepartureId = '')}
-											/>
-										</div>
-									{/if}
-									{#if openDepartures.length === 0 || !bookingDepartureId}
-										<div class="grid gap-3 sm:grid-cols-2">
-											<div>
-												<label
-													for="bk-from"
-													class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
-													>{t('services.book_pref_start', 'Preferred start')}</label
-												>
-												<input
-													id="bk-from"
-													type="date"
-													bind:value={prefStartOn}
-													class="{inputCls} w-full"
-												/>
-											</div>
-											<div>
-												<label
-													for="bk-to"
-													class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
-													>{t('services.book_pref_end', 'Preferred end')}</label
-												>
-												<input
-													id="bk-to"
-													type="date"
-													bind:value={prefEndOn}
-													class="{inputCls} w-full"
-												/>
-											</div>
-										</div>
-										<label class="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-											<input
-												type="checkbox"
-												checked={prefFlexible}
-												onchange={(e) => (prefFlexible = e.currentTarget.checked)}
-												class="h-3.5 w-3.5 rounded border-[var(--color-border)]"
-											/>
-											{t('services.book_flexible', 'My dates are flexible')}
-										</label>
-									{/if}
-									<div>
-										<label
-											for="bk-party"
-											class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
-											>{t('services.book_party_size', 'Party size')}</label
-										>
-										<input
-											id="bk-party"
-											type="number"
-											min="1"
-											bind:value={partySize}
-											class="{inputCls} w-24"
-										/>
-									</div>
-									<div>
-										<label
-											for="bk-note"
-											class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
-											>{t('services.book_note', 'Message to the provider')}</label
-										>
-										<textarea
-											id="bk-note"
-											bind:value={bookingNote}
-											rows={3}
-											placeholder={t('services.book_note_ph', 'Questions, requirements, context…')}
-											class="{inputCls} w-full"
-										></textarea>
-									</div>
-									{#if service.purchase_mode === 'paid'}
-										<div class="grid gap-3 sm:grid-cols-2">
-											<div>
-												<label
-													for="bk-prov"
-													class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
-													>{t('services.book_provider', 'Payment method')}</label
-												>
-												<Autocomplete
-													id="bk-prov"
-													placeholder={t('services.book_provider_ph', 'Choose a payment method')}
-													emptyMessage={t('common.no_results', 'No results found')}
-													fetcher={providerFetcher}
-													initialFetcher={providerFetcher}
-													selectedId={bookingProvider || null}
-													selectedLabel={providerItems.find((o) => o.id === bookingProvider)
-														?.label ?? null}
-													onSelect={(item) => (bookingProvider = item.id)}
-													onClear={() => (bookingProvider = '')}
-												/>
-											</div>
-											<div>
-												<label
-													for="bk-email"
-													class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]"
-													>{t('services.book_email', 'Email for receipt')}</label
-												>
-												<input
-													id="bk-email"
-													type="email"
-													bind:value={bookingEmail}
-													placeholder="you@example.com"
-													class="{inputCls} w-full"
-												/>
-											</div>
-										</div>
-									{/if}
-									{#if bookingResult?.error}
-										<div
-											class="flex items-center gap-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500"
-											role="alert"
-										>
-											<AlertCircle size={14} aria-hidden="true" /> {bookingResult.error}
-										</div>
-									{/if}
-									<div class="flex gap-2">
-										<button
-											type="button"
-											onclick={submitBooking}
-											disabled={bookingBusy}
-											class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-										>
-											{#if bookingBusy}<Loader2
-													size={16}
-													class="animate-spin"
-													aria-hidden="true"
-												/>{:else}<Send size={16} aria-hidden="true" />{/if}
-											{service.purchase_mode === 'paid'
-												? t('services.book_pay_reserve', 'Pay & reserve')
-												: t('services.book_send', 'Send inquiry')}
-										</button>
-										<button
-											type="button"
-											onclick={() => (bookingOpen = false)}
-											class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-										>
-											{t('common.cancel', 'Cancel')}
-										</button>
-									</div>
-								</div>
+								<p class="text-sm text-[var(--color-muted)]">
+									{t('services.pkg_price_on_request', 'Price on request')}
+								</p>
+							{/if}
+							{#if service.purchase_mode === 'paid' && service.agent_balance_due != null}
+								<p class="mt-1 text-xs text-[var(--color-muted)]">
+									{t(
+										'services.book_balance_note',
+										'This fee secures your booking. Remaining {balance} is payable directly to {org}.',
+										{
+											balance: formatMoney(
+												service.agent_balance_due,
+												service.price_currency,
+												currencies,
+												{ minor: true }
+											),
+											org: service.org_name ?? ''
+										}
+									)}
+								</p>
 							{/if}
 						</div>
-					{:else if guestBooking}
-						<p class="mt-4 text-sm text-[var(--color-muted)]">
-							<a
-								href="/login?redirect={encodeURIComponent(page.url.pathname)}"
-								class="text-[var(--color-primary)] hover:underline"
-							>
-								{service.purchase_mode === 'paid'
-									? t('services.book_login_reserve', 'Log in to reserve')
-									: t('services.book_login_inquiry', 'Log in to send an inquiry')}
-							</a>
-						</p>
-					{/if}
+						<button
+							type="button"
+							onclick={openBookingDialog}
+							class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+						>
+							<Send size={16} aria-hidden="true" />
+							{service.purchase_mode === 'paid'
+								? t('services.book_now', 'Book now')
+								: t('services.book_inquiry', 'Send inquiry')}
+						</button>
+					</div>
 				</section>
 			{/if}
 
@@ -1397,6 +1075,18 @@
 	{/if}
 </div>
 
+{#if service}
+	<BookingDialog
+		bind:open={bookingOpen}
+		{service}
+		{currencies}
+		authed={!!data.authed}
+		tiers={service.tiers}
+		{initialTierId}
+		defaultEmail={data.user?.email ?? ''}
+	/>
+{/if}
+
 {#if stickyCta && service}
 	<StickyBookBar
 		price={heroPrice}
@@ -1405,5 +1095,6 @@
 		ctaLabel={stickyCta.label}
 		ctaHref={stickyCta.href}
 		external={stickyCta.external}
+		onCta={stickyCta.dialog ? openBookingDialog : undefined}
 	/>
 {/if}
