@@ -194,6 +194,9 @@ func NewScheduler(cfg *Config) *asynq.Scheduler {
 	// (§67, ADR-124 hotel directory).
 	schedule("0 3 * * *", TypeTravelSyncHotelDirectory, 24*time.Hour)
 
+	// Daily 04:00 UTC: flat-rate ad spend accrual + auto-end (§25 amendment).
+	schedule("0 4 * * *", TypeAdsAccrueSpend, 24*time.Hour)
+
 	// Coupon expiry check + event flush — hourly.
 	schedule("0 * * * *", TypeCouponExpireCheck, 1*time.Hour)
 	schedule("5 * * * *", TypeCouponTrackEvents, 1*time.Hour)

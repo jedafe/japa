@@ -3683,6 +3683,88 @@ func HandleAdEventIngest(ctx context.Context, t *asynq.Task) error {
 	return nil
 }
 
+// HandleAdsAccrueSpendDaily accrues daily flat-rate spend for active ad
+// campaigns and auto-ends campaigns that are exhausted or past end_date
+// (§25 amendment). Idempotent per calendar day via a Valkey SETNX lock
+// (jc:ad_accrue:{YYYY-MM-DD}) so a retried or manual same-day run cannot
+// double-accrue spend. Org-owned (self-serve) campaigns get their unused
+// escrow refunded through the existing ads:refund_campaign_credits task.
+func HandleAdsAccrueSpendDaily(ctx context.Context, t *asynq.Task) error {
+	slog.Info("task:ad:accrue_spend_daily")
+
+	queries, err := requireDB()
+	if err != nil {
+		slog.Warn("task:ad:accrue_spend_daily: no database, skipping", "error", err)
+		return nil
+	}
+
+	now := time.Now().UTC()
+	// Same-day idempotency lock (conventions/valkey-keys-catalog.md).
+	dateKey := valkey.MustKey("ad_accrue:%s", now.Format("2006-01-02"))
+	if rdb != nil {
+		ok, err := rdb.SetNX(ctx, dateKey, "1", 48*time.Hour).Result()
+		if err != nil {
+			slog.Warn("task:ad:accrue_spend_daily: lock check failed, skipping", "error", err)
+			return nil
+		}
+		if !ok {
+			return nil // already accrued today
+		}
+	}
+
+	campaigns, err := queries.ListActiveFlatRateCampaigns(ctx)
+	if err != nil {
+		return fmt.Errorf("task:ad:accrue_spend_daily: %w", err)
+	}
+
+	for _, c := range campaigns {
+		updated, err := queries.AccrueCampaignSpend(ctx, c.ID)
+		if err != nil {
+			slog.Warn("task:ad:accrue_spend_daily: accrual failed", "campaign_id", c.ID.String(), "error", err)
+			continue
+		}
+
+		// Record the accrued spend in the daily rollup (flat_rate=0 accrues
+		// nothing — those rows are only listed for the end-date sweep).
+		if updated.FlatRate > 0 {
+			if _, err := queries.UpsertAdAnalyticsDaily(ctx, gen.UpsertAdAnalyticsDailyParams{
+				CampaignID:  c.ID,
+				SlotTypeID:  updated.SlotTypeID,
+				Date:        pgtype.Date{Time: now, Valid: true},
+				Impressions: 0,
+				Clicks:      0,
+				Spent:       int64(updated.FlatRate),
+			}); err != nil {
+				slog.Warn("task:ad:accrue_spend_daily: rollup upsert failed", "campaign_id", c.ID.String(), "error", err)
+			}
+		}
+
+		expired := updated.EndDate.Valid && updated.EndDate.Time.Before(now)
+		exhausted := (updated.BudgetCredits > 0 && updated.Spent >= int64(updated.BudgetCredits)) ||
+			(updated.Budget != nil && updated.Spent >= *updated.Budget)
+
+		if !expired && !exhausted {
+			continue
+		}
+
+		if _, err := queries.UpdateAdCampaignStatus(ctx, gen.UpdateAdCampaignStatusParams{ID: c.ID, Status: "ended"}); err != nil {
+			slog.Warn("task:ad:accrue_spend_daily: end failed", "campaign_id", c.ID.String(), "error", err)
+			continue
+		}
+
+		// Self-serve campaigns refund unused escrow via the existing task
+		// (§61). Fire-and-forget per Rule 8.
+		if updated.OrganizationID.Valid && taskEnqueuer != nil {
+			payload, _ := json.Marshal(map[string]string{"campaign_id": c.ID.String()})
+			if err := taskEnqueuer.Enqueue(TypeAdsRefundCampaignCredits, payload); err != nil {
+				slog.Warn("task:ad:accrue_spend_daily: refund enqueue failed", "campaign_id", c.ID.String(), "error", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // HandleMaintenanceUpdateVelocityScores recalculates spam velocity scores for recent content.
 func HandleMaintenanceUpdateVelocityScores(ctx context.Context, t *asynq.Task) error {
 	slog.Info("task:maintenance:update_velocity_scores")

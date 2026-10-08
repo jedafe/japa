@@ -48,7 +48,7 @@ const (
 	TypeAgentCreateDraftRequest       = "agent:create_draft_request"
 	TypeReviewAggregateRecalc         = "content:recalc_review_aggregate"
 	TypeTicketSendStatusUpdate        = "ticket:send_status_update"
-	TypeAcademyUpdateTrackCompletion = "academy:update_track_completion"
+	TypeAcademyUpdateTrackCompletion  = "academy:update_track_completion"
 	TypeJCERefreshValues              = "jce:refresh_values"
 	TypeVideoProcessing               = "content:process_video"
 	TypeVideoImportBulk               = "video:import_bulk"
@@ -83,7 +83,7 @@ const (
 	TypeAcademyNotifyCourseApproved     = "academy:notify_course_approved"
 	TypeAcademySendInstructorPayout     = "academy:send_instructor_payout"
 	TypeAcademyCalculatePeriodPayouts   = "academy:calculate_period_payouts"
-	TypeUniversityFetchLogo                = "university:fetch_logo"
+	TypeUniversityFetchLogo             = "university:fetch_logo"
 
 	// ---- Low tier (background maintenance, lowest concurrency) ----.
 
@@ -102,7 +102,7 @@ const (
 	TypeAnalyticsRefreshViews           = "analytics:refresh_views"
 	TypeSecurityScan                    = "security:scan"
 	TypeMaintenanceRegenerateLLMsTxt    = "maintenance:regenerate_llms_txt"
-	TypeAcademyIssueCertificate        = "academy:issue_certificate"
+	TypeAcademyIssueCertificate         = "academy:issue_certificate"
 	TypeDBManualVacuum                  = "db:manual_vacuum"
 	TypeNewsletterDigest                = "newsletter:digest"
 	TypeComputeTrending                 = "maintenance:compute_trending"
@@ -312,6 +312,7 @@ var handlerRegistry = []struct {
 	{TypeReferralReviewFlagged, HandleReferralReviewFlagged},
 	{TypeAdsRefundCampaignCredits, HandleAdsRefundCampaignCredits},
 	{TypeAdsNotifyCampaignStatus, HandleAdsNotifyCampaignStatus},
+	{TypeAdsAccrueSpend, HandleAdsAccrueSpendDaily},
 	{TypeNotificationSendPush, HandleNotificationSendPush},
 	{TypePersonaRunActivity, HandlePersonaRunActivity},
 	{TypePersonaDispatchAction, HandlePersonaDispatchAction},

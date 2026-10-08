@@ -81,7 +81,7 @@ var idempotentTasks = map[string]bool{
 	TypeWalletAwardPoints:               true,
 	TypePaymentWebhookProcess:           true,
 	TypeSubscriptionWebhookProcess:      true,
-	TypeAcademyProcessEnrollment:     true, // AUDIT-BE-005: double-credit guard
+	TypeAcademyProcessEnrollment:        true, // AUDIT-BE-005: double-credit guard
 	TypeWalletProcessCreditPurchase:     true, // Section 58: double-credit guard
 	TypeServiceBookingFeeSettle:         true, // §111 — refund/settle is money-moving; dedupe by task+payload
 	TypeServiceBookingCreated:           true, // §111 — one org notification fan-out per booking
@@ -279,6 +279,7 @@ var taskTier = func() map[string]string {
 	for _, t := range []string{
 		TypeDigestEmail, TypeSitemapGenerate, TypeRSSRegenerate,
 		TypeDataExport, TypeAccountDeletionCleanup, TypeAdEventIngest,
+		TypeAdsAccrueSpend,
 		TypeMaintenanceUpdateVelocityScores, TypeMaintenanceCheckSLABreaches,
 		TypeMaintenanceUpdateGeoIPDB, TypeSpaceAutoPopulate, TypeWikiSeedAttractions,
 		TypeAnalyticsRefreshViews, TypeSecurityScan,
@@ -487,6 +488,7 @@ var taskTypeCatalog = []struct {
 	{TypeDataExport, "low", "Generate GDPR data export"},
 	{TypeAccountDeletionCleanup, "low", "GDPR account deletion cleanup"},
 	{TypeAdEventIngest, "low", "Ingest ad impression/click events"},
+	{TypeAdsAccrueSpend, "low", "Daily flat-rate ad spend accrual + auto-end (§25)"},
 	{TypeMaintenanceUpdateVelocityScores, "low", "Update velocity scores"},
 	{TypeMaintenanceCheckSLABreaches, "low", "Check ticket SLA breaches"},
 	{TypeMaintenanceUpdateGeoIPDB, "low", "Update GeoIP database"},

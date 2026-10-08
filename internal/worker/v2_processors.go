@@ -413,11 +413,14 @@ const (
 	TypeReferralReviewFlagged    = "referral:review_flagged"
 	TypeAdsRefundCampaignCredits = "ads:refund_campaign_credits" // #nosec
 	TypeAdsNotifyCampaignStatus  = "ads:notify_campaign_status"
-	TypeNotificationSendPush     = "notification:send_push"
-	TypePersonaRunActivity       = "persona:run_activity"
-	TypePersonaDispatchAction    = "persona:dispatch_action"
-	TypeStudioRunBatch           = "studio:run_batch"
-	TypeStudioRetryFailed        = "studio:retry_failed"
+	// TypeAdsAccrueSpend — §25 amendment: daily flat-rate spend accrual +
+	// auto-end for exhausted/expired campaigns (scheduler, low tier).
+	TypeAdsAccrueSpend        = "ad:accrue_spend_daily"
+	TypeNotificationSendPush  = "notification:send_push"
+	TypePersonaRunActivity    = "persona:run_activity"
+	TypePersonaDispatchAction = "persona:dispatch_action"
+	TypeStudioRunBatch        = "studio:run_batch"
+	TypeStudioRetryFailed     = "studio:retry_failed"
 
 	// TypeMentorGenerateEmbedding — §102 Mentorship Matching (ADR-110).
 	TypeMentorGenerateEmbedding = "mentor:generate_embedding"
