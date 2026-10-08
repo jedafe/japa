@@ -30,6 +30,10 @@ func PublicCORS(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-API-Key, MCP-Protocol-Version, MCP-Session-Id")
 		w.Header().Set("Access-Control-Expose-Headers", "WWW-Authenticate, MCP-Session-Id")
+		// The global corsMiddleware may have set ACAC:true for an allowlisted
+		// origin — drop it, since ACAO:* + ACAC:true is invalid for credentialed
+		// fetches and these endpoints are credential-free.
+		w.Header().Del("Access-Control-Allow-Credentials")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

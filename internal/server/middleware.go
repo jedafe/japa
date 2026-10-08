@@ -89,15 +89,23 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 // should be restricted to the known frontend domains; in development it
 // permits all origins so local dev works without configuration.
 //
-// The middleware short-circuits OPTIONS preflight requests with a 204 so
-// the browser can proceed with the actual request immediately.
+// OPTIONS preflights are short-circuited with a 204 only when the origin is
+// allowed, so the browser can proceed with the actual request immediately.
+// Preflights from disallowed origins fall through to the router instead:
+// routes that registered their own OPTIONS handler under a route-level CORS
+// middleware (mcp.PublicCORS on the machine-facing MCP/OAuth endpoints)
+// answer with their own policy, and every other route gets chi's 405 — the
+// correct rejection for a disallowed preflight. Answering every OPTIONS here
+// would shadow those route-level policies and return a bare 204 with no
+// Access-Control-Allow-Origin, which fails the browser preflight anyway.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The response body varies by Origin, so caches must key on it.
 		w.Header().Add("Vary", "Origin")
 
 		origin := r.Header.Get("Origin")
-		if isOriginAllowed(origin) {
+		allowed := isOriginAllowed(origin)
+		if allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", mw.AllowedCORSHeaders())
@@ -105,7 +113,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Max-Age", "300")
 		}
 
-		if r.Method == http.MethodOptions {
+		// Only the global middleware answers preflights for approved origins;
+		// disallowed preflights continue down the chain (see doc comment).
+		if r.Method == http.MethodOptions && allowed {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
