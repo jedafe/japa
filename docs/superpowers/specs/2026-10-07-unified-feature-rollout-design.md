@@ -208,7 +208,11 @@ Response stays `{data: {key: bool}}` (back-compat). The endpoint gains `Optional
 New richer endpoint for surfaces that need phase data (e.g. "Coming soon"/"Beta" badges on cards):
 
 ```
-GET /api/v1/feature-flags/details   → {data: [{key, enabled, phase, rolloutPercentage, surfaces:{…}}]}
+GET /api/v1/feature-flags/details   → {data: [{key, enabled, phase, rolloutPercentage, visible}]}
+                                       — public payload deliberately omits surfaces/audience/geo
+                                       rules (group slugs, permission nodes, and geo policy are
+                                       internal config; full rules are exposed only via
+                                       /api/v1/control/extensions).
 ```
 
 Same public/no-auth posture as the existing map endpoint (it reveals only what an attacker could already probe via route 404s).

@@ -43,13 +43,32 @@ ALTER TABLE roadmap_items ADD CONSTRAINT roadmap_items_status_check
   CHECK (status IN ('pending','under_review','planned','in_progress',
                     'testing','shipped','declined','archived'));
 
--- 2) Backfill feature_flags from same-named system_settings bool keys so
---    services migrating off GetBoolOr("X.enabled") keep the operator's choice.
+-- 2) Backfill feature_flags from system_settings bool keys so services
+--    migrating off GetBoolOr("X.enabled") keep the operator's choice.
+--    EXPLICIT key list — do NOT use a regex: keys like
+--    'gamification.badges_enabled', 'ai.cache_enabled',
+--    'roadmap.submissions_enabled', 'assessment.ai_roadmap_enabled' are
+--    settings (quotas/switches), not feature-reachability toggles, and a
+--    pattern match would mint dozens of bogus flags.
+--    The list below is the same-name subset of the Task-13 migration map;
+--    extend it if Task 13 uncovers more reachability keys.
 --    value is jsonb; `value #>> '{}'` unwraps '"true"' and true alike.
 INSERT INTO feature_flags (key, enabled, updated_at)
 SELECT s.key, COALESCE((s.value #>> '{}')::boolean, true), now()
 FROM system_settings s
-WHERE s.key ~ '^[a-z_]+\.[a-z_\.]*enabled$'
+WHERE s.key = ANY(ARRAY[
+  'travel.enabled','story.enabled','wiki.enabled','checklist.enabled',
+  'assessment.enabled','remittance.enabled','jobs.enabled','fx.enabled',
+  'visa_routes.enabled','scam_alert.enabled','planning_group.enabled',
+  'digest.enabled','mutual_aid.enabled','calendar.enabled',
+  'japa_stage.enabled','achievement.enabled','service_directory.enabled',
+  'scholarship_finder.enabled','arrival_checklist.enabled',
+  'appointment_alert.enabled','attestation_guide.enabled',
+  'campaign.enabled','col_calculator.enabled','community_locator.enabled',
+  'cv_formatter.enabled','housing_guide.enabled','intel.enabled',
+  'language_test_hub.enabled','newsletter.enabled','participation.enabled',
+  'referral.enabled'
+]::text[])
   AND jsonb_typeof(s.value) IN ('string','boolean')
   AND NOT EXISTS (SELECT 1 FROM feature_flags f WHERE f.key = s.key)
 ON CONFLICT (key) DO NOTHING;
@@ -248,12 +267,22 @@ func (c *Checker) EvalFlag(ctx context.Context, key string, sc CallerScope) Eval
 func (c *Checker) EvalAll(ctx context.Context, sc CallerScope) map[string]bool // Visible results for the flags map
 
 // AudienceResolver supplies caller group/perm data without importing rbac.
+// Verified signatures (internal/rbac/rbac.go:66,307,211):
+//   UserContext{Groups []Group, Permissions map[string]bool}
+//   (*RBAC).GetUserContext(ctx, userID) (*UserContext, error)
+//   (*RBAC).IsSuperAdmin(ctx, userID) bool
 type AudienceResolver interface {
 	ResolveScope(ctx context.Context, userID pgtype.UUID) (groups map[string]bool, perms map[string]bool, superAdmin bool, err error)
 }
 func (c *Checker) SetAudienceResolver(r AudienceResolver)
 func (c *Checker) BuildScope(r *http.Request, surface string) CallerScope // reads auth user + geo ctx + resolver
 ```
+
+**Import direction verified:** `internal/features/handlers.go` already imports `internal/auth`; neither `internal/auth` nor `internal/geoip` imports `internal/features` — `eval.go` may import both directly. `features` must still not import `internal/rbac` (the `AudienceResolver` interface is the seam).
+
+**Cache requirement (do not skip — perf):** `flagCacheEntry` currently stores only `enabled bool` (features.go:48). Scoped evaluation needs `config` too, or every gated request hits Postgres. Extend the entry to `{enabled bool, config []byte, createdAt}`; change the L2 Valkey value at `jc:flags:<key>` from a bare bool to JSON `{enabled, config}` — decode must accept the legacy bare `true`/`false` (config = `{}`) for in-flight stale entries. `EvalFlag`/`IsEnabled` share this cache; invalidate per-key on every write path (Task 6 hook ensures writes also clear it).
+
+Also add an aggregate L2 entry `jc:flags:_all` (JSON array of `FlagRow`, TTL `flagCacheTTL`) backing `EvalAll` and `ListExtensions` — both need every row's config and must not run `ListFlagRows` on every request. Invalidate on any flag write. **Rule 4:** register `jc:flags:_all` in `.jeos/conventions/valkey-keys-catalog.md` (Task 15).
 
 - [ ] **Step 1: Failing test table** for `EvalFlag` covering the spec §5.1 matrix:
   - disabled flag → `{false,false}` regardless.
@@ -265,7 +294,7 @@ func (c *Checker) BuildScope(r *http.Request, surface string) CallerScope // rea
   - `audience:[group:beta]` + caller in beta → on; other group → off; anonymous (nil maps) → off; SuperAdmin=true → on.
   - `perm:beta.access` entry + perm map containing it → on.
   - `hidden`+audience: in-audience → `{true,false}`; out → `{false,false}`.
-- [ ] **Step 2: Implement `eval.go`** — resolution order exactly as spec §5.1; `BuildScope` reads `auth.FromContext` (features→auth import allowed? verify: `grep -rn 'internal/auth' internal/features/` and `grep -rn 'internal/features' internal/auth/` — if auth imports features, inject a `func(ctx) *struct{UserID pgtype.UUID}` getter instead and resolve in server.go), `geoip.FromContext`, and `audienceResolver.ResolveScope` when a user is present.
+- [ ] **Step 2: Implement `eval.go`** — resolution order exactly as spec §5.1; `BuildScope` reads `auth.FromContext` (import verified clean — see note above), `geoip.FromContext`, and `audienceResolver.ResolveScope` when a user is present. Extend `flagCacheEntry` per the cache note above in the same pass.
 - [ ] **Step 3: Tests pass; commit.**
 
 ---
@@ -279,11 +308,11 @@ func (c *Checker) BuildScope(r *http.Request, surface string) CallerScope // rea
 
 **Interfaces:**
 - Consumes: `EvalFlag`, `EvalAll`, `SurfaceFrom`, `BuildScope`, `AudienceResolver` (Task 4).
-- Produces: `GET /api/v1/feature-flags/details` → `{data: [{key, enabled, phase, rolloutPercentage, surfaces}]}` (public, same posture as the map endpoint).
+- Produces: `GET /api/v1/feature-flags/details` → `{data: [{key, enabled, phase, rolloutPercentage, visible}]}` (public, same posture as the map endpoint). **Do NOT return `surfaces`/`audience`/`geo_*`** — group slugs, permission nodes, and geo policy are internal config (spec §5.3 updated); full rules are exposed only via `/api/v1/control/extensions`.
 
 - [ ] **Step 1: Update `Gate`** — build scope via `c.BuildScope(r, SurfaceFrom(r))`, then `if !c.EvalFlag(ctx, key, sc).Enabled → 404 feature_disabled`. Signature unchanged (all ~80 call sites untouched). `BuildScope` must tolerate absent auth (anonymous → empty scope).
-- [ ] **Step 2: Update `HandleGetFeatureFlags`** — return `EvalAll(ctx, scope).Visible` map instead of `GetAllEnabled`. Keep `{data: map[string]bool}` envelope.
-- [ ] **Step 3: `HandleGetFeatureFlagDetails`** — Registry+DB merge (reuse `ListFeatureFlags`' merge), each entry's `enabled`/`visible` evaluated for the caller scope; include `phase`, `rolloutPercentage`, `surfaces` as stored.
+- [ ] **Step 2: Update `HandleGetFeatureFlags`** — return `EvalAll(ctx, scope).Visible` map instead of `GetAllEnabled`. Keep `{data: map[string]bool}` envelope. `EvalAll` reads the `jc:flags:_all` aggregate (Task 4), not `ListFlagRows` per request.
+- [ ] **Step 3: `HandleGetFeatureFlagDetails`** — Registry+DB merge (reuse `ListFeatureFlags`' merge), each entry's `enabled`/`visible` evaluated for the caller scope; expose only `{key, enabled, phase, rolloutPercentage, visible}` — never `surfaces`/`audience`/`geo_*` (internal config).
 - [ ] **Step 4: server.go wiring** — next to `featureHandlers := features.NewHandlers(featureChecker)` (~line 447):
 
 ```go
@@ -308,16 +337,16 @@ Register `r.Get("/feature-flags/details", featureHandlers.HandleGetFeatureFlagDe
 ### Task 6: Write-path config hook + audit
 
 **Files:**
-- Modify: `internal/features/handlers.go`, `internal/features/features.go`, `internal/control/handlers.go` (extension writes), `internal/server/server.go` (wire `SetOnConfigChanged` → roadmap sync — actual call lands in Task 8; wire it there).
+- Modify: `internal/features/features.go` (hook registry + fire on all Checker write paths), `internal/features/handlers.go`, `internal/server/server.go` (wire `SetOnConfigChanged` → roadmap sync — actual call lands in Task 8; wire it there).
 - Test: `internal/features/handlers_test.go`
 
 **Interfaces:**
-- Produces: `func (h *Handlers) SetOnConfigChanged(fn func(ctx context.Context, key string, cfg FlagConfig))` — fired fire-and-forget (`context.WithoutCancel`, Rule 8) after every successful flag write.
+- Produces: `func (c *Checker) SetOnConfigChanged(fn func(ctx context.Context, key string, cfg FlagConfig))` — **on `Checker`, not `Handlers`**: control extension writes go through `h.FeatureChecker.SetEnabled`/`SetRolloutPercentage`, never touching `featureHandlers`, so a Handlers-level hook would silently skip the `/control/extensions` write path. `Handlers.SetOnConfigChanged` becomes a thin delegate to the checker setter. Fired fire-and-forget (`context.WithoutCancel`, Rule 8) after every successful write.
 - Consumed by: Task 8 (`roadmapService.SyncFlagPhase`).
 
-- [ ] **Step 1:** Add `onConfigChanged` field + setter (mirror `SetOnFlagEnabled`).
+- [ ] **Step 1:** Add `onConfigChanged` field + setter on `Checker`. Fire it inside `SetEnabled`, `SetRolloutPercentage`, `UpdateFlag`, and `DeleteFlag` (delete → fire with empty `FlagConfig{}` so roadmap unlinks per spec §4.3) — that covers admin CRUD, `/control/extensions` writes, and `HandleSetFeatureFlag` uniformly. Also `Del` the per-key cache entry and `jc:flags:_all` at the same points.
 - [ ] **Step 2:** Extend `FeatureFlagInput` with `Phase`, `ShowOnRoadmap`, `Surfaces`; validate via `ValidateConfig` → `400` on error; write through `UpdateFlag` (already persists config).
-- [ ] **Step 3:** Fire `onConfigChanged` in `CreateFeatureFlag`, `UpdateFeatureFlag`, `HandleSetFeatureFlag`, `DeleteFeatureFlag` (delete → fire with empty config so roadmap unlinks per spec §4.3).
+- [ ] **Step 3:** `Handlers.SetOnConfigChanged` delegates to `checker.SetOnConfigChanged`; keep existing `SetOnFlagEnabled` behavior unchanged.
 - [ ] **Step 4:** Audit — each write inserts `audit_logs` (action `feature_flag.update`, actor, `key`, before/after config). Follow the existing audit insert pattern used by other control handlers (grep `audit_logs` in `internal/control/handlers.go`).
 - [ ] **Step 5: Tests + commit.**
 
@@ -333,7 +362,7 @@ Register `r.Get("/feature-flags/details", featureHandlers.HandleGetFeatureFlagDe
 - Produces: `StatusTesting ItemStatus = "testing"`; in `PublicStatuses`, `VotableStatuses`, `AllStatuses`; `boardColumnOrder` gains `{StatusTesting, "Testing"}` between InProgress and Shipped; `validTransitions` gains `planned→testing`, `in_progress→testing`, `testing→shipped|in_progress|archived`, `under_review→testing` (community item can go straight to beta).
 
 - [ ] **Step 1: Failing tests** — `ValidStatus("testing")` true; `IsVotableStatus(testing)` true; `IsPublicStatus(testing)` true; transitions in/out per above.
-- [ ] **Step 2: Implement** in `types.go`; check `service.go` for hardcoded status lists (`ListPublicRoadmapItems` SQL filters by `status IN` via `PublicStatuses` — verify the query in `internal/db/queries/roadmap.sql` takes the list as param; if statuses are inlined in SQL, add `testing` there and `make sqlc-gen`).
+- [ ] **Step 2: Implement** in `types.go`. Verified: `ListPublicRoadmapItems` filters via `i.status = ANY(@statuses::text[])` — no SQL change needed; adding `StatusTesting` to `PublicStatuses` flows automatically. Still grep `internal/roadmap/` for any other inlined status lists (admin filters, votable checks).
 - [ ] **Step 3: Tests + commit** `"feat(roadmap): testing status in lifecycle (spec §3.3)"`.
 
 ---
@@ -351,17 +380,21 @@ Register `r.Get("/feature-flags/details", featureHandlers.HandleGetFeatureFlagDe
 ```sql
 -- name: GetRoadmapItemByFlagKey :one
 SELECT * FROM roadmap_items WHERE feature_flag_key = $1 AND deleted_at IS NULL;
+-- name: ListRoadmapItemsByFlagKeys :many
+SELECT * FROM roadmap_items WHERE feature_flag_key = ANY($1::text[]) AND deleted_at IS NULL;
 -- name: ClearRoadmapItemFlagKey :exec
 UPDATE roadmap_items SET feature_flag_key = NULL, updated_at = now() WHERE feature_flag_key = $1;
 ```
-- Produces: `func (s *Service) SyncFlagPhase(ctx context.Context, flagKey string, cfg features.FlagConfig) error` — implements spec §4.4. Note: `internal/roadmap` importing `internal/features` — verify no cycle (`grep -rn 'internal/roadmap' internal/features/`); if cycle, accept `(ctx, key string, phase string, showOnRoadmap bool, name, desc string)` primitives instead.
+(`ListRoadmapItemsByFlagKeys` is needed by Task 9 to batch `linked_roadmap_slug` — one query for the whole extensions list, not N.)
+- New sentinel: `ErrStatusDerived = errors.New("status_derived")` in `internal/errors/sentinel.go` + a case in `internal/errors/http.go` → `409` code `status_derived` (mirror the `ErrInvalidStatusTransition` block at http.go:125).
+- Produces: `func (s *Service) SyncFlagPhase(ctx context.Context, flagKey string, cfg features.FlagConfig) error` — implements spec §4.4. `internal/roadmap` → `internal/features` import is clean (features is a leaf; it imports only auth/geoip).
 
 - [ ] **Step 1: Add queries + `make sqlc-gen`.**
-- [ ] **Step 2: `SyncFlagPhase`** per spec: `showOnRoadmap=false`+linked → set status `archived`; `true`+no item → create (title=name, slug=`content.Slugify(name)`+unique suffix, summary=description, status=derived); `true`+item → write derived status directly bypassing `IsValidTransition`; `phase→shipped` sets `shipped_at` + fires `ship_notify` only when previous status ≠ shipped; always `s.invalidateBoard(ctx)`. Empty `flagKey` (flag deleted) → clear `feature_flag_key` on linked items.
-- [ ] **Step 3: Linked-status enforcement** — in `AdminSetStatus` (service layer), if `item.FeatureFlagKey != nil` → return `errpkg`-style `ErrStatusDerived` → handler maps to `409 status_derived`. In `AdminCreateItem`/`AdminUpdateItem`, validate `feature_flag_key` against `features.RegistryLookup` + existing flag rows (query `SELECT 1 FROM feature_flags WHERE key=$1`); unknown → `400 unknown_feature_flag`. Setting a link applies the flag's current phase immediately.
-- [ ] **Step 4: Wire in server.go** near line 1324:
+- [ ] **Step 2: `SyncFlagPhase`** per spec: `showOnRoadmap=false`+linked → set status `archived`; `true`+no item → create (title=name, slug=`content.Slugify(name)`+unique suffix, summary=description, status=derived); `true`+item → write derived status directly via `UpdateRoadmapItemStatus` bypassing `IsValidTransition`; `phase→shipped` sets `shipped_at` (SQL-side CASE already handles this) + fires `ship_notify` only when previous status ≠ shipped; always `s.invalidateBoard(ctx)`. Empty `flagKey` (flag deleted) → `ClearRoadmapItemFlagKey`.
+- [ ] **Step 3: Linked-status enforcement** — in `AdminSetStatus` (service.go:651), after `current` is loaded and `from` computed (~line 671): `if current.FeatureFlagKey.Valid && current.FeatureFlagKey.String != "" → return ErrStatusDerived`. In `AdminCreateItem`/`AdminUpdateItem`, validate `feature_flag_key` against `features.RegistryLookup` + existing flag rows (`SELECT 1 FROM feature_flags WHERE key=$1`); unknown → `400 unknown_feature_flag`. Setting a link applies the flag's current phase immediately. Add the `ErrStatusDerived` sentinel + http.go mapping in this step.
+- [ ] **Step 4: Wire in server.go** near line 1324 — hook on the **checker** (Task 6):
 ```go
-featureHandlers.SetOnConfigChanged(func(ctx context.Context, key string, cfg features.FlagConfig) {
+featureChecker.SetOnConfigChanged(func(ctx context.Context, key string, cfg features.FlagConfig) {
 	if err := roadmapService.SyncFlagPhase(ctx, key, cfg); err != nil {
 		slog.Error("roadmap sync flag phase failed", "key", key, "error", err)
 	}
@@ -385,8 +418,8 @@ featureHandlers.SetOnConfigChanged(func(ctx context.Context, key string, cfg fea
 - `PATCH /control/extensions/{key}` body gains: `phase`, `show_on_roadmap`, `surfaces`, `name`, `description`, `rollout_percentage` — all optional; validated via `features.ValidateConfig`.
 
 - [ ] **Step 1: Failing test** — list returns every Registry key (not just 28); PATCH with `{phase:"testing", surfaces:{main:{state:"visible",audience:["group:beta_testers"]}}}` persists; `phase:"bogus"` → 400.
-- [ ] **Step 2: Implement** — `ListExtensions` iterates `features.Registry`, overlays `ListFlagRows` + `GetFlagConfig`; DELETE `knownExtensions`, `findExtension`, `extensionDefaultEnabled`, `extensionSettingKey` and their tests; lookup becomes `features.RegistryLookup(key)` (unknown key → 404 `extension_not_found`, but allow admin-created rows present in `feature_flags` — iterate union like `ListFeatureFlags`). `UpdateExtension` merges decoded body into `GetFlagConfig` + `SetEnabled`, validates, `ClearCache`, fires `onConfigChanged` (expose `FeaturesHandlers` to control or add `Checker.OnConfigChanged` — simplest: `Checker` gains the same hook registry so control handlers fire it too; spec §4.4 requires ALL write paths fire it).
-- [ ] **Step 3:** `linked_roadmap_slug` — `SELECT slug FROM roadmap_items WHERE feature_flag_key=$1 AND deleted_at IS NULL` via the Task-8 query (already generated); NULL → omit field.
+- [ ] **Step 2: Implement** — `ListExtensions` iterates `features.Registry` ∪ `feature_flags` rows. **Batch, do not loop-query:** the page polls every 30s over ~60 flags — one `ListFlagRows` call (carries `Enabled`+`Config`; or the `jc:flags:_all` aggregate) + one `ListRoadmapItemsByFlagKeys` (Task 8) + merge in Go. Per-flag `IsEnabled`/`GetFlagConfig`/roadmap lookups are forbidden here (N+1). DELETE `knownExtensions`, `findExtension`, `extensionDefaultEnabled`, `extensionSettingKey` and their tests; unknown key → 404 `extension_not_found` but admin-created `feature_flags` rows outside the Registry still list (union, like `ListFeatureFlags`). `UpdateExtension` merges decoded body into existing `FlagConfig` (decode stored config, apply only present fields, `ValidateConfig`, `UpdateFlag`) — the `Checker` hook fires `onConfigChanged` automatically per Task 6.
+- [ ] **Step 3:** `linked_roadmap_slug` — merge from the batched `ListRoadmapItemsByFlagKeys` map; unlinked → omit field.
 - [ ] **Step 4:** `show_on_roadmap=true` while `roadmap.enabled` resolves off → still persist, but include `"warning": "roadmap_disabled"` in the response `data` (spec §6.3).
 - [ ] **Step 5: Tests + commit.**
 
@@ -453,6 +486,8 @@ Optimistic-update the card state and roll back on `result.ok === false`, matchin
 - Modify: `.jeos/conventions/system-settings-catalog.md` — same deprecation notes.
 
 - [ ] **Step 1:** Each service gains a `features.FeatureChecker` dep (or reuses an injected one); `s.settings.GetBoolOr(ctx,"x.enabled",d)` → `s.features.IsEnabled(ctx,"x.enabled")`. Update constructors + server.go wiring. Test fakes updated (`fakeSettingsReader`-style stubs gain the checker interface).
+  - **Only reachability toggles migrate.** Sub-settings stay in `system_settings` per spec §9.2: `roadmap.submissions_enabled` (the §113 submission switch — reachability is already gated by `roadmap.enabled`), `gamification.badges_enabled`/`challenges_enabled`/`leaderboard_enabled`, `ai.cache_enabled`, `assessment.ai_roadmap_enabled`, `intel.relevance.classifier_enabled`, `wiki.candidate_reactions_enabled`-style feature-internal switches, `service_packages.tiers_enabled`, etc. Rule of thumb: if the key decides *whether the whole feature is reachable*, it becomes a flag; if it tunes a sub-behavior of an already-gated feature, it stays a setting. When in doubt, check whether the key appears in `features.Gate(...)` call sites — only those are reachability toggles.
+  - Each migrated key must exist in the Registry (Task 2) so it appears on `/extensions`. Keys with no Registry entry and no `Gate` call (e.g. `intel.discovery.enabled` if it's service-internal) may need a new Registry entry or stay settings — decide per key and record the choice in the commit message.
 - [ ] **Step 2:** Catalog deprecations.
 - [ ] **Step 3:** `go build ./... && go test ./internal/...` — green; commit.
 
@@ -472,7 +507,7 @@ Optimistic-update the card state and roll back on `result.ok === false`, matchin
 ### Task 15: JEOS + catalog updates
 
 **Files:**
-- Modify: `.jeos/sections/42-feature-flags.md` (or its successor — flag removal was noted "in progress"; amend to describe the unified model), `.jeos/sections/113-public-product-roadmap.md` (testing status + derived lifecycle), `.jeos/conventions/api-routes-catalog.md` (`/feature-flags/details`, extended control PATCH), `.jeos/conventions/system-settings-catalog.md` (deprecations), `.jeos/conventions/feature-flag-naming.md` (audience/geo note), `.jeos/AGENTS.md` if a new golden rule is warranted (e.g. "feature toggles live only in feature_flags").
+- Modify: `.jeos/sections/42-feature-flags.md` (or its successor — flag removal was noted "in progress"; amend to describe the unified model), `.jeos/sections/113-public-product-roadmap.md` (testing status + derived lifecycle), `.jeos/conventions/api-routes-catalog.md` (`/feature-flags/details`, extended control PATCH), `.jeos/conventions/system-settings-catalog.md` (deprecations), `.jeos/conventions/feature-flag-naming.md` (audience/geo note), `.jeos/conventions/valkey-keys-catalog.md` (new `jc:flags:_all` aggregate key + the `jc:flags:<key>` JSON-value format change), `.jeos/AGENTS.md` if a new golden rule is warranted (e.g. "feature toggles live only in feature_flags").
 
 - [ ] **Step 1:** Amend each doc to match shipped behavior — JEOS is updated to reflect code, not aspirational text (Rule 1).
 - [ ] **Step 2:** Commit `"docs(jeos): unified rollout model — phases, surfaces, audience, geo"`.
