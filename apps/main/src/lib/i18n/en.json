@@ -3224,6 +3224,7 @@
 	"services.book_departure": "Departure",
 	"services.book_departure_ph": "Choose a date",
 	"services.book_email": "Email for receipt",
+	"services.book_email_ph": "you@example.com",
 	"services.book_failed": "Could not submit",
 	"services.book_flexible": "My dates are flexible",
 	"services.book_heading_inquiry": "Booking & inquiries",

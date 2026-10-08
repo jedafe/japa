@@ -4167,6 +4167,12 @@ export interface ServiceBooking {
 	fee_amount?: number | null;
 	fee_currency?: string;
 	agent_balance_due?: number | null;
+	/** §114 snapshots — tier/coupon context frozen at booking time. */
+	tier_id?: string;
+	tier_name?: string;
+	tier_price_amount?: number | null;
+	coupon_code?: string;
+	discount_amount?: number | null;
 	org_response_note?: string;
 	dispute_reason?: string;
 	expires_at?: string;

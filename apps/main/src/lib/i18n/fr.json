@@ -3188,6 +3188,7 @@
 	"services.book_departure": "Départ",
 	"services.book_departure_ph": "Choisir une date",
 	"services.book_email": "E-mail pour le reçu",
+	"services.book_email_ph": "vous@exemple.com",
 	"services.book_failed": "Envoi impossible",
 	"services.book_flexible": "Mes dates sont flexibles",
 	"services.book_heading_inquiry": "Réservation et demandes",

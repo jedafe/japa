@@ -615,7 +615,7 @@
 							id="bk-email"
 							type="email"
 							bind:value={bookingEmail}
-							placeholder="you@example.com"
+							placeholder={t('services.book_email_ph', 'you@example.com')}
 							class="{inputCls} w-full"
 						/>
 					</div>
