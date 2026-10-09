@@ -1,23 +1,26 @@
 -- =====================================================================
 -- sqlc catalog compatibility stub — NOT a migration, NOT a query file.
 --
--- Migration 000824 dropped mentorship_connections, but the legacy
--- connection queries in internal/db/queries/mentorship.sql and gdpr.sql
--- still reference it (they are dead at runtime; the mentorship compat
--- rewrite in tasks 6/7 of 2026-10-09-services-mentorship-unification
--- removes them). sqlc builds its catalog by replaying migrations/, so
--- without this stub `make sqlc-gen` fails on the dangling references and
--- the gen.MentorshipConnection model disappears, breaking
--- internal/mentorship + internal/gdpr + internal/server callers that the
--- compat tasks have not rewired yet.
+-- Migration 000824 dropped mentorship_connections and Task 6 of
+-- 2026-10-09-services-mentorship-unification removed every query and
+-- call site in internal/mentorship that used it (connection state now
+-- lives in service_bookings behind the mentor's shadow listing). The
+-- table is still referenced by the dead anonymization/export queries in
+-- internal/db/queries/gdpr.sql — Task 7 owns cleaning those.
+--
+-- sqlc builds its catalog by replaying migrations/, so without this stub
+-- `make sqlc-gen` fails on the dangling gdpr.sql references and the
+-- gen.MentorshipConnection model disappears, breaking internal/gdpr
+-- callers that Task 7 has not rewired yet.
 --
 -- The definition below is the baseline 000735 shape verbatim (the same
 -- one 000824.down.sql recreates), so the generated model is identical to
--- the pre-drop model and every existing caller keeps compiling.
+-- the pre-drop model and the remaining gdpr callers keep compiling.
 --
--- REMOVE this file (and the schema entry in sqlc.yaml) together with the
--- mentorship_connections queries in Task 6/7 — until then any new query
--- written against this table would compile but fail at runtime.
+-- REMOVE this file (and the schema entry in sqlc.yaml) in Task 7 together
+-- with the mentorship_connections queries in gdpr.sql — until then any
+-- new query written against this table would compile but fail at
+-- runtime.
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS public.mentorship_connections (

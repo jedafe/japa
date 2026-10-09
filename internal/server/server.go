@@ -1707,6 +1707,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	mentorshipService.SetEnqueuer(taskEnqueuer)
 	mentorshipService.SetSettingsProvider(settingsService)
 	mentorshipService.SetEventTracker(analyticsEventTrackerAdapter{analyticsService})
+	// 000824 unification: connection lifecycle + mentor shadow listing
+	// delegate to servicedir bookings/listings.
+	mentorshipService.SetBookingBackend(serviceDirService)
 	mentorshipHandlers := mentorship.NewHandlers(mentorshipService)
 	mentorshipHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in mentorship responses
 

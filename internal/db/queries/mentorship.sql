@@ -76,10 +76,13 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetMentorProfile :one
 -- Get the current user's mentor profile settings from user_profiles.
+-- username and mentor_listing_content_id join in for the shadow-listing
+-- upsert in UpdateMentorProfile (000824 unification).
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url
+ up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username
 FROM user_profiles up
+JOIN users u ON u.id = up.user_id
 WHERE up.user_id = @user_id;
 
 -- name: UpdateMentorProfile :one
@@ -98,12 +101,23 @@ RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
 
 -- name: GetMentorByUsername :one
 -- Get a mentor's public profile by username (is_mentor must be true).
+-- 000824: the mentor must also have a live shadow listing —
+-- listing_kind='mentorship' meta on a published, non-deleted contents row.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, u.username
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
-WHERE u.username = @username AND up.is_mentor = true;
+WHERE u.username = @username AND up.is_mentor = true
+ AND EXISTS (
+   SELECT 1 FROM contents sc
+   JOIN service_listing_meta sm ON sm.content_id = sc.id
+   WHERE sc.author_id = up.user_id
+     AND sc.content_type = 'service_listing'
+     AND sm.listing_kind = 'mentorship'
+     AND sc.status = 'published'
+     AND sc.deleted_at IS NULL
+ );
 
 -- name: ListMentors :many
 -- Discover mentors with optional destination and area filters.
@@ -128,6 +142,16 @@ WITH mentors AS (
  FROM user_profiles up
  JOIN users u ON u.id = up.user_id
  WHERE up.is_mentor = true
+ -- 000824: only mentors with a live shadow listing are discoverable.
+ AND EXISTS (
+   SELECT 1 FROM contents sc
+   JOIN service_listing_meta sm ON sm.content_id = sc.id
+   WHERE sc.author_id = up.user_id
+     AND sc.content_type = 'service_listing'
+     AND sm.listing_kind = 'mentorship'
+     AND sc.status = 'published'
+     AND sc.deleted_at IS NULL
+ )
  AND (
  @dest_space_id::uuid IS NULL OR EXISTS (
  SELECT 1 FROM spaces s
@@ -194,6 +218,16 @@ WITH mentors AS (
  FROM user_profiles up
  JOIN users u ON u.id = up.user_id
  WHERE up.is_mentor = true
+ -- 000824: only mentors with a live shadow listing are discoverable.
+ AND EXISTS (
+   SELECT 1 FROM contents sc
+   JOIN service_listing_meta sm ON sm.content_id = sc.id
+   WHERE sc.author_id = up.user_id
+     AND sc.content_type = 'service_listing'
+     AND sm.listing_kind = 'mentorship'
+     AND sc.status = 'published'
+     AND sc.deleted_at IS NULL
+ )
  AND (
  @dest_space_id::uuid IS NULL OR EXISTS (
  SELECT 1 FROM spaces s
@@ -236,6 +270,8 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: GetMentorsByIDs :many
 -- Get up to 4 mentors by user IDs for the comparison endpoint (§30).
+-- 000824: requires a live shadow listing — an is_mentor profile without a
+-- published mentorship listing is not comparable.
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
  up.display_name, up.avatar_url, u.username,
@@ -244,105 +280,48 @@ FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 WHERE up.is_mentor = true
  AND up.user_id = ANY(@user_ids::uuid[])
+ AND EXISTS (
+   SELECT 1 FROM contents sc
+   JOIN service_listing_meta sm ON sm.content_id = sc.id
+   WHERE sc.author_id = up.user_id
+     AND sc.content_type = 'service_listing'
+     AND sm.listing_kind = 'mentorship'
+     AND sc.status = 'published'
+     AND sc.deleted_at IS NULL
+ )
 ORDER BY u.username;
 
--- name: CreateMentorshipConnection :one
--- Create a new mentorship request (status = 'pending').
--- The UNIQUE(mentor_id, mentee_id, status) constraint prevents duplicate
--- pending requests between the same pair.
-INSERT INTO mentorship_connections (mentor_id, mentee_id, status, goals, destination_space_id) VALUES (@mentor_id, @mentee_id, 'pending', @goals, @destination_space_id)
+-- name: SearchMentors :many
+-- Username/display-name substring search over discoverable mentors —
+-- same 000824 live-shadow gate as the other discovery queries.
+SELECT up.user_id, up.is_mentor, up.mentor_capacity,
+ up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
+ up.display_name, up.avatar_url, u.username,
+ (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
+FROM user_profiles up
+JOIN users u ON u.id = up.user_id
+WHERE up.is_mentor = true
+ AND (u.username ILIKE @q OR up.display_name ILIKE @q)
+ AND EXISTS (
+   SELECT 1 FROM contents sc
+   JOIN service_listing_meta sm ON sm.content_id = sc.id
+   WHERE sc.author_id = up.user_id
+     AND sc.content_type = 'service_listing'
+     AND sm.listing_kind = 'mentorship'
+     AND sc.status = 'published'
+     AND sc.deleted_at IS NULL
+ )
+ORDER BY up.display_name, u.username
+LIMIT @page_limit;
 
-RETURNING *;
+-- name: SetMentorListingContentID :exec
+-- Link/unlink the mentor's shadow listing on user_profiles (000824).
+-- NULL clears the link (used when the mentor opts out and the shadow
+-- contents row is soft-deleted).
+UPDATE user_profiles
+SET mentor_listing_content_id = sqlc.narg(content_id), updated_at = now()
+WHERE user_id = @user_id;
 
--- name: GetActiveOrPendingConnection :one
--- Check whether an active or pending connection already exists between a
--- mentor and mentee (§102: a new request can only be sent after the previous
--- one has been resolved). Returns at most one row.
-SELECT id FROM mentorship_connections
-WHERE mentor_id = @mentor_id
- AND mentee_id = @mentee_id
- AND status IN ('pending', 'active')
-LIMIT 1;
-
--- name: GetMentorshipConnection :one
--- Get a single connection by ID (within the platform).
-SELECT * FROM mentorship_connections
-WHERE id = @id;
-
--- name: ListOutgoingConnections :many
--- List requests sent by the mentee (status filter optional).
-SELECT mc.*, u.username AS mentor_username, up.display_name AS mentor_display_name
-FROM mentorship_connections mc
-JOIN users u ON u.id = mc.mentor_id
-LEFT JOIN user_profiles up ON up.user_id = mc.mentor_id
-WHERE mc.mentee_id = @mentee_id
- AND (@status::text = '' OR mc.status = @status)
-ORDER BY mc.created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: ListIncomingConnections :many
--- List requests received by the mentor (status filter optional).
-SELECT mc.*, u.username AS mentee_username, up.display_name AS mentee_display_name
-FROM mentorship_connections mc
-JOIN users u ON u.id = mc.mentee_id
-LEFT JOIN user_profiles up ON up.user_id = mc.mentee_id
-WHERE mc.mentor_id = @mentor_id
- AND (@status::text = '' OR mc.status = @status)
-ORDER BY mc.created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: AcceptMentorshipConnection :one
--- Mentor accepts a pending request (pending → active).
-UPDATE mentorship_connections
-SET status = 'active', responded_at = now(), updated_at = now()
-WHERE id = @id AND status = 'pending'
-RETURNING *;
-
--- name: DeclineMentorshipConnection :one
--- Mentor declines a pending request (pending → declined).
-UPDATE mentorship_connections
-SET status = 'declined', responded_at = now(), updated_at = now()
-WHERE id = @id AND status = 'pending'
-RETURNING *;
-
--- name: CompleteMentorshipConnection :one
--- Either party completes an active connection (active → completed).
-UPDATE mentorship_connections
-SET status = 'completed', completed_at = now(), updated_at = now()
-WHERE id = @id AND status = 'active'
-RETURNING *;
-
--- name: CancelMentorshipConnection :one
--- Either party cancels an active connection (active → cancelled).
-UPDATE mentorship_connections
-SET status = 'cancelled', cancelled_at = now(), cancel_reason = @cancel_reason, updated_at = now()
-WHERE id = @id AND status = 'active'
-RETURNING *;
-
--- name: CancelPendingConnection :execrows
--- Mentee cancels their own pending request (pending → cancelled).
-UPDATE mentorship_connections
-SET status = 'cancelled', cancelled_at = now(), updated_at = now()
-WHERE id = @id AND mentee_id = @mentee_id AND status = 'pending';
-
--- name: ListAllConnections :many
--- Admin: list all connections with optional status/mentor/mentee filters.
-SELECT mc.*, mu.username AS mentor_username, eu.username AS mentee_username
-FROM mentorship_connections mc
-LEFT JOIN users mu ON mu.id = mc.mentor_id
-LEFT JOIN users eu ON eu.id = mc.mentee_id
-WHERE (@status::text = '' OR mc.status = @status)
- AND (@mentor_id::uuid IS NULL OR mc.mentor_id = @mentor_id)
- AND (@mentee_id::uuid IS NULL OR mc.mentee_id = @mentee_id)
-ORDER BY mc.created_at DESC
-LIMIT @page_limit OFFSET @page_offset;
-
--- name: AdminUpdateConnection :one
--- Admin override: set connection status (remove bad actor, force-complete, etc.).
-UPDATE mentorship_connections
-SET status = @status, updated_at = now()
-WHERE id = @id
-RETURNING *;
 
 -- name: UpdateMentorEmbedding :exec
 -- Set the pgvector embedding for a mentor's bio (called by Asynq task).

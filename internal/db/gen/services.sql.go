@@ -13,19 +13,33 @@ import (
 
 const adminCountServiceBookings = `-- name: AdminCountServiceBookings :one
 SELECT COUNT(*) FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 WHERE ($1::text IS NULL OR sb.status = $1::text)
   AND ($2::text IS NULL OR sb.intent = $2::text)
   AND ($3::uuid IS NULL OR sb.org_id = $3::uuid)
+  AND ($4::text IS NULL OR sm.listing_kind = $4::text)
+  AND ($5::uuid IS NULL OR sb.provider_user_id = $5::uuid)
+  AND ($6::uuid IS NULL OR sb.booker_user_id = $6::uuid)
 `
 
 type AdminCountServiceBookingsParams struct {
-	Status *string     `json:"status"`
-	Intent *string     `json:"intent"`
-	OrgID  pgtype.UUID `json:"org_id"`
+	Status         *string     `json:"status"`
+	Intent         *string     `json:"intent"`
+	OrgID          pgtype.UUID `json:"org_id"`
+	Kind           *string     `json:"kind"`
+	ProviderUserID pgtype.UUID `json:"provider_user_id"`
+	BookerUserID   pgtype.UUID `json:"booker_user_id"`
 }
 
 func (q *Queries) AdminCountServiceBookings(ctx context.Context, arg AdminCountServiceBookingsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, adminCountServiceBookings, arg.Status, arg.Intent, arg.OrgID)
+	row := q.db.QueryRow(ctx, adminCountServiceBookings,
+		arg.Status,
+		arg.Intent,
+		arg.OrgID,
+		arg.Kind,
+		arg.ProviderUserID,
+		arg.BookerUserID,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -76,85 +90,114 @@ SELECT sb.id, sb.listing_meta_id, sb.departure_id, sb.booker_user_id, sb.org_id,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username
+       u.username AS booker_username, up.display_name AS booker_display_name,
+       up.avatar_url AS booker_avatar,
+       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       pup.avatar_url AS provider_avatar,
+       dsp.name AS destination_space_name,
+       COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
 LEFT JOIN users u ON u.id = sb.booker_user_id
+LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
+LEFT JOIN spaces dsp ON dsp.id = sb.destination_space_id
 WHERE ($1::text IS NULL OR sb.status = $1::text)
   AND ($2::text IS NULL OR sb.intent = $2::text)
   AND ($3::uuid IS NULL OR sb.org_id = $3::uuid)
+  AND ($4::text IS NULL OR sm.listing_kind = $4::text)
+  AND ($5::uuid IS NULL OR sb.provider_user_id = $5::uuid)
+  AND ($6::uuid IS NULL OR sb.booker_user_id = $6::uuid)
 ORDER BY sb.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $8 OFFSET $7
 `
 
 type AdminListServiceBookingsParams struct {
-	Status     *string     `json:"status"`
-	Intent     *string     `json:"intent"`
-	OrgID      pgtype.UUID `json:"org_id"`
-	PageOffset int32       `json:"page_offset"`
-	PageLimit  int32       `json:"page_limit"`
+	Status         *string     `json:"status"`
+	Intent         *string     `json:"intent"`
+	OrgID          pgtype.UUID `json:"org_id"`
+	Kind           *string     `json:"kind"`
+	ProviderUserID pgtype.UUID `json:"provider_user_id"`
+	BookerUserID   pgtype.UUID `json:"booker_user_id"`
+	PageOffset     int32       `json:"page_offset"`
+	PageLimit      int32       `json:"page_limit"`
 }
 
 type AdminListServiceBookingsRow struct {
-	ID                 pgtype.UUID        `json:"id"`
-	ListingMetaID      pgtype.UUID        `json:"listing_meta_id"`
-	DepartureID        pgtype.UUID        `json:"departure_id"`
-	BookerUserID       pgtype.UUID        `json:"booker_user_id"`
-	OrgID              pgtype.UUID        `json:"org_id"`
-	Intent             string             `json:"intent"`
-	PartySize          int32              `json:"party_size"`
-	PreferredDates     []byte             `json:"preferred_dates"`
-	Note               *string            `json:"note"`
-	Status             string             `json:"status"`
-	PurchaseMode       string             `json:"purchase_mode"`
-	PaymentID          pgtype.UUID        `json:"payment_id"`
-	TotalPrice         *int64             `json:"total_price"`
-	FeeAmount          *int64             `json:"fee_amount"`
-	FeeCurrency        *string            `json:"fee_currency"`
-	AgentBalanceDue    *int64             `json:"agent_balance_due"`
-	OrgResponseNote    *string            `json:"org_response_note"`
-	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
-	ConfirmedAt        pgtype.Timestamptz `json:"confirmed_at"`
-	FulfilledAt        pgtype.Timestamptz `json:"fulfilled_at"`
-	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason       *string            `json:"cancel_reason"`
-	AnonymizedAt       pgtype.Timestamptz `json:"anonymized_at"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-	RemindedAt         pgtype.Timestamptz `json:"reminded_at"`
-	DisputeReason      *string            `json:"dispute_reason"`
-	TierID             pgtype.UUID        `json:"tier_id"`
-	CouponID           pgtype.UUID        `json:"coupon_id"`
-	CouponCode         *string            `json:"coupon_code"`
-	DiscountAmount     *int64             `json:"discount_amount"`
-	TierName           *string            `json:"tier_name"`
-	TierPriceAmount    *int64             `json:"tier_price_amount"`
-	ProviderUserID     pgtype.UUID        `json:"provider_user_id"`
-	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
-	Meta               []byte             `json:"meta"`
-	ListingContentID   pgtype.UUID        `json:"listing_content_id"`
-	ListingTitle       string             `json:"listing_title"`
-	ListingSlug        string             `json:"listing_slug"`
-	ListingKind        string             `json:"listing_kind"`
-	OrgName            *string            `json:"org_name"`
-	OrgSlug            *string            `json:"org_slug"`
-	PaymentStatus      *string            `json:"payment_status"`
-	PaymentProvider    *string            `json:"payment_provider"`
-	DepartureStartsOn  pgtype.Date        `json:"departure_starts_on"`
-	DepartureEndsOn    pgtype.Date        `json:"departure_ends_on"`
-	BookerUsername     *string            `json:"booker_username"`
+	ID                   pgtype.UUID        `json:"id"`
+	ListingMetaID        pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID          pgtype.UUID        `json:"departure_id"`
+	BookerUserID         pgtype.UUID        `json:"booker_user_id"`
+	OrgID                pgtype.UUID        `json:"org_id"`
+	Intent               string             `json:"intent"`
+	PartySize            int32              `json:"party_size"`
+	PreferredDates       []byte             `json:"preferred_dates"`
+	Note                 *string            `json:"note"`
+	Status               string             `json:"status"`
+	PurchaseMode         string             `json:"purchase_mode"`
+	PaymentID            pgtype.UUID        `json:"payment_id"`
+	TotalPrice           *int64             `json:"total_price"`
+	FeeAmount            *int64             `json:"fee_amount"`
+	FeeCurrency          *string            `json:"fee_currency"`
+	AgentBalanceDue      *int64             `json:"agent_balance_due"`
+	OrgResponseNote      *string            `json:"org_response_note"`
+	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt          pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt          pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt          pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason         *string            `json:"cancel_reason"`
+	AnonymizedAt         pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt           pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason        *string            `json:"dispute_reason"`
+	TierID               pgtype.UUID        `json:"tier_id"`
+	CouponID             pgtype.UUID        `json:"coupon_id"`
+	CouponCode           *string            `json:"coupon_code"`
+	DiscountAmount       *int64             `json:"discount_amount"`
+	TierName             *string            `json:"tier_name"`
+	TierPriceAmount      *int64             `json:"tier_price_amount"`
+	ProviderUserID       pgtype.UUID        `json:"provider_user_id"`
+	DestinationSpaceID   pgtype.UUID        `json:"destination_space_id"`
+	Meta                 []byte             `json:"meta"`
+	ListingContentID     pgtype.UUID        `json:"listing_content_id"`
+	ListingTitle         string             `json:"listing_title"`
+	ListingSlug          string             `json:"listing_slug"`
+	ListingKind          string             `json:"listing_kind"`
+	OrgName              *string            `json:"org_name"`
+	OrgSlug              *string            `json:"org_slug"`
+	PaymentStatus        *string            `json:"payment_status"`
+	PaymentProvider      *string            `json:"payment_provider"`
+	DepartureStartsOn    pgtype.Date        `json:"departure_starts_on"`
+	DepartureEndsOn      pgtype.Date        `json:"departure_ends_on"`
+	BookerUsername       *string            `json:"booker_username"`
+	BookerDisplayName    *string            `json:"booker_display_name"`
+	BookerAvatar         *string            `json:"booker_avatar"`
+	ProviderUsername     *string            `json:"provider_username"`
+	ProviderDisplayName  *string            `json:"provider_display_name"`
+	ProviderAvatar       *string            `json:"provider_avatar"`
+	DestinationSpaceName *string            `json:"destination_space_name"`
+	EffectiveTierName    string             `json:"effective_tier_name"`
 }
 
-// Admin view — all bookings, any payment state.
+// Admin view — all bookings, any payment state. kind/provider_user_id/
+// booker_user_id are the mentorship-compat filters (000824): the legacy
+// admin connections list filters by mentor (provider) and mentee
+// (booker) over kind='mentorship' rows.
 func (q *Queries) AdminListServiceBookings(ctx context.Context, arg AdminListServiceBookingsParams) ([]AdminListServiceBookingsRow, error) {
 	rows, err := q.db.Query(ctx, adminListServiceBookings,
 		arg.Status,
 		arg.Intent,
 		arg.OrgID,
+		arg.Kind,
+		arg.ProviderUserID,
+		arg.BookerUserID,
 		arg.PageOffset,
 		arg.PageLimit,
 	)
@@ -213,6 +256,13 @@ func (q *Queries) AdminListServiceBookings(ctx context.Context, arg AdminListSer
 			&i.DepartureStartsOn,
 			&i.DepartureEndsOn,
 			&i.BookerUsername,
+			&i.BookerDisplayName,
+			&i.BookerAvatar,
+			&i.ProviderUsername,
+			&i.ProviderDisplayName,
+			&i.ProviderAvatar,
+			&i.DestinationSpaceName,
+			&i.EffectiveTierName,
 		); err != nil {
 			return nil, err
 		}
@@ -1068,6 +1118,44 @@ func (q *Queries) CreateCouponRedemption(ctx context.Context, arg CreateCouponRe
 	return i, err
 }
 
+const createMentorshipShadowContent = `-- name: CreateMentorshipShadowContent :one
+
+INSERT INTO contents (author_id, content_type, title, slug, body, body_html, status, published_at, content_hash)
+VALUES ($1, 'service_listing', $2, $3, $4, '', 'published', now(), $5)
+ON CONFLICT DO NOTHING
+RETURNING id
+`
+
+type CreateMentorshipShadowContentParams struct {
+	AuthorID    pgtype.UUID `json:"author_id"`
+	Title       string      `json:"title"`
+	Slug        string      `json:"slug"`
+	Body        string      `json:"body"`
+	ContentHash *string     `json:"content_hash"`
+}
+
+// ---------------------------------------------------------------------
+// Mentor shadow listing lifecycle (000824 / compat task). Shadow contents
+// rows are written directly — content.Service.CreateContent requires a
+// primary space for published rows and mentorship shadows are spaceless
+// by design (mirrors the 000824 migration INSERT, which also creates no
+// content_spaces row). ON CONFLICT DO NOTHING covers the partial uniques
+// on slug/content_hash (000745): a collision returns no row and the
+// service re-reads the winning shadow.
+// ---------------------------------------------------------------------
+func (q *Queries) CreateMentorshipShadowContent(ctx context.Context, arg CreateMentorshipShadowContentParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createMentorshipShadowContent,
+		arg.AuthorID,
+		arg.Title,
+		arg.Slug,
+		arg.Body,
+		arg.ContentHash,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createServiceBooking = `-- name: CreateServiceBooking :one
 
 INSERT INTO service_bookings (
@@ -1537,6 +1625,7 @@ const declineServiceBooking = `-- name: DeclineServiceBooking :one
 UPDATE service_bookings
 SET status = 'declined',
     org_response_note = $1,
+    meta = meta || jsonb_build_object('responded_at', now()),
     updated_at = now()
 WHERE id = $2 AND status = 'pending'
 RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason, tier_id, coupon_id, coupon_code, discount_amount, tier_name, tier_price_amount, provider_user_id, destination_space_id, meta
@@ -1547,7 +1636,10 @@ type DeclineServiceBookingParams struct {
 	ID              pgtype.UUID `json:"id"`
 }
 
-// pending → declined (org rejects).
+// pending → declined (org rejects). meta.responded_at preserves the
+// legacy mentorship_connections.responded_at semantics — service_bookings
+// has no declined_at column, so the response timestamp rides meta (same
+// shape the 000824 migration wrote for declined rows).
 func (q *Queries) DeclineServiceBooking(ctx context.Context, arg DeclineServiceBookingParams) (ServiceBooking, error) {
 	row := q.db.QueryRow(ctx, declineServiceBooking, arg.OrgResponseNote, arg.ID)
 	var i ServiceBooking
@@ -1765,6 +1857,21 @@ func (q *Queries) DisputeServiceBooking(ctx context.Context, arg DisputeServiceB
 		&i.Meta,
 	)
 	return i, err
+}
+
+const ensureMentorshipShadowMeta = `-- name: EnsureMentorshipShadowMeta :exec
+INSERT INTO service_listing_meta (content_id, org_id, service_category, is_remote, listing_kind, purchase_mode)
+SELECT $1, NULL, 'mentorship', true, 'mentorship', 'inquiry'
+WHERE NOT EXISTS (
+    SELECT 1 FROM service_listing_meta m WHERE m.content_id = $1
+)
+`
+
+// Meta row for a freshly created shadow — NOT EXISTS-guarded so the ensure
+// path can run it inside the same tx for both create and update.
+func (q *Queries) EnsureMentorshipShadowMeta(ctx context.Context, contentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, ensureMentorshipShadowMeta, contentID)
+	return err
 }
 
 const fulfillServiceBooking = `-- name: FulfillServiceBooking :one
@@ -4815,6 +4922,62 @@ type SetServiceListingVerifiedParams struct {
 // ---------------------------------------------------------------------
 func (q *Queries) SetServiceListingVerified(ctx context.Context, arg SetServiceListingVerifiedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setServiceListingVerified, arg.VerificationType, arg.VerifiedBy, arg.ContentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const softDeleteMentorshipShadow = `-- name: SoftDeleteMentorshipShadow :exec
+UPDATE contents c
+SET deleted_at = now(), updated_at = now()
+WHERE c.author_id = $1
+  AND c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM service_listing_meta sm
+      WHERE sm.content_id = c.id AND sm.listing_kind = 'mentorship'
+  )
+`
+
+// Opt-out path: soft-delete every live mentorship shadow for the author.
+// Scoped by listing_kind='mentorship' so a mentor who also authors real
+// service listings keeps them. service_bookings keep pointing at the meta
+// row — the meta and deleted contents row survive for audit.
+func (q *Queries) SoftDeleteMentorshipShadow(ctx context.Context, authorID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteMentorshipShadow, authorID)
+	return err
+}
+
+const updateMentorshipShadowContent = `-- name: UpdateMentorshipShadowContent :execrows
+UPDATE contents
+SET title = $1,
+    body = $2,
+    content_hash = $3,
+    status = 'published',
+    published_at = COALESCE(published_at, now()),
+    updated_at = now()
+WHERE id = $4 AND deleted_at IS NULL
+`
+
+type UpdateMentorshipShadowContentParams struct {
+	Title       string      `json:"title"`
+	Body        string      `json:"body"`
+	ContentHash *string     `json:"content_hash"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+// Refresh the mentor's shadow listing in place: title follows
+// display_name, body follows mentor_bio, content_hash follows Rule 12
+// (distinguisher 'mentor:<user_id>' matches the migration). Republishes a
+// preserved draft shadow (000824 fallback rows for non-listed mentors).
+func (q *Queries) UpdateMentorshipShadowContent(ctx context.Context, arg UpdateMentorshipShadowContentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateMentorshipShadowContent,
+		arg.Title,
+		arg.Body,
+		arg.ContentHash,
+		arg.ID,
+	)
 	if err != nil {
 		return 0, err
 	}

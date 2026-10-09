@@ -455,6 +455,9 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 		TierID: r.TierID, TierName: r.TierName, TierPriceAmount: r.TierPriceAmount,
 		CouponID: r.CouponID, CouponCode: r.CouponCode, DiscountAmount: r.DiscountAmount,
 	})
+	if r.EffectiveTierName != "" {
+		row.TierName = strPtr(r.EffectiveTierName) // snapshot wins, live tier name is the fallback
+	}
 	row.ListingTitle = r.ListingTitle
 	row.ListingSlug = r.ListingSlug
 	row.ListingKind = r.ListingKind
@@ -466,6 +469,12 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
 	row.BookerUsername = r.BookerUsername
+	row.BookerDisplayName = r.BookerDisplayName
+	row.BookerAvatar = r.BookerAvatar
+	row.ProviderUsername = r.ProviderUsername
+	row.ProviderDisplayName = r.ProviderDisplayName
+	row.ProviderAvatar = r.ProviderAvatar
+	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
 }
@@ -739,18 +748,26 @@ func (s *Store) ListBookingsByOrg(ctx context.Context, orgID pgtype.UUID, f Book
 }
 
 // BookingsAdminFilter holds filters for the admin bookings view.
+// Kind/ProviderUserID/BookerUserID are the mentorship-compat filters
+// (000824): the legacy admin connections list filters kind='mentorship'
+// by mentor (provider) and mentee (booker).
 type BookingsAdminFilter struct {
-	Status string
-	Intent string
-	OrgID  pgtype.UUID
-	Limit  int32
-	Offset int32
+	Status         string
+	Intent         string
+	OrgID          pgtype.UUID
+	Kind           string
+	ProviderUserID pgtype.UUID
+	BookerUserID   pgtype.UUID
+	Limit          int32
+	Offset         int32
 }
 
 // AdminListBookings returns all bookings (any payment state) for admins.
 func (s *Store) AdminListBookings(ctx context.Context, f BookingsAdminFilter) ([]BookingRow, int64, error) {
 	params := gen.AdminListServiceBookingsParams{
-		OrgID: f.OrgID, PageLimit: f.Limit, PageOffset: f.Offset,
+		OrgID:          f.OrgID,
+		ProviderUserID: f.ProviderUserID, BookerUserID: f.BookerUserID,
+		PageLimit: f.Limit, PageOffset: f.Offset,
 	}
 	if f.Status != "" {
 		params.Status = &f.Status
@@ -760,6 +777,10 @@ func (s *Store) AdminListBookings(ctx context.Context, f BookingsAdminFilter) ([
 		params.Intent = &f.Intent
 	}
 
+	if f.Kind != "" {
+		params.Kind = &f.Kind
+	}
+
 	rows, err := s.read.AdminListServiceBookings(ctx, params)
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: admin list bookings: %w", err)
@@ -767,6 +788,7 @@ func (s *Store) AdminListBookings(ctx context.Context, f BookingsAdminFilter) ([
 
 	total, err := s.read.AdminCountServiceBookings(ctx, gen.AdminCountServiceBookingsParams{
 		Status: params.Status, Intent: params.Intent, OrgID: f.OrgID,
+		Kind: params.Kind, ProviderUserID: f.ProviderUserID, BookerUserID: f.BookerUserID,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: admin count bookings: %w", err)

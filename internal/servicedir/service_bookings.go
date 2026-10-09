@@ -1059,9 +1059,13 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 					"booking_id", bookingID, "error", dmErr)
 			}
 		}
+	}
 
-		// confirmed moved active_mentee_count via the booking trigger —
-		// re-index the mentor's search document (§102).
+	// Any mentorship-kind transition out of 'confirmed' (complete) or into
+	// it (accept) moved active_mentee_count via the booking trigger —
+	// re-index the mentor's search document (§102).
+	if row.ListingKind == ListingKindMentorship &&
+		(action == "accept" || action == "complete") {
 		s.enqueueMentorMeilisearch(row.ProviderUserID)
 	}
 
@@ -1335,6 +1339,12 @@ func (s *Service) CancelMyBooking(ctx context.Context, bookingID, userID pgtype.
 
 	s.enqueueStatusChanged(row.ID, BookingStatusCancelled)
 	s.enqueueFeeSettle(row.ID, s.cancelFeeAction(ctx, row))
+
+	// Mentee-initiated cancel of an active mentorship connection also
+	// moves active_mentee_count — same §102 reindex as the provider arm.
+	if row.ListingKind == ListingKindMentorship && row.Status == BookingStatusConfirmed {
+		s.enqueueMentorMeilisearch(row.ProviderUserID)
+	}
 
 	return s.GetBooking(ctx, bookingID, userID, false)
 }

@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/servicedir"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -70,7 +72,51 @@ type Service struct {
 	embedder           Embedder
 	meilisearchIndexer MeilisearchIndexer
 	tracker            EventTracker
+	// bookings is the servicedir compatibility seam (000824 unification):
+	// connection lifecycle and the mentor shadow listing are servicedir
+	// bookings/listings behind the scenes. Nil keeps program/match/
+	// discovery paths working while connection calls fail fast.
+	bookings BookingBackend
 }
+
+// BookingBackend is the narrow servicedir seam mentorship delegates to
+// (000824 unification). *servicedir.Service satisfies it; the interface
+// exists so mentorship doesn't bind to the concrete service and tests can
+// fake the boundary. Method signatures deliberately reuse servicedir
+// DTO/row types — the compat layer maps them onto the legacy Connection
+// shape.
+type BookingBackend interface {
+	// MentorListingContentID resolves a mentor's live shadow listing —
+	// the content id CreateBooking anchors a request to.
+	MentorshipListingContentID(ctx context.Context, mentorID pgtype.UUID) (pgtype.UUID, error)
+	// CreateBooking creates the service_bookings row behind a request.
+	CreateBooking(ctx context.Context, bookerID, listingContentID pgtype.UUID, input servicedir.CreateBookingInput) (servicedir.BookingResult, error)
+	// MentorshipBookingRow returns one kind-checked booking row.
+	MentorshipBookingRow(ctx context.Context, bookingID pgtype.UUID) (servicedir.BookingRow, error)
+	ListMentorshipBookingsByBooker(ctx context.Context, bookerID pgtype.UUID, status string, limit, offset int32) ([]servicedir.BookingRow, error)
+	ListMentorshipBookingsByProvider(ctx context.Context, providerID pgtype.UUID, status string, limit, offset int32) ([]servicedir.BookingRow, error)
+	ListMentorshipBookingsAdmin(ctx context.Context, status string, providerID, bookerID pgtype.UUID, limit, offset int32) ([]servicedir.BookingRow, error)
+	// RespondToBooking applies the provider transitions
+	// (accept|decline|complete).
+	RespondToBooking(ctx context.Context, providerID, bookingID pgtype.UUID, action, note string) (servicedir.BookingDTO, error)
+	// CompleteMyBooking is the mentee-side confirmed → fulfilled arm.
+	CompleteMyBooking(ctx context.Context, bookingID, userID pgtype.UUID) (servicedir.BookingDTO, error)
+	// CancelMyBooking is the booker-side cancel (pending|confirmed).
+	CancelMyBooking(ctx context.Context, bookingID, userID pgtype.UUID, reason string) (servicedir.BookingDTO, error)
+	// CancelProviderBooking is the mentor-side cancel (pending|confirmed).
+	CancelProviderBooking(ctx context.Context, providerID, bookingID pgtype.UUID, reason string) (servicedir.BookingDTO, error)
+	// AdminSetBookingStatus is the admin override transition.
+	AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UUID, input servicedir.AdminBookingActionInput) (servicedir.BookingDTO, error)
+	// EnsureMentorShadowListing upserts the mentor's shadow listing and
+	// links user_profiles.mentor_listing_content_id.
+	EnsureMentorShadowListing(ctx context.Context, authorID pgtype.UUID, in servicedir.MentorShadowInput) (pgtype.UUID, error)
+	// RetireMentorShadowListing soft-deletes the shadow and clears the link.
+	RetireMentorShadowListing(ctx context.Context, authorID pgtype.UUID) error
+}
+
+// errBackendUnavailable is returned when a connection/shadow path runs
+// without the servicedir seam wired (unit tests, misconfigured server).
+var errBackendUnavailable = errors.New("mentorship: booking backend unavailable")
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
@@ -348,6 +394,13 @@ var (
 	ErrInvalidStatusChange = errors.New("invalid status transition")
 	ErrNotAuthorized       = errors.New("not authorized to modify this connection")
 	ErrCapacityExceeded    = errors.New("mentor_capacity exceeds platform max_capacity setting")
+	// ErrMentorAtCapacity surfaces servicedir's capacity gate — a mentor at
+	// mentor_capacity can't take new requests (000824 unification added the
+	// enforcement; the dropped connections table had none).
+	ErrMentorAtCapacity = errors.New("mentor at capacity")
+	// ErrInvalidDestination surfaces servicedir's destination_space_id
+	// validation (malformed uuid or unknown space).
+	ErrInvalidDestination = errors.New("invalid destination space")
 )
 
 // SetEnqueuer wires the Asynq enqueuer for mentor:generate_embedding tasks.
@@ -378,6 +431,11 @@ func (s *Service) SetMeilisearchIndexer(mi MeilisearchIndexer) { s.meilisearchIn
 
 // SetEventTracker wires the analytics event tracker for §102 analytics events.
 func (s *Service) SetEventTracker(t EventTracker) { s.tracker = t }
+
+// SetBookingBackend wires the servicedir compatibility seam (000824):
+// connection lifecycle and the mentor shadow listing delegate to
+// servicedir bookings/listings.
+func (s *Service) SetBookingBackend(b BookingBackend) { s.bookings = b }
 
 // trackEvent is a best-effort analytics event emitter (§102). Failures are
 // logged but never abort the caller's operation.
@@ -481,6 +539,38 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 		s.enqueueGenerateEmbedding(ctx, userID)
 	}
 
+	// Shadow listing lifecycle (000824 unification): a public mentor's
+	// directory presence is a servicedir contents + service_listing_meta
+	// mirror — discovery and bookings run off the unified tables. The
+	// ensure path is an idempotent upsert (also refreshes title/body on
+	// bio/display-name changes while is_mentor stays true); a failure
+	// surfaces so the caller retries rather than leaving the mentor
+	// opted-in but undiscoverable.
+	if s.bookings != nil && mergedIsMentor != nil {
+		if *mergedIsMentor {
+			displayName := ""
+			if row.DisplayName != nil {
+				displayName = *row.DisplayName
+			}
+			bio := ""
+			if row.MentorBio != nil {
+				bio = *row.MentorBio
+			}
+			if _, err := s.bookings.EnsureMentorShadowListing(ctx, userID, servicedir.MentorShadowInput{
+				Username:    current.Username,
+				DisplayName: displayName,
+				Bio:         bio,
+			}); err != nil {
+				return MentorProfile{}, fmt.Errorf("sync mentor shadow listing: %w", err)
+			}
+		} else if err := s.bookings.RetireMentorShadowListing(ctx, userID); err != nil {
+			// Retire is a no-op when no shadow exists (non-mentors,
+			// never-synced profiles) — still run it unconditionally so a
+			// migrated orphan shadow can't outlive the opt-out.
+			return MentorProfile{}, fmt.Errorf("retire mentor shadow listing: %w", err)
+		}
+	}
+
 	return MentorProfile{
 		UserID: row.UserID,
 
@@ -581,7 +671,9 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 }
 
 // SearchMentors returns mentors whose username or display name matches the
-// query, scoped to the platform.
+// query, scoped to the platform. Same 000824 live-shadow gate as the other
+// discovery queries — a mentor is findable iff their servicedir shadow
+// listing is published.
 func (s *Service) SearchMentors(ctx context.Context, query string, limit int32) ([]MentorSummary, error) {
 	if limit <= 0 {
 		limit = 20
@@ -591,61 +683,21 @@ func (s *Service) SearchMentors(ctx context.Context, query string, limit int32) 
 		limit = 100
 	}
 
-	const q = `
-SELECT up.user_id, up.is_mentor, up.mentor_capacity,
-       up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
-       up.display_name, up.avatar_url, u.username,
-       (up.mentor_capacity - up.active_mentee_count)::int AS available_slots
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id
-WHERE up.is_mentor = true
-  AND (u.username ILIKE $1 OR up.display_name ILIKE $1)
-ORDER BY up.display_name, u.username
-LIMIT $2
-`
-
-	rows, err := s.db.Reader.Query(ctx, q, "%"+query+"%", limit)
+	rows, err := s.read.SearchMentors(ctx, gen.SearchMentorsParams{
+		Q:         "%" + query + "%",
+		PageLimit: limit,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("searching mentors: %w", err)
 	}
 
-	defer rows.Close()
-
-	var out []MentorSummary
-
-	for rows.Next() {
-		var r struct {
-			UserID pgtype.UUID
-
-			IsMentor          *bool
-			MentorCapacity    *int16
-			ActiveMenteeCount *int16
-			MentorAreas       []string
-			MentorBio         *string
-			MentorSince       pgtype.Timestamptz
-			DisplayName       *string
-			AvatarUrl         *string
-			Username          string
-			AvailableSlots    int32
-		}
-
-		if err := rows.Scan(
-			&r.UserID, &r.IsMentor, &r.MentorCapacity,
-			&r.ActiveMenteeCount, &r.MentorAreas, &r.MentorBio, &r.MentorSince,
-			&r.DisplayName, &r.AvatarUrl, &r.Username, &r.AvailableSlots,
-		); err != nil {
-			return nil, fmt.Errorf("scanning mentor: %w", err)
-		}
-
-		out = append(out, mentorSummaryFromRow(
+	out := make([]MentorSummary, len(rows))
+	for i, r := range rows {
+		out[i] = mentorSummaryFromRow(
 			r.UserID, r.IsMentor, r.MentorCapacity,
 			r.ActiveMenteeCount, r.MentorAreas, r.MentorBio, r.MentorSince,
 			r.DisplayName, r.AvatarUrl, r.Username, r.AvailableSlots,
-		))
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating mentors: %w", err)
+		)
 	}
 
 	return out, nil
@@ -706,85 +758,178 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, userIDs []pgtype.UUID) ([
 	return mentors, nil
 }
 
+// ---------------------------------------------------------------------
+// Connection lifecycle — the 000824 compatibility surface.
+//
+// mentorship_connections is gone; every method below delegates to the
+// servicedir booking pipeline through the BookingBackend seam. Legacy
+// status vocabulary maps at the boundary: a "connection" is a
+// listing_kind='mentorship' booking with intent='inquiry' —
+// provider_user_id is the mentor, booker_user_id is the mentee.
+// ---------------------------------------------------------------------
+
+// bookingStatus translates the legacy connection vocabulary into the
+// service_bookings state machine: active → confirmed, completed →
+// fulfilled; every other token passes through verbatim (pending,
+// declined, cancelled share the name).
+func bookingStatus(status string) string {
+	switch status {
+	case "active":
+		return servicedir.BookingStatusConfirmed
+	case "completed":
+		return servicedir.BookingStatusFulfilled
+	default:
+		return status
+	}
+}
+
+// connectionStatus maps a service_bookings status back onto the legacy
+// mentorship_connections vocabulary the API contract exposes.
+func connectionStatus(status string) string {
+	switch status {
+	case servicedir.BookingStatusConfirmed:
+		return "active"
+	case servicedir.BookingStatusFulfilled:
+		return "completed"
+	default:
+		return status
+	}
+}
+
+// mapBookingErr translates servicedir sentinels into the legacy mentorship
+// vocabulary so handlers keep their existing error codes (Rule 5).
+func mapBookingErr(err error) error {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return ErrConnectionNotFound
+	case errors.Is(err, servicedir.ErrNotOwner):
+		return ErrNotAuthorized
+	case errors.Is(err, servicedir.ErrInvalidBookingTransition):
+		return ErrInvalidStatusChange
+	case errors.Is(err, servicedir.ErrDuplicateRequest):
+		return ErrDuplicateRequest
+	case errors.Is(err, servicedir.ErrMentorAtCapacity):
+		return ErrMentorAtCapacity
+	case errors.Is(err, servicedir.ErrSelfMentorship):
+		return ErrCannotSelfMentor
+	case errors.Is(err, servicedir.ErrBookingUnavailable):
+		// The shadow listing exists but isn't bookable (unpublished,
+		// no profile row) — surface like a non-existent mentor.
+		return ErrMentorNotFound
+	case errors.Is(err, servicedir.ErrInvalidID):
+		// Malformed/unknown destination_space_id on the request.
+		return ErrInvalidDestination
+	default:
+		// servicedir.ErrMentorshipDisabled passes through — the handler
+		// maps it to the feature-off 404.
+		return err
+	}
+}
+
+// bookingMetaString reads a string key out of service_bookings.meta —
+// the channel for legacy fields the bookings table has no column for
+// (responded_at on declined rows; see DeclineServiceBooking).
+func bookingMetaString(meta []byte, key string) string {
+	if len(meta) == 0 {
+		return ""
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(meta, &m); err != nil {
+		return ""
+	}
+
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+
+	return ""
+}
+
+// bookingRow re-reads one mentorship-kind booking, mapping errors to the
+// legacy not-found sentinel.
+func (s *Service) bookingRow(ctx context.Context, connID pgtype.UUID) (servicedir.BookingRow, error) {
+	row, err := s.bookings.MentorshipBookingRow(ctx, connID)
+	if err != nil {
+		return servicedir.BookingRow{}, mapBookingErr(err)
+	}
+
+	return row, nil
+}
+
 // CreateConnection creates a new mentorship request (status = 'pending').
 // POST /api/v1/mentorship/request.
+// (000824) The request lands as an intent='inquiry' service_bookings row
+// anchored to the mentor's shadow listing — servicedir owns dedupe (one
+// open request per mentee+mentor, plus the 000825 unique index), the
+// mentor-capacity gate, and the mentorship.enabled feature flag.
 func (s *Service) CreateConnection(ctx context.Context, mentorID, menteeID pgtype.UUID, goals *string, destSpaceID pgtype.UUID) (Connection, error) {
 	if mentorID == menteeID {
 		return Connection{}, ErrCannotSelfMentor
 	}
 
-	// §102: a new request can only be sent after the previous one has been
-	// resolved. Check for an existing pending or active connection before
-	// inserting. The UNIQUE(mentor_id, mentee_id, status) constraint only
-	// prevents duplicate same-status rows — it does not prevent a new
-	// pending request when an active connection already exists.
-	if _, err := s.read.GetActiveOrPendingConnection(ctx, gen.GetActiveOrPendingConnectionParams{
-
-		MentorID: mentorID,
-		MenteeID: menteeID,
-	}); err == nil {
-		return Connection{}, ErrDuplicateRequest
+	if s.bookings == nil {
+		return Connection{}, errBackendUnavailable
 	}
 
-	conn, err := s.write.CreateMentorshipConnection(ctx, gen.CreateMentorshipConnectionParams{
-
-		MentorID:           mentorID,
-		MenteeID:           menteeID,
-		Goals:              goals,
-		DestinationSpaceID: destSpaceID,
-	})
+	// Resolve the mentor's shadow listing — the booking's anchor. No live
+	// listing means the mentor isn't requestable (never opted in, or the
+	// shadow was retired on opt-out).
+	contentID, err := s.bookings.MentorshipListingContentID(ctx, mentorID)
 	if err != nil {
-		// Map unique constraint violation (23505) to ErrDuplicateRequest
-		// so the handler can return 409 instead of 500 (Rule 5).
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return Connection{}, ErrDuplicateRequest
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Connection{}, ErrMentorNotFound
 		}
 
-		return Connection{}, fmt.Errorf("creating mentorship connection: %w", err)
+		return Connection{}, fmt.Errorf("resolving mentor listing: %w", err)
 	}
 
-	// §102 analytics: mentorship_request_sent { mentor_username }
+	input := servicedir.CreateBookingInput{Intent: servicedir.BookingIntentInquiry}
+	if goals != nil {
+		input.Goals = *goals
+	}
+	if destSpaceID.Valid {
+		input.DestinationSpaceID = destSpaceID.String()
+	}
+
+	res, err := s.bookings.CreateBooking(ctx, menteeID, contentID, input)
+	if err != nil {
+		return Connection{}, mapBookingErr(err)
+	}
+
+	var bookingID pgtype.UUID
+	if err := bookingID.Scan(res.Booking.ID); err != nil {
+		return Connection{}, fmt.Errorf("parsing booking id: %w", err)
+	}
+
+	// §102 analytics: mentorship_request_sent { mentor_id }
 	// The mentee (menteeID) is the actor; the mentor is the entity.
-	s.trackEvent(ctx, menteeID, "mentorship_request_sent", "mentorship_connection", conn.ID,
+	s.trackEvent(ctx, menteeID, "mentorship_request_sent", "mentorship_connection", bookingID,
 		map[string]any{"mentor_id": mentorID.String()})
 
-	return connectionFromModel(conn), nil
+	row, err := s.bookingRow(ctx, bookingID)
+	if err != nil {
+		return Connection{}, fmt.Errorf("loading created connection: %w", err)
+	}
+
+	return connectionFromBookingRow(row), nil
 }
 
 // ListOutgoingConnections lists requests sent by the mentee.
 // GET /api/v1/me/mentorship/outgoing.
 func (s *Service) ListOutgoingConnections(ctx context.Context, menteeID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
-	rows, err := s.read.ListOutgoingConnections(ctx, gen.ListOutgoingConnectionsParams{
+	if s.bookings == nil {
+		return nil, errBackendUnavailable
+	}
 
-		MenteeID:   menteeID,
-		Status:     status,
-		PageLimit:  limit,
-		PageOffset: offset,
-	})
+	rows, err := s.bookings.ListMentorshipBookingsByBooker(ctx, menteeID, bookingStatus(status), limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing outgoing connections: %w", err)
 	}
 
 	conns := make([]Connection, len(rows))
 	for i, r := range rows {
-		conns[i] = Connection{
-			ID: r.ID,
-
-			MentorID:           r.MentorID,
-			MenteeID:           r.MenteeID,
-			Status:             r.Status,
-			Goals:              r.Goals,
-			DestinationSpaceID: r.DestinationSpaceID,
-			RespondedAt:        r.RespondedAt,
-			CompletedAt:        r.CompletedAt,
-			CancelledAt:        r.CancelledAt,
-			CancelReason:       r.CancelReason,
-			CreatedAt:          r.CreatedAt,
-			UpdatedAt:          r.UpdatedAt,
-			MentorUsername:     &r.MentorUsername,
-			MentorDisplayName:  r.MentorDisplayName,
-		}
+		conns[i] = connectionFromBookingRow(r)
 	}
 
 	return conns, nil
@@ -793,17 +938,24 @@ func (s *Service) ListOutgoingConnections(ctx context.Context, menteeID pgtype.U
 // CancelOutgoingConnection cancels a pending request by the mentee.
 // DELETE /api/v1/me/mentorship/outgoing/:id.
 func (s *Service) CancelOutgoingConnection(ctx context.Context, menteeID, connID pgtype.UUID) error {
-	rowsAffected, err := s.write.CancelPendingConnection(ctx, gen.CancelPendingConnectionParams{
-
-		ID:       connID,
-		MenteeID: menteeID,
-	})
-	if err != nil {
-		return fmt.Errorf("cancelling outgoing connection: %w", err)
+	if s.bookings == nil {
+		return errBackendUnavailable
 	}
 
-	if rowsAffected == 0 {
+	row, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return err
+	}
+
+	// Legacy guard parity: only a still-pending request the mentee owns
+	// is cancellable here — anything else reports not-found, same as the
+	// old WHERE status='pending' AND mentee_id=$2 zero-row result.
+	if row.BookerUserID != menteeID || row.Status != servicedir.BookingStatusPending {
 		return ErrConnectionNotFound
+	}
+
+	if _, err := s.bookings.CancelMyBooking(ctx, connID, menteeID, ""); err != nil {
+		return mapBookingErr(err)
 	}
 
 	return nil
@@ -812,36 +964,18 @@ func (s *Service) CancelOutgoingConnection(ctx context.Context, menteeID, connID
 // ListIncomingConnections lists requests received by the mentor.
 // GET /api/v1/me/mentorship/incoming.
 func (s *Service) ListIncomingConnections(ctx context.Context, mentorID pgtype.UUID, status string, limit, offset int32) ([]Connection, error) {
-	rows, err := s.read.ListIncomingConnections(ctx, gen.ListIncomingConnectionsParams{
+	if s.bookings == nil {
+		return nil, errBackendUnavailable
+	}
 
-		MentorID:   mentorID,
-		Status:     status,
-		PageLimit:  limit,
-		PageOffset: offset,
-	})
+	rows, err := s.bookings.ListMentorshipBookingsByProvider(ctx, mentorID, bookingStatus(status), limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing incoming connections: %w", err)
 	}
 
 	conns := make([]Connection, len(rows))
 	for i, r := range rows {
-		conns[i] = Connection{
-			ID: r.ID,
-
-			MentorID:           r.MentorID,
-			MenteeID:           r.MenteeID,
-			Status:             r.Status,
-			Goals:              r.Goals,
-			DestinationSpaceID: r.DestinationSpaceID,
-			RespondedAt:        r.RespondedAt,
-			CompletedAt:        r.CompletedAt,
-			CancelledAt:        r.CancelledAt,
-			CancelReason:       r.CancelReason,
-			CreatedAt:          r.CreatedAt,
-			UpdatedAt:          r.UpdatedAt,
-			MenteeUsername:     &r.MenteeUsername,
-			MenteeDisplayName:  r.MenteeDisplayName,
-		}
+		conns[i] = connectionFromBookingRow(r)
 	}
 
 	return conns, nil
@@ -852,31 +986,42 @@ func (s *Service) ListIncomingConnections(ctx context.Context, mentorID pgtype.U
 // between mentor and mentee (ADR-110 §48 integration).
 // PATCH /api/v1/me/mentorship/incoming/:id/accept.
 func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.UUID) (Connection, error) {
-	// Verify the current user is the mentor of this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx,
-
-		connID,
-	)
-	if err != nil {
-		return Connection{}, ErrConnectionNotFound
+	if s.bookings == nil {
+		return Connection{}, errBackendUnavailable
 	}
 
-	if existing.MentorID != mentorID {
+	row, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, err
+	}
+
+	if row.ProviderUserID != mentorID {
 		return Connection{}, ErrNotAuthorized
 	}
 
-	conn, err := s.write.AcceptMentorshipConnection(ctx,
-
-		connID,
-	)
-	if err != nil {
+	// Legacy guard parity: the old UPDATE filtered WHERE status='pending'
+	// — a non-pending row surfaced as not-found, not an invalid transition.
+	if row.Status != servicedir.BookingStatusPending {
 		return Connection{}, ErrConnectionNotFound
 	}
 
-	// Auto-open DM thread (ADR-110: session communication via §48 DM).
-	result := connectionFromModel(conn)
+	if _, err := s.bookings.RespondToBooking(ctx, mentorID, connID, "accept", ""); err != nil {
+		return Connection{}, mapBookingErr(err)
+	}
+
+	updated, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, fmt.Errorf("loading accepted connection: %w", err)
+	}
+
+	result := connectionFromBookingRow(updated)
+
+	// Auto-open DM thread + report its id (legacy contract). servicedir
+	// attempts the same GetOrCreate on its own seam — the call is
+	// idempotent, so both paths converging is safe; the compat layer
+	// repeats it because the legacy response carries dm_conversation_id.
 	if s.dmCreator != nil {
-		if dm, dmErr := s.dmCreator.GetOrCreateConversation(ctx, conn.MentorID, conn.MenteeID); dmErr != nil {
+		if dm, dmErr := s.dmCreator.GetOrCreateConversation(ctx, updated.ProviderUserID, updated.BookerUserID); dmErr != nil {
 			slog.Warn("mentorship: auto-open DM thread on accept", "connection_id", connID, "error", dmErr)
 			// Non-fatal — the connection is still accepted; the DM can be
 			// opened manually later.
@@ -885,13 +1030,13 @@ func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.
 		}
 	}
 
-	// active_mentee_count changed (pending → active) → sync Meilisearch (§102).
-	s.enqueueUpdateMeilisearch(ctx, conn.MentorID)
+	// active_mentee_count moved via the booking trigger — servicedir
+	// already enqueued the mentor Meilisearch reindex on accept.
 
-	// §102 analytics: mentorship_accepted { mentor_username }
+	// §102 analytics: mentorship_accepted { mentee_id }
 	// The mentor (mentorID) is the actor.
-	s.trackEvent(ctx, mentorID, "mentorship_accepted", "mentorship_connection", conn.ID,
-		map[string]any{"mentee_id": conn.MenteeID.String()})
+	s.trackEvent(ctx, mentorID, "mentorship_accepted", "mentorship_connection", connID,
+		map[string]any{"mentee_id": updated.BookerUserID.String()})
 
 	return result, nil
 }
@@ -900,148 +1045,175 @@ func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.
 // Only the mentor of the connection can decline.
 // PATCH /api/v1/me/mentorship/incoming/:id/decline.
 func (s *Service) DeclineConnection(ctx context.Context, mentorID, connID pgtype.UUID) (Connection, error) {
-	// Verify the current user is the mentor of this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx,
-
-		connID,
-	)
-	if err != nil {
-		return Connection{}, ErrConnectionNotFound
+	if s.bookings == nil {
+		return Connection{}, errBackendUnavailable
 	}
 
-	if existing.MentorID != mentorID {
+	row, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, err
+	}
+
+	if row.ProviderUserID != mentorID {
 		return Connection{}, ErrNotAuthorized
 	}
 
-	conn, err := s.write.DeclineMentorshipConnection(ctx,
-
-		connID,
-	)
-	if err != nil {
+	// Legacy guard parity: only pending rows were declinable.
+	if row.Status != servicedir.BookingStatusPending {
 		return Connection{}, ErrConnectionNotFound
 	}
 
-	return connectionFromModel(conn), nil
+	if _, err := s.bookings.RespondToBooking(ctx, mentorID, connID, "decline", ""); err != nil {
+		return Connection{}, mapBookingErr(err)
+	}
+
+	updated, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, fmt.Errorf("loading declined connection: %w", err)
+	}
+
+	return connectionFromBookingRow(updated), nil
 }
 
 // CompleteConnection completes an active connection (active → completed).
 // Either party (mentor or mentee) can complete.
 // PATCH /api/v1/mentorship/:id/complete.
 func (s *Service) CompleteConnection(ctx context.Context, userID, connID pgtype.UUID) (Connection, error) {
-	// Verify the current user is a participant in this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx,
-
-		connID,
-	)
-	if err != nil {
-		return Connection{}, ErrConnectionNotFound
+	if s.bookings == nil {
+		return Connection{}, errBackendUnavailable
 	}
 
-	if existing.MentorID != userID && existing.MenteeID != userID {
+	row, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, err
+	}
+
+	isMentor := row.ProviderUserID == userID
+	if !isMentor && row.BookerUserID != userID {
 		return Connection{}, ErrNotAuthorized
 	}
 
-	conn, err := s.write.CompleteMentorshipConnection(ctx,
-
-		connID,
-	)
-	if err != nil {
+	// Legacy guard parity: the old query filtered WHERE status='active' —
+	// a non-active row surfaced as not-found, not an invalid transition.
+	if row.Status != servicedir.BookingStatusConfirmed {
 		return Connection{}, ErrConnectionNotFound
 	}
 
-	// active_mentee_count changed (active → completed) → sync Meilisearch (§102).
-	s.enqueueUpdateMeilisearch(ctx, conn.MentorID)
+	if isMentor {
+		_, err = s.bookings.RespondToBooking(ctx, userID, connID, "complete", "")
+	} else {
+		_, err = s.bookings.CompleteMyBooking(ctx, connID, userID)
+	}
+	if err != nil {
+		return Connection{}, mapBookingErr(err)
+	}
 
 	// §102 analytics: mentorship_completed { connection_id }
-	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", conn.ID, nil)
+	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", connID, nil)
 
-	return connectionFromModel(conn), nil
+	updated, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, fmt.Errorf("loading completed connection: %w", err)
+	}
+
+	return connectionFromBookingRow(updated), nil
 }
 
 // CancelConnection cancels an active connection (active → cancelled).
 // Either party (mentor or mentee) can cancel.
 // PATCH /api/v1/mentorship/:id/cancel.
 func (s *Service) CancelConnection(ctx context.Context, userID, connID pgtype.UUID, reason *string) (Connection, error) {
-	// Verify the current user is a participant in this connection.
-	existing, err := s.read.GetMentorshipConnection(ctx,
-
-		connID,
-	)
-	if err != nil {
-		return Connection{}, ErrConnectionNotFound
+	if s.bookings == nil {
+		return Connection{}, errBackendUnavailable
 	}
 
-	if existing.MentorID != userID && existing.MenteeID != userID {
+	row, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, err
+	}
+
+	isMentor := row.ProviderUserID == userID
+	if !isMentor && row.BookerUserID != userID {
 		return Connection{}, ErrNotAuthorized
 	}
 
-	conn, err := s.write.CancelMentorshipConnection(ctx, gen.CancelMentorshipConnectionParams{
-
-		ID:           connID,
-		CancelReason: reason,
-	})
-	if err != nil {
+	// Legacy guard parity: only 'active' connections were cancellable via
+	// this route (pending requests go through CancelOutgoingConnection).
+	if row.Status != servicedir.BookingStatusConfirmed {
 		return Connection{}, ErrConnectionNotFound
 	}
 
-	// active_mentee_count changed (active → cancelled) → sync Meilisearch (§102).
-	s.enqueueUpdateMeilisearch(ctx, conn.MentorID)
+	reasonStr := ""
+	if reason != nil {
+		reasonStr = *reason
+	}
 
-	return connectionFromModel(conn), nil
+	if isMentor {
+		_, err = s.bookings.CancelProviderBooking(ctx, userID, connID, reasonStr)
+	} else {
+		_, err = s.bookings.CancelMyBooking(ctx, connID, userID, reasonStr)
+	}
+	if err != nil {
+		return Connection{}, mapBookingErr(err)
+	}
+
+	updated, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, fmt.Errorf("loading cancelled connection: %w", err)
+	}
+
+	return connectionFromBookingRow(updated), nil
 }
 
 // ListAllConnections lists all connections for admin (with filters).
 // GET /api/v1/admin/mentorship/connections.
 func (s *Service) ListAllConnections(ctx context.Context, status string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, error) {
-	rows, err := s.read.ListAllConnections(ctx, gen.ListAllConnectionsParams{
+	if s.bookings == nil {
+		return nil, errBackendUnavailable
+	}
 
-		Status:     status,
-		MentorID:   mentorID,
-		MenteeID:   menteeID,
-		PageLimit:  limit,
-		PageOffset: offset,
-	})
+	rows, err := s.bookings.ListMentorshipBookingsAdmin(ctx, bookingStatus(status), mentorID, menteeID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing all connections: %w", err)
 	}
 
 	conns := make([]Connection, len(rows))
 	for i, r := range rows {
-		conns[i] = Connection{
-			ID: r.ID,
-
-			MentorID:           r.MentorID,
-			MenteeID:           r.MenteeID,
-			Status:             r.Status,
-			Goals:              r.Goals,
-			DestinationSpaceID: r.DestinationSpaceID,
-			RespondedAt:        r.RespondedAt,
-			CompletedAt:        r.CompletedAt,
-			CancelledAt:        r.CancelledAt,
-			CancelReason:       r.CancelReason,
-			CreatedAt:          r.CreatedAt,
-			UpdatedAt:          r.UpdatedAt,
-			MentorUsername:     r.MentorUsername,
-			MenteeUsername:     r.MenteeUsername,
-		}
+		conns[i] = connectionFromBookingRow(r)
 	}
 
 	return conns, nil
 }
 
 // AdminUpdateConnection allows an admin to override a connection's status.
+// The status token is in legacy vocabulary — 'active'/'completed' map to
+// the booking's 'confirmed'/'fulfilled'.
 // PATCH /api/v1/admin/mentorship/connections/:id.
 func (s *Service) AdminUpdateConnection(ctx context.Context, connID pgtype.UUID, status string) (Connection, error) {
-	conn, err := s.write.AdminUpdateConnection(ctx, gen.AdminUpdateConnectionParams{
-
-		ID:     connID,
-		Status: status,
-	})
-	if err != nil {
-		return Connection{}, ErrConnectionNotFound
+	if s.bookings == nil {
+		return Connection{}, errBackendUnavailable
 	}
 
-	return connectionFromModel(conn), nil
+	// Kind-check: the admin route may only touch mentorship-kind bookings.
+	if _, err := s.bookingRow(ctx, connID); err != nil {
+		return Connection{}, err
+	}
+
+	target := bookingStatus(status)
+	if !servicedir.IsValidBookingStatus(target) {
+		return Connection{}, ErrInvalidStatusChange
+	}
+
+	if _, err := s.bookings.AdminSetBookingStatus(ctx, connID, servicedir.AdminBookingActionInput{Status: target}); err != nil {
+		return Connection{}, mapBookingErr(err)
+	}
+
+	updated, err := s.bookingRow(ctx, connID)
+	if err != nil {
+		return Connection{}, fmt.Errorf("loading updated connection: %w", err)
+	}
+
+	return connectionFromBookingRow(updated), nil
 }
 
 // UpdateMentorEmbedding sets the pgvector embedding for a mentor's bio.
@@ -1124,29 +1296,6 @@ func (s *Service) enqueueGenerateEmbedding(ctx context.Context, userID pgtype.UU
 	}
 }
 
-// enqueueUpdateMeilisearch fires the mentor:update_meilisearch Asynq task
-// after a connection status change that affects the mentor's
-// active_mentee_count (§102 spec: Meilisearch document updated whenever
-// active_mentee_count changes).
-func (s *Service) enqueueUpdateMeilisearch(ctx context.Context, mentorID pgtype.UUID) {
-	if s.enqueuer == nil {
-		return
-	}
-
-	payload, err := json.Marshal(map[string]string{
-
-		"user_id": mentorID.String(),
-	})
-	if err != nil {
-		slog.Warn("mentorship: marshal meilisearch task payload", "error", err)
-		return
-	}
-
-	if err := s.enqueuer.Enqueue("mentor:update_meilisearch", payload); err != nil {
-		slog.Warn("mentorship: enqueue update_meilisearch task", "error", err)
-	}
-}
-
 // mentorSummaryFromRow builds a MentorSummary from common field values.
 func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCount *int16, areas []string, bio *string, since pgtype.Timestamptz, displayName, avatarURL *string, username string, availableSlots int32) MentorSummary {
 	return MentorSummary{
@@ -1163,21 +1312,69 @@ func mentorSummaryFromRow(userID pgtype.UUID, isMentor *bool, capacity, activeCo
 	}
 }
 
-// connectionFromModel converts a gen.MentorshipConnection to Connection.
-func connectionFromModel(c gen.MentorshipConnection) Connection {
-	return Connection{
-		ID: c.ID,
-
-		MentorID:           c.MentorID,
-		MenteeID:           c.MenteeID,
-		Status:             c.Status,
-		Goals:              c.Goals,
-		DestinationSpaceID: c.DestinationSpaceID,
-		RespondedAt:        c.RespondedAt,
-		CompletedAt:        c.CompletedAt,
-		CancelledAt:        c.CancelledAt,
-		CancelReason:       c.CancelReason,
-		CreatedAt:          c.CreatedAt,
-		UpdatedAt:          c.UpdatedAt,
+// connectionFromBookingRow maps a mentorship-kind service_bookings row to
+// the legacy Connection shape (000824). Status vocabulary translates back
+// (confirmed→active, fulfilled→completed); responded_at comes from
+// confirmed_at on accepted rows and meta->>'responded_at' on declined
+// rows (DeclineServiceBooking stamps it — the bookings table has no
+// responded_at column). completed_at = fulfilled_at.
+func connectionFromBookingRow(r servicedir.BookingRow) Connection {
+	conn := Connection{
+		ID:                 r.ID,
+		MentorID:           r.ProviderUserID,
+		MenteeID:           r.BookerUserID,
+		Status:             connectionStatus(r.Status),
+		DestinationSpaceID: r.DestinationSpaceID,
+		RespondedAt:        r.ConfirmedAt,
+		CompletedAt:        r.FulfilledAt,
+		CancelledAt:        r.CancelledAt,
+		CancelReason:       r.CancelReason,
+		CreatedAt:          r.CreatedAt,
+		UpdatedAt:          r.UpdatedAt,
+		MentorUsername:     r.ProviderUsername,
+		MenteeUsername:     r.BookerUsername,
+		MentorDisplayName:  r.ProviderDisplayName,
+		MenteeDisplayName:  r.BookerDisplayName,
 	}
+
+	// goals: meta->>'goals' wins; the note column is the fallback for
+	// migrated rows that only carry goals in note (same rule as
+	// servicedir's bookingToDTO).
+	goals := bookingMetaString(r.Meta, "goals")
+	if goals == "" && r.Note != nil {
+		goals = *r.Note
+	}
+	if goals != "" {
+		conn.Goals = &goals
+	}
+
+	// responded_at on declined rows rides meta; accept already landed via
+	// ConfirmedAt.
+	if !conn.RespondedAt.Valid {
+		conn.RespondedAt = bookingMetaTimestamp(r.Meta, "responded_at")
+	}
+
+	return conn
+}
+
+// bookingMetaTimestamp reads a timestamptz-ish key out of
+// service_bookings.meta. jsonb_build_object renders timestamptz as ISO
+// 8601 ("2026-10-09T12:34:56.789+00:00") — RFC3339Nano covers that shape;
+// the pgtype scan is the fallback for the Postgres text layout.
+func bookingMetaTimestamp(meta []byte, key string) pgtype.Timestamptz {
+	raw := bookingMetaString(meta, key)
+	if raw == "" {
+		return pgtype.Timestamptz{}
+	}
+
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return pgtype.Timestamptz{Time: t, Valid: true}
+	}
+
+	var ts pgtype.Timestamptz
+	if err := ts.Scan(raw); err == nil {
+		return ts
+	}
+
+	return pgtype.Timestamptz{}
 }

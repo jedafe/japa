@@ -188,6 +188,60 @@ WHERE c.author_id = @author_id
   AND c.deleted_at IS NULL
 LIMIT 1;
 
+-- ---------------------------------------------------------------------
+-- Mentor shadow listing lifecycle (000824 / compat task). Shadow contents
+-- rows are written directly — content.Service.CreateContent requires a
+-- primary space for published rows and mentorship shadows are spaceless
+-- by design (mirrors the 000824 migration INSERT, which also creates no
+-- content_spaces row). ON CONFLICT DO NOTHING covers the partial uniques
+-- on slug/content_hash (000745): a collision returns no row and the
+-- service re-reads the winning shadow.
+-- ---------------------------------------------------------------------
+
+-- name: CreateMentorshipShadowContent :one
+INSERT INTO contents (author_id, content_type, title, slug, body, body_html, status, published_at, content_hash)
+VALUES (@author_id, 'service_listing', @title, @slug, @body, '', 'published', now(), @content_hash)
+ON CONFLICT DO NOTHING
+RETURNING id;
+
+-- Refresh the mentor's shadow listing in place: title follows
+-- display_name, body follows mentor_bio, content_hash follows Rule 12
+-- (distinguisher 'mentor:<user_id>' matches the migration). Republishes a
+-- preserved draft shadow (000824 fallback rows for non-listed mentors).
+-- name: UpdateMentorshipShadowContent :execrows
+UPDATE contents
+SET title = @title,
+    body = @body,
+    content_hash = @content_hash,
+    status = 'published',
+    published_at = COALESCE(published_at, now()),
+    updated_at = now()
+WHERE id = @id AND deleted_at IS NULL;
+
+-- Opt-out path: soft-delete every live mentorship shadow for the author.
+-- Scoped by listing_kind='mentorship' so a mentor who also authors real
+-- service listings keeps them. service_bookings keep pointing at the meta
+-- row — the meta and deleted contents row survive for audit.
+-- name: SoftDeleteMentorshipShadow :exec
+UPDATE contents c
+SET deleted_at = now(), updated_at = now()
+WHERE c.author_id = @author_id
+  AND c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM service_listing_meta sm
+      WHERE sm.content_id = c.id AND sm.listing_kind = 'mentorship'
+  );
+
+-- Meta row for a freshly created shadow — NOT EXISTS-guarded so the ensure
+-- path can run it inside the same tx for both create and update.
+-- name: EnsureMentorshipShadowMeta :exec
+INSERT INTO service_listing_meta (content_id, org_id, service_category, is_remote, listing_kind, purchase_mode)
+SELECT @content_id, NULL, 'mentorship', true, 'mentorship', 'inquiry'
+WHERE NOT EXISTS (
+    SELECT 1 FROM service_listing_meta m WHERE m.content_id = @content_id
+);
+
 -- Public filtered list. Optional filters are sqlc.narg — NULL means
 -- "no filter". sort='top' orders by engagement; anything else is
 -- latest-first. kind filters listing_kind ('service'|'package');
@@ -840,31 +894,51 @@ SELECT mentor_capacity, active_mentee_count
 FROM user_profiles
 WHERE user_id = @user_id;
 
--- Admin view — all bookings, any payment state.
+-- Admin view — all bookings, any payment state. kind/provider_user_id/
+-- booker_user_id are the mentorship-compat filters (000824): the legacy
+-- admin connections list filters by mentor (provider) and mentee
+-- (booker) over kind='mentorship' rows.
 -- name: AdminListServiceBookings :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username
+       u.username AS booker_username, up.display_name AS booker_display_name,
+       up.avatar_url AS booker_avatar,
+       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       pup.avatar_url AS provider_avatar,
+       dsp.name AS destination_space_name,
+       COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 LEFT JOIN organizations o ON o.id = sb.org_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
 LEFT JOIN users u ON u.id = sb.booker_user_id
+LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
+LEFT JOIN spaces dsp ON dsp.id = sb.destination_space_id
 WHERE (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
   AND (sqlc.narg(org_id)::uuid IS NULL OR sb.org_id = sqlc.narg(org_id)::uuid)
+  AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text)
+  AND (sqlc.narg(provider_user_id)::uuid IS NULL OR sb.provider_user_id = sqlc.narg(provider_user_id)::uuid)
+  AND (sqlc.narg(booker_user_id)::uuid IS NULL OR sb.booker_user_id = sqlc.narg(booker_user_id)::uuid)
 ORDER BY sb.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: AdminCountServiceBookings :one
 SELECT COUNT(*) FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 WHERE (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
-  AND (sqlc.narg(org_id)::uuid IS NULL OR sb.org_id = sqlc.narg(org_id)::uuid);
+  AND (sqlc.narg(org_id)::uuid IS NULL OR sb.org_id = sqlc.narg(org_id)::uuid)
+  AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text)
+  AND (sqlc.narg(provider_user_id)::uuid IS NULL OR sb.provider_user_id = sqlc.narg(provider_user_id)::uuid)
+  AND (sqlc.narg(booker_user_id)::uuid IS NULL OR sb.booker_user_id = sqlc.narg(booker_user_id)::uuid);
 
 -- ---------------------------------------------------------------------
 -- Booking state machine (§111). Each transition is guarded on its
@@ -883,11 +957,15 @@ SET status = 'confirmed',
 WHERE id = @id AND status = 'pending'
 RETURNING *;
 
--- pending → declined (org rejects).
+-- pending → declined (org rejects). meta.responded_at preserves the
+-- legacy mentorship_connections.responded_at semantics — service_bookings
+-- has no declined_at column, so the response timestamp rides meta (same
+-- shape the 000824 migration wrote for declined rows).
 -- name: DeclineServiceBooking :one
 UPDATE service_bookings
 SET status = 'declined',
     org_response_note = sqlc.narg(org_response_note),
+    meta = meta || jsonb_build_object('responded_at', now()),
     updated_at = now()
 WHERE id = @id AND status = 'pending'
 RETURNING *;

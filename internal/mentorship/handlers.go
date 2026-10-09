@@ -42,11 +42,12 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/literals"
+	"github.com/jedafe/japa/internal/servicedir"
 	"github.com/pgvector/pgvector-go"
 )
 
@@ -627,6 +628,15 @@ func (h *Handlers) RequestMentorship(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, ErrDuplicateRequest):
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_request",
 				"A pending request to this mentor already exists")
+		case errors.Is(err, ErrMentorNotFound):
+			errpkg.WriteError(w, http.StatusNotFound, "mentor_not_found", "Mentor not found or not accepting requests")
+		case errors.Is(err, ErrMentorAtCapacity):
+			errpkg.WriteError(w, http.StatusConflict, "mentor_at_capacity",
+				"This mentor is not accepting new mentees right now")
+		case errors.Is(err, ErrInvalidDestination):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_dest", "Invalid destination space ID")
+		case errors.Is(err, servicedir.ErrMentorshipDisabled):
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 		default:
 			slog.Error("creating mentorship connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to create mentorship request")
@@ -739,10 +749,15 @@ func (h *Handlers) AcceptConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.Service.AcceptConnection(r.Context(), userID, connID)
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrConnectionNotFound):
+		case errors.Is(err, ErrConnectionNotFound), errors.Is(err, ErrInvalidStatusChange):
+			// ErrInvalidStatusChange = the row raced out of 'pending'
+			// between the guard and the booking transition — same 404 the
+			// legacy zero-row UPDATE produced.
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
 		case errors.Is(err, ErrNotAuthorized):
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only the mentor can accept this request")
+		case errors.Is(err, servicedir.ErrMentorshipDisabled):
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 		default:
 			slog.Error("accepting connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to accept connection")
@@ -775,10 +790,12 @@ func (h *Handlers) DeclineConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.Service.DeclineConnection(r.Context(), userID, connID)
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrConnectionNotFound):
+		case errors.Is(err, ErrConnectionNotFound), errors.Is(err, ErrInvalidStatusChange):
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not pending")
 		case errors.Is(err, ErrNotAuthorized):
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only the mentor can decline this request")
+		case errors.Is(err, servicedir.ErrMentorshipDisabled):
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 		default:
 			slog.Error("declining connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to decline connection")
@@ -811,10 +828,12 @@ func (h *Handlers) CompleteConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.Service.CompleteConnection(r.Context(), userID, connID)
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrConnectionNotFound):
+		case errors.Is(err, ErrConnectionNotFound), errors.Is(err, ErrInvalidStatusChange):
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
 		case errors.Is(err, ErrNotAuthorized):
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only a participant can complete this connection")
+		case errors.Is(err, servicedir.ErrMentorshipDisabled):
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 		default:
 			slog.Error("completing connection", "error", err)
 			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to complete connection")
@@ -859,7 +878,7 @@ func (h *Handlers) CancelConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := h.Service.CancelConnection(r.Context(), userID, connID, input.CancelReason)
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrConnectionNotFound):
+		case errors.Is(err, ErrConnectionNotFound), errors.Is(err, ErrInvalidStatusChange):
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found or not active")
 		case errors.Is(err, ErrNotAuthorized):
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Only a participant can cancel this connection")
@@ -933,6 +952,11 @@ func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		if errors.Is(err, ErrConnectionNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Connection not found")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidStatusChange) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid connection status")
 			return
 		}
 
