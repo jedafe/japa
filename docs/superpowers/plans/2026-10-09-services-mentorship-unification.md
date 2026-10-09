@@ -87,7 +87,7 @@ Field map: `mentee_id`→`booker_user_id` · `mentor_id`→`provider_user_id` ·
 
 **Interfaces produced:**
 - `service_listing_meta.listing_kind` allows `'mentorship'`; `service_categories.applies_to` allows `'mentorship'`
-- `service_bookings`: `org_id` NULLable, `+ provider_user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL`, `+ destination_space_id uuid NULL REFERENCES spaces(id) ON DELETE SET NULL`, `+ meta jsonb NOT NULL DEFAULT '{}'`; CHECK exactly one of org_id/provider_user_id
+- `service_bookings`: `org_id` NULLable, `+ provider_user_id uuid NULL REFERENCES users(id) ON DELETE SET NULL`, `+ destination_space_id uuid NULL REFERENCES spaces(id) ON DELETE SET NULL`, `+ meta jsonb NOT NULL DEFAULT '{}'`; CHECK exactly one of org_id/provider_user_id — OR `anonymized_at IS NOT NULL`, so GDPR anonymize/hard-delete of a provider user cannot trip the CHECK on a scrubbed row
 - `user_profiles.mentor_listing_content_id uuid NULL REFERENCES contents(id) ON DELETE SET NULL`
 - Shadow listing per `is_mentor=true` user (contents + meta)
 - `mentorship_connections` → bookings; table dropped; mentee-count trigger re-pointed
@@ -123,7 +123,8 @@ ALTER TABLE service_bookings
     ADD COLUMN destination_space_id uuid REFERENCES spaces(id) ON DELETE SET NULL,
     ADD COLUMN meta jsonb NOT NULL DEFAULT '{}'::jsonb,
     ADD CONSTRAINT service_bookings_provider_check
-        CHECK ((org_id IS NOT NULL) <> (provider_user_id IS NOT NULL));
+        CHECK ((org_id IS NOT NULL) <> (provider_user_id IS NOT NULL)
+               OR anonymized_at IS NOT NULL);
 
 CREATE INDEX idx_svc_bookings_provider_user
     ON service_bookings (provider_user_id, status);
