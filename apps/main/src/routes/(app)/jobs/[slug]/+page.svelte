@@ -77,6 +77,18 @@
 	});
 
 	const title = $derived(job ? `${job.title} — JapaConnect` : 'Job — JapaConnect');
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(job ? `${page.url.origin}/jobs/${job.slug}` : `${page.url.origin}/jobs`);
+	// Fallback excerpt when job.summary is null — strip HTML from the body
+	// so the meta description is never empty (ResolveMetadata fallback).
+	const fallbackDescription = $derived(
+		job
+			? (job.summary?.trim() ||
+					(job.body ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160) ||
+					job.title)
+			: ''
+	);
 
 	function field(key: string): string {
 		return job?.field_values?.[key] ?? '';
@@ -354,7 +366,7 @@
 					title: job.title,
 					description: job.summary || job.body,
 					datePublished: job.published_at,
-					url: page.url.href,
+					url: canonical,
 					hiringOrganization: {
 						'@type': 'Organization',
 						name: field('company_name') || 'JapaConnect'
@@ -371,12 +383,14 @@
 
 <svelte:head>
 	<title>{title}</title>
-	{#if job?.summary}
-		<meta name="description" content={job.summary} />
+	{#if fallbackDescription}
+		<meta name="description" content={fallbackDescription} />
 	{/if}
 	<meta property="og:title" content={job?.title ?? 'Job'} />
+	{#if fallbackDescription}<meta property="og:description" content={fallbackDescription} />{/if}
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}

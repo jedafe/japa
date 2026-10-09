@@ -20,7 +20,8 @@
 	import { BookOpen, Calculator, ChevronLeft, ChevronRight, Lock, Pencil, History, Send } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import { tiptapToHtml, tiptapToText, type TipTapDoc } from '$lib/tiptap/serialize';
 
 	let { data }: { data: PageData } = $props();
@@ -156,6 +157,29 @@
 		return u && !u.startsWith('http') ? page.url.origin + u : u;
 	});
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);
+	// Article + BreadcrumbList JSON-LD (Section 26 — wiki pages are
+	// hierarchical articles under their destination space index).
+	const wikiArticleJsonLd = $derived(
+		data.page
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Article',
+					headline: data.page.title,
+					description,
+					url: canonicalUrl,
+					about: { '@type': 'Place', name: spaceName }
+				})
+			: ''
+	);
+	const wikiBreadcrumbJsonLd = $derived(
+		JSON.stringify(
+			breadcrumbJsonLd([
+				{ name: 'Home', path: page.url.origin },
+				{ name: spaceName, path: `${page.url.origin}/wiki/${data.spaceSlug}` },
+				{ name: data.page?.title ?? data.pageSlug, path: canonicalUrl }
+			])
+		)
+	);
 	const canEdit = $derived(
 		!!data.page && !data.page.is_locked && data.authed && data.userPermissions?.includes('wiki.edit')
 	);
@@ -284,6 +308,10 @@
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
 	<link rel="canonical" href={canonicalUrl} />
+	{#if wikiArticleJsonLd}
+		{@html safeJsonLdScript(wikiArticleJsonLd)}
+	{/if}
+	{@html safeJsonLdScript(wikiBreadcrumbJsonLd)}
 </svelte:head>
 
 <SetSidebar>

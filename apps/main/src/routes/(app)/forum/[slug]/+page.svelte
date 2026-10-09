@@ -47,6 +47,9 @@ import { contentHref } from '$lib/utils/contentLink';
 	const spaceHref = $derived(thread.space_slug ? `/spaces/${thread.space_slug}` : null);
 
 	const title = $derived(`${thread.title} — ${t('forum.list_title', 'Forum')}`);
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/forum/${thread.slug}`);
 	const description = $derived(tiptapExcerpt(thread.body, 160));
 
 	// BUG-013: use the backend-provided JSON-LD (which includes the
@@ -63,7 +66,7 @@ import { contentHref } from '$lib/utils/contentLink';
 					headline: thread.title,
 					datePublished: thread.created_at,
 					author: { '@type': 'Person', name: authorLabel },
-					url: page.url.href,
+					url: canonical,
 					interactionStatistic: {
 						'@type': 'InteractionCounter',
 						interactionType: 'https://schema.org/CommentAction',
@@ -82,12 +85,12 @@ import { contentHref } from '$lib/utils/contentLink';
 							{ name: 'Home', path: page.url.origin },
 							{ name: 'Forum', path: `${page.url.origin}/forum` },
 							{ name: thread.space_name ?? thread.space_slug, path: `${page.url.origin}/spaces/${thread.space_slug}` },
-							{ name: thread.title, path: page.url.href }
+							{ name: thread.title, path: canonical }
 						]
 					: [
 							{ name: 'Home', path: page.url.origin },
 							{ name: 'Forum', path: `${page.url.origin}/forum` },
-							{ name: thread.title, path: page.url.href }
+							{ name: thread.title, path: canonical }
 						]
 			)
 		)
@@ -404,7 +407,8 @@ import { contentHref } from '$lib/utils/contentLink';
 	<meta property="og:title" content={thread.title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(jsonLd)}
 	{@html safeJsonLdScript(breadcrumbLd)}
 </svelte:head>

@@ -258,6 +258,14 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	{#if data.page > 1}
+		{@const blogPrevUrl = (() => { const u = new URL(page.url.href); if (data.page - 1 <= 1) u.searchParams.delete('page'); else u.searchParams.set('page', String(data.page - 1)); return u.toString(); })()}
+		<link rel="prev" href={blogPrevUrl} />
+	{/if}
+	{#if hasNext}
+		{@const blogNextUrl = (() => { const u = new URL(page.url.href); u.searchParams.set('page', String(data.page + 1)); return u.toString(); })()}
+		<link rel="next" href={blogNextUrl} />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">

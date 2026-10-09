@@ -88,6 +88,7 @@
 		name="description"
 		content={t('planning_groups.new_description', 'Create a planning group to organize your japa journey with others.')}
 	/>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">

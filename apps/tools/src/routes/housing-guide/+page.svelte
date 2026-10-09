@@ -3,6 +3,7 @@
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -37,7 +38,20 @@
 				'Destination-specific housing guides — platforms, landlord requirements, rent ranges, scam categories, and tips for finding safe housing abroad.'
 			),
 			path: '/housing-guide',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-housing-guide.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'HowTo',
+				name: 'Finding Housing Abroad',
+				description: 'Destination-specific housing guides — platforms, landlord requirements, rent ranges, and scam avoidance.',
+				step: guides.slice(0, 10).map((g, i) => ({
+					'@type': 'HowToStep',
+					position: i + 1,
+					name: [g.city_space_name, g.destination_space_name].filter(Boolean).join(', ') || `Guide ${i + 1}`,
+					text: g.tips ?? g.landlord_requirements ?? ''
+				}))
+			}
 		})
 	);
 
@@ -115,18 +129,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-4xl px-4 py-8">
 	{#if !data.enabled}

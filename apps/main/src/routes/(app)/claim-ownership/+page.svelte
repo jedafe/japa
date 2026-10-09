@@ -156,6 +156,7 @@
 	<meta property="og:description" content={pageDescription} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">

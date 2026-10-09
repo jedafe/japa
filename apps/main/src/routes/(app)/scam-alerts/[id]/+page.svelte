@@ -11,6 +11,7 @@
 	import { scamTypeLabel } from '$lib/enumOptions';
 	import type { ScamReport, ScamStatus, ScamType } from '$lib/types';
 	import type { PageData } from './$types';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -22,6 +23,24 @@
 			: t('scam_alerts.list_title', 'Scam Alerts — JapaConnect')
 	);
 	const description = $derived(alert ? alert.description.slice(0, 160) : '');
+	// Section 26 — self-referencing canonical on the clean ID URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(alert ? `${page.url.origin}/scam-alerts/${alert.id}` : `${page.url.origin}/scam-alerts`);
+	// SpecialAnnouncement JSON-LD (Section 26 — scam alerts are public-safety
+	// notices; the Article fallback carries the full report text).
+	const scamJsonLd = $derived(
+		alert
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'SpecialAnnouncement',
+					name: title,
+					text: alert.description,
+					datePosted: alert.created_at,
+					url: canonical,
+					category: alert.scam_type
+				})
+			: ''
+	);
 
 	let subscribed = $state(false);
 	let subscribing = $state(false);
@@ -59,7 +78,11 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
+	{#if scamJsonLd}
+		{@html safeJsonLdScript(scamJsonLd)}
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full px-4 py-6">

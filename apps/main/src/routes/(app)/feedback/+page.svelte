@@ -70,6 +70,7 @@
 <svelte:head>
 	<title>{t('feedback.title')} — JapaConnect</title>
 	<meta name="description" content={t('feedback.subtitle')} />
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <section class="mx-auto max-w-full space-y-6 px-4 py-8">

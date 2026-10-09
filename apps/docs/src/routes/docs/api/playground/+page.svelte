@@ -223,6 +223,8 @@
 	<title>{data.meta.title}</title>
 	<meta name="description" content={data.meta.description} />
 	<link rel="canonical" href={data.meta.ogUrl} />
+	<!-- Auth-gated tool page (guests redirect to login) — never index. -->
+	<meta name="robots" content="noindex, nofollow" />
 	<meta property="og:title" content={data.meta.title} />
 	<meta property="og:description" content={data.meta.description} />
 	<meta property="og:type" content={data.meta.ogType} />

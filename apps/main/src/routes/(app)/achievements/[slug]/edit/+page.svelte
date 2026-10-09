@@ -123,6 +123,7 @@
 	<meta property="og:title" content={pageTitle} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-2xl px-4 py-6">

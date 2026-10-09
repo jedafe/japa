@@ -54,6 +54,7 @@
 
 <svelte:head>
 	<title>{t('academy.track_stats')} · {t('app.name')}</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="px-4 py-6 md:px-6 lg:px-8">

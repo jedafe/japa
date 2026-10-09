@@ -3,6 +3,7 @@
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -54,6 +55,7 @@
 			),
 			path: '/pof-calculator',
 			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-pof-calculator.png`,
 			jsonLd: {
 				'@context': 'https://schema.org',
 				'@type': 'SoftwareApplication',
@@ -192,16 +194,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	{#if seo.jsonLdString}
-		{@html `<script type="application/ld+json">${seo.jsonLdString}<\/script>`}
-	{/if}
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 {#if !data.enabled}
 	<ToolDisabled tool={data.tool} />

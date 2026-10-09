@@ -3,6 +3,7 @@
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -22,7 +23,20 @@
 			title: `${pathway.document_type} — ${t('attestation_guide.seo_title', 'Attestation Guide — JapaConnect Tools')}`,
 			description: `Attestation pathway for ${pathway.document_type} from ${pathway.issuing_space_name ?? ''} to ${pathway.destination_space_name ?? ''}.`,
 			path: `/attestation-guide/${page.params.id}`,
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-attestation-guide.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'HowTo',
+				name: `Attestation pathway for ${pathway.document_type}`,
+				description: `Attestation pathway for ${pathway.document_type} from ${pathway.issuing_space_name ?? ''} to ${pathway.destination_space_name ?? ''}.`,
+				step: (Array.isArray(pathway.pathway_steps) ? pathway.pathway_steps : []).slice(0, 10).map((s, i) => ({
+					'@type': 'HowToStep',
+					position: i + 1,
+					name: typeof s === 'object' && s !== null ? ((s as Record<string, unknown>).title as string ?? `Step ${i + 1}`) : `Step ${i + 1}`,
+					text: typeof s === 'string' ? s : JSON.stringify(s)
+				}))
+			}
 		})
 	);
 
@@ -66,18 +80,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-3xl px-4 py-8">
 	<a

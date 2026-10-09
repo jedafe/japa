@@ -29,6 +29,7 @@
 
 <svelte:head>
 	<title>{t('create.title', 'Create')} — {t('app.name', 'JapaConnect')}</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 {#if data.loadError}

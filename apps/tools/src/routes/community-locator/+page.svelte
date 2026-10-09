@@ -3,6 +3,7 @@
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -86,7 +87,15 @@
 				'Find diaspora organisations near your destination — cultural groups, religious communities, and social clubs.'
 			),
 			path: '/community-locator',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-community-locator.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'Dataset',
+				name: 'Diaspora Community Locator',
+				description: 'Directory of diaspora organisations — cultural groups, religious communities, and social clubs.',
+				creator: { '@type': 'Organization', name: 'JapaConnect' }
+			}
 		})
 	);
 
@@ -298,18 +307,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-5xl px-4 py-8">
 	{#if !data.enabled}

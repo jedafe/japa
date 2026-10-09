@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -43,6 +44,7 @@
 			description: scholarship?.description ?? t('scholarships.seo_description', 'Filter scholarships by country, level of study, award amount, and deadline.'),
 			path: `/scholarships/${page.params.guide_id}`,
 			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-scholarships.png`,
 			jsonLd: scholarship
 				? {
 						'@context': 'https://schema.org',
@@ -148,18 +150,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	{#if seo.jsonLdString}
-		<script type="application/ld+json">{seo.jsonLdString}</script>
-	{/if}
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 {#if !data.enabled}
 	<ToolDisabled tool={data.tool} />

@@ -2,6 +2,7 @@
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -91,14 +92,32 @@
 			),
 			path: '/sop-generator',
 			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-sop-generator.png`,
 			jsonLd: {
 				'@context': 'https://schema.org',
-				'@type': 'SoftwareApplication',
-				name: 'AI SOP Generator',
-				applicationCategory: 'UtilitiesApplication',
-				operatingSystem: 'Web',
-				offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-				description: 'Generate a tailored statement of purpose draft for visa and study applications.'
+				'@graph': [
+					{
+						'@type': 'SoftwareApplication',
+						name: 'AI SOP Generator',
+						applicationCategory: 'UtilitiesApplication',
+						operatingSystem: 'Web',
+						offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+						description:
+							'Generate a tailored statement of purpose draft for visa and study applications.'
+					},
+					{
+						'@type': 'HowTo',
+						name: 'How to write a statement of purpose',
+						description:
+							'Generate a tailored statement of purpose draft from proven templates — browse samples, refine, and export.',
+						step: templates.slice(0, 10).map((tpl, i) => ({
+							'@type': 'HowToStep',
+							position: i + 1,
+							name: tpl.title ?? `Template ${i + 1}`,
+							text: tpl.title ?? ''
+						}))
+					}
+				]
 			}
 		})
 	);
@@ -322,16 +341,7 @@
 	onDestroy(() => stopPolling());
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	{#if seo.jsonLdString}
-		{@html `<script type="application/ld+json">${seo.jsonLdString}<\/script>`}
-	{/if}
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 {#if !data.enabled}
 	<ToolDisabled tool={data.tool} />

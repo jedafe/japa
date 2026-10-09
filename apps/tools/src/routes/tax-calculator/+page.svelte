@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -45,7 +46,20 @@
 				'Destination-specific tax guides — residency triggers, worldwide income rules, double taxation treaties, and checklists.'
 			),
 			path: '/tax-calculator',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-tax-calculator.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'HowTo',
+				name: 'Destination Tax Obligations',
+				description: 'Destination-specific tax guides — residency triggers, worldwide income rules, and treaties.',
+				step: guides.slice(0, 10).map((g, i) => ({
+					'@type': 'HowToStep',
+					position: i + 1,
+					name: `${g.origin_space_name ?? ''} to ${g.destination_space_name ?? ''}`,
+					text: g.residency_trigger ?? g.first_year_obligations ?? ''
+				}))
+			}
 		})
 	);
 
@@ -129,18 +143,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-4xl px-4 py-8">
 	{#if !data.enabled}

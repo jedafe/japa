@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Public certificate share page — SSR (ADR-060 §4, shareable social proof).
 	import { t } from '$lib/i18n';
+	import { safeJsonLd } from '$lib/seo';
 	import { api } from '$lib/api/client';
 	import { Award, GraduationCap, CheckCircle, Download } from 'lucide-svelte';
 	import type { PageData } from './$types';
@@ -36,9 +37,19 @@
 <svelte:head>
 	<title>{cert.recipient_name} — {cert.title} · {t('academy.certificates')}</title>
 	<meta name="description" content={`Certificate of completion: ${cert.title}`} />
+	<!-- Public share page (GET /certificates/{id} is unauthenticated social
+	     proof) — indexable by design. No privacy flag exists on the backend
+	     Certificate model; if one is added, gate this to noindex. -->
+	<meta name="robots" content="index, follow" />
 	<link rel="canonical" href={`https://academy.japaconnect.com/certificates/${cert.id}`} />
-	<script type="application/ld+json">
-		{JSON.stringify({
+	<meta property="og:title" content={`${cert.recipient_name} — ${cert.title}`} />
+	<meta property="og:description" content={`Certificate of completion: ${cert.title}`} />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content={`https://academy.japaconnect.com/certificates/${cert.id}`} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={`${cert.recipient_name} — ${cert.title}`} />
+	<meta name="twitter:description" content={`Certificate of completion: ${cert.title}`} />
+	{@html safeJsonLd({
 			'@context': 'https://schema.org',
 			'@type': 'EducationalOccupationalCredential',
 			name: `Certificate of Completion: ${cert.title}`,
@@ -52,7 +63,6 @@
 				identifier: cert.certificate_number ?? cert.id
 			}
 		})}
-	</script>
 </svelte:head>
 
 <div class="flex min-h-[60vh] items-center justify-center px-4 py-12">

@@ -127,6 +127,9 @@
 	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
+	// Section 26 — self-referencing canonical on the clean content URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}${contentHref(article)}`);
 	const allowedIframeHosts = $derived(
 		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
 	);
@@ -148,8 +151,8 @@
 			'@type': 'Article',
 			headline: article.title,
 			datePublished: article.published_at || article.created_at,
-			author: { '@type': 'Person', name: article.author_name || t('app.name') },
-			url: page.url.href,
+				author: { '@type': 'Person', name: article.author_name || t('app.name') },
+			url: canonical,
 			description
 		}
 	);
@@ -168,7 +171,8 @@
 	<meta property="og:title" content={article.title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{#if article.featured_image_url}<meta property="og:image" content={article.featured_image_url} />{/if}
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={article.title} />

@@ -23,6 +23,7 @@
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -108,6 +109,46 @@
 		goto(url);
 	}
 
+	// Section 26 — full head tags for the quick-compare surface: title,
+	// description (body excerpt with title fallback so it is never empty),
+	// self-referencing canonical on the clean slug URL, OG/Twitter tags,
+	// and ItemList + Table JSON-LD for the ranked items/matrix.
+	const headTitle = $derived(`${comparison.content.title} — ${t('jce.compare.title', 'Compare')}`);
+	const headDescription = $derived(
+		(comparison.content.body_html ?? comparison.content.body ?? '')
+			.replace(/<[^>]*>/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 160) || comparison.content.title
+	);
+	const canonical = $derived(`${page.url.origin}/compare/${comparison.content.slug}`);
+	const compareJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'ItemList',
+				name: comparison.content.title,
+				description: headDescription,
+				url: canonical,
+				numberOfItems: resolvedItems.length,
+				itemListElement: resolvedItems.map((item, i) => ({
+					'@type': 'ListItem',
+					position: i + 1,
+					name: item.title,
+					...(item.description ? { description: item.description } : {})
+				}))
+			})
+	);
+	const compareTableJsonLd = $derived(
+		uniqueDims.length
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Table',
+					about: comparison.content.title,
+					url: canonical
+				})
+			: ''
+	);
+
 	function cellFor(item: MatrixItem, dim: JCEDimension): MatrixDimension | undefined {
 		return item.dimensions.find((d: MatrixDimension) => d.dimension_id === dim.id);
 	}
@@ -120,6 +161,23 @@
 		return '—';
 	}
 </script>
+
+<svelte:head>
+	<title>{headTitle}</title>
+	<meta name="description" content={headDescription} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:title" content={comparison.content.title} />
+	<meta property="og:description" content={headDescription} />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content={canonical} />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={comparison.content.title} />
+	<meta name="twitter:description" content={headDescription} />
+	{@html safeJsonLdScript(compareJsonLd)}
+	{#if compareTableJsonLd}
+		{@html safeJsonLdScript(compareTableJsonLd)}
+	{/if}
+</svelte:head>
 
 <div class="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
 	<div class="flex items-start justify-between gap-4 flex-wrap">

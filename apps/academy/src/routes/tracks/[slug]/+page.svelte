@@ -18,6 +18,7 @@
 	import type { PageData } from './$types';
 	import type { Bookmark, Enrollment, TrackReview, ReviewAggregate } from '$lib/types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { safeJsonLd } from '$lib/seo';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);
@@ -269,11 +270,27 @@
 	{#if track.description}
 		<meta name="description" content={track.description.slice(0, 160)} />
 	{/if}
+	<meta name="robots" content="index, follow" />
 	<link rel="canonical" href={`https://academy.japaconnect.com/tracks/${track.slug}`} />
+	<meta property="og:title" content={track.title} />
+	{#if track.description}
+		<meta property="og:description" content={track.description.slice(0, 160)} />
+	{/if}
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={`https://academy.japaconnect.com/tracks/${track.slug}`} />
+	{#if track.thumbnail_url}
+		<meta property="og:image" content={track.thumbnail_url} />
+	{/if}
+	<meta name="twitter:card" content={track.thumbnail_url ? 'summary_large_image' : 'summary'} />
+	<meta name="twitter:title" content={track.title} />
+	{#if track.description}
+		<meta name="twitter:description" content={track.description.slice(0, 160)} />
+	{/if}
+	{#if track.thumbnail_url}
+		<meta name="twitter:image" content={track.thumbnail_url} />
+	{/if}
 	{#if data.jsonLd}
-		<script type="application/ld+json">
-			{JSON.stringify(data.jsonLd)}
-		</script>
+		{@html safeJsonLd(data.jsonLd)}
 	{/if}
 </svelte:head>
 

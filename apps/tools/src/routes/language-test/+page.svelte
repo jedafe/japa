@@ -3,6 +3,7 @@
 	import { replaceState } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -63,7 +64,20 @@
 				'Find required language tests for your visa, minimum scores, prep resources, and community score stories.'
 			),
 			path: '/language-test',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-language-test.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'ItemList',
+				name: 'Language Test Requirements',
+				description: 'Required language tests, minimum scores, and prep resources by destination.',
+				itemListElement: tests.slice(0, 10).map((x, i) => ({
+					'@type': 'ListItem',
+					position: i + 1,
+					name: x.name,
+					url: `${page.url.origin}/language-test`
+				}))
+			}
 		})
 	);
 
@@ -221,18 +235,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-4xl px-4 py-8">
 	{#if !data.enabled}

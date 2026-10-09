@@ -21,6 +21,7 @@
 
 <svelte:head>
 	<title>{t('ai.agent.title', 'AI Agent')} — JapaConnect</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 {#if !data.enabled}

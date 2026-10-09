@@ -18,6 +18,7 @@
 
 <svelte:head>
 	<title>{t('sources.blocked.title', 'Blocked sources — JapaConnect')}</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="flex flex-col gap-4 p-4">

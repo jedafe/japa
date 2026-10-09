@@ -30,6 +30,8 @@
 		Table2
 	} from 'lucide-svelte';
 	import type { WikiPageIndex } from '$lib/types';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { breadcrumbJsonLd } from '$lib/seo/breadcrumbs';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -213,6 +215,25 @@
 		heroUrl ? (heroUrl.startsWith('http') ? heroUrl : page.url.origin + heroUrl) : ''
 	);
 	const canonicalUrl = $derived(page.url.origin + page.url.pathname);
+	// CollectionPage + BreadcrumbList JSON-LD (Section 26 — the space
+	// index lists that destination's wiki articles).
+	const wikiIndexJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'CollectionPage',
+			name: title,
+			description,
+			url: canonicalUrl
+		})
+	);
+	const wikiIndexBreadcrumbJsonLd = $derived(
+		JSON.stringify(
+			breadcrumbJsonLd([
+				{ name: 'Home', path: page.url.origin },
+				{ name: spaceName, path: canonicalUrl }
+			])
+		)
+	);
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const canCreate = $derived(data.authed && data.userPermissions?.includes('wiki.edit'));
 
@@ -258,6 +279,8 @@
 		<meta name="twitter:card" content="summary_large_image" />
 	{/if}
 	<link rel="canonical" href={canonicalUrl} />
+	{@html safeJsonLdScript(wikiIndexJsonLd)}
+	{@html safeJsonLdScript(wikiIndexBreadcrumbJsonLd)}
 </svelte:head>
 
 <SetSidebar>

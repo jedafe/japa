@@ -37,6 +37,7 @@
 
 <svelte:head>
 	<title>{t('academy.apply')} · {t('app.name')}</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="flex justify-center px-4 py-6 md:px-6 lg:px-8">

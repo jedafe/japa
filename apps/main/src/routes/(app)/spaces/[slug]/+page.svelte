@@ -322,6 +322,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	const title = $derived(`${space.name} — ${t('app.name')}`);
 	const description = $derived(space.description ?? `${space.name} on ${t('app.name')}`);
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/spaces/${space.slug}`);
 
 	// BreadcrumbList JSON-LD (Section 26 — all pages with hierarchy).
 	const breadcrumbLd = $derived(
@@ -551,7 +554,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(breadcrumbLd)}
 </svelte:head>
 

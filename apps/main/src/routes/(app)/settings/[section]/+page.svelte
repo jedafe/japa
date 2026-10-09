@@ -9,6 +9,7 @@
 
 <svelte:head>
 	<title>{title} — {t('settings.nav.label')}</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 {#if SectionComponent}

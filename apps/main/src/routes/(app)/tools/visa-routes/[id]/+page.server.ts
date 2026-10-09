@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet } from '$lib/server/api';
+import { apiContext, apiGet, apiGetEnvelope } from '$lib/server/api';
 import type { VisaRouteWithAi } from '$lib/types';
 
 /**
@@ -20,8 +20,11 @@ export const load: PageServerLoad = async (event) => {
 	const routeId = event.params.id;
 
 	let route: VisaRouteWithAi | null = null;
+	let jsonLd: unknown = null;
 	try {
-		route = await apiGet<VisaRouteWithAi>(ctx, `/visa-routes/${routeId}`);
+		const envelope = await apiGetEnvelope<VisaRouteWithAi>(ctx, `/visa-routes/${routeId}`);
+		route = envelope.data;
+		jsonLd = (envelope as { json_ld?: unknown }).json_ld ?? null;
 	} catch {
 		route = null;
 	}
@@ -30,5 +33,5 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, { code: 'visa_route_not_found', message: 'Visa route not found' });
 	}
 
-	return { route };
+	return { route, jsonLd };
 };

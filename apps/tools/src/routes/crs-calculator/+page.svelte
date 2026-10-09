@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { LineChart } from 'layerchart';
@@ -81,6 +82,7 @@
 			),
 			path: '/crs-calculator',
 			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-crs-calculator.png`,
 			jsonLd: {
 				'@context': 'https://schema.org',
 				'@type': 'SoftwareApplication',
@@ -215,18 +217,7 @@
 	};
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:type" content="website" />
-	<meta property="og:url" content={seo.canonical} />
-	{#if seo.jsonLdString}
-		{@html `<script type="application/ld+json">${seo.jsonLdString}<\/script>`}
-	{/if}
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 {#if !data.enabled}
 	<ToolDisabled tool={data.tool} />

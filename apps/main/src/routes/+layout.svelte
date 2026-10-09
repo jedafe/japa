@@ -87,6 +87,9 @@
 	let defaultLanguage = $derived(
 		(data.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
 	);
+	// og:locale mirrors the active locale; alternates cover the other enabled
+	// languages (same source as hreflang so the sets never drift).
+	let ogLocale = $derived((data.locale as string | undefined) ?? defaultLanguage);
 	// Strip the active locale prefix — canonical URLs are always unprefixed.
 	// With `reroute` the browser URL keeps /fr/... on both SSR and client,
 	// so this must be removed explicitly (prevents /fr/fr/... alternates and
@@ -138,6 +141,8 @@
 <svelte:head>
 	{#each hreflangLinks as link}<link rel="alternate" hreflang={link.lang} href={link.href} />{/each}
 	<link rel="alternate" hreflang="x-default" href={xDefaultHref} />
+	<meta property="og:locale" content={ogLocale} />
+	{#each enabledLanguages.filter((l) => l !== ogLocale) as alt}<meta property="og:locale:alternate" content={alt} />{/each}
 	<link rel="alternate" type="application/rss+xml" title={t('blog.rss_title', 'JapaConnect Blog')} href="/blog/rss.xml" />
 	<link
 		rel="alternate"

@@ -5,6 +5,7 @@
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -60,7 +61,22 @@
 				'Step-by-step document attestation pathways — apostille requirements, steps, fees, and community-verified updates.'
 			),
 			path: '/attestation-guide',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-attestation-guide.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'HowTo',
+				name: 'Document Attestation Guide',
+				description: 'Step-by-step document attestation pathways — apostille requirements, steps, and fees.',
+				step: pathways.slice(0, 1).flatMap((p) =>
+					(Array.isArray(p.pathway_steps) ? p.pathway_steps : []).slice(0, 10).map((s, i) => ({
+						'@type': 'HowToStep',
+						position: i + 1,
+						name: typeof s === 'object' && s !== null ? (s as Record<string, unknown>).title as string ?? `Step ${i + 1}` : `Step ${i + 1}`,
+						text: typeof s === 'string' ? s : JSON.stringify(s)
+					}))
+				)
+			}
 		})
 	);
 
@@ -259,18 +275,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-4xl px-4 py-8">
 	{#if !data.enabled}

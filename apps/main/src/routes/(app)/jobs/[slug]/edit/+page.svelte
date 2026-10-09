@@ -140,6 +140,7 @@
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="w-full p-4">

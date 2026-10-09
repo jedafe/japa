@@ -28,7 +28,7 @@
 	import { ArrowLeft, Clock, Eye, ExternalLink, Pencil } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { hydrateLinkPreviews } from '$lib/tiptap/hydrateLinkPreviews';
 	import { hydrateMentions } from '$lib/tiptap/hydrateMentions';
 	import { hydrateVideoEmbeds } from '$lib/tiptap/hydrateVideoEmbeds';
@@ -92,8 +92,45 @@
 	}
 
 	const headTitle = $derived(`${comparison.content.title} — ${t('jce.comparisons.title', 'Comparisons')}`);
+	// Fallback to the title/excerpt when the body is empty so the meta
+	// description is never conditionally empty (ResolveMetadata fallback).
 	const headDescription = $derived(
-		(comparison.content.body ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160)
+		(comparison.content.body_html ?? comparison.content.body ?? '')
+			.replace(/<[^>]*>/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 160) || comparison.content.title
+	);
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/comparisons/${comparison.content.slug}`);
+	// ItemList + Table JSON-LD (Section 26 — comparison pages expose the
+	// ranked items and the dimension matrix as structured data).
+	const comparisonJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'ItemList',
+				name: comparison.content.title,
+				description: headDescription,
+				url: canonical,
+				numberOfItems: resolvedItems.length,
+				itemListElement: resolvedItems.map((item, i) => ({
+					'@type': 'ListItem',
+					position: i + 1,
+					name: item.title,
+					...(item.description ? { description: item.description } : {})
+				}))
+			})
+	);
+	const comparisonTableJsonLd = $derived(
+		uniqueDims.length
+			? JSON.stringify({
+					'@context': 'https://schema.org',
+					'@type': 'Table',
+					about: comparison.content.title,
+					url: canonical
+				})
+			: ''
 	);
 	const sanitizedBody = $derived(
 		sanitizeContentHtml(comparison.content.body_html ?? comparison.content.body ?? '')
@@ -106,11 +143,16 @@
 	<meta property="og:title" content={comparison.content.title} />
 	{#if headDescription}<meta property="og:description" content={headDescription} />{/if}
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{#if comparison.content.featured_image_url}<meta property="og:image" content={comparison.content.featured_image_url} />{/if}
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={comparison.content.title} />
 	{#if headDescription}<meta name="twitter:description" content={headDescription} />{/if}
+	{@html safeJsonLdScript(comparisonJsonLd)}
+	{#if comparisonTableJsonLd}
+		{@html safeJsonLdScript(comparisonTableJsonLd)}
+	{/if}
 </svelte:head>
 
 <!-- ADR-058 Exception #1: dev.to reading layout. Left nav auto-collapses;

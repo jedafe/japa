@@ -178,6 +178,10 @@
 	const description = $derived(
 		t('tag.description', 'Content tagged with #{name} on JapaConnect.').replace('{name}', tag.name)
 	);
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/tags/${tag.slug}`);
+
 	const followerLabel = $derived(
 		t('tag.followers', '{n} followers').replace('{n}', String(tag.follower_count))
 	);
@@ -188,7 +192,7 @@
 			'@type': 'CollectionPage',
 			name: `#${tag.name}`,
 			description,
-			url: page.url.href
+			url: canonical
 		})
 	);
 
@@ -322,7 +326,8 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
@@ -662,7 +667,7 @@
 					<div class="mt-1 flex items-center gap-3">
 						{#if editCoverUrl}
 							<div class="relative">
-								<img src={editCoverUrl} alt="Cover" class="h-12 w-20 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+								<img src={editCoverUrl} alt={tag.name} class="h-12 w-20 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
 								<button type="button" onclick={() => { editCoverMediaId = ''; editCoverUrl = ''; }} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label="Remove">
 									<X size={12} />
 								</button>
@@ -685,7 +690,7 @@
 					<div class="mt-1 flex items-center gap-3">
 						{#if editLogoUrl}
 							<div class="relative">
-								<img src={editLogoUrl} alt="Logo" class="h-12 w-12 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
+								<img src={editLogoUrl} alt={tag.name} class="h-12 w-12 rounded-[var(--radius)] border border-[var(--color-border)] object-cover" />
 								<button type="button" onclick={() => { editLogoMediaId = ''; editLogoUrl = ''; }} class="absolute -right-1 -top-1 rounded-full p-0.5" style="background: var(--color-danger); color: white" aria-label="Remove">
 									<X size={12} />
 								</button>

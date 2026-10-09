@@ -98,6 +98,8 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
+	<link rel="canonical" href={page.url.origin + '/forum'} />
+	<meta property="og:url" content={page.url.origin + '/forum'} />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">

@@ -17,6 +17,7 @@
 	import type { PageData } from './$types';
 	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { excerptFromHtml, safeJsonLd } from '$lib/seo';
 
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);
@@ -251,17 +252,34 @@
 
 <svelte:head>
 	<title>{lesson.title} · {track.title} · {t('app.name')}</title>
-	<meta name="description" content={lesson.title} />
+	<meta name="description" content={excerptFromHtml(lesson.content_html) ?? lesson.title} />
+	{#if lesson.is_preview}
+		<meta name="robots" content="index, follow" />
+	{:else}
+		<meta name="robots" content="noindex, nofollow" />
+	{/if}
 	<link rel="canonical" href={`https://academy.japaconnect.com/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
-	<script type="application/ld+json">
-		{JSON.stringify({
+	<meta property="og:title" content={`${lesson.title} · ${track.title}`} />
+	<meta property="og:description" content={excerptFromHtml(lesson.content_html) ?? lesson.title} />
+	<meta property="og:type" content="article" />
+	<meta property="og:url" content={`https://academy.japaconnect.com/tracks/${track.slug}/${page.params.module}/${lesson.slug}`} />
+	{#if track.thumbnail_url}
+		<meta property="og:image" content={track.thumbnail_url} />
+	{/if}
+	<meta name="twitter:card" content={track.thumbnail_url ? 'summary_large_image' : 'summary'} />
+	<meta name="twitter:title" content={`${lesson.title} · ${track.title}`} />
+	<meta name="twitter:description" content={excerptFromHtml(lesson.content_html) ?? lesson.title} />
+	{#if track.thumbnail_url}
+		<meta name="twitter:image" content={track.thumbnail_url} />
+	{/if}
+	{@html safeJsonLd({
 			'@context': 'https://schema.org',
 			'@type': 'LearningResource',
 			name: lesson.title,
-			isPartOf: { '@type': 'Course', name: track.title },
+			description: excerptFromHtml(lesson.content_html) ?? undefined,
+			isPartOf: { '@type': 'Course', name: track.title, url: `https://academy.japaconnect.com/tracks/${track.slug}` },
 			teaches: lesson.title
 		})}
-	</script>
 </svelte:head>
 
 <!-- Right sidebar: lesson meta (progress ring, next lesson, notes).

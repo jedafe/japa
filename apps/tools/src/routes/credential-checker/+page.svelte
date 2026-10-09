@@ -2,6 +2,7 @@
 	import { untrack, onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -61,7 +62,20 @@
 				'Look up credential recognition pathways for your profession — regulatory body, timeline, cost, and steps.'
 			),
 			path: '/credential-checker',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-credential-checker.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'HowTo',
+				name: 'Professional Credential Recognition',
+				description: 'Credential recognition pathways — regulatory body, timeline, cost, and steps.',
+				step: pathways.slice(0, 10).map((p, i) => ({
+					'@type': 'HowToStep',
+					position: i + 1,
+					name: `${p.profession_name} — ${p.destination_space_name ?? ''}`,
+					text: p.pathway_description
+				}))
+			}
 		})
 	);
 
@@ -208,18 +222,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-5xl px-4 py-8">
 	{#if !data.enabled}

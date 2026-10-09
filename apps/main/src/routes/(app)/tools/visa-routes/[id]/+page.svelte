@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { Route, ArrowLeft, ExternalLink, DollarSign, Map, RefreshCw, AlertTriangle, ClipboardCheck, GitCompare } from 'lucide-svelte';
 	import type { PageData } from './$types';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	/**
 	 * Visa Route detail page — Section 90, ADR-098.
@@ -15,6 +16,45 @@
 
 	const title = $derived(`${route.name} — ${t('visa_routes.title', 'Visa Route Comparison')}`);
 	const description = $derived(route.eligibility_summary ?? t('visa_routes.subtitle', 'Compare visa routes side by side.'));
+	// Section 26 — self-referencing canonical on the clean ID URL (origin +
+	// pathname, never the query-string form) so filtered hits consolidate.
+	const canonical = $derived(`${page.url.origin}/tools/visa-routes/${route.id}`);
+	// HowTo JSON-LD built from the route requirements (Section 26 — visa
+	// detail pages expose application steps); FAQPage covers the
+	// eligibility summary when no stepwise requirements exist.
+	const visaJsonLd = $derived.by(() => {
+		const steps = Object.entries(route.requirements ?? {})
+			.filter(([, v]) => v != null && String(v).trim() !== '')
+			.map(([k, v], i) => ({
+				'@type': 'HowToStep',
+				position: i + 1,
+				name: k.replace(/_/g, ' '),
+				text: String(v)
+			}));
+		if (steps.length > 0) {
+			return JSON.stringify({
+				'@context': 'https://schema.org',
+				'@type': 'HowTo',
+				name: route.name,
+				description,
+				step: steps
+			});
+		}
+		if (route.eligibility_summary) {
+			return JSON.stringify({
+				'@context': 'https://schema.org',
+				'@type': 'FAQPage',
+				mainEntity: [
+					{
+						'@type': 'Question',
+						name: `Who is eligible for ${route.name}?`,
+						acceptedAnswer: { '@type': 'Answer', text: route.eligibility_summary }
+					}
+				]
+			});
+		}
+		return data.jsonLd ? JSON.stringify(data.jsonLd) : '';
+	});
 
 	function formatFee(fee: number | null | undefined): string {
 		if (fee == null) return '—';
@@ -29,11 +69,14 @@
 <svelte:head>
 	<title>{title}</title>
 	<meta name="description" content={description} />
-	<link rel="canonical" href={page.url.href} />
+	<link rel="canonical" href={canonical} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
-	<meta property="og:url" content={page.url.href} />
+	<meta property="og:url" content={canonical} />
 	<meta property="og:type" content="website" />
+	{#if visaJsonLd}
+		{@html safeJsonLdScript(visaJsonLd)}
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-3xl">

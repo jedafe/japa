@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -25,7 +26,16 @@
 					'Compare visa routes for your destination side by side — eligibility, fees, path to PR, and renewal terms.'
 				),
 			path: `/visa-routes/${page.params.id}`,
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-visa-routes.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'Article',
+				headline: route.name,
+				description: route.eligibility_summary ?? '',
+				author: { '@type': 'Organization', name: 'JapaConnect' },
+				mainEntityOfPage: `${page.url.origin}/visa-routes/${page.params.id}`
+			}
 		})
 	);
 
@@ -72,18 +82,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="article" twitterCard="summary" />
 
 <div class="mx-auto max-w-3xl px-4 py-8">
 	<a

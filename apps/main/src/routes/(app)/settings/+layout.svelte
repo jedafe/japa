@@ -16,6 +16,11 @@
 	const groupSections = $derived(sectionsInGroup(activeGroup, features));
 </script>
 
+<svelte:head>
+	<!-- Private account surface — not indexed. -->
+	<meta name="robots" content="noindex, nofollow" />
+</svelte:head>
+
 <div class="grid grid-cols-1 gap-6 px-4 py-4 md:grid-cols-[200px_1fr] md:px-6 lg:px-8">
 	<SettingsGroupRail
 		{groups}

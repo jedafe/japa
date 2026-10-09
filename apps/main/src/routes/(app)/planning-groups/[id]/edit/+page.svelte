@@ -83,6 +83,7 @@
 
 <svelte:head>
 	<title>{t('planning_groups.edit_heading', 'Edit Planning Group')} — JapaConnect</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="mx-auto max-w-2xl px-4 py-6">

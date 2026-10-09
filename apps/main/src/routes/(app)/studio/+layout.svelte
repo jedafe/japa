@@ -49,6 +49,11 @@
 	}
 </script>
 
+<svelte:head>
+	<!-- Creator studio is private — not indexed. -->
+	<meta name="robots" content="noindex, nofollow" />
+</svelte:head>
+
 <div class="studio-surface" class:is-composer={isCreateTab}>
 	<header class="studio-header">
 		<h1 class="studio-title">{t('studio.heading', 'Studio')}</h1>

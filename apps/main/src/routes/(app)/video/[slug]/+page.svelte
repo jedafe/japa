@@ -39,6 +39,10 @@
 		{#if source.description}
 			<meta name="description" content={source.description.slice(0, 160)} />
 		{/if}
+		{@const videoCanonical = `https://japaconnect.com/video/${source.slug ?? source.id}`}
+		<link rel="canonical" href={videoCanonical} />
+		<meta property="og:url" content={videoCanonical} />
+		<meta property="og:type" content="video.other" />
 	{/if}
 </svelte:head>
 

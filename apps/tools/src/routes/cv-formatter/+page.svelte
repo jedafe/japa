@@ -4,6 +4,7 @@
 	import { PUBLIC_JC_API_URL } from '$env/static/public';
 	import { buildApiUrl } from '@japaconnect/api-url';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -48,7 +49,20 @@
 				'Get destination-specific CV standards and AI-assisted formatting — photo policy, sections, tone, and common pitfalls.'
 			),
 			path: '/cv-formatter',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-cv-formatter.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'HowTo',
+				name: 'Destination CV Formatting',
+				description: 'Destination-specific CV standards — photo policy, sections, tone, and common pitfalls.',
+				step: standards.slice(0, 10).map((s, i) => ({
+					'@type': 'HowToStep',
+					position: i + 1,
+					name: s.destination_space_name ?? `Destination ${i + 1}`,
+					text: s.tone_guidance ?? s.common_pitfalls ?? ''
+				}))
+			}
 		})
 	);
 
@@ -140,18 +154,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-5xl px-4 py-8">
 	{#if !data.enabled}

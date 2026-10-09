@@ -68,6 +68,9 @@
 	const publishedDate = $derived(new Date(article.published_at || article.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }));
 	const title = $derived(`${article.title} — ${t('app.name')}`);
 	const description = $derived(article.excerpt ?? article.body.slice(0, 160));
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/blog/${article.slug}`);
 	const allowedIframeHosts = $derived(
 		(data.siteSettings?.['content.sanitization.allowed_iframe_hosts'] as string | undefined) ?? undefined
 	);
@@ -84,7 +87,7 @@
 			headline: article.title,
 			datePublished: article.published_at || article.created_at,
 			author: { '@type': 'Person', name: article.author_name || t('app.name') },
-			url: page.url.href,
+			url: canonical,
 			description
 		}
 	);
@@ -101,7 +104,7 @@
 		breadcrumbJsonLd([
 			{ name: 'Home', path: page.url.origin },
 			{ name: 'Blog', path: `${page.url.origin}/blog` },
-			{ name: article.title, path: page.url.href }
+			{ name: article.title, path: canonical }
 		])
 	);
 </script>
@@ -112,7 +115,8 @@
 	<meta property="og:title" content={article.title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{#if article.featured_image_url}<meta property="og:image" content={article.featured_image_url} />{/if}
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:title" content={article.title} />

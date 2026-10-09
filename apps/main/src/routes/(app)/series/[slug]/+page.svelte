@@ -13,6 +13,9 @@
 	const title = $derived(
 		t('series_detail.title', '{name} — JapaConnect').replace('{name}', series.title)
 	);
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/series/${series.slug}`);
 	const description = $derived(
 		series.description ??
 			t('series_detail.description', 'Posts in the {name} series.').replace(
@@ -28,7 +31,8 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full">

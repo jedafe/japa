@@ -31,11 +31,26 @@
 		TravelAirlineDirectoryResponse
 	} from '$lib/types';
 	import type { PageData } from './$types';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
 	const title = $derived(t('tools.travel', 'Travel Search — JapaConnect'));
 	const description = $derived(t('tools.travel_desc', 'Search flights and hotels for your move.'));
+	// Section 26 — self-referencing canonical on the clean tool URL (never
+	// the query-string form) so tab/filter hits consolidate.
+	const canonical = $derived(`${page.url.origin}/tools/travel`);
+	// WebApplication JSON-LD (Section 26 — interactive tool surface).
+	const travelJsonLd = $derived(
+		JSON.stringify({
+			'@context': 'https://schema.org',
+			'@type': 'WebApplication',
+			name: title,
+			description,
+			url: canonical,
+			applicationCategory: 'TravelApplication'
+		})
+	);
 
 	let disabled = $state(false);
 
@@ -521,7 +536,9 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
+	{@html safeJsonLdScript(travelJsonLd)}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-4xl">

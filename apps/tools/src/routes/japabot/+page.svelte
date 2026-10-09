@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
@@ -66,7 +67,17 @@
 				'Chat with JapaBot — answers grounded in JapaConnect\'s published guides, forum threads, and community knowledge via RAG.'
 			),
 			path: '/japabot',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-japabot.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'SoftwareApplication',
+				name: 'JapaBot',
+				applicationCategory: 'UtilitiesApplication',
+				operatingSystem: 'Web',
+				offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+				description: 'AI japa guide with answers grounded in published guides and community knowledge.'
+			}
 		})
 	);
 
@@ -186,18 +197,7 @@
 	]);
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="flex flex-col h-[calc(100vh-var(--header-height)-64px)]">
 	{#if !data.enabled}

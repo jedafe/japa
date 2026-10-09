@@ -2,6 +2,7 @@
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -43,7 +44,17 @@
 				'Convert between 160+ currencies at live mid-market rates — including NGN, GHS, KES — powered by Open Exchange Rates.'
 			),
 			path: '/currency-converter',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-currency-converter.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'SoftwareApplication',
+				name: 'Currency Converter',
+				applicationCategory: 'UtilitiesApplication',
+				operatingSystem: 'Web',
+				offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+				description: 'Convert between 160+ currencies at live mid-market rates.'
+			}
 		})
 	);
 
@@ -112,18 +123,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-2xl px-4 py-8">
 	{#if !data.enabled}

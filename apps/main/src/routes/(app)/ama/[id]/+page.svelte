@@ -74,6 +74,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			: t('ama.detail_title_missing', 'AMA — JapaConnect')
 	);
 	const description = $derived(session ? tiptapExcerpt(session.body, 160) : '');
+	// Section 26 — self-referencing canonical on the clean ID URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/ama/${session?.id ?? ''}`);
 
 	// FAQPage JSON-LD for completed AMAs (§88 / §26). Each host reply that
 	// answered a top-level question becomes an `acceptedAnswer`. Only emitted
@@ -124,7 +127,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<meta property="og:title" content={session?.title ?? title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{#if faqJsonLd}
 		{@html safeJsonLdScript(faqJsonLd)}
 	{/if}

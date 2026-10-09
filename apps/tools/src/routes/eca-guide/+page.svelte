@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
@@ -103,6 +104,7 @@
 			),
 			path: '/eca-guide',
 			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-eca-guide.png`,
 			jsonLd: {
 				'@context': 'https://schema.org',
 				'@type': 'HowTo',
@@ -217,16 +219,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	{#if seo.jsonLdString}
-		{@html `<script type="application/ld+json">${seo.jsonLdString}<\/script>`}
-	{/if}
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 {#if !data.enabled}
 	<ToolDisabled tool={data.tool} />
@@ -419,10 +412,10 @@
 												<div class="mb-2 text-xs">
 													<span class="font-medium">{update.user_name ?? t('eca_guide.anon_member', 'Member')}</span>
 													{#if update.fee_estimate}
-														· {t('eca_guide.paid_fmt', 'paid {fee}', { fee: update.fee_estimate })}
+														· {t('eca_guide.paid_fmt', 'paid {fee}').replace('{fee}', update.fee_estimate)}
 													{/if}
 													{#if update.turnaround_days}
-														· {t('eca_guide.turnaround_fmt', '{days}d turnaround', { days: update.turnaround_days })}
+														· {t('eca_guide.turnaround_fmt', '{days}d turnaround').replace('{days}', String(update.turnaround_days))}
 													{/if}
 													{#if update.note}
 														<p class="text-muted mt-0.5">{update.note}</p>

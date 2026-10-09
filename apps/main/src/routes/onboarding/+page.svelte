@@ -293,6 +293,7 @@
 
 <svelte:head>
 	<title>{t('onboarding.title', 'Welcome to JapaConnect')} — {t('app.name')}</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="min-h-screen bg-[var(--color-bg)] px-4 py-6 sm:px-6 sm:py-10">

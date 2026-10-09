@@ -16,6 +16,12 @@
 		offering.course.description ?? t('course_offering.meta_description', 'Degree program details, tuition, duration and entry requirements.')
 	);
 
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(
+		`${page.url.origin}/universities/${offering.university.slug}/courses/${offering.slug}`
+	);
+
 	const facts = $derived(
 		(
 			[
@@ -59,7 +65,8 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 

@@ -196,9 +196,19 @@
 <svelte:head>
 	<title>{title}</title>
 	<meta name="description" content={description} />
+	<link rel="canonical" href={page.url.origin + '/mutual-aid'} />
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.origin + '/mutual-aid'} />
+	{#if currentPage > 1}
+		{@const maPrevUrl = (() => { const u = new URL(page.url.href); if (currentPage - 1 <= 1) u.searchParams.delete('page'); else u.searchParams.set('page', String(currentPage - 1)); return u.toString(); })()}
+		<link rel="prev" href={maPrevUrl} />
+	{/if}
+	{#if currentPage < totalPages}
+		{@const maNextUrl = (() => { const u = new URL(page.url.href); u.searchParams.set('page', String(currentPage + 1)); return u.toString(); })()}
+		<link rel="next" href={maNextUrl} />
+	{/if}
 </svelte:head>
 
 <div class="mx-auto w-full max-w-full" style="--page-gutter: 1rem">

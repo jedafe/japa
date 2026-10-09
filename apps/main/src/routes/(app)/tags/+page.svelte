@@ -16,13 +16,18 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		t('tags.description', 'Browse all tags on JapaConnect and find content that matters to you.')
 	);
 
+	// Self-referencing canonical on the clean path (never the query-string
+	// form) so filtered/paginated hits consolidate; rel=prev/next on
+	// numbered pages (same pattern as /blog).
+	const tagsCanonical = $derived(page.url.origin + '/tags');
+
 	const jsonLd = $derived(
 		JSON.stringify({
 			'@context': 'https://schema.org',
 			'@type': 'CollectionPage',
 			name: 'Tags',
 			description,
-			url: page.url.href
+			url: tagsCanonical
 		})
 	);
 
@@ -103,7 +108,16 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={tagsCanonical} />
+	<meta property="og:url" content={tagsCanonical} />
+	{#if data.page > 0}
+		{@const tagsPrevUrl = (() => { const u = new URL(page.url.href); if (data.page - 1 <= 0) u.searchParams.delete('page'); else u.searchParams.set('page', String(data.page)); return u.toString(); })()}
+		<link rel="prev" href={tagsPrevUrl} />
+	{/if}
+	{#if data.page < data.totalPages - 1}
+		{@const tagsNextUrl = (() => { const u = new URL(page.url.href); u.searchParams.set('page', String(data.page + 2)); return u.toString(); })()}
+		<link rel="next" href={tagsNextUrl} />
+	{/if}
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />

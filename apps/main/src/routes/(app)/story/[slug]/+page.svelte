@@ -72,6 +72,9 @@
 
 	const title = $derived(story ? `${story.title} — ${t('stories.heading', 'Community Stories')}` : t('stories.heading', 'Community Stories'));
 	const description = $derived(story?.biggest_challenge ?? story?.title ?? '');
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(story ? `${page.url.origin}/story/${story.slug}` : `${page.url.origin}/stories`);
 	const publishedDate = $derived(
 		story
 			? new Date(story.published_at || story.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
@@ -92,7 +95,7 @@
 					headline: story.title,
 					datePublished: story.published_at || story.created_at,
 					author: { '@type': 'Person', name: story.author_name },
-					url: page.url.href,
+					url: canonical,
 					articleBody: story.body,
 					...(story?.destination_space_name ? { about: { '@type': 'Country', name: story.destination_space_name } } : {}),
 					...(story?.biggest_challenge ? { description: story.biggest_challenge } : {})
@@ -151,7 +154,8 @@
 	<meta property="og:title" content={story?.title ?? title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={story?.title ?? title} />
 	<meta name="twitter:description" content={description} />

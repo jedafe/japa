@@ -8,9 +8,46 @@
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Compass, GraduationCap, ArrowRight, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
+	import { robotsContent, safeJsonLd } from '$lib/seo';
+
+	// JSON-LD payload (CollectionPage + ItemList + BreadcrumbList). Kept as
+	// data in <script> and serialized via safeJsonLd so a script-close
+	// sequence inside content can never break out of the tag.
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	const catalogJsonLd = $derived([
+		{
+			'@context': 'https://schema.org',
+			'@type': 'CollectionPage',
+			name: t('academy.catalog'),
+			description: t('academy.catalog_description'),
+			url: 'https://academy.japaconnect.com/'
+		},
+		{
+			'@context': 'https://schema.org',
+			'@type': 'ItemList',
+			itemListElement: data.tracks.slice(0, 24).map((track, j) => ({
+				'@type': 'ListItem',
+				position: data.offset + j + 1,
+				name: track.title,
+				url: `https://academy.japaconnect.com/tracks/${track.slug}`
+			}))
+		},
+		{
+			'@context': 'https://schema.org',
+			'@type': 'BreadcrumbList',
+			itemListElement: [
+				{
+					'@type': 'ListItem',
+					position: 1,
+					name: t('academy.catalog'),
+					item: 'https://academy.japaconnect.com/'
+				}
+			]
+		}
+	]);
 
 	// CSR ONLY — use the shared enrollment store so TrackCard action state stays
 	// in sync with sidebar widgets and avoids duplicate /me/enrollments calls.
@@ -69,7 +106,16 @@
 <svelte:head>
 	<title>{t('academy.catalog')} · {t('academy.name')}</title>
 	<meta name="description" content={t('academy.catalog_description')} />
+	<meta name="robots" content={robotsContent(false)} />
 	<link rel="canonical" href="https://academy.japaconnect.com/" />
+	<meta property="og:title" content={`${t('academy.catalog')} · ${t('academy.name')}`} />
+	<meta property="og:description" content={t('academy.catalog_description')} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content="https://academy.japaconnect.com/" />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={`${t('academy.catalog')} · ${t('academy.name')}`} />
+	<meta name="twitter:description" content={t('academy.catalog_description')} />
+	{@html safeJsonLd(catalogJsonLd)}
 </svelte:head>
 
 <div class="px-4 py-6 md:px-6 lg:px-8">

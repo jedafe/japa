@@ -87,6 +87,7 @@
 
 <svelte:head>
 	<title>{t('ai.chat.title') ?? 'JapaBot Chat'} — JapaConnect</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 {#if !data.enabled}

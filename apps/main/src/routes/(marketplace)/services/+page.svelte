@@ -313,6 +313,14 @@
 	<meta name="twitter:card" content="summary" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
+	{#if currentPage > 1}
+		{@const svcPrevUrl = (() => { const u = new URL(page.url.href); if (currentPage - 1 <= 1) u.searchParams.delete('page'); else u.searchParams.set('page', String(currentPage - 1)); return u.toString(); })()}
+		<link rel="prev" href={svcPrevUrl} />
+	{/if}
+	{#if currentPage < totalPages}
+		{@const svcNextUrl = (() => { const u = new URL(page.url.href); u.searchParams.set('page', String(currentPage + 1)); return u.toString(); })()}
+		<link rel="next" href={svcNextUrl} />
+	{/if}
 </svelte:head>
 
 <MarketplaceHero q={data.filters.q} fetcher={fetchServiceSuggestions} onSearch={onHeroSearch} />

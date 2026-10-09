@@ -2,6 +2,7 @@
 	import { untrack, onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { mainAppUrl, buildSeoMeta } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { replaceState } from '$app/navigation';
@@ -39,7 +40,20 @@
 				'Compare visa routes for your destination side by side — eligibility, fees, path to PR, and renewal terms.'
 			),
 			path: '/visa-routes',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-visa-routes.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'ItemList',
+				name: 'Visa Route Comparison',
+				description: 'Compare visa routes side by side — eligibility, fees, path to PR, and renewal terms.',
+				itemListElement: routes.slice(0, 10).map((r, i) => ({
+					'@type': 'ListItem',
+					position: i + 1,
+					name: r.name,
+					url: `${page.url.origin}/visa-routes/${r.id}`
+				}))
+			}
 		})
 	);
 
@@ -121,18 +135,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-5xl px-4 py-8">
 	{#if !data.enabled}

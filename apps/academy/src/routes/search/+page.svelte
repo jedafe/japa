@@ -65,6 +65,7 @@
 <svelte:head>
 	<title>{t('academy.search_results')} · {t('app.name')}</title>
 	<meta name="description" content={t('academy.search_placeholder')} />
+	<meta name="robots" content="noindex, nofollow" />
 	<link rel="canonical" href="https://academy.japaconnect.com/search" />
 </svelte:head>
 

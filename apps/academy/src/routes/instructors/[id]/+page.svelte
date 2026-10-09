@@ -4,6 +4,7 @@
 	// Shows the instructor's bio, stats, social links, and their published tracks.
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
+	import { safeJsonLd } from '$lib/seo';
 	import { api } from '$lib/api/client';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import { formatCount, formatPriceKobo } from '$lib/format';
@@ -61,6 +62,28 @@
 	<title>{instructor?.display_name ?? t('academy.instructor')} · {t('app.name')}</title>
 	{#if instructor?.headline}
 		<meta name="description" content={instructor.headline.slice(0, 160)} />
+	{/if}
+	<meta name="robots" content="index, follow" />
+	<link rel="canonical" href={`https://academy.japaconnect.com/instructors/${id}`} />
+	<meta property="og:title" content={`${instructor?.display_name ?? t('academy.instructor')} · ${t('app.name')}`} />
+	{#if instructor?.headline}
+		<meta property="og:description" content={instructor.headline.slice(0, 160)} />
+	{/if}
+	<meta property="og:type" content="profile" />
+	<meta property="og:url" content={`https://academy.japaconnect.com/instructors/${id}`} />
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content={`${instructor?.display_name ?? t('academy.instructor')} · ${t('app.name')}`} />
+	{#if instructor?.headline}
+		<meta name="twitter:description" content={instructor.headline.slice(0, 160)} />
+	{/if}
+	{#if instructor}
+		{@html safeJsonLd({
+				'@context': 'https://schema.org',
+				'@type': 'Person',
+				name: instructor.display_name,
+				description: instructor.headline ?? instructor.bio ?? undefined,
+				url: `https://academy.japaconnect.com/instructors/${id}`
+			})}
 	{/if}
 </svelte:head>
 

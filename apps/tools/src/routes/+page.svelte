@@ -3,6 +3,7 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { getEnabledTools } from '$lib/tools/registry';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 
@@ -29,34 +30,35 @@
 			),
 			path: '/',
 			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-default.png`,
 			jsonLd: {
 				'@context': 'https://schema.org',
-				'@type': 'WebSite',
-				name: 'JapaConnect Tools',
-				url: `${page.url.origin}/`,
-				description:
-					'Identity tools for the Nigerian diaspora japa journey: visa checklist, readiness assessment, cost of living, scholarships, remittance tracker, and JapaBot.'
+				'@graph': [
+					{
+						'@type': 'WebSite',
+						name: 'JapaConnect Tools',
+						url: `${page.url.origin}/`,
+						description:
+							'Identity tools for the Nigerian diaspora japa journey: visa checklist, readiness assessment, cost of living, scholarships, remittance tracker, and JapaBot.'
+					},
+					{
+						'@type': 'ItemList',
+						name: 'JapaConnect Tools',
+						itemListElement: enabledTools.map((tool, i) => ({
+							'@type': 'ListItem',
+							position: i + 1,
+							name: tool.name,
+							description: tool.description,
+							url: `${page.url.origin}${tool.route}`
+						}))
+					}
+				]
 			}
 		})
 	);
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:site_name" content={seo.siteName} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary_large_image" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-	{#if seo.jsonLdString}
-		<script type="application/ld+json">{seo.jsonLdString}</script>
-	{/if}
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-[var(--max-width)] px-4 py-12 sm:py-16">
 	<div class="text-center mb-12">

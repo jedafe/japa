@@ -138,6 +138,10 @@
 			)
 	);
 
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/universities/${university.slug}`);
+
 	// JSON-LD: EducationalOrganization + AggregateRating (H3 — audit finding).
 	// Uses the server-fetched aggregate when available so the rating reflects
 	// the full review set, not just the first page.
@@ -148,7 +152,7 @@
 			name: university.name,
 			...(university.initials ? { alternateName: university.initials } : {}),
 			description: university.description ?? '',
-			url: page.url.href,
+			url: canonical,
 			...(university.logo_url ? { logo: { '@type': 'ImageObject', url: university.logo_url } } : {}),
 			...(reviewCount > 0
 				? {
@@ -251,7 +255,8 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="website" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 

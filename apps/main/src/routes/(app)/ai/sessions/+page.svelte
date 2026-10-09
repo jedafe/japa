@@ -63,6 +63,7 @@
 
 <svelte:head>
 	<title>{t('ai.agent.session_history', 'Session History')} — JapaConnect</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="mx-auto max-w-4xl">

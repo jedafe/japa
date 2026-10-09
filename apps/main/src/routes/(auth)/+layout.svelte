@@ -13,6 +13,11 @@
 	let brandSlides = $derived(parseBrandSlides(data.siteSettings));
 </script>
 
+<svelte:head>
+	<!-- Auth pages are private — not indexed. -->
+	<meta name="robots" content="noindex, nofollow" />
+</svelte:head>
+
 <AuthShell
 	{brandSlides}
 	logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}

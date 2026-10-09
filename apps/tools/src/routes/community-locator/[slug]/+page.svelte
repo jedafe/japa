@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { api } from '$lib/api/client';
@@ -55,7 +56,16 @@
 			title: `${org.name} — ${t('community_locator.seo_title', 'Diaspora Community Locator — JapaConnect Tools')}`,
 			description: `Diaspora community organisation in ${org.destination_space_name ?? ''}: ${org.org_type}, ${org.origin_community}.`,
 			path: `/community-locator/${page.params.slug}`,
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-community-locator.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'Organization',
+				name: org.name,
+				description: `Diaspora community organisation in ${org.destination_space_name ?? ''}: ${org.org_type}.`,
+				address: org.address ?? undefined,
+				url: org.website_url ?? `${page.url.origin}/community-locator/${page.params.slug}`
+			}
 		})
 	);
 
@@ -78,18 +88,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-3xl px-4 py-8">
 	<a

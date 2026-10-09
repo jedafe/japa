@@ -127,6 +127,12 @@
 
 	const totalPages = $derived(Math.max(1, Math.ceil((meta.total || 0) / (meta.limit || 1))));
 	const currentPage = $derived(meta.page || 1);
+	// List head: title/description, self-referencing canonical on the clean
+	// path, and rel=prev/next on numbered pages (same pattern as /blog).
+	const listTitle = $derived(t('jce.comparisons.heading', 'Comparisons') + ' — JapaConnect');
+	const listDescription = $derived(
+		t('jce.comparisons.seo_description', 'Compare destinations, visas, schools and more side by side.')
+	);
 	const isMine = $derived(filters.mine);
 
 	let searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -135,6 +141,24 @@
 		searchTimeout = setTimeout(() => apply(), 300);
 	}
 </script>
+
+<svelte:head>
+	<title>{listTitle}</title>
+	<meta name="description" content={listDescription} />
+	<link rel="canonical" href={page.url.origin + '/comparisons'} />
+	<meta property="og:title" content={listTitle} />
+	<meta property="og:description" content={listDescription} />
+	<meta property="og:type" content="website" />
+	<meta property="og:url" content={page.url.origin + '/comparisons'} />
+	{#if currentPage > 1}
+		{@const compPrevUrl = (() => { const u = new URL(page.url.href); if (currentPage - 1 <= 1) u.searchParams.delete('page'); else u.searchParams.set('page', String(currentPage - 1)); return u.toString(); })()}
+		<link rel="prev" href={compPrevUrl} />
+	{/if}
+	{#if currentPage < totalPages}
+		{@const compNextUrl = (() => { const u = new URL(page.url.href); u.searchParams.set('page', String(currentPage + 1)); return u.toString(); })()}
+		<link rel="next" href={compNextUrl} />
+	{/if}
+</svelte:head>
 
 <div class="max-w-6xl mx-auto p-4 sm:p-6 space-y-6" style="--page-gutter: 0px">
 	<h1 class="sr-only">{t('jce.comparisons.heading')}</h1>

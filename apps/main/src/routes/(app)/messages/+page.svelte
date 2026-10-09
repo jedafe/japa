@@ -423,6 +423,7 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:type" content="website" />
 	<meta property="og:url" content={page.url.href} />
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <!-- Exact-height column so the panes below scroll internally instead of

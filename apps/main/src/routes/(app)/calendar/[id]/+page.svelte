@@ -29,6 +29,9 @@
 		entry ? `${entry.title} — ${t('calendar.heading', 'Community Calendar')}` : t('calendar.heading', 'Community Calendar')
 	);
 	const description = $derived(entry?.description ?? entry?.title ?? '');
+	// Section 26 — self-referencing canonical on the clean ID URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/calendar/${entry?.id ?? ''}`);
 
 	function categoryLabel(cat: CalendarCategory): string {
 		return calendarCategoryLabel(t, cat);
@@ -102,7 +105,7 @@
 					description: entry.description ?? undefined,
 					startDate: entry.occurs_at,
 					...(entry.ends_at ? { endDate: entry.ends_at } : {}),
-					url: page.url.href
+					url: canonical
 				})
 			: ''
 	);
@@ -114,7 +117,8 @@
 	<meta property="og:title" content={entry?.title ?? title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{#if jsonLd}
 		{@html safeJsonLdScript(jsonLd)}
 	{/if}

@@ -94,6 +94,9 @@
 	);
 
 	const title = $derived(`${org.name} — ${t('app.name')}`);
+	// Section 26 — self-referencing canonical on the clean slug URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/org/${org.slug}`);
 	const description = $derived(org.description ?? org.tagline ?? org.name);
 	// JSON-LD: Organization schema (Section 14 / Section 26). The backend
 	// resolves the admin-managed Organization template server-side and returns
@@ -105,9 +108,9 @@
 					'@context': 'https://schema.org',
 					'@type': 'Organization',
 					name: org.name,
-					url: page.url.href,
+					url: canonical,
 					description: org.description ?? org.tagline ?? '',
-					...(org.verified ? { sameAs: page.url.href } : {})
+					...(org.verified ? { sameAs: canonical } : {})
 				})
 	);
 </script>
@@ -118,7 +121,8 @@
 	<meta property="og:title" content={org.name} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="profile" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	{@html safeJsonLdScript(jsonLd)}
 </svelte:head>
 

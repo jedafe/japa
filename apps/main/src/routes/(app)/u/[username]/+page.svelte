@@ -256,6 +256,9 @@
 	const displayName = $derived(user.display_name ?? user.username);
 	const title = $derived(`${displayName} (@${user.username}) — ${t('app.name')}`);
 	const description = $derived(user.bio ?? `${displayName} on ${t('app.name')}`);
+	// Section 26 — self-referencing canonical on the clean username URL (never
+	// the query-string form) so filtered/paginated hits consolidate.
+	const canonical = $derived(`${page.url.origin}/u/${user.username}`);
 	// JSON-LD: Person schema (Section 14 / Section 26). The backend resolves
 	// the admin-managed Person template server-side and returns it in the
 	// `json_ld` sidecar. Fall back to a basic schema when absent.
@@ -267,7 +270,7 @@
 					'@type': 'Person',
 					name: displayName,
 					alternateName: user.username ? `@${user.username}` : undefined,
-					url: page.url.href,
+					url: canonical,
 					description: user.bio ?? '',
 					...(user.avatar_url ? { image: user.avatar_url } : {})
 				})
@@ -536,7 +539,8 @@
 	<meta property="og:title" content={title} />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="profile" />
-	<meta property="og:url" content={page.url.href} />
+	<link rel="canonical" href={canonical} />
+	<meta property="og:url" content={canonical} />
 	<!-- §26 — per-user RSS autodiscovery (proxied to the backend profile feed). -->
 	<link
 		rel="alternate"

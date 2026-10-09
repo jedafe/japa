@@ -2,6 +2,7 @@
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import { api } from '$lib/api/client';
 	import { mainAppUrl } from '$lib/seo';
+	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { buildSeoMeta } from '$lib/seo';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -67,7 +68,17 @@
 				'Compare live remittance rates across providers, view historical trends, calculate transfer costs, and set rate alerts.'
 			),
 			path: '/remittance',
-			origin: page.url.origin
+			origin: page.url.origin,
+			ogImage: `${page.url.origin}/og/og-remittance.png`,
+			jsonLd: {
+				'@context': 'https://schema.org',
+				'@type': 'SoftwareApplication',
+				name: 'Remittance Rate Tracker',
+				applicationCategory: 'FinanceApplication',
+				operatingSystem: 'Web',
+				offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+				description: 'Compare live remittance rates across providers with historical trends and alerts.'
+			}
 		})
 	);
 
@@ -345,18 +356,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>{seo.title}</title>
-	<meta name="description" content={seo.description} />
-	<link rel="canonical" href={seo.canonical} />
-	<meta property="og:title" content={seo.title} />
-	<meta property="og:description" content={seo.description} />
-	<meta property="og:url" content={seo.canonical} />
-	<meta property="og:type" content="website" />
-	<meta name="twitter:card" content="summary" />
-	<meta name="twitter:title" content={seo.title} />
-	<meta name="twitter:description" content={seo.description} />
-</svelte:head>
+<SeoHead seo={seo} ogType="website" twitterCard="summary" />
 
 <div class="mx-auto max-w-5xl px-4 py-8">
 	{#if !data.enabled}
