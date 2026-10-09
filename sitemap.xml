@@ -1,3 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-</urlset>
+<!-- Canonical sitemaps are served live by the backend (internal/seo: ServeSitemap
+     renders a <sitemapindex> at /sitemap.xml with the sub-sitemaps below).
+     This static file mirrors that index so crawlers and tooling that read the
+     repo root resolve the same sub-sitemap set. -->
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://japaconnect.com/sitemap-content.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://japaconnect.com/sitemap-spaces.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://japaconnect.com/sitemap-tags.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://japaconnect.com/sitemap-users.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://japaconnect.com/sitemap-images.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://japaconnect.com/sitemap-deals.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://japaconnect.com/sitemap-roadmap.xml</loc>
+  </sitemap>
+</sitemapindex>

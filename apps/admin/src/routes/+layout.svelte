@@ -274,6 +274,8 @@
 
 <svelte:head>
 	<title>JapaConnect Admin</title>
+	<!-- Internal surface: never index. Defense-in-depth alongside robots.txt Disallow:/. -->
+	<meta name="robots" content="noindex,nofollow" />
 	{#if umamiEnabled}
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
 		<script

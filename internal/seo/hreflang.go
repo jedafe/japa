@@ -1,4 +1,12 @@
 // Package seo provides SEO utilities including hreflang and sitemap generation.
+//
+// Hreflang ownership note: hreflang alternates are rendered frontend-side by
+// apps/main/src/routes/+layout.svelte (per-locale <link rel="alternate"> tags
+// driven by i18n.enabled_languages). The sitemap handlers in sitemap.go
+// intentionally emit plain <urlset> entries with no xhtml:link hreflang
+// annotations, so there is no conflict or duplication between the sitemap
+// and the frontend-owned hreflang set. HreflangAlternate/HreflangLink below
+// are shared helpers available if server-rendered pages ever need them.
 package seo
 
 import (
