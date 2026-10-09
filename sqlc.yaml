@@ -4,9 +4,6 @@ sql:
     queries: "internal/db/queries/"
     schema:
       - "migrations/"
-      # Compat stub: keeps the dropped mentorship_connections table in the
-      # catalog until the dead queries are removed (see the file header).
-      - "internal/db/sqlc_compat.sql"
     gen:
       go:
         package: "gen"

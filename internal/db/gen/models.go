@@ -2363,21 +2363,6 @@ type MentorShadow struct {
 	Listed    bool        `json:"listed"`
 }
 
-type MentorshipConnection struct {
-	ID                 pgtype.UUID        `json:"id"`
-	MentorID           pgtype.UUID        `json:"mentor_id"`
-	MenteeID           pgtype.UUID        `json:"mentee_id"`
-	Status             string             `json:"status"`
-	Goals              *string            `json:"goals"`
-	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
-	RespondedAt        pgtype.Timestamptz `json:"responded_at"`
-	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
-	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason       *string            `json:"cancel_reason"`
-	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
-}
-
 type MentorshipMatch struct {
 	ID        pgtype.UUID        `json:"id"`
 	ProgramID pgtype.UUID        `json:"program_id"`

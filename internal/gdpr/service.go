@@ -559,14 +559,6 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if err := s.store.anonymizeUserProfile(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize user profile during deletion", "user_id", request.UserID.String(), "error", err)
 		}
-		// Scrub PII (goals) from mentorship_connections where the user is
-		// mentor or mentee (§102, ADR-014). The connection rows are retained
-		// for audit until HardDeleteUser cascades; only the goals text is
-		// cleared so it is not recoverable during the retention window.
-		// Best-effort: a failure logs a warning but does not abort.
-		if err := s.store.anonymizeMentorshipConnections(ctx, request.UserID); err != nil {
-			slog.Warn("failed to anonymize mentorship connections during deletion", "user_id", request.UserID.String(), "error", err)
-		}
 		// Scrub PII (ip_hash, user_agent_hash) from affiliate_link_events
 		// owned by the user's affiliate links (Section 56, ADR-014). The
 		// events are retained for commission audit; only tracking hashes are
@@ -581,11 +573,15 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		if err := s.store.anonymizeCouponEvents(ctx, request.UserID); err != nil {
 			slog.Warn("failed to anonymize coupon events during deletion", "user_id", request.UserID.String(), "error", err)
 		}
-		// Scrub traveler PII from service_bookings (§111, ADR-014):
-		// note + preferred_dates are wiped, booker_user_id nulled, and
-		// anonymized_at stamped. The financial columns survive as the
-		// org's audit record — the booking is a contract artifact, not
-		// erasable PII. Best-effort like the other scrub steps.
+		// Scrub PII from service_bookings (§111, ADR-014). This is also the
+		// 000824 replacement for the dropped mentorship_connections scrub —
+		// connection state lives in listing_kind='mentorship' bookings, so
+		// the provider arm wipes goals (note + meta), destination_space_id,
+		// org_response_note, and provider_user_id where the erased user was
+		// the mentor, exactly as the old goals-scrub did for mentors.
+		// The financial columns survive as the org's audit record — the
+		// booking is a contract artifact, not erasable PII. Best-effort like
+		// the other scrub steps.
 		if err := s.store.write.AnonymizeServiceBookings(ctx,
 			request.UserID,
 		); err != nil {

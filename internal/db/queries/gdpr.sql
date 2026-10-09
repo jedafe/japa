@@ -238,6 +238,9 @@ SET display_name = 'Deleted User',
  -- §102 Mentorship Matching (ADR-110): clear mentor PII — mentor_bio is
  -- personal text, mentor_embedding is derived PII, mentor_areas reveals
  -- expertise/destination knowledge, is_mentor reveals opt-in status.
+ -- mentor_listing_content_id (000824) points at the mentor's shadow
+ -- service listing; severing it keeps an erased mentor's profile from
+ -- referencing the listing row during the retention window.
  is_mentor = false,
  mentor_capacity = NULL,
  active_mentee_count = NULL,
@@ -245,19 +248,9 @@ SET display_name = 'Deleted User',
  mentor_bio = NULL,
  mentor_since = NULL,
  mentor_embedding = NULL,
+ mentor_listing_content_id = NULL,
  updated_at = now()
 WHERE user_id = @user_id;
-
--- name: AnonymizeMentorshipConnections :exec
--- Scrubs PII (goals — the mentee's free-text stated goals) from
--- mentorship_connections where the user is mentor or mentee during the GDPR
--- retention window (§102, ADR-014). The connection rows themselves are
--- retained for audit until HardDeleteUser cascades via ON DELETE CASCADE;
--- only the goals text is cleared so it is not recoverable during the
--- retention window. Best-effort: a failure logs a warning but does not abort.
-UPDATE mentorship_connections
-SET goals = NULL, updated_at = now()
-WHERE (mentor_id = @user_id OR mentee_id = @user_id);
 
 -- name: AnonymizeAffiliateLinkEvents :exec
 -- Scrubs PII (ip_hash, user_agent_hash) from affiliate_link_events owned by
@@ -800,8 +793,39 @@ SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM mentorship_matches WHERE (mentor_id = @user_id OR mentee_id = @user_id)) t;
 
 -- name: GdprExportUserMentorshipConnections :one
+-- 000824: mentorship_connections is dropped — connection state now lives in
+-- service_bookings rows anchored to the mentor's listing_kind='mentorship'
+-- shadow listing (provider_user_id = mentor, booker_user_id = mentee). The
+-- export keeps the legacy field name + column vocabulary: booking status
+-- maps back (confirmed→active, fulfilled→completed), goals reads
+-- meta->>'goals' with the note column as fallback (migrated rows only carry
+-- note), and responded_at comes from meta (DeclineServiceBooking / the
+-- 000824 backfill) falling back to confirmed_at.
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT * FROM mentorship_connections WHERE (mentor_id = @user_id OR mentee_id = @user_id)) t;
+FROM (
+    SELECT sb.id,
+           sb.provider_user_id AS mentor_id,
+           sb.booker_user_id AS mentee_id,
+           CASE sb.status
+               WHEN 'confirmed' THEN 'active'
+               WHEN 'fulfilled' THEN 'completed'
+               ELSE sb.status
+           END AS status,
+           COALESCE(sb.meta->>'goals', sb.note) AS goals,
+           sb.destination_space_id,
+           COALESCE((sb.meta->>'responded_at')::timestamptz,
+                    sb.confirmed_at) AS responded_at,
+           sb.fulfilled_at AS completed_at,
+           sb.cancelled_at,
+           sb.cancel_reason,
+           sb.created_at,
+           sb.updated_at
+    FROM service_bookings sb
+    JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+    WHERE sm.listing_kind = 'mentorship'
+      AND (sb.booker_user_id = @user_id OR sb.provider_user_id = @user_id)
+    ORDER BY sb.created_at DESC
+) t;
 
 -- name: GdprExportUserMentorProfiles :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data

@@ -229,7 +229,8 @@ var allowedVacuumTables = map[string]struct{}{
 	"calendar_subscriptions":    {},
 	"community_organisations":   {},
 	"digest_editions":           {},
-	"mentorship_connections":    {},
+	// mentorship_connections was dropped by 000824 — connection state lives
+	// in service_bookings now, which has no vacuum allow-list entry.
 	"mutual_aid_posts":          {},
 	"planning_group_checkins":   {},
 	"planning_group_members":    {},

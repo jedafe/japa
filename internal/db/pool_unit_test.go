@@ -179,8 +179,8 @@ func TestAllowedVacuumTables_CoversV2CommunityTables(t *testing.T) {
 		"tax_treaty_pairs", "tax_obligation_guides",
 		// §101 community locator
 		"community_organisations",
-		// §102 mentorship
-		"mentorship_connections",
+		// §102 mentorship — mentorship_connections was dropped by 000824
+		// (connection state lives in service_bookings now).
 	}
 
 	for _, table := range v2Tables {

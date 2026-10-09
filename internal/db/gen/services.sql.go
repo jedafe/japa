@@ -522,20 +522,32 @@ func (q *Queries) AdminSetServiceBookingStatus(ctx context.Context, arg AdminSet
 const anonymizeServiceBookings = `-- name: AnonymizeServiceBookings :exec
 UPDATE service_bookings
 SET booker_user_id = NULL,
+    provider_user_id = NULL,
     note = NULL,
+    org_response_note = NULL,
     preferred_dates = NULL,
+    destination_space_id = NULL,
+    meta = '{}'::jsonb,
     dispute_reason = NULL,
+    cancel_reason = NULL,
     anonymized_at = now(),
     updated_at = now()
-WHERE booker_user_id = $1
+WHERE (booker_user_id = $1 OR provider_user_id = $1)
   AND anonymized_at IS NULL
 `
 
-// GDPR (§19): anonymize traveler PII on confirmed erasure. The row
-// survives for the org's financial/audit record; booker_user_id is nulled
-// so the subsequent HardDeleteUser is not blocked by the FK.
-func (q *Queries) AnonymizeServiceBookings(ctx context.Context, bookerUserID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, anonymizeServiceBookings, bookerUserID)
+// GDPR (§19): anonymize booker/provider PII on confirmed erasure. The row
+// survives for the org's financial/audit record; both owner pointers are
+// nulled so the subsequent HardDeleteUser is not blocked by the FKs, and
+// every free-text/PII column is wiped (note — which carries mentorship
+// goals, org_response_note, cancel_reason, dispute_reason, preferred_dates,
+// destination_space_id, meta — which carries goals/responded_at).
+// (000824) The provider arm covers mentorship-kind bookings where the
+// erased user was the mentor; the provider XOR CHECK has an anonymized_at
+// escape so a mentorship row may legally end up with org_id and
+// provider_user_id both NULL.
+func (q *Queries) AnonymizeServiceBookings(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeServiceBookings, userID)
 	return err
 }
 

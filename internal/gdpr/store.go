@@ -304,8 +304,11 @@ func (s *Store) gdprExportUserMentorshipMatches(ctx context.Context, userID pgty
 	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipMatches, userID)
 }
 
-// gdprExportUserMentorshipConnections exports §102 mentorship_connections
-// rows where the user is mentor or mentee (ADR-110).
+// gdprExportUserMentorshipConnections exports §102 mentorship connections
+// where the user is mentor or mentee (ADR-110). Post-000824 the query reads
+// service_bookings (listing_kind='mentorship') and maps the booking columns
+// back onto the legacy connection vocabulary, so the exported JSON field
+// keeps its pre-unification shape.
 func (s *Store) gdprExportUserMentorshipConnections(ctx context.Context, userID pgtype.UUID) ([]map[string]interface{}, error) {
 	return exportJSONSlice(ctx, s.read.GdprExportUserMentorshipConnections, userID)
 }
@@ -733,19 +736,6 @@ func (s *Store) anonymizeUser(ctx context.Context, userID pgtype.UUID) error {
 func (s *Store) anonymizeUserProfile(ctx context.Context, userID pgtype.UUID) error {
 	if err := s.write.AnonymizeUserProfile(ctx, userID); err != nil {
 		return fmt.Errorf("anonymizing user profile: %w", err)
-	}
-
-	return nil
-}
-
-// anonymizeMentorshipConnections scrubs PII (goals — the mentee's free-text
-// stated goals) from mentorship_connections where the user is mentor or
-// mentee during the GDPR retention window (§102, ADR-014). The connection
-// rows are retained for audit until HardDeleteUser cascades; only the goals
-// text is cleared. Best-effort.
-func (s *Store) anonymizeMentorshipConnections(ctx context.Context, userID pgtype.UUID) error {
-	if err := s.write.AnonymizeMentorshipConnections(ctx, userID); err != nil {
-		return fmt.Errorf("anonymizing mentorship connections: %w", err)
 	}
 
 	return nil

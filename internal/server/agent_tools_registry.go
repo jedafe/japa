@@ -224,11 +224,19 @@ var toolCatalog = []toolCatalogDef{
 		readSQL:  "SELECT id, slug, name, official_url, validity_months, created_at FROM language_tests WHERE id = $1",
 	},
 	{
+		// 000824: mentorship_connections is dropped — connection state lives
+		// in service_bookings rows anchored to the mentor's
+		// listing_kind='mentorship' shadow listing (provider_user_id =
+		// mentor, booker_user_id = mentee). The read maps the booking status
+		// back onto the legacy connection vocabulary (confirmed→active,
+		// fulfilled→completed) so tools.read output keeps its old shape;
+		// goals reads meta->>'goals' with the note column as fallback, and
+		// responded_at comes from meta falling back to confirmed_at.
 		toolType: "mentorship_connection",
 		label:    "Mentorship Connections",
 		category: "community",
-		countSQL: "SELECT COUNT(*) FROM mentorship_connections",
-		readSQL:  "SELECT id, mentor_id, mentee_id, status, goals, destination_space_id, responded_at, completed_at, cancelled_at, cancel_reason, created_at FROM mentorship_connections WHERE id = $1",
+		countSQL: "SELECT COUNT(*) FROM service_bookings sb JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id WHERE sm.listing_kind = 'mentorship'",
+		readSQL:  "SELECT sb.id, sb.provider_user_id AS mentor_id, sb.booker_user_id AS mentee_id, CASE sb.status WHEN 'confirmed' THEN 'active' WHEN 'fulfilled' THEN 'completed' ELSE sb.status END AS status, COALESCE(sb.meta->>'goals', sb.note) AS goals, sb.destination_space_id, COALESCE((sb.meta->>'responded_at')::timestamptz, sb.confirmed_at) AS responded_at, sb.fulfilled_at AS completed_at, sb.cancelled_at, sb.cancel_reason, sb.created_at FROM service_bookings sb JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id WHERE sm.listing_kind = 'mentorship' AND sb.id = $1",
 	},
 	{
 		toolType: "remittance_rate",
