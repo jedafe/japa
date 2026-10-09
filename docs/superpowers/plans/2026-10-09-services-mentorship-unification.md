@@ -59,7 +59,7 @@ Field map: `mentee_id`→`booker_user_id` · `mentor_id`→`provider_user_id` ·
 
 ## Phase A — JEOS spec updates (before any code)
 
-### Task A1: Update section files + route catalog
+### Task 1: Update section files + route catalog
 
 **Files:**
 - `.jeos/sections/111-service-packages-bookings.md` — document `provider_user_id`, `destination_space_id`, `meta` on `service_bookings`; `?role=provider` + `?kind=` on `GET /me/service-bookings`; `POST /me/service-bookings/{id}/respond`; mentorship-kind semantics (no expiry, no fee, inquiry-only).
@@ -79,7 +79,7 @@ Field map: `mentee_id`→`booker_user_id` · `mentor_id`→`provider_user_id` ·
 
 ## Phase B — Backend: schema + servicedir
 
-### Task B1: Migration `000824_mentorship_service_unification`
+### Task 2: Migration `000824_mentorship_service_unification`
 
 **Files:**
 - Create: `migrations/000824_mentorship_service_unification.up.sql`
@@ -253,11 +253,11 @@ COMMIT;
 
 > ⚠️ Executor: before running, diff every identifier in the INSERT SELECTs against `migrations/000735_baseline_schema.up.sql` (`contents` NOT NULL columns beyond the listed set — e.g. `visibility`/`word_count` defaults) and against `000803` for `service_categories`. Adjust to the real schema; do not weaken NOT NULL columns silently.
 
-### Task B2: sqlc queries — provider dimension + filters
+### Task 3: sqlc queries — provider dimension + filters
 
 **Files:**
 - Modify: `internal/db/queries/services.sql`
-- Modify: `internal/db/queries/gdpr.sql` (see C2 note — may be deferred to Phase C)
+- Modify: `internal/db/queries/gdpr.sql` (see Task 7 note — may be deferred to Phase C)
 - Regen: `make sqlc-gen`
 
 - [ ] **Step 1:** `CreateServiceBooking` gains `provider_user_id`, `destination_space_id`, `meta` (`sqlc.narg`).
@@ -268,7 +268,7 @@ COMMIT;
   - `GetOpenMentorshipBooking :one` — pending OR confirmed booking for `(booker_user_id, listing_meta_id)` (dedupe, replaces `GetActiveOrPendingConnection`).
 - [ ] **Step 4:** `make sqlc-gen` → `go build ./...` → commit.
 
-### Task B3: servicedir — mentorship kind support
+### Task 4: servicedir — mentorship kind support
 
 **Files:**
 - `internal/servicedir/store.go` — `ListingKindMentorship = "mentorship"`; `IsValidListingKind` accepts it; `categoryAppliesTo` map in `service.go` gains `mentorship` (admin taxonomy CRUD accepts the new value).
@@ -287,11 +287,11 @@ COMMIT;
   - `CreateBooking()` — for `listing_kind='mentorship'`: skip the `PackagesEnabled` gate (require `MentorshipEnabled`), skip the org-required branch, set `provider_user_id = listing.AuthorID` (add `AuthorID` to the booking-path listing fetch if absent), force `intent='inquiry'`, `party_size=1`, `expires_at=NULL` (mentorship requests are not SLA-bound — keeps them out of `HandleServiceBookingExpirePending`), dedupe via `GetOpenMentorshipBooking` → `ErrDuplicateRequest`, capacity check (`active_mentee_count >= mentor_capacity` → `ErrMentorAtCapacity`), accept `goals` + `destination_space_id` input fields (goals → `note`; also store `goals` verbatim in `meta`). Reject `intent='booking'`/tiers/coupons on mentorship kind. Requires `booker != provider` (no self-requests).
   - `BookingDTO` gains `ProviderUserID/ProviderUsername/ProviderDisplayName/ProviderAvatar/DestinationSpaceID/DestinationSpaceName/Goals/ConnectionStatus` (Goals read from `meta->>'goals'` fallback `note`); `GetBooking` auth adds `row.ProviderUserID == viewerID` arm and guards `IsOrgMember` behind `row.OrgID.Valid`.
   - `HandleMyBookings` — new params `role=booker|provider` (default booker → `ListServiceBookingsByProviderUser`), `kind=` passthrough.
-  - New `POST /me/service-bookings/{id}/respond` — body `{action:'accept'|'decline'|'complete', note?}`; service `RespondToBooking(ctx, providerID, bookingID, action, note)`: requires `sb.provider_user_id = providerID` (org-owned bookings are NOT served — they have the org route); transitions pending→confirmed|declined, confirmed→fulfilled; decline note → `org_response_note`. On `accept` of a mentorship-kind booking → DM auto-open (B4) + enqueue `mentor:update_meilisearch` for the provider.
+  - New `POST /me/service-bookings/{id}/respond` — body `{action:'accept'|'decline'|'complete', note?}`; service `RespondToBooking(ctx, providerID, bookingID, action, note)`: requires `sb.provider_user_id = providerID` (org-owned bookings are NOT served — they have the org route); transitions pending→confirmed|declined, confirmed→fulfilled; decline note → `org_response_note`. On `accept` of a mentorship-kind booking → DM auto-open (Task 5) + enqueue `mentor:update_meilisearch` for the provider.
   - Route wiring in `server.go` under the existing `me/service-bookings` block: `r.With(auth.RequireAuth, rbac.RequirePermission("mentorship.respond")).Post("/me/service-bookings/{id}/respond", ...)` — the node exists (used on `/me/mentorship/incoming/{id}/accept`); org bookings keep `service.booking.manage` via the org route.
 - [ ] **Step 4:** Tests green → `go build ./...` → commit.
 
-### Task B4: Worker notifications + DM auto-open for mentorship bookings
+### Task 5: Worker notifications + DM auto-open for mentorship bookings
 
 **Files:**
 - `internal/worker/service_bookings.go` — `HandleServiceBookingCreated`/`notifyOrgMembers`/status-changed: when `!bk.OrgID.Valid && bk.ProviderUserID.Valid`, notify the provider user directly (`ActorType "user"`, `ActorID = provider_user_id`), notification `action_url = "/messages/mentorship?b="+id` (booker arm uses `/messages/bookings?b=`).
@@ -305,7 +305,7 @@ COMMIT;
 
 ## Phase C — Backend: mentorship compat layer
 
-### Task C1: mentorship.Service delegates to servicedir
+### Task 6: mentorship.Service delegates to servicedir
 
 **Files:**
 - `internal/mentorship/service.go`, `handlers.go`; `internal/server/mentorship_adapters.go`; `internal/server/server.go` (inject servicedir into mentorship service — add a narrow interface seam `type BookingBackend interface{...}` rather than importing the concrete type if layering demands it).
@@ -318,7 +318,7 @@ COMMIT;
 - [ ] **Step 4:** `ListOutgoingConnections`/`ListIncomingConnections`/`CancelOutgoingConnection`/`AcceptConnection`/`DeclineConnection`/`CompleteConnection`/`CancelConnection`/`ListAllConnections`/`AdminUpdateConnection` → servicedir reads + `RespondToBooking`/booker-cancel, filtered kind=mentorship; DTO maps booking status BACK to connection vocabulary (`confirmed`→`active`, `fulfilled`→`completed`).
 - [ ] **Step 5:** Update `internal/mentorship` tests to the new plumbing; `go test ./internal/mentorship/ ./internal/servicedir/ -v`; `go build ./...`; commit.
 
-### Task C2: GDPR + downstream consumers sweep
+### Task 7: GDPR + downstream consumers sweep
 
 - [ ] **Step 1:** `db/queries/gdpr.sql` — remove the `mentorship_connections` statement (line ~233 of gen output); mentor-PII block also clears `mentor_listing_content_id`; verify the booker-erasure booking wipe also clears `note`/`destination_space_id`/`meta` and that provider erasure sets `provider_user_id` NULL (FK covers hard delete; anonymize path needs an explicit UPDATE — check existing `service_bookings` anonymize query and add `provider_user_id` arm). `make sqlc-gen` after editing.
 - [ ] **Step 2:** `grep -rln "mentorship_connections\|MentorshipConnection" internal/` — every remaining reference must resolve to the new queries or the compat DTO (`connectionFromModel` currently takes `gen.MentorshipConnection` — retype it).
@@ -329,7 +329,7 @@ COMMIT;
 
 ## Phase D — Frontend: `/services` chrome strip
 
-### Task D1: Strip marketplace chrome, keep LeftNav
+### Task 8: Strip marketplace chrome, keep LeftNav
 
 **Files:**
 - Modify: `apps/main/src/routes/(marketplace)/+layout.svelte` — remove `MarketplaceHeader` + `MarketplaceFooter` (imports + render); keep `LeftNav` sticky aside + `ComposeModal`. `.marketplace-nav` sticky `top` becomes `1rem` (no `--nav-height` header above); `.marketplace-center` gets `px-4 sm:px-6 lg:px-8` + `py-6` margins. `(marketplace)/+layout.server.ts` unchanged (host guards).
@@ -343,7 +343,7 @@ COMMIT;
 
 ## Phase E — Frontend: `/services/[slug]` inside the shell
 
-### Task E1: Move detail + reviews into `(app)`
+### Task 9: Move detail + reviews into `(app)`
 
 **Files:**
 - `git mv` `(marketplace)/services/[slug]/` → `(app)/services/[slug]/` (page + server; `edit/` sibling already exists — directories merge).
@@ -357,11 +357,11 @@ COMMIT;
   - `StickyBookBar`, `BookingDialog`, claim flow, `AppealButton`, JSON-LD, view tracking unchanged.
 - [ ] **Step 3:** `bun run check`; verify desktop (provider in right sidebar) + mobile (sticky bar, no double bottom bar); commit.
 
-### Task E2: Mentorship kind — list tab, card variant, request dialog
+### Task 10: Mentorship kind — list tab, card variant, request dialog
 
 **Files:**
 - Create: `apps/main/src/lib/components/marketplace/MentorshipRequestDialog.svelte` — Bits UI `Dialog.Root`; goals textarea + destination `Autocomplete` (reuse the fetcher shape from the old `/mentors/[username]` page) → `POST /services/{id}/bookings` `{intent:'inquiry', note: goals, destination_space_id}`; success → link to `/messages/mentorship`.
-- Modify: `(app)/services/[slug]/+page.svelte` — when `service.listing_kind === 'mentorship'`: render mentor block (avatar, `mentor_areas` chips, `available_slots`/`mentor_capacity`, `mentor_since`, match score when the payload carries it) instead of tiers/departures; primary CTA "Request mentorship" opens the dialog; capacity-full → disabled + note. Requires the B3-enriched `mentor` object in the detail payload.
+- Modify: `(app)/services/[slug]/+page.svelte` — when `service.listing_kind === 'mentorship'`: render mentor block (avatar, `mentor_areas` chips, `available_slots`/`mentor_capacity`, `mentor_since`, match score when the payload carries it) instead of tiers/departures; primary CTA "Request mentorship" opens the dialog; capacity-full → disabled + note. Requires the Task-4-enriched `mentor` object in the detail payload.
 - Modify: `(marketplace)/services/+page.svelte` — kind tabs gain `Mentorship` (`kind=mentorship`) gated by `features['mentorship.enabled']`; `ServiceCard` mentorship variant renders the provider avatar/name fallback instead of a missing featured image.
 - Modify (stretch): `(app)/services/new/+page.svelte` — add `mentorship` to the Listing type selector for orgs/users listing mentorship offerings (category auto-pins to `mentorship`).
 
@@ -373,7 +373,7 @@ COMMIT;
 
 ## Phase F — Frontend: `/messages` tabs + redirects
 
-### Task F1: `/messages/bookings` + `/messages/mentorship` routes
+### Task 11: `/messages/bookings` + `/messages/mentorship` routes
 
 **Files:**
 - Create: `(app)/messages/bookings/+page.{svelte,server.ts}` and `(app)/messages/mentorship/+page.{svelte,server.ts}` — replicate the `ListPageBar`+`UrlTabs` header pattern from `/messages/requests`; tabs `Messages | Requests | Bookings | Mentorship` navigating across the four routes.
@@ -388,7 +388,7 @@ COMMIT;
 - [ ] **Step 2:** Build panes + tab wiring + i18n keys.
 - [ ] **Step 3:** `bun run check`; exercise mentor accept → DM-open → commit.
 
-### Task F2: Redirects + link sweep
+### Task 12: Redirects + link sweep
 
 **Files:**
 - `(app)/me/service-bookings/+page.server.ts` → `redirect(308, '/messages/bookings')`
@@ -398,7 +398,7 @@ COMMIT;
 - `(app)/mentors/me/+page.server.ts` → `redirect(308, '/messages/mentorship')`
 - `routes/mentorship/compare/+page.server.ts` → `redirect(308, '/compare/mentors')`
 - Delete the dead `+page.svelte` files under redirected routes (server files become pure redirects).
-- Update links: `/me/service-bookings` `PageAction` in `(marketplace)/services/+page.svelte` → `/messages/bookings`; `routeFeatureFlags.ts` `/mentors` entry → repoint; worker notification `action_url`s (done in B4).
+- Update links: `/me/service-bookings` `PageAction` in `(marketplace)/services/+page.svelte` → `/messages/bookings`; `routeFeatureFlags.ts` `/mentors` entry → repoint; worker notification `action_url`s (done in Task 5).
 - Keep `/org/[slug]/service-bookings` (org provider inbox — out of redirect scope).
 
 - [ ] **Step 1:** Redirects + link updates.
