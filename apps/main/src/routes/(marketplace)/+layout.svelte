@@ -1,20 +1,12 @@
 <script lang="ts">
-	// ADR-058 shell exception: public marketplace chrome. The /services
-	// directory leaves the AppShell — public browsing pages render under
-	// MarketplaceHeader + MarketplaceFooter instead of the full three-column
-	// shell, while authoring routes (/services/new, /services/[slug]/edit)
-	// stay in (app). Same pattern as the GuestHeader/GuestFooter exceptions
-	// in (app)/+layout.svelte.
-	//
-	// The standard LeftNav still mounts as a sticky sidebar at lg+ so the
-	// marketplace keeps the same primary navigation as the rest of the app.
-	// showBrand=false because MarketplaceHeader already renders the logo;
-	// the right sidebar, left ad rail and mobile bottom tab bar stay out —
-	// the detail page owns the mobile bottom edge via StickyBookBar.
+	// ADR-058 shell exception: the marketplace group now renders with only
+	// the standard LeftNav as a sticky sidebar at lg+ — MarketplaceHeader /
+	// MarketplaceFooter chrome was dropped so /services sits inside the same
+	// primary navigation as the rest of the app (services/mentorship
+	// unification, Task 8). Authoring routes (/services/new,
+	// /services/[slug]/edit) live in (app).
 	// Ref: docs/superpowers/plans/2026-10-07-services-marketplace-frontend.md (Task 2)
 	import { untrack, type Snippet } from 'svelte';
-	import MarketplaceHeader from '$lib/components/marketplace/MarketplaceHeader.svelte';
-	import MarketplaceFooter from '$lib/components/marketplace/MarketplaceFooter.svelte';
 	import LeftNav from '$lib/components/shell/LeftNav.svelte';
 	import ComposeModal from '$lib/components/shell/ComposeModal.svelte';
 	import { api } from '$lib/api/client';
@@ -35,12 +27,6 @@
 	}
 </script>
 
-<MarketplaceHeader
-	user={data.user}
-	unreadCount={data.unreadNotifications}
-	logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
-	logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
-/>
 <div
 	class="marketplace-body"
 	style="--current-nav-width: {collapsed
@@ -56,11 +42,10 @@
 			logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
 			logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 			features={data.features}
-			showBrand={false}
 			onToggle={toggleCollapse}
 		/>
 	</aside>
-	<main class="marketplace-center min-h-[60vh]">
+	<main class="marketplace-center min-h-[60vh] px-4 py-6 sm:px-6 lg:px-8">
 		{@render children()}
 		{#if data.user}
 			<!-- LeftNav's compose button needs the modal in-tree — AppShell
@@ -69,10 +54,6 @@
 		{/if}
 	</main>
 </div>
-<MarketplaceFooter
-	menu={data.footerMenu}
-	newsletterEnabled={data.features?.['feature.newsletter'] !== false}
-/>
 
 <style>
 	.marketplace-body {
@@ -85,9 +66,8 @@
 		min-width: 0;
 	}
 
-	/* Sidebar is desktop-only — below lg the MarketplaceHeader hamburger
-	   drawer carries navigation, and the service detail page's
-	   StickyBookBar owns the mobile bottom edge. */
+	/* Sidebar is desktop-only — with the header/footer chrome gone there
+	   is no marketplace nav below lg; pages carry their own breadcrumbs. */
 	.marketplace-nav {
 		display: none;
 	}
@@ -96,11 +76,11 @@
 		.marketplace-nav {
 			display: block;
 			position: sticky;
-			top: var(--nav-height);
+			top: 1rem;
 			align-self: flex-start;
 			flex-shrink: 0;
 			width: var(--current-nav-width);
-			height: calc(100dvh - var(--nav-height));
+			height: calc(100dvh - 2rem);
 		}
 
 		/* Raise the collapsed rail so its label flyouts paint above the

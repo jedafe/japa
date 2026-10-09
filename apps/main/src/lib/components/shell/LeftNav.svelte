@@ -32,9 +32,8 @@
 		/** Feature flags from /feature-flags — used to hide nav items for
 		 *  disabled features so no trace of a toggled-off feature leaks. */
 		features?: Record<string, boolean>;
-		/** Render the brand row at the top of the nav. The marketplace chrome
-		 *  (ADR-058 exception) already carries the logo in MarketplaceHeader,
-		 *  so it mounts the nav with showBrand={false}. */
+		/** Render the brand row at the top of the nav. Mounts that already
+		 *  carry the logo elsewhere can pass showBrand={false}. */
 		showBrand?: boolean;
 		onToggle: () => void;
 	}
@@ -149,9 +148,9 @@
 	class="flex h-full w-full flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]"
 	aria-label={t('a11y.main_nav')}
 >
-	<!-- Logo + collapse toggle. With showBrand=false (marketplace chrome)
-	     the row shrinks to just the collapse control; in the collapsed rail
-	     it's skipped entirely — the standalone expand button below covers it. -->
+	<!-- Logo + collapse toggle. With showBrand=false the row shrinks to
+	     just the collapse control; in the collapsed rail it's skipped
+	     entirely — the standalone expand button below covers it. -->
 	{#if showBrand || !collapsed}
 		<div
 			class={clsx(
