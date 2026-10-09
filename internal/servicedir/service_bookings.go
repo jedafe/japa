@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/content"
@@ -807,6 +808,14 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 
 	booking, err := s.store.createBookingWithRedemption(ctx, params, nil)
 	if err != nil {
+		// 000825: the partial unique index
+		// idx_svc_bookings_mentorship_open_uniq is the DB-level guard for
+		// the SELECT-then-INSERT race above — two concurrent requests can
+		// both pass HasOpenMentorshipBooking; the loser surfaces here.
+		if isDuplicateMentorshipBookingErr(err) {
+			return BookingResult{}, ErrDuplicateRequest
+		}
+
 		return BookingResult{}, err
 	}
 
@@ -1057,6 +1066,16 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 	}
 
 	return s.GetBooking(ctx, bookingID, providerID, false)
+}
+
+// isDuplicateMentorshipBookingErr reports whether err is the SQLSTATE
+// 23505 raised by idx_svc_bookings_mentorship_open_uniq (000825) — the
+// DB-level guard backing the SELECT-then-INSERT dedupe race in
+// createMentorshipBooking.
+func isDuplicateMentorshipBookingErr(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+		pgErr.ConstraintName == "idx_svc_bookings_mentorship_open_uniq"
 }
 
 // enqueueMentorMeilisearch fires the mentor:update_meilisearch task — the

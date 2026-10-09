@@ -12,11 +12,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -455,7 +457,7 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 	mentorID := insertTestUser(t, database, "t4mentor"+uniq)
 	menteeID := insertTestUser(t, database, "t4mentee"+uniq)
 	setMentor(t, database, mentorID, 3, 0)
-	contentID, _ := insertListing(t, database, mentorID, ListingKindMentorship, "mentorship", "t4-"+uniq)
+	contentID, metaID := insertListing(t, database, mentorID, ListingKindMentorship, "mentorship", "t4-"+uniq)
 
 	t.Run("creates a provider-side inquiry booking", func(t *testing.T) {
 		res, err := svc.CreateBooking(ctx, menteeID, contentID, CreateBookingInput{
@@ -570,6 +572,88 @@ func TestMentorshipCreateBooking_LiveDB(t *testing.T) {
 			t.Fatalf("expected ErrMentorshipDisabled, got %v", err)
 		}
 	})
+
+	// 000825 — the partial unique index is the DB-level backstop for the
+	// SELECT-then-INSERT dedupe race: a second open request on the same
+	// (booker, listing_meta) pair must 23505 even when the app pre-check
+	// never ran (concurrent insert path), and the error must classify as
+	// the dedupe sentinel the service layer maps to ErrDuplicateRequest.
+	t.Run("open duplicate insert hits the unique index", func(t *testing.T) {
+		var pgErr *pgconn.PgError
+		_, err := database.Writer.Exec(ctx,
+			`INSERT INTO service_bookings
+				(listing_meta_id, booker_user_id, provider_user_id, intent, party_size, status, purchase_mode)
+			 VALUES ($1, $2, $3, 'inquiry', 1, 'pending', 'inquiry')`,
+			metaID, menteeID, mentorID)
+		if err == nil {
+			t.Fatal("second open booking inserted — idx_svc_bookings_mentorship_open_uniq did not fire")
+		}
+		if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+			t.Fatalf("expected 23505 unique violation, got %v", err)
+		}
+		if pgErr.ConstraintName != "idx_svc_bookings_mentorship_open_uniq" {
+			t.Fatalf("violation came from %q, want idx_svc_bookings_mentorship_open_uniq", pgErr.ConstraintName)
+		}
+		if !isDuplicateMentorshipBookingErr(err) {
+			t.Fatal("isDuplicateMentorshipBookingErr did not classify the violation")
+		}
+
+		// Closed statuses keep multi-request freedom — a declined row on
+		// the same pair must not collide.
+		if _, err := database.Writer.Exec(ctx,
+			`INSERT INTO service_bookings
+				(listing_meta_id, booker_user_id, provider_user_id, intent, party_size, status, purchase_mode)
+			 VALUES ($1, $2, $3, 'inquiry', 1, 'declined', 'inquiry')`,
+			metaID, menteeID, mentorID); err != nil {
+			t.Fatalf("closed-status row should not hit the open dedupe index: %v", err)
+		}
+
+		// Org-owned bookings are outside the predicate — an org booking on
+		// a different meta (same booker) is untouched by the index.
+		var orgID pgtype.UUID
+		if err := database.Writer.QueryRow(ctx,
+			`INSERT INTO organizations (slug, name, owner_user_id) VALUES ($1, $2, $3) RETURNING id`,
+			"t4org"+uniq, "T4 Org "+uniq, mentorID).Scan(&orgID); err != nil {
+			t.Fatalf("insert org: %v", err)
+		}
+		t.Cleanup(func() {
+			database.Writer.Exec(context.Background(),
+				`DELETE FROM service_bookings WHERE org_id = $1`, orgID)
+			database.Writer.Exec(context.Background(),
+				`DELETE FROM organizations WHERE id = $1`, orgID)
+		})
+		otherContentID, otherMetaID := insertListing(t, database, mentorID, ListingKindService, "other", "t4svc-"+uniq)
+		_ = otherContentID
+		if _, err := database.Writer.Exec(ctx,
+			`INSERT INTO service_bookings
+				(listing_meta_id, booker_user_id, org_id, intent, party_size, status, purchase_mode)
+			 VALUES ($1, $2, $3, 'inquiry', 1, 'pending', 'inquiry')`,
+			otherMetaID, menteeID, orgID); err != nil {
+			t.Fatalf("org-owned open booking should not hit the mentorship dedupe index: %v", err)
+		}
+	})
+}
+
+// TestIsDuplicateMentorshipBookingErr covers the 23505 classifier — only
+// the open-request index maps to ErrDuplicateRequest; other unique
+// violations stay opaque errors.
+func TestIsDuplicateMentorshipBookingErr(t *testing.T) {
+	dup := &pgconn.PgError{Code: "23505", ConstraintName: "idx_svc_bookings_mentorship_open_uniq"}
+	if !isDuplicateMentorshipBookingErr(dup) {
+		t.Error("expected true for the open dedupe index")
+	}
+	if !isDuplicateMentorshipBookingErr(fmt.Errorf("insert: %w", dup)) {
+		t.Error("expected true through wrapping")
+	}
+	if isDuplicateMentorshipBookingErr(&pgconn.PgError{Code: "23505", ConstraintName: "other_idx"}) {
+		t.Error("other unique violations must not classify as duplicate request")
+	}
+	if isDuplicateMentorshipBookingErr(&pgconn.PgError{Code: "23503"}) {
+		t.Error("FK violations must not classify as duplicate request")
+	}
+	if isDuplicateMentorshipBookingErr(errors.New("boom")) {
+		t.Error("plain errors must not classify")
+	}
 }
 
 // TestMentorshipRespondAndList_LiveDB covers RespondToBooking transitions,
@@ -686,6 +770,38 @@ func TestMentorshipRespondAndList_LiveDB(t *testing.T) {
 		}
 		if dto.ConnectionStatus != "completed" {
 			t.Errorf("connection_status = %q, want completed", dto.ConnectionStatus)
+		}
+	})
+
+	t.Run("decline moves pending to declined with response note", func(t *testing.T) {
+		declineeID := insertTestUser(t, database, "t4declinee"+uniq)
+		res, err := svc.CreateBooking(ctx, declineeID, contentID, CreateBookingInput{Goals: "g"})
+		if err != nil {
+			t.Fatalf("seed decline booking: %v", err)
+		}
+		dBookingID := mustUUID(t, res.Booking.ID)
+
+		dto, err := svc.RespondToBooking(ctx, mentorID, dBookingID, "decline", "no capacity this season")
+		if err != nil {
+			t.Fatalf("decline: %v", err)
+		}
+		if dto.Status != BookingStatusDeclined {
+			t.Errorf("status = %q, want declined", dto.Status)
+		}
+		if dto.ConnectionStatus != BookingStatusDeclined {
+			t.Errorf("connection_status = %q, want declined passthrough", dto.ConnectionStatus)
+		}
+		if dto.OrgResponseNote != "no capacity this season" {
+			t.Errorf("org_response_note = %q, want decline note", dto.OrgResponseNote)
+		}
+
+		// A second decline is not a valid transition out of declined.
+		if _, err := svc.RespondToBooking(ctx, mentorID, dBookingID, "decline", ""); !errors.Is(err, ErrInvalidBookingTransition) {
+			t.Fatalf("re-decline: expected ErrInvalidBookingTransition, got %v", err)
+		}
+		// Nor is decline from the fulfilled booking in the parent test.
+		if _, err := svc.RespondToBooking(ctx, mentorID, bookingID, "decline", ""); !errors.Is(err, ErrInvalidBookingTransition) {
+			t.Fatalf("decline fulfilled: expected ErrInvalidBookingTransition, got %v", err)
 		}
 	})
 
