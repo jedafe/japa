@@ -801,7 +801,7 @@ FROM (SELECT * FROM mentorship_matches WHERE (mentor_id = @user_id OR mentee_id 
 -- meta->>'goals' with the note column as fallback (migrated rows only carry
 -- note), and responded_at comes from meta (DeclineServiceBooking / the
 -- 000824 backfill) falling back to confirmed_at.
-SELECT coalesce(json_agg(t), '[]'::json) AS data
+SELECT coalesce(json_agg(t ORDER BY t.created_at DESC), '[]'::json) AS data
 FROM (
     SELECT sb.id,
            sb.provider_user_id AS mentor_id,
@@ -824,7 +824,6 @@ FROM (
     JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
     WHERE sm.listing_kind = 'mentorship'
       AND (sb.booker_user_id = @user_id OR sb.provider_user_id = @user_id)
-    ORDER BY sb.created_at DESC
 ) t;
 
 -- name: GdprExportUserMentorProfiles :one

@@ -114,7 +114,6 @@ academy_lesson_progress
 media
 mentor_reviews
 mentor_sessions
-mentorship_connections
 mentorship_matches
 mentorship_profiles
 moderation_alerts
@@ -167,6 +166,7 @@ scam_reports
 scholarships
 search_analytics
 security_scan_results
+service_bookings
 service_listing_meta
 slug_history
 sop_drafts

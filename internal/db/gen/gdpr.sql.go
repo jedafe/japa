@@ -1898,7 +1898,7 @@ func (q *Queries) GdprExportUserMentorSessions(ctx context.Context, userID pgtyp
 }
 
 const gdprExportUserMentorshipConnections = `-- name: GdprExportUserMentorshipConnections :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
+SELECT coalesce(json_agg(t ORDER BY t.created_at DESC), '[]'::json) AS data
 FROM (
     SELECT sb.id,
            sb.provider_user_id AS mentor_id,
@@ -1921,7 +1921,6 @@ FROM (
     JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
     WHERE sm.listing_kind = 'mentorship'
       AND (sb.booker_user_id = $1 OR sb.provider_user_id = $1)
-    ORDER BY sb.created_at DESC
 ) t
 `
 
