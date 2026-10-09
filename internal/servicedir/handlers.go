@@ -167,6 +167,14 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 	case errors.Is(err, ErrPackagesDisabled):
 		// Disabled feature → 404 per convention.
 		errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
+	case errors.Is(err, ErrMentorshipDisabled):
+		errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
+	case errors.Is(err, ErrSelfMentorship):
+		errpkg.WriteError(w, http.StatusBadRequest, "self_mentorship", "You cannot request mentorship from yourself")
+	case errors.Is(err, ErrDuplicateRequest):
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_mentorship_request", "You already have an open mentorship request with this provider")
+	case errors.Is(err, ErrMentorAtCapacity):
+		errpkg.WriteError(w, http.StatusConflict, "mentor_at_capacity", "This mentor is not accepting new mentees right now")
 	case errors.Is(err, ErrCouponsDisabled):
 		errpkg.WriteError(w, http.StatusNotFound, "service_coupons_disabled", "Service coupons are not available")
 	case errors.Is(err, ErrInvalidCoupon):
@@ -194,7 +202,7 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 	case errors.Is(err, ErrPurchaseModeUnavailable):
 		errpkg.WriteError(w, http.StatusForbidden, "purchase_mode_unavailable", "This purchase mode is not available")
 	case errors.Is(err, ErrInvalidListingKind):
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_listing_kind", "listing_kind must be service|package and cannot change after creation")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_listing_kind", "listing_kind must be service|package|mentorship and cannot change after creation")
 	case errors.Is(err, ErrInvalidPurchaseMode):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purchase_mode", "purchase_mode must be inquiry|external|paid")
 	case errors.Is(err, ErrInvalidPricePer):
@@ -347,6 +355,10 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrPackagesDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
+			return
+		}
+		if errors.Is(err, ErrMentorshipDisabled) {
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
 			return
 		}
 

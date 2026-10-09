@@ -980,22 +980,24 @@ WHERE c.content_type = 'service_listing'
   AND ($5::text IS NULL OR $5::text = ANY(sm.origin_communities))
   AND ($6::bool IS NULL OR sm.is_verified = $6::bool)
   AND ($7::text IS NULL OR sm.listing_kind = $7::text)
-  AND ($8::bigint IS NULL OR sm.price_amount <= $8::bigint)
-  AND ($9::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $9::date)
-  AND ($10::text IS NULL OR c.title ILIKE '%' || $10::text || '%')
+  AND ($8::text IS NULL OR sm.listing_kind <> $8::text)
+  AND ($9::bigint IS NULL OR sm.price_amount <= $9::bigint)
+  AND ($10::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $10::date)
+  AND ($11::text IS NULL OR c.title ILIKE '%' || $11::text || '%')
 `
 
 type CountServiceListingsParams struct {
-	Status          *string     `json:"status"`
-	DestSpaceID     pgtype.UUID `json:"dest_space_id"`
-	CitySpaceID     pgtype.UUID `json:"city_space_id"`
-	ServiceCategory *string     `json:"service_category"`
-	OriginCommunity *string     `json:"origin_community"`
-	IsVerified      *bool       `json:"is_verified"`
-	ListingKind     *string     `json:"listing_kind"`
-	PriceMax        *int64      `json:"price_max"`
-	DateFrom        pgtype.Date `json:"date_from"`
-	Q               *string     `json:"q"`
+	Status             *string     `json:"status"`
+	DestSpaceID        pgtype.UUID `json:"dest_space_id"`
+	CitySpaceID        pgtype.UUID `json:"city_space_id"`
+	ServiceCategory    *string     `json:"service_category"`
+	OriginCommunity    *string     `json:"origin_community"`
+	IsVerified         *bool       `json:"is_verified"`
+	ListingKind        *string     `json:"listing_kind"`
+	ExcludeListingKind *string     `json:"exclude_listing_kind"`
+	PriceMax           *int64      `json:"price_max"`
+	DateFrom           pgtype.Date `json:"date_from"`
+	Q                  *string     `json:"q"`
 }
 
 func (q *Queries) CountServiceListings(ctx context.Context, arg CountServiceListingsParams) (int64, error) {
@@ -1007,6 +1009,7 @@ func (q *Queries) CountServiceListings(ctx context.Context, arg CountServiceList
 		arg.OriginCommunity,
 		arg.IsVerified,
 		arg.ListingKind,
+		arg.ExcludeListingKind,
 		arg.PriceMax,
 		arg.DateFrom,
 		arg.Q,
@@ -1881,6 +1884,30 @@ func (q *Queries) GetListingCouponByCode(ctx context.Context, arg GetListingCoup
 		&i.Position,
 		&i.Overrides,
 	)
+	return i, err
+}
+
+const getMentorCapacity = `-- name: GetMentorCapacity :one
+SELECT mentor_capacity, active_mentee_count
+FROM user_profiles
+WHERE user_id = $1
+`
+
+type GetMentorCapacityRow struct {
+	MentorCapacity    *int16 `json:"mentor_capacity"`
+	ActiveMenteeCount *int16 `json:"active_mentee_count"`
+}
+
+// Mentor capacity probe (000824): the mentee-count trigger
+// trg_service_booking_mentee_count keeps user_profiles.active_mentee_count
+// in sync with confirmed mentorship-kind bookings, so the create-booking
+// capacity check reads both columns straight from the profile. Deliberately
+// NOT the legacy GetMentorProfile (mentorship.sql is dead — Task 6 removes
+// it); this lives in servicedir's own query file.
+func (q *Queries) GetMentorCapacity(ctx context.Context, userID pgtype.UUID) (GetMentorCapacityRow, error) {
+	row := q.db.QueryRow(ctx, getMentorCapacity, userID)
+	var i GetMentorCapacityRow
+	err := row.Scan(&i.MentorCapacity, &i.ActiveMenteeCount)
 	return i, err
 }
 
@@ -4042,30 +4069,36 @@ WHERE c.content_type = 'service_listing'
   AND ($5::text IS NULL OR $5::text = ANY(sm.origin_communities))
   AND ($6::bool IS NULL OR sm.is_verified = $6::bool)
   AND ($7::text IS NULL OR sm.listing_kind = $7::text)
-  AND ($8::bigint IS NULL OR sm.price_amount <= $8::bigint)
-  AND ($9::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $9::date)
-  AND ($10::text IS NULL OR c.title ILIKE '%' || $10::text || '%')
+  -- exclude_listing_kind (000824): the unfiltered directory pins out
+  -- flag-gated kinds ('package' while service_packages.enabled is off,
+  -- 'mentorship' while mentorship.enabled is off) without collapsing
+  -- the list to a single kind.
+  AND ($8::text IS NULL OR sm.listing_kind <> $8::text)
+  AND ($9::bigint IS NULL OR sm.price_amount <= $9::bigint)
+  AND ($10::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= $10::date)
+  AND ($11::text IS NULL OR c.title ILIKE '%' || $11::text || '%')
 ORDER BY
-  CASE WHEN $11::text = 'top' THEN c.view_count END DESC NULLS LAST,
-  CASE WHEN $11::text = 'top' THEN c.comment_count END DESC NULLS LAST,
+  CASE WHEN $12::text = 'top' THEN c.view_count END DESC NULLS LAST,
+  CASE WHEN $12::text = 'top' THEN c.comment_count END DESC NULLS LAST,
   c.published_at DESC NULLS LAST, c.created_at DESC
-LIMIT $13 OFFSET $12
+LIMIT $14 OFFSET $13
 `
 
 type ListServiceListingsParams struct {
-	Status          *string     `json:"status"`
-	DestSpaceID     pgtype.UUID `json:"dest_space_id"`
-	CitySpaceID     pgtype.UUID `json:"city_space_id"`
-	ServiceCategory *string     `json:"service_category"`
-	OriginCommunity *string     `json:"origin_community"`
-	IsVerified      *bool       `json:"is_verified"`
-	ListingKind     *string     `json:"listing_kind"`
-	PriceMax        *int64      `json:"price_max"`
-	DateFrom        pgtype.Date `json:"date_from"`
-	Q               *string     `json:"q"`
-	Sort            *string     `json:"sort"`
-	PageOffset      int32       `json:"page_offset"`
-	PageLimit       int32       `json:"page_limit"`
+	Status             *string     `json:"status"`
+	DestSpaceID        pgtype.UUID `json:"dest_space_id"`
+	CitySpaceID        pgtype.UUID `json:"city_space_id"`
+	ServiceCategory    *string     `json:"service_category"`
+	OriginCommunity    *string     `json:"origin_community"`
+	IsVerified         *bool       `json:"is_verified"`
+	ListingKind        *string     `json:"listing_kind"`
+	ExcludeListingKind *string     `json:"exclude_listing_kind"`
+	PriceMax           *int64      `json:"price_max"`
+	DateFrom           pgtype.Date `json:"date_from"`
+	Q                  *string     `json:"q"`
+	Sort               *string     `json:"sort"`
+	PageOffset         int32       `json:"page_offset"`
+	PageLimit          int32       `json:"page_limit"`
 }
 
 type ListServiceListingsRow struct {
@@ -4141,6 +4174,7 @@ func (q *Queries) ListServiceListings(ctx context.Context, arg ListServiceListin
 		arg.OriginCommunity,
 		arg.IsVerified,
 		arg.ListingKind,
+		arg.ExcludeListingKind,
 		arg.PriceMax,
 		arg.DateFrom,
 		arg.Q,

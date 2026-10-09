@@ -44,6 +44,21 @@ func (h *Handlers) packagesAvailable(w http.ResponseWriter, r *http.Request) boo
 	return true
 }
 
+// bookingSurfaceAvailable gates the /me/service-bookings read/cancel
+// routes — they serve both package and mentorship bookings, so either
+// flag being on keeps them live (000824). Booking-kind specifics are
+// enforced inside the service layer.
+func (h *Handlers) bookingSurfaceAvailable(w http.ResponseWriter, r *http.Request) bool {
+	packages := h.service != nil && h.service.PackagesEnabled(r.Context())
+	mentorship := h.service != nil && h.service.MentorshipEnabled(r.Context())
+	if !packages && !mentorship {
+		errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
+		return false
+	}
+
+	return true
+}
+
 // HandleCreateBooking handles POST /services/:id/bookings. Auth required
 // (service.booking.create at route level); the payment-changing path runs
 // behind mw.IdempotencyMiddleware (Rule 9) so the Idempotency-Key header
@@ -54,12 +69,32 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.packagesAvailable(w, r) {
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
 		return
 	}
 
-	contentID, ok := scanUUIDParam(w, r, "id")
-	if !ok {
+	// The feature gate follows the listing's kind — mentorship-kind
+	// listings (000824) are gated on mentorship.enabled, not
+	// service_packages.enabled. The listing lookup doubles as the
+	// existence check the service layer would otherwise do.
+	listing, err := h.service.GetListingByContentID(r.Context(), contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+		slog.Error("servicedir: booking listing lookup failed", "content_id", contentID, "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "booking_failed", "Failed to create booking")
+		return
+	}
+
+	if listing.ListingKind == ListingKindMentorship {
+		if h.service == nil || !h.service.MentorshipEnabled(r.Context()) {
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
+			return
+		}
+	} else if !h.packagesAvailable(w, r) {
 		return
 	}
 
@@ -168,32 +203,118 @@ func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleMyBookings handles GET /me/service-bookings — caller's booking
-// history (?status=&intent=&page=&limit=).
+// history. role=booker (default) lists bookings the caller made;
+// role=provider (000824) lists bookings the caller provides — mentorship
+// requests today. ?status=&intent=&kind=&page=&limit= filter both roles.
 func (h *Handlers) HandleMyBookings(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	if !h.packagesAvailable(w, r) {
+	role := r.URL.Query().Get("role")
+	if role == "" {
+		role = "booker"
+	}
+	kind := r.URL.Query().Get("kind")
+
+	packages := h.service != nil && h.service.PackagesEnabled(r.Context())
+	mentorship := h.service != nil && h.service.MentorshipEnabled(r.Context())
+
+	var bookings []BookingDTO
+	var total int64
+	var err error
+
+	switch role {
+	case "booker":
+		// Mentorship bookings live here even when packages are off — the
+		// endpoint serves either flag.
+		if !packages && !mentorship {
+			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")
+			return
+		}
+		if kind == ListingKindMentorship && !mentorship {
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
+			return
+		}
+
+		page, limit := parsePageParams(r)
+		bookings, total, err = h.service.ListMyBookings(r.Context(), user.UserID,
+			r.URL.Query().Get("status"), r.URL.Query().Get("intent"), kind, page, limit)
+	case "provider":
+		// Provider-side inbox is mentorship-gated (000824).
+		if !mentorship {
+			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
+			return
+		}
+
+		page, limit := parsePageParams(r)
+		bookings, total, err = h.service.ListProviderBookings(r.Context(), user.UserID,
+			r.URL.Query().Get("status"), r.URL.Query().Get("intent"), kind, page, limit)
+	default:
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_role", "role must be booker|provider")
+		return
+	}
+
+	if err != nil {
+		slog.Error("servicedir: my bookings failed", "role", role, "error", err)
+		writeServiceError(w, err, "list_failed", "Failed to list bookings")
+
 		return
 	}
 
 	page, limit := parsePageParams(r)
-
-	bookings, total, err := h.service.ListMyBookings(r.Context(), user.UserID,
-		r.URL.Query().Get("status"), r.URL.Query().Get("intent"), page, limit)
-	if err != nil {
-		slog.Error("servicedir: my bookings failed", "error", err)
-		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list bookings")
-
-		return
-	}
-
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": bookings,
 		"meta": map[string]any{"page": page, "limit": limit, "total": total},
 	})
+}
+
+// HandleMyBookingRespond handles POST /me/service-bookings/:id/respond —
+// the provider's answer on a user-provider (mentorship) booking
+// (000824). Route carries mentorship.respond. Body:
+// {"action":"accept|decline|complete","note":"optional"}.
+func (h *Handlers) HandleMyBookingRespond(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if h.service == nil || !h.service.MentorshipEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
+		return
+	}
+
+	bookingID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var input BookingRespondInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
+		return
+	}
+
+	if input.Action == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_action", "action is required")
+		return
+	}
+
+	booking, err := h.service.RespondToBooking(r.Context(), user.UserID, bookingID, input.Action, input.Note)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "booking_not_found", "Booking not found")
+			return
+		}
+
+		slog.Error("servicedir: booking respond failed", "booking_id", bookingID, "action", input.Action, "error", err)
+		writeServiceError(w, err, "respond_failed", "Failed to respond to booking")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": booking})
 }
 
 // HandleMyBookingDetail handles GET /me/service-bookings/:id.
@@ -203,7 +324,7 @@ func (h *Handlers) HandleMyBookingDetail(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if !h.packagesAvailable(w, r) {
+	if !h.bookingSurfaceAvailable(w, r) {
 		return
 	}
 
@@ -263,7 +384,7 @@ func (h *Handlers) HandleMyBookingCancel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if !h.packagesAvailable(w, r) {
+	if !h.bookingSurfaceAvailable(w, r) {
 		return
 	}
 

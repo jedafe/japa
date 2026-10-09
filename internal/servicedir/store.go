@@ -89,15 +89,18 @@ var validVerificationTypes = map[string]struct{}{
 	VerificationTypeProfessionalBody: {},
 }
 
-// §111 listing kinds.
+// §111 listing kinds. 'mentorship' (000824 unification) is the kind of a
+// mentor's shadow listing — bookings against it carry provider_user_id
+// instead of org_id.
 const (
-	ListingKindService = "service"
-	ListingKindPackage = "package"
+	ListingKindService    = "service"
+	ListingKindPackage    = "package"
+	ListingKindMentorship = "mentorship"
 )
 
 // IsValidListingKind reports whether s is a canonical §111 listing_kind.
 func IsValidListingKind(s string) bool {
-	return s == ListingKindService || s == ListingKindPackage
+	return s == ListingKindService || s == ListingKindPackage || s == ListingKindMentorship
 }
 
 // §111 purchase modes. 'full' is intentionally absent — deferred until
@@ -187,18 +190,18 @@ func NewStore(read, write *gen.Queries, database *db.DB) *Store {
 type ServiceRow struct {
 	ID pgtype.UUID
 
-	AuthorID          pgtype.UUID
-	Title             string
-	Slug              string
-	Body              string
-	BodyHTML          string
-	Status            string
-	Visibility        string
-	ViewCount         int32
-	CommentCount      int32
-	PublishedAt       pgtype.Timestamptz
-	CreatedAt         pgtype.Timestamptz
-	UpdatedAt         pgtype.Timestamptz
+	AuthorID     pgtype.UUID
+	Title        string
+	Slug         string
+	Body         string
+	BodyHTML     string
+	Status       string
+	Visibility   string
+	ViewCount    int32
+	CommentCount int32
+	PublishedAt  pgtype.Timestamptz
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
 
 	// Featured image refs — resolved from contents.featured_image_id via
 	// the media LEFT JOIN (pattern from contents.sql GetContentDetailBySlug).
@@ -281,7 +284,7 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		FeaturedStoragePath:   r.FeaturedStoragePath,
 		RatingCount:           r.RatingCount,
 		RatingAvg:             r.RatingAvg,
-		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
+		MetaID:                r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
 		CitySpaceID: r.CitySpaceID, CitySpaceName: r.CitySpaceName, CitySpaceCode: r.CitySpaceCode,
@@ -314,7 +317,7 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		FeaturedStoragePath:   r.FeaturedStoragePath,
 		RatingCount:           r.RatingCount,
 		RatingAvg:             r.RatingAvg,
-		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
+		MetaID:                r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
 		CitySpaceID: r.CitySpaceID, CitySpaceName: r.CitySpaceName, CitySpaceCode: r.CitySpaceCode,
@@ -347,7 +350,7 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		FeaturedStoragePath:   r.FeaturedStoragePath,
 		RatingCount:           r.RatingCount,
 		RatingAvg:             r.RatingAvg,
-		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
+		MetaID:                r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
 		CitySpaceID: r.CitySpaceID, CitySpaceName: r.CitySpaceName, CitySpaceCode: r.CitySpaceCode,
@@ -406,7 +409,7 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		FeaturedStoragePath:   r.FeaturedStoragePath,
 		RatingCount:           r.RatingCount,
 		RatingAvg:             r.RatingAvg,
-		MetaID: r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
+		MetaID:                r.MetaID, OrgID: r.OrgID, OrgName: r.OrgName, OrgSlug: r.OrgSlug,
 		ServiceCategory: &r.ServiceCategory,
 		DestSpaceID:     r.DestinationSpaceID, DestSpaceName: r.DestSpaceName, DestSpaceCode: r.DestSpaceCode,
 		CitySpaceID: r.CitySpaceID, CitySpaceName: r.CitySpaceName, CitySpaceCode: r.CitySpaceCode,
@@ -484,13 +487,18 @@ type ListServicesFilter struct {
 	OriginCommunity string      // optional, ?origin= (BUG-005)
 	IsVerified      *bool       // optional, ?verified=
 	ListingKind     string      // optional, ?kind= (§111)
-	PriceMax        *int64      // optional, ?price_max= minor units (§111)
-	DateFrom        pgtype.Date // optional, ?date_from= (§111)
-	Sort            string      // "top" | "latest" (default: latest)
-	Status          string      // filter by status (default: published)
-	Q               string      // optional, ?q= — title substring search
-	Limit           int32
-	Offset          int32
+	// ExcludeKind pins one listing_kind OUT of the unfiltered list —
+	// the flag-gate mechanism for dark-launched kinds (000824: 'package'
+	// while service_packages is off, 'mentorship' while mentorship is
+	// off) so the remaining kinds still surface together.
+	ExcludeKind string
+	PriceMax    *int64      // optional, ?price_max= minor units (§111)
+	DateFrom    pgtype.Date // optional, ?date_from= (§111)
+	Sort        string      // "top" | "latest" (default: latest)
+	Status      string      // filter by status (default: published)
+	Q           string      // optional, ?q= — title substring search
+	Limit       int32
+	Offset      int32
 }
 
 // ListServices returns a paginated, filtered list of service listings.
@@ -519,6 +527,10 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 		params.ListingKind = &f.ListingKind
 	}
 
+	if f.ExcludeKind != "" {
+		params.ExcludeListingKind = &f.ExcludeKind
+	}
+
 	params.PriceMax = f.PriceMax
 	params.DateFrom = f.DateFrom
 
@@ -536,16 +548,17 @@ func (s *Store) ListServices(ctx context.Context, f ListServicesFilter) ([]Servi
 	}
 
 	total, err := s.read.CountServiceListings(ctx, gen.CountServiceListingsParams{
-		Status:          params.Status,
-		DestSpaceID:     params.DestSpaceID,
-		CitySpaceID:     params.CitySpaceID,
-		ServiceCategory: params.ServiceCategory,
-		OriginCommunity: params.OriginCommunity,
-		IsVerified:      params.IsVerified,
-		ListingKind:     params.ListingKind,
-		PriceMax:        params.PriceMax,
-		DateFrom:        params.DateFrom,
-		Q:               params.Q,
+		Status:             params.Status,
+		DestSpaceID:        params.DestSpaceID,
+		CitySpaceID:        params.CitySpaceID,
+		ServiceCategory:    params.ServiceCategory,
+		OriginCommunity:    params.OriginCommunity,
+		IsVerified:         params.IsVerified,
+		ListingKind:        params.ListingKind,
+		ExcludeListingKind: params.ExcludeListingKind,
+		PriceMax:           params.PriceMax,
+		DateFrom:           params.DateFrom,
+		Q:                  params.Q,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: count services: %w", err)

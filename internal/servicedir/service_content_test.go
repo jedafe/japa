@@ -133,3 +133,17 @@ func TestEncodeListingSteps(t *testing.T) {
 		t.Fatalf("expected trimmed title round-trip, got %s (err=%v)", b, err)
 	}
 }
+
+// TestValidateCategoryInputAppliesTo covers the applies_to enum — the
+// 000824 unification adds 'mentorship' to the CHECK constraint values.
+func TestValidateCategoryInputAppliesTo(t *testing.T) {
+	for _, v := range []string{"service", "package", "mentorship", "both"} {
+		if err := validateCategoryInput(CategoryInput{Slug: "cat_" + v, Label: "L", AppliesTo: v}, true); err != nil {
+			t.Errorf("applies_to=%q should validate: %v", v, err)
+		}
+	}
+
+	if err := validateCategoryInput(CategoryInput{Slug: "cat_x", Label: "L", AppliesTo: "bogus"}, true); err == nil {
+		t.Error("expected rejection for unknown applies_to")
+	}
+}

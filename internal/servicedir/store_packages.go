@@ -10,8 +10,10 @@ package servicedir
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -181,36 +183,43 @@ func (s *Store) DeparturesWithBookings(ctx context.Context, packageMetaID pgtype
 // BookingRow is the joined booking detail (booking fields + listing title/
 // slug/kind + org display + departure dates + booker display fields).
 // sqlc expands sb.* into flat columns, so the row is flat too.
+//
+// 000824: provider_user_id/destination_space_id/meta are the mentorship-
+// unification columns — user-provider (mentorship) bookings carry
+// provider_user_id instead of org_id (XOR-or-anonymized CHECK).
 type BookingRow struct {
-	ID              pgtype.UUID
-	ListingMetaID   pgtype.UUID
-	DepartureID     pgtype.UUID
-	BookerUserID    pgtype.UUID
-	OrgID           pgtype.UUID
-	Intent          string
-	PartySize       int32
-	PreferredDates  []byte
-	Note            *string
-	Status          string
-	PurchaseMode    string
-	PaymentID       pgtype.UUID
-	TotalPrice      *int64
-	FeeAmount       *int64
-	FeeCurrency     *string
-	AgentBalanceDue *int64
-	OrgResponseNote *string
-	DisputeReason   *string
-	ExpiresAt       pgtype.Timestamptz
-	ConfirmedAt     pgtype.Timestamptz
-	FulfilledAt     pgtype.Timestamptz
-	CancelledAt     pgtype.Timestamptz
-	CancelReason    *string
-	AnonymizedAt    pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	ListingTitle    string
-	ListingSlug     string
-	ListingKind     string
+	ID                 pgtype.UUID
+	ListingMetaID      pgtype.UUID
+	DepartureID        pgtype.UUID
+	BookerUserID       pgtype.UUID
+	OrgID              pgtype.UUID
+	ProviderUserID     pgtype.UUID
+	DestinationSpaceID pgtype.UUID
+	Meta               []byte
+	Intent             string
+	PartySize          int32
+	PreferredDates     []byte
+	Note               *string
+	Status             string
+	PurchaseMode       string
+	PaymentID          pgtype.UUID
+	TotalPrice         *int64
+	FeeAmount          *int64
+	FeeCurrency        *string
+	AgentBalanceDue    *int64
+	OrgResponseNote    *string
+	DisputeReason      *string
+	ExpiresAt          pgtype.Timestamptz
+	ConfirmedAt        pgtype.Timestamptz
+	FulfilledAt        pgtype.Timestamptz
+	CancelledAt        pgtype.Timestamptz
+	CancelReason       *string
+	AnonymizedAt       pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	ListingTitle       string
+	ListingSlug        string
+	ListingKind        string
 	// ListingContentID is the contents.id behind the listing — the
 	// jc:svc_package cache key (only populated by the detail query).
 	ListingContentID pgtype.UUID
@@ -224,7 +233,14 @@ type BookingRow struct {
 	DepartureStartsOn pgtype.Date
 	DepartureEndsOn   pgtype.Date
 	BookerUsername    *string
+	BookerDisplayName *string
 	BookerAvatar      *string
+	// Provider display joins (000824) — populated by the detail, by-org,
+	// and by-provider list queries; nil on org-owned rows.
+	ProviderUsername     *string
+	ProviderDisplayName  *string
+	ProviderAvatar       *string
+	DestinationSpaceName *string
 
 	// Marketplace booking snapshots (spec §2.3/§2.4). TierID/TierName/
 	// TierPriceAmount freeze the selected pricing tier — TierName carries
@@ -242,7 +258,10 @@ type BookingRow struct {
 func bookingFromGen(b gen.ServiceBooking) BookingRow {
 	return BookingRow{
 		ID: b.ID, ListingMetaID: b.ListingMetaID, DepartureID: b.DepartureID,
-		BookerUserID: b.BookerUserID, OrgID: b.OrgID, Intent: b.Intent,
+		BookerUserID: b.BookerUserID, OrgID: b.OrgID,
+		ProviderUserID:     b.ProviderUserID,
+		DestinationSpaceID: b.DestinationSpaceID, Meta: b.Meta,
+		Intent:    b.Intent,
 		PartySize: b.PartySize, PreferredDates: b.PreferredDates, Note: b.Note,
 		Status: b.Status, PurchaseMode: b.PurchaseMode, PaymentID: b.PaymentID,
 		TotalPrice: b.TotalPrice, FeeAmount: b.FeeAmount, FeeCurrency: b.FeeCurrency,
@@ -259,7 +278,9 @@ func bookingFromGen(b gen.ServiceBooking) BookingRow {
 func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 	row := bookingFromGen(gen.ServiceBooking{
 		ID: r.ID, ListingMetaID: r.ListingMetaID, DepartureID: r.DepartureID,
-		BookerUserID: r.BookerUserID, OrgID: r.OrgID, Intent: r.Intent,
+		BookerUserID: r.BookerUserID, OrgID: r.OrgID,
+		ProviderUserID: r.ProviderUserID, DestinationSpaceID: r.DestinationSpaceID,
+		Meta: r.Meta, Intent: r.Intent,
 		PartySize: r.PartySize, PreferredDates: r.PreferredDates, Note: r.Note,
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
@@ -285,6 +306,13 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
+	row.BookerUsername = r.BookerUsername
+	row.BookerDisplayName = r.BookerDisplayName
+	row.BookerAvatar = r.BookerAvatar
+	row.ProviderUsername = r.ProviderUsername
+	row.ProviderDisplayName = r.ProviderDisplayName
+	row.ProviderAvatar = r.ProviderAvatar
+	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
 }
@@ -292,7 +320,9 @@ func bookingRowFromDetail(r gen.GetServiceBookingDetailRow) BookingRow {
 func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 	row := bookingFromGen(gen.ServiceBooking{
 		ID: r.ID, ListingMetaID: r.ListingMetaID, DepartureID: r.DepartureID,
-		BookerUserID: r.BookerUserID, OrgID: r.OrgID, Intent: r.Intent,
+		BookerUserID: r.BookerUserID, OrgID: r.OrgID,
+		ProviderUserID: r.ProviderUserID, DestinationSpaceID: r.DestinationSpaceID,
+		Meta: r.Meta, Intent: r.Intent,
 		PartySize: r.PartySize, PreferredDates: r.PreferredDates, Note: r.Note,
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
@@ -317,6 +347,10 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 	row.OrgSlug = r.OrgSlug
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
+	row.ProviderUsername = r.ProviderUsername
+	row.ProviderDisplayName = r.ProviderDisplayName
+	row.ProviderAvatar = r.ProviderAvatar
+	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
 }
@@ -324,7 +358,9 @@ func bookingRowFromUser(r gen.ListServiceBookingsByUserRow) BookingRow {
 func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 	row := bookingFromGen(gen.ServiceBooking{
 		ID: r.ID, ListingMetaID: r.ListingMetaID, DepartureID: r.DepartureID,
-		BookerUserID: r.BookerUserID, OrgID: r.OrgID, Intent: r.Intent,
+		BookerUserID: r.BookerUserID, OrgID: r.OrgID,
+		ProviderUserID: r.ProviderUserID, DestinationSpaceID: r.DestinationSpaceID,
+		Meta: r.Meta, Intent: r.Intent,
 		PartySize: r.PartySize, PreferredDates: r.PreferredDates, Note: r.Note,
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
@@ -348,7 +384,56 @@ func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 	row.DepartureStartsOn = r.DepartureStartsOn
 	row.DepartureEndsOn = r.DepartureEndsOn
 	row.BookerUsername = r.BookerUsername
+	row.BookerDisplayName = r.BookerDisplayName
 	row.BookerAvatar = r.BookerAvatar
+	row.ProviderUsername = r.ProviderUsername
+	row.ProviderDisplayName = r.ProviderDisplayName
+	row.ProviderAvatar = r.ProviderAvatar
+	row.DestinationSpaceName = r.DestinationSpaceName
+
+	return row
+}
+
+// bookingRowFromProvider maps the provider-inbox query row (000824):
+// ListServiceBookingsByProviderUser carries every join column the detail
+// query has — the provider inbox shows the booker on each row.
+func bookingRowFromProvider(r gen.ListServiceBookingsByProviderUserRow) BookingRow {
+	row := bookingFromGen(gen.ServiceBooking{
+		ID: r.ID, ListingMetaID: r.ListingMetaID, DepartureID: r.DepartureID,
+		BookerUserID: r.BookerUserID, OrgID: r.OrgID,
+		ProviderUserID: r.ProviderUserID, DestinationSpaceID: r.DestinationSpaceID,
+		Meta: r.Meta, Intent: r.Intent,
+		PartySize: r.PartySize, PreferredDates: r.PreferredDates, Note: r.Note,
+		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
+		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
+		AgentBalanceDue: r.AgentBalanceDue, OrgResponseNote: r.OrgResponseNote,
+		DisputeReason: r.DisputeReason,
+		ExpiresAt:     r.ExpiresAt, ConfirmedAt: r.ConfirmedAt, FulfilledAt: r.FulfilledAt,
+		CancelledAt: r.CancelledAt, CancelReason: r.CancelReason,
+		AnonymizedAt: r.AnonymizedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		TierID: r.TierID, TierName: r.TierName, TierPriceAmount: r.TierPriceAmount,
+		CouponID: r.CouponID, CouponCode: r.CouponCode, DiscountAmount: r.DiscountAmount,
+	})
+	if r.EffectiveTierName != "" {
+		row.TierName = strPtr(r.EffectiveTierName)
+	}
+	row.ListingTitle = r.ListingTitle
+	row.ListingSlug = r.ListingSlug
+	row.ListingKind = r.ListingKind
+	row.ListingContentID = r.ListingContentID
+	row.PaymentStatus = r.PaymentStatus
+	row.PaymentProvider = r.PaymentProvider
+	row.OrgName = r.OrgName
+	row.OrgSlug = r.OrgSlug
+	row.DepartureStartsOn = r.DepartureStartsOn
+	row.DepartureEndsOn = r.DepartureEndsOn
+	row.BookerUsername = r.BookerUsername
+	row.BookerDisplayName = r.BookerDisplayName
+	row.BookerAvatar = r.BookerAvatar
+	row.ProviderUsername = r.ProviderUsername
+	row.ProviderDisplayName = r.ProviderDisplayName
+	row.ProviderAvatar = r.ProviderAvatar
+	row.DestinationSpaceName = r.DestinationSpaceName
 
 	return row
 }
@@ -356,7 +441,9 @@ func bookingRowFromOrg(r gen.ListServiceBookingsByOrgRow) BookingRow {
 func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 	row := bookingFromGen(gen.ServiceBooking{
 		ID: r.ID, ListingMetaID: r.ListingMetaID, DepartureID: r.DepartureID,
-		BookerUserID: r.BookerUserID, OrgID: r.OrgID, Intent: r.Intent,
+		BookerUserID: r.BookerUserID, OrgID: r.OrgID,
+		ProviderUserID: r.ProviderUserID, DestinationSpaceID: r.DestinationSpaceID,
+		Meta: r.Meta, Intent: r.Intent,
 		PartySize: r.PartySize, PreferredDates: r.PreferredDates, Note: r.Note,
 		Status: r.Status, PurchaseMode: r.PurchaseMode, PaymentID: r.PaymentID,
 		TotalPrice: r.TotalPrice, FeeAmount: r.FeeAmount, FeeCurrency: r.FeeCurrency,
@@ -466,6 +553,7 @@ func (s *Store) AttachBookingPayment(ctx context.Context, bookingID, paymentID p
 type BookingsByUserFilter struct {
 	Status string
 	Intent string
+	Kind   string // optional ?kind= listing_kind filter (000824)
 	Limit  int32
 	Offset int32
 }
@@ -483,13 +571,17 @@ func (s *Store) ListBookingsByUser(ctx context.Context, userID pgtype.UUID, f Bo
 		params.Intent = &f.Intent
 	}
 
+	if f.Kind != "" {
+		params.Kind = &f.Kind
+	}
+
 	rows, err := s.read.ListServiceBookingsByUser(ctx, params)
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: list bookings by user: %w", err)
 	}
 
 	total, err := s.read.CountServiceBookingsByUser(ctx, gen.CountServiceBookingsByUserParams{
-		BookerUserID: userID, Status: params.Status, Intent: params.Intent,
+		BookerUserID: userID, Status: params.Status, Intent: params.Intent, Kind: params.Kind,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("servicedir: count bookings by user: %w", err)
@@ -501,6 +593,103 @@ func (s *Store) ListBookingsByUser(ctx context.Context, userID pgtype.UUID, f Bo
 	}
 
 	return out, total, nil
+}
+
+// BookingsByProviderFilter holds filters for the user-provider inbox
+// (000824: GET /me/service-bookings?role=provider).
+type BookingsByProviderFilter struct {
+	Status string
+	Intent string
+	Kind   string // optional ?kind= listing_kind filter
+	Limit  int32
+	Offset int32
+}
+
+// ListBookingsByProviderUser returns the caller's provider-side inbox —
+// bookings where provider_user_id = the caller (mentorship requests).
+// Same money-moved visibility gate as the org inbox (enforced in SQL).
+func (s *Store) ListBookingsByProviderUser(ctx context.Context, providerID pgtype.UUID, f BookingsByProviderFilter) ([]BookingRow, int64, error) {
+	params := gen.ListServiceBookingsByProviderUserParams{
+		ProviderUserID: providerID, PageLimit: f.Limit, PageOffset: f.Offset,
+	}
+	if f.Status != "" {
+		params.Status = &f.Status
+	}
+
+	if f.Intent != "" {
+		params.Intent = &f.Intent
+	}
+
+	if f.Kind != "" {
+		params.Kind = &f.Kind
+	}
+
+	rows, err := s.read.ListServiceBookingsByProviderUser(ctx, params)
+	if err != nil {
+		return nil, 0, fmt.Errorf("servicedir: list bookings by provider: %w", err)
+	}
+
+	total, err := s.read.CountServiceBookingsByProviderUser(ctx, gen.CountServiceBookingsByProviderUserParams{
+		ProviderUserID: providerID, Status: params.Status, Intent: params.Intent, Kind: params.Kind,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("servicedir: count bookings by provider: %w", err)
+	}
+
+	out := make([]BookingRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, bookingRowFromProvider(r))
+	}
+
+	return out, total, nil
+}
+
+// HasOpenMentorshipBooking reports whether the booker already holds an
+// open request (pending or confirmed) against the mentor's shadow listing
+// — the dedupe check replacing the dropped GetActiveOrPendingConnection.
+func (s *Store) HasOpenMentorshipBooking(ctx context.Context, bookerID, listingMetaID pgtype.UUID) (bool, error) {
+	_, err := s.read.GetOpenMentorshipBooking(ctx, gen.GetOpenMentorshipBookingParams{
+		BookerUserID: bookerID, ListingMetaID: listingMetaID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+
+		return false, fmt.Errorf("servicedir: open mentorship booking probe: %w", err)
+	}
+
+	return true, nil
+}
+
+// MentorCapacity is the provider-side capacity pair from user_profiles —
+// active_mentee_count is kept in sync with confirmed mentorship bookings
+// by the trg_service_booking_mentee_count trigger (000824).
+type MentorCapacity struct {
+	Capacity *int16
+	Active   *int16
+}
+
+// GetMentorCapacity loads the provider's mentor_capacity vs
+// active_mentee_count for the create-booking capacity check.
+func (s *Store) GetMentorCapacity(ctx context.Context, userID pgtype.UUID) (MentorCapacity, error) {
+	row, err := s.read.GetMentorCapacity(ctx, userID)
+	if err != nil {
+		return MentorCapacity{}, fmt.Errorf("servicedir: get mentor capacity: %w", err)
+	}
+
+	return MentorCapacity{Capacity: row.MentorCapacity, Active: row.ActiveMenteeCount}, nil
+}
+
+// SpaceExists reports whether the destination space id resolves — the
+// mentorship booking's destination_space_id input validation (000824).
+func (s *Store) SpaceExists(ctx context.Context, spaceID pgtype.UUID) (bool, error) {
+	exists, err := s.read.SpaceExists(ctx, spaceID)
+	if err != nil {
+		return false, fmt.Errorf("servicedir: space exists probe: %w", err)
+	}
+
+	return exists, nil
 }
 
 // BookingsByOrgFilter holds filters for the org bookings inbox.

@@ -7166,6 +7166,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/me/service-bookings/{id}/pay", serviceDirHandlers.HandleMyBookingPay)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
+				// 000824 — provider responds to a user-owned (mentorship)
+				// booking: accept|decline|complete.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
+					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
 				// §111 booker dispute — report a problem on a confirmed|fulfilled booking.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()),
 					rbac.RequirePermission(rbacResolver, "service.booking.create")).

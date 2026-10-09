@@ -247,6 +247,11 @@ WHERE c.content_type = 'service_listing'
   AND (sqlc.narg(origin_community)::text IS NULL OR sqlc.narg(origin_community)::text = ANY(sm.origin_communities))
   AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
+  -- exclude_listing_kind (000824): the unfiltered directory pins out
+  -- flag-gated kinds ('package' while service_packages.enabled is off,
+  -- 'mentorship' while mentorship.enabled is off) without collapsing
+  -- the list to a single kind.
+  AND (sqlc.narg(exclude_listing_kind)::text IS NULL OR sm.listing_kind <> sqlc.narg(exclude_listing_kind)::text)
   AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
   AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
   AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%')
@@ -269,6 +274,7 @@ WHERE c.content_type = 'service_listing'
   AND (sqlc.narg(origin_community)::text IS NULL OR sqlc.narg(origin_community)::text = ANY(sm.origin_communities))
   AND (sqlc.narg(is_verified)::bool IS NULL OR sm.is_verified = sqlc.narg(is_verified)::bool)
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
+  AND (sqlc.narg(exclude_listing_kind)::text IS NULL OR sm.listing_kind <> sqlc.narg(exclude_listing_kind)::text)
   AND (sqlc.narg(price_max)::bigint IS NULL OR sm.price_amount <= sqlc.narg(price_max)::bigint)
   AND (sqlc.narg(date_from)::date IS NULL OR sm.available_from IS NULL OR sm.available_from >= sqlc.narg(date_from)::date)
   AND (sqlc.narg(q)::text IS NULL OR c.title ILIKE '%' || sqlc.narg(q)::text || '%');
@@ -822,6 +828,17 @@ WHERE sb.booker_user_id = @booker_user_id
   AND sb.status IN ('pending','confirmed')
 ORDER BY sb.created_at DESC
 LIMIT 1;
+
+-- Mentor capacity probe (000824): the mentee-count trigger
+-- trg_service_booking_mentee_count keeps user_profiles.active_mentee_count
+-- in sync with confirmed mentorship-kind bookings, so the create-booking
+-- capacity check reads both columns straight from the profile. Deliberately
+-- NOT the legacy GetMentorProfile (mentorship.sql is dead — Task 6 removes
+-- it); this lives in servicedir's own query file.
+-- name: GetMentorCapacity :one
+SELECT mentor_capacity, active_mentee_count
+FROM user_profiles
+WHERE user_id = @user_id;
 
 -- Admin view — all bookings, any payment state.
 -- name: AdminListServiceBookings :many

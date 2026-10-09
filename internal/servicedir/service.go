@@ -297,13 +297,14 @@ type SettingsReader interface {
 
 // Service holds the business logic for the Service Directory.
 type Service struct {
-	store    *Store
-	content  ContentService
-	settings SettingsReader
-	checker  FeatureChecker
-	vk       valkeycompat.Cmdable // §111 package detail cache (jc:svc_package:*)
-	enqueuer TaskEnqueuer         // §111 booking notifications/fee settlement
-	payments PaymentCreator       // §17 fee payment intents
+	store     *Store
+	content   ContentService
+	settings  SettingsReader
+	checker   FeatureChecker
+	vk        valkeycompat.Cmdable  // §111 package detail cache (jc:svc_package:*)
+	enqueuer  TaskEnqueuer          // §111 booking notifications/fee settlement
+	payments  PaymentCreator        // §17 fee payment intents
+	dmCreator DMConversationCreator // §48 DM seam — mentorship accept auto-open (wired by server)
 }
 
 // TaskEnqueuer enqueues Asynq tasks (§111 booking lifecycle).
@@ -360,6 +361,18 @@ func (s *Service) SetEnqueuer(e TaskEnqueuer) { s.enqueuer = e }
 // SetPayments injects the §17 payment creator for platform-fee intents.
 func (s *Service) SetPayments(p PaymentCreator) { s.payments = p }
 
+// DMConversationCreator opens a direct-message thread between two users
+// (§48/ADR-110 seam). The websocket.DMStore satisfies this signature —
+// wired by the server package; until then the field is nil and the
+// mentorship-accept auto-open is skipped silently.
+type DMConversationCreator interface {
+	GetOrCreateConversation(ctx context.Context, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error)
+}
+
+// SetDMCreator injects the §48 DM creator used to auto-open a thread
+// between mentor and mentee on mentorship-request accept.
+func (s *Service) SetDMCreator(d DMConversationCreator) { s.dmCreator = d }
+
 // §111 booking notifications are dispatched inside the Asynq worker
 // handlers (service:booking_created / service:booking_status_changed),
 // not through a service-level notifier seam — payloads carry booking IDs
@@ -405,6 +418,22 @@ func (s *Service) PackagesEnabled(ctx context.Context) bool {
 	}
 
 	return s.settings.GetBoolOr(ctx, "service_packages.enabled", false)
+}
+
+// MentorshipEnabled reads the mentorship.enabled flag (§102/000824) —
+// gates mentorship-kind bookings, the provider respond route, the
+// role=provider inbox, and the kind=mentorship list filter. Same shape
+// as PackagesEnabled.
+func (s *Service) MentorshipEnabled(ctx context.Context) bool {
+	if s.checker != nil {
+		return s.checker.IsEnabled(ctx, "mentorship.enabled")
+	}
+
+	if s.settings == nil {
+		return false
+	}
+
+	return s.settings.GetBoolOr(ctx, "mentorship.enabled", false)
 }
 
 // Option is a single selectable value exposed by the option endpoints.
@@ -562,6 +591,20 @@ var (
 	// ErrInvalidIntent — intent value or intent/purchase_mode mismatch on
 	// POST /services/:id/bookings (400 invalid_intent).
 	ErrInvalidIntent = errors.New("invalid_intent")
+	// ErrMentorshipDisabled — a mentorship-kind surface was hit while the
+	// mentorship.enabled flag is off (404 mentorship_disabled).
+	ErrMentorshipDisabled = errors.New("mentorship is not enabled")
+	// ErrDuplicateRequest — the booker already holds an open mentorship
+	// request (pending|confirmed) against the mentor's shadow listing
+	// (409 duplicate_request). Replaces the dropped mentorship_connections
+	// dedupe (000824).
+	ErrDuplicateRequest = errors.New("duplicate_request")
+	// ErrMentorAtCapacity — the provider's active_mentee_count has reached
+	// mentor_capacity (409 mentor_at_capacity).
+	ErrMentorAtCapacity = errors.New("mentor_at_capacity")
+	// ErrSelfMentorship — the booker is the listing's own author/provider
+	// (400 cannot_self_mentor).
+	ErrSelfMentorship = errors.New("cannot request mentorship from yourself")
 	// ErrCheckoutFieldsRequired — provider/email are required to open the
 	// platform-fee checkout on a paid booking (400 checkout_fields_required).
 	ErrCheckoutFieldsRequired = errors.New("checkout_fields_required")
@@ -634,11 +677,12 @@ var ErrCategoryExists = errors.New("service category slug already exists")
 var categorySlugRe = regexp.MustCompile(`^[a-z][a-z0-9_]{1,48}$`)
 
 // categoryAppliesTo enumerates the CHECK constraint values on
-// service_categories.applies_to.
+// service_categories.applies_to ('mentorship' added by 000824).
 var categoryAppliesTo = map[string]struct{}{
-	"service": {},
-	"package": {},
-	"both":    {},
+	"service":    {},
+	"package":    {},
+	"mentorship": {},
+	"both":       {},
 }
 
 // categoryAccentPalette is the token-mapped palette admins pick from —
@@ -673,7 +717,7 @@ func validateCategoryInput(in CategoryInput, creating bool) error {
 
 	if in.AppliesTo != "" {
 		if _, ok := categoryAppliesTo[in.AppliesTo]; !ok {
-			return categoryInputErr("applies_to must be one of service|package|both")
+			return categoryInputErr("applies_to must be one of service|package|mentorship|both")
 		}
 	}
 
@@ -1448,6 +1492,13 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 	return dto, nil
 }
 
+// GetListingByContentID fetches the raw listing row by public content id —
+// handlers that must branch on listing_kind before the feature gate
+// (booking create: mentorship vs package) read it here.
+func (s *Service) GetListingByContentID(ctx context.Context, contentID pgtype.UUID) (ServiceRow, error) {
+	return s.store.GetByContentID(ctx, contentID)
+}
+
 // EnsurePublishedListing applies the same public-visibility gate GetBySlug
 // enforces — published status, non-deleted, and the packages flag for
 // listing_kind='package' — for the id-keyed public subroutes
@@ -1760,17 +1811,33 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 
 	offset := (page - 1) * limit
 
-	// §111: the kind=package filter is gated on the packages flag. With the
-	// flag off, an explicit kind=package is a 404 and an unfiltered list is
-	// pinned to kind=service so package rows can never leak into the
-	// directory while the feature is dark-launched.
-	if !s.PackagesEnabled(ctx) {
-		if listingKind == ListingKindPackage {
-			return nil, 0, ErrPackagesDisabled
-		}
+	// §111/000824 kind gates: an explicit kind=package needs
+	// service_packages.enabled and kind=mentorship needs
+	// mentorship.enabled — a request for a dark-launched kind is a 404.
+	packagesOn := s.PackagesEnabled(ctx)
+	mentorshipOn := s.MentorshipEnabled(ctx)
 
-		if listingKind == "" {
+	if listingKind == ListingKindPackage && !packagesOn {
+		return nil, 0, ErrPackagesDisabled
+	}
+
+	if listingKind == ListingKindMentorship && !mentorshipOn {
+		return nil, 0, ErrMentorshipDisabled
+	}
+
+	// The unfiltered pin keeps flag-gated kinds out of the directory: with
+	// both flags off the list collapses to kind=service (the pre-000824
+	// behaviour); with one flag off the unfiltered query excludes that
+	// kind and still surfaces the rest together.
+	var excludeKind string
+	if listingKind == "" {
+		switch {
+		case !packagesOn && !mentorshipOn:
 			listingKind = ListingKindService
+		case !packagesOn:
+			excludeKind = ListingKindPackage
+		case !mentorshipOn:
+			excludeKind = ListingKindMentorship
 		}
 	}
 
@@ -1782,6 +1849,7 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 		OriginCommunity: originCommunity,
 		IsVerified:      isVerified,
 		ListingKind:     listingKind,
+		ExcludeKind:     excludeKind,
 		PriceMax:        priceMax,
 		DateFrom:        dateFrom,
 		Q:               q,

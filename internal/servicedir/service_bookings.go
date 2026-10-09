@@ -38,28 +38,46 @@ import (
 
 // BookingDTO is the API response shape for one service_bookings row.
 type BookingDTO struct {
-	ID             string               `json:"id"`
-	ListingMetaID  string               `json:"listing_meta_id"`
-	ListingID      string               `json:"listing_id,omitempty"` // the listing's public content id — the ?listing_id= filter key
-	ListingTitle   string               `json:"listing_title"`
-	ListingSlug    string               `json:"listing_slug"`
-	ListingKind    string               `json:"listing_kind"`
-	DepartureID    string               `json:"departure_id,omitempty"`
-	DepartureStart string               `json:"departure_starts_on,omitempty"`
-	DepartureEnd   string               `json:"departure_ends_on,omitempty"`
-	BookerUserID   string               `json:"booker_user_id,omitempty"`
-	BookerUsername string               `json:"booker_username,omitempty"`
-	BookerAvatar   string               `json:"booker_avatar,omitempty"`
-	OrgID          string               `json:"org_id"`
-	OrgName        string               `json:"org_name,omitempty"`
-	OrgSlug        string               `json:"org_slug,omitempty"`
-	Intent         string               `json:"intent"`
-	PartySize      int32                `json:"party_size"`
-	PreferredDates *PreferredDatesInput `json:"preferred_dates,omitempty"`
-	Note           string               `json:"note,omitempty"`
-	Status         string               `json:"status"`
-	PurchaseMode   string               `json:"purchase_mode"`
-	PaymentID      string               `json:"payment_id,omitempty"`
+	ID                string `json:"id"`
+	ListingMetaID     string `json:"listing_meta_id"`
+	ListingID         string `json:"listing_id,omitempty"` // the listing's public content id — the ?listing_id= filter key
+	ListingTitle      string `json:"listing_title"`
+	ListingSlug       string `json:"listing_slug"`
+	ListingKind       string `json:"listing_kind"`
+	DepartureID       string `json:"departure_id,omitempty"`
+	DepartureStart    string `json:"departure_starts_on,omitempty"`
+	DepartureEnd      string `json:"departure_ends_on,omitempty"`
+	BookerUserID      string `json:"booker_user_id,omitempty"`
+	BookerUsername    string `json:"booker_username,omitempty"`
+	BookerDisplayName string `json:"booker_display_name,omitempty"`
+	BookerAvatar      string `json:"booker_avatar,omitempty"`
+	// Provider dimension (000824) — populated on user-provider
+	// (mentorship) bookings; org fields are empty on those rows.
+	ProviderUserID       string `json:"provider_user_id,omitempty"`
+	ProviderUsername     string `json:"provider_username,omitempty"`
+	ProviderDisplayName  string `json:"provider_display_name,omitempty"`
+	ProviderAvatar       string `json:"provider_avatar,omitempty"`
+	DestinationSpaceID   string `json:"destination_space_id,omitempty"`
+	DestinationSpaceName string `json:"destination_space_name,omitempty"`
+	// Goals carries the mentorship request's goals verbatim — read from
+	// meta->>'goals' with the note column as the fallback (migrated
+	// connection rows predate the meta key).
+	Goals string `json:"goals,omitempty"`
+	// ConnectionStatus is the legacy mentorship_connections vocabulary
+	// the mentorship frontend still reads — populated only on
+	// mentorship-kind rows: confirmed→active, fulfilled→completed,
+	// everything else maps verbatim.
+	ConnectionStatus string               `json:"connection_status,omitempty"`
+	OrgID            string               `json:"org_id"`
+	OrgName          string               `json:"org_name,omitempty"`
+	OrgSlug          string               `json:"org_slug,omitempty"`
+	Intent           string               `json:"intent"`
+	PartySize        int32                `json:"party_size"`
+	PreferredDates   *PreferredDatesInput `json:"preferred_dates,omitempty"`
+	Note             string               `json:"note,omitempty"`
+	Status           string               `json:"status"`
+	PurchaseMode     string               `json:"purchase_mode"`
+	PaymentID        string               `json:"payment_id,omitempty"`
 	// Joined payment row — lets the booker UI offer checkout resume on a
 	// pending fee. Empty when payment_id is unset (inquiries, zero fee).
 	PaymentStatus   string `json:"payment_status,omitempty"`
@@ -121,9 +139,15 @@ type CreateBookingInput struct {
 	PartySize      int32                `json:"party_size"`
 	PreferredDates *PreferredDatesInput `json:"preferred_dates"`
 	Note           string               `json:"note"`
-	Provider       string               `json:"provider"`
-	Email          string               `json:"email"`
-	ReturnURL      string               `json:"return_url"`
+	// Mentorship-kind fields (000824): goals is stored in the note column
+	// AND meta->>'goals'; destination_space_id is the mentee's target
+	// space (validated against spaces). Both are ignored on non-mentorship
+	// listings.
+	Goals              string `json:"goals"`
+	DestinationSpaceID string `json:"destination_space_id"`
+	Provider           string `json:"provider"`
+	Email              string `json:"email"`
+	ReturnURL          string `json:"return_url"`
 }
 
 // OrgBookingActionInput is the PATCH /org/:org_id/service-bookings/:id body.
@@ -187,8 +211,54 @@ func bookingToDTO(r BookingRow) BookingDTO {
 		dto.BookerUsername = *r.BookerUsername
 	}
 
+	if r.BookerDisplayName != nil {
+		dto.BookerDisplayName = *r.BookerDisplayName
+	}
+
 	if r.BookerAvatar != nil {
 		dto.BookerAvatar = *r.BookerAvatar
+	}
+
+	if r.ProviderUserID.Valid {
+		dto.ProviderUserID = r.ProviderUserID.String()
+	}
+
+	if r.ProviderUsername != nil {
+		dto.ProviderUsername = *r.ProviderUsername
+	}
+
+	if r.ProviderDisplayName != nil {
+		dto.ProviderDisplayName = *r.ProviderDisplayName
+	}
+
+	if r.ProviderAvatar != nil {
+		dto.ProviderAvatar = *r.ProviderAvatar
+	}
+
+	if r.DestinationSpaceID.Valid {
+		dto.DestinationSpaceID = r.DestinationSpaceID.String()
+	}
+
+	if r.DestinationSpaceName != nil {
+		dto.DestinationSpaceName = *r.DestinationSpaceName
+	}
+
+	// Mentorship goals — meta->>'goals' wins, note is the fallback for
+	// migrated rows that only carry goals in the note column (000824).
+	if len(r.Meta) > 0 {
+		var meta struct {
+			Goals string `json:"goals"`
+		}
+		if err := json.Unmarshal(r.Meta, &meta); err == nil && meta.Goals != "" {
+			dto.Goals = meta.Goals
+		}
+	}
+	if dto.Goals == "" && r.ListingKind == ListingKindMentorship && r.Note != nil {
+		dto.Goals = *r.Note
+	}
+
+	if r.ListingKind == ListingKindMentorship {
+		dto.ConnectionStatus = mentorshipConnectionStatus(r.Status)
 	}
 
 	if r.OrgID.Valid {
@@ -257,6 +327,21 @@ func bookingToDTO(r BookingRow) BookingDTO {
 	}
 
 	return dto
+}
+
+// mentorshipConnectionStatus maps the service_bookings state machine onto
+// the legacy mentorship_connections vocabulary the mentorship frontend
+// still reads (000824): confirmed → active, fulfilled → completed, every
+// other status carries through unchanged.
+func mentorshipConnectionStatus(status string) string {
+	switch status {
+	case BookingStatusConfirmed:
+		return "active"
+	case BookingStatusFulfilled:
+		return "completed"
+	default:
+		return status
+	}
 }
 
 // validatePreferredDates enforces the §111 {start_on, end_on, flexible}
@@ -338,10 +423,6 @@ func (s *Service) bookingExpiresAt(ctx context.Context) pgtype.Timestamptz {
 // payment succeeds (query-level filter + notification deferred to the
 // payment-success path).
 func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listingContentID pgtype.UUID, input CreateBookingInput) (BookingResult, error) {
-	if !s.PackagesEnabled(ctx) {
-		return BookingResult{}, ErrPackagesDisabled
-	}
-
 	listing, err := s.store.GetByContentID(ctx, listingContentID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -353,6 +434,18 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 
 	if listing.Status != content.StatusPublished {
 		return BookingResult{}, ErrBookingUnavailable
+	}
+
+	// Mentorship-kind listings (000824) take an entirely different arm:
+	// user-provider bookings carry provider_user_id instead of org_id,
+	// are gated on mentorship.enabled (not service_packages.enabled), and
+	// skip every paid/package surface.
+	if listing.ListingKind == ListingKindMentorship {
+		return s.createMentorshipBooking(ctx, bookerID, listingContentID, listing, input)
+	}
+
+	if !s.PackagesEnabled(ctx) {
+		return BookingResult{}, ErrPackagesDisabled
 	}
 
 	// §111 availability window — a package that hasn't opened yet or is
@@ -609,8 +702,135 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 	return result, nil
 }
 
-// GetBooking returns the booking detail for the booker, a member of the
-// owning org, or an admin (checked at route level for admin).
+// createMentorshipBooking is the listing_kind='mentorship' arm of
+// CreateBooking (000824 unification). A mentorship request is always an
+// inquiry: no paid surface (tiers/coupons/booking intent rejected), no
+// SLA expiry (expires_at stays NULL so the pending-expiry sweep never
+// touches it), party_size 1, provider_user_id = the shadow listing's
+// author. Capacity and dedupe mirror the dropped mentorship_connections
+// rules: one open request per (booker, mentor), and the provider's
+// active_mentee_count must be below mentor_capacity.
+func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listingContentID pgtype.UUID, listing ServiceRow, input CreateBookingInput) (BookingResult, error) {
+	if !s.MentorshipEnabled(ctx) {
+		return BookingResult{}, ErrMentorshipDisabled
+	}
+
+	providerID := listing.AuthorID
+	if bookerID == providerID {
+		return BookingResult{}, ErrSelfMentorship
+	}
+
+	// Paid surfaces don't exist on mentorship requests — an explicit
+	// non-inquiry intent or a tier/coupon reference is a malformed request,
+	// same strictness as the inquiry/package arms above.
+	if input.Intent != "" && input.Intent != BookingIntentInquiry {
+		return BookingResult{}, ErrInvalidIntent
+	}
+	if input.TierID != "" || input.CouponCode != "" {
+		return BookingResult{}, ErrInvalidCoupon
+	}
+
+	open, err := s.store.HasOpenMentorshipBooking(ctx, bookerID, listing.MetaID)
+	if err != nil {
+		return BookingResult{}, err
+	}
+	if open {
+		return BookingResult{}, ErrDuplicateRequest
+	}
+
+	cap, err := s.store.GetMentorCapacity(ctx, providerID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// A shadow listing without a user_profiles row can't enforce
+			// capacity — treat as unavailable rather than unbounded.
+			return BookingResult{}, ErrBookingUnavailable
+		}
+
+		return BookingResult{}, fmt.Errorf("servicedir: mentorship booking: capacity probe: %w", err)
+	}
+	if cap.Capacity != nil {
+		var active int16
+		if cap.Active != nil {
+			active = *cap.Active
+		}
+		if active >= *cap.Capacity {
+			return BookingResult{}, ErrMentorAtCapacity
+		}
+	}
+
+	var destSpaceID pgtype.UUID
+	if input.DestinationSpaceID != "" {
+		if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+			return BookingResult{}, ErrInvalidID
+		}
+
+		exists, err := s.store.SpaceExists(ctx, destSpaceID)
+		if err != nil {
+			return BookingResult{}, fmt.Errorf("servicedir: mentorship booking: space probe: %w", err)
+		}
+		if !exists {
+			return BookingResult{}, ErrInvalidID
+		}
+	}
+
+	party := int32(1)
+	params := gen.CreateServiceBookingParams{
+		ListingMetaID:      listing.MetaID,
+		BookerUserID:       bookerID,
+		ProviderUserID:     providerID,
+		DestinationSpaceID: destSpaceID,
+		Intent:             BookingIntentInquiry,
+		PartySize:          &party,
+		Status:             strPtr(BookingStatusPending),
+		PurchaseMode:       listing.PurchaseMode,
+		// ExpiresAt deliberately unset: mentorship requests are not
+		// SLA-bound — NULL keeps them out of the pending-expiry sweep.
+	}
+
+	// goals rides both surfaces: the note column (display/migrated-row
+	// parity) and meta->>'goals' (the structured read the DTO prefers).
+	// A bare note still lands in note for API forgiveness.
+	note := input.Goals
+	if note == "" {
+		note = input.Note
+	}
+	if note != "" {
+		params.Note = &note
+	}
+	if input.Goals != "" {
+		meta, err := json.Marshal(map[string]string{"goals": input.Goals})
+		if err != nil {
+			return BookingResult{}, fmt.Errorf("servicedir: mentorship booking: meta encode: %w", err)
+		}
+		params.Meta = meta
+	}
+
+	booking, err := s.store.createBookingWithRedemption(ctx, params, nil)
+	if err != nil {
+		return BookingResult{}, err
+	}
+
+	result := BookingResult{Booking: bookingToDTO(bookingFromGen(booking))}
+
+	// bookingToDTO reads joined listing columns that only exist on the
+	// list/detail queries — the create path must stamp them itself.
+	result.Booking.ListingID = listingContentID.String()
+	result.Booking.ListingTitle = listing.Title
+	result.Booking.ListingSlug = listing.Slug
+	result.Booking.ListingKind = listing.ListingKind
+	result.Booking.ProviderUserID = providerID.String()
+	result.Booking.ConnectionStatus = mentorshipConnectionStatus(result.Booking.Status)
+
+	// Inquiry path — notify immediately (audience resolution for
+	// provider-owned rows is the worker's job).
+	s.enqueueBookingCreated(booking.ID)
+
+	return result, nil
+}
+
+// GetBooking returns the booking detail for the booker, the provider user
+// (mentorship), a member of the owning org, or an admin (checked at route
+// level for admin).
 func (s *Service) GetBooking(ctx context.Context, bookingID, viewerID pgtype.UUID, isAdmin bool) (BookingDTO, error) {
 	row, err := s.store.GetBookingDetail(ctx, bookingID)
 	if err != nil {
@@ -621,7 +841,14 @@ func (s *Service) GetBooking(ctx context.Context, bookingID, viewerID pgtype.UUI
 		return BookingDTO{}, fmt.Errorf("servicedir: get booking: %w", err)
 	}
 
-	if !isAdmin && row.BookerUserID != viewerID {
+	// Read access: the booker, the provider user (000824 user-provider
+	// bookings), or a member of the owning org. org_id is nullable now —
+	// the org-membership probe only runs when the booking is org-owned.
+	if !isAdmin && row.BookerUserID != viewerID && row.ProviderUserID != viewerID {
+		if !row.OrgID.Valid {
+			return BookingDTO{}, ErrNotOwner
+		}
+
 		isMember, err := s.store.IsOrgMember(ctx, row.OrgID, viewerID)
 		if err != nil {
 			return BookingDTO{}, fmt.Errorf("servicedir: booking: org membership check: %w", err)
@@ -693,8 +920,8 @@ func (s *Service) ResumeBookingPayment(ctx context.Context, bookingID, userID pg
 	return &BookingPayment{ID: res.PaymentID, CheckoutURL: res.CheckoutURL}, nil
 }
 
-// ListMyBookings returns the caller's bookings + inquiries.
-func (s *Service) ListMyBookings(ctx context.Context, userID pgtype.UUID, status, intent string, page, limit int32) ([]BookingDTO, int64, error) {
+// ListMyBookings returns the caller's bookings + inquiries (role=booker).
+func (s *Service) ListMyBookings(ctx context.Context, userID pgtype.UUID, status, intent, kind string, page, limit int32) ([]BookingDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -704,7 +931,7 @@ func (s *Service) ListMyBookings(ctx context.Context, userID pgtype.UUID, status
 	}
 
 	rows, total, err := s.store.ListBookingsByUser(ctx, userID, BookingsByUserFilter{
-		Status: status, Intent: intent, Limit: limit, Offset: (page - 1) * limit,
+		Status: status, Intent: intent, Kind: kind, Limit: limit, Offset: (page - 1) * limit,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -716,6 +943,134 @@ func (s *Service) ListMyBookings(ctx context.Context, userID pgtype.UUID, status
 	}
 
 	return out, total, nil
+}
+
+// ListProviderBookings returns the caller's provider-side inbox (000824 —
+// role=provider on GET /me/service-bookings): bookings where
+// provider_user_id = the caller. Mentorship is the only user-provider
+// surface today, so the inbox is gated on mentorship.enabled.
+func (s *Service) ListProviderBookings(ctx context.Context, providerID pgtype.UUID, status, intent, kind string, page, limit int32) ([]BookingDTO, int64, error) {
+	if !s.MentorshipEnabled(ctx) {
+		return nil, 0, ErrMentorshipDisabled
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+
+	rows, total, err := s.store.ListBookingsByProviderUser(ctx, providerID, BookingsByProviderFilter{
+		Status: status, Intent: intent, Kind: kind, Limit: limit, Offset: (page - 1) * limit,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	out := make([]BookingDTO, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, bookingToDTO(r))
+	}
+
+	return out, total, nil
+}
+
+// BookingRespondInput is the POST /me/service-bookings/:id/respond body —
+// the provider's action on a user-owned (mentorship) booking.
+type BookingRespondInput struct {
+	Action string `json:"action"` // accept | decline | complete
+	Note   string `json:"note"`
+}
+
+// RespondToBooking applies the provider-side transition on a
+// user-provider booking (000824): accept (pending→confirmed), decline
+// (pending→declined, note → org_response_note), complete
+// (confirmed→fulfilled). Only the booking's provider_user_id may respond
+// — org-owned bookings keep the PATCH /org/:org_id/service-bookings/:id
+// route; this method refuses them outright.
+func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pgtype.UUID, action, note string) (BookingDTO, error) {
+	if !s.MentorshipEnabled(ctx) {
+		return BookingDTO{}, ErrMentorshipDisabled
+	}
+
+	row, err := s.store.GetBookingDetail(ctx, bookingID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return BookingDTO{}, pgx.ErrNoRows
+		}
+
+		return BookingDTO{}, fmt.Errorf("servicedir: respond: get booking: %w", err)
+	}
+
+	if !row.ProviderUserID.Valid || row.ProviderUserID != providerID || row.OrgID.Valid {
+		return BookingDTO{}, ErrNotOwner
+	}
+
+	var notePtr *string
+	if note != "" {
+		notePtr = &note
+	}
+
+	var newStatus string
+	switch action {
+	case "accept":
+		newStatus = BookingStatusConfirmed
+		_, err = s.store.ConfirmBooking(ctx, bookingID, pgtype.UUID{}, row.PartySize, notePtr)
+	case "decline":
+		newStatus = BookingStatusDeclined
+		_, err = s.store.DeclineBooking(ctx, bookingID, notePtr)
+	case "complete":
+		newStatus = BookingStatusFulfilled
+		_, err = s.store.FulfillBooking(ctx, bookingID)
+	default:
+		return BookingDTO{}, ErrInvalidBookingTransition
+	}
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return BookingDTO{}, ErrInvalidBookingTransition
+		}
+
+		return BookingDTO{}, fmt.Errorf("servicedir: respond %s: %w", action, err)
+	}
+
+	// Booker notification — the default status_changed audience is the
+	// booker (the mentee learns their request was answered).
+	s.enqueueStatusChanged(row.ID, newStatus)
+
+	if action == "accept" && row.ListingKind == ListingKindMentorship {
+		// §48/ADR-110: auto-open the mentor↔mentee DM thread. Non-fatal —
+		// the booking is already confirmed; the seam stays nil until the
+		// server wires it.
+		if s.dmCreator != nil {
+			if _, dmErr := s.dmCreator.GetOrCreateConversation(ctx, row.ProviderUserID, row.BookerUserID); dmErr != nil {
+				slog.Warn("servicedir: mentorship accept DM auto-open failed",
+					"booking_id", bookingID, "error", dmErr)
+			}
+		}
+
+		// confirmed moved active_mentee_count via the booking trigger —
+		// re-index the mentor's search document (§102).
+		s.enqueueMentorMeilisearch(row.ProviderUserID)
+	}
+
+	return s.GetBooking(ctx, bookingID, providerID, false)
+}
+
+// enqueueMentorMeilisearch fires the mentor:update_meilisearch task — the
+// mentor's Meilisearch document is re-indexed whenever their mentee count
+// may have moved (payload mirrors the §102 producer: {user_id}).
+func (s *Service) enqueueMentorMeilisearch(mentorID pgtype.UUID) {
+	if s.enqueuer == nil {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]string{"user_id": mentorID.String()})
+	if err := s.enqueuer.Enqueue(worker.TypeMentorUpdateMeilisearch, payload); err != nil {
+		slog.Warn("servicedir: enqueue mentor:update_meilisearch failed", "mentor_id", mentorID, "error", err)
+	}
 }
 
 // ListOrgBookings returns the org's bookings inbox. The caller must be an
