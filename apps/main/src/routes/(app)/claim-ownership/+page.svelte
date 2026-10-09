@@ -12,6 +12,7 @@
 	import type { FormField, FormSubmissionResponse } from '$lib/types';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 
 	let { data } = $props();
 
@@ -226,6 +227,11 @@
 											{/if}
 											{t('claim_ownership.withdraw', 'Withdraw')}
 										</button>
+									{/if}
+									{#if claim.status === 'rejected'}
+										<!-- §22: a rejected claim is appealable; POST /appeals opens
+											a moderation_appeal + linked staff ticket. -->
+										<AppealButton entityType="org_claim" entityId={claim.id} class="!px-2.5 !py-1 text-xs" />
 									{/if}
 								</div>
 							</div>

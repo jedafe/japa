@@ -21,6 +21,7 @@
 
 	type TicketItem = {
 		id: string;
+		ticket_number?: number;
 		subject: string;
 		type_name: string;
 		type_slug: string;
@@ -257,7 +258,7 @@
 	});
 </script>
 
-<PageHeader title={ticket?.subject ?? t('tickets.detail.title', 'Ticket Detail')} />
+<PageHeader title={ticket ? `${ticket.subject} (${ticket.ticket_number ? `JC-${ticket.ticket_number}` : `#${ticket.id.slice(0, 8)}`})` : t('tickets.detail.title', 'Ticket Detail')} />
 
 {#if error}
 	<div class="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400">{error}</div>

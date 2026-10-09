@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
@@ -447,6 +448,114 @@ func (s *Service) RefundCampaignCredits(ctx context.Context, campaignID pgtype.U
 	}
 
 	return s.store.MarkCampaignRefunded(ctx, campaignID)
+}
+
+// ReopenCampaignOnAppeal reverses a rejected self-serve campaign when its
+// §22 appeal is overturned. Rejection refunds the escrowed budget_credits to
+// the org owner's wallet via ads:refund_campaign_credits and zeroes the
+// column — a naive reopen would let the campaign re-enter review (and
+// potentially go live) with no escrow, while the org keeps the refund.
+// The overturn therefore re-reserves the refunded amount inside the
+// per-user wallet advisory lock — the same pattern as
+// wallet.ReopenWithdrawalOnAppeal — and aborts the appeal resolution if the
+// owner has already spent the refund.
+//
+// Registered as an appeals.RegisterOverturn hook from server.go.
+func (s *Service) ReopenCampaignOnAppeal(ctx context.Context, campaignID pgtype.UUID) error {
+	tx, err := s.store.pool.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("adsselfserve: beginning reopen tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.writeQueries.WithTx(tx)
+
+	campaign, err := qtx.GetAdCampaignByID(ctx, campaignID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("adsselfserve: campaign %s not found", campaignID)
+		}
+		return fmt.Errorf("adsselfserve: loading campaign: %w", err)
+	}
+
+	if campaign.Status != StatusRejected {
+		// Already re-reviewed or reopened — no-op so appeal resolution
+		// still completes.
+		return nil
+	}
+
+	restoreCredits := campaign.BudgetCredits
+
+	if campaign.OrganizationID.Valid {
+		// Self-serve campaigns escrow budget_credits on the org owner's
+		// wallet. Look up the refund ledger row written by
+		// ads:refund_campaign_credits (deterministic idempotency key) to
+		// recover the refunded amount.
+		org, err := qtx.GetOrganizationByIDOnly(ctx, campaign.OrganizationID)
+		if err != nil {
+			return fmt.Errorf("adsselfserve: resolving campaign org: %w", err)
+		}
+		if !org.OwnerUserID.Valid {
+			return fmt.Errorf("adsselfserve: organization %s has no owner", campaign.OrganizationID)
+		}
+		ownerID := org.OwnerUserID
+
+		refundKey := fmt.Sprintf("deduct:%s:ad_campaign_refund:%s", ownerID.String(), campaignID.String())
+		refundAmount, err := qtx.GetAdCampaignRefundAmount(ctx, &refundKey)
+		switch {
+		case err == nil && refundAmount > 0:
+			// A refund was paid out — re-escrow it before reopening.
+			if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "wallet::"+ownerID.String()); err != nil {
+				return fmt.Errorf("adsselfserve: acquiring wallet lock: %w", err)
+			}
+			balance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+				UserID:     ownerID,
+				LedgerType: "credits",
+			})
+			if err != nil {
+				if !errors.Is(err, pgx.ErrNoRows) {
+					return fmt.Errorf("adsselfserve: reading credits balance: %w", err)
+				}
+				balance = 0
+			}
+			if balance < refundAmount {
+				return fmt.Errorf("%w: refunded campaign budget was spent", ErrInsufficientBalance)
+			}
+			source := "ad_campaign_appeal_reopen"
+			reference := fmt.Sprintf("%s — %s", source, campaignID.String())
+			idempotencyKey := fmt.Sprintf("deduct:%s:%s:%s", ownerID.String(), source, campaignID.String())
+			if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+				UserID:           ownerID,
+				LedgerType:       "credits",
+				Operation:        "spend",
+				Amount:           -refundAmount,
+				ResultingBalance: balance - refundAmount,
+				Source:           &source,
+				Reference:        &reference,
+				IdempotencyKey:   &idempotencyKey,
+				Reason:           &source,
+			}); err != nil {
+				return fmt.Errorf("adsselfserve: inserting re-escrow ledger entry: %w", err)
+			}
+			restoreCredits = int32(refundAmount)
+		case errors.Is(err, pgx.ErrNoRows):
+			// No refund row — either refunds are disabled
+			// (ads.credit_refund_on_reject=false) or the refund task never
+			// ran; budget_credits was not paid out so nothing to re-escrow.
+		default:
+			return fmt.Errorf("adsselfserve: reading refund ledger: %w", err)
+		}
+	}
+
+	if _, err = qtx.ReopenAdCampaignOnAppeal(ctx, gen.ReopenAdCampaignOnAppealParams{
+		ID:            campaignID,
+		BudgetCredits: restoreCredits,
+	}); err != nil {
+		return fmt.Errorf("adsselfserve: reopening campaign: %w", err)
+	}
+
+	return tx.Commit(ctx)
 }
 
 // NotifyCampaignStatus sends a notification to the campaign creator when the

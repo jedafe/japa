@@ -15,10 +15,10 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/forum"
-	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/mentorship"
 	"github.com/jedafe/japa/internal/referral"
 	"github.com/jedafe/japa/internal/wallet"
@@ -28,7 +28,7 @@ import (
 // per-user data from the relevant services and stores.
 type userContextAdapter struct {
 	wallet     *wallet.Service
-	academy   *academy.Store
+	academy    *academy.Store
 	mentorship *mentorship.Service
 	forum      *forum.Service
 	referral   *referral.Service
@@ -46,7 +46,7 @@ func newUserContextAdapter(
 ) ai.UserContextProvider {
 	return &userContextAdapter{
 		wallet:     wallet,
-		academy:   academy,
+		academy:    academy,
 		mentorship: mentorship,
 		forum:      forum,
 		referral:   referral,

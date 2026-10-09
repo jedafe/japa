@@ -4,6 +4,7 @@
 	import { Users, ArrowLeft, MapPin, Globe, Mail, Navigation, BadgeCheck, Hand, CheckCircle2, Loader2 } from 'lucide-svelte';
 	import { Modal } from '$lib/components/ui';
 	import { api } from '$lib/api/client';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import type { PageData } from './$types';
 
 	/**
@@ -154,6 +155,21 @@
 			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<h2 class="mb-2 text-sm font-semibold text-[var(--color-text)]">{t('community_locator.contact_info', 'Contact info')}</h2>
 				<p class="text-sm text-[var(--color-text-subtle)] whitespace-pre-line">{org.contact_info}</p>
+			</div>
+		{/if}
+
+		{#if org.claim_rejected}
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<p class="mb-2 text-sm text-[var(--color-muted)]">
+					{t('community_locator.claim_rejected', 'Your claim was rejected.')}
+				</p>
+				<AppealButton entityType="community_org_claim" entityId={org.id} />
+			</div>
+		{/if}
+
+		{#if org.is_submitter && org.is_removed}
+			<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<AppealButton entityType="community_org" entityId={org.id} />
 			</div>
 		{/if}
 

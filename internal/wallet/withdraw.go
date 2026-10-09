@@ -29,6 +29,12 @@ const (
 	WithdrawalStatusCancelled       = "cancelled"
 )
 
+// ErrInsufficientCredits marks a credit mutation that would push the wallet
+// negative — e.g. a §22 appeal overturn re-reserving refunded funds the user
+// already spent. Callers (the appeals resolver) map it to a retryable
+// "resolution blocked" response.
+var ErrInsufficientCredits = errors.New("wallet: insufficient credits")
+
 // CalculateWithdrawalInput holds parameters for previewing a withdrawal.
 type CalculateWithdrawalInput struct {
 	CreditAmount int64
@@ -730,6 +736,93 @@ func (s *Service) refundWithdrawalCredits(ctx context.Context, userID pgtype.UUI
 	})
 	if err != nil {
 		return fmt.Errorf("inserting refund ledger entry: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// ReopenWithdrawalOnAppeal reverses a rejected withdrawal when its appeal
+// is granted (§22 'withdrawal' subject). Rejection refunded the reserved
+// credits, so reopening must re-deduct them inside the per-user wallet
+// advisory lock — otherwise the user could double-spend the refunded
+// balance while the withdrawal re-enters the approval queue. Registered
+// with the appeals service via RegisterOverturn from server.go.
+func (s *Service) ReopenWithdrawalOnAppeal(ctx context.Context, withdrawalID pgtype.UUID) error {
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning reopen tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.store.write.WithTx(tx)
+
+	withdrawal, err := qtx.GetWithdrawalByID(ctx, withdrawalID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errpkg.ErrNotFound
+		}
+
+		return fmt.Errorf("loading withdrawal: %w", err)
+	}
+
+	if withdrawal.Status != WithdrawalStatusRejected {
+		// Already re-reviewed or reopened — treat as a no-op so appeal
+		// resolution still completes.
+		return nil
+	}
+
+	// Serialize concurrent balance mutations for this user (same lock key
+	// scheme as CreateWithdrawal).
+	lockKey := "wallet:" + "" + ":" + withdrawal.UserID.String()
+	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", lockKey); err != nil {
+		return fmt.Errorf("acquiring wallet lock: %w", err)
+	}
+
+	currentBalance, err := qtx.GetLatestBalance(ctx, gen.GetLatestBalanceParams{
+
+		UserID:     withdrawal.UserID,
+		LedgerType: LedgerTypeCredits,
+	})
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("reading credits balance: %w", err)
+		}
+
+		currentBalance = 0
+	}
+
+	if currentBalance < withdrawal.CreditAmount {
+		// The user spent the refunded credits; the appeal resolution is
+		// aborted (appeal stays pending) rather than pushing the balance
+		// negative.
+		return fmt.Errorf("%w: refunded credits were spent", ErrInsufficientCredits)
+	}
+
+	newBalance := currentBalance - withdrawal.CreditAmount
+	ref := withdrawal.ID.String()
+	reason := "withdrawal rejection overturned on appeal - credits re-reserved"
+
+	if _, err = qtx.InsertLedgerEntry(ctx, gen.InsertLedgerEntryParams{
+
+		UserID:           withdrawal.UserID,
+		LedgerType:       LedgerTypeCredits,
+		Operation:        OperationWithdraw,
+		Amount:           -withdrawal.CreditAmount,
+		ResultingBalance: newBalance,
+		Reference:        &ref,
+		Reason:           &reason,
+	}); err != nil {
+		return fmt.Errorf("inserting re-reserve ledger entry: %w", err)
+	}
+
+	if _, err = qtx.UpdateWithdrawalStatus(ctx, gen.UpdateWithdrawalStatusParams{
+		ID:         withdrawalID,
+		Status:     WithdrawalStatusPendingApproval,
+		ReviewedBy: pgtype.UUID{},
+		ReviewedAt: pgtype.Timestamptz{},
+	}); err != nil {
+		return fmt.Errorf("reopening withdrawal: %w", err)
 	}
 
 	return tx.Commit(ctx)

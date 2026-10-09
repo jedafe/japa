@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
+	import { ticketHref } from '$lib/tickets';
 	import type { TicketPriority, TicketType } from '$lib/types';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
@@ -42,7 +43,7 @@
 		}
 		loading = true;
 		try {
-			const res = await api.post<{ id: string }>('/tickets', {
+			const res = await api.post<{ id: string; ticket_number?: number }>('/tickets', {
 				type_id: typeId || undefined,
 				subject: subject.trim(),
 				description: description.trim(),
@@ -50,7 +51,7 @@
 				email: email.trim() || undefined
 			});
 			if (res.data) {
-				await goto(`/dashboard/tickets/${res.data.id}`);
+				await goto(ticketHref(res.data));
 				return;
 			}
 			errorKey = 'tickets.errors.create_failed';

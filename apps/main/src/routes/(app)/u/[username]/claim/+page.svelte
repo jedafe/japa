@@ -8,6 +8,7 @@
 	import { ShieldQuestion, Loader2, Send, FileCheck, Video } from 'lucide-svelte';
 	import { listMyVideoClaims, submitChannelClaim } from '$lib/api/videos';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import type { PublicUser, VideoChannelClaim, VideoSource } from '$lib/types';
 
 	const username = $derived(page.params.username);
@@ -229,10 +230,16 @@
 										? t('video_claims.type.takedown', 'Request a takedown')
 										: t('video_claims.type.claim', 'Claim this channel')}
 								</span>
-								<span
-									class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--color-text-subtle)]"
-								>
-									{claimStatusLabel(claim.status)}
+								<span class="flex shrink-0 items-center gap-2">
+									<span
+										class="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[11px] font-medium capitalize text-[var(--color-text-subtle)]"
+									>
+										{claimStatusLabel(claim.status)}
+									</span>
+									{#if claim.status === 'rejected'}
+										<!-- §22: rejected channel claims are appealable. -->
+										<AppealButton entityType="video_channel_claim" entityId={claim.id} class="!px-2 !py-0.5 text-[11px]" />
+									{/if}
 								</span>
 							</li>
 						{/each}

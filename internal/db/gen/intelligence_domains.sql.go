@@ -108,7 +108,7 @@ func (q *Queries) CountIntelRadarByType(ctx context.Context) ([]CountIntelRadarB
 
 const createCommunityOrganisationIntel = `-- name: CreateCommunityOrganisationIntel :one
 
-INSERT INTO community_organisations (name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides
+INSERT INTO community_organisations (name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, status, is_active, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, claimed_by_user_id, claim_rejected_at
 `
 
 type CreateCommunityOrganisationIntelParams struct {
@@ -204,6 +204,8 @@ func (q *Queries) CreateCommunityOrganisationIntel(ctx context.Context, arg Crea
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.ClaimedByUserID,
+		&i.ClaimRejectedAt,
 	)
 	return i, err
 }
@@ -954,7 +956,7 @@ func (q *Queries) CreateWikiPageIntel(ctx context.Context, arg CreateWikiPageInt
 }
 
 const getCommunityOrganisationByIntelRecord = `-- name: GetCommunityOrganisationByIntelRecord :one
-SELECT id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations WHERE intel_record_id = $1
+SELECT id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, claimed_by_user_id, claim_rejected_at FROM community_organisations WHERE intel_record_id = $1
 `
 
 func (q *Queries) GetCommunityOrganisationByIntelRecord(ctx context.Context, intelRecordID pgtype.UUID) (CommunityOrganisation, error) {
@@ -1001,6 +1003,8 @@ func (q *Queries) GetCommunityOrganisationByIntelRecord(ctx context.Context, int
 		&i.FreshnessScore,
 		&i.OverrideSource,
 		&i.EditorialOverrides,
+		&i.ClaimedByUserID,
+		&i.ClaimRejectedAt,
 	)
 	return i, err
 }
@@ -1697,7 +1701,7 @@ func (q *Queries) GetWikiPageByIntelRecordWithSpace(ctx context.Context, intelRe
 }
 
 const listCommunityOrganisationsIntelKeyset = `-- name: ListCommunityOrganisationsIntelKeyset :many
-SELECT id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides FROM community_organisations
+SELECT id, name, slug, org_type, origin_community, destination_space_id, city_space_id, address, latitude, longitude, website_url, meeting_frequency, contact_info, japaconnect_space_id, japaconnect_org_id, claim_status, is_verified, is_active, is_community_submitted, status, submitted_by, reviewed_by, reviewed_at, created_at, updated_at, deleted_at, ai_generated, ai_model, ai_prompt_hash, hitl_reviewed_by, hitl_reviewed_at, hitl_review_notes, is_japabot_indexed, intel_record_id, guide_id, confidence_overall, verification_status, freshness_score, override_source, editorial_overrides, claimed_by_user_id, claim_rejected_at FROM community_organisations
 WHERE intel_record_id IS NOT NULL
  AND ($1::timestamptz IS NULL
  OR created_at < $1
@@ -1762,6 +1766,8 @@ func (q *Queries) ListCommunityOrganisationsIntelKeyset(ctx context.Context, arg
 			&i.FreshnessScore,
 			&i.OverrideSource,
 			&i.EditorialOverrides,
+			&i.ClaimedByUserID,
+			&i.ClaimRejectedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -364,23 +364,43 @@ SET claim_status = @claim_status,
     updated_at = now()
 WHERE content_id = @content_id;
 
--- Atomically initiate a claim only when unclaimed (BUG-007).
+-- Atomically initiate a claim only when unclaimed (BUG-007) and unowned.
+-- The claim flow exists for platform-seeded listings with no owning org —
+-- a listing that already has org_id is owned, so claim must not let a
+-- different org take it over on approval (ownership hijack).
 -- name: ClaimServiceListingIfUnclaimed :execrows
 UPDATE service_listing_meta
 SET claim_status = 'pending', claimed_by_org_id = @org_id, updated_at = now()
-WHERE content_id = @content_id AND claim_status = 'unclaimed';
+WHERE content_id = @content_id AND claim_status = 'unclaimed' AND org_id IS NULL;
 
 -- Atomically resolve a pending claim (BUG-015). Rejection clears the
--- claimant; approval keeps claimed_by_org_id on the org.
+-- claimant; approval keeps claimed_by_org_id on the org AND links org_id —
+-- the approved claim is the ownership transfer (§07 claim pattern):
+-- without org_id the claiming org cannot edit the listing
+-- (loadListingForEdit), receive inquiries/bookings (service_bookings.org_id
+-- is NOT NULL), or appear as the provider on public payloads.
 -- name: ApproveServiceClaimIfPending :execrows
 UPDATE service_listing_meta
-SET claim_status = 'approved', claimed_by_org_id = @org_id, updated_at = now()
+SET claim_status = 'approved', claimed_by_org_id = @org_id, org_id = @org_id, updated_at = now()
 WHERE content_id = @content_id AND claim_status = 'pending';
 
 -- name: RejectServiceClaimIfPending :execrows
+-- Rejection keeps claimed_by_org_id: the claimant identity drives §22
+-- appeal eligibility (members of the rejected org may appeal) and the
+-- overturn path re-approves without re-capturing the org.
 UPDATE service_listing_meta
-SET claim_status = 'rejected', claimed_by_org_id = null, updated_at = now()
+SET claim_status = 'rejected', updated_at = now()
 WHERE content_id = @content_id AND claim_status = 'pending';
+
+-- Overturn a rejected claim via the §22 appeal flow — grants the claim
+-- (approved + org_id transfer) only when the row is still rejected and
+-- still carries the claimant.
+-- name: ApproveServiceClaimOnAppeal :execrows
+UPDATE service_listing_meta
+SET claim_status = 'approved', org_id = claimed_by_org_id, updated_at = now()
+WHERE content_id = @content_id
+  AND claim_status = 'rejected'
+  AND claimed_by_org_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------
 -- Org helpers

@@ -29,6 +29,7 @@
 		AlertTriangle
 	} from 'lucide-svelte';
 	import { openLightbox } from '$lib/lightbox.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import type { MediaAsset } from '$lib/types';
 	import { listMyMedia, getMedia, updateMedia, deleteMedia, bulkDeleteMedia } from '$lib/api/create';
 
@@ -551,6 +552,11 @@
 								<span class="rounded px-1.5 py-0.5 {statusClass(m.status)}">{m.status}</span>
 							{/if}
 						</div>
+						{#if m.status === 'rejected' || m.status === 'quarantined'}
+							<div class="mt-1.5">
+								<AppealButton entityType="media" entityId={m.id} class="!px-2 !py-1 text-xs" />
+							</div>
+						{/if}
 					</div>
 				</li>
 			{/each}
@@ -613,6 +619,14 @@
 											<AlertTriangle size={10} />
 											{t('media.library.flagged', 'Flagged')}
 										</span>
+									{/if}
+									{#if m.status === 'rejected' || m.status === 'quarantined'}
+										<AppealButton
+											entityType="media"
+											entityId={m.id}
+											label={t('appeals.appeal', 'Appeal')}
+											class="!px-2 !py-1 text-xs"
+										/>
 									{/if}
 								</div>
 							</td>

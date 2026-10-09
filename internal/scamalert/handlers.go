@@ -66,6 +66,28 @@ func NewHandlers(service *Service, settings *config.Settings) *Handlers {
 // descriptions render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
 
+// redactReportForCaller strips moderation internals from a DTO on the
+// public surfaces (GET /scam-alerts{,/:id}) — reporter identity and review
+// provenance (reporter_id/reporter_name/reviewed_by/ai_*/hitl_*) are
+// staff-only; the §47 PublicScamReport contract already omits them. The
+// reporter keeps their own reporter_id and gets is_reporter so reporter-
+// scoped UI (edit, §22 appeal) still works. Admin surfaces use
+// HandleAdminList and are unaffected.
+func redactReportForCaller(report *ScamReportDTO, callerID string) {
+	if callerID != "" && report.ReporterID == callerID {
+		report.IsReporter = true
+		return
+	}
+	report.ReporterID = ""
+	report.ReporterName = ""
+	report.ReviewedBy = ""
+	report.AiGenerated = false
+	report.AiModel = ""
+	report.AiGeneratedAt = ""
+	report.HitlReviewedBy = ""
+	report.HitlReviewedAt = ""
+}
+
 // resolveLiterals resolves {{...}} placeholders on a report DTO or slice.
 // Best-effort — failures are logged inside the resolver.
 func (h *Handlers) resolveLiterals(r *http.Request, v any) {
@@ -161,6 +183,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var callerID string
+	if u := auth.FromContext(r.Context()); u != nil && u.UserID.Valid {
+		callerID = u.UserID.String()
+	}
+	for i := range reports {
+		redactReportForCaller(&reports[i], callerID)
+	}
+
 	h.resolveLiterals(r, &reports)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -199,7 +229,17 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := h.service.Get(r.Context(), id)
+	// GetForViewer lets the report's own reporter read non-confirmed states
+	// (debunked/duplicate) — the §22 appeal surface on the detail page needs
+	// the reporter to reach them; everyone else gets confirmed-only.
+	var callerUUID pgtype.UUID
+	var callerID string
+	if u := auth.FromContext(r.Context()); u != nil && u.UserID.Valid {
+		callerUUID = u.UserID
+		callerID = u.UserID.String()
+	}
+
+	report, err := h.service.GetForViewer(r.Context(), id, callerUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "report_not_found", "Scam report not found")
@@ -214,12 +254,13 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 	// Include the authenticated user's subscription state for the report's
 	// destination space so the detail page can render the correct toggle.
-	if u := auth.FromContext(r.Context()); u != nil && report.DestinationSpaceID != "" {
+	if callerID != "" && report.DestinationSpaceID != "" {
 		var destSpaceID pgtype.UUID
 		if err := destSpaceID.Scan(report.DestinationSpaceID); err == nil {
-			report.IsSubscribed, _ = h.service.IsSubscribed(r.Context(), u.UserID, destSpaceID)
+			report.IsSubscribed, _ = h.service.IsSubscribed(r.Context(), callerUUID, destSpaceID)
 		}
 	}
+	redactReportForCaller(&report, callerID)
 
 	h.resolveLiterals(r, &report)
 
@@ -291,6 +332,10 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit scam report")
 
 		return
+	}
+
+	if reporterID.Valid {
+		report.IsReporter = true
 	}
 
 	h.resolveLiterals(r, &report)

@@ -2,6 +2,8 @@
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
+	import { page as pageState } from '$app/state';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { History, ArrowLeft, Bot, ChevronLeft, ChevronRight, Table2 } from 'lucide-svelte';
@@ -207,6 +209,17 @@
 								</div>
 							{/if}
 						</dl>
+
+						{#if rev.status === 'rejected' && rev.submitted_by && rev.submitted_by === pageState.data.user?.id}
+							<div class="mt-2 flex justify-end">
+								<AppealButton
+									entityType="wiki_revision"
+									entityId={rev.id}
+									label={t('appeals.appeal_rejection', 'Appeal rejection')}
+									class="!px-3 !py-1.5 text-xs"
+								/>
+							</div>
+						{/if}
 					</li>
 				{/each}
 			</ul>

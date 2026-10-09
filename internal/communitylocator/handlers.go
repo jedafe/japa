@@ -229,7 +229,12 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := h.service.GetBySlug(r.Context(), slug)
+	var viewerID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		viewerID = user.UserID
+	}
+
+	org, err := h.service.GetBySlug(r.Context(), slug, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
@@ -337,7 +342,7 @@ func (h *Handlers) HandleClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.InitiateClaim(r.Context(), id); err != nil {
+	if err := h.service.InitiateClaim(r.Context(), id, user.UserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "org_not_found", "Community organisation not found")
 			return

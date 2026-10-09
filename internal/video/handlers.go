@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/literals"
 )
 
@@ -284,9 +284,14 @@ func (h *Handlers) GetByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Removed sources are hidden from everyone except the author — §22
+	// video_source appeals mount on the video page, so the removal must
+	// remain reachable by the appellant.
 	if source.Status == "removed" {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Video source has been removed")
-		return
+		if user := auth.FromContext(r.Context()); user == nil || user.UserID != source.AuthorUserID {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Video source has been removed")
+			return
+		}
 	}
 
 	h.resolveLiterals(r, &source)

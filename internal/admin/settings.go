@@ -65,7 +65,19 @@ type Handlers struct {
 	DefaultFolderSetter auth.DefaultFolderProvider // Optional — wired by server after bookmarkfolders.Service is constructed (§50)
 	TierManager         auth.TierManager           // Optional — wired by server after tiers.Service is constructed (§unified-tiers)
 	Catalog             *literals.Catalog          // Optional — caches active platform literals and resolves maps.
+	AppealResolver      AppealResolver             // Optional — §22 appeal resolution + per-type overturn effects
 }
+
+// AppealResolver is the subset of the §22 appeals service the moderation
+// appeal handler delegates to — status validation, subject-type overturn
+// effects, and linked-ticket resolution live there.
+type AppealResolver interface {
+	Resolve(ctx context.Context, appealID, reviewerID pgtype.UUID, status, note string) error
+}
+
+// SetAppealResolver injects the appeals service used by PATCH
+// /admin/appeals/{id} so overturns apply their domain reversal.
+func (h *Handlers) SetAppealResolver(r AppealResolver) { h.AppealResolver = r }
 
 // SetTierManager injects the tier manager used to assign the regular tier on
 // admin-created users.

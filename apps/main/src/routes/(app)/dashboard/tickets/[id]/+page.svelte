@@ -6,6 +6,7 @@
 	// prepends the new comment optimistically.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { ticketRef } from '$lib/tickets';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { MessageSquare, Send } from 'lucide-svelte';
 	import { untrack } from 'svelte';
@@ -98,7 +99,7 @@
 			<div class="min-w-0">
 				<h1 class="text-lg font-medium text-[var(--color-text)]">{ticket.subject}</h1>
 				<p class="mt-0.5 text-xs text-[var(--color-muted)]">
-					#{ticket.id.slice(0, 8)} · {ticket.type_name}
+					{ticketRef(ticket)} · {ticket.type_name}
 				</p>
 			</div>
 			<span class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium {statusClass(ticket.status)}">

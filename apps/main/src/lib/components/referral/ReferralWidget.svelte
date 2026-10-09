@@ -4,6 +4,7 @@
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
 	import type { ReferralStats, ReferralHistoryEntry } from '$lib/types';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 
 	let stats = $state<ReferralStats | null>(null);
 	let history = $state<ReferralHistoryEntry[]>([]);
@@ -116,9 +117,14 @@
 					</h3>
 					<ul class="space-y-1">
 						{#each history.slice(0, 5) as entry}
-							<li class="flex items-center justify-between text-xs">
+							<li class="flex items-center justify-between gap-2 text-xs">
 								<span class="font-mono text-[var(--color-text)]">{entry.referral_code}</span>
-								<span class="text-[var(--color-muted)]">{statusLabel(entry.status)}</span>
+								<span class="flex items-center gap-2">
+									<span class="text-[var(--color-muted)]">{statusLabel(entry.status)}</span>
+									{#if entry.status === 'rejected'}
+										<AppealButton entityType="referral" entityId={entry.id} />
+									{/if}
+								</span>
 							</li>
 						{/each}
 					</ul>

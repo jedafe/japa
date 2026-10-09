@@ -54,10 +54,10 @@ INSERT INTO tickets (type_id, subject, description, status, priority, submitter_
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+ created_at, updated_at, ticket_number;
 
 -- name: GetTicketByID :one
-SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
  t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
  t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
  t.created_at, t.updated_at,
@@ -66,24 +66,36 @@ FROM tickets t
 JOIN ticket_types tt ON tt.id = t.type_id
 WHERE t.id = @id;
 
--- name: ListTickets :many
-SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
+-- name: GetTicketByNumber :one
+-- Numeric-ref variant of GetTicketByID — routes accept either the ticket's
+-- UUID or its JC-<number> reference (§38).
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
  t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
  t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
  t.created_at, t.updated_at,
  tt.name AS type_name, tt.slug AS type_slug
 FROM tickets t
 JOIN ticket_types tt ON tt.id = t.type_id
-WHERE (@status::text IS NULL OR t.status = @status)
- AND (@priority::text IS NULL OR t.priority = @priority)
- AND (@type_id::uuid IS NULL OR t.type_id = @type_id)
- AND (@assigned_to::uuid IS NULL OR t.assigned_to = @assigned_to)
- AND (@search::text IS NULL OR t.subject ILIKE '%' || @search || '%')
+WHERE t.ticket_number = @ticket_number;
+
+-- name: ListTickets :many
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
+ t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
+ t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
+ t.created_at, t.updated_at,
+ tt.name AS type_name, tt.slug AS type_slug
+FROM tickets t
+JOIN ticket_types tt ON tt.id = t.type_id
+WHERE (sqlc.narg(status)::text IS NULL OR t.status = sqlc.narg(status))
+ AND (sqlc.narg(priority)::text IS NULL OR t.priority = sqlc.narg(priority))
+ AND (sqlc.narg(type_id)::uuid IS NULL OR t.type_id = sqlc.narg(type_id))
+ AND (sqlc.narg(assigned_to)::uuid IS NULL OR t.assigned_to = sqlc.narg(assigned_to))
+ AND (sqlc.narg(search)::text IS NULL OR t.subject ILIKE '%' || sqlc.narg(search) || '%' OR t.ticket_number::text ILIKE '%' || sqlc.narg(search) || '%')
 ORDER BY t.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: ListTicketsBySubmitter :many
-SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
  t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
  t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
  t.created_at, t.updated_at,
@@ -104,7 +116,7 @@ WHERE id = @id
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+ created_at, updated_at, ticket_number;
 
 -- name: UpdateTicketPriority :one
 UPDATE tickets
@@ -113,7 +125,7 @@ WHERE id = @id
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+ created_at, updated_at, ticket_number;
 
 -- name: AssignTicket :one
 UPDATE tickets
@@ -123,7 +135,7 @@ WHERE id = @id
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+ created_at, updated_at, ticket_number;
 
 -- name: UpdateTicketSubject :one
 UPDATE tickets
@@ -132,7 +144,7 @@ WHERE id = @id
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+ created_at, updated_at, ticket_number;
 
 -- name: DeleteTicket :exec
 DELETE FROM tickets
@@ -146,7 +158,7 @@ WHERE id = @id
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+ created_at, updated_at, ticket_number;
 
 -- name: CloseTicket :one
 UPDATE tickets
@@ -155,7 +167,7 @@ WHERE id = @id
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at;
+ created_at, updated_at, ticket_number;
 
 -- name: GetLeastLoadedStaffInGroup :one
 SELECT u.id AS user_id
@@ -233,11 +245,11 @@ WHERE status = @status;
 
 -- name: CountTickets :one
 SELECT COUNT(*) FROM tickets
-WHERE (@status::text IS NULL OR status = @status)
- AND (@priority::text IS NULL OR priority = @priority)
- AND (@type_id::uuid IS NULL OR type_id = @type_id)
- AND (@assigned_to::uuid IS NULL OR assigned_to = @assigned_to)
- AND (@search::text IS NULL OR subject ILIKE '%' || @search || '%');
+WHERE (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status))
+ AND (sqlc.narg(priority)::text IS NULL OR priority = sqlc.narg(priority))
+ AND (sqlc.narg(type_id)::uuid IS NULL OR type_id = sqlc.narg(type_id))
+ AND (sqlc.narg(assigned_to)::uuid IS NULL OR assigned_to = sqlc.narg(assigned_to))
+ AND (sqlc.narg(search)::text IS NULL OR subject ILIKE '%' || sqlc.narg(search) || '%' OR ticket_number::text ILIKE '%' || sqlc.narg(search) || '%');
 
 -- name: UpdateTicketSLABreach :exec
 UPDATE tickets
@@ -245,7 +257,7 @@ SET sla_breach_at = now(), updated_at = now()
 WHERE id = @id AND sla_breach_at IS NULL AND status NOT IN ('resolved', 'closed', 'spam');
 
 -- name: ListSLABreachedTickets :many
-SELECT id, subject, sla_breach_at, assigned_to
+SELECT id, ticket_number, subject, sla_breach_at, assigned_to
 FROM tickets
 WHERE sla_breach_at IS NOT NULL
  AND sla_breach_at < now()

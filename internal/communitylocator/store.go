@@ -109,6 +109,11 @@ type OrgRow struct {
 	IsJapabotIndexed bool
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	// §22 claimant tracking (migration 000821): the most recent claimant
+	// and the rejection marker that makes a rejected claim appealable.
+	ClaimedByUserID pgtype.UUID
+	ClaimRejectedAt pgtype.Timestamptz
+	DeletedAt       pgtype.Timestamptz
 }
 
 // CreateOrgInput holds the fields for inserting a new community
@@ -552,7 +557,9 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.ai_generated, co.ai_model, co.ai_prompt_hash,
        co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
        co.is_japabot_indexed,
-       co.created_at, co.updated_at
+       co.created_at, co.updated_at,
+       co.claimed_by_user_id, co.claim_rejected_at,
+       co.deleted_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
@@ -589,6 +596,8 @@ LIMIT $%d OFFSET $%d
 			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 			&r.IsJapabotIndexed,
 			&r.CreatedAt, &r.UpdatedAt,
+			&r.ClaimedByUserID, &r.ClaimRejectedAt,
+			&r.DeletedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("communitylocator: scan org row: %w", err)
 		}
@@ -618,8 +627,10 @@ WHERE %s
 // GetBySlug returns a single community organisation by its slug for the
 // public detail endpoint. Only published, active orgs are returned —
 // pending submissions, AI drafts (ADR-088), and archived rows must never
-// be reachable via the public slug URL.
-func (s *Store) GetBySlug(ctx context.Context, slug string) (OrgRow, error) {
+// be reachable via the public slug URL. The submitter is exempt: §22
+// community_org appeals mount on the detail page, so an archived or
+// removed submission must stay reachable for its owner.
+func (s *Store) GetBySlug(ctx context.Context, slug string, viewerID pgtype.UUID) (OrgRow, error) {
 	const q = `
 SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
@@ -633,20 +644,25 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.ai_generated, co.ai_model, co.ai_prompt_hash,
        co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
        co.is_japabot_indexed,
-       co.created_at, co.updated_at
+       co.created_at, co.updated_at,
+       co.claimed_by_user_id, co.claim_rejected_at,
+       co.deleted_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
 LEFT JOIN spaces js ON js.id = co.japaconnect_space_id
 LEFT JOIN users u ON u.id = co.submitted_by
-WHERE co.slug = $1 AND co.deleted_at IS NULL
-  AND co.status = 'published' AND co.is_active = true
+WHERE co.slug = $1
+  AND (
+    co.submitted_by = $2
+    OR (co.deleted_at IS NULL AND co.status = 'published' AND co.is_active = true)
+  )
 LIMIT 1
 `
 
 	var r OrgRow
 
-	err := s.pool.Reader.QueryRow(ctx, q, slug).Scan(
+	err := s.pool.Reader.QueryRow(ctx, q, slug, viewerID).Scan(
 		&r.ID, &r.Name, &r.Slug, &r.OrgType, &r.OriginCommunity,
 		&r.DestinationSpaceID, &r.DestSpaceName, &r.DestSpaceCode,
 		&r.CitySpaceID, &r.CitySpaceName, &r.CitySpaceCode,
@@ -660,6 +676,8 @@ LIMIT 1
 		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 		&r.IsJapabotIndexed,
 		&r.CreatedAt, &r.UpdatedAt,
+		&r.ClaimedByUserID, &r.ClaimRejectedAt,
+		&r.DeletedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -687,7 +705,9 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.ai_generated, co.ai_model, co.ai_prompt_hash,
        co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
        co.is_japabot_indexed,
-       co.created_at, co.updated_at
+       co.created_at, co.updated_at,
+       co.claimed_by_user_id, co.claim_rejected_at,
+       co.deleted_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
@@ -713,6 +733,8 @@ LIMIT 1
 		&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 		&r.IsJapabotIndexed,
 		&r.CreatedAt, &r.UpdatedAt,
+		&r.ClaimedByUserID, &r.ClaimRejectedAt,
+		&r.DeletedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -727,15 +749,19 @@ LIMIT 1
 
 // InitiateClaim sets claim_status to 'pending' on a community organisation,
 // beginning the claim flow. Only published, unclaimed orgs can be claimed.
-func (s *Store) InitiateClaim(ctx context.Context, id pgtype.UUID) error {
+// The claimant is recorded in claimed_by_user_id (§22 community_org_claim
+// appeals need a stable appellant); any prior claim_rejected_at marker is
+// cleared because the new pending claim supersedes the old rejection.
+func (s *Store) InitiateClaim(ctx context.Context, id, userID pgtype.UUID) error {
 	const q = `
 UPDATE community_organisations
-SET claim_status = 'pending', updated_at = now()
+SET claim_status = 'pending', claimed_by_user_id = $2,
+    claim_rejected_at = NULL, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
   AND status = 'published' AND claim_status = 'unclaimed'
 `
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, id)
+	cmd, err := s.pool.Writer.Exec(ctx, q, id, userID)
 	if err != nil {
 		return fmt.Errorf("communitylocator: initiate claim: %w", err)
 	}
@@ -869,7 +895,9 @@ SELECT co.id, co.name, co.slug, co.org_type, co.origin_community,
        co.ai_generated, co.ai_model, co.ai_prompt_hash,
        co.hitl_reviewed_by, co.hitl_reviewed_at, co.hitl_review_notes,
        co.is_japabot_indexed,
-       co.created_at, co.updated_at
+       co.created_at, co.updated_at,
+       co.claimed_by_user_id, co.claim_rejected_at,
+       co.deleted_at
 FROM community_organisations co
 LEFT JOIN spaces ds ON ds.id = co.destination_space_id
 LEFT JOIN spaces cs ON cs.id = co.city_space_id
@@ -906,6 +934,8 @@ LIMIT $%d OFFSET $%d
 			&r.HitlReviewedBy, &r.HitlReviewedAt, &r.HitlReviewNotes,
 			&r.IsJapabotIndexed,
 			&r.CreatedAt, &r.UpdatedAt,
+			&r.ClaimedByUserID, &r.ClaimRejectedAt,
+			&r.DeletedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("communitylocator: admin scan org row: %w", err)
 		}
@@ -1037,9 +1067,14 @@ func (s *Store) ResolveClaim(ctx context.Context, id pgtype.UUID, approve bool) 
 		status = ClaimStatusClaimed
 	}
 
+	// Rejection keeps claimed_by_user_id and stamps claim_rejected_at so the
+	// rejected claimant can appeal (§22 community_org_claim) even though
+	// claim_status resets to 'unclaimed' for the next claimant.
 	const q = `
 UPDATE community_organisations
-SET claim_status = $2, updated_at = now()
+SET claim_status = $2,
+    claim_rejected_at = CASE WHEN $2 = 'unclaimed' THEN now() ELSE NULL END,
+    updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL AND claim_status = 'pending'
 `
 

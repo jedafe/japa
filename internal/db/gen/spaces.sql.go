@@ -3424,7 +3424,8 @@ func (q *Queries) ListSpacesByModeratorUser(ctx context.Context, arg ListSpacesB
 
 const listSpacesByOwnerUser = `-- name: ListSpacesByOwnerUser :many
 SELECT s.id, s.name, s.slug,
- (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
+ (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
+ s.status
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 LEFT JOIN users u ON u.id = $1
@@ -3447,6 +3448,7 @@ type ListSpacesByOwnerUserRow struct {
 	Name      string      `json:"name"`
 	Slug      string      `json:"slug"`
 	IsPrimary *bool       `json:"is_primary"`
+	Status    string      `json:"status"`
 }
 
 // Spaces the caller owns (space_members.role = 'owner'). Returns lean rows with
@@ -3471,6 +3473,7 @@ func (q *Queries) ListSpacesByOwnerUser(ctx context.Context, arg ListSpacesByOwn
 			&i.Name,
 			&i.Slug,
 			&i.IsPrimary,
+			&i.Status,
 		); err != nil {
 			return nil, err
 		}

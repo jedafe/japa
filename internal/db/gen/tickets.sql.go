@@ -19,7 +19,7 @@ WHERE id = $3
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+ created_at, updated_at, ticket_number
 `
 
 type AssignTicketParams struct {
@@ -49,6 +49,7 @@ func (q *Queries) AssignTicket(ctx context.Context, arg AssignTicketParams) (Tic
 		&i.ClosedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TicketNumber,
 	)
 	return i, err
 }
@@ -78,7 +79,7 @@ WHERE id = $1
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+ created_at, updated_at, ticket_number
 `
 
 func (q *Queries) CloseTicket(ctx context.Context, id pgtype.UUID) (Ticket, error) {
@@ -102,6 +103,7 @@ func (q *Queries) CloseTicket(ctx context.Context, id pgtype.UUID) (Ticket, erro
 		&i.ClosedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TicketNumber,
 	)
 	return i, err
 }
@@ -124,15 +126,15 @@ WHERE ($1::text IS NULL OR status = $1)
  AND ($2::text IS NULL OR priority = $2)
  AND ($3::uuid IS NULL OR type_id = $3)
  AND ($4::uuid IS NULL OR assigned_to = $4)
- AND ($5::text IS NULL OR subject ILIKE '%' || $5 || '%')
+ AND ($5::text IS NULL OR subject ILIKE '%' || $5 || '%' OR ticket_number::text ILIKE '%' || $5 || '%')
 `
 
 type CountTicketsParams struct {
-	Status     string      `json:"status"`
-	Priority   string      `json:"priority"`
+	Status     *string     `json:"status"`
+	Priority   *string     `json:"priority"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	AssignedTo pgtype.UUID `json:"assigned_to"`
-	Search     string      `json:"search"`
+	Search     *string     `json:"search"`
 }
 
 func (q *Queries) CountTickets(ctx context.Context, arg CountTicketsParams) (int64, error) {
@@ -179,7 +181,7 @@ INSERT INTO tickets (type_id, subject, description, status, priority, submitter_
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+ created_at, updated_at, ticket_number
 `
 
 type CreateTicketParams struct {
@@ -232,6 +234,7 @@ func (q *Queries) CreateTicket(ctx context.Context, arg CreateTicketParams) (Tic
 		&i.ClosedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TicketNumber,
 	)
 	return i, err
 }
@@ -478,7 +481,7 @@ func (q *Queries) GetOpenTicketCountByAssignee(ctx context.Context) ([]GetOpenTi
 }
 
 const getTicketByID = `-- name: GetTicketByID :one
-SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
  t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
  t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
  t.created_at, t.updated_at,
@@ -490,6 +493,7 @@ WHERE t.id = $1
 
 type GetTicketByIDRow struct {
 	ID              pgtype.UUID        `json:"id"`
+	TicketNumber    *int64             `json:"ticket_number"`
 	TypeID          pgtype.UUID        `json:"type_id"`
 	Subject         string             `json:"subject"`
 	Description     string             `json:"description"`
@@ -515,6 +519,71 @@ func (q *Queries) GetTicketByID(ctx context.Context, id pgtype.UUID) (GetTicketB
 	var i GetTicketByIDRow
 	err := row.Scan(
 		&i.ID,
+		&i.TicketNumber,
+		&i.TypeID,
+		&i.Subject,
+		&i.Description,
+		&i.Status,
+		&i.Priority,
+		&i.SubmitterUserID,
+		&i.SubmitterEmail,
+		&i.AssignedTo,
+		&i.AssignedGroupID,
+		&i.ResolutionNote,
+		&i.FieldValues,
+		&i.SlaBreachAt,
+		&i.ResolvedAt,
+		&i.ClosedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TypeName,
+		&i.TypeSlug,
+	)
+	return i, err
+}
+
+const getTicketByNumber = `-- name: GetTicketByNumber :one
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
+ t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
+ t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
+ t.created_at, t.updated_at,
+ tt.name AS type_name, tt.slug AS type_slug
+FROM tickets t
+JOIN ticket_types tt ON tt.id = t.type_id
+WHERE t.ticket_number = $1
+`
+
+type GetTicketByNumberRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	TicketNumber    *int64             `json:"ticket_number"`
+	TypeID          pgtype.UUID        `json:"type_id"`
+	Subject         string             `json:"subject"`
+	Description     string             `json:"description"`
+	Status          string             `json:"status"`
+	Priority        string             `json:"priority"`
+	SubmitterUserID pgtype.UUID        `json:"submitter_user_id"`
+	SubmitterEmail  *string            `json:"submitter_email"`
+	AssignedTo      pgtype.UUID        `json:"assigned_to"`
+	AssignedGroupID pgtype.UUID        `json:"assigned_group_id"`
+	ResolutionNote  *string            `json:"resolution_note"`
+	FieldValues     []byte             `json:"field_values"`
+	SlaBreachAt     pgtype.Timestamptz `json:"sla_breach_at"`
+	ResolvedAt      pgtype.Timestamptz `json:"resolved_at"`
+	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	TypeName        string             `json:"type_name"`
+	TypeSlug        string             `json:"type_slug"`
+}
+
+// Numeric-ref variant of GetTicketByID — routes accept either the ticket's
+// UUID or its JC-<number> reference (§38).
+func (q *Queries) GetTicketByNumber(ctx context.Context, ticketNumber *int64) (GetTicketByNumberRow, error) {
+	row := q.db.QueryRow(ctx, getTicketByNumber, ticketNumber)
+	var i GetTicketByNumberRow
+	err := row.Scan(
+		&i.ID,
+		&i.TicketNumber,
 		&i.TypeID,
 		&i.Subject,
 		&i.Description,
@@ -592,7 +661,7 @@ func (q *Queries) GetTicketTypeBySlug(ctx context.Context, slug string) (TicketT
 }
 
 const listSLABreachedTickets = `-- name: ListSLABreachedTickets :many
-SELECT id, subject, sla_breach_at, assigned_to
+SELECT id, ticket_number, subject, sla_breach_at, assigned_to
 FROM tickets
 WHERE sla_breach_at IS NOT NULL
  AND sla_breach_at < now()
@@ -601,10 +670,11 @@ ORDER BY sla_breach_at ASC
 `
 
 type ListSLABreachedTicketsRow struct {
-	ID          pgtype.UUID        `json:"id"`
-	Subject     string             `json:"subject"`
-	SlaBreachAt pgtype.Timestamptz `json:"sla_breach_at"`
-	AssignedTo  pgtype.UUID        `json:"assigned_to"`
+	ID           pgtype.UUID        `json:"id"`
+	TicketNumber *int64             `json:"ticket_number"`
+	Subject      string             `json:"subject"`
+	SlaBreachAt  pgtype.Timestamptz `json:"sla_breach_at"`
+	AssignedTo   pgtype.UUID        `json:"assigned_to"`
 }
 
 func (q *Queries) ListSLABreachedTickets(ctx context.Context) ([]ListSLABreachedTicketsRow, error) {
@@ -618,6 +688,7 @@ func (q *Queries) ListSLABreachedTickets(ctx context.Context) ([]ListSLABreached
 		var i ListSLABreachedTicketsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TicketNumber,
 			&i.Subject,
 			&i.SlaBreachAt,
 			&i.AssignedTo,
@@ -790,7 +861,7 @@ func (q *Queries) ListTicketTypes(ctx context.Context, arg ListTicketTypesParams
 }
 
 const listTickets = `-- name: ListTickets :many
-SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
  t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
  t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
  t.created_at, t.updated_at,
@@ -801,23 +872,24 @@ WHERE ($1::text IS NULL OR t.status = $1)
  AND ($2::text IS NULL OR t.priority = $2)
  AND ($3::uuid IS NULL OR t.type_id = $3)
  AND ($4::uuid IS NULL OR t.assigned_to = $4)
- AND ($5::text IS NULL OR t.subject ILIKE '%' || $5 || '%')
+ AND ($5::text IS NULL OR t.subject ILIKE '%' || $5 || '%' OR t.ticket_number::text ILIKE '%' || $5 || '%')
 ORDER BY t.created_at DESC
 LIMIT $7 OFFSET $6
 `
 
 type ListTicketsParams struct {
-	Status     string      `json:"status"`
-	Priority   string      `json:"priority"`
+	Status     *string     `json:"status"`
+	Priority   *string     `json:"priority"`
 	TypeID     pgtype.UUID `json:"type_id"`
 	AssignedTo pgtype.UUID `json:"assigned_to"`
-	Search     string      `json:"search"`
+	Search     *string     `json:"search"`
 	PageOffset int32       `json:"page_offset"`
 	PageLimit  int32       `json:"page_limit"`
 }
 
 type ListTicketsRow struct {
 	ID              pgtype.UUID        `json:"id"`
+	TicketNumber    *int64             `json:"ticket_number"`
 	TypeID          pgtype.UUID        `json:"type_id"`
 	Subject         string             `json:"subject"`
 	Description     string             `json:"description"`
@@ -857,6 +929,7 @@ func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Lis
 		var i ListTicketsRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TicketNumber,
 			&i.TypeID,
 			&i.Subject,
 			&i.Description,
@@ -887,7 +960,7 @@ func (q *Queries) ListTickets(ctx context.Context, arg ListTicketsParams) ([]Lis
 }
 
 const listTicketsBySubmitter = `-- name: ListTicketsBySubmitter :many
-SELECT t.id, t.type_id, t.subject, t.description, t.status, t.priority,
+SELECT t.id, t.ticket_number, t.type_id, t.subject, t.description, t.status, t.priority,
  t.submitter_user_id, t.submitter_email, t.assigned_to, t.assigned_group_id,
  t.resolution_note, t.field_values, t.sla_breach_at, t.resolved_at, t.closed_at,
  t.created_at, t.updated_at,
@@ -909,6 +982,7 @@ type ListTicketsBySubmitterParams struct {
 
 type ListTicketsBySubmitterRow struct {
 	ID              pgtype.UUID        `json:"id"`
+	TicketNumber    *int64             `json:"ticket_number"`
 	TypeID          pgtype.UUID        `json:"type_id"`
 	Subject         string             `json:"subject"`
 	Description     string             `json:"description"`
@@ -945,6 +1019,7 @@ func (q *Queries) ListTicketsBySubmitter(ctx context.Context, arg ListTicketsByS
 		var i ListTicketsBySubmitterRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.TicketNumber,
 			&i.TypeID,
 			&i.Subject,
 			&i.Description,
@@ -982,7 +1057,7 @@ WHERE id = $2
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+ created_at, updated_at, ticket_number
 `
 
 type ResolveTicketParams struct {
@@ -1011,6 +1086,7 @@ func (q *Queries) ResolveTicket(ctx context.Context, arg ResolveTicketParams) (T
 		&i.ClosedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TicketNumber,
 	)
 	return i, err
 }
@@ -1022,7 +1098,7 @@ WHERE id = $2
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+ created_at, updated_at, ticket_number
 `
 
 type UpdateTicketPriorityParams struct {
@@ -1051,6 +1127,7 @@ func (q *Queries) UpdateTicketPriority(ctx context.Context, arg UpdateTicketPrio
 		&i.ClosedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TicketNumber,
 	)
 	return i, err
 }
@@ -1075,7 +1152,7 @@ WHERE id = $2
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+ created_at, updated_at, ticket_number
 `
 
 type UpdateTicketStatusParams struct {
@@ -1104,6 +1181,7 @@ func (q *Queries) UpdateTicketStatus(ctx context.Context, arg UpdateTicketStatus
 		&i.ClosedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TicketNumber,
 	)
 	return i, err
 }
@@ -1115,7 +1193,7 @@ WHERE id = $2
 RETURNING id, type_id, subject, description, status, priority,
  submitter_user_id, submitter_email, assigned_to, assigned_group_id,
  resolution_note, field_values, sla_breach_at, resolved_at, closed_at,
- created_at, updated_at
+ created_at, updated_at, ticket_number
 `
 
 type UpdateTicketSubjectParams struct {
@@ -1144,6 +1222,7 @@ func (q *Queries) UpdateTicketSubject(ctx context.Context, arg UpdateTicketSubje
 		&i.ClosedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TicketNumber,
 	)
 	return i, err
 }

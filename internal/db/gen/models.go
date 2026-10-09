@@ -907,6 +907,8 @@ type CommunityOrganisation struct {
 	FreshnessScore       int32              `json:"freshness_score"`
 	OverrideSource       string             `json:"override_source"`
 	EditorialOverrides   []byte             `json:"editorial_overrides"`
+	ClaimedByUserID      pgtype.UUID        `json:"claimed_by_user_id"`
+	ClaimRejectedAt      pgtype.Timestamptz `json:"claim_rejected_at"`
 }
 
 type ComparisonContentMetadatum struct {
@@ -2451,14 +2453,19 @@ type ModerationAlert struct {
 }
 
 type ModerationAppeal struct {
-	ID         pgtype.UUID        `json:"id"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	EntityType string             `json:"entity_type"`
-	EntityID   pgtype.UUID        `json:"entity_id"`
-	Reason     string             `json:"reason"`
-	Status     string             `json:"status"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	EntityType     string             `json:"entity_type"`
+	EntityID       pgtype.UUID        `json:"entity_id"`
+	Reason         string             `json:"reason"`
+	Status         string             `json:"status"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	TicketID       pgtype.UUID        `json:"ticket_id"`
+	ReviewedBy     pgtype.UUID        `json:"reviewed_by"`
+	ResolutionNote *string            `json:"resolution_note"`
+	ResolvedAt     pgtype.Timestamptz `json:"resolved_at"`
+	SubjectLabel   *string            `json:"subject_label"`
 }
 
 type MonitoredEmbassy struct {
@@ -4020,6 +4027,7 @@ type Ticket struct {
 	ClosedAt        pgtype.Timestamptz `json:"closed_at"`
 	CreatedAt       pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	TicketNumber    *int64             `json:"ticket_number"`
 }
 
 type TicketAttachment struct {

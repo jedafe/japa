@@ -6,6 +6,7 @@
 	import VideoEmbed from '$lib/components/content/VideoEmbed.svelte';
 	import { formatDuration } from '$lib/utils/duration';
 	import { api } from '$lib/api/client';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { Sparkles, CheckCircle2, AlertCircle, Loader2 } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import type { PageData } from './$types';
@@ -75,6 +76,9 @@
 				>
 					{t('video.view_channel', 'View channel')}
 				</a>
+			{/if}
+			{#if source.status === 'removed' && source.author_user_id === data.currentUserId}
+				<AppealButton entityType="video_source" entityId={source.id} />
 			{/if}
 			{#if data.canSummarize}
 				<button

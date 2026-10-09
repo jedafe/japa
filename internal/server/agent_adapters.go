@@ -27,6 +27,7 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/attestationguide"
@@ -45,7 +46,6 @@ import (
 	"github.com/jedafe/japa/internal/fx"
 	"github.com/jedafe/japa/internal/housingguide"
 	"github.com/jedafe/japa/internal/languagetesthub"
-	"github.com/jedafe/japa/internal/academy"
 	"github.com/jedafe/japa/internal/menus"
 	"github.com/jedafe/japa/internal/personas"
 	"github.com/jedafe/japa/internal/pofcalculator"

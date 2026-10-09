@@ -74,7 +74,7 @@ export const load: PageServerLoad = async (event) => {
 			}
 		}
 
-		return { videoSource, sourceOnly: true as const, canSummarize };
+		return { videoSource, sourceOnly: true as const, canSummarize, currentUserId: event.locals.user?.id ?? null };
 	} catch (err) {
 		if (isRedirect(err)) {
 			throw err;

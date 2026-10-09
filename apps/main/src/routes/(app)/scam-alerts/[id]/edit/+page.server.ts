@@ -33,7 +33,7 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const canEdit =
-		alert.reporter_id === event.locals.user.id ||
+		alert.is_reporter === true ||
 		event.locals.user.permissions?.includes('scam_alert.edit_any');
 	if (!canEdit) {
 		throw error(403, { code: 'not_owner', message: 'You can only edit your own scam reports' });

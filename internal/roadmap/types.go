@@ -193,6 +193,10 @@ type BoardItem struct {
 type ItemDetail struct {
 	BoardItem
 	Body *string `json:"body"`
+	// IsSubmitter tells the frontend the caller submitted the item — gates
+	// owner-only affordances (e.g. the §22 appeal button on declined items)
+	// without exposing the raw submitted_by id publicly.
+	IsSubmitter bool `json:"is_submitter"`
 }
 
 // BoardColumn groups items under one status on the public board.

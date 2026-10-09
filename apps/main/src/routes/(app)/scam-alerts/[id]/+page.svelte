@@ -7,6 +7,7 @@
 	import { api } from '$lib/api/client';
 	import { relativeTime } from '$lib/feed/time';
 	import { EmptyState } from '$lib/components/ui';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { scamTypeLabel } from '$lib/enumOptions';
 	import type { ScamReport, ScamStatus, ScamType } from '$lib/types';
 	import type { PageData } from './$types';
@@ -155,6 +156,21 @@
 					</div>
 				{/if}
 			</dl>
+
+			<!-- Reporter appeal — own report closed as debunked/duplicate (§22) -->
+			{#if data.authed && alert.is_reporter && (alert.status === 'debunked' || alert.status === 'duplicate')}
+				<div class="mt-6 flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3">
+					<p class="text-xs text-[var(--color-muted)]">
+						{t('scam_alerts.appeal_hint', 'Think this classification is wrong? You can contest it.')}
+					</p>
+					<AppealButton
+						entityType="scam_report"
+						entityId={alert.id}
+						label={t('appeals.appeal_decision', 'Appeal decision')}
+						class="!px-3 !py-1.5 text-xs"
+					/>
+				</div>
+			{/if}
 
 			<!-- Subscribe action -->
 			<div class="mt-6 flex items-center justify-end border-t border-[var(--color-border)] pt-4">

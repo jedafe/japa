@@ -10,6 +10,7 @@
 	import { Flag, FileText } from 'lucide-svelte';
 	import { EmptyState, RelativeTime, PaginationControls } from '$lib/components/ui';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import type { MyReport } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -158,6 +159,16 @@
 								{statusLabel(report.status)}
 							</span>
 						</div>
+						{#if report.status === 'dismissed'}
+							<div class="mt-3 flex justify-end">
+								<AppealButton
+									entityType="content_report"
+									entityId={report.id}
+									label={t('appeals.appeal_dismissal', 'Appeal dismissal')}
+									class="!px-3 !py-1.5 text-xs"
+								/>
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>

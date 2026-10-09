@@ -17,6 +17,7 @@
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { relativeTime } from '$lib/feed/time';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -256,6 +257,10 @@
 				>
 					<MessageSquare size={14} /> {t('mutual_aid.respond', 'Respond')}
 				</a>
+			{/if}
+
+			{#if canManage && post.status === 'removed'}
+				<AppealButton entityType="mutual_aid_post" entityId={post.id} />
 			{/if}
 
 			{#if canManage}

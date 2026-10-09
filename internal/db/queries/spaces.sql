@@ -664,7 +664,8 @@ LIMIT @limit_val OFFSET @offset_val;
 -- the primary geo space flagged and supports server-side search/pagination.
 -- Catalog: GET /me/spaces/owned.
 SELECT s.id, s.name, s.slug,
- (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary
+ (u.current_geo_space_id IS NOT NULL AND s.id = u.current_geo_space_id) AS is_primary,
+ s.status
 FROM spaces s
 JOIN space_members sm ON sm.space_id = s.id
 LEFT JOIN users u ON u.id = @user_id

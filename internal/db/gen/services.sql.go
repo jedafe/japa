@@ -482,7 +482,7 @@ func (q *Queries) AnonymizeServiceBookings(ctx context.Context, bookerUserID pgt
 
 const approveServiceClaimIfPending = `-- name: ApproveServiceClaimIfPending :execrows
 UPDATE service_listing_meta
-SET claim_status = 'approved', claimed_by_org_id = $1, updated_at = now()
+SET claim_status = 'approved', claimed_by_org_id = $1, org_id = $1, updated_at = now()
 WHERE content_id = $2 AND claim_status = 'pending'
 `
 
@@ -492,9 +492,32 @@ type ApproveServiceClaimIfPendingParams struct {
 }
 
 // Atomically resolve a pending claim (BUG-015). Rejection clears the
-// claimant; approval keeps claimed_by_org_id on the org.
+// claimant; approval keeps claimed_by_org_id on the org AND links org_id —
+// the approved claim is the ownership transfer (§07 claim pattern):
+// without org_id the claiming org cannot edit the listing
+// (loadListingForEdit), receive inquiries/bookings (service_bookings.org_id
+// is NOT NULL), or appear as the provider on public payloads.
 func (q *Queries) ApproveServiceClaimIfPending(ctx context.Context, arg ApproveServiceClaimIfPendingParams) (int64, error) {
 	result, err := q.db.Exec(ctx, approveServiceClaimIfPending, arg.OrgID, arg.ContentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const approveServiceClaimOnAppeal = `-- name: ApproveServiceClaimOnAppeal :execrows
+UPDATE service_listing_meta
+SET claim_status = 'approved', org_id = claimed_by_org_id, updated_at = now()
+WHERE content_id = $1
+  AND claim_status = 'rejected'
+  AND claimed_by_org_id IS NOT NULL
+`
+
+// Overturn a rejected claim via the §22 appeal flow — grants the claim
+// (approved + org_id transfer) only when the row is still rejected and
+// still carries the claimant.
+func (q *Queries) ApproveServiceClaimOnAppeal(ctx context.Context, contentID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, approveServiceClaimOnAppeal, contentID)
 	if err != nil {
 		return 0, err
 	}
@@ -670,7 +693,7 @@ func (q *Queries) CancelServiceBooking(ctx context.Context, arg CancelServiceBoo
 const claimServiceListingIfUnclaimed = `-- name: ClaimServiceListingIfUnclaimed :execrows
 UPDATE service_listing_meta
 SET claim_status = 'pending', claimed_by_org_id = $1, updated_at = now()
-WHERE content_id = $2 AND claim_status = 'unclaimed'
+WHERE content_id = $2 AND claim_status = 'unclaimed' AND org_id IS NULL
 `
 
 type ClaimServiceListingIfUnclaimedParams struct {
@@ -678,7 +701,10 @@ type ClaimServiceListingIfUnclaimedParams struct {
 	ContentID pgtype.UUID `json:"content_id"`
 }
 
-// Atomically initiate a claim only when unclaimed (BUG-007).
+// Atomically initiate a claim only when unclaimed (BUG-007) and unowned.
+// The claim flow exists for platform-seeded listings with no owning org —
+// a listing that already has org_id is owned, so claim must not let a
+// different org take it over on approval (ownership hijack).
 func (q *Queries) ClaimServiceListingIfUnclaimed(ctx context.Context, arg ClaimServiceListingIfUnclaimedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, claimServiceListingIfUnclaimed, arg.OrgID, arg.ContentID)
 	if err != nil {
@@ -4150,10 +4176,13 @@ func (q *Queries) OrgCancelServiceBooking(ctx context.Context, arg OrgCancelServ
 
 const rejectServiceClaimIfPending = `-- name: RejectServiceClaimIfPending :execrows
 UPDATE service_listing_meta
-SET claim_status = 'rejected', claimed_by_org_id = null, updated_at = now()
+SET claim_status = 'rejected', updated_at = now()
 WHERE content_id = $1 AND claim_status = 'pending'
 `
 
+// Rejection keeps claimed_by_org_id: the claimant identity drives §22
+// appeal eligibility (members of the rejected org may appeal) and the
+// overturn path re-approves without re-capturing the org.
 func (q *Queries) RejectServiceClaimIfPending(ctx context.Context, contentID pgtype.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, rejectServiceClaimIfPending, contentID)
 	if err != nil {

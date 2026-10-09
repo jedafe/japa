@@ -136,6 +136,17 @@ func (s *Store) getTicketByID(ctx context.Context, id pgtype.UUID) (gen.GetTicke
 	return row, nil
 }
 
+// getTicketByNumber is the numeric-ref variant of getTicketByID — routes accept
+// either the ticket's UUID or its JC-<number> reference (§38).
+func (s *Store) getTicketByNumber(ctx context.Context, n int64) (gen.GetTicketByNumberRow, error) {
+	row, err := s.read.GetTicketByNumber(ctx, &n)
+	if err != nil {
+		return gen.GetTicketByNumberRow{}, fmt.Errorf("getting ticket by number: %w", err)
+	}
+
+	return row, nil
+}
+
 func (s *Store) listTicketsByPlatform(ctx context.Context, p gen.ListTicketsParams) (ListTicketsResponse, error) {
 	if p.PageLimit <= 0 || p.PageLimit > MaxPageSize {
 		p.PageLimit = DefaultPageSize

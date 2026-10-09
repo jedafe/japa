@@ -14,7 +14,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/appeals"
+	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/organizations"
@@ -1384,6 +1387,18 @@ func (h *Handlers) ListAppeals(w http.ResponseWriter, r *http.Request) {
 			"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
 			"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
 		}
+		if a.SubjectLabel != nil {
+			entry["subject_label"] = *a.SubjectLabel
+		}
+		if a.TicketID.Valid {
+			entry["ticket_id"] = a.TicketID.String()
+		}
+		if a.TicketNumber != nil {
+			entry["ticket_number"] = *a.TicketNumber
+		}
+		if a.ResolutionNote != nil {
+			entry["resolution_note"] = *a.ResolutionNote
+		}
 		if a.Username != nil {
 			entry["username"] = *a.Username
 		}
@@ -1415,18 +1430,42 @@ func (h *Handlers) GetAppeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	out := map[string]any{
 		"id": a.ID.String(), "user_id": a.UserID.String(), "entity_type": a.EntityType,
 		"entity_id": a.EntityID, "reason": a.Reason, "status": a.Status, "created_at": a.CreatedAt.Time.Format(time.RFC3339),
-	}})
+	}
+	if a.SubjectLabel != nil {
+		out["subject_label"] = *a.SubjectLabel
+	}
+	if a.TicketID.Valid {
+		out["ticket_id"] = a.TicketID.String()
+	}
+	if a.TicketNumber != nil {
+		out["ticket_number"] = *a.TicketNumber
+	}
+	if a.ResolutionNote != nil {
+		out["resolution_note"] = *a.ResolutionNote
+	}
+	if a.ReviewedBy.Valid {
+		out["reviewed_by"] = a.ReviewedBy.String()
+	}
+	if a.ResolvedAt.Valid {
+		out["resolved_at"] = a.ResolvedAt.Time.Format(time.RFC3339)
+	}
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": out})
 }
 
-// UpdateAppeal handles PATCH /admin/appeals/:id.
+// UpdateAppeal handles PATCH /admin/appeals/:id. Delegates to the §22
+// appeals service so 'overturn' applies the subject-type reversal
+// (lift ban / restore content / approve claim) and resolves the linked
+// ticket; 'upheld' and 'dismissed' close the appeal without subject
+// action.
 func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var input struct {
-		Status string `json:"status"`
+		Status         string `json:"status"`
+		ResolutionNote string `json:"resolution_note"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -1440,12 +1479,33 @@ func (h *Handlers) UpdateAppeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Queries.UpdateAppealStatus(r.Context(), gen.UpdateAppealStatusParams{
-		Status: input.Status,
-		ID:     aid,
-	})
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
+	if h.AppealResolver == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Appeal resolution unavailable")
+		return
+	}
+
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	if err := h.AppealResolver.Resolve(r.Context(), aid, user.UserID, input.Status, input.ResolutionNote); err != nil {
+		switch {
+		case errors.Is(err, appeals.ErrInvalidStatus):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Status must be upheld, overturn, or dismissed")
+		case errors.Is(err, appeals.ErrAlreadyResolved):
+			errpkg.WriteError(w, http.StatusConflict, "already_resolved", "This appeal has already been resolved")
+		case errors.Is(err, appeals.ErrReversalBlocked):
+			// e.g. the appellant already spent the refunded credits — the
+			// reversal can't safely complete yet; the appeal stays pending.
+			errpkg.WriteError(w, http.StatusConflict, "resolution_blocked", err.Error())
+		case errors.Is(err, pgx.ErrNoRows):
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Appeal not found")
+		default:
+			slog.Error("appeal resolution failed", "id", id, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to update appeal")
+		}
 		return
 	}
 

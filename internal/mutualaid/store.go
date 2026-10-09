@@ -217,6 +217,49 @@ LIMIT 1
 	return r, nil
 }
 
+// GetPostForViewer returns a post by id for a specific viewer. Same rules
+// as GetPost, plus the author may fetch their own removed post — §22
+// mutual_aid_post appeals mount on the detail page, so the removal must
+// remain reachable by the appellant.
+func (s *Store) GetPostForViewer(ctx context.Context, id, viewerID pgtype.UUID) (PostRow, error) {
+	const q = `
+SELECT m.id, m.user_id, m.post_type, m.category, m.title,
+       m.description, m.destination_space_id, m.city_space_id, m.expires_at,
+       m.is_fulfilled, m.status, m.created_at, m.updated_at, m.deleted_at,
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       cs.name AS city_space_name, cs.geo_code AS city_space_code
+FROM mutual_aid_posts m
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN user_profiles up ON up.user_id = m.user_id
+LEFT JOIN spaces ds ON ds.id = m.destination_space_id
+LEFT JOIN spaces cs ON cs.id = m.city_space_id
+WHERE m.id = $1 AND m.deleted_at IS NULL
+  AND (m.status <> 'removed' OR m.user_id = $2)
+LIMIT 1
+`
+
+	var r PostRow
+
+	err := s.pool.Reader.QueryRow(ctx, q, id, viewerID).Scan(
+		&r.ID, &r.UserID, &r.PostType, &r.Category, &r.Title,
+		&r.Description, &r.DestinationSpaceID, &r.CitySpaceID, &r.ExpiresAt,
+		&r.IsFulfilled, &r.Status, &r.CreatedAt, &r.UpdatedAt, &r.DeletedAt,
+		&r.AuthorName, &r.AuthorAvatar,
+		&r.DestSpaceName, &r.DestSpaceCode,
+		&r.CitySpaceName, &r.CitySpaceCode,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PostRow{}, pgx.ErrNoRows
+		}
+
+		return PostRow{}, fmt.Errorf("mutualaid: get post for viewer: %w", err)
+	}
+
+	return r, nil
+}
+
 // ListPosts returns a paginated, filtered list of active posts.
 func (s *Store) ListPosts(ctx context.Context, f ListPostsFilter) ([]PostRow, int64, error) {
 	var (

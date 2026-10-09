@@ -121,23 +121,28 @@ WHERE id = $1;
 -- =====================
 
 -- name: ListModerationAppeals :many
-SELECT ma.id, ma.user_id, ma.entity_type, ma.entity_id, ma.reason, ma.status, ma.created_at,
+SELECT ma.id, ma.user_id, ma.entity_type, ma.entity_id, ma.reason, ma.subject_label, ma.status, ma.created_at,
+ ma.ticket_id, ma.resolution_note, t.ticket_number,
  u.username, up.display_name
 FROM moderation_appeals ma
 LEFT JOIN users u ON u.id = ma.user_id
 LEFT JOIN user_profiles up ON up.user_id = ma.user_id
+LEFT JOIN tickets t ON t.id = ma.ticket_id
 WHERE (sqlc.narg(search)::text IS NULL OR (
  ma.entity_id::text ILIKE '%' || sqlc.narg(search) || '%'
  OR ma.reason ILIKE '%' || sqlc.narg(search) || '%'
  OR ma.entity_type ILIKE '%' || sqlc.narg(search) || '%'
+ OR ma.subject_label ILIKE '%' || sqlc.narg(search) || '%'
  ))
 ORDER BY ma.created_at DESC
 LIMIT 50;
 
 -- name: GetModerationAppeal :one
-SELECT id, user_id, entity_type, entity_id, reason, status, created_at
-FROM moderation_appeals
-WHERE id = $1;
+SELECT ma.id, ma.user_id, ma.entity_type, ma.entity_id, ma.reason, ma.subject_label, ma.status, ma.created_at,
+ ma.ticket_id, ma.resolution_note, ma.reviewed_by, ma.resolved_at, t.ticket_number
+FROM moderation_appeals ma
+LEFT JOIN tickets t ON t.id = ma.ticket_id
+WHERE ma.id = $1;
 
 -- name: UpdateAppealStatus :exec
 UPDATE moderation_appeals SET status = $1, updated_at = now() WHERE id = $2;

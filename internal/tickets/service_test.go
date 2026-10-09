@@ -161,3 +161,30 @@ func TestUpdateTicketStatusInputWithResolution(t *testing.T) {
 		t.Errorf("expected resolution note %q, got %q", "Issue fixed", input.ResolutionNote)
 	}
 }
+
+func TestParseTicketNumber(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in   string
+		want int64
+		ok   bool
+	}{
+		{"JC-1042", 1042, true},
+		{"jc-1042", 1042, true},
+		{"1042", 1042, true},
+		{"  JC-7 ", 7, true},
+		{"JC-", 0, false},
+		{"", 0, false},
+		{"abc", 0, false},
+		{"0", 0, false},
+		{"-5", 0, false},
+		{"JC-abc", 0, false},
+	}
+	for _, tc := range cases {
+		got, ok := parseTicketNumber(tc.in)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("parseTicketNumber(%q) = %d,%v; want %d,%v", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}

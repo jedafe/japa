@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -305,18 +307,69 @@ func (s *Service) GetTicket(ctx context.Context, id pgtype.UUID) (gen.GetTicketB
 	return s.store.getTicketByID(ctx, id)
 }
 
+// ResolveTicketRef accepts a ticket UUID or its public JC-<number> reference
+// ("JC-1042" or bare "1042") and returns the ticket's internal UUID. Every
+// /tickets/{id} route resolves its path parameter through this so
+// human-readable references work across all sub-resources (§38).
+func (s *Service) ResolveTicketRef(ctx context.Context, ref string) (pgtype.UUID, error) {
+	var id pgtype.UUID
+	if err := id.Scan(ref); err == nil {
+		return id, nil
+	}
+
+	n, ok := parseTicketNumber(ref)
+	if !ok {
+		return pgtype.UUID{}, fmt.Errorf("%w: invalid ticket reference %q", errpkg.ErrInvalid, ref)
+	}
+
+	row, err := s.store.getTicketByNumber(ctx, n)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return row.ID, nil
+}
+
+// parseTicketNumber parses a human-readable ticket reference — "JC-1042",
+// "jc-1042", or bare "1042" — into the numeric ticket_number.
+func parseTicketNumber(ref string) (int64, bool) {
+	ref = strings.TrimPrefix(strings.ToUpper(strings.TrimSpace(ref)), "JC-")
+
+	n, err := strconv.ParseInt(ref, 10, 64)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+
+	return n, true
+}
+
 // ListTickets returns tickets for admin view with filters.
 func (s *Service) ListTickets(ctx context.Context, status, priority string, typeID, assignedTo pgtype.UUID, search string, limit, offset int32) (ListTicketsResponse, error) {
+	// Searching the display form "JC-46" should hit ticket_number 46 —
+	// strip the prefix so the digits match the ::text comparison.
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(search)), "JC-") {
+		if n, ok := parseTicketNumber(search); ok {
+			search = strconv.FormatInt(n, 10)
+		}
+	}
 	return s.store.listTicketsByPlatform(ctx, gen.ListTicketsParams{
-
-		Status:     status,
-		Priority:   priority,
+		Status:     strPtrOrNil(status),
+		Priority:   strPtrOrNil(priority),
 		TypeID:     typeID,
 		AssignedTo: assignedTo,
-		Search:     search,
+		Search:     strPtrOrNil(search),
 		PageLimit:  limit,
 		PageOffset: offset,
 	})
+}
+
+// strPtrOrNil maps an empty filter string to NULL so sqlc.narg predicates
+// stay open — "" would otherwise filter every row out.
+func strPtrOrNil(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 // ListTicketsBySubmitter returns tickets submitted by a specific user.

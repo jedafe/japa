@@ -551,7 +551,10 @@ func (s *Service) GetItem(ctx context.Context, slug string, viewerID pgtype.UUID
 		return nil, err // pgx.ErrNoRows → 404 via HandleServiceError
 	}
 
-	if !IsPublicStatus(ItemStatus(row.Status)) {
+	// Submitter sees their own item in any state (§22: a declined item must
+	// be reachable so the author can appeal the decision from the detail
+	// surface); everyone else gets the §113 indistinguishable-404.
+	if !IsPublicStatus(ItemStatus(row.Status)) && row.SubmittedBy != viewerID {
 		return nil, fmt.Errorf("%w: roadmap item %q is not public", ErrNotFound, slug)
 	}
 
@@ -575,7 +578,7 @@ func (s *Service) GetItem(ctx context.Context, slug string, viewerID pgtype.UUID
 		HasVoted:       row.HasVoted,
 	})
 
-	return &ItemDetail{BoardItem: item, Body: row.Body}, nil
+	return &ItemDetail{BoardItem: item, Body: row.Body, IsSubmitter: row.SubmittedBy == viewerID && viewerID.Valid}, nil
 }
 
 // GetChangelog returns all shipped items ordered by shipped_at DESC —

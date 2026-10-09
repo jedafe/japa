@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -11,6 +12,43 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/valkey"
 )
+
+// banExemptPrefixes are the endpoints a banned/suspended user can still
+// reach so the §22 appeal loop stays usable — submit an appeal, read it
+// back, and converse on the linked §38 staff ticket. Everything else
+// stays blocked.
+//
+// Ref: japaconnect-engineering/sections/22-admin-panel.md (Appeals)
+var banExemptPrefixes = []string{
+	"/api/v1/appeals",
+	"/api/v1/me/appeals",
+	"/api/v1/me/tickets",
+}
+
+// banExemptExact are exact-path exemptions for the session bootstrap a
+// restricted session needs: /me (the frontend resolves identity + status
+// from it — without it the shell clears jc_token on the 403), /csrf
+// (needed to mint a token for POST /appeals), and auth refresh/logout so
+// the appeal channel survives access-token expiry. These are EXACT matches
+// — other /me/* subresources (content, notifications…) stay blocked.
+var banExemptExact = map[string]bool{
+	"/api/v1/me":           true,
+	"/api/v1/csrf":         true,
+	"/api/v1/auth/refresh": true,
+	"/api/v1/auth/logout":  true,
+}
+
+func isBanExemptPath(path string) bool {
+	if banExemptExact[path] {
+		return true
+	}
+	for _, p := range banExemptPrefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // BanEnforcement returns middleware that checks if the authenticated user
 // is banned. It checks the Valkey cache first (jc:ban:{user_id}) and
@@ -20,13 +58,15 @@ import (
 // when an active (non-expired) ban exists for the given user ID.
 //
 // When a ban is found, the middleware writes a 403 JSON response and
-// stops the request chain. When Valkey is unreachable or the user is
-// not banned, the request passes through normally.
+// stops the request chain — except on the appeal channel above, which a
+// banned user must be able to reach to contest the ban. When Valkey is
+// unreachable or the user is not banned, the request passes through
+// normally.
 func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context, userID string) (bool, *time.Time)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := auth.FromContext(r.Context())
-			if user == nil || !user.UserID.Valid {
+			if user == nil || !user.UserID.Valid || isBanExemptPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { Megaphone, Plus, Pause, Play, BarChart3, ArrowLeft, Check, X } from 'lucide-svelte';
 	import { invalidateAll } from '$app/navigation';
@@ -454,6 +455,9 @@
 										>
 											<Play class="h-4 w-4" />
 										</button>
+									{/if}
+									{#if campaign.status === 'rejected'}
+										<AppealButton entityType="ad_campaign" entityId={campaign.id} />
 									{/if}
 									<a
 										href="/dashboard/organizations/{org?.id}/ads/{campaign.id}/stats"

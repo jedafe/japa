@@ -5,6 +5,7 @@
 	import { calculateWithdrawal, createWithdrawal, createWithdrawalMethod } from '$lib/api/hub';
 	import type { WalletData, Withdrawal } from './types';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 
 	interface Props {
 		data: WalletData;
@@ -435,6 +436,9 @@
 							<span>{formatFiat(w.net_amount, w.currency_code)}</span>
 							<span>{new Date(w.created_at ?? '').toLocaleString()}</span>
 						</div>
+						{#if w.status === 'rejected'}
+							<AppealButton entityType="withdrawal" entityId={w.id} />
+						{/if}
 					</li>
 				{/each}
 			</ul>

@@ -16,6 +16,7 @@
 	import StatusBadge from '$lib/components/roadmap/StatusBadge.svelte';
 	import StatusSelect from '$lib/components/roadmap/StatusSelect.svelte';
 	import RoadmapCard from '$lib/components/roadmap/RoadmapCard.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { ArrowLeft, Flag, Pin } from 'lucide-svelte';
 	import { roadmapPublicStatuses, roadmapStatusLabel } from '$lib/enumOptions';
 
@@ -162,6 +163,10 @@
 
 			{#if data.canModerate}
 				<StatusSelect itemId={item.id} status={item.status} featureFlagKey={item.feature_flag_key} />
+			{/if}
+
+			{#if item.is_submitter && item.status === 'declined'}
+				<AppealButton entityType="roadmap_item" entityId={item.id} />
 			{/if}
 		</div>
 

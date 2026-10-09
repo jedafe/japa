@@ -39,6 +39,7 @@
 	import ProviderCard from '$lib/components/marketplace/ProviderCard.svelte';
 	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
 	import BookingDialog from '$lib/components/marketplace/BookingDialog.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { serviceCategoryIcon } from '$lib/components/marketplace/serviceCategoryIcon';
 	import { accentClasses, priceLabel, serviceCategoryInfo } from '$lib/marketplace';
 	import { serviceCategoryLabel } from '$lib/enumOptions';
@@ -162,6 +163,17 @@
 		!!service &&
 			service.claim_status === 'unclaimed' &&
 			(data.myOrgs?.length ?? 0) > 0
+	);
+
+	// §22 appeal surface — a rejected claim can be appealed by members of
+	// the rejected org (claimed_by_org_id is retained on rejection for
+	// exactly this). The backend CanAppeal hook re-verifies eligibility.
+	const canAppealClaim = $derived(
+		!!data.authed &&
+			!!service &&
+			service.claim_status === 'rejected' &&
+			service.claimed_by_org_id != null &&
+			(data.myOrgs ?? []).some((o) => o.id === service.claimed_by_org_id)
 	);
 
 	// ------------------------------------------------------------------
@@ -1065,7 +1077,7 @@
 						{/if}
 					{/if}
 
-					{#if !canEdit && service.claim_status === 'unclaimed'}
+					{#if !canEdit && service.claim_status === 'unclaimed' && !service.org_id}
 						{#if claimResult?.ok}
 							<div class="flex items-center gap-2 text-sm text-[var(--color-success)]">
 								<CheckCircle2 size={16} aria-hidden="true" />
@@ -1111,6 +1123,22 @@
 								)}
 							</p>
 						{/if}
+					{/if}
+
+					{#if canAppealClaim}
+						<div class="flex flex-wrap items-center gap-3">
+							<p class="text-sm text-[var(--color-text-subtle)]">
+								{t(
+									'services.claim_rejected_hint',
+									"Your organization's claim was rejected. You can appeal the decision."
+								)}
+							</p>
+							<AppealButton
+								entityType="service_claim"
+								entityId={service.id}
+								label={t('appeals.appeal_decision', 'Appeal rejection')}
+							/>
+						</div>
 					{/if}
 				</div>
 			{/if}

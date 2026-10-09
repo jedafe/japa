@@ -44,9 +44,13 @@ type ScamReportDTO struct {
 	ModeratorNote         string `json:"moderator_note,omitempty"`
 	IsPinned              bool   `json:"is_pinned"`
 	IsSubscribed          bool   `json:"is_subscribed"`
-	PinnedSpaceID         string `json:"pinned_space_id,omitempty"`
-	ReviewedBy            string `json:"reviewed_by,omitempty"`
-	ReviewedAt            string `json:"reviewed_at,omitempty"`
+	// IsReporter is set on public list/get responses when the caller is the
+	// report's submitter — drives reporter-only UI (edit, §22 appeal). The
+	// raw reporter_id is withheld from non-reporters on public surfaces.
+	IsReporter    bool   `json:"is_reporter,omitempty"`
+	PinnedSpaceID string `json:"pinned_space_id,omitempty"`
+	ReviewedBy    string `json:"reviewed_by,omitempty"`
+	ReviewedAt    string `json:"reviewed_at,omitempty"`
 	// ADR-088 universal AI-generation fields (admin review surfaces).
 	AiGenerated    bool   `json:"ai_generated"`
 	AiModel        string `json:"ai_model,omitempty"`
@@ -456,6 +460,33 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (ScamReportDTO, error
 		return ScamReportDTO{}, fmt.Errorf("scamalert: get: %w", err)
 	}
 
+	return rowToDTO(row), nil
+}
+
+// GetForViewer returns the public view of a report for the given caller.
+// Non-confirmed reports (under_review/debunked/duplicate) are hidden from
+// the public but remain readable by their own reporter — the §22 appeal
+// surface on the detail page needs the reporter to reach debunked and
+// duplicate reports.
+func (s *Service) GetForViewer(ctx context.Context, id, callerID pgtype.UUID) (ScamReportDTO, error) {
+	dto, err := s.Get(ctx, id)
+	if err == nil || !callerID.Valid {
+		return dto, err
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return dto, err
+	}
+
+	row, rerr := s.store.GetReportForUpdate(ctx, id)
+	if rerr != nil {
+		if errors.Is(rerr, pgx.ErrNoRows) {
+			return ScamReportDTO{}, pgx.ErrNoRows
+		}
+		return ScamReportDTO{}, fmt.Errorf("scamalert: get for viewer: %w", rerr)
+	}
+	if !row.ReporterID.Valid || row.ReporterID != callerID {
+		return ScamReportDTO{}, pgx.ErrNoRows
+	}
 	return rowToDTO(row), nil
 }
 

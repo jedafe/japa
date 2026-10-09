@@ -491,7 +491,11 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user.Status != "active" {
+	// Banned/suspended/restricted users may still authenticate — §22 requires
+	// the appeal channel to stay reachable; BanEnforcement confines their
+	// session to the appeal/ticket surface. Only 'deleted' (and any unknown
+	// status) is a hard stop.
+	if !loginAllowedStatus(user.Status) {
 		errpkg.WriteError(w, http.StatusForbidden, "account_inactive", "Account is not active")
 		return
 	}
@@ -742,7 +746,10 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if userRow.Status != "active" {
+	// Same restricted-session rule as login (§22): banned/suspended/
+	// restricted users keep their session for the appeal channel; only
+	// terminal statuses get a full revocation.
+	if !loginAllowedStatus(userRow.Status) {
 		// Revoke all sessions for the inactive user.
 		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
 			stored.UserID,
@@ -1632,5 +1639,19 @@ func (h *AuthHandlers) enqueueEmail(to, subject, body string, isHTML bool) {
 	// Use QueueForTask to route to the correct tier (default for emails).
 	if _, err := h.AsynqClient.Enqueue(task, asynq.Queue(worker.QueueForTask(worker.TypeEmailSend)), asynq.Unique(1*time.Hour)); err != nil {
 		slog.Error("auth: failed to enqueue email", "to", to, "error", err)
+	}
+}
+
+// loginAllowedStatus is the §22 restricted-session rule: users under a
+// ban/suspension/operation restriction may authenticate so the appeal
+// channel (POST /appeals, /me/appeals, /me/tickets) stays reachable —
+// BanEnforcement confines them to exempt paths. 'deleted', 'pending', and
+// any unknown status remain hard stops.
+func loginAllowedStatus(status string) bool {
+	switch status {
+	case "active", "banned", "suspended", "restricted":
+		return true
+	default:
+		return false
 	}
 }

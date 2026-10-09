@@ -53,10 +53,19 @@ type OrgDTO struct {
 	IsActive             bool    `json:"is_active"`
 	IsCommunitySubmitted bool    `json:"is_community_submitted"`
 	Status               string  `json:"status"`
-	SubmittedBy          string  `json:"submitted_by,omitempty"`
-	SubmitterName        string  `json:"submitter_name,omitempty"`
-	ReviewedBy           string  `json:"reviewed_by,omitempty"`
-	ReviewedAt           string  `json:"reviewed_at,omitempty"`
+	// IsSubmitter / ClaimRejected are viewer-scoped gates for §22 appeal
+	// affordances — set only by the detail endpoints when a caller is
+	// authenticated; they stay false for anonymous/public viewers.
+	IsSubmitter   bool `json:"is_submitter,omitempty"`
+	ClaimRejected bool `json:"claim_rejected,omitempty"`
+	// IsRemoved marks archived or soft-deleted submissions — only ever true
+	// for the submitter's viewer-scoped fetch (public responses never reach
+	// removed rows), so it can directly gate the §22 community_org appeal.
+	IsRemoved     bool   `json:"is_removed,omitempty"`
+	SubmittedBy   string `json:"submitted_by,omitempty"`
+	SubmitterName string `json:"submitter_name,omitempty"`
+	ReviewedBy    string `json:"reviewed_by,omitempty"`
+	ReviewedAt    string `json:"reviewed_at,omitempty"`
 	// ADR-088 universal AI content generation metadata.
 	AiGenerated      bool   `json:"ai_generated"`
 	AiModel          string `json:"ai_model,omitempty"`
@@ -541,9 +550,11 @@ func (s *Service) Generate(ctx context.Context, generatedBy pgtype.UUID, input G
 }
 
 // GetBySlug returns a single published community organisation by its slug.
-// Anonymous-accessible.
-func (s *Service) GetBySlug(ctx context.Context, slug string) (OrgDTO, error) {
-	row, err := s.store.GetBySlug(ctx, slug)
+// Anonymous-accessible; the submitter may additionally reach their own
+// pending/archived/removed submission so §22 appeal surfaces stay
+// reachable.
+func (s *Service) GetBySlug(ctx context.Context, slug string, viewerID pgtype.UUID) (OrgDTO, error) {
+	row, err := s.store.GetBySlug(ctx, slug, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OrgDTO{}, pgx.ErrNoRows
@@ -552,7 +563,12 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (OrgDTO, error) {
 		return OrgDTO{}, fmt.Errorf("communitylocator: get by slug: %w", err)
 	}
 
-	return rowToDTO(row), nil
+	dto := rowToDTO(row)
+	dto.IsSubmitter = viewerID.Valid && row.SubmittedBy == viewerID
+	dto.ClaimRejected = viewerID.Valid && row.ClaimedByUserID == viewerID && row.ClaimRejectedAt.Valid
+	dto.IsRemoved = dto.IsSubmitter && (row.DeletedAt.Valid || row.Status == StatusArchived)
+
+	return dto, nil
 }
 
 // List returns a paginated, filtered list of published community
@@ -599,10 +615,11 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 }
 
 // InitiateClaim begins the claim flow on a community organisation, setting
-// claim_status to 'pending'. Auth required (community_locator.claim
-// permission checked at route level).
-func (s *Service) InitiateClaim(ctx context.Context, id pgtype.UUID) error {
-	if err := s.store.InitiateClaim(ctx, id); err != nil {
+// claim_status to 'pending' and recording the claimant in
+// claimed_by_user_id. Auth required (community_locator.claim permission
+// checked at route level).
+func (s *Service) InitiateClaim(ctx context.Context, id, userID pgtype.UUID) error {
+	if err := s.store.InitiateClaim(ctx, id, userID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return pgx.ErrNoRows
 		}

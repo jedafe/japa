@@ -7,6 +7,7 @@
 	import { api } from '$lib/api/client';
 	import { page } from '$app/state';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { formatPriceKobo, formatCount } from '$lib/format';
 	import { GraduationCap, DollarSign, Users, TrendingUp, PenLine, CheckCircle, Clock, XCircle, Plus, Pencil, BarChart3 } from 'lucide-svelte';
 	import type { AcademyInstructorProfile, InstructorTrack, EarningsSummary, Payout } from '$lib/types';
@@ -178,12 +179,28 @@
 			description={t('academy.application_rejected_description')}
 		>
 			{#snippet action()}
-				<a
-					href="/dashboard/instructor/apply"
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
-				>
-					{t('academy.apply')}
-				</a>
+				<div class="flex items-center justify-center gap-3">
+					<a
+						href="/dashboard/instructor/apply"
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+					>
+						{t('academy.apply')}
+					</a>
+					{#if profile}
+						<AppealButton entityType="academy_instructor" entityId={profile.id} />
+					{/if}
+				</div>
+			{/snippet}
+		</EmptyState>
+	{:else if profile?.status === 'suspended'}
+		<EmptyState
+			title={t('academy.application_suspended', 'Instructor Account Suspended')}
+			description={t('academy.application_suspended_description', 'Your instructor account has been suspended.')}
+		>
+			{#snippet action()}
+				{#if profile}
+					<AppealButton entityType="academy_instructor" entityId={profile.id} />
+				{/if}
 			{/snippet}
 		</EmptyState>
 	{:else if !profile || profile.status !== 'approved'}
@@ -314,6 +331,9 @@
 											>
 												{submittingTrackId === tr.id ? t('common.processing', 'Processing...') : t('academy.submit_course')}
 											</button>
+										{/if}
+										{#if tr.submission_status === 'rejected'}
+											<AppealButton entityType="academy_track" entityId={tr.id} class="px-2.5 py-1 text-xs" />
 										{/if}
 									</div>
 								</div>

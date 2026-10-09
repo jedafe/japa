@@ -9,7 +9,8 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PaginationControls from '$lib/components/ui/PaginationControls.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
-	import { Ticket, Plus } from 'lucide-svelte';
+	import { Ticket, Plus, Scale } from 'lucide-svelte';
+	import { ticketHref, ticketRef } from '$lib/tickets';
 	import type { TicketPriority, TicketStatus } from '$lib/types';
 
 	let { data } = $props();
@@ -106,6 +107,13 @@
 				onValueChange={changePageSize}
 			/>
 			<a
+				href="/dashboard/appeals"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] transition hover:bg-[var(--color-surface-subtle)]"
+			>
+				<Scale class="h-4 w-4" aria-hidden="true" />
+				{t('appeals.nav_label', 'Appeals')}
+			</a>
+			<a
 				href="/dashboard/tickets/new"
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90"
 			>
@@ -126,7 +134,7 @@
 			{#each tickets as tk (tk.id)}
 				<li>
 					<a
-						href="/dashboard/tickets/{tk.id}"
+						href={ticketHref(tk)}
 						class="block rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition hover:border-[var(--color-primary)]/40"
 					>
 						<div class="flex items-start justify-between gap-3">
@@ -141,7 +149,7 @@
 							</span>
 						</div>
 						<div class="mt-2 flex items-center gap-3 text-xs text-[var(--color-muted)]">
-							<span>#{tk.id.slice(0, 8)}</span>
+							<span>{ticketRef(tk)}</span>
 							<span>·</span>
 							<span>{t(PRIORITY_KEY[tk.priority])}</span>
 							<span>·</span>

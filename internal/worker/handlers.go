@@ -1176,11 +1176,18 @@ func HandleTicketSendConfirmation(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("parsing ticket template: %w", err)
 	}
 
+	// User-facing reference is the JC-<n> ticket number (§38); fall back to
+	// the UUID prefix for rows predating the column.
+	ticketRef := ticketID.String()
+	if ticket.TicketNumber != nil {
+		ticketRef = fmt.Sprintf("JC-%d", *ticket.TicketNumber)
+	}
+
 	var bodyBuf bytes.Buffer
 	if err := ticketTmpl.Execute(&bodyBuf, struct {
 		Subject  string
 		TicketID string
-	}{Subject: ticket.Subject, TicketID: ticketID.String()}); err != nil {
+	}{Subject: ticket.Subject, TicketID: ticketRef}); err != nil {
 		return fmt.Errorf("rendering ticket template: %w", err)
 	}
 

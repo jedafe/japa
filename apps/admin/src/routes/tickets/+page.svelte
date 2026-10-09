@@ -18,6 +18,7 @@
 
 	type TicketItem = {
 		id: string;
+		ticket_number?: number;
 		subject: string;
 		type_name: string;
 		type_slug: string;
@@ -138,9 +139,14 @@
 
 	const columns = [
 		{
+			key: "ticket_number",
+			label: t("tickets.ref", "Ref"),
+			render: (v: number, row: TicketItem) => (v ? `JC-${v}` : `#${row.id.slice(0, 8)}`)
+		},
+		{
 			key: "subject",
 			label: t("tickets.subject", "Subject"),
-			
+
 		},
 		{
 			key: "type_name",

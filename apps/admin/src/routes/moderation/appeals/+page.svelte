@@ -7,6 +7,7 @@
 	import { moderationAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { escapeHtml } from '$lib/utils/html';
 	import { Eye, Gavel, RotateCcw, XCircle } from 'lucide-svelte';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 
@@ -17,6 +18,7 @@
 		display_name?: string;
 		entity_type: string;
 		entity_id: string;
+		subject_label?: string;
 		reason: string;
 		status: string;
 		resolution_note?: string;
@@ -150,7 +152,11 @@
 				key: 'entity_type',
 				label: t('moderation.subject', 'Subject'),
 				sortable: true,
-				render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v}</span>`
+				render: (v: string, row: Appeal) =>
+					`<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">${v}</span>` +
+					(row.subject_label
+						? `<div class="mt-0.5 text-xs">${escapeHtml(row.subject_label)}</div>`
+						: '')
 			},
 			{
 				key: 'display_name',
@@ -266,6 +272,9 @@
 			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('moderation.subject', 'Subject')}</p>
 			<p class="mt-1">
 				<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-info/15 text-info dark:text-info">{row.entity_type}</span>
+				{#if row.subject_label}
+					<span class="ml-2 text-sm" style="color: var(--color-foreground)">{row.subject_label}</span>
+				{/if}
 				<span class="ml-2 text-xs font-mono" style="color: var(--color-muted)">{row.entity_id}</span>
 			</p>
 		</div>

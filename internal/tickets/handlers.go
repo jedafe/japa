@@ -76,6 +76,23 @@ func parseUUIDParam(r *http.Request, param string) (pgtype.UUID, error) {
 	return id, nil
 }
 
+// parseTicketRef resolves the ticket {id} route parameter — a UUID or a public
+// JC-<number> reference — to the ticket's internal UUID (§38). Writes the
+// error response and returns false on failure.
+func (h *Handlers) parseTicketRef(w http.ResponseWriter, r *http.Request) (pgtype.UUID, bool) {
+	id, err := h.Service.ResolveTicketRef(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		if errors.Is(err, errpkg.ErrInvalid) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+		} else {
+			handleServiceError(w, err)
+		}
+		return pgtype.UUID{}, false
+	}
+
+	return id, true
+}
+
 // requireUser resolves the authenticated user from the request context.
 func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUser, bool) {
 	user := auth.FromContext(r.Context())
@@ -250,9 +267,8 @@ func (h *Handlers) GetMyTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -302,9 +318,8 @@ func (h *Handlers) AddReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -399,9 +414,8 @@ func (h *Handlers) GetTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -452,9 +466,8 @@ func (h *Handlers) UpdateTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -563,9 +576,8 @@ func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -622,9 +634,8 @@ func (h *Handlers) AddInternalNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -679,9 +690,8 @@ func (h *Handlers) GetTicketEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -709,9 +719,8 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -746,9 +755,8 @@ func (h *Handlers) ResolveTicket(w http.ResponseWriter, r *http.Request) {
 // DeleteTicket handles DELETE /api/v1/admin/tickets/:id.
 func (h *Handlers) DeleteTicket(w http.ResponseWriter, r *http.Request) {
 
-	id, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	id, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -802,9 +810,8 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticketID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	ticketID, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 
@@ -858,9 +865,8 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticketID, err := parseUUIDParam(r, "id")
-	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid ticket ID")
+	ticketID, ok := h.parseTicketRef(w, r)
+	if !ok {
 		return
 	}
 

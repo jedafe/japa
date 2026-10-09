@@ -73,6 +73,10 @@ export interface SessionUser {
 	username: string;
 	display_name?: string | null;
 	avatar_url?: string | null;
+	/** Account standing — 'banned'|'suspended'|'restricted' sessions are
+	 *  confined to the §22 appeal channel; surfaces should show the
+	 *  restriction notice. Absent/'active' = normal session. */
+	status?: string;
 	groups?: string[];
 	/** Effective RBAC permission nodes resolved by the backend (§26). Present
 	 *  on /me so frontend pages gate UI on the actual node (e.g.
@@ -289,6 +293,8 @@ export interface MeSpace {
 	is_primary?: boolean;
 	level?: string;
 	space_type_id?: string;
+	/** Present on /me/spaces/owned rows — 'suspended' spaces gate the §22 appeal control. */
+	status?: string;
 }
 
 /** GET /me/muted-spaces item. */
@@ -2321,6 +2327,8 @@ export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
 /** GET /me/tickets — list row (includes the joined type name/slug). */
 export interface TicketListItem {
 	id: string;
+	/** Public reference — rendered as JC-<n> (§38). */
+	ticket_number?: number | null;
 	type_id: string;
 	subject: string;
 	description: string;
@@ -2334,6 +2342,31 @@ export interface TicketListItem {
 	updated_at: string;
 	type_name: string;
 	type_slug: string;
+}
+
+/** GET /me/appeals item — §22 appeal record (moderation_appeals row). */
+export interface AppealListItem {
+	id: string;
+	entity_type: string;
+	entity_id: string;
+	/** Human-readable subject snapshot (e.g. "Removed post — Visa Help"). */
+	label?: string;
+	reason: string;
+	status: 'pending' | 'upheld' | 'overturn' | 'dismissed';
+	ticket_id?: string;
+	/** Public ticket reference number for the linked staff thread (§38). */
+	ticket_number?: number;
+	resolution_note?: string;
+	created_at: string;
+	resolved_at?: string;
+}
+
+/** GET /me/appeals/eligible item — a decision the caller can appeal (§22). */
+export interface AppealEligibleItem {
+	entity_type: string;
+	entity_id: string;
+	label: string;
+	detail?: string;
 }
 
 /** GET /me/tickets/{id} — full ticket + comments + attachments. */
@@ -3590,6 +3623,9 @@ export interface ScamReport {
 	moderator_note?: string;
 	is_pinned: boolean;
 	is_subscribed?: boolean;
+	/** True when the caller is the report's submitter (public surfaces only —
+	 * reporter_id itself is withheld from non-reporters). §22 appeal/edit gate. */
+	is_reporter?: boolean;
 	pinned_space_id?: string;
 	reviewed_by?: string;
 	reviewed_at?: string;
@@ -4700,6 +4736,11 @@ export interface CommunityOrg {
 	is_active: boolean;
 	is_community_submitted: boolean;
 	status: string;
+	/** §22 viewer-scoped gates — true only for the authenticated submitter / rejected claimant. */
+	is_submitter?: boolean;
+	claim_rejected?: boolean;
+	/** §22 — true for the submitter's view when the submission was archived or removed. */
+	is_removed?: boolean;
 	submitted_by?: string | null;
 	submitter_name?: string | null;
 	reviewed_by?: string | null;
@@ -5186,6 +5227,8 @@ export interface RoadmapBoard {
 export interface RoadmapItemDetail extends RoadmapBoardItem {
 	/** Base64 TipTap JSON (submitted via encodeReplyBody) or plain text. */
 	body: string | null;
+	/** True when the caller submitted the item — gates the §22 appeal control on declined items. */
+	is_submitter?: boolean;
 }
 
 /**

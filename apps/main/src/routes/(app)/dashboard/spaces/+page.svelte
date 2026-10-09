@@ -6,6 +6,7 @@
 	import { api } from '$lib/api/client';
 	import { EmptyState, UrlTabs, type UrlTab, PaginationControls } from '$lib/components/ui';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { UsersRound, Plus, Search, Volume2 } from 'lucide-svelte';
 	import type { MeSpace } from '$lib/types';
 
@@ -219,6 +220,16 @@
 									{t('spaces.unmute', 'Unmute')}
 								</button>
 							</div>
+						</div>
+					{:else if tab === 'owned' && s.status === 'suspended'}
+						<div
+							class="flex h-full items-center justify-between gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+						>
+							<a href="/spaces/{s.slug}" class="min-w-0 flex-1 transition hover:text-[var(--color-primary)]">
+								<p class="truncate text-sm font-medium text-[var(--color-text)]">{s.name}</p>
+								<p class="mt-0.5 text-xs text-[var(--color-muted)]">/{s.slug} · {t('spaces.status_suspended', 'Suspended')}</p>
+							</a>
+							<AppealButton entityType="space" entityId={s.id} />
 						</div>
 					{:else}
 						<a

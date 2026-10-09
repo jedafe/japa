@@ -208,9 +208,11 @@ func (s *Service) Create(ctx context.Context, userID pgtype.UUID, input CreatePo
 	return rowToDTO(row), nil
 }
 
-// Get returns a single active post by id. Anonymous-accessible.
-func (s *Service) Get(ctx context.Context, id pgtype.UUID) (PostDTO, error) {
-	row, err := s.store.GetPost(ctx, id)
+// Get returns a single post by id. Anonymous-accessible for public posts;
+// the author may also fetch their own moderation-removed post so the §22
+// appeal surface on the detail page stays reachable.
+func (s *Service) Get(ctx context.Context, id, viewerID pgtype.UUID) (PostDTO, error) {
+	row, err := s.store.GetPostForViewer(ctx, id, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return PostDTO{}, pgx.ErrNoRows

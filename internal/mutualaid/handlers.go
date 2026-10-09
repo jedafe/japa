@@ -298,7 +298,12 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.service.Get(r.Context(), postID)
+	var viewerID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		viewerID = user.UserID
+	}
+
+	post, err := h.service.Get(r.Context(), postID, viewerID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")
@@ -494,7 +499,7 @@ func (h *Handlers) HandleRespond(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	post, err := h.service.Get(r.Context(), postID)
+	post, err := h.service.Get(r.Context(), postID, user.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "post_not_found", "Post not found")

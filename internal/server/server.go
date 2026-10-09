@@ -30,6 +30,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/ama"
 	"github.com/jedafe/japa/internal/analytics"
+	"github.com/jedafe/japa/internal/appeals"
 	"github.com/jedafe/japa/internal/appointmentalert"
 	"github.com/jedafe/japa/internal/arrivalchecklist"
 	"github.com/jedafe/japa/internal/assessment"
@@ -2708,6 +2709,76 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// import.bulk, channel.claim) and restrict cross-user target_username.
 	videoService.SetPermissionChecker(rbacResolver)
 	intelHandlers.SetVideoStore(videoStore)
+
+	// §22 Appeals — user-facing appeal flow backed by moderation_appeals +
+	// a linked §38 'appeal' ticket per submission. Built-in subjects cover
+	// moderation actions, content removals, and service claims; the
+	// cross-service subjects wire their domain approve paths here.
+	appealsService := appeals.NewService(database, ticketService)
+	appealsHandlers := appeals.NewHandlers(appealsService)
+	appealsService.SetAccessCacheInvalidator(func(ctx context.Context, uid pgtype.UUID) {
+		if err := rbac.InvalidatePermCache(ctx, vkClient.Redis(), uid); err != nil {
+			slog.Error("appeals: perm cache invalidation failed", "error", err)
+		}
+		// Both enforcement caches — a stale jc:restrictions entry would keep
+		// an overturned operation ban in effect until TTL expiry.
+		_ = vkClient.Redis().Del(ctx,
+			valkey.MustKey("ban:%s", uid.String()),
+			valkey.MustKey("restrictions:%s", uid.String()),
+		).Err()
+	})
+	// org_claim overturn → re-run the §07 approve path (ownership transfer,
+	// owner membership, webhook) as the resolving admin.
+	appealsService.RegisterOverturn(appeals.SubjectOrgClaim, func(ctx context.Context, a appeals.Appeal, reviewedBy pgtype.UUID) error {
+		var claimID pgtype.UUID
+		if err := claimID.Scan(a.EntityID); err != nil {
+			return err
+		}
+		return orgService.ReviewOwnershipClaim(ctx, claimID, reviewedBy, organizations.ReviewClaimInput{
+			Status:         organizations.ClaimStatusApproved,
+			ResolutionNote: "Appeal overturned — claim approved",
+		})
+	})
+	// video_channel_claim overturn → §106 approve path (rejected→approved is
+	// a legal transition; side-effects run inside the same tx).
+	appealsService.RegisterOverturn(appeals.SubjectVideoClaim, func(ctx context.Context, a appeals.Appeal, reviewedBy pgtype.UUID) error {
+		var claimID pgtype.UUID
+		if err := claimID.Scan(a.EntityID); err != nil {
+			return err
+		}
+		_, err := videoService.ReviewClaim(ctx, reviewedBy, claimID, "approved", "Appeal overturned — claim approved")
+		return err
+	})
+	// withdrawal overturn → wallet.ReopenWithdrawalOnAppeal re-reserves the
+	// refunded credits inside the wallet advisory lock before flipping the
+	// withdrawal back to pending_approval (prevents double-spend).
+	appealsService.RegisterOverturn(appeals.SubjectWithdrawal, func(ctx context.Context, a appeals.Appeal, reviewedBy pgtype.UUID) error {
+		var withdrawalID pgtype.UUID
+		if err := withdrawalID.Scan(a.EntityID); err != nil {
+			return err
+		}
+		err := walletService.ReopenWithdrawalOnAppeal(ctx, withdrawalID)
+		if errors.Is(err, wallet.ErrInsufficientCredits) {
+			return fmt.Errorf("%w: %v", appeals.ErrReversalBlocked, err)
+		}
+		return err
+	})
+	// ad_campaign overturn → adsselfserve.ReopenCampaignOnAppeal re-escrows
+	// the reject-time credit refund (inside the wallet advisory lock) before
+	// the campaign returns to pending_review — otherwise approval would
+	// serve ads against an already-refunded budget.
+	appealsService.RegisterOverturn(appeals.SubjectAdCampaign, func(ctx context.Context, a appeals.Appeal, reviewedBy pgtype.UUID) error {
+		var campaignID pgtype.UUID
+		if err := campaignID.Scan(a.EntityID); err != nil {
+			return err
+		}
+		err := adsSelfServeService.ReopenCampaignOnAppeal(ctx, campaignID)
+		if errors.Is(err, adsselfserve.ErrInsufficientBalance) {
+			return fmt.Errorf("%w: %v", appeals.ErrReversalBlocked, err)
+		}
+		return err
+	})
+	adminHandlers.SetAppealResolver(appealsService)
 	intelHandlers.SetContentStore(contentService)
 	intelHandlers.SetReportService(reportsService)
 	intelHandlers.SetTagService(tagsService)
@@ -2945,6 +3016,52 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// flows) and non-JSON/streaming responses.
 			r.Use(literals.Middleware(literalsCatalog))
 
+			// Bot detection middleware — identifies known bots from User-Agent
+			// and stores bot info in request context for downstream handlers.
+			// Runs after platform middleware (needs platform context) but before
+			// route handlers.
+			r.Use(bots.BotDetectionMiddleware(botStore, vkClient))
+
+			// CSRF double-submit enforcement for all mutating /api/v1 requests
+			// (Bug Hunter §5). Cookie-authenticated browser requests (the admin
+			// SPA) are protected; non-cookie auth (Authorization: Bearer,
+			// X-API-Key) is exempt — those clients are CSRF-immune and would
+			// otherwise break. The public /auth/* subtree (login, register,
+			// password reset) is also exempt: those endpoints are reached before
+			// any token cookie exists and are not state-changing on behalf of an
+			// already-authenticated session. Public form submissions
+			// (/forms/{id}/submissions) and payment provider webhooks
+			// (/payments/webhook/*) are exempt: the former accepts anonymous
+			// submissions, the latter authenticates via webhook signatures, not
+			// cookies. Admin form CRUD (PATCH/DELETE /forms/{id}) is NOT exempt.
+			// Safe GET/OPTIONS pass through.
+			// // WithOriginCheck adds Origin header validation as defense-in-depth:
+			// a cross-site request carries a foreign Origin that is rejected
+			// even if the double-submit cookie was forged via subdomain
+			// injection. Same-origin SPA requests and exempt API clients
+			// (no Origin header) are unaffected.
+			r.Use(csrf.Middleware([]string{"/"}, csrfExempt, csrf.WithOriginCheck(mw.IsOriginAllowed)))
+
+			// Soft auth (ADR-064) — populates the authenticated-user context for
+			// every /api/v1 request when a valid Bearer token is present, without
+			// rejecting guests. This lets the VisitorContext resolver (below) read
+			// the user's content_country_preference on public+authenticated routes
+			// without each route needing its own OptionalAuth wrapper. Per-route
+			// RequireAuth guards still enforce 401 on protected endpoints.
+			r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
+
+			// Impersonation middleware (SEC-002) — injects impersonated identity
+			// into request context when an active impersonation session exists.
+			// Must run AFTER OptionalAuth so the admin's identity is populated in
+			// context before the Valkey lookup. Skips /api/v1/admin/ routes so the
+			// admin can still manage impersonation sessions with their real identity
+			// (Section 46: "wraps all non-admin routes").
+			r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
+
+			// Identity-dependent enforcement middleware — MUST run after
+			// OptionalAuth + impersonation so auth.FromContext is populated.
+			// Registered before soft-auth these all no-op silently.
+
 			// Ban enforcement middleware (BE-035) — checks Valkey cache then
 			// falls back to DB lookup for active bans on user_moderation_actions.
 			r.Use(mw.BanEnforcement(vkClient.Redis(), func(ctx context.Context, userID string) (bool, *time.Time) {
@@ -2972,8 +3089,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			}))
 
 			// Operation-level ban enforcement — checks user_operation_bans
-			// for per-operation restrictions (post, comment, discussion, blog, message).
-			r.Use(mw.OperationBanEnforcement(vkClient.Redis(), func(ctx context.Context, userID, op string) (bool, *time.Time) {
+			// for per-operation restrictions (post, comment, discussion, blog,
+			// message). Chi runs mux-level r.Use before route-level r.With
+			// middleware, so enforcement must be applied per-route as
+			// r.With(mw.WithOperation(op), opBanEnforce) — a mux-level r.Use
+			// would always see an empty operation and silently no-op.
+			opBanEnforce := mw.OperationBanEnforcement(vkClient.Redis(), func(ctx context.Context, userID, op string) (bool, *time.Time) {
 				var restricted bool
 
 				var expiresAt *time.Time
@@ -2993,55 +3114,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					ORDER BY created_at DESC LIMIT 1`, userID, op).Scan(&expiresAt)
 
 				return true, expiresAt
-			}))
-
-			// Bot detection middleware — identifies known bots from User-Agent
-			// and stores bot info in request context for downstream handlers.
-			// Runs after platform middleware (needs platform context) but before
-			// route handlers.
-			r.Use(bots.BotDetectionMiddleware(botStore, vkClient))
-
-			// CSRF double-submit enforcement for all mutating /api/v1 requests
-			// (Bug Hunter §5). Cookie-authenticated browser requests (the admin
-			// SPA) are protected; non-cookie auth (Authorization: Bearer,
-			// X-API-Key) is exempt — those clients are CSRF-immune and would
-			// otherwise break. The public /auth/* subtree (login, register,
-			// password reset) is also exempt: those endpoints are reached before
-			// any token cookie exists and are not state-changing on behalf of an
-			// already-authenticated session. Public form submissions
-			// (/forms/{id}/submissions) and payment provider webhooks
-			// (/payments/webhook/*) are exempt: the former accepts anonymous
-			// submissions, the latter authenticates via webhook signatures, not
-			// cookies. Admin form CRUD (PATCH/DELETE /forms/{id}) is NOT exempt.
-			// Safe GET/OPTIONS pass through.
-			// // WithOriginCheck adds Origin header validation as defense-in-depth:
-			// a cross-site request carries a foreign Origin that is rejected
-			// even if the double-submit cookie was forged via subdomain
-			// injection. Same-origin SPA requests and exempt API clients
-			// (no Origin header) are unaffected.
-			r.Use(csrf.Middleware([]string{"/"}, csrfExempt, csrf.WithOriginCheck(mw.IsOriginAllowed)))
+			})
 
 			// TOTP-for-admin enforcement (SEC-006) — when the
 			// "security.totp_required_for_admin" setting is enabled, admin-level
 			// users (per rbac.HasAdminCapability) without an active TOTP
 			// enrollment are rejected with 403 totp_required on /api/v1/admin/*.
 			r.Use(auth.RequireTOTPForAdmin(settingsService, rbacResolver, totpStore))
-
-			// Soft auth (ADR-064) — populates the authenticated-user context for
-			// every /api/v1 request when a valid Bearer token is present, without
-			// rejecting guests. This lets the VisitorContext resolver (below) read
-			// the user's content_country_preference on public+authenticated routes
-			// without each route needing its own OptionalAuth wrapper. Per-route
-			// RequireAuth guards still enforce 401 on protected endpoints.
-			r.Use(auth.OptionalAuth(kr, vkClient.Redis()))
-
-			// Impersonation middleware (SEC-002) — injects impersonated identity
-			// into request context when an active impersonation session exists.
-			// Must run AFTER OptionalAuth so the admin's identity is populated in
-			// context before the Valkey lookup. Skips /api/v1/admin/ routes so the
-			// admin can still manage impersonation sessions with their real identity
-			// (Section 46: "wraps all non-admin routes").
-			r.Use(impersonation.ImpersonationMiddleware(impersonationStore))
 
 			// VisitorContext resolver (ADR-064) — resolves the effective
 			// content country for geo-aware feed/search personalization. Runs
@@ -3428,7 +3507,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Content routes (Section 14 — Content Type System)
 			// Create (require auth + moderate rate limit + censor check + permission)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "content.create")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpPost), opBanEnforce, rbac.RequirePermission(rbacResolver, "content.create")).
 				Post("/content", contentHandlers.CreateContent)
 			// Read (require auth for list; single content is public for
 			// published items — Section 14 public content SSR).
@@ -3593,7 +3672,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Comments (Section 49 — Unified Comment System)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/comments/{id}", commentsHandlers.GetComment)
 			r.Get("/content/{id}/comments", commentsHandlers.ListComments)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).Post("/content/{id}/comments", commentsHandlers.CreateComment)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "comments.edit_own")).Patch("/comments/{id}", commentsHandlers.UpdateComment)
 			// BUG-003: own-vs-any resolved in the handler (RequireAuth only) so a
 			// moderator with comments.delete_any is not blocked by a delete_own
@@ -3870,7 +3949,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/conversations", wsHandlers.ListConversations)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.request")).Post("/dm/conversations", wsHandlers.InitiateConversation)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Get("/dm/conversations/{id}/messages", wsHandlers.ListMessages)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpMessage), opBanEnforce, rbac.RequirePermission(rbacResolver, "dm.send")).Post("/dm/conversations/{id}/messages", wsHandlers.SendMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.send")).Patch("/dm/conversations/{id}/messages/{mid}", wsHandlers.EditMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.delete")).Delete("/dm/conversations/{id}/messages/{mid}", wsHandlers.DeleteMessage)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "dm.view")).Post("/dm/conversations/{id}/read", wsHandlers.MarkAsRead)
@@ -4020,7 +4099,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
 				// Thread routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.thread.create")).Post("/forum", forumHandlers.CreateThread)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.thread.create")).Post("/forum", forumHandlers.CreateThread)
 				r.Get("/forum", forumHandlers.ListThreads)
 				// Section 88 — AMA routes registered BEFORE /forum/{slug} to
 				// avoid being shadowed by the wildcard route (chi matches in
@@ -4060,7 +4139,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/forum/{id}/solve", forumHandlers.UnsolveThread)
 
 				// Reply routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
 				r.Get("/forum/{id}/replies", forumHandlers.ListReplies)
 				// BUG-014: reply edit/delete rely on service-level canModerateReply
 				// (author or _any node). RequireAuth only so moderators with the
@@ -4114,7 +4193,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// service enforces own-vs-any scoping for blog.edit_own; admin
 				// "edit any" is covered by PATCH /admin/blog/{id} (blog.review.manage).
 				r.Get("/blog", blogHandlers.ListPosts)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.create")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), mw.WithOperation(mw.OpBlog), opBanEnforce, rbac.RequirePermission(rbacResolver, "blog.create")).
 					Post("/blog", blogHandlers.CreatePost)
 				r.Get("/blog/{slug}", blogHandlers.GetPost)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.EditLockMiddleware(vkClient.Redis(), settingsService), spam.CensorMiddleware(database, vkClient), rbac.RequirePermission(rbacResolver, "blog.edit_own")).
@@ -4585,7 +4664,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/tickets/{id}", ticketHandlers.GetMyTicket)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.submit")).
 					Post("/me/tickets/{id}/comments", ticketHandlers.AddReply)
-
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
 					Post("/me/tickets/{id}/attachments", ticketHandlers.AddAttachment)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
@@ -4621,6 +4699,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.type.manage")).
 					Delete("/admin/ticket-types/{id}", ticketHandlers.DeleteTicketType)
 			})
+
+			// §22 Appeals — user-facing submission + own list/eligible. Each
+			// submission creates a linked 'appeal' ticket (staff thread).
+			// Deliberately OUTSIDE the feature.tickets gate: the appeal
+			// channel is the contest path for moderation decisions and must
+			// stay reachable even if the user-facing ticket portal is off —
+			// a banned user has no other recourse. The linked ticket is still
+			// created server-side (it just isn't listable while the portal
+			// feature is disabled).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), rbac.RequirePermission(rbacResolver, "tickets.submit")).
+				Post("/appeals", appealsHandlers.HandleSubmit)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
+				Get("/me/appeals", appealsHandlers.HandleListMine)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "tickets.view_own")).
+				Get("/me/appeals/eligible", appealsHandlers.HandleListEligible)
 
 			// Public Product Roadmap routes (Section 113, ADR-127).
 			// Feature-flagged via features.Gate — every roadmap route
@@ -6332,12 +6425,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Post("/admin/users/{id}/warn-typed", adminHandlers.WarnUserTyped)
 
-			// Task 22: Appeals admin
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+			// Task 22: Appeals admin (§22 — gated by moderation.appeal.review)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.appeal.review")).
 				Get("/admin/appeals", adminHandlers.ListAppeals)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.appeal.review")).
 				Get("/admin/appeals/{id}", adminHandlers.GetAppeal)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.review")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "moderation.appeal.review")).
 				Patch("/admin/appeals/{id}", adminHandlers.UpdateAppeal)
 
 			// Task 23: Content admin moderation
@@ -6443,7 +6536,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// the plain comment list/create handlers.
 			r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 				Get("/content/{id}/discussions", commentsHandlers.ListDiscussions)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "comments.create")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "comments.create")).
 				Post("/content/{id}/discussions", commentsHandlers.StartConversation)
 			// NOTE: /content/{id}/react (POST+DELETE) and /content/{id}/spaces
 			// (PATCH) are registered once in the main content route group above
