@@ -193,22 +193,34 @@ func (s *Store) GetAllBots(ctx context.Context) ([]KnownBot, error) {
 	return result, nil
 }
 
-// contentURLPath maps a content_type + slug to the canonical frontend URL path
-// used in LLMS.txt link generation. Each content type has a distinct route
-// prefix in the main SvelteKit app (apps/main/src/routes).
+// ContentURLPath maps a content_type + slug to the canonical frontend URL path.
+// Each content type has a distinct route prefix in the main SvelteKit app
+// (apps/main/src/routes, ADR-058 route families — see
+// apps/main/src/lib/utils/contentLink.ts). Used in LLMS.txt link generation
+// and in SEO sitemap loc URLs (internal/seo) so crawlers see the canonical
+// detail URLs (/blog/, /forum/, /story/, /guide/, ...) instead of the
+// generic /content/ prefix.
 // Ref: japaconnect-engineering/sections/43-bot-crawler-management.md.
-func contentURLPath(contentType, slug string) string {
+func ContentURLPath(contentType, slug string) string {
 	switch contentType {
 	case "blog_post":
 		return "/blog/" + slug
 	case "forum_thread":
 		return "/forum/" + slug
 	case "guide":
-		return "/blog/" + slug
+		return "/guide/" + slug
 	case "discussion":
 		return "/forum/" + slug
 	case "comparison":
-		return "/blog/" + slug
+		return "/comparisons/" + slug
+	case "story":
+		return "/story/" + slug
+	case "job_listing":
+		return "/jobs/" + slug
+	case "service_listing":
+		return "/services/" + slug
+	case "video":
+		return "/video/" + slug
 	default:
 		return "/blog/" + slug
 	}
@@ -225,7 +237,7 @@ func (s *Store) GetLLMsData(ctx context.Context) (LLMsData, error) {
 
 	recentPosts := make([]Link, 0, len(posts))
 	for _, p := range posts {
-		recentPosts = append(recentPosts, Link{Title: p.Title, URL: contentURLPath(p.ContentType, p.Slug)})
+		recentPosts = append(recentPosts, Link{Title: p.Title, URL: ContentURLPath(p.ContentType, p.Slug)})
 	}
 
 	tags, err := s.read.ListTags(ctx)

@@ -183,15 +183,19 @@ func TestContentURLPath(t *testing.T) {
 	}{
 		{"blog_post", "my-post", "/blog/my-post"},
 		{"forum_thread", "my-thread", "/forum/my-thread"},
-		{"guide", "my-guide", "/blog/my-guide"},
+		{"guide", "my-guide", "/guide/my-guide"},
 		{"discussion", "my-discussion", "/forum/my-discussion"},
-		{"comparison", "my-comparison", "/blog/my-comparison"},
+		{"comparison", "my-comparison", "/comparisons/my-comparison"},
+		{"story", "my-story", "/story/my-story"},
+		{"job_listing", "my-job", "/jobs/my-job"},
+		{"service_listing", "my-svc", "/services/my-svc"},
+		{"video", "my-video", "/video/my-video"},
 		{"unknown_type", "my-content", "/blog/my-content"},
 		{"", "no-type", "/blog/no-type"},
 	}
 
 	for _, tt := range tests {
-		got := contentURLPath(tt.contentType, tt.slug)
+		got := ContentURLPath(tt.contentType, tt.slug)
 		if got != tt.want {
 			t.Errorf("contentURLPath(%q, %q) = %q, want %q", tt.contentType, tt.slug, got, tt.want)
 		}

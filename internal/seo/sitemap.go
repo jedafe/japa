@@ -60,7 +60,9 @@ func NewSitemapHandler(queries *gen.Queries, reader *pgxpool.Pool, settings site
 // sitemapCacheKey builds the platform-scoped Valkey cache key for a sitemap
 // sub-file. Pattern: jc:cache:sitemap:{}:{type}
 // (valkey-keys-catalog.md). type is "content", "spaces", "tags", "users",
-// "images", "deals", "roadmap", or "index".
+// "images", "deals", "roadmap", "universities", "courses", "jobs",
+// "scholarships", "services", "wiki", "calendar", "scam-alerts",
+// "comparisons", "tools", or "index".
 func sitemapCacheKey(sitemapType string) string {
 	return "jc:cache:sitemap:" + "" + ":" + sitemapType
 }
@@ -115,7 +117,8 @@ func InvalidateSitemapCache(ctx context.Context, rdb sitemapCacheInvalidator) {
 		return
 	}
 
-	types := []string{"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap"}
+	types := []string{"index", "content", "spaces", "tags", "users", "images", "deals", "roadmap",
+		"universities", "courses", "jobs", "scholarships", "services", "wiki", "calendar", "scam-alerts", "comparisons", "tools"}
 	for _, t := range types {
 		if err := rdb.Del(ctx, sitemapCacheKey(t)).Err(); err != nil {
 			slog.Warn("sitemap: failed to invalidate cache", "type", t, "error", err)
@@ -221,6 +224,16 @@ func (h *SitemapHandler) ServeSitemap(w http.ResponseWriter, r *http.Request) {
 		{Loc: base + "/sitemap-images.xml", LastMod: imagesLastMod},
 		{Loc: base + "/sitemap-deals.xml", LastMod: h.latestDealsLastMod(r.Context())},
 		{Loc: base + "/sitemap-roadmap.xml", LastMod: h.latestRoadmapLastMod(r.Context())},
+		{Loc: base + "/sitemap-universities.xml", LastMod: h.latestUniversitiesLastMod()},
+		{Loc: base + "/sitemap-courses.xml", LastMod: h.latestCoursesLastMod()},
+		{Loc: base + "/sitemap-jobs.xml", LastMod: h.latestJobsLastMod(r.Context())},
+		{Loc: base + "/sitemap-scholarships.xml", LastMod: h.latestScholarshipsLastMod()},
+		{Loc: base + "/sitemap-services.xml", LastMod: h.latestServicesLastMod(r.Context())},
+		{Loc: base + "/sitemap-wiki.xml", LastMod: h.latestWikiLastMod()},
+		{Loc: base + "/sitemap-calendar.xml", LastMod: h.latestCalendarLastMod()},
+		{Loc: base + "/sitemap-scam-alerts.xml", LastMod: h.latestScamAlertsLastMod()},
+		{Loc: base + "/sitemap-comparisons.xml", LastMod: h.latestComparisonsLastMod(r.Context())},
+		{Loc: base + "/sitemap-tools.xml"},
 	}
 
 	var buf strings.Builder
@@ -340,7 +353,11 @@ func (h *SitemapHandler) ServeContentSitemap(w http.ResponseWriter, r *http.Requ
 		}
 
 		entries = append(entries, urlEntry{
-			Loc:        fmt.Sprintf("%s/content/%s", base, c.Slug),
+			// Canonical frontend URLs are per-content-type routes
+			// (ADR-058 route families: /blog/, /forum/, /story/,
+			// /guide/, /comparisons/, /jobs/, /services/, /video/),
+			// not the generic /content/ prefix.
+			Loc:        base + bots.ContentURLPath(c.ContentType, c.Slug),
 			LastMod:    c.UpdatedAt.Time.Format(time.RFC3339),
 			ChangeFreq: "weekly",
 			Priority:   "0.8",
@@ -701,6 +718,9 @@ type imageItem struct {
 // <image:image> sub-element pointing to the featured image's media URL.
 // The media URL is resolved via the imgproxy/local-serve fallback
 // (media.MediaURL) using the media row's storage_bucket/storage_path.
+// The <loc> uses the canonical per-content-type frontend route
+// (bots.ContentURLPath — ADR-058 route families), matching
+// ServeContentSitemap.
 // Ref: japaconnect-engineering/sections/26-seo-performance.md.
 func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Request) {
 
@@ -710,7 +730,7 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 
 	base := h.baseURL(r)
 
-	rows, err := h.reader.Query(r.Context(), `SELECT c.slug, c.updated_at, c.title,
+	rows, err := h.reader.Query(r.Context(), `SELECT c.slug, c.content_type, c.updated_at, c.title,
 		        m.storage_bucket, m.storage_path, COALESCE(m.alt_text, c.title)
 		 FROM contents c
 		 JOIN media m ON c.featured_image_id = m.id
@@ -730,16 +750,16 @@ func (h *SitemapHandler) ServeImagesSitemap(w http.ResponseWriter, r *http.Reque
 	entries := make([]imageURLEntry, 0)
 
 	for rows.Next() {
-		var slug, title, storageBucket, storagePath, altText string
+		var slug, contentType, title, storageBucket, storagePath, altText string
 
 		var updatedAt time.Time
-		if err := rows.Scan(&slug, &updatedAt, &title, &storageBucket, &storagePath, &altText); err != nil {
+		if err := rows.Scan(&slug, &contentType, &updatedAt, &title, &storageBucket, &storagePath, &altText); err != nil {
 			continue
 		}
 
 		imgURL := resolveMediaURL(h.imgproxyBaseURL, base, storageBucket, storagePath)
 		entries = append(entries, imageURLEntry{
-			Loc:     fmt.Sprintf("%s/content/%s", base, slug),
+			Loc:     base + bots.ContentURLPath(contentType, slug),
 			LastMod: updatedAt.Format(time.RFC3339),
 			Images: []imageItem{
 				{Loc: imgURL, Title: title, Caption: altText},

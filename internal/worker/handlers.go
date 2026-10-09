@@ -3353,8 +3353,11 @@ func generateSitemapForPlatform(ctx context.Context, baseURL string) {
 			continue
 		}
 
-		sitemap.WriteString(fmt.Sprintf("  <url>\n    <loc>%s/%s</loc>\n    <lastmod>%s</lastmod>\n  </url>\n",
-			baseURL, s.Slug,
+		// Canonical frontend URLs are per-content-type routes (ADR-058 route
+		// families), not the generic /content/ prefix — matches
+		// ServeContentSitemap in internal/seo.
+		sitemap.WriteString(fmt.Sprintf("  <url>\n    <loc>%s%s</loc>\n    <lastmod>%s</lastmod>\n  </url>\n",
+			baseURL, bots.ContentURLPath(s.ContentType, s.Slug),
 			s.UpdatedAt.Time.Format("2006-01-02")))
 
 		urlCount++
