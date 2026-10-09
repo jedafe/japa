@@ -2357,6 +2357,12 @@ type MentorSession struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type MentorShadow struct {
+	ContentID pgtype.UUID `json:"content_id"`
+	AuthorID  pgtype.UUID `json:"author_id"`
+	Listed    bool        `json:"listed"`
+}
+
 type MentorshipConnection struct {
 	ID                 pgtype.UUID        `json:"id"`
 	MentorID           pgtype.UUID        `json:"mentor_id"`
@@ -3443,39 +3449,42 @@ type SecurityScanResult struct {
 }
 
 type ServiceBooking struct {
-	ID              pgtype.UUID        `json:"id"`
-	ListingMetaID   pgtype.UUID        `json:"listing_meta_id"`
-	DepartureID     pgtype.UUID        `json:"departure_id"`
-	BookerUserID    pgtype.UUID        `json:"booker_user_id"`
-	OrgID           pgtype.UUID        `json:"org_id"`
-	Intent          string             `json:"intent"`
-	PartySize       int32              `json:"party_size"`
-	PreferredDates  []byte             `json:"preferred_dates"`
-	Note            *string            `json:"note"`
-	Status          string             `json:"status"`
-	PurchaseMode    string             `json:"purchase_mode"`
-	PaymentID       pgtype.UUID        `json:"payment_id"`
-	TotalPrice      *int64             `json:"total_price"`
-	FeeAmount       *int64             `json:"fee_amount"`
-	FeeCurrency     *string            `json:"fee_currency"`
-	AgentBalanceDue *int64             `json:"agent_balance_due"`
-	OrgResponseNote *string            `json:"org_response_note"`
-	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
-	ConfirmedAt     pgtype.Timestamptz `json:"confirmed_at"`
-	FulfilledAt     pgtype.Timestamptz `json:"fulfilled_at"`
-	CancelledAt     pgtype.Timestamptz `json:"cancelled_at"`
-	CancelReason    *string            `json:"cancel_reason"`
-	AnonymizedAt    pgtype.Timestamptz `json:"anonymized_at"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
-	RemindedAt      pgtype.Timestamptz `json:"reminded_at"`
-	DisputeReason   *string            `json:"dispute_reason"`
-	TierID          pgtype.UUID        `json:"tier_id"`
-	CouponID        pgtype.UUID        `json:"coupon_id"`
-	CouponCode      *string            `json:"coupon_code"`
-	DiscountAmount  *int64             `json:"discount_amount"`
-	TierName        *string            `json:"tier_name"`
-	TierPriceAmount *int64             `json:"tier_price_amount"`
+	ID                 pgtype.UUID        `json:"id"`
+	ListingMetaID      pgtype.UUID        `json:"listing_meta_id"`
+	DepartureID        pgtype.UUID        `json:"departure_id"`
+	BookerUserID       pgtype.UUID        `json:"booker_user_id"`
+	OrgID              pgtype.UUID        `json:"org_id"`
+	Intent             string             `json:"intent"`
+	PartySize          int32              `json:"party_size"`
+	PreferredDates     []byte             `json:"preferred_dates"`
+	Note               *string            `json:"note"`
+	Status             string             `json:"status"`
+	PurchaseMode       string             `json:"purchase_mode"`
+	PaymentID          pgtype.UUID        `json:"payment_id"`
+	TotalPrice         *int64             `json:"total_price"`
+	FeeAmount          *int64             `json:"fee_amount"`
+	FeeCurrency        *string            `json:"fee_currency"`
+	AgentBalanceDue    *int64             `json:"agent_balance_due"`
+	OrgResponseNote    *string            `json:"org_response_note"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	ConfirmedAt        pgtype.Timestamptz `json:"confirmed_at"`
+	FulfilledAt        pgtype.Timestamptz `json:"fulfilled_at"`
+	CancelledAt        pgtype.Timestamptz `json:"cancelled_at"`
+	CancelReason       *string            `json:"cancel_reason"`
+	AnonymizedAt       pgtype.Timestamptz `json:"anonymized_at"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	RemindedAt         pgtype.Timestamptz `json:"reminded_at"`
+	DisputeReason      *string            `json:"dispute_reason"`
+	TierID             pgtype.UUID        `json:"tier_id"`
+	CouponID           pgtype.UUID        `json:"coupon_id"`
+	CouponCode         *string            `json:"coupon_code"`
+	DiscountAmount     *int64             `json:"discount_amount"`
+	TierName           *string            `json:"tier_name"`
+	TierPriceAmount    *int64             `json:"tier_price_amount"`
+	ProviderUserID     pgtype.UUID        `json:"provider_user_id"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	Meta               []byte             `json:"meta"`
 }
 
 type ServiceCategory struct {
@@ -4452,6 +4461,7 @@ type UserProfile struct {
 	Location                 *string             `json:"location"`
 	BannerMediaID            pgtype.UUID         `json:"banner_media_id"`
 	JapaIntent               *string             `json:"japa_intent"`
+	MentorListingContentID   pgtype.UUID         `json:"mentor_listing_content_id"`
 }
 
 type UserRole struct {

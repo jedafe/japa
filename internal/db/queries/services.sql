@@ -143,6 +143,51 @@ WHERE c.id = @content_id AND c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
 LIMIT 1;
 
+-- Mentor's shadow listing (000824): the listing_kind='mentorship' meta row
+-- behind a mentor user — resolved when creating a mentorship-request
+-- booking (meta_id feeds CreateServiceBooking.listing_meta_id) and when
+-- PATCH /me/mentor-profile upserts the shadow. Same column shape as
+-- GetServiceListingByContentID so the row maps onto the shared listing
+-- domain row. Status is intentionally not filtered: preserved draft
+-- shadows for non-live mentors still anchor their migrated bookings.
+-- Returns no rows for users without a shadow listing.
+-- name: GetMentorshipListingByAuthor :one
+SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
+       c.status, c.visibility, c.view_count, c.comment_count,
+       c.published_at, c.created_at, c.updated_at, c.featured_image_id,
+       sm.id AS meta_id,
+       sm.org_id, o.name AS org_name, o.slug AS org_slug,
+       sm.service_category,
+       sm.destination_space_id, ds.name AS dest_space_name, ds.geo_code AS dest_space_code,
+       sm.city_space_id, cs.name AS city_space_name, cs.geo_code AS city_space_code,
+       sm.origin_communities, sm.is_remote, sm.website_url, sm.booking_url,
+       sm.price_range, sm.is_verified, sm.verification_type,
+       sm.claim_status, sm.claimed_by_org_id, co.name AS claimed_org_name,
+       sm.verified_by, sm.verified_at,
+       sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
+       sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
+       sm.faqs, sm.steps,
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       fm.storage_bucket AS featured_storage_bucket,
+       fm.storage_path AS featured_storage_path,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+LEFT JOIN organizations o ON o.id = sm.org_id
+LEFT JOIN spaces ds ON ds.id = sm.destination_space_id
+LEFT JOIN spaces cs ON cs.id = sm.city_space_id
+LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
+LEFT JOIN users u ON u.id = c.author_id
+LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN media fm ON fm.id = c.featured_image_id AND fm.deleted_at IS NULL
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
+WHERE c.author_id = @author_id
+  AND c.content_type = 'service_listing'
+  AND sm.listing_kind = 'mentorship'
+  AND c.deleted_at IS NULL
+LIMIT 1;
+
 -- Public filtered list. Optional filters are sqlc.narg — NULL means
 -- "no filter". sort='top' orders by engagement; anything else is
 -- latest-first. kind filters listing_kind ('service'|'package');
@@ -557,21 +602,28 @@ WHERE id = @id;
 -- ---------------------------------------------------------------------
 
 -- name: CreateServiceBooking :one
+-- provider_user_id/destination_space_id/meta are the mentorship-unification
+-- columns (000824): provider-owned bookings (listing_kind='mentorship')
+-- carry provider_user_id instead of org_id. All three are narg so legacy
+-- org-path callers pass NULL/empty and keep working.
 INSERT INTO service_bookings (
     listing_meta_id, departure_id, booker_user_id, org_id, intent,
     party_size, preferred_dates, note, status, purchase_mode,
     payment_id, total_price, fee_amount, fee_currency, agent_balance_due,
     expires_at, tier_id, coupon_id, coupon_code, discount_amount,
-    tier_name, tier_price_amount
+    tier_name, tier_price_amount,
+    provider_user_id, destination_space_id, meta
 ) VALUES (
-    @listing_meta_id, sqlc.narg(departure_id), @booker_user_id, @org_id,
+    @listing_meta_id, sqlc.narg(departure_id), @booker_user_id, sqlc.narg(org_id),
     @intent, sqlc.narg(party_size), sqlc.narg(preferred_dates),
     sqlc.narg(note), sqlc.narg(status), @purchase_mode,
     sqlc.narg(payment_id), sqlc.narg(total_price), sqlc.narg(fee_amount),
     sqlc.narg(fee_currency), sqlc.narg(agent_balance_due),
     sqlc.narg(expires_at), sqlc.narg(tier_id), sqlc.narg(coupon_id),
     sqlc.narg(coupon_code), sqlc.narg(discount_amount),
-    sqlc.narg(tier_name), sqlc.narg(tier_price_amount)
+    sqlc.narg(tier_name), sqlc.narg(tier_price_amount),
+    sqlc.narg(provider_user_id), sqlc.narg(destination_space_id),
+    COALESCE(sqlc.narg(meta)::jsonb, '{}'::jsonb)
 ) RETURNING *;
 
 -- name: GetServiceBooking :one
@@ -588,6 +640,11 @@ SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title,
        o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
+       u.username AS booker_username, up.display_name AS booker_display_name,
+       up.avatar_url AS booker_avatar,
+       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       pup.avatar_url AS provider_avatar,
+       dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
@@ -596,6 +653,13 @@ LEFT JOIN organizations o ON o.id = sb.org_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
+LEFT JOIN users u ON u.id = sb.booker_user_id
+LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+-- Provider dimension (000824): user-owned (mentorship) bookings carry
+-- provider_user_id instead of org_id — NULL columns for org-owned rows.
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
+LEFT JOIN spaces dsp ON dsp.id = sb.destination_space_id
 WHERE sb.id = @id;
 
 -- name: AttachServiceBookingPayment :one
@@ -613,12 +677,16 @@ SET payment_id = @payment_id, updated_at = now()
 WHERE id = @id AND payment_id IS NULL
 RETURNING *;
 
--- Booker history.
+-- Booker history. kind filters sm.listing_kind ('service'|'package'|
+-- 'mentorship'); NULL means all kinds.
 -- name: ListServiceBookingsByUser :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        p.status AS payment_status, p.provider AS payment_provider,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
+       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       pup.avatar_url AS provider_avatar,
+       dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
@@ -627,17 +695,23 @@ LEFT JOIN organizations o ON o.id = sb.org_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
+LEFT JOIN spaces dsp ON dsp.id = sb.destination_space_id
 WHERE sb.booker_user_id = @booker_user_id
   AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text)
 ORDER BY sb.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountServiceBookingsByUser :one
 SELECT COUNT(*) FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 WHERE sb.booker_user_id = @booker_user_id
   AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
-  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text);
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text);
 
 -- Org inbox — paid bookings only appear once money actually moved
 -- (succeeded or refunded: a pending/failed payment never lands in the
@@ -647,7 +721,11 @@ WHERE sb.booker_user_id = @booker_user_id
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
        d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
-       u.username AS booker_username, up.avatar_url AS booker_avatar,
+       u.username AS booker_username, up.display_name AS booker_display_name,
+       up.avatar_url AS booker_avatar,
+       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       pup.avatar_url AS provider_avatar,
+       dsp.name AS destination_space_name,
        COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
 FROM service_bookings sb
 JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
@@ -657,6 +735,9 @@ LEFT JOIN service_package_departures d ON d.id = sb.departure_id
 LEFT JOIN payments p ON p.id = sb.payment_id
 LEFT JOIN users u ON u.id = sb.booker_user_id
 LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
+LEFT JOIN spaces dsp ON dsp.id = sb.destination_space_id
 LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
 -- Note: anonymized rows are NOT filtered out — §111 GDPR says the row
 -- survives erasure as the org's financial/audit record (booker PII is
@@ -680,6 +761,67 @@ WHERE sb.org_id = @org_id
   AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
   AND (sqlc.narg(listing_content_id)::uuid IS NULL OR sb.listing_meta_id =
        (SELECT id FROM service_listing_meta WHERE content_id = sqlc.narg(listing_content_id)::uuid));
+
+-- User-provider inbox (000824): the counterpart of ListServiceBookingsByOrg
+-- for user-owned listings — mentorship requests land here
+-- (provider_user_id = mentor). Same DTO shape as ListServiceBookingsByUser
+-- plus the booker display joins the provider needs, plus the same
+-- money-moved gate as the org inbox so unpaid paid-intent rows never reach
+-- the provider's work queue. kind filters sm.listing_kind.
+-- name: ListServiceBookingsByProviderUser :many
+SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
+       sm.listing_kind, o.name AS org_name, o.slug AS org_slug,
+       p.status AS payment_status, p.provider AS payment_provider,
+       d.starts_on AS departure_starts_on, d.ends_on AS departure_ends_on,
+       u.username AS booker_username, up.display_name AS booker_display_name,
+       up.avatar_url AS booker_avatar,
+       pu.username AS provider_username, pup.display_name AS provider_display_name,
+       pup.avatar_url AS provider_avatar,
+       dsp.name AS destination_space_name,
+       COALESCE(sb.tier_name, t.name, '') AS effective_tier_name
+FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+JOIN contents c ON c.id = sm.content_id
+LEFT JOIN organizations o ON o.id = sb.org_id
+LEFT JOIN payments p ON p.id = sb.payment_id
+LEFT JOIN service_package_departures d ON d.id = sb.departure_id
+LEFT JOIN service_package_tiers t ON t.id = sb.tier_id
+LEFT JOIN users u ON u.id = sb.booker_user_id
+LEFT JOIN user_profiles up ON up.user_id = sb.booker_user_id
+LEFT JOIN users pu ON pu.id = sb.provider_user_id
+LEFT JOIN user_profiles pup ON pup.user_id = pu.id
+LEFT JOIN spaces dsp ON dsp.id = sb.destination_space_id
+WHERE sb.provider_user_id = @provider_user_id
+  AND (sb.intent = 'inquiry' OR sb.fee_amount = 0 OR p.status IN ('succeeded','refunded'))
+  AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text)
+ORDER BY sb.created_at DESC
+LIMIT @page_limit OFFSET @page_offset;
+
+-- name: CountServiceBookingsByProviderUser :one
+SELECT COUNT(*) FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+LEFT JOIN payments p ON p.id = sb.payment_id
+WHERE sb.provider_user_id = @provider_user_id
+  AND (sb.intent = 'inquiry' OR sb.fee_amount = 0 OR p.status IN ('succeeded','refunded'))
+  AND (sqlc.narg(status)::text IS NULL OR sb.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(intent)::text IS NULL OR sb.intent = sqlc.narg(intent)::text)
+  AND (sqlc.narg(kind)::text IS NULL OR sm.listing_kind = sqlc.narg(kind)::text);
+
+-- Mentorship dedupe (000824) — replaces the dropped
+-- GetActiveOrPendingConnection: a booker may hold at most one OPEN request
+-- (pending awaiting mentor, or confirmed = active connection) against a
+-- mentor's shadow listing. Returns no rows when none is open — callers
+-- treat pgx.ErrNoRows as "no open request" (same contract the old
+-- connection query had).
+-- name: GetOpenMentorshipBooking :one
+SELECT sb.id FROM service_bookings sb
+WHERE sb.booker_user_id = @booker_user_id
+  AND sb.listing_meta_id = @listing_meta_id
+  AND sb.status IN ('pending','confirmed')
+ORDER BY sb.created_at DESC
+LIMIT 1;
 
 -- Admin view — all bookings, any payment state.
 -- name: AdminListServiceBookings :many
