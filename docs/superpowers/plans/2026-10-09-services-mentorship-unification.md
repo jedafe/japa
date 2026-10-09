@@ -295,7 +295,7 @@ COMMIT;
 ### Task 5: Worker notifications + DM auto-open for mentorship bookings
 
 **Files:**
-- `internal/worker/service_bookings.go` — `HandleServiceBookingCreated`/`notifyOrgMembers`/status-changed: when `!bk.OrgID.Valid && bk.ProviderUserID.Valid`, notify the provider user directly (`ActorType "user"`, `ActorID = provider_user_id`), notification `action_url = "/messages/mentorship?b="+id` (booker arm uses `/messages/bookings?b=`).
+- `internal/worker/service_bookings.go` — `HandleServiceBookingCreated`/`notifyOrgMembers`/status-changed: when `!bk.OrgID.Valid && bk.ProviderUserID.Valid`, notify the provider user directly (`ActorType "user"`; `ActorID` = the action initiator — booker on created/disputed, provider on the booker-facing status arm), notification `action_url = "/messages/mentorship?b="+id` (booker arm uses `/messages/bookings?b=`).
 - `internal/servicedir/service.go` — `SetDMCreator` seam (interface `CreateConversation(ctx, a, b pgtype.UUID, opts)`) injected in `server.go` from `wsDMStore` — the same object mentorshipService already receives at ~line 3891.
 - `internal/servicedir/service_bookings.go` — `RespondToBooking` accept path for mentorship kind: open DM provider↔booker, enqueue `mentor:update_meilisearch` (payload `{user_id}` — same shape the mentorship service uses).
 
