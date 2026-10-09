@@ -47,7 +47,18 @@ INSERT INTO service_categories (slug, label, description, icon, accent_color, ap
 VALUES ('mentorship', 'Mentorship', 'Guidance from members who already made the move', 'graduation-cap', 'violet', 'mentorship', 115)
 ON CONFLICT (slug) DO NOTHING;
 
--- 5. Shadow listings for every existing mentor.
+-- 5. Shadow listings. Two populations must get one:
+--    a) every is_mentor user → status 'published' (discoverable in the
+--       mentorship tab, linked via user_profiles.mentor_listing_content_id);
+--    b) every DISTINCT mentor_id present in mentorship_connections that
+--       population (a) didn't cover — mentors who flipped is_mentor off or
+--       never had a user_profiles row → status 'draft' (kept out of
+--       discovery, but their bookings still have a listing_meta_id to
+--       reference; without this the connection rows would be dropped
+--       unrestorably with the table).
+--    _mentor_shadow records exactly the content ids THIS migration
+--    created (RETURNING), so the meta INSERT and the bookings backfill
+--    can never attach to a pre-existing 'mentor-*' slug row.
 --    content_hash: sha256 hex of the normalized bio PLUS a per-user
 --    distinguisher ('|mentor:<user_id>') — empty/duplicate bios would
 --    otherwise collide on idx_contents_content_hash (Rule 12 parity:
@@ -57,43 +68,77 @@ ON CONFLICT (slug) DO NOTHING;
 --    idx_contents_content_hash are partial uniques (000745,
 --    WHERE deleted_at IS NULL), so a column-list arbiter would not
 --    infer them — and a slug or hash collision must skip, not fail.
-INSERT INTO contents (author_id, content_type, title, slug, body, body_html, status, published_at, content_hash)
-SELECT
-    up.user_id,
-    'service_listing',
-    COALESCE(NULLIF(up.display_name, ''), u.username) || ' — Mentorship',
-    'mentor-' || u.username,
-    COALESCE(up.mentor_bio, ''),
-    '',
-    'published',
-    now(),
-    encode(sha256(convert_to(
-        lower(regexp_replace(btrim(COALESCE(up.mentor_bio,'')), '\s+', ' ', 'g'))
-        || '|mentor:' || up.user_id::text,
-        'UTF8')), 'hex')
-FROM user_profiles up
-JOIN users u ON u.id = up.user_id
-WHERE up.is_mentor = true
-ON CONFLICT DO NOTHING;
+CREATE TEMPORARY TABLE _mentor_shadow (
+    content_id uuid PRIMARY KEY,
+    author_id  uuid NOT NULL,
+    listed     boolean NOT NULL    -- true when the author is an is_mentor profile
+) ON COMMIT DROP;
+
+WITH ins AS (
+    INSERT INTO contents (author_id, content_type, title, slug, body, body_html, status, published_at, content_hash)
+    SELECT
+        up.user_id,
+        'service_listing',
+        COALESCE(NULLIF(up.display_name, ''), u.username) || ' — Mentorship',
+        'mentor-' || u.username,
+        COALESCE(up.mentor_bio, ''),
+        '',
+        'published',
+        now(),
+        encode(sha256(convert_to(
+            lower(regexp_replace(btrim(COALESCE(up.mentor_bio,'')), '\s+', ' ', 'g'))
+            || '|mentor:' || up.user_id::text,
+            'UTF8')), 'hex')
+    FROM user_profiles up
+    JOIN users u ON u.id = up.user_id
+    WHERE up.is_mentor = true
+    UNION ALL
+    SELECT
+        u.id,
+        'service_listing',
+        COALESCE(NULLIF(up.display_name, ''), u.username) || ' — Mentorship',
+        'mentor-' || u.username,
+        COALESCE(up.mentor_bio, ''),
+        '',
+        'draft',
+        NULL,
+        encode(sha256(convert_to(
+            lower(regexp_replace(btrim(COALESCE(up.mentor_bio,'')), '\s+', ' ', 'g'))
+            || '|mentor:' || u.id::text,
+            'UTF8')), 'hex')
+    FROM users u
+    LEFT JOIN user_profiles up ON up.user_id = u.id
+    WHERE u.id IN (SELECT DISTINCT mentor_id FROM mentorship_connections)
+      AND NOT EXISTS (
+          SELECT 1 FROM user_profiles up2
+          WHERE up2.user_id = u.id AND up2.is_mentor = true
+      )
+    ON CONFLICT DO NOTHING
+    RETURNING id, author_id
+)
+INSERT INTO _mentor_shadow (content_id, author_id, listed)
+SELECT i.id, i.author_id, COALESCE(up.is_mentor, false)
+FROM ins i
+LEFT JOIN user_profiles up ON up.user_id = i.author_id;
 
 INSERT INTO service_listing_meta (content_id, org_id, service_category, is_remote, listing_kind, purchase_mode)
-SELECT c.id, NULL, 'mentorship', true, 'mentorship', 'inquiry'
-FROM contents c
-WHERE c.slug LIKE 'mentor-%' AND c.content_type = 'service_listing'
-  AND NOT EXISTS (SELECT 1 FROM service_listing_meta m WHERE m.content_id = c.id);
+SELECT s.content_id, NULL, 'mentorship', true, 'mentorship', 'inquiry'
+FROM _mentor_shadow s
+WHERE NOT EXISTS (SELECT 1 FROM service_listing_meta m WHERE m.content_id = s.content_id);
 
+-- Link only live mentors (draft fallback shadows stay unlinked).
 UPDATE user_profiles up
-SET mentor_listing_content_id = c.id
-FROM users u, contents c
-WHERE u.id = up.user_id
-  AND up.is_mentor = true
-  AND c.slug = 'mentor-' || u.username
-  AND c.content_type = 'service_listing'
-  AND c.deleted_at IS NULL;
+SET mentor_listing_content_id = s.content_id
+FROM _mentor_shadow s
+WHERE s.author_id = up.user_id
+  AND s.listed
+  AND up.is_mentor = true;
 
--- 6. Migrate connections → bookings (mentor resolved via shadow listing).
---    meta preserves the source row id and responded_at for the down
---    migration. mentorship_connections has no tenant_id column.
+-- 6. Migrate connections → bookings (mentor resolved via the shadow
+--    listing created above — covers draft shadows too, so EVERY
+--    connection row lands). meta preserves the source row id and
+--    responded_at for the down migration. mentorship_connections has
+--    no tenant_id column.
 INSERT INTO service_bookings (
     listing_meta_id, booker_user_id, provider_user_id,
     intent, party_size, note, destination_space_id, status, purchase_mode,
@@ -124,13 +169,34 @@ SELECT
     mc.created_at,
     mc.updated_at
 FROM mentorship_connections mc
-JOIN user_profiles up ON up.user_id = mc.mentor_id
-JOIN service_listing_meta m ON m.content_id = up.mentor_listing_content_id;
+JOIN _mentor_shadow s ON s.author_id = mc.mentor_id
+JOIN service_listing_meta m ON m.content_id = s.content_id;
+
+-- Fail loudly rather than drop a connection row unrecoverably: a mentor
+-- whose shadow INSERT was skipped by a slug/hash collision would
+-- otherwise lose every one of their connections on DROP TABLE.
+DO $$
+DECLARE
+    expected int;
+    actual   int;
+BEGIN
+    SELECT count(*) INTO expected FROM mentorship_connections;
+    SELECT count(*) INTO actual
+    FROM service_bookings
+    WHERE meta->>'source' = 'mentorship_connection';
+    IF expected <> actual THEN
+        RAISE EXCEPTION 'mentorship migration mismatch: % connection rows but % migrated bookings — aborting before DROP TABLE',
+            expected, actual;
+    END IF;
+END $$;
 
 -- 7. Mentee-count trigger moves to service_bookings (confirmed
 --    mentorship-kind bookings only). Fires for both NEW and OLD provider
---    so a provider reassignment can't strand the count; DELETE included
---    for parity with the original trg_mentee_count semantics.
+--    so a provider reassignment can't strand the count; listing_meta_id
+--    is in the UPDATE column list so re-pointing a booking between a
+--    mentorship and non-mentorship listing can't strand it either;
+--    DELETE included for parity with the original trg_mentee_count
+--    semantics.
 DROP TRIGGER IF EXISTS trg_mentee_count ON mentorship_connections;
 
 CREATE OR REPLACE FUNCTION trg_update_active_mentee_count()
@@ -153,11 +219,13 @@ END; $$;
 DROP TABLE mentorship_connections;
 
 CREATE TRIGGER trg_service_booking_mentee_count
-AFTER INSERT OR DELETE OR UPDATE OF status, provider_user_id ON service_bookings
+AFTER INSERT OR DELETE OR UPDATE OF status, provider_user_id, listing_meta_id ON service_bookings
 FOR EACH ROW EXECUTE FUNCTION trg_update_active_mentee_count();
 
 -- Backfill rows were inserted before the trigger existed; recompute
--- mentor counts once so migrated 'confirmed' bookings are reflected.
+-- counts once for every shadowed provider (includes non-is_mentor
+-- providers whose connections were preserved as draft-shadow bookings)
+-- so migrated 'confirmed' bookings are reflected.
 UPDATE user_profiles up
 SET active_mentee_count = (
     SELECT COUNT(*)::smallint
@@ -167,7 +235,9 @@ SET active_mentee_count = (
       AND m.listing_kind = 'mentorship'
       AND sb.status = 'confirmed'
 )
-WHERE up.is_mentor = true;
+WHERE EXISTS (
+    SELECT 1 FROM _mentor_shadow s WHERE s.author_id = up.user_id
+);
 
 -- Kind filter parity with idx_service_listing_meta_kind (000765): the
 -- mentorship tab of GET /services?kind=... filters on listing_kind.

@@ -103,6 +103,23 @@ SELECT
 FROM service_bookings sb
 WHERE sb.meta->>'source' = 'mentorship_connection';
 
+-- Mirror of the up assertion: the backfill must have restored every
+-- migrated booking before any of them are deleted.
+DO $$
+DECLARE
+    expected int;
+    actual   int;
+BEGIN
+    SELECT count(*) INTO expected
+    FROM service_bookings
+    WHERE meta->>'source' = 'mentorship_connection';
+    SELECT count(*) INTO actual FROM mentorship_connections;
+    IF expected <> actual THEN
+        RAISE EXCEPTION 'mentorship restore mismatch: % migrated bookings but % restored connections — aborting before DELETE',
+            expected, actual;
+    END IF;
+END $$;
+
 -- 4. Remove the migrated booking rows before restoring org_id NOT NULL
 --    (they carry org_id = NULL) and before deleting the shadow listing
 --    meta rows they reference.
