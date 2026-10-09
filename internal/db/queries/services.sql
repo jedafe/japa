@@ -980,6 +980,10 @@ LIMIT @page_limit;
 -- §111 SLA nudge — pending bookings past the midpoint of their response
 -- window that haven't been reminded yet. expires_at - created_at is the
 -- org_response_sla_hours window stamped at creation.
+-- Org-owned rows only: 000824 user-provider (mentorship) bookings are not
+-- SLA-bound (expires_at stays NULL) and get no reminder — the explicit
+-- org_id predicate documents that policy rather than relying on the
+-- expires_at filter or the inner join to incidentally exclude them.
 -- name: ListPendingBookingsDueReminder :many
 SELECT sb.*, c.id AS listing_content_id, c.title AS listing_title, c.slug AS listing_slug,
        sm.listing_kind, o.name AS org_name, o.slug AS org_slug
@@ -988,6 +992,7 @@ JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
 JOIN contents c ON c.id = sm.content_id
 JOIN organizations o ON o.id = sb.org_id
 WHERE sb.status = 'pending'
+  AND sb.org_id IS NOT NULL
   AND sb.reminded_at IS NULL
   AND sb.expires_at IS NOT NULL
   AND sb.expires_at > now()

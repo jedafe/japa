@@ -3891,6 +3891,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Wire DM store into mentorship service for auto-opening DM
 			// threads when a mentorship connection is accepted (§102, ADR-110).
 			mentorshipService.SetDMCreator(wsDMStore)
+			// Same seam on the unified bookings pipeline — a mentorship-kind
+			// booking accept (000824) auto-opens the provider↔booker thread.
+			serviceDirService.SetDMCreator(wsDMStore)
 			// Wire DM service into mutual aid handlers so HandleRespond can
 			// open a DM thread with the post author (§85, ADR-093). An adapter
 			// converts websocket.ConversationResult to mutualaid.dmConversationResult.

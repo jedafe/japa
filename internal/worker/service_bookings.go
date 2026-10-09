@@ -183,13 +183,46 @@ func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
 	title := fmt.Sprintf("New %s: %s", map[bool]string{true: "booking", false: "inquiry"}[bk.Intent == "booking"], bk.ListingTitle)
 	body := fmt.Sprintf("A %s was submitted for %s. Respond before the SLA expires.", bk.Intent, bk.ListingTitle)
 
+	// 000824 user-provider (mentorship) rows carry no response SLA —
+	// expires_at stays NULL so the expiry/reminder sweeps never touch
+	// them; the copy must not promise a deadline that doesn't exist.
+	if !bk.OrgID.Valid && bk.ProviderUserID.Valid {
+		body = "A new mentorship request is waiting for your response."
+	}
+
 	return notifyOrgMembers(ctx, q, bk, "service_booking_new", &actorType, bk.BookerUserID, title, body)
 }
 
 // notifyOrgMembers fans out a notification to every member of the
-// booking's selling org. Used by booking_created (new booking) and the
-// status_changed audience=org path (booker-raised dispute).
+// booking's selling org — or, on 000824 user-provider (mentorship)
+// bookings where org_id is NULL, directly to the provider user. Used by
+// booking_created (new booking) and the status_changed audience=org path
+// (booker-raised dispute).
 func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBookingDetailRow, ntype string, actorType *string, actorID pgtype.UUID, title, body string) error {
+	// Provider arm: no org row exists to fan out to — the provider user
+	// is the entire audience. The action URL targets the mentorship
+	// inbox (booker-facing notifications use /messages/bookings?b=).
+	if !bk.OrgID.Valid && bk.ProviderUserID.Valid {
+		subjectType := "service_booking"
+		actionURL := "/messages/mentorship?b=" + bk.ID.String()
+
+		if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
+			RecipientID:      bk.ProviderUserID,
+			NotificationType: ntype,
+			ActorType:        actorType,
+			ActorID:          actorID,
+			SubjectType:      &subjectType,
+			SubjectID:        bk.ID,
+			Title:            title,
+			Body:             &body,
+			ActionUrl:        &actionURL,
+		}); err != nil {
+			return fmt.Errorf("notify provider user: %w", err)
+		}
+
+		return nil
+	}
+
 	members, err := q.ListOrganizationMembers(ctx, bk.OrgID)
 	if err != nil {
 		return fmt.Errorf("list org members: %w", err)
@@ -278,8 +311,20 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 		orgName = *bk.OrgName
 	}
 
+	// 000824: user-provider (mentorship) rows have no org actor — the
+	// responding mentor is the actor and supplies the body copy name.
+	actorType := "organization"
+	actorID := bk.OrgID
+	if !bk.OrgID.Valid && bk.ProviderUserID.Valid {
+		actorType = "user"
+		actorID = bk.ProviderUserID
+		if bk.ProviderDisplayName != nil && *bk.ProviderDisplayName != "" {
+			orgName = *bk.ProviderDisplayName
+		}
+	}
+
 	subjectType := "service_booking"
-	actionURL := "/me/service-bookings/" + bookingID.String()
+	actionURL := "/messages/bookings?b=" + bookingID.String()
 	title := fmt.Sprintf("Booking %s — %s", status, bk.ListingTitle)
 	body := fmt.Sprintf("%s %s your booking for %s.", orgName, status, bk.ListingTitle)
 
@@ -290,8 +335,8 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 	if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
 		RecipientID:      bk.BookerUserID,
 		NotificationType: ntype,
-		ActorType:        strPtrWorker("organization"),
-		ActorID:          bk.OrgID,
+		ActorType:        &actorType,
+		ActorID:          actorID,
 		SubjectType:      &subjectType,
 		SubjectID:        bookingID,
 		Title:            title,
@@ -433,7 +478,7 @@ func HandleServiceBookingExpirePending(ctx context.Context, t *asynq.Task) error
 		// Booker notification.
 		if bk.BookerUserID.Valid {
 			subjectType := "service_booking"
-			actionURL := "/me/service-bookings/" + bk.ID.String()
+			actionURL := "/messages/bookings?b=" + bk.ID.String()
 			body := "Your booking expired — the organization did not respond in time."
 
 			if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
