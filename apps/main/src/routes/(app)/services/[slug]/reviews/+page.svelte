@@ -52,7 +52,7 @@
 	<meta property="og:url" content={canonical} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-[1200px] px-4 pt-4 pb-10">
+<div class="mx-auto w-full max-w-full px-4 pt-4 pb-10">
 	{#if data.loadError}
 		<EmptyState
 			icon={Star}

@@ -50,10 +50,11 @@ export function isExceptionRoute(routeId: string | null): boolean {
 }
 
 // Routes that replace the shell's mobile tab bar with a page-owned
-// fixed action bar (e.g. the forum thread's vote/bookmark/share strip).
+// fixed action bar (e.g. the forum thread's vote/bookmark/share strip,
+// the service detail's StickyBookBar).
 // Kept separate from isExceptionRoute — these routes keep the normal
 // left nav, right sidebar, and compose chrome on desktop.
-const NO_TAB_BAR_ROUTES = new Set(['/(app)/forum/[slug]']);
+const NO_TAB_BAR_ROUTES = new Set(['/(app)/forum/[slug]', '/(app)/services/[slug]']);
 
 export function isNoTabBarRoute(routeId: string | null): boolean {
 	return routeId !== null && NO_TAB_BAR_ROUTES.has(routeId);

@@ -40,6 +40,7 @@
 	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
 	import BookingDialog from '$lib/components/marketplace/BookingDialog.svelte';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
+	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { serviceCategoryIcon } from '$lib/components/marketplace/serviceCategoryIcon';
 	import { accentClasses, priceLabel, serviceCategoryInfo } from '$lib/marketplace';
 	import { serviceCategoryLabel } from '$lib/enumOptions';
@@ -280,12 +281,13 @@
 		!!service?.booking_url && (service.purchase_mode === 'external' || !service.purchase_mode)
 	);
 
-	// Hero CTAs — mode-aware. Primary: paid/inquiry scroll to #book,
+	// Hero CTAs — mode-aware. Primary: paid/inquiry open the booking dialog
+	// (the #book summary card now lives in the shell's right sidebar),
 	// external/mode-less listings link out to booking_url, then the
 	// provider's website (or the provider card). Secondary "Talk to an
-	// expert" reuses the inquiry path (#book) or the org profile.
+	// expert" reuses the inquiry path or the org profile.
 	const primaryCta = $derived.by(():
-		| { label: string; href: string; external: boolean }
+		| { label: string; href: string; external: boolean; dialog?: boolean }
 		| null => {
 		if (!service) return null;
 		if (bookingOutbound && service.booking_url) {
@@ -297,11 +299,25 @@
 				external: true
 			};
 		}
+		// The #book summary card lives in the AppShell right sidebar (Task 9)
+		// — it is permanently in view at xl+, so the CTA opens the booking
+		// dialog directly instead of scrolling to an anchor (same pattern as
+		// secondaryCta.dialog and StickyBookBar's onCta).
 		if (bookSurface && service.purchase_mode === 'paid') {
-			return { label: t('services.book_now', 'Book now'), href: '#book', external: false };
+			return {
+				label: t('services.book_now', 'Book now'),
+				href: '#book',
+				external: false,
+				dialog: true
+			};
 		}
 		if (bookSurface && service.purchase_mode === 'inquiry') {
-			return { label: t('services.book_inquiry', 'Send inquiry'), href: '#book', external: false };
+			return {
+				label: t('services.book_inquiry', 'Send inquiry'),
+				href: '#book',
+				external: false,
+				dialog: true
+			};
 		}
 		if (service.website_url) {
 			return {
@@ -371,6 +387,11 @@
 			return null;
 		}
 	);
+
+	// The AppShell right sidebar is dropped at <xl and whenever the admin
+	// sidebar resolves to none — the aside cards then render inline in the
+	// center column instead (same xl:hidden pattern as the content singles).
+	const sidebarLive = $derived(page.data.rightSidebarEnabled !== false);
 
 	const orgItems = $derived<AutocompleteItem[]>(
 		(data.myOrgs ?? []).map((o) => ({ id: o.id, label: o.name }))
@@ -497,7 +518,98 @@
 	{/if}
 </svelte:head>
 
-<div class="mx-auto w-full max-w-[1200px] px-4 pt-4 {stickyCta ? 'pb-24' : 'pb-10'} lg:pb-10">
+<!-- Aside cards — ProviderCard + the #book summary card. Rendered in the
+     AppShell right sidebar at xl+ via SetSidebar (appshell:sidebar
+     context, ADR-058); the same snippet renders inline further down for
+     <xl viewports and for sidebar-less layouts. `anchorIds` keeps the
+     #book/#provider anchors and aria-labelledby ids on the inline copy
+     only, so duplicate ids never collide in the DOM. -->
+{#snippet asideCards(anchorIds: boolean)}
+	{#if service}
+		<div id={anchorIds ? 'provider' : undefined} class="scroll-mt-20">
+			<ProviderCard {service} />
+		</div>
+
+		<!-- Booking / inquiry — only rendered when a booking surface exists
+			(bookSurface). The CTA opens BookingDialog; the anchor id lives on
+			the inline copy so deep links keep a visible target at <xl. -->
+		{#if bookSurface}
+			<section
+				id={anchorIds ? 'book' : undefined}
+				aria-labelledby={anchorIds ? 'book-heading' : 'book-heading-aside'}
+				class="scroll-mt-20"
+			>
+				<h2
+					id={anchorIds ? 'book-heading' : 'book-heading-aside'}
+					class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+				>
+					{service.purchase_mode === 'paid'
+						? t('services.book_heading_paid', 'Book this package')
+						: t('services.book_heading_inquiry', 'Booking & inquiries')}
+				</h2>
+				<!-- Order summary card — the CTA opens BookingDialog
+				     (form, tier picker, coupon preview all live there). -->
+				<div
+					class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
+				>
+					<div class="min-w-0">
+						{#if heroPrice}
+							<p class="flex flex-wrap items-baseline gap-x-2">
+								<span class="text-xs text-[var(--color-muted)]"
+									>{t('services.price_from', 'From')}</span
+								>
+								<!-- heroPrice already carries the price_per suffix
+								     (priceLabel in $lib/marketplace) — appending
+								     pricePerLabel here duplicated it ("per person
+								     per person"). -->
+								<span class="text-xl font-bold text-[var(--color-text)]">{heroPrice}</span>
+							</p>
+						{:else}
+							<p class="text-sm text-[var(--color-muted)]">
+								{t('services.pkg_price_on_request', 'Price on request')}
+							</p>
+						{/if}
+						{#if service.purchase_mode === 'paid' && service.agent_balance_due != null}
+							<p class="mt-1 text-xs text-[var(--color-muted)]">
+								{t(
+									'services.book_balance_note',
+									'This fee secures your booking. Remaining {balance} is payable directly to {org}.',
+									{
+										balance: formatMoney(
+											service.agent_balance_due,
+											service.price_currency,
+											currencies,
+											{ minor: true }
+										),
+										org: service.org_name ?? ''
+									}
+								)}
+							</p>
+						{/if}
+					</div>
+					<button
+						type="button"
+						onclick={openBookingDialog}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+					>
+						<Send size={16} aria-hidden="true" />
+						{service.purchase_mode === 'paid'
+							? t('services.book_now', 'Book now')
+							: t('services.book_inquiry', 'Send inquiry')}
+					</button>
+				</div>
+			</section>
+		{/if}
+	{/if}
+{/snippet}
+
+<SetSidebar>
+	<div class="flex flex-col gap-4">
+		{@render asideCards(false)}
+	</div>
+</SetSidebar>
+
+<div class="mx-auto w-full max-w-full px-4 pt-4 {stickyCta ? 'pb-24' : 'pb-10'} lg:pb-10">
 	{#if data.loadError || !service}
 		<EmptyState
 			icon={Briefcase}
@@ -531,8 +643,9 @@
 			>
 		</nav>
 
-		<!-- Hero: content left, image + facts right -->
-		<section class="grid gap-8 lg:grid-cols-2">
+		<!-- Hero: stacked single column for the shell's narrow center
+		     (~600–720px) — badges/title/rating → image → facts → CTAs. -->
+		<section>
 			<div>
 				<div class="flex flex-wrap items-center gap-2">
 					{#if catLabel}
@@ -652,44 +765,10 @@
 					</div>
 				{/if}
 
-				<!-- CTA pair -->
-				<div class="mt-6 flex flex-wrap gap-3">
-					{#if primaryCta}
-						<a
-							href={primaryCta.href}
-							target={primaryCta.external ? '_blank' : undefined}
-							rel={primaryCta.external ? 'noopener noreferrer' : undefined}
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-						>
-							{primaryCta.label}
-							{#if primaryCta.external}
-								<ExternalLink size={15} aria-hidden="true" />
-							{/if}
-						</a>
-					{/if}
-					{#if secondaryCta}
-						{#if secondaryCta.dialog}
-							<button
-								type="button"
-								onclick={openBookingDialog}
-								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-							>
-								{secondaryCta.label}
-							</button>
-						{:else}
-							<a
-								href={secondaryCta.href}
-								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-							>
-								{secondaryCta.label}
-							</a>
-						{/if}
-					{/if}
-				</div>
 			</div>
 
-			<!-- Right: featured image + fact grid -->
-			<div>
+			<!-- Featured image + fact grid -->
+			<div class="mt-6">
 				<div
 					class="relative aspect-[16/10] w-full overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]"
 				>
@@ -795,14 +874,55 @@
 					{/if}
 				</dl>
 			</div>
+
+			<!-- CTA row — internal paid/inquiry CTAs open BookingDialog
+			     directly (the #book card lives in the sidebar now). -->
+			<div class="mt-6 flex flex-wrap gap-3">
+				{#if primaryCta}
+					{#if primaryCta.dialog}
+						<button
+							type="button"
+							onclick={openBookingDialog}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+						>
+							{primaryCta.label}
+						</button>
+					{:else}
+						<a
+							href={primaryCta.href}
+							target={primaryCta.external ? '_blank' : undefined}
+							rel={primaryCta.external ? 'noopener noreferrer' : undefined}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
+						>
+							{primaryCta.label}
+							{#if primaryCta.external}
+								<ExternalLink size={15} aria-hidden="true" />
+							{/if}
+						</a>
+					{/if}
+				{/if}
+				{#if secondaryCta}
+					{#if secondaryCta.dialog}
+						<button
+							type="button"
+							onclick={openBookingDialog}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							{secondaryCta.label}
+						</button>
+					{:else}
+						<a
+							href={secondaryCta.href}
+							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+						>
+							{secondaryCta.label}
+						</a>
+					{/if}
+				{/if}
+			</div>
 		</section>
 
 		<div class="mt-10 space-y-10">
-			<!-- What's included -->
-			{#if service.items && service.items.length > 0}
-				<IncludedGrid items={service.items} />
-			{/if}
-
 			<!-- Body -->
 			{#if service.body}
 				<div class="prose prose-sm max-w-none text-[var(--color-text)]">
@@ -810,43 +930,9 @@
 				</div>
 			{/if}
 
-			<!-- How it works (§114 — listing-authored steps[]; hidden when empty) -->
-			{#if service.steps && service.steps.length > 0}
-				<HowItWorks steps={service.steps} />
-			{/if}
-
-			<!-- Open departures -->
-			{#if openDepartures.length > 0}
-				<section aria-labelledby="departures-heading">
-					<h2
-						id="departures-heading"
-						class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
-					>
-						{t('services.pkg_departures_heading', 'Upcoming departures')}
-					</h2>
-					<ul class="mt-3 grid gap-2 sm:grid-cols-2">
-						{#each openDepartures as dep (dep.id)}
-							<li
-								class="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
-							>
-								<span class="flex items-center gap-1.5 text-[var(--color-text)]">
-									<CalendarDays size={14} class="text-[var(--color-muted)]" aria-hidden="true" />
-									{formatDate(dep.starts_on)}{#if dep.ends_on}
-										→ {formatDate(dep.ends_on)}{/if}
-								</span>
-								<span class="text-xs text-[var(--color-muted)]">
-									{#if dep.capacity != null}
-										{t('services.pkg_seats_left', '{n} seats left', {
-											n: Math.max(0, dep.capacity - dep.booked_count)
-										})}
-									{:else}
-										{t('services.pkg_unlimited', 'Unlimited seats')}
-									{/if}
-								</span>
-							</li>
-						{/each}
-					</ul>
-				</section>
+			<!-- What's included -->
+			{#if service.items && service.items.length > 0}
+				<IncludedGrid items={service.items} />
 			{/if}
 
 			<!-- Pricing: tier cards (§114) or the single price card. -->
@@ -937,6 +1023,50 @@
 				</section>
 			{/if}
 
+			<!-- Open departures -->
+			{#if openDepartures.length > 0}
+				<section aria-labelledby="departures-heading">
+					<h2
+						id="departures-heading"
+						class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+					>
+						{t('services.pkg_departures_heading', 'Upcoming departures')}
+					</h2>
+					<ul class="mt-3 grid gap-2 sm:grid-cols-2">
+						{#each openDepartures as dep (dep.id)}
+							<li
+								class="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+							>
+								<span class="flex items-center gap-1.5 text-[var(--color-text)]">
+									<CalendarDays size={14} class="text-[var(--color-muted)]" aria-hidden="true" />
+									{formatDate(dep.starts_on)}{#if dep.ends_on}
+										→ {formatDate(dep.ends_on)}{/if}
+								</span>
+								<span class="text-xs text-[var(--color-muted)]">
+									{#if dep.capacity != null}
+										{t('services.pkg_seats_left', '{n} seats left', {
+											n: Math.max(0, dep.capacity - dep.booked_count)
+										})}
+									{:else}
+										{t('services.pkg_unlimited', 'Unlimited seats')}
+									{/if}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
+			<!-- How it works (§114 — listing-authored steps[]; hidden when empty) -->
+			{#if service.steps && service.steps.length > 0}
+				<HowItWorks steps={service.steps} />
+			{/if}
+
+			<!-- FAQs (§114 — listing-authored faqs[]; hidden when empty) -->
+			{#if service.faqs && service.faqs.length > 0}
+				<ServiceFaq faqs={service.faqs} />
+			{/if}
+
 			<!-- Reviews (§29 sidecar — BUG-014). The "View all reviews" footer
 			     links to the §114 paginated reviews page when the aggregate
 			     outgrows the embedded rows. -->
@@ -950,88 +1080,16 @@
 				</div>
 			{/if}
 
-			<!-- FAQs (§114 — listing-authored faqs[]; hidden when empty) -->
-			{#if service.faqs && service.faqs.length > 0}
-				<ServiceFaq faqs={service.faqs} />
-			{/if}
-
-			<!-- Provider -->
-			<div id="provider" class="scroll-mt-20">
-				<ProviderCard {service} />
+			<!-- Provider + #book summary card — at xl+ these render in the
+			     AppShell right sidebar via SetSidebar; below xl (and whenever
+			     the admin sidebar is unconfigured) the same snippet renders
+			     inline here so the provider/booking surface never disappears.
+			     The inline copy owns the #provider/#book anchors. -->
+			<div
+				class="flex flex-col gap-8 {sidebarLive ? 'xl:hidden' : ''}"
+			>
+				{@render asideCards(true)}
 			</div>
-
-			<!-- Booking / inquiry — id anchor for hero + tier CTAs. Only
-				rendered when a booking surface exists (bookSurface). -->
-			{#if bookSurface}
-				<!-- Plan Task 4.10: mobile gets the StickyBookBar; on desktop the
-				     summary card itself sticks below the marketplace header while
-				     the sections after it scroll underneath. -->
-				<section
-					id="book"
-					aria-labelledby="book-heading"
-					class="scroll-mt-20 lg:sticky lg:top-24 lg:z-10 lg:bg-[var(--color-bg)]"
-				>
-					<h2
-						id="book-heading"
-						class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
-					>
-						{service.purchase_mode === 'paid'
-							? t('services.book_heading_paid', 'Book this package')
-							: t('services.book_heading_inquiry', 'Booking & inquiries')}
-					</h2>
-					<!-- Order summary card — the CTA opens BookingDialog
-					     (form, tier picker, coupon preview all live there). -->
-					<div
-						class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
-					>
-						<div class="min-w-0">
-							{#if heroPrice}
-								<p class="flex flex-wrap items-baseline gap-x-2">
-									<span class="text-xs text-[var(--color-muted)]"
-										>{t('services.price_from', 'From')}</span
-									>
-									<!-- heroPrice already carries the price_per suffix
-									     (priceLabel in $lib/marketplace) — appending
-									     pricePerLabel here duplicated it ("per person
-									     per person"). -->
-									<span class="text-xl font-bold text-[var(--color-text)]">{heroPrice}</span>
-								</p>
-							{:else}
-								<p class="text-sm text-[var(--color-muted)]">
-									{t('services.pkg_price_on_request', 'Price on request')}
-								</p>
-							{/if}
-							{#if service.purchase_mode === 'paid' && service.agent_balance_due != null}
-								<p class="mt-1 text-xs text-[var(--color-muted)]">
-									{t(
-										'services.book_balance_note',
-										'This fee secures your booking. Remaining {balance} is payable directly to {org}.',
-										{
-											balance: formatMoney(
-												service.agent_balance_due,
-												service.price_currency,
-												currencies,
-												{ minor: true }
-											),
-											org: service.org_name ?? ''
-										}
-									)}
-								</p>
-							{/if}
-						</div>
-						<button
-							type="button"
-							onclick={openBookingDialog}
-							class="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
-						>
-							<Send size={16} aria-hidden="true" />
-							{service.purchase_mode === 'paid'
-								? t('services.book_now', 'Book now')
-								: t('services.book_inquiry', 'Send inquiry')}
-						</button>
-					</div>
-				</section>
-			{/if}
 
 			<!-- §111 scam disclaimer — packages render a standing notice +
 				a link to the §81 board filtered to this destination. -->
