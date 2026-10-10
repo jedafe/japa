@@ -1190,6 +1190,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	creatorService.SetMediaUploader(mediaService)
 	creatorService.SetSpaceLogoUpdater(spaceService)
 	creatorService.SetNotifier(notificationService)
+	creatorService.SetAdminChecker(rbacResolver) // platform admins skip the instructor-application flow (ADR-063)
 	creatorHandlers := creator.NewHandlers(creatorService)
 	creatorHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in university responses
 	// Register university processor for the worker's 5 university Asynq tasks.

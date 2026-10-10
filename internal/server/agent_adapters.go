@@ -703,12 +703,12 @@ func (a *agentAcademyAdapter) CreateTrack(ctx context.Context, input ai.Learning
 
 func (a *agentAcademyAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateTrackInput) (*ai.AcademyTrack, error) {
 	t, err := a.store.UpdateTrack(ctx, id, academy.UpdateTrackInput{
-		Title:                input.Title,
+		Title:                ptrOrNil(input.Title),
 		Description:          input.Description,
-		Difficulty:           input.Difficulty,
+		Difficulty:           ptrOrNil(input.Difficulty),
 		CoverMediaID:         input.CoverMediaID,
-		IsPublished:          input.IsPublished,
-		SortOrder:            input.SortOrder,
+		IsPublished:          ptrOrNil(input.IsPublished),
+		SortOrder:            ptrOrNil(input.SortOrder),
 		Category:             input.Category,
 		SubscriptionEligible: input.SubscriptionEligible,
 	})
@@ -758,13 +758,13 @@ func (a *agentAcademyAdapter) CreateLesson(ctx context.Context, moduleID pgtype.
 
 func (a *agentAcademyAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateLessonInput) (*ai.AcademyLesson, error) {
 	l, err := a.store.UpdateLesson(ctx, id, academy.UpdateLessonInput{
-		Title:           input.Title,
-		LessonType:      input.LessonType,
+		Title:           ptrOrNil(input.Title),
+		LessonType:      ptrOrNil(input.LessonType),
 		Content:         input.Content,
 		MediaID:         input.MediaID,
 		DurationMinutes: input.DurationMinutes,
-		SortOrder:       input.SortOrder,
-		IsPublished:     input.IsPublished,
+		SortOrder:       ptrOrNil(input.SortOrder),
+		IsPublished:     ptrOrNil(input.IsPublished),
 		IsPreview:       input.IsPreview,
 	})
 	if err != nil {
@@ -783,22 +783,10 @@ func (a *agentAcademyAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, 
 // case (small batches).
 func (a *agentAcademyAdapter) ReorderLessons(ctx context.Context, entries []ai.LearningReorderEntry) error {
 	for _, e := range entries {
-		// Fetch the existing lesson to preserve its fields, then update
-		// only the sort_order. UpdateLessonInput requires Title and
-		// LessonType, so we must read first.
-		lesson, err := a.store.GetLessonByID(ctx, e.ID)
-		if err != nil {
-			return fmt.Errorf("reorder: fetching lesson %s: %w", e.ID, err)
-		}
-
-		_, err = a.store.UpdateLesson(ctx, e.ID, academy.UpdateLessonInput{
-			Title:           lesson.Title,
-			LessonType:      lesson.LessonType,
-			Content:         lesson.Content,
-			MediaID:         derefUUID(lesson.MediaID),
-			DurationMinutes: lesson.DurationMinutes,
-			SortOrder:       e.SortOrder,
-			IsPublished:     lesson.IsPublished,
+		// UpdateLessonInput is partial-update safe — nil fields are left
+		// untouched, so a reorder only needs to send sort_order.
+		_, err := a.store.UpdateLesson(ctx, e.ID, academy.UpdateLessonInput{
+			SortOrder: ptrOrNil(e.SortOrder),
 		})
 		if err != nil {
 			return fmt.Errorf("reorder: updating lesson %s sort_order: %w", e.ID, err)
@@ -839,6 +827,12 @@ func learningLessonToAI(l academy.Lesson) ai.AcademyLesson {
 		CreatedAt:       pgtype.Timestamptz{Time: l.CreatedAt, Valid: !l.CreatedAt.IsZero()},
 		UpdatedAt:       pgtype.Timestamptz{Time: l.UpdatedAt, Valid: !l.UpdatedAt.IsZero()},
 	}
+}
+
+// ptrOrNil returns a pointer to v. The academy update inputs use pointer
+// fields so a zero value is still an explicit update.
+func ptrOrNil[T any](v T) *T {
+	return &v
 }
 
 // derefUUID returns the pgtype.UUID value pointed to by p, or the zero

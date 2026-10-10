@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -406,7 +407,7 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		if merr == nil {
 			completed, total, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID)
 			if perr == nil && total > 0 {
-				pct := float64(completed) / float64(total) * 100
+				pct := calculatePercent(completed, total)
 				if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
 					slog.Warn("academy: update_progress — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 				}
@@ -547,9 +548,10 @@ func (h *Handlers) UpdateTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// RAG re-indexing — fire-and-forget (§69/ADR-069 BUG-001 fix). Only
-	// published tracks are indexed; unpublished tracks are purged.
-	if input.IsPublished {
-		h.indexTrackRAG(r.Context(), id, input.Title, input.Description, h.resolveRAGLanguage(r.Context()))
+	// published tracks are indexed; unpublished tracks are purged. The updated
+	// row is the source of truth — a partial PATCH may not carry is_published.
+	if track.IsPublished {
+		h.indexTrackRAG(r.Context(), id, track.Title, track.Description, h.resolveRAGLanguage(r.Context()))
 	} else {
 		h.purgeTrackRAG(r.Context(), id)
 	}
@@ -994,7 +996,7 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 	// reflects the latest completion state. This is a cheap COUNT query.
 	completed, total, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID)
 	if perr == nil && total > 0 {
-		pct := float64(completed) / float64(total) * 100
+		pct := calculatePercent(completed, total)
 		if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
 			slog.Warn("academy: complete_lesson — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 		}
@@ -1116,16 +1118,37 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	total := len(questions)
-	score := 0.0
-	if total > 0 {
-		score = float64(correct) / float64(total) * 100
+	score := calculatePercent(correct, total)
+	passed := score >= quizPassScorePct
+
+	// A passing score completes the quiz lesson — same side effects as
+	// CompleteLesson (enrollment progress, certificate check, async
+	// completion sync) so a learner who passes the final quiz doesn't have
+	// to also press "Mark as complete" to finish the track.
+	if passed {
+		if user := auth.FromContext(r.Context()); user != nil {
+			if lesson, lerr := h.store.GetLessonByID(r.Context(), lessonID); lerr == nil {
+				if _, uerr := h.store.UpsertProgress(r.Context(), user.UserID, lessonID, UpdateProgressInput{Status: "completed"}); uerr != nil {
+					slog.Warn("academy: submit_quiz — lesson progress update failed", "user_id", user.UserID.String(), "lesson_id", lessonID.String(), "error", uerr)
+				}
+				if mod, merr := h.store.GetModuleByID(r.Context(), lesson.ModuleID); merr == nil {
+					if completed, ltotal, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID); perr == nil && ltotal > 0 {
+						if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, calculatePercent(completed, ltotal)); uerr != nil {
+							slog.Warn("academy: submit_quiz — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
+						}
+					}
+					h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
+				}
+				h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
+			}
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			// Frontend QuizResult contract (ADR-060 lesson player).
 			"score_pct":     score,
-			"passed":        score >= quizPassScorePct,
+			"passed":        passed,
 			"earned_points": correct,
 			"total_points":  total,
 			"results":       results,
@@ -1331,7 +1354,7 @@ func calculatePercent(completed, total int) float64 {
 		return 0
 	}
 
-	return float64(completed) / float64(total) * 100
+	return math.Round(float64(completed) / float64(total) * 100)
 }
 
 // MaxPageSize — parsePageSize extracts the page_size query param, clamped to [1, MaxPageSize].

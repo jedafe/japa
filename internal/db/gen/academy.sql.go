@@ -1470,7 +1470,7 @@ const listEnrollmentsByUserIDWithDetails = `-- name: ListEnrollmentsByUserIDWith
 SELECT e.id, e.user_id, e.track_id, e.access_type,
  CASE
  WHEN COALESCE(lp_stats.lessons_total, 0) > 0 THEN
- (lp_stats.lessons_completed * 100.0 / lp_stats.lessons_total)
+ ROUND(lp_stats.lessons_completed * 100.0 / lp_stats.lessons_total)
  ELSE 0
  END::numeric AS progress_pct,
  e.enrolled_at,
@@ -1715,13 +1715,13 @@ RETURNING id, module_id, title, slug, lesson_type, content, media_id, duration_m
 `
 
 type UpdateAcademyLessonParams struct {
-	Title           string      `json:"title"`
-	LessonType      string      `json:"lesson_type"`
+	Title           *string     `json:"title"`
+	LessonType      *string     `json:"lesson_type"`
 	Content         *string     `json:"content"`
 	MediaID         pgtype.UUID `json:"media_id"`
 	DurationMinutes *int32      `json:"duration_minutes"`
-	SortOrder       int32       `json:"sort_order"`
-	IsPublished     bool        `json:"is_published"`
+	SortOrder       *int32      `json:"sort_order"`
+	IsPublished     *bool       `json:"is_published"`
 	IsPreview       *bool       `json:"is_preview"`
 	ID              pgtype.UUID `json:"id"`
 }
@@ -1784,9 +1784,9 @@ RETURNING id, track_id, title, slug, description, sort_order, created_at, update
 `
 
 type UpdateAcademyModuleParams struct {
-	Title       string      `json:"title"`
+	Title       *string     `json:"title"`
 	Description *string     `json:"description"`
-	SortOrder   int32       `json:"sort_order"`
+	SortOrder   *int32      `json:"sort_order"`
 	ID          pgtype.UUID `json:"id"`
 }
 
@@ -1828,12 +1828,12 @@ RETURNING id, title, slug, description, difficulty, cover_media_id, is_published
 `
 
 type UpdateAcademyTrackParams struct {
-	Title                string      `json:"title"`
+	Title                *string     `json:"title"`
 	Description          *string     `json:"description"`
-	Difficulty           string      `json:"difficulty"`
+	Difficulty           *string     `json:"difficulty"`
 	CoverMediaID         pgtype.UUID `json:"cover_media_id"`
-	IsPublished          bool        `json:"is_published"`
-	SortOrder            int32       `json:"sort_order"`
+	IsPublished          *bool       `json:"is_published"`
+	SortOrder            *int32      `json:"sort_order"`
 	Category             *string     `json:"category"`
 	SubscriptionEligible *bool       `json:"subscription_eligible"`
 	ID                   pgtype.UUID `json:"id"`

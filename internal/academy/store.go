@@ -77,14 +77,16 @@ type CreateTrackInput struct {
 	SubscriptionEligible bool        `json:"subscription_eligible,omitempty"`
 }
 
-// UpdateTrackInput represents update track input.
+// UpdateTrackInput represents update track input. All fields are optional —
+// a nil pointer leaves the column untouched so partial PATCH bodies cannot
+// wipe values they never set (BUG: previously required params zeroed fields).
 type UpdateTrackInput struct {
-	Title                string      `json:"title"`
+	Title                *string     `json:"title,omitempty"`
 	Description          *string     `json:"description,omitempty"`
-	Difficulty           string      `json:"difficulty"`
+	Difficulty           *string     `json:"difficulty,omitempty"`
 	CoverMediaID         pgtype.UUID `json:"cover_media_id"`
-	IsPublished          bool        `json:"is_published"`
-	SortOrder            int32       `json:"sort_order"`
+	IsPublished          *bool       `json:"is_published,omitempty"`
+	SortOrder            *int32      `json:"sort_order,omitempty"`
 	Category             *string     `json:"category,omitempty"`
 	SubscriptionEligible *bool       `json:"subscription_eligible,omitempty"`
 }
@@ -462,11 +464,12 @@ type CreateModuleInput struct {
 	SortOrder   int32   `json:"sort_order"`
 }
 
-// UpdateModuleInput represents update module input.
+// UpdateModuleInput represents update module input. Nil pointers leave the
+// column untouched (partial-update safe).
 type UpdateModuleInput struct {
-	Title       string  `json:"title"`
+	Title       *string `json:"title,omitempty"`
 	Description *string `json:"description,omitempty"`
-	SortOrder   int32   `json:"sort_order"`
+	SortOrder   *int32  `json:"sort_order,omitempty"`
 }
 
 func moduleFromRow(r gen.AcademyModule) Module {
@@ -832,15 +835,16 @@ type CreateLessonInput struct {
 	IsPreview       bool        `json:"is_preview"`
 }
 
-// UpdateLessonInput represents update lesson input.
+// UpdateLessonInput represents update lesson input. Nil pointers leave the
+// column untouched (partial-update safe).
 type UpdateLessonInput struct {
-	Title           string      `json:"title"`
-	LessonType      string      `json:"lesson_type"`
+	Title           *string     `json:"title,omitempty"`
+	LessonType      *string     `json:"lesson_type,omitempty"`
 	Content         *string     `json:"content,omitempty"`
 	MediaID         pgtype.UUID `json:"media_id"`
 	DurationMinutes *int32      `json:"duration_minutes,omitempty"`
-	SortOrder       int32       `json:"sort_order"`
-	IsPublished     bool        `json:"is_published"`
+	SortOrder       *int32      `json:"sort_order,omitempty"`
+	IsPublished     *bool       `json:"is_published,omitempty"`
 	IsPreview       *bool       `json:"is_preview,omitempty"`
 }
 

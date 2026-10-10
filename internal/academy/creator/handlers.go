@@ -319,7 +319,7 @@ func (h *Handlers) ListMyTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	prof, err := h.service.ResolveSelfProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -349,7 +349,7 @@ func (h *Handlers) CreateMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	prof, err := h.service.ResolveSelfProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -430,7 +430,7 @@ func (h *Handlers) UpdateMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	prof, err := h.service.ResolveSelfProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -502,7 +502,7 @@ func (h *Handlers) SubmitMyTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	prof, err := h.service.ResolveSelfProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -530,7 +530,7 @@ func (h *Handlers) GetMyTrackStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	prof, err := h.service.ResolveSelfProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -686,7 +686,7 @@ func (h *Handlers) GetMyEarnings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	prof, err := h.service.ResolveSelfProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return
@@ -738,7 +738,7 @@ func (h *Handlers) GetMyPayouts(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parsePagination(r)
 
-	prof, err := h.service.store.GetByUser(r.Context(), user.UserID)
+	prof, err := h.service.ResolveSelfProfile(r.Context(), user.UserID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

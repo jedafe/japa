@@ -50,7 +50,7 @@ func (a *ProcessorAdapter) UpdateTrackCompletion(ctx context.Context, userID, tr
 		return nil
 	}
 
-	progressPct := float64(completed) / float64(total) * 100
+	progressPct := calculatePercent(completed, total)
 
 	if err := a.store.UpdateEnrollmentProgress(ctx, uid, tkid, progressPct); err != nil {
 		// Enrollment may not exist yet — log but don't fail the task.

@@ -390,7 +390,7 @@
 									: 'border-[var(--color-destructive)] bg-[var(--color-surface)]'}"
 							>
 								<p class="text-lg font-bold text-[var(--color-text)]">
-									{quizResult.score_pct}% — {quizResult.passed
+									{Math.round(quizResult.score_pct)}% — {quizResult.passed
 										? t('academy.quiz_passed', 'Passed!')
 										: t('academy.quiz_failed', 'Not passed')}
 								</p>

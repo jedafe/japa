@@ -54,12 +54,12 @@ RETURNING id, title, slug, description, difficulty, cover_media_id, is_published
 
 -- name: UpdateAcademyTrack :one
 UPDATE academy_tracks
-SET title = COALESCE(@title, title),
+SET title = COALESCE(sqlc.narg(title), title),
  description = COALESCE(sqlc.narg(description), description),
- difficulty = COALESCE(@difficulty, difficulty),
+ difficulty = COALESCE(sqlc.narg(difficulty), difficulty),
  cover_media_id = COALESCE(sqlc.narg(cover_media_id), cover_media_id),
- is_published = COALESCE(@is_published, is_published),
- sort_order = COALESCE(@sort_order, sort_order),
+ is_published = COALESCE(sqlc.narg(is_published), is_published),
+ sort_order = COALESCE(sqlc.narg(sort_order), sort_order),
  category = COALESCE(sqlc.narg(category), category),
  subscription_eligible = COALESCE(sqlc.narg(subscription_eligible), subscription_eligible),
  updated_at = now()
@@ -106,9 +106,9 @@ RETURNING id, track_id, title, slug, description, sort_order, created_at, update
 
 -- name: UpdateAcademyModule :one
 UPDATE academy_modules
-SET title = COALESCE(@title, title),
+SET title = COALESCE(sqlc.narg(title), title),
  description = COALESCE(sqlc.narg(description), description),
- sort_order = COALESCE(@sort_order, sort_order),
+ sort_order = COALESCE(sqlc.narg(sort_order), sort_order),
  updated_at = now()
 WHERE id = @id
 RETURNING id, track_id, title, slug, description, sort_order, created_at, updated_at;
@@ -182,13 +182,13 @@ RETURNING id, module_id, title, slug, lesson_type, content, media_id, duration_m
 
 -- name: UpdateAcademyLesson :one
 UPDATE academy_lessons
-SET title = COALESCE(@title, title),
- lesson_type = COALESCE(@lesson_type, lesson_type),
+SET title = COALESCE(sqlc.narg(title), title),
+ lesson_type = COALESCE(sqlc.narg(lesson_type), lesson_type),
  content = COALESCE(sqlc.narg(content), content),
  media_id = COALESCE(sqlc.narg(media_id), media_id),
  duration_minutes = COALESCE(sqlc.narg(duration_minutes), duration_minutes),
- sort_order = COALESCE(@sort_order, sort_order),
- is_published = COALESCE(@is_published, is_published),
+ sort_order = COALESCE(sqlc.narg(sort_order), sort_order),
+ is_published = COALESCE(sqlc.narg(is_published), is_published),
  is_preview = COALESCE(sqlc.narg(is_preview), is_preview),
  updated_at = now()
 WHERE id = @id
@@ -312,7 +312,7 @@ ORDER BY enrolled_at DESC;
 SELECT e.id, e.user_id, e.track_id, e.access_type,
  CASE
  WHEN COALESCE(lp_stats.lessons_total, 0) > 0 THEN
- (lp_stats.lessons_completed * 100.0 / lp_stats.lessons_total)
+ ROUND(lp_stats.lessons_completed * 100.0 / lp_stats.lessons_total)
  ELSE 0
  END::numeric AS progress_pct,
  e.enrolled_at,

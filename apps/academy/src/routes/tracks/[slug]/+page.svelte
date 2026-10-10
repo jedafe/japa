@@ -500,12 +500,12 @@
 		<!-- Curriculum -->
 		<Tabs.Content value="curriculum" class="pt-6">
 			<Accordion.Root type="multiple" class="max-w-3xl space-y-2">
-				{#each track.modules as module (module.id)}
+				{#each track.modules as module, moduleIndex (module.id)}
 					<Accordion.Item value={module.id} class="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]">
 						<Accordion.Header>
 							<Accordion.Trigger class="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 								<span class="flex items-center gap-2">
-									<span class="text-xs font-semibold text-[var(--color-muted)]">{t('academy.module')} {module.sort_order + 1}</span>
+									<span class="text-xs font-semibold text-[var(--color-muted)]">{t('academy.module')} {moduleIndex + 1}</span>
 									{module.title}
 									<span class="text-xs text-[var(--color-muted)]">· {module.lessons.length} {t('academy.lessons')}</span>
 								</span>

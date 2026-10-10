@@ -9,6 +9,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
@@ -57,6 +58,15 @@ type Service struct {
 	mediaUploader    MediaUploader        // nil = fetch_logo task skips media storage
 	spaceLogoUpdater SpaceLogoUpdater     // nil = fetch_logo task skips space update
 	notifier         Notifier             // nil = notify tasks log only
+	adminChecker     AdminChecker         // nil = no instructor-application bypass
+}
+
+// AdminChecker reports whether a caller holds platform-level academy admin
+// rights. Implemented by *rbac.RBAC; wired in server.go. A nil checker
+// disables the instructor-application bypass entirely.
+type AdminChecker interface {
+	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
 // Notifier dispatches in-app notifications for university events. Implemented
@@ -92,11 +102,78 @@ func (s *Service) SetMediaUploader(m MediaUploader) { s.mediaUploader = m }
 // university:fetch_logo task (Section 39).
 func (s *Service) SetSpaceLogoUpdater(u SpaceLogoUpdater) { s.spaceLogoUpdater = u }
 
+// SetAdminChecker wires the RBAC resolver used to decide whether a caller may
+// skip the public instructor-application flow. Optional — if not called,
+// every creator must apply and be approved by an admin (ADR-063).
+func (s *Service) SetAdminChecker(c AdminChecker) { s.adminChecker = c }
+
+// canSkipApplication reports whether the user holds platform-level academy
+// admin rights — super_admin group membership or the instructor-approval
+// permission node. A user who can approve instructor applications can grant
+// themselves the same status through the admin endpoints anyway, so
+// auto-provisioning an approved profile removes ceremony without widening
+// effective privilege.
+func (s *Service) canSkipApplication(ctx context.Context, userID pgtype.UUID) bool {
+	if s.adminChecker == nil {
+		return false
+	}
+
+	return s.adminChecker.IsSuperAdmin(ctx, userID) ||
+		s.adminChecker.HasPermission(ctx, userID, "academy.instructor.approve")
+}
+
+// ResolveSelfProfile returns the caller's instructor profile row, lazily
+// provisioning an approved profile for platform admins so they can author
+// courses without going through the public "Become an Instructor" flow
+// (ADR-063). Regular users with no profile get the store's pgx.ErrNoRows,
+// which callers surface as the "not an instructor" state.
+func (s *Service) ResolveSelfProfile(ctx context.Context, userID pgtype.UUID) (gen.AcademyInstructorProfile, error) {
+	prof, err := s.store.GetByUser(ctx, userID)
+	if err == nil {
+		return prof, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) || !s.canSkipApplication(ctx, userID) {
+		return gen.AcademyInstructorProfile{}, err
+	}
+
+	return s.provisionAdminProfile(ctx, userID)
+}
+
+// provisionAdminProfile creates an instructor profile for a platform admin
+// and approves it in the same call, seeding the display name from the user's
+// public profile (fallback: username). reviewer is set to the caller — the
+// approval is self-service by design for admins.
+func (s *Service) provisionAdminProfile(ctx context.Context, userID pgtype.UUID) (gen.AcademyInstructorProfile, error) {
+	displayName, err := s.store.UserDisplayName(ctx, userID)
+	if err != nil || displayName == "" {
+		slog.Warn("creator: provision admin profile: display name fallback", "user_id", userID.String(), "error", err)
+		displayName = "Platform Instructor"
+	}
+
+	row, err := s.store.Apply(ctx, userID, ApplyInput{DisplayName: displayName})
+	if err != nil {
+		slog.Error("creator: provision admin profile: apply", "user_id", userID.String(), "error", err)
+		return gen.AcademyInstructorProfile{}, err
+	}
+
+	approved, err := s.store.Approve(ctx, row.ID, userID, "", nil)
+	if err != nil {
+		slog.Error("creator: provision admin profile: approve", "user_id", userID.String(), "profile_id", row.ID.String(), "error", err)
+		return gen.AcademyInstructorProfile{}, err
+	}
+
+	s.invalidateInstructorProfileCache(ctx, userID)
+
+	return approved, nil
+}
+
 // ---------------------------------------------------------------------------
 // Instructor lifecycle
 // ---------------------------------------------------------------------------
 
-// Apply submits an instructor application.
+// Apply submits an instructor application. Platform admins skip the review
+// queue — their application is approved immediately.
 func (s *Service) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) (AcademyInstructorProfile, error) {
 	if in.DisplayName == "" {
 		return AcademyInstructorProfile{}, errors.New("display_name is required")
@@ -107,17 +184,45 @@ func (s *Service) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) 
 		return AcademyInstructorProfile{}, err
 	}
 
+	if row.Status == "pending" && s.canSkipApplication(ctx, userID) {
+		if approved, aerr := s.store.Approve(ctx, row.ID, userID, "", nil); aerr == nil {
+			row = approved
+			s.invalidateInstructorProfileCache(ctx, userID)
+		}
+	}
+
 	return profileFromRow(row), nil
 }
 
 // GetMyProfile returns the caller's instructor profile.
 func (s *Service) GetMyProfile(ctx context.Context, userID pgtype.UUID) (AcademyInstructorProfile, error) {
 	// AUDIT-BE-VALKEY-007: read-through cache (jc:academy:instructor:{user_id}:profile).
-	return s.cachedInstructorProfile(ctx, userID)
+	p, err := s.cachedInstructorProfile(ctx, userID)
+	if err == nil {
+		return p, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return AcademyInstructorProfile{}, err
+	}
+
+	// No profile row — platform admins get one provisioned on the fly.
+	row, perr := s.ResolveSelfProfile(ctx, userID)
+	if perr != nil {
+		return AcademyInstructorProfile{}, perr
+	}
+
+	return profileFromRow(row), nil
 }
 
 // UpdateMyProfile updates creator-editable fields.
 func (s *Service) UpdateMyProfile(ctx context.Context, userID pgtype.UUID, in UpdateSelfInput) (AcademyInstructorProfile, error) {
+	// Resolve (and lazily provision for platform admins) before updating so an
+	// admin's PATCH does not no-op on a missing profile row.
+	if _, err := s.ResolveSelfProfile(ctx, userID); err != nil {
+		return AcademyInstructorProfile{}, err
+	}
+
 	row, err := s.store.UpdateSelf(ctx, userID, in)
 	if err != nil {
 		return AcademyInstructorProfile{}, err

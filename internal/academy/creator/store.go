@@ -122,7 +122,9 @@ type ApplyInput struct {
 // Apply submits (or re-submits while pending/rejected) an instructor
 // application. Returns the resulting profile row.
 func (s *Store) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) (gen.AcademyInstructorProfile, error) {
-	var socialLinks []byte
+	// social_links is NOT NULL DEFAULT '{}' — an explicit NULL violates the
+	// constraint, so default an absent payload to an empty object.
+	socialLinks := []byte("{}")
 	if len(in.SocialLinks) > 0 {
 		socialLinks = in.SocialLinks
 	}
@@ -141,6 +143,21 @@ func (s *Store) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) (g
 	}
 
 	return row, nil
+}
+
+// UserDisplayName resolves a person's display name (fallback: username) for
+// auto-provisioning an instructor profile for platform admins.
+func (s *Store) UserDisplayName(ctx context.Context, userID pgtype.UUID) (string, error) {
+	up, err := s.read.GetUserProfile(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+
+	if up.DisplayName != nil && *up.DisplayName != "" {
+		return *up.DisplayName, nil
+	}
+
+	return up.Username, nil
 }
 
 // GetByUser returns the instructor profile for a user (any status).
