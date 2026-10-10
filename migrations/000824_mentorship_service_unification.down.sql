@@ -101,10 +101,18 @@ SELECT
     sb.created_at,
     sb.updated_at
 FROM service_bookings sb
-WHERE sb.meta->>'source' = 'mentorship_connection';
+WHERE sb.meta->>'source' = 'mentorship_connection'
+  -- Skip anonymized shells: the GDPR scrub (AnonymizeServiceBookings)
+  -- nulls both owner pointers, leaving no mentor/mentee to restore —
+  -- mentorship_connections requires both NOT NULL. These rows are purged
+  -- with the other user-provider bookings below.
+  AND sb.provider_user_id IS NOT NULL
+  AND sb.booker_user_id IS NOT NULL;
 
 -- Mirror of the up assertion: the backfill must have restored every
--- migrated booking before any of them are deleted.
+-- restorable migrated booking before any user-provider rows are deleted.
+-- expected uses the same unresolvable-row filter as the INSERT so an
+-- anonymized shell does not falsely trip the mismatch.
 DO $$
 DECLARE
     expected int;
@@ -112,19 +120,24 @@ DECLARE
 BEGIN
     SELECT count(*) INTO expected
     FROM service_bookings
-    WHERE meta->>'source' = 'mentorship_connection';
+    WHERE meta->>'source' = 'mentorship_connection'
+      AND provider_user_id IS NOT NULL
+      AND booker_user_id IS NOT NULL;
     SELECT count(*) INTO actual FROM mentorship_connections;
     IF expected <> actual THEN
-        RAISE EXCEPTION 'mentorship restore mismatch: % migrated bookings but % restored connections — aborting before DELETE',
+        RAISE EXCEPTION 'mentorship restore mismatch: % restorable bookings but % restored connections — aborting before DELETE',
             expected, actual;
     END IF;
 END $$;
 
--- 4. Remove the migrated booking rows before restoring org_id NOT NULL
---    (they carry org_id = NULL) and before deleting the shadow listing
---    meta rows they reference.
+-- 4. Remove every user-provider booking before restoring org_id NOT NULL
+--    (they all carry org_id = NULL): migrated connection rows, live
+--    mentorship bookings created since 000824 (meta = {'goals':...} —
+--    not source-tagged), and GDPR-anonymized shells (both pointers
+--    nulled). Org-owned bookings keep org_id and survive — including
+--    anonymized ones, which retain org_id as the org's audit record.
 DELETE FROM service_bookings
-WHERE meta->>'source' = 'mentorship_connection';
+WHERE provider_user_id IS NOT NULL OR org_id IS NULL;
 
 -- 5. Revert service_bookings schema.
 ALTER TABLE service_bookings

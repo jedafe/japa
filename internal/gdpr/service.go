@@ -587,6 +587,19 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		); err != nil {
 			slog.Warn("failed to anonymize service bookings during deletion", "user_id", request.UserID.String(), "error", err)
 		}
+		// Retire + scrub the mentor's shadow service listing (000824). The
+		// shadow contents row carries PII — title '<name> — Mentorship',
+		// body mentor_bio, slug 'mentor-<username>' — and
+		// AnonymizeUserProfile only severs the user_profiles link, so
+		// without this the listing stays published + bookable and
+		// ReassignContentAuthor later carries that PII to the placeholder
+		// user. Must run in this phase, before the hard-delete
+		// reassignment. Best-effort like the other scrub steps.
+		if err := s.store.write.AnonymizeMentorshipShadowListings(ctx,
+			request.UserID,
+		); err != nil {
+			slog.Warn("failed to anonymize mentorship shadow listings during deletion", "user_id", request.UserID.String(), "error", err)
+		}
 		// Scrub PII from onboarding_state.step_data (name, current_location,
 		// destination) during the anonymization phase (Section 09, ADR-014).
 		// The row has ON DELETE CASCADE from users(id) so it is removed at
