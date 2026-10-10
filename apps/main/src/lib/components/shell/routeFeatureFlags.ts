@@ -9,6 +9,11 @@
  * `routeFeatureFlags.get(item.url)` (exact match) — for prefix matching, use
  * `routeFeatureFlagForPath(path)`.
  *
+ * A route may map to an array of flags — OR semantics: the nav item stays
+ * visible when ANY listed flag is enabled. Used for composite surfaces like
+ * /messages/bookings, which serves directory, packages, and mentorship
+ * deployments alike (mirrors bookingsInboxEnabled in $lib/features).
+ *
  * Only routes that correspond to a feature_flags key need to be listed here.
  * Core routes (home, search, profile, settings, spaces, tags, users) are never
  * feature-flagged and are intentionally absent.
@@ -16,7 +21,10 @@
  * Ref: sections/42-feature-flags.md, internal/features/registry.go
  */
 
-export const routeFeatureFlags: Map<string, string> = new Map([
+export const routeFeatureFlags: Map<string, string | string[]> = new Map<
+	string,
+	string | string[]
+>([
 	// Content features
 	['/blog', 'feature.blog'],
 	['/forum', 'feature.forum'],
@@ -24,8 +32,9 @@ export const routeFeatureFlags: Map<string, string> = new Map([
 	['/notifications', 'feature.notifications'],
 	// The bookings/mentorship inboxes live under /messages but are NOT
 	// feature.dm surfaces — list them first so longest-prefix matching maps
-	// them to their own flags (§111/000824).
-	['/messages/bookings', 'service_directory.enabled'],
+	// them to their own flags (§111/000824). The bookings inbox is a
+	// composite surface — OR-gated like bookingsInboxEnabled ($lib/features).
+	['/messages/bookings', ['service_directory.enabled', 'service_packages.enabled', 'mentorship.enabled']],
 	['/messages/mentorship', 'mentorship.enabled'],
 	['/messages', 'feature.dm'],
 	// Commerce features
@@ -67,7 +76,8 @@ export const routeFeatureFlags: Map<string, string> = new Map([
 	['/ama', 'forum.ama.enabled'],
 	['/achievements', 'achievement.enabled'],
 	['/services', 'service_directory.enabled'],
-	// Mentorship
+	// Mentorship — /mentors 308-redirects into /services?kind=mentorship;
+	// keep the nav item hidden unless mentorship itself is enabled.
 	['/mentors', 'mentorship.enabled'],
 	// Academy
 	['/academy', 'feature.academy'],
@@ -76,16 +86,17 @@ export const routeFeatureFlags: Map<string, string> = new Map([
 ]);
 
 /**
- * Resolve the feature flag for a given path using prefix matching.
- * Returns undefined when the path is not feature-flagged.
+ * Resolve the feature flag(s) for a given path using prefix matching.
+ * Returns a single flag key or an array (OR semantics — see the map
+ * docstring); undefined when the path is not feature-flagged.
  */
-export function routeFeatureFlagForPath(path: string): string | undefined {
+export function routeFeatureFlagForPath(path: string): string | string[] | undefined {
 	// Try exact match first.
 	const exact = routeFeatureFlags.get(path);
 	if (exact) return exact;
 
 	// Try prefix match — longest prefix wins.
-	let bestMatch: string | undefined;
+	let bestMatch: string | string[] | undefined;
 	let bestLen = 0;
 	for (const [route, flag] of routeFeatureFlags) {
 		if (path === route || path.startsWith(route + '/')) {

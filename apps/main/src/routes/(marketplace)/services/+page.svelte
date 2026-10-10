@@ -32,6 +32,7 @@
 	import CategoryPills from '$lib/components/marketplace/CategoryPills.svelte';
 	import ServiceCard from '$lib/components/marketplace/ServiceCard.svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
+	import { bookingsInboxEnabled } from '$lib/features';
 	import type { ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -47,6 +48,12 @@
 	const canonical = $derived(`${page.url.origin}/services`);
 
 	const services = $derived<ServiceListing[]>(data.services);
+
+	// The bookings inbox is a composite surface (directory || packages ||
+	// mentorship) — mirror its flag composite so the action never links to
+	// a 404 in mentorship-only deployments (000824).
+	const features = $derived((page.data.features ?? {}) as Record<string, boolean>);
+	const bookingsEnabled = $derived(bookingsInboxEnabled(features));
 
 	// Filter-panel state — seeded from URL params and re-synced on navigation
 	// so back/forward and shared links repaint the controls.
@@ -370,9 +377,9 @@
 				onValueChange={selectSort}
 				class="w-36"
 			/>
-			{#if data.authed && data.packagesEnabled}
+			{#if data.authed && bookingsEnabled}
 				<PageAction
-					href="/me/service-bookings"
+					href="/messages/bookings"
 					icon={Package}
 					label={t('bookings.my_title', 'Service Bookings')}
 					secondary

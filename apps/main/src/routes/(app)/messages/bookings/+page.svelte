@@ -27,7 +27,8 @@
 	const selectedId = $derived(page.url.searchParams.get('b'));
 
 	// Empty-state copy per role; the browse action prefers the surface whose
-	// flag is actually on (packages → /services, mentorship-only → /mentors).
+	// flag is actually on (packages → /services, mentorship-only → the
+	// directory's mentorship kind).
 	const emptyTitle = $derived(
 		data.role === 'received'
 			? t('bookings.empty_received', 'Nothing received yet')
@@ -50,7 +51,7 @@
 			: features['service_packages.enabled']
 				? { label: t('bookings.browse', 'Browse services'), href: '/services?kind=package' }
 				: features['mentorship.enabled']
-					? { label: t('mentors.browse', 'Browse mentors'), href: '/mentors' }
+					? { label: t('mentors.browse', 'Browse mentors'), href: '/services?kind=mentorship' }
 					: { label: t('bookings.browse', 'Browse services'), href: '/services' }
 	);
 

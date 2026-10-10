@@ -45,7 +45,7 @@
 	const emptyAction = $derived(
 		data.role === 'received'
 			? undefined
-			: { label: t('mentors.browse', 'Browse mentors'), href: '/mentors' }
+			: { label: t('mentors.browse', 'Browse mentors'), href: '/services?kind=mentorship' }
 	);
 
 	function closeDetail() {

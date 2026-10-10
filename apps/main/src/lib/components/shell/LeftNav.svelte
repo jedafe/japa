@@ -49,7 +49,10 @@
 			if (item.visibility === 'authenticated') return !!user;
 			if (item.visibility === 'guest') return !user;
 			const flag = routeFeatureFlagForPath(item.url);
-			if (flag && features[flag] !== true) return false;
+			// An array maps a route to a composite surface (e.g.
+			// /messages/bookings) — visible when ANY listed flag is on.
+			const flags = Array.isArray(flag) ? flag : flag ? [flag] : [];
+			if (flags.length > 0 && !flags.some((f) => features[f] === true)) return false;
 			return true;
 		})
 	);

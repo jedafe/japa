@@ -3,10 +3,12 @@ import { redirect } from '@sveltejs/kit';
 import { academyUrl } from '$lib/appOrigins';
 
 // Pass-through: the root layout already loads everything the marketplace
-// chrome needs (user, siteSettings, menu, footerMenu, features,
-// unreadNotifications, currencies). This file documents the ADR-058
-// exception and reserves the layout for marketplace-scoped data later;
-// returning {} keeps child pages receiving parent() data.
+// chrome needs (user, siteSettings, menu, userSpaces, navCollapsed,
+// features) — the group renders with only the standard LeftNav as a
+// sticky sidebar since the MarketplaceHeader/MarketplaceFooter chrome was
+// dropped (services/mentorship unification). This file documents the
+// ADR-058 exception and reserves the layout for marketplace-scoped data
+// later; returning {} keeps child pages receiving parent() data.
 //
 // Host-surface guards replicate the (app) group exactly — moving /services
 // out of (app) must not drop them. Deliberately scoped to this group

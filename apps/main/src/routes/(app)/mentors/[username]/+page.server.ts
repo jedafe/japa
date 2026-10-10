@@ -1,37 +1,26 @@
 // Ref: japaconnect-engineering/sections/102-mentorship-matching.md
-import { error } from '@sveltejs/kit';
+// Legacy redirect (services/mentorship unification): the mentor profile
+// moved to the mentor's shadow service listing at /services/mentor-<username>.
+// The listing is resolved server-side first so a username without a
+// published shadow listing falls back to the mentorship directory instead
+// of a dead 404.
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
-import type { Mentor, GeoCountry } from '$lib/types';
+import { apiContext, apiGet } from '$lib/server/api';
+import type { ServiceListing } from '$lib/types';
 
-/**
- * Mentor profile at /mentors/{username} — SSR-fetches GET /mentors/{username}.
- * Feature-flagged via `mentorship.enabled` (§102): 404 when disabled.
- */
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
 	if (!features['mentorship.enabled']) {
 		throw error(404, { code: 'feature_disabled', message: 'Mentorship is not available' });
 	}
 
+	const slug = `mentor-${event.params.username}`;
 	const ctx = apiContext(event);
-	const authed = !!event.locals.user;
-	const username = event.params.username;
-
-	let countries: GeoCountry[] = [];
 	try {
-		countries = (await apiList<GeoCountry>(ctx, '/geo/countries')).items;
+		await apiGet<ServiceListing>(ctx, `/services/${encodeURIComponent(slug)}`);
 	} catch {
-		countries = [];
+		throw redirect(308, '/services?kind=mentorship');
 	}
-
-	try {
-		const mentor = await apiGet<Mentor>(ctx, `/mentors/${encodeURIComponent(username)}`);
-		return { mentor, authed, countries, loadError: false };
-	} catch (e) {
-		if (e instanceof ApiError && e.status === 404) {
-			throw error(404, { code: 'mentor_not_found', message: 'Mentor not found' });
-		}
-		return { mentor: null, authed, countries, loadError: true };
-	}
+	throw redirect(308, `/services/${encodeURIComponent(slug)}`);
 };

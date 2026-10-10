@@ -49,16 +49,25 @@ async function resolveSpaceRef(
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
-	if (!features['service_directory.enabled']) {
+	const packagesEnabled = !!features['service_packages.enabled'];
+	const mentorshipEnabled = !!features['mentorship.enabled'];
+
+	const get = (k: string) => event.url.searchParams.get(k)?.trim() ?? '';
+	const kindRaw = get('kind');
+	// Kind-aware gate mirrors servicedir.HandleList (internal/servicedir/
+	// handlers.go): the bare list is directory-gated, but an explicit
+	// kind=mentorship request is allowed on mentorship.enabled alone —
+	// /mentors redirects here and that surface must stay live in
+	// mentorship-only deployments (000824).
+	if (
+		!features['service_directory.enabled'] &&
+		!(kindRaw === 'mentorship' && mentorshipEnabled)
+	) {
 		throw error(404, { code: 'feature_disabled', message: 'Service Directory is not available' });
 	}
 
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
-	const packagesEnabled = !!features['service_packages.enabled'];
-	const mentorshipEnabled = !!features['mentorship.enabled'];
-
-	const get = (k: string) => event.url.searchParams.get(k)?.trim() ?? '';
 	const q = get('q');
 	const dest = get('dest');
 	const city = get('city');
@@ -71,7 +80,6 @@ export const load: PageServerLoad = async (event) => {
 	const verified = verifiedRaw === '1' ? 'true' : verifiedRaw;
 	const sortRaw = get('sort');
 	const sort = VALID_SORTS.has(sortRaw) ? sortRaw : 'latest';
-	const kindRaw = get('kind');
 	// §111/000824: kind tabs are flag-gated — kind=package needs
 	// service_packages.enabled, kind=mentorship needs mentorship.enabled;
 	// a dark-launched kind is a backend 404, so it is dropped here. The
