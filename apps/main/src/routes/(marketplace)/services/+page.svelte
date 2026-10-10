@@ -283,9 +283,7 @@
 	let submittedDismissed = $state(false);
 	const showSubmitted = $derived(data.submitted && !submittedDismissed);
 
-	const totalPages = $derived(
-		data.meta?.total ? Math.ceil(data.meta.total / data.filters.limit) : 1
-	);
+	const totalPages = $derived(Math.ceil((data.meta?.total ?? 0) / (data.meta?.limit ?? 20)));
 	const currentPage = $derived(data.filters.page || 1);
 
 	function gotoPage(p: number) {

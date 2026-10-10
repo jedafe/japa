@@ -197,13 +197,23 @@
 	const isOwnMentorListing = $derived(
 		isMentorship && !!service && service.author_id === data.currentUserId
 	);
+	const packagesEnabled = $derived(!!page.data.features?.['service_packages.enabled']);
+	const mentorshipEnabled = $derived(!!page.data.features?.['mentorship.enabled']);
 	// Guests still get the CTA — MentorshipRequestDialog renders a login
-	// prompt for them (same pattern as BookingDialog).
+	// prompt for them (same pattern as BookingDialog). Authed viewers need
+	// service.booking.create — the same node POST /services/:id/bookings
+	// enforces (mirrors canBook) — and the request path is dead when
+	// mentorship.enabled is off.
 	const mentorCanRequest = $derived(
-		isMentorship && !isOwnMentorListing && !mentorUnavailable && !mentorFull
+		isMentorship &&
+			!isOwnMentorListing &&
+			!mentorUnavailable &&
+			!mentorFull &&
+			mentorshipEnabled &&
+			(!data.authed ||
+				(data.user?.permissions ?? []).includes('service.booking.create'))
 	);
 	let mentorDialogOpen = $state(false);
-	const packagesEnabled = $derived(!!page.data.features?.['service_packages.enabled']);
 	// §114 flags — the API omits tiers/coupons entirely when the flags are
 	// off, so the data-length guard is the authoritative check.
 	const tiersVisible = $derived(
@@ -1304,12 +1314,17 @@
 			{#if data.authed}
 				<div class="flex flex-wrap gap-3 border-t border-[var(--color-border)] pt-6">
 					{#if canEdit}
-						<a
-							href="/services/{service.slug}/edit"
-							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							{t('services.edit', 'Edit listing')}
-						</a>
+						{#if !isMentorship}
+							<!-- 000824: mentorship listings are managed via the mentor
+							     profile (/settings/mentorship) — the generic edit
+							     route rejects them (mentorship_listing_managed). -->
+							<a
+								href="/services/{service.slug}/edit"
+								class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+							>
+								{t('services.edit', 'Edit listing')}
+							</a>
+						{/if}
 						{#if isPackage && service.org_slug}
 							<a
 								href="/org/{service.org_slug}/service-bookings"

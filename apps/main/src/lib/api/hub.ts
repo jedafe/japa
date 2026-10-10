@@ -275,14 +275,4 @@ export const patchNewsletterPreferences = (v: { digest_enabled?: boolean; campai
 export const unsubscribeNewsletter = (email: string) =>
 	api.delete<{ unsubscribed: boolean }>(`/newsletter/unsubscribe?email=${encodeURIComponent(email)}`);
 
-/* ---- mentorship (Section 102, ADR-110) ---- */
-export const acceptMentorship = (id: string) =>
-	api.patch<unknown>(`/me/mentorship/incoming/${id}/accept`);
-export const declineMentorship = (id: string) =>
-	api.patch<unknown>(`/me/mentorship/incoming/${id}/decline`);
-export const cancelOutgoingMentorship = (id: string) =>
-	api.delete<unknown>(`/me/mentorship/outgoing/${id}`);
-export const cancelMentorship = (id: string) =>
-	api.patch<unknown>(`/mentorship/${id}/cancel`);
-export const completeMentorship = (id: string) =>
-	api.patch<unknown>(`/mentorship/${id}/complete`);
+

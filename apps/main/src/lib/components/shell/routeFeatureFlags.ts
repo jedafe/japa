@@ -11,8 +11,8 @@
  *
  * A route may map to an array of flags — OR semantics: the nav item stays
  * visible when ANY listed flag is enabled. Used for composite surfaces like
- * /messages/bookings, which serves directory, packages, and mentorship
- * deployments alike (mirrors bookingsInboxEnabled in $lib/features).
+ * /messages/bookings, which serves directory and mentorship deployments
+ * alike (mirrors bookingsInboxEnabled in $lib/features).
  *
  * Only routes that correspond to a feature_flags key need to be listed here.
  * Core routes (home, search, profile, settings, spaces, tags, users) are never
@@ -34,7 +34,7 @@ export const routeFeatureFlags: Map<string, string | string[]> = new Map<
 	// feature.dm surfaces — list them first so longest-prefix matching maps
 	// them to their own flags (§111/000824). The bookings inbox is a
 	// composite surface — OR-gated like bookingsInboxEnabled ($lib/features).
-	['/messages/bookings', ['service_directory.enabled', 'service_packages.enabled', 'mentorship.enabled']],
+	['/messages/bookings', ['service_directory.enabled', 'mentorship.enabled']],
 	['/messages/mentorship', 'mentorship.enabled'],
 	['/messages', 'feature.dm'],
 	// Commerce features

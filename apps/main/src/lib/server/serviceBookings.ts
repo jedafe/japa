@@ -109,6 +109,13 @@ export async function loadBookingsSurface(
 		} catch {
 			selectedMissing = true;
 		}
+		// Cross-kind ?b= leak: a fixed-kind surface (e.g. /messages/mentorship)
+		// must not render a booking of another kind reached by deep link —
+		// treat it like a missing row.
+		if (selected && opts.fixedKind && selected.listing_kind !== opts.fixedKind) {
+			selected = null;
+			selectedMissing = true;
+		}
 	} else if (selectedId) {
 		selectedMissing = true;
 	}

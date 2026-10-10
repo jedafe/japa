@@ -19,6 +19,7 @@ const CONVERSATION_SORTS = new Set(['recent', 'oldest', 'unread', 'name']);
 const PAGE_SIZES = new Set([10, 20, 30, 50]);
 const DEFAULT_PAGE_SIZE = 30;
 const MESSAGES_PAGE_SIZE = 50;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
@@ -39,7 +40,11 @@ export const load: PageServerLoad = async (event) => {
 	const sort = CONVERSATION_SORTS.has(sortParam) ? sortParam : 'recent';
 	const sizeParam = Number(params.get('page_size'));
 	const pageSize = PAGE_SIZES.has(sizeParam) ? sizeParam : DEFAULT_PAGE_SIZE;
-	const activeId = params.get('c');
+	// ?c= is a raw user param — validate it as a conversation UUID before it
+	// hits an API path (an invalid value is treated as no active
+	// conversation rather than smuggled into the request URL).
+	const rawActiveId = params.get('c');
+	const activeId = rawActiveId && UUID_RE.test(rawActiveId) ? rawActiveId : null;
 
 	const convQuery = new URLSearchParams();
 	convQuery.set('page_size', String(pageSize));
@@ -64,7 +69,7 @@ export const load: PageServerLoad = async (event) => {
 		try {
 			const res = await apiList<DMMessage>(
 				ctx,
-				`/dm/conversations/${activeId}/messages?page_size=${MESSAGES_PAGE_SIZE}`
+				`/dm/conversations/${encodeURIComponent(activeId)}/messages?page_size=${MESSAGES_PAGE_SIZE}`
 			);
 			// The API returns newest-first; the thread renders oldest→newest.
 			activeMessages = res.items.reverse();

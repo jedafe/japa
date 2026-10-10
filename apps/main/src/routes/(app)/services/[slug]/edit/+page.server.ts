@@ -32,12 +32,20 @@ export const load: PageServerLoad = async (event) => {
 
 	let service: ServiceListing;
 	try {
-		service = await apiGet<ServiceListing>(ctx, `/services/${slug}?raw=1`);
+		service = await apiGet<ServiceListing>(ctx, `/services/${encodeURIComponent(slug)}?raw=1`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Service not found' });
 		}
 		throw error(500, { code: 'load_failed', message: 'Failed to load service' });
+	}
+
+	// 000824: mentorship shadow listings are managed via PATCH
+	// /me/mentor-profile (/settings/mentorship) — the generic edit form
+	// would be rejected with mentorship_listing_managed anyway, so the
+	// route 404s like the backend's edit guard.
+	if (service.listing_kind === 'mentorship') {
+		throw error(404, { code: 'not_found', message: 'Service not found' });
 	}
 
 	// Mirrors EditOwn (§98/§111): author, owning-org member, or

@@ -40,7 +40,7 @@ export const load: PageServerLoad = async (event) => {
 		// Use apiGetEnvelope to access the sidecar `reviews` and
 		// `review_aggregate` fields emitted by GET /services/:slug (BUG-014).
 		const [envelope, myOrgs] = await Promise.all([
-			apiGetEnvelope<ServiceListing>(ctx, `/services/${slug}`),
+			apiGetEnvelope<ServiceListing>(ctx, `/services/${encodeURIComponent(slug)}`),
 			myOrgsPromise
 		]);
 		const service = envelope.data;

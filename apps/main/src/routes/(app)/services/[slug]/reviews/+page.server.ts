@@ -31,7 +31,10 @@ export const load: PageServerLoad = async (event) => {
 	let service: ServiceListing;
 	let reviewAggregate: ServiceReviewAggregate;
 	try {
-		const envelope = await apiGetEnvelope<ServiceListing>(ctx, `/services/${slug}`);
+		const envelope = await apiGetEnvelope<ServiceListing>(
+			ctx,
+			`/services/${encodeURIComponent(slug)}`
+		);
 		service = envelope.data;
 		reviewAggregate =
 			(envelope as unknown as { review_aggregate?: ServiceReviewAggregate }).review_aggregate ??

@@ -29,7 +29,7 @@
 		CheckCircle2,
 		MapPin
 	} from 'lucide-svelte';
-	import { RelativeTime } from '$lib/components/ui';
+	import { RelativeTime, Modal } from '$lib/components/ui';
 	import type { ServiceBooking } from '$lib/types';
 	import {
 		bookingCounterpart,
@@ -481,145 +481,106 @@
 	{/if}
 </div>
 
-{#if disputeOpen}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		role="dialog"
-		aria-modal="true"
-	>
-		<div
-			class="w-full max-w-md rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
+<Modal bind:open={disputeOpen} title={t('bookings.dispute_title', 'Report a problem')} size="md">
+	<p class="text-xs text-[var(--color-muted)]">
+		{t(
+			'bookings.dispute_hint',
+			'Describe what went wrong. The platform team will review your dispute.'
+		)}
+	</p>
+	<textarea
+		bind:value={disputeReason}
+		rows="4"
+		class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+		placeholder={t('bookings.dispute_reason_ph', 'What happened?')}
+	></textarea>
+	<div class="mt-3 flex justify-end gap-2">
+		<button
+			type="button"
+			onclick={() => (disputeOpen = false)}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+		>{t('common.cancel', 'Cancel')}</button>
+		<button
+			type="button"
+			disabled={!disputeReason.trim() || busy}
+			onclick={submitDispute}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-danger)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
 		>
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">
-				{t('bookings.dispute_title', 'Report a problem')}
-			</h2>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">
-				{t(
-					'bookings.dispute_hint',
-					'Describe what went wrong. The platform team will review your dispute.'
-				)}
-			</p>
-			<textarea
-				bind:value={disputeReason}
-				rows="4"
-				class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-				placeholder={t('bookings.dispute_reason_ph', 'What happened?')}
-			></textarea>
-			<div class="mt-3 flex justify-end gap-2">
-				<button
-					type="button"
-					onclick={() => (disputeOpen = false)}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-				>{t('common.cancel', 'Cancel')}</button>
-				<button
-					type="button"
-					disabled={!disputeReason.trim() || busy}
-					onclick={submitDispute}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-danger)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-				>
-					{#if busy}<CheckCircle2 size={14} />{/if}
-					{t('bookings.dispute_submit', 'Submit dispute')}
-				</button>
-			</div>
-		</div>
+			{#if busy}<CheckCircle2 size={14} />{/if}
+			{t('bookings.dispute_submit', 'Submit dispute')}
+		</button>
 	</div>
-{/if}
+</Modal>
 
-{#if declineOpen}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		role="dialog"
-		aria-modal="true"
-	>
-		<div
-			class="w-full max-w-md rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
+<Modal bind:open={declineOpen} title={t('bookings.decline_title', 'Decline request')} size="md">
+	<p class="text-xs text-[var(--color-muted)]">
+		{t('bookings.respond_note_hint', 'Add an optional note for the other person.')}
+	</p>
+	<textarea
+		bind:value={declineNote}
+		rows="3"
+		class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+		placeholder={t('bookings.respond_note_ph', 'Note (optional)')}
+	></textarea>
+	<div class="mt-3 flex justify-end gap-2">
+		<button
+			type="button"
+			onclick={() => (declineOpen = false)}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+		>{t('common.cancel', 'Cancel')}</button>
+		<button
+			type="button"
+			disabled={busy}
+			onclick={() => respond('decline', declineNote)}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-danger)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
 		>
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">
-				{t('bookings.decline_title', 'Decline request')}
-			</h2>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">
-				{t('bookings.respond_note_hint', 'Add an optional note for the other person.')}
-			</p>
-			<textarea
-				bind:value={declineNote}
-				rows="3"
-				class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-				placeholder={t('bookings.respond_note_ph', 'Note (optional)')}
-			></textarea>
-			<div class="mt-3 flex justify-end gap-2">
-				<button
-					type="button"
-					onclick={() => (declineOpen = false)}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-				>{t('common.cancel', 'Cancel')}</button>
-				<button
-					type="button"
-					disabled={busy}
-					onclick={() => respond('decline', declineNote)}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-danger)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
-				>
-					{#if busy}<CheckCircle2 size={14} />{/if}
-					{t('bookings.decline', 'Decline')}
-				</button>
-			</div>
-		</div>
+			{#if busy}<CheckCircle2 size={14} />{/if}
+			{t('bookings.decline', 'Decline')}
+		</button>
 	</div>
-{/if}
+</Modal>
 
-{#if payOpen}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		role="dialog"
-		aria-modal="true"
-	>
-		<div
-			class="w-full max-w-md rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-lg"
+<Modal bind:open={payOpen} title={t('bookings.pay_title', 'Complete payment')} size="md">
+	<p class="text-xs text-[var(--color-muted)]">
+		{t(
+			'bookings.pay_hint',
+			'Reopen the secure checkout for the platform fee to keep this booking.'
+		)}
+	</p>
+	<label for="pay-email" class="mb-1 mt-3 block text-xs font-medium text-[var(--color-muted)]">
+		{t('bookings.pay_email', 'Email for receipt')}
+	</label>
+	<input
+		id="pay-email"
+		type="email"
+		bind:value={payEmail}
+		placeholder="you@example.com"
+		class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+	/>
+	{#if b.fee_amount != null}
+		<p class="mt-2 text-xs text-[var(--color-muted)]">
+			{t('bookings.pay_amount', 'Amount due now')}: {formatMoney(
+				b.fee_amount,
+				b.fee_currency,
+				null,
+				{ minor: true }
+			)}
+		</p>
+	{/if}
+	<div class="mt-3 flex justify-end gap-2">
+		<button
+			type="button"
+			onclick={() => (payOpen = false)}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+		>{t('common.cancel', 'Cancel')}</button>
+		<button
+			type="button"
+			disabled={!payEmail.trim() || busy}
+			onclick={resumePayment}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 		>
-			<h2 class="text-sm font-semibold text-[var(--color-text)]">
-				{t('bookings.pay_title', 'Complete payment')}
-			</h2>
-			<p class="mt-1 text-xs text-[var(--color-muted)]">
-				{t(
-					'bookings.pay_hint',
-					'Reopen the secure checkout for the platform fee to keep this booking.'
-				)}
-			</p>
-			<label for="pay-email" class="mb-1 mt-3 block text-xs font-medium text-[var(--color-muted)]">
-				{t('bookings.pay_email', 'Email for receipt')}
-			</label>
-			<input
-				id="pay-email"
-				type="email"
-				bind:value={payEmail}
-				placeholder="you@example.com"
-				class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
-			/>
-			{#if b.fee_amount != null}
-				<p class="mt-2 text-xs text-[var(--color-muted)]">
-					{t('bookings.pay_amount', 'Amount due now')}: {formatMoney(
-						b.fee_amount,
-						b.fee_currency,
-						null,
-						{ minor: true }
-					)}
-				</p>
-			{/if}
-			<div class="mt-3 flex justify-end gap-2">
-				<button
-					type="button"
-					onclick={() => (payOpen = false)}
-					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-				>{t('common.cancel', 'Cancel')}</button>
-				<button
-					type="button"
-					disabled={!payEmail.trim() || busy}
-					onclick={resumePayment}
-					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
-				>
-					{#if busy}<CheckCircle2 size={14} />{/if}
-					{t('bookings.pay_submit', 'Continue to checkout')}
-				</button>
-			</div>
-		</div>
+			{#if busy}<CheckCircle2 size={14} />{/if}
+			{t('bookings.pay_submit', 'Continue to checkout')}
+		</button>
 	</div>
-{/if}
+</Modal>
