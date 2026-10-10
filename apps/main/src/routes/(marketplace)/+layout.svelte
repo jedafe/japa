@@ -148,11 +148,11 @@
 		.marketplace-nav {
 			display: block;
 			position: sticky;
-			top: 1rem;
+			top: 0;
 			align-self: flex-start;
 			flex-shrink: 0;
 			width: var(--current-nav-width);
-			height: calc(100dvh - 2rem);
+			height: 100dvh;
 		}
 
 		/* Raise the collapsed rail so its label flyouts paint above the

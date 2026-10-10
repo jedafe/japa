@@ -12,7 +12,6 @@
 		Briefcase,
 		Plus,
 		Package,
-		ChevronRight,
 		X,
 		Check,
 		ShieldCheck,
@@ -23,7 +22,6 @@
 		EmptyState,
 		FilterToggle,
 		PageAction,
-		PaginationControls,
 		SelectField,
 		UrlTabs,
 		type UrlTab
@@ -31,7 +29,6 @@
 	import MarketplaceHero from '$lib/components/marketplace/MarketplaceHero.svelte';
 	import CategoryPills from '$lib/components/marketplace/CategoryPills.svelte';
 	import ServiceCard from '$lib/components/marketplace/ServiceCard.svelte';
-	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { bookingsInboxEnabled } from '$lib/features';
 	import type { ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
@@ -47,7 +44,37 @@
 	);
 	const canonical = $derived(`${page.url.origin}/services`);
 
-	const services = $derived<ServiceListing[]>(data.services);
+	// Load-more pagination — the SSR payload is page N of the filtered list;
+	// further chunks are fetched client-side with the same query params and
+	// appended. A new SSR payload (filter/nav change) resets the tail.
+	let appended = $state<ServiceListing[]>([]);
+	let lastFetchedPage = $state(untrack(() => data.filters.page || 1));
+	let loadingMore = $state(false);
+
+	$effect(() => {
+		data.services;
+		appended = [];
+		lastFetchedPage = data.filters.page || 1;
+	});
+
+	const totalPages = $derived(Math.ceil((data.meta?.total ?? 0) / (data.meta?.limit ?? 20)));
+	const currentPage = $derived(data.filters.page || 1);
+	const services = $derived<ServiceListing[]>([...data.services, ...appended]);
+	const hasMore = $derived(lastFetchedPage < totalPages);
+
+	async function loadMore() {
+		if (loadingMore || !hasMore) return;
+		loadingMore = true;
+		const params = new URLSearchParams(page.url.searchParams);
+		params.set('page', String(lastFetchedPage + 1));
+		params.delete('submitted');
+		const res = await api.get<ServiceListing[]>(`/services?${params.toString()}`);
+		if (res.data) {
+			appended = [...appended, ...res.data];
+			lastFetchedPage += 1;
+		}
+		loadingMore = false;
+	}
 
 	// The bookings inbox is a composite surface (directory || packages ||
 	// mentorship) — mirror its flag composite so the action never links to
@@ -62,7 +89,6 @@
 	let cityLabelInput = $state(untrack(() => data.filters.cityLabel));
 	let originInput = $state(untrack(() => data.filters.origin));
 	let verifiedInput = $state(untrack(() => data.filters.verified === 'true'));
-	let limitInput = $state(untrack(() => data.filters.limit));
 	let priceMaxInput = $state(untrack(() => data.filters.priceMaxMajor));
 	let dateFromInput = $state(untrack(() => data.filters.date_from));
 
@@ -72,7 +98,6 @@
 		cityLabelInput = data.filters.cityLabel;
 		originInput = data.filters.origin;
 		verifiedInput = data.filters.verified === 'true';
-		limitInput = data.filters.limit;
 		priceMaxInput = data.filters.priceMaxMajor;
 		dateFromInput = data.filters.date_from;
 	});
@@ -149,9 +174,6 @@
 			: null
 	);
 
-	const limitItems: AutocompleteItem[] = ['10', '20', '50'].map((n) => ({ id: n, label: n }));
-	const limitFetcher = staticAutocompleteFetcher(limitItems);
-
 	// Live suggestions for the hero search — the backend title search (?q=).
 	async function fetchServiceSuggestions(q: string) {
 		const res = await api.get<ServiceListing[]>(`/services?q=${encodeURIComponent(q.trim())}&limit=5`);
@@ -224,8 +246,6 @@
 				else p.delete('origin');
 				if (verifiedInput) p.set('verified', 'true');
 				else p.delete('verified');
-				if (limitInput !== 20) p.set('limit', String(limitInput));
-				else p.delete('limit');
 				// §111 package-only filters — the API takes price_max in minor
 				// units; the input collects major units like the create form.
 				if (data.filters.kind === 'package') {
@@ -255,7 +275,6 @@
 		cityLabelInput = '';
 		originInput = '';
 		verifiedInput = false;
-		limitInput = 20;
 		priceMaxInput = '';
 		dateFromInput = '';
 		goto('/services');
@@ -271,8 +290,7 @@
 			!!data.filters.verified ||
 			!!data.filters.kind ||
 			!!data.filters.priceMaxMajor ||
-			!!data.filters.date_from ||
-			data.filters.limit !== 20
+			!!data.filters.date_from
 	);
 
 	let showFilters = $state(false);
@@ -282,18 +300,6 @@
 
 	let submittedDismissed = $state(false);
 	const showSubmitted = $derived(data.submitted && !submittedDismissed);
-
-	const totalPages = $derived(Math.ceil((data.meta?.total ?? 0) / (data.meta?.limit ?? 20)));
-	const currentPage = $derived(data.filters.page || 1);
-
-	function gotoPage(p: number) {
-		const params = new URLSearchParams(page.url.searchParams);
-		params.set('page', String(p));
-		// The one-shot ?submitted=1 notice never propagates (same as
-		// paramsWith).
-		params.delete('submitted');
-		goto(`/services?${params.toString()}`);
-	}
 
 	const trustItems = $derived([
 		{
@@ -340,15 +346,6 @@
 <!-- Edge gutters + vertical rhythm come from the (marketplace) layout's
      `marketplace-center` main — this wrapper only caps the content width. -->
 <div class="mx-auto w-full max-w-[1400px]">
-	<!-- Breadcrumb -->
-	<nav class="mb-4 flex items-center gap-1 text-xs text-[var(--color-muted)]" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
-		<a href="/" class="transition-colors hover:text-[var(--color-text)]">{t('nav.home', 'Home')}</a>
-		<ChevronRight size={12} aria-hidden="true" />
-		<span class="font-medium text-[var(--color-text)]" aria-current="page">
-			{t('marketplace.nav_services', 'Services')}
-		</span>
-	</nav>
-
 	<!-- Category pills -->
 	<div class="mb-5">
 		<CategoryPills
@@ -498,19 +495,6 @@
 					</label>
 				</div>
 				<div class="flex items-center gap-2">
-					<Autocomplete
-						placeholder={t('services.page_size', 'Per page')}
-						ariaLabel={t('services.page_size', 'Results per page')}
-						emptyMessage={t('common.no_results', 'No results found')}
-						fetcher={limitFetcher}
-						initialFetcher={limitFetcher}
-						selectedId={String(limitInput)}
-						selectedLabel={String(limitInput)}
-						onSelect={(item) => {
-							limitInput = Number(item.id);
-							applyFilters();
-						}}
-					/>
 					<button
 						type="submit"
 						class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
@@ -577,15 +561,6 @@
 				: { label: t('services.list_a_service', 'List a Service'), href: '/login?redirect=/services/new' }}
 		/>
 	{:else}
-		{#if data.meta?.total}
-			<p class="mb-3 text-xs text-[var(--color-muted)]">
-				{t('common.showing', 'Showing {start}-{end} of {total}')
-					.replace('{start}', String((currentPage - 1) * data.filters.limit + 1))
-					.replace('{end}', String(Math.min(currentPage * data.filters.limit, data.meta.total)))
-					.replace('{total}', String(data.meta.total))}
-			</p>
-		{/if}
-
 		<div
 			class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
 			aria-busy={!!navigating.to}
@@ -602,9 +577,16 @@
 			{/each}
 		</div>
 
-		{#if totalPages > 1}
+		{#if hasMore}
 			<div class="mt-6 flex justify-center">
-				<PaginationControls page={currentPage} {totalPages} onPageChange={gotoPage} />
+				<button
+					type="button"
+					onclick={loadMore}
+					disabled={loadingMore}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-60"
+				>
+					{loadingMore ? t('common.loading', 'Loading') : t('common.load_more', 'Load more')}
+				</button>
 			</div>
 		{/if}
 	{/if}

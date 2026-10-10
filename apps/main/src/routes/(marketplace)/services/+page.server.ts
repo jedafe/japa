@@ -15,7 +15,7 @@ import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '$li
  * the space id (and display name) via GET /spaces/{slug} before the list
  * call so the URL stays human-readable.
  */
-const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 100; // backend caps ?limit= at 100
 const VALID_SORTS = new Set(['latest', 'top']);
 const VALID_KINDS = new Set(['service', 'package', 'mentorship', 'all']);
