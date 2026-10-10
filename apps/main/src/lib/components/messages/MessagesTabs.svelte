@@ -16,6 +16,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { UrlTabs, type UrlTab } from '$lib/components/ui';
+	import { bookingsInboxEnabled } from '$lib/features';
 
 	interface Props {
 		value: 'inbox' | 'requests' | 'bookings' | 'mentorship';
@@ -27,10 +28,7 @@
 
 	const features = $derived((page.data.features ?? {}) as Record<string, boolean>);
 	const dmEnabled = $derived(!!features['feature.dm']);
-	const bookingsEnabled = $derived(
-		(features['service_directory.enabled'] ?? features['service_packages.enabled'] ?? false) ||
-			!!features['mentorship.enabled']
-	);
+	const bookingsEnabled = $derived(bookingsInboxEnabled(features));
 	const mentorshipEnabled = $derived(!!features['mentorship.enabled']);
 
 	const tabs = $derived<UrlTab[]>([

@@ -1488,6 +1488,14 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 		return ServiceDTO{}, pgx.ErrNoRows
 	}
 
+	// Mentorship-kind listings keep a public detail URL while
+	// mentorship.enabled OR the directory flag is on — the
+	// /messages/mentorship inbox links here and is mentorship-gated, not
+	// directory-gated (000824). They vanish only when both flags are off.
+	if row.ListingKind == ListingKindMentorship && !s.Enabled(ctx) && !s.MentorshipEnabled(ctx) {
+		return ServiceDTO{}, pgx.ErrNoRows
+	}
+
 	dto := rowToDTO(row)
 
 	if row.ListingKind == ListingKindPackage {
@@ -1544,6 +1552,12 @@ func (s *Service) EnsurePublishedListing(ctx context.Context, contentID pgtype.U
 		return pgx.ErrNoRows
 	}
 
+	// Same OR-gate as GetBySlug — mentorship-kind rows stay publicly
+	// visible while mentorship.enabled or the directory flag is on.
+	if row.ListingKind == ListingKindMentorship && !s.Enabled(ctx) && !s.MentorshipEnabled(ctx) {
+		return pgx.ErrNoRows
+	}
+
 	return nil
 }
 
@@ -1590,6 +1604,12 @@ func (s *Service) GetBySlugEditor(ctx context.Context, slug string, userID pgtyp
 	// a disabled feature leaves no surface, public or owner-scoped.
 	if row.ListingKind == ListingKindPackage && !s.PackagesEnabled(ctx) {
 		return ServiceDTO{}, ErrPackagesDisabled
+	}
+
+	// Same OR-gate as GetBySlug — mentorship-kind editor views stay
+	// reachable while mentorship.enabled or the directory flag is on.
+	if row.ListingKind == ListingKindMentorship && !s.Enabled(ctx) && !s.MentorshipEnabled(ctx) {
+		return ServiceDTO{}, ErrMentorshipDisabled
 	}
 
 	dto := rowToDTO(row)

@@ -48,11 +48,23 @@
 		viewerEmail?: string;
 		/** feature.dm — hides "Open messages" when DM is off (bookings still work). */
 		dmEnabled: boolean;
+		/** service_packages.enabled — the dispute route is packages-gated
+		 *  (HandleMyBookingDispute), so mentorship-kind rows hide "Report a
+		 *  problem" when packages is off. */
+		packagesEnabled: boolean;
 		/** Clear the ?b= selection (mobile back). */
 		onClose: () => void;
 	}
 
-	let { booking, role, dmEnabled, viewerId, viewerEmail = '', onClose }: Props = $props();
+	let {
+		booking,
+		role,
+		dmEnabled,
+		packagesEnabled,
+		viewerId,
+		viewerEmail = '',
+		onClose
+	}: Props = $props();
 	const b = $derived(booking);
 
 	// The viewer's relationship to the row — derived from the booking, not
@@ -67,7 +79,13 @@
 	const counterpart = $derived(bookingCounterpart(b, viewRole));
 	const goals = $derived(b.goals || b.note || '');
 	const canCancel = $derived(isBooker && (b.status === 'pending' || b.status === 'confirmed'));
-	const canDispute = $derived(isBooker && (b.status === 'confirmed' || b.status === 'fulfilled'));
+	// The dispute route is packages-gated server-side — mentorship-kind rows
+	// (the only kind that can exist while packages is off) hide the action.
+	const canDispute = $derived(
+		isBooker &&
+			(b.status === 'confirmed' || b.status === 'fulfilled') &&
+			(b.listing_kind !== 'mentorship' || packagesEnabled)
+	);
 
 	// Checkout resume — only pending paid bookings with an unsettled hosted
 	// fee (manual_transfer/credit have no session to reopen).

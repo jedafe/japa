@@ -20,7 +20,10 @@
 
 	const features = $derived((page.data.features ?? {}) as Record<string, boolean>);
 	const dmEnabled = $derived(!!features['feature.dm']);
-	const viewerId = $derived(page.data.user?.id ?? '');
+	const packagesEnabled = $derived(!!features['service_packages.enabled']);
+	// viewerId is the root layout's dedicated viewer id — immune to page-level
+	// `user` overrides.
+	const viewerId = $derived(page.data.viewerId ?? '');
 	const selectedId = $derived(page.url.searchParams.get('b'));
 
 	const emptyTitle = $derived(
@@ -97,6 +100,7 @@
 					role={data.role}
 					{viewerId}
 					{dmEnabled}
+					{packagesEnabled}
 					onClose={closeDetail}
 				/>
 			{:else if data.selectedMissing}

@@ -383,7 +383,14 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 // HandleGet handles GET /services/:slug — single published service listing.
 func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
-	if h.service == nil || !h.service.Enabled(r.Context()) {
+	// The cheap pre-check only rejects when EVERY relevant flag is off —
+	// the kind-appropriate gate runs after the listing resolves below:
+	// mentorship-kind listings (000824) are reachable while
+	// mentorship.enabled OR service_directory.enabled is on so the
+	// /messages/mentorship inbox's listing links stay live in
+	// mentorship-only deployments. Same resolve-then-gate order as
+	// HandleCreateBooking.
+	if h.service == nil || (!h.service.Enabled(r.Context()) && !h.service.MentorshipEnabled(r.Context())) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
@@ -410,7 +417,7 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 		rawService, rawErr := h.service.GetBySlugEditor(r.Context(), slug, user.UserID, isEditAny)
 		if rawErr != nil {
-			if errors.Is(rawErr, pgx.ErrNoRows) || errors.Is(rawErr, ErrNotOwner) || errors.Is(rawErr, ErrPackagesDisabled) {
+			if errors.Is(rawErr, pgx.ErrNoRows) || errors.Is(rawErr, ErrNotOwner) || errors.Is(rawErr, ErrPackagesDisabled) || errors.Is(rawErr, ErrMentorshipDisabled) {
 				errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
 				return
 			}
@@ -436,6 +443,14 @@ func (h *Handlers) HandleGet(w http.ResponseWriter, r *http.Request) {
 
 			return
 		}
+	}
+
+	// Kind-appropriate gate (000824): mentorship-kind listings pass when
+	// either flag is on — the service layer already refused them when both
+	// are off; every other kind still requires the directory flag.
+	if service.ListingKind != ListingKindMentorship && !h.service.Enabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+		return
 	}
 
 	// BUG-014: §98 spec says "service detail + reviews". Embed the

@@ -2,6 +2,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { loadBookingsSurface } from '$lib/server/serviceBookings';
+import { bookingsInboxEnabled } from '$lib/features';
 
 /**
  * Service bookings inbox at /messages/bookings — auth-gated. NOT gated on
@@ -15,11 +16,9 @@ import { loadBookingsSurface } from '$lib/server/serviceBookings';
  */
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
-	const directoryGate =
-		features['service_directory.enabled'] ?? features['service_packages.enabled'] ?? false;
-	const bookingsEnabled =
-		directoryGate || !!features['service_packages.enabled'] || !!features['mentorship.enabled'];
-	if (!bookingsEnabled) {
+	// Shared with the MessagesTabs visibility check (lib/features.ts) —
+	// a visible tab never lands on a 404.
+	if (!bookingsInboxEnabled(features)) {
 		throw error(404, {
 			code: 'feature_disabled',
 			message: 'Service bookings are not available'
