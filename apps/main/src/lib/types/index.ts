@@ -4251,7 +4251,22 @@ export interface ServiceBooking {
 	departure_ends_on?: string;
 	booker_user_id?: string;
 	booker_username?: string;
+	booker_display_name?: string;
 	booker_avatar?: string;
+	/** Provider dimension (000824) — populated on user-provider (mentorship)
+	 *  bookings; org fields are empty on those rows. */
+	provider_user_id?: string;
+	provider_username?: string;
+	provider_display_name?: string;
+	provider_avatar?: string;
+	/** Mentorship request context — the mentee's target space + goals
+	 *  (meta->>'goals' with the note column as fallback for migrated rows). */
+	destination_space_id?: string;
+	destination_space_name?: string;
+	goals?: string;
+	/** Legacy mentorship_connections vocabulary on mentorship-kind rows:
+	 *  confirmed→active, fulfilled→completed, else verbatim (000824). */
+	connection_status?: string;
 	org_id: string;
 	org_name?: string;
 	org_slug?: string;

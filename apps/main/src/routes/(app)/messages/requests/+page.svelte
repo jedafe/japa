@@ -4,13 +4,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import {
-		EmptyState,
-		AutocompleteSelect,
-		UrlTabs,
-		ListPageBar,
-		type UrlTab
-	} from '$lib/components/ui';
+	import { EmptyState, AutocompleteSelect, ListPageBar } from '$lib/components/ui';
+	import MessagesTabs from '$lib/components/messages/MessagesTabs.svelte';
 	import { UserX, Search, Loader2 } from 'lucide-svelte';
 	import type { DMRequest } from '$lib/types';
 	import type { PageData } from './$types';
@@ -33,11 +28,6 @@
 	});
 
 	const title = $derived(t('messages.requests_title', 'Message requests — JapaConnect'));
-
-	const tabs = $derived<UrlTab[]>([
-		{ value: 'inbox', label: t('messages.tab_inbox', 'Messages') },
-		{ value: 'requests', label: t('messages.tab_requests', 'Requests') }
-	]);
 
 	const sortOptions = [
 		{ value: 'recent', label: t('messages.sort_recent', 'Most recent') },
@@ -130,14 +120,7 @@
 
 <div class="mx-auto w-full max-w-full">
 	<ListPageBar>
-		<UrlTabs
-			{tabs}
-			value="requests"
-			onValueChange={(v) => {
-				if (v === 'inbox') goto('/messages');
-			}}
-			class="!border-b-0 !bg-transparent"
-		/>
+		<MessagesTabs value="requests" />
 	</ListPageBar>
 
 	<div class="mx-auto w-full max-w-2xl">

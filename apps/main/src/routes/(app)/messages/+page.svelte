@@ -21,10 +21,9 @@
 		LiteralSuggest,
 		Modal,
 		AutocompleteSelect,
-		UrlTabs,
-		ListPageBar,
-		type UrlTab
+		ListPageBar
 	} from '$lib/components/ui';
+	import MessagesTabs from '$lib/components/messages/MessagesTabs.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { realtime, type DMMessageEvent } from '$lib/realtime/realtime.svelte';
@@ -87,17 +86,6 @@
 	);
 
 	const title = $derived(t('messages.title', 'Messages — JapaConnect'));
-
-	const tabs = $derived<UrlTab[]>([
-		{ value: 'inbox', label: t('messages.tab_inbox', 'Messages') },
-		{
-			value: 'requests',
-			label:
-				data.requestCount > 0
-					? `${t('messages.tab_requests', 'Requests')} (${data.requestCount}${data.requestCount >= 50 ? '+' : ''})`
-					: t('messages.tab_requests', 'Requests')
-		}
-	]);
 
 	const sortOptions = [
 		{ value: 'recent', label: t('messages.sort_recent', 'Most recent') },
@@ -436,14 +424,7 @@
 	class="mx-auto flex w-full max-w-full flex-col overflow-hidden h-[calc(100dvh-8.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] md:h-dvh"
 >
 	<ListPageBar>
-		<UrlTabs
-			{tabs}
-			value="inbox"
-			onValueChange={(v) => {
-				if (v === 'requests') goto('/messages/requests');
-			}}
-			class="!border-b-0 !bg-transparent"
-		/>
+		<MessagesTabs value="inbox" requestCount={data.requestCount} />
 		{#snippet actions()}
 			<button
 				type="button"

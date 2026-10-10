@@ -22,6 +22,11 @@ export const routeFeatureFlags: Map<string, string> = new Map([
 	['/forum', 'feature.forum'],
 	// Social features
 	['/notifications', 'feature.notifications'],
+	// The bookings/mentorship inboxes live under /messages but are NOT
+	// feature.dm surfaces — list them first so longest-prefix matching maps
+	// them to their own flags (§111/000824).
+	['/messages/bookings', 'service_directory.enabled'],
+	['/messages/mentorship', 'mentorship.enabled'],
 	['/messages', 'feature.dm'],
 	// Commerce features
 	['/dashboard/wallet', 'feature.wallet'],
