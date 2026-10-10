@@ -337,7 +337,9 @@
 
 <MarketplaceHero q={data.filters.q} fetcher={fetchServiceSuggestions} onSearch={onHeroSearch} />
 
-<div class="mx-auto w-full max-w-[1400px] px-4 py-6">
+<!-- Edge gutters + vertical rhythm come from the (marketplace) layout's
+     `marketplace-center` main — this wrapper only caps the content width. -->
+<div class="mx-auto w-full max-w-[1400px]">
 	<!-- Breadcrumb -->
 	<nav class="mb-4 flex items-center gap-1 text-xs text-[var(--color-muted)]" aria-label={t('a11y.breadcrumb', 'Breadcrumb')}>
 		<a href="/" class="transition-colors hover:text-[var(--color-text)]">{t('nav.home', 'Home')}</a>

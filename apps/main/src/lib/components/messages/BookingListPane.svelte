@@ -2,10 +2,11 @@
 	// Ref: japaconnect-engineering/sections/111-service-packages-bookings.md
 	//
 	// Left pane of the /messages/bookings + /messages/mentorship inboxes —
-	// role sub-filter (sent|received → API booker|provider), status pills,
-	// booking rows (listing title, status chip, counterpart, time). Row
-	// selection writes ?b=<id> which the server load resolves to the detail
-	// pane.
+	// role sub-filter (sent|received → API booker|provider), intent pills
+	// (bookings surface only — mentorship rows are always inquiries),
+	// status pills, booking rows (listing title, status chip, counterpart,
+	// time). Row selection writes ?b=<id> which the server load resolves to
+	// the detail pane.
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -27,6 +28,9 @@
 		basePath: string;
 		role: 'sent' | 'received';
 		status: string;
+		/** Active ?intent= filter. `undefined` hides the intent pill row —
+		 *  the mentorship surface omits it (its rows are always inquiries). */
+		intent?: string;
 		meta?: ListMeta;
 		currentPage: number;
 		loadError: boolean;
@@ -41,6 +45,7 @@
 		basePath,
 		role,
 		status,
+		intent,
 		meta,
 		currentPage,
 		loadError,
@@ -52,6 +57,13 @@
 	const roleFilters = [
 		{ id: 'sent', label: t('bookings.role_sent', 'Sent') },
 		{ id: 'received', label: t('bookings.role_received', 'Received') }
+	];
+
+	// §111 intent enum — inquiry vs paid booking. '' = no filter.
+	const intentFilters = [
+		{ id: '', label: t('bookings.filter_all', 'All') },
+		{ id: 'inquiry', label: t('bookings.intent_inquiry', 'Inquiries') },
+		{ id: 'booking', label: t('bookings.intent_booking', 'Bookings') }
 	];
 
 	// §111 booking statuses (plus the mentorship aliases surface through
@@ -67,7 +79,7 @@
 		{ id: 'refunded', label: t('bookings.status_refunded', 'Refunded') }
 	];
 
-	/** Filter href — changing role/status resets the page + selection. */
+	/** Filter href — changing role/intent/status resets the page + selection. */
 	function filterHref(overrides: Record<string, string>): string {
 		const sp = new URLSearchParams(page.url.searchParams);
 		for (const [k, v] of Object.entries(overrides)) {
@@ -112,6 +124,24 @@
 			>{f.label}</a>
 		{/each}
 	</div>
+	{#if intent !== undefined}
+		<div
+			class="flex flex-wrap items-center gap-1.5"
+			role="group"
+			aria-label={t('bookings.filter_type', 'Type')}
+		>
+			{#each intentFilters as f (f.id)}
+				<a
+					href={filterHref({ intent: f.id })}
+					aria-current={intent === f.id ? 'true' : undefined}
+					class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {intent ===
+					f.id
+						? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+						: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+				>{f.label}</a>
+			{/each}
+		</div>
+	{/if}
 	<div class="flex flex-wrap items-center gap-1.5">
 		{#each statusFilters as f (f.id)}
 			<a

@@ -90,6 +90,7 @@
 				{basePath}
 				role={data.role}
 				status={data.status}
+				intent={data.intent}
 				meta={data.meta}
 				currentPage={data.currentPage}
 				loadError={data.loadError}

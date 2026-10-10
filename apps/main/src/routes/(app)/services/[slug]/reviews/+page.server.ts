@@ -19,7 +19,12 @@ const PAGE_SIZE = 10;
  */
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
-	if (!features['service_directory.enabled']) {
+	// Composite gate mirrors the backend's GateAny(service_directory,
+	// mentorship) on GET /services/{id}/reviews: under a mentorship-only
+	// deployment the directory flag is off but mentor reviews must still
+	// resolve — the listing-kind check below scopes the escape hatch.
+	const directoryEnabled = !!features['service_directory.enabled'];
+	if (!directoryEnabled && !features['mentorship.enabled']) {
 		throw error(404, { code: 'feature_disabled', message: 'Service directory is not available' });
 	}
 
@@ -44,6 +49,13 @@ export const load: PageServerLoad = async (event) => {
 			throw error(404, { code: 'not_found', message: 'Service not found' });
 		}
 		throw error(500, { code: 'load_failed', message: 'Failed to load service' });
+	}
+
+	// Directory off + mentorship on: only mentorship-kind listings stay
+	// reachable (the backend applies the same kind scope) — every other
+	// kind keeps the directory's feature_disabled 404.
+	if (!directoryEnabled && service.listing_kind !== 'mentorship') {
+		throw error(404, { code: 'feature_disabled', message: 'Service directory is not available' });
 	}
 
 	try {

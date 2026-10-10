@@ -62,7 +62,9 @@ export async function loadBookingsSurface(
 	const statusRaw = params.get('status') ?? '';
 	const status = BOOKING_STATUSES.has(statusRaw) ? statusRaw : '';
 	const intentRaw = params.get('intent') ?? '';
-	const intent = BOOKING_INTENTS.has(intentRaw) ? intentRaw : '';
+	// Fixed-kind surfaces (mentorship) only ever hold inquiry rows — ignore
+	// ?intent= there so a stray param can't silently empty the inbox.
+	const intent = !opts.fixedKind && BOOKING_INTENTS.has(intentRaw) ? intentRaw : '';
 	const kindRaw = params.get('kind') ?? '';
 	const kind =
 		opts.fixedKind ?? (opts.allowKindFilter && BOOKING_KINDS.has(kindRaw) ? kindRaw : '');
