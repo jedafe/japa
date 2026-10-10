@@ -22,6 +22,7 @@
 		ShieldAlert,
 		ShieldCheck,
 		Headset,
+		GraduationCap,
 		Send,
 		ChevronRight,
 		Eye,
@@ -39,6 +40,7 @@
 	import ProviderCard from '$lib/components/marketplace/ProviderCard.svelte';
 	import StickyBookBar from '$lib/components/marketplace/StickyBookBar.svelte';
 	import BookingDialog from '$lib/components/marketplace/BookingDialog.svelte';
+	import MentorshipRequestDialog from '$lib/components/marketplace/MentorshipRequestDialog.svelte';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import { serviceCategoryIcon } from '$lib/components/marketplace/serviceCategoryIcon';
@@ -184,6 +186,23 @@
 		(page.data.currencies ?? []) as { code: string; name: string; symbol: string }[]
 	);
 	const isPackage = $derived(service?.listing_kind === 'package');
+	// 000824 mentorship kind — the listing is a mentor's shadow listing; the
+	// mentor block (author user_profiles join) carries the profile card
+	// fields. A missing block or is_mentor=false means the author lapsed out
+	// of the program — the surface reads "unavailable".
+	const isMentorship = $derived(service?.listing_kind === 'mentorship');
+	const mentor = $derived(service?.mentor ?? null);
+	const mentorUnavailable = $derived(!mentor || mentor.is_mentor === false);
+	const mentorFull = $derived(!!mentor && mentor.available_slots <= 0);
+	const isOwnMentorListing = $derived(
+		isMentorship && !!service && service.author_id === data.currentUserId
+	);
+	// Guests still get the CTA — MentorshipRequestDialog renders a login
+	// prompt for them (same pattern as BookingDialog).
+	const mentorCanRequest = $derived(
+		isMentorship && !isOwnMentorListing && !mentorUnavailable && !mentorFull
+	);
+	let mentorDialogOpen = $state(false);
 	const packagesEnabled = $derived(!!page.data.features?.['service_packages.enabled']);
 	// §114 flags — the API omits tiers/coupons entirely when the flags are
 	// off, so the data-length guard is the authoritative check.
@@ -251,6 +270,17 @@
 		bookingOpen = true;
 	}
 
+	// Single CTA dispatcher — mentorship listings open the request dialog
+	// (BookingDialog is tier/party/date oriented); every other kind opens
+	// the booking dialog.
+	function openCtaDialog() {
+		if (isMentorship) {
+			mentorDialogOpen = true;
+			return;
+		}
+		openBookingDialog();
+	}
+
 	// TierGrid "Choose X" — preselect the tier and open the dialog. The
 	// button only renders when tierCtaEnabled (a booking surface exists
 	// for this viewer), so no scroll-to-anchor fallback is needed.
@@ -290,6 +320,17 @@
 		| { label: string; href: string; external: boolean; dialog?: boolean }
 		| null => {
 		if (!service) return null;
+		// 000824 mentorship — the request dialog is the CTA target; the
+		// unavailable/full/own-listing states render inline on the page.
+		if (isMentorship) {
+			if (!mentorCanRequest) return null;
+			return {
+				label: t('services.mentor_request_cta', 'Request mentorship'),
+				href: '#request-mentorship',
+				external: false,
+				dialog: true
+			};
+		}
 		if (bookingOutbound && service.booking_url) {
 			return {
 				label: isPackage
@@ -334,7 +375,7 @@
 
 	const secondaryCta = $derived.by(
 		(): { label: string; href: string; dialog?: boolean } | null => {
-			if (!service) return null;
+			if (!service || isMentorship) return null;
 			// Inquiry intent IS the expert-contact path — open the booking
 			// dialog directly instead of bouncing through the org profile.
 			if (service.purchase_mode === 'inquiry' && (canBook || guestBooking)) {
@@ -359,6 +400,15 @@
 	const stickyCta = $derived.by(
 		(): { label: string; href: string; external: boolean; dialog?: boolean } | null => {
 			if (!service || canEdit) return null;
+			if (isMentorship) {
+				if (!mentorCanRequest) return null;
+				return {
+					label: t('services.mentor_request_cta', 'Request mentorship'),
+					href: '#request-mentorship',
+					external: false,
+					dialog: true
+				};
+			}
 			if (bookingOutbound && service.booking_url) {
 				return {
 					label: isPackage
@@ -772,7 +822,22 @@
 				<div
 					class="relative aspect-[16/10] w-full overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]"
 				>
-					{#if service.featured_image_url}
+					{#if isMentorship}
+						<!-- Mentorship shadows never carry featured media — the
+						     mentor's avatar (or a graduation-cap tile) fronts the
+						     hero instead, mirroring the ServiceCard variant. -->
+						<div class="grid h-full w-full place-items-center bg-[var(--color-surface-subtle)]">
+							{#if mentor?.avatar_url}
+								<img
+									src={mentor.avatar_url}
+									alt={mentor.display_name || mentor.username}
+									class="h-28 w-28 rounded-full object-cover ring-4 ring-[var(--color-surface)]"
+								/>
+							{:else}
+								<GraduationCap size={72} strokeWidth={1.25} class="text-[var(--color-muted)]" />
+							{/if}
+						</div>
+					{:else if service.featured_image_url}
 						<img
 							src={service.featured_image_url}
 							alt={service.title}
@@ -875,14 +940,43 @@
 				</dl>
 			</div>
 
-			<!-- CTA row — internal paid/inquiry CTAs open BookingDialog
-			     directly (the #book card lives in the sidebar now). -->
-			<div class="mt-6 flex flex-wrap gap-3">
+			<!-- CTA row — internal paid/inquiry CTAs open the booking dialog
+			     directly (the #book card lives in the sidebar now); mentorship
+			     CTAs open the request dialog, with disabled states for own
+			     listing / lapsed mentor / full roster. -->
+			<div class="mt-6 flex flex-wrap items-center gap-3">
+				{#if isMentorship && isOwnMentorListing}
+					<p class="text-sm text-[var(--color-muted)]">
+						{t(
+							'services.mentor_own_listing',
+							'This is your mentor listing — manage it from your mentor profile.'
+						)}
+					</p>
+					<a
+						href="/settings/mentorship"
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						{t('mentors.edit_profile', 'Edit Mentor Profile')}
+					</a>
+				{:else if isMentorship && (mentorUnavailable || mentorFull)}
+					<button
+						type="button"
+						disabled
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-50"
+					>
+						{t('services.mentor_request_cta', 'Request mentorship')}
+					</button>
+					<p class="w-full text-xs text-[var(--color-muted)]">
+						{mentorUnavailable
+							? t('services.mentor_unavailable', 'This mentor is not accepting requests right now.')
+							: t('services.mentor_full', "This mentor's roster is full — check back soon.")}
+					</p>
+				{:else}
 				{#if primaryCta}
 					{#if primaryCta.dialog}
 						<button
 							type="button"
-							onclick={openBookingDialog}
+							onclick={openCtaDialog}
 							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-5 py-2.5 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 						>
 							{primaryCta.label}
@@ -905,7 +999,7 @@
 					{#if secondaryCta.dialog}
 						<button
 							type="button"
-							onclick={openBookingDialog}
+							onclick={openCtaDialog}
 							class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							{secondaryCta.label}
@@ -919,6 +1013,7 @@
 						</a>
 					{/if}
 				{/if}
+				{/if}
 			</div>
 		</section>
 
@@ -928,6 +1023,96 @@
 				<div class="prose prose-sm max-w-none text-[var(--color-text)]">
 					{@html sanitizeContentHtml(service.body_html || service.body)}
 				</div>
+			{/if}
+
+			<!-- 000824 mentor block — replaces the pricing/departure surfaces
+			     on mentorship listings: avatar, name, areas chips, capacity and
+			     mentor_since all ride the listing's mentor payload. -->
+			{#if isMentorship}
+				<section
+					id="request-mentorship"
+					aria-labelledby="mentor-heading"
+					class="scroll-mt-20 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
+				>
+					<h2
+						id="mentor-heading"
+						class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
+					>
+						{t('services.mentor_heading', 'About your mentor')}
+					</h2>
+					{#if mentor}
+						<div class="mt-4 flex items-center gap-3">
+							{#if mentor.avatar_url}
+								<img
+									src={mentor.avatar_url}
+									alt={mentor.display_name || mentor.username}
+									class="h-14 w-14 shrink-0 rounded-full object-cover"
+								/>
+							{:else}
+								<div
+									class="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-[var(--color-muted)]"
+								>
+									<GraduationCap size={24} aria-hidden="true" />
+								</div>
+							{/if}
+							<div class="min-w-0">
+								<p class="truncate text-base font-semibold text-[var(--color-text)]">
+									{mentor.display_name || mentor.username}
+								</p>
+								{#if mentor.display_name}
+									<p class="truncate text-xs text-[var(--color-muted)]">@{mentor.username}</p>
+								{/if}
+								{#if mentor.mentor_since}
+									<p class="mt-0.5 text-xs text-[var(--color-muted)]">
+										{t('services.mentor_since', 'Mentor since {date}', {
+											date: formatDate(mentor.mentor_since)
+										})}
+									</p>
+								{/if}
+							</div>
+						</div>
+
+						{#if mentor.areas && mentor.areas.length > 0}
+							<div class="mt-4">
+								<h3 class="text-sm font-medium text-[var(--color-text)]">
+									{t('mentors.areas', 'Mentorship areas')}
+								</h3>
+								<div class="mt-1.5 flex flex-wrap gap-1.5">
+									{#each mentor.areas as area (area)}
+										<span
+											class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]"
+										>
+											{area}
+										</span>
+									{/each}
+								</div>
+							</div>
+						{/if}
+
+						<!-- Capacity — available_slots is capacity − active mentees,
+						     clamped ≥0 server-side. -->
+						<div class="mt-4 flex items-center gap-2">
+							<div class="h-2 w-40 overflow-hidden rounded-full bg-[var(--color-surface-subtle)]">
+								<div
+									class="h-full rounded-full bg-[var(--color-primary)]"
+									style="width: {mentor.capacity > 0
+										? Math.min(100, Math.round((mentor.active_mentee_count / mentor.capacity) * 100))
+										: 0}%"
+								></div>
+							</div>
+							<span class="text-xs text-[var(--color-muted)]">
+								{t('services.mentor_slots', '{open} of {capacity} spots open', {
+									open: Math.max(0, mentor.available_slots),
+									capacity: mentor.capacity
+								})}
+							</span>
+						</div>
+					{:else}
+						<p class="mt-3 text-sm text-[var(--color-muted)]">
+							{t('services.mentor_unavailable', 'This mentor is not accepting requests right now.')}
+						</p>
+					{/if}
+				</section>
 			{/if}
 
 			<!-- What's included -->
@@ -1135,7 +1320,7 @@
 						{/if}
 					{/if}
 
-					{#if !canEdit && service.claim_status === 'unclaimed' && !service.org_id}
+					{#if !canEdit && service.claim_status === 'unclaimed' && !service.org_id && !isMentorship}
 						{#if claimResult?.ok}
 							<div class="flex items-center gap-2 text-sm text-[var(--color-success)]">
 								<CheckCircle2 size={16} aria-hidden="true" />
@@ -1256,7 +1441,9 @@
 	{/if}
 </div>
 
-{#if service}
+{#if service && isMentorship}
+	<MentorshipRequestDialog bind:open={mentorDialogOpen} {service} authed={!!data.authed} />
+{:else if service}
 	<BookingDialog
 		bind:open={bookingOpen}
 		{service}
@@ -1276,6 +1463,6 @@
 		ctaLabel={stickyCta.label}
 		ctaHref={stickyCta.href}
 		external={stickyCta.external}
-		onCta={stickyCta.dialog ? openBookingDialog : undefined}
+		onCta={stickyCta.dialog ? openCtaDialog : undefined}
 	/>
 {/if}

@@ -4083,6 +4083,25 @@ export interface ServiceListing {
 	badge?: 'popular' | 'best_value' | string;
 	faqs?: ServiceFaq[];
 	steps?: ServiceStep[];
+	// 000824 mentor block — populated on list + detail payloads when
+	// listing_kind='mentorship'; omitted for every other kind. is_mentor=false
+	// means the author lapsed out of the program — treat as unavailable.
+	mentor?: ServiceMentor | null;
+}
+
+/** 000824 — the mentor profile card carried on listing_kind='mentorship'
+ *  payloads (ServiceListing.mentor). available_slots is capacity minus
+ *  active_mentee_count, clamped ≥0 server-side. */
+export interface ServiceMentor {
+	username: string;
+	display_name?: string;
+	avatar_url?: string;
+	areas?: string[];
+	capacity: number;
+	active_mentee_count: number;
+	available_slots: number;
+	mentor_since?: string;
+	is_mentor: boolean;
 }
 
 /** §114 marketplace — one FAQ entry on a service listing (question/answer). */

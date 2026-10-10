@@ -18,7 +18,7 @@ import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '$li
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100; // backend caps ?limit= at 100
 const VALID_SORTS = new Set(['latest', 'top']);
-const VALID_KINDS = new Set(['service', 'package', 'all']);
+const VALID_KINDS = new Set(['service', 'package', 'mentorship', 'all']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parsePositiveInt(raw: string | null, fallback: number, max: number): number {
@@ -56,6 +56,7 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const packagesEnabled = !!features['service_packages.enabled'];
+	const mentorshipEnabled = !!features['mentorship.enabled'];
 
 	const get = (k: string) => event.url.searchParams.get(k)?.trim() ?? '';
 	const q = get('q');
@@ -71,9 +72,18 @@ export const load: PageServerLoad = async (event) => {
 	const sortRaw = get('sort');
 	const sort = VALID_SORTS.has(sortRaw) ? sortRaw : 'latest';
 	const kindRaw = get('kind');
-	// §111: kind tabs only exist while service_packages.enabled is on —
-	// kind=package against a disabled flag is a backend 404.
-	const kind = packagesEnabled && VALID_KINDS.has(kindRaw) ? kindRaw : '';
+	// §111/000824: kind tabs are flag-gated — kind=package needs
+	// service_packages.enabled, kind=mentorship needs mentorship.enabled;
+	// a dark-launched kind is a backend 404, so it is dropped here. The
+	// 'service'/'all' kinds exist once either flag is on (the tab row then
+	// renders — see +page.svelte).
+	const kindEnabled = (k: string): boolean => {
+		if (!VALID_KINDS.has(k)) return false;
+		if (k === 'package') return packagesEnabled;
+		if (k === 'mentorship') return mentorshipEnabled;
+		return packagesEnabled || mentorshipEnabled;
+	};
+	const kind = kindEnabled(kindRaw) ? kindRaw : '';
 	// §111 package filters — price_max is minor units on the API contract;
 	// date_from is an ISO availability-start filter. Both are pass-through
 	// and only meaningful when packages are enabled.
@@ -151,6 +161,7 @@ export const load: PageServerLoad = async (event) => {
 			meta,
 			authed,
 			packagesEnabled,
+			mentorshipEnabled,
 			filters,
 			countries,
 			serviceCategories,
@@ -163,6 +174,7 @@ export const load: PageServerLoad = async (event) => {
 			meta: undefined,
 			authed,
 			packagesEnabled,
+			mentorshipEnabled,
 			filters,
 			countries,
 			serviceCategories,

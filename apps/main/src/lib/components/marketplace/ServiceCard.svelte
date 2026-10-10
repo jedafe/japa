@@ -11,6 +11,7 @@
 		BadgeCheck,
 		BadgePercent,
 		Flame,
+		GraduationCap,
 		Heart,
 		MapPin,
 		Star,
@@ -37,6 +38,13 @@
 	const accent = $derived(accentClasses(category?.accent_color));
 	const CategoryIcon = $derived(serviceCategoryIcon(category?.icon));
 	const price = $derived(priceLabel(listing, currencies));
+	// 000824 mentorship cards — shadow listings carry no featured media; the
+	// mentor block (author profile join) fronts the card instead.
+	const isMentorship = $derived(listing.listing_kind === 'mentorship');
+	const mentor = $derived(listing.mentor ?? null);
+	const mentorName = $derived(
+		mentor?.display_name || mentor?.username || listing.author_name || ''
+	);
 	const blurb = $derived(excerpt(listing.body_html || listing.body, 140));
 	const ratingAvg = $derived(listing.rating_avg ?? 0);
 	const ratingCount = $derived(listing.review_count ?? 0);
@@ -95,7 +103,32 @@
 >
 	<!-- Image area -->
 	<div class="relative aspect-[16/10] w-full overflow-hidden">
-		{#if listing.featured_image_url}
+		{#if isMentorship}
+			<!-- Mentor avatar tile — no featured image on shadow listings. -->
+			<div class="grid h-full w-full place-items-center bg-[var(--color-surface-subtle)]">
+				<div class="flex flex-col items-center gap-2 px-4">
+					{#if mentor?.avatar_url}
+						<img
+							src={mentor.avatar_url}
+							alt={mentorName}
+							loading="lazy"
+							class="h-16 w-16 rounded-full object-cover ring-2 ring-[var(--color-surface)]"
+						/>
+					{:else}
+						<div
+							class="grid h-16 w-16 place-items-center rounded-full bg-[var(--color-surface)] text-[var(--color-muted)]"
+						>
+							<GraduationCap size={26} strokeWidth={1.5} aria-hidden="true" />
+						</div>
+					{/if}
+					{#if mentorName}
+						<span class="max-w-full truncate text-sm font-medium text-[var(--color-text)]">
+							{mentorName}
+						</span>
+					{/if}
+				</div>
+			</div>
+		{:else if listing.featured_image_url}
 			<img
 				src={listing.featured_image_url}
 				alt={listing.title}
@@ -174,7 +207,9 @@
 					<BadgeCheck size={13} class="shrink-0 text-[var(--color-primary)]" />
 				{/if}
 			{:else if listing.author_name}
-				<span class="truncate font-medium text-[var(--color-text-subtle)]">{listing.author_name}</span>
+				<span class="truncate font-medium text-[var(--color-text-subtle)]"
+					>{isMentorship ? mentorName : listing.author_name}</span
+				>
 			{/if}
 			{#if listing.destination_space_name || listing.city_space_name}
 				<span class="ml-auto inline-flex shrink-0 items-center gap-0.5">
@@ -236,7 +271,15 @@
 		<!-- Footer: price + view affordance (non-interactive span — the
 		     stretched link carries the click). -->
 		<div class="mt-auto flex items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3">
-			{#if price}
+			{#if isMentorship}
+				<!-- Mentorship listings carry no price — surface the roster
+				     slots instead (clamped ≥0 server-side). -->
+				<p class="text-xs font-medium text-[var(--color-text-subtle)]">
+					{t('services.mentor_slots_short', '{n} spots open', {
+						n: Math.max(0, mentor?.available_slots ?? 0)
+					})}
+				</p>
+			{:else if price}
 				<p class="text-sm">
 					<span class="text-xs text-[var(--color-muted)]">{t('services.price_from', 'From')}</span>
 					<span class="font-semibold text-[var(--color-text)]">{price}</span>

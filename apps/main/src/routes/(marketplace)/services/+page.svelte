@@ -70,11 +70,18 @@
 		dateFromInput = data.filters.date_from;
 	});
 
-	// §111 kind tabs — only rendered while service_packages.enabled is on.
+	// §111/000824 kind tabs — the row renders once either gated kind exists
+	// (service_packages.enabled / mentorship.enabled); each flag-gated tab
+	// only appears under its own flag.
 	const kindTabs = $derived<UrlTab[]>([
 		{ value: 'all', label: t('services.kind_all', 'All listings') },
 		{ value: 'service', label: t('services.kind_service', 'Services') },
-		{ value: 'package', label: t('services.kind_package', 'Packages') }
+		...(data.packagesEnabled
+			? [{ value: 'package', label: t('services.kind_package', 'Packages') }]
+			: []),
+		...(data.mentorshipEnabled
+			? [{ value: 'mentorship', label: t('services.kind_mentorship', 'Mentorship') }]
+			: [])
 	]);
 	const activeKind = $derived(data.filters.kind || 'all');
 
@@ -346,7 +353,7 @@
 
 	<!-- Toolbar: kind tabs + filters + sort + list action -->
 	<div class="mb-4 flex flex-wrap items-center gap-2">
-		{#if data.packagesEnabled}
+		{#if data.packagesEnabled || data.mentorshipEnabled}
 			<UrlTabs
 				tabs={kindTabs}
 				value={activeKind}
