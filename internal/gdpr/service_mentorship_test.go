@@ -148,6 +148,22 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 	serviceID, _ := insertShadowListing(t, database, mentorID, "service", "svc-"+uniq+"a")
 	otherShadowID, _ := insertShadowListing(t, database, otherID, "", "mentor-"+uniq+"b")
 
+	// Opt-out tombstone: SoftDeleteMentorshipShadow only sets deleted_at
+	// and leaves title/body/slug intact. The scrub must de-PII it while
+	// preserving the original tombstone timestamp.
+	tombID, _ := insertShadowListing(t, database, mentorID, "", "mentor-"+uniq+"a-old")
+	if _, err := database.Writer.Exec(ctx,
+		`UPDATE contents SET deleted_at = now() - interval '7 days' WHERE id = $1`,
+		tombID); err != nil {
+		t.Fatalf("soft-delete tombstone shadow: %v", err)
+	}
+	var tombDeletedAt pgtype.Timestamptz
+	if err := database.Writer.QueryRow(ctx,
+		`SELECT deleted_at FROM contents WHERE id = $1`, tombID).
+		Scan(&tombDeletedAt); err != nil {
+		t.Fatalf("read tombstone deleted_at: %v", err)
+	}
+
 	if err := q.AnonymizeMentorshipShadowListings(ctx, mentorID); err != nil {
 		t.Fatalf("AnonymizeMentorshipShadowListings: %v", err)
 	}
@@ -173,6 +189,25 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 		t.Errorf("content_hash = %v, want %q", got.ContentHash, wantHashHex)
 	}
 
+	// Opt-out tombstone: PII scrubbed, original deleted_at preserved
+	// (COALESCE — the scrub must not rewrite opt-out history).
+	tomb := readShadowState(t, database, tombID)
+	if !tomb.DeletedAt.Valid {
+		t.Error("tombstone lost its deleted_at")
+	} else if !tomb.DeletedAt.Time.Equal(tombDeletedAt.Time) {
+		t.Errorf("tombstone deleted_at rewritten: got %v, want %v",
+			tomb.DeletedAt.Time, tombDeletedAt.Time)
+	}
+	if tomb.Title != "" || tomb.Body != "" || tomb.BodyHTML != "" {
+		t.Errorf("tombstone PII not scrubbed: title=%q body=%q", tomb.Title, tomb.Body)
+	}
+	if tomb.Slug != "mentor-deleted-"+tombID.String() {
+		t.Errorf("tombstone slug = %q, want mentor-deleted-%s", tomb.Slug, tombID.String())
+	}
+	if tomb.Status != "archived" {
+		t.Errorf("tombstone status = %q, want archived", tomb.Status)
+	}
+
 	// Non-mentorship service listing by the same author must survive —
 	// the scrub is scoped by listing_kind='mentorship'.
 	svc := readShadowState(t, database, serviceID)
@@ -188,13 +223,19 @@ func TestAnonymizeMentorshipShadowListings_LiveDB(t *testing.T) {
 			other.DeletedAt.Valid, other.Status)
 	}
 
-	// Idempotent: a second run is a no-op (scrubbed rows are filtered by
-	// deleted_at IS NULL), so a retried deletion job stays safe.
+	// Idempotent: a second run rewrites the same deterministic values
+	// (slug/hash are derived from the row id, deleted_at is COALESCEd),
+	// so a retried deletion job — or the hardDeleteUser tx running the
+	// scrub again — stays safe.
 	if err := q.AnonymizeMentorshipShadowListings(ctx, mentorID); err != nil {
 		t.Fatalf("second AnonymizeMentorshipShadowListings: %v", err)
 	}
 	again := readShadowState(t, database, shadowID)
 	if !again.DeletedAt.Valid || again.Title != "" || again.Slug != wantSlug {
 		t.Error("second run mutated the tombstone row")
+	}
+	againTomb := readShadowState(t, database, tombID)
+	if !againTomb.DeletedAt.Time.Equal(tombDeletedAt.Time) {
+		t.Error("second run rewrote the opt-out tombstone timestamp")
 	}
 }

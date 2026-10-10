@@ -231,7 +231,7 @@ func (q *Queries) AnonymizeInstructorPayoutsForInstructor(ctx context.Context, u
 
 const anonymizeMentorshipShadowListings = `-- name: AnonymizeMentorshipShadowListings :exec
 UPDATE contents c
-SET deleted_at = now(),
+SET deleted_at = COALESCE(c.deleted_at, now()),
     status = 'archived',
     title = '',
     body = '',
@@ -241,7 +241,6 @@ SET deleted_at = now(),
     updated_at = now()
 WHERE c.author_id = $1
   AND c.content_type = 'service_listing'
-  AND c.deleted_at IS NULL
   AND EXISTS (
       SELECT 1 FROM service_listing_meta m
       WHERE m.content_id = c.id AND m.listing_kind = 'mentorship'
@@ -257,13 +256,20 @@ WHERE c.author_id = $1
 // would later carry that PII to the placeholder user. This retires the
 // row (soft-delete per Rule 11 + status='archived' so it drops out of
 // discovery and booking probes) and blanks every PII-bearing column.
+// Already-tombstoned shadows are scrubbed too: SoftDeleteMentorshipShadow
+// (the opt-out path) only sets deleted_at and leaves title/body/slug
+// intact, so an opt-out-then-erased mentor would otherwise keep a
+// permanent PII tombstone. COALESCE preserves an existing deleted_at so
+// the scrub does not rewrite opt-out history.
 // slug is re-keyed to a deterministic per-row value so a restored or
 // re-created shadow can mint 'mentor-*' slugs without colliding on
 // idx_contents_slug; content_hash gets a per-row sha256 sentinel for the
 // same reason (idx_contents_content_hash is a partial unique over live
 // rows — an empty hash would collide across scrubbed rows if one were
 // ever un-deleted).
-// Must run in the anonymize phase, before the hard-delete reassignment.
+// Must run in the anonymize phase, before the hard-delete reassignment;
+// hardDeleteUser also calls it inside its tx for the admin hard-delete
+// path that bypasses the anonymize pipeline.
 func (q *Queries) AnonymizeMentorshipShadowListings(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, anonymizeMentorshipShadowListings, userID)
 	return err

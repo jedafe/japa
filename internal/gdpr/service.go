@@ -594,11 +594,16 @@ func (s *Service) ProcessAccountDeletion(ctx context.Context, requestID pgtype.U
 		// without this the listing stays published + bookable and
 		// ReassignContentAuthor later carries that PII to the placeholder
 		// user. Must run in this phase, before the hard-delete
-		// reassignment. Best-effort like the other scrub steps.
+		// reassignment. Also covers opt-out tombstones: the opt-out path
+		// only soft-deletes the shadow and leaves its PII columns intact.
+		// Unlike the sibling scrubs this one is fatal: the artifact it
+		// protects is publicly visible, and a warn-only failure would
+		// checkpoint past the step so a retry never scrubs it.
 		if err := s.store.write.AnonymizeMentorshipShadowListings(ctx,
 			request.UserID,
 		); err != nil {
-			slog.Warn("failed to anonymize mentorship shadow listings during deletion", "user_id", request.UserID.String(), "error", err)
+			s.markDeletionFailed(ctx, requestID)
+			return fmt.Errorf("anonymizing mentorship shadow listings: %w", err)
 		}
 		// Scrub PII from onboarding_state.step_data (name, current_location,
 		// destination) during the anonymization phase (Section 09, ADR-014).
@@ -952,6 +957,18 @@ func (s *Service) hardDeleteUser(ctx context.Context, userID pgtype.UUID) error 
 	// All four steps run in one transaction so a failure cannot leave the user
 	// half-erased (e.g. authorship reassigned but the user row still present).
 	if err := db.WithTx(ctx, s.db.Writer, func(q *gen.Queries) error {
+		// 0. Retire + scrub the mentor's shadow service listing (000824)
+		//    BEFORE authorship moves to the placeholder. The admin
+		//    hard-delete path (DELETE /admin/users/{id}/hard) reaches this
+		//    tx for users marked deleted without the anonymize pipeline
+		//    having run, so the scrub must live here too — idempotent, so
+		//    the worker path (which already ran it in the anonymize phase)
+		//    is unaffected. Fatal: a failure rolls the whole tx back rather
+		//    than reassigning a PII-bearing listing to the placeholder.
+		if err := q.AnonymizeMentorshipShadowListings(ctx, userID); err != nil {
+			return fmt.Errorf("anonymizing mentorship shadow listings: %w", err)
+		}
+
 		// 1. Reassign content authorship to preserve thread continuity.
 		if err := q.ReassignContentAuthor(ctx, gen.ReassignContentAuthorParams{
 			UserID: userID,
