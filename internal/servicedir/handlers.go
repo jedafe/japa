@@ -302,7 +302,9 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 		// deployment can't reach.
 		scoped := make([]Option, 0, len(cats))
 		for _, c := range cats {
-			if c.AppliesTo == "mentorship" {
+			// 'both' means every kind per the applies_to convention
+			// (pricing.go, coupons.go), so it stays visible here.
+			if c.AppliesTo == "mentorship" || c.AppliesTo == "both" {
 				scoped = append(scoped, c)
 			}
 		}

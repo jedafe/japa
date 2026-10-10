@@ -149,10 +149,11 @@ func TestCategoriesCompositeGate(t *testing.T) {
 		}
 	})
 
-	t.Run("mentorship-only → only applies_to=mentorship rows", func(t *testing.T) {
+	t.Run("mentorship-only → only applies_to=mentorship|both rows", func(t *testing.T) {
 		// store=nil falls back to the hardcoded §98 enum, which carries no
 		// applies_to — the mentorship-only scope must filter every row out
-		// rather than leak service/package categories.
+		// rather than leak service/package categories. 'both' stays visible
+		// (it means "applies to every kind" per the applies_to convention).
 		h := &Handlers{service: &Service{checker: fakeFlags{"mentorship.enabled": true}}}
 		rec, req := newReq()
 		h.HandleCategories(rec, req)
@@ -168,8 +169,8 @@ func TestCategoriesCompositeGate(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		for _, o := range body.Data {
-			if o.AppliesTo != "mentorship" {
-				t.Fatalf("category %q has applies_to %q, want mentorship only", o.Value, o.AppliesTo)
+			if o.AppliesTo != "mentorship" && o.AppliesTo != "both" {
+				t.Fatalf("category %q has applies_to %q, want mentorship|both only", o.Value, o.AppliesTo)
 			}
 		}
 	})
