@@ -137,6 +137,7 @@
 			submitOk = true;
 			idemKey = crypto.randomUUID();
 			goals = '';
+			destinationSpaceId = '';
 		} else {
 			submitError = mentorErrorMessage(
 				res.error?.code ?? '',

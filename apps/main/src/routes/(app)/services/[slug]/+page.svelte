@@ -1078,7 +1078,7 @@
 									{t('mentors.areas', 'Mentorship areas')}
 								</h3>
 								<div class="mt-1.5 flex flex-wrap gap-1.5">
-									{#each mentor.areas as area (area)}
+									{#each mentor.areas as area, i (i)}
 										<span
 											class="inline-flex items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-subtle)]"
 										>
