@@ -285,7 +285,7 @@ func (h *Handlers) HandleMyBookings(w http.ResponseWriter, r *http.Request) {
 // HandleMyBookingRespond handles POST /me/service-bookings/:id/respond —
 // the provider's answer on a user-provider (mentorship) booking
 // (000824). Route carries mentorship.respond. Body:
-// {"action":"accept|decline|complete","note":"optional"}.
+// {"action":"accept|decline|complete|cancel","note":"optional"}.
 func (h *Handlers) HandleMyBookingRespond(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {

@@ -1694,6 +1694,7 @@ func (s *Service) enqueueStatusChanged(bookingID pgtype.UUID, status string) {
 
 // enqueueStatusChangedAudience enqueues the status_changed task with an
 // audience hint — "org" notifies org members (booker-raised disputes);
+// "provider" notifies the provider (booker-initiated cancel/complete);
 // empty notifies the booker (the default).
 func (s *Service) enqueueStatusChangedAudience(bookingID pgtype.UUID, status, audience string) {
 	if s.enqueuer == nil {
