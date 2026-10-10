@@ -140,6 +140,8 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) (
 			ReviewStatus: r.ReviewStatus,
 			ParentID:     uuidPtr(r.ParentID),
 			Position:     r.Position,
+			Category:     r.Category,
+			Subcategory:  r.Subcategory,
 			CreatedAt:    r.CreatedAt.Time.Format(time.RFC3339),
 		}
 	}
@@ -167,6 +169,8 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, audience string
 			LastReviewedAt: timestamptzPtr(r.LastReviewedAt),
 			ParentID:       uuidPtr(r.ParentID),
 			Position:       r.Position,
+			Category:       r.Category,
+			Subcategory:    r.Subcategory,
 			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339),
 			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339),
 		}
@@ -195,6 +199,8 @@ func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
 			LastReviewedAt: timestamptzPtr(r.LastReviewedAt),
 			ParentID:       uuidPtr(r.ParentID),
 			Position:       r.Position,
+			Category:       r.Category,
+			Subcategory:    r.Subcategory,
 			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339),
 			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339),
 		}
@@ -283,11 +289,13 @@ func (s *Service) SearchDocPages(ctx context.Context, query, audience string, li
 	results := make([]DocSearchResult, len(rows))
 	for i, r := range rows {
 		results[i] = DocSearchResult{
-			ID:       r.ID.String(),
-			Title:    r.Title,
-			Slug:     r.Slug,
-			Audience: r.Audience,
-			Excerpt:  extractExcerpt(r.Content, excerptMaxLen),
+			ID:          r.ID.String(),
+			Title:       r.Title,
+			Slug:        r.Slug,
+			Audience:    r.Audience,
+			Category:    r.Category,
+			Subcategory: r.Subcategory,
+			Excerpt:     extractExcerpt(r.Content, excerptMaxLen),
 		}
 	}
 
@@ -318,11 +326,13 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, query string, a
 
 		for _, r := range rows {
 			allResults = append(allResults, DocSearchResult{
-				ID:       r.ID.String(),
-				Title:    r.Title,
-				Slug:     r.Slug,
-				Audience: r.Audience,
-				Excerpt:  extractExcerpt(r.Content, excerptMaxLen),
+				ID:          r.ID.String(),
+				Title:       r.Title,
+				Slug:        r.Slug,
+				Audience:    r.Audience,
+				Category:    r.Category,
+				Subcategory: r.Subcategory,
+				Excerpt:     extractExcerpt(r.Content, excerptMaxLen),
 			})
 			// nolint:gosec // G115: bounded
 			if int32(len(allResults)) >= limit { // #nosec //nolint:gosec // G115: bounded
@@ -423,12 +433,14 @@ func buildAudienceNavItems(group []gen.ListPublishedDocPagesRow) []DocNavItem {
 // navItemFromRow converts a published-page row to a nav item.
 func navItemFromRow(r gen.ListPublishedDocPagesRow) DocNavItem {
 	return DocNavItem{
-		ID:       r.ID.String(),
-		Title:    r.Title,
-		Slug:     r.Slug,
-		Audience: r.Audience,
-		ParentID: uuidPtr(r.ParentID),
-		Position: r.Position,
+		ID:          r.ID.String(),
+		Title:       r.Title,
+		Slug:        r.Slug,
+		Audience:    r.Audience,
+		ParentID:    uuidPtr(r.ParentID),
+		Position:    r.Position,
+		Category:    r.Category,
+		Subcategory: r.Subcategory,
 	}
 }
 
@@ -528,6 +540,28 @@ func (s *Service) invalidateAllPageCaches(ctx context.Context) {
 	}
 }
 
+// maxTaxonomyLen caps free-text category/subcategory labels (§44 amendment).
+const maxTaxonomyLen = 120
+
+// normalizeTaxonomy trims a category/subcategory label. Empty or absent input
+// normalizes to nil (stored NULL); overlong labels are rejected.
+func normalizeTaxonomy(s *string) (*string, error) {
+	if s == nil {
+		return nil, nil
+	}
+
+	v := strings.TrimSpace(*s)
+	if v == "" {
+		return nil, nil
+	}
+
+	if len([]rune(v)) > maxTaxonomyLen {
+		return nil, fmt.Errorf("category/subcategory exceeds %d characters", maxTaxonomyLen)
+	}
+
+	return &v, nil
+}
+
 // CreateDocPage inserts a new documentation page and returns its ID.
 func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (pgtype.UUID, error) {
 	if !ValidAudiences[req.Audience] {
@@ -541,6 +575,16 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 
 	if !ValidReviewStatuses[status] {
 		return pgtype.UUID{}, fmt.Errorf("invalid review_status: %s", status)
+	}
+
+	category, err := normalizeTaxonomy(req.Category)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	subcategory, err := normalizeTaxonomy(req.Subcategory)
+	if err != nil {
+		return pgtype.UUID{}, err
 	}
 
 	contentBytes := []byte(req.Content)
@@ -565,6 +609,8 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 		ReviewStatus: status,
 		ParentID:     parentID,
 		Position:     req.Position,
+		Category:     category,
+		Subcategory:  subcategory,
 	})
 	if err != nil {
 		return pgtype.UUID{}, err
@@ -610,12 +656,31 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 		title = existing.Title
 	}
 
+	// Taxonomy: a nil field preserves the stored value; "" clears it (§44
+	// amendment). Subcategory is independent of category — a page may move to
+	// a different category while keeping or clearing its subcategory.
+	category := existing.Category
+	if req.Category != nil {
+		if category, err = normalizeTaxonomy(req.Category); err != nil {
+			return err
+		}
+	}
+
+	subcategory := existing.Subcategory
+	if req.Subcategory != nil {
+		if subcategory, err = normalizeTaxonomy(req.Subcategory); err != nil {
+			return err
+		}
+	}
+
 	if err := s.store.update(ctx, gen.UpdateDocPageParams{
 		ID: id,
 
 		Title:          title,
 		Content:        contentBytes,
 		ReviewStatus:   status,
+		Category:       category,
+		Subcategory:    subcategory,
 		LastReviewedBy: pgtype.UUID{},
 	}); err != nil {
 		return err
@@ -717,6 +782,8 @@ func toDocPage(p gen.DocPage) *DocPage {
 		LastReviewedAt: timestamptzPtr(p.LastReviewedAt),
 		ParentID:       uuidPtr(p.ParentID),
 		Position:       p.Position,
+		Category:       p.Category,
+		Subcategory:    p.Subcategory,
 		// Phase 8 (i18n) will persist translated variants. Until then the API
 		// always reports the source language as English, including when a
 		// ?lang query parameter is supplied.

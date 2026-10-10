@@ -128,7 +128,7 @@
 				{:else}
 					<span class="brand-mark">JC</span>
 				{/if}
-				<span>{t('app.name')}</span>
+				<span class="hidden whitespace-nowrap sm:inline">{t('app.name')}</span>
 			</a>
 			<div class="full-topbar-actions">
 				<SearchLauncher />
@@ -182,7 +182,7 @@
 					{:else}
 						<span class="brand-mark">JC</span>
 					{/if}
-					<span>{t('app.name')}</span>
+					<span class="hidden whitespace-nowrap sm:inline">{t('app.name')}</span>
 				</a>
 				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
 				<!-- Topbar widgets (theme/language toggles) — the sidebar topbar is
@@ -285,7 +285,7 @@
 					{:else}
 						<span class="brand-mark">JC</span>
 					{/if}
-					<span>{t('app.name')}</span>
+					<span class="hidden whitespace-nowrap sm:inline">{t('app.name')}</span>
 				</a>
 				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
 				<!-- Topbar widgets (theme/language toggles) + account menu — the

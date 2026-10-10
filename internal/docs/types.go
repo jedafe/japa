@@ -18,6 +18,8 @@ type DocPage struct {
 	LastReviewedAt *string         `json:"last_reviewed_at,omitempty"`
 	ParentID       *string         `json:"parent_id,omitempty"`
 	Position       int32           `json:"position"`
+	Category       *string         `json:"category,omitempty"`
+	Subcategory    *string         `json:"subcategory,omitempty"`
 	ContentLang    string          `json:"content_lang"`
 	CreatedAt      string          `json:"created_at"`
 	UpdatedAt      string          `json:"updated_at"`
@@ -32,6 +34,8 @@ type DocPageSummary struct {
 	ReviewStatus string  `json:"review_status"`
 	ParentID     *string `json:"parent_id,omitempty"`
 	Position     int32   `json:"position"`
+	Category     *string `json:"category,omitempty"`
+	Subcategory  *string `json:"subcategory,omitempty"`
 	CreatedAt    string  `json:"created_at"`
 }
 
@@ -45,13 +49,19 @@ type CreateDocPageRequest struct {
 	ReviewStatus string          `json:"review_status"`
 	ParentID     *string         `json:"parent_id,omitempty"`
 	Position     int32           `json:"position"`
+	Category     *string         `json:"category,omitempty"`
+	Subcategory  *string         `json:"subcategory,omitempty"`
 }
 
 // UpdateDocPageRequest is the JSON body for PATCH /api/v1/admin/docs/{id}.
+// Category/Subcategory: nil preserves the stored value; "" clears it; any
+// other value replaces it (§44 taxonomy amendment).
 type UpdateDocPageRequest struct {
 	Title        string          `json:"title"`
 	Content      json.RawMessage `json:"content"`
 	ReviewStatus string          `json:"review_status"`
+	Category     *string         `json:"category,omitempty"`
+	Subcategory  *string         `json:"subcategory,omitempty"`
 }
 
 // DocNavItem is a single navigation entry (a published page), optionally
@@ -61,9 +71,11 @@ type DocNavItem struct {
 	Title    string       `json:"title"`
 	Slug     string       `json:"slug"`
 	Audience string       `json:"audience"`
-	ParentID *string      `json:"parent_id,omitempty"`
-	Position int32        `json:"position"`
-	Children []DocNavItem `json:"children,omitempty"`
+	ParentID    *string      `json:"parent_id,omitempty"`
+	Position    int32        `json:"position"`
+	Category    *string      `json:"category,omitempty"`
+	Subcategory *string      `json:"subcategory,omitempty"`
+	Children    []DocNavItem `json:"children,omitempty"`
 }
 
 // DocNavTree groups navigation items by audience section.
@@ -74,11 +86,13 @@ type DocNavTree struct {
 
 // DocSearchResult is a lightweight search hit for the docs sidebar.
 type DocSearchResult struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Slug     string `json:"slug"`
-	Audience string `json:"audience"`
-	Excerpt  string `json:"excerpt"`
+	ID          string  `json:"id"`
+	Title       string  `json:"title"`
+	Slug        string  `json:"slug"`
+	Audience    string  `json:"audience"`
+	Category    *string `json:"category,omitempty"`
+	Subcategory *string `json:"subcategory,omitempty"`
+	Excerpt     string  `json:"excerpt"`
 }
 
 // AudienceOrder is the canonical display order for audience sections.

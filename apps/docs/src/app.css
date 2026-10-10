@@ -202,7 +202,7 @@ body {
 	scroll-margin-top: calc(var(--nav-height) + 1rem);
 }
 .prose h1 { font-size: 2rem; margin-top: 2.5rem; margin-bottom: 1rem; }
-.prose h2 { font-size: 1.5rem; margin-top: 2rem; margin-bottom: 0.75rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--color-border); }
+.prose h2 { font-size: 1.5rem; margin-top: 2.25rem; margin-bottom: 0.75rem; }
 .prose h3 { font-size: 1.25rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
 .prose h4 { font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.5rem; }
 .prose p { margin-top: 1.25rem; margin-bottom: 1.25rem; }
@@ -219,6 +219,45 @@ body {
 	color: var(--color-text-subtle);
 	margin-top: 1.5rem;
 	margin-bottom: 1.5rem;
+}
+/* Callout boxes — blockquote variants used for info/warning/tip panels
+   (same convention as the main app, Ref: §23). */
+.prose blockquote.callout {
+	font-style: normal;
+	padding: 0.75rem 1rem;
+	border-radius: var(--radius);
+	background: var(--color-surface-subtle);
+	color: var(--color-text);
+}
+.prose blockquote.callout p:first-child { margin-top: 0; }
+.prose blockquote.callout p:last-child { margin-bottom: 0; }
+.prose blockquote.callout-tip { border-left-color: var(--chart-3, var(--color-primary)); }
+.prose blockquote.callout-note { border-left-color: var(--color-primary); }
+.prose blockquote.callout-warning,
+.prose blockquote.callout-important { border-left-color: var(--method-delete); }
+/* Heading permalinks — '#' appears on hover (docs convention). The anchor
+   element is injected by injectHeadingAnchors() in tiptap/serialize.ts. */
+.prose .heading-anchor {
+	margin-left: 0.5rem;
+	font-family: var(--font-sans);
+	font-weight: 500;
+	font-size: 0.8em;
+	color: var(--color-muted);
+	text-decoration: none;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose .heading-anchor:focus-visible {
+	opacity: 1;
+}
+.prose .heading-anchor:hover { color: var(--color-primary); }
+/* When a heading is the jump target, flash the anchor visible. */
+.prose h2:target .heading-anchor,
+.prose h3:target .heading-anchor {
+	opacity: 1;
+	color: var(--color-primary);
 }
 .prose code {
 	font-family: var(--font-mono);

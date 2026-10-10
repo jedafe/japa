@@ -1,25 +1,13 @@
 import { generateHTML } from '@tiptap/html';
 import { marked } from 'marked';
-import StarterKit from '@tiptap/starter-kit';
-import Link from '@tiptap/extension-link';
-import { Table } from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
+import { docExtensions } from './extensions';
 import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 /**
  * Extensions shared between the docs prose renderer and the editor (admin).
  * Kept in sync with the backend's stored TipTap JSON shape (Section 44).
  */
-const extensions = [
-	StarterKit,
-	Link,
-	Table,
-	TableRow,
-	TableCell,
-	TableHeader
-];
+const extensions = docExtensions;
 
 /**
  * Render a stored TipTap JSON document to HTML on the server.
@@ -128,6 +116,20 @@ export function extractTocHeadings(html: string): TocHeading[] {
 		headings.push({ id, text, level });
 	}
 	return headings;
+}
+
+/**
+ * Inject a hover-visible permalink (`#` link) inside each h2/h3 — the modern
+ * docs convention. Must run AFTER extractTocHeadings: the anchor text would
+ * otherwise leak a trailing '#' into the TOC label.
+ */
+export function injectHeadingAnchors(html: string): string {
+	if (!html) return '';
+	return html.replace(/<h([23])\b([^>]*)>(.*?)<\/h\1>/gis, (full, level, attrs, inner) => {
+		const id = /id="([^"]+)"/i.exec(attrs)?.[1];
+		if (!id) return full;
+		return `<h${level}${attrs}>${inner}<a class="heading-anchor" href="#${id}" aria-hidden="true" tabindex="-1">#</a></h${level}>`;
+	});
 }
 
 /** Inject/normalize id attributes on h2/h3 in the rendered HTML so anchor links resolve. */

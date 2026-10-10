@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
-import { renderDocContent, ensureHeadingIds, extractTocHeadings } from '$lib/tiptap/serialize';
+import { renderDocContent, ensureHeadingIds, extractTocHeadings, injectHeadingAnchors } from '$lib/tiptap/serialize';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPage } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
@@ -65,8 +65,9 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const rawHtml = renderDocContent(page.content);
-	const html = ensureHeadingIds(rawHtml);
-	const toc = extractTocHeadings(html);
+	const withIds = ensureHeadingIds(rawHtml);
+	const toc = extractTocHeadings(withIds);
+	const html = injectHeadingAnchors(withIds);
 
 	// Fetch the OpenAPI spec server-side to find a matching operation for the
 	// right code pane. Uses a module-level cache to avoid re-fetching the

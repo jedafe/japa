@@ -43,6 +43,8 @@ func (s *Store) getBySlug(ctx context.Context, audience, slug string) (gen.DocPa
 		LastReviewedAt: row.LastReviewedAt,
 		ParentID:       row.ParentID,
 		Position:       row.Position,
+		Category:       row.Category,
+		Subcategory:    row.Subcategory,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil
@@ -70,6 +72,8 @@ func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (gen.DocPage, error
 		LastReviewedAt: row.LastReviewedAt,
 		ParentID:       row.ParentID,
 		Position:       row.Position,
+		Category:       row.Category,
+		Subcategory:    row.Subcategory,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil

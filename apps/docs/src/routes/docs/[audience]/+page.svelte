@@ -5,7 +5,11 @@
 	import { page } from '$app/state';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { AUDIENCE_ICON, AUDIENCE_DESC_KEY } from '$lib/audience-meta';
+	import { groupNavItems } from '$lib/docs/grouping';
+	import { ArrowRight, ArrowUpRight, ChevronRight, FileText, Plus } from 'lucide-svelte';
 	import type { PageData } from './$types';
+	import type { DocNavItem } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
 
@@ -25,6 +29,27 @@
 	const defaultLanguage = $derived(
 		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
 	);
+
+	// The nav tree (layout data) carries parent→children hierarchy — the flat
+	// pages list doesn't. Build the section cards from it (Rule 16: same API
+	// payload the sidebar renders).
+	const navItems = $derived(
+		data.nav.find((tree) => tree.audience === data.audience)?.items ?? []
+	);
+	// Category → subcategory grouping (§44 taxonomy): ungrouped pages first,
+	// then category sections in first-appearance order.
+	const grouped = $derived(groupNavItems(navItems));
+	const AudienceIcon = $derived(AUDIENCE_ICON[data.audience]);
+
+	// Post-create/save notices (?created=<status> / ?saved=<status>).
+	const noticeStatus = $derived(
+		page.url.searchParams.get('created') ?? page.url.searchParams.get('saved')
+	);
+	const noticeVerb = $derived(page.url.searchParams.has('created') ? 'created' : 'saved');
+
+	function pageHref(slug: string): string {
+		return `/docs/${data.audience}/${slug}`;
+	}
 </script>
 
 <svelte:head>
@@ -79,54 +104,197 @@
 >
 	<section class="audience-page">
 		<header class="audience-header">
-			<a href="/docs" class="back-link">← {t('page.back_to_docs')}</a>
-			<h1>{t(data.labelKey, data.audience)}</h1>
+			<nav class="breadcrumb" aria-label="Breadcrumb">
+				<a href="/docs" class="crumb">{t('audience.overview')}</a>
+				<ChevronRight size={12} class="crumb-sep" />
+				<span class="crumb-current">{t(data.labelKey, data.audience)}</span>
+			</nav>
+			<div class="audience-title-row">
+				<span class="audience-icon"><AudienceIcon size={22} /></span>
+				<div class="audience-title-body">
+					<h1>{t(data.labelKey, data.audience)}</h1>
+					<p class="audience-desc">{t(AUDIENCE_DESC_KEY[data.audience])}</p>
+				</div>
+			</div>
+			{#if navItems.length > 0}
+				<p class="audience-count">
+					{t('landing.pages', '{count} pages', { count: String(data.pages.length) })}
+				</p>
+			{/if}
+			{#if data.canEditDocs}
+				<div class="audience-actions">
+					<a href="/docs/{data.audience}/new" class="new-page-link">
+						<Plus size={15} />
+						{t('audience.new_page', 'New page')}
+					</a>
+				</div>
+			{/if}
 		</header>
 
-		{#if data.pages.length === 0}
+		{#if noticeStatus}
+			<p class="created-notice" role="status">
+				{noticeStatus === 'published'
+					? t(`audience.${noticeVerb}_published`, 'Page saved and published.')
+					: t(`audience.${noticeVerb}_draft`, 'Page saved — it stays hidden until published.')}
+			</p>
+		{/if}
+
+		{#if navItems.length === 0}
 			<p class="empty">{t('nav.empty')}</p>
 		{:else}
-			<ul class="page-list">
-				{#each data.pages as page (page.id)}
-					<li>
-						<a href="/docs/{data.audience}/{page.slug}" class="page-card">
-							<span class="page-title">{page.title}</span>
-							<span class="page-meta">
-								{#if page.review_status === 'published'}
-									<span class="badge published">{t('page.status_published')}</span>
-								{:else}
-									<span class="badge">{page.review_status}</span>
-								{/if}
-							</span>
-						</a>
-					</li>
-				{/each}
-			</ul>
+			{#if grouped.ungrouped.length > 0}
+				<div class="doc-grid">
+					{#each grouped.ungrouped as item (item.id)}
+						{@render docCard(item)}
+					{/each}
+				</div>
+			{/if}
+			{#each grouped.categories as cat (cat.name)}
+				<section class="cat-section">
+					<h2 class="cat-title">{cat.name}</h2>
+					{#each cat.subcategories as sub (sub.name)}
+						{#if sub.name}
+							<h3 class="subcat-title">{sub.name}</h3>
+						{/if}
+						<div class="doc-grid">
+							{#each sub.items as item (item.id)}
+								{@render docCard(item)}
+							{/each}
+						</div>
+					{/each}
+				</section>
+			{/each}
 		{/if}
 	</section>
 </AppShell>
 
+{#snippet docCard(item: DocNavItem)}
+	{#if item.children && item.children.length > 0}
+		<div class="doc-card doc-card-group">
+			<a href={pageHref(item.slug)} class="doc-card-head">
+				<span class="doc-card-title">{item.title}</span>
+				<ArrowUpRight size={15} class="doc-card-arrow" />
+			</a>
+			<ul class="doc-card-children">
+				{#each item.children as child (child.id)}
+					<li>
+						<a href={pageHref(child.slug)} class="doc-child-link">
+							<span class="doc-child-title">{child.title}</span>
+							<ArrowRight size={13} class="doc-child-arrow" />
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{:else}
+		<a href={pageHref(item.slug)} class="doc-card doc-card-link">
+			<FileText size={16} class="doc-link-icon" />
+			<span class="doc-card-title">{item.title}</span>
+			<ArrowRight size={15} class="doc-card-arrow" />
+		</a>
+	{/if}
+{/snippet}
+
 <style>
 	.audience-page {
-		max-width: 760px;
+		max-width: 860px;
 		margin: 0 auto;
 		padding: 2.5rem 1.5rem 4rem;
 	}
 	.audience-header { margin-bottom: 2rem; }
-	.back-link {
+	.breadcrumb {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
 		font-size: 0.8125rem;
+		margin-bottom: 1.25rem;
+	}
+	.crumb {
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.back-link:hover { color: var(--color-primary); }
-	.audience-header h1 {
+	.crumb:hover { color: var(--color-primary); }
+	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
+	.crumb-current { color: var(--color-text-subtle); font-weight: 500; }
+	.audience-title-row {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.875rem;
+	}
+	.audience-icon {
+		display: grid;
+		place-items: center;
+		height: 2.75rem;
+		width: 2.75rem;
+		border-radius: var(--radius-card);
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		color: var(--color-primary);
+		flex-shrink: 0;
+	}
+	.audience-title-body { min-width: 0; }
+	.audience-title-body h1 {
 		font-family: var(--font-sans);
-		font-size: 2rem;
+		font-size: 1.75rem;
 		font-weight: 700;
 		color: var(--color-text);
-		margin: 0.5rem 0 0;
+		margin: 0;
 		letter-spacing: -0.02em;
-		text-transform: capitalize;
+		line-height: 1.2;
+	}
+	.audience-desc {
+		font-size: 0.9375rem;
+		color: var(--color-text-subtle);
+		margin: 0.375rem 0 0;
+		line-height: 1.55;
+		max-width: 60ch;
+	}
+	.audience-count {
+		font-size: 0.75rem;
+		color: var(--color-muted);
+		margin: 0.75rem 0 0;
+	}
+	.audience-actions { margin-top: 1rem; }
+	.new-page-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.5rem 0.875rem;
+		border-radius: var(--radius);
+		border: 1px solid var(--color-border);
+		background: var(--color-surface);
+		color: var(--color-primary);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		text-decoration: none;
+		transition: border-color 0.15s;
+	}
+	.new-page-link:hover { border-color: var(--color-primary); }
+	.created-notice {
+		margin: 0 0 1.5rem;
+		padding: 0.75rem 1rem;
+		border-radius: var(--radius);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+		background: color-mix(in srgb, var(--color-primary) 7%, transparent);
+		color: var(--color-text);
+		font-size: 0.875rem;
+	}
+	.cat-section { margin-top: 2rem; }
+	.cat-title {
+		font-family: var(--font-sans);
+		font-size: 1.125rem;
+		font-weight: 700;
+		color: var(--color-text);
+		margin: 0 0 0.875rem;
+		letter-spacing: -0.01em;
+	}
+	.subcat-title {
+		font-family: var(--font-sans);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--color-muted);
+		margin: 1.25rem 0 0.625rem;
 	}
 	.empty {
 		padding: 2rem;
@@ -136,37 +304,81 @@
 		border: 1px dashed var(--color-border);
 		border-radius: var(--radius-card);
 	}
-	.page-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
+	.doc-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+		gap: 0.875rem;
+		align-items: start;
 	}
-	.page-card {
+	.doc-card {
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-card);
+		background: var(--color-surface);
+		transition: border-color 0.15s, box-shadow 0.15s;
+		overflow: hidden;
+	}
+	.doc-card-link {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 1rem 1.125rem;
+		text-decoration: none;
+	}
+	.doc-card-link:hover {
+		border-color: var(--color-primary);
+		box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
+	}
+	.doc-card-link :global(.doc-link-icon) { color: var(--color-muted); flex-shrink: 0; }
+	.doc-card-link:hover :global(.doc-link-icon) { color: var(--color-primary); }
+	.doc-card-title {
+		font-size: 0.9375rem;
+		font-weight: 600;
+		color: var(--color-text);
+		flex: 1;
+		min-width: 0;
+	}
+	.doc-card-group { display: flex; flex-direction: column; }
+	.doc-card-group:hover { border-color: var(--color-primary); }
+	.doc-card-head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 0.75rem;
-		padding: 0.875rem 1rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
+		gap: 0.5rem;
+		padding: 1rem 1.125rem;
 		text-decoration: none;
-		transition: border-color 0.15s;
 	}
-	.page-card:hover { border-color: var(--color-primary); }
-	.page-title { font-size: 0.9375rem; font-weight: 500; color: var(--color-text); }
-	.badge {
-		font-size: 0.6875rem;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
+	.doc-card-head:hover .doc-card-title { color: var(--color-primary); }
+	.doc-card-children {
+		list-style: none;
+		padding: 0.25rem 0.375rem 0.625rem;
+		margin: 0;
+		border-top: 1px solid var(--color-border);
+	}
+	.doc-child-link {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.4375rem 0.75rem;
+		border-radius: var(--radius);
+		text-decoration: none;
+	}
+	.doc-child-link:hover { background: var(--color-surface-subtle); }
+	.doc-child-title {
+		font-size: 0.8125rem;
+		color: var(--color-text-subtle);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.doc-child-link:hover .doc-child-title { color: var(--color-text); }
+	:global(.doc-card-arrow), :global(.doc-child-arrow) {
 		color: var(--color-muted);
-		padding: 0.125rem 0.5rem;
-		border-radius: 4px;
-		background: var(--color-surface-subtle);
 		flex-shrink: 0;
 	}
-	.badge.published { color: var(--method-get); background: var(--method-get-bg); }
+	.doc-card-head:hover :global(.doc-card-arrow),
+	.doc-card-link:hover :global(.doc-card-arrow),
+	.doc-child-link:hover :global(.doc-child-arrow) {
+		color: var(--color-primary);
+	}
 </style>

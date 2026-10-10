@@ -1724,6 +1724,8 @@ type DocPage struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	HelpfulYes     int32              `json:"helpful_yes"`
 	HelpfulNo      int32              `json:"helpful_no"`
+	Category       *string            `json:"category"`
+	Subcategory    *string            `json:"subcategory"`
 }
 
 type EcaCommunityUpdate struct {

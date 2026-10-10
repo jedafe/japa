@@ -12,7 +12,7 @@ import (
 )
 
 const createDocPage = `-- name: CreateDocPage :one
-INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 
 RETURNING id
 `
@@ -26,6 +26,8 @@ type CreateDocPageParams struct {
 	ReviewStatus string      `json:"review_status"`
 	ParentID     pgtype.UUID `json:"parent_id"`
 	Position     int32       `json:"position"`
+	Category     *string     `json:"category"`
+	Subcategory  *string     `json:"subcategory"`
 }
 
 func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (pgtype.UUID, error) {
@@ -38,6 +40,8 @@ func (q *Queries) CreateDocPage(ctx context.Context, arg CreateDocPageParams) (p
 		arg.ReviewStatus,
 		arg.ParentID,
 		arg.Position,
+		arg.Category,
+		arg.Subcategory,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -55,7 +59,8 @@ func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 
 const getDocPageByID = `-- name: GetDocPageByID :one
 SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, created_at, updated_at
+ last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
+ created_at, updated_at
 FROM doc_pages
 WHERE id = $1
 `
@@ -72,6 +77,8 @@ type GetDocPageByIDRow struct {
 	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
 	ParentID       pgtype.UUID        `json:"parent_id"`
 	Position       int32              `json:"position"`
+	Category       *string            `json:"category"`
+	Subcategory    *string            `json:"subcategory"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -91,6 +98,8 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 		&i.LastReviewedAt,
 		&i.ParentID,
 		&i.Position,
+		&i.Category,
+		&i.Subcategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -99,7 +108,8 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 
 const getDocPageBySlug = `-- name: GetDocPageBySlug :one
 SELECT id, title, slug, audience, content, ai_generated, review_status,
- last_reviewed_by, last_reviewed_at, parent_id, position, created_at, updated_at
+ last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
+ created_at, updated_at
 FROM doc_pages
 WHERE audience = $1 AND slug = $2 AND review_status = 'published'
 `
@@ -121,6 +131,8 @@ type GetDocPageBySlugRow struct {
 	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
 	ParentID       pgtype.UUID        `json:"parent_id"`
 	Position       int32              `json:"position"`
+	Category       *string            `json:"category"`
+	Subcategory    *string            `json:"subcategory"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -140,6 +152,8 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 		&i.LastReviewedAt,
 		&i.ParentID,
 		&i.Position,
+		&i.Category,
+		&i.Subcategory,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -177,7 +191,7 @@ func (q *Queries) IncrementDocPageHelpful(ctx context.Context, arg IncrementDocP
 
 const listAllDocPages = `-- name: ListAllDocPages :many
 SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
- last_reviewed_at, parent_id, position, created_at, updated_at
+ last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
 FROM doc_pages
 
 ORDER BY audience ASC, position ASC, title ASC
@@ -194,6 +208,8 @@ type ListAllDocPagesRow struct {
 	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
 	ParentID       pgtype.UUID        `json:"parent_id"`
 	Position       int32              `json:"position"`
+	Category       *string            `json:"category"`
+	Subcategory    *string            `json:"subcategory"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -218,6 +234,8 @@ func (q *Queries) ListAllDocPages(ctx context.Context) ([]ListAllDocPagesRow, er
 			&i.LastReviewedAt,
 			&i.ParentID,
 			&i.Position,
+			&i.Category,
+			&i.Subcategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -233,7 +251,7 @@ func (q *Queries) ListAllDocPages(ctx context.Context) ([]ListAllDocPagesRow, er
 
 const listAllDocPagesByAudience = `-- name: ListAllDocPagesByAudience :many
 SELECT id, title, slug, audience, ai_generated, review_status, last_reviewed_by,
- last_reviewed_at, parent_id, position, created_at, updated_at
+ last_reviewed_at, parent_id, position, category, subcategory, created_at, updated_at
 FROM doc_pages
 WHERE audience = $1
 ORDER BY position ASC, title ASC
@@ -250,6 +268,8 @@ type ListAllDocPagesByAudienceRow struct {
 	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
 	ParentID       pgtype.UUID        `json:"parent_id"`
 	Position       int32              `json:"position"`
+	Category       *string            `json:"category"`
+	Subcategory    *string            `json:"subcategory"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -274,6 +294,8 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, audience string
 			&i.LastReviewedAt,
 			&i.ParentID,
 			&i.Position,
+			&i.Category,
+			&i.Subcategory,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -288,7 +310,7 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, audience string
 }
 
 const listDocPagesByAudience = `-- name: ListDocPagesByAudience :many
-SELECT id, title, slug, audience, review_status, parent_id, position, created_at
+SELECT id, title, slug, audience, review_status, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE audience = $1 AND review_status = 'published'
 ORDER BY position ASC, title ASC
@@ -302,6 +324,8 @@ type ListDocPagesByAudienceRow struct {
 	ReviewStatus string             `json:"review_status"`
 	ParentID     pgtype.UUID        `json:"parent_id"`
 	Position     int32              `json:"position"`
+	Category     *string            `json:"category"`
+	Subcategory  *string            `json:"subcategory"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
@@ -322,6 +346,8 @@ func (q *Queries) ListDocPagesByAudience(ctx context.Context, audience string) (
 			&i.ReviewStatus,
 			&i.ParentID,
 			&i.Position,
+			&i.Category,
+			&i.Subcategory,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -335,7 +361,7 @@ func (q *Queries) ListDocPagesByAudience(ctx context.Context, audience string) (
 }
 
 const listDocPagesTree = `-- name: ListDocPagesTree :many
-SELECT id, title, slug, audience, parent_id, position, review_status
+SELECT id, title, slug, audience, parent_id, position, review_status, category, subcategory
 FROM doc_pages
 WHERE audience = $1 AND review_status = 'published'
 ORDER BY position ASC
@@ -349,6 +375,8 @@ type ListDocPagesTreeRow struct {
 	ParentID     pgtype.UUID `json:"parent_id"`
 	Position     int32       `json:"position"`
 	ReviewStatus string      `json:"review_status"`
+	Category     *string     `json:"category"`
+	Subcategory  *string     `json:"subcategory"`
 }
 
 func (q *Queries) ListDocPagesTree(ctx context.Context, audience string) ([]ListDocPagesTreeRow, error) {
@@ -368,6 +396,8 @@ func (q *Queries) ListDocPagesTree(ctx context.Context, audience string) ([]List
 			&i.ParentID,
 			&i.Position,
 			&i.ReviewStatus,
+			&i.Category,
+			&i.Subcategory,
 		); err != nil {
 			return nil, err
 		}
@@ -380,20 +410,22 @@ func (q *Queries) ListDocPagesTree(ctx context.Context, audience string) ([]List
 }
 
 const listPublishedDocPages = `-- name: ListPublishedDocPages :many
-SELECT id, title, slug, audience, parent_id, position, created_at
+SELECT id, title, slug, audience, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
 ORDER BY audience ASC, position ASC, title ASC
 `
 
 type ListPublishedDocPagesRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	Audience  string             `json:"audience"`
-	ParentID  pgtype.UUID        `json:"parent_id"`
-	Position  int32              `json:"position"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Audience    string             `json:"audience"`
+	ParentID    pgtype.UUID        `json:"parent_id"`
+	Position    int32              `json:"position"`
+	Category    *string            `json:"category"`
+	Subcategory *string            `json:"subcategory"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) ListPublishedDocPages(ctx context.Context) ([]ListPublishedDocPagesRow, error) {
@@ -412,6 +444,8 @@ func (q *Queries) ListPublishedDocPages(ctx context.Context) ([]ListPublishedDoc
 			&i.Audience,
 			&i.ParentID,
 			&i.Position,
+			&i.Category,
+			&i.Subcategory,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -425,7 +459,7 @@ func (q *Queries) ListPublishedDocPages(ctx context.Context) ([]ListPublishedDoc
 }
 
 const searchDocPages = `-- name: SearchDocPages :many
-SELECT id, title, slug, audience, content, parent_id, position, created_at
+SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
 FROM doc_pages
 WHERE review_status = 'published'
  AND ($1::text IS NULL OR audience = $1)
@@ -441,14 +475,16 @@ type SearchDocPagesParams struct {
 }
 
 type SearchDocPagesRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	Title     string             `json:"title"`
-	Slug      string             `json:"slug"`
-	Audience  string             `json:"audience"`
-	Content   []byte             `json:"content"`
-	ParentID  pgtype.UUID        `json:"parent_id"`
-	Position  int32              `json:"position"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Audience    string             `json:"audience"`
+	Content     []byte             `json:"content"`
+	ParentID    pgtype.UUID        `json:"parent_id"`
+	Position    int32              `json:"position"`
+	Category    *string            `json:"category"`
+	Subcategory *string            `json:"subcategory"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) ([]SearchDocPagesRow, error) {
@@ -468,6 +504,8 @@ func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) 
 			&i.Content,
 			&i.ParentID,
 			&i.Position,
+			&i.Category,
+			&i.Subcategory,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -483,14 +521,17 @@ func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) 
 const updateDocPage = `-- name: UpdateDocPage :exec
 UPDATE doc_pages
 SET title = $1, content = $2, review_status = $3,
- last_reviewed_by = $4, last_reviewed_at = now(), updated_at = now()
-WHERE id = $5
+ category = $4, subcategory = $5,
+ last_reviewed_by = $6, last_reviewed_at = now(), updated_at = now()
+WHERE id = $7
 `
 
 type UpdateDocPageParams struct {
 	Title          string      `json:"title"`
 	Content        []byte      `json:"content"`
 	ReviewStatus   string      `json:"review_status"`
+	Category       *string     `json:"category"`
+	Subcategory    *string     `json:"subcategory"`
 	LastReviewedBy pgtype.UUID `json:"last_reviewed_by"`
 	ID             pgtype.UUID `json:"id"`
 }
@@ -500,6 +541,8 @@ func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) er
 		arg.Title,
 		arg.Content,
 		arg.ReviewStatus,
+		arg.Category,
+		arg.Subcategory,
 		arg.LastReviewedBy,
 		arg.ID,
 	)

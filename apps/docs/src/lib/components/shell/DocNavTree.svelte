@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { PanelLeftClose, PanelLeft, ChevronDown, BookOpen } from 'lucide-svelte';
+	import { PanelLeftClose, PanelLeft, ChevronDown, BookOpen, Plus } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import type { DocNavTree as DocNavTreeType, DocAudience, DocNavItem } from '$lib/types';
 	import { AUDIENCE_LABEL_KEY } from '$lib/types';
+	import { groupNavItems } from '$lib/docs/grouping';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import AudienceSwitcher from './AudienceSwitcher.svelte';
 
@@ -75,6 +76,11 @@
 	function isActive(item: DocNavItem, audience: DocAudience): boolean {
 		return activePath === hrefFor(audience, item.slug);
 	}
+
+	// Editor affordance: docs.manage holders get a per-section "new page"
+	// shortcut (§44 in-app authoring). Group-name checks are unreliable —
+	// the permission node is canonical (DOC-007).
+	const canManageDocs = $derived(page.data?.user?.permissions?.includes('docs.manage') ?? false);
 </script>
 
 <aside class="nav" class:collapsed data-tour="docs-nav">
@@ -130,50 +136,63 @@
 		{:else}
 			{#each treesWithApi as tree (tree.audience)}
 				<div class="section">
-					<a
-						href="/docs/{tree.audience}"
-						class="section-header"
-						class:active={activeAudience === tree.audience && !activePath.includes(`/${tree.audience}/`)}
-						onclick={(e) => {
-							// Toggle expand when clicking the header if it's the active audience.
-							if (activeAudience === tree.audience) {
-								e.preventDefault();
-								toggleSection(tree.audience);
-							}
-						}}
-					>
-						<span>{t(AUDIENCE_LABEL_KEY[tree.audience], tree.audience)}</span>
-						{#if tree.items.length > 0}
-							<ChevronDown size={14} class={`chevron ${expanded[tree.audience] ?? false ? 'rot' : ''}`} />
+					<div class="section-header-row">
+						<a
+							href="/docs/{tree.audience}"
+							class="section-header"
+							class:active={activeAudience === tree.audience && !activePath.includes(`/${tree.audience}/`)}
+							onclick={(e) => {
+								// Toggle expand when clicking the header if it's the active audience.
+								if (activeAudience === tree.audience) {
+									e.preventDefault();
+									toggleSection(tree.audience);
+								}
+							}}
+						>
+							<span>{t(AUDIENCE_LABEL_KEY[tree.audience], tree.audience)}</span>
+							{#if tree.items.length > 0}
+								<ChevronDown size={14} class={`chevron ${expanded[tree.audience] ?? false ? 'rot' : ''}`} />
+							{/if}
+						</a>
+						{#if canManageDocs}
+							<a
+								href="/docs/{tree.audience}/new"
+								class="new-page-btn"
+								title={t('nav.new_page', 'New page')}
+								aria-label={t('nav.new_page', 'New page')}
+							>
+								<Plus size={14} />
+							</a>
 						{/if}
-					</a>
+					</div>
 				{#if expanded[tree.audience] ?? false}
 					{#if tree.items.length > 0}
+						{@const grouped = groupNavItems(tree.items)}
 						<ul class="page-list">
-							{#each tree.items as item (item.id)}
-								<li>
-									<a
-										href={hrefFor(tree.audience, item.slug)}
-										class="page-link"
-										class:active={isActive(item, tree.audience)}
-									>
-										{item.title}
-									</a>
-									{#if item.children && item.children.length > 0}
-										<ul class="sub-list">
-											{#each item.children as child (child.id)}
-												<li>
-													<a
-														href={hrefFor(tree.audience, child.slug)}
-														class="page-link sub"
-														class:active={isActive(child, tree.audience)}
-													>
-														{child.title}
-													</a>
+							{#each grouped.ungrouped as item (item.id)}
+								{@render navItem(item, tree.audience)}
+							{/each}
+							{#each grouped.categories as cat (cat.name)}
+								<li class="cat-group">
+									<span class="cat-header">{cat.name}</span>
+									<ul class="page-list">
+										{#each cat.subcategories as sub (sub.name)}
+											{#if sub.name}
+												<li class="subcat-group">
+													<span class="subcat-header">{sub.name}</span>
+													<ul class="page-list">
+														{#each sub.items as item (item.id)}
+															{@render navItem(item, tree.audience)}
+														{/each}
+													</ul>
 												</li>
-											{/each}
-										</ul>
-									{/if}
+											{:else}
+												{#each sub.items as item (item.id)}
+													{@render navItem(item, tree.audience)}
+												{/each}
+											{/if}
+										{/each}
+									</ul>
 								</li>
 							{/each}
 						</ul>
@@ -189,6 +208,33 @@
 		{/if}
 	</nav>
 </aside>
+
+{#snippet navItem(item: DocNavItem, audience: DocAudience)}
+	<li>
+		<a
+			href={hrefFor(audience, item.slug)}
+			class="page-link"
+			class:active={isActive(item, audience)}
+		>
+			{item.title}
+		</a>
+		{#if item.children && item.children.length > 0}
+			<ul class="sub-list">
+				{#each item.children as child (child.id)}
+					<li>
+						<a
+							href={hrefFor(audience, child.slug)}
+							class="page-link sub"
+							class:active={isActive(child, audience)}
+						>
+							{child.title}
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</li>
+{/snippet}
 
 <style>
 	.nav {
@@ -303,6 +349,47 @@
 
 	/* Expanded sections (Stripe-docs style) */
 	.section { margin-bottom: 0.25rem; }
+	.section-header-row {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+	}
+	.section-header-row .section-header { flex: 1; min-width: 0; }
+	.new-page-btn {
+		display: grid;
+		place-items: center;
+		height: 1.5rem;
+		width: 1.5rem;
+		margin-right: 0.5rem;
+		border-radius: var(--radius);
+		color: var(--color-muted);
+		flex-shrink: 0;
+	}
+	.new-page-btn:hover { background: var(--color-surface-subtle); color: var(--color-primary); }
+
+	/* Category/subcategory group headers (§44 taxonomy) */
+	.cat-group { margin-top: 0.25rem; }
+	.cat-header {
+		display: block;
+		padding: 0.375rem 0.75rem 0.125rem 1rem;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--color-muted);
+	}
+	.subcat-group { margin-top: 0.125rem; }
+	.subcat-header {
+		display: block;
+		padding: 0.25rem 0.75rem 0.125rem 1.75rem;
+		font-size: 0.6875rem;
+		font-weight: 500;
+		color: var(--color-text-subtle);
+	}
+	.cat-group > .page-list > li > .page-link { padding-left: 1.75rem; }
+	.subcat-group .page-list .page-link { padding-left: 2.5rem; }
+	.subcat-group .page-list .page-link.sub { padding-left: 3rem; }
+
 	.section-header {
 		display: flex;
 		align-items: center;

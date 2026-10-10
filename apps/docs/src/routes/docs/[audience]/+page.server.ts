@@ -66,5 +66,8 @@ export const load: PageServerLoad = async (event) => {
 		})
 	});
 
-	return { audience, pages, labelKey, meta, isGated };
+	// docs.manage holders get the "New page" affordance (§44 in-app authoring).
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+
+	return { audience, pages, labelKey, meta, isGated, canEditDocs };
 };

@@ -9,6 +9,7 @@
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { page } from '$app/state';
+	import { CalendarClock, ChevronRight, Clock, ListTree } from 'lucide-svelte';
 	import { env } from '$env/dynamic/public';
 	import type { PageData } from './$types';
 
@@ -60,6 +61,22 @@
 			: ''
 	);
 	let exampleSample = $derived(requestSample);
+
+	// Doc-page meta parity with [audience]/[slug] — updated date + read time.
+	const localeTag = $derived((page.data?.locale as string | undefined) ?? 'en');
+	const readMinutes = $derived.by(() => {
+		const words = data.html.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
+		return Math.max(1, Math.round(words / 200));
+	});
+	const updatedLabel = $derived(
+		t('page.updated', 'Updated {date}', {
+			date: new Date(data.page.updated_at).toLocaleDateString(localeTag, {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric'
+			})
+		})
+	);
 </script>
 
 <svelte:head>
@@ -130,7 +147,11 @@
 
 	<article class="doc-article">
 		<header class="doc-header">
-			<a href="/docs/api" class="back-link">← {t('audience.api')}</a>
+			<nav class="breadcrumb" aria-label="Breadcrumb">
+				<a href="/docs" class="crumb">{t('audience.overview')}</a>
+				<ChevronRight size={12} class="crumb-sep" />
+				<a href="/docs/api" class="crumb">{t('audience.api')}</a>
+			</nav>
 			<h1>{data.page.title}</h1>
 			{#if data.operation}
 				<div class="op-line">
@@ -138,7 +159,24 @@
 					<code class="op-path">{path}</code>
 				</div>
 			{/if}
+			<div class="doc-meta">
+				<span class="meta-item"><CalendarClock size={13} />{updatedLabel}</span>
+				<span class="meta-item"><Clock size={13} />{t('page.read_time', '{min} min read', { min: String(readMinutes) })}</span>
+			</div>
 		</header>
+
+		{#if data.toc.length > 0}
+			<details class="mobile-toc">
+				<summary><ListTree size={15} />{t('page.table_of_contents')}</summary>
+				<ul>
+					{#each data.toc as h (h.id)}
+						<li class:level-3={h.level === 3}>
+							<a href="#{h.id}">{h.text}</a>
+						</li>
+					{/each}
+				</ul>
+			</details>
+		{/if}
 
 		<div class="prose">
 			<DocContent
@@ -159,20 +197,87 @@
 		margin: 0 auto;
 		padding: 2.5rem 1.5rem 4rem;
 	}
-	.doc-header { margin-bottom: 1.5rem; }
-	.back-link {
+	.doc-header {
+		margin-bottom: 2rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+	.breadcrumb {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.375rem;
 		font-size: 0.8125rem;
+		margin-bottom: 0.5rem;
+	}
+	.crumb {
 		color: var(--color-muted);
 		text-decoration: none;
 	}
-	.back-link:hover { color: var(--color-primary); }
+	.crumb:hover { color: var(--color-primary); }
+	.breadcrumb :global(.crumb-sep) { color: var(--color-muted); flex-shrink: 0; }
 	.doc-header h1 {
 		font-family: var(--font-sans);
-		font-size: 2.25rem;
+		font-size: 2rem;
 		font-weight: 700;
 		color: var(--color-text);
 		margin: 0.5rem 0 0;
 		letter-spacing: -0.02em;
+		line-height: 1.2;
+	}
+	.doc-meta {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
+		margin-top: 0.875rem;
+	}
+	.meta-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-size: 0.8125rem;
+		color: var(--color-muted);
+	}
+	/* Mobile TOC — the right code pane hides below 1280px. */
+	.mobile-toc { display: none; }
+	@media (max-width: 1279px) {
+		.mobile-toc {
+			display: block;
+			margin-bottom: 1.75rem;
+			border: 1px solid var(--color-border);
+			border-radius: var(--radius-card);
+			background: var(--color-surface);
+			padding: 0.75rem 1rem;
+		}
+		.mobile-toc summary {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+			font-size: 0.8125rem;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: var(--color-muted);
+			cursor: pointer;
+			list-style: none;
+		}
+		.mobile-toc summary::-webkit-details-marker { display: none; }
+		.mobile-toc ul {
+			list-style: none;
+			padding: 0;
+			margin: 0.75rem 0 0;
+			display: flex;
+			flex-direction: column;
+			gap: 0.25rem;
+		}
+		.mobile-toc a {
+			font-size: 0.875rem;
+			color: var(--color-text-subtle);
+			text-decoration: none;
+		}
+		.mobile-toc a:hover { color: var(--color-primary); }
+		.mobile-toc li.level-3 a { padding-left: 1rem; font-size: 0.8125rem; }
 	}
 	.op-line {
 		display: flex;

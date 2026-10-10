@@ -113,6 +113,10 @@ export interface DocPage {
 	last_reviewed_at?: string | null;
 	parent_id?: string | null;
 	position: number;
+	/** Free-text grouping label inside the audience (§44 taxonomy). */
+	category?: string | null;
+	/** Optional second-level grouping label inside `category`. */
+	subcategory?: string | null;
 	created_at: string;
 	updated_at: string;
 	/** Breadcrumb chain (audience → parents → current). Ref: §44. */
@@ -141,6 +145,8 @@ export interface DocPageSummary {
 	review_status: string;
 	parent_id?: string | null;
 	position: number;
+	category?: string | null;
+	subcategory?: string | null;
 	created_at: string;
 }
 
@@ -152,6 +158,8 @@ export interface DocNavItem {
 	audience: DocAudience;
 	parent_id?: string | null;
 	position: number;
+	category?: string | null;
+	subcategory?: string | null;
 	children?: DocNavItem[];
 }
 
@@ -167,7 +175,33 @@ export interface DocSearchResult {
 	title: string;
 	slug: string;
 	audience: DocAudience;
+	category?: string | null;
+	subcategory?: string | null;
 	excerpt: string;
+}
+
+/** POST /api/v1/admin/docs/pages — create a doc page (docs.manage). */
+export interface DocPageCreateRequest {
+	title: string;
+	slug: string;
+	audience: DocAudience;
+	/** TipTap JSON document object. */
+	content?: unknown;
+	review_status?: string;
+	parent_id?: string | null;
+	position?: number;
+	category?: string | null;
+	subcategory?: string | null;
+}
+
+/** PATCH /api/v1/admin/docs/pages/{id} — update a doc page (docs.manage). */
+export interface DocPageUpdateRequest {
+	title: string;
+	/** TipTap JSON document object. */
+	content?: unknown;
+	review_status: string;
+	category?: string | null;
+	subcategory?: string | null;
 }
 
 /* ------------------------------------------------------------------ *
