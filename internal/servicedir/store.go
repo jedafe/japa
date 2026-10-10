@@ -247,12 +247,12 @@ type ServiceRow struct {
 	// user_profiles join on the listing queries. Only meaningful when
 	// ListingKind == 'mentorship'; rowToDTO turns them into the mentor
 	// block on the listing payload.
-	AuthorDisplayName      *string
-	MentorIsMentor         *bool
-	MentorCapacity         *int16
+	AuthorDisplayName       *string
+	MentorIsMentor          *bool
+	MentorCapacity          *int16
 	MentorActiveMenteeCount *int16
-	MentorAreas            []string
-	MentorSince            pgtype.Timestamptz
+	MentorAreas             []string
+	MentorSince             pgtype.Timestamptz
 
 	// §111 package fields
 	ListingKind    string

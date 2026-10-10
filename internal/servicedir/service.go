@@ -2649,7 +2649,41 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	dto.Faqs = decodeListingFaqs(r.Faqs)
 	dto.Steps = decodeListingSteps(r.Steps)
 
+	// 000824 mentor block — only mentorship-kind listings carry it; the
+	// fields ride the author user_profiles join. A missing profile row
+	// degrades to is_mentor=false so the surface reads "unavailable".
+	if r.ListingKind == ListingKindMentorship {
+		dto.Mentor = mentorBlock(r)
+	}
+
 	return dto
+}
+
+// mentorBlock maps the author-profile join columns onto the mentor card
+// DTO. available_slots is capacity − active_mentee_count clamped ≥0 — a
+// NULL capacity (never configured) reads as zero slots.
+func mentorBlock(r ServiceRow) *MentorDTO {
+	m := &MentorDTO{
+		Username:    strOrEmpty(r.AuthorName),
+		DisplayName: strOrEmpty(r.AuthorDisplayName),
+		AvatarURL:   strOrEmpty(r.AuthorAvatar),
+		Areas:       r.MentorAreas,
+		MentorSince: formatTs(r.MentorSince),
+	}
+	if r.MentorIsMentor != nil {
+		m.IsMentor = *r.MentorIsMentor
+	}
+	if r.MentorCapacity != nil {
+		m.Capacity = int32(*r.MentorCapacity)
+	}
+	if r.MentorActiveMenteeCount != nil {
+		m.ActiveMenteeCount = int32(*r.MentorActiveMenteeCount)
+	}
+	if slots := m.Capacity - m.ActiveMenteeCount; slots > 0 {
+		m.AvailableSlots = slots
+	}
+
+	return m
 }
 
 // metaToDTO converts a content row + service_listing_meta into a ServiceDTO.
