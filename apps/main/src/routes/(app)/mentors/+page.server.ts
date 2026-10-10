@@ -12,5 +12,12 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, { code: 'feature_disabled', message: 'Mentorship is not available' });
 	}
 
-	throw redirect(308, '/services?kind=mentorship');
+	// Preserve the legacy filters that map onto the services directory
+	// (dest, sort, page). `areas` has no services-side equivalent.
+	const target = new URLSearchParams({ kind: 'mentorship' });
+	for (const key of ['dest', 'sort', 'page'] as const) {
+		const value = event.url.searchParams.get(key)?.trim();
+		if (value) target.set(key, value);
+	}
+	throw redirect(308, `/services?${target.toString()}`);
 };

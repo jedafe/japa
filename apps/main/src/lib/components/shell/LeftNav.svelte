@@ -70,7 +70,12 @@
 
 	function isActive(url: string): boolean {
 		if (url === '/') return page.url.pathname === '/';
-		return page.url.pathname === url || page.url.pathname.startsWith(url + '/');
+		const [path, query] = url.split('?');
+		const pathMatch = page.url.pathname === path || page.url.pathname.startsWith(path + '/');
+		if (!pathMatch || !query) return pathMatch;
+		// Query-string menu urls (e.g. /services?kind=mentorship) only stay
+		// active while the page carries the same params.
+		return [...new URLSearchParams(query)].every(([k, v]) => page.url.searchParams.get(k) === v);
 	}
 
 	// Deterministic hue per item (same hash convention as DirectoryCard /

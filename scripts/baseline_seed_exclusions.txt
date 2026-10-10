@@ -72,6 +72,8 @@ content_tags
 content_thread_links
 content_views
 coupon_events
+coupon_redemptions
+coupons
 academy_course_access_grants
 credential_community_notes
 crs_score_history
@@ -167,7 +169,11 @@ scholarships
 search_analytics
 security_scan_results
 service_bookings
+service_listing_coupons
 service_listing_meta
+service_package_departures
+service_package_items
+service_package_tiers
 slug_history
 sop_drafts
 space_members
