@@ -17,12 +17,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/worker"
@@ -990,6 +994,133 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 		// kind=package stays directory-gated even with packages on.
 		if code, _ := list(fakeFlags{"service_packages.enabled": true}, "kind=package&q=T4+t4"); code != http.StatusNotFound {
 			t.Errorf("kind=package with directory off: got %d, want 404", code)
+		}
+	})
+}
+
+// readThroughContent satisfies the ContentService seam for tests that
+// exercise EditOwn/loadListingForEdit: reads run the real contents query,
+// writes fail — the mentorship-kind refusal in EditOwn fires before any
+// write path is reached.
+type readThroughContent struct{ q *gen.Queries }
+
+func (r *readThroughContent) CreateContent(context.Context, content.CreateContentInput) (gen.CreateContentRow, error) {
+	return gen.CreateContentRow{}, errors.New("readThroughContent: writes are unsupported in tests")
+}
+
+func (r *readThroughContent) GetContent(ctx context.Context, id pgtype.UUID) (gen.GetContentByIDRow, error) {
+	return r.q.GetContentByID(ctx, id)
+}
+
+func (r *readThroughContent) UpdateContent(context.Context, pgtype.UUID, pgtype.UUID, content.UpdateContentInput, bool) (gen.UpdateContentRow, error) {
+	return gen.UpdateContentRow{}, errors.New("readThroughContent: writes are unsupported in tests")
+}
+
+func (r *readThroughContent) DeleteContent(context.Context, pgtype.UUID) error {
+	return errors.New("readThroughContent: writes are unsupported in tests")
+}
+
+// TestMentorshipKindCreateEditGuard_LiveDB pins the 000824 shadow-listing
+// write guards from the final review: POST /services must not mint a
+// listing_kind='mentorship' row (shadow minting belongs to the mentor-
+// profile opt-in path only), and PATCH /services/:id must not edit a
+// shadow row — a mentor rewriting their own shadow would desync it from
+// the mentor profile it mirrors.
+func TestMentorshipKindCreateEditGuard_LiveDB(t *testing.T) {
+	ctx := t.Context()
+	database := liveDB(t)
+	uniq := uniqSlug("mguard-")
+
+	svc := newTestService(database, fakeFlags{"service_directory.enabled": true})
+	svc.content = &readThroughContent{q: gen.New(database.Reader)}
+
+	mentorID := insertTestUser(t, database, "t4mentor"+uniq)
+	strangerID := insertTestUser(t, database, "t4stranger"+uniq)
+	setMentor(t, database, mentorID, 3, 0)
+	menContentID, _ := insertListing(t, database, mentorID, ListingKindMentorship, "mentorship", "t4men-"+uniq)
+	svcContentID, _ := insertListing(t, database, mentorID, ListingKindService, "other", "t4svc-"+uniq)
+
+	t.Run("create rejects listing_kind=mentorship", func(t *testing.T) {
+		_, err := svc.Create(ctx, mentorID, CreateServiceInput{
+			Title:           "T4 forged shadow",
+			ServiceCategory: "other",
+			ListingKind:     ListingKindMentorship,
+		}, false)
+		if !errors.Is(err, ErrMentorshipListingManaged) {
+			t.Fatalf("expected ErrMentorshipListingManaged, got %v", err)
+		}
+
+		// No forged shadow may exist beyond the fixture row.
+		row, err := svc.store.GetMentorshipListing(ctx, mentorID)
+		if err != nil {
+			t.Fatalf("shadow lookup: %v", err)
+		}
+		if row.ID != menContentID {
+			t.Fatalf("mentor has a second shadow %s — forged row was written", row.ID)
+		}
+	})
+
+	t.Run("create still rejects unknown kinds", func(t *testing.T) {
+		_, err := svc.Create(ctx, mentorID, CreateServiceInput{
+			Title:           "T4 bogus",
+			ServiceCategory: "other",
+			ListingKind:     "bogus",
+		}, false)
+		if !errors.Is(err, ErrInvalidListingKind) {
+			t.Fatalf("expected ErrInvalidListingKind, got %v", err)
+		}
+	})
+
+	t.Run("edit refuses the author's own shadow", func(t *testing.T) {
+		title := "T4 rewritten shadow"
+		_, err := svc.EditOwn(ctx, menContentID, mentorID, EditServiceInput{Title: &title}, false, false)
+		if !errors.Is(err, ErrMentorshipListingManaged) {
+			t.Fatalf("expected ErrMentorshipListingManaged, got %v", err)
+		}
+	})
+
+	t.Run("edit refuses shadows for service.edit_any too", func(t *testing.T) {
+		title := "T4 rewritten shadow"
+		_, err := svc.EditOwn(ctx, menContentID, strangerID, EditServiceInput{Title: &title}, true, true)
+		if !errors.Is(err, ErrMentorshipListingManaged) {
+			t.Fatalf("expected ErrMentorshipListingManaged, got %v", err)
+		}
+	})
+
+	t.Run("non-owner edit on a service listing still returns not_owner", func(t *testing.T) {
+		title := "T4 hijack"
+		_, err := svc.EditOwn(ctx, svcContentID, strangerID, EditServiceInput{Title: &title}, false, false)
+		if !errors.Is(err, ErrNotOwner) {
+			t.Fatalf("expected ErrNotOwner, got %v", err)
+		}
+	})
+
+	t.Run("PATCH handler surfaces 400 mentorship_listing_managed", func(t *testing.T) {
+		h := &Handlers{service: svc}
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/services/"+menContentID.String(),
+			strings.NewReader(`{"title":"T4 rewritten shadow"}`))
+		req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey,
+			&auth.AuthenticatedUser{UserID: mentorID}))
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", menContentID.String())
+		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+		rec := httptest.NewRecorder()
+		h.HandleEdit(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("got %d, want 400: %s", rec.Code, rec.Body.String())
+		}
+		var body struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+			t.Fatalf("decode error body: %v", err)
+		}
+		if body.Error.Code != "mentorship_listing_managed" {
+			t.Fatalf("error code = %q, want mentorship_listing_managed", body.Error.Code)
 		}
 	})
 }

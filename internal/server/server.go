@@ -7114,12 +7114,46 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			})
 
 			// Section 98 — Service Directory (ADR-106)
-			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
-				r.Get("/services/categories", serviceDirHandlers.HandleCategories)
+			//
+			// 000824 — two flag scopes. Routes that serve mentorship-kind
+			// listings/bookings sit under the composite
+			// service_directory.enabled OR mentorship.enabled gate so a
+			// mentorship-only deployment keeps its unified surfaces; the
+			// kind-appropriate flag checks then run inside the handlers
+			// (packages can't outlive the directory flag — a non-mentorship
+			// listing still 404s while the directory is off). Directory/
+			// packages-only routes keep the single-flag gate.
+			r.With(features.GateAny(featureChecker, "service_directory.enabled", "mentorship.enabled")).Group(func(r chi.Router) {
 				r.Get("/services", serviceDirHandlers.HandleList)
 				// Global OptionalAuth already populates the viewer context —
 				// ?raw=1 (editor view) reads it; guests get the published-only path.
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)
+
+				// Section 111 + 000824 — the unified bookings surfaces.
+				// HandleCreateBooking resolves the listing and applies the
+				// kind-appropriate gate (mentorship.enabled for mentorship-
+				// kind rows, service_packages.enabled otherwise); the
+				// /me/service-bookings read/cancel/respond handlers serve
+				// both package and mentorship bookings behind the same
+				// composite logic.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()),
+					rbac.RequirePermission(rbacResolver, "service.booking.create"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)). // Rule 9: fee checkout is financial
+					Post("/services/{id}/bookings", serviceDirHandlers.HandleCreateBooking)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/service-bookings", serviceDirHandlers.HandleMyBookings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
+				// 000824 — provider responds to a user-owned (mentorship)
+				// booking: accept|decline|complete.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
+					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
+			})
+
+			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
+				r.Get("/services/categories", serviceDirHandlers.HandleCategories)
 				// Public paginated reviews for a listing (§114) — same
 				// anonymous-readable shape as /spaces/{id}/reviews; {id} is
 				// the listing's contents id.
@@ -7157,35 +7191,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/admin/service-categories/{slug}", serviceDirHandlers.HandleAdminDeleteCategory)
 
 				// Section 111 — Service Packages & Bookings (ADR-123).
-				// Handlers self-gate on service_packages.enabled (404 when
-				// off); this group inherits the directory flag so packages
-				// can't outlive their parent feature.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()),
-					rbac.RequirePermission(rbacResolver, "service.booking.create"),
-					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)). // Rule 9: fee checkout is financial
-					Post("/services/{id}/bookings", serviceDirHandlers.HandleCreateBooking)
+				// The packages-only routes below self-gate on
+				// service_packages.enabled in the handler (404 when off);
+				// this group keeps the directory flag so packages can't
+				// outlive their parent feature. Routes that also serve
+				// mentorship-kind rows live in the composite-gate group
+				// above.
 				// Live quote for the booking modal (?tier_id=&coupon_code=)
 				// — read-only; coupon rejections return 200 coupon_valid:false.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 					Get("/services/{id}/price-preview", serviceDirHandlers.HandlePricePreview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/services/{id}/departures", serviceDirHandlers.HandlePackageDepartures)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Get("/me/service-bookings", serviceDirHandlers.HandleMyBookings)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
 				// §111 checkout resume — re-initiates a provider session, so
 				// Rule 9 applies: permission node + Idempotency-Key required.
+				// pay/dispute are pure-packages surfaces (mentorship bookings
+				// are inquiry-only — no fee, no dispute arm), so they stay
+				// directory-gated like the other package routes.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()),
 					rbac.RequirePermission(rbacResolver, "service.booking.create"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/pay", serviceDirHandlers.HandleMyBookingPay)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
-				// 000824 — provider responds to a user-owned (mentorship)
-				// booking: accept|decline|complete.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
-					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
 				// §111 booker dispute — report a problem on a confirmed|fulfilled booking.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()),
 					rbac.RequirePermission(rbacResolver, "service.booking.create")).

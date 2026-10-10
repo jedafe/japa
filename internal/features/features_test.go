@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -122,9 +124,11 @@ func TestRegistryHasChecklistEnabled(t *testing.T) {
 }
 
 // TestRegistryCoversAllGatedKeys parses server.go for
-// features.Gate(featureChecker, "key") literals and asserts each key exists in
-// Registry. This keeps the registry from drifting out of sync with the routes
-// it gates — a new Gate call without a Registry entry fails this test.
+// features.Gate(featureChecker, "key") and
+// features.GateAny(featureChecker, "key", ...) literals and asserts each
+// key exists in Registry. This keeps the registry from drifting out of
+// sync with the routes it gates — a new Gate/GateAny call without a
+// Registry entry fails this test.
 func TestRegistryCoversAllGatedKeys(t *testing.T) {
 	t.Parallel()
 
@@ -141,14 +145,17 @@ func TestRegistryCoversAllGatedKeys(t *testing.T) {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Gate" {
+		if !ok || (sel.Sel.Name != "Gate" && sel.Sel.Name != "GateAny") {
 			return true
 		}
 		if len(call.Args) < 2 {
 			return true
 		}
-		if lit, ok := call.Args[1].(*ast.BasicLit); ok {
-			gated = append(gated, strings.Trim(lit.Value, `"`))
+		// Gate takes one key (arg 1); GateAny is variadic (args 1..n).
+		for _, arg := range call.Args[1:] {
+			if lit, ok := arg.(*ast.BasicLit); ok {
+				gated = append(gated, strings.Trim(lit.Value, `"`))
+			}
 		}
 		return true
 	})
@@ -162,6 +169,80 @@ func TestRegistryCoversAllGatedKeys(t *testing.T) {
 			t.Errorf("gated flag %q missing from Registry", key)
 		}
 	}
+}
+
+// TestGateAny covers the composite-gate middleware: the request passes
+// when ANY listed flag resolves enabled for the caller, and 404s with
+// feature_disabled only when every key is off (or no keys are given).
+// Flag state is seeded into the checker's L1 cache — an unseeded key
+// falls through to its Registry default (all gated keys default off).
+func TestGateAny(t *testing.T) {
+	t.Parallel()
+
+	newChecker := func(seeded map[string]bool) *Checker {
+		c := &Checker{
+			cache: &flagCache{entries: make(map[string]*flagCacheEntry)},
+		}
+		for k, v := range seeded {
+			c.cacheSet(k, v, nil)
+		}
+		return c
+	}
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	serve := func(c *Checker, keys ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		rec := httptest.NewRecorder()
+		GateAny(c, keys...)(next).ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("second key enabled passes", func(t *testing.T) {
+		t.Parallel()
+		c := newChecker(map[string]bool{"mentorship.enabled": true})
+		if rec := serve(c, "service_directory.enabled", "mentorship.enabled"); rec.Code != http.StatusNoContent {
+			t.Fatalf("got %d, want 204", rec.Code)
+		}
+	})
+
+	t.Run("first key enabled passes", func(t *testing.T) {
+		t.Parallel()
+		c := newChecker(map[string]bool{"service_directory.enabled": true})
+		if rec := serve(c, "service_directory.enabled", "mentorship.enabled"); rec.Code != http.StatusNoContent {
+			t.Fatalf("got %d, want 204", rec.Code)
+		}
+	})
+
+	t.Run("all disabled returns 404 feature_disabled", func(t *testing.T) {
+		t.Parallel()
+		c := newChecker(nil)
+		rec := serve(c, "service_directory.enabled", "mentorship.enabled")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("got %d, want 404", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "feature_disabled") {
+			t.Fatalf("body missing feature_disabled: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("explicitly seeded-off key still 404s alongside an off default", func(t *testing.T) {
+		t.Parallel()
+		c := newChecker(map[string]bool{"service_directory.enabled": false})
+		if rec := serve(c, "service_directory.enabled", "mentorship.enabled"); rec.Code != http.StatusNotFound {
+			t.Fatalf("got %d, want 404", rec.Code)
+		}
+	})
+
+	t.Run("empty keys list always 404s", func(t *testing.T) {
+		t.Parallel()
+		c := newChecker(map[string]bool{"service_directory.enabled": true})
+		if rec := serve(c); rec.Code != http.StatusNotFound {
+			t.Fatalf("got %d, want 404", rec.Code)
+		}
+	})
 }
 
 func TestChecker_CloseIsIdempotent(t *testing.T) {

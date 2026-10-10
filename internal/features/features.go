@@ -969,3 +969,31 @@ func Gate(checker *Checker, key string) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// GateAny is HTTP middleware that passes when ANY of the given feature
+// keys is enabled for the caller — the composite gate for unified routes
+// that serve more than one feature (e.g. the §111/000824 services +
+// mentorship surfaces, reachable while service_directory.enabled OR
+// mentorship.enabled is on so mentorship-only deployments keep their
+// unified inbox/listing routes). Each key is evaluated with the caller's
+// full scope exactly like Gate; only when EVERY key is disabled does the
+// middleware return the 404 feature_disabled contract (ADR-042). An empty
+// keys list always 404s.
+// This MUST be used inside the platform middleware group so platform
+// context is available.
+// Ref: docs/superpowers/specs/2026-10-07-unified-feature-rollout-design.md §5.4.
+func GateAny(checker *Checker, keys ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sc := checker.BuildScope(r, SurfaceFrom(r))
+			for _, key := range keys {
+				if checker.EvalFlag(r.Context(), key, sc).Enabled {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			errpkg.WriteError(w, http.StatusNotFound, "feature_disabled", "This feature is not available")
+		})
+	}
+}

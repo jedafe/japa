@@ -627,6 +627,13 @@ var (
 	// ErrSelfMentorship — the booker is the listing's own author/provider
 	// (400 cannot_self_mentor).
 	ErrSelfMentorship = errors.New("cannot request mentorship from yourself")
+	// ErrMentorshipListingManaged — a write tried to mint or mutate a
+	// listing_kind='mentorship' row through the public create/edit paths.
+	// Shadow listings are managed exclusively by the mentor-profile
+	// pipeline (EnsureMentorShadowListing / RetireMentorShadowListing via
+	// PATCH /me/mentor-profile) so the shadow always mirrors the mentor's
+	// profile (400 mentorship_listing_managed).
+	ErrMentorshipListingManaged = errors.New("mentorship listings are managed via the mentor profile")
 	// ErrCheckoutFieldsRequired — provider/email are required to open the
 	// platform-fee checkout on a paid booking (400 checkout_fields_required).
 	ErrCheckoutFieldsRequired = errors.New("checkout_fields_required")
@@ -908,6 +915,16 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 
 	if !IsValidListingKind(listingKind) {
 		return ServiceDTO{}, ErrInvalidListingKind
+	}
+
+	// 000824: 'mentorship' is a valid column value but not a client-
+	// selectable kind — a mentor's shadow listing is minted only by
+	// EnsureMentorShadowListing behind the mentorship opt-in +
+	// mentorship.become_mentor flow. Accepting it here would let any
+	// service.create holder forge a self-attributed shadow
+	// (provider_user_id = author) and bypass opt-in entirely.
+	if listingKind == ListingKindMentorship {
+		return ServiceDTO{}, ErrMentorshipListingManaged
 	}
 
 	isPackage := listingKind == ListingKindPackage
@@ -1949,6 +1966,17 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 	existing, meta, err := s.loadListingForEdit(ctx, contentID, userID, isEditAny)
 	if err != nil {
 		return ServiceDTO{}, err
+	}
+
+	// 000824: a mentorship-kind row is the mentor's shadow listing — its
+	// title/body/category mirror the mentor profile and must stay in sync
+	// with it, so the shared listing editor refuses them for everyone
+	// (author and service.edit_any alike). The mentor edits through
+	// PATCH /me/mentor-profile, which refreshes the shadow via
+	// EnsureMentorShadowListing; moderation runs through the contents
+	// status paths, not the listing editor.
+	if meta.ListingKind == ListingKindMentorship {
+		return ServiceDTO{}, ErrMentorshipListingManaged
 	}
 
 	isPackage := meta.ListingKind == ListingKindPackage
