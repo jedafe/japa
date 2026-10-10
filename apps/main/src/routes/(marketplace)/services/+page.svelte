@@ -345,7 +345,7 @@
 
 <!-- Edge gutters + vertical rhythm come from the (marketplace) layout's
      `marketplace-center` main — this wrapper only caps the content width. -->
-<div class="mx-auto w-full max-w-[1400px]">
+<div class="mx-auto mt-6 w-full max-w-[1400px] sm:mt-8">
 	<!-- Category pills -->
 	<div class="mb-5">
 		<CategoryPills
