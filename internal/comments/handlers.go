@@ -24,6 +24,10 @@ import (
 
 const defaultPageSize int32 = 20
 
+// maxBodyBytes caps TipTap JSON bodies on comment create+update (200KB).
+// Oversized payloads are rejected with 413 body_too_large.
+const maxBodyBytes = 200 * 1024
+
 // NotificationDispatcher dispatches notifications via the batch system
 // (Section 35 — consolidated from comment:notify_author/parent/mention
 // into notification:dispatch_batch per Section 11). The return type is
@@ -445,6 +449,7 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 		IsAnonymous bool    `json:"is_anonymous"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+1024)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -452,6 +457,11 @@ func (h *Handlers) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	if len(input.Body) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
+		return
+	}
+
+	if len(input.Body) > maxBodyBytes {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Comment body exceeds size limit")
 		return
 	}
 
@@ -568,6 +578,7 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 		Body []byte `json:"body"` // TipTap JSON
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+1024)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -576,6 +587,32 @@ func (h *Handlers) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	if len(input.Body) == 0 {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_body", "Comment body is required")
 		return
+	}
+
+	if len(input.Body) > maxBodyBytes {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Comment body exceeds size limit")
+		return
+	}
+
+	// Spam pipeline re-check — mirrors CreateComment: edited bodies must
+	// pass the same multi-layer safety check (BE-034). Route-level
+	// CensorMiddleware + EditLock stay in place; this is the semantic layer.
+	if h.SpamPipeline != nil {
+		clientIP := clientip.FromRequest(r)
+
+		spamResult, err := h.SpamPipeline.Check(r.Context(), spam.SpamCheckRequest{
+			Content:    string(input.Body),
+			UserID:     user.UserID,
+			IP:         clientIP,
+			UserType:   "existing",
+			EntityType: "comment",
+		})
+		if err != nil {
+			slog.Warn("spam check failed", "error", err)
+		} else if spamResult.Blocked {
+			errpkg.WriteError(w, http.StatusForbidden, "content_blocked", "Content blocked by safety filters")
+			return
+		}
 	}
 
 	comment, err := h.Service.UpdateComment(r.Context(), commentID, user.UserID, input.Body)

@@ -80,7 +80,12 @@ LIMIT @page_limit OFFSET @page_offset;
 -- upsert in UpdateMentorProfile (000824 unification).
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username
+ up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username,
+ -- 000829 mentor card fields (§114 detail-page rebuild).
+ up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
+ up.mentor_session_type, up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials, up.mentor_years_experience,
+ up.mentor_success_label
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 WHERE up.user_id = @user_id;
@@ -95,11 +100,27 @@ SET is_mentor = @is_mentor,
  mentor_capacity = @mentor_capacity,
  mentor_areas = @mentor_areas,
  mentor_bio = @mentor_bio,
+ -- 000829 mentor card fields — COALESCE so nil preserves the stored
+ -- value; the service layer maps absent → nil, empty → empty value.
+ mentor_title = COALESCE(sqlc.narg(mentor_title), mentor_title),
+ mentor_response_time = COALESCE(sqlc.narg(mentor_response_time), mentor_response_time),
+ mentor_availability = COALESCE(sqlc.narg(mentor_availability), mentor_availability),
+ mentor_session_type = COALESCE(sqlc.narg(mentor_session_type), mentor_session_type),
+ mentor_languages = COALESCE(sqlc.narg(mentor_languages), mentor_languages),
+ mentor_session_formats = COALESCE(sqlc.narg(mentor_session_formats), mentor_session_formats),
+ mentor_countries = COALESCE(sqlc.narg(mentor_countries), mentor_countries),
+ mentor_credentials = COALESCE(sqlc.narg(mentor_credentials), mentor_credentials),
+ mentor_years_experience = COALESCE(sqlc.narg(mentor_years_experience), mentor_years_experience),
+ mentor_success_label = COALESCE(sqlc.narg(mentor_success_label), mentor_success_label),
  mentor_since = CASE WHEN @is_mentor = true AND mentor_since IS NULL THEN now() ELSE mentor_since END,
  updated_at = now()
 WHERE user_id = @user_id
 RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
- mentor_areas, mentor_bio, mentor_since, display_name, avatar_url;
+ mentor_areas, mentor_bio, mentor_since, display_name, avatar_url,
+ mentor_title, mentor_response_time, mentor_availability,
+ mentor_session_type, mentor_languages, mentor_session_formats,
+ mentor_countries, mentor_credentials, mentor_years_experience,
+ mentor_success_label;
 
 -- name: GetMentorByUsername :one
 -- Get a mentor's public profile by username (is_mentor must be true).

@@ -27,7 +27,21 @@ sw.addEventListener('push', (event) => {
 
 	const title = payload.title ?? 'JapaConnect';
 	const body = payload.body ?? '';
-	const actionUrl = payload.action_url ? new URL(payload.action_url, sw.location.origin).toString() : sw.location.origin;
+	// Same-origin gate: a compromised notifier (or an API echoing a crafted
+	// content URL into the push payload) must not turn a trusted
+	// notification into a one-click phish. Cross-origin action_urls fall
+	// back to the app origin.
+	let actionUrl = sw.location.origin;
+	if (payload.action_url) {
+		try {
+			const parsed = new URL(payload.action_url, sw.location.origin);
+			if (parsed.origin === sw.location.origin) {
+				actionUrl = parsed.toString();
+			}
+		} catch {
+			// malformed URL — keep the origin fallback
+		}
+	}
 
 	const options: NotificationOptions = {
 		body,

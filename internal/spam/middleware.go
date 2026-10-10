@@ -194,7 +194,7 @@ func CensorMiddleware(database *db.DB, rdb *valkey.Client) func(http.Handler) ht
 func rewriteBodyFields(payload map[string]any, words []CensoredWord) ([]byte, bool) {
 	changed := false
 
-	for _, field := range []string{"body", "content", "title", "message", "text"} {
+	for _, field := range []string{"body", "content", "title", "message", "text", "description", "origin_community", "amount_range", "question", "reason", "slug", "name", "rules"} {
 		val, ok := payload[field]
 		if !ok {
 			continue
@@ -295,7 +295,7 @@ func extractBodyText(r *http.Request) (text string, payload map[string]any, rawB
 
 	var sb strings.Builder
 
-	for _, field := range []string{"body", "content", "title", "message", "text"} {
+	for _, field := range []string{"body", "content", "title", "message", "text", "description", "origin_community", "amount_range", "question", "reason", "slug", "name", "rules"} {
 		if val, ok := p[field]; ok {
 			if s, ok := val.(string); ok {
 				sb.WriteString(s)

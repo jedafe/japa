@@ -10,6 +10,7 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/impersonation"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -71,7 +72,16 @@ func BanEnforcement(rdb valkeycompat.Cmdable, isBanned func(ctx context.Context,
 				return
 			}
 
-			userID := user.UserID.String()
+			// Enforce against the EFFECTIVE user: when an admin impersonates
+			// a banned target, the ban must still apply to the target's
+			// identity. The real admin stays in auth.UserContextKey for
+			// audit; ResolveEffectiveUserID falls back to the real user
+			// when no impersonation is active.
+			effectiveID, _, _ := impersonation.ResolveEffectiveUserID(r.Context())
+			if !effectiveID.Valid {
+				effectiveID = user.UserID
+			}
+			userID := effectiveID.String()
 			cacheKey := valkey.MustKey("ban:%s", userID)
 
 			// Check Valkey cache for ban status. The cache is invalidated

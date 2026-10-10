@@ -20,13 +20,25 @@ import (
 
 // Provider defines the interface for payment providers.
 // Each provider must implement payment initiation, webhook verification,
-// and webhook event processing.
+// webhook event processing, and provider-side refunds.
 type Provider interface {
 	Name() string
 	InitiatePayment(ctx context.Context, req PaymentRequest) (PaymentResponse, error)
 	VerifyWebhookSignature(payload []byte, signature string) error
 	ProcessWebhookEvent(ctx context.Context, event WebhookEvent) error
+	// RefundPayment issues a provider-side refund for a captured payment.
+	// providerRef is the provider's transaction reference, amountMinor the
+	// refund amount in minor units (kobo/cents). Returns the provider's
+	// refund reference. Providers without a refund API return
+	// ErrRefundNotSupported so the caller keeps the refund pending for
+	// manual review instead of failing the whole flow.
+	RefundPayment(ctx context.Context, providerRef string, amountMinor int64) (string, error)
 }
+
+// ErrRefundNotSupported is returned by Provider.RefundPayment when the
+// provider has no refund API (NOWPayments invoices, manual transfer).
+// Callers treat this as "leave pending for manual review", not as a failure.
+var ErrRefundNotSupported = errors.New("provider does not support API refunds")
 
 // PaymentRequest holds parameters for initiating a payment.
 type PaymentRequest struct {
@@ -395,6 +407,67 @@ func (p *PaystackProvider) ProcessWebhookEvent(_ context.Context, event WebhookE
 	return nil
 }
 
+// RefundPayment issues a provider-side refund via POST /refund.
+// amountMinor is passed through in minor units (kobo), matching the
+// Paystack API contract.
+func (p *PaystackProvider) RefundPayment(ctx context.Context, providerRef string, amountMinor int64) (string, error) {
+	if p.secretKey == "" {
+		return "", errors.New("paystack secret key not configured")
+	}
+
+	if providerRef == "" {
+		return "", errors.New("provider reference is required")
+	}
+
+	payload := map[string]any{"transaction": providerRef}
+	if amountMinor > 0 {
+		payload["amount"] = amountMinor
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshaling paystack refund request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.paystack.co/refund", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("creating paystack refund request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+p.secretKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("paystack refund: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading paystack refund response: %w", err)
+	}
+
+	var apiResp struct {
+		Status  bool   `json:"status"`
+		Message string `json:"message"`
+		Data    struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return "", fmt.Errorf("parsing paystack refund response: %w", err)
+	}
+
+	if !apiResp.Status {
+		return "", fmt.Errorf("paystack refund error: %s", apiResp.Message)
+	}
+
+	return apiResp.Data.ID, nil
+}
+
 // ---------------------------------------------------------------------------
 // Stripe Provider
 // ---------------------------------------------------------------------------
@@ -664,6 +737,58 @@ func (p *StripeProvider) ProcessWebhookEvent(_ context.Context, event WebhookEve
 	return nil
 }
 
+// RefundPayment issues a provider-side refund via POST /v1/refunds.
+// amountMinor is passed through in minor units (cents), matching the
+// Stripe API contract. providerRef is the charge/payment-intent id.
+func (p *StripeProvider) RefundPayment(ctx context.Context, providerRef string, amountMinor int64) (string, error) {
+	if p.secretKey == "" {
+		return "", errors.New("stripe secret key not configured")
+	}
+
+	if providerRef == "" {
+		return "", errors.New("provider reference is required")
+	}
+
+	form := "charge=" + url.QueryEscape(providerRef)
+	if amountMinor > 0 {
+		form += "&amount=" + strconv.FormatInt(amountMinor, 10)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.stripe.com/v1/refunds", strings.NewReader(form))
+	if err != nil {
+		return "", fmt.Errorf("creating stripe refund request: %w", err)
+	}
+
+	httpReq.SetBasicAuth(p.secretKey, "")
+	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("stripe refund: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading stripe refund response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("stripe refund error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var refundResp struct {
+		ID string `json:"id"`
+	}
+
+	if err := json.Unmarshal(respBody, &refundResp); err != nil {
+		return "", fmt.Errorf("parsing stripe refund response: %w", err)
+	}
+
+	return refundResp.ID, nil
+}
+
 // ---------------------------------------------------------------------------
 // NOWPayments Provider
 // ---------------------------------------------------------------------------
@@ -789,6 +914,13 @@ func (p *NOWPaymentsProvider) ProcessWebhookEvent(_ context.Context, event Webho
 	return nil
 }
 
+// RefundPayment is unsupported: NOWPayments invoices have no refund API.
+// Returns ErrRefundNotSupported so the caller keeps the refund pending
+// for manual review instead of failing the flow.
+func (p *NOWPaymentsProvider) RefundPayment(_ context.Context, _ string, _ int64) (string, error) {
+	return "", ErrRefundNotSupported
+}
+
 // ---------------------------------------------------------------------------
 // Manual Transfer Provider
 // ---------------------------------------------------------------------------
@@ -826,4 +958,11 @@ func (p *ManualTransferProvider) VerifyWebhookSignature(_ []byte, _ string) erro
 func (p *ManualTransferProvider) ProcessWebhookEvent(_ context.Context, _ WebhookEvent) error {
 	// Manual transfers don't have webhooks
 	return nil
+}
+
+// RefundPayment is unsupported: manual transfers settle off-platform.
+// Returns ErrRefundNotSupported so the caller keeps the refund pending
+// for manual review instead of failing the flow.
+func (p *ManualTransferProvider) RefundPayment(_ context.Context, _ string, _ int64) (string, error) {
+	return "", ErrRefundNotSupported
 }

@@ -112,6 +112,9 @@ type BookingBackend interface {
 	EnsureMentorShadowListing(ctx context.Context, authorID pgtype.UUID, in servicedir.MentorShadowInput) (pgtype.UUID, error)
 	// RetireMentorShadowListing soft-deletes the shadow and clears the link.
 	RetireMentorShadowListing(ctx context.Context, authorID pgtype.UUID) error
+	// MentorShadowContent reads the shadow listing's decoded page content
+	// back for the profile GET — nil means no shadow exists.
+	MentorShadowContent(ctx context.Context, mentorID pgtype.UUID) (*servicedir.MentorShadowContentDTO, error)
 }
 
 // errBackendUnavailable is returned when a connection/shadow path runs
@@ -347,6 +350,52 @@ type MentorProfile struct {
 	MentorSince       pgtype.Timestamptz `json:"mentor_since"`
 	DisplayName       *string            `json:"display_name"`
 	AvatarURL         *string            `json:"avatar_url"`
+
+	// 000829 mentor card fields (§114 detail-page rebuild) — surfaced on
+	// the mentorship listing's mentor block via the shadow listing join.
+	Location        *string  `json:"location,omitempty"`
+	MentorTitle     *string  `json:"mentor_title,omitempty"`
+	ResponseTime    *string  `json:"mentor_response_time,omitempty"`
+	Availability    *string  `json:"mentor_availability,omitempty"`
+	SessionType     *string  `json:"mentor_session_type,omitempty"`
+	Languages       []string `json:"mentor_languages,omitempty"`
+	SessionFormats  []string `json:"mentor_session_formats,omitempty"`
+	Countries       []string `json:"mentor_countries,omitempty"`
+	Credentials     []string `json:"mentor_credentials,omitempty"`
+	YearsExperience *int16   `json:"mentor_years_experience,omitempty"`
+	SuccessLabel    *string  `json:"mentor_success_label,omitempty"`
+
+	// ShadowContent carries the mentor's shadow-listing page content on
+	// GET /me/mentor-profile so the settings editor seeds and PATCH
+	// values round-trip (§114 2026-10-10). Absent when no shadow exists.
+	ShadowContent *servicedir.MentorShadowContentDTO `json:"shadow_content,omitempty"`
+}
+
+// MentorCardInput carries the 000829 mentor-card fields plus the shadow
+// listing's page content on PATCH /me/mentor-profile. Profile fields:
+// nil preserves the stored value; "" clears a text field. The shadow
+// content fields follow the servicedir replace-on-save contract (nil
+// preserves, [] clears).
+type MentorCardInput struct {
+	Title           *string
+	ResponseTime    *string
+	Availability    *string
+	SessionType     *string
+	Languages       *[]string
+	SessionFormats  *[]string
+	Countries       *[]string
+	Credentials     *[]string
+	YearsExperience *int16
+	SuccessLabel    *string
+
+	SellingPoints *[]servicedir.ServiceIconEntryInput
+	Facts         *[]servicedir.ServiceFactInput
+	Highlights    *[]string
+	Audience      *[]string
+	Included      *[]servicedir.ServiceIconEntryInput
+	Faqs          *[]servicedir.ServiceFaqInput
+	Steps         *[]servicedir.ServiceStepInput
+	Tiers         *[]servicedir.TierInput
 }
 
 // MentorSummary is a mentor's public card for discovery and comparison.
@@ -401,6 +450,9 @@ var (
 	// ErrInvalidDestination surfaces servicedir's destination_space_id
 	// validation (malformed uuid or unknown space).
 	ErrInvalidDestination = errors.New("invalid destination space")
+	// ErrInvalidMentorField — a 000829 mentor-card field failed its range
+	// check (400 invalid_input).
+	ErrInvalidMentorField = errors.New("invalid mentor field")
 )
 
 // SetEnqueuer wires the Asynq enqueuer for mentor:generate_embedding tasks.
@@ -460,6 +512,18 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 		return MentorProfile{}, fmt.Errorf("getting mentor profile: %w", err)
 	}
 
+	// 000829: the settings editor needs the shadow listing's page content
+	// to seed its structured-content fields — best-effort read through
+	// the servicedir seam (nil backend keeps program/match surfaces).
+	var shadow *servicedir.MentorShadowContentDTO
+	if s.bookings != nil {
+		var err error
+		shadow, err = s.bookings.MentorShadowContent(ctx, userID)
+		if err != nil {
+			return MentorProfile{}, fmt.Errorf("getting mentor shadow content: %w", err)
+		}
+	}
+
 	return MentorProfile{
 		UserID: row.UserID,
 
@@ -472,13 +536,26 @@ func (s *Service) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Men
 		MentorSince:       row.MentorSince,
 		DisplayName:       row.DisplayName,
 		AvatarURL:         row.AvatarUrl,
+		Location:          row.Location,
+		MentorTitle:       row.MentorTitle,
+		ResponseTime:      row.MentorResponseTime,
+		Availability:      row.MentorAvailability,
+		SessionType:       row.MentorSessionType,
+		Languages:         row.MentorLanguages,
+		SessionFormats:    row.MentorSessionFormats,
+		Countries:         row.MentorCountries,
+		Credentials:       row.MentorCredentials,
+		YearsExperience:   row.MentorYearsExperience,
+		SuccessLabel:      row.MentorSuccessLabel,
+		ShadowContent:     shadow,
 	}, nil
 }
 
-// UpdateMentorProfile toggles is_mentor and sets capacity/areas/bio.
+// UpdateMentorProfile toggles is_mentor and sets capacity/areas/bio plus
+// the 000829 mentor-card fields and the shadow listing's page content.
 // PATCH /api/v1/me/mentor-profile
 // When mentor_bio changes, enqueues the mentor:generate_embedding task.
-func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, isMentor *bool, capacity *int16, areas []string, bio *string) (MentorProfile, error) {
+func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, isMentor *bool, capacity *int16, areas []string, bio *string, card MentorCardInput) (MentorProfile, error) {
 	// Fetch current values for merge.
 	current, err := s.read.GetMentorProfile(ctx,
 
@@ -522,14 +599,41 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 		mergedBio = bio
 	}
 
-	row, err := s.write.UpdateMentorProfile(ctx, gen.UpdateMentorProfileParams{
+	// 000829: bound years_experience to a sane range before the write.
+	if card.YearsExperience != nil && (*card.YearsExperience < 0 || *card.YearsExperience > 150) {
+		return MentorProfile{}, ErrInvalidMentorField
+	}
+
+	params := gen.UpdateMentorProfileParams{
 		IsMentor:       mergedIsMentor,
 		MentorCapacity: mergedCapacity,
 		MentorAreas:    mergedAreas,
 		MentorBio:      mergedBio,
+		// Mentor card fields — nil preserves via the query's COALESCE;
+		// a text "" clears, an empty array clears.
+		MentorTitle:           card.Title,
+		MentorResponseTime:    card.ResponseTime,
+		MentorAvailability:    card.Availability,
+		MentorSessionType:     card.SessionType,
+		MentorYearsExperience: card.YearsExperience,
+		MentorSuccessLabel:    card.SuccessLabel,
 
 		UserID: userID,
-	})
+	}
+	if card.Languages != nil {
+		params.MentorLanguages = *card.Languages
+	}
+	if card.SessionFormats != nil {
+		params.MentorSessionFormats = *card.SessionFormats
+	}
+	if card.Countries != nil {
+		params.MentorCountries = *card.Countries
+	}
+	if card.Credentials != nil {
+		params.MentorCredentials = *card.Credentials
+	}
+
+	row, err := s.write.UpdateMentorProfile(ctx, params)
 	if err != nil {
 		return MentorProfile{}, fmt.Errorf("updating mentor profile: %w", err)
 	}
@@ -560,6 +664,16 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 				Username:    current.Username,
 				DisplayName: displayName,
 				Bio:         bio,
+				// §114 2026-10-10: the shadow mirrors the structured page
+				// content the mentorship detail page renders.
+				SellingPoints: card.SellingPoints,
+				Facts:         card.Facts,
+				Highlights:    card.Highlights,
+				Audience:      card.Audience,
+				Included:      card.Included,
+				Faqs:          card.Faqs,
+				Steps:         card.Steps,
+				Tiers:         card.Tiers,
 			}); err != nil {
 				return MentorProfile{}, fmt.Errorf("sync mentor shadow listing: %w", err)
 			}
@@ -568,6 +682,17 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 			// never-synced profiles) — still run it unconditionally so a
 			// migrated orphan shadow can't outlive the opt-out.
 			return MentorProfile{}, fmt.Errorf("retire mentor shadow listing: %w", err)
+		}
+	}
+
+	// Read the shadow content back so the response mirrors what the
+	// editor just saved (a retired shadow resolves to nil).
+	var shadow *servicedir.MentorShadowContentDTO
+	if s.bookings != nil {
+		var err error
+		shadow, err = s.bookings.MentorShadowContent(ctx, userID)
+		if err != nil {
+			return MentorProfile{}, fmt.Errorf("getting mentor shadow content: %w", err)
 		}
 	}
 
@@ -583,6 +708,18 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 		MentorSince:       row.MentorSince,
 		DisplayName:       row.DisplayName,
 		AvatarURL:         row.AvatarUrl,
+		Location:          current.Location,
+		MentorTitle:       row.MentorTitle,
+		ResponseTime:      row.MentorResponseTime,
+		Availability:      row.MentorAvailability,
+		SessionType:       row.MentorSessionType,
+		Languages:         row.MentorLanguages,
+		SessionFormats:    row.MentorSessionFormats,
+		Countries:         row.MentorCountries,
+		Credentials:       row.MentorCredentials,
+		YearsExperience:   row.MentorYearsExperience,
+		SuccessLabel:      row.MentorSuccessLabel,
+		ShadowContent:     shadow,
 	}, nil
 }
 

@@ -11,6 +11,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveDeviceTokens = `-- name: CountActiveDeviceTokens :one
+SELECT COUNT(*)::int FROM device_tokens
+WHERE user_id = $1 AND is_active = true
+`
+
+func (q *Queries) CountActiveDeviceTokens(ctx context.Context, userID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countActiveDeviceTokens, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deregisterDeviceToken = `-- name: DeregisterDeviceToken :exec
 
 UPDATE device_tokens

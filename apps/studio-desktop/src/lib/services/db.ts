@@ -7,6 +7,7 @@
 import type { StudioSettings } from './settings';
 import type { FileState } from '$lib/types/queue';
 import type { SyncLogEntry } from '$lib/stores/sync-log.svelte';
+import { decryptSecret, encryptSecret, redactSecrets } from './secrets';
 
 const DB_PATH = 'sqlite:state.db';
 const PROJECT_ID = 'default';
@@ -132,10 +133,21 @@ class TauriDbAdapter implements StorageAdapter {
 			[PROJECT_ID]
 		)) as Array<Record<string, unknown>>;
 		if (!rows.length) return null;
-		return rowToSettings(rows[0]);
+		return await rowToSettings(rows[0]);
 	}
 
 	async saveSettings(settings: StudioSettings): Promise<void> {
+		// Secrets are AES-256-GCM encrypted at rest (see secrets.ts) — a
+		// raw state.db read yields ciphertext, never bearer tokens.
+		const [apiKey, accessToken, refreshToken] = await Promise.all([
+			settings.apiKey ? encryptSecret(settings.apiKey) : Promise.resolve(settings.apiKey),
+			settings.accessToken
+				? encryptSecret(settings.accessToken)
+				: Promise.resolve(settings.accessToken ?? null),
+			settings.refreshToken
+				? encryptSecret(settings.refreshToken)
+				: Promise.resolve(settings.refreshToken ?? null)
+		]);
 		await this.db.execute(
 			`INSERT OR REPLACE INTO projects (
 				id, name, watched_path, base_url, api_key, mode, auto_sync,
@@ -149,7 +161,7 @@ class TauriDbAdapter implements StorageAdapter {
 				settings.projectName,
 				settings.projectRoot,
 				settings.baseUrl,
-				settings.apiKey,
+				apiKey,
 				settings.mode,
 				settings.autoSync ? 1 : 0,
 				JSON.stringify(settings.autoSyncContentTypes ?? []),
@@ -161,8 +173,8 @@ class TauriDbAdapter implements StorageAdapter {
 				settings.default_status,
 				settings.default_visibility,
 				JSON.stringify(settings.default_tags ?? []),
-				settings.accessToken ?? null,
-				settings.refreshToken ?? null,
+				accessToken,
+				refreshToken,
 				settings.tokenExpiresAt ?? null,
 				settings.deviceId ?? null
 			]
@@ -272,11 +284,23 @@ class TauriDbAdapter implements StorageAdapter {
 
 class LocalStorageAdapter implements StorageAdapter {
 	async loadSettings(): Promise<StudioSettings | null> {
-		return readJson<StudioSettings>(SETTINGS_KEY);
+		// Secrets are never persisted to localStorage — only non-secret
+		// settings survive here (decrypt still runs for rows migrated from
+		// an older plaintext payload).
+		const stored = readJson<StudioSettings>(SETTINGS_KEY);
+		if (!stored) return null;
+		return {
+			...stored,
+			apiKey: (await decryptSecret(stored.apiKey)) ?? '',
+			accessToken: await decryptSecret(stored.accessToken),
+			refreshToken: await decryptSecret(stored.refreshToken)
+		};
 	}
 
 	async saveSettings(settings: StudioSettings): Promise<void> {
-		writeJson(SETTINGS_KEY, settings);
+		// Strip secrets before touching localStorage: in the browser/Vitest
+		// fallback they live in memory only for the session.
+		writeJson(SETTINGS_KEY, redactSecrets({ ...settings }));
 	}
 
 	async loadFileStates(): Promise<FileState[]> {
@@ -351,11 +375,11 @@ function writeJson<T>(key: string, value: T): void {
 	}
 }
 
-function rowToSettings(row: Record<string, unknown>): StudioSettings {
-	return {
+function rowToSettings(row: Record<string, unknown>): Promise<StudioSettings> {
+	return (async () => ({
 		projectName: String(row.name ?? ''),
 		baseUrl: String(row.base_url ?? ''),
-		apiKey: String(row.api_key ?? ''),
+		apiKey: (await decryptSecret(row.api_key ? String(row.api_key) : undefined)) ?? '',
 		projectRoot: String(row.watched_path ?? ''),
 		mode: (row.mode as StudioSettings['mode']) ?? 'operator',
 		autoSync: Boolean(row.auto_sync ?? 0),
@@ -368,11 +392,15 @@ function rowToSettings(row: Record<string, unknown>): StudioSettings {
 		default_status: (row.default_status as StudioSettings['default_status']) ?? 'draft',
 		default_visibility: (row.default_visibility as StudioSettings['default_visibility']) ?? 'public',
 		default_tags: parseJson(row.default_tags as string, []),
-		accessToken: row.access_token ? String(row.access_token) : undefined,
-		refreshToken: row.refresh_token ? String(row.refresh_token) : undefined,
+		accessToken: await decryptSecret(
+			row.access_token ? String(row.access_token) : undefined
+		),
+		refreshToken: await decryptSecret(
+			row.refresh_token ? String(row.refresh_token) : undefined
+		),
 		tokenExpiresAt: row.token_expires_at ? Number(row.token_expires_at) : undefined,
 		deviceId: row.device_id ? String(row.device_id) : undefined
-	};
+	}))();
 }
 
 function rowToFileState(row: Record<string, unknown>): FileState {

@@ -31,7 +31,13 @@ var privateIPRanges = []string{
 }
 
 // IsPrivateIP returns true if the given IP address is in a private/reserved range.
+// IPv4-mapped IPv6 forms (::ffff:127.0.0.1) are normalized to IPv4 first:
+// without To4, a 16-byte mapped address tested against a 4-byte CIDR can
+// miss and pass validation while the dialer treats it as 127.0.0.1.
 func IsPrivateIP(ip net.IP) bool {
+	if v4 := ip.To4(); v4 != nil {
+		ip = v4
+	}
 	for _, cidr := range privateIPRanges {
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {

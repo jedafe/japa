@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -16,6 +19,36 @@ import (
 )
 
 const defaultPageSize int32 = 20
+
+// validatePushEndpoint rejects subscription endpoints that would turn the
+// notifier into an SSRF sink. Web Push services are https-only; http is
+// rejected outright (no localhost exception — browsers require a secure
+// context for PushManager). Literal private/loopback IPs are rejected;
+// hostnames are resolved at send time by the push library, so DNS
+// rebinding past this check is bounded by the per-send timeout and the
+// fact that only an opaque encrypted payload (no VAPID secret) is sent.
+func validatePushEndpoint(endpoint string) error {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Host == "" {
+		return errors.New("endpoint must be a valid URL")
+	}
+
+	if u.Scheme != "https" {
+		return errors.New("endpoint must use https")
+	}
+
+	if u.User != nil {
+		return errors.New("endpoint must not embed credentials")
+	}
+
+	if ip := net.ParseIP(u.Hostname()); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return errors.New("endpoint must not target a private address")
+		}
+	}
+
+	return nil
+}
 
 // literalResolver resolves {{...}} template literals in user-facing text
 // fields (§14). Implemented by *literals.Catalog; nil disables resolution.
@@ -446,6 +479,16 @@ func (h *Handlers) HandlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 
 	if input.Auth == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_auth", "auth is required")
+		return
+	}
+
+	// Push endpoints are server-fetched on every notification: an
+	// attacker-supplied http://169.254.169.254/ endpoint turns the
+	// notifier into an SSRF sink that also leaks the VAPID JWT. Push
+	// services (FCM, Mozilla autopush) are https-only, so https is
+	// required; userinfo is rejected (credential leak into logs).
+	if err := validatePushEndpoint(input.Endpoint); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_endpoint", err.Error())
 		return
 	}
 

@@ -39,6 +39,11 @@ import (
 type SearchFetcher struct {
 	client   *http.Client
 	settings AdapterSettings
+	// allowPrivate relaxes the insert-time endpoint guard for httptest
+	// loopback servers. Set only via test-injected clients
+	// (NewCompositeWithClient); production wiring leaves it false and the
+	// SafeClient dial guard stays on regardless.
+	allowPrivate bool
 }
 
 // NewSearchFetcher returns a SearchFetcher backed by an SSRF-safe client
@@ -46,9 +51,9 @@ type SearchFetcher struct {
 // nil leaves the adapter disabled.
 func NewSearchFetcher(client *http.Client, settings AdapterSettings) *SearchFetcher {
 	if client == nil {
-		client = NewSafeClient(30*time.Second, defaultMaxBodySize)
+		return &SearchFetcher{client: NewSafeClient(30*time.Second, defaultMaxBodySize), settings: settings}
 	}
-	return &SearchFetcher{client: client, settings: settings}
+	return &SearchFetcher{client: client, settings: settings, allowPrivate: true}
 }
 
 // searchEndpoints are the built-in provider bases — overridable per
@@ -113,7 +118,7 @@ func (f *SearchFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	endpoint := strings.TrimRight(cfg.EndpointOverride, "/")
 	if endpoint == "" {
 		endpoint = searchEndpoints[provider]
-	} else if err := validateSearchEndpointOverride(endpoint); err != nil {
+	} else if err := f.validateSearchEndpointOverride(endpoint); err != nil {
 		return FetchResult{}, err
 	}
 
@@ -235,22 +240,43 @@ func (f *SearchFetcher) buildRequest(ctx context.Context, provider, endpoint, ke
 
 // validateSearchEndpointOverride constrains provider_config.endpoint_override:
 // the request carries the decrypted intel.search.api_key (query param or
-// header), so overrides must be https — plaintext http would leak the key in
-// transit. Loopback/private-literal hosts (tests, local gateways) may use
-// http; the SSRF dial guard still applies on top.
-func validateSearchEndpointOverride(endpoint string) error {
+// header), so plaintext http would leak the key in transit — https only.
+// Userinfo is rejected (credential leak into logs), and private-literal +
+// numeric-IP hosts are rejected at insert time on top of the SSRF dial
+// guard. Test-injected clients (allowPrivate) relax the loopback/private
+// rule for httptest servers; production wiring never sets it.
+func (f *SearchFetcher) validateSearchEndpointOverride(endpoint string) error {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return fmt.Errorf("fetcher: invalid search endpoint_override %q", endpoint)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("fetcher: search endpoint_override must be a valid URL: %q", endpoint)
 	}
-	if u.Scheme == "https" {
+	if u.Scheme != "https" {
+		if !f.allowPrivate || u.Scheme != "http" {
+			return fmt.Errorf("fetcher: search endpoint_override must be https: %q", endpoint)
+		}
+		host := u.Hostname()
+		if !isLoopbackOrPrivateLiteral(host) {
+			return fmt.Errorf("fetcher: search endpoint_override must be https for non-local hosts: %q", endpoint)
+		}
 		return nil
+	}
+	if u.User != nil {
+		return fmt.Errorf("fetcher: search endpoint_override must not embed credentials")
 	}
 	host := u.Hostname()
-	if strings.EqualFold(host, "localhost") || sources.IsPrivateIPLiteral(host) {
-		return nil
+	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
+		return fmt.Errorf("fetcher: search endpoint_override targets a private address: %q", endpoint)
 	}
-	return fmt.Errorf("fetcher: search endpoint_override must be https for non-local hosts: %q", endpoint)
+	return nil
+}
+
+// isLoopbackOrPrivateLiteral reports whether host is localhost or a
+// private-literal/numeric IP — the test-only http exception set.
+func isLoopbackOrPrivateLiteral(host string) bool {
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return true
+	}
+	return sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host)
 }
 
 // braveFreshness maps the recency enum onto Brave's freshness param.

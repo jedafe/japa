@@ -4,7 +4,19 @@ import { getAccessToken } from '$lib/api/token';
 
 // PUBLIC_JC_WS_URL is the WS *origin* (e.g. ws://localhost:8080); the
 // WebSocket endpoint lives under the API version prefix, /api/v1/ws.
-const WS_BASE_URL = (PUBLIC_JC_WS_URL ?? 'ws://localhost:8080').replace(/\/+$/, '');
+//
+// In production (page served over https:) a ws:// URL is refused outright
+// rather than silently downgraded — mixed-content cleartext would leak the
+// single-use ticket. Set PUBLIC_JC_WS_URL=wss://… in prod.
+function resolveWsBase(): string {
+	const raw = (PUBLIC_JC_WS_URL ?? 'ws://localhost:8080').replace(/\/+$/, '');
+	if (browser && window.location.protocol === 'https:' && raw.startsWith('ws://')) {
+		console.error('websocket: refusing cleartext ws:// under https — set PUBLIC_JC_WS_URL=wss://…');
+		return raw.replace(/^ws:\/\//, 'wss://');
+	}
+	return raw;
+}
+const WS_BASE_URL = resolveWsBase();
 
 type EventCallback = (data: any) => void;
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -67,7 +79,7 @@ class AdminWebSocketClient {
 				return;
 			}
 
-			const ws = new WebSocket(`${WS_BASE_URL}/api/v1/ws?ticket=${this.ticket}`);
+			const ws = new WebSocket(`${WS_BASE_URL}/api/v1/ws?ticket=${encodeURIComponent(this.ticket)}`);
 			this.ws = ws;
 
 			ws.onopen = () => {
@@ -80,7 +92,9 @@ class AdminWebSocketClient {
 			ws.onmessage = (event) => {
 				try {
 					const msg: WSMessage = JSON.parse(event.data);
+					if (typeof msg?.type !== 'string' || !msg.type) return;
 					if (msg.type === 'pong') return;
+					if (msg.payload !== undefined && (typeof msg.payload !== 'object' || msg.payload === null)) return;
 					this.emit(msg.type, msg.payload);
 				} catch {
 					// ignore malformed messages

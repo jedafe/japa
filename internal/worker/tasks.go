@@ -22,6 +22,7 @@ const (
 	TypeWebhookDelivery            = "webhook:deliver"
 	TypePaymentWebhookProcess      = "payment:process_webhook"
 	TypeSubscriptionWebhookProcess = "subscription:webhook_process" // §17 recurring billing lifecycle
+	TypePaymentRefundProcess       = "payment:process_refund"       // §17 provider refund retry (kept pending until provider confirms)
 	TypeTicketSendConfirmation     = "ticket:send_confirmation"
 	TypePushDelivery               = "push:deliver"
 	TypeDMNotifyRequest            = "dm:notify_request"

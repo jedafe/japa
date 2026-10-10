@@ -208,6 +208,7 @@ func (s *Store) RegisterPermission(ctx context.Context, key, description string)
 // AssignPermissionToRole grants a permission to a role and invalidates cache
 // for every user in groups that hold this role.
 func (s *Store) AssignPermissionToRole(ctx context.Context, roleID pgtype.UUID, permKey string) error {
+	s.auditWildcardGrant(ctx, roleID, permKey)
 	if err := s.write.AssignPermissionToRole(ctx, gen.AssignPermissionToRoleParams{
 		RoleID:  roleID,
 		PermKey: permKey,
@@ -704,6 +705,15 @@ func (s *Store) SetRolePermissions(ctx context.Context, roleID pgtype.UUID, perm
 	}
 	defer tx.Rollback(ctx)
 
+	// Audit any wildcard grant before committing so the log survives even
+	// when invalidation below is skipped.
+	for _, key := range permKeys {
+		if key == SystemWildcardPermission {
+			s.auditWildcardGrant(ctx, roleID, key)
+			break
+		}
+	}
+
 	q := gen.New(tx)
 
 	// Remove existing
@@ -791,4 +801,39 @@ func (s *Store) GetGroupByID(ctx context.Context, groupID pgtype.UUID) (Group, e
 	}
 
 	return group, nil
+}
+
+// auditWildcardGrant logs a warning whenever the system wildcard permission
+// ("*") is granted to a role held by a non-super_admin group. The wildcard
+// implicitly satisfies every permission node, so any grant outside the
+// super_admin group is a privilege-escalation risk that must leave an audit
+// trail. Failures to resolve group membership are fail-open for the mutation
+// itself but still logged.
+func (s *Store) auditWildcardGrant(ctx context.Context, roleID pgtype.UUID, permKey string) {
+	if permKey != SystemWildcardPermission {
+		return
+	}
+
+	groupIDs, err := s.read.ListGroupsByRoleID(ctx, roleID)
+	if err != nil {
+		slog.Warn("rbac: wildcard grant audit — failed to resolve groups for role",
+			"role_id", roleID.String(), "error", err)
+		return
+	}
+
+	for _, groupID := range groupIDs {
+		g, err := s.read.GetUserGroupByID(ctx, groupID)
+		if err != nil {
+			slog.Warn("rbac: wildcard grant audit — failed to resolve group",
+				"role_id", roleID.String(), "group_id", groupID.String(), "error", err)
+			continue
+		}
+		if g.Slug == SystemGroupSuperAdmin {
+			continue
+		}
+		slog.Warn("rbac: system wildcard permission granted to non-super_admin group",
+			"role_id", roleID.String(),
+			"group_id", groupID.String(),
+			"group_slug", g.Slug)
+	}
 }

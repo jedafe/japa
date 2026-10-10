@@ -55,14 +55,35 @@
 	}
 
 	/** Defense-in-depth: only allow http(s) and relative URLs as href.
-	 *  The server sanitizer also validates data-url, but the frontend
-	 *  must never render javascript:/data: URIs as clickable links. */
+	 *  Rejects protocol-relative (//evil) and dangerous schemes. The
+	 *  server only fetches http(s) URLs, but the frontend must never
+	 *  render javascript:/data: URIs as clickable links. */
 	function safeHref(u: string): string {
-		const lower = u.trim().toLowerCase();
+		const trimmed = u.trim();
+		if (!trimmed || trimmed.startsWith('//')) return '#';
+		const cleaned = trimmed
+			.split('')
+			.filter((ch) => ch.charCodeAt(0) > 32)
+			.join('')
+			.toLowerCase();
+		if (/^(javascript|data|vbscript):/.test(cleaned)) return '#';
+		const lower = trimmed.toLowerCase();
 		if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('/') || lower.startsWith('#') || lower.startsWith('?')) {
 			return u;
 		}
 		return '#';
+	}
+
+	/** Remote OG image/favicon URLs are attacker-influenced page metadata
+	 *  (tracking pixels, javascript: payloads). Only render absolute
+	 *  http(s) images — never data:/javascript: or protocol-relative. */
+	function safeImgSrc(u: string | undefined | null): string {
+		if (!u || typeof u !== 'string') return '';
+		const trimmed = u.trim();
+		if (!trimmed || trimmed.startsWith('//')) return '';
+		const lower = trimmed.toLowerCase();
+		if (lower.startsWith('https://') || lower.startsWith('http://')) return u;
+		return '';
 	}
 </script>
 
@@ -82,9 +103,9 @@
 		</div>
 	{:else if preview}
 		<a href={safeHref(url)} target="_blank" rel="noopener noreferrer" class="lp-content">
-			{#if preview.image}
+			{#if safeImgSrc(preview.image)}
 				<div class="lp-image">
-					<img src={preview.image} alt={preview.title} loading="lazy" />
+					<img src={safeImgSrc(preview.image)} alt={preview.title} loading="lazy" />
 				</div>
 			{/if}
 			<div class="lp-text">
@@ -93,8 +114,8 @@
 					<p class="lp-desc">{preview.description}</p>
 				{/if}
 				<div class="lp-meta">
-					{#if preview.favicon}
-						<img src={preview.favicon} alt="" class="lp-favicon" loading="lazy" />
+					{#if safeImgSrc(preview.favicon)}
+						<img src={safeImgSrc(preview.favicon)} alt="" class="lp-favicon" loading="lazy" />
 					{/if}
 					<span class="lp-site">{preview.site_name || displayUrl(url)}</span>
 				</div>

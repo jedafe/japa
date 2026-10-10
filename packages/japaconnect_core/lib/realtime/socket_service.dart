@@ -20,6 +20,14 @@ class SocketService {
   SocketClient? _socket;
   Timer? _reconnectTimer;
 
+  /// Bounded reconnect: 10 attempts max with exponential backoff
+  /// (5s, 10s, 20s … capped at 60s), matching the web client's cap.
+  /// An unbounded 5s loop would mint ws-tickets forever against a
+  /// permanently-down backend.
+  static const maxReconnectAttempts = 10;
+  static const maxReconnectDelay = Duration(seconds: 60);
+  int _reconnectAttempts = 0;
+
   SocketService({required this.client});
 
   Stream<RealtimeEvent> get events => _eventController.stream;
@@ -33,12 +41,21 @@ class SocketService {
       );
       // POST /auth/ws-ticket responds { "data": { "ticket": "<uuid>" } } —
       // the client unwraps `data`, so the key here is `ticket`.
+      final ticketValue = ticket['ticket'];
+      if (ticketValue is! String || ticketValue.isEmpty) {
+        _scheduleReconnect();
+        return;
+      }
       _socket = SocketClient(url: client.effectiveWsUrl);
-      _socket!.connect(ticket['ticket'] as String);
+      _socket!.connect(ticketValue);
+      _reconnectAttempts = 0;
       _socket!.events.listen(
         (event) {
-          if (event is Map<String, dynamic>) {
+          try {
             _eventController.add(RealtimeEvent.fromJson(event));
+          } catch (_) {
+            // Drop events that fail model parsing — a new server event
+            // type must never crash the realtime stream.
           }
         },
         onError: (_) => _onConnectionLost(),
@@ -57,11 +74,17 @@ class SocketService {
 
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), connect);
+    if (_reconnectAttempts >= maxReconnectAttempts) return;
+    final shift = _reconnectAttempts.clamp(0, 6);
+    var delay = Duration(seconds: 5 * (1 << shift));
+    if (delay > maxReconnectDelay) delay = maxReconnectDelay;
+    _reconnectAttempts++;
+    _reconnectTimer = Timer(delay, connect);
   }
 
   void disconnect() {
     _reconnectTimer?.cancel();
+    _reconnectAttempts = 0;
     _socket?.disconnect();
     _socket = null;
   }

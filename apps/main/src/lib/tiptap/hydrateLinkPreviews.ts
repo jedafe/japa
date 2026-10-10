@@ -23,6 +23,11 @@ export function hydrateLinkPreviews(node: HTMLElement) {
 		for (const el of placeholders) {
 			const url = el.dataset.url;
 			if (!url) continue;
+			// Never hydrate dangerous/protocol-relative targets — the card
+			// would request them from the preview API. Leave the sanitized
+			// placeholder unlinked instead.
+			const trimmed = url.trim().toLowerCase();
+			if (trimmed.startsWith('//') || /^(javascript|data|vbscript):/.test(trimmed)) continue;
 			el.setAttribute('data-hydrated', 'true');
 			el.className = 'link-preview-mount';
 			const comp = mount(LinkPreviewCard, {

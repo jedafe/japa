@@ -10,10 +10,18 @@ import (
 )
 
 // InternalGuard returns a middleware that restricts access to internal
-// callers only. A request is considered internal if:
+// callers only.
 //
-//  1. It carries a matching X-Internal-Token header, OR
-//  2. The client IP is a loopback address (127.0.0.1, ::1, etc.)
+// When expectedToken is non-empty (production), the request MUST carry the
+// matching X-Internal-Token header — even from loopback. Trusting loopback
+// alone is insufficient: any local process or SSRF primitive can reach
+// 127.0.0.1, so bare-loopback access would let an attacker pivot to these
+// endpoints without the secret.
+//
+// When expectedToken is empty (dev), loopback access is allowed without a
+// token so local development works without configuring a secret. The client
+// IP is resolved via clientip.FromRequest (not the raw RemoteAddr) so the
+// trusted-proxy model is enforced consistently with the rest of the stack.
 //
 // This protects endpoints that should never be called from the public
 // internet (e.g. server-to-server rendering helpers).
@@ -26,13 +34,19 @@ func InternalGuard(expectedToken string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Fall back to loopback IP check.
-			host, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				host = r.RemoteAddr
+			// A configured token is required: loopback alone never suffices.
+			if expectedToken != "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error": map[string]string{"code": "forbidden", "message": "Access to this endpoint is restricted to internal callers"},
+				})
+				return
 			}
 
-			if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			// Dev mode (no token configured): fall back to a loopback check
+			// resolved through the trusted-proxy-aware client IP helper.
+			if ip := net.ParseIP(clientip.FromRequest(r)); ip != nil && ip.IsLoopback() {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -4083,10 +4083,37 @@ export interface ServiceListing {
 	badge?: 'popular' | 'best_value' | string;
 	faqs?: ServiceFaq[];
 	steps?: ServiceStep[];
+	// §114 2026-10-10 page content (migration 000829) — the mockup-aligned
+	// detail surfaces: hero trust chips, fact cards (package overlay stats),
+	// highlights/audience checklists, what's-included icon cards. Detail
+	// payloads only; omitted when the stored set is empty.
+	selling_points?: ServiceIconEntry[];
+	facts?: ServiceFact[];
+	highlights?: string[];
+	audience?: string[];
+	included?: ServiceIconEntry[];
 	// 000824 mentor block — populated on list + detail payloads when
 	// listing_kind='mentorship'; omitted for every other kind. is_mentor=false
 	// means the author lapsed out of the program — treat as unavailable.
 	mentor?: ServiceMentor | null;
+}
+
+/** §114 2026-10-10 — one icon-titled page entry: the shared shape for
+ *  selling_points[] (hero trust chips) and included[] (what-you-get
+ *  cards). icon is a kebab-case Lucide name resolved through the fixed
+ *  marketplaceIcon whitelist. */
+export interface ServiceIconEntry {
+	icon?: string;
+	title: string;
+	description?: string;
+}
+
+/** §114 2026-10-10 — one hero fact card entry ({icon,label,value} —
+ *  e.g. {icon:'clock', label:'Processing time', value:'4–10 weeks'}). */
+export interface ServiceFact {
+	icon?: string;
+	label: string;
+	value: string;
 }
 
 /** 000824 — the mentor profile card carried on listing_kind='mentorship'
@@ -4102,6 +4129,20 @@ export interface ServiceMentor {
 	available_slots: number;
 	mentor_since?: string;
 	is_mentor: boolean;
+	// 000829 mentor card fields — detail payloads only. Feed the headline
+	// card, the stats row, and the "Mentorship details" sidebar.
+	location?: string;
+	title?: string;
+	response_time?: string;
+	availability?: string;
+	session_type?: string;
+	languages?: string[];
+	session_formats?: string[];
+	countries?: string[];
+	credentials?: string[];
+	years_experience?: number;
+	success_label?: string;
+	mentees_helped?: number;
 }
 
 /** §114 marketplace — one FAQ entry on a service listing (question/answer). */
@@ -4110,8 +4151,11 @@ export interface ServiceFaq {
 	answer: string;
 }
 
-/** §114 marketplace — one "how it works" step on a service listing. */
+/** §114 marketplace — one "how it works" step on a service listing.
+ *  `icon` is an optional kebab-case Lucide name resolved through the
+ *  marketplaceIcon whitelist (000829). */
 export interface ServiceStep {
+	icon?: string;
 	title: string;
 	description: string;
 }
@@ -4217,6 +4261,8 @@ export interface PackageTier {
 	id: string;
 	name: string;
 	badge?: string;
+	/** Kebab-case Lucide name (marketplaceIcon whitelist) — card chip. */
+	icon?: string;
 	description?: string;
 	price_amount: number; // minor units
 	price_currency?: string;
@@ -4363,6 +4409,40 @@ export interface MentorProfile {
 	mentor_since: string | null;
 	display_name: string | null;
 	avatar_url: string | null;
+
+	// 000829 mentor card fields (§114 detail-page rebuild) — rendered on
+	// the mentorship listing's mentor block.
+	location?: string | null;
+	mentor_title?: string | null;
+	mentor_response_time?: string | null;
+	mentor_availability?: string | null;
+	mentor_session_type?: string | null;
+	mentor_languages?: string[];
+	mentor_session_formats?: string[];
+	mentor_countries?: string[];
+	mentor_credentials?: string[];
+	mentor_years_experience?: number | null;
+	mentor_success_label?: string | null;
+
+	// §114 2026-10-10 — the shadow listing's page content, read back so
+	// the settings editor can seed its structured-content fields.
+	// Absent when no shadow listing exists.
+	shadow_content?: MentorShadowContent | null;
+}
+
+/** §114 2026-10-10 — decoded page content of the mentor's shadow
+ *  listing, carried on GET /me/mentor-profile for the settings editor. */
+export interface MentorShadowContent {
+	selling_points: ServiceIconEntry[];
+	facts: ServiceFact[];
+	highlights: string[];
+	audience: string[];
+	included: ServiceIconEntry[];
+	faqs: ServiceFaq[];
+	steps: ServiceStep[];
+	/** Active pricing tiers on the shadow listing — flag-gated, omitted
+	 *  when service_packages.tiers_enabled is off (§114 amendment). */
+	tiers?: PackageTier[];
 }
 
 /** Mentorship connection (outgoing/incoming/admin list item). */

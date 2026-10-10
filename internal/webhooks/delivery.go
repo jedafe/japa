@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -29,6 +30,11 @@ const maxResponseCaptureBytes = 4096
 // loopback/link-local IP ranges to prevent SSRF (BUG-014). Tests replace
 // this with an unrestricted dialer so httptest.Server (which binds to
 // 127.0.0.1) can be reached.
+//
+// The dial-time Control hook re-validates the connection IP: the pre-flight
+// LookupIP check below can race a DNS rebinding (validate public, dial
+// private), so the kernel-resolved address is checked again at connect
+// time — the same defense as linkpreview's newSSRFSafeClient.
 var ssrfDialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -46,7 +52,19 @@ var ssrfDialContext = func(ctx context.Context, network, addr string) (net.Conn,
 		}
 	}
 
-	d := &net.Dialer{Timeout: 10 * time.Second}
+	d := &net.Dialer{
+		Timeout: 10 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			h, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return err
+			}
+			if ip := net.ParseIP(h); ip != nil && isBlockedIP(ip) {
+				return fmt.Errorf("SSRF blocked at connect time: %s", ip)
+			}
+			return nil
+		},
+	}
 	return d.DialContext(ctx, network, net.JoinHostPort(host, port))
 }
 
@@ -66,9 +84,11 @@ func newDeliveryClient(dial func(ctx context.Context, network, addr string) (net
 			if len(via) >= 5 {
 				return errors.New("stopped after 5 redirects")
 			}
-			// Block redirects to non-http(s) schemes (defense-in-depth).
-			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-				return fmt.Errorf("redirect to non-http scheme blocked: %s", req.URL.Scheme)
+			// Re-validate every redirect hop: scheme, host, and userinfo.
+			// A 302 from a public URL to http://169.254.169.254/ must be
+			// refused before following, not merely caught at dial time.
+			if err := validateEndpoint(req.URL.String()); err != nil {
+				return err
 			}
 			return nil
 		},
@@ -76,15 +96,15 @@ func newDeliveryClient(dial func(ctx context.Context, network, addr string) (net
 	}
 }
 
-// isBlockedIP reports whether the IP is in a private, loopback, link-local, or
-// reserved range that must not be contacted for outbound webhook delivery
+// isBlockedIP reports whether the IP is in a private, loopback, link-local,
+// or reserved range that must not be contacted for outbound webhook delivery
 // (SSRF defense, BUG-014).
 func isBlockedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true
 	}
 
-	if ip.IsUnspecified() {
+	if ip.IsUnspecified() || ip.IsMulticast() {
 		return true
 	}
 	// IPv4-mapped IPv6 — check the underlying IPv4.
@@ -94,6 +114,28 @@ func isBlockedIP(ip net.IP) bool {
 		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
 			return true
 		}
+		// 0.0.0.0/8 (current network) — IsUnspecified covers only all-zeros.
+		if v4[0] == 0 {
+			return true
+		}
+		// 192.0.0.0/24 (IETF protocol assignments).
+		if v4[0] == 192 && v4[1] == 0 && v4[2] == 0 {
+			return true
+		}
+		// 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24 (documentation).
+		if (v4[0] == 192 && v4[1] == 0 && v4[2] == 2) ||
+			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
+			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) {
+			return true
+		}
+		// 198.18.0.0/15 (benchmarking).
+		if v4[0] == 198 && (v4[1] == 18 || v4[1] == 19) {
+			return true
+		}
+		// 240.0.0.0/4 (reserved, includes 255.255.255.255 broadcast).
+		if v4[0] >= 240 {
+			return true
+		}
 	}
 
 	return false
@@ -101,7 +143,8 @@ func isBlockedIP(ip net.IP) bool {
 
 // validateEndpoint checks that the webhook endpoint URL is safe to call
 // (SEC-009, BUG-014). Rejects non-http(s) schemes which would allow
-// javascript:/data:/file: URLs, and empty hosts.
+// javascript:/data:/file: URLs, empty hosts, and embedded userinfo
+// (credentials in the URL leak into logs and error messages).
 func validateEndpoint(endpoint string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -114,6 +157,10 @@ func validateEndpoint(endpoint string) error {
 
 	if u.Host == "" {
 		return errors.New("webhook endpoint has empty host")
+	}
+
+	if u.User != nil {
+		return errors.New("webhook endpoint must not embed userinfo credentials")
 	}
 
 	return nil
@@ -152,7 +199,7 @@ func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvel
 
 	resp, err := deliveryClient.Do(req)
 	if err != nil {
-		return result, fmt.Errorf("sending webhook to %s: %w", endpoint, err)
+		return result, fmt.Errorf("sending webhook: %w", err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
@@ -163,7 +210,7 @@ func Deliver(ctx context.Context, endpoint, secret string, envelope WebhookEnvel
 	result.ResponseBody = string(body)
 
 	if resp.StatusCode >= 400 {
-		return result, fmt.Errorf("webhook to %s returned status %d", endpoint, resp.StatusCode)
+		return result, fmt.Errorf("webhook returned status %d", resp.StatusCode)
 	}
 
 	return result, nil
@@ -241,13 +288,13 @@ func PerformChallenge(ctx context.Context, endpoint, token string) error {
 
 	resp, err := deliveryClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("sending challenge to %s: %w", endpoint, err)
+		return fmt.Errorf("sending challenge: %w", err)
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("challenge to %s returned status %d", endpoint, resp.StatusCode)
+		return fmt.Errorf("challenge returned status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseCaptureBytes))

@@ -3,11 +3,15 @@ package payout
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -103,12 +107,17 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 		IPNCallback: req.CallbackURL,
 	}
 
+	// NOWPayments expects decimal major units on the wire. Convert from
+	// minor units at this edge, rounded to 8 decimals (crypto precision)
+	// so binary-float dust cannot drift the settled amount.
+	amountMajor := math.Round(float64(req.AmountMinor)/100.0*1e8) / 1e8
+
 	// Use fiat_amount when the amount is in fiat; otherwise send amount in crypto.
 	if req.Currency == strings.ToUpper(req.Currency) && len(req.Currency) == 3 {
-		payload.FiatAmount = req.Amount
+		payload.FiatAmount = amountMajor
 		payload.FiatCurrency = strings.ToLower(req.Currency)
 	} else {
-		payload.Amount = req.Amount
+		payload.Amount = amountMajor
 	}
 
 	body, err := json.Marshal(payload)
@@ -156,6 +165,9 @@ func (p *NOWPaymentsPayoutProvider) InitiatePayout(ctx context.Context, req Payo
 
 // VerifyWebhookSignature validates a NOWPayments IPN HMAC-SHA256 signature.
 // The signature is sent in the x-nowpayments-sig header as a hex-encoded hash.
+// The apiKey here must be the IPN secret (JC_NOWPAYMENTS_IPN_SECRET) —
+// server.go wires payout and inbound providers with their own credentials,
+// never substituted.
 func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signature string) error {
 	if p.apiKey == "" {
 		return errors.New("nowpayments IPN secret not configured")
@@ -164,8 +176,14 @@ func (p *NOWPaymentsPayoutProvider) VerifyWebhookSignature(payload []byte, signa
 	if signature == "" {
 		return errors.New("missing nowpayments signature")
 	}
-	// Delegated to the existing payments package implementation to avoid
-	// duplicating the HMAC logic. This provider only exposes the payout-specific
-	// methods.
+
+	mac := hmac.New(sha256.New, []byte(p.apiKey))
+	mac.Write(payload)
+	expected := hex.EncodeToString(mac.Sum(nil))
+
+	if !hmac.Equal([]byte(strings.TrimSpace(signature)), []byte(expected)) {
+		return errors.New("invalid nowpayments webhook signature")
+	}
+
 	return nil
 }

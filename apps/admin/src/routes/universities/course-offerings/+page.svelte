@@ -141,6 +141,9 @@
 		createPermission: 'universities.course_offering.create',
 		editPermission: 'universities.course_offering.update',
 		deletePermission: 'universities.course_offering.delete',
+		// Fail-closed: hard delete needs the dedicated grant; without it the
+		// scaffold hides the Hard Delete button entirely.
+		hardDeletePermission: 'admin.hard_delete',
 		pageSize: 25,
 		columns: [
 			{ key: 'course_title', label: t('courses.course', 'Course'), sortable: true, sortKey: 'title', render: (v: string) => `<span class="font-medium">${v ?? ''}</span>` },

@@ -58,6 +58,10 @@ func (f *fakeBookingBackend) MentorshipListingContentID(_ context.Context, _ pgt
 	return f.listingID, nil
 }
 
+func (f *fakeBookingBackend) MentorShadowContent(_ context.Context, _ pgtype.UUID) (*servicedir.MentorShadowContentDTO, error) {
+	return nil, nil
+}
+
 func (f *fakeBookingBackend) CreateBooking(_ context.Context, bookerID, _ pgtype.UUID, in servicedir.CreateBookingInput) (servicedir.BookingResult, error) {
 	f.created = append(f.created, in)
 	if f.createErr != nil {

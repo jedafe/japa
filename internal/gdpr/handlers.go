@@ -13,6 +13,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -112,6 +113,10 @@ func clientIP(r *http.Request) *string {
 
 	return &ip
 }
+
+// maxDeletionReasonLen caps the account-deletion reason free-text so a
+// caller cannot store unbounded blobs in the request row.
+const maxDeletionReasonLen = 2000
 
 // ---------------------------------------------------------------------------
 // User-facing endpoints
@@ -309,15 +314,56 @@ func (h *Handlers) GetMyDataExportDownload(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Defense-in-depth: validate the scheme of the server-generated URL
-	// before redirecting (SEC-005).
+	// Defense-in-depth: validate the server-generated redirect target before
+	// following it — scheme must be http(s) and the host must be the
+	// same-origin API host or an explicitly allowlisted download host. A
+	// compromised or misconfigured storage backend must not turn this
+	// endpoint into an open redirect.
 	dest := *request.DownloadUrl
-	if u, err := url.Parse(dest); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+	if !isAllowedDownloadRedirect(r, dest) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_download_url", "Download URL is not valid")
 		return
 	}
 
 	http.Redirect(w, r, dest, http.StatusTemporaryRedirect)
+}
+
+// allowedDownloadHosts are the extra hosts (beyond the request's own host)
+// a GDPR export download URL may redirect to — e.g. the SeaweedFS/S3 public
+// endpoint or CDN when exports are stored off-origin. Empty by default
+// (same-origin only); operators extend via GDPRDownloadHosts.
+var allowedDownloadHosts = map[string]bool{}
+
+// isAllowedDownloadRedirect reports whether dest is a safe redirect target:
+// http(s) scheme, an absolute URL, and a host that is either the request's
+// own host or an explicitly allowlisted download host.
+func isAllowedDownloadRedirect(r *http.Request, dest string) bool {
+	u, err := url.Parse(dest)
+	if err != nil || !u.IsAbs() {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return false
+	}
+	// Compare against the request host with any port stripped.
+	reqHost := strings.ToLower(r.Host)
+	if h, _, splitErr := netSplitHostPort(reqHost); splitErr == nil {
+		reqHost = h
+	}
+	if host == reqHost {
+		return true
+	}
+	return allowedDownloadHosts[host]
+}
+
+// netSplitHostPort splits host:port, returning an error when there is no
+// port so callers can fall back to the full host value.
+func netSplitHostPort(hostport string) (string, string, error) {
+	return net.SplitHostPort(hostport)
 }
 
 // RequestAccountDeletion handles POST /api/v1/account/delete.
@@ -337,6 +383,12 @@ func (h *Handlers) RequestAccountDeletion(w http.ResponseWriter, r *http.Request
 	// genuinely malformed JSON.
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+		return
+	}
+
+	// Cap the reason free-text so the stored row cannot grow unbounded.
+	if len(input.Reason) > maxDeletionReasonLen {
+		errpkg.WriteError(w, http.StatusBadRequest, "reason_too_long", "Reason must be at most 2000 characters")
 		return
 	}
 

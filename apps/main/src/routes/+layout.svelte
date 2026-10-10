@@ -5,6 +5,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { t } from '$lib/i18n';
 	import { seedCsrfToken } from '$lib/api/csrf.svelte';
+	import { sanitizeCustomCss } from '$lib/utils/safeHtml';
 	import { env } from '$env/dynamic/public';
 	import type { Snippet } from 'svelte';
 	import type { LayoutData } from './$types';
@@ -130,8 +131,24 @@
 
 	// Custom code injection (§57). Loaded from GET /site/settings/public
 	// and rendered server-side in the root layout so it applies to every route.
-	let customCss = $derived((data.siteSettings?.['site.custom_css'] as string | undefined) ?? '');
-	let customJs = $derived((data.siteSettings?.['site.custom_js'] as string | undefined) ?? '');
+	//
+	// Staff-only settings with a server-side audit trail (admin settings
+	// writes are audit-logged) — but the payload still reaches every visitor,
+	// so three gates apply:
+	//  1. CSP nonce — both blocks carry nonce={cspNonce} and the response
+	//     carries a nonce-based style-src/script-src policy (hooks.server.ts).
+	//  2. Custom CSS passes through the sanitizeCustomCss blocklist —
+	//     url(/expression(/@import/javascript:) payloads are stripped.
+	//  3. Custom JS renders ONLY when the super_admin-approved
+	//     `site.custom_js_approved` flag is set (fail-closed default);
+	//     the approval itself is audit-logged server-side.
+	let customCss = $derived(sanitizeCustomCss((data.siteSettings?.['site.custom_css'] as string | undefined) ?? ''));
+	let customJsRaw = $derived((data.siteSettings?.['site.custom_js'] as string | undefined) ?? '');
+	let customJsApproved = $derived(
+		(data.siteSettings?.['site.custom_js_approved'] as boolean | undefined) ?? false
+	);
+	let customJs = $derived(customJsApproved ? customJsRaw : '');
+	let cspNonce = $derived(data.cspNonce ?? '');
 
 	// Umami analytics — Main surface (§40, ROADMAP-MAIN 01.10).
 	// Ref: japaconnect-engineering/ADR-040-platform-analytics-dual-layer.md
@@ -169,8 +186,9 @@
 		<link rel="icon" href={faviconUrl} type="image/png" />
 	{/if}
 	{#if customCss}
-		<!-- Admin custom CSS (§57). Loaded from site.custom_css public setting. -->
-		<style id="jc-custom-css">{@html customCss}</style>
+		<!-- Admin custom CSS (§57). Staff-only setting with an audit trail.
+		Sanitized via sanitizeCustomCss + gated behind the CSP nonce. -->
+		<style id="jc-custom-css" nonce={cspNonce}>{@html customCss}</style>
 	{/if}
 	{#if umamiEnabled}
 		<!-- Umami page-view analytics (§40, ADR-040). Cookieless, privacy-first. -->
@@ -203,6 +221,8 @@
 </div>
 
 {#if customJs}
-	<!-- Admin custom JavaScript (§57). Loaded from site.custom_js public setting. -->
-	{@html `<script id="jc-custom-js">` + customJs + `</script>`}
+	<!-- Admin custom JavaScript (§57). Renders only when the super_admin-approved
+	site.custom_js_approved flag is set (audit-logged server-side); gated behind
+	the CSP nonce. Without approval the setting is inert. -->
+	{@html `<script id="jc-custom-js" nonce="${cspNonce}">` + customJs + `</script>`}
 {/if}

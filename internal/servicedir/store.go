@@ -274,6 +274,32 @@ type ServiceRow struct {
 	Faqs  []byte
 	Steps []byte
 
+	// §114 2026-10-10 page content — raw jsonb decoded by the DTO layer:
+	// selling-point trust chips, hero fact cards, highlights/audience
+	// checklists, what's-included cards. Populated by the detail queries.
+	SellingPoints []byte
+	Facts         []byte
+	Highlights    []byte
+	Audience      []byte
+	Included      []byte
+
+	// 000829 mentor card fields — read off the author user_profiles join
+	// on the detail queries (mentorship detail page: headline card, stats
+	// row, "Mentorship details" sidebar). MenteesHelped is the lifetime
+	// fulfilled-booking count subquery — the "N mentees helped" stat.
+	MentorLocation        *string
+	MentorTitle           *string
+	MentorResponseTime    *string
+	MentorAvailability    *string
+	MentorSessionType     *string
+	MentorLanguages       []string
+	MentorSessionFormats  []string
+	MentorCountries       []string
+	MentorCredentials     []string
+	MentorYearsExperience *int16
+	MentorSuccessLabel    *string
+	MenteesHelped         int32
+
 	// HasCoupon is the list-query badge column — true when the listing has
 	// at least one currently-active attached coupon. Populated only by the
 	// list/org-list queries (the EXISTS projection); detail rows leave it
@@ -355,6 +381,14 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
 		Faqs: r.Faqs, Steps: r.Steps,
+		SellingPoints: r.SellingPoints, Facts: r.Facts,
+		Highlights: r.Highlights, Audience: r.Audience, Included: r.Included,
+		MentorLocation: r.Location, MentorTitle: r.MentorTitle,
+		MentorResponseTime: r.MentorResponseTime, MentorAvailability: r.MentorAvailability,
+		MentorSessionType: r.MentorSessionType, MentorLanguages: r.MentorLanguages,
+		MentorSessionFormats: r.MentorSessionFormats, MentorCountries: r.MentorCountries,
+		MentorCredentials: r.MentorCredentials, MentorYearsExperience: r.MentorYearsExperience,
+		MentorSuccessLabel: r.MentorSuccessLabel, MenteesHelped: r.MenteesHelped,
 	}
 }
 
@@ -391,6 +425,14 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
 		Faqs: r.Faqs, Steps: r.Steps,
+		SellingPoints: r.SellingPoints, Facts: r.Facts,
+		Highlights: r.Highlights, Audience: r.Audience, Included: r.Included,
+		MentorLocation: r.Location, MentorTitle: r.MentorTitle,
+		MentorResponseTime: r.MentorResponseTime, MentorAvailability: r.MentorAvailability,
+		MentorSessionType: r.MentorSessionType, MentorLanguages: r.MentorLanguages,
+		MentorSessionFormats: r.MentorSessionFormats, MentorCountries: r.MentorCountries,
+		MentorCredentials: r.MentorCredentials, MentorYearsExperience: r.MentorYearsExperience,
+		MentorSuccessLabel: r.MentorSuccessLabel, MenteesHelped: r.MenteesHelped,
 	}
 }
 

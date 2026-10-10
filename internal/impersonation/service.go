@@ -200,6 +200,36 @@ func (s *Service) IsAdmin(ctx context.Context, userID pgtype.UUID) bool {
 	return s.rbac.HasAdminCapability(ctx, userID)
 }
 
+// LogImpersonatedAction records a per-request action taken under
+// impersonation to audit_logs, carrying both the real admin (actor) and the
+// impersonated target. Call it from handlers that mutate state while
+// isImpersonating is true so the audit trail always shows who acted as whom.
+// It is a no-op (nil error) when the request is not impersonated, and
+// returns an error when impersonation is active but the audit write fails.
+func (s *Service) LogImpersonatedAction(ctx context.Context, actionType, ipAddress string, metadata map[string]string) error {
+	ic := ImpersonatedFromContext(ctx)
+	if ic == nil {
+		return nil
+	}
+
+	targetIDStr := ic.ImpersonatedID.String()
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	if _, ok := metadata["admin_id"]; !ok {
+		metadata["admin_id"] = ic.AdminID.String()
+	}
+	if _, ok := metadata["target_id"]; !ok {
+		metadata["target_id"] = targetIDStr
+	}
+
+	if err := s.auditLog(ctx, ic.AdminID, &targetIDStr, actionType, ipAddress, metadata); err != nil {
+		return fmt.Errorf("audit log for impersonated action %q: %w", actionType, err)
+	}
+
+	return nil
+}
+
 // auditLog inserts a row into audit_logs for an impersonation action.
 // impersonatedUserID may be nil for actions that don't have a target.
 // metadata is serialized to JSON via encoding/json (safe against injection).

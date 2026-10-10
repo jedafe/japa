@@ -34,6 +34,9 @@ import (
 // client like every other outbound call.
 type WaybackFetcher struct {
 	client *http.Client
+	// allowPrivate relaxes the insert-time endpoint guard for httptest
+	// loopback servers (see SearchFetcher.allowPrivate).
+	allowPrivate bool
 }
 
 // NewWaybackFetcher returns a WaybackFetcher backed by an SSRF-safe client.
@@ -72,6 +75,8 @@ func (f *WaybackFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRe
 	endpoint := strings.TrimRight(stringFromCfg(cfg, "cdx_endpoint"), "/")
 	if endpoint == "" {
 		endpoint = cdxEndpoint
+	} else if err := f.validateWaybackEndpoint(endpoint); err != nil {
+		return FetchResult{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+q.Encode(), nil)
@@ -136,4 +141,33 @@ func waybackManifest(body []byte) ([]byte, error) {
 	}
 
 	return []byte(b.String()), nil
+}
+
+// validateWaybackEndpoint constrains provider_config.cdx_endpoint: https
+// only, no userinfo, no private-literal or numeric-IP hosts — on top of
+// the SafeClient dial guard. Test-injected clients (allowPrivate) accept
+// loopback http for httptest servers. The default web.archive.org
+// endpoint bypasses validation (constant, not operator input).
+func (f *WaybackFetcher) validateWaybackEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("fetcher: wayback cdx_endpoint must be a valid URL: %q", endpoint)
+	}
+	if u.Scheme != "https" {
+		if !f.allowPrivate || u.Scheme != "http" {
+			return fmt.Errorf("fetcher: wayback cdx_endpoint must be https: %q", endpoint)
+		}
+		if !isLoopbackOrPrivateLiteral(u.Hostname()) {
+			return fmt.Errorf("fetcher: wayback cdx_endpoint must be https for non-local hosts: %q", endpoint)
+		}
+		return nil
+	}
+	if u.User != nil {
+		return fmt.Errorf("fetcher: wayback cdx_endpoint must not embed credentials")
+	}
+	host := u.Hostname()
+	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
+		return fmt.Errorf("fetcher: wayback cdx_endpoint targets a private address: %q", endpoint)
+	}
+	return nil
 }

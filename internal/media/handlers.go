@@ -2,6 +2,8 @@ package media
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/worker"
@@ -196,6 +199,10 @@ const (
 	// MaxStandardBody is the maximum body size for standard POST/PATCH requests (10MB).
 	MaxStandardBody int64 = 10 << 20
 )
+
+// MaxBulkDeleteIDs caps bulk-delete batches so a single request cannot fan
+// out into an unbounded number of row writes.
+const MaxBulkDeleteIDs = 100
 
 // permissionChecker is the minimal RBAC interface media handlers need to
 // check additional permission nodes inside handler bodies (e.g.
@@ -1177,6 +1184,13 @@ func (h *Handlers) BulkDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cap bulk batches so a single request cannot fan out into an unbounded
+	// number of row writes.
+	if len(input.MediaIDs) > MaxBulkDeleteIDs {
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_media_ids", "media_ids is limited to 100 items per request")
+		return
+	}
+
 	ids := make([]pgtype.UUID, 0, len(input.MediaIDs))
 
 	for _, idStr := range input.MediaIDs {
@@ -1247,7 +1261,19 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	w.Header().Set("Content-Type", contentType)
+	ctype := contentType
+	// Never serve SVG inline: browsers execute embedded script on the API
+	// origin (stored XSS). Force a download with a sandboxed CSP.
+	if CanonicalMIMEType(ctype) == "image/svg+xml" {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Content-Disposition", `attachment; filename="media.svg"`)
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+		http.ServeFile(w, r, localPath)
+		return
+	}
+	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, localPath)
@@ -1257,7 +1283,7 @@ func (h *Handlers) ServeMedia(w http.ResponseWriter, r *http.Request) {
 // returns the sniffed MIME type. Used when the storage path extension does
 // not map to a type (legacy .bin uploads).
 func sniffStoredContentType(localPath string) (string, error) {
-	f, err := os.Open(localPath)
+	f, err := os.Open(localPath) // #nosec G304 -- localPath is resolveMediaPath-validated (bucket allowlist + traversal guard) at every call site
 	if err != nil {
 		return "", err
 	}
@@ -1352,6 +1378,14 @@ func isActiveContentType(contentType string) bool {
 // This is the dev-only fallback for presigned URL uploads when S3/SeaweedFS is
 // not configured. The client PUTs raw file bytes to the presigned URL; this
 // handler writes them to the local filesystem so ServeMedia can retrieve them.
+//
+// Auth note: the route is gated by auth.RequireAuth (server.go) — only an
+// authenticated session holder reaches this handler. The PUT must correspond
+// to a pending upload row created via InitiateUpload (which binds the owner
+// and stores the claimed MIME/size): direct PUTs without a valid pending row
+// are rejected with 404. Sniffed content is allowlist-gated exactly like
+// InitiateUpload and a virus-scan task is enqueued for the pending row once
+// bytes land; confirmation still runs the full verification in ConfirmUpload.
 func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 	bucket := chi.URLParam(r, "bucket")
 	storagePath := chi.URLParam(r, "*") // catch-all
@@ -1367,7 +1401,24 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// nolint:gosec // G301: bounded
+	// Require the Initiate→Confirm flow: look up the pending row by storage
+	// path so owner binding, claimed MIME/size, and expiry (presigned URL
+	// ttl) are enforced by lookup. When the store is unavailable we fail
+	// closed — without a row the write cannot be attributed to an owner.
+	pending, err := h.service.store.GetMediaByStoragePath(r.Context(), storagePath)
+	if err != nil || pending.UploaderUserID == (pgtype.UUID{}) {
+		slog.Warn("seaweedfs upload: no pending upload row for path", "path", localPath)
+		errpkg.WriteError(w, http.StatusNotFound, "upload_not_initiated", "No pending upload found for this path — initiate the upload first")
+		return
+	}
+
+	// Owner binding: the authenticated caller must be the row's uploader.
+	if user := auth.FromContext(r.Context()); user == nil || user.UserID != pending.UploaderUserID {
+		slog.Warn("seaweedfs upload: owner mismatch", "path", localPath)
+		errpkg.WriteError(w, http.StatusNotFound, "upload_not_initiated", "No pending upload found for this path — initiate the upload first")
+		return
+	}
+
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil { // #nosec G301,G703 // bounded; pending path validation
 		slog.Warn("seaweedfs upload: failed to create directory", "path", localPath, "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "dir_error", "Failed to create upload directory")
@@ -1395,16 +1446,56 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Same MIME gates as InitiateUpload: sniff the stored bytes
+	// (DetectStorageMIME — never a client header), run content inspection
+	// (VerifyMIMEType against the row's declared type), and enforce the
+	// media-context allowlist. A mismatch is removed without confirmation.
+	if sniffErr := h.verifyPendingUploadBytes(localPath, pending.OriginalFilename, pending.MimeType); sniffErr != nil {
+		slog.Warn("seaweedfs upload: content failed MIME gates", "path", localPath, "error", sniffErr)
+		_ = os.Remove(localPath)
+		errpkg.WriteError(w, http.StatusBadRequest, "unsupported_media_type", "Uploaded content failed file-type validation")
+		return
+	}
+
+	// Enqueue the virus scan for the pending row now that bytes have landed
+	// (ConfirmUpload enqueues again; the task is idempotent on media id).
+	h.enqueueMediaTasks(r.Context(), pending.ID)
+
 	slog.Info("seaweedfs upload: file stored locally", "path", localPath, "bytes", written)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-// ProxyRemoteMedia handles GET /api/v1/media/proxy?url={encoded} — public.
+// verifyPendingUploadBytes applies the InitiateUpload MIME gates to bytes
+// already written by SeaweedFSUpload: DetectStorageMIME sniffing, the
+// service allowlist for the media context, and VerifyMIMEType content
+// inspection against the row's declared MIME.
+func (h *Handlers) verifyPendingUploadBytes(localPath, filename, declaredMIME string) error {
+	f, err := os.Open(localPath) // #nosec G304 -- path resolved via resolveMediaPath
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(f, head)
+	sniffed := DetectStorageMIME(head[:n], filename)
+	if !h.service.isAllowedMIME(context.Background(), sniffed, UploadContextMedia) {
+		return errors.New("media: sniffed type not allowed for upload")
+	}
+	if _, matches, verr := VerifyMIMEType(head[:n], declaredMIME); verr != nil || !matches {
+		return errors.New("media: content does not match declared MIME type")
+	}
+	return nil
+}
+
+// ProxyRemoteMedia handles GET /api/v1/media/proxy?url={encoded}.
 // Fetches a remote image same-origin so hosts that block cross-origin embeds
 // (CORP/ORB) still render. Any failure (bad URL, SSRF-guarded target,
 // non-image response, oversize body) falls back to the placeholder SVG with
-// 200 so <img> consumers never see a console error.
+// 200 so <img> consumers never see a console error. The route is gated by
+// auth.RequireAuth plus a tight rate limit (server.go) — an anonymous caller
+// cannot use the endpoint as an open fetch oracle.
 // Ref: conventions/api-routes-catalog.md (media), sections/34 (media system).
 func (h *Handlers) ProxyRemoteMedia(w http.ResponseWriter, r *http.Request) {
 	rawURL := r.URL.Query().Get("url")
@@ -1415,14 +1506,30 @@ func (h *Handlers) ProxyRemoteMedia(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.service.ProxyRemote(r.Context(), rawURL)
 	if err != nil {
-		slog.Debug("media proxy: fetch failed", "url", rawURL, "error", err)
+		// Keep the placeholder-200 UX but surface abuse as an Info log with
+		// the caller IP and a hash of the requested URL (never the raw URL,
+		// which may carry credentials or session tokens in the query).
+		sum := sha256.Sum256([]byte(rawURL))
+		slog.Info("media proxy: fetch failed", "ip", clientip.FromRequest(r),
+			"url_sha256", hex.EncodeToString(sum[:]), "error", err)
 		writePlaceholderSVG(w)
 		return
 	}
 
 	// Same hardening as ServeMedia — proxied bytes are attacker-influenced.
+	// Proxied SVG is never served inline: force a download so embedded
+	// script cannot run on this origin.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	if CanonicalMIMEType(res.ContentType) == "image/svg+xml" {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Content-Disposition", `attachment; filename="proxy.svg"`)
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Header().Set("Content-Length", strconv.Itoa(len(res.Body)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(res.Body)
+		return
+	}
 	w.Header().Set("Content-Type", res.ContentType)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Header().Set("Content-Length", strconv.Itoa(len(res.Body)))

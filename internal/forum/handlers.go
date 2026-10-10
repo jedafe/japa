@@ -34,6 +34,36 @@ import (
 
 const defaultPageSize int32 = 20
 
+// Abuse-control caps: TipTap bodies are capped at 200KB (create+update,
+// 413 body_too_large on exceed); titles/slugs have length caps.
+const (
+	maxBodyBytes  = 200 * 1024
+	maxTitleRunes = 200
+	maxSlugRunes  = 200
+	maxForumRunes = 10000
+)
+
+// rejectOversizedBody reports whether body exceeds the TipTap cap, writing
+// the 413 response when it does.
+func rejectOversizedBody(w http.ResponseWriter, body []byte) bool {
+	if len(body) > maxBodyBytes {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Body exceeds size limit")
+		return true
+	}
+
+	return false
+}
+
+// rejectOverlongField writes a 400 when s exceeds max runes, naming field.
+func rejectOverlongField(w http.ResponseWriter, field, s string, max int) bool {
+	if len([]rune(s)) > max {
+		errpkg.WriteError(w, http.StatusBadRequest, "field_too_long", field+" exceeds length limit")
+		return true
+	}
+
+	return false
+}
+
 // JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
 // Section 26). The forum uses it to emit QAPage structured data from the
 // active template, falling back to the hardcoded generator when no template
@@ -302,6 +332,17 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	}
 }
 
+// isThreadModerator reports whether userID may auto-publish a space-scoped
+// thread: space moderators and holders of the forum.thread moderator-override
+// node publish immediately; everyone else starts pending review.
+func (h *Handlers) isThreadModerator(ctx context.Context, userID, spaceID pgtype.UUID) bool {
+	if h.Service.canModerateAny(ctx, spaceID, userID, "forum.thread.edit_any") {
+		return true
+	}
+
+	return false
+}
+
 // parsePageSize extracts and clamps the page_size query parameter.
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
@@ -439,6 +480,7 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		Poll              *pollInputJSON `json:"poll"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+4096)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
@@ -451,6 +493,18 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	if input.Slug == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_slug", "Slug is required")
+		return
+	}
+
+	if rejectOverlongField(w, "title", input.Title, maxTitleRunes) {
+		return
+	}
+
+	if rejectOverlongField(w, "slug", input.Slug, maxSlugRunes) {
+		return
+	}
+
+	if len(input.Body) > 0 && rejectOversizedBody(w, input.Body) {
 		return
 	}
 
@@ -505,18 +559,29 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 	// BUG-004: create the backing contents row so reporting, related content,
 	// and content-type integrations can resolve the thread by content_id.
 	// Clients that already supply a content_id (e.g. persona pre-create flow)
-	// can bypass this step.
+	// can bypass this step. The row is created pending review whenever the
+	// thread is space-scoped and the author is not a moderator, so the
+	// auto-publish path cannot bypass moderation; RAG/search indexing only
+	// runs after publish (see below).
 	if h.content != nil && !contentID.Valid {
+		needsReview := spaceID.Valid && !h.isThreadModerator(r.Context(), user.UserID, spaceID)
+
 		status := content.StatusDraft
 		if spaceID.Valid {
-			status = content.StatusPublished
+			if needsReview {
+				// Moderation-hold state is "in_review" per the contents
+				// CHECK constraint (there is no "pending_review" value).
+				status = content.StatusInReview
+			} else {
+				status = content.StatusPublished
+			}
 		}
 
 		contentRow, err := h.content.CreateContent(r.Context(), content.CreateContentInput{
 			AuthorID:     user.UserID,
 			ContentType:  "forum_thread",
-			Title:        input.Title,
-			Slug:         input.Slug,
+			Title:        content.SanitizeText(input.Title),
+			Slug:         content.SanitizeText(input.Slug),
 			Body:         string(input.Body),
 			BodyHtml:     forumBodyHTML(input.Body),
 			FieldValues:  []byte("{}"),
@@ -536,17 +601,17 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 			if err := h.content.EnsureContentScore(r.Context(), contentID); err != nil {
 				slog.Warn("forum: failed to ensure content score", "content_id", contentID.String(), "error", err)
 			}
-		}
 
-		h.enqueueContentEmbedding(contentID)
+			h.enqueueContentEmbedding(contentID)
+		}
 	}
 
 	thread, err := h.Service.CreateThread(r.Context(), user.UserID, CreateThreadInput{
 		ContentID:         contentID,
 		SpaceID:           spaceID,
 		ParentReplyID:     parentReplyID,
-		Title:             input.Title,
-		Slug:              input.Slug,
+		Title:             content.SanitizeText(input.Title),
+		Slug:              content.SanitizeText(input.Slug),
 		Body:              input.Body,
 		IsAnonymous:       input.IsAnonymous,
 		EditWindowMinutes: editWindow,
@@ -565,15 +630,23 @@ func (h *Handlers) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Indexing gates: RAG + search only run once the thread is publicly
+	// visible. Space-scoped threads from non-moderators start as
+	// pending review (backing contents row is draft/in_review), so indexing
+	// is deferred until publish/moderation.
+	published := !spaceID.Valid || h.isThreadModerator(r.Context(), user.UserID, spaceID)
+
 	// Dispatch @mention notifications — fire-and-forget (BL-002, Section 15).
 	h.dispatchMentionNotifications(r.Context(), user.UserID, thread.ID, spaceID, input.Body, "mention.content")
 
-	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: forum threads
-	// are part of the RAG corpus).
-	h.indexThreadRAG(r.Context(), thread.ID, spaceID, user.UserID, input.Title, input.Body)
+	if published {
+		// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: forum threads
+		// are part of the RAG corpus).
+		h.indexThreadRAG(r.Context(), thread.ID, spaceID, user.UserID, input.Title, input.Body)
 
-	// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
-	h.enqueueSearchIndex("forum_thread", "index", thread.ID)
+		// §12 stale-index fix: enqueue Meilisearch re-index for the new thread.
+		h.enqueueSearchIndex("forum_thread", "index", thread.ID)
+	}
 
 	h.resolveLiterals(r, &thread)
 
@@ -1048,9 +1121,22 @@ func (h *Handlers) UpdateThread(w http.ResponseWriter, r *http.Request) {
 		IsAnonymous bool   `json:"is_anonymous"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+4096)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
 		return
+	}
+
+	if input.Title != "" && rejectOverlongField(w, "title", input.Title, maxTitleRunes) {
+		return
+	}
+
+	if len(input.Body) > 0 && rejectOversizedBody(w, input.Body) {
+		return
+	}
+
+	if input.Title != "" {
+		input.Title = content.SanitizeText(input.Title)
 	}
 
 	thread, err := h.Service.UpdateThread(r.Context(), id, user.UserID, input.Title, input.Body, input.IsAnonymous)
@@ -1210,8 +1296,13 @@ func (h *Handlers) CreateReply(w http.ResponseWriter, r *http.Request) {
 		IsAnonymous   bool    `json:"is_anonymous"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+4096)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if len(input.Body) > 0 && rejectOversizedBody(w, input.Body) {
 		return
 	}
 
@@ -1336,8 +1427,13 @@ func (h *Handlers) UpdateReply(w http.ResponseWriter, r *http.Request) {
 		Body []byte `json:"body"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes+4096)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if len(input.Body) > 0 && rejectOversizedBody(w, input.Body) {
 		return
 	}
 

@@ -20,6 +20,7 @@
 	} from './assistApi';
 	import type { DraftRequest, DraftResponse, FieldSchema, DraftOptions } from './types';
 	import { AutocompleteSelect } from '$lib/components/ui';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	interface Props {
 		open: boolean;
@@ -830,7 +831,7 @@
 
 				{#if draft}
 					<div class="min-h-[12rem] rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] p-3 text-sm">
-						{@html draft.body_html}
+						{@html sanitizeContentHtml(draft.body_html)}
 					</div>
 				{/if}
 			{/if}

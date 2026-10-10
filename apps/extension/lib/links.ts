@@ -24,7 +24,28 @@ export function contentHref(item: { slug: string; content_type?: string | null }
 
 // Single site-origin override for dev/staging builds — also drives the API
 // base (lib/api.ts) and MV3 host_permissions (wxt.config.ts).
-export const SITE_ORIGIN = (import.meta.env.WXT_JC_SITE_URL ?? 'https://japa.to').replace(/\/+$/, '');
+//
+// Cleartext guard: OAuth tokens and API keys ride on this origin. A
+// non-localhost http:// build would send bearer credentials in cleartext,
+// interceptable on the network — fail closed at module load so a
+// misconfigured WXT_JC_SITE_URL can never ship tokens over HTTP.
+function resolveSiteOrigin(): string {
+	const raw = ((import.meta.env.WXT_JC_SITE_URL as string | undefined) ?? 'https://japa.to').replace(/\/+$/, '');
+	try {
+		const parsed = new URL(raw);
+		const isLocal = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
+		if (parsed.protocol === 'http:' && !isLocal) {
+			throw new Error(
+				`WXT_JC_SITE_URL must be https in non-local builds (got ${raw}) — refusing to send tokens over cleartext HTTP`
+			);
+		}
+	} catch (e) {
+		if (e instanceof Error && e.message.startsWith('WXT_JC_SITE_URL')) throw e;
+		throw new Error(`Invalid WXT_JC_SITE_URL: ${raw}`);
+	}
+	return raw;
+}
+export const SITE_ORIGIN = resolveSiteOrigin();
 
 export function siteUrl(path: string): string {
 	return `${SITE_ORIGIN}${path}`;

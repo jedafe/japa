@@ -242,7 +242,7 @@
 				show: (row: RoadmapItem) => !isDeleted(row)
 			});
 		}
-		if (canEdit) {
+		if (canDelete) {
 			acts.push({
 				label: t('common.restore', 'Restore'),
 				icon: RotateCcw,
@@ -346,7 +346,7 @@
 		editPermission: 'roadmap.edit',
 		deletePermission: 'roadmap.delete',
 		hardDeletePermission: 'admin.hard_delete',
-		restorePermission: 'roadmap.edit',
+		restorePermission: 'roadmap.delete',
 		pageSize: 25,
 		exportable: true,
 		exportFilename: 'roadmap-items-export',

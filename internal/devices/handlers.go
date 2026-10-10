@@ -152,6 +152,8 @@ func writeDeviceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "push_unavailable", "Push delivery is not configured")
 	case errors.Is(err, ErrNoActiveTokens):
 		errpkg.WriteError(w, http.StatusNotFound, "no_active_tokens", "No active device tokens for user")
+	case errors.Is(err, ErrTooManyDevices):
+		errpkg.WriteError(w, http.StatusConflict, "too_many_devices", err.Error())
 	default:
 		errpkg.WriteError(w, http.StatusBadRequest, "device_error", err.Error())
 	}

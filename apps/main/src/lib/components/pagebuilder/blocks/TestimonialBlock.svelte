@@ -1,8 +1,10 @@
 <script lang="ts">
 	import type { TestimonialProps } from '../types';
 	import { Star } from 'lucide-svelte';
+	import { safeHref } from '$lib/utils/safeHtml';
 
 	let { props }: { props: TestimonialProps } = $props();
+	const avatarSrc = $derived(props.avatar_url ? safeHref(props.avatar_url) : '');
 </script>
 
 <div class="mx-auto w-full max-w-2xl px-4 py-6">
@@ -18,8 +20,8 @@
 			"{props.quote}"
 		</blockquote>
 		<figcaption class="mt-4 flex items-center gap-3">
-			{#if props.avatar_url}
-				<img src={props.avatar_url} alt={props.author_name} class="h-10 w-10 rounded-full object-cover" />
+			{#if avatarSrc}
+				<img src={avatarSrc} alt={props.author_name} class="h-10 w-10 rounded-full object-cover" />
 			{:else}
 				<div class="grid h-10 w-10 place-items-center rounded-full bg-[var(--color-surface-subtle)] text-sm font-medium text-[var(--color-text-subtle)]">
 					{props.author_name?.charAt(0).toUpperCase() ?? '?'}

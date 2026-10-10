@@ -29,6 +29,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -109,6 +110,13 @@ func validateEndpointWithPolicy(rawURL string, allowHTTP bool) error {
 // isInternalHost reports whether the host is a loopback, private, or
 // link-local address — these should never be valid LLM provider endpoints
 // in production. Also rejects bare "localhost" hostname.
+//
+// Alt-IP forms (decimal 2130706433, hex 0x7f.0.0.1, octal 0177.0.0.1)
+// bypass net.ParseIP and would otherwise pass as "hostnames" — they are
+// normalized first: anything that parses as an IP after stripping is
+// checked as an IP. Hostnames that need DNS to resolve (evil-rebind.com)
+// cannot be decided here; the redirect cap and per-request timeout bound
+// that residual, and provider URLs are admin-supplied (not attacker input).
 func isInternalHost(host string) bool {
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return true
@@ -118,16 +126,92 @@ func isInternalHost(host string) bool {
 	// and we only check for localhost above.
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return false
+		if normalized := normalizeNumericIP(host); normalized != nil {
+			ip = normalized
+		} else {
+			return false
+		}
 	}
 
 	// Reject loopback (127.0.0.0/8, ::1), private (10.x, 172.16-31.x,
 	// 192.168.x, fc00::/7), and link-local (169.254.x, fe80::/10).
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() {
 		return true
 	}
 
+	// Reserved ranges the stdlib predicates miss.
+	if v4 := ip.To4(); v4 != nil {
+		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
+			return true
+		}
+		if v4[0] == 0 || v4[0] >= 240 {
+			return true
+		}
+		if (v4[0] == 192 && v4[1] == 0 && (v4[2] == 0 || v4[2] == 2)) ||
+			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
+			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) ||
+			(v4[0] == 198 && (v4[1] == 18 || v4[1] == 19)) {
+			return true
+		}
+	}
+
 	return false
+}
+
+// normalizeNumericIP parses decimal/hex/octal IPv4 forms that net.ParseIP
+// rejects but the dialer accepts: "2130706433" (127.0.0.1),
+// "0x7f.0.0.1", "0177.0.0.1". Returns nil when the host is not a numeric
+// IPv4 form.
+func normalizeNumericIP(host string) net.IP {
+	if host == "" || strings.Contains(host, ":") {
+		return nil
+	}
+
+	parts := strings.Split(host, ".")
+	if len(parts) != 1 && len(parts) != 4 {
+		return nil
+	}
+
+	parsePart := func(s string, bits int) (uint64, bool) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return 0, false
+		}
+		base := 10
+		if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+			base = 16
+			s = s[2:]
+		} else if len(s) > 1 && strings.HasPrefix(s, "0") {
+			base = 8
+			s = s[1:]
+		}
+		if s == "" {
+			return 0, false
+		}
+		n, err := strconv.ParseUint(s, base, bits)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+
+	if len(parts) == 1 {
+		n, ok := parsePart(parts[0], 32)
+		if !ok {
+			return nil
+		}
+		return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+	}
+
+	var b [4]byte
+	for i, p := range parts {
+		n, ok := parsePart(p, 8)
+		if !ok {
+			return nil
+		}
+		b[i] = byte(n)
+	}
+	return net.IPv4(b[0], b[1], b[2], b[3])
 }
 
 // isLoopbackHost reports whether the host is a loopback address
@@ -141,6 +225,9 @@ func isLoopbackHost(host string) bool {
 	}
 
 	ip := net.ParseIP(host)
+	if ip == nil {
+		ip = normalizeNumericIP(host)
+	}
 	if ip == nil {
 		return false
 	}

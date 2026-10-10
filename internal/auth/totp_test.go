@@ -107,14 +107,14 @@ func TestGenerateBackupCodes(t *testing.T) {
 		t.Errorf("expected 10 backup codes, got %d", len(codes))
 	}
 
-	// Check format: XXXX-XXXX
+	// Check format: XXXX-XXXX-XXXX (64-bit entropy, base32 no padding)
 	for i, code := range codes {
-		if len(code) != 9 {
-			t.Errorf("code %d: expected 9 chars (XXXX-XXXX), got %d: %s", i, len(code), code)
+		if len(code) != 14 {
+			t.Errorf("code %d: expected 14 chars (XXXX-XXXX-XXXX), got %d: %s", i, len(code), code)
 		}
 
-		if code[4] != '-' {
-			t.Errorf("code %d: expected dash at position 4, got %s", i, code)
+		if code[4] != '-' || code[9] != '-' {
+			t.Errorf("code %d: expected dashes at positions 4 and 9, got %s", i, code)
 		}
 	}
 }

@@ -77,7 +77,7 @@ func TestFetchRates_EndToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := &Adapter{svc: nil, http: srv.Client()} // svc nil → pure fetch path test via fetchMatrix
+	a := &Adapter{svc: nil, http: srv.Client(), allowPrivate: true} // svc nil → pure fetch path test via fetchMatrix
 	cfg := providerConfig{AppID: "testkey", Endpoint: srv.URL, BaseCurrency: "USD", Engine: "oxr"}
 
 	rates, err := a.fetchMatrix(context.Background(), cfg)
@@ -100,7 +100,7 @@ func TestFetchMatrix_BaseMismatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := &Adapter{svc: nil, http: srv.Client()}
+	a := &Adapter{svc: nil, http: srv.Client(), allowPrivate: true}
 	cfg := providerConfig{AppID: "k", Endpoint: srv.URL, BaseCurrency: "USD", Engine: "oxr"}
 
 	if _, err := a.fetchMatrix(context.Background(), cfg); err == nil {

@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -37,6 +36,12 @@ type VerificationTokenRecord struct {
 
 // GenerateResetToken creates a cryptographically random token and its SHA-256 hash.
 // The raw token is sent to the user; the hash is stored in the database.
+//
+// The hash MUST be computed over the hex-encoded token string (not the raw
+// bytes) because every lookup site hashes the user-supplied token string
+// with HashRefreshToken (SHA256 of the string). Hashing raw bytes here
+// while lookups hash the hex string would make every stored token
+// unfindable — a total password-reset/email-verify DoS.
 func GenerateResetToken() (token, hash string, err error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
@@ -44,13 +49,13 @@ func GenerateResetToken() (token, hash string, err error) {
 	}
 
 	token = hex.EncodeToString(bytes)
-	h := sha256.Sum256(bytes)
-	hash = hex.EncodeToString(h[:])
+	hash = HashRefreshToken(token)
 
 	return token, hash, nil
 }
 
 // GenerateVerificationToken creates a cryptographically random token and its SHA-256 hash.
+// Same hash-domain contract as GenerateResetToken: hash over the hex string.
 func GenerateVerificationToken() (token, hash string, err error) {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
@@ -58,8 +63,7 @@ func GenerateVerificationToken() (token, hash string, err error) {
 	}
 
 	token = hex.EncodeToString(bytes)
-	h := sha256.Sum256(bytes)
-	hash = hex.EncodeToString(h[:])
+	hash = HashRefreshToken(token)
 
 	return token, hash, nil
 }

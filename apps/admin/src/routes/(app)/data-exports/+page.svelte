@@ -6,9 +6,8 @@
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { api, apiRaw, adminCatalogApi, type CatalogOption } from '$lib/api';
-	import { getAccessToken } from '$lib/api/token';
-	import { PUBLIC_JC_API_URL } from '$env/static/public';
-	import { buildApiUrl } from '@japaconnect/api-url';
+	import { escapeHtml } from '$lib/utils/html';
+	import { apiFetch } from '$lib/api/client';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Select } from '$lib/components/ui/select';
@@ -116,9 +115,9 @@
 			await Promise.all(idArr.map((id) => api(`/admin/data-exports/${id}`, { method: 'DELETE' })));
 			pageSuccess = t('app.data_exports.msg_bulk_deleted', `${idArr.length} export(s) deleted`);
 			await loadSummary();
+			bulkDeleting = false;
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('app.data_exports.msg_delete_failed', 'Failed to delete export');
-		} finally {
 			bulkDeleting = false;
 		}
 	}
@@ -127,8 +126,9 @@
 	// The backend returns fileUrl as a relative API path
 	// (/api/v1/admin/data-exports/{id}/download), but the admin SPA is served
 	// from a different origin than the API and a raw <a href> cannot attach
-	// the Bearer token. Fetch the file via an authenticated request and
-	// trigger a blob download instead.
+	// the Bearer token. Fetch the file via apiFetch (blob-capable) so the
+	// request gets the same CSRF-retry / 401-refresh coalescing as every
+	// other admin API call, and trigger a blob download instead.
 	let downloading = $state(false);
 
 	async function downloadExport(row: DataExport) {
@@ -136,30 +136,26 @@
 		downloading = true;
 		pageError = '';
 		try {
-			const url = buildApiUrl(`/admin/data-exports/${row.id}/download`, PUBLIC_JC_API_URL);
-			const token = getAccessToken();
-			const res = await fetch(url, {
-				credentials: 'include',
-				headers: token ? { Authorization: `Bearer ${token}` } : {}
-			});
-			if (!res.ok) {
+			const result = await apiFetch<Blob>(`/admin/data-exports/${row.id}/download`, {
+				method: 'GET'
+			}, undefined, 'blob');
+			if (result.error || !(result.data instanceof Blob)) {
 				pageError = t('app.data_exports.msg_download_failed', 'Failed to download export file');
+				downloading = false;
 				return;
 			}
-			const blob = await res.blob();
+			const blob = result.data;
 			const objUrl = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = objUrl;
-			const cd = res.headers.get('Content-Disposition');
-			const match = cd?.match(/filename="(.+?)"/);
-			a.download = match?.[1] ?? `${row.name}.${row.format}`;
+			a.download = result.filename ?? `${row.name}.${row.format}`;
 			document.body.appendChild(a);
 			a.click();
 			document.body.removeChild(a);
 			URL.revokeObjectURL(objUrl);
+			downloading = false;
 		} catch (e) {
 			pageError = e instanceof Error ? e.message : t('app.data_exports.msg_download_failed', 'Failed to download export file');
-		} finally {
 			downloading = false;
 		}
 	}
@@ -191,8 +187,8 @@
 				sortable: true,
 				render: (_: any, row: any) => `
 					<div>
-						<p class="font-medium text-foreground">${row.name}</p>
-						<p class="text-xs text-muted">${row.type} · ${row.format.toUpperCase()}</p>
+						<p class="font-medium text-foreground">${escapeHtml(row.name)}</p>
+						<p class="text-xs text-muted">${escapeHtml(row.type)} · ${escapeHtml(row.format.toUpperCase())}</p>
 					</div>`
 			},
 			{
@@ -201,7 +197,9 @@
 				sortable: true,
 				render: (value: string) => {
 					const cls = statusBadgeClass(value);
-					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${value.charAt(0).toUpperCase() + value.slice(1)}</span>`;
+					const label = String(value ?? '');
+					const safe = escapeHtml(label.charAt(0).toUpperCase() + label.slice(1));
+					return `<span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}">${safe}</span>`;
 				}
 			},
 			{
@@ -283,11 +281,14 @@
 				if (result.ok) {
 					pageSuccess = t('app.data_exports.msg_queued', 'Export job queued successfully');
 					await loadSummary();
+					saving = false;
 					return { ok: true };
 				}
-				return { ok: false, error: result.error ?? t('app.data_exports.msg_create_failed', 'Failed to create export') };
-			} finally {
 				saving = false;
+				return { ok: false, error: result.error ?? t('app.data_exports.msg_create_failed', 'Failed to create export') };
+			} catch (e) {
+				saving = false;
+				return { ok: false, error: e instanceof Error ? e.message : t('app.data_exports.msg_create_failed', 'Failed to create export') };
 			}
 		},
 		remove: async (id) => {

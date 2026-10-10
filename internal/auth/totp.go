@@ -65,18 +65,26 @@ func GenerateTOTPSecret(userID, email, issuer string) (secret, qrCodeURL string,
 
 // GenerateBackupCodes creates a set of one-time backup codes for account
 // recovery when the user loses access to their authenticator device.
+// Each code carries 64 bits of entropy (8 random bytes, base32 without
+// padding split as XXXX-XXXX-XXXX): 32-bit codes fall to an offline
+// GPU brute-force in hours after a DB leak, and the unsalted fast hash
+// gives the attacker no slowdown — 64 bits keeps the offline search
+// infeasible while codes stay typable.
 func GenerateBackupCodes() ([]string, error) {
 	codes := make([]string, 10)
 	for i := range codes {
-		buf := make([]byte, 4)
+		buf := make([]byte, 8)
 		if _, err := rand.Read(buf); err != nil {
 			return nil, fmt.Errorf("generating backup code: %w", err)
 		}
-		// Format: XXXX-XXXX (8 hex characters with a dash)
+		// Format: XXXX-XXXX-XXXX (base32, no padding — unambiguous,
+		// no 0/O or 1/l confusion).
+		enc := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf)
 		codes[i] = fmt.Sprintf(
-			"%s-%s",
-			base32.StdEncoding.EncodeToString(buf[:2])[:4],
-			base32.StdEncoding.EncodeToString(buf[2:])[:4],
+			"%s-%s-%s",
+			enc[0:4],
+			enc[4:8],
+			enc[8:12],
 		)
 	}
 

@@ -15,13 +15,35 @@
  *   <div class="prose" use:hydrateMentions>{@html body}</div>
  */
 export function hydrateMentions(node: HTMLElement) {
+	/**
+	 * Guard a `data-url` value before it becomes a link href. The sanitizer
+	 * validates data-url too, but hydrate must never trust the DOM — a
+	 * `javascript:`/entity-encoded payload would execute on click. Returns
+	 * the URL when safe (http/https/mailto/tel or a site-relative path),
+	 * else '' so the caller renders a span instead of a link.
+	 */
+	function safeDataUrl(url: string): string {
+		const trimmed = url.trim();
+		if (!trimmed || trimmed.startsWith('//')) return '';
+		const lowered = trimmed
+			.split('')
+			.filter((ch) => ch.charCodeAt(0) > 32)
+			.join('')
+			.toLowerCase();
+		if (/^(javascript|data|vbscript):/.test(lowered)) return '';
+		return trimmed;
+	}
+
 	function scan() {
 		const mentions = node.querySelectorAll<HTMLElement>(
 			'span.mention[data-handle]:not([data-linked])'
 		);
 		for (const el of mentions) {
 			const handle = el.dataset.handle;
-			if (!handle) continue;
+			// Handles are username slugs — reject anything outside the
+			// slug alphabet so a stored data-handle="/x" onmouseover=…
+			// cannot break out of the /u/ path into markup/JS.
+			if (!handle || !/^[a-z0-9_]{1,30}$/i.test(handle)) continue;
 			el.setAttribute('data-linked', 'true');
 			const link = document.createElement('a');
 			link.href = `/u/${handle}`;
@@ -40,8 +62,18 @@ export function hydrateMentions(node: HTMLElement) {
 			const url = el.dataset.url;
 			if (!url) continue;
 			el.setAttribute('data-linked', 'true');
+			const safe = safeDataUrl(url);
+			if (!safe) {
+				// Unsafe target — drop the link and leave a plain span so no
+				// javascript:/entity-encoded payload becomes clickable.
+				const span = document.createElement('span');
+				span.className = el.classList.contains('interlink') ? 'interlink-link' : 'hashtag-link';
+				el.parentElement?.insertBefore(span, el);
+				span.appendChild(el);
+				continue;
+			}
 			const link = document.createElement('a');
-			link.href = url;
+			link.href = safe;
 			link.className = el.classList.contains('interlink') ? 'interlink-link' : 'hashtag-link';
 			el.parentElement?.insertBefore(link, el);
 			link.appendChild(el);

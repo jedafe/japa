@@ -87,6 +87,15 @@ export async function initSettingsDb(): Promise<void> {
 					'Failed to migrate legacy settings from localStorage:',
 					e instanceof Error ? e.message : e
 				);
+			} finally {
+				// Wipe the legacy key after migration: it may hold plaintext
+				// apiKey/accessToken/refreshToken from older versions, and
+				// secrets must never rest in localStorage.
+				try {
+					localStorage.removeItem(SETTINGS_KEY);
+				} catch {
+					// storage unavailable — nothing to wipe
+				}
 			}
 		}
 

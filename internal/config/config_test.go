@@ -37,6 +37,7 @@ func TestLoad_ReadsEnvironmentVariables(t *testing.T) {
 	t.Setenv("JC_JWT_KEY_ID", "key-prod")
 	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
 	t.Setenv("JC_ENCRYPTION_KEY", "test-encryption-key-for-production")
+	t.Setenv("JC_SMTP_HOST", "smtp.example.com")
 
 	cfg, err := Load()
 	if err != nil {
@@ -188,8 +189,9 @@ func TestIsProduction(t *testing.T) {
 				}
 			}
 			// Production validation requires JC_COOKIE_DOMAIN, JC_DATABASE_URL,
-			// JC_JWT_SECRET, and JC_ENCRYPTION_KEY.
+			// JC_JWT_SECRET, JC_ENCRYPTION_KEY, and JC_SMTP_HOST.
 			t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
+			t.Setenv("JC_SMTP_HOST", "smtp.example.com")
 			t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 			t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
 			t.Setenv("JC_ENCRYPTION_KEY", "test-encryption-key")
@@ -295,6 +297,7 @@ func TestLoad_ProductionRequiresEncryptionKey(t *testing.T) {
 	t.Setenv("JC_ENV", "production")
 	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
+	t.Setenv("JC_SMTP_HOST", "smtp.example.com")
 	t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
 
 	if err := os.Unsetenv("JC_ENCRYPTION_KEY"); err != nil {
@@ -325,6 +328,7 @@ func TestLoad_ProductionAcceptsLegacyEncryptionKey(t *testing.T) {
 	t.Setenv("JC_ENV", "production")
 	t.Setenv("JC_DATABASE_URL", "postgresql://test:test@localhost:5432/testdb?sslmode=disable")
 	t.Setenv("JC_COOKIE_DOMAIN", ".example.com")
+	t.Setenv("JC_SMTP_HOST", "smtp.example.com")
 	t.Setenv("JC_JWT_SECRET", strings.Repeat("x", 32))
 
 	if err := os.Unsetenv("JC_ENCRYPTION_KEY"); err != nil {

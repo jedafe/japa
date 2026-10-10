@@ -35,7 +35,7 @@ RUN VERSION="1.0.0"; \
 # Stage 2: minimal runtime image
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates tesseract-ocr tesseract-ocr-data-eng poppler-utils
+RUN apk --no-cache add ca-certificates tesseract-ocr tesseract-ocr-data-eng poppler-utils ffmpeg
 
 WORKDIR /app
 

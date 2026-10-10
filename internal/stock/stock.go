@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -417,4 +420,47 @@ func (s *Service) ImportPhoto(ctx context.Context, uploaderID pgtype.UUID, provi
 
 func cacheKey(provider, query string, page, perPage int) string {
 	return fmt.Sprintf("%s:%s:%d:%d", provider, query, page, perPage)
+}
+
+// validateDownloadURL constrains upstream-supplied photo URLs before the
+// Download fetch: https only, no userinfo, no private-literal hosts. A
+// compromised upstream returning "full_url": "http://169.254.169.254/x"
+// must not turn the importer into an SSRF sink. Hostnames are trusted
+// past the literal check (upstream CDNs resolve publicly); the 30s client
+// timeout bounds the residual.
+func validateDownloadURL(rawURL string) error {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Host == "" || u.Scheme != "https" {
+		return fmt.Errorf("stock: download URL must be https: %q", rawURL)
+	}
+	if u.User != nil {
+		return fmt.Errorf("stock: download URL must not embed credentials")
+	}
+	if ip := net.ParseIP(u.Hostname()); ip != nil && isReservedIP(ip) {
+		return fmt.Errorf("stock: download URL targets a private address: %q", rawURL)
+	}
+	return nil
+}
+
+// isReservedIP mirrors the webhook/ai/fx SSRF literal blocklist
+// (stdlib-only, no cross-package import).
+func isReservedIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+	if v4 := ip.To4(); v4 != nil {
+		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
+			return true
+		}
+		if v4[0] == 0 || v4[0] >= 240 {
+			return true
+		}
+		if (v4[0] == 192 && v4[1] == 0 && (v4[2] == 0 || v4[2] == 2)) ||
+			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
+			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) ||
+			(v4[0] == 198 && (v4[1] == 18 || v4[1] == 19)) {
+			return true
+		}
+	}
+	return false
 }

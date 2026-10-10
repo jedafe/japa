@@ -182,7 +182,7 @@ func (h *Handlers) HandleListExports(w http.ResponseWriter, r *http.Request) {
 
 // HandleGetExport handles GET /api/v1/admin/data-exports/:id.
 func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -206,18 +206,47 @@ func (h *Handlers) HandleGetExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ownership gate: export files carry PII (user emails, orders). Only
+	// the creator may read via this route — route middleware already
+	// requires gdpr.data_exports.view, and broader admin access flows
+	// through dedicated manage tooling. Return 404 (not 403) so export
+	// IDs cannot be probed for existence.
+	if exp.CreatedBy != user.UserID {
+		errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
+		return
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": serializeExport(exp)})
 }
 
 // HandleDeleteExport handles DELETE /api/v1/admin/data-exports/:id.
 func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
+		return
+	}
+
+	// Same ownership gate as HandleGetExport — never delete another
+	// creator's export. 404 (not 403) to avoid existence probing.
+	exp, err := h.service.GetExport(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
+		} else {
+			slog.Error("dataexport: delete lookup failed", "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "export_delete_failed", "Failed to delete export")
+		}
+
+		return
+	}
+
+	if exp.CreatedBy != user.UserID {
+		errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
 		return
 	}
 
@@ -233,15 +262,34 @@ func (h *Handlers) HandleDeleteExport(w http.ResponseWriter, r *http.Request) {
 
 // HandleDownloadExport handles GET /api/v1/admin/data-exports/:id/download —
 // serves the generated export file. The export must be completed and the
-// caller's platform must match the export's platform. Gated by gdpr.data_exports.view.
+// caller must be its creator. Gated by gdpr.data_exports.view.
 func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
 
 	id, ok := scanUUIDParam(w, r, "id")
 	if !ok {
+		return
+	}
+
+	// Ownership gate first — the file carries PII. 404 (not 403) to
+	// avoid existence probing.
+	exp, err := h.service.GetExport(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
+		} else {
+			slog.Error("dataexport: download lookup failed", "error", err)
+			errpkg.WriteError(w, http.StatusNotFound, "file_not_available", "Export file not available")
+		}
+
+		return
+	}
+
+	if exp.CreatedBy != user.UserID {
+		errpkg.WriteError(w, http.StatusNotFound, "export_not_found", "Export not found")
 		return
 	}
 
@@ -258,12 +306,6 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Determine content type from the export format.
-	exp, err := h.service.GetExport(r.Context(), id)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "export_get_failed", "Failed to fetch export")
-		return
-	}
-
 	contentType := "application/octet-stream"
 
 	switch exp.Format {
@@ -278,6 +320,10 @@ func (h *Handlers) HandleDownloadExport(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	// Export files are PII-bearing downloads: block MIME sniffing and
+	// script execution if the file is ever rendered in a browser context.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	http.ServeFile(w, r, filePath)
 }
 

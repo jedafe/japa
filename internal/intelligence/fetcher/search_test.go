@@ -305,7 +305,7 @@ func TestSearchFetcher_EndpointOverrideScheme(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if err := validateSearchEndpointOverride(tc.endpoint); (err != nil) != tc.wantErr {
+			if err := f.validateSearchEndpointOverride(tc.endpoint); (err != nil) != tc.wantErr {
 				t.Errorf("validateSearchEndpointOverride(%q) err = %v, wantErr %v", tc.endpoint, err, tc.wantErr)
 			}
 		})

@@ -46,6 +46,39 @@ func (q *Queries) CancelSubscription(ctx context.Context, id pgtype.UUID) (Subsc
 	return i, err
 }
 
+const consumeDiscountCodeUse = `-- name: ConsumeDiscountCodeUse :one
+UPDATE discount_codes SET uses = uses + 1
+WHERE id = $1 AND (max_uses IS NULL OR uses < max_uses)
+RETURNING id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at, uses
+`
+
+// Atomically consumes one use of a discount code. The guarded UPDATE
+// serializes concurrent checkouts on the row lock: the increment only
+// happens when max_uses is NULL (unlimited) or the counter is still below
+// max_uses, so max_uses can never be overshot. Returns no row
+// (pgx.ErrNoRows) when the code is exhausted — callers treat that as
+// "discount code usage limit reached".
+func (q *Queries) ConsumeDiscountCodeUse(ctx context.Context, id pgtype.UUID) (DiscountCode, error) {
+	row := q.db.QueryRow(ctx, consumeDiscountCodeUse, id)
+	var i DiscountCode
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.ApplicableTo,
+		&i.MaxUses,
+		&i.UsesPerUser,
+		&i.GroupID,
+		&i.ValidFrom,
+		&i.ValidUntil,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.Uses,
+	)
+	return i, err
+}
+
 const countDiscountCodeUses = `-- name: CountDiscountCodeUses :one
 SELECT COUNT(*)::int FROM discount_code_uses
 WHERE code_id = $1
@@ -81,7 +114,7 @@ func (q *Queries) CountDiscountCodeUsesByUser(ctx context.Context, arg CountDisc
 const createDiscountCode = `-- name: CreateDiscountCode :one
 
 INSERT INTO discount_codes (code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-RETURNING id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at
+RETURNING id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at, uses
 `
 
 type CreateDiscountCodeParams struct {
@@ -127,6 +160,7 @@ func (q *Queries) CreateDiscountCode(ctx context.Context, arg CreateDiscountCode
 		&i.ValidUntil,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.Uses,
 	)
 	return i, err
 }
@@ -390,7 +424,7 @@ func (q *Queries) GetAdminPaymentByID(ctx context.Context, id pgtype.UUID) (Paym
 }
 
 const getDiscountCodeByCode = `-- name: GetDiscountCodeByCode :one
-SELECT id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at FROM discount_codes
+SELECT id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at, uses FROM discount_codes
 WHERE code = $1
 `
 
@@ -410,12 +444,13 @@ func (q *Queries) GetDiscountCodeByCode(ctx context.Context, code string) (Disco
 		&i.ValidUntil,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.Uses,
 	)
 	return i, err
 }
 
 const getDiscountCodeByID = `-- name: GetDiscountCodeByID :one
-SELECT id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at FROM discount_codes
+SELECT id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at, uses FROM discount_codes
 WHERE id = $1
 `
 
@@ -435,6 +470,7 @@ func (q *Queries) GetDiscountCodeByID(ctx context.Context, id pgtype.UUID) (Disc
 		&i.ValidUntil,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.Uses,
 	)
 	return i, err
 }
@@ -499,6 +535,26 @@ func (q *Queries) GetPaymentByProviderRef(ctx context.Context, providerRef *stri
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
+const getRefundByID = `-- name: GetRefundByID :one
+SELECT id, payment_id, amount, reason, status, provider_ref, created_at FROM payment_refunds
+WHERE id = $1
+`
+
+func (q *Queries) GetRefundByID(ctx context.Context, id pgtype.UUID) (PaymentRefund, error) {
+	row := q.db.QueryRow(ctx, getRefundByID, id)
+	var i PaymentRefund
+	err := row.Scan(
+		&i.ID,
+		&i.PaymentID,
+		&i.Amount,
+		&i.Reason,
+		&i.Status,
+		&i.ProviderRef,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -800,7 +856,7 @@ func (q *Queries) ListDiscountCodeUses(ctx context.Context, arg ListDiscountCode
 }
 
 const listDiscountCodes = `-- name: ListDiscountCodes :many
-SELECT id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at FROM discount_codes
+SELECT id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at, uses FROM discount_codes
 
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $1
@@ -833,6 +889,7 @@ func (q *Queries) ListDiscountCodes(ctx context.Context, arg ListDiscountCodesPa
 			&i.ValidUntil,
 			&i.CreatedBy,
 			&i.CreatedAt,
+			&i.Uses,
 		); err != nil {
 			return nil, err
 		}
@@ -1162,6 +1219,36 @@ func (q *Queries) ReactivateSubscription(ctx context.Context, userID pgtype.UUID
 	return i, err
 }
 
+const releaseDiscountCodeUse = `-- name: ReleaseDiscountCodeUse :one
+UPDATE discount_codes SET uses = GREATEST(uses - 1, 0)
+WHERE id = $1
+RETURNING id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at, uses
+`
+
+// Compensation for ConsumeDiscountCodeUse when the follow-up
+// discount_code_uses insert fails (e.g. duplicate per-user use): gives the
+// consumed slot back so the counter stays accurate. Never drops below zero.
+func (q *Queries) ReleaseDiscountCodeUse(ctx context.Context, id pgtype.UUID) (DiscountCode, error) {
+	row := q.db.QueryRow(ctx, releaseDiscountCodeUse, id)
+	var i DiscountCode
+	err := row.Scan(
+		&i.ID,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.ApplicableTo,
+		&i.MaxUses,
+		&i.UsesPerUser,
+		&i.GroupID,
+		&i.ValidFrom,
+		&i.ValidUntil,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.Uses,
+	)
+	return i, err
+}
+
 const renewSubscriptionPeriod = `-- name: RenewSubscriptionPeriod :one
 UPDATE subscriptions
 SET status = 'active', current_period_start = $1,
@@ -1259,7 +1346,7 @@ SET
  valid_from = COALESCE($6, valid_from),
  valid_until = $7
 WHERE id = $8
-RETURNING id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at
+RETURNING id, code, discount_type, discount_value, applicable_to, max_uses, uses_per_user, group_id, valid_from, valid_until, created_by, created_at, uses
 `
 
 type UpdateDiscountCodeParams struct {
@@ -1298,6 +1385,7 @@ func (q *Queries) UpdateDiscountCode(ctx context.Context, arg UpdateDiscountCode
 		&i.ValidUntil,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.Uses,
 	)
 	return i, err
 }
@@ -1376,6 +1464,37 @@ func (q *Queries) UpdatePaymentStatus(ctx context.Context, arg UpdatePaymentStat
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.IdempotencyKey,
+	)
+	return i, err
+}
+
+const updateRefund = `-- name: UpdateRefund :one
+UPDATE payment_refunds SET status = $1, provider_ref = $2
+WHERE id = $3
+RETURNING id, payment_id, amount, reason, status, provider_ref, created_at
+`
+
+type UpdateRefundParams struct {
+	Status      string      `json:"status"`
+	ProviderRef *string     `json:"provider_ref"`
+	ID          pgtype.UUID `json:"id"`
+}
+
+// Updates a refund's settlement state after the provider refund call
+// resolves (succeeded with the provider refund reference, failed, or
+// pending_review when the provider has no refund API). The refund row
+// stays pending until the provider confirms — never pre-marked refunded.
+func (q *Queries) UpdateRefund(ctx context.Context, arg UpdateRefundParams) (PaymentRefund, error) {
+	row := q.db.QueryRow(ctx, updateRefund, arg.Status, arg.ProviderRef, arg.ID)
+	var i PaymentRefund
+	err := row.Scan(
+		&i.ID,
+		&i.PaymentID,
+		&i.Amount,
+		&i.Reason,
+		&i.Status,
+		&i.ProviderRef,
+		&i.CreatedAt,
 	)
 	return i, err
 }

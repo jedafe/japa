@@ -271,6 +271,25 @@ INSERT INTO discount_code_uses (code_id, user_id, payment_id) VALUES (@code_id, 
 ON CONFLICT (code_id, user_id) DO NOTHING
 RETURNING *;
 
+-- name: ConsumeDiscountCodeUse :one
+-- Atomically consumes one use of a discount code. The guarded UPDATE
+-- serializes concurrent checkouts on the row lock: the increment only
+-- happens when max_uses is NULL (unlimited) or the counter is still below
+-- max_uses, so max_uses can never be overshot. Returns no row
+-- (pgx.ErrNoRows) when the code is exhausted — callers treat that as
+-- "discount code usage limit reached".
+UPDATE discount_codes SET uses = uses + 1
+WHERE id = @id AND (max_uses IS NULL OR uses < max_uses)
+RETURNING *;
+
+-- name: ReleaseDiscountCodeUse :one
+-- Compensation for ConsumeDiscountCodeUse when the follow-up
+-- discount_code_uses insert fails (e.g. duplicate per-user use): gives the
+-- consumed slot back so the counter stays accurate. Never drops below zero.
+UPDATE discount_codes SET uses = GREATEST(uses - 1, 0)
+WHERE id = @id
+RETURNING *;
+
 -- name: CountDiscountCodeUsesByUser :one
 SELECT COUNT(*)::int FROM discount_code_uses
 WHERE code_id = @code_id AND user_id = @user_id;
@@ -294,6 +313,19 @@ LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CreateRefund :one
 INSERT INTO payment_refunds (payment_id, amount, reason, status, provider_ref) VALUES (@payment_id, @amount, sqlc.narg(reason), @status, sqlc.narg(provider_ref))
+RETURNING *;
+
+-- name: GetRefundByID :one
+SELECT id, payment_id, amount, reason, status, provider_ref, created_at FROM payment_refunds
+WHERE id = @id;
+
+-- name: UpdateRefund :one
+-- Updates a refund's settlement state after the provider refund call
+-- resolves (succeeded with the provider refund reference, failed, or
+-- pending_review when the provider has no refund API). The refund row
+-- stays pending until the provider confirms — never pre-marked refunded.
+UPDATE payment_refunds SET status = @status, provider_ref = sqlc.narg(provider_ref)
+WHERE id = @id
 RETURNING *;
 
 -- name: ListRefundsByPayment :many

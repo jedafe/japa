@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { HeroProps } from '../types';
+	import { safeHref } from '$lib/utils/safeHtml';
 
 	interface Props {
 		props: HeroProps;
@@ -8,6 +9,10 @@
 
 	const align = $derived(props.text_align ?? 'center');
 	const overlay = $derived(props.overlay_opacity ?? 0.4);
+	const ctaHref = $derived(props.cta_url ? safeHref(props.cta_url) : '');
+	// Background images render as <img>: http(s) or site-relative only, so
+	// data:/javascript: payloads never load.
+	const bgSrc = $derived(props.background_image ? safeHref(props.background_image) : '');
 </script>
 
 <section
@@ -15,9 +20,9 @@
 	class:text-left={align === 'left'}
 	class:text-right={align === 'right'}
 >
-	{#if props.background_image}
+	{#if bgSrc}
 		<img
-			src={props.background_image}
+			src={bgSrc}
 			alt=""
 			class="absolute inset-0 h-full w-full object-cover"
 			loading="eager"
@@ -31,9 +36,9 @@
 		{#if props.subtitle}
 			<p class="mt-4 text-balance text-lg text-white/80">{props.subtitle}</p>
 		{/if}
-		{#if props.cta_text && props.cta_url}
+		{#if props.cta_text && ctaHref}
 			<a
-				href={props.cta_url}
+				href={ctaHref}
 				class="mt-8 inline-flex items-center justify-center rounded-[var(--radius)] bg-[var(--color-primary)] px-6 py-3 text-sm font-semibold text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				{props.cta_text}

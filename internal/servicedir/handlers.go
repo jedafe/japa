@@ -262,6 +262,26 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "too_many_steps", "Listing exceeds the maximum number of steps")
 	case errors.Is(err, ErrInvalidStep):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step", "A step entry is invalid")
+	case errors.Is(err, ErrTooManySellingPoints):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_selling_points", "Listing exceeds the maximum number of selling points")
+	case errors.Is(err, ErrInvalidSellingPoint):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_selling_point", "A selling point entry is invalid")
+	case errors.Is(err, ErrTooManyFacts):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_facts", "Listing exceeds the maximum number of facts")
+	case errors.Is(err, ErrInvalidFact):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_fact", "A fact entry is invalid")
+	case errors.Is(err, ErrTooManyIncluded):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_included", "Listing exceeds the maximum number of included entries")
+	case errors.Is(err, ErrInvalidIncluded):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_included", "An included entry is invalid")
+	case errors.Is(err, ErrTooManyHighlights):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_highlights", "Listing exceeds the maximum number of highlights")
+	case errors.Is(err, ErrInvalidHighlight):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_highlight", "A highlight entry is invalid")
+	case errors.Is(err, ErrTooManyAudience):
+		errpkg.WriteError(w, http.StatusBadRequest, "too_many_audience", "Listing exceeds the maximum number of audience entries")
+	case errors.Is(err, ErrInvalidAudience):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "An audience entry is invalid")
 	case errors.Is(err, ErrInvalidID):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid id")
 	case errors.Is(err, ErrInputTooLong):

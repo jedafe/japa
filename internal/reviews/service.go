@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 )
 
@@ -29,6 +30,23 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 	if input.Rating < RatingMin || input.Rating > RatingMax {
 		return gen.Review{}, fmt.Errorf("rating must be between %d and %d", RatingMin, RatingMax)
 	}
+
+	if len([]rune(input.Title)) > MaxTitleRunes {
+		return gen.Review{}, fmt.Errorf("title must be at most %d characters", MaxTitleRunes)
+	}
+
+	if len([]rune(input.Body)) > MaxBodyRunes {
+		return gen.Review{}, fmt.Errorf("body must be at most %d characters", MaxBodyRunes)
+	}
+
+	if len(input.Body) > MaxBodyBytes {
+		return gen.Review{}, fmt.Errorf("body exceeds size limit")
+	}
+
+	// Sanitize on write (mirror content/store.go:460): titles are plain
+	// text, bodies go through the whitelist HTML sanitizer.
+	input.Title = content.SanitizeText(input.Title)
+	input.Body = content.SanitizeHTML(input.Body)
 
 	// One-per-user enforcement.
 	exists, err := s.store.hasUserReviewedEntity(ctx, input.EntityType, input.EntityID, reviewerUserID)
@@ -136,6 +154,23 @@ func (s *Service) UpdateReview(ctx context.Context, id, reviewerUserID pgtype.UU
 	if rating < RatingMin || rating > RatingMax {
 		return gen.Review{}, fmt.Errorf("rating must be between %d and %d", RatingMin, RatingMax)
 	}
+
+	if len([]rune(title)) > MaxTitleRunes {
+		return gen.Review{}, fmt.Errorf("title must be at most %d characters", MaxTitleRunes)
+	}
+
+	if len([]rune(body)) > MaxBodyRunes {
+		return gen.Review{}, fmt.Errorf("body must be at most %d characters", MaxBodyRunes)
+	}
+
+	if len(body) > MaxBodyBytes {
+		return gen.Review{}, fmt.Errorf("body exceeds size limit")
+	}
+
+	// Sanitize on write (mirror content/store.go:460): titles are plain
+	// text, bodies go through the whitelist HTML sanitizer.
+	title = content.SanitizeText(title)
+	body = content.SanitizeHTML(body)
 
 	var t *string
 	if title != "" {

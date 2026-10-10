@@ -928,7 +928,7 @@ func (h *Handlers) BanUser(w http.ResponseWriter, r *http.Request) {
 	err = h.Queries.CreateUserBan(ctx, gen.CreateUserBanParams{
 		UserID:  uid,
 		Reason:  &input.Reason,
-		Column3: int32(input.Days),
+		Column3: int32(input.Days), // #nosec G115 -- input.Days is range-checked against math.MaxInt32 above
 	})
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to ban user")

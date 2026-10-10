@@ -21,6 +21,7 @@ type fakeAPIKeyValidator struct {
 	keyCtx      *publicapi.APIKeyContext
 	validateErr error
 	allowed     bool
+	restricted  bool
 	ipErr       error
 }
 
@@ -38,6 +39,14 @@ func (f *fakeAPIKeyValidator) HasIPAccess(ctx context.Context, keyID pgtype.UUID
 	}
 
 	return f.allowed, nil
+}
+
+func (f *fakeAPIKeyValidator) HasIPRestrictions(ctx context.Context, keyID pgtype.UUID) (bool, error) {
+	if f.ipErr != nil {
+		return false, f.ipErr
+	}
+
+	return f.restricted, nil
 }
 
 type fakeRefreshCreator struct {
@@ -270,6 +279,9 @@ func TestExchangeKey_BodyFallback(t *testing.T) {
 		KeyRotation: newTestKeyRotation(t),
 		Queries:     &fakeRefreshCreator{},
 	}
+	// The JSON body fallback was removed: API keys in a loggable/storable
+	// payload leak into request logs. Header-only transport — a body-only
+	// key must be rejected with 401 missing_api_key.
 	body := strings.NewReader(`{"api_key":"fallback-key"}`)
 	req := httptest.NewRequest(http.MethodPost, "/auth/exchange-key", body)
 	req.Header.Set("Content-Type", "application/json")
@@ -277,9 +289,11 @@ func TestExchangeKey_BodyFallback(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ExchangeKey(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
 	}
+
+	assertErrorCode(t, rr.Body.String(), "missing_api_key")
 }
 
 func assertErrorCode(t *testing.T, body, code string) {

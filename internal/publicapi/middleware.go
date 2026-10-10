@@ -67,8 +67,25 @@ func APIKeyMiddleware(service *Service, resolveBearer BearerTokenResolver) func(
 
 			// IP allowlist enforcement: if the key has IP restrictions,
 			// verify the client IP is within the allowed CIDR ranges.
+			// An unidentifiable client IP (empty peer address — unix
+			// socket, broken transport) fails closed when restrictions
+			// exist: an allowlisted key must never pass unchecked.
+			// Unrestricted keys (no allowlist rows) pass through.
 			clientIP := extractClientIP(r)
-			if clientIP != "" {
+			if clientIP == "" {
+				restricted, err := service.HasIPRestrictions(r.Context(), keyCtx.KeyID)
+				if err != nil {
+					slog.Error("api key: IP restriction check failed", "error", err)
+					errpkg.WriteError(w, http.StatusInternalServerError, "ip_check_error", "Failed to verify IP access")
+					return
+				}
+				if restricted {
+					slog.Warn("api key: empty client IP, denying allowlisted key",
+						"key_id", keyCtx.KeyID.String())
+					errpkg.WriteError(w, http.StatusForbidden, "ip_not_allowed", "Your IP address is not authorized for this API key")
+					return
+				}
+			} else {
 				allowed, err := service.HasIPAccess(r.Context(), keyCtx.KeyID, clientIP)
 				if err != nil {
 					slog.Error("api key: IP allowlist check failed", "error", err)

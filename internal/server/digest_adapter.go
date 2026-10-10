@@ -85,7 +85,7 @@ func (r *intelDigestReader) ListRecentForSpace(ctx context.Context, viewerID, sp
 	out = r.filterBlockedSources(ctx, viewerID, out, recordIDs)
 
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
-	if int32(len(out)) > limit {
+	if len(out) > int(limit) {
 		out = out[:limit]
 	}
 	return out, nil

@@ -23,9 +23,12 @@
 	interface Props {
 		service: ServiceListing;
 		authed: boolean;
+		/** Prefill for the goals field — set when a tier card's "Choose"
+		 *  opens the dialog (§114 2026-10-10: mentorship tier CTA). */
+		initialGoals?: string;
 		open?: boolean;
 	}
-	let { service, authed, open = $bindable(false) }: Props = $props();
+	let { service, authed, initialGoals = '', open = $bindable(false) }: Props = $props();
 
 	const mentor = $derived(service.mentor ?? null);
 	const mentorName = $derived(mentor?.display_name || mentor?.username || service.title);
@@ -51,6 +54,9 @@
 			idemKey = crypto.randomUUID();
 			submitError = '';
 			submitOk = false;
+			// Tier-CTA prefill — only fills an untouched goals box so the
+			// mentor name/package choice never clobbers typed text.
+			if (initialGoals && !goals.trim()) goals = initialGoals;
 			if (countries === null) void loadCountries();
 		}
 		prevOpen = open;

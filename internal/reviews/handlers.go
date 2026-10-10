@@ -180,8 +180,24 @@ func (h *Handlers) CreateReview(w http.ResponseWriter, r *http.Request) {
 		Body   string `json:"body"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes+4096)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if len([]rune(input.Title)) > MaxTitleRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "title_too_long", "Title must be at most 200 characters")
+		return
+	}
+
+	if len([]rune(input.Body)) > MaxBodyRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "body_too_long", "Body must be at most 10000 characters")
+		return
+	}
+
+	if len(input.Body) > MaxBodyBytes {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Body exceeds size limit")
 		return
 	}
 
@@ -441,8 +457,24 @@ func (h *Handlers) UpdateReview(w http.ResponseWriter, r *http.Request) {
 		Body   string `json:"body"`
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes+4096)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+		return
+	}
+
+	if len([]rune(input.Title)) > MaxTitleRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "title_too_long", "Title must be at most 200 characters")
+		return
+	}
+
+	if len([]rune(input.Body)) > MaxBodyRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "body_too_long", "Body must be at most 10000 characters")
+		return
+	}
+
+	if len(input.Body) > MaxBodyBytes {
+		errpkg.WriteError(w, http.StatusRequestEntityTooLarge, "body_too_large", "Body exceeds size limit")
 		return
 	}
 
@@ -539,6 +571,30 @@ func (h *Handlers) FlagReview(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid review ID")
 		return
+	}
+
+	// Bound the flag payload (flag reason / report text) so flag-spam cannot
+	// push unbounded bodies through the flag endpoint. The reason field is
+	// optional; absent bodies still flag.
+	if r.Body != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes+4096)
+
+		var flagInput struct {
+			Reason string `json:"reason"`
+			Body   string `json:"body"`
+		}
+
+		if r.ContentLength != 0 {
+			if err := json.NewDecoder(r.Body).Decode(&flagInput); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid JSON body")
+				return
+			}
+
+			if len([]rune(flagInput.Reason)) > MaxFlagRunes || len([]rune(flagInput.Body)) > MaxFlagRunes {
+				errpkg.WriteError(w, http.StatusBadRequest, "flag_too_long", "Flag reason must be at most 2000 characters")
+				return
+			}
+		}
 	}
 
 	if err := h.Service.FlagReview(r.Context(), id); err != nil {

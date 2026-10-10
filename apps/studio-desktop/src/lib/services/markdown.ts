@@ -62,6 +62,25 @@ function escapeHtml(text: string): string {
 		.replace(/'/g, '&#039;');
 }
 
+/** Scheme allowlist for markdown link/image targets. escapeHtml alone
+ *  cannot stop [x](javascript:alert(1)) — the scheme executes on click
+ *  even when quoted. Only http(s), site-relative, anchors, and mailto
+ *  survive; the publish path also runs DOMPurify (sanitize:true). */
+function safeMarkdownUrl(raw: string): string {
+	const v = String(raw ?? '').trim();
+	if (
+		v === '' ||
+		v.startsWith('#') ||
+		v.startsWith('/') ||
+		v.startsWith('./') ||
+		v.startsWith('../')
+	) {
+		return v === '' ? '#' : v;
+	}
+	if (/^(https?|mailto):/i.test(v)) return v;
+	return '#';
+}
+
 const headingSizes: Record<number, string> = {
 	1: 'text-3xl',
 	2: 'text-2xl',
@@ -83,12 +102,12 @@ class TailwindRenderer extends Renderer {
 
 	link({ href, title, tokens }: Tokens.Link): string {
 		const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
-		return `<a href="${escapeHtml(href)}" class="text-primary hover:underline"${titleAttr}>${this.parser.parseInline(tokens)}</a>`;
+		return `<a href="${escapeHtml(safeMarkdownUrl(href))}" class="text-primary hover:underline"${titleAttr}>${this.parser.parseInline(tokens)}</a>`;
 	}
 
 	image({ href, title, text }: Tokens.Image): string {
 		const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
-		return `<img src="${escapeHtml(href)}" alt="${escapeHtml(text)}" class="rounded-lg my-4 max-w-full h-auto"${titleAttr} />`;
+		return `<img src="${escapeHtml(safeMarkdownUrl(href))}" alt="${escapeHtml(text)}" class="rounded-lg my-4 max-w-full h-auto"${titleAttr} />`;
 	}
 
 	list({ items, ordered, start }: Tokens.List): string {

@@ -971,6 +971,23 @@
 		uploadingKey = setting.key;
 		uploadError = '';
 
+		// Raster-only uploads: SVG is an active-XML script vector
+		// (<script>, event handlers, foreignObject) and the server forces
+		// Content-Disposition: attachment for it — never inline. Reject both
+		// by MIME and by extension (some platforms report an empty/generic
+		// type for .svg files).
+		const looksSvg =
+			file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+		if (looksSvg) {
+			uploadError = t(
+				'settings.upload_svg_blocked',
+				'SVG uploads are blocked — use a raster image (PNG, JPEG, or WebP).'
+			);
+			if (inputEl) inputEl.value = '';
+			uploadingKey = '';
+			return;
+		}
+
 		// Client-side file size check — fail fast instead of waiting for the backend.
 		const maxBytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
 		if (file.size > maxBytes) {
@@ -1000,18 +1017,24 @@
 			if (!res.ok) {
 				const errBody = await res.json().catch(() => ({}));
 				uploadError = errBody?.error?.message || `Upload failed: ${res.statusText}`;
+				uploadingKey = '';
+				if (inputEl) inputEl.value = '';
 				return;
 			}
 			const body = await res.json();
 			const url = body?.data?.url;
 			if (!url) {
 				uploadError = 'Upload succeeded but no URL returned';
+				uploadingKey = '';
+				if (inputEl) inputEl.value = '';
 				return;
 			}
 			updateSetting(setting.key, url);
+			uploadingKey = '';
+			// Reset file input so the same file can be re-uploaded.
+			if (inputEl) inputEl.value = '';
 		} catch (e) {
 			uploadError = e instanceof Error ? e.message : 'Upload failed';
-		} finally {
 			uploadingKey = '';
 			// Reset file input so the same file can be re-uploaded.
 			if (inputEl) inputEl.value = '';
@@ -1433,7 +1456,8 @@
 											<input
 												type="file"
 												class="hidden"
-												accept="image/*,.heic,.heif,.svg"
+												accept="image/*,.heic,.heif"
+												title={t('settings.upload_raster_only', 'Raster images only — SVG uploads are blocked (script vector)')}
 												onchange={(e) => {
 													const input = e.currentTarget;
 													const file = input.files?.[0];
@@ -1792,7 +1816,7 @@
 												onclick={(e) => { (e.currentTarget as HTMLButtonElement).querySelector<HTMLInputElement>('input[type=file]')?.click(); }}
 												disabled={uploadingKey === setting.key}
 											>
-												<input type="file" class="hidden" accept="image/*,.heic,.heif,.svg" onchange={(e) => { const input = e.currentTarget; const file = input.files?.[0]; if (file) handleFileUpload(setting, file, input); }} />
+												<input type="file" class="hidden" accept="image/*,.heic,.heif" title={t('settings.upload_raster_only', 'Raster images only — SVG uploads are blocked (script vector)')} onchange={(e) => { const input = e.currentTarget; const file = input.files?.[0]; if (file) handleFileUpload(setting, file, input); }} />
 												{#if uploadingKey === setting.key}
 													<Loader2 class="size-3 animate-spin" />
 												{:else}

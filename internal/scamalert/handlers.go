@@ -282,6 +282,7 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input SubmitReportInput
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
@@ -299,6 +300,21 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	if input.Description == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_description", "Description is required")
+		return
+	}
+
+	if len([]rune(input.Description)) > MaxDescriptionRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "description_too_long", "Description must be at most 10000 characters")
+		return
+	}
+
+	if len([]rune(input.OriginCommunity)) > MaxOriginCommunityRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "origin_community_too_long", "Origin community must be at most 200 characters")
+		return
+	}
+
+	if len([]rune(input.AmountRange)) > MaxAmountRangeRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "amount_range_too_long", "Amount range must be at most 100 characters")
 		return
 	}
 
@@ -364,6 +380,7 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var input UpdateReportInput
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_body", "Invalid request body")
 		return
@@ -381,6 +398,21 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if input.Description == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_description", "Description is required")
+		return
+	}
+
+	if len([]rune(input.Description)) > MaxDescriptionRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "description_too_long", "Description must be at most 10000 characters")
+		return
+	}
+
+	if len([]rune(input.OriginCommunity)) > MaxOriginCommunityRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "origin_community_too_long", "Origin community must be at most 200 characters")
+		return
+	}
+
+	if len([]rune(input.AmountRange)) > MaxAmountRangeRunes {
+		errpkg.WriteError(w, http.StatusBadRequest, "amount_range_too_long", "Amount range must be at most 100 characters")
 		return
 	}
 

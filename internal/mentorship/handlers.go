@@ -559,6 +559,28 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 		MentorCapacity *int16   `json:"mentor_capacity,omitempty"`
 		MentorAreas    []string `json:"mentor_areas,omitempty"`
 		MentorBio      *string  `json:"mentor_bio,omitempty"`
+
+		// 000829 mentor card fields (§114 detail-page rebuild).
+		MentorTitle           *string   `json:"mentor_title,omitempty"`
+		MentorResponseTime    *string   `json:"mentor_response_time,omitempty"`
+		MentorAvailability    *string   `json:"mentor_availability,omitempty"`
+		MentorSessionType     *string   `json:"mentor_session_type,omitempty"`
+		MentorLanguages       *[]string `json:"mentor_languages,omitempty"`
+		MentorSessionFormats  *[]string `json:"mentor_session_formats,omitempty"`
+		MentorCountries       *[]string `json:"mentor_countries,omitempty"`
+		MentorCredentials     *[]string `json:"mentor_credentials,omitempty"`
+		MentorYearsExperience *int16    `json:"mentor_years_experience,omitempty"`
+		MentorSuccessLabel    *string   `json:"mentor_success_label,omitempty"`
+
+		// Shadow listing page content — replace-on-save (nil preserves).
+		SellingPoints *[]servicedir.ServiceIconEntryInput `json:"selling_points,omitempty"`
+		Facts         *[]servicedir.ServiceFactInput      `json:"facts,omitempty"`
+		Highlights    *[]string                           `json:"highlights,omitempty"`
+		Audience      *[]string                           `json:"audience,omitempty"`
+		Included      *[]servicedir.ServiceIconEntryInput `json:"included,omitempty"`
+		Faqs          *[]servicedir.ServiceFaqInput       `json:"faqs,omitempty"`
+		Steps         *[]servicedir.ServiceStepInput      `json:"steps,omitempty"`
+		Tiers         *[]servicedir.TierInput             `json:"tiers,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -566,12 +588,46 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	card := MentorCardInput{
+		Title:           input.MentorTitle,
+		ResponseTime:    input.MentorResponseTime,
+		Availability:    input.MentorAvailability,
+		SessionType:     input.MentorSessionType,
+		Languages:       input.MentorLanguages,
+		SessionFormats:  input.MentorSessionFormats,
+		Countries:       input.MentorCountries,
+		Credentials:     input.MentorCredentials,
+		YearsExperience: input.MentorYearsExperience,
+		SuccessLabel:    input.MentorSuccessLabel,
+		SellingPoints:   input.SellingPoints,
+		Facts:           input.Facts,
+		Highlights:      input.Highlights,
+		Audience:        input.Audience,
+		Included:        input.Included,
+		Faqs:            input.Faqs,
+		Steps:           input.Steps,
+		Tiers:           input.Tiers,
+	}
+
 	profile, err := h.Service.UpdateMentorProfile(r.Context(), userID,
-		input.IsMentor, input.MentorCapacity, input.MentorAreas, input.MentorBio)
+		input.IsMentor, input.MentorCapacity, input.MentorAreas, input.MentorBio, card)
 	if err != nil {
 		if errors.Is(err, ErrCapacityExceeded) {
 			errpkg.WriteError(w, http.StatusBadRequest, "capacity_exceeded",
 				"mentor_capacity exceeds the platform max_capacity setting")
+			return
+		}
+
+		if errors.Is(err, ErrInvalidMentorField) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input",
+				"A mentor profile field is invalid")
+			return
+		}
+
+		// §114 page-content validation surfaces from the shadow sync —
+		// same machine-readable codes as the listing editor.
+		if code, ok := mentorShadowContentError(err); ok {
+			errpkg.WriteError(w, http.StatusBadRequest, code, "A listing content field is invalid")
 			return
 		}
 
@@ -985,4 +1041,44 @@ func (h *Handlers) AdminUpdateConnection(w http.ResponseWriter, r *http.Request)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": conn})
+}
+
+// mentorShadowContentError maps the servicedir shadow-content validation
+// sentinels (raised while EnsureMentorShadowListing syncs the §114 page
+// content) to the same machine-readable codes the listing editor uses.
+func mentorShadowContentError(err error) (string, bool) {
+	switch {
+	case errors.Is(err, servicedir.ErrTooManySellingPoints):
+		return "too_many_selling_points", true
+	case errors.Is(err, servicedir.ErrInvalidSellingPoint):
+		return "invalid_selling_point", true
+	case errors.Is(err, servicedir.ErrTooManyFacts):
+		return "too_many_facts", true
+	case errors.Is(err, servicedir.ErrInvalidFact):
+		return "invalid_fact", true
+	case errors.Is(err, servicedir.ErrTooManyIncluded):
+		return "too_many_included", true
+	case errors.Is(err, servicedir.ErrInvalidIncluded):
+		return "invalid_included", true
+	case errors.Is(err, servicedir.ErrTooManyHighlights):
+		return "too_many_highlights", true
+	case errors.Is(err, servicedir.ErrInvalidHighlight):
+		return "invalid_highlight", true
+	case errors.Is(err, servicedir.ErrTooManyAudience):
+		return "too_many_audience", true
+	case errors.Is(err, servicedir.ErrInvalidAudience):
+		return "invalid_audience", true
+	case errors.Is(err, servicedir.ErrTooManyFaqs):
+		return "too_many_faqs", true
+	case errors.Is(err, servicedir.ErrInvalidFaq):
+		return "invalid_faq", true
+	case errors.Is(err, servicedir.ErrTooManySteps):
+		return "too_many_steps", true
+	case errors.Is(err, servicedir.ErrInvalidStep):
+		return "invalid_step", true
+	case errors.Is(err, servicedir.ErrInvalidTier), errors.Is(err, servicedir.ErrInvalidTiers):
+		return "invalid_tiers", true
+	}
+
+	return "", false
 }

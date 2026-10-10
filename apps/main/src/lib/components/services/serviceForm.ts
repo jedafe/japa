@@ -9,6 +9,8 @@ export interface EditableTier {
 	name: string;
 	badge: string;
 	description: string;
+	/** Kebab-case Lucide name from the marketplaceIcon whitelist; '' = none. */
+	icon: string;
 	/** Major units as typed ('' = price unset); ×100 → minor on serialize. */
 	priceAmount: string;
 	/** ISO currency override; '' inherits the package's currency. */
@@ -20,20 +22,22 @@ export interface EditableTier {
 
 /**
  * Serialize the editor rows into the backend TierInput[] contract
- * (internal/servicedir TierInput): position follows array order, blank
- * price omits price_amount (0 is a valid free tier — only an untouched
- * field omits), blank badge/description stay blank, blank currency
- * inherits the package currency server-side.
+ * (internal/servicedir TierInput): position follows array order, a blank
+ * or unparseable price serializes to price_amount 0 (the backend requires
+ * the field and treats 0 as a valid free tier), blank badge/description
+ * stay blank, blank currency inherits the package currency server-side.
  */
 export function tiersToPayload(tiers: EditableTier[]): Record<string, unknown>[] {
 	return tiers.map((t) => {
 		const amountStr = String(t.priceAmount ?? '').trim();
 		const major = Number(amountStr);
+		const minor = amountStr && !Number.isNaN(major) ? Math.max(0, Math.round(major * 100)) : 0;
 		return {
 			name: t.name.trim(),
 			badge: t.badge.trim(),
 			description: t.description.trim(),
-			...(amountStr && !Number.isNaN(major) ? { price_amount: Math.round(major * 100) } : {}),
+			...(t.icon ? { icon: t.icon } : {}),
+			price_amount: minor,
 			...(t.currency ? { price_currency: t.currency } : {}),
 			features: t.featuresText
 				.split('\n')

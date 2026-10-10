@@ -863,3 +863,14 @@ func (q *Queries) VerifyEmail(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, verifyEmail, id)
 	return err
 }
+
+const verifyEmailByHash = `-- name: VerifyEmailByHash :exec
+UPDATE email_verifications
+SET verified_at = now()
+WHERE token_hash = $1 AND verified_at IS NULL
+`
+
+func (q *Queries) VerifyEmailByHash(ctx context.Context, tokenHash string) error {
+	_, err := q.db.Exec(ctx, verifyEmailByHash, tokenHash)
+	return err
+}

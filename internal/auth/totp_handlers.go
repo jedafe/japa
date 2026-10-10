@@ -4,14 +4,54 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/valkey-io/valkey-go/valkeycompat"
 )
 
 // TOTPHandlers holds dependencies for TOTP HTTP handlers.
 type TOTPHandlers struct {
 	Store    TOTPStore
 	SiteName string
+	// Queries revokes refresh tokens after 2FA enable/disable so
+	// pre-existing sessions cannot survive the change. Optional — when
+	// nil, refresh revocation is skipped.
+	Queries *gen.Queries
+	// KeyRotation validates the caller's access token so its JTI can be
+	// revoked immediately. Optional — when nil, JTI revocation is skipped.
+	KeyRotation *KeyRotation
+	// Redis stores revoked JTIs. Optional — when nil, JTI revocation is
+	// skipped (refresh-token revocation still applies when Queries is set).
+	Redis valkeycompat.Cmdable
+}
+
+// revokeSessionsAfterTOTPChange revokes all refresh tokens for the user and
+// the caller's current access-token JTI, forcing re-login on all devices.
+// Follows the HandleResetPassword session-invalidation pattern: refresh
+// revocation stops renewal, JTI revocation kills the live access token.
+func (h *TOTPHandlers) revokeSessionsAfterTOTPChange(r *http.Request, userID pgtype.UUID) {
+	if h.Queries != nil {
+		if err := InvalidateAllUserSessions(r.Context(), h.Queries, userID); err != nil {
+			slog.Error("totp: failed to invalidate sessions", "user_id", userID.String(), "error", err)
+		}
+	}
+
+	if h.KeyRotation != nil && h.Redis != nil {
+		if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				if claims, err := h.KeyRotation.ValidateAccessToken(parts[1]); err == nil {
+					if err := RevokeToken(r.Context(), claims.JTI, claims.ExpiresAt.Time, h.Redis); err != nil {
+						slog.Error("totp: revoke access token JTI", "user_id", userID.String(), "error", err)
+					}
+				}
+			}
+		}
+	}
 }
 
 // HandleSetup handles POST /api/v1/me/totp/enable.
@@ -114,6 +154,9 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	backupCodes, err := GenerateBackupCodes()
 	if err != nil {
 		slog.Error("generate backup codes", "user_id", user.UserID.String(), "error", err)
+		// 2FA is already enabled — revoke sessions even though backup
+		// code generation failed.
+		h.revokeSessionsAfterTOTPChange(r, user.UserID)
 		// 2FA is already enabled — don't fail the whole request, just
 		// return without backup codes. The user can regenerate later.
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -135,6 +178,11 @@ func (h *TOTPHandlers) HandleVerify(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.SaveBackupCodes(r.Context(), user.UserID, hashed); err != nil {
 		slog.Error("save backup codes", "user_id", user.UserID.String(), "error", err)
 	}
+
+	// 2FA enrollment changes the account's security posture — revoke all
+	// sessions (including the caller's) so a hijacked session cannot
+	// survive enrollment.
+	h.revokeSessionsAfterTOTPChange(r, user.UserID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
@@ -176,6 +224,10 @@ func (h *TOTPHandlers) HandleDisable(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// Disabling 2FA lowers the account's security posture — revoke all
+	// sessions so only a fresh password login survives.
+	h.revokeSessionsAfterTOTPChange(r, user.UserID)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{

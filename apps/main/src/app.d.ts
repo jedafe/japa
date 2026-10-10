@@ -16,6 +16,8 @@ declare global {
 			theme: ThemeName;
 			/** Hostname (port stripped) used for reverse-proxy and host-based routing. */
 			requestHost: string;
+			/** Per-request CSP nonce for the staff-gated custom-code blocks. */
+			cspNonce: string;
 			/** Resolved UI locale code (e.g. 'en', 'fr', 'yo'), from the jc_locale
 			 *  cookie or the locale prefix in the URL. Dynamic per ADR-013. */
 			locale: Locale;
@@ -29,6 +31,14 @@ declare global {
 			 * for guests (no mutations) or when the backend is unreachable.
 			 */
 			csrfToken: string | null;
+			/**
+			 * Per-request CSP nonce for the staff-gated custom-code blocks
+			 * (`site.custom_css` / `site.custom_js`). Emitted server-side in
+			 * hooks.server.ts; threaded through `data.cspNonce` so the layout's
+			 * inline `<style>`/`<script>` tags carry `nonce={...}` and stay
+			 * executable under a nonce-based style-src/script-src policy.
+			 */
+			cspNonce: string;
 			/**
 			 * Public site settings fetched once per request (cached) and reused by
 			 * page load functions. Ref: conventions/system-settings-catalog.md.
@@ -44,6 +54,8 @@ declare global {
 			isRoadmapHost: boolean;
 			/** CSRF token for client-side mutations (echoed as X-CSRF-Token). */
 			csrfToken: string | null;
+			/** Per-request CSP nonce for the staff-gated custom-code blocks. */
+			cspNonce: string;
 			/** Feature flags from GET /feature-flags (public endpoint). */
 			features?: Record<string, boolean>;
 		}

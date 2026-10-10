@@ -535,7 +535,15 @@ func restrictionsCacheKey(uid pgtype.UUID) string {
 // given Valkey keys for a user after a moderation action. Failures are logged
 // rather than returned — the write is already committed — but they are never
 // dropped silently, since a stale cache lets a restricted user keep acting.
+// Both the L1 in-memory resolver cache (via h.RBAC) and the L2 Valkey entry
+// are evicted so the ban/suspension takes effect immediately in-process.
 func (h *Handlers) invalidateUserAccessCaches(ctx context.Context, uid pgtype.UUID, keys ...string) {
+	// L1: in-process resolver cache. Always evicted when the resolver is
+	// wired, even when Valkey is unavailable.
+	if h.RBAC != nil {
+		h.RBAC.InvalidateUserCache(ctx, uid)
+	}
+
 	if h.Valkey == nil {
 		return
 	}

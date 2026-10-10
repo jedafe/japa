@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -62,6 +63,10 @@ func selectByPath(data []byte, path string) ([]byte, error) {
 // stages (extractor) walk Path to pull individual records.
 type APIFetcher struct {
 	client *http.Client
+	// allowPrivate disables the insert-time private-IP guard for
+	// httptest loopback servers. Production wiring never sets it —
+	// the SafeClient dial guard stays on regardless.
+	allowPrivate bool
 }
 
 // NewAPIFetcher returns an APIFetcher with a 30s timeout and SSRF-safe
@@ -69,6 +74,17 @@ type APIFetcher struct {
 // capped at defaultMaxBodySize by the Fetch method).
 func NewAPIFetcher() *APIFetcher {
 	return &APIFetcher{client: NewSafeClient(30*time.Second, defaultMaxBodySize)}
+}
+
+// NewAPIFetcherWithClient injects a custom client (tests). Passing a
+// non-nil client also relaxes the insert-time private-IP guard so
+// httptest loopback URLs validate — the dial guard belongs to the
+// injected client in that case.
+func NewAPIFetcherWithClient(client *http.Client) *APIFetcher {
+	if client == nil {
+		return NewAPIFetcher()
+	}
+	return &APIFetcher{client: client, allowPrivate: true}
 }
 
 // ParseProviderConfig decodes source.provider_config into APIProviderConfig.
@@ -97,9 +113,21 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		return FetchResult{}, err
 	}
 
-	method := strings.ToUpper(cfg.Method)
+	method := strings.ToUpper(strings.TrimSpace(cfg.Method))
 	if method == "" {
 		method = http.MethodGet
+	}
+
+	// CONNECT/TRACE/TRACK let provider_config turn the fetcher into an
+	// arbitrary proxy primitive — restrict to data-retrieval verbs.
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead:
+	default:
+		return FetchResult{}, fmt.Errorf("api: method %q not allowed", method)
+	}
+
+	if err := f.validateAPIEndpoint(cfg.Endpoint); err != nil {
+		return FetchResult{}, err
 	}
 
 	// provider_config.body is a JSON-encoded payload: a JSON string body is
@@ -131,6 +159,17 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 	}
 
 	for k, v := range cfg.Headers {
+		// Host/Authorization/proxy headers from provider_config would let
+		// a channel override smuggle credentials or reroute the request —
+		// the fetcher sets its own User-Agent/Accept, nothing else.
+		lowered := strings.ToLower(strings.TrimSpace(k))
+		switch lowered {
+		case "host", "authorization", "proxy-authorization", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "forwarded":
+			continue
+		}
+		if lowered == "" || strings.ContainsAny(lowered, " :\r\n") {
+			continue
+		}
 		req.Header.Set(k, v)
 	}
 
@@ -170,4 +209,27 @@ func (f *APIFetcher) Fetch(ctx context.Context, source sources.Source) (FetchRes
 		Body:        body,
 		ContentHash: NormalizeForHash(body, contentType),
 	}, nil
+}
+
+// validateAPIEndpoint constrains provider_config.endpoint: http(s) only,
+// no userinfo — on top of the SafeClient dial guard. Private-literal and
+// numeric-IP hosts are rejected unless the fetcher runs with a
+// test-injected client (allowPrivate, httptest loopback). Operator
+// endpoints are trusted past these insert-time checks (DNS rebinding
+// residual, same as git).
+func (f *APIFetcher) validateAPIEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("api: endpoint must be an http(s) URL: %q", endpoint)
+	}
+	if u.User != nil {
+		return fmt.Errorf("api: endpoint must not embed credentials")
+	}
+	host := u.Hostname()
+	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
+		if !f.allowPrivate || !isLoopbackOrPrivateLiteral(host) {
+			return fmt.Errorf("api: endpoint targets a private address: %q", endpoint)
+		}
+	}
+	return nil
 }

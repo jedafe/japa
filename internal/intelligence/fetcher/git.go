@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-billy/v5/memfs"
@@ -102,17 +104,90 @@ func (f *GitFetcher) Fetch(ctx context.Context, src sources.Source) (FetchResult
 	}, nil
 }
 
-// validateGitRemote rejects non-http(s) schemes and private-literal hosts —
-// the bare minimum SSRF guard since go-git does its own dial.
+// validateGitRemote rejects non-http(s) schemes, embedded userinfo, and
+// private-literal hosts — the insert-time SSRF guard since go-git does its
+// own dial (no SafeTransport Control hook). Hostnames that resolve to
+// private IPs at clone time remain a residual: go-git cannot take a custom
+// dialer, so operator-supplied repo URLs are trusted past the literal
+// check. Alt-IP decimal/hex/octal forms bypass net.ParseIP and are
+// normalized before the literal check.
 func validateGitRemote(repoURL string) error {
 	u, err := url.Parse(repoURL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return fmt.Errorf("fetcher: git: repo %q must be an http(s) URL", repoURL)
 	}
-	if sources.IsPrivateIPLiteral(u.Hostname()) {
-		return fmt.Errorf("fetcher: git: repo host %q is a private IP", u.Hostname())
+	if u.User != nil {
+		return fmt.Errorf("fetcher: git: repo URL must not embed credentials")
+	}
+	host := u.Hostname()
+	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
+		return fmt.Errorf("fetcher: git: repo host %q is a private IP", host)
 	}
 	return nil
+}
+
+// isNumericIPPrivate catches decimal/hex/octal IPv4 forms (2130706433,
+// 0x7f.0.0.1, 0177.0.0.1) that net.ParseIP rejects but the dialer accepts.
+func isNumericIPPrivate(host string) bool {
+	ip := parseNumericIPv4(host)
+	if ip == nil {
+		return false
+	}
+	return sources.IsPrivateIP(ip)
+}
+
+// parseNumericIPv4 parses decimal/hex/octal IPv4 forms into a net.IP.
+// Returns nil when the host is not a numeric IPv4 form.
+func parseNumericIPv4(host string) net.IP {
+	if host == "" || strings.Contains(host, ":") {
+		return nil
+	}
+
+	parts := strings.Split(host, ".")
+	if len(parts) != 1 && len(parts) != 4 {
+		return nil
+	}
+
+	parsePart := func(s string, bits int) (uint64, bool) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return 0, false
+		}
+		base := 10
+		if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+			base = 16
+			s = s[2:]
+		} else if len(s) > 1 && strings.HasPrefix(s, "0") {
+			base = 8
+			s = s[1:]
+		}
+		if s == "" {
+			return 0, false
+		}
+		n, err := strconv.ParseUint(s, base, bits)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+
+	if len(parts) == 1 {
+		n, ok := parsePart(parts[0], 32)
+		if !ok {
+			return nil
+		}
+		return net.IPv4(byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
+	}
+
+	var b [4]byte
+	for i, p := range parts {
+		n, ok := parsePart(p, 8)
+		if !ok {
+			return nil
+		}
+		b[i] = byte(n)
+	}
+	return net.IPv4(b[0], b[1], b[2], b[3])
 }
 
 // fetchTags lists remote tags without cloning — ls-remote equivalent.

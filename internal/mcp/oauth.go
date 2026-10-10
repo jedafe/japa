@@ -25,6 +25,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -52,6 +53,21 @@ const (
 	// authorizationCodeTTL bounds the window in which a code can be
 	// exchanged. 10 minutes per common OAuth practice.
 	authorizationCodeTTL = 10 * time.Minute
+
+	// maxOAuthAccessTokenTTL caps the admin-configured
+	// mcp.oauth_access_token_ttl_seconds (default 3600) so a huge value
+	// cannot create everlasting bearer tokens.
+	maxOAuthAccessTokenTTL = 24 * time.Hour
+
+	// maxOAuthRefreshTokenTTL caps the admin-configured
+	// mcp.oauth_refresh_token_ttl_seconds (default 2592000 = 30d) so a
+	// huge value cannot create everlasting refresh chains.
+	maxOAuthRefreshTokenTTL = 90 * 24 * time.Hour
+
+	// maxOAuthReuseGrace caps the admin-configured
+	// mcp.oauth_reuse_grace_seconds (default 30) so a huge value cannot
+	// keep the reuse-detection grace window open indefinitely.
+	maxOAuthReuseGrace = 5 * time.Minute
 )
 
 // oauthSettingsReader is the subset of config.Settings the OAuth server
@@ -445,6 +461,13 @@ func (s *OAuthService) accessTokenTTL(ctx context.Context) time.Duration {
 		sec = 3600
 	}
 
+	// Compare in seconds before converting: huge values would overflow
+	// int64 nanoseconds during multiplication.
+	if sec > 86400 {
+		slog.Warn("mcp oauth access TTL clamped to max", "requested_seconds", sec, "max", maxOAuthAccessTokenTTL.String())
+		return maxOAuthAccessTokenTTL
+	}
+
 	return time.Duration(sec) * time.Second
 }
 
@@ -455,6 +478,11 @@ func (s *OAuthService) refreshTokenTTL(ctx context.Context) time.Duration {
 	}
 	if sec <= 0 {
 		sec = 2592000
+	}
+
+	if sec > 7776000 {
+		slog.Warn("mcp oauth refresh TTL clamped to max", "requested_seconds", sec, "max", maxOAuthRefreshTokenTTL.String())
+		return maxOAuthRefreshTokenTTL
 	}
 
 	return time.Duration(sec) * time.Second
@@ -483,6 +511,11 @@ func (s *OAuthService) reuseGraceWindow(ctx context.Context) time.Duration {
 	}
 	if sec < 0 {
 		sec = 0
+	}
+
+	if sec > 300 {
+		slog.Warn("mcp oauth reuse grace clamped to max", "requested_seconds", sec, "max", maxOAuthReuseGrace.String())
+		return maxOAuthReuseGrace
 	}
 
 	return time.Duration(sec) * time.Second

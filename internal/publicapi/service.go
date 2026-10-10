@@ -828,7 +828,6 @@ func (s *Service) HasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP s
 	if count == 0 {
 		return true, nil
 	}
-	// Check if the client IP falls within any of the CIDR ranges.
 	var allowed int
 
 	err = s.store.dbPool.QueryRow(ctx, `
@@ -840,6 +839,22 @@ func (s *Service) HasIPAccess(ctx context.Context, keyID pgtype.UUID, clientIP s
 	}
 
 	return allowed > 0, nil
+}
+
+// HasIPRestrictions reports whether the key has any IP allowlist rows.
+// Used by the middleware to fail closed on unidentifiable client IPs:
+// unrestricted keys pass, restricted keys deny.
+func (s *Service) HasIPRestrictions(ctx context.Context, keyID pgtype.UUID) (bool, error) {
+	var count int
+
+	err := s.store.dbPool.QueryRow(ctx, `
+		SELECT count(*) FROM api_key_ip_allowlist WHERE api_key_id = $1
+	`, keyID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("check IP restrictions: %w", err)
+	}
+
+	return count > 0, nil
 }
 
 // ---------------------------------------------------------------------------

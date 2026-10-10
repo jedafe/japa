@@ -71,6 +71,8 @@ func (f *SocialFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 		if err != nil {
 			return FetchResult{}, err
 		}
+	} else if err := validateSocialEndpointOverride(fetchURL); err != nil {
+		return FetchResult{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
@@ -248,4 +250,26 @@ func normalizeTelegram(body []byte, pageURL string) ([]byte, error) {
 	})
 
 	return []byte(b.String()), nil
+}
+
+// validateSocialEndpointOverride constrains provider_config.endpoint_override:
+// http(s) only, no userinfo, no private-literal or numeric-IP hosts — on
+// top of the SafeClient dial guard. Social overrides carry no credentials
+// (unlike search), so loopback http is accepted for local test gateways;
+// production channels use the built-in https provider endpoints.
+func validateSocialEndpointOverride(endpoint string) error {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("fetcher: social endpoint_override must be an http(s) URL: %q", endpoint)
+	}
+	if u.User != nil {
+		return fmt.Errorf("fetcher: social endpoint_override must not embed credentials")
+	}
+	host := u.Hostname()
+	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
+		if u.Scheme != "http" || !isLoopbackOrPrivateLiteral(host) {
+			return fmt.Errorf("fetcher: social endpoint_override targets a private address: %q", endpoint)
+		}
+	}
+	return nil
 }

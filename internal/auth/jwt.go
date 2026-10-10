@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -272,16 +273,22 @@ func (kr *KeyRotation) parseToken(tokenString string) (*JWTClaims, error) {
 const revocationKeyPrefix = "jc:revoked_jti:"
 
 // IsTokenRevoked checks whether a specific token (by JTI) has been revoked.
-// Returns false if Valkey is unreachable (fail-open for availability).
+// Fail-CLOSED: when a Valkey client is configured but the revocation lookup
+// fails (Valkey unreachable, command error), the token is treated as revoked
+// so a revoked session cannot slip through an outage. A nil client means
+// revocation checking is unwired (tests / degraded boot) — warn and allow.
 func IsTokenRevoked(ctx context.Context, jti string, vkClient valkeycompat.Cmdable) bool {
 	if vkClient == nil {
+		slog.Warn("token revocation check skipped: no Valkey client configured")
 		return false
 	}
 
 	exists, err := vkClient.Exists(ctx, revocationKeyPrefix+jti).Result()
 	if err != nil {
-		// Valkey unreachable — fail open, don't block legitimate requests.
-		return false
+		// Valkey error with a configured client — fail closed: treat the
+		// token as revoked rather than letting a revoked session through.
+		slog.Warn("token revocation check failed, treating token as revoked", "jti", jti, "error", err)
+		return true
 	}
 
 	return exists > 0

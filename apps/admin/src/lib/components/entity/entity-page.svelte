@@ -214,12 +214,16 @@
 			hasPermission(config.deletePermission ?? config.createPermission!)
 		);
 	});
+	// Hard delete is fail-closed: the button appears ONLY when the page sets an
+	// explicit hardDeletePermission AND the viewer holds it. No fallback to
+	// deletePermission/createPermission and no permission-less default — a
+	// permanent-erase action must never be granted by a weaker permission.
 	const canHardDelete = $derived.by(() => {
 		void getPermissionState();
 		return (
 			!!config.hardRemove &&
-			(!(config.hardDeletePermission ?? config.deletePermission ?? config.createPermission) ||
-				hasPermission(config.hardDeletePermission ?? config.deletePermission ?? config.createPermission!))
+			!!config.hardDeletePermission &&
+			hasPermission(config.hardDeletePermission)
 		);
 	});
 	const canRestore = $derived.by(() => {
@@ -598,9 +602,13 @@
 	}
 
 	// ── Export (CSV) ────────────────────────────────────────────────────────
+	// Formula neutralization: values starting with = + - @, tab, pipe, or a
+	// DDE command are prefixed with a single quote so spreadsheet apps
+	// (Excel, Sheets, LibreOffice) treat them as text, not live formulas.
 	function csvEscape(value: any): string {
 		if (value == null) return '';
-		const s = typeof value === 'object' ? JSON.stringify(value) : String(value);
+		let s = typeof value === 'object' ? JSON.stringify(value) : String(value);
+		if (/^[=+\-@\t|]/.test(s) || /^cmd\|/i.test(s)) s = `'${s}`;
 		if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
 		return s;
 	}

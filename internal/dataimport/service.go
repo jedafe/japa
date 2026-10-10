@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/db"
@@ -56,7 +57,25 @@ const (
 	// maxImportFileSizeMB limits the size of an import file to prevent OOM
 	// (BUG-014). Configurable via the dataimport.max_file_mb system setting.
 	maxImportFileSizeMB = 100
+
+	// maxImportRows caps the number of parsed rows accepted from an import
+	// file. Size limits alone do not bound row count (a small CSV can hold
+	// hundreds of thousands of rows, each becoming a write), so the worker
+	// rejects files that exceed this row budget.
+	maxImportRows = 10000
 )
+
+// blockedImportColumns are CSV/JSON columns that imports must never write
+// directly. password_hash would let an import file set (or overwrite)
+// credentials, and ledger balance columns would let a file forge balances.
+// Both are stripped before insert and reported in the audit trail.
+var blockedImportColumns = map[string]bool{
+	"password_hash":     true,
+	"resulting_balance": true,
+	"balance":           true,
+	"available_balance": true,
+	"ledger_balance":    true,
+}
 
 // validModerationReasons are the allowed reason values for content_reports
 // per the CHECK constraint in migration 000111.
@@ -237,6 +256,26 @@ func (s *Service) ProcessImport(ctx context.Context, importID pgtype.UUID) error
 	if err != nil {
 		s.markFailed(ctx, importID, fmt.Sprintf("parsing file: %v", err))
 		return fmt.Errorf("parsing file: %w", err)
+	}
+
+	// Row-count cap: a file within the byte limit can still hold an
+	// unbounded number of rows (each becoming a write). Reject the job
+	// before any row is processed.
+	if len(rows) > maxImportRows {
+		s.markFailed(ctx, importID, fmt.Sprintf("row count %d exceeds limit of %d", len(rows), maxImportRows))
+		s.auditImportEvent(ctx, auditActor(ctx), "data_import.row_cap_exceeded",
+			importID, map[string]any{"rows": len(rows), "limit": maxImportRows})
+		return fmt.Errorf("row count %d exceeds limit of %d", len(rows), maxImportRows)
+	}
+
+	// Strip blocked columns (password_hash, ledger balances) from every row
+	// before insert and keep a count for the audit trail.
+	stripped := stripBlockedImportColumns(rows, imp.ImportType)
+	if stripped > 0 {
+		slog.Warn("dataimport: stripped blocked columns from import rows",
+			"import_id", importID.String(), "type", imp.ImportType, "rows_affected", stripped)
+		s.auditImportEvent(ctx, auditActor(ctx), "data_import.blocked_columns_stripped",
+			importID, map[string]any{"type": imp.ImportType, "rows_affected": stripped})
 	}
 
 	// Insert/update each row.
@@ -429,7 +468,14 @@ func parseJSON(r io.Reader) ([]map[string]string, error) {
 }
 
 // insertRow inserts or upserts a single row into the relevant table.
+// For ledger-type imports the balance is recomputed server-side: the
+// current balance is read inside a row-locked transaction and the insert
+// runs in the same transaction so concurrent imports cannot fork the
+// balance chain. All other types use a single statement.
 func (s *Service) insertRow(ctx context.Context, importType, mode string, row map[string]string) error {
+	if importType == TypeTransactions {
+		return s.insertLedgerRow(ctx, mode, row)
+	}
 	query, args, err := buildImportQuery(importType, mode, row)
 	if err != nil {
 		return err
@@ -445,6 +491,92 @@ func (s *Service) insertRow(ctx context.Context, importType, mode string, row ma
 	}
 
 	return nil
+}
+
+// insertLedgerRow inserts one wallet_ledger row with the resulting_balance
+// recomputed server-side in a row-locked transaction. Any client-supplied
+// balance column is ignored (stripBlockedImportColumns removes it before
+// this point; this ignores it again by construction — the value is never
+// read from the row map).
+func (s *Service) insertLedgerRow(ctx context.Context, mode string, row map[string]string) error {
+	_ = mode // ledger imports are insert-only; mode selects conflict handling below.
+	tx, err := s.db.Writer.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning ledger import tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	username := strings.TrimSpace(row["user"])
+	ledgerType := strings.TrimSpace(row["ledger_type"])
+	if ledgerType == "" {
+		ledgerType = "points"
+	}
+	operation := strings.TrimSpace(row["operation"])
+	if operation == "" {
+		operation = "earn"
+	}
+	source := strings.TrimSpace(row["source"])
+	if source == "" {
+		source = "import"
+	}
+	// Lock the user's ledger tail so the balance recompute is serialized:
+	// read the latest row FOR UPDATE (row-level lock held to commit).
+	// When the user has no ledger rows yet, fall back to locking the
+	// users row so two concurrent first-imports cannot both start at 0.
+	var current int64
+	err = tx.QueryRow(ctx, `
+		SELECT w.resulting_balance
+		FROM wallet_ledger w JOIN users u ON u.id = w.user_id
+		WHERE u.username = $1 AND w.ledger_type = $2
+		ORDER BY w.created_at DESC, w.id DESC
+		LIMIT 1 FOR UPDATE OF w
+	`, username, ledgerType).Scan(&current)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			current = 0
+			var locked pgtype.UUID
+			if lerr := tx.QueryRow(ctx, `SELECT id FROM users WHERE username = $1 FOR UPDATE`, username).Scan(&locked); lerr != nil && !errors.Is(lerr, pgx.ErrNoRows) {
+				return fmt.Errorf("locking user row for ledger import: %w", lerr)
+			}
+		} else {
+			return fmt.Errorf("reading current ledger balance: %w", err)
+		}
+	}
+
+	query, args, err := buildLedgerInsertQuery(row, ledgerType, operation, source, current)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("inserting ledger row: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing ledger import: %w", err)
+	}
+	return nil
+}
+
+// buildLedgerInsertQuery validates one ledger row and returns the INSERT
+// with the server-recomputed resulting balance (current + amount).
+func buildLedgerInsertQuery(row map[string]string, ledgerType, operation, source string, current int64) (string, []any, error) {
+	amount, err := parseInt64(row["amount"])
+	if err != nil {
+		return "", nil, fmt.Errorf("transactions: %w", err)
+	}
+	if !validLedgerTypes[ledgerType] {
+		return "", nil, fmt.Errorf("transactions: invalid ledger_type %q (must be one of: points, credits)", ledgerType)
+	}
+	if !validWalletOperations[operation] {
+		return "", nil, fmt.Errorf("transactions: invalid operation %q (must be one of: earn, spend, purchase, convert, refund, clawback, admin_adjust)", operation)
+	}
+	resultingBalance := current + amount
+	return `
+		INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, reason)
+		SELECT u.id, $2, $3, $4, $5, $6, $7
+		FROM users u WHERE u.username = $1
+		ON CONFLICT DO NOTHING`,
+		[]any{strings.TrimSpace(row["user"]), ledgerType, operation, amount, resultingBalance, source, row["reason"]},
+		nil
 }
 
 // computeContentHash implements the Rule 12 content_hash formula:
@@ -526,6 +658,9 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 	case TypeUsers:
 		// users table has no display_name/bio — those are in user_profiles.
 		// profile_type is the column (not user_type).
+		// password_hash is NEVER importable: the column is stripped by
+		// stripBlockedImportColumns before insert and imports create users
+		// without credentials (they must set a password via reset flow).
 		username := strings.TrimSpace(row["username"])
 		if username == "" {
 			return "", nil, errors.New("username is required")
@@ -534,11 +669,6 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 		email := strings.TrimSpace(row["email"])
 		if email == "" {
 			return "", nil, errors.New("email is required")
-		}
-		// BUG-002: validate password_hash — reject empty hashes.
-		passwordHash := strings.TrimSpace(row["password_hash"])
-		if passwordHash == "" {
-			return "", nil, errors.New("password_hash is required (cannot import users without a password hash)")
 		}
 
 		// Validate profile_type against users_profile_type_check (empty →
@@ -549,11 +679,15 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 
 		conflict := "ON CONFLICT DO NOTHING"
 		if mode == ModeUpsert {
-			conflict = "ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email, profile_type = EXCLUDED.profile_type, status = EXCLUDED.status, password_hash = EXCLUDED.password_hash, updated_at = now()"
+			conflict = "ON CONFLICT (username) DO UPDATE SET email = EXCLUDED.email, profile_type = EXCLUDED.profile_type, status = EXCLUDED.status, updated_at = now()"
 		}
 
+		// password_hash is NOT NULL in the schema: imported users get an
+		// unusable bcrypt sentinel ('!' matches no bcrypt hash, so no
+		// password verifies) and must set a password via the reset flow.
+		const unusablePasswordHash = "!"
 		return "\n\t\t\tINSERT INTO users (username, email, profile_type, status, password_hash)\n\t\t\tVALUES ($1, $2, COALESCE(NULLIF($3, ''), 'regular'), COALESCE(NULLIF($4, ''), 'active'), $5)\n\t\t\t" + conflict,
-			[]any{username, email, row["profile_type"], row["status"], passwordHash},
+			[]any{username, email, row["profile_type"], row["status"], unusablePasswordHash},
 			nil
 
 	case TypePosts:
@@ -616,48 +750,11 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 			nil
 
 	case TypeTransactions:
-		// The wallet transactions table is `wallet_ledger`.
-		// BUG-006: parse amount as int64 (bigint column).
-		amount, err := parseInt64(row["amount"])
-		if err != nil {
-			return "", nil, fmt.Errorf("transactions: %w", err)
-		}
-		// BUG-008: validate ledger_type and operation against CHECK constraints.
-		ledgerType := strings.TrimSpace(row["ledger_type"])
-		if ledgerType == "" {
-			ledgerType = "points"
-		} else if !validLedgerTypes[ledgerType] {
-			return "", nil, fmt.Errorf("transactions: invalid ledger_type %q (must be one of: points, credits)", ledgerType)
-		}
-
-		operation := strings.TrimSpace(row["operation"])
-		if operation == "" {
-			operation = "earn"
-		} else if !validWalletOperations[operation] {
-			return "", nil, fmt.Errorf("transactions: invalid operation %q (must be one of: earn, spend, purchase, convert, refund, clawback, admin_adjust)", operation)
-		}
-		// BUG-004: compute resulting_balance from current balance + amount.
-		// The resulting_balance is set to the amount itself as a fallback;
-		// a proper balance computation would require a lock on the wallet,
-		// which is not appropriate for bulk import. The imported transaction
-		// is tagged with source='import' so it can be excluded from balance
-		// calculations. The resulting_balance is set to 0 + amount as a
-		// best-effort snapshot — consumers should treat imported ledger
-		// entries as historical records, not live balance state.
-		resultingBalance := amount
-
-		source := strings.TrimSpace(row["source"])
-		if source == "" {
-			source = "import"
-		}
-
-		return `
-			INSERT INTO wallet_ledger (user_id, ledger_type, operation, amount, resulting_balance, source, reason)
-			SELECT u.id, $2, $3, $4, $5, $6, $7
-			FROM users u WHERE u.username = $1
-			ON CONFLICT DO NOTHING`,
-			[]any{row["user"], ledgerType, operation, amount, resultingBalance, source, row["reason"]},
-			nil
+		// The wallet transactions table is `wallet_ledger`. Rows are
+		// inserted via insertLedgerRow (row-locked tx with server-side
+		// balance recompute); buildImportQuery rejects direct use so a
+		// caller cannot bypass the recompute by crafting the query here.
+		return "", nil, errors.New("transactions: use ledger import path (balance is recomputed server-side)")
 
 	case TypeAnalytics:
 		// The analytics events table is `platform_events`.
@@ -720,6 +817,56 @@ func buildImportQuery(importType, mode string, row map[string]string) (string, [
 	}
 
 	return "", nil, nil
+}
+
+// stripBlockedImportColumns removes columns that imports must never write
+// (password_hash on users; balance columns on ledger rows) from every parsed
+// row. The balance is always recomputed server-side at insert time from the
+// amount, so a stripped key cannot influence the stored row. Returns the
+// number of rows that contained at least one blocked column.
+func stripBlockedImportColumns(rows []map[string]string, importType string) int {
+	affected := 0
+	for _, row := range rows {
+		hit := false
+		for k := range row {
+			lk := strings.ToLower(strings.TrimSpace(k))
+			if !blockedImportColumns[lk] {
+				continue
+			}
+			// password_hash is blocked on users imports (all other types
+			// have no such column — stripping is harmless); balance
+			// columns are blocked on ledger-type imports.
+			if lk == "password_hash" && importType != TypeUsers {
+				continue
+			}
+			delete(row, k)
+			hit = true
+		}
+		if hit {
+			affected++
+		}
+	}
+	return affected
+}
+
+// auditActor is the actor id for worker-side import audit writes. The worker
+// has no authenticated user, so the zero UUID marks a system actor.
+func auditActor(_ context.Context) pgtype.UUID { return pgtype.UUID{} }
+
+// auditImportEvent writes a best-effort audit_logs row for an import
+// lifecycle event (create/delete/row-cap rejections). The actor is the
+// authenticated user on the handler path and the zero UUID (system) on the
+// worker path. A logging failure is recorded in the server log only — it
+// must not fail the import itself.
+func (s *Service) auditImportEvent(ctx context.Context, actor pgtype.UUID, action string, importID pgtype.UUID, metadata map[string]any) {
+	metaJSON, _ := json.Marshal(metadata)
+	_, err := s.db.Writer.Exec(ctx, `
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata)
+		VALUES ($1, $2, 'data_import', $3, $4)
+	`, actor, action, importID, string(metaJSON))
+	if err != nil {
+		slog.Warn("dataimport: audit write failed", "import_id", importID.String(), "action", action, "error", err)
+	}
 }
 
 // ListPendingImports returns pending imports for the worker.

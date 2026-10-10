@@ -247,20 +247,16 @@ function refreshSession(session: OAuthSession): Promise<OAuthSession | null> {
 
 // getValidAccessToken returns a live access token, refreshing when the
 // stored one is inside the expiry skew (or when force is set — the 401
-// retry path). Returns null when no OAuth session exists. When a refresh
-// fails transiently the stored token is returned anyway — let the API be
-// the judge rather than logging the user out over a network blip.
+// retry path). Returns null when no OAuth session exists or renewal fails.
+// A failed refresh never returns the stale token: an expired bearer pinned
+// in play would loop 401s against the reuse-detection window, while null
+// forces a clean re-login on a definitively dead grant.
 export async function getValidAccessToken(force = false): Promise<string | null> {
 	let session = await getOAuthSession();
 	if (!session) return null;
 	if (force || session.expiresAt - EXPIRY_SKEW_MS <= Date.now()) {
 		const renewed = await refreshSession(session);
-		if (!renewed) {
-			// Session cleared → grant is dead → null. Session intact →
-			// transient failure → keep the stored token in play.
-			session = await getOAuthSession();
-			return session?.accessToken ?? null;
-		}
+		if (!renewed) return null;
 		session = renewed;
 	}
 	return session.accessToken;

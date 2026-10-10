@@ -236,3 +236,8 @@ FROM password_history
 WHERE user_id = @user_id
 ORDER BY created_at DESC
 LIMIT @hash_limit;
+
+-- name: VerifyEmailByHash :exec
+UPDATE email_verifications
+SET verified_at = now()
+WHERE token_hash = @token_hash AND verified_at IS NULL;

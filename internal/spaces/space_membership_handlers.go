@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
@@ -148,9 +149,21 @@ func (h *Handlers) Leave(w http.ResponseWriter, r *http.Request) {
 
 // ListMembers handles GET /api/v1/spaces/{slug}/members.
 // Returns paginated members of the space with user profile data.
+//
+// Visibility gate: a private space's roster is only visible to its members
+// (or a holder of the spaces.moderate node). Outsiders — including
+// authenticated non-members and guests — receive 404 (not 403) so the
+// endpoint cannot be used to probe for the existence of private spaces.
+// Public spaces stay open. The member rows carry no email addresses, so no
+// additional redaction is needed for non-members of public spaces.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	space, ok := spaceFromContext(w, r)
 	if !ok {
+		return
+	}
+
+	if space.Visibility == VisibilityPrivate && !h.canViewPrivateMembers(r, space) {
+		errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
 		return
 	}
 
@@ -164,6 +177,39 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": members})
+}
+
+// canViewPrivateMembers reports whether the caller may list the members of a
+// private space: an approved member of the space, or a holder of the
+// spaces.moderate node. The moderate bypass mirrors
+// rbac.HasSpacePermission semantics: the static node, the space owner, or an
+// assigned space moderator. Fail-closed: any check error denies.
+func (h *Handlers) canViewPrivateMembers(r *http.Request, space *gen.GetSpaceBySlugRow) bool {
+	user := auth.FromContext(r.Context())
+	if user == nil || !user.UserID.Valid {
+		return false
+	}
+
+	ctx := r.Context()
+
+	isMember, err := h.Service.IsMember(ctx, space.ID, user.UserID)
+	if err == nil && isMember {
+		return true
+	}
+
+	if isMod, merr := h.Service.IsModerator(ctx, space.ID, user.UserID); merr == nil && isMod {
+		return true
+	}
+
+	if isOwner, oerr := h.Service.IsOwner(ctx, space.ID, user.UserID); oerr == nil && isOwner {
+		return true
+	}
+
+	if h.permChecker != nil && h.permChecker.HasPermission(ctx, user.UserID, "spaces.moderate") {
+		return true
+	}
+
+	return false
 }
 
 // parsePageSize extracts and clamps the page_size query parameter.

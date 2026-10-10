@@ -353,11 +353,10 @@
 		if (!newCampaign.name || !newCampaign.subject) return;
 		creating = true;
 		pageError = '';
-		const sanitizedHtml = newCampaign.html
-			.replace(/<script[\s\S]*?<\/script>/gi, '')
-			.replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
-			.replace(/\bon\w+\s*=\s*"[^"]*"/gi, '')
-			.replace(/\bon\w+\s*=\s*'[^']*'/gi, '');
+		// Use the hardened DOMParser-based sanitizeHtml (allowlisted tags and
+		// attrs, dangerous schemes rejected, unsafe styles dropped) instead
+		// of a regex strip — regexes miss entity-encoded and nested vectors.
+		const sanitizedHtml = sanitizeHtml(newCampaign.html);
 		try {
 			const result = await api('/admin/newsletter/campaigns', { method: 'POST', body: { ...newCampaign, html: sanitizedHtml } });
 			if (result.ok) {

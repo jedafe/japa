@@ -207,6 +207,10 @@ func (p *UnsplashProvider) Download(ctx context.Context, photoID string) (*Downl
 		_, _ = io.Copy(io.Discard, resp.Body)
 	}()
 
+	if err := validateDownloadURL(photo.FullURL); err != nil {
+		return nil, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, photo.FullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("building download request: %w", err)

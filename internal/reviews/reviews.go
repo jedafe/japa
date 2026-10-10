@@ -33,6 +33,16 @@ const (
 	MaxPageSize     = 100
 )
 
+// Abuse-control caps: title/body length caps on create+update, TipTap-size
+// body cap (200KB), and flag-reason cap against flag-spam.
+const (
+	MaxTitleRunes  = 200
+	MaxBodyRunes   = 10000
+	MaxBodyBytes   = 200 * 1024
+	MaxFlagRunes   = 2000
+	MaxBulkMediaID = 100
+)
+
 // webhookEmitter fans a review.* event out to all subscribed webhook
 // endpoints for the platform (fire-and-forget). Ref: Section 12 (webhooks).
 type webhookEmitter interface {

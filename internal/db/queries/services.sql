@@ -17,7 +17,8 @@ INSERT INTO service_listing_meta (
     city_space_id, origin_communities, is_remote, website_url, booking_url,
     price_range, is_verified, verification_type, claim_status, claimed_by_org_id,
     listing_kind, price_amount, price_currency, price_per, purchase_mode,
-    capacity, available_from, available_until, faqs, steps
+    capacity, available_from, available_until, faqs, steps,
+    selling_points, facts, highlights, audience, included
 ) VALUES (
     @content_id, sqlc.narg(org_id), sqlc.narg(service_category),
     sqlc.narg(destination_space_id), sqlc.narg(city_space_id),
@@ -28,7 +29,10 @@ INSERT INTO service_listing_meta (
     COALESCE(sqlc.narg(listing_kind), 'service'), sqlc.narg(price_amount), sqlc.narg(price_currency),
     sqlc.narg(price_per), COALESCE(sqlc.narg(purchase_mode), 'inquiry'), sqlc.narg(capacity),
     sqlc.narg(available_from), sqlc.narg(available_until),
-    COALESCE(sqlc.narg(faqs), '[]'::jsonb), COALESCE(sqlc.narg(steps), '[]'::jsonb)
+    COALESCE(sqlc.narg(faqs), '[]'::jsonb), COALESCE(sqlc.narg(steps), '[]'::jsonb),
+    COALESCE(sqlc.narg(selling_points), '[]'::jsonb), COALESCE(sqlc.narg(facts), '[]'::jsonb),
+    COALESCE(sqlc.narg(highlights), '[]'::jsonb), COALESCE(sqlc.narg(audience), '[]'::jsonb),
+    COALESCE(sqlc.narg(included), '[]'::jsonb)
 ) RETURNING *;
 
 -- name: GetServiceListingMetaByContentID :one
@@ -65,6 +69,12 @@ SET org_id = sqlc.narg(org_id),
     -- the service layer merges the patch over the row before calling).
     faqs = COALESCE(sqlc.narg(faqs), faqs),
     steps = COALESCE(sqlc.narg(steps), steps),
+    -- 000829 page-content fields — same replace-set/COALESCE semantics.
+    selling_points = COALESCE(sqlc.narg(selling_points), selling_points),
+    facts = COALESCE(sqlc.narg(facts), facts),
+    highlights = COALESCE(sqlc.narg(highlights), highlights),
+    audience = COALESCE(sqlc.narg(audience), audience),
+    included = COALESCE(sqlc.narg(included), included),
     updated_at = now()
 WHERE content_id = @content_id
 RETURNING *;
@@ -89,12 +99,26 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
+       -- 000829 detail-page content fields (all listing kinds).
+       sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
        u.username AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
+       -- 000829 mentor card fields — headline card, stats row, and the
+       -- "Mentorship details" sidebar on the mentorship detail page.
+       up.location, up.mentor_title, up.mentor_response_time,
+       up.mentor_availability, up.mentor_session_type,
+       up.mentor_languages, up.mentor_session_formats,
+       up.mentor_countries, up.mentor_credentials,
+       up.mentor_years_experience, up.mentor_success_label,
+       -- Lifetime fulfilled bookings = "mentees helped" social proof
+       -- (provider_user_id is only ever set on mentorship-kind rows).
+       (SELECT COUNT(*)::int FROM service_bookings sb
+        WHERE sb.provider_user_id = c.author_id
+          AND sb.status = 'fulfilled') AS mentees_helped,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -129,12 +153,26 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
+       -- 000829 detail-page content fields (all listing kinds).
+       sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
        u.username AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
+       -- 000829 mentor card fields — headline card, stats row, and the
+       -- "Mentorship details" sidebar on the mentorship detail page.
+       up.location, up.mentor_title, up.mentor_response_time,
+       up.mentor_availability, up.mentor_session_type,
+       up.mentor_languages, up.mentor_session_formats,
+       up.mentor_countries, up.mentor_credentials,
+       up.mentor_years_experience, up.mentor_success_label,
+       -- Lifetime fulfilled bookings = "mentees helped" social proof
+       -- (provider_user_id is only ever set on mentorship-kind rows).
+       (SELECT COUNT(*)::int FROM service_bookings sb
+        WHERE sb.provider_user_id = c.author_id
+          AND sb.status = 'fulfilled') AS mentees_helped,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -177,12 +215,26 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
+       -- 000829 detail-page content fields (all listing kinds).
+       sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
        u.username AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
+       -- 000829 mentor card fields — headline card, stats row, and the
+       -- "Mentorship details" sidebar on the mentorship detail page.
+       up.location, up.mentor_title, up.mentor_response_time,
+       up.mentor_availability, up.mentor_session_type,
+       up.mentor_languages, up.mentor_session_formats,
+       up.mentor_countries, up.mentor_credentials,
+       up.mentor_years_experience, up.mentor_success_label,
+       -- Lifetime fulfilled bookings = "mentees helped" social proof
+       -- (provider_user_id is only ever set on mentorship-kind rows).
+       (SELECT COUNT(*)::int FROM service_bookings sb
+        WHERE sb.provider_user_id = c.author_id
+          AND sb.status = 'fulfilled') AS mentees_helped,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -1325,9 +1377,9 @@ SELECT EXISTS(
 
 -- name: CreateServicePackageTier :one
 INSERT INTO service_package_tiers (listing_meta_id, name, badge, description,
-    price_amount, price_currency, features, position, is_featured, is_active)
+    icon, price_amount, price_currency, features, position, is_featured, is_active)
 VALUES (@listing_meta_id, @name, sqlc.narg(badge), sqlc.narg(description),
-    @price_amount, sqlc.narg(price_currency), @features,
+    sqlc.narg(icon), @price_amount, sqlc.narg(price_currency), @features,
     COALESCE(sqlc.narg(position), 0), COALESCE(sqlc.narg(is_featured), false),
     COALESCE(sqlc.narg(is_active), true))
 RETURNING *;
@@ -1361,3 +1413,18 @@ WHERE listing_meta_id = @listing_meta_id AND is_active = true;
 SELECT COUNT(*) FROM service_bookings
 WHERE booker_user_id = @user_id AND org_id = @org_id
   AND status NOT IN ('cancelled','declined','refunded');
+
+-- name: UpdateMentorShadowMetaContent :exec
+-- §114 2026-10-10: mentor-profile PATCH syncs the shadow listing's page
+-- content the same way UpdateMentorShadowMeta syncs the listing fields —
+-- COALESCE so nil preserves the stored set, '[]' clears.
+UPDATE service_listing_meta
+SET selling_points = COALESCE(sqlc.narg(selling_points), selling_points),
+    facts = COALESCE(sqlc.narg(facts), facts),
+    highlights = COALESCE(sqlc.narg(highlights), highlights),
+    audience = COALESCE(sqlc.narg(audience), audience),
+    included = COALESCE(sqlc.narg(included), included),
+    faqs = COALESCE(sqlc.narg(faqs), faqs),
+    steps = COALESCE(sqlc.narg(steps), steps),
+    updated_at = now()
+WHERE content_id = @content_id;

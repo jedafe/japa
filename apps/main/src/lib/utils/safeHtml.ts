@@ -58,6 +58,11 @@ export function sanitizeSidebarHtml(html: string): string {
 				const value = m[2];
 				// Drop any event handler.
 				if (name.startsWith('on')) continue;
+				// Reject executable / overlay styles (position:fixed phish veil).
+				if (name === 'style') {
+					const unquoted = value.replace(/^["']|["']$/g, '');
+					if (UNSAFE_STYLE.test(unquoted)) continue;
+				}
 				// Allow data-* attributes.
 				if (!ALLOWED_ATTRS.has(name) && !name.startsWith('data-')) continue;
 				// Guard URL-bearing attributes against dangerous schemes.
@@ -65,8 +70,15 @@ export function sanitizeSidebarHtml(html: string): string {
 					const unquoted = value.replace(/^["']|["']$/g, '').trim();
 					if (isDangerousUrl(unquoted)) continue;
 				}
+				// data-url survives the sanitizer and is later assigned to
+				// link.href by hydrate actions — validate it like any URL.
+				if (name === 'data-url') {
+					const unquoted = value.replace(/^["']|["']$/g, '').trim();
+					if (!safeHref(unquoted)) continue;
+				}
 				safeAttrs.push(` ${name}=${value}`);
 			}
+			ensureNoopenerRel(lower, safeAttrs);
 			return `<${lower}${safeAttrs.join('')}>`;
 		}
 	);
@@ -86,13 +98,83 @@ export function safeHref(url: string | undefined | null): string {
 	if (!url || typeof url !== 'string') return '';
 	const trimmed = url.trim();
 	if (!trimmed) return '';
+	// Reject protocol-relative URLs (//evil.com inherits the page scheme).
+	if (trimmed.startsWith('//')) return '';
 	if (isDangerousUrl(trimmed)) return '';
 	return trimmed;
 }
 
+// Any `style` value that could execute code, load remote content, or overlay
+// the page (phish click-jacking via position:fixed) rejects the whole attribute.
+const UNSAFE_STYLE =
+	/url\s*\(|expression\s*\(|@import|@charset|javascript|vbscript|behavior\s*:|binding\s*:|-moz-binding|position\s*:/i;
+
+/**
+ * Decode numeric/known-named HTML entities (looped for double-encoding).
+ * The browser decodes `&#106;avascript:` on click/navigation, so scheme
+ * checks must run on the decoded value, not the raw attribute text.
+ */
+function decodeEntities(value: string): string {
+	const named: Record<string, string> = {
+		colon: ':',
+		semi: ';',
+		comma: ',',
+		sol: '/',
+		excl: '!',
+		lpar: '(',
+		rpar: ')',
+		tab: '\t',
+		newline: '\n',
+		quot: '"',
+		amp: '&',
+		lt: '<',
+		gt: '>',
+		nbsp: ' '
+	};
+	let out = value;
+	for (let i = 0; i < 5; i++) {
+		const prev = out;
+		out = out
+			.replace(/&#(\d+);?/g, (_m, d: string) => {
+				const c = parseInt(d, 10);
+				return Number.isFinite(c) ? String.fromCharCode(c) : _m;
+			})
+			.replace(/&#[xX]([0-9a-fA-F]+);?/g, (_m, h: string) => {
+				const c = parseInt(h, 16);
+				return Number.isFinite(c) ? String.fromCharCode(c) : _m;
+			})
+			.replace(/&([a-zA-Z]+);?/g, (m, n: string) => named[n.toLowerCase()] ?? m);
+		if (out === prev) break;
+	}
+	return out;
+}
+
 function isDangerousUrl(url: string): boolean {
-	// Match `javascript:`, `data:`, `vbscript:` with optional whitespace/control chars.
-	return /^\s*(javascript|data|vbscript)\s*:/i.test(url);
+	// Decode entities BEFORE the scheme check, then strip ASCII control
+	// chars/whitespace (ignored around the scheme by browsers).
+	const decoded = decodeEntities(url)
+		.split('')
+		.filter((ch) => ch.charCodeAt(0) > 32)
+		.join('');
+	return /^(javascript|data|vbscript):/i.test(decoded);
+}
+
+/** Force `rel="noopener noreferrer"` on `_blank` links (reverse tabnabbing). */
+function ensureNoopenerRel(tag: string, safeAttrs: string[]): void {
+	if (tag !== 'a') return;
+	const hasBlank = safeAttrs.some((a) => /^\s*target\s*=\s*(["']?)_blank\1$/i.test(a.trim()));
+	if (!hasBlank) return;
+	const idx = safeAttrs.findIndex((a) => /^\s*rel\s*=/i.test(a));
+	if (idx === -1) {
+		safeAttrs.push(' rel="noopener noreferrer"');
+		return;
+	}
+	const m = safeAttrs[idx].match(/^\s*rel\s*=\s*(["'])(.*)\1$/);
+	if (!m) return;
+	const tokens = m[2].split(/\s+/).filter(Boolean);
+	if (!tokens.includes('noopener')) tokens.push('noopener');
+	if (!tokens.includes('noreferrer')) tokens.push('noreferrer');
+	safeAttrs[idx] = ` rel="${tokens.join(' ')}"`;
 }
 
 /**
@@ -189,6 +271,10 @@ export function sanitizeContentHtml(html: string, allowedIframeHosts?: string): 
 				const value = m[2];
 				// Drop any event handler.
 				if (name.startsWith('on')) continue;
+				if (name === 'style') {
+					const unquoted = value.replace(/^["']|["']$/g, '');
+					if (UNSAFE_STYLE.test(unquoted)) continue;
+				}
 				// Allow data-* attributes.
 				if (!allowedAttrs.has(name) && !name.startsWith('data-')) continue;
 				// Guard URL-bearing attributes against dangerous schemes.
@@ -200,8 +286,13 @@ export function sanitizeContentHtml(html: string, allowedIframeHosts?: string): 
 						if (urlHost(unquoted) === '') continue;
 					}
 				}
+				if (name === 'data-url') {
+					const unquoted = value.replace(/^["']|["']$/g, '').trim();
+					if (!safeHref(unquoted)) continue;
+				}
 				safeAttrs.push(` ${name}=${value}`);
 			}
+			ensureNoopenerRel(lower, safeAttrs);
 			return `<${lower}${safeAttrs.join('')}>`;
 		}
 	);
@@ -227,4 +318,34 @@ export function safeJsonLdScript(payload: unknown): string {
 	const json = typeof payload === 'string' ? payload : JSON.stringify(payload);
 	const safe = json.replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 	return `<script type="application/ld+json">${safe}</script>`;
+}
+
+/**
+ * Sanitize admin-authored custom CSS (`site.custom_css`) before it is inlined
+ * in `<style id="jc-custom-css">`.
+ *
+ * Staff-only setting with an audit trail, but the value still reaches every
+ * visitor, so executable exfiltration vectors are stripped: `url(` (remote
+ * loads / data-URI payloads), `expression(` (legacy IE script), `@import` /
+ * `@charset` (remote stylesheet inclusion), `javascript:` / `vbscript:` /
+ * `data:` schemes, and `behavior:` / `binding:` / `-moz-binding` (HTC/XBL
+ * script attachment). Anything matching the blocklist is removed, not
+ * escaped — the remainder is inert declarations only.
+ */
+export function sanitizeCustomCss(css: string): string {
+	if (!css) return '';
+	let out = String(css);
+	// Drop @import / @charset rules wholesale (remote stylesheet inclusion).
+	out = out.replace(/@import[^;]+;/gi, '');
+	out = out.replace(/@charset[^;]+;/gi, '');
+	// Drop url(...) payloads (remote loads, data-URI exfiltration).
+	out = out.replace(/url\s*\([^)]*\)/gi, '');
+	// Drop expression(...) (legacy IE script-in-CSS).
+	out = out.replace(/expression\s*\([^)]*\)/gi, '');
+	// Drop behavior:/binding:/-moz-binding declarations (HTC/XBL script).
+	out = out.replace(/[a-z-]*binding\s*:[^;}]+;?/gi, '');
+	out = out.replace(/behavior\s*:[^;}]+;?/gi, '');
+	// Neutralize residual dangerous schemes if they survive the passes above.
+	out = out.replace(/javascript\s*:/gi, '').replace(/vbscript\s*:/gi, '');
+	return out;
 }

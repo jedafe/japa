@@ -231,6 +231,15 @@ func (h *Handlers) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Re-validate the user at upgrade time: the ticket may have been minted
+	// before a ban/suspension/erasure landed. The same sessionChecker that
+	// guards pong also gates the upgrade — a pre-ban ticket cannot open a
+	// socket that then lives until the next pong.
+	if h.sessionChecker != nil && !h.sessionChecker(userID.String()) {
+		errpkg.WriteError(w, http.StatusForbidden, "account_inactive", "Account is no longer active")
+		return
+	}
+
 	// Upgrade to WebSocket.
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {

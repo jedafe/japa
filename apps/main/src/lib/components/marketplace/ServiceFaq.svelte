@@ -4,23 +4,34 @@
 	// listing carries faqs — callers gate on faqs.length.
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { Accordion } from 'bits-ui';
-	import { ChevronDown } from 'lucide-svelte';
+	import { ArrowRight, ChevronDown } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import type { ServiceFaq } from '$lib/types';
 
 	interface Props {
 		faqs: ServiceFaq[];
+		heading?: string;
+		/** Optional "View all FAQs" link beside the heading (mockup header). */
+		viewAllHref?: string;
 	}
-	let { faqs }: Props = $props();
+	let { faqs, heading, viewAllHref }: Props = $props();
 </script>
 
 <section aria-labelledby="service-faq-heading">
-	<h2
-		id="service-faq-heading"
-		class="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
-	>
-		{t('services.faq_heading', 'Frequently asked questions')}
-	</h2>
+	<div class="flex flex-wrap items-baseline justify-between gap-2">
+		<h2 id="service-faq-heading" class="text-xl font-bold text-[var(--color-text)]">
+			{heading || t('services.faq_heading', 'Frequently asked questions')}
+		</h2>
+		{#if viewAllHref}
+			<a
+				href={viewAllHref}
+				class="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
+			>
+				{t('services.faq_view_all', 'View all FAQs')}
+				<ArrowRight size={12} aria-hidden="true" />
+			</a>
+		{/if}
+	</div>
 	<Accordion.Root type="single" class="mt-4 space-y-2">
 		{#each faqs as faq, i (i)}
 			<Accordion.Item

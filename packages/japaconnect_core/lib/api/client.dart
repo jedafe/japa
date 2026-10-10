@@ -56,14 +56,25 @@ class JcApiClient {
   });
 
   String get effectiveWsUrl {
-    if (wsUrl.isNotEmpty) return wsUrl;
+    if (wsUrl.isNotEmpty) return _forceSecureWs(wsUrl);
     // baseUrl already includes the API prefix (e.g. .../api/v1) — the WS
     // endpoint lives at <base>/ws.
     final base = baseUrl
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://')
         .replaceFirst(RegExp(r'/+$'), '');
-    return '$base/ws';
+    return _forceSecureWs('$base/ws');
+  }
+
+  /// Upgrades ws:// to wss:// in release builds so a release binary can
+  /// never silently downgrade to cleartext WebSockets. Debug builds keep
+  /// the configured scheme (localhost dev over ws://).
+  static String _forceSecureWs(String url) {
+    if (!kReleaseMode) return url;
+    if (url.startsWith('ws://')) {
+      return 'wss://${url.substring(5)}';
+    }
+    return url;
   }
 
   String? get accessToken => _accessToken;

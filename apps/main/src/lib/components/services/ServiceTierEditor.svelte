@@ -6,6 +6,10 @@
 	import { Plus, Trash2, ChevronUp, ChevronDown, Star } from 'lucide-svelte';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 	import type { EditableTier } from './serviceForm';
+	import {
+		marketplaceIcon,
+		MARKETPLACE_ICON_NAMES
+	} from '$lib/components/marketplace/marketplaceIcon';
 
 	interface Props {
 		tiers: EditableTier[];
@@ -24,7 +28,7 @@
 	function add() {
 		tiers = [
 			...tiers,
-			{ name: '', badge: '', description: '', priceAmount: '', currency: '', featuresText: '', isFeatured: false }
+			{ name: '', badge: '', description: '', icon: '', priceAmount: '', currency: '', featuresText: '', isFeatured: false }
 		];
 	}
 
@@ -41,6 +45,29 @@
 		tiers = tiers.map((tr, i) => ({ ...tr, isFeatured: i === idx ? on : false }));
 	}
 </script>
+
+{#snippet iconRow(value: string, onpick: (name: string) => void)}
+	{@const Preview = marketplaceIcon(value)}
+	<div class="flex items-center gap-2">
+		<span
+			class="grid h-8 w-8 shrink-0 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]"
+			aria-hidden="true"
+		>
+			<Preview size={14} class="text-[var(--color-primary)]" />
+		</span>
+		<select
+			value={value}
+			onchange={(e) => onpick(e.currentTarget.value)}
+			class="{inputClass} w-auto min-w-0 flex-1 sm:flex-none"
+			aria-label={t('services.icon_pick', 'Icon')}
+		>
+			<option value="">{t('services.icon_none', 'No icon')}</option>
+			{#each MARKETPLACE_ICON_NAMES as name (name)}
+				<option value={name}>{name}</option>
+			{/each}
+		</select>
+	</div>
+{/snippet}
 
 <div>
 	<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -97,6 +124,7 @@
 							class={inputClass}
 							aria-label={t('services.tier_desc_ph', 'Tier description')}
 						/>
+						{@render iconRow(tier.icon, (v) => (tier.icon = v))}
 						<div class="flex gap-2">
 							<input
 								type="number"

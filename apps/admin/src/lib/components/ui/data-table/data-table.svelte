@@ -412,7 +412,10 @@
    // CSV export of the currently selected rows — the universal built-in bulk
    // action. Skips label-less columns (avatar stacks, action cells).
    function csvEscape(v: any): string {
-     const s = v == null ? "" : String(v);
+     let s = v == null ? "" : String(v);
+     // Formula neutralization: prefix =, +, -, @, tab, pipe, and DDE
+     // payloads with a single quote so spreadsheets render text, not formulas.
+     if (/^[=+\-@\t|]/.test(s) || /^cmd\|/i.test(s)) s = `'${s}`;
      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
    }
    function exportSelectedCsv(ids: Set<string>) {

@@ -13,6 +13,7 @@
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import type {
 		Space, SpaceModerator, SpaceRule, SpacePermissionPreset, MediaAsset
 	} from '$lib/types';
@@ -988,7 +989,7 @@
 						{t('space.delete_confirm', 'Are you absolutely sure? Type the space name to confirm.')}
 					</p>
 					<p class="text-xs text-[var(--color-muted)]">
-						{@html t('spaces.delete_confirm_hint', 'Type <strong>{name}</strong> to confirm deletion:').replace('{name}', escapeHtml(space.name))}
+						{@html sanitizeContentHtml(t('spaces.delete_confirm_hint', 'Type <strong>{name}</strong> to confirm deletion:').replace('{name}', escapeHtml(space.name)))}
 					</p>
 					<input
 						type="text"

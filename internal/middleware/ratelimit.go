@@ -79,6 +79,11 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if rdb == nil {
+				// No Valkey wired — fail-open for availability, but log and
+				// mark the response so the degraded state is observable.
+				slog.Warn("rate limiter: no Valkey client, allowing request",
+					"tier", tier)
+				w.Header().Set("X-RateLimit-Degraded", "true")
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -115,7 +120,12 @@ func RateLimit(rdb valkeycompat.Cmdable, tier string) func(http.Handler) http.Ha
 			pipe.Expire(ctx, key, limit.Window+time.Second)
 
 			if _, err := pipe.Exec(ctx); err != nil {
-				// Valkey unreachable — degrade gracefully.
+				// Valkey unreachable — degrade gracefully (fail-open for
+				// availability) but mark the response so operators can see
+				// enforcement was skipped for this request.
+				slog.Warn("rate limiter: Valkey unreachable, allowing request",
+					"tier", tier, "identifier", identifier, "error", err)
+				w.Header().Set("X-RateLimit-Degraded", "true")
 				next.ServeHTTP(w, r)
 				return
 			}

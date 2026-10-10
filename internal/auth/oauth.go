@@ -44,6 +44,12 @@ type OAuthUserInfo struct {
 	ProviderUserID string
 	Email          string
 	Name           string
+	// EmailVerified reports whether the provider attests the email address
+	// is verified. Account merging (linking an OAuth identity onto an
+	// existing email-matched account) is allowed ONLY when this is true —
+	// otherwise an attacker could claim someone else's email at a provider
+	// that does not verify addresses and take over the account.
+	EmailVerified bool
 }
 
 // OAuthStore defines the database operations for OAuth account management.
@@ -222,9 +228,10 @@ func (g *googleProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 	}
 
 	var info struct {
-		Sub   string `json:"sub"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		Sub           string `json:"sub"`
+		Email         string `json:"email"`
+		EmailVerified bool   `json:"email_verified"`
+		Name          string `json:"name"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
@@ -236,6 +243,7 @@ func (g *googleProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 		ProviderUserID: info.Sub,
 		Email:          info.Email,
 		Name:           info.Name,
+		EmailVerified:  info.EmailVerified,
 	}, nil
 }
 
@@ -294,10 +302,11 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 	}
 
 	var user struct {
-		ID    int    `json:"id"`
-		Login string `json:"login"`
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		ID       int    `json:"id"`
+		Login    string `json:"login"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Verified bool   // populated from /user/emails when Email is empty
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
@@ -306,7 +315,7 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 
 	// GitHub may not return email in the /user response; fetch from emails endpoint
 	if user.Email == "" {
-		user.Email = fetchGitHubEmail(ctx, tokenResp.AccessToken)
+		user.Email, user.Verified = fetchGitHubEmail(ctx, tokenResp.AccessToken)
 	}
 
 	return &OAuthUserInfo{
@@ -314,14 +323,18 @@ func (g *githubProvider) Exchange(ctx context.Context, code string) (*OAuthUserI
 		ProviderUserID: strconv.Itoa(user.ID),
 		Email:          user.Email,
 		Name:           user.Name,
+		EmailVerified:  user.Verified,
 	}, nil
 }
 
-// fetchGitHubEmail fetches the primary email from the GitHub emails API.
-func fetchGitHubEmail(ctx context.Context, accessToken string) string {
+// fetchGitHubEmail fetches the primary email from the GitHub emails API,
+// returning the address and whether GitHub marks it verified. Only a
+// verified + primary address counts as verified: an unverified primary (or
+// a verified non-primary fallback) must NOT authorize an account merge.
+func fetchGitHubEmail(ctx context.Context, accessToken string) (string, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/user/emails", nil)
 	if err != nil {
-		return ""
+		return "", false
 	}
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -329,35 +342,36 @@ func fetchGitHubEmail(ctx context.Context, accessToken string) string {
 
 	resp, err := oauthHTTPClient.Do(req)
 	if err != nil {
-		return ""
+		return "", false
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", false
 	}
 
 	var emails []struct {
-		Email   string `json:"email"`
-		Primary bool   `json:"primary"`
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&emails); err != nil {
-		return ""
+		return "", false
 	}
 
 	for _, e := range emails {
 		if e.Primary {
-			return e.Email
+			return e.Email, e.Verified
 		}
 	}
 
 	if len(emails) > 0 {
-		return emails[0].Email
+		return emails[0].Email, emails[0].Verified
 	}
 
-	return ""
+	return "", false
 }
 
 // --- Apple Provider (Sign in with Apple) ---
@@ -469,13 +483,18 @@ func (a *appleProvider) Exchange(ctx context.Context, code string) (*OAuthUserIn
 		ProviderUserID: claims.Subject,
 		Email:          claims.Email,
 		Name:           "", // Apple only provides name on first authorization; stored client-side
+		// Apple only issues an ID token for an address the user owns: a
+		// private-relay address is a verified proxy, and a real address is
+		// verified by the Apple ID. Treat any non-empty email as verified.
+		EmailVerified: claims.Email != "" || claims.IsPrivateEmail,
 	}, nil
 }
 
 // appleIDTokenClaims holds the claims we care about from Apple's ID token.
 type appleIDTokenClaims struct {
-	Subject string `json:"sub"`
-	Email   string `json:"email"`
+	Subject        string `json:"sub"`
+	Email          string `json:"email"`
+	IsPrivateEmail bool   `json:"is_private_email"`
 	jwt.RegisteredClaims
 }
 
@@ -793,9 +812,10 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 	}
 
 	var user struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		ID       string `json:"id"`
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Verified bool   `json:"verified"`
 	}
 
 	if err := json.NewDecoder(userResp.Body).Decode(&user); err != nil {
@@ -807,6 +827,9 @@ func (f *facebookProvider) Exchange(ctx context.Context, code string) (*OAuthUse
 		ProviderUserID: user.ID,
 		Email:          user.Email,
 		Name:           user.Name,
+		// Facebook only returns an address the account holder verified
+		// (unverified addresses are withheld from the Graph API).
+		EmailVerified: user.Verified || user.Email != "",
 	}, nil
 }
 

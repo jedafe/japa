@@ -35,6 +35,7 @@ type TierInput struct {
 	Name          string   `json:"name"`
 	Badge         string   `json:"badge"`
 	Description   string   `json:"description"`
+	Icon          string   `json:"icon"`
 	PriceAmount   *int64   `json:"price_amount"` // minor units; 0 is a valid (free) tier
 	PriceCurrency string   `json:"price_currency"`
 	Features      []string `json:"features"`
@@ -50,6 +51,7 @@ type PackageTierDTO struct {
 	Name          string   `json:"name"`
 	Badge         string   `json:"badge,omitempty"`
 	Description   string   `json:"description,omitempty"`
+	Icon          string   `json:"icon,omitempty"`
 	PriceAmount   int64    `json:"price_amount"`
 	PriceCurrency string   `json:"price_currency,omitempty"`
 	Features      []string `json:"features"`
@@ -82,7 +84,10 @@ func (s *Service) validatePackageTiers(ctx context.Context, tiers []TierInput) (
 		return nil, nil
 	}
 
-	maxTiers := int32(s.settings.GetIntOr(ctx, "service_packages.tiers.max_count", 5))
+	maxTiers := int32(5) //nolint:gosec // default cap
+	if s.settings != nil {
+		maxTiers = int32(s.settings.GetIntOr(ctx, "service_packages.tiers.max_count", 5)) //nolint:gosec // configured bound
+	}
 	if int32(len(tiers)) > maxTiers { //nolint:gosec // slice length is bounded by request body
 		return nil, fmt.Errorf("tiers: exceeds service_packages.tiers.max_count (%d): %w", maxTiers, ErrInvalidTiers)
 	}
@@ -118,10 +123,16 @@ func (s *Service) validatePackageTiers(ctx context.Context, tiers []TierInput) (
 			features = []string{}
 		}
 
+		icon := strings.TrimSpace(t.Icon)
+		if len(icon) > maxIconNameLen {
+			return nil, fmt.Errorf("tiers[%d]: icon exceeds %d chars: %w", i, maxIconNameLen, ErrInvalidTiers)
+		}
+
 		params = append(params, gen.CreateServicePackageTierParams{
 			Name:          name,
 			Badge:         nilIfEmpty(&t.Badge),
 			Description:   nilIfEmpty(&t.Description),
+			Icon:          nilIfEmpty(&icon),
 			PriceAmount:   *t.PriceAmount,
 			PriceCurrency: nilIfEmpty(&t.PriceCurrency),
 			Features:      features,
@@ -141,6 +152,7 @@ func tierToDTO(t gen.ServicePackageTier) PackageTierDTO {
 		Name:          t.Name,
 		Badge:         strOrEmpty(t.Badge),
 		Description:   strOrEmpty(t.Description),
+		Icon:          strOrEmpty(t.Icon),
 		PriceAmount:   t.PriceAmount,
 		PriceCurrency: strOrEmpty(t.PriceCurrency),
 		Features:      t.Features,

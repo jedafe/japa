@@ -1,4 +1,5 @@
 // Ref: japaconnect-engineering/sections/98-service-directory.md
+// Ref: japaconnect-engineering/sections/114-services-marketplace.md
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
@@ -20,6 +21,9 @@ import type { ContentArticle } from '$lib/types/content';
  * When the visitor is authed, also fetches their organizations via
  * GET /me/organizations so the claim flow can present an org picker
  * (BUG-004: the backend requires { org_id } on POST /services/{id}/claim).
+ *
+ * Lives in the (marketplace) group (§114 2026-10-10) — the detail page
+ * shares the marketplace shell rather than the narrow AppShell column.
  */
 export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);

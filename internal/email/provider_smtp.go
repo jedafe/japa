@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/smtp"
 	"os"
 	"sort"
@@ -59,8 +60,42 @@ func (p *SMTPProvider) Name() string {
 	return "smtp"
 }
 
+// sanitizeHeaderValue strips CR/LF from a header field to block SMTP header
+// injection (CWE-113): a To/Subject/extra-header value containing "\r\nBcc:
+// attacker@x" would otherwise smuggle attacker headers into the message.
+func sanitizeHeaderValue(v string) string {
+	v = strings.ReplaceAll(v, "\r", "")
+	v = strings.ReplaceAll(v, "\n", "")
+
+	return strings.TrimSpace(v)
+}
+
+// sanitizeAddress parses and re-serializes an address, rejecting display
+// names or comments that smuggle CR/LF. Returns an error when the address
+// is not a valid RFC 5322 mailbox.
+func sanitizeAddress(addr string) (string, error) {
+	addr = sanitizeHeaderValue(addr)
+
+	parsed, err := mail.ParseAddress(addr)
+	if err != nil {
+		return "", fmt.Errorf("invalid email address: %w", err)
+	}
+
+	return parsed.Address, nil
+}
+
 // Send dispatches an email via SMTP.
 func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailResponse, error) {
+	to, err := sanitizeAddress(req.To)
+	if err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp send: %w", err)
+	}
+
+	from, err := sanitizeAddress(p.from)
+	if err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp misconfigured (JC_SMTP_FROM): %w", err)
+	}
+
 	// Build the message
 	contentType := "text/plain; charset=UTF-8"
 	contentBody := req.Body
@@ -70,16 +105,18 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 	}
 
 	// Base headers, in a stable order for deterministic output.
+	// Every interpolated value is CRLF-sanitized (CWE-113).
 	var hdr strings.Builder
 
-	hdr.WriteString("From: " + p.from + "\r\n")
-	hdr.WriteString("To: " + req.To + "\r\n")
-	hdr.WriteString("Subject: " + req.Subject + "\r\n")
+	hdr.WriteString("From: " + from + "\r\n")
+	hdr.WriteString("To: " + to + "\r\n")
+	hdr.WriteString("Subject: " + sanitizeHeaderValue(req.Subject) + "\r\n")
 	hdr.WriteString("MIME-Version: 1.0\r\n")
 	hdr.WriteString("Content-Type: " + contentType + "\r\n")
 
 	// Merge optional extra headers (e.g. List-Unsubscribe) in a stable
 	// (alphabetical) order so the rendered message is deterministic.
+	// Header names are restricted to token chars; values are sanitized.
 	if len(req.Headers) > 0 {
 		keys := make([]string, 0, len(req.Headers))
 		for k := range req.Headers {
@@ -89,7 +126,13 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		sort.Strings(keys)
 
 		for _, k := range keys {
-			hdr.WriteString(k + ": " + req.Headers[k] + "\r\n")
+			name := sanitizeHeaderValue(k)
+			if name == "" || strings.ContainsAny(name, " :") {
+				slog.Warn("email_send: dropping invalid header name")
+				continue
+			}
+
+			hdr.WriteString(name + ": " + sanitizeHeaderValue(req.Headers[k]) + "\r\n")
 		}
 	}
 
@@ -125,11 +168,11 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 			}
 		}
 
-		if err := client.Mail(p.from); err != nil {
+		if err := client.Mail(from); err != nil {
 			return EmailResponse{}, fmt.Errorf("smtp mail: %w", err)
 		}
 
-		if err := client.Rcpt(req.To); err != nil {
+		if err := client.Rcpt(to); err != nil {
 			return EmailResponse{}, fmt.Errorf("smtp rcpt: %w", err)
 		}
 
@@ -153,10 +196,71 @@ func (p *SMTPProvider) Send(ctx context.Context, req EmailRequest) (EmailRespons
 		return EmailResponse{Status: "success"}, nil
 	}
 
-	// STARTTLS or plain SMTP.
-	if err := smtp.SendMail(p.addr, auth, p.from, []string{req.To}, []byte(msg)); err != nil {
-		slog.Error("email_send: SMTP send failed", "to", req.To, "addr", p.addr, "error", err)
-		return EmailResponse{}, fmt.Errorf("smtp send to %s: %w", req.To, err)
+	// Non-465 path: STARTTLS when the server offers it, plain only in
+	// non-production. In production a server that does not offer STARTTLS
+	// is refused rather than sending credentials and content in cleartext.
+	if strings.EqualFold(os.Getenv("JC_ENV"), "production") {
+		return p.sendProductionSTARTTLS(msg, from, to, auth)
+	}
+
+	if err := smtp.SendMail(p.addr, auth, from, []string{to}, []byte(msg)); err != nil {
+		slog.Error("email_send: SMTP send failed", "to", to, "addr", p.addr, "error", err)
+		return EmailResponse{}, fmt.Errorf("smtp send to %s: %w", to, err)
+	}
+
+	return EmailResponse{Status: "success"}, nil
+}
+
+// sendProductionSTARTTLS delivers via an explicit smtp.Client so STARTTLS
+// can be enforced: the connection is upgraded before Auth/Mail, and a
+// server without the extension is refused outright.
+func (p *SMTPProvider) sendProductionSTARTTLS(msg, from, to string, auth smtp.Auth) (EmailResponse, error) {
+	client, err := smtp.Dial(p.addr)
+	if err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp dial %s: %w", p.addr, err)
+	}
+
+	defer func() { _ = client.Close() }()
+
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		_ = client.Quit()
+
+		return EmailResponse{}, fmt.Errorf("smtp server %s does not offer STARTTLS (refusing plaintext in production)", p.addr)
+	}
+
+	if err := client.StartTLS(&tls.Config{ServerName: p.host, MinVersion: tls.VersionTLS12}); err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp starttls: %w", err)
+	}
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return EmailResponse{}, fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+
+	if err := client.Mail(from); err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp mail: %w", err)
+	}
+
+	if err := client.Rcpt(to); err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp rcpt: %w", err)
+	}
+
+	w, err := client.Data()
+	if err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp data: %w", err)
+	}
+
+	if _, err := w.Write([]byte(msg)); err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp write: %w", err)
+	}
+
+	if err := w.Close(); err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp close: %w", err)
+	}
+
+	if err := client.Quit(); err != nil {
+		return EmailResponse{}, fmt.Errorf("smtp quit: %w", err)
 	}
 
 	return EmailResponse{Status: "success"}, nil

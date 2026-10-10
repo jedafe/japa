@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -50,6 +51,10 @@ type providerConfig struct {
 type Adapter struct {
 	svc  *Service
 	http *http.Client
+	// allowPrivate relaxes the insert-time endpoint guard for httptest
+	// loopback servers. Set only when a custom client is injected
+	// (tests); production wiring passes nil and the guard stays on.
+	allowPrivate bool
 }
 
 // NewAdapter creates the adapter. httpClient may be nil → a client with the
@@ -57,8 +62,9 @@ type Adapter struct {
 func NewAdapter(svc *Service, httpClient *http.Client) *Adapter {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: defaultHTTPTimeout}
+		return &Adapter{svc: svc, http: httpClient}
 	}
-	return &Adapter{svc: svc, http: httpClient}
+	return &Adapter{svc: svc, http: httpClient, allowPrivate: true}
 }
 
 // FetchRates satisfies remittance.RateProvider (ADR-075 §2).
@@ -161,6 +167,8 @@ func (a *Adapter) fetchOXR(ctx context.Context, cfg providerConfig) (string, map
 	endpoint := cfg.Endpoint
 	if endpoint == "" {
 		endpoint = defaultOXREndpoint
+	} else if err := a.validateEngineEndpoint(endpoint); err != nil {
+		return "", nil, err
 	}
 
 	u, err := url.Parse(endpoint)
@@ -253,4 +261,64 @@ func emitSnapshots(m *Matrix, configCorridors []string, requested []remittance.C
 	}
 
 	return snaps
+}
+
+// validateEngineEndpoint constrains api_config.endpoint overrides: https
+// only (the app_id query credential would leak over plaintext http), no
+// userinfo, no private-literal hosts. The compiled-in default bypasses
+// validation (constant, not operator input). Test-injected clients
+// (allowPrivate) accept loopback http for httptest servers. No dial-time
+// guard exists on the adapter client — DNS-rebinding past insert-time
+// checks is an accepted residual (admin-only precondition, per-tick fetch
+// with 30s timeout).
+func (a *Adapter) validateEngineEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("fx: engine endpoint must be a valid URL: %q", endpoint)
+	}
+	if u.Scheme != "https" {
+		if !a.allowPrivate || u.Scheme != "http" {
+			return fmt.Errorf("fx: engine endpoint must be https: %q", endpoint)
+		}
+		host := u.Hostname()
+		if ip := net.ParseIP(host); ip != nil {
+			if !isReservedIP(ip) {
+				return fmt.Errorf("fx: engine endpoint must be https for non-local hosts: %q", endpoint)
+			}
+		} else if !strings.EqualFold(host, "localhost") && !strings.HasSuffix(strings.ToLower(host), ".localhost") {
+			return fmt.Errorf("fx: engine endpoint must be https for non-local hosts: %q", endpoint)
+		}
+		return nil
+	}
+	if u.User != nil {
+		return fmt.Errorf("fx: engine endpoint must not embed credentials")
+	}
+	if ip := net.ParseIP(u.Hostname()); ip != nil && isReservedIP(ip) {
+		return fmt.Errorf("fx: engine endpoint targets a private address: %q", endpoint)
+	}
+	return nil
+}
+
+// isReservedIP mirrors the webhook/ai SSRF literal blocklist for the fx
+// adapter (stdlib-only: fx cannot import intelligence/sources without a
+// cycle risk through remittance).
+func isReservedIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return true
+	}
+	if v4 := ip.To4(); v4 != nil {
+		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
+			return true
+		}
+		if v4[0] == 0 || v4[0] >= 240 {
+			return true
+		}
+		if (v4[0] == 192 && v4[1] == 0 && (v4[2] == 0 || v4[2] == 2)) ||
+			(v4[0] == 198 && v4[1] == 51 && v4[2] == 100) ||
+			(v4[0] == 203 && v4[1] == 0 && v4[2] == 113) ||
+			(v4[0] == 198 && (v4[1] == 18 || v4[1] == 19)) {
+			return true
+		}
+	}
+	return false
 }

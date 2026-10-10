@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 
@@ -57,6 +58,20 @@ type intelUsageRecorder struct {
 	costs *ai.CostEstimator
 }
 
+// saturateTokenCount clamps a provider-reported token count to the int32
+// range so int→int32 conversions can never wrap on 64-bit platforms
+// (gosec G115). Provider counts are small in practice; an absurd value
+// saturates instead of corrupting the metering row.
+func saturateTokenCount(v int) int32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(v)
+}
+
 // record inserts one usage row. Errors are logged and swallowed — metering
 // must never break the pipeline it observes.
 func (r *intelUsageRecorder) record(ctx context.Context, taskType, provider, model, requestRef string, usage ai.TokenUsage) {
@@ -70,7 +85,7 @@ func (r *intelUsageRecorder) record(ctx context.Context, taskType, provider, mod
 	}
 
 	if err := r.store.RecordAIUsage(ctx, pgtype.UUID{}, provider, model, taskType, requestRef,
-		int32(usage.PromptTokens), int32(usage.CompletionTokens), int32(usage.TotalTokens), cost); err != nil {
+		saturateTokenCount(usage.PromptTokens), saturateTokenCount(usage.CompletionTokens), saturateTokenCount(usage.TotalTokens), cost); err != nil {
 		slog.Warn("intel: record ai usage failed", "task_type", taskType, "provider", provider, "error", err)
 	}
 }

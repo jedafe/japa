@@ -86,7 +86,8 @@ type createImportRequest struct {
 }
 
 // HandleCreateImport handles POST /api/v1/admin/data-imports — create a new
-// platform data import. Gated by gdpr.data_imports.manage.
+// platform data import. Gated by data_imports.manage. The creating user is
+// recorded for the audit trail (create path) alongside the import row.
 func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
@@ -125,6 +126,10 @@ func (h *Handlers) HandleCreateImport(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// Audit-log the create (actor + import id + type).
+	h.service.auditImportEvent(r.Context(), user.UserID, "data_import.created",
+		imp.ID, map[string]any{"type": req.Type, "format": req.Format, "mode": req.Mode})
 
 	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": serializeImport(imp)})
 }
@@ -180,8 +185,9 @@ func (h *Handlers) HandleGetImport(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleDeleteImport handles DELETE /api/v1/admin/data-imports/:id.
+// The deleting user is recorded in the audit trail (delete path).
 func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireUser(w, r)
+	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -197,6 +203,9 @@ func (h *Handlers) HandleDeleteImport(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	h.service.auditImportEvent(r.Context(), user.UserID, "data_import.deleted",
+		id, map[string]any{})
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
 }

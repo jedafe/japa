@@ -40,6 +40,7 @@ import (
 	"github.com/jedafe/japa/internal/credentialchecker"
 	"github.com/jedafe/japa/internal/crscalculator"
 	"github.com/jedafe/japa/internal/customfields"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/docs"
 	"github.com/jedafe/japa/internal/forum"
@@ -2507,6 +2508,32 @@ func (a *agentPersonaCatalogAdapter) GetPersona(ctx context.Context, id pgtype.U
 // ---------------------------------------------------------------------------
 // Agent data tools (spec 2026-09-23-agent-data-api)
 // ---------------------------------------------------------------------------
+
+// desktopExchangeAuditor implements desktopauth.AuditLogger by writing
+// key-issuance records to audit_logs (actor = key owner, action
+// desktop.exchange_issuance, metadata carries the key id/prefix + device).
+// Minimal wiring so ExchangeKey issuance is traceable.
+type desktopExchangeAuditor struct{ db *db.DB }
+
+func (a *desktopExchangeAuditor) LogExchangeIssuance(ctx context.Context, userID, keyID pgtype.UUID, keyPrefix, deviceName, clientIP string) error {
+	meta, _ := json.Marshal(map[string]string{
+		"key_id":      keyID.String(),
+		"key_prefix":  keyPrefix,
+		"device_name": deviceName,
+	})
+	var ipArg any
+	if clientIP != "" {
+		ipArg = clientIP
+	}
+	_, err := a.db.Writer.Exec(ctx, `
+		INSERT INTO audit_logs (actor_user_id, action_type, target_type, target_id, metadata, ip_address)
+		VALUES ($1, 'desktop.exchange_issuance', 'api_key', $2, $3::jsonb, $4::inet)
+	`, userID, keyID, meta, ipArg)
+	if err != nil {
+		return fmt.Errorf("desktop exchange audit log: %w", err)
+	}
+	return nil
+}
 
 // agentDataAdapter adapts *publicapi.Service to ai.AgentDataReader. The ai
 // package cannot import publicapi (publicapi imports visaroutes, which

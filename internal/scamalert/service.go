@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/wallet"
 )
 
@@ -288,10 +289,13 @@ var ErrEditForbidden = errors.New("edit forbidden")
 // (ADR-088).
 var ErrModeratorNoteRequired = errors.New("moderator note required")
 
-// permissionChecker is the subset of rbac.RBAC used for edit authorization.
-type permissionChecker interface {
-	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
-}
+// Abuse-control caps on scam report free-text fields.
+const (
+	MaxDescriptionRunes     = 10000
+	MaxOriginCommunityRunes = 200
+	MaxAmountRangeRunes     = 100
+	MaxModeratorNoteRunes   = 5000
+)
 
 // Submit creates a new scam report in 'under_review' status. reporterID may
 // be zero-valued (invalid) for anonymous reports when anonymous reports are
@@ -349,12 +353,29 @@ func (s *Service) Submit(ctx context.Context, reporterID pgtype.UUID, input Subm
 	return dto, nil
 }
 
+// permissionChecker is the subset of rbac.RBAC used for edit authorization.
+type permissionChecker interface {
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
+}
+
 // buildScamReport validates a submit/update input and converts it into a
 // ScamReport value. The caller is responsible for setting ID, ReporterID
 // and Status for create, and for supplying the report id/platform for update.
 func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 	if input.ScamType == "" || input.DestinationSpaceID == "" || input.Description == "" {
 		return ScamReport{}, errors.New("scam_type, destination_space_id, and description are required")
+	}
+
+	if len([]rune(input.Description)) > MaxDescriptionRunes {
+		return ScamReport{}, fmt.Errorf("description must be at most %d characters", MaxDescriptionRunes)
+	}
+
+	if len([]rune(input.OriginCommunity)) > MaxOriginCommunityRunes {
+		return ScamReport{}, fmt.Errorf("origin_community must be at most %d characters", MaxOriginCommunityRunes)
+	}
+
+	if len([]rune(input.AmountRange)) > MaxAmountRangeRunes {
+		return ScamReport{}, fmt.Errorf("amount_range must be at most %d characters", MaxAmountRangeRunes)
 	}
 
 	if !validScamTypes[input.ScamType] {
@@ -364,6 +385,13 @@ func buildScamReport(input UpdateReportInput) (ScamReport, error) {
 	if input.PlatformUsed != "" && !validPlatforms[input.PlatformUsed] {
 		return ScamReport{}, ErrInvalidPlatform
 	}
+
+	// Sanitize on write (mirror content/store.go:460): description is the
+	// rich-text field (whitelist HTML), origin_community/amount_range are
+	// plain text.
+	input.Description = content.SanitizeHTML(input.Description)
+	input.OriginCommunity = content.SanitizeText(input.OriginCommunity)
+	input.AmountRange = content.SanitizeText(input.AmountRange)
 
 	var destSpaceID pgtype.UUID
 	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {

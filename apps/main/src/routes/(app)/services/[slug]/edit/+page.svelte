@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { Briefcase, Save, Loader2, AlertCircle, Package, Trash2, Plus, ChevronDown } from 'lucide-svelte';
+	import { Briefcase, Save, Loader2, AlertCircle, Package, Trash2, Plus } from 'lucide-svelte';
 	import { serviceCategoryOptions } from '$lib/enumOptions';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
@@ -16,6 +16,13 @@
 	import CoverUploader from '$lib/components/create/CoverUploader.svelte';
 	import ServiceTierEditor from '$lib/components/services/ServiceTierEditor.svelte';
 	import ServiceCouponSelector from '$lib/components/services/ServiceCouponSelector.svelte';
+	import ServiceContentEditor from '$lib/components/services/ServiceContentEditor.svelte';
+	import type {
+		FactEntry,
+		FaqEntry,
+		IconEntry,
+		StepEntry
+	} from '$lib/components/services/ServiceContentEditor.svelte';
 	import { tiersToPayload, type EditableTier } from '$lib/components/services/serviceForm';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 
@@ -53,6 +60,9 @@
 	// org_id is locked (package_org_immutable), so packages edit price,
 	// mode, capacity, availability, items and departures only.
 	const isPackage = $derived(svc.listing_kind === 'package');
+	// Mentorship shadow listings are managed on the mentor settings card —
+	// this editor keeps them off the booking/pricing section entirely.
+	const isMentorship = $derived(svc.listing_kind === 'mentorship');
 	let purchaseMode = $state<'inquiry' | 'external' | 'paid'>(
 		untrack(() => (svc.purchase_mode === 'external' || svc.purchase_mode === 'paid' ? svc.purchase_mode : 'inquiry'))
 	);
@@ -91,23 +101,63 @@
 		)
 	);
 
-	// §114 structured content — faqs[]/steps[] are replace-on-save like
-	// items[]/departures[]: the edit payload always sends both arrays so
+	// §114/000829 structured content — faqs[]/steps[]/selling_points[]/
+	// facts[]/included[]/highlights[]/audience[] are replace-on-save like
+	// items[]/departures[]: the edit payload always sends every array so
 	// removed rows actually clear (absent preserves on PATCH). The client
-	// caps mirror the seeded system_settings
-	// (service_marketplace.content.max_faqs=12 / max_steps=8); the backend
-	// re-validates against the live settings.
-	const MAX_FAQS = 12;
-	const MAX_STEPS = 8;
-	let faqs = $state(
+	// caps live inside ServiceContentEditor; the backend re-validates
+	// against the live system_settings.
+	let faqs = $state<FaqEntry[]>(
 		untrack(() => (svc.faqs ?? []).map((f) => ({ question: f.question, answer: f.answer })))
 	);
-	let steps = $state(
-		untrack(() => (svc.steps ?? []).map((s) => ({ title: s.title, description: s.description })))
+	let steps = $state<StepEntry[]>(
+		untrack(() =>
+			(svc.steps ?? []).map((s) => ({
+				icon: s.icon ?? '',
+				title: s.title,
+				description: s.description
+			}))
+		)
 	);
+	let sellingPoints = $state<IconEntry[]>(
+		untrack(() =>
+			(svc.selling_points ?? []).map((p) => ({
+				icon: p.icon ?? '',
+				title: p.title,
+				description: p.description ?? ''
+			}))
+		)
+	);
+	let facts = $state<FactEntry[]>(
+		untrack(() =>
+			(svc.facts ?? []).map((f) => ({ icon: f.icon ?? '', label: f.label, value: f.value }))
+		)
+	);
+	let included = $state<IconEntry[]>(
+		untrack(() =>
+			(svc.included ?? []).map((p) => ({
+				icon: p.icon ?? '',
+				title: p.title,
+				description: p.description ?? ''
+			}))
+		)
+	);
+	let highlights = $state<string[]>(untrack(() => [...(svc.highlights ?? [])]));
+	let audience = $state<string[]>(untrack(() => [...(svc.audience ?? [])]));
 	// Open the optional section when the listing already carries content —
 	// otherwise a seeded set would be invisible behind the collapsed details.
-	let detailsOpen = $state(untrack(() => (svc.faqs?.length ?? 0) > 0 || (svc.steps?.length ?? 0) > 0));
+	let detailsOpen = $state(
+		untrack(
+			() =>
+				(svc.faqs?.length ?? 0) > 0 ||
+				(svc.steps?.length ?? 0) > 0 ||
+				(svc.selling_points?.length ?? 0) > 0 ||
+				(svc.facts?.length ?? 0) > 0 ||
+				(svc.included?.length ?? 0) > 0 ||
+				(svc.highlights?.length ?? 0) > 0 ||
+				(svc.audience?.length ?? 0) > 0
+		)
+	);
 
 	// §114 marketplace fields — featured image on all listing kinds;
 	// tiers + coupon attach are package-only and flag-gated. The tier seed
@@ -125,6 +175,7 @@
 				name: tr.name,
 				badge: tr.badge ?? '',
 				description: tr.description ?? '',
+				icon: tr.icon ?? '',
 				priceAmount: tr.price_amount != null ? String(tr.price_amount / 100) : '',
 				currency: tr.price_currency ?? '',
 				featuresText: (tr.features ?? []).join('\n'),
@@ -142,12 +193,23 @@
 	let submitting = $state(false);
 	let errorMsg = $state('');
 
+	// §114 2026-10-10 amendment: 'paid' mode is package-bound (§111) —
+	// service/mentorship kinds offer inquiry/external only.
 	const purchaseModeItems = $derived<AutocompleteItem[]>([
 		{ id: 'inquiry', label: t('services.pkg_mode_inquiry', 'Inquiry — travellers message you') },
 		{ id: 'external', label: t('services.pkg_mode_external', 'External — book on your site') },
-		{ id: 'paid', label: t('services.pkg_mode_paid', 'Paid — reserve with a platform fee') }
+		...(isPackage
+			? [{ id: 'paid', label: t('services.pkg_mode_paid', 'Paid — reserve with a platform fee') }]
+			: [])
 	]);
 	const purchaseModeFetcher = $derived(staticAutocompleteFetcher(purchaseModeItems));
+
+	// A legacy non-package row can't carry 'paid' — seeding could still
+	// pick it up from purchase_mode, so clamp like the create form does.
+	$effect(() => {
+		if (!isPackage && purchaseMode === 'paid') purchaseMode = 'inquiry';
+	});
+
 	const pricePerItems = $derived<AutocompleteItem[]>([
 		{ id: 'person', label: t('services.pkg_per_person', 'per person') },
 		{ id: 'package', label: t('services.pkg_per_package', 'per package') },
@@ -240,15 +302,22 @@
 			errorMsg = t('services.errors.step_title_required', 'Every step needs a title');
 			return false;
 		}
+		// 000829 — icon-entry and fact groups need their primary text; the
+		// backend rejects blank titles/labels (invalid_selling_point /
+		// invalid_included / invalid_fact).
+		if (sellingPoints.some((p) => !p.title.trim())) {
+			errorMsg = t('services.errors.point_title_required', 'Every selling point needs a title');
+			return false;
+		}
+		if (included.some((p) => !p.title.trim())) {
+			errorMsg = t('services.errors.included_title_required', 'Every included item needs a title');
+			return false;
+		}
+		if (facts.some((f) => !f.label.trim() || !f.value.trim())) {
+			errorMsg = t('services.errors.fact_required', 'Every fact needs a label and a value');
+			return false;
+		}
 		if (isPackage) {
-			if (purchaseMode === 'paid' && (!String(priceAmount ?? '').trim() || !priceCurrency)) {
-				errorMsg = t('services.errors.pkg_price_required', 'Paid packages require a price and currency');
-				return false;
-			}
-			if (purchaseMode === 'external' && !bookingUrl.trim()) {
-				errorMsg = t('services.errors.pkg_booking_url_required', 'External packages need a booking URL — that is the "book" link travellers follow');
-				return false;
-			}
 			if (pkgItems.some((i) => !i.title.trim())) {
 				errorMsg = t('services.errors.pkg_item_title_required', 'Every package item needs a title');
 				return false;
@@ -257,10 +326,21 @@
 				errorMsg = t('services.errors.pkg_departure_start_required', 'Every departure needs a start date');
 				return false;
 			}
-			if (tiersEnabled && tiers.some((tr) => !tr.name.trim())) {
-				errorMsg = t('services.errors.tier_name_required', 'Every pricing tier needs a name');
-				return false;
-			}
+		}
+		// Booking/pricing rules apply to every listing kind (§114
+		// 2026-10-10 amendment) — services take inquiry/external bookings
+		// and tiered pricing too.
+		if (purchaseMode === 'paid' && (!String(priceAmount ?? '').trim() || !priceCurrency)) {
+			errorMsg = t('services.errors.pkg_price_required', 'Paid packages require a price and currency');
+			return false;
+		}
+		if (purchaseMode === 'external' && !bookingUrl.trim()) {
+			errorMsg = t('services.errors.pkg_booking_url_required', 'External listings need a booking URL — that is the "book" link travellers follow');
+			return false;
+		}
+		if (tiersEnabled && tiers.some((tr) => !tr.name.trim())) {
+			errorMsg = t('services.errors.tier_name_required', 'Every pricing tier needs a name');
+			return false;
 		}
 		return true;
 	}
@@ -288,10 +368,27 @@
 			website_url: websiteUrl.trim(),
 			booking_url: bookingUrl.trim(),
 			price_range: priceRange.trim(),
-			// §114 — replace-on-save for all listing kinds: always send both
-			// arrays; an empty array clears the stored set.
+			// §114/000829 — replace-on-save for all listing kinds: always
+			// send every array; an empty array clears the stored set.
 			faqs: faqs.map((f) => ({ question: f.question.trim(), answer: f.answer.trim() })),
-			steps: steps.map((s) => ({ title: s.title.trim(), description: s.description.trim() }))
+			steps: steps.map((s) => ({
+				icon: s.icon,
+				title: s.title.trim(),
+				description: s.description.trim()
+			})),
+			selling_points: sellingPoints.map((p) => ({
+				icon: p.icon,
+				title: p.title.trim(),
+				description: p.description.trim()
+			})),
+			facts: facts.map((f) => ({ icon: f.icon, label: f.label.trim(), value: f.value.trim() })),
+			included: included.map((p) => ({
+				icon: p.icon,
+				title: p.title.trim(),
+				description: p.description.trim()
+			})),
+			highlights: highlights.map((h) => h.trim()).filter(Boolean),
+			audience: audience.map((a) => a.trim()).filter(Boolean)
 		};
 
 		// §114 — featured_media_id semantics: absent preserves, '' clears,
@@ -305,14 +402,24 @@
 		// org_id are immutable after creation and never sent. Clear
 		// convention: price_amount/capacity take 0 to clear (null would
 		// merge-keep the stored value); '' clears currency/dates.
-		if (isPackage) {
-			payload.purchase_mode = purchaseMode;
-			payload.price_per = pricePer;
+		// §114 2026-10-10 amendment: purchase-mode/price/tiers apply to every
+		// listing kind — the shared detail page renders the same pricing
+		// surface for services.
+		payload.purchase_mode = purchaseMode;
+		payload.price_per = pricePer;
+		{
 			// bind:value on type="number" yields number|null — coerce
 			// back to string before trimming.
 			const amountStr = String(priceAmount ?? '').trim();
 			payload.price_amount = amountStr ? Math.round(Number(amountStr) * 100) : 0;
 			payload.price_currency = priceCurrency;
+		}
+		// §114 tiers are replace-on-save like items[]/departures[] —
+		// always sent while the flag is on so removals clear.
+		if (tiersEnabled) {
+			payload.tiers = tiersToPayload(tiers);
+		}
+		if (isPackage) {
 			const capStr = String(capacity ?? '').trim();
 			payload.capacity = capStr ? Number(capStr) : 0;
 			payload.available_from = availableFrom;
@@ -334,11 +441,6 @@
 					status: d.status || 'open'
 				};
 			});
-			// §114 tiers are replace-on-save like items[]/departures[] —
-			// always sent while the flag is on so removals clear.
-			if (tiersEnabled) {
-				payload.tiers = tiersToPayload(tiers);
-			}
 		}
 
 		submitting = true;
@@ -598,124 +700,30 @@
 				/>
 			</div>
 
-			<!-- §114 structured content — FAQs + how-it-works steps apply to
-				all listing kinds; collapsed unless the listing already has some. -->
-			<details class="group rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40" bind:open={detailsOpen}>
-				<summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
-					{t('services.content_details_section', 'Content details (optional)')}
-					<ChevronDown size={16} class="ml-auto shrink-0 text-[var(--color-muted)] transition-transform group-open:rotate-180" />
-				</summary>
-				<div class="space-y-4 border-t border-[var(--color-border)] px-4 py-4">
-					<!-- FAQs repeater -->
-					<div>
-						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-							{t('services.faq_items', 'FAQs')}
-						</span>
-						<p class="mb-2 text-xs text-[var(--color-muted)]">
-							{t('services.faq_hint', 'Answer the questions travellers ask most — shown as an accordion on your listing.')}
-						</p>
-						<div class="space-y-2">
-							{#each faqs as faq, idx (idx)}
-								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-									<div class="flex items-start gap-2">
-										<div class="flex-1 space-y-2">
-											<input
-												type="text"
-												bind:value={faq.question}
-												placeholder={t('services.faq_question_ph', 'Question (e.g. How long does processing take?)')}
-												class={inputClass}
-												aria-label={t('services.faq_question_ph', 'Question')}
-											/>
-											<textarea
-												bind:value={faq.answer}
-												rows={2}
-												placeholder={t('services.faq_answer_ph', 'Answer')}
-												class="{inputClass} resize-y"
-												aria-label={t('services.faq_answer_ph', 'Answer')}
-											></textarea>
-										</div>
-										<button
-											type="button"
-											onclick={() => (faqs = faqs.filter((_, i) => i !== idx))}
-											class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-											aria-label={t('common.remove', 'Remove')}
-										>
-											<Trash2 size={16} />
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-						{#if faqs.length < MAX_FAQS}
-							<button
-								type="button"
-								onclick={() => (faqs = [...faqs, { question: '', answer: '' }])}
-								class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-							>
-								<Plus size={14} /> {t('services.faq_add', 'Add question')}
-							</button>
-						{/if}
-					</div>
+			<!-- §114/000829 structured content — one collapsed section
+				shared with the create form (ServiceContentEditor). -->
+			<ServiceContentEditor
+				{inputClass}
+				bind:open={detailsOpen}
+				bind:faqs
+				bind:steps
+				bind:sellingPoints
+				bind:facts
+				bind:included
+				bind:highlights
+				bind:audience
+			/>
 
-					<!-- Steps repeater -->
-					<div>
-						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-							{t('services.steps_items', 'How it works')}
-						</span>
-						<p class="mb-2 text-xs text-[var(--color-muted)]">
-							{t('services.steps_hint', 'Walk travellers through the process — rendered as numbered steps on your listing.')}
-						</p>
-						<div class="space-y-2">
-							{#each steps as step, idx (idx)}
-								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-									<div class="flex items-start gap-2">
-										<div class="flex-1 space-y-2">
-											<input
-												type="text"
-												bind:value={step.title}
-												placeholder={t('services.step_title_ph', 'Step title (e.g. Initial consultation)')}
-												class={inputClass}
-												aria-label={t('services.step_title_ph', 'Step title')}
-											/>
-											<input
-												type="text"
-												bind:value={step.description}
-												placeholder={t('services.step_desc_ph', 'Short description (optional)')}
-												class={inputClass}
-												aria-label={t('services.step_desc_ph', 'Short description')}
-											/>
-										</div>
-										<button
-											type="button"
-											onclick={() => (steps = steps.filter((_, i) => i !== idx))}
-											class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-											aria-label={t('common.remove', 'Remove')}
-										>
-											<Trash2 size={16} />
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-						{#if steps.length < MAX_STEPS}
-							<button
-								type="button"
-								onclick={() => (steps = [...steps, { title: '', description: '' }])}
-								class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-							>
-								<Plus size={14} /> {t('services.steps_add', 'Add step')}
-							</button>
-						{/if}
-					</div>
-				</div>
-			</details>
-
-			<!-- §111 package fields — the selling org is immutable after
-				creation (package_org_immutable); shown read-only. -->
-			{#if isPackage}
+			<!-- §111 package fields + §114 booking/pricing (all non-mentorship
+				kinds) — the selling org is immutable after creation
+				(package_org_immutable); shown read-only. -->
+			{#if !isMentorship}
 				<div class="space-y-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40 p-4">
 					<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
-						<Package size={16} /> {t('services.pkg_section', 'Package details')}
+						<Package size={16} />
+						{isPackage
+							? t('services.pkg_section', 'Package details')
+							: t('services.booking_section', 'Booking & pricing')}
 						{#if svc.org_name}
 							<span class="ml-auto text-xs font-normal text-[var(--color-muted)]">{svc.org_name}</span>
 						{/if}
@@ -776,14 +784,17 @@
 								onSelect={(item) => (pricePer = item.id as typeof pricePer)}
 							/>
 						</div>
+						{#if isPackage}
 						<div>
 							<label for="pkg-capacity" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
 								{t('services.pkg_capacity', 'Total capacity')}
 							</label>
 							<input id="pkg-capacity" type="number" min="1" bind:value={capacity} placeholder={t('services.pkg_capacity_ph', 'Leave empty for unlimited')} class={inputClass} />
 						</div>
+						{/if}
 					</div>
 
+					{#if isPackage}
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
 							<label for="pkg-from" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -874,16 +885,18 @@
 							<Plus size={14} /> {t('services.pkg_add_departure', 'Add departure')}
 						</button>
 					</div>
+					{/if}
 
-					<!-- §114 pricing tiers — service_packages.tiers_enabled -->
+					<!-- §114 pricing tiers — service_packages.tiers_enabled; all
+						listing kinds render the tier cards (§114 amendment). -->
 					{#if tiersEnabled}
 						<ServiceTierEditor bind:tiers {inputClass} currencies={currenciesList} />
 					{/if}
 
 					<!-- §114 coupon attach — service_coupons.enabled; seeds from
 						the editor-scoped coupon list so suspended attachments
-						stay attached. -->
-					{#if couponsEnabled}
+						stay attached. Paid redemption is package-bound. -->
+					{#if couponsEnabled && isPackage}
 						<ServiceCouponSelector
 							bind:selectedIds={couponIds}
 							bind:ready={couponsReady}

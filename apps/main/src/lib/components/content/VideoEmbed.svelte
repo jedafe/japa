@@ -14,6 +14,20 @@
 
 	let { source }: Props = $props();
 
+	/** Upload/fallback URLs come from the video_sources row — never trust
+	 *  them blindly as src/href (stored-XSS vector). Absolute http(s) or
+	 *  same-origin /api/v1/media/serve paths only. */
+	function safeMediaUrl(u: string | undefined | null): string {
+		if (!u || typeof u !== 'string') return '';
+		const trimmed = u.trim();
+		if (!trimmed || trimmed.startsWith('//')) return '';
+		const lower = trimmed.toLowerCase();
+		if (lower.startsWith('https://') || lower.startsWith('http://') || trimmed.startsWith('/')) {
+			return trimmed;
+		}
+		return '';
+	}
+
 	/** Best-effort external ID recovery when external_id is missing —
 	 *  handles the canonical YouTube watch/youtu.be/embed/shorts URLs the
 	 *  resolver stores in source_url. */
@@ -81,11 +95,11 @@
 				{t('content.video.unavailable_body', 'This video has been removed or is unavailable, possibly due to a takedown request.')}
 			</p>
 		</div>
-	{:else if isUpload}
+	{:else if isUpload && safeMediaUrl(source.source_url)}
 		<!-- Uploaded videos are served same-origin via /api/v1/media/serve.
 		     No captions track exists for user uploads. -->
 		<!-- svelte-ignore a11y_media_has_caption -->
-		<video controls preload="metadata" src={source.source_url} poster={source.thumbnail_url ?? undefined}></video>
+		<video controls preload="metadata" src={safeMediaUrl(source.source_url)} poster={source.thumbnail_url ? safeMediaUrl(source.thumbnail_url) || undefined : undefined}></video>
 	{:else if iframeSrc}
 		<iframe
 			src={iframeSrc}
@@ -93,12 +107,19 @@
 			allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
 			allowfullscreen
 			loading="lazy"
+			sandbox="allow-scripts allow-same-origin allow-presentation"
 		></iframe>
-	{:else}
+	{:else if safeMediaUrl(source.source_url)}
 		<!-- Unknown provider — link out to the canonical source. -->
-		<a href={source.source_url} target="_blank" rel="noopener noreferrer" class="video-embed-fallback">
+		<a href={safeMediaUrl(source.source_url)} target="_blank" rel="noopener noreferrer" class="video-embed-fallback">
 			{source.title || source.source_url}
 		</a>
+	{:else}
+		<!-- Fail closed: upload/fallback URL failed validation — never render
+		     a raw stored URL as src/href. -->
+		<div class="video-embed-unavailable-panel">
+			<p class="video-embed-unavailable-title">{t('content.video.unavailable', 'Video unavailable')}</p>
+		</div>
 	{/if}
 	{#if duration && !unavailable}
 		<span class="video-embed-duration">{duration}</span>

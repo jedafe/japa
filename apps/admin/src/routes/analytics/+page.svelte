@@ -334,27 +334,33 @@
 	}
 	
 	function handleExport() {
-		// Build CSV from overview data
+		// Build CSV from overview data. Values are neutralized against
+		// spreadsheet formula injection (=, +, -, @, tab, pipe, DDE).
+		const csvCell = (v: unknown): string => {
+			let s = String(v ?? '');
+			if (/^[=+\-@\t|]/.test(s) || /^cmd\|/i.test(s)) s = `'${s}`;
+			return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+		};
 		const rows: string[] = ['Metric,Value'];
 		if (overview?.daily_active_users?.length) {
 			const latest = overview.daily_active_users[overview.daily_active_users.length - 1];
-			rows.push(`Daily Active Users,${latest.dau}`);
+			rows.push(`${csvCell('Daily Active Users')},${csvCell(latest.dau)}`);
 		}
 		if (overview?.monthly_active_users?.length) {
 			const latest = overview.monthly_active_users[overview.monthly_active_users.length - 1];
-			rows.push(`Monthly Active Users,${latest.mau}`);
+			rows.push(`${csvCell('Monthly Active Users')},${csvCell(latest.mau)}`);
 		}
 		if (overview?.user_growth?.length) {
 			const latest = overview.user_growth[overview.user_growth.length - 1];
-			rows.push(`New Signups (Latest),${latest.new_users}`);
+			rows.push(`${csvCell('New Signups (Latest)')},${csvCell(latest.new_users)}`);
 		}
 		if (overview?.content_over_time?.length) {
 			const total = overview.content_over_time.reduce((sum, d) => sum + d.content_count, 0);
-			rows.push(`Total Content Items,${total}`);
+			rows.push(`${csvCell('Total Content Items')},${csvCell(total)}`);
 		}
 		if (overview?.event_counts?.length) {
 			const total = overview.event_counts.reduce((sum, e) => sum + e.count, 0);
-			rows.push(`Total Events,${total}`);
+			rows.push(`${csvCell('Total Events')},${csvCell(total)}`);
 		}
 		const csv = rows.join('\n');
 		const blob = new Blob([csv], { type: 'text/csv' });

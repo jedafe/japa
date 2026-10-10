@@ -1663,6 +1663,7 @@ type DiscountCode struct {
 	ValidUntil    pgtype.Timestamptz `json:"valid_until"`
 	CreatedBy     pgtype.UUID        `json:"created_by"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	Uses          int32              `json:"uses"`
 }
 
 type DiscountCodeUse struct {
@@ -3525,6 +3526,11 @@ type ServiceListingMetum struct {
 	AvailableUntil     pgtype.Date        `json:"available_until"`
 	Faqs               []byte             `json:"faqs"`
 	Steps              []byte             `json:"steps"`
+	SellingPoints      []byte             `json:"selling_points"`
+	Facts              []byte             `json:"facts"`
+	Highlights         []byte             `json:"highlights"`
+	Audience           []byte             `json:"audience"`
+	Included           []byte             `json:"included"`
 }
 
 type ServicePackageDeparture struct {
@@ -3564,6 +3570,7 @@ type ServicePackageTier struct {
 	IsActive      bool               `json:"is_active"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Icon          *string            `json:"icon"`
 }
 
 type SharePlatform struct {
@@ -4447,6 +4454,16 @@ type UserProfile struct {
 	BannerMediaID            pgtype.UUID         `json:"banner_media_id"`
 	JapaIntent               *string             `json:"japa_intent"`
 	MentorListingContentID   pgtype.UUID         `json:"mentor_listing_content_id"`
+	MentorTitle              *string             `json:"mentor_title"`
+	MentorResponseTime       *string             `json:"mentor_response_time"`
+	MentorAvailability       *string             `json:"mentor_availability"`
+	MentorSessionType        *string             `json:"mentor_session_type"`
+	MentorLanguages          []string            `json:"mentor_languages"`
+	MentorSessionFormats     []string            `json:"mentor_session_formats"`
+	MentorCountries          []string            `json:"mentor_countries"`
+	MentorCredentials        []string            `json:"mentor_credentials"`
+	MentorYearsExperience    *int16              `json:"mentor_years_experience"`
+	MentorSuccessLabel       *string             `json:"mentor_success_label"`
 }
 
 type UserRole struct {

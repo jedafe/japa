@@ -14,11 +14,16 @@ import (
 type PayoutRequest struct {
 	WithdrawalID string // Internal withdrawal ID (for idempotency/reference)
 	UserID       string
-	Amount       float64 // Amount in the payout currency (e.g. 10.50 USDT)
-	Currency     string  // Fiat or crypto currency code (ISO-4217 or ticker)
-	Address      string  // Destination address / account identifier
-	ExtraID      string  // Memo / destination tag (optional)
-	CallbackURL  string  // Webhook URL for provider status updates
+	// AmountMinor is the payout amount in the currency's minor units
+	// (kobo/cents/satoshi-equivalent integer). Integer math end-to-end —
+	// never float — so crypto dust and fiat rounding cannot drift. Each
+	// provider converts to its wire format at the edge with explicit
+	// rounding.
+	AmountMinor int64
+	Currency    string // Fiat or crypto currency code (ISO-4217 or ticker)
+	Address     string // Destination address / account identifier
+	ExtraID     string // Memo / destination tag (optional)
+	CallbackURL string // Webhook URL for provider status updates
 }
 
 // PayoutResponse holds the result of an outbound payout initiation.

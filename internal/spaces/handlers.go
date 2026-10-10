@@ -87,6 +87,9 @@ type Handlers struct {
 	ragIndexer RAGEntityIndexer // nil disables RAG indexing (§69)
 	settings   settingsReader   // nil falls back to defaults
 	attrSeeder attractionSeeder // nil disables seed dry-run previews (§80)
+	// permChecker resolves static RBAC nodes (e.g. spaces.moderate for the
+	// private-space member-list gate). Wired by the server; nil-safe.
+	permChecker PermissionChecker
 }
 
 // FollowToggleService is the subset of the follows.Service used by the space
@@ -249,6 +252,11 @@ func (h *Handlers) invalidateTargetPermCache(ctx context.Context, targetUserID p
 
 	h.permCache.InvalidateUserCache(ctx, targetUserID)
 }
+
+// SetPermissionChecker wires the RBAC resolver for static permission
+// checks inside space handlers (e.g. the spaces.moderate bypass in the
+// private-space member-list gate). Nil degrades to membership-only gating.
+func (h *Handlers) SetPermissionChecker(p PermissionChecker) { h.permChecker = p }
 
 // NewHandlers creates Handlers with the given Service and UnreadCounter.
 func NewHandlers(service *Service, unread *UnreadCounter, contentService ContentService) *Handlers {

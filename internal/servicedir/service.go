@@ -132,6 +132,17 @@ type ServiceDTO struct {
 	Faqs  []ServiceFaqDTO  `json:"faqs,omitempty"`
 	Steps []ServiceStepDTO `json:"steps,omitempty"`
 
+	// §114 2026-10-10 page content — the mockup-aligned detail surfaces:
+	// selling-point trust chips under the hero, fact cards beside the
+	// hero image (package image-overlay stats), highlights/audience
+	// checklists, and the what's-included icon grid. All listing kinds;
+	// detail payloads only; omitted when the stored set is empty.
+	SellingPoints []ServiceIconEntryDTO `json:"selling_points,omitempty"`
+	Facts         []ServiceFactDTO      `json:"facts,omitempty"`
+	Highlights    []string              `json:"highlights,omitempty"`
+	Audience      []string              `json:"audience,omitempty"`
+	Included      []ServiceIconEntryDTO `json:"included,omitempty"`
+
 	// §114 derived status ribbon — 'popular' once the listing clears
 	// service_marketplace.badges.min_reviews, else 'best_value' when it
 	// carries a live coupon and clears service_marketplace.badges.min_rating.
@@ -161,6 +172,56 @@ type MentorDTO struct {
 	AvailableSlots    int32    `json:"available_slots"`
 	MentorSince       string   `json:"mentor_since,omitempty"`
 	IsMentor          bool     `json:"is_mentor"`
+
+	// 000829 mentor card fields — the mentorship detail page's headline
+	// card, stats row, and "Mentorship details" sidebar. Populated by the
+	// detail queries' user_profiles join; detail payloads only.
+	Location        string   `json:"location,omitempty"`
+	Title           string   `json:"title,omitempty"`
+	ResponseTime    string   `json:"response_time,omitempty"`
+	Availability    string   `json:"availability,omitempty"`
+	SessionType     string   `json:"session_type,omitempty"`
+	Languages       []string `json:"languages,omitempty"`
+	SessionFormats  []string `json:"session_formats,omitempty"`
+	Countries       []string `json:"countries,omitempty"`
+	Credentials     []string `json:"credentials,omitempty"`
+	YearsExperience int32    `json:"years_experience,omitempty"`
+	SuccessLabel    string   `json:"success_label,omitempty"`
+	MenteesHelped   int32    `json:"mentees_helped,omitempty"`
+}
+
+// ServiceIconEntryDTO is one icon-titled page entry — the shared shape
+// for selling_points[] (hero trust chips) and included[] (what-you-get
+// cards). Icon is a kebab-case Lucide name the frontend resolves through
+// a fixed whitelist (§114 2026-10-10 amendment).
+type ServiceIconEntryDTO struct {
+	Icon        string `json:"icon"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+}
+
+// ServiceFactDTO is one hero-fact card entry — {icon,label,value}, e.g.
+// {icon:"clock", label:"Duration", value:"4 weeks"}.
+type ServiceFactDTO struct {
+	Icon  string `json:"icon"`
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// ServiceIconEntryInput / ServiceFactInput are the write-side shapes —
+// same replace-on-save contract as faqs[]/steps[] (nil keeps the stored
+// set on PATCH, an empty array clears it).
+type ServiceIconEntryInput struct {
+	Icon        string `json:"icon"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// ServiceFactInput — see ServiceIconEntryInput for the replace contract.
+type ServiceFactInput struct {
+	Icon  string `json:"icon"`
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 // ServiceFaqDTO is one FAQ entry stored in service_listing_meta.faqs (§114).
@@ -170,8 +231,10 @@ type ServiceFaqDTO struct {
 }
 
 // ServiceStepDTO is one "how it works" step stored in
-// service_listing_meta.steps (§114).
+// service_listing_meta.steps (§114). Icon is an optional kebab-case
+// Lucide name resolved through the frontend whitelist (000829).
 type ServiceStepDTO struct {
+	Icon        string `json:"icon,omitempty"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
@@ -187,6 +250,7 @@ type ServiceFaqInput struct {
 
 // ServiceStepInput — see ServiceFaqInput for the replace-on-save contract.
 type ServiceStepInput struct {
+	Icon        string `json:"icon"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 }
@@ -268,6 +332,13 @@ type CreateServiceInput struct {
 	// §114 structured content (all listing kinds).
 	Faqs  []ServiceFaqInput  `json:"faqs"`
 	Steps []ServiceStepInput `json:"steps"`
+
+	// §114 2026-10-10 page content (all listing kinds).
+	SellingPoints []ServiceIconEntryInput `json:"selling_points"`
+	Facts         []ServiceFactInput      `json:"facts"`
+	Highlights    []string                `json:"highlights"`
+	Audience      []string                `json:"audience"`
+	Included      []ServiceIconEntryInput `json:"included"`
 }
 
 // EditServiceInput is the request body for PATCH /services/:id.
@@ -305,6 +376,13 @@ type EditServiceInput struct {
 	// an empty array clears it. Available on all listing kinds.
 	Faqs  *[]ServiceFaqInput  `json:"faqs"`
 	Steps *[]ServiceStepInput `json:"steps"`
+
+	// §114 2026-10-10 page content — same replace-on-save contract.
+	SellingPoints *[]ServiceIconEntryInput `json:"selling_points"`
+	Facts         *[]ServiceFactInput      `json:"facts"`
+	Highlights    *[]string                `json:"highlights"`
+	Audience      *[]string                `json:"audience"`
+	Included      *[]ServiceIconEntryInput `json:"included"`
 }
 
 // SettingsReader is the narrow settings contract servicedir needs
@@ -676,6 +754,17 @@ var (
 	// ErrInvalidStep — malformed step entry (empty/oversized title,
 	// oversized description).
 	ErrInvalidStep = errors.New("invalid step")
+	// 000829 page-content sentinels (400 too_many_*/invalid_*).
+	ErrTooManySellingPoints = errors.New("too many selling points")
+	ErrInvalidSellingPoint  = errors.New("invalid selling point")
+	ErrTooManyFacts         = errors.New("too many facts")
+	ErrInvalidFact          = errors.New("invalid fact")
+	ErrTooManyIncluded      = errors.New("too many included entries")
+	ErrInvalidIncluded      = errors.New("invalid included entry")
+	ErrTooManyHighlights    = errors.New("too many highlights")
+	ErrInvalidHighlight     = errors.New("invalid highlight")
+	ErrTooManyAudience      = errors.New("too many audience entries")
+	ErrInvalidAudience      = errors.New("invalid audience entry")
 )
 
 // ---------------------------------------------------------------------------
@@ -1084,10 +1173,48 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		return ServiceDTO{}, err
 	}
 
+	// 000829 page content — same encode-before-write discipline as
+	// faqs[]/steps[]; available on every listing kind.
+	sellingPointsJSON, err := s.encodeIconEntries(ctx, "selling_points",
+		"service_marketplace.content.max_selling_points", 6, input.SellingPoints,
+		ErrTooManySellingPoints, ErrInvalidSellingPoint)
+	if err != nil {
+		return ServiceDTO{}, err
+	}
+
+	factsJSON, err := s.encodeFacts(ctx, input.Facts)
+	if err != nil {
+		return ServiceDTO{}, err
+	}
+
+	highlightsJSON, err := s.encodeChecklist(ctx, "highlights",
+		"service_marketplace.content.max_highlights", 12, input.Highlights,
+		ErrTooManyHighlights, ErrInvalidHighlight)
+	if err != nil {
+		return ServiceDTO{}, err
+	}
+
+	audienceJSON, err := s.encodeChecklist(ctx, "audience",
+		"service_marketplace.content.max_audience", 12, input.Audience,
+		ErrTooManyAudience, ErrInvalidAudience)
+	if err != nil {
+		return ServiceDTO{}, err
+	}
+
+	includedJSON, err := s.encodeIconEntries(ctx, "included",
+		"service_marketplace.content.max_included", 12, input.Included,
+		ErrTooManyIncluded, ErrInvalidIncluded)
+	if err != nil {
+		return ServiceDTO{}, err
+	}
+
 	// tiers[] is gated on service_packages.tiers_enabled — with the flag
-	// off the field is silently ignored (no validation, no write).
+	// off the field is silently ignored (no validation, no write). Applies
+	// to every listing kind (§114 2026-10-10 amendment): service and
+	// mentorship detail pages render the same pricing cards; only the
+	// booking-side tier_id reference stays paid/package-bound.
 	var tierParams []gen.CreateServicePackageTierParams
-	if isPackage && s.TiersEnabled(ctx) {
+	if s.TiersEnabled(ctx) {
 		tierParams, err = s.validatePackageTiers(ctx, input.Tiers)
 		if err != nil {
 			return ServiceDTO{}, err
@@ -1148,6 +1275,11 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		AvailableUntil:     availableUntil,
 		Faqs:               faqsJSON,
 		Steps:              stepsJSON,
+		SellingPoints:      sellingPointsJSON,
+		Facts:              factsJSON,
+		Highlights:         highlightsJSON,
+		Audience:           audienceJSON,
+		Included:           includedJSON,
 	}
 
 	// §111: packages are org-authored only — they never enter the §98
@@ -1204,12 +1336,14 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 			slog.Error("servicedir: create package departures failed", "meta_id", metaRow.ID, "error", err)
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package departures: %w", err)
 		}
+	}
 
-		if s.TiersEnabled(ctx) {
-			if err := s.store.ReplacePackageTiers(ctx, metaRow.ID, tierParams); err != nil {
-				slog.Error("servicedir: create package tiers failed", "meta_id", metaRow.ID, "error", err)
-				return ServiceDTO{}, fmt.Errorf("servicedir: create package tiers: %w", err)
-			}
+	// tiers[] write sits outside the package block — all listing kinds
+	// carry pricing tiers (§114 2026-10-10 amendment).
+	if s.TiersEnabled(ctx) {
+		if err := s.store.ReplacePackageTiers(ctx, metaRow.ID, tierParams); err != nil {
+			slog.Error("servicedir: create package tiers failed", "meta_id", metaRow.ID, "error", err)
+			return ServiceDTO{}, fmt.Errorf("servicedir: create package tiers: %w", err)
 		}
 	}
 
@@ -1388,7 +1522,12 @@ func (s *Service) encodeListingSteps(ctx context.Context, steps []ServiceStepInp
 			return nil, fmt.Errorf("steps[%d]: description must be %d characters or fewer: %w", i, maxFaqStepBodyLen, ErrInvalidStep)
 		}
 
-		out = append(out, ServiceStepDTO{Title: title, Description: st.Description})
+		icon := strings.TrimSpace(st.Icon)
+		if len(icon) > maxIconNameLen {
+			return nil, fmt.Errorf("steps[%d]: icon must be %d characters or fewer: %w", i, maxIconNameLen, ErrInvalidStep)
+		}
+
+		out = append(out, ServiceStepDTO{Icon: icon, Title: title, Description: st.Description})
 	}
 
 	b, err := json.Marshal(out)
@@ -1421,6 +1560,178 @@ func decodeListingSteps(raw []byte) []ServiceStepDTO {
 	}
 
 	var out []ServiceStepDTO
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+
+	return out
+}
+
+// 000829 page-content per-entry caps (§114 2026-10-10 amendment) — count
+// caps come from service_marketplace.content.max_* system_settings; these
+// bound the per-entry text/icon lengths.
+const (
+	maxIconNameLen   = 40   // kebab-case Lucide name — whitelist-resolved client-side
+	maxEntryTitleLen = 300  // selling-point / included title
+	maxEntryDescLen  = 2000 // selling-point / included description
+	maxFactLabelLen  = 120  // fact label
+	maxFactValueLen  = 300  // fact value
+	maxChecklistLen  = 300  // highlights[]/audience[] line
+)
+
+// encodeIconEntries validates a selling_points[]/included[] write payload
+// against the given service_marketplace.content.max_* count cap and the
+// per-entry field caps, then marshals to the jsonb column shape.
+func (s *Service) encodeIconEntries(ctx context.Context, field, settingKey string, fallback int, entries []ServiceIconEntryInput, tooMany, invalid error) ([]byte, error) {
+	maxEntries := fallback
+	if s.settings != nil {
+		maxEntries = s.settings.GetIntOr(ctx, settingKey, fallback)
+	}
+
+	if len(entries) > maxEntries {
+		return nil, tooMany
+	}
+
+	out := make([]ServiceIconEntryDTO, 0, len(entries))
+
+	for i, e := range entries {
+		icon := strings.TrimSpace(e.Icon)
+		if len(icon) > maxIconNameLen {
+			return nil, fmt.Errorf("%s[%d]: icon must be %d characters or fewer: %w", field, i, maxIconNameLen, invalid)
+		}
+
+		title := strings.TrimSpace(e.Title)
+		if title == "" || len(title) > maxEntryTitleLen {
+			return nil, fmt.Errorf("%s[%d]: title must be 1-%d characters: %w", field, i, maxEntryTitleLen, invalid)
+		}
+
+		if len(e.Description) > maxEntryDescLen {
+			return nil, fmt.Errorf("%s[%d]: description must be %d characters or fewer: %w", field, i, maxEntryDescLen, invalid)
+		}
+
+		out = append(out, ServiceIconEntryDTO{Icon: icon, Title: title, Description: e.Description})
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: marshal %s: %w", field, err)
+	}
+
+	return b, nil
+}
+
+// encodeFacts validates the facts[] write payload against
+// service_marketplace.content.max_facts and the per-entry caps.
+func (s *Service) encodeFacts(ctx context.Context, facts []ServiceFactInput) ([]byte, error) {
+	maxFacts := 8
+	if s.settings != nil {
+		maxFacts = s.settings.GetIntOr(ctx, "service_marketplace.content.max_facts", 8)
+	}
+
+	if len(facts) > maxFacts {
+		return nil, ErrTooManyFacts
+	}
+
+	out := make([]ServiceFactDTO, 0, len(facts))
+
+	for i, f := range facts {
+		icon := strings.TrimSpace(f.Icon)
+		if len(icon) > maxIconNameLen {
+			return nil, fmt.Errorf("facts[%d]: icon must be %d characters or fewer: %w", i, maxIconNameLen, ErrInvalidFact)
+		}
+
+		label := strings.TrimSpace(f.Label)
+		if label == "" || len(label) > maxFactLabelLen {
+			return nil, fmt.Errorf("facts[%d]: label must be 1-%d characters: %w", i, maxFactLabelLen, ErrInvalidFact)
+		}
+
+		value := strings.TrimSpace(f.Value)
+		if value == "" || len(value) > maxFactValueLen {
+			return nil, fmt.Errorf("facts[%d]: value must be 1-%d characters: %w", i, maxFactValueLen, ErrInvalidFact)
+		}
+
+		out = append(out, ServiceFactDTO{Icon: icon, Label: label, Value: value})
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: marshal facts: %w", err)
+	}
+
+	return b, nil
+}
+
+// encodeChecklist validates a highlights[]/audience[] string-array
+// payload against the given count cap — each line must be 1-300 chars
+// after trimming; blank lines are dropped rather than stored.
+func (s *Service) encodeChecklist(ctx context.Context, field, settingKey string, fallback int, lines []string, tooMany, invalid error) ([]byte, error) {
+	maxLines := fallback
+	if s.settings != nil {
+		maxLines = s.settings.GetIntOr(ctx, settingKey, fallback)
+	}
+
+	if len(lines) > maxLines {
+		return nil, tooMany
+	}
+
+	out := make([]string, 0, len(lines))
+
+	for i, l := range lines {
+		line := strings.TrimSpace(l)
+		if line == "" {
+			continue
+		}
+
+		if len(line) > maxChecklistLen {
+			return nil, fmt.Errorf("%s[%d]: line must be %d characters or fewer: %w", field, i, maxChecklistLen, invalid)
+		}
+
+		out = append(out, line)
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("servicedir: marshal %s: %w", field, err)
+	}
+
+	return b, nil
+}
+
+// decodeIconEntries / decodeFacts / decodeChecklist read the jsonb
+// columns back into DTO slices — malformed or empty payloads produce nil
+// (omitted from the response) rather than failing the read.
+func decodeIconEntries(raw []byte) []ServiceIconEntryDTO {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var out []ServiceIconEntryDTO
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+
+	return out
+}
+
+func decodeFacts(raw []byte) []ServiceFactDTO {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var out []ServiceFactDTO
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+
+	return out
+}
+
+func decodeChecklist(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var out []string
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil
 	}
@@ -1537,6 +1848,11 @@ func (s *Service) GetBySlug(ctx context.Context, slug string) (ServiceDTO, error
 
 	if row.ListingKind == ListingKindPackage {
 		s.attachPackageDataCached(ctx, row.ID, row.MetaID, &dto)
+	} else {
+		// Service + mentorship kinds carry tiers[] too (§114 2026-10-10
+		// amendment) — the §111 package cache is package-only, so these
+		// attach straight from the store.
+		s.attachTiers(ctx, row.MetaID, &dto)
 	}
 
 	// Attached coupons ride the public detail payload when the coupons
@@ -1656,6 +1972,8 @@ func (s *Service) GetBySlugEditor(ctx context.Context, slug string, userID pgtyp
 		if err := s.attachPackageData(ctx, row.MetaID, &dto); err != nil {
 			slog.Warn("servicedir: attach package data failed", "content_id", row.ID, "error", err)
 		}
+	} else {
+		s.attachTiers(ctx, row.MetaID, &dto)
 	}
 
 	// §114: same coupon + badge surface as the public detail so the editor
@@ -1795,6 +2113,25 @@ func (s *Service) attachPackageData(ctx context.Context, metaID pgtype.UUID, dto
 	}
 
 	return nil
+}
+
+// attachTiers fills dto.Tiers for the non-package listing kinds —
+// service + mentorship carry the same tiered pricing cards (§114
+// 2026-10-10 amendment) but have no §111 package cache to ride, so they
+// read the active set straight from the store. Flag off or a store
+// failure leaves the field unset rather than failing the detail read.
+func (s *Service) attachTiers(ctx context.Context, metaID pgtype.UUID, dto *ServiceDTO) {
+	if !s.TiersEnabled(ctx) {
+		return
+	}
+
+	tiers, err := s.listPackageTiers(ctx, metaID)
+	if err != nil {
+		slog.Warn("servicedir: attach tiers failed", "meta_id", metaID, "error", err)
+		return
+	}
+
+	dto.Tiers = tiers
 }
 
 // departureToDTO maps one departure row to the API shape — used by both
@@ -2037,6 +2374,11 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		AvailableUntil:     meta.AvailableUntil,
 		Faqs:               meta.Faqs,
 		Steps:              meta.Steps,
+		SellingPoints:      meta.SellingPoints,
+		Facts:              meta.Facts,
+		Highlights:         meta.Highlights,
+		Audience:           meta.Audience,
+		Included:           meta.Included,
 	}
 
 	if input.OrgID != nil && *input.OrgID != "" {
@@ -2110,47 +2452,53 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		return ServiceDTO{}, ErrInvalidListingKind
 	}
 
+	// §114 2026-10-10 amendment: purchase-mode + flat price fields apply to
+	// every listing kind — service and mentorship detail pages render the
+	// same pricing surface as packages. 'paid' stays package-bound (§111):
+	// non-package kinds may only take inquiry/external modes.
+	if input.PurchaseMode != nil {
+		switch {
+		case *input.PurchaseMode == "full":
+			return ServiceDTO{}, ErrPurchaseModeUnavailable
+		case !IsValidPurchaseMode(*input.PurchaseMode):
+			return ServiceDTO{}, ErrInvalidPurchaseMode
+		case !isPackage && *input.PurchaseMode != PurchaseModeInquiry && *input.PurchaseMode != PurchaseModeExternal:
+			return ServiceDTO{}, ErrPurchaseModeUnavailable
+		default:
+			params.PurchaseMode = input.PurchaseMode
+		}
+	}
+
+	// §111 clear convention: price_amount/capacity take 0 to clear (both
+	// are positive-only fields, so 0 is unambiguous); '' clears
+	// price_currency via nilIfEmpty and the date fields via
+	// parseOptionalDate. Absent fields keep the stored value (JSON null
+	// is indistinguishable from absent on pointer fields).
+	if input.PriceAmount != nil {
+		if *input.PriceAmount < 0 {
+			return ServiceDTO{}, fmt.Errorf("servicedir: edit: price_amount must be positive")
+		}
+
+		if *input.PriceAmount == 0 {
+			params.PriceAmount = nil
+		} else {
+			params.PriceAmount = input.PriceAmount
+		}
+	}
+
+	if input.PriceCurrency != nil {
+		params.PriceCurrency = nilIfEmpty(input.PriceCurrency)
+	}
+
+	if input.PricePer != nil {
+		if !IsValidPricePer(*input.PricePer) {
+			return ServiceDTO{}, ErrInvalidPricePer
+		}
+
+		params.PricePer = input.PricePer
+	}
+
 	if isPackage {
-		if input.PurchaseMode != nil {
-			switch {
-			case *input.PurchaseMode == "full":
-				return ServiceDTO{}, ErrPurchaseModeUnavailable
-			case !IsValidPurchaseMode(*input.PurchaseMode):
-				return ServiceDTO{}, ErrInvalidPurchaseMode
-			default:
-				params.PurchaseMode = input.PurchaseMode
-			}
-		}
-
-		// §111 clear convention: price_amount/capacity take 0 to clear (both
-		// are positive-only fields, so 0 is unambiguous); '' clears
-		// price_currency via nilIfEmpty and the date fields via
-		// parseOptionalDate. Absent fields keep the stored value (JSON null
-		// is indistinguishable from absent on pointer fields).
-		if input.PriceAmount != nil {
-			if *input.PriceAmount < 0 {
-				return ServiceDTO{}, fmt.Errorf("servicedir: edit: price_amount must be positive")
-			}
-
-			if *input.PriceAmount == 0 {
-				params.PriceAmount = nil
-			} else {
-				params.PriceAmount = input.PriceAmount
-			}
-		}
-
-		if input.PriceCurrency != nil {
-			params.PriceCurrency = nilIfEmpty(input.PriceCurrency)
-		}
-
-		if input.PricePer != nil {
-			if !IsValidPricePer(*input.PricePer) {
-				return ServiceDTO{}, ErrInvalidPricePer
-			}
-
-			params.PricePer = input.PricePer
-		}
-
 		if input.Capacity != nil {
 			if *input.Capacity < 0 {
 				return ServiceDTO{}, fmt.Errorf("servicedir: edit: capacity must be positive")
@@ -2210,6 +2558,50 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		}
 	}
 
+	// 000829 page content — same replace-on-save contract.
+	if input.SellingPoints != nil {
+		params.SellingPoints, err = s.encodeIconEntries(ctx, "selling_points",
+			"service_marketplace.content.max_selling_points", 6, *input.SellingPoints,
+			ErrTooManySellingPoints, ErrInvalidSellingPoint)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
+	if input.Facts != nil {
+		params.Facts, err = s.encodeFacts(ctx, *input.Facts)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
+	if input.Highlights != nil {
+		params.Highlights, err = s.encodeChecklist(ctx, "highlights",
+			"service_marketplace.content.max_highlights", 12, *input.Highlights,
+			ErrTooManyHighlights, ErrInvalidHighlight)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
+	if input.Audience != nil {
+		params.Audience, err = s.encodeChecklist(ctx, "audience",
+			"service_marketplace.content.max_audience", 12, *input.Audience,
+			ErrTooManyAudience, ErrInvalidAudience)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
+	if input.Included != nil {
+		params.Included, err = s.encodeIconEntries(ctx, "included",
+			"service_marketplace.content.max_included", 12, *input.Included,
+			ErrTooManyIncluded, ErrInvalidIncluded)
+		if err != nil {
+			return ServiceDTO{}, err
+		}
+	}
+
 	// Validate the replace-on-save collections before any write so a
 	// rejected edit doesn't leave a half-updated listing (title committed,
 	// items rejected, status bounced back into review).
@@ -2223,8 +2615,9 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 
 	// tiers[] mirrors items[] replace-on-save semantics, gated on
 	// service_packages.tiers_enabled — flag off → field silently ignored.
+	// Applies to every listing kind (§114 2026-10-10 amendment).
 	var tierParams []gen.CreateServicePackageTierParams
-	if isPackage && input.Tiers != nil && s.TiersEnabled(ctx) {
+	if input.Tiers != nil && s.TiersEnabled(ctx) {
 		tierParams, err = s.validatePackageTiers(ctx, *input.Tiers)
 		if err != nil {
 			return ServiceDTO{}, err
@@ -2389,7 +2782,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		}
 	}
 
-	if isPackage && input.Tiers != nil && s.TiersEnabled(ctx) {
+	if input.Tiers != nil && s.TiersEnabled(ctx) {
 		if err := s.store.ReplacePackageTiers(ctx, meta.ID, tierParams); err != nil {
 			return ServiceDTO{}, fmt.Errorf("servicedir: edit: replace package tiers: %w", err)
 		}
@@ -2556,6 +2949,8 @@ func (s *Service) getServiceDTOByID(ctx context.Context, contentID pgtype.UUID) 
 		if err := s.attachPackageData(ctx, meta.ID, &dto); err != nil {
 			slog.Warn("servicedir: attach package data failed", "content_id", contentID, "error", err)
 		}
+	} else {
+		s.attachTiers(ctx, meta.ID, &dto)
 	}
 
 	return dto, nil
@@ -2717,6 +3112,14 @@ func rowToDTO(r ServiceRow) ServiceDTO {
 	dto.Faqs = decodeListingFaqs(r.Faqs)
 	dto.Steps = decodeListingSteps(r.Steps)
 
+	// 000829 page content (detail queries only — list/admin rows leave
+	// the raw columns nil so nothing leaks onto the cards).
+	dto.SellingPoints = decodeIconEntries(r.SellingPoints)
+	dto.Facts = decodeFacts(r.Facts)
+	dto.Highlights = decodeChecklist(r.Highlights)
+	dto.Audience = decodeChecklist(r.Audience)
+	dto.Included = decodeIconEntries(r.Included)
+
 	// 000824 mentor block — only mentorship-kind listings carry it; the
 	// fields ride the author user_profiles join. A missing profile row
 	// degrades to is_mentor=false so the surface reads "unavailable".
@@ -2749,6 +3152,22 @@ func mentorBlock(r ServiceRow) *MentorDTO {
 	}
 	if slots := m.Capacity - m.ActiveMenteeCount; slots > 0 {
 		m.AvailableSlots = slots
+	}
+
+	// 000829 mentor card fields — detail queries only.
+	m.Location = strOrEmpty(r.MentorLocation)
+	m.Title = strOrEmpty(r.MentorTitle)
+	m.ResponseTime = strOrEmpty(r.MentorResponseTime)
+	m.Availability = strOrEmpty(r.MentorAvailability)
+	m.SessionType = strOrEmpty(r.MentorSessionType)
+	m.Languages = r.MentorLanguages
+	m.SessionFormats = r.MentorSessionFormats
+	m.Countries = r.MentorCountries
+	m.Credentials = r.MentorCredentials
+	m.SuccessLabel = strOrEmpty(r.MentorSuccessLabel)
+	m.MenteesHelped = r.MenteesHelped
+	if r.MentorYearsExperience != nil {
+		m.YearsExperience = int32(*r.MentorYearsExperience)
 	}
 
 	return m
@@ -2849,6 +3268,13 @@ func metaToDTO(c gen.GetContentByIDRow, m gen.ServiceListingMetum) ServiceDTO {
 	// §114 structured content.
 	dto.Faqs = decodeListingFaqs(m.Faqs)
 	dto.Steps = decodeListingSteps(m.Steps)
+
+	// 000829 page content.
+	dto.SellingPoints = decodeIconEntries(m.SellingPoints)
+	dto.Facts = decodeFacts(m.Facts)
+	dto.Highlights = decodeChecklist(m.Highlights)
+	dto.Audience = decodeChecklist(m.Audience)
+	dto.Included = decodeIconEntries(m.Included)
 
 	return dto
 }

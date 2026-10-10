@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -22,7 +23,10 @@ func consumeBackupCode(ctx context.Context, dbConn *db.DB, cred *gen.TotpCredent
 	target := hashBackupCode(code)
 
 	for i, h := range stored {
-		if h == target {
+		// Constant-time compare: a byte-wise == leaks the matching
+		// prefix length through timing, letting an online attacker
+		// oracle codes character-by-character past the rate limit.
+		if len(h) == len(target) && subtle.ConstantTimeCompare([]byte(h), []byte(target)) == 1 {
 			stored = append(stored[:i], stored[i+1:]...)
 
 			encoded, err := encodeBackupHashes(stored)

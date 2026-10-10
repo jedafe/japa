@@ -75,7 +75,13 @@ func (ls *LocalStorage) Store(_ context.Context, exportID pgtype.UUID, filename,
 		return "", 0, err
 	}
 
-	full := filepath.Join(dir, filename)
+	// Traversal re-check (same Abs+prefix guard as GetPath): the filename
+	// is reconstructed server-side, but a compromised caller must still
+	// never escape the export root.
+	full, err := absWithinDir(dir, filename)
+	if err != nil {
+		return "", 0, err
+	}
 	if err := os.WriteFile(full, data, 0o600); err != nil {
 		return "", 0, fmt.Errorf("writing export file: %w", err)
 	}
@@ -98,7 +104,13 @@ func (ls *LocalStorage) GetPath(exportID pgtype.UUID, filename string) (string, 
 		return "", err
 	}
 
-	full := filepath.Join(dir, filename)
+	return absWithinDir(dir, filename)
+}
+
+// absWithinDir joins name onto dir and verifies the absolute result stays
+// under dir (Abs+prefix traversal guard shared by Store and GetPath).
+func absWithinDir(dir, name string) (string, error) {
+	full := filepath.Join(dir, name)
 	// Path-traversal guard: ensure the resolved path stays under the platform dir.
 	abs, err := filepath.Abs(full)
 	if err != nil {

@@ -861,6 +861,23 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Email change resets email_verified_at and the service revoked all
+	// refresh tokens. Revoke the caller's live access-token JTI too so
+	// the old session dies immediately rather than at access-token TTL
+	// expiry. Same pattern as ChangePassword.
+	if result.EmailChanged && h.keyRot != nil && h.Redis != nil {
+		if authHeader := r.Header.Get("Authorization"); authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				if claims, err := h.keyRot.ValidateAccessToken(parts[1]); err == nil {
+					if err := auth.RevokeToken(r.Context(), claims.JTI, claims.ExpiresAt.Time, h.Redis); err != nil {
+						slog.Error("update-account: revoke access token JTI", "error", err)
+					}
+				}
+			}
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
 

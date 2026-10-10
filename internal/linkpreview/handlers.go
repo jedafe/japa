@@ -1,6 +1,7 @@
 package linkpreview
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/jedafe/japa/internal/auth"
@@ -33,10 +34,13 @@ func (h *Handlers) Fetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch preview
+	// Fetch preview. Internal failure detail stays in the server log —
+	// callers get a generic fetch_failed so upstream error text (DNS
+	// internals, redirect targets, status codes) is never echoed.
 	preview, err := h.Fetcher.Fetch(r.Context(), rawURL)
 	if err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "fetch_failed", err.Error())
+		slog.Info("linkpreview: fetch failed", "error", err)
+		errpkg.WriteError(w, http.StatusBadRequest, "fetch_failed", "Could not fetch a preview for this URL")
 		return
 	}
 

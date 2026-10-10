@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/clientip"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/control"
 	"github.com/jedafe/japa/internal/db"
@@ -578,7 +579,8 @@ var defaultSettings = map[string]SettingCategory{
 		Label: "Site",
 		Settings: []SettingDef{
 			{Key: "custom_css", Label: "Custom CSS", Type: "textarea", Description: "Raw CSS injected inside `<style id=\"jc-custom-css\">` in `<head>`. Max 50 KB."},
-			{Key: "custom_js", Label: "Custom JS", Type: "textarea", Description: "Raw JS injected as `<script id=\"jc-custom-js\">` before `</body>`. Max 100 KB."},
+			{Key: "custom_js", Label: "Custom JS", Type: "textarea", Description: "Raw JS injected as `<script id=\"jc-custom-js\">` before `</body>`. Max 100 KB. Renders ONLY when custom_js_approved is true."},
+			{Key: "custom_js_approved", Label: "Approve Custom JS", Type: "toggle", Description: "Two-person approval for Custom JS: a super_admin must set this true before the JS renders. Fail-closed default.", Value: false},
 		},
 	},
 
@@ -778,7 +780,8 @@ func (h *Handlers) currencySettingCodes(ctx context.Context) []string {
 // Each pair is upserted into the system_settings table using the full
 // dot-notation key (category.setting_key).
 func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireUser(w, r); !ok {
+	actor, ok := requireUser(w, r)
+	if !ok {
 		return
 	}
 
@@ -838,10 +841,28 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		fullKey := category + "." + key
 
 		if category == "site" {
+			// Two-person approval for custom JS: only a super_admin may set
+			// custom_js_approved, and the JS renders only while it is true.
+			// A single compromised admin account (or a stored-XSS payload
+			// smuggled through another surface) cannot ship site-wide
+			// script execution alone.
+			if key == "custom_js_approved" {
+				want := false
+				if b, ok := value.(bool); ok {
+					want = b
+				}
+				if want && (h.RBAC == nil || !h.RBAC.IsSuperAdmin(ctx, actor.UserID)) {
+					errpkg.WriteError(w, http.StatusForbidden, "super_admin_required", "Approving custom JS requires super_admin")
+					return
+				}
+			}
+
 			var raw string
-			if err := json.Unmarshal(valueJSON, &raw); err != nil {
-				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", key+" must be a string")
-				return
+			if key != "custom_js_approved" {
+				if err := json.Unmarshal(valueJSON, &raw); err != nil {
+					errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", key+" must be a string")
+					return
+				}
 			}
 
 			if key == "custom_css" && len(raw) > 50*1024 {
@@ -870,6 +891,28 @@ func (h *Handlers) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// already-cached previews for now-blocklisted domains would survive their 24h TTL.
 	if category == "content" && h.Valkey != nil {
 		invalidateLinkPreviewCache(r.Context(), h.Valkey)
+	}
+
+	// Audit-trail every settings write — custom_css/custom_js reach every
+	// visitor's browser, so who changed what and when must be traceable.
+	// Best-effort (Rule 8): a failed audit write never blocks the save.
+	if h.DB != nil {
+		keys := make([]string, 0, len(pending))
+		for k := range pending {
+			keys = append(keys, k)
+		}
+		meta, _ := json.Marshal(map[string]any{"category": category, "keys": keys})
+		ip := clientip.FromRequest(r)
+		var ipArg any
+		if ip != "" {
+			ipArg = ip
+		}
+		if _, err := h.DB.Writer.Exec(ctx, `
+			INSERT INTO audit_logs (actor_user_id, action_type, target_type, metadata, ip_address)
+			VALUES ($1, 'admin.settings.update', 'system_setting', $2::jsonb, $3::inet)
+		`, actor.UserID, meta, ipArg); err != nil {
+			slog.Warn("admin: failed to write settings audit log", "category", category, "error", err)
+		}
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{

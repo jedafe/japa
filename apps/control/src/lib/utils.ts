@@ -32,6 +32,8 @@ const UNSAFE_STYLE = /url\s*\(|expression\s*\(|@import|@charset|javascript|vbscr
 function isSafeHref(href: string): boolean {
 	const v = href.trim().toLowerCase();
 	if (v === '') return true;
+	// Reject protocol-relative URLs (//evil.com inherits the page scheme).
+	if (v.startsWith('//')) return false;
 	if (v.startsWith('#') || v.startsWith('/') || v.startsWith('./') || v.startsWith('../')) return true;
 	return /^(https?|mailto):/i.test(v);
 }

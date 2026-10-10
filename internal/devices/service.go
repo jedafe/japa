@@ -34,6 +34,7 @@ var (
 	ErrPushDisabled    = errors.New("devices: push notifications are disabled")
 	ErrNoDispatcher    = errors.New("devices: no push dispatcher configured")
 	ErrDeviceNotFound  = errors.New("devices: device not found")
+	ErrTooManyDevices  = errors.New("devices: too many registered devices")
 )
 
 // PushPayload is the resolved push payload handed to a PushDispatcher.
@@ -130,6 +131,11 @@ func (s *Service) SetFeatureChecker(c FeatureChecker) { s.checker = c }
 // SendPush/SendTestPush return ErrNoDispatcher (BE-006: never silently no-op).
 func (s *Service) SetDispatcher(d PushDispatcher) { s.dispatcher = d }
 
+// maxDevicesPerUser caps push device registrations per user. Device rows
+// are cheap but unbounded registration (one row per stolen-access call)
+// would grow the table and fan every notification out to attacker tokens.
+const maxDevicesPerUser = 20
+
 // RegisterDevice registers or updates a device token for the user.
 func (s *Service) RegisterDevice(ctx context.Context, userID pgtype.UUID, input RegisterDeviceInput) (DeviceInfo, error) {
 	if input.DeviceID == "" || input.Token == "" {
@@ -138,6 +144,14 @@ func (s *Service) RegisterDevice(ctx context.Context, userID pgtype.UUID, input 
 
 	if !IsValidPlatform(input.Platform) {
 		return DeviceInfo{}, fmt.Errorf("%w: %s", ErrInvalidPlatform, input.Platform)
+	}
+
+	// New device_ids count against the cap; re-registration of a known
+	// device_id upserts in place and never counts.
+	if n, err := s.store.CountActiveTokens(ctx, userID); err == nil && n >= maxDevicesPerUser {
+		if _, lerr := s.store.GetTokenByDeviceID(ctx, input.DeviceID); lerr != nil {
+			return DeviceInfo{}, fmt.Errorf("%w (max %d)", ErrTooManyDevices, maxDevicesPerUser)
+		}
 	}
 
 	var appVersion *string

@@ -133,6 +133,14 @@ func (s *DBStore) MarkEmailVerified(ctx context.Context, userID pgtype.UUID) err
 	return s.write.MarkEmailVerifiedByUserID(ctx, userID)
 }
 
+// ConsumeVerificationToken marks the email_verifications row used so the
+// token is single-use. Callers must check rec.VerifiedAt BEFORE calling:
+// the guarded UPDATE is a no-op on an already-consumed row, so the
+// pre-check is what rejects replays.
+func (s *DBStore) ConsumeVerificationToken(ctx context.Context, tokenHash string) error {
+	return s.write.VerifyEmailByHash(ctx, tokenHash)
+}
+
 // GetRecentPasswordHashes returns the most recent N password hashes for a user,
 // ordered by creation time descending (newest first).
 func (s *DBStore) GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error) {

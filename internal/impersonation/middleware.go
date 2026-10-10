@@ -17,9 +17,10 @@ import (
 const adminAPIPrefix = "/api/v1/admin/"
 
 // ImpersonationMiddleware extracts the impersonation state from Valkey
-// and injects it into the request context. The real admin identity is
-// preserved for audit logging; downstream handlers can read the
-// impersonated user via ImpersonatedFromContext or EffectiveUserID.
+// and injects it into the request context. The real admin identity stays in
+// auth.UserContextKey for audit logging; the resolved effective user
+// (target when impersonating, else the real user) is additionally placed
+// under EffectiveUserKey for downstream enforcement (ban checks, RBAC).
 //
 // Must be registered AFTER auth middleware (OptionalAuth/RequireAuth) so
 // the admin's identity is populated in context before the Valkey lookup.
@@ -41,29 +42,36 @@ func ImpersonationMiddleware(store *Store) func(http.Handler) http.Handler { //n
 				return
 			}
 
+			// Default effective identity: the real user. Always set so
+			// downstream enforcement can rely on EffectiveUserKey.
+			ctx := context.WithValue(r.Context(), EffectiveUserKey, user.UserID)
+
 			targetID, err := store.GetImpersonation(r.Context(), user.UserID)
 			if err != nil {
 				slog.Warn("impersonation middleware: failed to get status", "error", err)
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(w, r.WithContext(ctx))
 
 				return
 			}
 
 			if targetID == "" {
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
 			var impersonatedID pgtype.UUID
 			if err := impersonatedID.Scan(targetID); err != nil {
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), impersonatedUserKey, &ImpersonationContext{
+			ctx = context.WithValue(ctx, impersonatedUserKey, &ImpersonationContext{
 				AdminID:        user.UserID,
 				ImpersonatedID: impersonatedID,
 			})
+			// Effective identity switches to the impersonated target; the
+			// real admin remains in auth.UserContextKey for audit.
+			ctx = context.WithValue(ctx, EffectiveUserKey, impersonatedID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

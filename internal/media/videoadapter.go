@@ -111,7 +111,7 @@ func (a *VideoProcessorAdapter) ProcessMediaVideo(ctx context.Context, mediaID, 
 		return err
 	}
 
-	processed, err := os.ReadFile(outPath)
+	processed, err := os.ReadFile(outPath) // #nosec G304 -- outPath is a same-function os.CreateTemp staging file, never caller-controlled
 	if err != nil {
 		return fmt.Errorf("reading processed output: %w", err)
 	}

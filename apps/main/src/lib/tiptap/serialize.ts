@@ -153,6 +153,20 @@ const escapeHtml = (s: string): string =>
 
 const escapeAttr = (s: string): string => s.replace(/"/g, '&quot;');
 
+/** Allowlist for URL-bearing attributes (link href, image src, embed url).
+ *  escapeAttr alone cannot stop `javascript:`, `data:text/html`, or
+ *  `vbscript:` payloads — a stored `javascript:alert(1)` href executes on
+ *  click. Only http(s), site-relative paths, anchors, and mailto: survive;
+ *  everything else collapses to '#'. Mirrors safeHref in safeHtml.ts. */
+function safeUrl(raw: string): string {
+	const v = String(raw ?? '').trim();
+	if (v === '' || v.startsWith('#') || v.startsWith('/') || v.startsWith('./') || v.startsWith('../')) {
+		return v === '' ? '#' : v;
+	}
+	if (/^(https?|mailto):/i.test(v)) return v;
+	return '#';
+}
+
 /** Render inline marks (bold/italic/code/link) around a text node. */
 function renderMarks(text: string, marks: PMMark[] | undefined): string {
 	let out = escapeHtml(text);
@@ -172,7 +186,7 @@ function renderMarks(text: string, marks: PMMark[] | undefined): string {
 				out = `<s>${out}</s>`;
 				break;
 			case 'link': {
-				const href = String(mark.attrs?.href ?? '#');
+				const href = safeUrl(String(mark.attrs?.href ?? '#'));
 				const target = mark.attrs?.target ? ` target="${escapeAttr(String(mark.attrs.target))}"` : '';
 				const rel = ` rel="noopener noreferrer"`;
 				out = `<a href="${escapeAttr(href)}"${target}${rel}>${out}</a>`;
@@ -248,7 +262,7 @@ function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string):
 		case 'horizontalRule':
 			return '<hr />';
 		case 'image': {
-			const src = escapeAttr(String(node.attrs?.src ?? ''));
+			const src = escapeAttr(safeUrl(String(node.attrs?.src ?? '')));
 			const alt = escapeAttr(String(node.attrs?.alt ?? ''));
 			return `<img src="${src}" alt="${alt}" loading="lazy" />`;
 		}
@@ -276,8 +290,8 @@ function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string):
 			// when the node carries a url (data-url on editor output, url
 			// attr on JSON).
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
-			const url = escapeAttr(String(node.attrs?.url ?? ''));
-			if (url) {
+			const url = escapeAttr(safeUrl(String(node.attrs?.url ?? '')));
+			if (url && url !== '#') {
 				return `<a class="hashtag" href="${url}"><strong>#${label}</strong></a>`;
 			}
 			return `<span class="hashtag"><strong>#${label}</strong></span>`;
@@ -287,8 +301,8 @@ function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string):
 			// label (bold) and link to the referenced content when the node
 			// carries a url.
 			const label = escapeHtml(String(node.attrs?.label ?? ''));
-			const url = escapeAttr(String(node.attrs?.url ?? ''));
-			if (url) {
+			const url = escapeAttr(safeUrl(String(node.attrs?.url ?? '')));
+			if (url && url !== '#') {
 				return `<a class="interlink" href="${url}"><strong>${label}</strong></a>`;
 			}
 			return `<span class="interlink"><strong>${label}</strong></span>`;
@@ -311,8 +325,9 @@ function renderNode(node: PMNode, deleted?: Set<string>, deletedLabel?: string):
 		case 'linkPreview': {
 			// Section 15 / ROADMAP-MAIN 07.09: store URL, hydrate into a
 			// LinkPreviewCard on the view page via the hydrateLinkPreviews
-			// Svelte action.
-			const url = escapeAttr(String(node.attrs?.url ?? ''));
+			// Svelte action. The URL is scheme-allowlisted: a stored
+			// javascript:/data: URL must never reach the fetch card.
+			const url = escapeAttr(safeUrl(String(node.attrs?.url ?? '')));
 			return `<div class="link-preview-placeholder" data-type="link-preview" data-url="${url}"></div>`;
 		}
 		default:

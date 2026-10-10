@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // ErrMentorShadowConflict marks a mentor shadow whose canonical slug
@@ -40,6 +41,74 @@ type MentorShadowInput struct {
 	Username    string // slug suffix — 'mentor-<username>'
 	DisplayName string // title prefix — '<display_name> — Mentorship'
 	Bio         string // listing body + content_hash source
+
+	// §114 2026-10-10 shadow page content — same replace-on-save
+	// contract as the public listing PATCH: nil preserves the shadow's
+	// stored set, an empty slice clears it. Validated through the same
+	// service_marketplace.content.max_* caps before any write.
+	SellingPoints *[]ServiceIconEntryInput
+	Facts         *[]ServiceFactInput
+	Highlights    *[]string
+	Audience      *[]string
+	Included      *[]ServiceIconEntryInput
+	Faqs          *[]ServiceFaqInput
+	Steps         *[]ServiceStepInput
+	// Tiers replaces the shadow's tier set when non-nil and the
+	// service_packages.tiers_enabled flag is on; nil preserves.
+	Tiers *[]TierInput
+}
+
+// MentorShadowContentDTO is the decoded detail-page content authored on
+// a mentor's shadow listing (§114 2026-10-10). GET /me/mentor-profile
+// embeds it so the settings editor seeds and PATCH values round-trip.
+type MentorShadowContentDTO struct {
+	SellingPoints []ServiceIconEntryDTO `json:"selling_points"`
+	Facts         []ServiceFactDTO      `json:"facts"`
+	Highlights    []string              `json:"highlights"`
+	Audience      []string              `json:"audience"`
+	Included      []ServiceIconEntryDTO `json:"included"`
+	Faqs          []ServiceFaqDTO       `json:"faqs"`
+	Steps         []ServiceStepDTO      `json:"steps"`
+	// Tiers carries the shadow's active pricing set so the settings
+	// editor round-trips it (§114 2026-10-10: mentorship pages render
+	// tier cards too). Flag-gated — omitted when tiers are disabled.
+	Tiers []PackageTierDTO `json:"tiers,omitempty"`
+}
+
+// MentorShadowContent returns the decoded page content stored on the
+// mentor's shadow listing. Returns (nil, nil) when the mentor has no
+// shadow (never opted in or opted out) — a missing shadow is a valid
+// state for the profile read, not an error.
+func (s *Service) MentorShadowContent(ctx context.Context, mentorID pgtype.UUID) (*MentorShadowContentDTO, error) {
+	row, err := s.store.GetMentorshipListing(ctx, mentorID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	dto := &MentorShadowContentDTO{
+		SellingPoints: decodeIconEntries(row.SellingPoints),
+		Facts:         decodeFacts(row.Facts),
+		Highlights:    decodeChecklist(row.Highlights),
+		Audience:      decodeChecklist(row.Audience),
+		Included:      decodeIconEntries(row.Included),
+		Faqs:          decodeListingFaqs(row.Faqs),
+		Steps:         decodeListingSteps(row.Steps),
+	}
+
+	// Flag-gated like every other tiers surface — a flag-off read omits
+	// the field rather than leaking dormant rows into the editor.
+	if s.TiersEnabled(ctx) && row.MetaID.Valid {
+		tiers, err := s.listPackageTiers(ctx, row.MetaID)
+		if err != nil {
+			return nil, err
+		}
+		dto.Tiers = tiers
+	}
+
+	return dto, nil
 }
 
 // MentorshipListingContentID resolves a mentor's live shadow listing
@@ -74,6 +143,113 @@ func (s *Service) MentorshipListingContentID(ctx context.Context, mentorID pgtyp
 // this author's shadow, the create retries mentor-<username>-2, -3, …
 // instead of failing or hijacking the squatter's row.
 func (s *Service) EnsureMentorShadowListing(ctx context.Context, authorID pgtype.UUID, in MentorShadowInput) (pgtype.UUID, error) {
+	contentID, err := s.ensureMentorShadow(ctx, authorID, in)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	// §114 2026-10-10: the shadow mirrors the mentor's structured page
+	// content too — the mentorship detail page renders its selling
+	// points/facts/checklists/included cards off the meta row.
+	if err := s.syncMentorShadowContent(ctx, contentID, in); err != nil {
+		return pgtype.UUID{}, fmt.Errorf("servicedir: sync mentor shadow content: %w", err)
+	}
+
+	return contentID, nil
+}
+
+// syncMentorShadowContent encodes the non-nil page-content fields and
+// applies them to the shadow's meta row (nil params preserve the stored
+// set via the query's COALESCE; [] clears). A nil tiers set is skipped;
+// a present one replaces the shadow's tiers when the flag allows.
+func (s *Service) syncMentorShadowContent(ctx context.Context, contentID pgtype.UUID, in MentorShadowInput) error {
+	params := gen.UpdateMentorShadowMetaContentParams{ContentID: contentID}
+	dirty := false
+
+	var err error
+	if in.SellingPoints != nil {
+		if params.SellingPoints, err = s.encodeIconEntries(ctx, "selling_points",
+			"service_marketplace.content.max_selling_points", 6, *in.SellingPoints,
+			ErrTooManySellingPoints, ErrInvalidSellingPoint); err != nil {
+			return err
+		}
+		dirty = true
+	}
+
+	if in.Facts != nil {
+		if params.Facts, err = s.encodeFacts(ctx, *in.Facts); err != nil {
+			return err
+		}
+		dirty = true
+	}
+
+	if in.Highlights != nil {
+		if params.Highlights, err = s.encodeChecklist(ctx, "highlights",
+			"service_marketplace.content.max_highlights", 12, *in.Highlights,
+			ErrTooManyHighlights, ErrInvalidHighlight); err != nil {
+			return err
+		}
+		dirty = true
+	}
+
+	if in.Audience != nil {
+		if params.Audience, err = s.encodeChecklist(ctx, "audience",
+			"service_marketplace.content.max_audience", 12, *in.Audience,
+			ErrTooManyAudience, ErrInvalidAudience); err != nil {
+			return err
+		}
+		dirty = true
+	}
+
+	if in.Included != nil {
+		if params.Included, err = s.encodeIconEntries(ctx, "included",
+			"service_marketplace.content.max_included", 12, *in.Included,
+			ErrTooManyIncluded, ErrInvalidIncluded); err != nil {
+			return err
+		}
+		dirty = true
+	}
+
+	if in.Faqs != nil {
+		if params.Faqs, err = s.encodeListingFaqs(ctx, *in.Faqs); err != nil {
+			return err
+		}
+		dirty = true
+	}
+
+	if in.Steps != nil {
+		if params.Steps, err = s.encodeListingSteps(ctx, *in.Steps); err != nil {
+			return err
+		}
+		dirty = true
+	}
+
+	if dirty {
+		if err := s.store.UpdateMentorShadowContent(ctx, params); err != nil {
+			return err
+		}
+	}
+
+	if in.Tiers != nil && s.TiersEnabled(ctx) {
+		tierParams, err := s.validatePackageTiers(ctx, *in.Tiers)
+		if err != nil {
+			return err
+		}
+
+		meta, err := s.store.GetMeta(ctx, contentID)
+		if err != nil {
+			return err
+		}
+
+		if err := s.store.ReplacePackageTiers(ctx, meta.ID, tierParams); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) ensureMentorShadow(ctx context.Context, authorID pgtype.UUID, in MentorShadowInput) (pgtype.UUID, error) {
 	title := in.DisplayName
 	if title == "" {
 		title = in.Username

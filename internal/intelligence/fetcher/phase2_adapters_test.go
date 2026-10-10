@@ -215,7 +215,7 @@ func TestWaybackFetcher_Manifest(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	f := &WaybackFetcher{client: srv.Client()}
+	f := &WaybackFetcher{client: srv.Client(), allowPrivate: true}
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      "https://example.com/page",
 		ProviderConfig: []byte(`{"cdx_endpoint":"` + srv.URL + `"}`),

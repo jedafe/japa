@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"mime"
 	"net/http"
 	"net/url"
@@ -22,6 +23,20 @@ import (
 // MaxFileSizeBytes is the fallback maximum allowed upload size when
 // media.max_upload_mb is not configured in system_settings (50 MB).
 const MaxFileSizeBytes int64 = 50 * 1024 * 1024
+
+// saturateInt32 clamps an int to the int32 range so int→int32 conversions
+// at trust boundaries (worker-supplied retention/limits) can never wrap
+// on 64-bit platforms (gosec G115). Negative inputs clamp to 0 — a
+// negative retention/limit is meaningless.
+func saturateInt32(v int) int32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(v)
+}
 
 // MaxUploadBytes returns the effective maximum upload size in bytes,
 // consulting the media.max_upload_mb system_setting (Rule 3) and falling
@@ -524,8 +539,8 @@ func (s *Service) HardDeleteMedia(ctx context.Context, mediaID pgtype.UUID) erro
 // Returns the number of rows purged.
 func (s *Service) PurgeDeletedMedia(ctx context.Context, retentionDays, limit int) (int, error) {
 	rows, err := s.store.ListMediaDeletedForCleanup(ctx, gen.ListMediaDeletedForCleanupParams{
-		RetentionDays: int32(retentionDays),
-		RowLimit:      int32(limit),
+		RetentionDays: saturateInt32(retentionDays),
+		RowLimit:      saturateInt32(limit),
 	})
 	if err != nil {
 		return 0, err

@@ -1007,13 +1007,13 @@ func (s *Service) initiatePayout(ctx context.Context, withdrawal gen.WalletWithd
 		payoutCurrency = withdrawal.CurrencyCode
 	}
 
-	// Convert net fiat amount to major units.
-	amount := float64(calc.NetAmount) / 100.0
-
+	// Pass the net fiat amount in minor units (kobo/cents). Integer
+	// math end-to-end — the provider converts to its wire format at the
+	// edge with explicit rounding, so crypto dust cannot drift.
 	return provider.InitiatePayout(ctx, payout.PayoutRequest{
 		WithdrawalID: withdrawal.ID.String(),
 		UserID:       withdrawal.UserID.String(),
-		Amount:       amount,
+		AmountMinor:  calc.NetAmount,
 		Currency:     payoutCurrency,
 		Address:      method.Account,
 		ExtraID:      extractMemo(method.Metadata),

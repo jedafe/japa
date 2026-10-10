@@ -242,8 +242,11 @@ func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (*Preview, error) {
 		return nil, fmt.Errorf("URL validation failed: %w", err)
 	}
 
-	// Check blacklist (resolved per-request from system_settings when wired)
-	host := strings.ToLower(getHost(rawURL))
+	// Check blacklist (resolved per-request from system_settings when wired).
+	// Hosts are normalized through normalizeHost (url.Parse Hostname,
+	// lowercased, port stripped) so IsBlockedDomain sees the same form the
+	// allowlist entries use.
+	host := normalizeHost(rawURL)
 	blacklist := f.resolveBlacklist(ctx)
 
 	if IsBlockedDomain(host, blacklist) {
@@ -438,13 +441,45 @@ func parseOGTags(r io.Reader, rawURL string) (*Preview, error) {
 
 // cacheKey generates a Valkey cache key for a URL.
 // Format: jc:link_preview:{sha256_url}. Uses the full SHA-256 hash to
-// avoid collision risk from truncation (STD-004).
+// avoid collision risk from truncation (STD-004). The URL is normalized
+// first (lowercased host, sorted query, trimmed trailing slash) so
+// equivalent URLs share one cache entry.
 func (f *Fetcher) cacheKey(rawURL string) string {
-	hash := sha256.Sum256([]byte(rawURL))
+	hash := sha256.Sum256([]byte(normalizeURL(rawURL)))
 	return valkey.MustKey("link_preview:%s", hex.EncodeToString(hash[:]))
 }
 
+// normalizeHost extracts the hostname via url.Parse (Hostname strips any
+// port and lowercases it) and lowercases the result for blocklist
+// comparison. Falls back to the legacy string-split for inputs that do
+// not parse as URLs.
+func normalizeHost(rawURL string) string {
+	if u, err := url.Parse(rawURL); err == nil && u.Hostname() != "" {
+		return strings.ToLower(u.Hostname())
+	}
+	return strings.ToLower(getHost(rawURL))
+}
+
+// normalizeURL canonicalizes a URL for cache-key purposes: lowercase host,
+// sorted query parameters, and a trimmed trailing slash on the path. Any
+// input that fails to parse is returned unchanged (still hashed safely).
+func normalizeURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	u.Host = strings.ToLower(u.Host)
+	// url.Values.Encode sorts keys, giving a canonical query form.
+	if u.RawQuery != "" {
+		u.RawQuery = u.Query().Encode()
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	return u.String()
+}
+
 // getHost extracts the hostname from a URL.
+// Deprecated: prefer normalizeHost (url.Parse-based). Retained for
+// inputs that do not parse as absolute URLs.
 func getHost(rawURL string) string {
 	parts := strings.SplitN(rawURL, "://", 2)
 	if len(parts) < 2 {

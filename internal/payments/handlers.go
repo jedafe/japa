@@ -43,6 +43,7 @@ type SettingsProvider interface {
 // Handlers holds dependencies for payment HTTP handlers.
 type Handlers struct {
 	Service             *Service
+	StripeSecretKey     string // JC_STRIPE_SECRET_KEY — Stripe API key; gates the Stripe "Enabled" flag
 	StripeWebhookSecret string // JC_STRIPE_WEBHOOK_SECRET — Stripe webhook signing secret
 	NOWPaymentsIPNKey   string // JC_NOWPAYMENTS_IPN_SECRET — NOWPayments IPN HMAC key
 	PaystackSecretKey   string // Paystack secret key for webhook HMAC verification
@@ -227,7 +228,7 @@ func (h *Handlers) ListPaymentProviders(w http.ResponseWriter, r *http.Request) 
 			ID:          ProviderStripe,
 			Name:        "Stripe",
 			Description: "International cards",
-			Enabled:     h.StripeWebhookSecret != "",
+			Enabled:     h.StripeSecretKey != "",
 		},
 		{
 			ID:          ProviderNOWPayments,
@@ -244,6 +245,31 @@ func (h *Handlers) ListPaymentProviders(w http.ResponseWriter, r *http.Request) 
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": providers})
+}
+
+// allowUnsignedWebhooks reports whether unsigned provider webhooks are
+// accepted. This is a development-only escape hatch: it honours
+// JC_ALLOW_UNSIGNED_WEBHOOKS=true only when JC_ENV is development/test, and
+// logs a warning every time the bypass is taken so it can never slip into
+// production silently. In production the bypass is always off — a missing
+// secret returns 500 misconfigured.
+func allowUnsignedWebhooks(provider string) bool {
+	if !strings.EqualFold(os.Getenv("JC_ALLOW_UNSIGNED_WEBHOOKS"), "true") {
+		return false
+	}
+
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("JC_ENV")))
+	if env != "" && env != "development" && env != "test" && env != "testing" {
+		slog.Error("payments: JC_ALLOW_UNSIGNED_WEBHOOKS ignored outside development/test",
+			"provider", provider, "env", os.Getenv("JC_ENV"))
+
+		return false
+	}
+
+	slog.Warn("payments: accepting unsigned webhook (dev bypass JC_ALLOW_UNSIGNED_WEBHOOKS)",
+		"provider", provider)
+
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -425,9 +451,9 @@ func (h *Handlers) HandlePaystackWebhook(w http.ResponseWriter, r *http.Request)
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify Paystack webhook signature (HMAC-SHA256 of body with secret key).
-	// Reject unsigned webhooks unless explicitly allowed in dev (Guide §5.2).
+	// Reject unsigned webhooks unless the dev-only bypass is active (§5.2).
 	if h.PaystackSecretKey == "" {
-		if !strings.EqualFold(os.Getenv("JC_ALLOW_UNSIGNED_WEBHOOKS"), "true") {
+		if !allowUnsignedWebhooks(ProviderPaystack) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "misconfigured", "Paystack webhook secret not configured")
 			return
 		}
@@ -484,9 +510,9 @@ func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify Stripe webhook signature (HMAC-SHA256 with webhook secret).
-	// Reject unsigned webhooks unless explicitly allowed in dev (Guide §5.2).
+	// Reject unsigned webhooks unless the dev-only bypass is active (§5.2).
 	if h.StripeWebhookSecret == "" {
-		if !strings.EqualFold(os.Getenv("JC_ALLOW_UNSIGNED_WEBHOOKS"), "true") {
+		if !allowUnsignedWebhooks(ProviderStripe) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "misconfigured", "Stripe webhook secret not configured")
 			return
 		}
@@ -545,9 +571,9 @@ func (h *Handlers) HandleNOWPaymentsWebhook(w http.ResponseWriter, r *http.Reque
 	defer func() { _ = r.Body.Close() }()
 
 	// Verify NOWPayments IPN signature (HMAC-SHA256 with IPN secret).
-	// Reject unsigned webhooks unless explicitly allowed in dev (Guide §5.2).
+	// Reject unsigned webhooks unless the dev-only bypass is active (§5.2).
 	if h.NOWPaymentsIPNKey == "" {
-		if !strings.EqualFold(os.Getenv("JC_ALLOW_UNSIGNED_WEBHOOKS"), "true") {
+		if !allowUnsignedWebhooks(ProviderNOWPayments) {
 			errpkg.WriteError(w, http.StatusInternalServerError, "misconfigured", "NOWPayments IPN secret not configured")
 			return
 		}
@@ -841,7 +867,7 @@ func (h *Handlers) GetPayment(w http.ResponseWriter, r *http.Request) {
 // the platform and is in a refundable state (succeeded) before creating
 // the refund record (BUG-P008, BUG-P009).
 func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -898,6 +924,16 @@ func (h *Handlers) RefundPayment(w http.ResponseWriter, r *http.Request) {
 		handleServiceError(w, err)
 		return
 	}
+
+	// Defense-in-depth audit: every issued refund records the acting admin,
+	// the payment, and its owner so cross-user refunds are traceable.
+	slog.Warn("payments: refund issued",
+		"actor_user_id", user.UserID.String(),
+		"payment_id", id.String(),
+		"payment_user_id", payment.UserID.String(),
+		"amount", input.Amount,
+		"currency", payment.Currency,
+		"refund_id", refund.ID.String())
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": refund})
 }

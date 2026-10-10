@@ -1401,7 +1401,8 @@ INSERT INTO service_listing_meta (
     city_space_id, origin_communities, is_remote, website_url, booking_url,
     price_range, is_verified, verification_type, claim_status, claimed_by_org_id,
     listing_kind, price_amount, price_currency, price_per, purchase_mode,
-    capacity, available_from, available_until, faqs, steps
+    capacity, available_from, available_until, faqs, steps,
+    selling_points, facts, highlights, audience, included
 ) VALUES (
     $1, $2, $3,
     $4, $5,
@@ -1412,8 +1413,11 @@ INSERT INTO service_listing_meta (
     COALESCE($15, 'service'), $16, $17,
     $18, COALESCE($19, 'inquiry'), $20,
     $21, $22,
-    COALESCE($23, '[]'::jsonb), COALESCE($24, '[]'::jsonb)
-) RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps
+    COALESCE($23, '[]'::jsonb), COALESCE($24, '[]'::jsonb),
+    COALESCE($25, '[]'::jsonb), COALESCE($26, '[]'::jsonb),
+    COALESCE($27, '[]'::jsonb), COALESCE($28, '[]'::jsonb),
+    COALESCE($29, '[]'::jsonb)
+) RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps, selling_points, facts, highlights, audience, included
 `
 
 type CreateServiceListingMetaParams struct {
@@ -1441,6 +1445,11 @@ type CreateServiceListingMetaParams struct {
 	AvailableUntil     pgtype.Date `json:"available_until"`
 	Faqs               interface{} `json:"faqs"`
 	Steps              interface{} `json:"steps"`
+	SellingPoints      interface{} `json:"selling_points"`
+	Facts              interface{} `json:"facts"`
+	Highlights         interface{} `json:"highlights"`
+	Audience           interface{} `json:"audience"`
+	Included           interface{} `json:"included"`
 }
 
 // =====================================================================
@@ -1480,6 +1489,11 @@ func (q *Queries) CreateServiceListingMeta(ctx context.Context, arg CreateServic
 		arg.AvailableUntil,
 		arg.Faqs,
 		arg.Steps,
+		arg.SellingPoints,
+		arg.Facts,
+		arg.Highlights,
+		arg.Audience,
+		arg.Included,
 	)
 	var i ServiceListingMetum
 	err := row.Scan(
@@ -1512,6 +1526,11 @@ func (q *Queries) CreateServiceListingMeta(ctx context.Context, arg CreateServic
 		&i.AvailableUntil,
 		&i.Faqs,
 		&i.Steps,
+		&i.SellingPoints,
+		&i.Facts,
+		&i.Highlights,
+		&i.Audience,
+		&i.Included,
 	)
 	return i, err
 }
@@ -1603,12 +1622,12 @@ func (q *Queries) CreateServicePackageItem(ctx context.Context, arg CreateServic
 
 const createServicePackageTier = `-- name: CreateServicePackageTier :one
 INSERT INTO service_package_tiers (listing_meta_id, name, badge, description,
-    price_amount, price_currency, features, position, is_featured, is_active)
+    icon, price_amount, price_currency, features, position, is_featured, is_active)
 VALUES ($1, $2, $3, $4,
-    $5, $6, $7,
-    COALESCE($8, 0), COALESCE($9, false),
-    COALESCE($10, true))
-RETURNING id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at
+    $5, $6, $7, $8,
+    COALESCE($9, 0), COALESCE($10, false),
+    COALESCE($11, true))
+RETURNING id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at, icon
 `
 
 type CreateServicePackageTierParams struct {
@@ -1616,6 +1635,7 @@ type CreateServicePackageTierParams struct {
 	Name          string      `json:"name"`
 	Badge         *string     `json:"badge"`
 	Description   *string     `json:"description"`
+	Icon          *string     `json:"icon"`
 	PriceAmount   int64       `json:"price_amount"`
 	PriceCurrency *string     `json:"price_currency"`
 	Features      []string    `json:"features"`
@@ -1630,6 +1650,7 @@ func (q *Queries) CreateServicePackageTier(ctx context.Context, arg CreateServic
 		arg.Name,
 		arg.Badge,
 		arg.Description,
+		arg.Icon,
 		arg.PriceAmount,
 		arg.PriceCurrency,
 		arg.Features,
@@ -1652,6 +1673,7 @@ func (q *Queries) CreateServicePackageTier(ctx context.Context, arg CreateServic
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Icon,
 	)
 	return i, err
 }
@@ -2098,12 +2120,26 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
+       -- 000829 detail-page content fields (all listing kinds).
+       sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
        u.username AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
+       -- 000829 mentor card fields — headline card, stats row, and the
+       -- "Mentorship details" sidebar on the mentorship detail page.
+       up.location, up.mentor_title, up.mentor_response_time,
+       up.mentor_availability, up.mentor_session_type,
+       up.mentor_languages, up.mentor_session_formats,
+       up.mentor_countries, up.mentor_credentials,
+       up.mentor_years_experience, up.mentor_success_label,
+       -- Lifetime fulfilled bookings = "mentees helped" social proof
+       -- (provider_user_id is only ever set on mentorship-kind rows).
+       (SELECT COUNT(*)::int FROM service_bookings sb
+        WHERE sb.provider_user_id = c.author_id
+          AND sb.status = 'fulfilled') AS mentees_helped,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -2177,6 +2213,11 @@ type GetMentorshipListingByAuthorRow struct {
 	AvailableUntil        pgtype.Date        `json:"available_until"`
 	Faqs                  []byte             `json:"faqs"`
 	Steps                 []byte             `json:"steps"`
+	SellingPoints         []byte             `json:"selling_points"`
+	Facts                 []byte             `json:"facts"`
+	Highlights            []byte             `json:"highlights"`
+	Included              []byte             `json:"included"`
+	Audience              []byte             `json:"audience"`
 	AuthorName            *string            `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
@@ -2185,6 +2226,18 @@ type GetMentorshipListingByAuthorRow struct {
 	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
 	MentorAreas           []string           `json:"mentor_areas"`
 	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
+	Location              *string            `json:"location"`
+	MentorTitle           *string            `json:"mentor_title"`
+	MentorResponseTime    *string            `json:"mentor_response_time"`
+	MentorAvailability    *string            `json:"mentor_availability"`
+	MentorSessionType     *string            `json:"mentor_session_type"`
+	MentorLanguages       []string           `json:"mentor_languages"`
+	MentorSessionFormats  []string           `json:"mentor_session_formats"`
+	MentorCountries       []string           `json:"mentor_countries"`
+	MentorCredentials     []string           `json:"mentor_credentials"`
+	MentorYearsExperience *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string            `json:"mentor_success_label"`
+	MenteesHelped         int32              `json:"mentees_helped"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
 	FeaturedStoragePath   *string            `json:"featured_storage_path"`
 	RatingCount           *int32             `json:"rating_count"`
@@ -2255,6 +2308,11 @@ func (q *Queries) GetMentorshipListingByAuthor(ctx context.Context, authorID pgt
 		&i.AvailableUntil,
 		&i.Faqs,
 		&i.Steps,
+		&i.SellingPoints,
+		&i.Facts,
+		&i.Highlights,
+		&i.Included,
+		&i.Audience,
 		&i.AuthorName,
 		&i.AuthorAvatar,
 		&i.AuthorDisplayName,
@@ -2263,6 +2321,18 @@ func (q *Queries) GetMentorshipListingByAuthor(ctx context.Context, authorID pgt
 		&i.ActiveMenteeCount,
 		&i.MentorAreas,
 		&i.MentorSince,
+		&i.Location,
+		&i.MentorTitle,
+		&i.MentorResponseTime,
+		&i.MentorAvailability,
+		&i.MentorSessionType,
+		&i.MentorLanguages,
+		&i.MentorSessionFormats,
+		&i.MentorCountries,
+		&i.MentorCredentials,
+		&i.MentorYearsExperience,
+		&i.MentorSuccessLabel,
+		&i.MenteesHelped,
 		&i.FeaturedStorageBucket,
 		&i.FeaturedStoragePath,
 		&i.RatingCount,
@@ -2613,12 +2683,26 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
+       -- 000829 detail-page content fields (all listing kinds).
+       sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
        u.username AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
+       -- 000829 mentor card fields — headline card, stats row, and the
+       -- "Mentorship details" sidebar on the mentorship detail page.
+       up.location, up.mentor_title, up.mentor_response_time,
+       up.mentor_availability, up.mentor_session_type,
+       up.mentor_languages, up.mentor_session_formats,
+       up.mentor_countries, up.mentor_credentials,
+       up.mentor_years_experience, up.mentor_success_label,
+       -- Lifetime fulfilled bookings = "mentees helped" social proof
+       -- (provider_user_id is only ever set on mentorship-kind rows).
+       (SELECT COUNT(*)::int FROM service_bookings sb
+        WHERE sb.provider_user_id = c.author_id
+          AND sb.status = 'fulfilled') AS mentees_helped,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -2686,6 +2770,11 @@ type GetServiceListingByContentIDRow struct {
 	AvailableUntil        pgtype.Date        `json:"available_until"`
 	Faqs                  []byte             `json:"faqs"`
 	Steps                 []byte             `json:"steps"`
+	SellingPoints         []byte             `json:"selling_points"`
+	Facts                 []byte             `json:"facts"`
+	Highlights            []byte             `json:"highlights"`
+	Included              []byte             `json:"included"`
+	Audience              []byte             `json:"audience"`
 	AuthorName            *string            `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
@@ -2694,6 +2783,18 @@ type GetServiceListingByContentIDRow struct {
 	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
 	MentorAreas           []string           `json:"mentor_areas"`
 	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
+	Location              *string            `json:"location"`
+	MentorTitle           *string            `json:"mentor_title"`
+	MentorResponseTime    *string            `json:"mentor_response_time"`
+	MentorAvailability    *string            `json:"mentor_availability"`
+	MentorSessionType     *string            `json:"mentor_session_type"`
+	MentorLanguages       []string           `json:"mentor_languages"`
+	MentorSessionFormats  []string           `json:"mentor_session_formats"`
+	MentorCountries       []string           `json:"mentor_countries"`
+	MentorCredentials     []string           `json:"mentor_credentials"`
+	MentorYearsExperience *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string            `json:"mentor_success_label"`
+	MenteesHelped         int32              `json:"mentees_helped"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
 	FeaturedStoragePath   *string            `json:"featured_storage_path"`
 	RatingCount           *int32             `json:"rating_count"`
@@ -2751,6 +2852,11 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.AvailableUntil,
 		&i.Faqs,
 		&i.Steps,
+		&i.SellingPoints,
+		&i.Facts,
+		&i.Highlights,
+		&i.Included,
+		&i.Audience,
 		&i.AuthorName,
 		&i.AuthorAvatar,
 		&i.AuthorDisplayName,
@@ -2759,6 +2865,18 @@ func (q *Queries) GetServiceListingByContentID(ctx context.Context, contentID pg
 		&i.ActiveMenteeCount,
 		&i.MentorAreas,
 		&i.MentorSince,
+		&i.Location,
+		&i.MentorTitle,
+		&i.MentorResponseTime,
+		&i.MentorAvailability,
+		&i.MentorSessionType,
+		&i.MentorLanguages,
+		&i.MentorSessionFormats,
+		&i.MentorCountries,
+		&i.MentorCredentials,
+		&i.MentorYearsExperience,
+		&i.MentorSuccessLabel,
+		&i.MenteesHelped,
 		&i.FeaturedStorageBucket,
 		&i.FeaturedStoragePath,
 		&i.RatingCount,
@@ -2784,12 +2902,26 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
+       -- 000829 detail-page content fields (all listing kinds).
+       sm.selling_points, sm.facts, sm.highlights, sm.included, sm.audience,
        u.username AS author_name, up.avatar_url AS author_avatar,
        -- 000824 mentorship fields: the mentor block on listing payloads
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
        up.mentor_areas, up.mentor_since,
+       -- 000829 mentor card fields — headline card, stats row, and the
+       -- "Mentorship details" sidebar on the mentorship detail page.
+       up.location, up.mentor_title, up.mentor_response_time,
+       up.mentor_availability, up.mentor_session_type,
+       up.mentor_languages, up.mentor_session_formats,
+       up.mentor_countries, up.mentor_credentials,
+       up.mentor_years_experience, up.mentor_success_label,
+       -- Lifetime fulfilled bookings = "mentees helped" social proof
+       -- (provider_user_id is only ever set on mentorship-kind rows).
+       (SELECT COUNT(*)::int FROM service_bookings sb
+        WHERE sb.provider_user_id = c.author_id
+          AND sb.status = 'fulfilled') AS mentees_helped,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -2857,6 +2989,11 @@ type GetServiceListingBySlugRow struct {
 	AvailableUntil        pgtype.Date        `json:"available_until"`
 	Faqs                  []byte             `json:"faqs"`
 	Steps                 []byte             `json:"steps"`
+	SellingPoints         []byte             `json:"selling_points"`
+	Facts                 []byte             `json:"facts"`
+	Highlights            []byte             `json:"highlights"`
+	Included              []byte             `json:"included"`
+	Audience              []byte             `json:"audience"`
 	AuthorName            *string            `json:"author_name"`
 	AuthorAvatar          *string            `json:"author_avatar"`
 	AuthorDisplayName     *string            `json:"author_display_name"`
@@ -2865,6 +3002,18 @@ type GetServiceListingBySlugRow struct {
 	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
 	MentorAreas           []string           `json:"mentor_areas"`
 	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
+	Location              *string            `json:"location"`
+	MentorTitle           *string            `json:"mentor_title"`
+	MentorResponseTime    *string            `json:"mentor_response_time"`
+	MentorAvailability    *string            `json:"mentor_availability"`
+	MentorSessionType     *string            `json:"mentor_session_type"`
+	MentorLanguages       []string           `json:"mentor_languages"`
+	MentorSessionFormats  []string           `json:"mentor_session_formats"`
+	MentorCountries       []string           `json:"mentor_countries"`
+	MentorCredentials     []string           `json:"mentor_credentials"`
+	MentorYearsExperience *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string            `json:"mentor_success_label"`
+	MenteesHelped         int32              `json:"mentees_helped"`
 	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
 	FeaturedStoragePath   *string            `json:"featured_storage_path"`
 	RatingCount           *int32             `json:"rating_count"`
@@ -2925,6 +3074,11 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.AvailableUntil,
 		&i.Faqs,
 		&i.Steps,
+		&i.SellingPoints,
+		&i.Facts,
+		&i.Highlights,
+		&i.Included,
+		&i.Audience,
 		&i.AuthorName,
 		&i.AuthorAvatar,
 		&i.AuthorDisplayName,
@@ -2933,6 +3087,18 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 		&i.ActiveMenteeCount,
 		&i.MentorAreas,
 		&i.MentorSince,
+		&i.Location,
+		&i.MentorTitle,
+		&i.MentorResponseTime,
+		&i.MentorAvailability,
+		&i.MentorSessionType,
+		&i.MentorLanguages,
+		&i.MentorSessionFormats,
+		&i.MentorCountries,
+		&i.MentorCredentials,
+		&i.MentorYearsExperience,
+		&i.MentorSuccessLabel,
+		&i.MenteesHelped,
 		&i.FeaturedStorageBucket,
 		&i.FeaturedStoragePath,
 		&i.RatingCount,
@@ -2942,7 +3108,7 @@ func (q *Queries) GetServiceListingBySlug(ctx context.Context, slug string) (Get
 }
 
 const getServiceListingMetaByContentID = `-- name: GetServiceListingMetaByContentID :one
-SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps FROM service_listing_meta
+SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps, selling_points, facts, highlights, audience, included FROM service_listing_meta
 WHERE content_id = $1
 `
 
@@ -2979,12 +3145,17 @@ func (q *Queries) GetServiceListingMetaByContentID(ctx context.Context, contentI
 		&i.AvailableUntil,
 		&i.Faqs,
 		&i.Steps,
+		&i.SellingPoints,
+		&i.Facts,
+		&i.Highlights,
+		&i.Audience,
+		&i.Included,
 	)
 	return i, err
 }
 
 const getServiceListingMetaByID = `-- name: GetServiceListingMetaByID :one
-SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps FROM service_listing_meta
+SELECT id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps, selling_points, facts, highlights, audience, included FROM service_listing_meta
 WHERE id = $1
 `
 
@@ -3021,6 +3192,11 @@ func (q *Queries) GetServiceListingMetaByID(ctx context.Context, id pgtype.UUID)
 		&i.AvailableUntil,
 		&i.Faqs,
 		&i.Steps,
+		&i.SellingPoints,
+		&i.Facts,
+		&i.Highlights,
+		&i.Audience,
+		&i.Included,
 	)
 	return i, err
 }
@@ -3113,7 +3289,7 @@ func (q *Queries) GetServicePackageDepartureForUpdate(ctx context.Context, id pg
 }
 
 const getServicePackageTier = `-- name: GetServicePackageTier :one
-SELECT id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at FROM service_package_tiers
+SELECT id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at, icon FROM service_package_tiers
 WHERE id = $1 AND listing_meta_id = $2
 `
 
@@ -3139,6 +3315,7 @@ func (q *Queries) GetServicePackageTier(ctx context.Context, arg GetServicePacka
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Icon,
 	)
 	return i, err
 }
@@ -3289,7 +3466,7 @@ func (q *Queries) ListActiveServiceListingCoupons(ctx context.Context, listingMe
 }
 
 const listAllServicePackageTiers = `-- name: ListAllServicePackageTiers :many
-SELECT id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at FROM service_package_tiers
+SELECT id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at, icon FROM service_package_tiers
 WHERE listing_meta_id = $1
 ORDER BY position ASC
 `
@@ -3317,6 +3494,7 @@ func (q *Queries) ListAllServicePackageTiers(ctx context.Context, listingMetaID 
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Icon,
 		); err != nil {
 			return nil, err
 		}
@@ -4805,7 +4983,7 @@ func (q *Queries) ListServicePackageItems(ctx context.Context, packageMetaID pgt
 }
 
 const listServicePackageTiers = `-- name: ListServicePackageTiers :many
-SELECT id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at FROM service_package_tiers
+SELECT id, listing_meta_id, name, badge, description, price_amount, price_currency, features, position, is_featured, is_active, created_at, updated_at, icon FROM service_package_tiers
 WHERE listing_meta_id = $1 AND is_active = true
 ORDER BY position ASC
 `
@@ -4833,6 +5011,7 @@ func (q *Queries) ListServicePackageTiers(ctx context.Context, listingMetaID pgt
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Icon,
 		); err != nil {
 			return nil, err
 		}
@@ -5111,6 +5290,47 @@ func (q *Queries) SoftDeleteMentorshipShadow(ctx context.Context, authorID pgtyp
 	return err
 }
 
+const updateMentorShadowMetaContent = `-- name: UpdateMentorShadowMetaContent :exec
+UPDATE service_listing_meta
+SET selling_points = COALESCE($1, selling_points),
+    facts = COALESCE($2, facts),
+    highlights = COALESCE($3, highlights),
+    audience = COALESCE($4, audience),
+    included = COALESCE($5, included),
+    faqs = COALESCE($6, faqs),
+    steps = COALESCE($7, steps),
+    updated_at = now()
+WHERE content_id = $8
+`
+
+type UpdateMentorShadowMetaContentParams struct {
+	SellingPoints []byte      `json:"selling_points"`
+	Facts         []byte      `json:"facts"`
+	Highlights    []byte      `json:"highlights"`
+	Audience      []byte      `json:"audience"`
+	Included      []byte      `json:"included"`
+	Faqs          []byte      `json:"faqs"`
+	Steps         []byte      `json:"steps"`
+	ContentID     pgtype.UUID `json:"content_id"`
+}
+
+// §114 2026-10-10: mentor-profile PATCH syncs the shadow listing's page
+// content the same way UpdateMentorShadowMeta syncs the listing fields —
+// COALESCE so nil preserves the stored set, '[]' clears.
+func (q *Queries) UpdateMentorShadowMetaContent(ctx context.Context, arg UpdateMentorShadowMetaContentParams) error {
+	_, err := q.db.Exec(ctx, updateMentorShadowMetaContent,
+		arg.SellingPoints,
+		arg.Facts,
+		arg.Highlights,
+		arg.Audience,
+		arg.Included,
+		arg.Faqs,
+		arg.Steps,
+		arg.ContentID,
+	)
+	return err
+}
+
 const updateMentorshipShadowContent = `-- name: UpdateMentorshipShadowContent :execrows
 UPDATE contents
 SET title = $1,
@@ -5265,9 +5485,15 @@ SET org_id = $1,
     -- the service layer merges the patch over the row before calling).
     faqs = COALESCE($18, faqs),
     steps = COALESCE($19, steps),
+    -- 000829 page-content fields — same replace-set/COALESCE semantics.
+    selling_points = COALESCE($20, selling_points),
+    facts = COALESCE($21, facts),
+    highlights = COALESCE($22, highlights),
+    audience = COALESCE($23, audience),
+    included = COALESCE($24, included),
     updated_at = now()
-WHERE content_id = $20
-RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps
+WHERE content_id = $25
+RETURNING id, content_id, org_id, service_category, destination_space_id, city_space_id, is_remote, website_url, booking_url, price_range, is_verified, verification_type, claim_status, claimed_by_org_id, created_at, updated_at, origin_communities, verified_by, verified_at, listing_kind, price_amount, price_currency, price_per, purchase_mode, capacity, available_from, available_until, faqs, steps, selling_points, facts, highlights, audience, included
 `
 
 type UpdateServiceListingMetaParams struct {
@@ -5290,6 +5516,11 @@ type UpdateServiceListingMetaParams struct {
 	AvailableUntil     pgtype.Date `json:"available_until"`
 	Faqs               []byte      `json:"faqs"`
 	Steps              []byte      `json:"steps"`
+	SellingPoints      []byte      `json:"selling_points"`
+	Facts              []byte      `json:"facts"`
+	Highlights         []byte      `json:"highlights"`
+	Audience           []byte      `json:"audience"`
+	Included           []byte      `json:"included"`
 	ContentID          pgtype.UUID `json:"content_id"`
 }
 
@@ -5317,6 +5548,11 @@ func (q *Queries) UpdateServiceListingMeta(ctx context.Context, arg UpdateServic
 		arg.AvailableUntil,
 		arg.Faqs,
 		arg.Steps,
+		arg.SellingPoints,
+		arg.Facts,
+		arg.Highlights,
+		arg.Audience,
+		arg.Included,
 		arg.ContentID,
 	)
 	var i ServiceListingMetum
@@ -5350,6 +5586,11 @@ func (q *Queries) UpdateServiceListingMeta(ctx context.Context, arg UpdateServic
 		&i.AvailableUntil,
 		&i.Faqs,
 		&i.Steps,
+		&i.SellingPoints,
+		&i.Facts,
+		&i.Highlights,
+		&i.Audience,
+		&i.Included,
 	)
 	return i, err
 }

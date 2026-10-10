@@ -5,11 +5,12 @@
 	// shorter than the aggregate count.
 	// Ref: docs/superpowers/specs/2026-10-07-services-marketplace-upgrade-design.md (§3.3)
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { ChevronRight, Star } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { EmptyState, PaginationControls } from '$lib/components/ui';
 	import ReviewListItem from '$lib/components/marketplace/ReviewListItem.svelte';
+	import ReviewForm from '$lib/components/reviews/ReviewForm.svelte';
 	import { excerpt } from '$lib/utils/seo-score';
 	import type { PageData } from './$types';
 
@@ -138,5 +139,28 @@
 				</div>
 			{/if}
 		{/if}
+
+		<!-- §29 write path — the listing's reviews feed (detail carousel +
+			this index) is only half the loop without a submission surface.
+			Guests get a login link; the form redirects to login on submit too. -->
+		<div class="mt-8">
+			{#if page.data.user}
+				<ReviewForm
+					entityType="service_listing"
+					entityId={service.id}
+					onCreated={() => invalidateAll()}
+				/>
+			{:else}
+				<p
+					class="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] p-4 text-center text-sm text-[var(--color-muted)]"
+				>
+					<a
+						href="/login?redirect={encodeURIComponent(page.url.pathname)}"
+						class="font-medium text-[var(--color-primary)] hover:underline"
+						>{t('services.reviews_login', 'Log in to write a review')}</a
+					>
+				</p>
+			{/if}
+		</div>
 	{/if}
 </div>

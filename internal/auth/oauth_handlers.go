@@ -240,7 +240,11 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try to find user by email — if found, merge the OAuth identity.
+	// Try to find user by email — if found, merge the OAuth identity ONLY
+	// when the provider verified the email address. Merging on an
+	// unverified address would let an attacker claim someone else's email
+	// at a lax provider and take over the account. Unverified matches get
+	// a pending-link redirect (no session, no silent merge).
 	if userInfo.Email != "" {
 		user, err := h.Store.GetUserByEmail(r.Context(), userInfo.Email)
 		if err == nil && user != nil {
@@ -251,6 +255,15 @@ func (h *OAuthHandlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
 					"user_id", user.ID, "provider", providerName)
 				h.redirectOAuthError(w, r, "invalid_account")
 
+				return
+			}
+
+			if !userInfo.EmailVerified {
+				// Provider did not verify the email: do NOT merge. Send
+				// the user to verify ownership first; no session issued.
+				slog.Warn("oauth merge refused: unverified provider email",
+					"provider", providerName, "user_id", user.ID)
+				h.redirectOAuthPendingLink(w, r)
 				return
 			}
 
@@ -509,6 +522,20 @@ func (h *OAuthHandlers) redirectOAuthError(w http.ResponseWriter, r *http.Reques
 	}
 
 	target := base + "/login?oauth_error=" + url.QueryEscape(code)
+	http.Redirect(w, r, target, http.StatusFound)
+}
+
+// redirectOAuthPendingLink redirects to the frontend login page signalling
+// the OAuth email needs verification before it can be linked to an existing
+// account. No session is issued and no account is merged — the user must
+// prove ownership of the email first.
+func (h *OAuthHandlers) redirectOAuthPendingLink(w http.ResponseWriter, r *http.Request) {
+	base := strings.TrimRight(h.FrontendBaseURL, "/")
+	if base == "" {
+		base = ""
+	}
+
+	target := base + "/login?verified_email_required=1"
 	http.Redirect(w, r, target, http.StatusFound)
 }
 

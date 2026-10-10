@@ -27,6 +27,9 @@ export interface ApiResult<T> {
 	// accessing top-level pagination metadata (total, total_pages) that some
 	// backends put alongside `data` instead of nesting it inside `data`.
 	body?: any;
+	// Suggested download filename parsed from Content-Disposition.
+	// Present only when apiFetch is called with responseKind 'blob'.
+	filename?: string;
 	error: ApiErr['error'] | null;
 	status: number;
 }
@@ -95,13 +98,16 @@ async function attemptRefresh(): Promise<boolean> {
 }
 
 // dispatch performs a single fetch attempt with CSRF headers attached for unsafe
-// methods, parsing the standard {data|error} envelope.
+// methods, parsing the standard {data|error} envelope. With responseKind
+// 'blob' the body is returned as a Blob (for file downloads) instead of
+// being parsed as JSON — the 401-refresh path still applies.
 async function dispatch<T>(
 	url: string,
 	options: RequestInit,
 	fetcher: typeof fetch,
 	withCsrf: boolean,
-	skipRefresh: boolean = false
+	skipRefresh: boolean = false,
+	responseKind: 'json' | 'blob' = 'json'
 ): Promise<ApiResult<T>> {
 	const baseHeaders = options.headers as Record<string, string> | undefined;
 	const headers = withCsrf ? await csrfHeaders(options.method, baseHeaders) : baseHeaders;
@@ -143,6 +149,9 @@ async function dispatch<T>(
 					...await csrfHeaders(options.method, headers),
 				},
 			});
+			if (responseKind === 'blob' && retryRes.ok) {
+				return { data: (await retryRes.blob()) as T, filename: filenameFromDisposition(retryRes.headers.get('content-disposition')), error: null, status: retryRes.status };
+			}
 			if (retryRes.ok) {
 				const body = await retryRes.json();
 				return { data: (body as ApiOk<T>).data, body, error: null, status: retryRes.status };
@@ -150,6 +159,21 @@ async function dispatch<T>(
 		}
 		clearAccessToken();
 		return { data: null, error: { code: 'unauthorized', message: 'Session expired', status: 401 }, status: 401 };
+	}
+
+	if (responseKind === 'blob') {
+		if (!res.ok) {
+			const text = await res.text().catch(() => '');
+			let msg = res.statusText;
+			try {
+				const body = JSON.parse(text);
+				if (body?.error?.message) msg = body.error.message;
+			} catch {
+				if (text) msg = text;
+			}
+			return { data: null, error: { code: 'download_failed', message: msg, status: res.status }, status: res.status };
+		}
+		return { data: (await res.blob()) as T, filename: filenameFromDisposition(res.headers.get('content-disposition')), error: null, status: res.status };
 	}
 
 	if (res.status === 204 || res.status === 205 || res.headers.get('content-length') === '0') {
@@ -187,16 +211,36 @@ async function dispatch<T>(
 async function retryAfterCsrfRefresh<T>(
 	url: string,
 	options: RequestInit,
-	fetcher: typeof fetch
+	fetcher: typeof fetch,
+	responseKind: 'json' | 'blob' = 'json'
 ): Promise<ApiResult<T>> {
 	await refreshCsrfToken(fetcher);
-	return dispatch<T>(url, options, fetcher, true, false);
+	return dispatch<T>(url, options, fetcher, true, false, responseKind);
+}
+
+// filenameFromDisposition parses the suggested filename from a
+// Content-Disposition header (RFC 6266 filename= and RFC 5987 filename*=),
+// returning undefined when absent so callers can fall back to a local name.
+function filenameFromDisposition(header: string | null): string | undefined {
+	if (!header) return undefined;
+	const star = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+	if (star?.[1]) {
+		try {
+			return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ''));
+		} catch {
+			return star[1].trim().replace(/^"|"$/g, '');
+		}
+	}
+	const plain = header.match(/filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)/i);
+	const name = (plain?.[1] ?? plain?.[2])?.trim();
+	return name || undefined;
 }
 
 export async function apiFetch<T>(
 	path: string,
 	options: RequestInit = {},
-	fetchFn?: typeof fetch
+	fetchFn?: typeof fetch,
+	responseKind: 'json' | 'blob' = 'json'
 ): Promise<ApiResult<T>> {
 	const fetcher = fetchFn ?? fetch;
 	const url = buildApiUrl(path, PUBLIC_JC_API_URL);
@@ -209,10 +253,10 @@ export async function apiFetch<T>(
 	}
 
 	try {
-		const result = await dispatch<T>(url, cleanOptions, fetcher, true, skipRefresh);
+		const result = await dispatch<T>(url, cleanOptions, fetcher, true, skipRefresh, responseKind);
 
 		if (!skipRefresh && isCsrfRejection(result.status, result.error)) {
-			return retryAfterCsrfRefresh<T>(url, cleanOptions, fetcher);
+			return retryAfterCsrfRefresh<T>(url, cleanOptions, fetcher, responseKind);
 		}
 
 		return result;

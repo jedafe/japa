@@ -95,6 +95,18 @@ func (s *Store) UpdateMentorShadow(ctx context.Context, contentID, authorID pgty
 	})
 }
 
+// UpdateMentorShadowContent syncs the shadow listing's page-content
+// jsonb columns (selling_points/facts/highlights/audience/included plus
+// faqs/steps) from the mentor-profile PATCH — nil params preserve the
+// stored set via the query's COALESCE.
+func (s *Store) UpdateMentorShadowContent(ctx context.Context, p gen.UpdateMentorShadowMetaContentParams) error {
+	if err := s.write.UpdateMentorShadowMetaContent(ctx, p); err != nil {
+		return fmt.Errorf("servicedir: update mentor shadow content: %w", err)
+	}
+
+	return nil
+}
+
 // GetMentorshipBookingIDByConnectionID resolves a legacy
 // mentorship_connections UUID (kept on meta->>'connection_id' by the
 // 000824 migration) to the live service_bookings id. pgx.ErrNoRows when
@@ -152,5 +164,13 @@ func rowFromMentorShadow(r gen.GetMentorshipListingByAuthorRow) ServiceRow {
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
 		Faqs: r.Faqs, Steps: r.Steps,
+		SellingPoints: r.SellingPoints, Facts: r.Facts,
+		Highlights: r.Highlights, Audience: r.Audience, Included: r.Included,
+		MentorLocation: r.Location, MentorTitle: r.MentorTitle,
+		MentorResponseTime: r.MentorResponseTime, MentorAvailability: r.MentorAvailability,
+		MentorSessionType: r.MentorSessionType, MentorLanguages: r.MentorLanguages,
+		MentorSessionFormats: r.MentorSessionFormats, MentorCountries: r.MentorCountries,
+		MentorCredentials: r.MentorCredentials, MentorYearsExperience: r.MentorYearsExperience,
+		MentorSuccessLabel: r.MentorSuccessLabel, MenteesHelped: r.MenteesHelped,
 	}
 }

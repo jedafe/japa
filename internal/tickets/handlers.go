@@ -805,7 +805,7 @@ func (h *Handlers) ListTicketTypes(w http.ResponseWriter, r *http.Request) {
 // Verifies the ticket belongs to the caller's platform before adding an
 // attachment.
 func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -815,9 +815,16 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the ticket belongs to the caller's platform before mutating.
-	if _, err := h.Service.GetTicket(r.Context(), ticketID); err != nil {
+	// Verify the caller owns the ticket — sibling AddReply/GetMyTicket
+	// enforce SubmitterUserID==caller; attachments must match.
+	ticket, err := h.Service.GetTicket(r.Context(), ticketID)
+	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	if ticket.SubmitterUserID != user.UserID {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only add attachments to your own tickets")
 		return
 	}
 
@@ -860,7 +867,7 @@ func (h *Handlers) AddAttachment(w http.ResponseWriter, r *http.Request) {
 // Verifies the ticket belongs to the caller's platform before listing
 // attachments.
 func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.requireUser(w, r)
+	user, ok := h.requireUser(w, r)
 	if !ok {
 		return
 	}
@@ -870,9 +877,15 @@ func (h *Handlers) ListAttachments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the ticket belongs to the caller's platform before listing.
-	if _, err := h.Service.GetTicket(r.Context(), ticketID); err != nil {
+	// Same ownership gate as AddAttachment — attachments may contain PII.
+	ticket, err := h.Service.GetTicket(r.Context(), ticketID)
+	if err != nil {
 		handleServiceError(w, err)
+		return
+	}
+
+	if ticket.SubmitterUserID != user.UserID {
+		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only view your own tickets")
 		return
 	}
 

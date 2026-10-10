@@ -113,7 +113,7 @@ func TestAPIFetcher_Fetch(t *testing.T) {
 	cfg, _ := json.Marshal(APIProviderConfig{Endpoint: srv.URL, Path: "data.opportunityData.opportunityDetails"})
 	// httptest binds 127.0.0.1 — inject its client (mirroring rss_test.go)
 	// since NewAPIFetcher's SSRF dial guard would reject the loopback dial.
-	f := &APIFetcher{client: srv.Client()}
+	f := &APIFetcher{client: srv.Client(), allowPrivate: true}
 
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
@@ -216,7 +216,7 @@ func TestAPIFetcher_FetchPOST(t *testing.T) {
 		Body:     postBody,
 		Path:     "data.opportunityData.opportunityDetails",
 	})
-	f := &APIFetcher{client: srv.Client()}
+	f := &APIFetcher{client: srv.Client(), allowPrivate: true}
 
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
@@ -285,7 +285,7 @@ func TestAPIFetcher_FetchPOST_StringBody(t *testing.T) {
 		Body:     json.RawMessage(`"q=visa&page=2"`),
 		Headers:  map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
 	})
-	f := &APIFetcher{client: srv.Client()}
+	f := &APIFetcher{client: srv.Client(), allowPrivate: true}
 
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
@@ -326,7 +326,7 @@ func TestAPIFetcher_FetchPOST_JSONBodyUnchanged(t *testing.T) {
 		Method:   "POST",
 		Body:     json.RawMessage(`{"status":"posted"}`),
 	})
-	f := &APIFetcher{client: srv.Client()}
+	f := &APIFetcher{client: srv.Client(), allowPrivate: true}
 
 	if _, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
@@ -337,14 +337,22 @@ func TestAPIFetcher_FetchPOST_JSONBodyUnchanged(t *testing.T) {
 	}
 }
 
-// TestAPIFetcher_FetchAuthHeaders verifies that auth headers from the
-// provider_config are attached to the outgoing request.
+// TestAPIFetcher_FetchAuthHeaders verifies that sensitive headers
+// (Authorization, Host, proxy/forwarding headers) from provider_config are
+// STRIPPED and never attached to the outgoing request — a channel override
+// must not smuggle credentials or reroute the fetch. Benign custom headers
+// (X-Source) still pass through.
 func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" {
+		if r.Header.Get("Authorization") != "" {
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if r.Header.Get("X-Source") != "intel" {
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
@@ -355,9 +363,9 @@ func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 
 	cfg, _ := json.Marshal(APIProviderConfig{
 		Endpoint: srv.URL,
-		Headers:  map[string]string{"Authorization": "Bearer test-token"},
+		Headers:  map[string]string{"Authorization": "Bearer test-token", "X-Source": "intel"},
 	})
-	f := &APIFetcher{client: srv.Client()}
+	f := &APIFetcher{client: srv.Client(), allowPrivate: true}
 
 	res, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,
@@ -369,7 +377,7 @@ func TestAPIFetcher_FetchAuthHeaders(t *testing.T) {
 	}
 
 	if res.HTTPStatus != http.StatusOK {
-		t.Errorf("status = %d, want 200 (auth header not sent)", res.HTTPStatus)
+		t.Errorf("status = %d, want 200 (Authorization stripped, X-Source passed)", res.HTTPStatus)
 	}
 }
 
@@ -387,7 +395,7 @@ func TestAPIFetcher_ErrorStatus(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg, _ := json.Marshal(APIProviderConfig{Endpoint: srv.URL})
-	f := &APIFetcher{client: srv.Client()}
+	f := &APIFetcher{client: srv.Client(), allowPrivate: true}
 
 	_, err := f.Fetch(t.Context(), sources.Source{
 		SourceUrl:      srv.URL,

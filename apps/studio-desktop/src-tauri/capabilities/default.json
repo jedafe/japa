@@ -25,13 +25,11 @@
         { "path": "$DOCUMENT/**" },
         { "path": "$DOWNLOAD/**" },
         { "path": "$APPDATA/**" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "**" }
+        { "path": "$APPLOCALDATA/**" }
       ]
     },
     "dialog:default",
     "dialog:allow-open",
-    "dialog:allow-save",
-    "shell:default"
+    "dialog:allow-save"
   ]
 }

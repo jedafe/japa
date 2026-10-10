@@ -1,6 +1,7 @@
 import type { Handle } from '@sveltejs/kit';
-import { building } from '$app/environment';
+import { building, dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { PUBLIC_JC_API_URL, PUBLIC_JC_WS_URL } from '$env/static/public';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import {
 	refreshSession,
@@ -322,10 +323,56 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	return resolve(event, {
+	// CSP nonce for the staff-gated custom-code blocks (`site.custom_css` /
+	// `site.custom_js`). Generated per request, stored in locals, threaded to
+	// the layout via `data.cspNonce` (see +layout.server.ts), and enforced in
+	// the Content-Security-Policy response header below. The inline
+	// `<style id="jc-custom-css">` / `<script id="jc-custom-js">` tags carry
+	// `nonce={cspNonce}` so they stay executable under the nonce policy while
+	// arbitrary injected markup without the nonce is blocked.
+	//
+	// The nonce alone does NOT make the payload safe — custom code is a
+	// staff-only setting with a server-side audit trail (admin settings
+	// writes are audit-logged), custom CSS passes through the
+	// sanitizeCustomCss blocklist before render, and custom JS renders only
+	// when a super_admin-approved `site.custom_js_approved` flag is set.
+	event.locals.cspNonce = crypto.randomUUID().replaceAll('-', '');
+
+	const response = await resolve(event, {
 		transformPageChunk: ({ html }) =>
 			html
 				.replace('%jc.theme%', event.locals.theme)
 				.replace('lang="en"', `lang="${event.locals.locale}"`)
 	});
+	// Dev note: Vite injects all CSS as runtime <style> tags without nonces,
+	// so a nonce-based style-src would leave dev pages completely unstyled.
+	// 'unsafe-inline' is ignored by browsers once a nonce is present, so dev
+	// swaps the nonce for unsafe-inline rather than layering both.
+	const styleSrc = dev
+		? `style-src 'self' 'unsafe-inline'`
+		: `style-src 'self' 'nonce-${event.locals.cspNonce}'`;
+	const scriptSrc = dev
+		? `script-src 'self' 'unsafe-inline' 'unsafe-eval'`
+		: `script-src 'self' 'nonce-${event.locals.cspNonce}'`;
+	// connect-src must cover the realtime socket (and the API base when it is
+	// absolute — /api/v1 is same-origin and already covered by 'self'). Both
+	// come from PUBLIC_JC_* env, e.g. ws://localhost:8080/api/v1/ws in dev or
+	// wss://api.japaconnect.com/api/v1/ws in production.
+	const connectOrigins = [PUBLIC_JC_API_URL, PUBLIC_JC_WS_URL]
+		.filter((u): u is string => Boolean(u && /^https?:|^wss?:/.test(u)))
+		.map((u) => {
+			try {
+				const parsed = new URL(u);
+				return `${parsed.protocol}//${parsed.host}`;
+			} catch {
+				return '';
+			}
+		})
+		.filter(Boolean)
+		.join(' ');
+	response.headers.set(
+		'Content-Security-Policy',
+		`default-src 'self'; connect-src 'self'${connectOrigins ? ` ${connectOrigins}` : ''}; ${styleSrc}; ${scriptSrc}; object-src 'none'; base-uri 'self'; frame-ancestors 'self'`
+	);
+	return response;
 };

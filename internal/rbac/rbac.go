@@ -21,11 +21,17 @@ import (
 )
 
 // permCacheTTL is how long permission entries live in Valkey before expiring.
-// Extended from 5 to 10 minutes (ADR-004 amendment performance tuning):
-// permissions change rarely, and cache invalidation fires on every
-// group/role/ban/moderator change (Rule 6), so a 10-minute TTL is safe
-// and halves the DB load from permission checks for active users.
-const permCacheTTL = 10 * time.Minute
+// Reduced to 5 minutes so a missed invalidation (Rule 6) self-heals quickly:
+// permissions change rarely, and invalidation fires on every
+// group/role/ban/moderator change, so a 5-minute TTL bounds stale reads
+// while keeping DB load from permission checks acceptable.
+const permCacheTTL = 5 * time.Minute
+
+// l1CacheMaxAge is how long an in-memory L1 entry is trusted. Enforced both
+// by the background sweeper and inline in cacheGet (defense in depth: the
+// sweeper alone leaves a window where a stale entry is served between
+// ticker runs).
+const l1CacheMaxAge = 60 * time.Second
 
 // permCacheKeyPrefix namespaces all RBAC cache keys in Valkey.
 const permCacheKeyPrefix = "jc:perm:"
@@ -105,7 +111,7 @@ func New(database *db.DB, vkClient valkeycompat.Cmdable) *RBAC {
 		},
 		vk: vkClient,
 	}
-	go r.cache.cleanupLoop(60 * time.Second)
+	go r.cache.cleanupLoop(l1CacheMaxAge)
 
 	return r
 }
@@ -390,17 +396,30 @@ func (r *RBAC) loadUserContext(ctx context.Context, userID pgtype.UUID) (*UserCo
 	}, nil
 }
 
-// cacheGet retrieves a cached UserContext if still valid.
+// cacheGet retrieves a cached UserContext if still valid. Entries older than
+// l1CacheMaxAge are treated as a miss (and evicted) inline so a stale entry
+// is never served between background sweeper runs.
 func (r *RBAC) cacheGet(key string) *UserContext {
 	r.cache.mu.RLock()
-	defer r.cache.mu.RUnlock()
-
 	entry, ok := r.cache.entries[key]
 	if !ok {
+		r.cache.mu.RUnlock()
 		return nil
 	}
+	if time.Since(entry.createdAt) > l1CacheMaxAge {
+		// Upgrade to a write lock to evict the expired entry.
+		r.cache.mu.RUnlock()
+		r.cache.mu.Lock()
+		if cur, ok := r.cache.entries[key]; ok && time.Since(cur.createdAt) > l1CacheMaxAge {
+			delete(r.cache.entries, key)
+		}
+		r.cache.mu.Unlock()
+		return nil
+	}
+	uc := entry.user
+	r.cache.mu.RUnlock()
 
-	return entry.user
+	return uc
 }
 
 // cacheSet stores a UserContext in the cache with current timestamp.
@@ -470,6 +489,18 @@ func (r *RBAC) InvalidateUserCache(ctx context.Context, userID pgtype.UUID) {
 			slog.Warn("rbac: failed to invalidate valkey cache", "key", key, "error", err)
 		}
 	}
+}
+
+// InvalidateOnBan evicts a user's cached permissions after a ban, suspension,
+// grant, revoke, or moderator mutation (Rule 6). It is a nil-safe wrapper
+// around InvalidateUserCache so mutation handlers with an optionally-wired
+// RBAC dependency degrade to TTL expiry instead of panicking.
+func (r *RBAC) InvalidateOnBan(ctx context.Context, userID pgtype.UUID) {
+	if r == nil {
+		return
+	}
+
+	r.InvalidateUserCache(ctx, userID)
 }
 
 // InvalidateAllCache flushes every cached permission entry from both L1 and L2.

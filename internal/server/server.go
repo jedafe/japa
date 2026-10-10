@@ -345,7 +345,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	// TOTP 2FA handlers — uses the same auth store for TOTP credential storage.
 	totpStore := auth.NewTOTPStore(database)
-	totpHandlers := &auth.TOTPHandlers{Store: totpStore}
+	totpHandlers := &auth.TOTPHandlers{Store: totpStore, Queries: gen.New(database.Writer), KeyRotation: kr, Redis: vkClient.Redis()}
 
 	// OAuth social login handlers — provider config from environment.
 	// Read Apple private key content from file if configured.
@@ -563,6 +563,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// consistent auto-join (BL-010) and notification dispatch.
 	spaceHandlers.SetFollowToggleService(followService)
 	spaceHandlers.SetPermCacheInvalidator(rbacResolver)
+	spaceHandlers.SetPermissionChecker(rbacResolver)
 
 	// BUG-003: wire the space posting-permission checker into the content
 	// handler so CreateContent enforces the space's posting_perm axis
@@ -805,15 +806,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	walletService.SetCurrencyResolver(currencyResolver)
 
 	// Wire outbound payout providers (Section 58 Credit Withdrawal amendment).
-	// Prefer JC_NOWPAYMENTS_API_KEY; fall back to JC_NOWPAYMENTS_IPN_SECRET
-	// for backward compatibility with the existing inbound payment setup.
-	nowpaymentsAPIKey := cfg.NOWPaymentsAPIKey
-	if nowpaymentsAPIKey == "" {
-		nowpaymentsAPIKey = cfg.NOWPaymentsIPNSecret
-	}
-
-	if nowpaymentsAPIKey != "" {
-		walletService.SetPayoutProvider(payout.NewNOWPaymentsPayoutProvider(nowpaymentsAPIKey))
+	// The payout API key (JC_NOWPAYMENTS_API_KEY) is a separate credential
+	// from the inbound IPN HMAC secret (JC_NOWPAYMENTS_IPN_SECRET) — they
+	// must never be substituted for each other. Without an explicit API key
+	// the payout provider stays unwired and crypto withdrawals fall back to
+	// the manual flow.
+	if cfg.NOWPaymentsAPIKey != "" {
+		walletService.SetPayoutProvider(payout.NewNOWPaymentsPayoutProvider(cfg.NOWPaymentsAPIKey))
+	} else {
+		slog.Error("payments: JC_NOWPAYMENTS_API_KEY not set, crypto payouts disabled (manual flow only)")
 	}
 
 	// Wire the Valkey cache invalidator for the currency cache
@@ -856,6 +857,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 	paymentHandlers := payments.NewHandlers(paymentService)
 	paymentHandlers.SetSettings(settingsService) // SETTING-001: configurable pricing
+	paymentHandlers.StripeSecretKey = cfg.StripeSecretKey
 	paymentHandlers.StripeWebhookSecret = cfg.StripeWebhookSecret
 	paymentHandlers.NOWPaymentsIPNKey = cfg.NOWPaymentsIPNSecret
 	paymentHandlers.PaystackSecretKey = cfg.PaystackSecretKey
@@ -2616,6 +2618,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		KeyRotation: kr,
 		Queries:     gen.New(database.Writer),
 		APIKeys:     publicAPIService,
+		Audit:       &desktopExchangeAuditor{db: database},
 	}
 
 	// User Profile & Preferences subsystem.
@@ -2689,6 +2692,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Wire the JWT key rotation so ChangePassword can revoke the caller's
 	// current access token JTI after a successful password change.
 	usersHandlers.SetKeyRotation(kr)
+	// Wire Valkey so ChangePassword / UpdateMyAccount / DeactivateAccount
+	// can revoke the caller's live access-token JTI (without this the
+	// `h.Redis != nil` guard skips JTI revocation and the old access JWT
+	// survives until TTL expiry).
+	usersHandlers.Redis = vkClient.Redis()
 	// §14: resolve {{...}} literals in /me content lists and bookmarks.
 	usersHandlers.SetLiteralResolver(literalsCatalog)
 
@@ -3174,9 +3182,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Post("/totp/verify-challenge", authHandlers.VerifyLoginChallenge)
 				r.Post("/totp/backup", authHandlers.ConsumeBackupCode)
 
-				// Password reset flow
+				// Password reset flow.
+				// GET /reset-password is a token-validity oracle: the tight tier
+				// throttles token-guessing, and the handler keeps a uniform
+				// {data:{valid:bool}} 200 shape so validity is not
+				// distinguishable by status code.
 				r.Post("/forgot-password", authHandlers.HandleForgotPassword)
-				r.Get("/reset-password", authHandlers.HandleResetPasswordPage)
+				r.With(mw.RateLimit(vkClient.Redis(), "tight")).Get("/reset-password", authHandlers.HandleResetPasswordPage)
 				r.Post("/reset-password", authHandlers.HandleResetPassword)
 
 				// Email verification
@@ -3984,9 +3996,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// Media serving endpoint (no auth required for serving files)
 			r.Get("/media/serve/{bucket}/*", mediaHandlers.ServeMedia)
-			// Remote image proxy (no auth) — same-origin fetches for external
-			// assets that block cross-origin embeds via CORP/ORB.
-			r.Get("/media/proxy", mediaHandlers.ProxyRemoteMedia)
+			// Remote image proxy — authenticated + tight rate limit so the
+			// endpoint cannot be used as an anonymous fetch oracle.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight")).Get("/media/proxy", mediaHandlers.ProxyRemoteMedia)
 
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "media.upload")).Post("/media/upload", mediaHandlers.InitiateUpload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/media/confirm/{id}", mediaHandlers.ConfirmUpload)
@@ -4114,8 +4126,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			forumService.SetAMAQuestionHandler(amaService)
 
 			r.With(features.Gate(featureChecker, "feature.forum")).Group(func(r chi.Router) {
-				// Thread routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.thread.create")).Post("/forum", forumHandlers.CreateThread)
+				// Thread routes — abuse controls mirror content.create (tight
+				// 10/min + censor + posting IP block + operation ban).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.thread.create")).Post("/forum", forumHandlers.CreateThread)
 				r.Get("/forum", forumHandlers.ListThreads)
 				// Section 88 — AMA routes registered BEFORE /forum/{slug} to
 				// avoid being shadowed by the wildcard route (chi matches in
@@ -4123,7 +4136,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(features.Gate(featureChecker, "forum.ama.enabled")).Group(func(r chi.Router) {
 					r.Get("/forum/ama", amaHandlers.HandleList)
 					r.Get("/forum/ama/{id}", amaHandlers.HandleGet)
-					r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.ama.create")).
+					// AMA sessions are discussion content: tag OpDiscussion so
+					// operation-ban enforcement covers AMA creation alongside
+					// POST /forum.
+					r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpDiscussion), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.ama.create")).
 						Post("/forum/ama", amaHandlers.HandleCreate)
 					// Close (empty body or {"closed":true}) or edit title/body.
 					// Host (author) OR forum.ama.moderate. The service resolves
@@ -4154,8 +4170,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Delete("/forum/{id}/solve", forumHandlers.UnsolveThread)
 
-				// Reply routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
+				// Reply routes — abuse controls mirror content.create (tight
+				// 10/min + censor + posting IP block + operation ban).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpComment), opBanEnforce, rbac.RequirePermission(rbacResolver, "forum.reply.create")).Post("/forum/{id}/replies", forumHandlers.CreateReply)
 				r.Get("/forum/{id}/replies", forumHandlers.ListReplies)
 				// BUG-014: reply edit/delete rely on service-level canModerateReply
 				// (author or _any node). RequireAuth only so moderators with the
@@ -4166,16 +4183,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/forum/replies/{id}", forumHandlers.DeleteReply)
 				r.Post("/forum/replies/{id}/view", forumHandlers.RecordReplyView)
 
-				// Vote routes — URL-param (catalog).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/{id}/vote", forumHandlers.VoteOnThread)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.vote")).Delete("/forum/{id}/vote", forumHandlers.RemoveThreadVote)
+				// Vote routes — URL-param (catalog). Votes, poll votes, and
+				// bookmarks are cheap spam/abuse vectors, so they carry the
+				// tight bucket (10/min) plus the posting IP block.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.vote")).Post("/forum/{id}/vote", forumHandlers.VoteOnThread)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.vote")).Delete("/forum/{id}/vote", forumHandlers.RemoveThreadVote)
 
 				// Poll routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/poll-options/{id}/vote", forumHandlers.VotePollOption)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Delete("/poll-options/{id}/vote", forumHandlers.RetractPollVoteHandler)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/forum/polls/{id}/vote", forumHandlers.VotePoll)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Post("/poll-options/{id}/vote", forumHandlers.VotePollOption)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.vote")).Delete("/poll-options/{id}/vote", forumHandlers.RetractPollVoteHandler)
 				r.Get("/forum/polls/{id}", forumHandlers.GetPoll)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.poll.create")).
 					Post("/forum/{id}/poll", forumHandlers.CreatePoll)
 
 				// Tag routes
@@ -4194,10 +4213,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Delete("/forum/{id}/tags/{tagId}", forumHandlers.RemoveThreadTag)
 				r.Get("/forum/{id}/tags", forumHandlers.ListThreadTags)
 
-				// Bookmark routes
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Post("/forum/bookmarks", forumHandlers.AddBookmark)
+				// Bookmark routes — votes/bookmarks share the tight bucket plus
+				// the posting IP block (cheap abuse vectors).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Post("/forum/bookmarks", forumHandlers.AddBookmark)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/forum/bookmarks", forumHandlers.ListBookmarks)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.RequireNotIPBlocked(spam.BlockTypePosting), rbac.RequirePermission(rbacResolver, "forum.bookmark.manage")).Delete("/forum/bookmarks/{id}", forumHandlers.RemoveBookmark)
 			})
 
 			// Blog Extension routes — gated by feature.blog (Section 24)
@@ -4270,20 +4290,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/blog/feed.xml", blogHandlers.GetRSSFeed)
 			})
 
-			// Universal Ratings & Reviews routes — gated by feature.ratings_reviews (Section 29)
+			// Universal Ratings & Reviews routes — gated by feature.ratings_reviews (Section 29).
+			// Create + flag carry the content.create abuse stack (tight
+			// 10/min + censor + posting IP block + operation ban).
 			r.With(features.Gate(featureChecker, "feature.ratings_reviews")).Group(func(r chi.Router) {
 				// catalog: /reviews/:entity_type/:entity_id[/aggregate]; bare /reviews
 				// (reviewer-scoped list) kept as a documented extra. The bare
 				// /reviews route is NOT marked [public] in the catalog (it
 				// allows reviewer-scoped enumeration), so it requires auth.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.create")).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpPost), opBanEnforce, rbac.RequirePermission(rbacResolver, "reviews.create")).Post("/reviews/{entity_type}/{entity_id}", reviewHandlers.CreateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}", reviewHandlers.ListReviews)
 				r.Get("/reviews/{entity_type}/{entity_id}/aggregate", reviewHandlers.GetAggregate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/reviews/{id}", reviewHandlers.GetReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.edit_own")).Patch("/reviews/{id}", reviewHandlers.UpdateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.delete_own")).Delete("/reviews/{id}", reviewHandlers.DeleteReview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.flag")).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpPost), opBanEnforce, rbac.RequirePermission(rbacResolver, "reviews.flag")).Post("/reviews/{id}/flag", reviewHandlers.FlagReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).Patch("/admin/reviews/{id}", reviewHandlers.ModerateReview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reviews.moderate")).Delete("/admin/reviews/{id}", reviewHandlers.HardDeleteReview)
 			})
@@ -4765,7 +4787,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// check inside rbac.RequireForceDelete (Rule 11).
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.delete"), rbac.RequireForceDelete(rbacResolver)).
 					Delete("/admin/roadmap/items/{id}", roadmapHandlers.AdminDeleteItem)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.edit")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.delete")).
 					Post("/admin/roadmap/items/{id}/restore", roadmapHandlers.AdminRestoreItem)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "roadmap.moderate")).
 					Patch("/admin/roadmap/items/{id}/status", roadmapHandlers.AdminSetStatus)
@@ -4808,8 +4830,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/i18n/packs/{lang_code}", i18nHandlers.GetLocaleTranslations)
 
 			// GDPR / NDPR Compliance routes (Section 19)
-			// User-facing endpoints
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			// User-facing endpoints. Consent + data-export + deletion are
+			// sensitive identity operations: tight on POST/DELETE (10/min),
+			// form_submission on the self-service account-erasure DELETE.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight")).
 				Post("/consent", gdprHandlers.RecordConsent)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/consent", gdprHandlers.GetUserConsents)
@@ -4817,7 +4841,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// so the frontend does not hardcode them.
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Get("/consent/config", gdprHandlers.GetConsentConfig)
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight")).
 				Delete("/consent/{type}", gdprHandlers.RevokeConsent)
 			// NOTE (§6.1/§6.2 dedupe): data-export and account-deletion are served
 			// by the real GDPR handlers under /me/data-export and DELETE /me (below).
@@ -4860,14 +4884,16 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
 				Get("/admin/data-exports/{id}/download", platformDataExportHandlers.HandleDownloadExport)
 			// Platform data imports (Section 67) — admin-initiated imports of
-			// platform data from CSV/JSON files.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+			// platform data from CSV/JSON files. Gated by the dedicated
+			// data_imports.manage node (not the reused exports view node) so
+			// imports can be granted independently of exports.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "data_imports.manage")).
 				Get("/admin/data-imports", platformDataImportHandlers.HandleListImports)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "data_imports.manage")).
 				Post("/admin/data-imports", platformDataImportHandlers.HandleCreateImport)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "data_imports.manage")).
 				Get("/admin/data-imports/{id}", platformDataImportHandlers.HandleGetImport)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "gdpr.data_exports.view")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "data_imports.manage")).
 				Delete("/admin/data-imports/{id}", platformDataImportHandlers.HandleDeleteImport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "admin.moderation")).
 				Get("/admin/deletions", adminHandlers.ListDeletedContents)
@@ -5204,11 +5230,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// (queue-backed export via data:export_user_data + Honcho hard erasure),
 			// not the users-package stubs. Consolidated here from /account/* (§6).
 			// Ref: japaconnect-engineering/sections/50-user-dashboard-settings.md (user.account.delete_own, user.data.export_own)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.account.delete_own")).Delete("/me", gdprHandlers.RequestAccountDeletion)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.data.export_own"), mw.RateLimit(vkClient.Redis(), "moderate")).Post("/me/data-export", gdprHandlers.RequestDataExport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.account.delete_own"), mw.RateLimit(vkClient.Redis(), "form_submission")).Delete("/me", gdprHandlers.RequestAccountDeletion)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "user.data.export_own"), mw.RateLimit(vkClient.Redis(), "tight")).Post("/me/data-export", gdprHandlers.RequestDataExport)
 			// Cancel a pending/processing data export request.
 			// Ref: japaconnect-engineering/sections/19-gdpr-ndpr-compliance.md
-			r.With(auth.RequireAuth(kr, vkClient.Redis())).Delete("/me/data-export", gdprHandlers.CancelMyDataExport)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight")).Delete("/me/data-export", gdprHandlers.CancelMyDataExport)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/status", gdprHandlers.GetMyDataExportStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/me/data-export/download", gdprHandlers.GetMyDataExportDownload)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "reports.view_own")).Get("/me/reports", reportsHandlers.ListMyReports)
@@ -6935,7 +6961,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.Get("/scam-alerts/schema", scamAlertHandlers.HandleSchema)
 				r.Get("/scam-alerts", scamAlertHandlers.HandleList)
 				r.Get("/scam-alerts/{id}", scamAlertHandlers.HandleGet)
-				r.Post("/scam-alerts", scamAlertHandlers.HandleSubmit)
+				// Abuse controls mirror content.create: anon stays allowed
+				// (OptionalAuth) but the route is tight rate-limited (10/min),
+				// censor-checked, posting-IP-block enforced, and operation-ban
+				// enforced (OpPost).
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "tight"), spam.CensorMiddleware(database, vkClient), spam.RequireNotIPBlocked(spam.BlockTypePosting), mw.WithOperation(mw.OpPost), opBanEnforce).
+					Post("/scam-alerts", scamAlertHandlers.HandleSubmit)
 				// §81: edit_own gates route access for authenticated members;
 				// ownership vs scam_alert.edit_any is enforced in the service.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "scam_alert.edit_own")).
@@ -8143,50 +8174,85 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/api-scopes", rbacHandlers.ListAllScopes)
 
 			// Deployments
-			r.Get("/deployments", controlHandlers.ListDeployments)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.view")).
+				Get("/deployments", controlHandlers.ListDeployments)
 
 			// Permission Nodes — list all registered permission nodes
 			r.Get("/permission-nodes", controlHandlers.ListPermissionNodes)
 
-			// Webhook Endpoints — super-admin view (wires existing webhook handlers).
-			// The /control group is gated by control.panel.access (super-admin
-			// only); integrations.webhooks.manage is implicitly satisfied for
-			// super-admins and is not re-checked here (BUG-013: documented as
-			// intentional — control panel access supersedes per-feature RBAC).
-			r.Get("/webhooks", webhookHandlers.ListWebhooks)
-			r.Get("/webhooks/{id}", webhookHandlers.GetWebhook)
-			r.Post("/webhooks", webhookHandlers.CreateWebhook)
-			r.Patch("/webhooks/{id}", webhookHandlers.UpdateWebhook)
-			r.Delete("/webhooks/{id}", webhookHandlers.DeleteWebhook)
-			r.Post("/webhooks/{id}/test", webhookHandlers.TestWebhook)
-			r.Post("/webhooks/{id}/verify", webhookHandlers.VerifyWebhook)
-			r.Get("/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
-			r.Post("/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
-			r.Get("/webhook-events", webhookHandlers.ListWebhookEvents)
+			// Webhook Endpoints — control-panel CRUD. Mutations require
+			// api.keys.manage (outbound-integration secrets surface); reads
+			// require api.keys.view.all. The /control group gate
+			// (control.panel.access) still applies underneath.
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/webhooks", webhookHandlers.ListWebhooks)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/webhooks/{id}", webhookHandlers.GetWebhook)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/webhooks", webhookHandlers.CreateWebhook)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Patch("/webhooks/{id}", webhookHandlers.UpdateWebhook)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Delete("/webhooks/{id}", webhookHandlers.DeleteWebhook)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/webhooks/{id}/test", webhookHandlers.TestWebhook)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Post("/webhooks/{id}/verify", webhookHandlers.VerifyWebhook)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/webhook-events", webhookHandlers.ListWebhookEvents)
 
-			// OAuth Clients — super-admin CRUD
-			r.Get("/oauth-clients", controlHandlers.ListOAuthClients)
-			r.Get("/oauth-clients/{id}", controlHandlers.GetOAuthClient)
-			r.Post("/oauth-clients", controlHandlers.CreateOAuthClient)
-			r.Patch("/oauth-clients/{id}", controlHandlers.UpdateOAuthClient)
-			r.Delete("/oauth-clients/{id}", controlHandlers.DeleteOAuthClient)
-			r.Post("/oauth-clients/{id}/rotate-secret", controlHandlers.RotateOAuthClientSecret)
-			r.Get("/oauth-providers", controlHandlers.ListOAuthProviders)
+			// OAuth Clients — control-panel CRUD. Client secrets are
+			// credential material, so mutations require api.keys.manage and
+			// reads require api.keys.view.all.
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/oauth-clients", controlHandlers.ListOAuthClients)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/oauth-clients/{id}", controlHandlers.GetOAuthClient)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/oauth-clients", controlHandlers.CreateOAuthClient)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Patch("/oauth-clients/{id}", controlHandlers.UpdateOAuthClient)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Delete("/oauth-clients/{id}", controlHandlers.DeleteOAuthClient)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.manage")).
+				Post("/oauth-clients/{id}/rotate-secret", controlHandlers.RotateOAuthClientSecret)
+			r.With(rbac.RequirePermission(rbacResolver, "api.keys.view.all")).
+				Get("/oauth-providers", controlHandlers.ListOAuthProviders)
 
-			// Extensions — super-admin CRUD (feature_flags is the single source of truth)
-			r.Get("/extensions", controlHandlers.ListExtensions)
-			r.Patch("/extensions/{key}", controlHandlers.UpdateExtension)
-			r.Post("/extensions/{key}/enable", controlHandlers.EnableExtension)
-			r.Post("/extensions/{key}/disable", controlHandlers.DisableExtension)
-			r.Patch("/extensions/{key}/rollout", controlHandlers.UpdateExtensionRollout)
+			// Extensions — control-panel CRUD (feature_flags is the single source of truth).
+			// Toggling or re-configuring an extension changes platform behavior,
+			// so mutations require system.settings.edit; reads require
+			// system.settings.view.
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.view")).
+				Get("/extensions", controlHandlers.ListExtensions)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Patch("/extensions/{key}", controlHandlers.UpdateExtension)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Post("/extensions/{key}/enable", controlHandlers.EnableExtension)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Post("/extensions/{key}/disable", controlHandlers.DisableExtension)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Patch("/extensions/{key}/rollout", controlHandlers.UpdateExtensionRollout)
 
-			// Backup Configs — super-admin CRUD
-			r.Get("/backup-configs", controlHandlers.ListBackupConfigs)
-			r.Post("/backup-configs", controlHandlers.CreateBackupConfig)
-			r.Patch("/backup-configs/{id}", controlHandlers.UpdateBackupConfig)
-			r.Delete("/backup-configs/{id}", controlHandlers.DeleteBackupConfig)
-			r.Post("/backup-configs/{id}/trigger", controlHandlers.TriggerBackup)
-			r.Get("/backup-targets", controlHandlers.ListBackupTargets)
+			// Backup Configs — control-panel CRUD. Backups capture full
+			// platform data and can trigger expensive jobs, so mutations
+			// require system.settings.edit; reads require system.settings.view.
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.view")).
+				Get("/backup-configs", controlHandlers.ListBackupConfigs)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Post("/backup-configs", controlHandlers.CreateBackupConfig)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Patch("/backup-configs/{id}", controlHandlers.UpdateBackupConfig)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Delete("/backup-configs/{id}", controlHandlers.DeleteBackupConfig)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Post("/backup-configs/{id}/trigger", controlHandlers.TriggerBackup)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.view")).
+				Get("/backup-targets", controlHandlers.ListBackupTargets)
 
 			// Wallet Currencies — super_admin CRUD
 			r.With(rbac.RequirePermission(rbacResolver, "wallet.currency.manage")).

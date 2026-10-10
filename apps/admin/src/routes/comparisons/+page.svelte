@@ -5,6 +5,7 @@
 	import { comparisonAdminApi, type ComparisonEntry, type ComparisonType } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { escapeHtml } from '$lib/utils/html';
 	import { Trash2 } from 'lucide-svelte';
 	import type { FilterDef, BulkAction } from '$lib/components/ui/data-table';
 	import type { Snippet } from 'svelte';
@@ -223,7 +224,7 @@
 				key: 'slug',
 				label: t('comparisons.col_slug', 'Slug'),
 				render: (v: string) =>
-					`<span class="text-xs font-mono" style="color: var(--color-muted)">${v}</span>`
+					`<span class="text-xs font-mono" style="color: var(--color-muted)">${escapeHtml(v)}</span>`
 			},
 			{
 				key: 'visibility',
@@ -237,7 +238,7 @@
 							: v === 'members'
 								? 'bg-muted/15 text-muted dark:text-muted'
 								: 'bg-danger/15 text-danger dark:text-danger';
-					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}">${label}</span>`;
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}">${escapeHtml(label)}</span>`;
 				}
 			},
 			{
@@ -248,7 +249,7 @@
 						v === 'published'
 							? 'bg-success/15 text-success dark:text-success'
 							: 'bg-muted/15 text-muted dark:text-muted';
-					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}">${v}</span>`;
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}">${escapeHtml(v)}</span>`;
 				}
 			},
 			{
@@ -259,7 +260,7 @@
 						v === 'detailed'
 							? 'bg-success/15 text-success dark:text-success'
 							: 'bg-muted/15 text-muted dark:text-muted';
-					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}">${v ?? '—'}</span>`;
+					return `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${color}">${escapeHtml(v ?? '—')}</span>`;
 				}
 			},
 			{
@@ -267,7 +268,7 @@
 				label: t('comparisons.col_promoted_from', 'Promoted From'),
 				render: (v: string | null) => {
 					if (!v) return '—';
-					return `<a href="?q=${encodeURIComponent(v)}" class="text-xs font-mono" style="color: var(--color-primary)">${v}</a>`;
+					return `<a href="?q=${encodeURIComponent(v)}" class="text-xs font-mono" style="color: var(--color-primary)">${escapeHtml(v)}</a>`;
 				}
 			},
 			{

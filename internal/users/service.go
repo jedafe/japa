@@ -1841,6 +1841,16 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 		return nil, err
 	}
 
+	// Email change resets email_verified_at — revoke all refresh tokens so
+	// a session bound to the old address cannot survive the identity
+	// change. The handler revokes the caller's live access-token JTI.
+	if result.EmailChanged {
+		if err := s.store.revokeAllRefreshTokens(ctx, userID); err != nil {
+			slog.Error("update-account: failed to invalidate sessions",
+				"user_id", userID.String(), "error", err)
+		}
+	}
+
 	// Re-index the user in Meilisearch when username or display_name
 	// changes so the search index reflects the new values (§13/§19).
 	// Enqueued after commit so we don't index a row that might roll back.

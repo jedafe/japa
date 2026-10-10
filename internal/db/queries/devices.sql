@@ -73,3 +73,7 @@ WHERE user_id = @user_id AND device_id = @device_id AND is_active = true;
 -- name: GetDeviceTokenByDeviceID :one
 SELECT * FROM device_tokens
 WHERE device_id = @device_id AND is_active = true;
+
+-- name: CountActiveDeviceTokens :one
+SELECT COUNT(*)::int FROM device_tokens
+WHERE user_id = @user_id AND is_active = true;

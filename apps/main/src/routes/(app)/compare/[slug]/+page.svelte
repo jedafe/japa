@@ -23,7 +23,7 @@
 	import FreshnessChip from '$lib/components/compare/FreshnessChip.svelte';
 	import RefreshButton from '$lib/components/compare/RefreshButton.svelte';
 	import { ArrowLeft, Pencil, Sparkles, Trash2, ExternalLink } from 'lucide-svelte';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript, sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -302,10 +302,12 @@
 	{/if}
 
 	{#if comparison.metadata.depth === 'quick'}
-		<!-- Localized notice with hardcoded <strong> wrapper; no user content is interpolated. -->
+		<!-- Localized notice; translations are admin-editable (untrusted) so the
+		composed HTML is re-sanitized before render. The <strong> wrapper is in
+		the allowlist so it survives; only the name payload is escaped. -->
 		<div class="rounded-[var(--radius-card)] border p-4 text-sm" style="background-color: var(--color-surface); border-color: var(--color-border); color: var(--color-muted)">
-			{@html t('jce.compare.quick_comparison_notice')
-				.replace('{promote}', '<strong style="color: var(--color-text)">' + t('jce.compare.promote_to_detailed') + '</strong>')}
+			{@html sanitizeContentHtml(t('jce.compare.quick_comparison_notice')
+				.replace('{promote}', '<strong style="color: var(--color-text)">' + t('jce.compare.promote_to_detailed') + '</strong>'))}
 		</div>
 	{/if}
 </div>

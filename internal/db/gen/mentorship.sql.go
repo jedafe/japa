@@ -148,7 +148,12 @@ const getMentorProfile = `-- name: GetMentorProfile :one
 
 SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
- up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username
+ up.display_name, up.avatar_url, up.mentor_listing_content_id, u.username,
+ -- 000829 mentor card fields (§114 detail-page rebuild).
+ up.location, up.mentor_title, up.mentor_response_time, up.mentor_availability,
+ up.mentor_session_type, up.mentor_languages, up.mentor_session_formats,
+ up.mentor_countries, up.mentor_credentials, up.mentor_years_experience,
+ up.mentor_success_label
 FROM user_profiles up
 JOIN users u ON u.id = up.user_id
 WHERE up.user_id = $1
@@ -166,6 +171,17 @@ type GetMentorProfileRow struct {
 	AvatarUrl              *string            `json:"avatar_url"`
 	MentorListingContentID pgtype.UUID        `json:"mentor_listing_content_id"`
 	Username               string             `json:"username"`
+	Location               *string            `json:"location"`
+	MentorTitle            *string            `json:"mentor_title"`
+	MentorResponseTime     *string            `json:"mentor_response_time"`
+	MentorAvailability     *string            `json:"mentor_availability"`
+	MentorSessionType      *string            `json:"mentor_session_type"`
+	MentorLanguages        []string           `json:"mentor_languages"`
+	MentorSessionFormats   []string           `json:"mentor_session_formats"`
+	MentorCountries        []string           `json:"mentor_countries"`
+	MentorCredentials      []string           `json:"mentor_credentials"`
+	MentorYearsExperience  *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel     *string            `json:"mentor_success_label"`
 }
 
 // =====================================================================
@@ -190,6 +206,17 @@ func (q *Queries) GetMentorProfile(ctx context.Context, userID pgtype.UUID) (Get
 		&i.AvatarUrl,
 		&i.MentorListingContentID,
 		&i.Username,
+		&i.Location,
+		&i.MentorTitle,
+		&i.MentorResponseTime,
+		&i.MentorAvailability,
+		&i.MentorSessionType,
+		&i.MentorLanguages,
+		&i.MentorSessionFormats,
+		&i.MentorCountries,
+		&i.MentorCredentials,
+		&i.MentorYearsExperience,
+		&i.MentorSuccessLabel,
 	)
 	return i, err
 }
@@ -953,31 +980,67 @@ SET is_mentor = $1,
  mentor_capacity = $2,
  mentor_areas = $3,
  mentor_bio = $4,
+ -- 000829 mentor card fields — COALESCE so nil preserves the stored
+ -- value; the service layer maps absent → nil, empty → empty value.
+ mentor_title = COALESCE($5, mentor_title),
+ mentor_response_time = COALESCE($6, mentor_response_time),
+ mentor_availability = COALESCE($7, mentor_availability),
+ mentor_session_type = COALESCE($8, mentor_session_type),
+ mentor_languages = COALESCE($9, mentor_languages),
+ mentor_session_formats = COALESCE($10, mentor_session_formats),
+ mentor_countries = COALESCE($11, mentor_countries),
+ mentor_credentials = COALESCE($12, mentor_credentials),
+ mentor_years_experience = COALESCE($13, mentor_years_experience),
+ mentor_success_label = COALESCE($14, mentor_success_label),
  mentor_since = CASE WHEN $1 = true AND mentor_since IS NULL THEN now() ELSE mentor_since END,
  updated_at = now()
-WHERE user_id = $5
+WHERE user_id = $15
 RETURNING user_id, is_mentor, mentor_capacity, active_mentee_count,
- mentor_areas, mentor_bio, mentor_since, display_name, avatar_url
+ mentor_areas, mentor_bio, mentor_since, display_name, avatar_url,
+ mentor_title, mentor_response_time, mentor_availability,
+ mentor_session_type, mentor_languages, mentor_session_formats,
+ mentor_countries, mentor_credentials, mentor_years_experience,
+ mentor_success_label
 `
 
 type UpdateMentorProfileParams struct {
-	IsMentor       *bool       `json:"is_mentor"`
-	MentorCapacity *int16      `json:"mentor_capacity"`
-	MentorAreas    []string    `json:"mentor_areas"`
-	MentorBio      *string     `json:"mentor_bio"`
-	UserID         pgtype.UUID `json:"user_id"`
+	IsMentor              *bool       `json:"is_mentor"`
+	MentorCapacity        *int16      `json:"mentor_capacity"`
+	MentorAreas           []string    `json:"mentor_areas"`
+	MentorBio             *string     `json:"mentor_bio"`
+	MentorTitle           *string     `json:"mentor_title"`
+	MentorResponseTime    *string     `json:"mentor_response_time"`
+	MentorAvailability    *string     `json:"mentor_availability"`
+	MentorSessionType     *string     `json:"mentor_session_type"`
+	MentorLanguages       []string    `json:"mentor_languages"`
+	MentorSessionFormats  []string    `json:"mentor_session_formats"`
+	MentorCountries       []string    `json:"mentor_countries"`
+	MentorCredentials     []string    `json:"mentor_credentials"`
+	MentorYearsExperience *int16      `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string     `json:"mentor_success_label"`
+	UserID                pgtype.UUID `json:"user_id"`
 }
 
 type UpdateMentorProfileRow struct {
-	UserID            pgtype.UUID        `json:"user_id"`
-	IsMentor          *bool              `json:"is_mentor"`
-	MentorCapacity    *int16             `json:"mentor_capacity"`
-	ActiveMenteeCount *int16             `json:"active_mentee_count"`
-	MentorAreas       []string           `json:"mentor_areas"`
-	MentorBio         *string            `json:"mentor_bio"`
-	MentorSince       pgtype.Timestamptz `json:"mentor_since"`
-	DisplayName       *string            `json:"display_name"`
-	AvatarUrl         *string            `json:"avatar_url"`
+	UserID                pgtype.UUID        `json:"user_id"`
+	IsMentor              *bool              `json:"is_mentor"`
+	MentorCapacity        *int16             `json:"mentor_capacity"`
+	ActiveMenteeCount     *int16             `json:"active_mentee_count"`
+	MentorAreas           []string           `json:"mentor_areas"`
+	MentorBio             *string            `json:"mentor_bio"`
+	MentorSince           pgtype.Timestamptz `json:"mentor_since"`
+	DisplayName           *string            `json:"display_name"`
+	AvatarUrl             *string            `json:"avatar_url"`
+	MentorTitle           *string            `json:"mentor_title"`
+	MentorResponseTime    *string            `json:"mentor_response_time"`
+	MentorAvailability    *string            `json:"mentor_availability"`
+	MentorSessionType     *string            `json:"mentor_session_type"`
+	MentorLanguages       []string           `json:"mentor_languages"`
+	MentorSessionFormats  []string           `json:"mentor_session_formats"`
+	MentorCountries       []string           `json:"mentor_countries"`
+	MentorCredentials     []string           `json:"mentor_credentials"`
+	MentorYearsExperience *int16             `json:"mentor_years_experience"`
+	MentorSuccessLabel    *string            `json:"mentor_success_label"`
 }
 
 // Toggle is_mentor and set capacity/areas/bio. When is_mentor flips to true,
@@ -990,6 +1053,16 @@ func (q *Queries) UpdateMentorProfile(ctx context.Context, arg UpdateMentorProfi
 		arg.MentorCapacity,
 		arg.MentorAreas,
 		arg.MentorBio,
+		arg.MentorTitle,
+		arg.MentorResponseTime,
+		arg.MentorAvailability,
+		arg.MentorSessionType,
+		arg.MentorLanguages,
+		arg.MentorSessionFormats,
+		arg.MentorCountries,
+		arg.MentorCredentials,
+		arg.MentorYearsExperience,
+		arg.MentorSuccessLabel,
 		arg.UserID,
 	)
 	var i UpdateMentorProfileRow
@@ -1003,6 +1076,16 @@ func (q *Queries) UpdateMentorProfile(ctx context.Context, arg UpdateMentorProfi
 		&i.MentorSince,
 		&i.DisplayName,
 		&i.AvatarUrl,
+		&i.MentorTitle,
+		&i.MentorResponseTime,
+		&i.MentorAvailability,
+		&i.MentorSessionType,
+		&i.MentorLanguages,
+		&i.MentorSessionFormats,
+		&i.MentorCountries,
+		&i.MentorCredentials,
+		&i.MentorYearsExperience,
+		&i.MentorSuccessLabel,
 	)
 	return i, err
 }

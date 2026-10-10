@@ -172,7 +172,7 @@ function buildPayload(
 	const title = getString(frontmatter, 'title') || 'Untitled';
 	const slug = getString(frontmatter, 'slug') || '';
 	const contentType = getString(frontmatter, 'content_type') || 'guide';
-	const bodyHtml = markdownToHtml(body);
+	const bodyHtml = markdownToHtml(body, { sanitize: true });
 	const spaceId = getOptionalString(frontmatter, 'space_id');
 	const publishAt = normalisePublishAt(getString(frontmatter, 'publish_at'));
 	const fieldValues = getFieldValues(frontmatter);

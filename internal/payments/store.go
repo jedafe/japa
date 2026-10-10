@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -481,6 +482,33 @@ func (s *Store) insertDiscountCodeUse(ctx context.Context, p gen.InsertDiscountC
 	return row, nil
 }
 
+// consumeDiscountCodeUse atomically consumes one use of a discount code.
+// The guarded UPDATE serializes concurrent checkouts on the row lock: the
+// counter only increments when max_uses is NULL (unlimited) or still below
+// max_uses. Returns pgx.ErrNoRows when the code is exhausted — callers map
+// that to "discount code usage limit reached" so max_uses can never be
+// overshot, unlike the previous read-check (COUNT) + unguarded insert.
+func (s *Store) consumeDiscountCodeUse(ctx context.Context, codeID pgtype.UUID) error {
+	if _, err := s.write.ConsumeDiscountCodeUse(ctx, codeID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("discount code usage limit reached")
+		}
+
+		return fmt.Errorf("consuming discount code use: %w", err)
+	}
+
+	return nil
+}
+
+// releaseDiscountCodeUse compensates a consumed use when the follow-up
+// discount_code_uses insert fails (e.g. duplicate per-user use), so the
+// counter stays accurate. Never drops below zero.
+func (s *Store) releaseDiscountCodeUse(ctx context.Context, codeID pgtype.UUID) {
+	if _, err := s.write.ReleaseDiscountCodeUse(ctx, codeID); err != nil {
+		slog.Warn("payments: failed to release discount code use", "code_id", codeID, "error", err)
+	}
+}
+
 func (s *Store) countDiscountCodeUsesByUser(ctx context.Context, codeID, userID pgtype.UUID) (int32, error) {
 	count, err := s.read.CountDiscountCodeUsesByUser(ctx, gen.CountDiscountCodeUsesByUserParams{
 		CodeID: codeID,
@@ -518,6 +546,23 @@ func (s *Store) createRefund(ctx context.Context, p gen.CreateRefundParams) (gen
 	row, err := s.write.CreateRefund(ctx, p)
 	if err != nil {
 		return gen.PaymentRefund{}, fmt.Errorf("creating refund: %w", err)
+	}
+
+	return row, nil
+}
+
+// updateRefund settles a refund row after the provider refund call resolves
+// (succeeded with the provider refund reference, failed, or left pending
+// for manual review). The refund row stays pending until the provider
+// confirms — it is never pre-marked refunded.
+func (s *Store) updateRefund(ctx context.Context, id pgtype.UUID, status string, providerRef *string) (gen.PaymentRefund, error) {
+	row, err := s.write.UpdateRefund(ctx, gen.UpdateRefundParams{
+		Status:      status,
+		ProviderRef: providerRef,
+		ID:          id,
+	})
+	if err != nil {
+		return gen.PaymentRefund{}, fmt.Errorf("updating refund: %w", err)
 	}
 
 	return row, nil

@@ -43,6 +43,16 @@ func (s *Store) UpsertToken(ctx context.Context, arg gen.UpsertDeviceTokenParams
 	return row, nil
 }
 
+// CountActiveTokens returns the number of active device tokens for a user.
+func (s *Store) CountActiveTokens(ctx context.Context, userID pgtype.UUID) (int, error) {
+	n, err := s.queries.CountActiveDeviceTokens(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("devices: count tokens: %w", err)
+	}
+
+	return int(n), nil
+}
+
 // DeregisterToken is an exported method.
 func (s *Store) DeregisterToken(ctx context.Context, arg gen.DeregisterDeviceTokenParams) error {
 	if err := s.writeQueries.DeregisterDeviceToken(ctx, arg); err != nil {

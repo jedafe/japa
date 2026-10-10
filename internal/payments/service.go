@@ -679,16 +679,13 @@ func (s *Service) validateDiscountCode(ctx context.Context, code gen.DiscountCod
 		return errors.New("discount code expired")
 	}
 
-	// Check max uses (if limited) — use COUNT query instead of list+len
-	// to avoid fetching up to 1000 rows and silently under-counting beyond
-	// that limit (BUG-018).
+	// Check max uses (if limited) against the atomically-maintained uses
+	// counter. The counter is consumed with a guarded UPDATE at checkout
+	// (ApplyDiscountCodeUse), so concurrent checkouts serialize on the row
+	// lock and max_uses can never be overshot. The legacy COUNT query is
+	// kept as a read-side validation for display only.
 	if code.MaxUses != nil {
-		totalUses, err := s.store.countDiscountCodeUses(ctx, code.ID)
-		if err != nil {
-			return fmt.Errorf("checking discount code uses: %w", err)
-		}
-
-		if totalUses >= *code.MaxUses {
+		if code.Uses >= *code.MaxUses {
 			return errors.New("discount code usage limit reached")
 		}
 	}
@@ -744,14 +741,24 @@ func (s *Service) calculateDiscount(code gen.DiscountCode, amount int64) int64 {
 	}
 }
 
-// ApplyDiscountCodeUse records that a user used a discount code.
+// ApplyDiscountCodeUse records that a user used a discount code. The global
+// max_uses slot is consumed first with an atomic guarded UPDATE (row lock
+// serializes concurrent checkouts so the limit can never be overshot); then
+// the per-user row is inserted. If the per-user insert fails (e.g. duplicate
+// use by the same user), the consumed global slot is released back so the
+// counter stays accurate.
 func (s *Service) ApplyDiscountCodeUse(ctx context.Context, codeID, userID, paymentID pgtype.UUID) error {
-	_, err := s.store.insertDiscountCodeUse(ctx, gen.InsertDiscountCodeUseParams{
+	if err := s.store.consumeDiscountCodeUse(ctx, codeID); err != nil {
+		return err
+	}
+
+	if _, err := s.store.insertDiscountCodeUse(ctx, gen.InsertDiscountCodeUseParams{
 		CodeID:    codeID,
 		UserID:    userID,
 		PaymentID: paymentID,
-	})
-	if err != nil {
+	}); err != nil {
+		s.store.releaseDiscountCodeUse(ctx, codeID)
+
 		return fmt.Errorf("record discount code use: %w", err)
 	}
 
@@ -771,14 +778,17 @@ type CreateRefundInput struct {
 	ProviderRef string
 }
 
-// CreateRefund creates a new refund for a payment.
-// // In addition to recording the refund row, this finalizes the payment's
-// status transition to "refunded" and enqueues the webhook processor with
-// status="refunded" so the worker runs reversePaymentSideEffects (course
-// access revocation, org boost expiry, wallet credit reversal) per JEOS §17.
-// Without this, an admin-initiated refund would leave a dangling pending
-// refund row and never reverse the side effects of the original purchase
-// (BUG-001 — Guide §13 "Refund path doesn't reverse the ledger entry").
+// CreateRefund creates a refund for a payment and issues it provider-side.
+// The flow is: insert refund row (pending) → call provider RefundPayment →
+// settle the refund row (succeeded with the provider reference, failed, or
+// pending for manual review when the provider has no refund API) → mark the
+// payment refunded → enqueue the webhook processor so the worker runs
+// reversePaymentSideEffects (course access revocation, org boost expiry,
+// wallet credit reversal) per JEOS §17.
+//
+// A provider error keeps the refund pending (never pre-marked refunded) so
+// it can be retried; the payment row is not flipped until the refund is
+// confirmed or explicitly queued for manual review.
 func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (gen.PaymentRefund, error) {
 	if input.PaymentID == "" {
 		return gen.PaymentRefund{}, errors.New("payment_id is required")
@@ -791,6 +801,15 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 	var paymentID pgtype.UUID
 	if err := paymentID.Scan(input.PaymentID); err != nil {
 		return gen.PaymentRefund{}, fmt.Errorf("invalid payment_id: %w", err)
+	}
+
+	payment, err := s.store.getPaymentByID(ctx, paymentID)
+	if err != nil {
+		return gen.PaymentRefund{}, fmt.Errorf("loading payment: %w", err)
+	}
+
+	if payment.Status != PaymentStatusSucceeded {
+		return gen.PaymentRefund{}, fmt.Errorf("payment must be in 'succeeded' status to be refunded")
 	}
 
 	var reason *string
@@ -812,6 +831,48 @@ func (s *Service) CreateRefund(ctx context.Context, input CreateRefundInput) (ge
 	})
 	if err != nil {
 		return gen.PaymentRefund{}, err
+	}
+
+	refundStatus := RefundStatusPending
+
+	providerTxRef := ""
+	if payment.ProviderRef != nil {
+		providerTxRef = *payment.ProviderRef
+	}
+
+	// Credit-wallet payments settle internally — no external provider call.
+	if payment.Provider == ProviderCredit {
+		refundStatus = RefundStatusSucceeded
+	} else if provider := s.providers[payment.Provider]; provider != nil {
+		ref, rerr := provider.RefundPayment(ctx, providerTxRef, input.Amount)
+		if rerr != nil {
+			if errors.Is(rerr, ErrRefundNotSupported) {
+				slog.Warn("payments: provider has no refund API, refund left pending for manual review",
+					"payment_id", paymentID, "provider", payment.Provider, "refund_id", refund.ID)
+			} else {
+				slog.Error("payments: provider refund failed, refund left pending for retry",
+					"payment_id", paymentID, "provider", payment.Provider, "refund_id", refund.ID, "error", rerr)
+			}
+		} else {
+			if ref != "" {
+				providerRef = &ref
+			}
+
+			refundStatus = RefundStatusSucceeded
+		}
+	} else {
+		slog.Warn("payments: no provider registered, refund left pending for manual review",
+			"payment_id", paymentID, "provider", payment.Provider, "refund_id", refund.ID)
+	}
+
+	if settled, serr := s.store.updateRefund(ctx, refund.ID, refundStatus, providerRef); serr != nil {
+		slog.Error("payments: failed to settle refund row", "refund_id", refund.ID, "error", serr)
+	} else {
+		refund = settled
+	}
+
+	if refundStatus != RefundStatusSucceeded {
+		return refund, nil
 	}
 
 	// Finalize the payment status as "refunded" so the canonical payment

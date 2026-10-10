@@ -64,12 +64,12 @@ func NewCompositeWithClient(client *http.Client, settings AdapterSettings, rdb v
 	return &Composite{
 		static:  &StaticFetcher{client: client},
 		rss:     &RSSFetcher{client: client},
-		api:     &APIFetcher{client: client},
+		api:     &APIFetcher{client: client, allowPrivate: true},
 		render:  NewRenderFetcher(client, settings, rdb),
 		git:     NewGitFetcher(),
 		social:  NewSocialFetcher(client, settings),
-		wayback: &WaybackFetcher{client: client},
-		search:  NewSearchFetcher(client, settings),
+		wayback: &WaybackFetcher{client: client, allowPrivate: true},
+		search:  &SearchFetcher{client: client, settings: settings, allowPrivate: true},
 	}
 }
 

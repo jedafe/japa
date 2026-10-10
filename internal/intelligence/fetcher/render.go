@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -83,6 +84,16 @@ func (f *RenderFetcher) Fetch(ctx context.Context, src sources.Source) (FetchRes
 	}
 	if serviceURL == "" || f.client == nil {
 		return FetchResult{}, fmt.Errorf("%w: intel.render.service_url unset", ErrAdapterDisabled)
+	}
+
+	// The render target is attacker-influenced (proposed source entry_url)
+	// and the fetch is delegated to an internal service that skips its own
+	// dial guard (AllowPrivate client). Validate the target here so a
+	// proposed http://169.254.169.254/ source cannot SSRF through the
+	// renderer. Service URL itself is admin-configured — scheme + userinfo
+	// checked, host trusted past literals (internal infra by design).
+	if err := validateRenderTarget(src.SourceUrl); err != nil {
+		return FetchResult{}, err
 	}
 
 	if f.circuitOpen(ctx) {
@@ -241,4 +252,23 @@ func stringFromCfg(cfg map[string]any, key string) string {
 		return s
 	}
 	return ""
+}
+
+// validateRenderTarget constrains the delegated render target: http(s)
+// only, no userinfo, no private-literal or numeric-IP hosts. Attacker
+// proposes the URL via source entry_url; without this the internal render
+// service (AllowPrivate) fetches it unchecked.
+func validateRenderTarget(target string) error {
+	u, err := url.Parse(strings.TrimSpace(target))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("fetcher: render target must be an http(s) URL")
+	}
+	if u.User != nil {
+		return fmt.Errorf("fetcher: render target must not embed credentials")
+	}
+	host := u.Hostname()
+	if sources.IsPrivateIPLiteral(host) || isNumericIPPrivate(host) {
+		return fmt.Errorf("fetcher: render target must not be a private address")
+	}
+	return nil
 }

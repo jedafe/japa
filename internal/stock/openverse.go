@@ -169,6 +169,10 @@ func (p *OpenverseProvider) Download(ctx context.Context, photoID string) (*Down
 		return nil, err
 	}
 
+	if err := validateDownloadURL(photo.FullURL); err != nil {
+		return nil, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, photo.FullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("building download request: %w", err)

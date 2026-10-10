@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -255,6 +256,53 @@ func applyDefaults(cfg *Config) error {
 	// JC_ENCRYPTION_KEY → JC_STOCK_ENCRYPTION_KEY → JC_TOTP_ENCRYPTION_KEY.
 	if cfg.IsProduction() && cfg.EncryptionKey == "" && os.Getenv("JC_STOCK_ENCRYPTION_KEY") == "" && cfg.TOTPEncryptionKey == "" {
 		return errors.New("JC_ENCRYPTION_KEY must be set in production (secrets at rest cannot be encrypted without it)")
+	}
+
+	// Payment provider credentials: at least one provider must be fully
+	// configured when payments are enabled, and each configured provider
+	// needs both its API key and its webhook secret — an API key without a
+	// webhook secret (or vice versa) means webhooks go unverified or the
+	// provider UI lies about availability. NOWPayments needs both its API
+	// key (payouts/invoices) and its IPN secret (inbound HMAC), which are
+	// separate credentials that must never be substituted.
+	if cfg.IsProduction() {
+		paystackOK := cfg.PaystackSecretKey != ""
+		stripeOK := cfg.StripeSecretKey != "" && cfg.StripeWebhookSecret != ""
+		nowOK := cfg.NOWPaymentsAPIKey != "" && cfg.NOWPaymentsIPNSecret != ""
+		if cfg.StripeSecretKey != "" && cfg.StripeWebhookSecret == "" {
+			return errors.New("JC_STRIPE_WEBHOOK_SECRET must be set in production when JC_STRIPE_SECRET_KEY is set (webhooks cannot go unverified)")
+		}
+
+		if cfg.NOWPaymentsAPIKey != "" && cfg.NOWPaymentsIPNSecret == "" {
+			return errors.New("JC_NOWPAYMENTS_IPN_SECRET must be set in production when JC_NOWPAYMENTS_API_KEY is set (IPN cannot go unverified)")
+		}
+
+		if cfg.NOWPaymentsIPNSecret != "" && cfg.NOWPaymentsAPIKey == "" {
+			return errors.New("JC_NOWPAYMENTS_API_KEY must be set in production when JC_NOWPAYMENTS_IPN_SECRET is set (separate credential, never substituted)")
+		}
+
+		if !paystackOK && !stripeOK && !nowOK {
+			slog.Warn("config: no payment provider fully configured in production (paystack, stripe key+webhook, or nowpayments api+ipn)")
+		}
+	}
+
+	// SMTP: required in production so transactional mail (verification,
+	// password reset) cannot silently black-hole.
+	if cfg.IsProduction() && os.Getenv("JC_SMTP_HOST") == "" {
+		return errors.New("JC_SMTP_HOST must be set in production (transactional mail cannot be delivered without it)")
+	}
+
+	// WebPush: warn when incomplete — push registration will fail at runtime.
+	if cfg.IsProduction() && (cfg.VAPIDPublicKey == "" || cfg.VAPIDPrivateKey == "" || cfg.VAPIDSubject == "") {
+		slog.Warn("config: VAPID keys incomplete in production (JC_VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT) — push notifications disabled")
+	}
+
+	// S3 media backend: warn when partially configured so a half-wired
+	// backend is noticed at boot instead of at first upload.
+	if cfg.IsProduction() && (cfg.S3Endpoint != "" || cfg.S3AccessKey != "" || cfg.S3SecretKey != "" || cfg.S3Bucket != "") {
+		if cfg.S3Endpoint == "" || cfg.S3AccessKey == "" || cfg.S3SecretKey == "" || cfg.S3Bucket == "" {
+			slog.Warn("config: S3 media backend partially configured in production (need JC_S3_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET)")
+		}
 	}
 
 	return nil

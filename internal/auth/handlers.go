@@ -166,6 +166,7 @@ type Querier interface {
 	// Email verification
 	GetValidVerificationToken(ctx context.Context, tokenHash string) (*VerificationTokenRecord, error)
 	MarkEmailVerified(ctx context.Context, userID pgtype.UUID) error
+	ConsumeVerificationToken(ctx context.Context, tokenHash string) error
 
 	// Password history
 	GetRecentPasswordHashes(ctx context.Context, userID pgtype.UUID, limit int) ([]string, error)
@@ -438,6 +439,8 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	bruteKey := LoginIdentifier(req.Email, ip)
 
 	// Check brute-force lockout — read max attempts from system settings.
+	// Fail-CLOSED: a store error denies the attempt (429 + Retry-After),
+	// so password guessing cannot proceed while the counter backend is down.
 	maxAttempts := DefaultMaxLoginAttempts
 	if h.Settings != nil {
 		maxAttempts = MaxLoginAttempts(r.Context(), h.Settings)
@@ -693,15 +696,20 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if row.RevokedAt.Valid {
-				// Revoked-beyond-leeway is a theft signal only when no
-				// sibling cookie resolves to a live token — a stale
-				// duplicate-path cookie alongside a live one is a leftover
-				// from cross-app rotation, not a replay.
+				// ANY revoked-beyond-leeway reuse revokes the whole family,
+				// even when a live sibling cookie is also present. A stale
+				// duplicate-path cookie proves an old token left the
+				// rotation window — possibly replayed by an attacker — so
+				// it must not be masked by a sibling that still validates.
+				// Ref: §02 (rotation reuse detection).
 				if time.Since(row.RevokedAt.Time) >= refreshReuseLeeway {
-					if theftCandidate == nil {
-						theftCandidate = row
-					}
-					continue
+					slog.Warn("refresh: revoked token reuse detected, revoking session family",
+						"user_id", row.UserID.String())
+					_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
+						row.UserID,
+					)
+					errpkg.WriteError(w, http.StatusUnauthorized, "invalid_refresh_token", "Refresh token has been revoked")
+					return
 				}
 				// Within leeway: rotation race — usable, stays revoked.
 				if stored == nil {
@@ -713,18 +721,21 @@ func (h *AuthHandlers) Refresh(w http.ResponseWriter, r *http.Request) {
 				sawExpired = true
 				continue
 			}
-			// Fully valid token wins immediately.
+			// Fully valid token wins immediately. Note: any
+			// revoked-beyond-leeway cookie already returned above, so
+			// reaching here means no theft signal was present among the
+			// presented values.
 			refreshToken, stored = c.Value, row
 			break
 		}
 
 		if stored == nil {
 			if theftCandidate != nil {
-				// Every resolvable cookie was revoked beyond the leeway
-				// window: a revoked token re-presented alone indicates
-				// theft (the legitimate user rotated past it, or an
-				// attacker stole it before rotation). Revoke the entire
-				// session family. Ref: §02 (rotation reuse detection).
+				// Unreachable in practice: revoked-beyond-leeway cookies
+				// return immediately above. Retained as defense-in-depth in
+				// case the loop above is ever restructured.
+				slog.Warn("refresh: revoked token reuse detected, revoking session family",
+					"user_id", theftCandidate.UserID.String())
 				_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(),
 					theftCandidate.UserID,
 				)
@@ -864,6 +875,25 @@ func (h *AuthHandlers) VerifyLoginChallenge(w http.ResponseWriter, r *http.Reque
 	if err := (error)(nil); err != nil {
 		errpkg.WriteError(w, http.StatusUnauthorized, "invalid_challenge", "Invalid challenge token")
 		return
+	}
+
+	// Rate-limit TOTP challenge attempts per user to prevent brute-force
+	// guessing of the 6-digit code. 5 attempts per 5 minutes — cataloged
+	// as jc:ratelimit:totp_challenge:{user_id}. Fail-open on Valkey
+	// errors (log and allow), matching ConsumeBackupCode.
+	if h.VKClient != nil {
+		rlKey := valkey.MustKey("jc:ratelimit:totp_challenge:%s", userID.String())
+
+		ok, err := rateLimitCheck(r.Context(), h.VKClient.Redis(), rlKey, 5, 5*time.Minute)
+		if err != nil {
+			slog.Error("totp challenge: rate limit check failed, allowing request", "error", err)
+		}
+
+		if !ok {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "rate_limit_exceeded",
+				"Too many verification attempts. Please try again later.")
+			return
+		}
 	}
 
 	req.Code = sanitizeCode(req.Code)
@@ -1078,9 +1108,14 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		cookie, err := r.Cookie("jc_refresh")
-		if err == nil && cookie.Value != "" {
-			tokenHash := HashRefreshToken(cookie.Value)
+		// Revoke ALL presented jc_refresh values: duplicate-path cookies
+		// (Path=/ and Path=/api/v1) can coexist in the jar, and leaving
+		// any one live would keep the session usable after logout.
+		for _, c := range r.Cookies() {
+			if c.Name != "jc_refresh" || c.Value == "" {
+				continue
+			}
+			tokenHash := HashRefreshToken(c.Value)
 			if err := h.DB.RevokeRefreshToken(r.Context(), tokenHash); err != nil {
 				slog.Error("revoke refresh token", "error", err)
 			}
@@ -1101,16 +1136,21 @@ func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "jc_refresh",
-		Value:    "",
-		Path:     "/api/v1",
-		Domain:   h.CookieDomain,
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   h.SecureCookies,
-		SameSite: http.SameSiteStrictMode,
-	}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
+	// Clear both cookie paths: the backend sets Path=/api/v1 while SSR
+	// proxies re-set Path=/, so both must be expired or the browser keeps
+	// sending the surviving one.
+	for _, path := range []string{"/api/v1", "/"} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "jc_refresh",
+			Value:    "",
+			Path:     path,
+			Domain:   h.CookieDomain,
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   h.SecureCookies,
+			SameSite: http.SameSiteStrictMode,
+		}) // #nosec G124 -- Secure is set via h.SecureCookies (true in production); gosec can't verify the struct field statically
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{"status": "logged_out"},
@@ -1291,6 +1331,12 @@ func (h *AuthHandlers) HandleForgotPassword(w http.ResponseWriter, r *http.Reque
 
 // HandleResetPasswordPage handles GET /api/v1/auth/reset-password.
 // Validates the token and returns whether it's valid without consuming it.
+//
+// The response shape is intentionally unchanged ({data:{valid:bool}},
+// always 200 on well-formed requests) so token validity is not
+// distinguishable by status code. Tight per-IP rate limiting against
+// token-guessing (oracle) is enforced at route level in server.go
+// (RateLimit "tight"); the handler only logs validation failures.
 func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
@@ -1302,6 +1348,7 @@ func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Re
 
 	rec, err := h.DB.GetValidResetToken(r.Context(), tokenHash)
 	if err != nil || rec == nil {
+		slog.Warn("reset-password page: invalid token presented")
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{"valid": false},
 		})
@@ -1311,6 +1358,7 @@ func (h *AuthHandlers) HandleResetPasswordPage(w http.ResponseWriter, r *http.Re
 
 	// Check expiry and whether it's been used.
 	if time.Now().After(rec.ExpiresAt) || rec.UsedAt.Valid {
+		slog.Warn("reset-password page: expired or used token presented")
 		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"data": map[string]interface{}{"valid": false},
 		})
@@ -1484,6 +1532,16 @@ func (h *AuthHandlers) HandleVerifyEmail(w http.ResponseWriter, r *http.Request)
 				"message": "Email has already been verified.",
 			},
 		})
+
+		return
+	}
+
+	// Consume the token BEFORE marking verified so a replayed link finds
+	// an already-consumed row (single-use). The guarded UPDATE is a no-op
+	// on consumed rows; the pre-check above is what rejects replays.
+	if err := h.DB.ConsumeVerificationToken(r.Context(), tokenHash); err != nil {
+		slog.Error("verify-email: failed to consume token", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "verify_failed", "Failed to verify email")
 
 		return
 	}

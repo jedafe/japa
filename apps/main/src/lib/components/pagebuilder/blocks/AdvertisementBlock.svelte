@@ -8,6 +8,7 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { sanitizeContentHtml, safeHref } from '$lib/utils/safeHtml';
 
 	interface Props {
 		props: {
@@ -59,6 +60,10 @@
 	}
 
 	function ensureScript(url: string, attrs?: Record<string, unknown>): void {
+		// Ad-provider loader scripts are powerful: only inject https URLs and
+		// only honour a safe boolean subset (async/defer). Arbitrary
+		// script_attrs (src, onload, …) would be a stored-XSS vector.
+		if (!isSafeScriptUrl(url)) return;
 		if (injectedScripts.has(url)) return;
 		if (document.querySelector(`script[data-jc-ad-network][src="${CSS.escape(url)}"]`)) {
 			injectedScripts.add(url);
@@ -69,10 +74,31 @@
 		script.src = url;
 		script.async = true;
 		script.setAttribute('data-jc-ad-network', props.provider ?? '');
-		for (const [k, v] of Object.entries(attrs ?? {})) {
+		const raw = attrs ?? {};
+		if (raw.async === true || raw.async === 'true') script.async = true;
+		if (raw.defer === true || raw.defer === 'true') script.defer = true;
+		// data-* pass-through only — every other attribute is dropped.
+		for (const [k, v] of Object.entries(raw)) {
+			if (!k.startsWith('data-')) continue;
 			if (v !== null && v !== undefined) script.setAttribute(k, String(v));
 		}
 		document.head.appendChild(script);
+	}
+
+	/** Provider loader scripts must be absolute https URLs — never
+	 *  javascript:/data:, protocol-relative, or same-host-relative paths
+	 *  (a compromised relative path would run first-party script). */
+	function isSafeScriptUrl(url: string): boolean {
+		if (!url || typeof url !== 'string') return false;
+		const trimmed = url.trim();
+		if (!trimmed || trimmed.startsWith('//')) return false;
+		const cleaned = trimmed
+			.split('')
+			.filter((ch) => ch.charCodeAt(0) > 32)
+			.join('')
+			.toLowerCase();
+		if (/^(javascript|data|vbscript):/.test(cleaned)) return false;
+		return /^https:\/\//i.test(trimmed);
 	}
 
 	function genericRender(network: AdNetwork, slotId: string | null): void {
@@ -103,7 +129,16 @@
 		const provider = props.provider ?? 'adsense';
 
 		if (provider === 'custom' && props.custom_html) {
-			container.innerHTML = props.custom_html;
+			// Admin-authored ad HTML still passes the hardened content
+			// sanitizer — raw innerHTML would execute stored script.
+			container.innerHTML = sanitizeContentHtml(props.custom_html);
+			if (props.fallback_url && safeHref(props.fallback_url)) {
+				const a = document.createElement('a');
+				a.href = safeHref(props.fallback_url);
+				a.rel = 'noopener noreferrer sponsored';
+				a.textContent = t('ads.fallback', 'Learn more');
+				container.appendChild(a);
+			}
 			return;
 		}
 
