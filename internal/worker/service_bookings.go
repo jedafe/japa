@@ -70,7 +70,10 @@ func bookingNotificationType(status string) string {
 
 // bookingTaskPayload is the decoded payload shared by the §111 booking
 // tasks. audience selects the notification target for status_changed:
-// "" → booker (default), "org" → org members (booker-raised disputes).
+// "" → booker (default, provider/admin transitions — actor is the org or
+// provider user), "org" → org members (booker-raised disputes),
+// "provider" → the provider side, actor = booker (booker-initiated
+// cancel/complete — a booker never self-notifies "provider cancelled").
 type bookingTaskPayload struct {
 	BookingID pgtype.UUID
 	Status    string
@@ -196,15 +199,17 @@ func HandleServiceBookingCreated(ctx context.Context, t *asynq.Task) error {
 // notifyOrgMembers fans out a notification to every member of the
 // booking's selling org — or, on 000824 user-provider (mentorship)
 // bookings where org_id is NULL, directly to the provider user. Used by
-// booking_created (new booking) and the status_changed audience=org path
-// (booker-raised dispute).
+// booking_created (new booking), the status_changed audience=org path
+// (booker-raised dispute), and audience=provider (booker-initiated
+// cancel/complete).
 func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBookingDetailRow, ntype string, actorType *string, actorID pgtype.UUID, title, body string) error {
 	// Provider arm: no org row exists to fan out to — the provider user
 	// is the entire audience. The action URL targets the mentorship
-	// inbox (booker-facing notifications use /messages/bookings?b=).
+	// inbox's RECEIVED arm — /messages/mentorship defaults to role=sent
+	// (the mentee view), so providers need the explicit role param.
 	if !bk.OrgID.Valid && bk.ProviderUserID.Valid {
 		subjectType := "service_booking"
-		actionURL := "/messages/mentorship?b=" + bk.ID.String()
+		actionURL := "/messages/mentorship?role=received&b=" + bk.ID.String()
 
 		if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
 			RecipientID:      bk.ProviderUserID,
@@ -235,7 +240,7 @@ func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBook
 		orgRef = *bk.OrgSlug
 	}
 
-	actionURL := fmt.Sprintf("/org/%s/bookings", orgRef)
+	actionURL := fmt.Sprintf("/org/%s/service-bookings", orgRef)
 
 	for _, m := range members {
 		if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{
@@ -260,7 +265,9 @@ func notifyOrgMembers(ctx context.Context, q *gen.Queries, bk gen.GetServiceBook
 // HandleServiceBookingStatusChanged notifies the booker of an org/admin
 // status transition (confirmed/declined/fulfilled/cancelled). Payload
 // audience="org" inverts the direction — the booker raised a dispute, so
-// org members get service_booking_disputed instead.
+// org members get service_booking_disputed instead. audience="provider"
+// sends the alert to the provider side on booker-initiated transitions
+// (mentee cancel/complete) with actor=booker.
 func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error {
 	p, err := bookingPayload(t)
 	if err != nil {
@@ -301,6 +308,26 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 		return fmt.Errorf("%w: unknown status %q", asynq.SkipRetry, status)
 	}
 
+	if p.Audience == "provider" {
+		// Booker-initiated transition (booker cancel, mentee complete) —
+		// the provider side is the audience, the booker is the actor. The
+		// mentee must never self-notify "provider cancelled"; the mentor /
+		// org members need the ping. notifyOrgMembers resolves the target:
+		// provider_user_id on user-provider rows, org members on org rows.
+		bookerName := "The booker"
+		if bk.BookerDisplayName != nil && *bk.BookerDisplayName != "" {
+			bookerName = *bk.BookerDisplayName
+		}
+
+		title := fmt.Sprintf("Booking %s — %s", status, bk.ListingTitle)
+		body := fmt.Sprintf("%s %s their %s for %s.", bookerName, status, bk.Intent, bk.ListingTitle)
+		if bk.CancelReason != nil && *bk.CancelReason != "" {
+			body += " Reason: " + *bk.CancelReason
+		}
+
+		return notifyOrgMembers(ctx, q, bk, ntype, strPtrWorker("user"), bk.BookerUserID, title, body)
+	}
+
 	// GDPR-erased booker — no notification target.
 	if !bk.BookerUserID.Valid {
 		return nil
@@ -325,6 +352,11 @@ func HandleServiceBookingStatusChanged(ctx context.Context, t *asynq.Task) error
 
 	subjectType := "service_booking"
 	actionURL := "/messages/bookings?b=" + bookingID.String()
+	if bk.ListingKind == "mentorship" {
+		// The mentee's requests live on the mentorship inbox — whose
+		// role=sent default is already the booker arm, no param needed.
+		actionURL = "/messages/mentorship?b=" + bookingID.String()
+	}
 	title := fmt.Sprintf("Booking %s — %s", status, bk.ListingTitle)
 	body := fmt.Sprintf("%s %s your booking for %s.", orgName, status, bk.ListingTitle)
 
@@ -549,7 +581,7 @@ func HandleServiceBookingExpirePending(ctx context.Context, t *asynq.Task) error
 			orgRef = bk.OrgSlug
 		}
 
-		actionURL := fmt.Sprintf("/org/%s/bookings", orgRef)
+		actionURL := fmt.Sprintf("/org/%s/service-bookings", orgRef)
 
 		for _, m := range members {
 			if _, err := q.InsertNotification(ctx, gen.InsertNotificationParams{

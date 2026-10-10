@@ -201,6 +201,15 @@ WHERE c.author_id = @author_id
   AND c.content_type = 'service_listing'
   AND sm.listing_kind = 'mentorship'
   AND c.deleted_at IS NULL
+-- Deterministic pick when a user somehow owns more than one shadow
+-- (000824 created one per mentor, but nothing structurally forbids a
+-- duplicate): prefer the row already anchoring the most bookings, then
+-- the newest — an arbitrary LIMIT 1 would leave the ensure path updating
+-- one shadow while the public surface serves another.
+ORDER BY (
+    SELECT COUNT(*) FROM service_bookings sb
+    WHERE sb.listing_meta_id = sm.id
+  ) DESC, c.id DESC
 LIMIT 1;
 
 -- ---------------------------------------------------------------------
@@ -221,15 +230,34 @@ RETURNING id;
 
 -- Refresh the mentor's shadow listing in place: title follows
 -- display_name, body follows mentor_bio, content_hash follows Rule 12
--- (distinguisher 'mentor:<user_id>' matches the migration). Republishes a
--- preserved draft shadow (000824 fallback rows for non-listed mentors).
+-- (distinguisher 'mentor:<user_id>' matches the migration). Slug re-asserts
+-- the canonical mentor-<username> form — a username change (or a shadow
+-- minted with a suffix because the canonical slug was squatted) snaps
+-- back once the slug frees up; the NOT EXISTS guard keeps the old slug
+-- when another live row occupies the target so the update never 23505s
+-- or hijacks an occupied slug. Status semantics: only a 'draft' shadow is
+-- republished (preserved 000824 fallback rows for non-listed mentors); an
+-- archived/moderated status is left alone so refresh can't silently
+-- republish a deliberately unpublished row.
 -- name: UpdateMentorshipShadowContent :execrows
 UPDATE contents
 SET title = @title,
     body = @body,
     content_hash = @content_hash,
-    status = 'published',
-    published_at = COALESCE(published_at, now()),
+    slug = CASE
+        WHEN contents.slug <> @target_slug AND NOT EXISTS (
+            SELECT 1 FROM contents o
+            WHERE o.slug = @target_slug
+              AND o.id <> @id
+              AND o.deleted_at IS NULL
+        ) THEN @target_slug
+        ELSE contents.slug
+    END,
+    status = CASE WHEN status = 'draft' THEN 'published' ELSE status END,
+    published_at = CASE
+        WHEN status = 'draft' THEN COALESCE(published_at, now())
+        ELSE published_at
+    END,
     updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
@@ -503,10 +531,14 @@ WHERE content_id = @content_id;
 -- The claim flow exists for platform-seeded listings with no owning org —
 -- a listing that already has org_id is owned, so claim must not let a
 -- different org take it over on approval (ownership hijack).
+-- listing_kind <> 'mentorship': mentor shadow listings are managed only
+-- by the mentor-profile ensure path (000824) — an org must never claim a
+-- personal mentor shadow.
 -- name: ClaimServiceListingIfUnclaimed :execrows
 UPDATE service_listing_meta
 SET claim_status = 'pending', claimed_by_org_id = @org_id, updated_at = now()
-WHERE content_id = @content_id AND claim_status = 'unclaimed' AND org_id IS NULL;
+WHERE content_id = @content_id AND claim_status = 'unclaimed' AND org_id IS NULL
+  AND listing_kind <> 'mentorship';
 
 -- Atomically resolve a pending claim (BUG-015). Rejection clears the
 -- claimant; approval keeps claimed_by_org_id on the org AND links org_id —
@@ -517,7 +549,8 @@ WHERE content_id = @content_id AND claim_status = 'unclaimed' AND org_id IS NULL
 -- name: ApproveServiceClaimIfPending :execrows
 UPDATE service_listing_meta
 SET claim_status = 'approved', claimed_by_org_id = @org_id, org_id = @org_id, updated_at = now()
-WHERE content_id = @content_id AND claim_status = 'pending';
+WHERE content_id = @content_id AND claim_status = 'pending'
+  AND listing_kind <> 'mentorship';
 
 -- name: RejectServiceClaimIfPending :execrows
 -- Rejection keeps claimed_by_org_id: the claimant identity drives §22
@@ -535,7 +568,8 @@ UPDATE service_listing_meta
 SET claim_status = 'approved', org_id = claimed_by_org_id, updated_at = now()
 WHERE content_id = @content_id
   AND claim_status = 'rejected'
-  AND claimed_by_org_id IS NOT NULL;
+  AND claimed_by_org_id IS NOT NULL
+  AND listing_kind <> 'mentorship';
 
 -- ---------------------------------------------------------------------
 -- Org helpers
@@ -902,25 +936,44 @@ WHERE sb.provider_user_id = @provider_user_id
 -- Mentorship dedupe (000824) — replaces the dropped
 -- GetActiveOrPendingConnection: a booker may hold at most one OPEN request
 -- (pending awaiting mentor, or confirmed = active connection) against a
--- mentor's shadow listing. Returns no rows when none is open — callers
--- treat pgx.ErrNoRows as "no open request" (same contract the old
--- connection query had).
+-- MENTOR, keyed on (booker_user_id, provider_user_id) — the same pair the
+-- idx_svc_bookings_mentorship_open_uniq partial index enforces (000828).
+-- Keying on the provider user, not the listing meta, keeps the gate closed
+-- across shadow re-mints; org_id IS NULL mirrors the index predicate.
+-- Returns no rows when none is open — callers treat pgx.ErrNoRows as
+-- "no open request" (same contract the old connection query had).
 -- name: GetOpenMentorshipBooking :one
 SELECT sb.id FROM service_bookings sb
 WHERE sb.booker_user_id = @booker_user_id
-  AND sb.listing_meta_id = @listing_meta_id
+  AND sb.provider_user_id = @provider_user_id
+  AND sb.org_id IS NULL
   AND sb.status IN ('pending','confirmed')
 ORDER BY sb.created_at DESC
+LIMIT 1;
+
+-- Legacy connection-id fallback (000824): migrated rows keep their
+-- pre-unification mentorship_connections UUID in
+-- meta->>'connection_id'. Compat callers (the mentorship.Service row
+-- lookup, tools.read) still arrive holding that old id — resolve it to
+-- the live booking id so a migrated connection stays addressable.
+-- name: GetMentorshipBookingIDByConnectionID :one
+SELECT sb.id FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+WHERE sb.meta->>'connection_id' = @connection_id::text
+  AND sm.listing_kind = 'mentorship'
 LIMIT 1;
 
 -- Mentor capacity probe (000824): the mentee-count trigger
 -- trg_service_booking_mentee_count keeps user_profiles.active_mentee_count
 -- in sync with confirmed mentorship-kind bookings, so the create-booking
--- capacity check reads both columns straight from the profile. Deliberately
+-- capacity check reads both columns straight from the profile. is_mentor
+-- rides along so the create path can re-verify the mentor flag — a live
+-- shadow left behind when mentorship is switched off must not keep
+-- minting bookings (orphan-shadow guard). Deliberately
 -- NOT the legacy GetMentorProfile (mentorship.sql is dead — Task 6 removes
 -- it); this lives in servicedir's own query file.
 -- name: GetMentorCapacity :one
-SELECT mentor_capacity, active_mentee_count
+SELECT mentor_capacity, active_mentee_count, is_mentor
 FROM user_profiles
 WHERE user_id = @user_id;
 
@@ -1032,12 +1085,17 @@ RETURNING *;
 
 -- Booker flags a confirmed|fulfilled booking as disputed — the booker's
 -- reason lands in dispute_reason (org_response_note stays org/admin-only).
+-- org_id IS NOT NULL: mentorship-kind rows (user-owned, org_id NULL) are
+-- inquiry-only and non-disputable — the service layer rejects them ahead
+-- of this query; the predicate is defence-in-depth so a direct query call
+-- can never push a mentor request into the dispute flow.
 -- name: DisputeServiceBooking :one
 UPDATE service_bookings
 SET status = 'disputed',
     dispute_reason = sqlc.narg(dispute_reason),
     updated_at = now()
 WHERE id = @id AND status IN ('confirmed','fulfilled')
+  AND org_id IS NOT NULL
 RETURNING *;
 
 -- Admin dispute resolution / forced transition.

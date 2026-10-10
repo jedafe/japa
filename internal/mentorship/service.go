@@ -954,7 +954,10 @@ func (s *Service) CancelOutgoingConnection(ctx context.Context, menteeID, connID
 		return ErrConnectionNotFound
 	}
 
-	if _, err := s.bookings.CancelMyBooking(ctx, connID, menteeID, ""); err != nil {
+	// row.ID, not connID: the caller may hold a pre-migration connection
+	// id resolved via meta->>'connection_id' — the backend only knows the
+	// booking id.
+	if _, err := s.bookings.CancelMyBooking(ctx, row.ID, menteeID, ""); err != nil {
 		return mapBookingErr(err)
 	}
 
@@ -1005,11 +1008,12 @@ func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.
 		return Connection{}, ErrConnectionNotFound
 	}
 
-	if _, err := s.bookings.RespondToBooking(ctx, mentorID, connID, "accept", ""); err != nil {
+	// row.ID — connID may be a legacy connection id (meta fallback).
+	if _, err := s.bookings.RespondToBooking(ctx, mentorID, row.ID, "accept", ""); err != nil {
 		return Connection{}, mapBookingErr(err)
 	}
 
-	updated, err := s.bookingRow(ctx, connID)
+	updated, err := s.bookingRow(ctx, row.ID)
 	if err != nil {
 		return Connection{}, fmt.Errorf("loading accepted connection: %w", err)
 	}
@@ -1035,7 +1039,7 @@ func (s *Service) AcceptConnection(ctx context.Context, mentorID, connID pgtype.
 
 	// §102 analytics: mentorship_accepted { mentee_id }
 	// The mentor (mentorID) is the actor.
-	s.trackEvent(ctx, mentorID, "mentorship_accepted", "mentorship_connection", connID,
+	s.trackEvent(ctx, mentorID, "mentorship_accepted", "mentorship_connection", row.ID,
 		map[string]any{"mentee_id": updated.BookerUserID.String()})
 
 	return result, nil
@@ -1063,11 +1067,12 @@ func (s *Service) DeclineConnection(ctx context.Context, mentorID, connID pgtype
 		return Connection{}, ErrConnectionNotFound
 	}
 
-	if _, err := s.bookings.RespondToBooking(ctx, mentorID, connID, "decline", ""); err != nil {
+	// row.ID — connID may be a legacy connection id (meta fallback).
+	if _, err := s.bookings.RespondToBooking(ctx, mentorID, row.ID, "decline", ""); err != nil {
 		return Connection{}, mapBookingErr(err)
 	}
 
-	updated, err := s.bookingRow(ctx, connID)
+	updated, err := s.bookingRow(ctx, row.ID)
 	if err != nil {
 		return Connection{}, fmt.Errorf("loading declined connection: %w", err)
 	}
@@ -1099,19 +1104,20 @@ func (s *Service) CompleteConnection(ctx context.Context, userID, connID pgtype.
 		return Connection{}, ErrConnectionNotFound
 	}
 
+	// row.ID — connID may be a legacy connection id (meta fallback).
 	if isMentor {
-		_, err = s.bookings.RespondToBooking(ctx, userID, connID, "complete", "")
+		_, err = s.bookings.RespondToBooking(ctx, userID, row.ID, "complete", "")
 	} else {
-		_, err = s.bookings.CompleteMyBooking(ctx, connID, userID)
+		_, err = s.bookings.CompleteMyBooking(ctx, row.ID, userID)
 	}
 	if err != nil {
 		return Connection{}, mapBookingErr(err)
 	}
 
 	// §102 analytics: mentorship_completed { connection_id }
-	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", connID, nil)
+	s.trackEvent(ctx, userID, "mentorship_completed", "mentorship_connection", row.ID, nil)
 
-	updated, err := s.bookingRow(ctx, connID)
+	updated, err := s.bookingRow(ctx, row.ID)
 	if err != nil {
 		return Connection{}, fmt.Errorf("loading completed connection: %w", err)
 	}
@@ -1148,16 +1154,17 @@ func (s *Service) CancelConnection(ctx context.Context, userID, connID pgtype.UU
 		reasonStr = *reason
 	}
 
+	// row.ID — connID may be a legacy connection id (meta fallback).
 	if isMentor {
-		_, err = s.bookings.CancelProviderBooking(ctx, userID, connID, reasonStr)
+		_, err = s.bookings.CancelProviderBooking(ctx, userID, row.ID, reasonStr)
 	} else {
-		_, err = s.bookings.CancelMyBooking(ctx, connID, userID, reasonStr)
+		_, err = s.bookings.CancelMyBooking(ctx, row.ID, userID, reasonStr)
 	}
 	if err != nil {
 		return Connection{}, mapBookingErr(err)
 	}
 
-	updated, err := s.bookingRow(ctx, connID)
+	updated, err := s.bookingRow(ctx, row.ID)
 	if err != nil {
 		return Connection{}, fmt.Errorf("loading cancelled connection: %w", err)
 	}
@@ -1170,6 +1177,12 @@ func (s *Service) CancelConnection(ctx context.Context, userID, connID pgtype.UU
 func (s *Service) ListAllConnections(ctx context.Context, status string, mentorID, menteeID pgtype.UUID, limit, offset int32) ([]Connection, error) {
 	if s.bookings == nil {
 		return nil, errBackendUnavailable
+	}
+
+	// The ?status= filter speaks connection vocabulary only — booking-only
+	// tokens (disputed, refunded) are invalid input, not an empty page.
+	if status != "" && !isConnectionStatus(status) {
+		return nil, ErrInvalidStatusChange
 	}
 
 	rows, err := s.bookings.ListMentorshipBookingsAdmin(ctx, bookingStatus(status), mentorID, menteeID, limit, offset)
@@ -1185,17 +1198,40 @@ func (s *Service) ListAllConnections(ctx context.Context, status string, mentorI
 	return conns, nil
 }
 
+// isConnectionStatus reports whether s belongs to the legacy
+// mentorship_connections vocabulary — the only statuses the compat
+// admin/filter surfaces accept. Booking-only statuses (disputed,
+// refunded) are unreachable on mentorship rows and reject as invalid
+// input rather than silently filtering to an empty set or writing a
+// meaningless state.
+func isConnectionStatus(s string) bool {
+	switch s {
+	case "pending", "active", "declined", "completed", "cancelled":
+		return true
+	}
+
+	return false
+}
+
 // AdminUpdateConnection allows an admin to override a connection's status.
 // The status token is in legacy vocabulary — 'active'/'completed' map to
-// the booking's 'confirmed'/'fulfilled'.
+// the booking's 'confirmed'/'fulfilled'; anything outside the connection
+// enum (incl. booking-only 'disputed'/'refunded') is a 400.
 // PATCH /api/v1/admin/mentorship/connections/:id.
 func (s *Service) AdminUpdateConnection(ctx context.Context, connID pgtype.UUID, status string) (Connection, error) {
 	if s.bookings == nil {
 		return Connection{}, errBackendUnavailable
 	}
 
+	if !isConnectionStatus(status) {
+		return Connection{}, ErrInvalidStatusChange
+	}
+
 	// Kind-check: the admin route may only touch mentorship-kind bookings.
-	if _, err := s.bookingRow(ctx, connID); err != nil {
+	// row carries the resolved booking id — connID may be a legacy
+	// connection id (meta->>'connection_id' fallback).
+	row, err := s.bookingRow(ctx, connID)
+	if err != nil {
 		return Connection{}, err
 	}
 
@@ -1204,11 +1240,11 @@ func (s *Service) AdminUpdateConnection(ctx context.Context, connID pgtype.UUID,
 		return Connection{}, ErrInvalidStatusChange
 	}
 
-	if _, err := s.bookings.AdminSetBookingStatus(ctx, connID, servicedir.AdminBookingActionInput{Status: target}); err != nil {
+	if _, err := s.bookings.AdminSetBookingStatus(ctx, row.ID, servicedir.AdminBookingActionInput{Status: target}); err != nil {
 		return Connection{}, mapBookingErr(err)
 	}
 
-	updated, err := s.bookingRow(ctx, connID)
+	updated, err := s.bookingRow(ctx, row.ID)
 	if err != nil {
 		return Connection{}, fmt.Errorf("loading updated connection: %w", err)
 	}

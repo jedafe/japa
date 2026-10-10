@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -103,6 +104,10 @@ type BookingDTO struct {
 	CancelReason    string `json:"cancel_reason,omitempty"`
 	CreatedAt       string `json:"created_at"`
 }
+
+// maxBookingTextLen caps free-text booking inputs (note, goals,
+// cancel_reason, dispute_reason, respond note) — §111.
+const maxBookingTextLen = 4000
 
 // BookingResult is the POST /services/:id/bookings response — the booking
 // plus a nested payment object when a platform-fee checkout was opened
@@ -449,6 +454,12 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 		return BookingResult{}, ErrPackagesDisabled
 	}
 
+	// §111 free-text cap — note is unbounded user input landing in a text
+	// column; reject oversized payloads before any row is written.
+	if utf8.RuneCountInString(input.Note) > maxBookingTextLen {
+		return BookingResult{}, ErrInputTooLong
+	}
+
 	// §111 availability window — a package that hasn't opened yet or is
 	// past available_until doesn't accept bookings. Date columns compare
 	// against the UTC civil date (pgtype.Date stores UTC midnight).
@@ -716,6 +727,12 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 		return BookingResult{}, ErrMentorshipDisabled
 	}
 
+	// §111 free-text caps — goals/note are unbounded user input landing in
+	// a text column + meta JSON; reject oversized payloads early.
+	if utf8.RuneCountInString(input.Note) > maxBookingTextLen || utf8.RuneCountInString(input.Goals) > maxBookingTextLen {
+		return BookingResult{}, ErrInputTooLong
+	}
+
 	providerID := listing.AuthorID
 	if bookerID == providerID {
 		return BookingResult{}, ErrSelfMentorship
@@ -731,7 +748,11 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 		return BookingResult{}, ErrInvalidCoupon
 	}
 
-	open, err := s.store.HasOpenMentorshipBooking(ctx, bookerID, listing.MetaID)
+	// Dedupe keys on (booker, provider) — the same pair the
+	// idx_svc_bookings_mentorship_open_uniq partial index (000828) guards
+	// at the DB level. Keying on the mentor user keeps the gate closed
+	// when the shadow meta row is re-minted.
+	open, err := s.store.HasOpenMentorshipBooking(ctx, bookerID, providerID)
 	if err != nil {
 		return BookingResult{}, err
 	}
@@ -749,6 +770,15 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 
 		return BookingResult{}, fmt.Errorf("servicedir: mentorship booking: capacity probe: %w", err)
 	}
+
+	// Orphan-shadow re-verify: a live listing_kind='mentorship' row whose
+	// author no longer has is_mentor (opt-out raced the listing fetch, or
+	// a stale shadow survived) must not mint bookings. The compat layer
+	// maps ErrBookingUnavailable → mentor_not_found.
+	if cap.IsMentor == nil || !*cap.IsMentor {
+		return BookingResult{}, ErrBookingUnavailable
+	}
+
 	if cap.Capacity != nil {
 		var active int16
 		if cap.Active != nil {
@@ -989,14 +1019,16 @@ func (s *Service) ListProviderBookings(ctx context.Context, providerID pgtype.UU
 // BookingRespondInput is the POST /me/service-bookings/:id/respond body —
 // the provider's action on a user-owned (mentorship) booking.
 type BookingRespondInput struct {
-	Action string `json:"action"` // accept | decline | complete
+	Action string `json:"action"` // accept | decline | complete | cancel
 	Note   string `json:"note"`
 }
 
 // RespondToBooking applies the provider-side transition on a
 // user-provider booking (000824): accept (pending→confirmed), decline
 // (pending→declined, note → org_response_note), complete
-// (confirmed→fulfilled). Only the booking's provider_user_id may respond
+// (confirmed→fulfilled), cancel (pending|confirmed→cancelled, note →
+// cancel_reason — the mentor arm of "either party cancels", delegated to
+// CancelProviderBooking). Only the booking's provider_user_id may respond
 // — org-owned bookings keep the PATCH /org/:org_id/service-bookings/:id
 // route; this method refuses them outright.
 func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pgtype.UUID, action, note string) (BookingDTO, error) {
@@ -1017,6 +1049,10 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 		return BookingDTO{}, ErrNotOwner
 	}
 
+	if utf8.RuneCountInString(note) > maxBookingTextLen {
+		return BookingDTO{}, ErrInputTooLong
+	}
+
 	var notePtr *string
 	if note != "" {
 		notePtr = &note
@@ -1033,6 +1069,11 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 	case "complete":
 		newStatus = BookingStatusFulfilled
 		_, err = s.store.FulfillBooking(ctx, bookingID)
+	case "cancel":
+		// pending|confirmed → cancelled with cancel_reason — the
+		// dedicated method owns the transition, the booker notification,
+		// and the mentee-count re-index.
+		return s.CancelProviderBooking(ctx, providerID, bookingID, note)
 	default:
 		return BookingDTO{}, ErrInvalidBookingTransition
 	}
@@ -1312,6 +1353,10 @@ func (s *Service) CancelMyBooking(ctx context.Context, bookingID, userID pgtype.
 		return BookingDTO{}, ErrNotOwner
 	}
 
+	if utf8.RuneCountInString(reason) > maxBookingTextLen {
+		return BookingDTO{}, ErrInputTooLong
+	}
+
 	var reasonPtr *string
 	if reason != "" {
 		reasonPtr = &reason
@@ -1337,7 +1382,10 @@ func (s *Service) CancelMyBooking(ctx context.Context, bookingID, userID pgtype.
 		s.invalidatePackageCache(row.ListingContentID)
 	}
 
-	s.enqueueStatusChanged(row.ID, BookingStatusCancelled)
+	// Booker-initiated — the alert goes to the PROVIDER side (mentee
+	// cancelling never self-notifies "provider cancelled"): mentorship
+	// rows → provider_user_id, org rows → org members.
+	s.enqueueStatusChangedAudience(row.ID, BookingStatusCancelled, "provider")
 	s.enqueueFeeSettle(row.ID, s.cancelFeeAction(ctx, row))
 
 	// Mentee-initiated cancel of an active mentorship connection also
@@ -1367,6 +1415,18 @@ func (s *Service) DisputeMyBooking(ctx context.Context, bookingID, userID pgtype
 
 	if row.BookerUserID != userID {
 		return BookingDTO{}, ErrNotOwner
+	}
+
+	// Mentorship-kind rows are inquiry-only and non-disputable (§111):
+	// disputed/refunded are unreachable on mentor requests — there is no
+	// fee to contest. The query's org_id IS NOT NULL predicate is the
+	// defence-in-depth backstop.
+	if row.ListingKind == ListingKindMentorship {
+		return BookingDTO{}, ErrInvalidBookingTransition
+	}
+
+	if utf8.RuneCountInString(reason) > maxBookingTextLen {
+		return BookingDTO{}, ErrInputTooLong
 	}
 
 	var reasonPtr *string
@@ -1459,6 +1519,13 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 	acquire := holdsSeat(input.Status) && !holdsSeat(row.Status)
 	release := !holdsSeat(input.Status) && holdsSeat(row.Status)
 
+	// Mentorship rows: an admin transition crossing 'confirmed' in either
+	// direction moved active_mentee_count via the booking trigger —
+	// re-index the mentor's §102 document (same as the respond/cancel
+	// paths; unrelated mentorship transitions don't touch the count).
+	crossedConfirmed := row.ListingKind == ListingKindMentorship &&
+		(row.Status == BookingStatusConfirmed) != (input.Status == BookingStatusConfirmed)
+
 	switch {
 	case acquire && row.DepartureID.Valid:
 		var cerr error
@@ -1486,6 +1553,10 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 		s.invalidatePackageCache(row.ListingContentID)
 		s.enqueueStatusChanged(row.ID, input.Status)
 
+		if crossedConfirmed {
+			s.enqueueMentorMeilisearch(row.ProviderUserID)
+		}
+
 		return s.GetBooking(ctx, bookingID, pgtype.UUID{}, true)
 	default:
 		releaseDep := pgtype.UUID{}
@@ -1503,6 +1574,10 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 	}
 
 	s.enqueueStatusChanged(row.ID, input.Status)
+
+	if crossedConfirmed {
+		s.enqueueMentorMeilisearch(row.ProviderUserID)
+	}
 
 	switch input.Status {
 	case BookingStatusDeclined, BookingStatusRefunded:

@@ -199,7 +199,7 @@ func TestServiceBookingCreated_ProviderArm_LiveDB(t *testing.T) {
 	if n.ActorID == nil || *n.ActorID != menteeID.String() {
 		t.Errorf("actor_id = %v, want booker %s", n.ActorID, menteeID)
 	}
-	wantURL := "/messages/mentorship?b=" + bookingID.String()
+	wantURL := "/messages/mentorship?role=received&b=" + bookingID.String()
 	if n.ActionURL == nil || *n.ActionURL != wantURL {
 		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)
 	}
@@ -207,8 +207,8 @@ func TestServiceBookingCreated_ProviderArm_LiveDB(t *testing.T) {
 
 // TestServiceBookingStatusChanged_MentorshipBookerArm_LiveDB — the booker
 // of a mentorship booking gets the transition notification with the
-// provider user (not a NULL org) as actor, deep-linked to the bookings
-// inbox.
+// provider user (not a NULL org) as actor, deep-linked to the mentee's
+// mentorship inbox (role=sent is the default arm there).
 func TestServiceBookingStatusChanged_MentorshipBookerArm_LiveDB(t *testing.T) {
 	database := workerLiveDB(t)
 	uniq := workerUniq("w5s-")
@@ -246,7 +246,52 @@ func TestServiceBookingStatusChanged_MentorshipBookerArm_LiveDB(t *testing.T) {
 	if n.ActorID == nil || *n.ActorID != mentorID.String() {
 		t.Errorf("actor_id = %v, want provider %s", n.ActorID, mentorID)
 	}
-	wantURL := "/messages/bookings?b=" + bookingID.String()
+	wantURL := "/messages/mentorship?b=" + bookingID.String()
+	if n.ActionURL == nil || *n.ActionURL != wantURL {
+		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)
+	}
+}
+
+// TestServiceBookingStatusChanged_ProviderArm_BookerCancel_LiveDB — a
+// mentee-initiated cancel must notify the PROVIDER (audience=provider),
+// with the booker as actor — the old booker-default audience left the
+// mentor unaware and self-notified the mentee "provider cancelled".
+func TestServiceBookingStatusChanged_ProviderArm_BookerCancel_LiveDB(t *testing.T) {
+	database := workerLiveDB(t)
+	uniq := workerUniq("w5c-")
+
+	mentorID := insertWorkerUser(t, database, "w5mentor"+uniq)
+	menteeID := insertWorkerUser(t, database, "w5mentee"+uniq)
+	bookingID := insertMentorshipBooking(t, database, mentorID, menteeID, uniq)
+
+	if _, err := database.Writer.Exec(t.Context(),
+		`UPDATE service_bookings SET status = 'cancelled', cancel_reason = 'changed my mind', cancelled_at = now() WHERE id = $1`,
+		bookingID); err != nil {
+		t.Fatalf("cancel booking: %v", err)
+	}
+
+	err := HandleServiceBookingStatusChanged(t.Context(), bookingTask(t, TypeServiceBookingStatusChanged,
+		map[string]string{"booking_id": bookingID.String(), "status": "cancelled", "audience": "provider"}))
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	got := notificationsFor(t, database, bookingID)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 notification, got %d", len(got))
+	}
+
+	n := got[0]
+	if n.RecipientID != mentorID.String() {
+		t.Errorf("recipient = %s, want provider %s", n.RecipientID, mentorID)
+	}
+	if n.ActorType == nil || *n.ActorType != "user" {
+		t.Errorf("actor_type = %v, want user (booker)", n.ActorType)
+	}
+	if n.ActorID == nil || *n.ActorID != menteeID.String() {
+		t.Errorf("actor_id = %v, want booker %s (the canceller)", n.ActorID, menteeID)
+	}
+	wantURL := "/messages/mentorship?role=received&b=" + bookingID.String()
 	if n.ActionURL == nil || *n.ActionURL != wantURL {
 		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)
 	}
@@ -287,7 +332,7 @@ func TestServiceBookingDispute_ProviderArm_LiveDB(t *testing.T) {
 	if n.ActorID == nil || *n.ActorID != menteeID.String() {
 		t.Errorf("actor_id = %v, want booker %s (the disputer)", n.ActorID, menteeID)
 	}
-	wantURL := "/messages/mentorship?b=" + bookingID.String()
+	wantURL := "/messages/mentorship?role=received&b=" + bookingID.String()
 	if n.ActionURL == nil || *n.ActionURL != wantURL {
 		t.Errorf("action_url = %v, want %s", n.ActionURL, wantURL)
 	}

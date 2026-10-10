@@ -65,13 +65,15 @@ func (s *Store) CreateMentorShadow(ctx context.Context, authorID pgtype.UUID, ti
 }
 
 // UpdateMentorShadow refreshes an existing shadow in place (title/body/
-// content_hash, republish a preserved draft) and re-asserts the profile
-// link — all in one transaction.
-func (s *Store) UpdateMentorShadow(ctx context.Context, contentID, authorID pgtype.UUID, title, body, contentHash string) error {
+// content_hash, canonical mentor-<username> slug, republish a preserved
+// draft — other statuses are left alone) and re-asserts the profile link
+// — all in one transaction.
+func (s *Store) UpdateMentorShadow(ctx context.Context, contentID, authorID pgtype.UUID, title, slug, body, contentHash string) error {
 	return db.WithTx(ctx, s.pool.Writer, func(q *gen.Queries) error {
 		n, err := q.UpdateMentorshipShadowContent(ctx, gen.UpdateMentorshipShadowContentParams{
 			ID:          contentID,
 			Title:       title,
+			TargetSlug:  slug,
 			Body:        body,
 			ContentHash: &contentHash,
 		})
@@ -91,6 +93,14 @@ func (s *Store) UpdateMentorShadow(ctx context.Context, contentID, authorID pgty
 			ContentID: contentID, UserID: authorID,
 		})
 	})
+}
+
+// GetMentorshipBookingIDByConnectionID resolves a legacy
+// mentorship_connections UUID (kept on meta->>'connection_id' by the
+// 000824 migration) to the live service_bookings id. pgx.ErrNoRows when
+// the legacy id matches no mentorship-kind booking.
+func (s *Store) GetMentorshipBookingIDByConnectionID(ctx context.Context, connectionID string) (pgtype.UUID, error) {
+	return s.read.GetMentorshipBookingIDByConnectionID(ctx, connectionID)
 }
 
 // RetireMentorShadow soft-deletes the mentor's live shadow contents row

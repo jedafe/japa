@@ -572,6 +572,7 @@ const approveServiceClaimIfPending = `-- name: ApproveServiceClaimIfPending :exe
 UPDATE service_listing_meta
 SET claim_status = 'approved', claimed_by_org_id = $1, org_id = $1, updated_at = now()
 WHERE content_id = $2 AND claim_status = 'pending'
+  AND listing_kind <> 'mentorship'
 `
 
 type ApproveServiceClaimIfPendingParams struct {
@@ -599,6 +600,7 @@ SET claim_status = 'approved', org_id = claimed_by_org_id, updated_at = now()
 WHERE content_id = $1
   AND claim_status = 'rejected'
   AND claimed_by_org_id IS NOT NULL
+  AND listing_kind <> 'mentorship'
 `
 
 // Overturn a rejected claim via the §22 appeal flow — grants the claim
@@ -791,6 +793,7 @@ const claimServiceListingIfUnclaimed = `-- name: ClaimServiceListingIfUnclaimed 
 UPDATE service_listing_meta
 SET claim_status = 'pending', claimed_by_org_id = $1, updated_at = now()
 WHERE content_id = $2 AND claim_status = 'unclaimed' AND org_id IS NULL
+  AND listing_kind <> 'mentorship'
 `
 
 type ClaimServiceListingIfUnclaimedParams struct {
@@ -802,6 +805,9 @@ type ClaimServiceListingIfUnclaimedParams struct {
 // The claim flow exists for platform-seeded listings with no owning org —
 // a listing that already has org_id is owned, so claim must not let a
 // different org take it over on approval (ownership hijack).
+// listing_kind <> 'mentorship': mentor shadow listings are managed only
+// by the mentor-profile ensure path (000824) — an org must never claim a
+// personal mentor shadow.
 func (q *Queries) ClaimServiceListingIfUnclaimed(ctx context.Context, arg ClaimServiceListingIfUnclaimedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, claimServiceListingIfUnclaimed, arg.OrgID, arg.ContentID)
 	if err != nil {
@@ -1834,6 +1840,7 @@ SET status = 'disputed',
     dispute_reason = $1,
     updated_at = now()
 WHERE id = $2 AND status IN ('confirmed','fulfilled')
+  AND org_id IS NOT NULL
 RETURNING id, listing_meta_id, departure_id, booker_user_id, org_id, intent, party_size, preferred_dates, note, status, purchase_mode, payment_id, total_price, fee_amount, fee_currency, agent_balance_due, org_response_note, expires_at, confirmed_at, fulfilled_at, cancelled_at, cancel_reason, anonymized_at, created_at, updated_at, reminded_at, dispute_reason, tier_id, coupon_id, coupon_code, discount_amount, tier_name, tier_price_amount, provider_user_id, destination_space_id, meta
 `
 
@@ -1844,6 +1851,10 @@ type DisputeServiceBookingParams struct {
 
 // Booker flags a confirmed|fulfilled booking as disputed — the booker's
 // reason lands in dispute_reason (org_response_note stays org/admin-only).
+// org_id IS NOT NULL: mentorship-kind rows (user-owned, org_id NULL) are
+// inquiry-only and non-disputable — the service layer rejects them ahead
+// of this query; the predicate is defence-in-depth so a direct query call
+// can never push a mentor request into the dispute flow.
 func (q *Queries) DisputeServiceBooking(ctx context.Context, arg DisputeServiceBookingParams) (ServiceBooking, error) {
 	row := q.db.QueryRow(ctx, disputeServiceBooking, arg.DisputeReason, arg.ID)
 	var i ServiceBooking
@@ -2024,7 +2035,7 @@ func (q *Queries) GetListingCouponByCode(ctx context.Context, arg GetListingCoup
 }
 
 const getMentorCapacity = `-- name: GetMentorCapacity :one
-SELECT mentor_capacity, active_mentee_count
+SELECT mentor_capacity, active_mentee_count, is_mentor
 FROM user_profiles
 WHERE user_id = $1
 `
@@ -2032,19 +2043,43 @@ WHERE user_id = $1
 type GetMentorCapacityRow struct {
 	MentorCapacity    *int16 `json:"mentor_capacity"`
 	ActiveMenteeCount *int16 `json:"active_mentee_count"`
+	IsMentor          *bool  `json:"is_mentor"`
 }
 
 // Mentor capacity probe (000824): the mentee-count trigger
 // trg_service_booking_mentee_count keeps user_profiles.active_mentee_count
 // in sync with confirmed mentorship-kind bookings, so the create-booking
-// capacity check reads both columns straight from the profile. Deliberately
+// capacity check reads both columns straight from the profile. is_mentor
+// rides along so the create path can re-verify the mentor flag — a live
+// shadow left behind when mentorship is switched off must not keep
+// minting bookings (orphan-shadow guard). Deliberately
 // NOT the legacy GetMentorProfile (mentorship.sql is dead — Task 6 removes
 // it); this lives in servicedir's own query file.
 func (q *Queries) GetMentorCapacity(ctx context.Context, userID pgtype.UUID) (GetMentorCapacityRow, error) {
 	row := q.db.QueryRow(ctx, getMentorCapacity, userID)
 	var i GetMentorCapacityRow
-	err := row.Scan(&i.MentorCapacity, &i.ActiveMenteeCount)
+	err := row.Scan(&i.MentorCapacity, &i.ActiveMenteeCount, &i.IsMentor)
 	return i, err
+}
+
+const getMentorshipBookingIDByConnectionID = `-- name: GetMentorshipBookingIDByConnectionID :one
+SELECT sb.id FROM service_bookings sb
+JOIN service_listing_meta sm ON sm.id = sb.listing_meta_id
+WHERE sb.meta->>'connection_id' = $1::text
+  AND sm.listing_kind = 'mentorship'
+LIMIT 1
+`
+
+// Legacy connection-id fallback (000824): migrated rows keep their
+// pre-unification mentorship_connections UUID in
+// meta->>'connection_id'. Compat callers (the mentorship.Service row
+// lookup, tools.read) still arrive holding that old id — resolve it to
+// the live booking id so a migrated connection stays addressable.
+func (q *Queries) GetMentorshipBookingIDByConnectionID(ctx context.Context, connectionID string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getMentorshipBookingIDByConnectionID, connectionID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getMentorshipListingByAuthor = `-- name: GetMentorshipListingByAuthor :one
@@ -2087,6 +2122,10 @@ WHERE c.author_id = $1
   AND c.content_type = 'service_listing'
   AND sm.listing_kind = 'mentorship'
   AND c.deleted_at IS NULL
+ORDER BY (
+    SELECT COUNT(*) FROM service_bookings sb
+    WHERE sb.listing_meta_id = sm.id
+  ) DESC, c.id DESC
 LIMIT 1
 `
 
@@ -2160,6 +2199,11 @@ type GetMentorshipListingByAuthorRow struct {
 // domain row. Status is intentionally not filtered: preserved draft
 // shadows for non-live mentors still anchor their migrated bookings.
 // Returns no rows for users without a shadow listing.
+// Deterministic pick when a user somehow owns more than one shadow
+// (000824 created one per mentor, but nothing structurally forbids a
+// duplicate): prefer the row already anchoring the most bookings, then
+// the newest — an arbitrary LIMIT 1 would leave the ensure path updating
+// one shadow while the public surface serves another.
 func (q *Queries) GetMentorshipListingByAuthor(ctx context.Context, authorID pgtype.UUID) (GetMentorshipListingByAuthorRow, error) {
 	row := q.db.QueryRow(ctx, getMentorshipListingByAuthor, authorID)
 	var i GetMentorshipListingByAuthorRow
@@ -2242,25 +2286,29 @@ func (q *Queries) GetMinActiveTierPrice(ctx context.Context, listingMetaID pgtyp
 const getOpenMentorshipBooking = `-- name: GetOpenMentorshipBooking :one
 SELECT sb.id FROM service_bookings sb
 WHERE sb.booker_user_id = $1
-  AND sb.listing_meta_id = $2
+  AND sb.provider_user_id = $2
+  AND sb.org_id IS NULL
   AND sb.status IN ('pending','confirmed')
 ORDER BY sb.created_at DESC
 LIMIT 1
 `
 
 type GetOpenMentorshipBookingParams struct {
-	BookerUserID  pgtype.UUID `json:"booker_user_id"`
-	ListingMetaID pgtype.UUID `json:"listing_meta_id"`
+	BookerUserID   pgtype.UUID `json:"booker_user_id"`
+	ProviderUserID pgtype.UUID `json:"provider_user_id"`
 }
 
 // Mentorship dedupe (000824) — replaces the dropped
 // GetActiveOrPendingConnection: a booker may hold at most one OPEN request
 // (pending awaiting mentor, or confirmed = active connection) against a
-// mentor's shadow listing. Returns no rows when none is open — callers
-// treat pgx.ErrNoRows as "no open request" (same contract the old
-// connection query had).
+// MENTOR, keyed on (booker_user_id, provider_user_id) — the same pair the
+// idx_svc_bookings_mentorship_open_uniq partial index enforces (000828).
+// Keying on the provider user, not the listing meta, keeps the gate closed
+// across shadow re-mints; org_id IS NULL mirrors the index predicate.
+// Returns no rows when none is open — callers treat pgx.ErrNoRows as
+// "no open request" (same contract the old connection query had).
 func (q *Queries) GetOpenMentorshipBooking(ctx context.Context, arg GetOpenMentorshipBookingParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getOpenMentorshipBooking, arg.BookerUserID, arg.ListingMetaID)
+	row := q.db.QueryRow(ctx, getOpenMentorshipBooking, arg.BookerUserID, arg.ProviderUserID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -5068,28 +5116,49 @@ UPDATE contents
 SET title = $1,
     body = $2,
     content_hash = $3,
-    status = 'published',
-    published_at = COALESCE(published_at, now()),
+    slug = CASE
+        WHEN contents.slug <> $4 AND NOT EXISTS (
+            SELECT 1 FROM contents o
+            WHERE o.slug = $4
+              AND o.id <> $5
+              AND o.deleted_at IS NULL
+        ) THEN $4
+        ELSE contents.slug
+    END,
+    status = CASE WHEN status = 'draft' THEN 'published' ELSE status END,
+    published_at = CASE
+        WHEN status = 'draft' THEN COALESCE(published_at, now())
+        ELSE published_at
+    END,
     updated_at = now()
-WHERE id = $4 AND deleted_at IS NULL
+WHERE id = $5 AND deleted_at IS NULL
 `
 
 type UpdateMentorshipShadowContentParams struct {
 	Title       string      `json:"title"`
 	Body        string      `json:"body"`
 	ContentHash *string     `json:"content_hash"`
+	TargetSlug  string      `json:"target_slug"`
 	ID          pgtype.UUID `json:"id"`
 }
 
 // Refresh the mentor's shadow listing in place: title follows
 // display_name, body follows mentor_bio, content_hash follows Rule 12
-// (distinguisher 'mentor:<user_id>' matches the migration). Republishes a
-// preserved draft shadow (000824 fallback rows for non-listed mentors).
+// (distinguisher 'mentor:<user_id>' matches the migration). Slug re-asserts
+// the canonical mentor-<username> form — a username change (or a shadow
+// minted with a suffix because the canonical slug was squatted) snaps
+// back once the slug frees up; the NOT EXISTS guard keeps the old slug
+// when another live row occupies the target so the update never 23505s
+// or hijacks an occupied slug. Status semantics: only a 'draft' shadow is
+// republished (preserved 000824 fallback rows for non-listed mentors); an
+// archived/moderated status is left alone so refresh can't silently
+// republish a deliberately unpublished row.
 func (q *Queries) UpdateMentorshipShadowContent(ctx context.Context, arg UpdateMentorshipShadowContentParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateMentorshipShadowContent,
 		arg.Title,
 		arg.Body,
 		arg.ContentHash,
+		arg.TargetSlug,
 		arg.ID,
 	)
 	if err != nil {

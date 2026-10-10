@@ -8,6 +8,7 @@
 //	GET   /api/v1/me/service-bookings              — caller's bookings+inquiries
 //	GET   /api/v1/me/service-bookings/:id          — caller's booking detail
 //	POST  /api/v1/me/service-bookings/:id/cancel   — booker cancel
+//	POST  /api/v1/me/service-bookings/:id/complete — booker complete (user-provider rows)
 //	GET   /api/v1/org/:org_id/packages             — org's package listings
 //	GET   /api/v1/org/:org_id/service-bookings     — org bookings inbox
 //	PATCH /api/v1/org/:org_id/service-bookings/:id — org status transition
@@ -92,6 +93,17 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 	if listing.ListingKind == ListingKindMentorship {
 		if h.service == nil || !h.service.MentorshipEnabled(r.Context()) {
 			errpkg.WriteError(w, http.StatusNotFound, "mentorship_disabled", "Mentorship is not available")
+			return
+		}
+
+		// §111: mentorship-kind bookings additionally require
+		// mentorship.request — the route-level service.booking.create
+		// grant (member+) covers package/service bookings but must not
+		// let a business-only member mint mentor requests. Conditional
+		// (not a second route gate): the kind isn't known until the
+		// listing loads.
+		if h.rbac == nil || !h.rbac.HasPermission(r.Context(), user.UserID, "mentorship.request") {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You do not have permission to perform this action")
 			return
 		}
 	} else if !h.packagesAvailable(w, r) {
@@ -402,6 +414,36 @@ func (h *Handlers) HandleMyBookingCancel(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		slog.Error("servicedir: cancel booking failed", "booking_id", bookingID, "error", err)
 		writeServiceError(w, err, "cancel_failed", "Failed to cancel booking")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": booking})
+}
+
+// HandleMyBookingComplete handles POST /me/service-bookings/:id/complete —
+// the booker arm of "either party completes" (000824): confirmed →
+// fulfilled on user-provider (mentorship) rows only. Replaces the mentee
+// arm of the legacy PATCH /mentorship/:id/complete route.
+func (h *Handlers) HandleMyBookingComplete(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	if !h.bookingSurfaceAvailable(w, r) {
+		return
+	}
+
+	bookingID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	booking, err := h.service.CompleteMyBooking(r.Context(), bookingID, user.UserID)
+	if err != nil {
+		slog.Error("servicedir: complete booking failed", "booking_id", bookingID, "error", err)
+		writeServiceError(w, err, "complete_failed", "Failed to complete booking")
 
 		return
 	}

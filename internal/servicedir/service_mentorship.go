@@ -19,11 +19,18 @@ import (
 	"errors"
 	"fmt"
 
+	"unicode/utf8"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/jedafe/japa/internal/content"
 )
+
+// errShadowSlugSquat marks a mentor shadow whose canonical slug chain was
+// fully occupied by unrelated rows (EnsureMentorShadowListing exhausted
+// its retries) — an internal edge, never a client-facing error.
+var errShadowSlugSquat = errors.New("mentor shadow slug chain exhausted")
 
 // MentorShadowInput carries the display fields the shadow listing mirrors
 // from the mentor's profile (PATCH /me/mentor-profile upsert).
@@ -49,13 +56,21 @@ func (s *Service) MentorshipListingContentID(ctx context.Context, mentorID pgtyp
 // EnsureMentorShadowListing creates or refreshes the mentor's shadow
 // listing and returns its content id. Called after the user_profiles
 // write when is_mentor is (or stays) true: an existing live or draft
-// shadow is updated in place and republished; a missing shadow is
+// shadow is updated in place (the query republishes only a preserved
+// draft — an archived/moderated status is respected) and its slug is
+// re-asserted to the canonical mentor-<username>; a missing shadow is
 // created and linked on user_profiles.mentor_listing_content_id.
 //
 // Slug/title/hash follow the 000824 migration verbatim:
 // slug 'mentor-<username>', title '<display_name> — Mentorship'
 // (username when display_name is blank), body = mentor bio, hash =
 // ComputeContentHashWithDistinguisher(bio, "mentor:<user_id>").
+//
+// mentor- is a reserved prefix (Create re-suffixes generated mentor-*
+// slugs for non-mentorship listings), but a pre-existing squat can't be
+// ruled out — when the canonical slug is occupied by a row that is NOT
+// this author's shadow, the create retries mentor-<username>-2, -3, …
+// instead of failing or hijacking the squatter's row.
 func (s *Service) EnsureMentorShadowListing(ctx context.Context, authorID pgtype.UUID, in MentorShadowInput) (pgtype.UUID, error) {
 	title := in.DisplayName
 	if title == "" {
@@ -63,12 +78,12 @@ func (s *Service) EnsureMentorShadowListing(ctx context.Context, authorID pgtype
 	}
 	title += " — Mentorship"
 
-	slug := "mentor-" + in.Username
+	slug := mentorSlugPrefix + in.Username
 	hash := content.ComputeContentHashWithDistinguisher(in.Bio, "mentor:"+authorID.String())
 
 	existing, err := s.store.GetMentorshipListing(ctx, authorID)
 	if err == nil {
-		if err := s.store.UpdateMentorShadow(ctx, existing.ID, authorID, title, in.Bio, hash); err != nil {
+		if err := s.store.UpdateMentorShadow(ctx, existing.ID, authorID, title, slug, in.Bio, hash); err != nil {
 			return pgtype.UUID{}, fmt.Errorf("servicedir: ensure mentor shadow: %w", err)
 		}
 
@@ -79,24 +94,40 @@ func (s *Service) EnsureMentorShadowListing(ctx context.Context, authorID pgtype
 		return pgtype.UUID{}, fmt.Errorf("servicedir: ensure mentor shadow: %w", err)
 	}
 
-	contentID, err := s.store.CreateMentorShadow(ctx, authorID, title, slug, in.Bio, hash)
-	if err != nil {
-		// Lost an insert race (another ensure created the shadow first) —
-		// adopt the winner so the link lands on the live row.
-		if errors.Is(err, pgx.ErrNoRows) {
-			if winner, rerr := s.store.GetMentorshipListing(ctx, authorID); rerr == nil {
-				if uerr := s.store.UpdateMentorShadow(ctx, winner.ID, authorID, title, in.Bio, hash); uerr == nil {
-					return winner.ID, nil
-				}
-
-				return winner.ID, nil
-			}
+	// Insert race / squat disambiguation: CreateMentorshipShadowContent is
+	// ON CONFLICT DO NOTHING over both partial uniques (slug, content_hash)
+	// so a conflict returns pgx.ErrNoRows. The hash carries the
+	// mentor:<user_id> distinguisher — if it conflicted, the winning row
+	// IS this author's shadow (adopt it). If no shadow of ours exists, the
+	// slug is squatted by an unrelated row — retry with a numeric suffix.
+	const maxSquatRetries = 6
+	for attempt := 1; attempt <= maxSquatRetries; attempt++ {
+		candidate := slug
+		if attempt > 1 {
+			candidate = fmt.Sprintf("%s-%d", slug, attempt)
 		}
 
-		return pgtype.UUID{}, fmt.Errorf("servicedir: ensure mentor shadow: %w", err)
+		contentID, err := s.store.CreateMentorShadow(ctx, authorID, title, candidate, in.Bio, hash)
+		if err == nil {
+			return contentID, nil
+		}
+
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, fmt.Errorf("servicedir: ensure mentor shadow: %w", err)
+		}
+
+		if winner, rerr := s.store.GetMentorshipListing(ctx, authorID); rerr == nil {
+			// Lost an insert race (another ensure created the shadow
+			// first) — adopt the winner so the link lands on the live row.
+			if uerr := s.store.UpdateMentorShadow(ctx, winner.ID, authorID, title, slug, in.Bio, hash); uerr == nil {
+				return winner.ID, nil
+			}
+
+			return winner.ID, nil
+		}
 	}
 
-	return contentID, nil
+	return pgtype.UUID{}, fmt.Errorf("servicedir: ensure mentor shadow: %w: slug %s* exhausted %d retries", errShadowSlugSquat, slug, maxSquatRetries)
 }
 
 // RetireMentorShadowListing removes the mentor from the directory: the
@@ -114,11 +145,26 @@ func (s *Service) RetireMentorShadowListing(ctx context.Context, authorID pgtype
 // MentorshipBookingRow returns the joined booking row for a single
 // mentorship request, kind-checked. pgx.ErrNoRows when the id is not a
 // mentorship-kind booking — the compat layer maps that to the legacy
-// "connection not found" sentinel.
+// "connection not found" sentinel. A miss also probes the legacy-id
+// fallback: migrated rows keep their pre-000824 connection UUID in
+// meta->>'connection_id', so a caller holding the old id still resolves
+// the booking.
 func (s *Service) MentorshipBookingRow(ctx context.Context, bookingID pgtype.UUID) (BookingRow, error) {
 	row, err := s.store.GetBookingDetail(ctx, bookingID)
 	if err != nil {
-		return BookingRow{}, err
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return BookingRow{}, err
+		}
+
+		resolved, rerr := s.store.GetMentorshipBookingIDByConnectionID(ctx, bookingID.String())
+		if rerr != nil {
+			return BookingRow{}, err // keep the original not-found
+		}
+
+		row, err = s.store.GetBookingDetail(ctx, resolved)
+		if err != nil {
+			return BookingRow{}, err
+		}
 	}
 
 	if row.ListingKind != ListingKindMentorship {
@@ -206,7 +252,10 @@ func (s *Service) CompleteMyBooking(ctx context.Context, bookingID, userID pgtyp
 		return BookingDTO{}, fmt.Errorf("servicedir: complete booking: %w", err)
 	}
 
-	s.enqueueStatusChanged(row.ID, BookingStatusFulfilled)
+	// Booker-initiated — notify the provider side, not the booker
+	// (audience=provider → provider_user_id on mentorship rows, org
+	// members on org-owned rows).
+	s.enqueueStatusChangedAudience(row.ID, BookingStatusFulfilled, "provider")
 
 	if row.ListingKind == ListingKindMentorship {
 		// Leaving 'confirmed' dropped active_mentee_count via the trigger.
@@ -231,6 +280,10 @@ func (s *Service) CancelProviderBooking(ctx context.Context, providerID, booking
 
 	if !row.ProviderUserID.Valid || row.ProviderUserID != providerID {
 		return BookingDTO{}, ErrNotOwner
+	}
+
+	if utf8.RuneCountInString(reason) > maxBookingTextLen {
+		return BookingDTO{}, ErrInputTooLong
 	}
 
 	var reasonPtr *string

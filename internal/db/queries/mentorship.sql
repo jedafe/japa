@@ -87,7 +87,9 @@ WHERE up.user_id = @user_id;
 
 -- name: UpdateMentorProfile :one
 -- Toggle is_mentor and set capacity/areas/bio. When is_mentor flips to true,
--- mentor_since is set to now(). When false, mentor_since is cleared.
+-- mentor_since is set to now() if not already recorded. mentor_since is
+-- deliberately NOT cleared when is_mentor turns off — it records when the
+-- user first mentored and is restored intact on re-enable.
 UPDATE user_profiles
 SET is_mentor = @is_mentor,
  mentor_capacity = @mentor_capacity,
@@ -356,7 +358,19 @@ WHERE user_id = @user_id;
 
 -- name: ListMentorsWithEmbeddings :many
 -- Get all mentors with their embeddings for batch Meilisearch sync.
+-- Same live-shadow EXISTS gate as the sibling discovery queries (000824):
+-- a stale is_mentor flag without a live published shadow listing is not
+-- an indexable mentor document.
 SELECT up.user_id, up.mentor_embedding, up.is_mentor, up.mentor_areas,
  up.mentor_bio, up.mentor_capacity, up.active_mentee_count, up.mentor_since
 FROM user_profiles up
-WHERE up.is_mentor = true;
+WHERE up.is_mentor = true
+ AND EXISTS (
+     SELECT 1 FROM contents c
+     JOIN service_listing_meta sm ON sm.content_id = c.id
+     WHERE c.author_id = up.user_id
+       AND c.content_type = 'service_listing'
+       AND sm.listing_kind = 'mentorship'
+       AND c.status = 'published'
+       AND c.deleted_at IS NULL
+ );

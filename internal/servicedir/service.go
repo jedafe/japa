@@ -646,6 +646,10 @@ var (
 	// ErrInvalidID — a UUID path/query parameter failed to parse
 	// (400 invalid_id).
 	ErrInvalidID = errors.New("invalid_id")
+	// ErrInputTooLong — a free-text booking input (note, goals,
+	// cancel_reason, dispute_reason, respond note) exceeded the
+	// maxBookingTextLen character cap (400 input_too_long).
+	ErrInputTooLong = errors.New("input_too_long")
 	// ErrPackageOrgImmutable — the selling org of a package cannot change
 	// post-create; the merchant of record is bound to the booking pipeline.
 	ErrPackageOrgImmutable = errors.New("package_org_immutable")
@@ -1095,11 +1099,22 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		createStatus = content.StatusPublished
 	}
 
+	// mentor- slug reservation (000824): the 'mentor-<username>' namespace
+	// belongs to mentor shadow listings. An organic title like "Mentor
+	// Training" slugifies into the reserved space — re-suffix it rather
+	// than erroring (the listing is legitimate) or silently squatting the
+	// canonical shadow slot (the shadow ensure path would then collide).
+	createSlug := ""
+	if slugged := content.Slugify(input.Title); strings.HasPrefix(slugged, mentorSlugPrefix) {
+		createSlug = slugged + "-listing"
+	}
+
 	contentRow, err := s.content.CreateContent(ctx, content.CreateContentInput{
 		AuthorID:        authorID,
 		OrganizationID:  orgID,
 		ContentType:     content.TypeServiceListing,
 		Title:           input.Title,
+		Slug:            createSlug,
 		Body:            input.Body,
 		Status:          createStatus,
 		Visibility:      content.VisibilityPublic,

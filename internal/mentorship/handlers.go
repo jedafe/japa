@@ -913,6 +913,11 @@ func (h *Handlers) ListAllConnections(w http.ResponseWriter, r *http.Request) {
 
 	conns, err := h.Service.ListAllConnections(r.Context(), status, mentorID, menteeID, limit, offset)
 	if err != nil {
+		if errors.Is(err, ErrInvalidStatusChange) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", "Invalid connection status filter")
+			return
+		}
+
 		slog.Error("listing all connections", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list connections")
 

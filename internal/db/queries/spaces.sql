@@ -982,7 +982,16 @@ WHERE s.id = @id AND s.deleted_at IS NOT NULL
 -- name: SpaceExists :one
 -- Existence probe for the hard-delete path: distinguishes 404 not_found
 -- from 409 not_deleted/in_use when the guarded DELETE affects no row.
+-- Deliberately sees soft-deleted rows — HardDeleteSpace must tell
+-- "deleted" (deletable) apart from "missing" (404).
 SELECT EXISTS(SELECT 1 FROM spaces WHERE id = @id) AS exists;
+
+-- name: SpaceExistsLive :one
+-- Live-only existence probe for input validation paths (e.g. the
+-- servicedir mentorship booking destination_space_id check): a
+-- soft-deleted space must not accept new references. Hard-delete probes
+-- keep using SpaceExists above.
+SELECT EXISTS(SELECT 1 FROM spaces WHERE id = @id AND deleted_at IS NULL) AS exists;
 
 -- name: SpaceHasChildSpaces :one
 -- Dependency probe for the hard-delete path (subspaces must go first).

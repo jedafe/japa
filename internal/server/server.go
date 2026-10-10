@@ -7146,8 +7146,14 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
+				// Booker arm of "either party completes" (000824) — the
+				// mentee marks a confirmed mentorship booking fulfilled;
+				// user-provider rows only, service.booking.create mirrors
+				// the mentee-side create permission surface.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.create")).
+					Post("/me/service-bookings/{id}/complete", serviceDirHandlers.HandleMyBookingComplete)
 				// 000824 — provider responds to a user-owned (mentorship)
-				// booking: accept|decline|complete.
+				// booking: accept|decline|complete|cancel.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
 					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
 			})

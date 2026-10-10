@@ -262,6 +262,8 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_step", "A step entry is invalid")
 	case errors.Is(err, ErrInvalidID):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid id")
+	case errors.Is(err, ErrInputTooLong):
+		errpkg.WriteError(w, http.StatusBadRequest, "input_too_long", "A free-text field exceeds the 4000-character limit")
 	case errors.Is(err, content.ErrEditWindowExpired):
 		// Author edits to a *published* listing after the shared §49 content
 		// edit window. Non-published listings bypass this (see EditOwn).

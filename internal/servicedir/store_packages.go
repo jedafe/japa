@@ -654,11 +654,14 @@ func (s *Store) ListBookingsByProviderUser(ctx context.Context, providerID pgtyp
 }
 
 // HasOpenMentorshipBooking reports whether the booker already holds an
-// open request (pending or confirmed) against the mentor's shadow listing
-// — the dedupe check replacing the dropped GetActiveOrPendingConnection.
-func (s *Store) HasOpenMentorshipBooking(ctx context.Context, bookerID, listingMetaID pgtype.UUID) (bool, error) {
+// open request (pending or confirmed) against the MENTOR — the dedupe is
+// keyed on (booker, provider_user_id), the same pair the
+// idx_svc_bookings_mentorship_open_uniq index enforces (000828), so a
+// re-minted shadow meta can't re-open the gate. Replaces the dropped
+// GetActiveOrPendingConnection.
+func (s *Store) HasOpenMentorshipBooking(ctx context.Context, bookerID, providerID pgtype.UUID) (bool, error) {
 	_, err := s.read.GetOpenMentorshipBooking(ctx, gen.GetOpenMentorshipBookingParams{
-		BookerUserID: bookerID, ListingMetaID: listingMetaID,
+		BookerUserID: bookerID, ProviderUserID: providerID,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -673,27 +676,34 @@ func (s *Store) HasOpenMentorshipBooking(ctx context.Context, bookerID, listingM
 
 // MentorCapacity is the provider-side capacity pair from user_profiles —
 // active_mentee_count is kept in sync with confirmed mentorship bookings
-// by the trg_service_booking_mentee_count trigger (000824).
+// by the trg_service_booking_mentee_count trigger (000824). IsMentor lets
+// the create path re-verify the mentor flag so a stale/orphaned shadow
+// can't keep minting requests.
 type MentorCapacity struct {
 	Capacity *int16
 	Active   *int16
+	IsMentor *bool
 }
 
 // GetMentorCapacity loads the provider's mentor_capacity vs
-// active_mentee_count for the create-booking capacity check.
+// active_mentee_count for the create-booking capacity check, plus the
+// is_mentor flag for the orphan-shadow re-verify.
 func (s *Store) GetMentorCapacity(ctx context.Context, userID pgtype.UUID) (MentorCapacity, error) {
 	row, err := s.read.GetMentorCapacity(ctx, userID)
 	if err != nil {
 		return MentorCapacity{}, fmt.Errorf("servicedir: get mentor capacity: %w", err)
 	}
 
-	return MentorCapacity{Capacity: row.MentorCapacity, Active: row.ActiveMenteeCount}, nil
+	return MentorCapacity{Capacity: row.MentorCapacity, Active: row.ActiveMenteeCount, IsMentor: row.IsMentor}, nil
 }
 
-// SpaceExists reports whether the destination space id resolves — the
-// mentorship booking's destination_space_id input validation (000824).
+// SpaceExists reports whether the destination space id resolves AND is
+// live — the mentorship booking's destination_space_id input validation
+// (000824) uses SpaceExistsLive so a soft-deleted space can't anchor a
+// new booking (the all-rows SpaceExists stays reserved for the spaces
+// hard-delete probe).
 func (s *Store) SpaceExists(ctx context.Context, spaceID pgtype.UUID) (bool, error) {
-	exists, err := s.read.SpaceExists(ctx, spaceID)
+	exists, err := s.read.SpaceExistsLive(ctx, spaceID)
 	if err != nil {
 		return false, fmt.Errorf("servicedir: space exists probe: %w", err)
 	}

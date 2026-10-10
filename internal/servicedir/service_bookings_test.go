@@ -1134,3 +1134,197 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 	}
 	return id
 }
+
+// statusChangedAudience decodes the service:booking_status_changed payloads
+// a fake enqueuer captured and returns their audience fields in order.
+func statusChangedAudiences(queue *fakeEnqueuer) []string {
+	var out []string
+	for _, task := range queue.tasks {
+		if task.taskType != worker.TypeServiceBookingStatusChanged {
+			continue
+		}
+		var payload struct {
+			Audience string `json:"audience"`
+		}
+		if err := json.Unmarshal(task.payload, &payload); err == nil {
+			out = append(out, payload.Audience)
+		}
+	}
+	return out
+}
+
+// TestMentorshipBookingHardening_LiveDB covers the mentorship unification
+// hardening round: provider-keyed dedupe, the is_mentor orphan-shadow
+// recheck, non-disputable mentorship rows, the provider "cancel" respond
+// action, mentee-initiated complete/cancel notifying the provider arm,
+// and the admin confirmed-crossing Meilisearch reindex.
+func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
+	ctx := t.Context()
+	database := liveDB(t)
+	uniq := uniqSlug("mfix-")
+
+	svc := newTestService(database, fakeFlags{"mentorship.enabled": true})
+	queue := &fakeEnqueuer{}
+	svc.SetEnqueuer(queue)
+
+	mentorID := insertTestUser(t, database, "t4mentor"+uniq)
+	menteeID := insertTestUser(t, database, "t4mentee"+uniq)
+	setMentor(t, database, mentorID, 5, 0)
+	contentID, _ := insertListing(t, database, mentorID, ListingKindMentorship, "mentorship", "t4m-"+uniq)
+
+	res, err := svc.CreateBooking(ctx, menteeID, contentID, CreateBookingInput{Goals: "g"})
+	if err != nil {
+		t.Fatalf("seed booking: %v", err)
+	}
+	bookingID := mustUUID(t, res.Booking.ID)
+
+	t.Run("dedupe keys on provider, not listing meta", func(t *testing.T) {
+		// A re-minted shadow is a DIFFERENT service_listing_meta row for
+		// the same mentor — the old (booker, listing_meta) dedupe let a
+		// second request through; the provider-keyed index must not.
+		secondContentID, _ := insertListing(t, database, mentorID, ListingKindMentorship, "mentorship", "t4m2-"+uniq)
+		if _, err := svc.CreateBooking(ctx, menteeID, secondContentID, CreateBookingInput{Goals: "g"}); !errors.Is(err, ErrDuplicateRequest) {
+			t.Fatalf("expected ErrDuplicateRequest across re-minted shadow, got %v", err)
+		}
+	})
+
+	t.Run("orphan shadow rejected when is_mentor off", func(t *testing.T) {
+		if _, err := database.Writer.Exec(ctx,
+			`UPDATE user_profiles SET is_mentor = false WHERE user_id = $1`, mentorID); err != nil {
+			t.Fatalf("unset mentor flag: %v", err)
+		}
+
+		thirdID := insertTestUser(t, database, "t4third"+uniq)
+		_, err := svc.CreateBooking(ctx, thirdID, contentID, CreateBookingInput{Goals: "g"})
+
+		// Restore before asserting — the flag gates every later subtest,
+		// and a t.Cleanup here would run with a canceled context.
+		setMentor(t, database, mentorID, 5, 0)
+
+		if !errors.Is(err, ErrBookingUnavailable) {
+			t.Fatalf("expected ErrBookingUnavailable, got %v", err)
+		}
+	})
+
+	t.Run("overlong goals rejected", func(t *testing.T) {
+		fourthID := insertTestUser(t, database, "t4fourth"+uniq)
+		_, err := svc.CreateBooking(ctx, fourthID, contentID, CreateBookingInput{Goals: strings.Repeat("x", 4001)})
+		if !errors.Is(err, ErrInputTooLong) {
+			t.Fatalf("expected ErrInputTooLong, got %v", err)
+		}
+	})
+
+	t.Run("mentee cannot dispute a mentorship booking", func(t *testing.T) {
+		_, err := svc.DisputeMyBooking(ctx, bookingID, menteeID, "unresponsive mentor")
+		if !errors.Is(err, ErrInvalidBookingTransition) {
+			t.Fatalf("expected ErrInvalidBookingTransition, got %v", err)
+		}
+	})
+
+	t.Run("provider cancel via respond", func(t *testing.T) {
+		queue.tasks = nil
+		dto, err := svc.RespondToBooking(ctx, mentorID, bookingID, "cancel", "moving abroad")
+		if err != nil {
+			t.Fatalf("provider cancel respond: %v", err)
+		}
+		if dto.Status != BookingStatusCancelled {
+			t.Errorf("status = %q, want cancelled", dto.Status)
+		}
+		if dto.CancelReason != "moving abroad" {
+			t.Errorf("cancel_reason = %q, want the provider note", dto.CancelReason)
+		}
+		if dto.ConnectionStatus != BookingStatusCancelled {
+			t.Errorf("connection_status = %q, want cancelled passthrough", dto.ConnectionStatus)
+		}
+		// Provider-initiated transitions notify the booker arm.
+		for _, a := range statusChangedAudiences(queue) {
+			if a != "" {
+				t.Errorf("status_changed audience = %q, want booker (empty)", a)
+			}
+		}
+	})
+
+	t.Run("mentee complete fulfils and notifies provider", func(t *testing.T) {
+		res, err := svc.CreateBooking(ctx, menteeID, contentID, CreateBookingInput{Goals: "g2"})
+		if err != nil {
+			t.Fatalf("seed booking 2: %v", err)
+		}
+		booking2 := mustUUID(t, res.Booking.ID)
+		if _, err := svc.RespondToBooking(ctx, mentorID, booking2, "accept", ""); err != nil {
+			t.Fatalf("accept booking 2: %v", err)
+		}
+
+		queue.tasks = nil
+		dto, err := svc.CompleteMyBooking(ctx, booking2, menteeID)
+		if err != nil {
+			t.Fatalf("mentee complete: %v", err)
+		}
+		if dto.Status != BookingStatusFulfilled {
+			t.Errorf("status = %q, want fulfilled", dto.Status)
+		}
+		if dto.ConnectionStatus != "completed" {
+			t.Errorf("connection_status = %q, want completed", dto.ConnectionStatus)
+		}
+		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
+			t.Error("expected mentor:update_meilisearch on leaving confirmed")
+		}
+		for _, a := range statusChangedAudiences(queue) {
+			if a != "provider" {
+				t.Errorf("status_changed audience = %q, want provider", a)
+			}
+		}
+	})
+
+	t.Run("mentee cancel notifies provider arm", func(t *testing.T) {
+		res, err := svc.CreateBooking(ctx, menteeID, contentID, CreateBookingInput{Goals: "g3"})
+		if err != nil {
+			t.Fatalf("seed booking 3: %v", err)
+		}
+		booking3 := mustUUID(t, res.Booking.ID)
+		if _, err := svc.RespondToBooking(ctx, mentorID, booking3, "accept", ""); err != nil {
+			t.Fatalf("accept booking 3: %v", err)
+		}
+
+		queue.tasks = nil
+		dto, err := svc.CancelMyBooking(ctx, booking3, menteeID, "found another mentor")
+		if err != nil {
+			t.Fatalf("mentee cancel: %v", err)
+		}
+		if dto.Status != BookingStatusCancelled {
+			t.Errorf("status = %q, want cancelled", dto.Status)
+		}
+		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
+			t.Error("expected mentor:update_meilisearch on leaving confirmed")
+		}
+		aud := statusChangedAudiences(queue)
+		if len(aud) != 1 || aud[0] != "provider" {
+			t.Errorf("status_changed audiences = %v, want exactly one provider task", aud)
+		}
+	})
+
+	t.Run("admin transition across confirmed reindexes mentor", func(t *testing.T) {
+		res, err := svc.CreateBooking(ctx, menteeID, contentID, CreateBookingInput{Goals: "g4"})
+		if err != nil {
+			t.Fatalf("seed booking 4: %v", err)
+		}
+		booking4 := mustUUID(t, res.Booking.ID)
+
+		queue.tasks = nil
+		// pending → confirmed enters the active set: reindex.
+		if _, err := svc.AdminSetBookingStatus(ctx, booking4, AdminBookingActionInput{Status: BookingStatusConfirmed}); err != nil {
+			t.Fatalf("admin confirm: %v", err)
+		}
+		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
+			t.Error("expected mentor:update_meilisearch when admin moves booking into confirmed")
+		}
+
+		queue.tasks = nil
+		// confirmed → cancelled leaves the active set: reindex again.
+		if _, err := svc.AdminSetBookingStatus(ctx, booking4, AdminBookingActionInput{Status: BookingStatusCancelled, ResolutionNote: "policy"}); err != nil {
+			t.Fatalf("admin cancel: %v", err)
+		}
+		if !queue.hasTask(worker.TypeMentorUpdateMeilisearch) {
+			t.Error("expected mentor:update_meilisearch when admin moves booking out of confirmed")
+		}
+	})
+}

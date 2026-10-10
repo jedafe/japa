@@ -98,6 +98,11 @@ const (
 	ListingKindMentorship = "mentorship"
 )
 
+// mentorSlugPrefix is the reserved slug namespace for mentor shadow
+// listings — 'mentor-<username>'. Ordinary listings never mint a slug in
+// this space; the ensure path writes shadows here directly.
+const mentorSlugPrefix = "mentor-"
+
 // IsValidListingKind reports whether s is a canonical §111 listing_kind.
 func IsValidListingKind(s string) bool {
 	return s == ListingKindService || s == ListingKindPackage || s == ListingKindMentorship

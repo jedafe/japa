@@ -4359,6 +4359,8 @@ SELECT EXISTS(SELECT 1 FROM spaces WHERE id = $1) AS exists
 
 // Existence probe for the hard-delete path: distinguishes 404 not_found
 // from 409 not_deleted/in_use when the guarded DELETE affects no row.
+// Deliberately sees soft-deleted rows — HardDeleteSpace must tell
+// "deleted" (deletable) apart from "missing" (404).
 func (q *Queries) SpaceExists(ctx context.Context, id pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, spaceExists, id)
 	var exists bool
@@ -4391,6 +4393,21 @@ SELECT EXISTS (
 func (q *Queries) SpaceExistsByWikidataID(ctx context.Context, qid *string) (*bool, error) {
 	row := q.db.QueryRow(ctx, spaceExistsByWikidataID, qid)
 	var exists *bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const spaceExistsLive = `-- name: SpaceExistsLive :one
+SELECT EXISTS(SELECT 1 FROM spaces WHERE id = $1 AND deleted_at IS NULL) AS exists
+`
+
+// Live-only existence probe for input validation paths (e.g. the
+// servicedir mentorship booking destination_space_id check): a
+// soft-deleted space must not accept new references. Hard-delete probes
+// keep using SpaceExists above.
+func (q *Queries) SpaceExistsLive(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, spaceExistsLive, id)
+	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
