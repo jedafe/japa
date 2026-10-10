@@ -243,6 +243,17 @@ type ServiceRow struct {
 	AuthorName        *string
 	AuthorAvatar      *string
 
+	// Mentor profile fields (000824 unification) — read off the author
+	// user_profiles join on the listing queries. Only meaningful when
+	// ListingKind == 'mentorship'; rowToDTO turns them into the mentor
+	// block on the listing payload.
+	AuthorDisplayName      *string
+	MentorIsMentor         *bool
+	MentorCapacity         *int16
+	MentorActiveMenteeCount *int16
+	MentorAreas            []string
+	MentorSince            pgtype.Timestamptz
+
 	// §111 package fields
 	ListingKind    string
 	PriceAmount    *int64
@@ -295,6 +306,9 @@ func rowFromList(r gen.ListServiceListingsRow) ServiceRow {
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar,
+		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
+		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
@@ -328,6 +342,9 @@ func rowFromSlug(r gen.GetServiceListingBySlugRow) ServiceRow {
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar,
+		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
+		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
@@ -361,6 +378,9 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar,
+		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
+		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
@@ -388,6 +408,9 @@ func rowFromAdmin(r gen.AdminListServiceListingsRow) ServiceRow {
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar,
+		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
+		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
@@ -420,6 +443,9 @@ func rowFromOrg(r gen.ListServiceListingsByOrgRow) ServiceRow {
 		ClaimStatus:      &r.ClaimStatus, ClaimedByOrgID: r.ClaimedByOrgID,
 		ClaimedOrgName: r.ClaimedOrgName, VerifiedBy: r.VerifiedBy,
 		VerifiedAt: r.VerifiedAt, AuthorName: r.AuthorName, AuthorAvatar: r.AuthorAvatar,
+		AuthorDisplayName: r.AuthorDisplayName, MentorIsMentor: r.IsMentor,
+		MentorCapacity: r.MentorCapacity, MentorActiveMenteeCount: r.ActiveMenteeCount,
+		MentorAreas: r.MentorAreas, MentorSince: r.MentorSince,
 		ListingKind: r.ListingKind, PriceAmount: r.PriceAmount,
 		PriceCurrency: r.PriceCurrency, PricePer: r.PricePer,
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,

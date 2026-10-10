@@ -139,6 +139,28 @@ type ServiceDTO struct {
 	// list rows and the detail payload by the call sites that already
 	// stamp has_coupon/min_price (rowToDTO has no settings context).
 	Badge string `json:"badge,omitempty"`
+
+	// Mentor block (000824 unification) — populated on list + detail
+	// payloads when listing_kind='mentorship' so mentor surfaces render
+	// capacity/areas without a second fetch. Omitted on all other kinds.
+	Mentor *MentorDTO `json:"mentor,omitempty"`
+}
+
+// MentorDTO is the mentor-profile card serialized on
+// listing_kind='mentorship' payloads (000824 unification). The fields ride
+// the author user_profiles join on the listing queries — is_mentor=false
+// means the author has lapsed out of the program and the frontend treats
+// the listing as unavailable.
+type MentorDTO struct {
+	Username          string   `json:"username"`
+	DisplayName       string   `json:"display_name,omitempty"`
+	AvatarURL         string   `json:"avatar_url,omitempty"`
+	Areas             []string `json:"areas,omitempty"`
+	Capacity          int32    `json:"capacity"`
+	ActiveMenteeCount int32    `json:"active_mentee_count"`
+	AvailableSlots    int32    `json:"available_slots"`
+	MentorSince       string   `json:"mentor_since,omitempty"`
+	IsMentor          bool     `json:"is_mentor"`
 }
 
 // ServiceFaqDTO is one FAQ entry stored in service_listing_meta.faqs (§114).

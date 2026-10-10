@@ -90,6 +90,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       -- 000824 mentorship fields: the mentor block on listing payloads
+       -- (listing_kind='mentorship') is read off the author profile join.
+       up.display_name AS author_display_name,
+       up.is_mentor, up.mentor_capacity, up.active_mentee_count,
+       up.mentor_areas, up.mentor_since,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -125,6 +130,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       -- 000824 mentorship fields: the mentor block on listing payloads
+       -- (listing_kind='mentorship') is read off the author profile join.
+       up.display_name AS author_display_name,
+       up.is_mentor, up.mentor_capacity, up.active_mentee_count,
+       up.mentor_areas, up.mentor_since,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -168,6 +178,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       -- 000824 mentorship fields: the mentor block on listing payloads
+       -- (listing_kind='mentorship') is read off the author profile join.
+       up.display_name AS author_display_name,
+       up.is_mentor, up.mentor_capacity, up.active_mentee_count,
+       up.mentor_areas, up.mentor_since,
        fm.storage_bucket AS featured_storage_bucket,
        fm.storage_path AS featured_storage_path,
        ra.review_count AS rating_count,
@@ -265,6 +280,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       -- 000824 mentorship fields: the mentor block on listing payloads
+       -- (listing_kind='mentorship') is read off the author profile join.
+       up.display_name AS author_display_name,
+       up.is_mentor, up.mentor_capacity, up.active_mentee_count,
+       up.mentor_areas, up.mentor_since,
        COALESCE(
            (SELECT MIN(t.price_amount) FROM service_package_tiers t
             WHERE t.listing_meta_id = sm.id AND t.is_active),
@@ -351,7 +371,12 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.listing_kind, sm.price_amount, sm.price_currency, sm.price_per,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
-       u.username AS author_name, up.avatar_url AS author_avatar
+       u.username AS author_name, up.avatar_url AS author_avatar,
+       -- 000824 mentorship fields: the mentor block on listing payloads
+       -- (listing_kind='mentorship') is read off the author profile join.
+       up.display_name AS author_display_name,
+       up.is_mentor, up.mentor_capacity, up.active_mentee_count,
+       up.mentor_areas, up.mentor_since
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -405,6 +430,11 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        sm.purchase_mode, sm.capacity, sm.available_from, sm.available_until,
        sm.faqs, sm.steps,
        u.username AS author_name, up.avatar_url AS author_avatar,
+       -- 000824 mentorship fields: the mentor block on listing payloads
+       -- (listing_kind='mentorship') is read off the author profile join.
+       up.display_name AS author_display_name,
+       up.is_mentor, up.mentor_capacity, up.active_mentee_count,
+       up.mentor_areas, up.mentor_since,
        COALESCE(
            (SELECT MIN(t.price_amount) FROM service_package_tiers t
             WHERE t.listing_meta_id = sm.id AND t.is_active),
