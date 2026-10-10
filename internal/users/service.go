@@ -1719,6 +1719,10 @@ var ErrUsernameCooldown = errors.New("username change cooldown not elapsed")
 // ErrUsernameTaken is returned when the requested username is already in use.
 var ErrUsernameTaken = errors.New("username already taken")
 
+// ErrInvalidUsername is returned when a user-supplied username fails the
+// §50 charset contract (^[a-zA-Z0-9_]{3,30}$). Maps to 400 invalid_username.
+var ErrInvalidUsername = errors.New("username must be 3-30 characters of letters, numbers, and underscores")
+
 // ErrEmailTaken is returned when the requested email is already in use.
 var ErrEmailTaken = errors.New("email already taken")
 
@@ -1756,6 +1760,12 @@ func (s *Service) UpdateAccount(ctx context.Context, userID pgtype.UUID, req *Up
 			newUsername := strings.TrimSpace(*req.Username)
 			if newUsername == "" {
 				return nil, errors.New("username cannot be empty")
+			}
+
+			// §50 charset contract — enforced on write only; the user's
+			// existing (possibly pre-rule) username is never re-validated.
+			if newUsername != acct.Username && !auth.ValidateUsername(newUsername) {
+				return nil, ErrInvalidUsername
 			}
 
 			if newUsername != acct.Username {

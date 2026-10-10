@@ -748,6 +748,14 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 		return BookingResult{}, ErrInvalidCoupon
 	}
 
+	// Mentorship requests are point-in-time inquiries — no departure or
+	// date surface exists. preferred_dates is rejected outright rather
+	// than silently dropped so the caller learns the field does nothing
+	// on this kind (§111 hardening amendment).
+	if input.PreferredDates != nil {
+		return BookingResult{}, ErrInvalidInput
+	}
+
 	// Dedupe keys on (booker, provider) — the same pair the
 	// idx_svc_bookings_mentorship_open_uniq partial index (000828) guards
 	// at the DB level. Keying on the mentor user keeps the gate closed
@@ -1241,6 +1249,13 @@ func (s *Service) OrgTransition(ctx context.Context, orgID, bookingID, userID pg
 		return BookingDTO{}, ErrPackagesDisabled
 	}
 
+	// §111 hardening — the privileged free-text fields carry the same
+	// 4000-char cap as the booker-facing inputs (input_too_long).
+	if utf8.RuneCountInString(input.OrgResponseNote) > maxBookingTextLen ||
+		utf8.RuneCountInString(input.CancelReason) > maxBookingTextLen {
+		return BookingDTO{}, ErrInputTooLong
+	}
+
 	isMember, err := s.store.IsOrgMember(ctx, orgID, userID)
 	if err != nil {
 		return BookingDTO{}, fmt.Errorf("servicedir: org transition: membership check: %w", err)
@@ -1493,6 +1508,12 @@ func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDSt
 func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UUID, input AdminBookingActionInput) (BookingDTO, error) {
 	if !IsValidBookingStatus(input.Status) {
 		return BookingDTO{}, ErrInvalidBookingTransition
+	}
+
+	// §111 hardening — the admin resolution note is privileged input but
+	// lands in the same text column as org_response_note; same cap.
+	if utf8.RuneCountInString(input.ResolutionNote) > maxBookingTextLen {
+		return BookingDTO{}, ErrInputTooLong
 	}
 
 	row, err := s.store.GetBookingDetail(ctx, bookingID)

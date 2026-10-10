@@ -251,6 +251,14 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §50 username contract — enforced server-side on every user-supplied
+	// username write (3–30 chars, [a-zA-Z0-9_]).
+	if !ValidateUsername(req.Username) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_username",
+			"Username must be 3-30 characters of letters, numbers, and underscores")
+		return
+	}
+
 	if err := ValidatePassword(req.Password, h.Policy); err != nil {
 		// Check if this is a breach error — different error code for monitoring.
 		var breached *BreachedError

@@ -848,6 +848,8 @@ func (h *Handlers) UpdateMyAccount(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrUsernameCooldown):
 			errpkg.WriteError(w, http.StatusTooManyRequests, "username_cooldown", "Username can only be changed once every 30 days")
+		case errors.Is(err, ErrInvalidUsername):
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_username", "Username must be 3-30 characters of letters, numbers, and underscores")
 		case errors.Is(err, ErrUsernameTaken):
 			errpkg.WriteError(w, http.StatusConflict, "username_taken", "This username is already in use")
 		case errors.Is(err, ErrEmailTaken):

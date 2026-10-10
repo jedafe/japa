@@ -374,6 +374,8 @@ func parsePage(r *http.Request) (int32, int32) {
 // uses pgvector cosine similarity for bio-based match scoring (§102 ADR-110).
 // When dest is empty and the user is authenticated, injects the user's
 // profile destination as the default filter (§102 Geo Awareness).
+// ?include_unavailable=1|true keeps at-capacity mentors visible
+// (§102/§111 hardening amendment).
 func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parsePage(r)
@@ -396,6 +398,9 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 		sort = "newest"
 	}
 
+	// ?include_unavailable=1|true — strconv.ParseBool covers both forms.
+	includeUnavailable, _ := strconv.ParseBool(r.URL.Query().Get("include_unavailable"))
+
 	// §102 Geo Awareness: when dest is empty and the user is authenticated,
 	// inject the user's profile destination as the default filter.
 	if !destSpaceID.Valid {
@@ -417,7 +422,7 @@ func (h *Handlers) ListMentors(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	mentors, total, err := h.Service.ListMentors(r.Context(), destSpaceID, areas, sort, menteeEmbedding, limit, offset)
+	mentors, total, err := h.Service.ListMentors(r.Context(), destSpaceID, areas, sort, menteeEmbedding, includeUnavailable, limit, offset)
 	if err != nil {
 		slog.Error("listing mentors", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to list mentors")
@@ -567,6 +572,14 @@ func (h *Handlers) UpdateMyMentorProfile(w http.ResponseWriter, r *http.Request)
 		if errors.Is(err, ErrCapacityExceeded) {
 			errpkg.WriteError(w, http.StatusBadRequest, "capacity_exceeded",
 				"mentor_capacity exceeds the platform max_capacity setting")
+			return
+		}
+
+		// §111 hardening: the shadow listing's canonical slug chain was
+		// squatted end-to-end — a typed conflict, not an opaque 500.
+		if errors.Is(err, servicedir.ErrMentorShadowConflict) {
+			errpkg.WriteError(w, http.StatusConflict, "mentor_shadow_conflict",
+				"Your mentor listing could not be published — please contact support")
 			return
 		}
 

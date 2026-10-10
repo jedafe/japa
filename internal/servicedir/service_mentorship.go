@@ -27,10 +27,12 @@ import (
 	"github.com/jedafe/japa/internal/content"
 )
 
-// errShadowSlugSquat marks a mentor shadow whose canonical slug chain was
-// fully occupied by unrelated rows (EnsureMentorShadowListing exhausted
-// its retries) — an internal edge, never a client-facing error.
-var errShadowSlugSquat = errors.New("mentor shadow slug chain exhausted")
+// ErrMentorShadowConflict marks a mentor shadow whose canonical slug
+// chain was fully occupied by unrelated rows
+// (EnsureMentorShadowListing exhausted its retries) — a typed conflict
+// the PATCH /me/mentor-profile surface maps to 409 mentor_shadow_conflict
+// (§111 hardening amendment).
+var ErrMentorShadowConflict = errors.New("mentor shadow slug chain exhausted")
 
 // MentorShadowInput carries the display fields the shadow listing mirrors
 // from the mentor's profile (PATCH /me/mentor-profile upsert).
@@ -127,7 +129,7 @@ func (s *Service) EnsureMentorShadowListing(ctx context.Context, authorID pgtype
 		}
 	}
 
-	return pgtype.UUID{}, fmt.Errorf("servicedir: ensure mentor shadow: %w: slug %s* exhausted %d retries", errShadowSlugSquat, slug, maxSquatRetries)
+	return pgtype.UUID{}, fmt.Errorf("servicedir: ensure mentor shadow: %w: slug %s* exhausted %d retries", ErrMentorShadowConflict, slug, maxSquatRetries)
 }
 
 // RetireMentorShadowListing removes the mentor from the directory: the

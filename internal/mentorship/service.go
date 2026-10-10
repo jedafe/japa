@@ -613,16 +613,19 @@ func (s *Service) GetMentorByUsername(ctx context.Context, username string) (Men
 // 0.6 keyword + 0.4 bio cosine §102 score (ListMentorsByMatch). When
 // sort=match without an embedding, falls back to keyword-only scoring
 // via the same ListMentors query ordered by area_overlap.
-func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, limit, offset int32) ([]MentorSummary, int, error) {
+// includeUnavailable=false (the default) hides at-capacity mentors
+// (available_slots <= 0) from discovery (§102/§111 hardening amendment).
+func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, areas []string, sort string, menteeEmbedding *pgvector.Vector, includeUnavailable bool, limit, offset int32) ([]MentorSummary, int, error) {
 	// sort=match with an embedding uses the pgvector query.
 	if sort == "match" && menteeEmbedding != nil {
 		rows, err := s.read.ListMentorsByMatch(ctx, gen.ListMentorsByMatchParams{
 			MenteeEmbedding: menteeEmbedding,
 
-			DestSpaceID: destSpaceID,
-			Areas:       areas,
-			PageLimit:   limit,
-			PageOffset:  offset,
+			DestSpaceID:        destSpaceID,
+			Areas:              areas,
+			IncludeUnavailable: includeUnavailable,
+			PageLimit:          limit,
+			PageOffset:         offset,
 		})
 		if err != nil {
 			return nil, 0, fmt.Errorf("listing mentors by match: %w", err)
@@ -646,11 +649,12 @@ func (s *Service) ListMentors(ctx context.Context, destSpaceID pgtype.UUID, area
 	// which now orders by area_overlap when sort='match'.
 	rows, err := s.read.ListMentors(ctx, gen.ListMentorsParams{
 
-		DestSpaceID: destSpaceID,
-		Areas:       areas,
-		Sort:        sort,
-		PageLimit:   limit,
-		PageOffset:  offset,
+		DestSpaceID:        destSpaceID,
+		Areas:              areas,
+		IncludeUnavailable: includeUnavailable,
+		Sort:               sort,
+		PageLimit:          limit,
+		PageOffset:         offset,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("listing mentors: %w", err)

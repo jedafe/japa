@@ -1214,6 +1214,20 @@ func TestMentorshipBookingHardening_LiveDB(t *testing.T) {
 		}
 	})
 
+	t.Run("preferred_dates rejected on mentorship kind", func(t *testing.T) {
+		// §111 hardening — mentorship requests have no date surface;
+		// preferred_dates is rejected outright (400 invalid_input), not
+		// silently dropped. The check runs before the dedupe guard so the
+		// same mentee (with an open request) still sees invalid_input.
+		_, err := svc.CreateBooking(ctx, menteeID, contentID, CreateBookingInput{
+			Goals:          "g",
+			PreferredDates: &PreferredDatesInput{StartOn: "2026-01-01", EndOn: "2026-01-10"},
+		})
+		if !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("expected ErrInvalidInput, got %v", err)
+		}
+	})
+
 	t.Run("mentee cannot dispute a mentorship booking", func(t *testing.T) {
 		_, err := svc.DisputeMyBooking(ctx, bookingID, menteeID, "unresponsive mentor")
 		if !errors.Is(err, ErrInvalidBookingTransition) {

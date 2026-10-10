@@ -248,6 +248,8 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider", "provider must be one of: paystack, stripe, nowpayments, manual_transfer, credit")
 	case errors.Is(err, ErrInvalidPreferredDates):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_preferred_dates", "preferred_dates must be {start_on, end_on, flexible} with start_on <= end_on")
+	case errors.Is(err, ErrInvalidInput):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", "The request contains a field this booking type does not accept")
 	case errors.Is(err, ErrPackageOrgImmutable):
 		errpkg.WriteError(w, http.StatusBadRequest, "package_org_immutable", "A package's selling organization cannot change after creation")
 	case errors.Is(err, ErrInvalidFeaturedMedia):
@@ -280,15 +282,33 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 // ---------------------------------------------------------------------------
 
 // HandleCategories handles GET /services/categories — returns the canonical
-// service category option list (Rule 16).
+// service category option list (Rule 16). The route sits under the
+// composite service_directory.enabled OR mentorship.enabled gate (§111
+// hardening): when the directory flag is off, only applies_to='mentorship'
+// rows are returned so the rail never advertises unreachable kinds.
 func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 
-	if h.service == nil || !h.service.Enabled(r.Context()) {
+	directoryOn := h.service != nil && h.service.Enabled(r.Context())
+	if !directoryOn && (h.service == nil || !h.service.MentorshipEnabled(r.Context())) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
 
 	cats := h.service.Categories(r.Context())
+
+	if !directoryOn {
+		// Mentorship-only deployment (000824): serve the mentor-surface
+		// taxonomy only — service/package categories describe kinds the
+		// deployment can't reach.
+		scoped := make([]Option, 0, len(cats))
+		for _, c := range cats {
+			if c.AppliesTo == "mentorship" {
+				scoped = append(scoped, c)
+			}
+		}
+		cats = scoped
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": cats})
 }
 
@@ -528,8 +548,13 @@ func parseReviewPageParams(r *http.Request) (page, limit int32) {
 // reviews never leak for in_review/draft rows. When the reviews fetcher
 // is unwired the response carries meta only (no data key) — the same
 // nil-fallback the detail payload uses.
+//
+// The route sits under the composite service_directory.enabled OR
+// mentorship.enabled gate (§111 hardening): when the directory flag is
+// off, only listing_kind='mentorship' listings resolve — the same
+// kind-appropriate gate HandleGet runs.
 func (h *Handlers) HandleListReviews(w http.ResponseWriter, r *http.Request) {
-	if h.service == nil || !h.service.Enabled(r.Context()) {
+	if h.service == nil || (!h.service.Enabled(r.Context()) && !h.service.MentorshipEnabled(r.Context())) {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}
@@ -537,6 +562,29 @@ func (h *Handlers) HandleListReviews(w http.ResponseWriter, r *http.Request) {
 	contentID, ok := scanUUIDParam(w, r, "id")
 	if !ok {
 		return
+	}
+
+	// Kind-appropriate gate (mirrors HandleGet): with the directory flag
+	// off, reviews resolve for mentorship-kind listings only — every
+	// other kind still requires service_directory.enabled.
+	if !h.service.Enabled(r.Context()) {
+		listing, err := h.service.GetListingByContentID(r.Context(), contentID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+				return
+			}
+
+			slog.Error("servicedir: reviews listing kind lookup failed", "content_id", contentID, "error", err)
+			errpkg.WriteError(w, http.StatusInternalServerError, "reviews_failed", "Failed to list reviews")
+
+			return
+		}
+
+		if listing.ListingKind != ListingKindMentorship {
+			errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
+			return
+		}
 	}
 
 	if err := h.service.EnsurePublishedListing(r.Context(), contentID); err != nil {

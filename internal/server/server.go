@@ -5786,8 +5786,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.become_mentor")).
 					Patch("/me/mentor-profile", mentorshipHandlers.UpdateMyMentorProfile)
 
-				// Authenticated: request mentorship (member+).
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.request")).
+				// Authenticated: request mentorship (member+). Moderate
+				// rate limit — same booking-write bucket as the unified
+				// surface it delegates to (§111 hardening).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.request"), mw.RateLimit(vkClient.Redis(), "moderate")).
 					Post("/mentorship/request", mentorshipHandlers.RequestMentorship)
 
 				// Authenticated: manage outgoing requests (as mentee).
@@ -7129,42 +7131,50 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// ?raw=1 (editor view) reads it; guests get the published-only path.
 				r.Get("/services/{slug}", serviceDirHandlers.HandleGet)
 
-				// Section 111 + 000824 — the unified bookings surfaces.
-				// HandleCreateBooking resolves the listing and applies the
-				// kind-appropriate gate (mentorship.enabled for mentorship-
-				// kind rows, service_packages.enabled otherwise); the
-				// /me/service-bookings read/cancel/respond handlers serve
-				// both package and mentorship bookings behind the same
-				// composite logic.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()),
-					rbac.RequirePermission(rbacResolver, "service.booking.create"),
-					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)). // Rule 9: fee checkout is financial
-					Post("/services/{id}/bookings", serviceDirHandlers.HandleCreateBooking)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Get("/me/service-bookings", serviceDirHandlers.HandleMyBookings)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
-				// Booker arm of "either party completes" (000824) — the
-				// mentee marks a confirmed mentorship booking fulfilled;
-				// user-provider rows only, service.booking.create mirrors
-				// the mentee-side create permission surface.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.create")).
-					Post("/me/service-bookings/{id}/complete", serviceDirHandlers.HandleMyBookingComplete)
-				// 000824 — provider responds to a user-owned (mentorship)
-				// booking: accept|decline|complete|cancel.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond")).
-					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
-			})
-
-			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
+				// §111 hardening — categories + reviews sit under the same
+				// composite gate so mentorship-only deployments keep the
+				// mentor category rail and mentorship-listing reviews. The
+				// handlers self-scope: directory off → applies_to='mentorship'
+				// categories only / mentorship-kind listings only.
 				r.Get("/services/categories", serviceDirHandlers.HandleCategories)
 				// Public paginated reviews for a listing (§114) — same
 				// anonymous-readable shape as /spaces/{id}/reviews; {id} is
 				// the listing's contents id.
 				r.With(auth.OptionalAuth(kr, vkClient.Redis())).
 					Get("/services/{id}/reviews", serviceDirHandlers.HandleListReviews)
+
+				// Section 111 + 000824 — the unified bookings surfaces.
+				// HandleCreateBooking resolves the listing and applies the
+				// kind-appropriate gate (mentorship.enabled for mentorship-
+				// kind rows, service_packages.enabled otherwise); the
+				// /me/service-bookings read/cancel/respond handlers serve
+				// both package and mentorship bookings behind the same
+				// composite logic. Write routes carry the moderate
+				// rate-limit bucket (§111 hardening, ADR-022).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()),
+					rbac.RequirePermission(rbacResolver, "service.booking.create"),
+					mw.RateLimit(vkClient.Redis(), "moderate"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)). // Rule 9: fee checkout is financial
+					Post("/services/{id}/bookings", serviceDirHandlers.HandleCreateBooking)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/service-bookings", serviceDirHandlers.HandleMyBookings)
+				r.With(auth.RequireAuth(kr, vkClient.Redis())).
+					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
+				// Booker arm of "either party completes" (000824) — the
+				// mentee marks a confirmed mentorship booking fulfilled;
+				// user-provider rows only, service.booking.create mirrors
+				// the mentee-side create permission surface.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate")).
+					Post("/me/service-bookings/{id}/complete", serviceDirHandlers.HandleMyBookingComplete)
+				// 000824 — provider responds to a user-owned (mentorship)
+				// booking: accept|decline|complete|cancel.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond"), mw.RateLimit(vkClient.Redis(), "moderate")).
+					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
+			})
+
+			r.With(features.Gate(featureChecker, "service_directory.enabled")).Group(func(r chi.Router) {
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.create")).
 					Post("/services", serviceDirHandlers.HandleCreate)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "service.edit_own", "service.edit_any")).
@@ -7220,7 +7230,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/me/service-bookings/{id}/pay", serviceDirHandlers.HandleMyBookingPay)
 				// §111 booker dispute — report a problem on a confirmed|fulfilled booking.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()),
-					rbac.RequirePermission(rbacResolver, "service.booking.create")).
+					rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate")).
 					Post("/me/service-bookings/{id}/dispute", serviceDirHandlers.HandleMyBookingDispute)
 				r.Get("/org/{org_id}/packages", serviceDirHandlers.HandleOrgPackages)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).

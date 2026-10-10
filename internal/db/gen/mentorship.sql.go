@@ -365,6 +365,7 @@ WITH mentors AS (
  )
  )
  )
+ AND ($6::boolean OR up.mentor_capacity > up.active_mentee_count)
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
@@ -379,11 +380,12 @@ LIMIT $3 OFFSET $2
 `
 
 type ListMentorsParams struct {
-	Sort        interface{} `json:"sort"`
-	PageOffset  int32       `json:"page_offset"`
-	PageLimit   int32       `json:"page_limit"`
-	Areas       []string    `json:"areas"`
-	DestSpaceID pgtype.UUID `json:"dest_space_id"`
+	Sort               interface{} `json:"sort"`
+	PageOffset         int32       `json:"page_offset"`
+	PageLimit          int32       `json:"page_limit"`
+	Areas              []string    `json:"areas"`
+	DestSpaceID        pgtype.UUID `json:"dest_space_id"`
+	IncludeUnavailable bool        `json:"include_unavailable"`
 }
 
 type ListMentorsRow struct {
@@ -407,6 +409,9 @@ type ListMentorsRow struct {
 // destination country name, geo_code, slug, or any word of the name.
 // sort: 'newest' (mentor_since DESC), 'capacity' (available_slots DESC),
 // 'match' (keyword area_overlap DESC — partial substring match).
+// include_unavailable: when false (default) at-capacity mentors
+// (available_slots <= 0) are hidden from discovery
+// (§102/§111 hardening amendment).
 func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]ListMentorsRow, error) {
 	rows, err := q.db.Query(ctx, listMentors,
 		arg.Sort,
@@ -414,6 +419,7 @@ func (q *Queries) ListMentors(ctx context.Context, arg ListMentorsParams) ([]Lis
 		arg.PageLimit,
 		arg.Areas,
 		arg.DestSpaceID,
+		arg.IncludeUnavailable,
 	)
 	if err != nil {
 		return nil, err
@@ -509,6 +515,7 @@ WITH mentors AS (
  )
  )
  )
+ AND ($6::boolean OR up.mentor_capacity > up.active_mentee_count)
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
@@ -521,11 +528,12 @@ LIMIT $2 OFFSET $1
 `
 
 type ListMentorsByMatchParams struct {
-	PageOffset      int32               `json:"page_offset"`
-	PageLimit       int32               `json:"page_limit"`
-	MenteeEmbedding *pgvector_go.Vector `json:"mentee_embedding"`
-	Areas           []string            `json:"areas"`
-	DestSpaceID     pgtype.UUID         `json:"dest_space_id"`
+	PageOffset         int32               `json:"page_offset"`
+	PageLimit          int32               `json:"page_limit"`
+	MenteeEmbedding    *pgvector_go.Vector `json:"mentee_embedding"`
+	Areas              []string            `json:"areas"`
+	DestSpaceID        pgtype.UUID         `json:"dest_space_id"`
+	IncludeUnavailable bool                `json:"include_unavailable"`
 }
 
 type ListMentorsByMatchRow struct {
@@ -548,6 +556,7 @@ type ListMentorsByMatchRow struct {
 
 // Discover mentors ordered by §102 match score (60% keyword + 40% bio cosine).
 // Mentors without an embedding fall back to keyword-only scoring (weight=1.0).
+// include_unavailable: same at-capacity semantics as ListMentors.
 func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatchParams) ([]ListMentorsByMatchRow, error) {
 	rows, err := q.db.Query(ctx, listMentorsByMatch,
 		arg.PageOffset,
@@ -555,6 +564,7 @@ func (q *Queries) ListMentorsByMatch(ctx context.Context, arg ListMentorsByMatch
 		arg.MenteeEmbedding,
 		arg.Areas,
 		arg.DestSpaceID,
+		arg.IncludeUnavailable,
 	)
 	if err != nil {
 		return nil, err

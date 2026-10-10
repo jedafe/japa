@@ -643,6 +643,11 @@ var (
 	// ErrInvalidPreferredDates — the preferred_dates object failed shape
 	// or ordering validation (400 invalid_preferred_dates).
 	ErrInvalidPreferredDates = errors.New("invalid_preferred_dates")
+	// ErrInvalidInput — a well-formed field was supplied that the booking
+	// kind does not accept at all (preferred_dates on a mentorship-kind
+	// request — rejected outright per the §111 hardening amendment, not
+	// silently dropped) (400 invalid_input).
+	ErrInvalidInput = errors.New("invalid_input")
 	// ErrInvalidID — a UUID path/query parameter failed to parse
 	// (400 invalid_id).
 	ErrInvalidID = errors.New("invalid_id")

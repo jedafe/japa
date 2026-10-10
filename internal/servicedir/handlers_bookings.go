@@ -34,6 +34,21 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 )
 
+// writeMyBookingError is the /me/service-bookings object-route variant of
+// writeServiceError (§111 hardening): a foreign-but-existing booking is
+// indistinguishable from a missing one — ErrNotOwner and pgx.ErrNoRows
+// both answer a uniform 404 booking_not_found so the user-facing surface
+// never acts as an existence oracle. Org and admin routes keep the
+// 403 not_owner distinction (privileged viewers may learn the row exists).
+func writeMyBookingError(w http.ResponseWriter, err error, code, msg string) {
+	if errors.Is(err, ErrNotOwner) || errors.Is(err, pgx.ErrNoRows) {
+		errpkg.WriteError(w, http.StatusNotFound, "booking_not_found", "Booking not found")
+		return
+	}
+
+	writeServiceError(w, err, code, msg)
+}
+
 // packagesAvailable gates every booking route on service_packages.enabled
 // (404 when off — disabled features are invisible per convention).
 func (h *Handlers) packagesAvailable(w http.ResponseWriter, r *http.Request) bool {
@@ -315,13 +330,10 @@ func (h *Handlers) HandleMyBookingRespond(w http.ResponseWriter, r *http.Request
 
 	booking, err := h.service.RespondToBooking(r.Context(), user.UserID, bookingID, input.Action, input.Note)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "booking_not_found", "Booking not found")
-			return
+		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("servicedir: booking respond failed", "booking_id", bookingID, "action", input.Action, "error", err)
 		}
-
-		slog.Error("servicedir: booking respond failed", "booking_id", bookingID, "action", input.Action, "error", err)
-		writeServiceError(w, err, "respond_failed", "Failed to respond to booking")
+		writeMyBookingError(w, err, "respond_failed", "Failed to respond to booking")
 
 		return
 	}
@@ -347,8 +359,10 @@ func (h *Handlers) HandleMyBookingDetail(w http.ResponseWriter, r *http.Request)
 
 	booking, err := h.service.GetBooking(r.Context(), bookingID, user.UserID, false)
 	if err != nil {
-		slog.Error("servicedir: get booking failed", "booking_id", bookingID, "error", err)
-		writeServiceError(w, err, "get_failed", "Failed to get booking")
+		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("servicedir: get booking failed", "booking_id", bookingID, "error", err)
+		}
+		writeMyBookingError(w, err, "get_failed", "Failed to get booking")
 
 		return
 	}
@@ -380,8 +394,10 @@ func (h *Handlers) HandleMyBookingPay(w http.ResponseWriter, r *http.Request) {
 
 	payment, err := h.service.ResumeBookingPayment(r.Context(), bookingID, user.UserID, input)
 	if err != nil {
-		slog.Error("servicedir: resume booking payment failed", "booking_id", bookingID, "error", err)
-		writeServiceError(w, err, "payment_resume_failed", "Failed to resume booking payment")
+		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("servicedir: resume booking payment failed", "booking_id", bookingID, "error", err)
+		}
+		writeMyBookingError(w, err, "payment_resume_failed", "Failed to resume booking payment")
 
 		return
 	}
@@ -412,8 +428,10 @@ func (h *Handlers) HandleMyBookingCancel(w http.ResponseWriter, r *http.Request)
 
 	booking, err := h.service.CancelMyBooking(r.Context(), bookingID, user.UserID, body.Reason)
 	if err != nil {
-		slog.Error("servicedir: cancel booking failed", "booking_id", bookingID, "error", err)
-		writeServiceError(w, err, "cancel_failed", "Failed to cancel booking")
+		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("servicedir: cancel booking failed", "booking_id", bookingID, "error", err)
+		}
+		writeMyBookingError(w, err, "cancel_failed", "Failed to cancel booking")
 
 		return
 	}
@@ -442,8 +460,10 @@ func (h *Handlers) HandleMyBookingComplete(w http.ResponseWriter, r *http.Reques
 
 	booking, err := h.service.CompleteMyBooking(r.Context(), bookingID, user.UserID)
 	if err != nil {
-		slog.Error("servicedir: complete booking failed", "booking_id", bookingID, "error", err)
-		writeServiceError(w, err, "complete_failed", "Failed to complete booking")
+		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("servicedir: complete booking failed", "booking_id", bookingID, "error", err)
+		}
+		writeMyBookingError(w, err, "complete_failed", "Failed to complete booking")
 
 		return
 	}
@@ -476,13 +496,10 @@ func (h *Handlers) HandleMyBookingDispute(w http.ResponseWriter, r *http.Request
 
 	booking, err := h.service.DisputeMyBooking(r.Context(), bookingID, user.UserID, body.Reason)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			errpkg.WriteError(w, http.StatusNotFound, "booking_not_found", "Booking not found")
-			return
+		if !errors.Is(err, ErrNotOwner) && !errors.Is(err, pgx.ErrNoRows) {
+			slog.Error("servicedir: dispute booking failed", "booking_id", bookingID, "error", err)
 		}
-
-		slog.Error("servicedir: dispute booking failed", "booking_id", bookingID, "error", err)
-		writeServiceError(w, err, "dispute_failed", "Failed to dispute booking")
+		writeMyBookingError(w, err, "dispute_failed", "Failed to dispute booking")
 
 		return
 	}

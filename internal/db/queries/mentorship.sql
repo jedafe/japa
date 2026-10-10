@@ -127,6 +127,9 @@ WHERE u.username = @username AND up.is_mentor = true
 -- destination country name, geo_code, slug, or any word of the name.
 -- sort: 'newest' (mentor_since DESC), 'capacity' (available_slots DESC),
 -- 'match' (keyword area_overlap DESC — partial substring match).
+-- include_unavailable: when false (default) at-capacity mentors
+-- (available_slots <= 0) are hidden from discovery
+-- (§102/§111 hardening amendment).
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
@@ -184,6 +187,7 @@ WITH mentors AS (
  )
  )
  )
+ AND (@include_unavailable::boolean OR up.mentor_capacity > up.active_mentee_count)
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,
@@ -199,6 +203,7 @@ LIMIT @page_limit OFFSET @page_offset;
 -- name: ListMentorsByMatch :many
 -- Discover mentors ordered by §102 match score (60% keyword + 40% bio cosine).
 -- Mentors without an embedding fall back to keyword-only scoring (weight=1.0).
+-- include_unavailable: same at-capacity semantics as ListMentors.
 WITH mentors AS (
  SELECT up.user_id, up.is_mentor, up.mentor_capacity,
  up.active_mentee_count, up.mentor_areas, up.mentor_bio, up.mentor_since,
@@ -260,6 +265,7 @@ WITH mentors AS (
  )
  )
  )
+ AND (@include_unavailable::boolean OR up.mentor_capacity > up.active_mentee_count)
 )
 SELECT user_id, is_mentor, mentor_capacity,
  active_mentee_count, mentor_areas, mentor_bio, mentor_since,

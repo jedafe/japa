@@ -43,6 +43,13 @@ func (h *Handlers) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §50 username contract — same charset rule as public registration.
+	if !auth.ValidateUsername(input.Username) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_username",
+			"Username must be 3-30 characters of letters, numbers, and underscores")
+		return
+	}
+
 	if err := auth.ValidatePassword(input.Password, auth.DefaultPasswordPolicy()); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "password_policy", err.Error())
 		return
