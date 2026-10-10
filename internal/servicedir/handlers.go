@@ -292,7 +292,13 @@ func (h *Handlers) HandleCategories(w http.ResponseWriter, r *http.Request) {
 // filters. Query params: ?dest=&city=&category=&origin=&verified=&sort=top|latest&q=&page=&limit=.
 func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
-	if h.service == nil || !h.service.Enabled(r.Context()) {
+	// The bare list is directory-gated, but an explicit kind=mentorship
+	// request gets the kind-appropriate gate: Task 12 redirects
+	// /mentors → /services?kind=mentorship and that surface must stay live
+	// in mentorship-only deployments (000824 — same OR-gate as HandleGet).
+	// List() itself enforces mentorship.enabled on the kind filter below,
+	// so passing the handler gate with the mentorship flag off still 404s.
+	if h.service == nil || (!h.service.Enabled(r.Context()) && r.URL.Query().Get("kind") != "mentorship") {
 		errpkg.WriteError(w, http.StatusNotFound, "service_directory_disabled", "Service directory is not available")
 		return
 	}

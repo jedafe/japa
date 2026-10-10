@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strconv"
 	"testing"
@@ -928,6 +930,66 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 			ListingKindMentorship, nil, pgtype.Date{}, "T4 t4", "", 1, 100)
 		if !errors.Is(err, ErrMentorshipDisabled) {
 			t.Fatalf("kind=mentorship with flag off: expected ErrMentorshipDisabled, got %v", err)
+		}
+	})
+
+	// Task 11 fix round 2 — the handler-level pin: HandleList's upfront
+	// directory gate used to 404 every request while
+	// service_directory.enabled was off, which would strand Task 12's
+	// /mentors → /services?kind=mentorship redirect in a mentorship-only
+	// deployment. An explicit kind=mentorship request now gets the
+	// kind-appropriate gate; the bare list keeps the directory gate.
+	t.Run("handler gate: directory off keeps kind=mentorship reachable", func(t *testing.T) {
+		list := func(flags fakeFlags, rawQuery string) (int, map[string]bool) {
+			t.Helper()
+			h := &Handlers{service: newTestService(database, flags)}
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/services?"+rawQuery, nil)
+			rec := httptest.NewRecorder()
+			h.HandleList(rec, req)
+			got := map[string]bool{}
+			if rec.Code == http.StatusOK {
+				var body struct {
+					Data []struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				}
+				if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+					t.Fatalf("decode list body: %v", err)
+				}
+				for _, row := range body.Data {
+					got[row.ID] = true
+				}
+			}
+			return rec.Code, got
+		}
+
+		// Directory off + mentorship on + explicit kind → mentorship rows.
+		code, got := list(fakeFlags{"mentorship.enabled": true}, "kind=mentorship&q=T4+t4")
+		if code != http.StatusOK {
+			t.Fatalf("kind=mentorship with directory off + mentorship on: got %d, want 200", code)
+		}
+		if !got[menContentID.String()] || len(got) != 1 {
+			t.Errorf("kind=mentorship returned %v, want only the mentorship listing", got)
+		}
+
+		// The bare list keeps the directory gate.
+		if code, _ := list(fakeFlags{"mentorship.enabled": true}, "q=T4+t4"); code != http.StatusNotFound {
+			t.Errorf("bare list with directory off: got %d, want 404", code)
+		}
+
+		// kind=all normalizes to the bare request — still directory-gated.
+		if code, _ := list(fakeFlags{"mentorship.enabled": true}, "kind=all&q=T4+t4"); code != http.StatusNotFound {
+			t.Errorf("kind=all with directory off: got %d, want 404", code)
+		}
+
+		// Explicit kind with BOTH flags off → the kind gate still applies.
+		if code, _ := list(fakeFlags{}, "kind=mentorship&q=T4+t4"); code != http.StatusNotFound {
+			t.Errorf("kind=mentorship with both flags off: got %d, want 404", code)
+		}
+
+		// kind=package stays directory-gated even with packages on.
+		if code, _ := list(fakeFlags{"service_packages.enabled": true}, "kind=package&q=T4+t4"); code != http.StatusNotFound {
+			t.Errorf("kind=package with directory off: got %d, want 404", code)
 		}
 	})
 }
