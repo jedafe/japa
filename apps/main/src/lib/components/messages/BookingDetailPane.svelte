@@ -5,10 +5,12 @@
 	//
 	// Right pane of the /messages/bookings + /messages/mentorship inboxes —
 	// the selected booking's detail plus its actions:
-	//   booker   → cancel (pending|confirmed), dispute (confirmed|fulfilled),
-	//              pay-resume (pending hosted-fee checkout) — ported from the
+	//   booker   → cancel (pending|confirmed), complete (confirmed
+	//              mentorship via POST /me/service-bookings/:id/complete),
+	//              dispute (confirmed|fulfilled), pay-resume (pending
+	//              hosted-fee checkout) — ported from the
 	//              /me/service-bookings pages.
-	//   provider → accept/decline (pending), complete (confirmed) via
+	//   provider → accept/decline (pending), complete|cancel (confirmed) via
 	//              POST /me/service-bookings/:id/respond — mentorship rows
 	//              only; org-owned bookings never reach this pane under
 	//              role=provider.
@@ -100,9 +102,21 @@
 	);
 
 	// Provider actions (000824) — pending → accept|decline, confirmed →
-	// complete. Only applies to user-provider (mentorship) rows.
+	// complete|cancel. Only applies to user-provider (mentorship) rows.
 	const canAcceptDecline = $derived(isProvider && b.status === 'pending');
 	const canComplete = $derived(isProvider && b.status === 'confirmed');
+	// Mentor cancel on a confirmed booking — the provider arm of "either
+	// party cancels" via respond {action:'cancel'} (a pending row is
+	// declined instead). The optional note maps to cancel_reason.
+	const canProviderCancel = $derived(
+		isProvider && b.status === 'confirmed' && b.listing_kind === 'mentorship'
+	);
+	// Mentee complete (000824) — POST /me/service-bookings/:id/complete,
+	// confirmed → fulfilled. Mentorship-kind only: org-owned bookings leave
+	// the fulfill decision to the org inbox.
+	const canBookerComplete = $derived(
+		isBooker && b.status === 'confirmed' && b.listing_kind === 'mentorship'
+	);
 
 	let busy = $state(false);
 	let actionError = $state('');
@@ -110,6 +124,9 @@
 	let disputeReason = $state('');
 	let declineOpen = $state(false);
 	let declineNote = $state('');
+	let cancelOpen = $state(false);
+	let cancelNote = $state('');
+	let completeOpen = $state(false);
 	let payOpen = $state(false);
 	let payEmail = $state(untrack(() => viewerEmail));
 	let payIdemKey = $state('');
@@ -175,10 +192,10 @@
 	}
 
 	// Provider transition — POST /me/service-bookings/:id/respond
-	// {action: 'accept'|'decline'|'complete', note?}. The accept path
+	// {action: 'accept'|'decline'|'complete'|'cancel', note?}. The accept path
 	// auto-opens the mentor↔mentee DM thread server-side (ADR-110); the
 	// response has no conversation id, so the UI just refreshes.
-	async function respond(action: 'accept' | 'decline' | 'complete', note = '') {
+	async function respond(action: 'accept' | 'decline' | 'complete' | 'cancel', note = '') {
 		busy = true;
 		actionError = '';
 		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/respond`, {
@@ -192,6 +209,24 @@
 		}
 		declineOpen = false;
 		declineNote = '';
+		cancelOpen = false;
+		cancelNote = '';
+		await invalidateAll();
+	}
+
+	// Booker-side complete (000824) — the mentee arm of "either party
+	// completes": POST /me/service-bookings/:id/complete moves a confirmed
+	// user-provider booking to fulfilled and notifies the provider.
+	async function completeBooking() {
+		busy = true;
+		actionError = '';
+		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/complete`, {});
+		busy = false;
+		if (res.error) {
+			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
+			return;
+		}
+		completeOpen = false;
 		await invalidateAll();
 	}
 </script>
@@ -417,7 +452,7 @@
 		</div>
 	{/if}
 
-	{#if canResumePayment || canCancel || canDispute || canAcceptDecline || canComplete || dmEnabled}
+	{#if canResumePayment || canCancel || canDispute || canAcceptDecline || canComplete || canProviderCancel || canBookerComplete || dmEnabled}
 		<div class="flex flex-wrap gap-2">
 			{#if canResumePayment}
 				<button
@@ -449,6 +484,25 @@
 					type="button"
 					disabled={busy}
 					onclick={() => respond('complete')}
+					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+				>{t('bookings.complete', 'Mark completed')}</button>
+			{/if}
+			{#if canProviderCancel}
+				<button
+					type="button"
+					disabled={busy}
+					onclick={() => {
+						cancelOpen = true;
+						cancelNote = '';
+					}}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-danger)] hover:bg-red-500/10 disabled:opacity-50"
+				>{t('bookings.cancel_mentorship', 'Cancel mentorship')}</button>
+			{/if}
+			{#if canBookerComplete}
+				<button
+					type="button"
+					disabled={busy}
+					onclick={() => (completeOpen = true)}
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>{t('bookings.complete', 'Mark completed')}</button>
 			{/if}
@@ -536,6 +590,63 @@
 		>
 			{#if busy}<CheckCircle2 size={14} />{/if}
 			{t('bookings.decline', 'Decline')}
+		</button>
+	</div>
+</Modal>
+
+<Modal
+	bind:open={cancelOpen}
+	title={t('bookings.cancel_mentorship', 'Cancel mentorship')}
+	size="md"
+>
+	<p class="text-xs text-[var(--color-muted)]">
+		{t('bookings.respond_note_hint', 'Add an optional note for the other person.')}
+	</p>
+	<textarea
+		bind:value={cancelNote}
+		rows="3"
+		class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+		placeholder={t('bookings.respond_note_ph', 'Note (optional)')}
+	></textarea>
+	<div class="mt-3 flex justify-end gap-2">
+		<button
+			type="button"
+			onclick={() => (cancelOpen = false)}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+		>{t('common.cancel', 'Cancel')}</button>
+		<button
+			type="button"
+			disabled={busy}
+			onclick={() => respond('cancel', cancelNote)}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-danger)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+		>
+			{#if busy}<CheckCircle2 size={14} />{/if}
+			{t('bookings.cancel_mentorship', 'Cancel mentorship')}
+		</button>
+	</div>
+</Modal>
+
+<Modal bind:open={completeOpen} title={t('bookings.complete', 'Mark completed')} size="md">
+	<p class="text-xs text-[var(--color-muted)]">
+		{t(
+			'bookings.complete_hint',
+			'Confirm this mentorship is complete. The mentor will be notified.'
+		)}
+	</p>
+	<div class="mt-3 flex justify-end gap-2">
+		<button
+			type="button"
+			onclick={() => (completeOpen = false)}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+		>{t('common.cancel', 'Cancel')}</button>
+		<button
+			type="button"
+			disabled={busy}
+			onclick={completeBooking}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+		>
+			{#if busy}<CheckCircle2 size={14} />{/if}
+			{t('bookings.complete', 'Mark completed')}
 		</button>
 	</div>
 </Modal>
