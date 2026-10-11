@@ -589,6 +589,33 @@ func (h *Handlers) GetSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if space.Visibility == VisibilityPrivate {
+		allowed := false
+		if viewer := auth.FromContext(r.Context()); viewer != nil && viewer.UserID.Valid {
+			ctx := r.Context()
+			if isMember, err := h.Service.IsMember(ctx, space.ID, viewer.UserID); err == nil && isMember {
+				allowed = true
+			}
+			if !allowed {
+				if isModerator, err := h.Service.IsModerator(ctx, space.ID, viewer.UserID); err == nil && isModerator {
+					allowed = true
+				}
+			}
+			if !allowed {
+				if isOwner, err := h.Service.IsOwner(ctx, space.ID, viewer.UserID); err == nil && isOwner {
+					allowed = true
+				}
+			}
+			if !allowed && h.permChecker != nil && h.permChecker.HasPermission(ctx, viewer.UserID, "spaces.moderate") {
+				allowed = true
+			}
+		}
+		if !allowed {
+			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Space not found")
+			return
+		}
+	}
+
 	rules, err := h.Service.ListSpaceRules(r.Context(), space.ID)
 	if err != nil {
 		handleServiceError(w, err)
