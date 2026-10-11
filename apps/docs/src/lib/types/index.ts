@@ -119,6 +119,9 @@ export interface DocPage {
 	subcategory?: string | null;
 	created_at: string;
 	updated_at: string;
+	/** Aggregate helpful votes (§44 amendment 2). */
+	helpful_yes?: number;
+	helpful_no?: number;
 	/** Breadcrumb chain (audience → parents → current). Ref: §44. */
 	breadcrumb?: DocBreadcrumbItem[];
 	/** Previous page in the audience's nav order. Ref: §44. */
@@ -161,6 +164,8 @@ export interface DocNavItem {
 	category?: string | null;
 	subcategory?: string | null;
 	children?: DocNavItem[];
+	/** Present on the editor-only unpublished merge (§44 amendment 2). */
+	review_status?: string;
 }
 
 /** Nav tree grouped by audience section. GET /docs/nav returns DocNavTree[]. */
@@ -199,9 +204,23 @@ export interface DocPageUpdateRequest {
 	title: string;
 	/** TipTap JSON document object. */
 	content?: unknown;
-	review_status: string;
+	review_status?: string;
+	slug?: string;
+	parent_id?: string | null;
+	position?: number;
+	audience?: string;
 	category?: string | null;
 	subcategory?: string | null;
+	/** Optimistic-lock precondition — send back the loaded updated_at. */
+	expected_updated_at?: string;
+}
+
+/** GET/POST .../docs/{audience}/{slug}/feedback response (§44 amendment 2). */
+export interface DocFeedback {
+	page_id: string;
+	helpful_yes: number;
+	helpful_no: number;
+	my_vote: 'up' | 'down' | null;
 }
 
 /* ------------------------------------------------------------------ *

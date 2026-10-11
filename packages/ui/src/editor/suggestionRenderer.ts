@@ -1,5 +1,5 @@
 import type { SuggestionProps, SuggestionKeyDownProps } from '@tiptap/suggestion';
-import type { SearchHit } from '$lib/types';
+import type { EditorSearchHit } from './types';
 
 interface RendererConfig {
 	/** entity_type stored in the mention node attrs (Section 15: {id, entity_type, label}). */
@@ -46,12 +46,12 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 	/** Signature of the last rendered item set, used to skip no-op re-renders. */
 	let lastSignature = '';
 	/** The items currently rendered in the popup. */
-	let currentItems: SearchHit[] = [];
+	let currentItems: EditorSearchHit[] = [];
 	/** The suggestion query as of the last render callback — used to pick
 	 *  between the "start typing" hint and "No results" on an empty list. */
 	let currentQuery = '';
 
-	function itemsSignature(items: SearchHit[]): string {
+	function itemsSignature(items: EditorSearchHit[]): string {
 		if (items.length === 0) {
 			// Include the empty-state mode so the signature changes (and the
 			// popup text updates) when the query crosses minQueryLength
@@ -69,7 +69,7 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 	 * Full rebuild of the popup's child nodes. Only called when the item
 	 * set changes — not on every state transaction.
 	 */
-	function rebuildList(items: SearchHit[]) {
+	function rebuildList(items: EditorSearchHit[]) {
 		if (!popup) return;
 		currentItems = items;
 		lastSignature = itemsSignature(items);
@@ -109,7 +109,7 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 		});
 	}
 
-	function selectItem(items: SearchHit[], i: number) {
+	function selectItem(items: EditorSearchHit[], i: number) {
 		if (!items[i] || !command) return;
 		// Section 15: all reference nodes store { id, entity_type, label }.
 		// entity_type defaults to 'user' for @-mentions. For user mentions
@@ -200,7 +200,7 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 			positionPopup(props);
 			document.body.appendChild(popup);
 			index = 0;
-			const items = props.items as SearchHit[];
+			const items = props.items as EditorSearchHit[];
 			rebuildList(items);
 		},
 		onStart: (props) => {
@@ -208,7 +208,7 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 			command = props.command;
 			currentQuery = props.query ?? '';
 			positionPopup(props);
-			const items = props.items as SearchHit[];
+			const items = props.items as EditorSearchHit[];
 			rebuildList(items);
 		},
 		onBeforeUpdate: (props) => {
@@ -227,7 +227,7 @@ export function createSuggestionRenderer(cfg: RendererConfig): RenderReturn {
 				close();
 				return;
 			}
-			const items = props.items as SearchHit[];
+			const items = props.items as EditorSearchHit[];
 			// Only rebuild the DOM if the item set actually changed.
 			// TipTap v3 calls onUpdate on every state transaction; without
 			// this guard the buttons are destroyed and recreated 60+ times

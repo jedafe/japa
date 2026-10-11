@@ -2103,6 +2103,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	agentDeps.Spaces = spaceService
 	agentDeps.Academy = &agentAcademyAdapter{store: academyStore}
 	agentDeps.Docs = &agentDocsAdapter{svc: docsService}
+	// §44 amendment 2: PATCH now carries parent_id/position with hierarchy
+	// validation, so the docs.organize bridge resolves through the service.
+	agentDeps.DocsOrganize = func(ctx context.Context, entries []ai.DocsOrganizeEntry) error {
+		for _, e := range entries {
+			req := docs.UpdateDocPageRequest{Position: &e.Position}
+			if e.ParentID != nil {
+				s := e.ParentID.String()
+				req.ParentID = &s
+			}
+
+			if err := docsService.UpdateDocPage(ctx, e.ID, req); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
 	agentDeps.Menus = &agentMenusAdapter{svc: menusService}
 	agentDeps.Users = &agentUsersAdapter{svc: agentUsersSvc}
 	agentDeps.CustomFieldDefs = cfService
@@ -5859,12 +5876,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.Get("/docs/audience-gates", docsHandlers.ListDocAudienceGates)
 			r.Get("/docs/audiences", docsHandlers.ListDocAudiences)
 			// DOC-011: authenticated helpful-vote feedback for doc pages.
+			// §44 amendment 2: per-user vote records — GET returns counts + the
+			// caller's vote; POST upserts idempotently.
+			r.Get("/docs/{audience}/{slug}/feedback", docsHandlers.GetDocFeedback)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Post("/docs/{audience}/{slug}/feedback", docsHandlers.SubmitDocPageFeedback)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).Get("/docs/statuses", docsHandlers.ListDocStatuses)
 
 			// Admin docs page list/detail (P5.6 — Task 3, catalog paths)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Get("/admin/docs/pages", docsHandlers.ListAllDocPages)
+			// §44 amendment 2: editor draft preview — by-slug lookup, any status.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
+				Get("/admin/docs/page", docsHandlers.GetAdminDocPageBySlug)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).
 				Get("/admin/docs/pages/{id}", docsHandlers.GetAdminDocPage)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "docs.manage")).

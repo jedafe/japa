@@ -1,47 +1,38 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import { api } from '$lib/api/client';
 	import { ExternalLink, Loader2, X } from 'lucide-svelte';
-
-	interface LinkPreview {
-		url: string;
-		title: string;
-		description: string;
-		image: string;
-		site_name: string;
-		favicon: string;
-	}
+	import type { EditorTranslator, LinkPreviewData } from './types';
 
 	interface Props {
 		url: string;
+		/** Fetch link-preview metadata for a URL. Host-provided so the
+		 * component is not coupled to one app's API client. */
+		fetchPreview: (url: string) => Promise<LinkPreviewData | null>;
+		/** i18n translator injected by the host app. */
+		t?: EditorTranslator;
 		onclose?: () => void;
 	}
 
-	let { url, onclose }: Props = $props();
+	let { url, fetchPreview, t = (_k, fb) => fb ?? _k, onclose }: Props = $props();
 
-	let preview = $state<LinkPreview | null>(null);
+	let preview = $state<LinkPreviewData | null>(null);
 	let loading = $state(true);
 	let error = $state(false);
 
 	$effect(() => {
-		fetchPreview(url);
+		load(url);
 	});
 
-	async function fetchPreview(targetUrl: string) {
+	async function load(targetUrl: string) {
 		loading = true;
 		error = false;
 		preview = null;
 
-		const encoded = encodeURIComponent(targetUrl);
-		const result = await api.get<LinkPreview>(`/link-preview?url=${encoded}`);
-
-		if (result.error || !result.data) {
-			error = true;
-			loading = false;
-			return;
+		try {
+			preview = await fetchPreview(targetUrl);
+		} catch {
+			preview = null;
 		}
-
-		preview = result.data;
+		error = !preview;
 		loading = false;
 	}
 
@@ -91,11 +82,11 @@
 	{#if loading}
 		<div class="lp-loading">
 			<Loader2 size={16} style="animation: lp-spin 0.8s linear infinite;" />
-			<span>{t('create.editor.link_preview.loading')}</span>
+			<span>{t('create.editor.link_preview.loading', 'Loading preview…')}</span>
 		</div>
 	{:else if error}
 		<div class="lp-error">
-			<span>{t('create.editor.link_preview.error')}</span>
+			<span>{t('create.editor.link_preview.error', 'Could not load link preview')}</span>
 			<a href={safeHref(url)} target="_blank" rel="noopener noreferrer" class="lp-open-external">
 				{displayUrl(url)}
 				<ExternalLink size={12} />
@@ -125,7 +116,7 @@
 	{/if}
 
 	{#if onclose}
-		<button type="button" class="lp-close" onclick={onclose} aria-label={t('create.editor.link_preview.dismiss')}>
+		<button type="button" class="lp-close" onclick={onclose} aria-label={t('create.editor.link_preview.dismiss', 'Remove preview')}>
 			<X size={14} />
 		</button>
 	{/if}

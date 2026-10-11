@@ -29,6 +29,8 @@ type Taxonomized = { category?: string | null; subcategory?: string | null };
 export function groupByCategory<T extends Taxonomized>(items: T[]): GroupedDocItems<T> {
 	const ungrouped: T[] = [];
 	const categories: DocCategoryGroup<T>[] = [];
+	// Case-folded keys — "Guides" and "guides" are the same group; the
+	// first-seen casing becomes the display label (§44 amendment 2).
 	const catIdx = new Map<string, DocCategoryGroup<T>>();
 
 	for (const item of items) {
@@ -38,15 +40,17 @@ export function groupByCategory<T extends Taxonomized>(items: T[]): GroupedDocIt
 			continue;
 		}
 
-		let cat = catIdx.get(catName);
+		let cat = catIdx.get(catName.toLowerCase());
 		if (!cat) {
 			cat = { name: catName, subcategories: [{ name: '', items: [] }] };
-			catIdx.set(catName, cat);
+			catIdx.set(catName.toLowerCase(), cat);
 			categories.push(cat);
 		}
 
 		const subName = item.subcategory?.trim() ?? '';
-		let sub = cat.subcategories.find((s) => s.name === subName);
+		let sub = cat.subcategories.find(
+			(s) => s.name.toLowerCase() === subName.toLowerCase()
+		);
 		if (!sub) {
 			sub = { name: subName, items: [] };
 			cat.subcategories.push(sub);

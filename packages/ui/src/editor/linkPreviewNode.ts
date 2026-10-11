@@ -1,8 +1,8 @@
-import { Node } from '@tiptap/core';
+import { Node, type CommandProps } from '@tiptap/core';
 
 /**
  * LinkPreview — a block-level TipTap node that stores a URL and renders a
- * placeholder div. The PostEditor hydrates the placeholder into a live
+ * placeholder div. The editor hydrates the placeholder into a live
  * LinkPreviewCard Svelte component after each editor update. The saved
  * HTML contains the placeholder div with the URL, so the view page can
  * hydrate it the same way.
@@ -26,8 +26,8 @@ export const LinkPreviewNode = Node.create({
 			url: {
 				default: null,
 				renderHTML: (attrs: { url: string }) => ({ 'data-url': attrs.url }),
-				parseHTML: (el: HTMLElement) => el.getAttribute('data-url'),
-			},
+				parseHTML: (el: HTMLElement) => el.getAttribute('data-url')
+			}
 		};
 	},
 
@@ -46,7 +46,11 @@ export const LinkPreviewNode = Node.create({
 	 */
 	renderMarkdown(node: { attrs?: { url?: string } }) {
 		const url = node.attrs?.url ?? '';
-		const escaped = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+		const escaped = url
+			.replace(/&/g, '&amp;')
+			.replace(/"/g, '&quot;')
+			.replace(/</g, '&lt;')
+			.replace(/>/g, '&gt;');
 		return `<div data-type="link-preview" data-url="${escaped}"></div>`;
 	},
 
@@ -54,14 +58,14 @@ export const LinkPreviewNode = Node.create({
 		return {
 			insertLinkPreview:
 				(url: string) =>
-				({ commands }: { commands: any }) => {
+				({ commands }: CommandProps) => {
 					return commands.insertContent({
 						type: 'linkPreview',
-						attrs: { url },
+						attrs: { url }
 					});
-				},
+				}
 		};
-	},
+	}
 });
 
 declare module '@tiptap/core' {

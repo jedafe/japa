@@ -20,6 +20,8 @@ type DocPage struct {
 	Position       int32           `json:"position"`
 	Category       *string         `json:"category,omitempty"`
 	Subcategory    *string         `json:"subcategory,omitempty"`
+	HelpfulYes     int32           `json:"helpful_yes"`
+	HelpfulNo      int32           `json:"helpful_no"`
 	ContentLang    string          `json:"content_lang"`
 	CreatedAt      string          `json:"created_at"`
 	UpdatedAt      string          `json:"updated_at"`
@@ -54,14 +56,32 @@ type CreateDocPageRequest struct {
 }
 
 // UpdateDocPageRequest is the JSON body for PATCH /api/v1/admin/docs/{id}.
-// Category/Subcategory: nil preserves the stored value; "" clears it; any
-// other value replaces it (§44 taxonomy amendment).
+// Pointer fields follow preserve-on-absent semantics: nil keeps the stored
+// value, "" clears it (Category, Subcategory, ParentID), and any other value
+// replaces it (§44 amendment 2). ReviewStatus accepts only draft/in_review —
+// approved/published go through the dedicated approve/publish endpoints.
+// ExpectedUpdatedAt is an optimistic-lock precondition (RFC3339); a mismatch
+// returns 409 stale_write.
 type UpdateDocPageRequest struct {
-	Title        string          `json:"title"`
-	Content      json.RawMessage `json:"content"`
-	ReviewStatus string          `json:"review_status"`
-	Category     *string         `json:"category,omitempty"`
-	Subcategory  *string         `json:"subcategory,omitempty"`
+	Title             string          `json:"title"`
+	Content           json.RawMessage `json:"content"`
+	ReviewStatus      string          `json:"review_status"`
+	Slug              *string         `json:"slug,omitempty"`
+	ParentID          *string         `json:"parent_id,omitempty"`
+	Position          *int32          `json:"position,omitempty"`
+	Audience          *string         `json:"audience,omitempty"`
+	Category          *string         `json:"category,omitempty"`
+	Subcategory       *string         `json:"subcategory,omitempty"`
+	ExpectedUpdatedAt *string         `json:"expected_updated_at,omitempty"`
+}
+
+// DocFeedback is the response for GET .../feedback — aggregate counts plus
+// the caller's recorded vote (§44 amendment 2).
+type DocFeedback struct {
+	PageID     string  `json:"page_id"`
+	HelpfulYes int32   `json:"helpful_yes"`
+	HelpfulNo  int32   `json:"helpful_no"`
+	MyVote     *string `json:"my_vote"`
 }
 
 // DocNavItem is a single navigation entry (a published page), optionally

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { onMount } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
@@ -41,11 +42,34 @@
 	const grouped = $derived(groupNavItems(navItems));
 	const AudienceIcon = $derived(AUDIENCE_ICON[data.audience]);
 
-	// Post-create/save notices (?created=<status> / ?saved=<status>).
-	const noticeStatus = $derived(
-		page.url.searchParams.get('created') ?? page.url.searchParams.get('saved')
-	);
-	const noticeVerb = $derived(page.url.searchParams.has('created') ? 'created' : 'saved');
+	// Post-create/save notices (?created=<status> / ?saved=<status>) —
+	// one-shot: strip the params after mount so a refresh doesn't resurrect
+	// the banner (§44 amendment 2).
+	let noticeStatus = $state<string | null>(null);
+	onMount(() => {
+		noticeStatus =
+			page.url.searchParams.get('created') ?? page.url.searchParams.get('saved');
+		if (noticeStatus) {
+			const url = new URL(page.url);
+			url.searchParams.delete('created');
+			url.searchParams.delete('saved');
+			history.replaceState(history.state, '', url);
+		}
+	});
+	const noticeText = $derived.by(() => {
+		switch (noticeStatus) {
+			case 'published':
+				return t('notice.saved_published', 'Published — this page is now live.');
+			case 'approved':
+				return t('notice.saved_approved', 'Approved — ready to publish.');
+			case 'in_review':
+				return t('notice.saved_in_review', 'Submitted for review. Only editors can see this page.');
+			case 'draft':
+				return t('notice.saved_draft', 'Saved as draft. Only editors can see this page.');
+			default:
+				return noticeStatus ? t('notice.saved', 'Changes saved.') : null;
+		}
+	});
 
 	function pageHref(slug: string): string {
 		return `/docs/${data.audience}/${slug}`;
@@ -131,15 +155,11 @@
 			{/if}
 		</header>
 
-		{#if noticeStatus}
-			<p class="created-notice" role="status">
-				{noticeStatus === 'published'
-					? t(`audience.${noticeVerb}_published`, 'Page saved and published.')
-					: t(`audience.${noticeVerb}_draft`, 'Page saved — it stays hidden until published.')}
-			</p>
+		{#if noticeText}
+			<p class="created-notice" role="status">{noticeText}</p>
 		{/if}
 
-		{#if navItems.length === 0}
+		{#if navItems.length === 0 && data.unpublishedPages.length === 0}
 			<p class="empty">{t('nav.empty')}</p>
 		{:else}
 			{#if grouped.ungrouped.length > 0}
@@ -164,6 +184,29 @@
 					{/each}
 				</section>
 			{/each}
+
+			<!-- Editor-only: unpublished pages (draft / in_review / approved) so
+			     in-flight docs stay reachable + reviewable in-app (§44 amendment 2). -->
+			{#if data.unpublishedPages.length > 0}
+				<section class="cat-section unpublished-section">
+					<h2 class="cat-title">
+						{t('audience.unpublished', 'In progress')}
+						<span class="unpublished-count">{data.unpublishedPages.length}</span>
+					</h2>
+					<div class="doc-grid">
+						{#each data.unpublishedPages as item (item.id)}
+							<a href={pageHref(item.slug)} class="doc-card doc-card-link doc-card-draft">
+								<FileText size={16} class="doc-link-icon" />
+								<span class="doc-card-title">{item.title}</span>
+								<span class="status-badge status-{item.review_status}">
+									{t(`new_page.status.${item.review_status}`, item.review_status ?? '')}
+								</span>
+								<ArrowRight size={15} class="doc-card-arrow" />
+							</a>
+						{/each}
+					</div>
+				</section>
+			{/if}
 		{/if}
 	</section>
 </AppShell>
@@ -380,5 +423,41 @@
 	.doc-card-link:hover :global(.doc-card-arrow),
 	.doc-child-link:hover :global(.doc-child-arrow) {
 		color: var(--color-primary);
+	}
+	.unpublished-section .cat-title {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.unpublished-count {
+		font-size: 0.6875rem;
+		font-weight: 700;
+		background: var(--color-surface-subtle);
+		color: var(--color-text-subtle);
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 0.0625rem 0.5rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.doc-card-draft { border-style: dashed; }
+	.status-badge {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.625rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-weight: 700;
+		padding: 0.125rem 0.4375rem;
+		border-radius: 4px;
+		background: var(--color-surface-subtle);
+		color: var(--color-text-subtle);
+		border: 1px solid var(--color-border);
+		flex-shrink: 0;
+	}
+	.status-badge.status-in_review,
+	.status-badge.status-approved {
+		color: var(--method-patch);
+		background: var(--method-patch-bg);
+		border-color: transparent;
 	}
 </style>

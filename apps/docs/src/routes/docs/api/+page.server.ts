@@ -2,8 +2,9 @@ import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import type { DocPageSummary } from '$lib/types';
+import type { DocPageSummary, DocNavItem } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
+import type { ExistingPage } from '$lib/server/docs-author';
 
 type ApiEndpoint = { method: string; path: string; summary: string; tag: string };
 
@@ -86,5 +87,32 @@ export const load: PageServerLoad = async (event) => {
 		})
 	});
 
-	return { pages, endpoints, meta };
+	// Authoring parity with the other audience landings (§44 amendment 2):
+	// docs.manage holders get the "New page" affordance and the unpublished
+	// drafts listing.
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+
+	let unpublishedPages: DocNavItem[] = [];
+	if (canEditDocs) {
+		try {
+			const all = await apiGet<ExistingPage[]>(ctx, '/admin/docs/pages?audience=api');
+			unpublishedPages = (all ?? [])
+				.filter((p) => p.review_status !== 'published')
+				.map((p) => ({
+					id: p.id,
+					slug: p.slug,
+					title: p.title,
+					audience: 'api' as const,
+					category: p.category ?? null,
+					subcategory: p.subcategory ?? null,
+					position: p.position ?? 0,
+					parent_id: p.parent_id ?? null,
+					review_status: p.review_status
+				}));
+		} catch {
+			unpublishedPages = [];
+		}
+	}
+
+	return { pages, endpoints, meta, canEditDocs, unpublishedPages };
 };

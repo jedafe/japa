@@ -190,6 +190,70 @@ func uuidPtrFromBytes(b [16]byte) *string {
 	return &s
 }
 
+func TestValidateDocSlug(t *testing.T) {
+	t.Parallel()
+
+	valid := []struct{ audience, slug string }{
+		{"users", "getting-started"},
+		{"users", "a"},
+		{"api", "authentication"},
+		{"admin", "x9"},
+	}
+	for _, tc := range valid {
+		if err := validateDocSlug(tc.audience, tc.slug); err != nil {
+			t.Errorf("slug %q in %q should be valid: %v", tc.slug, tc.audience, err)
+		}
+	}
+
+	invalid := []struct{ audience, slug string }{
+		{"users", ""},
+		{"users", "Has-Caps"},
+		{"users", "under_score"},
+		{"users", "-leading"},
+		{"users", "trailing-"},
+		{"users", "double--dash"},
+		{"users", "new"},        // reserved in every audience
+		{"admin", "new"},        // reserved in every audience
+		{"api", "keys"},         // api static route
+		{"api", "playground"},   // api static route
+		{"api", "new"},          // both rules apply
+		{"users", "keys"},       // NOT reserved outside api — should be valid, see below
+	}
+	for _, tc := range invalid[:9] {
+		if err := validateDocSlug(tc.audience, tc.slug); err == nil {
+			t.Errorf("slug %q in %q should be rejected", tc.slug, tc.audience)
+		}
+	}
+	// "keys" is only reserved in the api audience.
+	if err := validateDocSlug("users", "keys"); err != nil {
+		t.Errorf("slug 'keys' should be valid in users audience: %v", err)
+	}
+}
+
+func TestDocContentEqual(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		a, b []byte
+		want bool
+	}{
+		{"identical bytes", []byte(`{"a":1}`), []byte(`{"a":1}`), true},
+		{"key order differs", []byte(`{"a":1,"b":2}`), []byte(`{"b":2,"a":1}`), true},
+		{"whitespace differs", []byte(`{ "a": 1 }`), []byte(`{"a":1}`), true},
+		{"changed text", []byte(`{"text":"v1"}`), []byte(`{"text":"v2"}`), false},
+		{"string vs object", []byte(`"plain"`), []byte(`{"type":"doc"}`), false},
+		{"same string", []byte(`"plain markdown"`), []byte(`"plain markdown"`), true},
+		{"invalid json falls back", []byte(`not json`), []byte(`not json`), true},
+		{"invalid vs valid", []byte(`not json`), []byte(`{"a":1}`), false},
+	}
+	for _, tc := range cases {
+		if got := docContentEqual(tc.a, tc.b); got != tc.want {
+			t.Errorf("%s: docContentEqual = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestOpenAPIHandler(t *testing.T) {
 	t.Parallel()
 

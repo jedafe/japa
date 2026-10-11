@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SLASH_BLOCKS } from './slashMenu';
+import { SLASH_BLOCKS } from '@japaconnect/ui';
 
 describe('SLASH_BLOCKS', () => {
 	it('defines heading/list/quote/code/image blocks with i18n label keys', () => {

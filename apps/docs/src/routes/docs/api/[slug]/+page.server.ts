@@ -1,9 +1,7 @@
-import { error, redirect } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
-import { renderDocContent, ensureHeadingIds, extractTocHeadings, injectHeadingAnchors } from '$lib/tiptap/serialize';
+import type { PageServerLoad, Actions } from './$types';
+import { apiContext, API_BASE, JC_SURFACE } from '$lib/server/api';
+import { loadDocPage, editorData, saveDocPageAction, reviewAction } from '$lib/server/docs-author';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import type { DocPage } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
 
 /**
@@ -40,34 +38,24 @@ async function getOpenApiSpec(): Promise<Record<string, unknown> | null> {
 /**
  * API reference page — the three-column variant (nav · prose · code-sample
  * pane). 'api' is always public (ADR-060), so no audience redirect here; a
- * 403 still degrades to /docs/access-denied defensively.
+ * 403 still degrades to /docs/access-denied defensively (via loadDocPage).
  *
  * The page content is a normal DocPage (audience='api'); the right code pane
- * renders Request/Response/Example tabs derived from the OpenAPI spec when the
- * page's slug matches an operation. The spec is fetched server-side and the
- * matching operation is passed to the client for the code pane.
+ * renders Request/Response/Example tabs derived from the OpenAPI spec when
+ * the page's slug matches an operation exactly — no substring fallback
+ * (§44 amendment 2: a prose page slugged e.g. 'docs' must not inherit an
+ * unrelated endpoint's code pane).
+ *
+ * Authoring parity with the audience pages: ?edit=1 inline editing, draft
+ * preview via the admin by-slug lookup, and the shared save/approve/publish
+ * actions.
  */
 export const load: PageServerLoad = async (event) => {
 	const slug = event.params.slug;
 	const ctx = apiContext(event);
 
-	let page: DocPage;
-	try {
-		// Pass the user's locale for parity with the [audience]/[slug] load
-		// (the backend returns content_lang; translations are not stored yet).
-		page = await apiGet<DocPage>(ctx, `/docs/api/${slug}?lang=${event.locals.locale}`);
-	} catch (err) {
-		if (err instanceof ApiError) {
-			if (err.status === 403) throw redirect(308, '/docs/access-denied');
-			if (err.status === 404) throw error(404, { code: 'not_found', message: 'Page not found' });
-		}
-		throw error(500, { code: 'internal_error', message: 'Failed to load page' });
-	}
-
-	const rawHtml = renderDocContent(page.content);
-	const withIds = ensureHeadingIds(rawHtml);
-	const toc = extractTocHeadings(withIds);
-	const html = injectHeadingAnchors(withIds);
+	// 'api' is public — but still confirm the audience is enabled.
+	const { page, html, toc, preview, feedback, editHtml } = await loadDocPage(event, 'api', slug);
 
 	// Fetch the OpenAPI spec server-side to find a matching operation for the
 	// right code pane. Uses a module-level cache to avoid re-fetching the
@@ -80,36 +68,29 @@ export const load: PageServerLoad = async (event) => {
 				string,
 				Record<string, { operationId?: string; summary?: string }>
 			>;
-			// Match by priority: operationId exact > path segment exact > path substring (prefer shortest)
-			let bestMatch: { method: string; path: string; summary?: string } | null = null;
-			let bestPriority = 3; // 1=highest, 3=lowest
+			// Exact matches only: operationId, then a path segment equal to the
+			// slug (parameter segments like {id} are compared unwrapped).
+			let segmentMatch: { method: string; path: string; summary?: string } | null = null;
 
 			outer: for (const [path, methods] of Object.entries(paths)) {
 				for (const [method, op] of Object.entries(methods)) {
 					if (!HTTP_METHODS.has(method)) continue;
 					if (op.operationId === slug) {
-						// Exact operationId match — always win
-						bestMatch = { method: method.toUpperCase(), path, summary: op.summary };
+						operation = { method: method.toUpperCase(), path, summary: op.summary };
 						break outer;
 					}
-					// Check if slug matches the last path segment: /foo/{slug} or /foo/slug
+					// Slug equals a literal path segment (e.g. 'users' → /users,
+					// /users/{id}) — prefer the shortest such path.
 					const segments = path.split('/').filter(Boolean);
-					const lastSegment = segments[segments.length - 1]?.replace(/[{}]/g, '');
-					if (lastSegment === slug) {
-						if (bestPriority > 2) {
-							bestMatch = { method: method.toUpperCase(), path, summary: op.summary };
-							bestPriority = 2;
-						}
-					} else if (path.includes(slug)) {
-						// Substring fallback — prefer shorter (more specific) paths
-						if (bestPriority > 3 || (bestPriority === 3 && bestMatch && path.length < bestMatch.path.length)) {
-							bestMatch = { method: method.toUpperCase(), path, summary: op.summary };
-							bestPriority = 3;
-						}
+					const literalMatch = segments.some(
+						(seg) => !seg.includes('{') && seg === slug
+					);
+					if (literalMatch && (!segmentMatch || path.length < segmentMatch.path.length)) {
+						segmentMatch = { method: method.toUpperCase(), path, summary: op.summary };
 					}
 				}
 			}
-			operation = bestMatch;
+			operation = operation ?? segmentMatch;
 		}
 	} catch {
 		// Spec fetch is best-effort; the code pane simply shows the page's own
@@ -131,13 +112,40 @@ export const load: PageServerLoad = async (event) => {
 		title,
 		description,
 		path: `/docs/api/${slug}`,
-		jsonLd: techArticleLd({
-			headline: page.title,
-			dateModified: page.updated_at,
-			url: `${DOCS_ORIGIN}/docs/api/${slug}`,
-			description
-		})
+		jsonLd: preview
+			? undefined
+			: techArticleLd({
+					headline: page.title,
+					dateModified: page.updated_at,
+					url: `${DOCS_ORIGIN}/docs/api/${slug}`,
+					description
+				})
 	});
 
-	return { page, html, toc, operation, meta };
+	// Authoring parity: same edit payload contract as /docs/[audience]/[slug]
+	// — fetched lazily so it only ships when the editor is actually open.
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+	const wantsEdit = event.url.searchParams.get('edit') === '1';
+	const editor = canEditDocs && wantsEdit ? await editorData(event, page, editHtml) : null;
+
+	return {
+		page,
+		html,
+		toc,
+		operation,
+		meta,
+		preview,
+		feedback,
+		isGated: preview, // draft previews are never indexable
+		canEditDocs,
+		editSeed: editor?.editSeed ?? null,
+		statuses: editor?.statuses ?? [],
+		existingPages: editor?.existingPages ?? []
+	};
+};
+
+export const actions: Actions = {
+	save: async (event) => saveDocPageAction(event, 'api', event.params.slug),
+	approve: reviewAction('approve'),
+	publish: reviewAction('publish')
 };

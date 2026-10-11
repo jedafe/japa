@@ -7,9 +7,9 @@
 	import { api } from '$lib/api/client';
 	import { uploadLessonFile } from '$lib/api/media';
 	import { page } from '$app/state';
+	import { beforeNavigate } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { marked } from 'marked';
-	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
+	import { RichTextEditor } from '@japaconnect/ui';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import {
 		ArrowLeft,
@@ -66,7 +66,16 @@
 	let lessonMediaId = $state<string | null>(null);
 	let uploadingFile = $state(false);
 	let busyLesson = $state(false);
-	let showMarkdownPreview = $state(false);
+	let busyMove = $state(false);
+	// Snapshot of the article markdown at editor-open time — seeds the
+	// RichTextEditor once; edits flow back via onmarkdown → lessonForm.content.
+	let articleSeed = $state('');
+	// Content is tracked via a flag (the rich editor normalizes its seed at
+	// mount, which would false-positive a baseline string compare). The
+	// baseline snapshot covers every other field + the attached media id.
+	let lessonBaseline = $state<string | null>(null);
+	let lessonContentEdited = $state(false);
+	let openedLessonType = $state<LessonType | null>(null);
 
 	// ---------------- quiz builder state ----------------
 	let quizQuestions = $state<QuizEditQuestion[]>([]);
@@ -104,6 +113,22 @@
 	}
 
 	onMount(load);
+
+	onMount(() => {
+		const handler = (e: BeforeUnloadEvent) => {
+			if (lessonDirty) e.preventDefault();
+		};
+		window.addEventListener('beforeunload', handler);
+		return () => window.removeEventListener('beforeunload', handler);
+	});
+
+	beforeNavigate((nav) => {
+		if (lessonDirty && nav.type !== 'leave') {
+			if (!confirm(t('curriculum.unsaved_confirm', 'You have unsaved lesson changes. Discard them?'))) {
+				nav.cancel();
+			}
+		}
+	});
 
 	function flash(msg: string) {
 		notice = msg;
@@ -170,17 +195,24 @@
 			error = r.error.message;
 			return;
 		}
-		if (lessonModuleId === m.id) cancelLessonEditor();
+		if (lessonModuleId === m.id) resetLessonEditor();
 		await load();
 	}
 
 	// Move a module one step up/down by swapping sort_order with its neighbour.
 	async function moveModule(mods: CurriculumModule[], idx: number, dir: -1 | 1) {
+		if (busyMove) return;
 		const other = mods[idx + dir];
 		if (!other) return;
 		const cur = mods[idx];
-		await api.patch(`/academy/my/modules/${cur.id}`, { sort_order: other.sort_order });
-		await api.patch(`/academy/my/modules/${other.id}`, { sort_order: cur.sort_order });
+		busyMove = true;
+		const r1 = await api.patch(`/academy/my/modules/${cur.id}`, { sort_order: other.sort_order });
+		const r2 = r1.error ? r1 : await api.patch(`/academy/my/modules/${other.id}`, { sort_order: cur.sort_order });
+		busyMove = false;
+		if (r1.error || r2.error) {
+			error = (r1.error ?? r2.error)?.message ?? t('common.error', 'Error');
+			return;
+		}
 		await load();
 	}
 
@@ -190,11 +222,44 @@
 		return lessonModuleId === moduleId;
 	}
 
+	// Baseline snapshot of the editable fields — `content` is excluded (the
+	// rich editor emits a normalized seed at mount; `lessonContentEdited`
+	// tracks real edits instead). sort_order is reorder-owned, not a field.
+	function lessonFieldsSnapshot(): string {
+		return JSON.stringify({
+			title: lessonForm.title,
+			slug: lessonForm.slug,
+			lesson_type: lessonForm.lesson_type,
+			external_url: lessonForm.external_url,
+			duration_minutes: lessonForm.duration_minutes ?? 0,
+			is_published: lessonForm.is_published,
+			is_preview: lessonForm.is_preview,
+			media: lessonMediaId,
+			// Checklist edits write lessonForm.content through a plain textarea
+			// — include it for non-article types where no editor emits.
+			content: lessonForm.lesson_type === 'article' ? '' : lessonForm.content
+		});
+	}
+
+	const lessonDirty = $derived(
+		lessonBaseline !== null &&
+			(lessonContentEdited || quizDirty || lessonFieldsSnapshot() !== lessonBaseline)
+	);
+
+	function confirmDiscardLesson(): boolean {
+		if (!lessonDirty) return true;
+		return confirm(t('curriculum.unsaved_confirm', 'You have unsaved lesson changes. Discard them?'));
+	}
+
 	async function openLessonEditor(moduleId: string, lesson: CurriculumLesson | null) {
+		if (!confirmDiscardLesson()) return;
 		lessonModuleId = moduleId;
 		editingLessonId = lesson?.id ?? null;
-		showMarkdownPreview = false;
+		// Seed only for article lessons — other types don't use the editor.
+		articleSeed = lesson?.lesson_type === 'article' ? (lesson.content ?? '') : '';
 		quizDirty = false;
+		lessonContentEdited = false;
+		openedLessonType = lesson?.lesson_type ?? null;
 
 		if (lesson) {
 			lessonForm = {
@@ -235,37 +300,87 @@
 			lessonMediaId = null;
 			quizQuestions = [];
 		}
+
+		lessonBaseline = lessonFieldsSnapshot();
 	}
 
-	function cancelLessonEditor() {
+	// Internal teardown — callers that already know the edit is safe to lose
+	// (successful save, module delete) pass force=true to skip the confirm.
+	function resetLessonEditor() {
 		lessonModuleId = null;
 		editingLessonId = null;
 		quizQuestions = [];
 		quizDirty = false;
+		lessonBaseline = null;
+		lessonContentEdited = false;
+		openedLessonType = null;
+	}
+
+	function cancelLessonEditor() {
+		if (!confirmDiscardLesson()) return;
+		resetLessonEditor();
 	}
 
 	function lessonPayload(): Record<string, unknown> {
+		// URL/embed types store their URL in content; article/checklist/quiz
+		// keep it in lessonForm.content. '' (not null) so clearing a field
+		// actually clears it server-side — null means "keep" in the PATCH.
 		const contentFields = ['youtube', 'screencast', 'video', 'document', 'audio', 'link'].includes(
 			lessonForm.lesson_type
 		)
-			? { content: lessonForm.external_url || null }
-			: { content: lessonForm.content || null };
+			? { content: lessonForm.external_url.trim() }
+			: { content: lessonForm.content };
 
 		return {
 			title: lessonForm.title.trim(),
-			slug: lessonForm.slug || undefined,
+			slug: lessonForm.slug.trim() || undefined,
 			lesson_type: lessonForm.lesson_type,
 			...contentFields,
-			media_id: lessonMediaId,
-			duration_minutes: lessonForm.duration_minutes || null,
-			sort_order: lessonForm.sort_order,
+			// '' detaches the file; null/omitted would preserve it.
+			media_id: lessonMediaId ?? '',
+			// 0 is a real value (no duration) — the || null form made it
+			// impossible to reset a duration back to zero.
+			duration_minutes: Math.max(0, lessonForm.duration_minutes ?? 0),
+			// sort_order intentionally omitted — appending is the default on
+			// create and reordering owns it on update.
 			is_published: lessonForm.is_published,
 			is_preview: lessonForm.is_preview
 		};
 	}
 
+	function onLessonTypeChange() {
+		// Switching type on an existing lesson drops the previous type's
+		// payload (markdown body, URL, media) — warn before it happens.
+		if (editingLessonId && openedLessonType && lessonForm.lesson_type !== openedLessonType) {
+			const ok = confirm(
+				t(
+					'curriculum.type_change_confirm',
+					'Changing the lesson type discards content saved for the previous type. Continue?'
+				)
+			);
+			if (!ok) lessonForm.lesson_type = openedLessonType;
+		}
+	}
+
 	async function saveLesson() {
 		if (!lessonForm.title.trim() || busyLesson) return;
+		error = null;
+
+		// URL-bearing types need a real http(s) URL — type="url" never runs
+		// because these are plain buttons, not a form submit.
+		const url = lessonForm.external_url.trim();
+		const urlTypes = ['youtube', 'screencast', 'video', 'document', 'audio', 'link'];
+		if (urlTypes.includes(lessonForm.lesson_type)) {
+			const required = lessonForm.lesson_type === 'youtube' || lessonForm.lesson_type === 'link';
+			const ok = !url ? !required : /^https?:\/\/\S+$/i.test(url);
+			if (!ok) {
+				error = required
+					? t('curriculum.url_required', 'A valid https:// URL is required for this lesson type.')
+					: t('curriculum.url_invalid', 'The external URL must be a valid https:// URL.');
+				return;
+			}
+		}
+
 		busyLesson = true;
 		let savedId = editingLessonId;
 
@@ -297,7 +412,7 @@
 
 		busyLesson = false;
 		flash(editingLessonId ? t('common.saved', 'Saved') : t('curriculum.lesson_created', 'Lesson created'));
-		cancelLessonEditor();
+		resetLessonEditor();
 		await load();
 	}
 
@@ -308,16 +423,23 @@
 			error = r.error.message;
 			return;
 		}
-		if (editingLessonId === lesson.id) cancelLessonEditor();
+		if (editingLessonId === lesson.id) resetLessonEditor();
 		await load();
 	}
 
 	async function moveLesson(lessons: CurriculumLesson[], idx: number, dir: -1 | 1) {
+		if (busyMove) return;
 		const other = lessons[idx + dir];
 		if (!other) return;
 		const cur = lessons[idx];
-		await api.patch(`/academy/my/lessons/${cur.id}`, { sort_order: other.sort_order });
-		await api.patch(`/academy/my/lessons/${other.id}`, { sort_order: cur.sort_order });
+		busyMove = true;
+		const r1 = await api.patch(`/academy/my/lessons/${cur.id}`, { sort_order: other.sort_order });
+		const r2 = r1.error ? r1 : await api.patch(`/academy/my/lessons/${other.id}`, { sort_order: cur.sort_order });
+		busyMove = false;
+		if (r1.error || r2.error) {
+			error = (r1.error ?? r2.error)?.message ?? t('common.error', 'Error');
+			return;
+		}
 		await load();
 	}
 
@@ -387,12 +509,6 @@
 		quizDirty = false;
 		return true;
 	}
-
-	// ---------------- markdown preview ----------------
-
-	let previewHtml = $derived(
-		showMarkdownPreview && lessonForm.content ? sanitizeContentHtml(marked.parse(lessonForm.content) as string) : ''
-	);
 
 	function statusColor(status: string): string {
 		switch (status) {
@@ -581,7 +697,7 @@
 								</label>
 								<label class="block">
 									<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.lesson_type', 'Type')}</span>
-									<select bind:value={lessonForm.lesson_type} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]">
+									<select bind:value={lessonForm.lesson_type} onchange={onLessonTypeChange} class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-text)]">
 										{#each lessonTypeOptions as opt (opt.value)}
 											<option value={opt.value}>{opt.label}</option>
 										{/each}
@@ -596,22 +712,23 @@
 							<!-- Type-specific fields -->
 							{#if lessonForm.lesson_type === 'article'}
 								<div class="mt-3">
-									<div class="mb-1 flex items-center justify-between">
-										<span class="text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.content_md', 'Content (markdown)')}</span>
-										<button type="button" onclick={() => (showMarkdownPreview = !showMarkdownPreview)} class="text-xs text-[var(--color-primary)]">
-											{showMarkdownPreview ? t('curriculum.write', 'Write') : t('curriculum.preview_tab', 'Preview')}
-										</button>
-									</div>
-									{#if showMarkdownPreview}
-										<div class="prose min-h-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">{@html previewHtml}</div>
-									{:else}
-										<textarea bind:value={lessonForm.content} rows="10" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono text-sm text-[var(--color-text)]" placeholder="# Heading&#10;&#10;Write the lesson in markdown…"></textarea>
-									{/if}
+									<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.content', 'Content')}</span>
+									<RichTextEditor
+										content={articleSeed}
+										{t}
+										placeholder={t('curriculum.article_placeholder', 'Write the lesson…')}
+										ariaLabel={t('curriculum.content', 'Content')}
+										defaultMode="wysiwyg"
+										minHeight={220}
+										features={{ image: true, youtube: true, markdown: true }}
+										onmarkdown={(md) => (lessonForm.content = md)}
+										onedit={() => (lessonContentEdited = true)}
+									/>
 								</div>
 							{:else if lessonForm.lesson_type === 'checklist'}
 								<label class="mt-3 block">
 									<span class="mb-1 block text-xs font-medium text-[var(--color-text-subtle)]">{t('curriculum.checklist_items', 'Checklist items (one per line)')}</span>
-									<textarea bind:value={lessonForm.content} rows="6" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"></textarea>
+									<textarea bind:value={lessonForm.content} oninput={() => (lessonContentEdited = true)} rows="6" class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]"></textarea>
 								</label>
 							{:else if lessonForm.lesson_type === 'quiz'}
 								<div class="mt-3">

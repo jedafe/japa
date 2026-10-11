@@ -488,9 +488,21 @@ func (s *Service) UpdateMyLesson(ctx context.Context, userID, lessonID pgtype.UU
 		return LessonDTO{}, fmt.Errorf("invalid lesson_type %q", *in.LessonType)
 	}
 
+	// Slug renames go through the same normalizer as create; empty means
+	// "keep the current slug" (PATCH-sparse field).
+	var slug *string
+	if in.Slug != nil && strings.TrimSpace(*in.Slug) != "" {
+		normalized := moduleSlug(in.Slug, in.Title)
+		slug = &normalized
+	}
+
+	// media_id is tri-state: nil keeps the attachment, "" detaches it
+	// (zero-UUID sentinel in the UPDATE CASE), a UUID replaces it.
 	var mediaID pgtype.UUID
-	if in.MediaID != nil && *in.MediaID != "" {
-		if err := mediaID.Scan(*in.MediaID); err != nil {
+	if in.MediaID != nil {
+		if *in.MediaID == "" {
+			mediaID = pgtype.UUID{Valid: true}
+		} else if err := mediaID.Scan(*in.MediaID); err != nil {
 			return LessonDTO{}, errors.New("invalid media_id")
 		}
 	}
@@ -501,6 +513,7 @@ func (s *Service) UpdateMyLesson(ctx context.Context, userID, lessonID pgtype.UU
 		row, e = q.UpdateAcademyLesson(ctx, gen.UpdateAcademyLessonParams{
 			ID:              lessonID,
 			Title:           title,
+			Slug:            slug,
 			LessonType:      in.LessonType,
 			Content:         in.Content,
 			MediaID:         mediaID,

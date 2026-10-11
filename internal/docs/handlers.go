@@ -316,10 +316,41 @@ func (h *Handlers) SearchDocPages(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": results})
 }
 
+// GetDocFeedback handles GET /api/v1/docs/{audience}/{slug}/feedback.
+// Returns aggregate helpful counters plus the caller's recorded vote
+// (§44 amendment 2). Guests get counts with my_vote=null.
+func (h *Handlers) GetDocFeedback(w http.ResponseWriter, r *http.Request) {
+	audience := chi.URLParam(r, "audience")
+	slug := chi.URLParam(r, "slug")
+
+	if !ValidAudiences[audience] {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid documentation section")
+		return
+	}
+
+	if !h.checkAudienceGate(w, r, audience) {
+		return
+	}
+
+	var userID pgtype.UUID
+	if user := auth.FromContext(r.Context()); user != nil {
+		userID = user.UserID
+	}
+
+	feedback, err := h.Service.GetDocPageFeedback(r.Context(), audience, slug, userID)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": feedback})
+}
+
 // SubmitDocPageFeedback handles POST /api/v1/docs/{audience}/{slug}/feedback.
-// Increments the aggregate helpful_yes / helpful_no counters for a doc page.
-// Requires authentication; guests may vote client-side until a captcha/anon
-// path is added. CSRF is enforced by the route middleware (DOC-011).
+// Records the caller's vote in doc_page_votes — per-user dedupe makes the
+// vote idempotent (repeat = no-op, change = counters move). Returns the
+// post-vote feedback state. CSRF is enforced by the route middleware
+// (DOC-011 + §44 amendment 2).
 func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request) {
 
 	user := auth.FromContext(r.Context())
@@ -333,6 +364,10 @@ func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request)
 
 	if !ValidAudiences[audience] {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_audience", "Invalid documentation section")
+		return
+	}
+
+	if !h.checkAudienceGate(w, r, audience) {
 		return
 	}
 
@@ -350,12 +385,13 @@ func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.Service.SubmitDocPageFeedback(r.Context(), audience, slug, input.Vote); err != nil {
+	feedback, err := h.Service.SubmitDocPageFeedback(r.Context(), audience, slug, input.Vote, user.UserID)
+	if err != nil {
 		handleServiceError(w, err)
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": map[string]any{"status": "accepted"}})
+	errpkg.WriteJSON(w, http.StatusAccepted, map[string]any{"data": feedback})
 }
 
 // ListDocAudienceGates handles GET /api/v1/docs/audience-gates.
@@ -461,6 +497,28 @@ func (h *Handlers) GetAdminDocPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page, err := h.Service.GetDocPageByID(r.Context(), id)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": page})
+}
+
+// GetAdminDocPageBySlug handles GET /api/v1/admin/docs/page?audience=&slug=.
+// Returns a page by audience+slug regardless of status — powers the docs
+// app's editor draft preview (§44 amendment 2). Route is docs.manage-gated.
+func (h *Handlers) GetAdminDocPageBySlug(w http.ResponseWriter, r *http.Request) {
+
+	audience := r.URL.Query().Get("audience")
+	slug := r.URL.Query().Get("slug")
+
+	if !ValidAudiences[audience] || slug == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_fields", "audience and slug are required")
+		return
+	}
+
+	page, err := h.Service.GetDocPageBySlugAnyStatus(r.Context(), audience, slug)
 	if err != nil {
 		handleServiceError(w, err)
 		return

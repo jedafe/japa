@@ -1775,20 +1775,29 @@ func (q *Queries) ListTrackLessonsForNav(ctx context.Context, trackID pgtype.UUI
 const updateAcademyLesson = `-- name: UpdateAcademyLesson :one
 UPDATE academy_lessons
 SET title = COALESCE($1, title),
- lesson_type = COALESCE($2, lesson_type),
- content = COALESCE($3, content),
- media_id = COALESCE($4, media_id),
- duration_minutes = COALESCE($5, duration_minutes),
- sort_order = COALESCE($6, sort_order),
- is_published = COALESCE($7, is_published),
- is_preview = COALESCE($8, is_preview),
+ slug = COALESCE($2, slug),
+ lesson_type = COALESCE($3, lesson_type),
+ content = COALESCE($4, content),
+ -- media_id tri-state: NULL param keeps the attachment, the zero UUID detaches
+ -- it (the service maps an explicit "" media_id to this sentinel). The ::uuid
+ -- casts are load-bearing — without them Postgres cannot infer $N's type.
+ media_id = CASE
+  WHEN $5::uuid IS NULL THEN media_id
+  WHEN $5::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
+  ELSE $5::uuid
+ END,
+ duration_minutes = COALESCE($6, duration_minutes),
+ sort_order = COALESCE($7, sort_order),
+ is_published = COALESCE($8, is_published),
+ is_preview = COALESCE($9, is_preview),
  updated_at = now()
-WHERE id = $9
+WHERE id = $10
 RETURNING id, module_id, title, slug, lesson_type, content, media_id, duration_minutes, sort_order, is_published, is_preview, created_at, updated_at
 `
 
 type UpdateAcademyLessonParams struct {
 	Title           *string     `json:"title"`
+	Slug            *string     `json:"slug"`
 	LessonType      *string     `json:"lesson_type"`
 	Content         *string     `json:"content"`
 	MediaID         pgtype.UUID `json:"media_id"`
@@ -1818,6 +1827,7 @@ type UpdateAcademyLessonRow struct {
 func (q *Queries) UpdateAcademyLesson(ctx context.Context, arg UpdateAcademyLessonParams) (UpdateAcademyLessonRow, error) {
 	row := q.db.QueryRow(ctx, updateAcademyLesson,
 		arg.Title,
+		arg.Slug,
 		arg.LessonType,
 		arg.Content,
 		arg.MediaID,

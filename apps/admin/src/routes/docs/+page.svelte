@@ -12,7 +12,7 @@
 	import { SlideOver } from '$lib/components/ui/slide-over';
 	import type { ActionItem } from '$lib/components/ui/data-table';
 	import { docsApi } from '$lib/api';
-	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles } from 'lucide-svelte';
+	import { Pencil, Trash2, Send, FileDown, Plus, Sparkles, CheckCircle2 } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	const canEdit = $derived(hasPermission('docs.manage'));
@@ -50,12 +50,20 @@
 	let audiences = $state<string[]>(['users', 'premium', 'organizations', 'moderators', 'api', 'admin', 'superadmin']);
 	let statuses = $state<string[]>(['draft', 'in_review', 'approved', 'published']);
 
-	const statusOptions = $derived(
-		statuses.map((s) => ({
+	// §44 amendment 2: PATCH may only set draft/in_review — approve/publish are
+	// dedicated endpoints (and record the reviewer). Create offers only the two
+	// writable statuses; edit adds the row's current status so the select can
+	// display it.
+	const statusOptions = $derived.by(() => {
+		const current = editingId ? form.status : '';
+		const writable = statuses.filter(
+			(s) => s === 'draft' || s === 'in_review' || s === current
+		);
+		return writable.map((s) => ({
 			value: s,
 			label: t(`docs.status.${s}`, s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
-		}))
-	);
+		}));
+	});
 
 	const audienceOptions = $derived(audiences.map((a) => ({ value: a, label: a })));
 
@@ -86,10 +94,16 @@
 			show: () => canEdit
 		},
 		{
+			label: t('docs.approve', 'Approve'),
+			icon: CheckCircle2,
+			onclick: (row) => approvePage(row),
+			show: (row: DocPage) => canPublish && (row.status === 'draft' || row.status === 'in_review')
+		},
+		{
 			label: t('docs.publish', 'Publish'),
 			icon: Send,
 			onclick: (row) => togglePublish(row),
-			show: (row: DocPage) => canPublish && row.status !== 'published'
+			show: (row: DocPage) => canPublish && row.status === 'approved'
 		},
 		{
 			label: t('docs.unpublish', 'Unpublish'),
@@ -180,7 +194,17 @@
 		// backend (which expects jsonb TipTap content) can store and render it.
 		// Ref: §44 "content jsonb NOT NULL DEFAULT '{}', -- TipTap JSON"
 		const tiptapContent = wrapAsTipTap(form.body);
-		const payload = { title: form.title.trim(), slug, audience: form.audience, review_status: form.status, content: tiptapContent };
+		// §44 amendment 2: only draft/in_review are writable via create/PATCH.
+		// An approved/published row keeps its status by omission.
+		const payload: { title: string; slug: string; audience: string; content: unknown; review_status?: string } = {
+			title: form.title.trim(),
+			slug,
+			audience: form.audience,
+			content: tiptapContent
+		};
+		if (form.status === 'draft' || form.status === 'in_review') {
+			payload.review_status = form.status;
+		}
 		const result = editingId ? await docsApi.update(editingId, payload) : await docsApi.create(payload);
 		if (result.ok) {
 			showFormSlideOver = false;
@@ -191,6 +215,16 @@
 		saving = false;
 	}
 
+	// §44 amendment 2: the review workflow is draft/in_review → approve →
+	// publish, enforced server-side. Approve and publish are dedicated calls
+	// so reviewer metadata stays truthful.
+	async function approvePage(item: DocPage) {
+		errorMessage = '';
+		const result = await docsApi.approve(item.id);
+		if (result.ok) loadDocs();
+		else errorMessage = result.error;
+	}
+
 	async function togglePublish(item: DocPage) {
 		errorMessage = '';
 		if (item.status === 'published') {
@@ -199,7 +233,8 @@
 			if (result.ok) loadDocs();
 			else errorMessage = result.error;
 		} else {
-			// Publish: use the dedicated publish endpoint (§44 — validates approved status).
+			// Publish: dedicated endpoint — requires the page to be approved
+			// first (§44). The row action only shows on approved pages.
 			const result = await docsApi.publish(item.id);
 			if (result.ok) loadDocs();
 			else errorMessage = result.error;

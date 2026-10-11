@@ -1,6 +1,7 @@
 package docs
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +18,7 @@ import (
 	"github.com/jedafe/japa/internal/ai"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -142,7 +146,7 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) (
 			Position:     r.Position,
 			Category:     r.Category,
 			Subcategory:  r.Subcategory,
-			CreatedAt:    r.CreatedAt.Time.Format(time.RFC3339),
+			CreatedAt:    r.CreatedAt.Time.Format(time.RFC3339Nano),
 		}
 	}
 
@@ -171,8 +175,8 @@ func (s *Service) ListAllDocPagesByAudience(ctx context.Context, audience string
 			Position:       r.Position,
 			Category:       r.Category,
 			Subcategory:    r.Subcategory,
-			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339),
-			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339),
+			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339Nano),
+			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339Nano),
 		}
 	}
 
@@ -201,8 +205,8 @@ func (s *Service) ListAllDocPages(ctx context.Context) ([]DocPage, error) {
 			Position:       r.Position,
 			Category:       r.Category,
 			Subcategory:    r.Subcategory,
-			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339),
-			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339),
+			CreatedAt:      r.CreatedAt.Time.Format(time.RFC3339Nano),
+			UpdatedAt:      r.UpdatedAt.Time.Format(time.RFC3339Nano),
 		}
 	}
 
@@ -314,53 +318,60 @@ func (s *Service) SearchDocPagesInAudiences(ctx context.Context, query string, a
 		return s.searcher.SearchDocPages(ctx, query, audiences, limit)
 	}
 
-	allResults := make([]DocSearchResult, 0, limit)
+	// §44 amendment 2: single query over the allowed set — JSON keys stripped
+	// by the SQL so structural keys can't produce false positives.
+	rows, err := s.store.searchInAudiences(ctx, query, audiences, limit)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, aud := range audiences {
-		audPtr := &aud
-
-		rows, err := s.store.search(ctx, query, audPtr, limit)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, r := range rows {
-			allResults = append(allResults, DocSearchResult{
-				ID:          r.ID.String(),
-				Title:       r.Title,
-				Slug:        r.Slug,
-				Audience:    r.Audience,
-				Category:    r.Category,
-				Subcategory: r.Subcategory,
-				Excerpt:     extractExcerpt(r.Content, excerptMaxLen),
-			})
-			// nolint:gosec // G115: bounded
-			if int32(len(allResults)) >= limit { // #nosec //nolint:gosec // G115: bounded
-				break
-			}
-		}
-
-		// nolint:gosec // G115: bounded
-		if int32(len(allResults)) >= limit { // #nosec //nolint:gosec // G115: bounded
-			break
+	results := make([]DocSearchResult, len(rows))
+	for i, r := range rows {
+		results[i] = DocSearchResult{
+			ID:          r.ID.String(),
+			Title:       r.Title,
+			Slug:        r.Slug,
+			Audience:    r.Audience,
+			Category:    r.Category,
+			Subcategory: r.Subcategory,
+			Excerpt:     extractExcerpt(r.Content, excerptMaxLen),
 		}
 	}
 
-	return allResults, nil
+	return results, nil
 }
 
-// SubmitDocPageFeedback increments the aggregate helpful/unhelpful counter for
-// a published doc page (DOC-011). Vote must be "up" or "down".
-func (s *Service) SubmitDocPageFeedback(ctx context.Context, audience, slug, vote string) error {
+// SubmitDocPageFeedback records the user's vote for a published doc page
+// (DOC-011 + §44 amendment 2). Votes are per-user and idempotent: a repeat
+// vote is a no-op, a changed vote moves the aggregate counters. Returns the
+// post-vote feedback state.
+func (s *Service) SubmitDocPageFeedback(ctx context.Context, audience, slug, vote string, userID pgtype.UUID) (*DocFeedback, error) {
 	if vote != "up" && vote != "down" {
-		return fmt.Errorf("invalid vote: %s", vote)
+		return nil, fmt.Errorf("%w: vote must be 'up' or 'down'", errpkg.ErrInvalid)
 	}
 
 	if !ValidAudiences[audience] {
-		return fmt.Errorf("invalid audience: %s", audience)
+		return nil, fmt.Errorf("%w: audience %q", errpkg.ErrInvalid, audience)
 	}
 
-	return s.store.incrementHelpful(ctx, audience, slug, vote)
+	// Resolve the published page — feedback on missing/draft pages is 404.
+	page, err := s.store.getBySlug(ctx, audience, slug)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := s.store.setVote(ctx, page.ID, userID, vote)
+	if err != nil {
+		return nil, err
+	}
+
+	if rows == 0 {
+		return nil, errpkg.ErrNotFound
+	}
+
+	// Read back on the writer pool — replica lag must not serve pre-vote
+	// counts in the POST response.
+	return s.getDocPageFeedback(ctx, audience, slug, userID, true)
 }
 
 // ListAudiences returns the canonical ordered list of documentation audience slugs.
@@ -543,6 +554,98 @@ func (s *Service) invalidateAllPageCaches(ctx context.Context) {
 // maxTaxonomyLen caps free-text category/subcategory labels (§44 amendment).
 const maxTaxonomyLen = 120
 
+// maxDocContentBytes caps the raw content blob (TipTap JSON) on create/update
+// (§44 amendment 2).
+const maxDocContentBytes = 512 << 10 // 512 KiB
+
+// docSlugRe is the canonical slug shape: lowercase alnum segments joined by
+// single dashes (§44 amendment 2).
+var docSlugRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// reservedSlugs are docs-app route segments that can never be page slugs —
+// a page using one would be shadowed by a static route and unreachable.
+// `new` is reserved in every audience (the /{audience}/new create route);
+// the api audience additionally serves /docs/api/keys and
+// /docs/api/playground (§44 amendment 2).
+var reservedSlugs = map[string]map[string]bool{
+	"*":   {"new": true},
+	"api": {"keys": true, "playground": true},
+}
+
+// validateDocSlug checks slug shape and the reserved list for an audience.
+func validateDocSlug(audience, slug string) error {
+	if !docSlugRe.MatchString(slug) {
+		return fmt.Errorf("%w: slug must be lowercase alphanumeric segments joined by dashes", errpkg.ErrInvalid)
+	}
+
+	if reservedSlugs["*"][slug] || reservedSlugs[audience][slug] {
+		return fmt.Errorf("%w: slug %q is reserved in audience %q", errpkg.ErrInvalid, slug, audience)
+	}
+
+	return nil
+}
+
+// createAllowedStatuses are the only review_status values a page may be
+// created with — pages cannot be born approved or published (§44 amendment 2).
+var createAllowedStatuses = map[string]bool{"draft": true, "in_review": true}
+
+// patchAllowedStatuses are the statuses UpdateDocPage may set directly.
+// approved/published require the dedicated approve/publish endpoints so
+// reviewer metadata stays truthful (§44 amendment 2).
+var patchAllowedStatuses = map[string]bool{"draft": true, "in_review": true}
+
+// validateParent checks a parent_id assignment: the parent must exist, live
+// in the same audience, and must not be the page itself or one of its
+// descendants (cycle guard — walks the ancestor chain; §44 amendment 2).
+func (s *Service) validateParent(ctx context.Context, pageID, parentID pgtype.UUID, audience string) error {
+	if pageID.Valid && parentID.String() == pageID.String() {
+		return fmt.Errorf("%w: a page cannot be its own parent", errpkg.ErrInvalid)
+	}
+
+	parent, err := s.store.getByID(ctx, parentID)
+	if err != nil {
+		return fmt.Errorf("%w: parent page not found", errpkg.ErrInvalid)
+	}
+
+	if parent.Audience != audience {
+		return fmt.Errorf("%w: parent page belongs to audience %q", errpkg.ErrInvalid, parent.Audience)
+	}
+
+	// Walk the ancestor chain — if we reach pageID, this assignment would
+	// create a cycle.
+	ancestor := parent
+	for i := 0; i < 100; i++ {
+		if !ancestor.ParentID.Valid {
+			return nil
+		}
+
+		if pageID.Valid && ancestor.ParentID.String() == pageID.String() {
+			return fmt.Errorf("%w: parent is a descendant of this page (cycle)", errpkg.ErrInvalid)
+		}
+
+		ancestor, err = s.store.getByID(ctx, ancestor.ParentID)
+		if err != nil {
+			// Dangling ancestor reference — treat the chain as terminated
+			// rather than failing the assignment.
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: parent chain too deep", errpkg.ErrInvalid)
+}
+
+// docContentEqual compares two content blobs semantically: JSON documents
+// (TipTap) are compared structurally so key order/whitespace differences in
+// a re-sent doc don't count as an edit (§44 amendment 3); anything that
+// isn't parseable JSON falls back to byte comparison.
+func docContentEqual(a, b []byte) bool {
+	var va, vb any
+	if json.Unmarshal(a, &va) != nil || json.Unmarshal(b, &vb) != nil {
+		return bytes.Equal(bytes.TrimSpace(a), bytes.TrimSpace(b))
+	}
+	return reflect.DeepEqual(va, vb)
+}
+
 // normalizeTaxonomy trims a category/subcategory label. Empty or absent input
 // normalizes to nil (stored NULL); overlong labels are rejected.
 func normalizeTaxonomy(s *string) (*string, error) {
@@ -563,9 +666,11 @@ func normalizeTaxonomy(s *string) (*string, error) {
 }
 
 // CreateDocPage inserts a new documentation page and returns its ID.
+// Pages can only be created as draft or in_review — approved/published must
+// go through the review workflow (§44 amendment 2).
 func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (pgtype.UUID, error) {
 	if !ValidAudiences[req.Audience] {
-		return pgtype.UUID{}, fmt.Errorf("invalid audience: %s", req.Audience)
+		return pgtype.UUID{}, fmt.Errorf("%w: audience %q", errpkg.ErrInvalid, req.Audience)
 	}
 
 	status := req.ReviewStatus
@@ -574,7 +679,15 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 	}
 
 	if !ValidReviewStatuses[status] {
-		return pgtype.UUID{}, fmt.Errorf("invalid review_status: %s", status)
+		return pgtype.UUID{}, fmt.Errorf("%w: review_status %q", errpkg.ErrInvalid, status)
+	}
+
+	if !createAllowedStatuses[status] {
+		return pgtype.UUID{}, fmt.Errorf("%w: pages cannot be created with status %q — use approve/publish", errpkg.ErrInvalidStatusTransition, status)
+	}
+
+	if err := validateDocSlug(req.Audience, req.Slug); err != nil {
+		return pgtype.UUID{}, err
 	}
 
 	category, err := normalizeTaxonomy(req.Category)
@@ -592,10 +705,18 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 		contentBytes = []byte(`""`)
 	}
 
+	if len(contentBytes) > maxDocContentBytes {
+		return pgtype.UUID{}, fmt.Errorf("%w: content exceeds %d bytes", errpkg.ErrInvalid, maxDocContentBytes)
+	}
+
 	var parentID pgtype.UUID
-	if req.ParentID != nil {
+	if req.ParentID != nil && *req.ParentID != "" {
 		if err := parentID.Scan(*req.ParentID); err != nil {
-			return pgtype.UUID{}, fmt.Errorf("invalid parent_id %q: %w", *req.ParentID, err)
+			return pgtype.UUID{}, fmt.Errorf("%w: parent_id %q", errpkg.ErrInvalid, *req.ParentID)
+		}
+
+		if err := s.validateParent(ctx, pgtype.UUID{}, parentID, req.Audience); err != nil {
+			return pgtype.UUID{}, err
 		}
 	}
 
@@ -621,15 +742,32 @@ func (s *Service) CreateDocPage(ctx context.Context, req CreateDocPageRequest) (
 	return id, nil
 }
 
-// UpdateDocPage modifies an existing documentation page.
+// UpdateDocPage modifies an existing documentation page. Pointer fields
+// preserve stored values when absent (§44 amendment 2). Status transitions
+// are enforced: PATCH may move a page to draft/in_review only — approving or
+// publishing requires the dedicated endpoints so reviewer metadata stays
+// truthful. last_reviewed_by/at are never written here.
 func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateDocPageRequest) error {
-	status := req.ReviewStatus
-	if status == "" {
-		status = "draft"
+	// Single fetch drives fallbacks, transition checks, hierarchy validation,
+	// and cache invalidation.
+	existing, err := s.store.getByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("fetching existing page: %w", err)
 	}
 
-	if !ValidReviewStatuses[status] {
-		return fmt.Errorf("invalid review_status: %s", status)
+	// Status: absent preserves the stored status (§44 amendment 2 — an absent
+	// status silently resetting to draft was the unpublish bug).
+	status := existing.ReviewStatus
+	if req.ReviewStatus != "" {
+		if !ValidReviewStatuses[req.ReviewStatus] {
+			return fmt.Errorf("%w: review_status %q", errpkg.ErrInvalid, req.ReviewStatus)
+		}
+
+		if req.ReviewStatus != existing.ReviewStatus && !patchAllowedStatuses[req.ReviewStatus] {
+			return fmt.Errorf("%w: %q requires the approve/publish endpoints", errpkg.ErrInvalidStatusTransition, req.ReviewStatus)
+		}
+
+		status = req.ReviewStatus
 	}
 
 	// Preserve existing content when the request doesn't include it (e.g. status-only toggle).
@@ -637,23 +775,84 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 	// do NOT double-encode with json.Marshal(string(...)).
 	contentBytes := req.Content
 	if contentBytes == nil {
-		existing, err := s.store.getByID(ctx, id)
-		if err != nil {
-			return fmt.Errorf("fetching existing page for content merge: %w", err)
-		}
-
 		contentBytes = existing.Content
 	}
 
-	// Fetch existing page for title fallback and cache invalidation.
-	existing, err := s.store.getByID(ctx, id)
-	if err != nil {
-		return fmt.Errorf("fetching existing page: %w", err)
+	if len(contentBytes) > maxDocContentBytes {
+		return fmt.Errorf("%w: content exceeds %d bytes", errpkg.ErrInvalid, maxDocContentBytes)
 	}
 
 	title := req.Title
 	if title == "" {
 		title = existing.Title
+	}
+
+	// Audience: absent preserves; a move re-validates and invalidates both
+	// audience caches.
+	audience := existing.Audience
+	if req.Audience != nil && *req.Audience != "" && *req.Audience != existing.Audience {
+		if !ValidAudiences[*req.Audience] {
+			return fmt.Errorf("%w: audience %q", errpkg.ErrInvalid, *req.Audience)
+		}
+
+		audience = *req.Audience
+	}
+
+	// Slug: absent preserves; a rename is re-validated (including the
+	// reserved list) against the target audience.
+	slug := existing.Slug
+	if req.Slug != nil && *req.Slug != "" && *req.Slug != existing.Slug {
+		if err := validateDocSlug(audience, *req.Slug); err != nil {
+			return err
+		}
+
+		slug = *req.Slug
+	}
+
+	position := existing.Position
+	if req.Position != nil {
+		position = *req.Position
+	}
+
+	parentID := existing.ParentID
+	if req.ParentID != nil {
+		parentID = pgtype.UUID{}
+
+		if *req.ParentID != "" {
+			if err := parentID.Scan(*req.ParentID); err != nil {
+				return fmt.Errorf("%w: parent_id %q", errpkg.ErrInvalid, *req.ParentID)
+			}
+
+			if err := s.validateParent(ctx, id, parentID, audience); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Optimistic lock: expected_updated_at must still match the stored row.
+	var expectedUpdatedAt pgtype.Timestamptz
+	if req.ExpectedUpdatedAt != nil && *req.ExpectedUpdatedAt != "" {
+		t, err := time.Parse(time.RFC3339, *req.ExpectedUpdatedAt)
+		if err != nil {
+			return fmt.Errorf("%w: expected_updated_at must be RFC3339", errpkg.ErrInvalid)
+		}
+
+		expectedUpdatedAt = pgtype.Timestamptz{Time: t, Valid: true}
+	}
+
+	// §44 amendment 3: editing an approved page's title or content voids the
+	// approval — the reviewer approved a different artifact. The page demotes
+	// to in_review and the review stamp clears so "Last reviewed" never
+	// describes content that wasn't actually reviewed. Organizational moves
+	// (slug/category/parent/position/audience) don't demote. Published pages
+	// are unaffected — published edits go live by design.
+	clearReview := false
+	if existing.ReviewStatus == "approved" &&
+		(title != existing.Title || !docContentEqual(contentBytes, existing.Content)) {
+		if status == "approved" {
+			status = "in_review"
+		}
+		clearReview = true
 	}
 
 	// Taxonomy: a nil field preserves the stored value; "" clears it (§44
@@ -673,27 +872,94 @@ func (s *Service) UpdateDocPage(ctx context.Context, id pgtype.UUID, req UpdateD
 		}
 	}
 
-	if err := s.store.update(ctx, gen.UpdateDocPageParams{
+	rows, err := s.store.update(ctx, gen.UpdateDocPageParams{
 		ID: id,
 
-		Title:          title,
-		Content:        contentBytes,
-		ReviewStatus:   status,
-		Category:       category,
-		Subcategory:    subcategory,
-		LastReviewedBy: pgtype.UUID{},
-	}); err != nil {
+		Title:             title,
+		Content:           contentBytes,
+		ReviewStatus:      status,
+		Slug:              slug,
+		ParentID:          parentID,
+		Position:          position,
+		Audience:          audience,
+		Category:          category,
+		Subcategory:       subcategory,
+		ExpectedUpdatedAt: expectedUpdatedAt,
+		ClearReview:       &clearReview,
+	})
+	if err != nil {
 		return err
 	}
 
-	// Invalidate nav + the specific page cache (BUG-016 fix).
+	if rows == 0 {
+		// The WHERE guard rejected the write. If the page still exists, the
+		// expected_updated_at precondition failed — stale write.
+		if _, gerr := s.store.getByID(ctx, id); gerr != nil {
+			return fmt.Errorf("fetching existing page: %w", gerr)
+		}
+
+		return fmt.Errorf("%w: page was modified since %s", errpkg.ErrStaleWrite, *req.ExpectedUpdatedAt)
+	}
+
+	// Invalidate nav + the page caches at both the old and new coordinates
+	// (BUG-016 fix extended to slug/audience moves).
 	s.invalidateCache(ctx, existing.Audience, existing.Slug)
+	if audience != existing.Audience || slug != existing.Slug {
+		s.invalidateCache(ctx, audience, slug)
+	}
 
 	return nil
 }
 
-// ApproveDocPage sets review_status to 'approved' and records the reviewer (§44).
+// GetDocPageBySlugAnyStatus returns a page regardless of review status.
+// Editor preview only — callers must hold docs.manage (§44 amendment 2).
+// Never cached: preview must reflect the latest row.
+func (s *Service) GetDocPageBySlugAnyStatus(ctx context.Context, audience, slug string) (*DocPage, error) {
+	page, err := s.store.getBySlugAnyStatus(ctx, audience, slug)
+	if err != nil {
+		return nil, err
+	}
+
+	return toDocPage(page), nil
+}
+
+// GetDocPageFeedback returns aggregate helpful counters plus the requesting
+// user's recorded vote for a published page (§44 amendment 2). userID may be
+// invalid for guests — my_vote is simply nil.
+func (s *Service) GetDocPageFeedback(ctx context.Context, audience, slug string, userID pgtype.UUID) (*DocFeedback, error) {
+	return s.getDocPageFeedback(ctx, audience, slug, userID, false)
+}
+
+// getDocPageFeedback backs both feedback reads; write=true routes to the
+// writer pool so a POST response reflects the just-recorded vote.
+func (s *Service) getDocPageFeedback(ctx context.Context, audience, slug string, userID pgtype.UUID, write bool) (*DocFeedback, error) {
+	row, err := s.store.getFeedback(ctx, audience, slug, userID, write)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DocFeedback{
+		PageID:     row.PageID.String(),
+		HelpfulYes: row.HelpfulYes,
+		HelpfulNo:  row.HelpfulNo,
+		MyVote:     row.MyVote,
+	}, nil
+}
+
+// ApproveDocPage sets review_status to 'approved' and records the reviewer
+// (§44). Allowed from draft/in_review (and is a no-op when already approved);
+// approving a published page would silently demote it, so that is rejected
+// (§44 amendment 2).
 func (s *Service) ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
+	currentStatus, err := s.store.getStatus(ctx, id)
+	if err != nil {
+		return fmt.Errorf("fetching current status: %w", err)
+	}
+
+	if currentStatus == "published" {
+		return fmt.Errorf("%w: page is already published — unpublish to draft first", errpkg.ErrInvalidStatusTransition)
+	}
+
 	if err := s.store.updateStatus(ctx, gen.UpdateDocPageStatusParams{
 		ID: id,
 
@@ -723,7 +989,7 @@ func (s *Service) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID
 	}
 
 	if currentStatus != "approved" {
-		return fmt.Errorf("cannot publish: current status is %q, must be 'approved'", currentStatus)
+		return fmt.Errorf("%w: cannot publish status %q, must be 'approved'", errpkg.ErrInvalidStatusTransition, currentStatus)
 	}
 
 	if err := s.store.updateStatus(ctx, gen.UpdateDocPageStatusParams{
@@ -784,12 +1050,14 @@ func toDocPage(p gen.DocPage) *DocPage {
 		Position:       p.Position,
 		Category:       p.Category,
 		Subcategory:    p.Subcategory,
+		HelpfulYes:     p.HelpfulYes,
+		HelpfulNo:      p.HelpfulNo,
 		// Phase 8 (i18n) will persist translated variants. Until then the API
 		// always reports the source language as English, including when a
 		// ?lang query parameter is supplied.
 		ContentLang: "en",
-		CreatedAt:   p.CreatedAt.Time.Format(time.RFC3339),
-		UpdatedAt:   p.UpdatedAt.Time.Format(time.RFC3339),
+		CreatedAt:   p.CreatedAt.Time.Format(time.RFC3339Nano),
+		UpdatedAt:   p.UpdatedAt.Time.Format(time.RFC3339Nano),
 	}
 }
 
@@ -810,7 +1078,10 @@ func timestamptzPtr(t pgtype.Timestamptz) *string {
 		return nil
 	}
 
-	s := t.Time.Format(time.RFC3339)
+	// RFC3339Nano keeps microsecond precision — updated_at round-trips through
+	// PATCH expected_updated_at and must compare equal to the stored
+	// timestamptz (§44 amendment 2).
+	s := t.Time.Format(time.RFC3339Nano)
 
 	return &s
 }

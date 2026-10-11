@@ -2,11 +2,24 @@ package docs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 )
+
+// mapWriteErr translates Postgres constraint violations into sentinel errors
+// so handlers emit a 409 instead of a raw 500 (§44 amendment 2).
+func mapWriteErr(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return fmt.Errorf("%w: %s", errpkg.ErrDuplicate, pgErr.ConstraintName)
+	}
+	return err
+}
 
 // Store provides low-level database access for documentation pages.
 type Store struct {
@@ -45,6 +58,41 @@ func (s *Store) getBySlug(ctx context.Context, audience, slug string) (gen.DocPa
 		Position:       row.Position,
 		Category:       row.Category,
 		Subcategory:    row.Subcategory,
+		HelpfulYes:     row.HelpfulYes,
+		HelpfulNo:      row.HelpfulNo,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+	}, nil
+}
+
+// getBySlugAnyStatus returns a doc page by audience+slug regardless of
+// review status. Editor preview only — callers must gate on docs.manage
+// (§44 amendment 2).
+func (s *Store) getBySlugAnyStatus(ctx context.Context, audience, slug string) (gen.DocPage, error) {
+	row, err := s.read.GetDocPageBySlugAnyStatus(ctx, gen.GetDocPageBySlugAnyStatusParams{
+		Audience: audience,
+		Slug:     slug,
+	})
+	if err != nil {
+		return gen.DocPage{}, fmt.Errorf("getting doc page by slug (any status): %w", err)
+	}
+
+	return gen.DocPage{
+		ID:             row.ID,
+		Title:          row.Title,
+		Slug:           row.Slug,
+		Audience:       row.Audience,
+		Content:        row.Content,
+		AiGenerated:    row.AiGenerated,
+		ReviewStatus:   row.ReviewStatus,
+		LastReviewedBy: row.LastReviewedBy,
+		LastReviewedAt: row.LastReviewedAt,
+		ParentID:       row.ParentID,
+		Position:       row.Position,
+		Category:       row.Category,
+		Subcategory:    row.Subcategory,
+		HelpfulYes:     row.HelpfulYes,
+		HelpfulNo:      row.HelpfulNo,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil
@@ -74,6 +122,8 @@ func (s *Store) getByID(ctx context.Context, id pgtype.UUID) (gen.DocPage, error
 		Position:       row.Position,
 		Category:       row.Category,
 		Subcategory:    row.Subcategory,
+		HelpfulYes:     row.HelpfulYes,
+		HelpfulNo:      row.HelpfulNo,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil
@@ -145,19 +195,21 @@ func (s *Store) search(ctx context.Context, query string, audience *string, limi
 func (s *Store) create(ctx context.Context, params gen.CreateDocPageParams) (pgtype.UUID, error) {
 	id, err := s.write.CreateDocPage(ctx, params)
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("creating doc page: %w", err)
+		return pgtype.UUID{}, fmt.Errorf("creating doc page: %w", mapWriteErr(err))
 	}
 
 	return id, nil
 }
 
-// update modifies an existing doc page.
-func (s *Store) update(ctx context.Context, params gen.UpdateDocPageParams) error {
-	if err := s.write.UpdateDocPage(ctx, params); err != nil {
-		return fmt.Errorf("updating doc page: %w", err)
+// update modifies an existing doc page. Returns the number of rows written —
+// 0 means the optimistic-lock guard or the id filter rejected the write.
+func (s *Store) update(ctx context.Context, params gen.UpdateDocPageParams) (int64, error) {
+	rows, err := s.write.UpdateDocPage(ctx, params)
+	if err != nil {
+		return 0, fmt.Errorf("updating doc page: %w", mapWriteErr(err))
 	}
 
-	return nil
+	return rows, nil
 }
 
 // updateStatus updates only the review status and reviewer of a doc page.
@@ -179,8 +231,13 @@ func (s *Store) getStatus(ctx context.Context, id pgtype.UUID) (string, error) {
 	return status, nil
 }
 
-// delete removes a doc page.
+// delete removes a doc page and orphans its children (parent_id is not an
+// FK — children must be unlinked explicitly or they'd carry a dead
+// reference; nav promotes them to roots).
 func (s *Store) delete(ctx context.Context, id pgtype.UUID) error {
+	if err := s.write.ClearDocPageParent(ctx, id); err != nil {
+		return fmt.Errorf("unlinking doc page children: %w", err)
+	}
 	if err := s.write.DeleteDocPage(ctx,
 		id,
 	); err != nil {
@@ -190,16 +247,55 @@ func (s *Store) delete(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// incrementHelpful increments the aggregate helpful_yes / helpful_no counters.
-func (s *Store) incrementHelpful(ctx context.Context, audience, slug, vote string) error {
-	if err := s.write.IncrementDocPageHelpful(ctx, gen.IncrementDocPageHelpfulParams{
-
-		Audience: audience,
-		Slug:     slug,
-		Vote:     vote,
-	}); err != nil {
-		return fmt.Errorf("incrementing helpful counters: %w", err)
+// getFeedback returns aggregate helpful counters plus the user's recorded
+// vote for a published page (§44 amendment 2). When write is true the query
+// runs on the writer pool — used after a vote so replica lag can't return
+// pre-vote counts in the POST response.
+func (s *Store) getFeedback(ctx context.Context, audience, slug string, userID pgtype.UUID, write bool) (gen.GetDocPageFeedbackRow, error) {
+	q := s.read
+	if write {
+		q = s.write
 	}
 
-	return nil
+	row, err := q.GetDocPageFeedback(ctx, gen.GetDocPageFeedbackParams{
+		UserID:   userID,
+		Audience: audience,
+		Slug:     slug,
+	})
+	if err != nil {
+		return gen.GetDocPageFeedbackRow{}, fmt.Errorf("getting doc page feedback: %w", err)
+	}
+
+	return row, nil
+}
+
+// setVote atomically upserts the user's vote and moves the aggregate
+// counters (§44 amendment 2). Returns rows affected by the counter update —
+// 0 means the page ID did not match a doc_pages row.
+func (s *Store) setVote(ctx context.Context, pageID, userID pgtype.UUID, vote string) (int64, error) {
+	rows, err := s.write.SetDocPageVote(ctx, gen.SetDocPageVoteParams{
+		PageID: pageID,
+		UserID: userID,
+		Vote:   vote,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("recording doc page vote: %w", err)
+	}
+
+	return rows, nil
+}
+
+// searchInAudiences runs the single-query multi-audience fallback search
+// (§44 amendment 2).
+func (s *Store) searchInAudiences(ctx context.Context, query string, audiences []string, limit int32) ([]gen.SearchDocPagesInAudiencesRow, error) {
+	rows, err := s.read.SearchDocPagesInAudiences(ctx, gen.SearchDocPagesInAudiencesParams{
+		Audiences:   audiences,
+		Query:       query,
+		ResultLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("searching doc pages across audiences: %w", err)
+	}
+
+	return rows, nil
 }

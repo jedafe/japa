@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearDocPageParent = `-- name: ClearDocPageParent :exec
+UPDATE doc_pages SET parent_id = NULL, updated_at = now() WHERE parent_id = $1
+`
+
+// Orphan children before their parent is deleted — parent_id is not an FK.
+func (q *Queries) ClearDocPageParent(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearDocPageParent, id)
+	return err
+}
+
 const createDocPage = `-- name: CreateDocPage :one
 INSERT INTO doc_pages (title, slug, audience, content, ai_generated, review_status, parent_id, position, category, subcategory) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 
@@ -60,6 +70,7 @@ func (q *Queries) DeleteDocPage(ctx context.Context, id pgtype.UUID) error {
 const getDocPageByID = `-- name: GetDocPageByID :one
 SELECT id, title, slug, audience, content, ai_generated, review_status,
  last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
+ helpful_yes, helpful_no,
  created_at, updated_at
 FROM doc_pages
 WHERE id = $1
@@ -79,6 +90,8 @@ type GetDocPageByIDRow struct {
 	Position       int32              `json:"position"`
 	Category       *string            `json:"category"`
 	Subcategory    *string            `json:"subcategory"`
+	HelpfulYes     int32              `json:"helpful_yes"`
+	HelpfulNo      int32              `json:"helpful_no"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -100,6 +113,8 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 		&i.Position,
 		&i.Category,
 		&i.Subcategory,
+		&i.HelpfulYes,
+		&i.HelpfulNo,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -109,6 +124,7 @@ func (q *Queries) GetDocPageByID(ctx context.Context, id pgtype.UUID) (GetDocPag
 const getDocPageBySlug = `-- name: GetDocPageBySlug :one
 SELECT id, title, slug, audience, content, ai_generated, review_status,
  last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
+ helpful_yes, helpful_no,
  created_at, updated_at
 FROM doc_pages
 WHERE audience = $1 AND slug = $2 AND review_status = 'published'
@@ -133,6 +149,8 @@ type GetDocPageBySlugRow struct {
 	Position       int32              `json:"position"`
 	Category       *string            `json:"category"`
 	Subcategory    *string            `json:"subcategory"`
+	HelpfulYes     int32              `json:"helpful_yes"`
+	HelpfulNo      int32              `json:"helpful_no"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -154,8 +172,104 @@ func (q *Queries) GetDocPageBySlug(ctx context.Context, arg GetDocPageBySlugPara
 		&i.Position,
 		&i.Category,
 		&i.Subcategory,
+		&i.HelpfulYes,
+		&i.HelpfulNo,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDocPageBySlugAnyStatus = `-- name: GetDocPageBySlugAnyStatus :one
+SELECT id, title, slug, audience, content, ai_generated, review_status,
+ last_reviewed_by, last_reviewed_at, parent_id, position, category, subcategory,
+ helpful_yes, helpful_no,
+ created_at, updated_at
+FROM doc_pages
+WHERE audience = $1 AND slug = $2
+`
+
+type GetDocPageBySlugAnyStatusParams struct {
+	Audience string `json:"audience"`
+	Slug     string `json:"slug"`
+}
+
+type GetDocPageBySlugAnyStatusRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Audience       string             `json:"audience"`
+	Content        []byte             `json:"content"`
+	AiGenerated    bool               `json:"ai_generated"`
+	ReviewStatus   string             `json:"review_status"`
+	LastReviewedBy pgtype.UUID        `json:"last_reviewed_by"`
+	LastReviewedAt pgtype.Timestamptz `json:"last_reviewed_at"`
+	ParentID       pgtype.UUID        `json:"parent_id"`
+	Position       int32              `json:"position"`
+	Category       *string            `json:"category"`
+	Subcategory    *string            `json:"subcategory"`
+	HelpfulYes     int32              `json:"helpful_yes"`
+	HelpfulNo      int32              `json:"helpful_no"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Editor draft preview (§44 amendment 2): like GetDocPageBySlug but status-
+// agnostic. Callers MUST gate on docs.manage — never expose to public readers.
+func (q *Queries) GetDocPageBySlugAnyStatus(ctx context.Context, arg GetDocPageBySlugAnyStatusParams) (GetDocPageBySlugAnyStatusRow, error) {
+	row := q.db.QueryRow(ctx, getDocPageBySlugAnyStatus, arg.Audience, arg.Slug)
+	var i GetDocPageBySlugAnyStatusRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.Audience,
+		&i.Content,
+		&i.AiGenerated,
+		&i.ReviewStatus,
+		&i.LastReviewedBy,
+		&i.LastReviewedAt,
+		&i.ParentID,
+		&i.Position,
+		&i.Category,
+		&i.Subcategory,
+		&i.HelpfulYes,
+		&i.HelpfulNo,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDocPageFeedback = `-- name: GetDocPageFeedback :one
+SELECT p.id AS page_id, p.helpful_yes, p.helpful_no, v.vote AS my_vote
+FROM doc_pages p
+LEFT JOIN doc_page_votes v ON v.page_id = p.id AND v.user_id = $1::uuid
+WHERE p.audience = $2 AND p.slug = $3 AND p.review_status = 'published'
+`
+
+type GetDocPageFeedbackParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	Audience string      `json:"audience"`
+	Slug     string      `json:"slug"`
+}
+
+type GetDocPageFeedbackRow struct {
+	PageID     pgtype.UUID `json:"page_id"`
+	HelpfulYes int32       `json:"helpful_yes"`
+	HelpfulNo  int32       `json:"helpful_no"`
+	MyVote     *string     `json:"my_vote"`
+}
+
+// Aggregate counts + the requesting user's recorded vote (§44 amendment 2).
+func (q *Queries) GetDocPageFeedback(ctx context.Context, arg GetDocPageFeedbackParams) (GetDocPageFeedbackRow, error) {
+	row := q.db.QueryRow(ctx, getDocPageFeedback, arg.UserID, arg.Audience, arg.Slug)
+	var i GetDocPageFeedbackRow
+	err := row.Scan(
+		&i.PageID,
+		&i.HelpfulYes,
+		&i.HelpfulNo,
+		&i.MyVote,
 	)
 	return i, err
 }
@@ -463,7 +577,8 @@ SELECT id, title, slug, audience, content, parent_id, position, category, subcat
 FROM doc_pages
 WHERE review_status = 'published'
  AND ($1::text IS NULL OR audience = $1)
- AND (title ILIKE '%' || $2::text || '%' OR content::text ILIKE '%' || $2::text || '%')
+ AND (title ILIKE '%' || $2::text || '%'
+   OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || $2::text || '%')
 ORDER BY position ASC, title ASC
 LIMIT $3
 `
@@ -518,35 +633,164 @@ func (q *Queries) SearchDocPages(ctx context.Context, arg SearchDocPagesParams) 
 	return items, nil
 }
 
-const updateDocPage = `-- name: UpdateDocPage :exec
+const searchDocPagesInAudiences = `-- name: SearchDocPagesInAudiences :many
+SELECT id, title, slug, audience, content, parent_id, position, category, subcategory, created_at
+FROM doc_pages
+WHERE review_status = 'published'
+ AND audience = ANY($1::text[])
+ AND (title ILIKE '%' || $2::text || '%'
+   OR regexp_replace(content::text, '"[^"]*"[[:space:]]*:', ' ', 'g') ILIKE '%' || $2::text || '%')
+ORDER BY array_position($1::text[], audience), position ASC, title ASC
+LIMIT $3
+`
+
+type SearchDocPagesInAudiencesParams struct {
+	Audiences   []string `json:"audiences"`
+	Query       string   `json:"query"`
+	ResultLimit int32    `json:"result_limit"`
+}
+
+type SearchDocPagesInAudiencesRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	Title       string             `json:"title"`
+	Slug        string             `json:"slug"`
+	Audience    string             `json:"audience"`
+	Content     []byte             `json:"content"`
+	ParentID    pgtype.UUID        `json:"parent_id"`
+	Position    int32              `json:"position"`
+	Category    *string            `json:"category"`
+	Subcategory *string            `json:"subcategory"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+// §44 amendment 2: single query over the caller's accessible audiences.
+// The content match strips JSON keys first ("key": → space) so structural
+// keys like "doc"/"paragraph"/"text" cannot match every page.
+func (q *Queries) SearchDocPagesInAudiences(ctx context.Context, arg SearchDocPagesInAudiencesParams) ([]SearchDocPagesInAudiencesRow, error) {
+	rows, err := q.db.Query(ctx, searchDocPagesInAudiences, arg.Audiences, arg.Query, arg.ResultLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchDocPagesInAudiencesRow
+	for rows.Next() {
+		var i SearchDocPagesInAudiencesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Audience,
+			&i.Content,
+			&i.ParentID,
+			&i.Position,
+			&i.Category,
+			&i.Subcategory,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setDocPageVote = `-- name: SetDocPageVote :execrows
+WITH prev AS (
+    SELECT vote FROM doc_page_votes
+    WHERE doc_page_votes.page_id = $2 AND doc_page_votes.user_id = $3
+), ups AS (
+    INSERT INTO doc_page_votes (page_id, user_id, vote)
+    VALUES ($2, $3, $1)
+    ON CONFLICT (page_id, user_id) DO UPDATE
+        SET vote = EXCLUDED.vote, updated_at = now()
+        WHERE doc_page_votes.vote <> $1
+)
+UPDATE doc_pages SET
+    helpful_yes = helpful_yes + CASE
+        WHEN $1 = 'up' AND NOT EXISTS (SELECT 1 FROM prev WHERE prev.vote = 'up') THEN 1
+        WHEN $1 = 'down' AND EXISTS (SELECT 1 FROM prev WHERE prev.vote = 'up') THEN -1
+        ELSE 0 END,
+    helpful_no = helpful_no + CASE
+        WHEN $1 = 'down' AND NOT EXISTS (SELECT 1 FROM prev WHERE prev.vote = 'down') THEN 1
+        WHEN $1 = 'up' AND EXISTS (SELECT 1 FROM prev WHERE prev.vote = 'down') THEN -1
+        ELSE 0 END
+WHERE doc_pages.id = $2
+`
+
+type SetDocPageVoteParams struct {
+	Vote   interface{} `json:"vote"`
+	PageID pgtype.UUID `json:"page_id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Atomic vote upsert + counter adjustment (§44 amendment 2). The CTEs see the
+// pre-statement snapshot: prev captures any existing vote, ups applies the
+// change only when the vote is new or different, and the UPDATE moves the
+// aggregate counters to match. Repeat votes and missing pages are no-ops.
+func (q *Queries) SetDocPageVote(ctx context.Context, arg SetDocPageVoteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setDocPageVote, arg.Vote, arg.PageID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateDocPage = `-- name: UpdateDocPage :execrows
 UPDATE doc_pages
 SET title = $1, content = $2, review_status = $3,
- category = $4, subcategory = $5,
- last_reviewed_by = $6, last_reviewed_at = now(), updated_at = now()
-WHERE id = $7
+ slug = $4, parent_id = $5, position = $6, audience = $7,
+ category = $8, subcategory = $9,
+ -- clear_review: content edits to an approved page demote it back to
+ -- in_review and void the prior review stamp (§44 amendment 3).
+ last_reviewed_by = CASE WHEN $10::boolean THEN NULL ELSE last_reviewed_by END,
+ last_reviewed_at = CASE WHEN $10::boolean THEN NULL ELSE last_reviewed_at END,
+ updated_at = now()
+WHERE id = $11
+  AND ($12::timestamptz IS NULL
+       OR updated_at = $12::timestamptz)
 `
 
 type UpdateDocPageParams struct {
-	Title          string      `json:"title"`
-	Content        []byte      `json:"content"`
-	ReviewStatus   string      `json:"review_status"`
-	Category       *string     `json:"category"`
-	Subcategory    *string     `json:"subcategory"`
-	LastReviewedBy pgtype.UUID `json:"last_reviewed_by"`
-	ID             pgtype.UUID `json:"id"`
+	Title             string             `json:"title"`
+	Content           []byte             `json:"content"`
+	ReviewStatus      string             `json:"review_status"`
+	Slug              string             `json:"slug"`
+	ParentID          pgtype.UUID        `json:"parent_id"`
+	Position          int32              `json:"position"`
+	Audience          string             `json:"audience"`
+	Category          *string            `json:"category"`
+	Subcategory       *string            `json:"subcategory"`
+	ClearReview       *bool              `json:"clear_review"`
+	ID                pgtype.UUID        `json:"id"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
-func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) error {
-	_, err := q.db.Exec(ctx, updateDocPage,
+// §44 amendment 2: full update contract — slug, parent_id, position, audience
+// are settable; last_reviewed_* are NOT touched (approve/publish endpoints own
+// them). expected_updated_at is an optimistic-lock precondition: a stale
+// caller writes 0 rows → mapped to 409 stale_write upstream.
+func (q *Queries) UpdateDocPage(ctx context.Context, arg UpdateDocPageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateDocPage,
 		arg.Title,
 		arg.Content,
 		arg.ReviewStatus,
+		arg.Slug,
+		arg.ParentID,
+		arg.Position,
+		arg.Audience,
 		arg.Category,
 		arg.Subcategory,
-		arg.LastReviewedBy,
+		arg.ClearReview,
 		arg.ID,
+		arg.ExpectedUpdatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateDocPageStatus = `-- name: UpdateDocPageStatus :exec
@@ -562,6 +806,7 @@ type UpdateDocPageStatusParams struct {
 	ID             pgtype.UUID `json:"id"`
 }
 
+// Approve/publish transitions only — records the reviewer (§44).
 func (q *Queries) UpdateDocPageStatus(ctx context.Context, arg UpdateDocPageStatusParams) error {
 	_, err := q.db.Exec(ctx, updateDocPageStatus, arg.ReviewStatus, arg.LastReviewedBy, arg.ID)
 	return err

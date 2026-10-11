@@ -1,15 +1,23 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { enhance } from '$app/forms';
-	import { invalidateAll, goto } from '$app/navigation';
+	import { onMount } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import TableOfContents from '$lib/components/shell/TableOfContents.svelte';
 	import DocContent from '$lib/components/docs/DocContent.svelte';
-	import DocEditor from '$lib/components/docs/DocEditor.svelte';
+	import DocEditForm from '$lib/components/docs/DocEditForm.svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { ArrowLeft, ArrowRight, CalendarClock, ChevronRight, Clock, ListTree, Pencil } from 'lucide-svelte';
+	import {
+		ArrowLeft,
+		ArrowRight,
+		CalendarClock,
+		ChevronRight,
+		Clock,
+		Eye,
+		ListTree,
+		Pencil
+	} from 'lucide-svelte';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import type { PageData, ActionData } from './$types';
 
@@ -28,20 +36,17 @@
 	let editing = $derived(canEdit && page.url.searchParams.get('edit') === '1');
 	const viewPath = $derived(`/docs/${data.audience}/${data.page.slug}`);
 
-	// Edit form state — reseeded from the page each time edit mode opens.
-	let editTitle = $state('');
-	let editCategory = $state('');
-	let editSubcategory = $state('');
-	let editStatus = $state('draft');
-	let contentJson = $state<unknown>(null);
-	let saving = $state(false);
-
-	$effect(() => {
-		if (editing) {
-			editTitle = data.page.title;
-			editCategory = data.page.category ?? '';
-			editSubcategory = data.page.subcategory ?? '';
-			editStatus = data.page.review_status;
+	// One-shot notices (?created=…/?saved=…) — show once, then strip the query
+	// param so a refresh doesn't resurrect a stale banner.
+	let notice = $state<string | null>(null);
+	onMount(() => {
+		const status = page.url.searchParams.get('saved') ?? page.url.searchParams.get('created');
+		if (status) {
+			notice = status;
+			const url = new URL(page.url);
+			url.searchParams.delete('saved');
+			url.searchParams.delete('created');
+			history.replaceState(history.state, '', url);
 		}
 	});
 
@@ -53,18 +58,26 @@
 		(audienceTree?.items ?? []).flatMap((item) => [item, ...(item.children ?? [])])
 	);
 
-	// Category/subcategory suggestions from sibling pages in this audience.
+	// Category/subcategory suggestions — case-folded so "Guides"/"guides"
+	// don't surface as two near-duplicate groups (§44 amendment 2).
 	const existingCategories = $derived(
-		[...new Set(flatNav.map((i) => i.category).filter((c): c is string => !!c))]
+		[
+			...new Map(
+				data.existingPages
+					.map((p) => p.category?.trim())
+					.filter((c): c is string => !!c)
+					.map((c) => [c.toLowerCase(), c])
+			).values()
+		]
 	);
 	const existingSubcategories = $derived(
 		[
-			...new Set(
-				flatNav
-					.filter((i) => !editCategory || i.category === editCategory)
-					.map((i) => i.subcategory)
+			...new Map(
+				data.existingPages
+					.map((p) => p.subcategory?.trim())
 					.filter((c): c is string => !!c)
-			)
+					.map((c) => [c.toLowerCase(), c])
+			).values()
 		]
 	);
 
@@ -109,6 +122,22 @@
 			})
 		})
 	);
+
+	const noticeText = $derived.by(() => {
+		if (!notice) return null;
+		switch (notice) {
+			case 'published':
+				return t('notice.saved_published', 'Published — this page is now live.');
+			case 'approved':
+				return t('notice.saved_approved', 'Approved — ready to publish.');
+			case 'in_review':
+				return t('notice.saved_in_review', 'Submitted for review. Only editors can see this page.');
+			case 'draft':
+				return t('notice.saved_draft', 'Saved as draft. Only editors can see this page.');
+			default:
+				return t('notice.saved', 'Changes saved.');
+		}
+	});
 </script>
 
 <svelte:head>
@@ -162,7 +191,9 @@
 	onToggleCollapse={toggleCollapse}
 >
 	{#snippet sidebar()}
-		<TableOfContents headings={data.toc} />
+		{#if !editing}
+			<TableOfContents headings={data.toc} />
+		{/if}
 	{/snippet}
 
 	<article class="doc-article">
@@ -183,110 +214,58 @@
 			<div class="doc-meta">
 				<span class="meta-item"><CalendarClock size={13} />{updatedLabel}</span>
 				<span class="meta-item"><Clock size={13} />{t('page.read_time', '{min} min read', { min: String(readMinutes) })}</span>
+				{#if data.page.review_status !== 'published'}
+					<span class="status-badge status-{data.page.review_status}">
+						{t(`new_page.status.${data.page.review_status}`, data.page.review_status)}
+					</span>
+				{/if}
 				{#if data.page.ai_generated}
 					<span class="ai-flag">{t('page.ai_assisted_draft')}</span>
 				{/if}
+				{#if canEdit}
+					<a href="?edit=1" class="meta-edit-link">
+						<Pencil size={13} />
+						{t('page.edit_this_page', 'Edit this page')}
+					</a>
+				{/if}
 			</div>
+			{#if data.preview}
+				<div class="preview-banner" role="status">
+					<Eye size={15} />
+					<span>
+						{t(
+							'page.preview_banner',
+							'Preview — this page is {status} and only visible to editors.',
+							{ status: t(`new_page.status.${data.page.review_status}`, data.page.review_status) }
+						)}
+					</span>
+				</div>
+			{/if}
+			{#if noticeText}
+				<div class="save-notice" role="status">{noticeText}</div>
+			{/if}
 			{#if data.locale !== 'en' && data.page.content_lang === 'en'}
 				<div class="translation-notice">
 					{t('page.not_translated', 'This page is not yet translated. Showing the English version.')}
+					{#if editing}
+						<strong>{t('page.edit_source_warning', 'Editing changes the English source content.')}</strong>
+					{/if}
 				</div>
 			{/if}
 		</header>
 
 		{#if editing}
 			<!-- Inline edit mode (§44 in-app authoring — docs.manage). -->
-			{#if form?.error}
-				<p class="form-error" role="alert">
-					{form.message || t(`new_page.error.${form.error}`, 'Could not save the page.')}
-				</p>
-			{/if}
-			<form
-				method="POST"
-				action="?/save"
-				class="edit-form"
-				use:enhance={({ formData }) => {
-					formData.set('content', JSON.stringify(contentJson ?? {}));
-					saving = true;
-					return async ({ result, update }) => {
-						saving = false;
-						if (result.type === 'success') {
-							await invalidateAll();
-							await goto(viewPath);
-						} else {
-							// errors populate `form`; redirects are followed by update()
-							await update();
-						}
-					};
-				}}
-			>
-				<input type="hidden" name="page_id" value={data.page.id} />
-
-				<label class="ef-field">
-					<span class="ef-label">{t('new_page.field_title', 'Title')}</span>
-					<input type="text" name="title" class="ef-input ef-title" required maxlength="200" bind:value={editTitle} />
-				</label>
-
-				<div class="ef-grid">
-					<label class="ef-field">
-						<span class="ef-label">{t('new_page.field_category', 'Category')}</span>
-						<input
-							type="text"
-							name="category"
-							class="ef-input"
-							list="doc-categories"
-							maxlength="120"
-							bind:value={editCategory}
-							placeholder={t('new_page.optional', 'Optional')}
-						/>
-						<datalist id="doc-categories">
-							{#each existingCategories as c (c)}
-								<option value={c}></option>
-							{/each}
-						</datalist>
-					</label>
-
-					<label class="ef-field">
-						<span class="ef-label">{t('new_page.field_subcategory', 'Subcategory')}</span>
-						<input
-							type="text"
-							name="subcategory"
-							class="ef-input"
-							list="doc-subcategories"
-							maxlength="120"
-							bind:value={editSubcategory}
-							placeholder={t('new_page.optional', 'Optional')}
-						/>
-						<datalist id="doc-subcategories">
-							{#each existingSubcategories as s (s)}
-								<option value={s}></option>
-							{/each}
-						</datalist>
-					</label>
-
-					<label class="ef-field">
-						<span class="ef-label">{t('new_page.field_status', 'Review status')}</span>
-						<select name="review_status" class="ef-input" bind:value={editStatus}>
-							{#each data.statuses as s (s)}
-								<option value={s}>{t(`new_page.status.${s}`, s)}</option>
-							{/each}
-						</select>
-					</label>
-				</div>
-
-				<DocEditor
-					initialContent={data.editSeed}
-					bind:value={contentJson}
-					placeholder={t('new_page.content_placeholder', 'Start writing the documentation…')}
-				/>
-
-				<div class="ef-actions">
-					<button type="submit" class="ef-save" disabled={saving}>
-						{saving ? t('edit.saving', 'Saving…') : t('edit.save', 'Save changes')}
-					</button>
-					<a href={viewPath} class="ef-cancel">{t('editor.cancel', 'Cancel')}</a>
-				</div>
-			</form>
+			<DocEditForm
+				page={data.page}
+				statuses={data.statuses}
+				existingPages={data.existingPages}
+				editSeed={data.editSeed}
+				categories={existingCategories}
+				subcategories={existingSubcategories}
+				{form}
+				{viewPath}
+			/>
 		{:else}
 			<!-- Mobile TOC — the right sidebar hides below 1280px, so the in-page
 			     anchors get a collapsible panel at the top of the article. -->
@@ -311,6 +290,7 @@
 					html={data.html}
 					lastReviewedAt={data.page.last_reviewed_at}
 					lastReviewedBy={data.page.last_reviewed_by}
+					published={data.page.review_status === 'published'}
 				/>
 			</div>
 
@@ -334,16 +314,6 @@
 						<span class="pn-card pn-placeholder"></span>
 					{/if}
 				</nav>
-			{/if}
-
-			<!-- Edit this page link (§44 in-app authoring — docs.manage only) -->
-			{#if canEdit}
-				<div class="edit-link-row">
-					<a href="?edit=1" class="edit-link">
-						<Pencil size={14} />
-						{t('page.edit_this_page', 'Edit this page')}
-					</a>
-				</div>
 			{/if}
 		{/if}
 	</article>
@@ -383,6 +353,40 @@
 		font-size: 0.8125rem;
 		color: var(--color-muted);
 	}
+	.meta-edit-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-left: auto;
+		font-size: 0.8125rem;
+		font-weight: 500;
+		color: var(--color-primary);
+		text-decoration: none;
+		padding: 0.25rem 0.625rem;
+		border-radius: var(--radius);
+		border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+	}
+	.meta-edit-link:hover {
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+	}
+	.status-badge {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.6875rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-weight: 600;
+		padding: 0.125rem 0.5rem;
+		border-radius: 4px;
+		background: var(--color-surface-subtle);
+		color: var(--color-text-subtle);
+		border: 1px solid var(--color-border);
+	}
+	.status-badge.status-approved {
+		color: var(--method-patch);
+		background: var(--method-patch-bg);
+		border-color: transparent;
+	}
 	.ai-flag {
 		display: inline-flex;
 		align-items: center;
@@ -395,6 +399,29 @@
 		border-radius: 4px;
 		font-weight: 600;
 	}
+	.preview-banner {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		margin-top: 0.875rem;
+		padding: 0.625rem 0.875rem;
+		border: 1px solid color-mix(in srgb, var(--method-patch) 45%, var(--color-border));
+		background: var(--method-patch-bg);
+		color: var(--method-patch);
+		border-radius: var(--radius);
+		font-size: 0.8125rem;
+		font-weight: 500;
+	}
+	.save-notice {
+		margin-top: 0.875rem;
+		padding: 0.5rem 0.75rem;
+		border: 1px solid color-mix(in srgb, var(--method-get, #16a34a) 40%, var(--color-border));
+		background: color-mix(in srgb, var(--method-get, #16a34a) 8%, transparent);
+		color: var(--method-get, #16a34a);
+		border-radius: var(--radius);
+		font-size: 0.8125rem;
+		font-weight: 500;
+	}
 	.translation-notice {
 		margin-top: 0.875rem;
 		padding: 0.5rem 0.75rem;
@@ -404,6 +431,7 @@
 		border-radius: var(--radius);
 		font-size: 0.8125rem;
 	}
+	.translation-notice strong { display: block; margin-top: 0.125rem; }
 	.breadcrumb {
 		display: flex;
 		align-items: center;
@@ -497,86 +525,10 @@
 		font-weight: 600;
 		color: var(--color-text);
 	}
-	.edit-link-row {
-		margin-top: 1.5rem;
-		padding-top: 1.5rem;
-		border-top: 1px solid var(--color-border);
-	}
-	.edit-link {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.375rem;
-		font-size: 0.8125rem;
-		color: var(--color-muted);
-		text-decoration: none;
-	}
-	.edit-link:hover { color: var(--color-primary); }
-
-	/* Inline edit form (§44 in-app authoring) */
-	.edit-form { display: flex; flex-direction: column; gap: 1rem; }
-	.ef-field { display: flex; flex-direction: column; gap: 0.375rem; min-width: 0; }
-	.ef-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: var(--color-text-subtle);
-	}
-	.ef-input {
-		padding: 0.5rem 0.75rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius);
-		background: var(--color-surface);
-		color: var(--color-text);
-		font-size: 0.875rem;
-		font-family: var(--font-sans);
-	}
-	.ef-input:focus { outline: none; border-color: var(--color-primary); }
-	.ef-title { font-size: 1.25rem; font-weight: 600; }
-	.ef-grid {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.875rem;
-	}
-	.ef-actions {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		margin-top: 0.25rem;
-	}
-	.ef-save {
-		padding: 0.625rem 1.5rem;
-		border: none;
-		border-radius: var(--radius);
-		background: var(--color-primary);
-		color: var(--color-primary-contrast);
-		font-size: 0.875rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.ef-save:hover { filter: brightness(1.05); }
-	.ef-save:disabled { opacity: 0.6; cursor: default; }
-	.ef-cancel {
-		font-size: 0.875rem;
-		color: var(--color-muted);
-		text-decoration: none;
-	}
-	.ef-cancel:hover { color: var(--color-text); }
-	.form-error {
-		margin: 0 0 0.25rem;
-		padding: 0.75rem 1rem;
-		border-radius: var(--radius);
-		border: 1px solid color-mix(in srgb, var(--color-danger, #dc2626) 40%, var(--color-border));
-		background: color-mix(in srgb, var(--color-danger, #dc2626) 8%, transparent);
-		color: var(--color-danger, #dc2626);
-		font-size: 0.875rem;
-	}
-	@media (max-width: 640px) {
-		.ef-grid { grid-template-columns: 1fr; }
-	}
 	@media (max-width: 560px) {
 		.prev-next { grid-template-columns: 1fr; }
 		.pn-next { text-align: left; }
 		.pn-next .pn-label { justify-content: flex-start; }
+		.meta-edit-link { margin-left: 0; }
 	}
 </style>

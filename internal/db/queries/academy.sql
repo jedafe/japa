@@ -183,9 +183,17 @@ RETURNING id, module_id, title, slug, lesson_type, content, media_id, duration_m
 -- name: UpdateAcademyLesson :one
 UPDATE academy_lessons
 SET title = COALESCE(sqlc.narg(title), title),
+ slug = COALESCE(sqlc.narg(slug), slug),
  lesson_type = COALESCE(sqlc.narg(lesson_type), lesson_type),
  content = COALESCE(sqlc.narg(content), content),
- media_id = COALESCE(sqlc.narg(media_id), media_id),
+ -- media_id tri-state: NULL param keeps the attachment, the zero UUID detaches
+ -- it (the service maps an explicit "" media_id to this sentinel). The ::uuid
+ -- casts are load-bearing — without them Postgres cannot infer $N's type.
+ media_id = CASE
+  WHEN sqlc.narg(media_id)::uuid IS NULL THEN media_id
+  WHEN sqlc.narg(media_id)::uuid = '00000000-0000-0000-0000-000000000000'::uuid THEN NULL
+  ELSE sqlc.narg(media_id)::uuid
+ END,
  duration_minutes = COALESCE(sqlc.narg(duration_minutes), duration_minutes),
  sort_order = COALESCE(sqlc.narg(sort_order), sort_order),
  is_published = COALESCE(sqlc.narg(is_published), is_published),

@@ -2,8 +2,8 @@
 	/**
 	 * Minimal TipTap WYSIWYG editor for comments (Section 49).
 	 * Supports blocks suitable for comments: paragraph, bold, italic,
-	 * strike, code, link, image, and @mention. Uses the same InsertModal
-	 * link component and MediaLibraryModal image picker as PostEditor.
+	 * strike, code, link, image, and @mention. Uses the shared
+	 * EditorInsertModal link dialog and MediaLibraryModal image picker.
 	 *
 	 * Ref: japaconnect-engineering/sections/49-comments-replies.md
 	 */
@@ -17,11 +17,11 @@
 	import Mention from '@tiptap/extension-mention';
 	import { PluginKey } from '@tiptap/pm/state';
 	import { Bold, Italic, Link as LinkIcon, Code, Strikethrough, ImagePlus } from 'lucide-svelte';
+	import { t } from '$lib/i18n';
 	import { searchHits } from '$lib/api/create';
-	import { createSuggestionRenderer } from '$lib/tiptap/suggestionRenderer';
+	import { createSuggestionRenderer } from '@japaconnect/ui';
 	import { encodeTiptapDoc, decodeTipTapDoc, type TipTapDoc } from '$lib/tiptap/serialize';
-	import EmojiPicker from '$lib/components/tiptap/EmojiPicker.svelte';
-	import InsertModal from '$lib/components/create/editors/InsertModal.svelte';
+	import { EmojiPicker, EditorInsertModal } from '@japaconnect/ui';
 	import MediaLibraryModal from '$lib/components/media/MediaLibraryModal.svelte';
 	import type { MediaAsset } from '$lib/types';
 
@@ -208,16 +208,17 @@
 		<button type="button" onclick={openImagePicker} class="{btnBase} {btnOff}" aria-label="Image" title="Image">
 			<ImagePlus size={14} />
 		</button>
-		<EmojiPicker onselect={insertEmoji} />
+		<EmojiPicker onselect={insertEmoji} {t} />
 	</div>
 	<!-- Editor surface -->
 	<div bind:this={element} class="tiptap-comment-editor px-3 py-2 text-sm text-[var(--color-text)]"></div>
 </div>
 
 {#if linkModalOpen}
-	<InsertModal
+	<EditorInsertModal
 		kind="link"
 		currentUrl={linkCurrentUrl}
+		{t}
 		onConfirm={handleLinkConfirm}
 		onClose={closeLinkModal}
 	/>

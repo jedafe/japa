@@ -70,6 +70,10 @@ var (
 	// external source of truth (e.g. a feature flag's rollout phase on a
 	// linked roadmap item) and cannot be changed directly.
 	ErrStatusDerived = errors.New("status_derived")
+
+	// ErrStaleWrite indicates an optimistic-lock precondition failed — the
+	// caller's expected version token no longer matches the stored row.
+	ErrStaleWrite = errors.New("stale_write")
 )
 
 // WrapDuplicate wraps an error with the duplicate sentinel if it appears to be

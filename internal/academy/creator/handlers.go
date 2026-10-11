@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/admin"
 	"github.com/jedafe/japa/internal/auth"
@@ -140,6 +141,13 @@ func parsePagination(r *http.Request) (int32, int32) {
 }
 
 func handleServiceError(w http.ResponseWriter, err error) {
+	// Unique violations (e.g. the global academy_lessons.slug index) surface
+	// as a clean 409 instead of a generic 500 — the same mapping docs uses.
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		errpkg.WriteError(w, http.StatusConflict, "already_exists", "A record with this identifier already exists")
+		return
+	}
 	errpkg.HandleServiceError(w, err)
 }
 

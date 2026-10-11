@@ -1,12 +1,14 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { ThumbsUp, ThumbsDown, LogIn } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { getCookie } from '$lib/api/client';
 	import { page } from '$app/state';
 	import { env } from '$env/dynamic/public';
+	import type { DocFeedback } from '$lib/types';
 
 	interface Props {
-		/** Page ID for localStorage persistence of the vote. */
+		/** Page ID — kept for the keyed reset effect. */
 		pageId: string;
 		/** Docs audience (e.g. 'users'). Used to POST feedback. */
 		audience: string;
@@ -19,17 +21,27 @@
 		/** Reviewer user id (UUID) — accepted for API shape parity but not
 		 *  displayed: the backend sends an internal id, not a display name. */
 		lastReviewedBy?: string | null;
+		/** Server-fetched feedback state — counts + the caller's own vote
+		 *  (§44 amendment 2, doc_page_votes). */
+		feedback?: DocFeedback | null;
 	}
 
-	let { pageId, audience, slug, question = '', lastReviewedAt = null }: Props = $props();
+	let {
+		pageId,
+		audience,
+		slug,
+		question = '',
+		lastReviewedAt = null,
+		feedback = null
+	}: Props = $props();
 
-	let vote = $state<'up' | 'down' | null>(null);
+	let vote = $state<'up' | 'down' | null>(untrack(() => feedback?.my_vote ?? null));
+	let helpfulYes = $state(untrack(() => feedback?.helpful_yes ?? 0));
+	let helpfulNo = $state(untrack(() => feedback?.helpful_no ?? 0));
 	let voteError = $state('');
 	let submitting = $state(false);
 
-	const storageKey = $derived(`jc:docs:vote:${pageId}`);
-
-	// /docs/{audience}/{slug}/feedback requires a session (RequireAuth), so
+	// /docs/{audience}/{slug}/feedback POST requires a session (RequireAuth);
 	// guests get a sign-in link instead of vote buttons that can only 401.
 	const user = $derived(page.data?.user ?? null);
 	const mainOrigin = (env.PUBLIC_MAIN_ORIGIN ?? 'http://localhost:3000').replace(/\/$/, '');
@@ -37,32 +49,23 @@
 		`${mainOrigin}/login?redirect=${encodeURIComponent(page.url.href)}`
 	);
 
-	// Load saved vote from localStorage after hydration (browser-only).
-	// Uses $effect keyed on pageId so the vote resets on client-side
-	// navigation (same route, different params) — onMount only runs once
-	// per component instance and would leave the previous page's vote
-	// displayed after a page change.
+	// Re-sync from fresh server props on client-side navigation (same route,
+	// different params) — keyed on pageId so the previous page's vote doesn't
+	// bleed through.
 	$effect(() => {
-		// Track pageId so the effect re-runs when it changes.
 		const _pageId = pageId;
-		vote = null;
+		vote = feedback?.my_vote ?? null;
+		helpfulYes = feedback?.helpful_yes ?? 0;
+		helpfulNo = feedback?.helpful_no ?? 0;
 		voteError = '';
-		try {
-			const saved = localStorage.getItem(`jc:docs:vote:${_pageId}`);
-			if (saved === 'up' || saved === 'down') vote = saved;
-		} catch {
-			// localStorage unavailable (private browsing, etc.)
-		}
 	});
 
-	// The backend only increments aggregate helpful/unhelpful counters — it
-	// has no un-vote or vote-switch contract (internal/docs SubmitDocPageFeedback).
-	// So once a vote is recorded the widget locks: clicking the active or
-	// other button again is a no-op rather than lying about undo semantics.
+	// §44 amendment 2: the backend dedupes votes per (page, user) — repeating
+	// the same vote is a no-op, switching moves the counter. The widget stays
+	// interactive after a vote so users can correct it; the response carries
+	// the authoritative counters.
 	async function submitVote(v: 'up' | 'down') {
-		// In-flight + already-voted guards — a double-click would double-count
-		// the vote (DOC-011) and there is no undo endpoint.
-		if (submitting || vote) return;
+		if (submitting || v === vote) return;
 		voteError = '';
 
 		submitting = true;
@@ -82,13 +85,13 @@
 				const json = await res.json().catch(() => ({}));
 				throw new Error(json?.error?.message ?? json?.message ?? 'Feedback failed');
 			}
-			// Persist only after the server confirms (BUG-HUNT-012: failed
-			// votes were being persisted).
-			vote = v;
-			try {
-				localStorage.setItem(storageKey, v);
-			} catch {
-				// localStorage unavailable
+			const json = (await res.json()) as { data?: DocFeedback };
+			if (json.data) {
+				vote = json.data.my_vote ?? v;
+				helpfulYes = json.data.helpful_yes;
+				helpfulNo = json.data.helpful_no;
+			} else {
+				vote = v;
 			}
 		} catch (err) {
 			voteError = err instanceof Error ? err.message : 'Feedback failed';
@@ -117,35 +120,45 @@
 	<div class="helpful-row">
 		<span class="helpful-label">{question || t('a11y.helpful')}</span>
 		{#if !user}
+			<span class="counts">
+				{#if helpfulYes + helpfulNo > 0}
+					<span class="count"><ThumbsUp size={12} />{helpfulYes}</span>
+					<span class="count"><ThumbsDown size={12} />{helpfulNo}</span>
+				{/if}
+			</span>
 			<a href={loginHref} class="signin-link">
 				<LogIn size={14} />
 				{t('page.feedback_sign_in', 'Sign in to vote')}
 			</a>
-		{:else if vote}
-			<span class="vote-thanks">
-				{#if vote === 'up'}<ThumbsUp size={14} />{:else}<ThumbsDown size={14} />{/if}
-				{t('page.feedback_recorded', 'Thanks for your feedback')}
-			</span>
 		{:else}
-			<div class="helpful-buttons">
+			<div class="helpful-buttons" class:voted={vote !== null}>
 				<button
 					type="button"
 					class="vote-btn"
+					class:active={vote === 'up'}
 					onclick={() => submitVote('up')}
 					disabled={submitting}
+					aria-pressed={vote === 'up'}
 					aria-label={t('a11y.helpful_yes')}
 				>
 					<ThumbsUp size={16} />
+					{#if helpfulYes > 0}<span class="btn-count">{helpfulYes}</span>{/if}
 				</button>
 				<button
 					type="button"
 					class="vote-btn"
+					class:active={vote === 'down'}
 					onclick={() => submitVote('down')}
 					disabled={submitting}
+					aria-pressed={vote === 'down'}
 					aria-label={t('a11y.helpful_no')}
 				>
 					<ThumbsDown size={16} />
+					{#if helpfulNo > 0}<span class="btn-count">{helpfulNo}</span>{/if}
 				</button>
+				{#if vote}
+					<span class="vote-thanks">{t('page.feedback_recorded', 'Thanks for your feedback')}</span>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -165,17 +178,18 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
+		flex-wrap: wrap;
 	}
 	.helpful-label {
 		font-size: 0.875rem;
 		font-weight: 500;
 		color: var(--color-text);
 	}
-	.helpful-buttons { display: flex; gap: 0.5rem; }
+	.helpful-buttons { display: flex; align-items: center; gap: 0.5rem; }
 	.vote-btn {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.25rem;
+		gap: 0.375rem;
 		height: 2.25rem;
 		padding: 0 0.75rem;
 		border-radius: var(--radius);
@@ -185,10 +199,26 @@
 		cursor: pointer;
 	}
 	.vote-btn:hover { border-color: var(--color-border-input-hover); color: var(--color-text); }
-	.vote-thanks {
+	.vote-btn.active {
+		border-color: var(--color-primary);
+		color: var(--color-primary);
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+	}
+	.btn-count {
+		font-size: 0.75rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+	.counts { display: inline-flex; gap: 0.625rem; }
+	.count {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.375rem;
+		gap: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--color-muted);
+		font-variant-numeric: tabular-nums;
+	}
+	.vote-thanks {
 		font-size: 0.8125rem;
 		font-weight: 500;
 		color: var(--color-primary);

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import HelpfulWidget from './HelpfulWidget.svelte';
-	import { sanitizeSidebarHtml } from '$lib/utils/safeHtml';
+	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 	import type { TocHeading } from '$lib/tiptap/serialize';
+	import type { DocFeedback } from '$lib/types';
 
 	interface Props {
 		/** Page ID for helpful-vote localStorage persistence. */
@@ -14,9 +15,22 @@
 		html: string;
 		lastReviewedAt?: string | null;
 		lastReviewedBy?: string | null;
+		/** Feedback is published-pages only (§44 amendment 2). */
+		published?: boolean;
+		/** Server-fetched feedback state (counts + caller's vote). */
+		feedback?: DocFeedback | null;
 	}
 
-	let { pageId, audience, slug, html, lastReviewedAt = null, lastReviewedBy = null }: Props = $props();
+	let {
+		pageId,
+		audience,
+		slug,
+		html,
+		lastReviewedAt = null,
+		lastReviewedBy = null,
+		published = true,
+		feedback = null
+	}: Props = $props();
 
 	let contentEl: HTMLDivElement | undefined = undefined;
 
@@ -55,8 +69,10 @@
 
 <div class="doc-content" bind:this={contentEl}>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags — server-rendered from trusted TipTap JSON, re-sanitized client-side as defense in depth -->
-	{@html sanitizeSidebarHtml(html)}
-	<HelpfulWidget {pageId} {audience} {slug} {lastReviewedAt} {lastReviewedBy} />
+	{@html sanitizeContentHtml(html)}
+	{#if published}
+		<HelpfulWidget {pageId} {audience} {slug} {lastReviewedAt} {lastReviewedBy} {feedback} />
+	{/if}
 </div>
 
 <style>

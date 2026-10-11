@@ -52,6 +52,23 @@ describe('groupByCategory', () => {
 		expect(out.categories[0].subcategories.map((s) => s.name)).toEqual(['']);
 	});
 
+	// §44 amendment 2 — near-duplicate labels fold into one group and keep
+	// the first-seen casing as the display label.
+	it('folds case variants into a single group', () => {
+		const out = groupByCategory([
+			item('a', 'Guides'),
+			item('b', 'guides'),
+			item('c', 'Guides', 'Advanced'),
+			item('d', 'Guides', 'advanced')
+		]);
+		expect(out.categories).toHaveLength(1);
+		expect(out.categories[0].name).toBe('Guides');
+		const subs = out.categories[0].subcategories;
+		expect(subs.map((s) => s.name)).toEqual(['', 'Advanced']);
+		expect(subs[0].items.map((i) => i.id)).toEqual(['a', 'b']);
+		expect(subs[1].items.map((i) => i.id)).toEqual(['c', 'd']);
+	});
+
 	it('returns empty groups for empty input', () => {
 		expect(groupByCategory([])).toEqual({ ungrouped: [], categories: [] });
 	});

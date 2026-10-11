@@ -143,10 +143,10 @@ func DocsCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("missing_audience", "audience is required"), nil
 		}
 
-		// The agent never publishes directly (§44 + §103) — the
+		// The agent never approves or publishes (§44 + §103 amendment) — the
 		// approved → published transition is a human reviewer action.
-		if a.ReviewStatus == "published" {
-			return errorToolResult("cannot_publish_directly", "the agent cannot publish directly; use review_status 'draft' or 'in_review' and let a human reviewer approve + publish"), nil
+		if a.ReviewStatus == "published" || a.ReviewStatus == "approved" {
+			return errorToolResult("cannot_publish_directly", "the agent cannot approve or publish; use review_status 'draft' or 'in_review' and let a human reviewer approve + publish"), nil
 		}
 
 		reviewStatus := a.ReviewStatus
@@ -215,27 +215,24 @@ func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
 		}
 
-		// The agent never publishes directly (§44 + §103).
-		if a.ReviewStatus == "published" {
-			return errorToolResult("cannot_publish_directly", "the agent cannot publish directly; use review_status 'draft' or 'in_review' and let a human reviewer approve + publish"), nil
+		// The agent never approves or publishes directly (§44 + §103).
+		if a.ReviewStatus == "published" || a.ReviewStatus == "approved" {
+			return errorToolResult("cannot_publish_directly", "the agent cannot approve or publish; use review_status 'draft' or 'in_review' and let a human reviewer approve + publish"), nil
 		}
 
-		reviewStatus := a.ReviewStatus
-		if reviewStatus == "" {
-			reviewStatus = "draft"
-		}
-
+		// §44 amendment 2: an absent review_status preserves the stored status
+		// (defaulting to draft here would silently unpublish live pages).
 		if err := deps.Docs.UpdateDocPage(ctx, docID, DocsUpdatePageRequest{
 			Title:        a.Title,
 			Content:      a.Content,
-			ReviewStatus: reviewStatus,
+			ReviewStatus: a.ReviewStatus,
 		}); err != nil {
 			return errorToolResult("docs_update_failed", err.Error()), nil
 		}
 
 		return successToolResult(map[string]any{
 			"doc_id":        uuidString(docID),
-			"review_status": reviewStatus,
+			"review_status": a.ReviewStatus,
 			"updated":       true,
 		}), nil
 	}

@@ -1728,6 +1728,15 @@ type DocPage struct {
 	Subcategory    *string            `json:"subcategory"`
 }
 
+type DocPageVote struct {
+	ID        pgtype.UUID        `json:"id"`
+	PageID    pgtype.UUID        `json:"page_id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Vote      string             `json:"vote"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 type EcaCommunityUpdate struct {
 	ID             pgtype.UUID        `json:"id"`
 	GuideID        pgtype.UUID        `json:"guide_id"`

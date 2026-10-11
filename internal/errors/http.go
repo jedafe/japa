@@ -123,6 +123,9 @@ func HandleServiceError(w http.ResponseWriter, err error) {
 	// --- 409 Conflict ---
 	case errors.Is(err, ErrDuplicate), errors.Is(err, ErrAlreadyExists):
 		WriteError(w, http.StatusConflict, "already_exists", "Resource already exists")
+	case errors.Is(err, ErrStaleWrite):
+		WriteError(w, http.StatusConflict, "stale_write",
+			"This resource was modified by someone else. Reload and retry.")
 	case errors.Is(err, ErrInvalidStatusTransition):
 		WriteError(w, http.StatusConflict, "invalid_status_transition", stripSentinelPrefix(err, ErrInvalidStatusTransition))
 	case errors.Is(err, ErrStatusDerived):

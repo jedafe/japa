@@ -5,11 +5,20 @@
 	import { t } from '$lib/i18n';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	import { persistNavCollapse } from '$lib/nav-collapse';
+	import { groupNavItems } from '$lib/docs/grouping';
 	import { page } from '$app/state';
-	import { Play, Download, Search } from 'lucide-svelte';
+	import { ArrowRight, ArrowUpRight, FileText, Play, Download, Plus, Search } from 'lucide-svelte';
 	import type { PageData } from './$types';
+	import type { DocNavItem } from '$lib/types';
 
 	let { data }: { data: PageData } = $props();
+
+	// Grouped page listing — same nav-tree-driven taxonomy as the other
+	// audience landings (§44 amendment 2 parity).
+	const navItems = $derived(
+		data.nav.find((tree) => tree.audience === 'api')?.items ?? []
+	);
+	const grouped = $derived(groupNavItems(navItems));
 
 	// Dynamic hreflang from enabled languages (copies [audience]/[slug] pattern).
 	// NOTE: this page load has no `locale` field — read the default from the
@@ -122,6 +131,14 @@
 			<p class="audience-desc">
 				{t('api.landing_desc', 'REST API reference, authentication guides, and an interactive playground for testing endpoints.')}
 			</p>
+			{#if data.canEditDocs}
+				<div class="audience-actions">
+					<a href="/docs/api/new" class="new-page-link">
+						<Plus size={15} />
+						{t('audience.new_page', 'New page')}
+					</a>
+				</div>
+			{/if}
 		</header>
 
 		<a href="/docs/api/playground" class="playground-card">
@@ -193,25 +210,80 @@
 				<p class="empty">{t('nav.empty', 'No pages yet')}</p>
 			{/if}
 		{:else}
-			<ul class="page-list">
-				{#each data.pages as page (page.id)}
-					<li>
-						<a href="/docs/api/{page.slug}" class="page-card">
-							<span class="page-title">{page.title}</span>
-							<span class="page-meta">
-								{#if page.review_status === 'published'}
-									<span class="badge published">{t('page.status_published')}</span>
-								{:else}
-									<span class="badge">{page.review_status}</span>
-								{/if}
+			{#if grouped.ungrouped.length > 0}
+				<div class="doc-grid">
+					{#each grouped.ungrouped as item (item.id)}
+						{@render docCard(item)}
+					{/each}
+				</div>
+			{/if}
+			{#each grouped.categories as cat (cat.name)}
+				<section class="cat-section">
+					<h2 class="cat-title">{cat.name}</h2>
+					{#each cat.subcategories as sub (sub.name)}
+						{#if sub.name}
+							<h3 class="subcat-title">{sub.name}</h3>
+						{/if}
+						<div class="doc-grid">
+							{#each sub.items as item (item.id)}
+								{@render docCard(item)}
+							{/each}
+						</div>
+					{/each}
+				</section>
+			{/each}
+		{/if}
+
+		<!-- Editor-only: unpublished API docs (§44 amendment 2) -->
+		{#if data.unpublishedPages.length > 0}
+			<section class="cat-section unpublished-section">
+				<h2 class="cat-title">
+					{t('audience.unpublished', 'In progress')}
+					<span class="unpublished-count">{data.unpublishedPages.length}</span>
+				</h2>
+				<div class="doc-grid">
+					{#each data.unpublishedPages as item (item.id)}
+						<a href="/docs/api/{item.slug}" class="doc-card doc-card-link doc-card-draft">
+							<FileText size={16} class="doc-link-icon" />
+							<span class="doc-card-title">{item.title}</span>
+							<span class="status-badge status-{item.review_status}">
+								{t(`new_page.status.${item.review_status}`, item.review_status ?? '')}
 							</span>
+							<ArrowRight size={15} class="doc-card-arrow" />
+						</a>
+					{/each}
+				</div>
+			</section>
+		{/if}
+	</section>
+</AppShell>
+
+{#snippet docCard(item: DocNavItem)}
+	{#if item.children && item.children.length > 0}
+		<div class="doc-card doc-card-group">
+			<a href="/docs/api/{item.slug}" class="doc-card-head">
+				<span class="doc-card-title">{item.title}</span>
+				<ArrowUpRight size={15} class="doc-card-arrow" />
+			</a>
+			<ul class="doc-card-children">
+				{#each item.children as child (child.id)}
+					<li>
+						<a href="/docs/api/{child.slug}" class="doc-child-link">
+							<span class="doc-child-title">{child.title}</span>
+							<ArrowRight size={13} class="doc-child-arrow" />
 						</a>
 					</li>
 				{/each}
 			</ul>
-		{/if}
-	</section>
-</AppShell>
+		</div>
+	{:else}
+		<a href="/docs/api/{item.slug}" class="doc-card doc-card-link">
+			<FileText size={16} class="doc-link-icon" />
+			<span class="doc-card-title">{item.title}</span>
+			<ArrowRight size={15} class="doc-card-arrow" />
+		</a>
+	{/if}
+{/snippet}
 
 <style>
 	.audience-page {
@@ -418,37 +490,151 @@
 	.method-PATCH { color: var(--method-patch); background: var(--method-patch-bg); }
 	.method-PUT { color: var(--method-put); background: var(--method-put-bg); }
 	.method-DELETE { color: var(--method-delete); background: var(--method-delete-bg); }
-	.page-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-	.page-card {
-		display: flex;
+	.audience-actions { margin-top: 1rem; }
+	.new-page-link {
+		display: inline-flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		padding: 0.875rem 1rem;
-		border: 1px solid var(--color-border);
+		gap: 0.375rem;
+		padding: 0.5rem 0.875rem;
 		border-radius: var(--radius);
+		border: 1px solid var(--color-border);
 		background: var(--color-surface);
+		color: var(--color-primary);
+		font-size: 0.8125rem;
+		font-weight: 600;
 		text-decoration: none;
 		transition: border-color 0.15s;
 	}
-	.page-card:hover { border-color: var(--color-primary); }
-	.page-title { font-size: 0.9375rem; font-weight: 500; color: var(--color-text); }
-	.badge {
-		font-size: 0.6875rem;
+	.new-page-link:hover { border-color: var(--color-primary); }
+	.cat-section { margin-top: 2rem; }
+	.cat-title {
+		font-family: var(--font-sans);
+		font-size: 1.125rem;
+		font-weight: 700;
+		color: var(--color-text);
+		margin: 0 0 0.875rem;
+		letter-spacing: -0.01em;
+	}
+	.subcat-title {
+		font-family: var(--font-sans);
+		font-size: 0.8125rem;
+		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: var(--color-muted);
-		padding: 0.125rem 0.5rem;
-		border-radius: 4px;
-		background: var(--color-surface-subtle);
+		margin: 1.25rem 0 0.625rem;
+	}
+	.doc-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+		gap: 0.875rem;
+		align-items: start;
+	}
+	.doc-card {
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-card);
+		background: var(--color-surface);
+		transition: border-color 0.15s, box-shadow 0.15s;
+		overflow: hidden;
+	}
+	.doc-card-link {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		padding: 1rem 1.125rem;
+		text-decoration: none;
+	}
+	.doc-card-link:hover {
+		border-color: var(--color-primary);
+		box-shadow: 0 2px 10px color-mix(in srgb, var(--color-text) 5%, transparent);
+	}
+	.doc-card-link :global(.doc-link-icon) { color: var(--color-muted); flex-shrink: 0; }
+	.doc-card-link:hover :global(.doc-link-icon) { color: var(--color-primary); }
+	.doc-card-title {
+		font-size: 0.9375rem;
+		font-weight: 600;
+		color: var(--color-text);
+		flex: 1;
+		min-width: 0;
+	}
+	.doc-card-group { display: flex; flex-direction: column; }
+	.doc-card-group:hover { border-color: var(--color-primary); }
+	.doc-card-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 1rem 1.125rem;
+		text-decoration: none;
+	}
+	.doc-card-head:hover .doc-card-title { color: var(--color-primary); }
+	.doc-card-children {
+		list-style: none;
+		padding: 0.25rem 0.375rem 0.625rem;
+		margin: 0;
+		border-top: 1px solid var(--color-border);
+	}
+	.doc-child-link {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.4375rem 0.75rem;
+		border-radius: var(--radius);
+		text-decoration: none;
+	}
+	.doc-child-link:hover { background: var(--color-surface-subtle); }
+	.doc-child-title {
+		font-size: 0.8125rem;
+		color: var(--color-text-subtle);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.doc-child-link:hover .doc-child-title { color: var(--color-text); }
+	:global(.doc-card-arrow), :global(.doc-child-arrow) {
+		color: var(--color-muted);
 		flex-shrink: 0;
 	}
-	.badge.published { color: var(--method-get); background: var(--method-get-bg); }
+	.doc-card-head:hover :global(.doc-card-arrow),
+	.doc-card-link:hover :global(.doc-card-arrow),
+	.doc-child-link:hover :global(.doc-child-arrow) {
+		color: var(--color-primary);
+	}
+	.unpublished-section .cat-title {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.unpublished-count {
+		font-size: 0.6875rem;
+		font-weight: 700;
+		background: var(--color-surface-subtle);
+		color: var(--color-text-subtle);
+		border: 1px solid var(--color-border);
+		border-radius: 999px;
+		padding: 0.0625rem 0.5rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.doc-card-draft { border-style: dashed; }
+	.status-badge {
+		display: inline-flex;
+		align-items: center;
+		font-size: 0.625rem;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-weight: 700;
+		padding: 0.125rem 0.4375rem;
+		border-radius: 4px;
+		background: var(--color-surface-subtle);
+		color: var(--color-text-subtle);
+		border: 1px solid var(--color-border);
+		flex-shrink: 0;
+	}
+	.status-badge.status-in_review,
+	.status-badge.status-approved {
+		color: var(--method-patch);
+		background: var(--method-patch-bg);
+		border-color: transparent;
+	}
 </style>

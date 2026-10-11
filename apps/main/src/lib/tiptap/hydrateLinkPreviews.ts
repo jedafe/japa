@@ -1,5 +1,7 @@
 import { mount, unmount } from 'svelte';
-import LinkPreviewCard from '$lib/components/create/editors/LinkPreviewCard.svelte';
+import { LinkPreviewCard, type LinkPreviewData } from '@japaconnect/ui';
+import { api } from '$lib/api/client';
+import { t } from '$lib/i18n';
 
 /**
  * Svelte action that scans a container for `data-type="link-preview"` divs
@@ -15,6 +17,13 @@ import LinkPreviewCard from '$lib/components/create/editors/LinkPreviewCard.svel
  */
 export function hydrateLinkPreviews(node: HTMLElement) {
 	const mounted = new Map<HTMLElement, Record<string, unknown>>();
+
+	async function fetchPreview(url: string): Promise<LinkPreviewData | null> {
+		const result = await api.get<LinkPreviewData>(
+			`/link-preview?url=${encodeURIComponent(url)}`
+		);
+		return result.data ?? null;
+	}
 
 	function scan() {
 		const placeholders = node.querySelectorAll<HTMLElement>(
@@ -32,9 +41,9 @@ export function hydrateLinkPreviews(node: HTMLElement) {
 			el.className = 'link-preview-mount';
 			const comp = mount(LinkPreviewCard, {
 				target: el,
-				props: { url },
+				props: { url, fetchPreview, t }
 			});
-			mounted.set(el, comp);
+			mounted.set(el, comp as Record<string, unknown>);
 		}
 	}
 
@@ -51,6 +60,6 @@ export function hydrateLinkPreviews(node: HTMLElement) {
 				unmount(comp);
 			}
 			mounted.clear();
-		},
+		}
 	};
 }

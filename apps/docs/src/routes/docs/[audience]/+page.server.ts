@@ -1,16 +1,22 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, ApiError } from '$lib/server/api';
 import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
-import type { DocPageSummary, DocAudience } from '$lib/types';
+import type { DocPageSummary, DocAudience, DocNavItem } from '$lib/types';
 import { AUDIENCE_LABEL_KEY } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
+import type { ExistingPage } from '$lib/server/docs-author';
 
 /**
  * Audience landing: lists published pages for the given audience. Gated
  * audiences (anything other than 'api' for guests) are enforced server-side:
  * if the audience isn't in accessibleAudiences, redirect to /docs/access-denied
- * (ADR-060 — never client checks).
+ * (ADR-060 — never client checks). 303, not 308: access decisions are
+ * dynamic and must never be cached as permanent redirects.
+ *
+ * §44 amendment 2: docs.manage holders additionally see this audience's
+ * non-published pages (draft/in_review/approved) so drafts stay reachable
+ * and reviewable in-app instead of disappearing from every surface.
  */
 export const load: PageServerLoad = async (event) => {
 	const audience = event.params.audience as DocAudience;
@@ -23,7 +29,7 @@ export const load: PageServerLoad = async (event) => {
 
 	// 'api' is fully public; other audiences require membership.
 	if (!event.locals.accessibleAudiences.includes(audience)) {
-		throw redirect(308, '/docs/access-denied');
+		throw redirect(303, '/docs/access-denied');
 	}
 
 	const ctx = apiContext(event);
@@ -36,6 +42,35 @@ export const load: PageServerLoad = async (event) => {
 		}
 		// Degrade to empty list — never blank the shell.
 		pages = [];
+	}
+
+	// docs.manage holders get the "New page" affordance and the unpublished
+	// listing merge (§44 in-app authoring).
+	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
+
+	let unpublishedPages: DocNavItem[] = [];
+	if (canEditDocs) {
+		try {
+			const all = await apiGet<ExistingPage[]>(
+				ctx,
+				`/admin/docs/pages?audience=${audience}`
+			);
+			unpublishedPages = (all ?? [])
+				.filter((p) => p.review_status !== 'published')
+				.map((p) => ({
+					id: p.id,
+					slug: p.slug,
+					title: p.title,
+					audience,
+					category: p.category ?? null,
+					subcategory: p.subcategory ?? null,
+					position: p.position ?? 0,
+					parent_id: p.parent_id ?? null,
+					review_status: p.review_status
+				}));
+		} catch {
+			unpublishedPages = [];
+		}
 	}
 
 	const locale = event.locals.locale;
@@ -66,8 +101,5 @@ export const load: PageServerLoad = async (event) => {
 		})
 	});
 
-	// docs.manage holders get the "New page" affordance (§44 in-app authoring).
-	const canEditDocs = event.locals.user?.permissions?.includes('docs.manage') ?? false;
-
-	return { audience, pages, labelKey, meta, isGated, canEditDocs };
+	return { audience, pages, unpublishedPages, labelKey, meta, isGated, canEditDocs };
 };

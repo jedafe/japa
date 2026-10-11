@@ -1,42 +1,52 @@
 <script lang="ts">
-	// InsertModal — replaces window.prompt/window.alert for YouTube, Link,
-	// and Coupon inserts in the block editor and WYSIWYG toolbar.
+	// EditorInsertModal — replaces window.prompt/window.alert for YouTube,
+	// Link, and Coupon inserts in the rich text editor toolbar/slash menu.
 	// Uses bits-ui Dialog for a consistent modal experience.
 	import { Dialog } from 'bits-ui';
 	import { untrack } from 'svelte';
-	import { t } from '$lib/i18n';
 	import { X, Search, Loader2, Link as LinkIcon, Video, Ticket, ExternalLink, Check } from 'lucide-svelte';
-	import { searchHits } from '$lib/api/create';
-	import type { SearchHit } from '$lib/types';
+	import type { EditorSearchHit, EditorTranslator } from './types';
 
-	type InsertKind = 'youtube' | 'link' | 'coupon';
+	export type InsertKind = 'youtube' | 'link' | 'coupon';
 
 	interface Props {
 		kind: InsertKind;
 		/** For link inserts, the current href (if any) to pre-fill. */
 		currentUrl?: string;
+		/** Coupon search provider — required when `kind === 'coupon'`.
+		 * Returns "id|label" hits; selection confirms with `id|label`. */
+		onSearchCoupons?: (query: string) => Promise<EditorSearchHit[]>;
+		/** i18n translator injected by the host app. */
+		t?: EditorTranslator;
 		onConfirm: (value: string) => void;
 		onClose: () => void;
 	}
 
-	let { kind, currentUrl = '', onConfirm, onClose }: Props = $props();
+	let {
+		kind,
+		currentUrl = '',
+		onSearchCoupons,
+		t = (_k, fb) => fb ?? _k,
+		onConfirm,
+		onClose
+	}: Props = $props();
 
 	let inputValue = $state(untrack(() => currentUrl));
 	let couponQuery = $state('');
-	let couponResults = $state<SearchHit[]>([]);
-	let couponSelected = $state<SearchHit | null>(null);
+	let couponResults = $state<EditorSearchHit[]>([]);
+	let couponSelected = $state<EditorSearchHit | null>(null);
 	let searching = $state(false);
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
 	let error = $state<string | null>(null);
 
-	const youtubeIcon = Video;
-
-	const config = {
+	// $derived so the labels track the `t` prop (reactive to locale switches)
+	// rather than capturing the initial value once.
+	const config = $derived.by(() => ({
 		youtube: {
 			title: t('create.editor.insert.youtube_title', 'Insert YouTube Video'),
 			label: t('create.editor.insert.url_label', 'YouTube URL'),
 			placeholder: 'https://www.youtube.com/watch?v=…',
-			icon: youtubeIcon,
+			icon: Video,
 			buttonText: t('create.editor.insert.insert', 'Insert'),
 			hint: t('create.editor.insert.youtube_hint', 'Paste a YouTube video or Shorts URL')
 		},
@@ -56,7 +66,7 @@
 			buttonText: t('create.editor.insert.insert', 'Insert'),
 			hint: t('create.editor.insert.coupon_hint', 'Search for a coupon by name or code, then select it.')
 		}
-	};
+	}));
 
 	const cfg = $derived(config[kind]);
 
@@ -75,7 +85,7 @@
 		couponQuery = query;
 		couponSelected = null;
 		if (searchTimer) clearTimeout(searchTimer);
-		if (query.trim().length < 2) {
+		if (query.trim().length < 2 || !onSearchCoupons) {
 			couponResults = [];
 			return;
 		}
@@ -83,7 +93,7 @@
 			searching = true;
 			error = null;
 			try {
-				couponResults = await searchHits('coupons', query.trim());
+				couponResults = await onSearchCoupons(query.trim());
 			} catch (e) {
 				error = e instanceof Error ? e.message : t('create.editor.insert.search_failed', 'Search failed');
 				couponResults = [];
@@ -93,7 +103,7 @@
 		}, 300);
 	}
 
-	function selectCoupon(hit: SearchHit) {
+	function selectCoupon(hit: EditorSearchHit) {
 		couponSelected = hit;
 	}
 
@@ -399,25 +409,20 @@
 		cursor: pointer;
 		transition: background 0.12s, border-color 0.12s, opacity 0.12s;
 	}
+	:global(.insert-btn:hover) {
+		background: var(--color-surface-subtle);
+	}
 	:global(.insert-btn:disabled) {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
-
-	:global(.insert-btn-cancel) {
-		background: transparent;
-		color: var(--color-text);
-	}
-	:global(.insert-btn-cancel:hover) {
-		background: var(--color-surface-subtle);
-	}
-
 	:global(.insert-btn-confirm) {
 		background: var(--color-primary);
 		border-color: var(--color-primary);
-		color: var(--color-surface);
+		color: var(--color-on-primary, #fff);
 	}
 	:global(.insert-btn-confirm:hover:not(:disabled)) {
+		background: var(--color-primary);
 		opacity: 0.9;
 	}
 </style>
