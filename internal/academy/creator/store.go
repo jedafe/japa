@@ -1,4 +1,4 @@
-// Package university implements the Japa Academy creator economy backend
+// Package creator implements the Japa Academy creator economy backend
 // (ADR-063): instructor profiles, marketplace track publishing, paid/Pro
 // enrollment revenue splits, and instructor payouts.
 // // The package follows the layered architecture: Handlers parse/validate input
@@ -7,7 +7,7 @@
 // separation. Asynq tasks (enrollment processing, payout calculation/execution,
 // notifications) are defined in the worker package and delegated here via the
 // Processor interface.
-// // Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa Academy)
+// // Ref: japaconnect-engineering/sections/36-academy-platform.md (Japa Academy)
 // //	japaconnect-engineering/adr/ADR-063-japa-academy-creator-economy.md
 package creator
 
@@ -33,7 +33,7 @@ type Store struct {
 	db    *db.DB
 }
 
-// NewStore creates a university store bound to the provided database pools.
+// NewStore creates an academy store bound to the provided database pools.
 func NewStore(database *db.DB) *Store {
 	return &Store{
 		read:  gen.New(database.Reader),
@@ -377,9 +377,9 @@ type CatalogTrack struct {
 	ReviewCount          int32   `json:"review_count"`
 }
 
-// MarshalJSON emits the canonical CatalogTrack fields plus Learn-app aliases
+// MarshalJSON emits the canonical CatalogTrack fields plus Academy-app aliases
 // (rating_avg, rating_count, enrolled_count, subtitle) so the same DTO works
-// for both the Main university page and the Learn marketplace surfaces.
+// for both the Main university page and the Academy marketplace surfaces.
 func (c CatalogTrack) MarshalJSON() ([]byte, error) {
 	// noMethod is a defined copy of CatalogTrack with the same fields/tags but
 	// without this MarshalJSON method, which avoids infinite recursion.
@@ -983,7 +983,7 @@ func (s *Store) SetTrackFeatured(ctx context.Context, trackID pgtype.UUID, featu
 
 // ---------------------------------------------------------------------------
 // Track categories (ADR-063 §9.1)
-// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+// Ref: japaconnect-engineering/sections/36-academy-platform.md (Track categories)
 // ---------------------------------------------------------------------------
 
 // CreateTrackCategory inserts a new academy_track_categories row.

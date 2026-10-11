@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Learn mobile bottom bar — learning-oriented tabs (no compose button).
+	// Academy mobile bottom bar — academy-oriented tabs (no compose button).
 	// Ref: ADR-058 (mobile single-column + bottom bar), ADR-060 (Academy nav).
 	// Nav items come from the API-driven bottom bar menu
 	// (GET /menus/academy_bottom_bar) so the list is never hardcoded (Rule 16).

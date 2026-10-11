@@ -1,4 +1,4 @@
-// Package ai — tools_learn.go implements the learning platform tool handlers
+// Package ai — tools_academy.go implements the Japa Academy tool handlers
 // for the AI Agent Executor extended tool catalog (Section 103, Phase 9).
 //
 // Tools implemented here (Phase 9, tasks 9.02):
@@ -11,17 +11,17 @@
 //   - academy.lessons.update   — update a lesson
 //   - academy.lessons.reorder  — reorder lessons within a track
 //
-// Learning operations are on academy.Store, not a Service. Lesson creation
+// Academy operations are on academy.Store, not a Service. Lesson creation
 // requires a moduleID — lessons attach to modules, not directly to tracks.
 // This is preserved in the handler schema (module_id is required for
 // academy.lessons.create).
 //
-// Privacy: learning data is not user data and has no ai_exempt column, so
+// Privacy: academy data is not user data and has no ai_exempt column, so
 // no PrivacyTargetFunc is registered. The executor's RBAC gate enforces
 // the required_permission on each tool.
 //
-// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Learn tools)
-// Ref: japaconnect-engineering/sections/36-learning-platform.md
+// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Academy tools)
+// Ref: japaconnect-engineering/sections/36-academy-platform.md
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 9, task 9.02)
 package ai
 
@@ -37,16 +37,16 @@ import (
 // academy.tracks.list (task 9.02a)
 // ---------------------------------------------------------------------------
 
-// AcademyTracksListHandler returns a ToolHandler that lists all learning
+// AcademyTracksListHandler returns a ToolHandler that lists all academy
 // tracks for the platform (including drafts — the agent needs to see the
 // full catalog for admin operations).
 func AcademyTracksListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.Learning == nil {
-			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
+		if deps == nil || deps.Academy == nil {
+			return errorToolResult("academy_unavailable", "academy store is not configured"), nil
 		}
 
-		tracks, err := deps.Learning.ListTracks(ctx)
+		tracks, err := deps.Academy.ListTracks(ctx)
 		if err != nil {
 			return errorToolResult("learn_tracks_list_failed", err.Error()), nil
 		}
@@ -81,13 +81,13 @@ type learnTrackCreateArgs struct {
 	SubscriptionEligible bool    `json:"subscription_eligible,omitempty"`
 }
 
-// AcademyTracksCreateHandler returns a ToolHandler that creates a learning
+// AcademyTracksCreateHandler returns a ToolHandler that creates an academy
 // track. The executor's RBAC gate checks the required_permission
 // (academy.admin.manage); the tool config sets requires_hitl = true.
 func AcademyTracksCreateHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.Learning == nil {
-			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
+		if deps == nil || deps.Academy == nil {
+			return errorToolResult("academy_unavailable", "academy store is not configured"), nil
 		}
 
 		var a learnTrackCreateArgs
@@ -113,7 +113,7 @@ func AcademyTracksCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_cover_media_id", "cover_media_id is not a valid UUID"), nil
 		}
 
-		track, err := deps.Learning.CreateTrack(ctx, LearningCreateTrackInput{
+		track, err := deps.Academy.CreateTrack(ctx, AcademyCreateTrackInput{
 			Title:                a.Title,
 			Slug:                 a.Slug,
 			Description:          a.Description,
@@ -157,12 +157,12 @@ type learnTrackUpdateArgs struct {
 	SubscriptionEligible *bool   `json:"subscription_eligible,omitempty"`
 }
 
-// AcademyTracksUpdateHandler returns a ToolHandler that updates a learning
+// AcademyTracksUpdateHandler returns a ToolHandler that updates an academy
 // track.
 func AcademyTracksUpdateHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.Learning == nil {
-			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
+		if deps == nil || deps.Academy == nil {
+			return errorToolResult("academy_unavailable", "academy store is not configured"), nil
 		}
 
 		var a learnTrackUpdateArgs
@@ -189,7 +189,7 @@ func AcademyTracksUpdateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_cover_media_id", "cover_media_id is not a valid UUID"), nil
 		}
 
-		track, err := deps.Learning.UpdateTrack(ctx, trackID, LearningUpdateTrackInput{
+		track, err := deps.Academy.UpdateTrack(ctx, trackID, AcademyUpdateTrackInput{
 			Title:                a.Title,
 			Description:          a.Description,
 			Difficulty:           difficulty,
@@ -221,11 +221,11 @@ func AcademyTracksUpdateHandler(deps *ToolDeps) ToolHandler {
 // the platform (admin view, including drafts).
 func AcademyLessonsListHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.Learning == nil {
-			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
+		if deps == nil || deps.Academy == nil {
+			return errorToolResult("academy_unavailable", "academy store is not configured"), nil
 		}
 
-		lessons, err := deps.Learning.ListLessons(ctx)
+		lessons, err := deps.Academy.ListLessons(ctx)
 		if err != nil {
 			return errorToolResult("learn_lessons_list_failed", err.Error()), nil
 		}
@@ -267,8 +267,8 @@ type learnLessonCreateArgs struct {
 // (academy.admin.manage); the tool config sets requires_hitl = true.
 func AcademyLessonsCreateHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.Learning == nil {
-			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
+		if deps == nil || deps.Academy == nil {
+			return errorToolResult("academy_unavailable", "academy store is not configured"), nil
 		}
 
 		var a learnLessonCreateArgs
@@ -299,7 +299,7 @@ func AcademyLessonsCreateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_media_id", "media_id is not a valid UUID"), nil
 		}
 
-		lesson, err := deps.Learning.CreateLesson(ctx, moduleID, LearningCreateLessonInput{
+		lesson, err := deps.Academy.CreateLesson(ctx, moduleID, AcademyCreateLessonInput{
 			Title:           a.Title,
 			Slug:            a.Slug,
 			LessonType:      lessonType,
@@ -347,8 +347,8 @@ type learnLessonUpdateArgs struct {
 // AcademyLessonsUpdateHandler returns a ToolHandler that updates a lesson.
 func AcademyLessonsUpdateHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.Learning == nil {
-			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
+		if deps == nil || deps.Academy == nil {
+			return errorToolResult("academy_unavailable", "academy store is not configured"), nil
 		}
 
 		var a learnLessonUpdateArgs
@@ -375,7 +375,7 @@ func AcademyLessonsUpdateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_media_id", "media_id is not a valid UUID"), nil
 		}
 
-		lesson, err := deps.Learning.UpdateLesson(ctx, lessonID, LearningUpdateLessonInput{
+		lesson, err := deps.Academy.UpdateLesson(ctx, lessonID, AcademyUpdateLessonInput{
 			Title:           a.Title,
 			LessonType:      lessonType,
 			Content:         a.Content,
@@ -418,8 +418,8 @@ type learnLessonReorderEntry struct {
 // by updating their sort_order values in bulk.
 func AcademyLessonsReorderHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
-		if deps == nil || deps.Learning == nil {
-			return errorToolResult("learning_unavailable", "learning store is not configured"), nil
+		if deps == nil || deps.Academy == nil {
+			return errorToolResult("academy_unavailable", "academy store is not configured"), nil
 		}
 
 		var a learnLessonReorderArgs
@@ -431,7 +431,7 @@ func AcademyLessonsReorderHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("empty_entries", "at least one reorder entry is required"), nil
 		}
 
-		entries := make([]LearningReorderEntry, 0, len(a.Entries))
+		entries := make([]AcademyReorderEntry, 0, len(a.Entries))
 
 		for _, e := range a.Entries {
 			id, err := scanUUID(e.LessonID)
@@ -439,13 +439,13 @@ func AcademyLessonsReorderHandler(deps *ToolDeps) ToolHandler {
 				return errorToolResult("invalid_lesson_id", fmt.Sprintf("lesson_id %q is not a valid UUID", e.LessonID)), nil
 			}
 
-			entries = append(entries, LearningReorderEntry{
+			entries = append(entries, AcademyReorderEntry{
 				ID:        id,
 				SortOrder: e.SortOrder,
 			})
 		}
 
-		if err := deps.Learning.ReorderLessons(ctx, entries); err != nil {
+		if err := deps.Academy.ReorderLessons(ctx, entries); err != nil {
 			return errorToolResult("learn_lessons_reorder_failed", err.Error()), nil
 		}
 

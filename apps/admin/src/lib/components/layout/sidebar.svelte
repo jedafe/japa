@@ -147,6 +147,7 @@
 			{ path: "/academy", label: t("nav.academy", "Academy"), icon: GraduationCap, permission: "academy.admin.manage" },
 			{ path: "/academy/instructors", label: t("nav.academy_instructors", "Academy Instructors"), icon: GraduationCap, permission: "academy.instructor.approve" },
 			{ path: "/academy/tracks", label: t("nav.academy_tracks", "Academy Tracks"), icon: BookOpen, permission: "academy.course.approve" },
+		{ path: "/academy/curriculum", label: t("nav.academy_curriculum", "Curriculum"), icon: BookOpen, permission: "academy.admin.manage" },
 		{ path: "/academy/categories", label: t("nav.academy_categories", "Track Categories"), icon: Tag, permission: "academy.category.manage" },
 			{ path: "/academy/payouts", label: t("nav.academy_payouts", "Academy Payouts"), icon: DollarSign, permission: "academy.payout.process" },
 		{ path: "/academy/revenue-splits", label: t("nav.academy_revenue_splits", "Revenue Splits"), icon: DollarSign, permission: "academy.revenue.list" },

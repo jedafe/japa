@@ -185,6 +185,45 @@ func (q *Queries) GetContentEmbeddingStatsByType(ctx context.Context) ([]GetCont
 	return items, nil
 }
 
+const listAcademyTrackIDsForReindex = `-- name: ListAcademyTrackIDsForReindex :many
+
+SELECT id FROM academy_tracks
+WHERE is_published = true
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $1
+`
+
+type ListAcademyTrackIDsForReindexParams struct {
+	PageOffset int32 `json:"page_offset"`
+	PageLimit  int32 `json:"page_limit"`
+}
+
+// =====================================================================
+// List all published academy track IDs for a platform (for full corpus
+// re-index). Academy tracks are part of the RAG corpus (ADR-069 §2).
+// Only published tracks are indexed; academy_tracks has no deleted_at
+// column (tracks are hard-deleted).
+// =====================================================================
+func (q *Queries) ListAcademyTrackIDsForReindex(ctx context.Context, arg ListAcademyTrackIDsForReindexParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listAcademyTrackIDsForReindex, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listForumThreadIDsForReindex = `-- name: ListForumThreadIDsForReindex :many
 
 SELECT ft.id, COALESCE(sp.visibility, 'private') AS visibility,
@@ -232,45 +271,6 @@ func (q *Queries) ListForumThreadIDsForReindex(ctx context.Context, arg ListForu
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listLearningTrackIDsForReindex = `-- name: ListLearningTrackIDsForReindex :many
-
-SELECT id FROM academy_tracks
-WHERE is_published = true
-ORDER BY created_at DESC
-LIMIT $2 OFFSET $1
-`
-
-type ListLearningTrackIDsForReindexParams struct {
-	PageOffset int32 `json:"page_offset"`
-	PageLimit  int32 `json:"page_limit"`
-}
-
-// =====================================================================
-// List all published learning track IDs for a platform (for full corpus
-// re-index). Learning tracks are part of the RAG corpus (ADR-069 §2).
-// Only published tracks are indexed; academy_tracks has no deleted_at
-// column (tracks are hard-deleted).
-// =====================================================================
-func (q *Queries) ListLearningTrackIDsForReindex(ctx context.Context, arg ListLearningTrackIDsForReindexParams) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listLearningTrackIDsForReindex, arg.PageOffset, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []pgtype.UUID
-	for rows.Next() {
-		var id pgtype.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -548,7 +548,7 @@ type SearchContentEmbeddingsRow struct {
 // ADR-069 §4 requires tier classification by content_type, not entity_type.
 //
 // BUG-004 (rag-audit): add status/deleted filters for non-content entity types
-// as defense-in-depth. The forum/spaces/learning handlers purge embeddings on
+// as defense-in-depth. The forum/spaces/academy handlers purge embeddings on
 // delete, but those are fire-and-forget — a failed purge leaves orphaned
 // embeddings. The CASE expression checks each entity type's status condition.
 // §69 Citation Source Contract: entity_title/entity_slug let the API emit a

@@ -4,7 +4,7 @@
  * at internal/academy/handlers.go and internal/academy/creator/handlers.go).
  *
  * Ref: ADR-060 (Academy shell), ADR-063 (Japa Academy creator economy),
- *      sections/36 (Learning Platform).
+ *      sections/36 (Academy Platform).
  */
 
 export type ThemeName = 'light' | 'dark';
@@ -120,7 +120,7 @@ export interface Menu {
 }
 
 /* ------------------------------------------------------------------ *
- * Learning Platform — Section 36
+ * Academy Platform — Section 36
  *   GET /academy/tracks, GET /academy/tracks/{slug}, GET /academy/lessons/{id},
  *   POST /academy/lessons/{id}/progress, POST /academy/lessons/{id}/complete,
  *   GET /me/enrollments, GET /me/certificates, GET/POST /academy/quizzes/{id}
@@ -453,7 +453,7 @@ export interface AcademyInstructorProfile {
 }
 
 /** Marketplace catalog item — GET /academy/catalog. */
-export interface UniversityCatalogTrack extends TrackSummary {
+export interface AcademyCatalogTrack extends TrackSummary {
 	instructor_bio?: string | null;
 	instructor_avatar_url?: string | null;
 }
@@ -461,7 +461,7 @@ export interface UniversityCatalogTrack extends TrackSummary {
 /** Instructor's own track with marketplace status — GET /academy/my/tracks. */
 export interface InstructorTrack extends TrackSummary {
 	description?: string | null;
-	/** True when the track is live (not draft). Distinct from university submission status. */
+	/** True when the track is live (not draft). Distinct from academy submission status. */
 	is_published?: boolean;
 	/** Marketplace submission status. */
 	submission_status: 'draft' | 'pending' | 'approved' | 'rejected';

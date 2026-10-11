@@ -1,5 +1,5 @@
 // Package academy — processoradapter.go implements the worker.AcademyProcessor
-// interface by delegating to the learning store for track completion recalculation
+// interface by delegating to the academy store for track completion recalculation
 // and certificate issuance.
 package academy
 
@@ -14,7 +14,7 @@ import (
 )
 
 // ProcessorAdapter implements worker.AcademyProcessor by delegating to the
-// learning store. It is registered with the worker at startup so background
+// academy store. It is registered with the worker at startup so background
 // tasks (academy:update_track_completion, academy:issue_certificate) invoke
 // real service logic instead of the noop stub.
 type ProcessorAdapter struct {

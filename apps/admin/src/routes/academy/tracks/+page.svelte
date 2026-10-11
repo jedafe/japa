@@ -1,5 +1,5 @@
 <script lang="ts">
-	// /university/tracks — migrated to the EntityPage scaffold.
+	// /academy/tracks — migrated to the EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -47,7 +47,7 @@
 	loadCurrencies().then((list) => (currencies = list));
 
 	function formatPrice(kobo: number | null | undefined, currency: string): string {
-		if (kobo == null) return t('university.free', 'Free');
+		if (kobo == null) return t('academy.free', 'Free');
 		return formatMoney(kobo, currency, currencies, { minor: true, fractionDigits: 0, withCode: true });
 	}
 
@@ -64,10 +64,10 @@
 				showApproveConfirm = false;
 				entityController?.reload();
 			} else {
-				pageError = result.error ?? t('university.approve_failed', 'Failed to approve track');
+				pageError = result.error ?? t('academy.approve_failed', 'Failed to approve track');
 			}
 		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('university.approve_failed', 'Failed to approve track');
+			pageError = e instanceof Error ? e.message : t('academy.approve_failed', 'Failed to approve track');
 		} finally {
 			actionLoading = false;
 		}
@@ -94,10 +94,10 @@
 
 	// `fields` is required by EntityPageConfig; tracks are read-only in this view.
 	const fields: FieldDef[] = [
-		{ key: 'title', label: t('university.track_title', 'Track'), type: 'text' },
-		{ key: 'slug', label: t('university.slug', 'Slug'), type: 'text' },
-		{ key: 'difficulty', label: t('university.difficulty', 'Difficulty'), type: 'text' },
-		{ key: 'price_kobo', label: t('university.price', 'Price'), type: 'number' }
+		{ key: 'title', label: t('academy.track_title', 'Track'), type: 'text' },
+		{ key: 'slug', label: t('academy.slug', 'Slug'), type: 'text' },
+		{ key: 'difficulty', label: t('academy.difficulty', 'Difficulty'), type: 'text' },
+		{ key: 'price_kobo', label: t('academy.price', 'Price'), type: 'number' }
 	];
 
 	const rowActions = $derived.by<ActionItem[]>(() => {
@@ -127,7 +127,7 @@
 
 	async function loadFilterOptions() {
 		const [statusRes, difficultyRes] = await Promise.all([
-			adminCatalogApi.get('university.tracks.status'),
+			adminCatalogApi.get('academy.tracks.status'),
 			adminCatalogApi.get('academy.tracks.difficulty')
 		]);
 		if (statusRes.ok && statusRes.data) {
@@ -143,39 +143,39 @@
 	});
 
 	const statusFilterOptions = $derived([
-		{ value: '', label: t('university.all', 'All') },
+		{ value: '', label: t('academy.all', 'All') },
 		...statusOptions
 	]);
 
 	const config = $derived<EntityPageConfig>({
-		title: t('university.tracks_title', 'University Track Approvals'),
-		description: t('university.tracks_desc', 'Review and approve instructor-submitted tracks for the Japa Academy marketplace'),
+		title: t('academy.tracks_title', 'Academy Track Approvals'),
+		description: t('academy.tracks_desc', 'Review and approve instructor-submitted tracks for the Japa Academy marketplace'),
 		pageSize: 25,
 		readonly: true,
 		columns: [
-			{ key: 'title', label: t('university.track_title', 'Track'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-			{ key: 'instructor_name', label: t('university.instructor', 'Instructor'), sortable: true },
+			{ key: 'title', label: t('academy.track_title', 'Track'), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
+			{ key: 'instructor_name', label: t('academy.instructor', 'Instructor'), sortable: true },
 			{
 				key: 'difficulty',
-				label: t('university.difficulty', 'Difficulty'),
+				label: t('academy.difficulty', 'Difficulty'),
 				sortable: true,
 				render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'advanced' ? 'bg-danger/15 text-danger' : v === 'intermediate' ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}">${v}</span>`
 			},
-			{ key: 'price_kobo', label: t('university.price', 'Price'), sortable: true, render: (_: any, row: Track) => `<span class="text-xs">${formatPrice(row.price_kobo, row.currency)}</span>` },
-			{ key: 'category', label: t('university.category', 'Category'), sortable: true, render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? '—'}</span>` },
-			{ key: 'language', label: t('university.language', 'Language'), sortable: true, render: (v: string) => `<span class="text-xs">${v}</span>` },
-			{ key: 'total_enrolled', label: t('university.enrolled', 'Enrolled'), sortable: true, render: (v: number) => `<span class="text-xs">${v}</span>` },
+			{ key: 'price_kobo', label: t('academy.price', 'Price'), sortable: true, render: (_: any, row: Track) => `<span class="text-xs">${formatPrice(row.price_kobo, row.currency)}</span>` },
+			{ key: 'category', label: t('academy.category', 'Category'), sortable: true, render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? '—'}</span>` },
+			{ key: 'language', label: t('academy.language', 'Language'), sortable: true, render: (v: string) => `<span class="text-xs">${v}</span>` },
+			{ key: 'total_enrolled', label: t('academy.enrolled', 'Enrolled'), sortable: true, render: (v: number) => `<span class="text-xs">${v}</span>` },
 			{ key: 'created_at', label: t('common.submitted', 'Submitted'), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
 		],
 		filters: [
 			{
 				key: 'status',
-				label: t('university.status', 'Status'),
+				label: t('academy.status', 'Status'),
 				options: statusFilterOptions
 			},
 			{
 				key: 'difficulty',
-				label: t('university.difficulty', 'Difficulty'),
+				label: t('academy.difficulty', 'Difficulty'),
 				options: difficultyOptions
 			}
 		],
@@ -244,7 +244,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('university.tracks_title', 'University Track Approvals')} — JapaConnect Admin</title>
+	<title>{t('academy.tracks_title', 'Academy Track Approvals')} — JapaConnect Admin</title>
 </svelte:head>
 
 {#if pageError}
@@ -260,8 +260,8 @@
 
 <!-- Approve Modal -->
 {#if actionTarget}
-	<Modal bind:open={showApproveConfirm} title={t('university.approve_track', 'Approve Track')}>
-		<p class="text-sm" style="color: var(--color-muted)">{t('university.approve_track_confirm', 'Publish')} <strong>{actionTarget.title}</strong> {t('university.to_marketplace', 'to the Japa Academy marketplace?')}</p>
+	<Modal bind:open={showApproveConfirm} title={t('academy.approve_track', 'Approve Track')}>
+		<p class="text-sm" style="color: var(--color-muted)">{t('academy.approve_track_confirm', 'Publish')} <strong>{actionTarget.title}</strong> {t('academy.to_marketplace', 'to the Japa Academy marketplace?')}</p>
 		<div class="mt-6 flex justify-end gap-2">
 			<Button variant="outline" onclick={() => { showApproveConfirm = false; }}>{t('common.cancel', 'Cancel')}</Button>
 			<Button onclick={confirmApprove} disabled={actionLoading}>{actionLoading ? t('common.processing', 'Processing...') : t('common.approve', 'Approve')}</Button>
@@ -271,11 +271,11 @@
 
 <!-- Reject Modal -->
 {#if actionTarget}
-	<Modal bind:open={showRejectModal} title={t('university.reject_track', 'Reject Track')}>
-		<p class="mb-3 text-sm" style="color: var(--color-muted)">{t('university.reject_track_confirm', 'Reject')} <strong>{actionTarget.title}</strong>?</p>
+	<Modal bind:open={showRejectModal} title={t('academy.reject_track', 'Reject Track')}>
+		<p class="mb-3 text-sm" style="color: var(--color-muted)">{t('academy.reject_track_confirm', 'Reject')} <strong>{actionTarget.title}</strong>?</p>
 		<div>
-			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('university.rejectReason', 'Reason (optional)')}</label>
-			<textarea id="reject-reason" bind:value={rejectReason} rows={3} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('university.rejectReasonPlaceholder', 'Reason for rejection...')}></textarea>
+			<label for="reject-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t('academy.rejectReason', 'Reason (optional)')}</label>
+			<textarea id="reject-reason" bind:value={rejectReason} rows={3} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t('academy.rejectReasonPlaceholder', 'Reason for rejection...')}></textarea>
 		</div>
 		<div class="mt-6 flex justify-end gap-2">
 			<Button variant="outline" onclick={() => { showRejectModal = false; }}>{t('common.cancel', 'Cancel')}</Button>

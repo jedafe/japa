@@ -1,4 +1,4 @@
-// Package academy provides HTTP handlers for the learning management system.
+// Package academy provides HTTP handlers for Japa Academy.
 package academy
 
 import (
@@ -32,13 +32,13 @@ type TaskEnqueueClient interface {
 }
 
 // JSONLDResolver resolves admin-managed JSON-LD templates (Section 14 /
-// Section 26). The learning platform uses it to emit Course structured data
+// Section 26). The academy uses it to emit Course structured data
 // from the active template.
 type JSONLDResolver interface {
 	ResolveJSONLD(ctx context.Context, contentType string, fields map[string]string) (json.RawMessage, error)
 }
 
-// RAGEntityIndexer is the subset of the RAG indexer that learning needs to
+// RAGEntityIndexer is the subset of the RAG indexer that academy needs to
 // index track content into content_embeddings (§69/ADR-069). Implemented
 // by rag.Service; nil disables RAG indexing (graceful degradation).
 type RAGEntityIndexer interface {
@@ -46,7 +46,7 @@ type RAGEntityIndexer interface {
 	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
-// settingsReader is the subset of config.Settings needed by the learning
+// settingsReader is the subset of config.Settings needed by the academy
 // handlers to resolve hot-reloadable system_settings (e.g.
 // i18n.default_language for RAG indexing). Nil falls back to defaults.
 type settingsReader interface {
@@ -60,7 +60,7 @@ type literalResolver interface {
 	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
 }
 
-// Handlers exposes HTTP endpoints for the learning platform. Each handler
+// Handlers exposes HTTP endpoints for Japa Academy. Each handler
 // reads platform context from the request, parses input, delegates to the
 // store, and writes a JSON response. Guard clauses at the top of every
 // handler keep the happy path un-indented.
@@ -92,7 +92,7 @@ func (h *Handlers) SetSettings(s settingsReader) { h.settings = s }
 // and lesson text renders {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
 
-// resolveLiterals resolves {{...}} placeholders on a learning DTO or slice.
+// resolveLiterals resolves {{...}} placeholders on an academy DTO or slice.
 // Best-effort — failures are logged inside the resolver.
 func (h *Handlers) resolveLiterals(r *http.Request, v any) {
 	if literals.IsRawRequest(r) {
@@ -514,7 +514,7 @@ func (h *Handlers) CreateTrack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: learning
+	// RAG indexing — fire-and-forget (§69/ADR-069 BUG-001 fix: academy
 	// tracks are part of the RAG corpus). Only index published tracks.
 	if input.IsPublished {
 		h.indexTrackRAG(r.Context(), track.ID, input.Title, input.Description, h.resolveRAGLanguage(r.Context()))
@@ -1055,7 +1055,7 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Accept both the array form the Learn frontend posts
+	// Accept both the array form the Academy frontend posts
 	// ({answers: [{question_id, answer: string | string[]}]}) and the map form
 	// ({answers: {question_id: answer}}) for API compatibility.
 	var input struct {
@@ -1382,7 +1382,7 @@ func parsePageSizeOffset(r *http.Request) int32 {
 	return int32(n) // #nosec G109 G115 -- bounded by non-negative check above
 }
 
-// ─── Admin Learning Extras (P5.6 — Task 14) ──────────────────────────────
+// ─── Admin Academy Extras (P5.6 — Task 14) ──────────────────────────────
 
 // ListTrackEnrollments handles GET /admin/academy/tracks/:id/enrollments.
 func (h *Handlers) ListTrackEnrollments(w http.ResponseWriter, r *http.Request) {
@@ -1496,11 +1496,11 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Learning track reviews (AUDIT-BE-ROUTE-040)
+// Academy track reviews (AUDIT-BE-ROUTE-040)
 // Reuse Section 29 reviews with entity_type=academy_track.
 // ---------------------------------------------------------------------------
 
-const learningTrackEntityType = "academy_track"
+const academyTrackEntityType = "academy_track"
 
 // CreateTrackReview handles POST /api/v1/academy/tracks/{id}/reviews.
 // Only enrolled users can review a track. The review is created via the

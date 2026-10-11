@@ -178,8 +178,8 @@
 		<a href="/dashboard/relationships" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 			{t('dashboard.nav.relationships')}
 		</a>
-		<a href="/dashboard/learning" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
-			{t('dashboard.nav.learning')}
+		<a href="/dashboard/academy" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
+			{t('dashboard.nav.academy')}
 		</a>
 		<a href="/dashboard/knowledge-base" class="rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]">
 			{t('dashboard.nav.knowledge_base')}

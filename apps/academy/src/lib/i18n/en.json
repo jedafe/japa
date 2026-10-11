@@ -7,7 +7,7 @@
 	"academy.all_courses": "all courses",
 	"academy.all_languages": "All languages",
 	"academy.all_levels": "All levels",
-	"academy.analytics_endpoint_pending": "Requires a backend analytics endpoint (e.g. GET /me/learning-analytics).",
+	"academy.analytics_endpoint_pending": "Requires a backend analytics endpoint (e.g. GET /me/academy-analytics).",
 	"academy.analytics_pending": "Requires analytics endpoint",
 	"academy.application_note_label": "Application Note",
 	"academy.application_note_placeholder": "Portfolio URL, areas of expertise, sample content links…",

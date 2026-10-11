@@ -5,10 +5,10 @@
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { GraduationCap } from 'lucide-svelte';
 	import { academyUrl } from '$lib/appOrigins';
-	import type { LearnEnrollment, LessonNavRef } from '$lib/types';
+	import type { AcademyEnrollment, LessonNavRef } from '$lib/types';
 
 	let { data }: { data: unknown } = $props();
-	const academy_enrollments = $derived((data as LearnEnrollment[] | null) ?? []);
+	const academy_enrollments = $derived((data as AcademyEnrollment[] | null) ?? []);
 
 	// Phase 18.16 — progress chart series. Each bar represents one enrollment's
 	// completion percentage. `x` is the URL-safe track slug for the band scale;
@@ -34,7 +34,7 @@
 	/** Resume path: next lesson when known, otherwise the track landing page.
 	 *  Slugs are URL-encoded so bad data (e.g. spaces in track_slug) does not
 	 *  produce an invalid cross-app href. */
-	function resumePath(en: LearnEnrollment): string {
+	function resumePath(en: AcademyEnrollment): string {
 		const trackSlug = encodeURIComponent(en.track_slug);
 		if (en.next_lesson) {
 			const nl = en.next_lesson as LessonNavRef;
@@ -47,13 +47,13 @@
 
 	// academyUrl throws when PUBLIC_JC_ACADEMY_ORIGIN is unset — guard so a
 	// missing env doesn't crash the render (falls back to '#').
-	function safeLearnUrl(path: string): string {
+	function safeAcademyUrl(path: string): string {
 		try { return academyUrl(path); } catch { return '#'; }
 	}
 
 	/** Label for the resume CTA: "Start" for untouched first lessons,
 	 *  "Resume" when in progress, "View track" when there is no next lesson. */
-	function resumeLabel(en: LearnEnrollment): string {
+	function resumeLabel(en: AcademyEnrollment): string {
 		if (!en.next_lesson) return t('dashboard.academy.view_track', 'View track');
 		if ((en.progress_pct ?? 0) === 0) return t('dashboard.academy.start', 'Start');
 		return t('dashboard.academy.resume', 'Resume');
@@ -69,7 +69,7 @@
 
 	/** Activity line: "Last active {date}" if last_activity_at exists,
 	 *  otherwise "Enrolled {date}". */
-	function activityLine(en: LearnEnrollment): string {
+	function activityLine(en: AcademyEnrollment): string {
 		const date = en.last_activity_at ?? en.enrolled_at;
 		if (en.last_activity_at) {
 			return t('dashboard.academy.last_active', 'Last active {date}', { date: formatDate(date) });
@@ -185,7 +185,7 @@
 							</div>
 						</div>
 						<a
-							href={safeLearnUrl(resumePath(en))}
+							href={safeAcademyUrl(resumePath(en))}
 							class="shrink-0 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)]"
 						>
 							{resumeLabel(en)}

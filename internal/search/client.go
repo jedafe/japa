@@ -20,8 +20,8 @@ const (
 	IndexSpaces            = "spaces"                     // geo-first community spaces
 	IndexUsers             = "users"                      // user profiles
 	IndexTags              = "tags"                       // forum tags
-	IndexKnowledgeArticles = "knowledge_articles"         // learning platform articles (§13, ADR-069)
-	IndexAcademyTracks    = "academy_tracks"            // Japa Academy marketplace courses (ADR-063)
+	IndexKnowledgeArticles = "knowledge_articles"         // academy articles (§13, ADR-069)
+	IndexAcademyTracks     = "academy_tracks"             // Japa Academy marketplace courses (ADR-063)
 	IndexDocPages          = "doc_pages"                  // documentation pages (SEARCH-001)
 	IndexOrganizations     = "organizations"              // verified orgs/businesses (Section 54)
 	IndexLanguageTestReqs  = "language_test_requirements" // §99 language test score requirements (JapaBot RAG)
@@ -60,7 +60,7 @@ var filterableAttributesByIndex = map[string][]string{
 	IndexUsers:             {"status"},
 	IndexTags:              {},
 	IndexKnowledgeArticles: {"status"},
-	IndexAcademyTracks:    {"difficulty", "category", "language", "relevant_countries", "is_free"},
+	IndexAcademyTracks:     {"difficulty", "category", "language", "relevant_countries", "is_free"},
 	IndexDocPages:          {"audience", "review_status"},
 	IndexOrganizations:     {"org_type", "verified", "status", "country_code"},
 	IndexLanguageTestReqs:  {"test_slug", "destination_space_id", "visa_category", "is_japabot_indexed"},
@@ -80,7 +80,7 @@ var sortableAttributesByIndex = map[string][]string{
 	IndexUsers:             {"created_at"},
 	IndexTags:              {"created_at"},
 	IndexKnowledgeArticles: {"created_at"},
-	IndexAcademyTracks:    {"created_at"},
+	IndexAcademyTracks:     {"created_at"},
 	IndexDocPages:          {"created_at"},
 	IndexOrganizations:     {"created_at"},
 	IndexLanguageTestReqs:  {"created_at"},

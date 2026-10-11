@@ -116,24 +116,24 @@ var adminCatalogs = map[string][]CatalogOption{
 		{Value: "website", Label: "Website"},
 		{Value: "youtube", Label: "YouTube"},
 	},
-	"university.tracks.status": {
+	"academy.tracks.status": {
 		{Value: "pending", Label: "Pending"},
 		{Value: "approved", Label: "Approved"},
 		{Value: "rejected", Label: "Rejected"},
 	},
-	"university.payouts.status": {
+	"academy.payouts.status": {
 		{Value: "pending", Label: "Pending"},
 		{Value: "processing", Label: "Processing"},
 		{Value: "paid", Label: "Paid"},
 		{Value: "failed", Label: "Failed"},
 	},
-	"university.instructors.status": {
+	"academy.instructors.status": {
 		{Value: "pending", Label: "Pending"},
 		{Value: "approved", Label: "Approved"},
 		{Value: "rejected", Label: "Rejected"},
 		{Value: "suspended", Label: "Suspended"},
 	},
-	"university.revenue_splits.source": {
+	"academy.revenue_splits.source": {
 		{Value: "purchase", Label: "Purchase"},
 		{Value: "pro_stream", Label: "Pro Stream"},
 	},
@@ -370,7 +370,7 @@ var adminCatalogs = map[string][]CatalogOption{
 }
 
 // CatalogOptions returns a defensive copy of the options for a named catalog.
-// It is exported so other packages (e.g. the university marketplace) can expose
+// It is exported so other packages (e.g. the academy marketplace) can expose
 // the same source of truth without duplicating option lists (Rule 16).
 func CatalogOptions(name string) ([]CatalogOption, bool) {
 	opts, ok := adminCatalogs[name]

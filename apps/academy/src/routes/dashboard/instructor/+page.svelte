@@ -306,7 +306,7 @@
 								<div class="flex flex-col items-end gap-2">
 									<span class="inline-flex items-center gap-1 text-xs font-medium" style="color: {submissionStatusColor(tr.submission_status)}">
 										<StatusIcon size={14} />
-										{t(`university.submission_${tr.submission_status}`)}
+										{t(`academy.submission_${tr.submission_status}`)}
 									</span>
 									<div class="flex items-center gap-2">
 										<a

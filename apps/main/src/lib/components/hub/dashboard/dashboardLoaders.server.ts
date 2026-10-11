@@ -4,7 +4,7 @@ import type {
 	FollowerGrowthItem,
 	RecommendationsResponse,
 	WalletSummary,
-	LearnEnrollment,
+	AcademyEnrollment,
 	Certificate,
 	UserDashboard
 } from '$lib/types';
@@ -251,7 +251,7 @@ export const DASHBOARD_LOADERS: Record<string, (ctx: ApiContext, params?: Dashbo
 			level
 		};
 	},
-	academy: async (ctx) => (await apiList<LearnEnrollment>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
+	academy: async (ctx) => (await apiList<AcademyEnrollment>(ctx, '/me/enrollments').catch(() => ({ items: [] }))).items,
 	certificates: async (ctx) => (await apiList<Certificate>(ctx, '/me/certificates').catch(() => ({ items: [] }))).items,
 	'knowledge-base': async (ctx) =>
 		// page_size=100 — the endpoint default is 20 and it returns no meta total,

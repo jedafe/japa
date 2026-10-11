@@ -388,7 +388,7 @@
 				}
 			}
 			// C3: academy.subdomain / academy.custom_domain change warning
-			// (ADR-063 §2). Changing either value affects how the Learn app
+			// (ADR-063 §2). Changing either value affects how the Academy app
 			// detects its host — show a confirmation dialog before saving.
 			// Ref: japaconnect-engineering/conventions/system-settings-catalog.md
 			const surfaceDomainSetting = changed.find(
@@ -1914,7 +1914,7 @@
 	title={t('settings.surface_domain_warning_title', 'Surface Domain Change')}
 	consequence={t(
 		'settings.surface_domain_warning',
-		'Changing academy.subdomain or academy.custom_domain affects how the Learn app detects its host. This may break Learn app routing until DNS and the Learn app config are updated. New value: '
+		'Changing academy.subdomain or academy.custom_domain affects how the Academy app detects its host. This may break Academy app routing until DNS and the Academy app config are updated. New value: '
 	) + pendingSurfaceDomainValue}
 	confirmText={t('common.confirm', 'Confirm')}
 	onConfirm={confirmSurfaceDomainSave}

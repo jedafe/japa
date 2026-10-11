@@ -824,7 +824,7 @@ FROM (SELECT * FROM activity_events WHERE user_id = @user_id) t;
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM academy_lesson_progress WHERE user_id = @user_id) t;
 
--- name: GdprExportUserLearningCertificates :one
+-- name: GdprExportUserAcademyCertificates :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT * FROM academy_certificates WHERE user_id = @user_id) t;
 

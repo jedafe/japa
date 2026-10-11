@@ -124,7 +124,7 @@
 	// Categories from the public API (Rule 16 — no hardcoded option lists)
 	let categories = $state<Category[]>([]);
 
-	const canManageLearning = $derived(hasPermission("academy.admin.manage"));
+	const canManageAcademy = $derived(hasPermission("academy.admin.manage"));
 
 	const tabs = $derived([
 		{ value: "tracks", label: t('app.academy.tab_tracks', 'Tracks'), icon: GraduationCap, count: tracks.length },
@@ -252,20 +252,20 @@
 	];
 
 	const trackActions: ActionItem[] = [
-		{ label: t('app.academy.publish', 'Publish'), icon: Send, onclick: (row) => openPublish(row.id, row.title), show: (row) => canManageLearning && row.is_published === false },
-		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("track", row), show: () => canManageLearning },
-		{ label: t('app.academy.academy_enrollments', 'Enrollments'), icon: Users, onclick: (row) => openEnrollments(row.id, row.title), show: () => canManageLearning },
-		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("track", row.id, row.title), show: () => canManageLearning }
+		{ label: t('app.academy.publish', 'Publish'), icon: Send, onclick: (row) => openPublish(row.id, row.title), show: (row) => canManageAcademy && row.is_published === false },
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("track", row), show: () => canManageAcademy },
+		{ label: t('app.academy.enrollments', 'Enrollments'), icon: Users, onclick: (row) => openEnrollments(row.id, row.title), show: () => canManageAcademy },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("track", row.id, row.title), show: () => canManageAcademy }
 	];
 
 	const moduleActions: ActionItem[] = [
-		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("module", row), show: () => canManageLearning },
-		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("module", row.id, row.title), show: () => canManageLearning }
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("module", row), show: () => canManageAcademy },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("module", row.id, row.title), show: () => canManageAcademy }
 	];
 
 	const lessonActions: ActionItem[] = [
-		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("lesson", row), show: () => canManageLearning },
-		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("lesson", row.id, row.title), show: () => canManageLearning }
+		{ label: t('common.edit', 'Edit'), icon: Pencil, onclick: (row) => openEdit("lesson", row), show: () => canManageAcademy },
+		{ label: t('common.delete', 'Delete'), icon: Trash2, variant: 'destructive', onclick: (row) => confirmDelete("lesson", row.id, row.title), show: () => canManageAcademy }
 	];
 
 	let currentColumns = $derived(
@@ -276,7 +276,7 @@
 		activeTab === "tracks" ? trackActions : activeTab === "modules" ? moduleActions : lessonActions
 	);
 
-	const bulkActions: BulkAction[] = $derived(canManageLearning
+	const bulkActions: BulkAction[] = $derived(canManageAcademy
 		? [{ label: t('app.academy.delete_selected', 'Delete Selected'), icon: Trash2, variant: 'destructive', onclick: bulkDelete }]
 		: []);
 
@@ -300,21 +300,21 @@
 		error = "";
 		try {
 			if (activeTab === "tracks") {
-				const result = await api<Track[]>("/admin/academy/learning/tracks");
+				const result = await api<Track[]>("/admin/academy/curriculum/tracks");
 				if (result.ok) {
 					tracks = result.data ?? [];
 				} else {
 					error = result.error || t('app.academy.error_load', 'Failed to load data');
 				}
 			} else if (activeTab === "modules") {
-				const result = await api<Module[]>("/admin/academy/learning/modules");
+				const result = await api<Module[]>("/admin/academy/curriculum/modules");
 				if (result.ok) {
 					modules = result.data ?? [];
 				} else {
 					error = result.error || t('app.academy.error_load', 'Failed to load data');
 				}
 			} else {
-				const result = await api<Lesson[]>("/admin/academy/learning/lessons");
+				const result = await api<Lesson[]>("/admin/academy/curriculum/lessons");
 				if (result.ok) {
 					lessons = result.data ?? [];
 				} else {
@@ -329,14 +329,14 @@
 	}
 
 	async function fetchTracks() {
-		const result = await api<Track[]>("/admin/academy/learning/tracks");
+		const result = await api<Track[]>("/admin/academy/curriculum/tracks");
 		if (result.ok) {
 			tracks = result.data ?? [];
 		}
 	}
 
 	async function fetchModulesForTrack(trackId: string) {
-		const result = await api<Module[]>(`/admin/academy/learning/tracks/${trackId}/modules`);
+		const result = await api<Module[]>(`/admin/academy/curriculum/tracks/${trackId}/modules`);
 		if (result.ok) {
 			modulesForLesson = result.data ?? [];
 		} else {
@@ -367,7 +367,7 @@
 		error = "";
 		try {
 			const slug = newTrack.slug.trim() || slugify(newTrack.title);
-			const result = await api("/admin/academy/learning/tracks", {
+			const result = await api("/admin/academy/curriculum/tracks", {
 				method: "POST",
 				body: {
 					title: newTrack.title.trim(),
@@ -398,7 +398,7 @@
 		error = "";
 		try {
 			const slug = newModule.slug.trim() || slugify(newModule.title);
-			const result = await api(`/admin/academy/learning/tracks/${newModule.track_id}/modules`, {
+			const result = await api(`/admin/academy/curriculum/tracks/${newModule.track_id}/modules`, {
 				method: "POST",
 				body: {
 					title: newModule.title.trim(),
@@ -426,7 +426,7 @@
 		error = "";
 		try {
 			const slug = newLesson.slug.trim() || slugify(newLesson.title);
-			const result = await api(`/admin/academy/learning/modules/${newLesson.module_id}/lessons`, {
+			const result = await api(`/admin/academy/curriculum/modules/${newLesson.module_id}/lessons`, {
 				method: "POST",
 				body: {
 					title: newLesson.title.trim(),
@@ -472,7 +472,7 @@
 		publishing = true;
 		error = "";
 		try {
-			const result = await api(`/admin/academy/learning/tracks/${id}/publish`, {
+			const result = await api(`/admin/academy/curriculum/tracks/${id}/publish`, {
 				method: "POST",
 				body: { is_published: true }
 			});
@@ -532,17 +532,17 @@
 			let result;
 			if (_type === "track") {
 				const { category, ...rest } = editForm;
-				result = await api(`/admin/academy/learning/tracks/${id}`, {
+				result = await api(`/admin/academy/curriculum/tracks/${id}`, {
 					method: "PATCH",
 					body: { ...rest, category: category || undefined }
 				});
 			} else if (_type === "module") {
-				result = await api(`/admin/academy/learning/modules/${id}`, {
+				result = await api(`/admin/academy/curriculum/modules/${id}`, {
 					method: "PATCH",
 					body: editForm
 				});
 			} else {
-				result = await api(`/admin/academy/learning/lessons/${id}`, {
+				result = await api(`/admin/academy/curriculum/lessons/${id}`, {
 					method: "PATCH",
 					body: editForm
 				});
@@ -576,11 +576,11 @@
 			const { type, id } = deleteTarget;
 			let result;
 			if (type === "track") {
-				result = await api(`/admin/academy/learning/tracks/${id}`, { method: "DELETE" });
+				result = await api(`/admin/academy/curriculum/tracks/${id}`, { method: "DELETE" });
 			} else if (type === "module") {
-				result = await api(`/admin/academy/learning/modules/${id}`, { method: "DELETE" });
+				result = await api(`/admin/academy/curriculum/modules/${id}`, { method: "DELETE" });
 			} else {
-				result = await api(`/admin/academy/learning/lessons/${id}`, { method: "DELETE" });
+				result = await api(`/admin/academy/curriculum/lessons/${id}`, { method: "DELETE" });
 			}
 			if (result.ok) {
 				showDeleteModal = false;
@@ -604,14 +604,14 @@
 		loadingEnrollments = true;
 		academy_enrollments = [];
 		try {
-			const result = await api<Enrollment[]>(`/admin/academy/learning/tracks/${id}/enrollments`);
+			const result = await api<Enrollment[]>(`/admin/academy/curriculum/tracks/${id}/enrollments`);
 			if (result.ok) {
 				academy_enrollments = result.data ?? [];
 			} else {
-				error = result.error || t('app.academy.error_enrollments', 'Failed to load academy_enrollments');
+				error = result.error || t('app.academy.error_enrollments', 'Failed to load enrollments');
 			}
 		} catch {
-			error = t('app.academy.error_enrollments', 'Failed to load academy_enrollments');
+			error = t('app.academy.error_enrollments', 'Failed to load enrollments');
 		} finally {
 			loadingEnrollments = false;
 		}
@@ -626,10 +626,10 @@
 		try {
 			const ids = Array.from(selectedIds);
 			const endpoint = activeTab === "tracks"
-				? (id: string) => `/admin/academy/learning/tracks/${id}`
+				? (id: string) => `/admin/academy/curriculum/tracks/${id}`
 				: activeTab === "modules"
-					? (id: string) => `/admin/academy/learning/modules/${id}`
-					: (id: string) => `/admin/academy/learning/lessons/${id}`;
+					? (id: string) => `/admin/academy/curriculum/modules/${id}`
+					: (id: string) => `/admin/academy/curriculum/lessons/${id}`;
 			await Promise.all(ids.map((id) => api(endpoint(id), { method: "DELETE" })));
 			selectedIds = new Set();
 			await refresh();
@@ -680,14 +680,14 @@
 </script>
 
 <svelte:head>
-	<title>{t('app.academy.page_title', 'Learning — JapaConnect Admin')}</title>
+	<title>{t('app.academy.page_title', 'Academy Curriculum — JapaConnect Admin')}</title>
 </svelte:head>
 
 <PageHeader
-	title={t('app.academy.title', 'Learning Management')}
+	title={t('app.academy.title', 'Academy Curriculum')}
 	description={t('app.academy.description', 'Create and manage courses, modules, and lessons')}
 	actions={[
-		...(canManageLearning ? [{ label: `${t('app.academy.new_prefix', 'New')} ${activeTab === "tracks" ? t('app.academy.track', 'Track') : activeTab === "modules" ? t('app.academy.module', 'Module') : t('app.academy.lesson', 'Lesson')}`, icon: Plus, onclick: openCreate }] : [])
+		...(canManageAcademy ? [{ label: `${t('app.academy.new_prefix', 'New')} ${activeTab === "tracks" ? t('app.academy.track', 'Track') : activeTab === "modules" ? t('app.academy.module', 'Module') : t('app.academy.lesson', 'Lesson')}`, icon: Plus, onclick: openCreate }] : [])
 	]}
 />
 
@@ -709,9 +709,9 @@
 				pageSize={15}
 				emptyMessage={t(`app.academy.empty_${activeTab}`, `No ${activeTab} found`)}
 				searchable
-				searchPlaceholder={t('app.academy.search_placeholder', 'Search learning content...')}
+				searchPlaceholder={t('app.academy.search_placeholder', 'Search academy content...')}
 				onsearch={(q) => { searchQuery = q; }}
-				selectable={canManageLearning}
+				selectable={canManageAcademy}
 				bind:selectedIds
 				actions={currentActions}
 				bulkActionsList={bulkActions}
@@ -1165,7 +1165,7 @@
      ══════════════════════════════════════════════════════════════════════════ -->
 <Modal
 	bind:open={showEnrollmentsModal}
-	title={enrollmentsTrack ? `${t('app.academy.enrollments_for', 'Enrollments for')} ${enrollmentsTrack.title}` : t('app.academy.academy_enrollments', 'Enrollments')}
+	title={enrollmentsTrack ? `${t('app.academy.enrollments_for', 'Enrollments for')} ${enrollmentsTrack.title}` : t('app.academy.enrollments', 'Enrollments')}
 	size="xl"
 >
 	{#if loadingEnrollments}
@@ -1176,7 +1176,7 @@
 		</div>
 	{:else if academy_enrollments.length === 0}
 		<div class="rounded-lg bg-surface p-8 text-center">
-			<p class="text-sm text-muted">{t('app.academy.no_enrollments', 'No academy_enrollments found for this track.')}</p>
+			<p class="text-sm text-muted">{t('app.academy.no_enrollments', 'No enrollments found for this track.')}</p>
 		</div>
 	{:else}
 		<div class="overflow-x-auto">

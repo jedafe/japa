@@ -11,7 +11,7 @@ const API_TARGET = 'http://localhost:8080';
 /**
  * For client-side fetches to /api/v1 and /ws: turn the jc_token cookie into a
  * Bearer header and forward the request host (port stripped) for reverse-proxy
- * correctness. Mirrors the pattern used by the main/learn apps.
+ * correctness. Mirrors the pattern used by the main/academy apps.
  *
  * NOTE: only /api/v1/* is proxied — SvelteKit API routes (+server.ts endpoints)
  * must NOT be forwarded to the Go backend.

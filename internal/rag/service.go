@@ -493,9 +493,9 @@ func (s *Service) QueueReindex(ctx context.Context) error {
 	// fire-and-forget IndexEntity calls in background goroutines. The HTTP
 	// response returns immediately after enumeration; the actual embedding
 	// work happens asynchronously.
-	go s.reindexForumThreads()   // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-	go s.reindexSpaces()         // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
-	go s.reindexLearningTracks() // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexForumThreads()  // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexSpaces()        // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
+	go s.reindexAcademyTracks() // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 
 	return nil
 }
@@ -620,10 +620,10 @@ func (s *Service) reindexSpaces() {
 	}
 }
 
-// reindexLearningTracks enumerates all published learning tracks for the
+// reindexAcademyTracks enumerates all published learning tracks for the
 // platform and re-indexes them into content_embeddings. Fire-and-forget —
 // called in a goroutine from QueueReindex.
-func (s *Service) reindexLearningTracks() {
+func (s *Service) reindexAcademyTracks() {
 	ctx := context.Background()
 	language := "en"
 
@@ -638,7 +638,7 @@ func (s *Service) reindexLearningTracks() {
 	total := 0
 
 	for {
-		ids, err := s.store.ListLearningTrackIDs(ctx, batchSize, offset)
+		ids, err := s.store.ListAcademyTrackIDs(ctx, batchSize, offset)
 		if err != nil {
 			slog.Warn("rag: reindex learning tracks: list batch failed", "offset", offset, "error", err)
 			return
@@ -649,7 +649,7 @@ func (s *Service) reindexLearningTracks() {
 		}
 
 		for _, id := range ids {
-			text, err := s.fetchLearningTrackText(ctx, id)
+			text, err := s.fetchAcademyTrackText(ctx, id)
 			if err != nil {
 				slog.Warn("rag: reindex learning tracks: fetch failed", "track_id", id.String(), "error", err)
 				continue
@@ -659,7 +659,7 @@ func (s *Service) reindexLearningTracks() {
 				continue
 			}
 
-			if err := s.IndexEntity(ctx, EntityTypeLearningTrack, id,
+			if err := s.IndexEntity(ctx, EntityTypeAcademyTrack, id,
 				"public", pgtype.UUID{}, pgtype.UUID{}, text, language); err != nil {
 				slog.Warn("rag: reindex learning tracks: index failed", "track_id", id.String(), "error", err)
 				continue
@@ -732,9 +732,9 @@ func (s *Service) fetchSpaceText(ctx context.Context, spaceID pgtype.UUID) (stri
 	return text, nil
 }
 
-// fetchLearningTrackText loads a learning track's title + description from
+// fetchAcademyTrackText loads a learning track's title + description from
 // the database for RAG embedding. Returns empty string if the track has no text.
-func (s *Service) fetchLearningTrackText(ctx context.Context, trackID pgtype.UUID) (string, error) {
+func (s *Service) fetchAcademyTrackText(ctx context.Context, trackID pgtype.UUID) (string, error) {
 	q := gen.New(s.store.pool.Reader)
 
 	row, err := q.GetAcademyTrackByID(ctx,

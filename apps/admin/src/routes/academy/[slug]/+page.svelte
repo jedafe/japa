@@ -120,31 +120,31 @@
 	}
 
 	const instructorColumns = [
-		{ key: "display_name", label: t("university.instructor", "Instructor"), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: "tier", label: t("university.tier", "Tier"), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-primary/15 text-primary">${v}</span>` },
-		{ key: "status", label: t("university.status", "Status"), sortable: true, render: (v: string) => `<span class="text-xs ${v === 'approved' ? 'text-success' : v === 'pending' ? 'text-warning' : 'text-danger'}">${v}</span>` },
+		{ key: "display_name", label: t("academy.instructor", "Instructor"), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: "tier", label: t("academy.tier", "Tier"), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium bg-primary/15 text-primary">${v}</span>` },
+		{ key: "status", label: t("academy.status", "Status"), sortable: true, render: (v: string) => `<span class="text-xs ${v === 'approved' ? 'text-success' : v === 'pending' ? 'text-warning' : 'text-danger'}">${v}</span>` },
 		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${fmtDate(v)}</span>` }
 	];
 
 	const trackColumns = [
-		{ key: "title", label: t("university.track_title", "Track"), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
-		{ key: "instructor_name", label: t("university.instructor", "Instructor"), sortable: true },
-		{ key: "difficulty", label: t("university.difficulty", "Difficulty"), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'advanced' ? 'bg-danger/15 text-danger' : v === 'intermediate' ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}">${v}</span>` },
-		{ key: "total_enrolled", label: t("university.enrolled", "Enrolled"), sortable: true, render: (v: number) => `<span class="text-xs">${v}</span>` },
-		{ key: "academy_submission_status", label: t("university.submission_status", "Submission"), render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? "—"}</span>` }
+		{ key: "title", label: t("academy.track_title", "Track"), sortable: true, render: (v: string) => `<span class="font-medium">${v}</span>` },
+		{ key: "instructor_name", label: t("academy.instructor", "Instructor"), sortable: true },
+		{ key: "difficulty", label: t("academy.difficulty", "Difficulty"), sortable: true, render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === 'advanced' ? 'bg-danger/15 text-danger' : v === 'intermediate' ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}">${v}</span>` },
+		{ key: "total_enrolled", label: t("academy.enrolled", "Enrolled"), sortable: true, render: (v: number) => `<span class="text-xs">${v}</span>` },
+		{ key: "academy_submission_status", label: t("academy.submission_status", "Submission"), render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? "—"}</span>` }
 	];
 
 	const payoutColumns = [
-		{ key: "period_start", label: t("university.period", "Period"), sortable: true, render: (_: any, row: Payout) => `<span class="text-xs">${fmtDate(row.period_start)} → ${fmtDate(row.period_end)}</span>` },
-		{ key: "status", label: t("university.status", "Status"), sortable: true, render: (v: string) => `<span class="text-xs ${v === 'paid' ? 'text-success' : v === 'failed' ? 'text-danger' : 'text-warning'}">${v}</span>` },
-		{ key: "net_kobo", label: t("university.net", "Net"), sortable: true, render: (v: number, row: Payout) => `<span class="text-xs">${fmtKobo(v, row.currency)}</span>` },
+		{ key: "period_start", label: t("academy.period", "Period"), sortable: true, render: (_: any, row: Payout) => `<span class="text-xs">${fmtDate(row.period_start)} → ${fmtDate(row.period_end)}</span>` },
+		{ key: "status", label: t("academy.status", "Status"), sortable: true, render: (v: string) => `<span class="text-xs ${v === 'paid' ? 'text-success' : v === 'failed' ? 'text-danger' : 'text-warning'}">${v}</span>` },
+		{ key: "net_kobo", label: t("academy.net", "Net"), sortable: true, render: (v: number, row: Payout) => `<span class="text-xs">${fmtKobo(v, row.currency)}</span>` },
 		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${fmtDate(v)}</span>` }
 	];
 
 	const splitColumns = [
-		{ key: "source", label: t("university.source", "Source"), sortable: true, render: (v: string) => `<span class="text-xs">${v}</span>` },
-		{ key: "creator_kobo", label: t("university.creator_share", "Creator"), sortable: true, render: (v: number, row: RevenueSplit) => `<span class="text-xs">${fmtKobo(v, row.currency)}</span>` },
-		{ key: "platform_kobo", label: t("university.platform_share", "Platform"), sortable: true, render: (v: number, row: RevenueSplit) => `<span class="text-xs">${fmtKobo(v, row.currency)}</span>` },
+		{ key: "source", label: t("academy.source", "Source"), sortable: true, render: (v: string) => `<span class="text-xs">${v}</span>` },
+		{ key: "creator_kobo", label: t("academy.creator_share", "Creator"), sortable: true, render: (v: number, row: RevenueSplit) => `<span class="text-xs">${fmtKobo(v, row.currency)}</span>` },
+		{ key: "platform_kobo", label: t("academy.platform_share", "Platform"), sortable: true, render: (v: number, row: RevenueSplit) => `<span class="text-xs">${fmtKobo(v, row.currency)}</span>` },
 		{ key: "created_at", label: t("common.created", "Created"), sortable: true, render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${fmtDate(v)}</span>` }
 	];
 
@@ -232,13 +232,13 @@
 </script>
 
 <svelte:head>
-	<title>{space?.name ?? t("university.detail", "University")} — JapaConnect Admin</title>
+	<title>{space?.name ?? t("academy.detail", "University")} — JapaConnect Admin</title>
 </svelte:head>
 
 <div class="mb-4">
-	<Button variant="ghost" size="sm" href="/university">
+	<Button variant="ghost" size="sm" href="/academy">
 		<ArrowLeft class="mr-1 h-3.5 w-3.5" />
-		{t("university.back_to_hub", "Back to University Hub")}
+		{t("academy.back_to_hub", "Back to Academy Hub")}
 	</Button>
 </div>
 
@@ -248,7 +248,7 @@
 		<p class="text-sm" style="color: var(--color-danger)">{errorMessage}</p>
 		<div class="flex gap-2">
 			<Button variant="outline" size="sm" onclick={load}>{t("common.retry", "Retry")}</Button>
-			<Button variant="ghost" size="sm" href="/university">{t("university.back_to_hub", "Back to University Hub")}</Button>
+			<Button variant="ghost" size="sm" href="/academy">{t("academy.back_to_hub", "Back to Academy Hub")}</Button>
 		</div>
 	</div>
 {:else if loading}
@@ -263,7 +263,7 @@
 {:else if space}
 	<PageHeader
 		title={space.name}
-		description={space.description ?? t("university.scoped_desc", "Creator economy activity for tracks targeted at this university space")}
+		description={space.description ?? t("academy.scoped_desc", "Creator economy activity for tracks targeted at this university space")}
 		actions={[
 			{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: load },
 			{ label: t("universities.manage", "Manage University"), icon: ExternalLink, variant: "outline" as const, href: "/universities" }
@@ -297,13 +297,13 @@
 			<CardContent>
 				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("universities.students", "Members")}</p>
 				<p class="mt-1 text-2xl font-semibold" style="color: var(--color-foreground)">{(space.member_count ?? 0).toLocaleString()}</p>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">{(space.follower_count ?? 0).toLocaleString()} {t("university.followers", "followers")} · {(space.post_count ?? 0).toLocaleString()} {t("university.posts", "posts")}</p>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{(space.follower_count ?? 0).toLocaleString()} {t("academy.followers", "followers")} · {(space.post_count ?? 0).toLocaleString()} {t("academy.posts", "posts")}</p>
 			</CardContent>
 		</Card>
 		<Card>
 			<CardContent>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.creator_economy", "Creator Economy")}</p>
-				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t("university.scoped_note", "Tracks targeted at this university space and their associated instructors, payouts, and revenue splits.")}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.creator_economy", "Creator Economy")}</p>
+				<p class="mt-1 text-xs" style="color: var(--color-muted)">{t("academy.scoped_note", "Tracks targeted at this university space and their associated instructors, payouts, and revenue splits.")}</p>
 			</CardContent>
 		</Card>
 	</div>
@@ -315,15 +315,15 @@
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
 						<Users class="h-4 w-4" style="color: var(--color-muted)" />
-						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("university.instructors_title", "Instructors")}</h2>
+						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.instructors_title", "Instructors")}</h2>
 						<span class="text-xs" style="color: var(--color-muted)">({instructorsTotal})</span>
 					</div>
-					<Button variant="ghost" size="sm" href="/university/instructors">{t("common.view_all", "View all")} →</Button>
+					<Button variant="ghost" size="sm" href="/academy/instructors">{t("common.view_all", "View all")} →</Button>
 				</div>
 			</CardHeader>
 			<CardContent>
 				{#if instructors.length === 0}
-					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("university.no_instructors_scoped", "No instructors have tracks targeted at this university space.")}</p>
+					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("academy.no_instructors_scoped", "No instructors have tracks targeted at this university space.")}</p>
 				{:else}
 					<DataTable columns={instructorColumns} data={instructors} pageSize={10} emptyMessage="" />
 				{/if}
@@ -338,15 +338,15 @@
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
 						<BookOpen class="h-4 w-4" style="color: var(--color-muted)" />
-						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("university.tracks_title", "Tracks")}</h2>
+						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.tracks_title", "Tracks")}</h2>
 						<span class="text-xs" style="color: var(--color-muted)">({tracksTotal})</span>
 					</div>
-					<Button variant="ghost" size="sm" href="/university/tracks">{t("common.view_all", "View all")} →</Button>
+					<Button variant="ghost" size="sm" href="/academy/tracks">{t("common.view_all", "View all")} →</Button>
 				</div>
 			</CardHeader>
 			<CardContent>
 				{#if tracks.length === 0}
-					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("university.no_tracks_scoped", "No tracks targeted at this university space.")}</p>
+					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("academy.no_tracks_scoped", "No tracks targeted at this university space.")}</p>
 				{:else}
 					<DataTable columns={trackColumns} data={tracks} pageSize={10} emptyMessage="" />
 				{/if}
@@ -361,15 +361,15 @@
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
 						<DollarSign class="h-4 w-4" style="color: var(--color-muted)" />
-						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("university.payouts_title", "Payouts")}</h2>
+						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.payouts_title", "Payouts")}</h2>
 						<span class="text-xs" style="color: var(--color-muted)">({payoutsTotal})</span>
 					</div>
-					<Button variant="ghost" size="sm" href="/university/payouts">{t("common.view_all", "View all")} →</Button>
+					<Button variant="ghost" size="sm" href="/academy/payouts">{t("common.view_all", "View all")} →</Button>
 				</div>
 			</CardHeader>
 			<CardContent>
 				{#if payouts.length === 0}
-					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("university.no_payouts_scoped", "No payouts for instructors with tracks in this university space.")}</p>
+					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("academy.no_payouts_scoped", "No payouts for instructors with tracks in this university space.")}</p>
 				{:else}
 					<DataTable columns={payoutColumns} data={payouts} pageSize={10} emptyMessage="" />
 				{/if}
@@ -384,15 +384,15 @@
 				<div class="flex items-center justify-between">
 					<div class="flex items-center gap-2">
 						<TrendingUp class="h-4 w-4" style="color: var(--color-muted)" />
-						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("university.revenue_splits_title", "Revenue Splits")}</h2>
+						<h2 class="text-sm font-semibold" style="color: var(--color-foreground)">{t("academy.revenue_splits_title", "Revenue Splits")}</h2>
 						<span class="text-xs" style="color: var(--color-muted)">({splitsTotal})</span>
 					</div>
-					<Button variant="ghost" size="sm" href="/university/revenue-splits">{t("common.view_all", "View all")} →</Button>
+					<Button variant="ghost" size="sm" href="/academy/revenue-splits">{t("common.view_all", "View all")} →</Button>
 				</div>
 			</CardHeader>
 			<CardContent>
 				{#if splits.length === 0}
-					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("university.no_splits_scoped", "No revenue splits for tracks in this university space.")}</p>
+					<p class="py-6 text-center text-xs" style="color: var(--color-muted)">{t("academy.no_splits_scoped", "No revenue splits for tracks in this university space.")}</p>
 				{:else}
 					<DataTable columns={splitColumns} data={splits} pageSize={10} emptyMessage="" />
 				{/if}

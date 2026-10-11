@@ -17,7 +17,7 @@ type Processor struct {
 	service *Service
 }
 
-// NewProcessor creates a university processor bound to the provided service.
+// NewProcessor creates an academy processor bound to the provided service.
 func NewProcessor(service *Service) *Processor {
 	return &Processor{service: service}
 }

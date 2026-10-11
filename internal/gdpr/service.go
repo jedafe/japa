@@ -2216,8 +2216,8 @@ type UserDataExport struct {
 	ConsentRecords              []map[string]interface{} `json:"consent_records"`
 	WalletLedger                []map[string]interface{} `json:"wallet_ledger"`
 	ActivityEvents              []map[string]interface{} `json:"activity_events"`
-	AcademyLessonProgress              []map[string]interface{} `json:"academy_lesson_progress"`
-	AcademyCertificates        []map[string]interface{} `json:"academy_certificates"`
+	AcademyLessonProgress       []map[string]interface{} `json:"academy_lesson_progress"`
+	AcademyCertificates         []map[string]interface{} `json:"academy_certificates"`
 	MentorshipMatches           []map[string]interface{} `json:"mentorship_matches"`
 	MentorshipConnections       []map[string]interface{} `json:"mentorship_connections"` // §102 ADR-110
 	MentorProfiles              []map[string]interface{} `json:"mentor_profiles"`        // §102 ADR-110
@@ -2229,9 +2229,9 @@ type UserDataExport struct {
 	UserMutes                   []map[string]interface{} `json:"user_mutes"`
 	SpaceMutes                  []map[string]interface{} `json:"space_mutes"`
 	TicketComments              []map[string]interface{} `json:"ticket_comments"`
-	AcademyInstructorProfiles          []map[string]interface{} `json:"academy_instructor_profiles"`
+	AcademyInstructorProfiles   []map[string]interface{} `json:"academy_instructor_profiles"`
 	RevenueSplits               []map[string]interface{} `json:"revenue_splits"`
-	AcademyInstructorPayouts           []map[string]interface{} `json:"academy_instructor_payouts"`
+	AcademyInstructorPayouts    []map[string]interface{} `json:"academy_instructor_payouts"`
 	CustomFieldValues           []map[string]interface{} `json:"custom_field_values"`            // BUG-020
 	PushTokens                  []map[string]interface{} `json:"push_tokens"`                    // BUG-014
 	DMConversations             []map[string]interface{} `json:"dm_conversations"`               // BUG-022
@@ -2612,15 +2612,15 @@ func (s *Service) collectUserData(ctx context.Context, userID pgtype.UUID) (*Use
 		slog.Warn("failed to collect activity_events for export", "user_id", userID.String(), "error", err)
 	}
 
-	// Learning lesson progress.
+	// Academy lesson progress.
 	if rows, err := s.store.gdprExportUserLessonProgress(ctx, userID); err == nil {
 		export.AcademyLessonProgress = rows
 	} else {
 		slog.Warn("failed to collect academy_lesson_progress for export", "user_id", userID.String(), "error", err)
 	}
 
-	// Issued learning certificates.
-	if rows, err := s.store.gdprExportUserLearningCertificates(ctx, userID); err == nil {
+	// Issued academy certificates.
+	if rows, err := s.store.gdprExportUserAcademyCertificates(ctx, userID); err == nil {
 		export.AcademyCertificates = rows
 	} else {
 		slog.Warn("failed to collect academy_certificates for export", "user_id", userID.String(), "error", err)

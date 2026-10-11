@@ -56,7 +56,7 @@ type PersonaVoiceResolver interface {
 
 // UserContextProvider fetches the per-category site activity that feeds
 // buildUserAIContext (ADR-025). It is satisfied by a wiring-layer adapter that
-// calls the real wallet, learning, mentorship, forum, referral, and moderation
+// calls the real wallet, academy, mentorship, forum, referral, and moderation
 // services/stores (BUG-001).
 type UserContextProvider interface {
 	GetUserAIContextData(ctx context.Context, userID pgtype.UUID, categories []string) (map[string]any, error)

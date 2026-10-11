@@ -54,12 +54,12 @@ func (noopAITranslateProcessor) TranslatePack(_ context.Context, packID, sourceL
 type noopAcademyProcessor struct{}
 
 func (noopAcademyProcessor) UpdateTrackCompletion(_ context.Context, userID, trackID string) error {
-	slog.Debug("worker: noop learning processor: update track completion", "user_id", userID, "track_id", trackID)
+	slog.Debug("worker: noop academy processor: update track completion", "user_id", userID, "track_id", trackID)
 	return nil
 }
 
 func (noopAcademyProcessor) IssueCertificate(_ context.Context, userID, trackID, courseName string) error {
-	slog.Debug("worker: noop learning processor: issue certificate", "user_id", userID, "track_id", trackID, "course_name", courseName)
+	slog.Debug("worker: noop academy processor: issue certificate", "user_id", userID, "track_id", trackID, "course_name", courseName)
 	return nil
 }
 

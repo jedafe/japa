@@ -14,7 +14,7 @@
 //     (housing, ECA, tax obligations, arrival checklists)
 //   - confirmed scam reports aggregated per (type, destination)
 //   - wiki pages + latest approved revision
-//   - published learning lessons
+//   - published academy lessons
 //   - published long-form contents (guides, articles)
 //
 // Post-processing: near-duplicate answers across sources are removed via
@@ -257,7 +257,7 @@ func main() {
 	// keeping template rows whose field values genuinely differ.
 	dedupThreshold := flag.Float64("dedup", 0.8, "Jaccard similarity above which near-duplicate answers are dropped (0 = disabled)")
 	system := flag.String("system", defaultSystemPrompt, "system prompt baked into each example")
-	sourcesFlag := flag.String("sources", "", "comma-separated source filter (behavior,forum,traces,sessions,housing,eca,tax,checklist,scam,wiki,learn,content,distill); empty = all DB sources")
+	sourcesFlag := flag.String("sources", "", "comma-separated source filter (behavior,forum,traces,sessions,housing,eca,tax,checklist,scam,wiki,academy,learn,content,distill); empty = all DB sources")
 	distillProvider := flag.String("distill-provider", "", "ai_providers.name of a teacher model — enables the distill source (off by default; costs API calls)")
 	distillModel := flag.String("distill-model", "", "override the provider row's model")
 	distillMaxDocs := flag.Int("distill-max-docs", 50, "seed documents for distillation")
@@ -310,7 +310,8 @@ func run(outPath, evalPath string, evalFrac float64, minVotes int, dedupThreshol
 		{"eca", ecaGuides},
 		{"tax", taxGuides},
 		{"wiki", wikiPages},
-		{"learn", lessons},
+		{"academy", lessons},
+		{"learn", lessons}, // legacy alias for "academy"
 		{"content", publishedContents},
 	}
 
@@ -883,7 +884,7 @@ func wikiPages(ctx context.Context, pool *pgxpool.Pool, system string, _ int) ([
 }
 
 // ---------------------------------------------------------------------------
-// Source: published learning lessons (article-type lessons only — quizzes
+// Source: published academy lessons (article-type lessons only — quizzes
 // and videos don't flatten to text).
 // ---------------------------------------------------------------------------
 

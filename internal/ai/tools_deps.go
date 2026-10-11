@@ -260,21 +260,21 @@ type SpacesService interface {
 	UpdateSpace(ctx context.Context, params gen.UpdateSpaceParams) (gen.UpdateSpaceRow, error)
 }
 
-// LearningStore is the subset of internal/academy.Store the Phase 9 learn
+// AcademyStore is the subset of internal/academy.Store the Phase 9 academy
 // tools call. academy.Track and academy.Lesson are content-package types
 // that would create an import cycle if imported here, so mirror types
 // (AcademyTrack, AcademyLesson) are defined below and the wiring layer
 // adapts between them.
-// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Learn tools)
-// Ref: japaconnect-engineering/sections/36-learning-platform.md.
-type LearningStore interface {
+// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Academy tools)
+// Ref: japaconnect-engineering/sections/36-academy-platform.md.
+type AcademyStore interface {
 	ListTracks(ctx context.Context) ([]AcademyTrack, error)
-	CreateTrack(ctx context.Context, input LearningCreateTrackInput) (*AcademyTrack, error)
-	UpdateTrack(ctx context.Context, id pgtype.UUID, input LearningUpdateTrackInput) (*AcademyTrack, error)
+	CreateTrack(ctx context.Context, input AcademyCreateTrackInput) (*AcademyTrack, error)
+	UpdateTrack(ctx context.Context, id pgtype.UUID, input AcademyUpdateTrackInput) (*AcademyTrack, error)
 	ListLessons(ctx context.Context) ([]AcademyLesson, error)
-	CreateLesson(ctx context.Context, moduleID pgtype.UUID, input LearningCreateLessonInput) (*AcademyLesson, error)
-	UpdateLesson(ctx context.Context, id pgtype.UUID, input LearningUpdateLessonInput) (*AcademyLesson, error)
-	ReorderLessons(ctx context.Context, entries []LearningReorderEntry) error
+	CreateLesson(ctx context.Context, moduleID pgtype.UUID, input AcademyCreateLessonInput) (*AcademyLesson, error)
+	UpdateLesson(ctx context.Context, id pgtype.UUID, input AcademyUpdateLessonInput) (*AcademyLesson, error)
+	ReorderLessons(ctx context.Context, entries []AcademyReorderEntry) error
 }
 
 // AcademyTrack mirrors academy.Track (the subset the AI tools surface).
@@ -291,8 +291,8 @@ type AcademyTrack struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }
 
-// LearningCreateTrackInput mirrors academy.CreateTrackInput.
-type LearningCreateTrackInput struct {
+// AcademyCreateTrackInput mirrors academy.CreateTrackInput.
+type AcademyCreateTrackInput struct {
 	Title                string      `json:"title"`
 	Slug                 string      `json:"slug"`
 	Description          *string     `json:"description,omitempty"`
@@ -304,8 +304,8 @@ type LearningCreateTrackInput struct {
 	SubscriptionEligible bool        `json:"subscription_eligible,omitempty"`
 }
 
-// LearningUpdateTrackInput mirrors academy.UpdateTrackInput.
-type LearningUpdateTrackInput struct {
+// AcademyUpdateTrackInput mirrors academy.UpdateTrackInput.
+type AcademyUpdateTrackInput struct {
 	Title                string      `json:"title"`
 	Description          *string     `json:"description,omitempty"`
 	Difficulty           string      `json:"difficulty"`
@@ -333,8 +333,8 @@ type AcademyLesson struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
-// LearningCreateLessonInput mirrors academy.CreateLessonInput.
-type LearningCreateLessonInput struct {
+// AcademyCreateLessonInput mirrors academy.CreateLessonInput.
+type AcademyCreateLessonInput struct {
 	Title           string      `json:"title"`
 	Slug            string      `json:"slug"`
 	LessonType      string      `json:"lesson_type"`
@@ -346,8 +346,8 @@ type LearningCreateLessonInput struct {
 	IsPreview       bool        `json:"is_preview"`
 }
 
-// LearningUpdateLessonInput mirrors academy.UpdateLessonInput.
-type LearningUpdateLessonInput struct {
+// AcademyUpdateLessonInput mirrors academy.UpdateLessonInput.
+type AcademyUpdateLessonInput struct {
 	Title           string      `json:"title"`
 	LessonType      string      `json:"lesson_type"`
 	Content         *string     `json:"content,omitempty"`
@@ -358,8 +358,8 @@ type LearningUpdateLessonInput struct {
 	IsPreview       *bool       `json:"is_preview,omitempty"`
 }
 
-// LearningReorderEntry is a single {id, sort_order} pair for bulk reorder.
-type LearningReorderEntry struct {
+// AcademyReorderEntry is a single {id, sort_order} pair for bulk reorder.
+type AcademyReorderEntry struct {
 	ID        pgtype.UUID `json:"id"`
 	SortOrder int32       `json:"sort_order"`
 }
@@ -606,7 +606,7 @@ type ToolDeps struct {
 
 	// Phase 9 extended catalog (Section 103).
 	Spaces           SpacesService           // nil → space tools return "not configured"
-	Learning         LearningStore           // nil → learn tools return "not configured"
+	Academy          AcademyStore            // nil → academy tools return "not configured"
 	Docs             DocsService             // nil → docs tools return "not configured"
 	DocsOrganize     DocsOrganizer           // nil → docs.organize returns "not configured"
 	Menus            MenusService            // nil → menu tools return "not configured"
@@ -1153,8 +1153,8 @@ func (d *ToolDeps) WithHITL(s HITLStore) *ToolDeps { d.HITL = s; return d }
 // WithSpaces injects the spaces service (Phase 9 space tools).
 func (d *ToolDeps) WithSpaces(s SpacesService) *ToolDeps { d.Spaces = s; return d }
 
-// WithLearning injects the learning store (Phase 9 learn tools).
-func (d *ToolDeps) WithLearning(s LearningStore) *ToolDeps { d.Learning = s; return d }
+// WithAcademy injects the academy store (Phase 9 academy tools).
+func (d *ToolDeps) WithAcademy(s AcademyStore) *ToolDeps { d.Academy = s; return d }
 
 // WithDocs injects the docs service (Phase 9 docs tools).
 func (d *ToolDeps) WithDocs(s DocsService) *ToolDeps { d.Docs = s; return d }

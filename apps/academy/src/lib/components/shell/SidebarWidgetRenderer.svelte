@@ -219,7 +219,7 @@
 			{/each}
 		</Menu>
 	{/if}
-{:else if widget.widget_type === 'learning_enrollments'}
+{:else if widget.widget_type === 'academy_enrollments'}
 	<AcademyEnrollmentsWidget {title} limit={typeof widgetProps.limit === 'number' ? widgetProps.limit : 3} />
 {:else if widget.widget_type === 'progress_ring'}
 	<ProgressRingWidget {title} />

@@ -1,5 +1,5 @@
 <script lang="ts">
-	// /university/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
+	// /academy/revenue-splits — read-only audit viewer migrated to EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController } from '$lib/components/entity';
 	import { academyAdminApi, adminCatalogApi, type CatalogOption } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -25,13 +25,13 @@
 	let entityController = $state<EntityPageController | undefined>(undefined);
 
 	let revenueSourceOptions = $state<CatalogOption[]>([
-		{ value: 'purchase', label: t('university.source_purchase', 'Purchase') },
-		{ value: 'pro_stream', label: t('university.source_pro_stream', 'Pro Stream') }
+		{ value: 'purchase', label: t('academy.source_purchase', 'Purchase') },
+		{ value: 'pro_stream', label: t('academy.source_pro_stream', 'Pro Stream') }
 	]);
 
 	$effect(() => {
 		void (async () => {
-			const res = await adminCatalogApi.get('university.revenue_splits.source');
+			const res = await adminCatalogApi.get('academy.revenue_splits.source');
 			if (res.ok && res.data?.length) revenueSourceOptions = res.data;
 		})();
 	});
@@ -46,51 +46,51 @@
 	}
 
 	const config = $derived<EntityPageConfig>({
-		title: t('university.revenue_splits_title', 'Revenue Splits'),
-		description: t('university.revenue_splits_desc', 'Read-only audit viewer for per-event revenue split records'),
+		title: t('academy.revenue_splits_title', 'Revenue Splits'),
+		description: t('academy.revenue_splits_desc', 'Read-only audit viewer for per-event revenue split records'),
 		readonly: true,
 		pageSize: 25,
 		columns: [
 			{
 				key: 'instructor_name',
-				label: t('university.instructor', 'Instructor'),
+				label: t('academy.instructor', 'Instructor'),
 				sortable: true,
 				render: (v: string, row: RevenueSplit) =>
 					`<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + '...' : '—')}</span>`
 			},
 			{
 				key: 'track_title',
-				label: t('university.track_title', 'Track'),
+				label: t('academy.track_title', 'Track'),
 				render: (v: string) => `<span class="text-sm">${v ?? '—'}</span>`
 			},
 			{
 				key: 'source',
-				label: t('university.source', 'Source'),
+				label: t('academy.source', 'Source'),
 				sortable: true,
 				componentSnippet: SourceBadge
 			},
 			{
 				key: 'gross_kobo',
-				label: t('university.gross', 'Gross'),
+				label: t('academy.gross', 'Gross'),
 				sortable: true,
 				render: (v: number) => `<span class="text-sm font-medium">${formatKobo(v)}</span>`
 			},
 			{
 				key: 'platform_commission_kobo',
-				label: t('university.commission', 'Commission'),
+				label: t('academy.commission', 'Commission'),
 				render: (v: number) =>
 					`<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v)}</span>`
 			},
 			{
 				key: 'instructor_net_kobo',
-				label: t('university.net', 'Instructor Net'),
+				label: t('academy.net', 'Instructor Net'),
 				sortable: true,
 				render: (v: number) =>
 					`<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v)}</span>`
 			},
 			{
 				key: 'payout_id',
-				label: t('university.payout_id', 'Payout ID'),
+				label: t('academy.payout_id', 'Payout ID'),
 				render: (v: string | null | undefined) =>
 					v
 						? `<span class="font-mono text-xs" style="color: var(--color-muted)">${v.slice(0, 8)}...</span>`
@@ -107,7 +107,7 @@
 		filters: [
 			{
 				key: 'source',
-				label: t('university.source', 'Source'),
+				label: t('academy.source', 'Source'),
 				options: revenueSourceOptions
 			}
 		],
@@ -122,7 +122,7 @@
 			if (dateTo) params.set('to', dateTo);
 			const result = await academyAdminApi.listRevenueSplits(params.toString() || undefined);
 			if (!result.ok) {
-				throw new Error(result.error ?? t('university.revenue_splits_load_error', 'Failed to load revenue splits'));
+				throw new Error(result.error ?? t('academy.revenue_splits_load_error', 'Failed to load revenue splits'));
 			}
 			const raw = (result.data as { data?: RevenueSplit[] } | null | undefined)?.data ?? [];
 
@@ -161,7 +161,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('university.revenue_splits_title', 'Revenue Splits')} — JapaConnect Admin</title>
+	<title>{t('academy.revenue_splits_title', 'Revenue Splits')} — JapaConnect Admin</title>
 </svelte:head>
 
 <!-- Page-local date-range filter (EntityPage FilterDef only supports select dropdowns) -->
@@ -208,31 +208,31 @@
 {#snippet SplitView({ row }: { row: RevenueSplit })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.instructor', 'Instructor')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.instructor', 'Instructor')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.instructor_name || row.instructor_id}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.track_title', 'Track')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.track_title', 'Track')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.track_title ?? '—'}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.source', 'Source')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.source', 'Source')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.source}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.gross', 'Gross')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.gross', 'Gross')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatKobo(row.gross_kobo)}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.commission', 'Commission')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.commission', 'Commission')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{formatKobo(row.platform_commission_kobo)}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.net', 'Instructor Net')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.net', 'Instructor Net')}</p>
 			<p class="mt-1 text-sm font-semibold" style="color: var(--color-success)">{formatKobo(row.instructor_net_kobo)}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.payout_id', 'Payout ID')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.payout_id', 'Payout ID')}</p>
 			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.payout_id ?? '—'}</p>
 		</div>
 		<div>

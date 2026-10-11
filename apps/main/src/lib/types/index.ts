@@ -1863,7 +1863,7 @@ export interface TrendingUser extends TrendingSnapshotBase {
  * ------------------------------------------------------------------ */
 
 /** GET /academy/tracks item — a learning track. */
-export interface LearnTrack {
+export interface AcademyTrack {
 	id: string;
 
 	title: string;
@@ -1878,13 +1878,13 @@ export interface LearnTrack {
 }
 
 /** GET /academy/tracks/{slug} — track with nested modules. */
-export interface LearnTrackDetail {
-	track: LearnTrack;
-	modules: LearnModule[];
+export interface AcademyTrackDetail {
+	track: AcademyTrack;
+	modules: AcademyModule[];
 }
 
 /** A module within a learning track. */
-export interface LearnModule {
+export interface AcademyModule {
 	id: string;
 
 	track_id: string;
@@ -1896,7 +1896,7 @@ export interface LearnModule {
 }
 
 /** GET /academy/tracks/{trackSlug}/modules/{moduleSlug}/lessons/{lessonSlug} — a single lesson. */
-export interface LearnLesson {
+export interface AcademyLesson {
 	id: string;
 
 	module_id: string;
@@ -1914,7 +1914,7 @@ export interface LearnLesson {
 }
 
 /** GET /academy/progress/{trackId} — the user's progress in a track. */
-export interface LearnProgress {
+export interface AcademyProgress {
 	completed: number;
 	total: number;
 	percent: number;
@@ -1936,7 +1936,7 @@ export type TrackLevel = string;
  * ListEnrollmentsByUser). Fields are used by the dashboard Learning tab,
  * the public profile learning hub, and the right-sidebar progress widgets.
  */
-export interface LearnEnrollment {
+export interface AcademyEnrollment {
 	id: string;
 	user_id: string;
 	track_id: string;

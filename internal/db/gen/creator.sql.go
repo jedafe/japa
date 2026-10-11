@@ -344,7 +344,7 @@ type CreateAcademyTrackCategoryParams struct {
 
 // =====================================================================
 // University track categories (ADR-063 §9.1)
-// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+// Ref: japaconnect-engineering/sections/36-academy-platform.md (Track categories)
 // =====================================================================
 func (q *Queries) CreateAcademyTrackCategory(ctx context.Context, arg CreateAcademyTrackCategoryParams) (AcademyTrackCategory, error) {
 	row := q.db.QueryRow(ctx, createAcademyTrackCategory,

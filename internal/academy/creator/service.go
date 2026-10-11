@@ -69,20 +69,20 @@ type AdminChecker interface {
 	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
 }
 
-// Notifier dispatches in-app notifications for university events. Implemented
+// Notifier dispatches in-app notifications for academy events. Implemented
 // by the notifications service; nil = the notify_* tasks log only (V1 stub).
 type Notifier interface {
 	CreateNotification(ctx context.Context, recipientID pgtype.UUID, nType, actorType string, actorID pgtype.UUID, subjectType string, subjectID pgtype.UUID, title, body, actionURL string) error
 }
 
-// NewService creates a university service.
+// NewService creates an academy service.
 func NewService(store *Store, settings *config.Settings, enqueuer TaskEnqueuer) *Service {
 	return &Service{store: store, settings: settings, enqueuer: enqueuer}
 }
 
 // SetValkey wires the Valkey client for cache reads/writes. Optional — if
 // not called, caching is disabled and all operations hit the DB.
-// AUDIT-BE-VALKEY-007/008/009: enables the 3 university cache keys.
+// AUDIT-BE-VALKEY-007/008/009: enables the 3 academy cache keys.
 func (s *Service) SetValkey(rdb valkeycompat.Cmdable) { s.rdb = rdb }
 
 // SetEnqueuer wires (or rewires) the Asynq enqueuer after construction.
@@ -556,7 +556,7 @@ func (s *Service) CalculatePeriodPayouts(ctx context.Context, periodStart, perio
 	}
 
 	// List all approved instructors via the status filter (no space scope —
-	// the periodic payout run is platform-wide, not per-university).
+	// the periodic payout run is platform-wide, not per-instructor).
 	profiles, err := s.store.ListByStatus(ctx, "approved", pgtype.UUID{}, 1000, 0)
 	if err != nil {
 		return fmt.Errorf("creator: list instructors for payout: %w", err)
@@ -772,13 +772,13 @@ func (s *Service) NotifyInstructorApprovedDispatch(ctx context.Context, instruct
 		ctx,
 		profile.UserID,
 		"academy_instructor_approved", // notification type key
-		"system",                         // actor type
-		pgtype.UUID{},                    // actor ID (system)
-		"instructor",                     // subject type
-		instructorID,                     // subject ID
+		"system",                      // actor type
+		pgtype.UUID{},                 // actor ID (system)
+		"instructor",                  // subject type
+		instructorID,                  // subject ID
 		"Instructor Application Approved",
 		"Your instructor application has been approved. You can now publish tracks on Japa Academy.",
-		"/university/instructor/dashboard",
+		"/dashboard/instructor",
 	)
 }
 
@@ -813,13 +813,13 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, trackID pgty
 		ctx,
 		profile.UserID,
 		"academy_course_approved", // notification type key
-		"system",                     // actor type
-		pgtype.UUID{},                // actor ID (system)
-		"track",                      // subject type
-		trackID,                      // subject ID
+		"system",                  // actor type
+		pgtype.UUID{},             // actor ID (system)
+		"track",                   // subject type
+		trackID,                   // subject ID
 		"Track Approved",
 		"Your track \""+track.Title+"\" has been approved and is now live on the Japa Academy marketplace.",
-		"/university/tracks/"+trackID.String(),
+		"/tracks/"+track.Slug,
 	)
 }
 
@@ -830,18 +830,18 @@ func (s *Service) NotifyCourseApprovedDispatch(ctx context.Context, trackID pgty
 // instructorProfileCacheKey builds jc:academy:{}:instructor:{user_id}:profile.
 // Platform-scoped to prevent cross-platform data leakage in multi-platform deployments (BUG-016).
 func instructorProfileCacheKey(userID pgtype.UUID) string {
-	return valkey.MustKey("university::instructor:%s:profile", userID.String())
+	return valkey.MustKey("academy:instructor:%s:profile", userID.String())
 }
 
 // trackEnrolledCacheKey builds jc:academy:{}:track:{track_id}:enrolled.
 // Platform-scoped to prevent cross-platform data leakage (BUG-016).
 func trackEnrolledCacheKey(trackID pgtype.UUID) string {
-	return valkey.MustKey("university::track:%s:enrolled", trackID.String())
+	return valkey.MustKey("academy:track:%s:enrolled", trackID.String())
 }
 
 // payoutAccumulatorCacheKey builds jc:academy:payout:{}:{period}:{instructor_id}.
 func payoutAccumulatorCacheKey(instructorID pgtype.UUID, period string) string {
-	return valkey.MustKey("university:payout::%s:%s", period, instructorID.String())
+	return valkey.MustKey("academy:payout:%s:%s", period, instructorID.String())
 }
 
 // cachedInstructorProfile returns the instructor profile from Valkey cache,

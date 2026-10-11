@@ -51,7 +51,7 @@ export function profileUrl(username: string): string {
 // Path prefixes this app actually routes — menu items pointing anywhere else
 // (login, signup, docs, privacy, settings, …) are platform pages hosted on the
 // Main app and must be rewritten to absolute URLs or they 404 on Academy.
-const LEARN_PATH_PREFIXES = [
+const ACADEMY_PATH_PREFIXES = [
 	'/tracks',
 	'/search',
 	'/my-learning',
@@ -79,7 +79,7 @@ export function resolveMenuUrl(url: string): string {
 
 	const path = url.split(/[?#]/)[0];
 	if (path === '/login') return loginUrl();
-	if (path === '/' || LEARN_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+	if (path === '/' || ACADEMY_PATH_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
 		return url;
 	}
 	return `${MAIN_ORIGIN}${url}`;

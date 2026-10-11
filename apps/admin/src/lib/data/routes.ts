@@ -114,7 +114,7 @@ const adminRoutes: string[] = [
 	'/jobs',
 	'/jsonld-templates',
 	'/academy',
-	'/academy/learning',
+	'/academy/curriculum',
 	'/media',
 	'/menus',
 	'/mentorship',

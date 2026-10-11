@@ -309,7 +309,7 @@ func (s *Service) CreatePage(ctx context.Context, createdBy pgtype.UUID, input C
 // DuplicatePage clones an existing page into a new draft. The copy inherits
 // the source's blocks, meta, theme, and page_type so an admin can redesign it
 // for another app's homepage (e.g. duplicate the default guest landing page
-// and reshape it for Learn/Docs). The new slug is derived from the source
+// and reshape it for Academy/Docs). The new slug is derived from the source
 // slug with a "-copy" suffix (incremented until unique) and the title gets a
 // " (Copy)" suffix. The copy always starts as a draft so it is never
 // accidentally published over the source.

@@ -1,5 +1,5 @@
 <script lang="ts">
-	// /university/categories — migrated to the EntityPage scaffold.
+	// /academy/categories — migrated to the EntityPage scaffold.
 	import { EntityPage, type EntityPageConfig, type EntityPageController, type FieldDef } from '$lib/components/entity';
 	import { academyAdminApi } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -37,39 +37,39 @@
 	}
 
 	const fields: FieldDef[] = [
-		{ key: 'name', label: t('university.category_name', 'Category Name'), type: 'text', required: true },
-		{ key: 'slug', label: t('university.slug', 'Slug'), type: 'text', required: true },
-		{ key: 'sort_order', label: t('university.sort_order', 'Sort Order'), type: 'number' },
-		{ key: 'is_active', label: t('university.active', 'Active'), type: 'checkbox' }
+		{ key: 'name', label: t('academy.category_name', 'Category Name'), type: 'text', required: true },
+		{ key: 'slug', label: t('academy.slug', 'Slug'), type: 'text', required: true },
+		{ key: 'sort_order', label: t('academy.sort_order', 'Sort Order'), type: 'number' },
+		{ key: 'is_active', label: t('academy.active', 'Active'), type: 'checkbox' }
 	];
 
 	const config = $derived<EntityPageConfig>({
-		title: t('university.categories_title', 'University Track Categories'),
-		description: t('university.categories_desc', 'Manage the canonical category list for university marketplace tracks'),
-		createLabel: t('university.add_category', 'Add Category'),
+		title: t('academy.categories_title', 'Academy Track Categories'),
+		description: t('academy.categories_desc', 'Manage the canonical category list for Academy marketplace tracks'),
+		createLabel: t('academy.add_category', 'Add Category'),
 		createPermission: 'academy.category.manage',
 		editPermission: 'academy.category.manage',
 		deletePermission: 'academy.category.manage',
 		pageSize: 25,
 		columns: [
-			{ key: 'name', label: t('university.category_name', 'Category'), render: (v: string) => `<span class="font-medium">${v}</span>` },
-			{ key: 'slug', label: t('university.slug', 'Slug'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
-			{ key: 'sort_order', label: t('university.sort_order', 'Sort Order'), render: (v: number) => `<span class="text-xs">${v}</span>` },
+			{ key: 'name', label: t('academy.category_name', 'Category'), render: (v: string) => `<span class="font-medium">${v}</span>` },
+			{ key: 'slug', label: t('academy.slug', 'Slug'), render: (v: string) => `<span class="font-mono text-xs" style="color: var(--color-muted)">${v}</span>` },
+			{ key: 'sort_order', label: t('academy.sort_order', 'Sort Order'), render: (v: number) => `<span class="text-xs">${v}</span>` },
 			{
 				key: 'is_active',
-				label: t('university.status', 'Status'),
+				label: t('academy.status', 'Status'),
 				render: (v: boolean) => v
-					? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">${t('university.active', 'Active')}</span>`
-					: `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">${t('university.inactive', 'Inactive')}</span>`
+					? `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-success) 15%, transparent); color: var(--color-success)">${t('academy.active', 'Active')}</span>`
+					: `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium" style="background: color-mix(in srgb, var(--color-muted) 15%, transparent); color: var(--color-muted)">${t('academy.inactive', 'Inactive')}</span>`
 			}
 		],
 		filters: [
 			{
 				key: 'active',
-				label: t('university.status', 'Status'),
+				label: t('academy.status', 'Status'),
 				options: [
-					{ value: 'true', label: t('university.active', 'Active') },
-					{ value: 'false', label: t('university.inactive', 'Inactive') }
+					{ value: 'true', label: t('academy.active', 'Active') },
+					{ value: 'false', label: t('academy.inactive', 'Inactive') }
 				]
 			}
 		],
@@ -131,7 +131,7 @@
 </script>
 
 <svelte:head>
-	<title>{t('university.categories_title', 'University Track Categories')} — JapaConnect Admin</title>
+	<title>{t('academy.categories_title', 'Academy Track Categories')} — JapaConnect Admin</title>
 </svelte:head>
 
 {#if pageError}
@@ -150,20 +150,20 @@
 {#snippet CategoryView({ row }: { row: Category })}
 	<div class="space-y-4">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.category_name', 'Category Name')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.category_name', 'Category Name')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.name}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.slug', 'Slug')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.slug', 'Slug')}</p>
 			<p class="mt-1 text-sm font-mono" style="color: var(--color-foreground)">{row.slug}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.sort_order', 'Sort Order')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.sort_order', 'Sort Order')}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.sort_order}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.status', 'Status')}</p>
-			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_active ? t('university.active', 'Active') : t('university.inactive', 'Inactive')}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.status', 'Status')}</p>
+			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.is_active ? t('academy.active', 'Active') : t('academy.inactive', 'Inactive')}</p>
 		</div>
 	</div>
 {/snippet}

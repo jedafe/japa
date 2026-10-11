@@ -643,7 +643,7 @@ type BookmarkListItem struct {
 
 // ListMyBookmarks handles GET /api/v1/me/bookmarks.
 // Supports optional ?folder_id=uuid filter (BL-002, §50) and
-// ?entity_type=<type> filter (so the learn app can request only learning
+// ?entity_type=<type> filter (so the academy app can request only academy
 // entities).
 func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	user, ok := h.requireUser(w, r)
@@ -665,8 +665,8 @@ func (h *Handlers) ListMyBookmarks(w http.ResponseWriter, r *http.Request) {
 	entityType := r.URL.Query().Get("entity_type")
 
 	// The entity_type filter accepts a comma-separated list (e.g.
-	// ?entity_type=academy_track,content) so the learn app can request
-	// multiple learning-related entity types in one call. When a single
+	// ?entity_type=academy_track,content) so the academy app can request
+	// multiple academy-related entity types in one call. When a single
 	// value is passed, it filters to that one type. When empty, all types
 	// are returned.
 	var entityTypes []string

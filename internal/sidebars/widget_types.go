@@ -20,7 +20,7 @@ const (
 	WidgetCategoryContent      = "content"
 	WidgetCategorySocial       = "social"
 	WidgetCategoryMonetization = "monetization"
-	WidgetCategoryLearning     = "learning"
+	WidgetCategoryAcademy      = "academy"
 	WidgetCategoryDashboard    = "dashboard"
 	WidgetCategoryMarketing    = "marketing"
 	WidgetCategoryCustom       = "custom"
@@ -41,7 +41,7 @@ type WidgetType struct {
 	// Category groups the widget in the admin picker.
 	Category string `json:"category"`
 	// Apps lists the frontend apps whose SidebarWidgetRenderer actually
-	// implements this type ("main", "docs", "learn"). An empty slice means
+	// implements this type ("main", "docs", "academy"). An empty slice means
 	// all apps. The admin picker filters by this and the service rejects
 	// widget creation for apps that cannot render the type — otherwise an
 	// admin can place a widget that renders as a permanent stub on a surface
@@ -152,7 +152,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "search_launcher",
 		Name:        "Search Launcher",
-		Description: "Search launcher button for Docs/Learn (opens cmd+k palette or inline search)",
+		Description: "Search launcher button for Docs/Academy (opens cmd+k palette or inline search)",
 		Icon:        "search",
 		Slot:        WidgetSlotTopbar,
 		Category:    WidgetCategoryNavigation,
@@ -343,10 +343,10 @@ var widgetRegistry = []WidgetType{
 		Description: "User's most recent enrollment with progress — data fetched from /me/enrollments (authenticated users only)",
 		Icon:        "play-circle",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryLearning,
-		// Learn renders its own hardcoded ContinueLearningCard route widget
+		Category:    WidgetCategoryAcademy,
+		// Academy renders its own hardcoded ContinueAcademyCard route widget
 		// (Section 59), so this type is main-only — scoped otherwise it
-		// resolves on learn as a duplicate no-op.
+		// resolves on academy as a duplicate no-op.
 		Apps: appMainOnly,
 		DefaultProps: map[string]any{
 			"title": "Continue Learning",
@@ -354,12 +354,12 @@ var widgetRegistry = []WidgetType{
 		PropSchema: []PropField{titleProp()},
 	},
 	{
-		Type:        "learning_enrollments",
-		Name:        "Learning Enrollments",
-		Description: "User's active learning tracks with progress — data fetched from /me/enrollments (authenticated users only)",
+		Type:        "academy_enrollments",
+		Name:        "Academy Enrollments",
+		Description: "User's active academy tracks with progress — data fetched from /me/enrollments (authenticated users only)",
 		Icon:        "graduation-cap",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryLearning,
+		Category:    WidgetCategoryAcademy,
 		Apps:        appMainAcademy,
 		DefaultProps: map[string]any{
 			"limit": 3,
@@ -373,7 +373,7 @@ var widgetRegistry = []WidgetType{
 		Description: "Aggregate learning progress indicator — data fetched from /me/enrollments (authenticated users only)",
 		Icon:        "circle-dashed",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryLearning,
+		Category:    WidgetCategoryAcademy,
 		Apps:        appMainAcademy,
 		DefaultProps: map[string]any{
 			"title": "My Progress",
@@ -387,7 +387,7 @@ var widgetRegistry = []WidgetType{
 		Description: "Featured learning track card — data fetched from /academy/tracks/{slug} (track_slug prop) or /academy/catalog (fallback)",
 		Icon:        "book-open",
 		Slot:        WidgetSlotContent,
-		Category:    WidgetCategoryLearning,
+		Category:    WidgetCategoryAcademy,
 		Apps:        appMainAcademy,
 		DefaultProps: map[string]any{
 			"track_slug": "",

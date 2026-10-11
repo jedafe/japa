@@ -126,7 +126,7 @@
 		return null;
 	});
 
-	// Price label — always shown on the unified University surface.
+	// Price label — always shown on the unified Academy surface.
 	const priceLabel = $derived.by(() => {
 		if (isFreeForUser(track.price_kobo, data.user?.is_pro)) {
 			return data.user?.is_pro ? t('academy.included_pro') : t('academy.free');

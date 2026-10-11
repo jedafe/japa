@@ -25,7 +25,7 @@ type Store struct {
 	db    *db.DB
 }
 
-// NewStore creates a learning store bound to the provided database pools.
+// NewStore creates an academy store bound to the provided database pools.
 func NewStore(database *db.DB) *Store {
 	return &Store{
 		read:  gen.New(database.Reader),

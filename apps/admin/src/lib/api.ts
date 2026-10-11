@@ -1505,25 +1505,25 @@ export const i18nAdminApiExtended = {
 		api<unknown>(`/admin/i18n/strings/${id}/translate`, { method: 'POST', body }),
 };
 
-export const academyLearningAdminApi = {
-	listTracks: (params?: string) => api<unknown>(`/admin/academy/learning/tracks${params ? `?${params}` : ''}`),
-	getTrackEnrollments: (id: string) => api<unknown>(`/admin/academy/learning/tracks/${id}/enrollments`),
-	createTrack: (body: Record<string, unknown>) => api<unknown>('/admin/academy/learning/tracks', { method: 'POST', body }),
+export const academyCurriculumAdminApi = {
+	listTracks: (params?: string) => api<unknown>(`/admin/academy/curriculum/tracks${params ? `?${params}` : ''}`),
+	getTrackEnrollments: (id: string) => api<unknown>(`/admin/academy/curriculum/tracks/${id}/enrollments`),
+	createTrack: (body: Record<string, unknown>) => api<unknown>('/admin/academy/curriculum/tracks', { method: 'POST', body }),
 	updateTrack: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/academy/learning/tracks/${id}`, { method: 'PATCH', body }),
+		api<unknown>(`/admin/academy/curriculum/tracks/${id}`, { method: 'PATCH', body }),
 	publishTrack: (id: string) =>
-		api<unknown>(`/admin/academy/learning/tracks/${id}/publish`, { method: 'POST', body: {} }),
-	deleteTrack: (id: string) => api<{ deleted: boolean }>(`/admin/academy/learning/tracks/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/curriculum/tracks/${id}/publish`, { method: 'POST', body: {} }),
+	deleteTrack: (id: string) => api<{ deleted: boolean }>(`/admin/academy/curriculum/tracks/${id}`, { method: 'DELETE' }),
 	addModule: (trackId: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/academy/learning/tracks/${trackId}/modules`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/curriculum/tracks/${trackId}/modules`, { method: 'POST', body }),
 	updateModule: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/academy/learning/modules/${id}`, { method: 'PATCH', body }),
-	deleteModule: (id: string) => api<{ deleted: boolean }>(`/admin/academy/learning/modules/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/curriculum/modules/${id}`, { method: 'PATCH', body }),
+	deleteModule: (id: string) => api<{ deleted: boolean }>(`/admin/academy/curriculum/modules/${id}`, { method: 'DELETE' }),
 	addLesson: (moduleId: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/academy/learning/modules/${moduleId}/lessons`, { method: 'POST', body }),
+		api<unknown>(`/admin/academy/curriculum/modules/${moduleId}/lessons`, { method: 'POST', body }),
 	updateLesson: (id: string, body: Record<string, unknown>) =>
-		api<unknown>(`/admin/academy/learning/lessons/${id}`, { method: 'PATCH', body }),
-	deleteLesson: (id: string) => api<{ deleted: boolean }>(`/admin/academy/learning/lessons/${id}`, { method: 'DELETE' }),
+		api<unknown>(`/admin/academy/curriculum/lessons/${id}`, { method: 'PATCH', body }),
+	deleteLesson: (id: string) => api<{ deleted: boolean }>(`/admin/academy/curriculum/lessons/${id}`, { method: 'DELETE' }),
 };
 
 export const mentorshipAdminApiExtended = {

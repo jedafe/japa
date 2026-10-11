@@ -307,7 +307,7 @@ ORDER BY enrolled_at DESC;
 -- for slug/title/thumbnail/level and computes lessons_completed/lessons_total
 -- + last_activity_at via a LATERAL subquery on academy_lesson_progress. Also fetches
 -- the next incomplete lesson via a second LATERAL join so the Continue
--- Learning card can render without an N+1 per enrollment. The frontend
+-- Continue card can render without an N+1 per enrollment. The frontend
 -- Enrollment type (apps/academy/src/lib/types) expects all these fields.
 SELECT e.id, e.user_id, e.track_id, e.access_type,
  CASE

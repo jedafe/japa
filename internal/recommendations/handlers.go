@@ -143,7 +143,7 @@ var toolLabelMap = map[string]string{
 	"banking-guide":             "Banking Guide",
 	"mutual-aid-board":          "Mutual Aid Board",
 	"service-directory":         "Service Directory",
-	"japa-academy":           "Japa Academy",
+	"japa-academy":              "Japa Academy",
 	"story-wall":                "Community Story Wall",
 	"scam-alert":                "Scam Alert",
 	"planning-groups":           "Planning Groups",
@@ -175,7 +175,7 @@ var toolURLMap = map[string]string{
 	"banking-guide":             "/tools/banking-guide",
 	"mutual-aid-board":          "/mutual-aid",
 	"service-directory":         "/services",
-	"japa-academy":           "/university",
+	"japa-academy":              "/university",
 	"story-wall":                "/stories",
 	"scam-alert":                "/scam-alerts",
 	"planning-groups":           "/groups",
@@ -205,7 +205,7 @@ var featureSlugs = map[string]bool{
 	"service-directory":  true, // §98 Service Directory
 	"destination-wiki":   true, // §80 Destination Wiki
 	"mentorship":         true, // §102 Mentorship Matching
-	"japa-academy":    true, // §77 Japa Academy (platform feature)
+	"japa-academy":       true, // §77 Japa Academy (platform feature)
 }
 
 // GetRecommendations handles GET /api/v1/recommendations (ADR-064a).

@@ -23,10 +23,10 @@ import (
 
 // EntityType constants — the set of indexable on-platform content types.
 const (
-	EntityTypeContent       = "content"
-	EntityTypeForumThread   = "forum_thread"
-	EntityTypeSpace         = "space"
-	EntityTypeLearningTrack = "academy_track"
+	EntityTypeContent      = "content"
+	EntityTypeForumThread  = "forum_thread"
+	EntityTypeSpace        = "space"
+	EntityTypeAcademyTrack = "academy_track"
 )
 
 // SourceTier classifies an entity as editorial (Tier 1) or community (Tier 2).
@@ -135,7 +135,7 @@ func SourceURL(entityType, contentType, slug string) string {
 		return "/forum/" + slug
 	case EntityTypeSpace:
 		return "/spaces/" + slug
-	case EntityTypeLearningTrack:
+	case EntityTypeAcademyTrack:
 		return "/academy/tracks/" + slug
 	default:
 		return ""
@@ -317,10 +317,10 @@ func (s *Store) ListSpaceIDs(ctx context.Context, limit, offset int32) ([]Reinde
 	return results, nil
 }
 
-// ListLearningTrackIDs returns a batch of published learning track IDs for
+// ListAcademyTrackIDs returns a batch of published learning track IDs for
 // full corpus re-indexing (ADR-069 §2: learning tracks are part of the corpus).
-func (s *Store) ListLearningTrackIDs(ctx context.Context, limit, offset int32) ([]pgtype.UUID, error) {
-	rows, err := s.queries.ListLearningTrackIDsForReindex(ctx, gen.ListLearningTrackIDsForReindexParams{
+func (s *Store) ListAcademyTrackIDs(ctx context.Context, limit, offset int32) ([]pgtype.UUID, error) {
+	rows, err := s.queries.ListAcademyTrackIDsForReindex(ctx, gen.ListAcademyTrackIDsForReindexParams{
 
 		PageLimit:  limit,
 		PageOffset: offset,

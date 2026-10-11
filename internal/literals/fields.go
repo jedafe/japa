@@ -27,7 +27,7 @@ var resolvableFields = map[string]bool{
 	"MetaTitle":       true,
 	"MetaDescription": true,
 	// Generic content/body fields used by non-contents entities:
-	// learning lessons (Content *string / ContentHTML), wiki revisions
+	// academy lessons (Content *string / ContentHTML), wiki revisions
 	// (Content json.RawMessage / CurrentContent), space/track descriptions,
 	// and comment/feed cards that join the parent title (ContentTitle,
 	// ThreadTitle).

@@ -44,16 +44,16 @@ var contentTypeFolderNames = map[string]string{
 // entityTypeFolderNames maps entity_type values directly to default folder
 // names, covering non-content entity types and normalized forum types.
 var entityTypeFolderNames = map[string]string{
-	"blog_post":      "blog",
-	"academy_track": "learn",
-	"doc_page":       "docs",
-	"forum_thread":   "discussions",
-	"forum_reply":    "discussions",
-	"thread":         "discussions",
-	"reply":          "discussions",
-	"space":          "spaces",
-	"tag":            "tags",
-	"comment":        "comments",
+	"blog_post":     "blog",
+	"academy_track": "academy",
+	"doc_page":      "docs",
+	"forum_thread":  "discussions",
+	"forum_reply":   "discussions",
+	"thread":        "discussions",
+	"reply":         "discussions",
+	"space":         "spaces",
+	"tag":           "tags",
+	"comment":       "comments",
 }
 
 // defaultFolderOrder is the canonical order of default folders. It is used
@@ -61,7 +61,7 @@ var entityTypeFolderNames = map[string]string{
 // folders created on first bookmark.
 var defaultFolderOrder = []string{
 	"blog", "discussions", "guides", "pages", "comparisons", "events",
-	"jobs", "stories", "achievements", "services", "learn", "docs",
+	"jobs", "stories", "achievements", "services", "academy", "docs",
 	"spaces", "tags", "comments",
 }
 

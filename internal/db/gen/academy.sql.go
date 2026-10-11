@@ -1538,7 +1538,7 @@ type ListEnrollmentsByUserIDWithDetailsRow struct {
 // for slug/title/thumbnail/level and computes lessons_completed/lessons_total
 // + last_activity_at via a LATERAL subquery on academy_lesson_progress. Also fetches
 // the next incomplete lesson via a second LATERAL join so the Continue
-// Learning card can render without an N+1 per enrollment. The frontend
+// Continue card can render without an N+1 per enrollment. The frontend
 // Enrollment type (apps/academy/src/lib/types) expects all these fields.
 func (q *Queries) ListEnrollmentsByUserIDWithDetails(ctx context.Context, userID pgtype.UUID) ([]ListEnrollmentsByUserIDWithDetailsRow, error) {
 	rows, err := q.db.Query(ctx, listEnrollmentsByUserIDWithDetails, userID)

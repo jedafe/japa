@@ -3,7 +3,7 @@
 	// Renders a single sidebar widget based on its widget_type.
 	// Only widget types scoped to the Docs app in the backend registry
 	// (WidgetType.Apps) render real UI here — the registry rejects creating
-	// main/learn-only types on docs sidebars, and any legacy rows render as
+	// main/academy-only types on docs sidebars, and any legacy rows render as
 	// no-ops below (never a permanent "Loading…" state).
 
 	import { t } from '$lib/i18n';
@@ -324,7 +324,7 @@
 	{#if user}
 		<UserDropdown {user} />
 	{/if}
-{:else if ['recent_content', 'space_list', 'trending_tags', 'suggested_spaces', 'suggested_content', 'leaderboard', 'featured_content', 'related_discussions', 'upcoming_events', 'tag_cloud', 'user_card', 'space_categories', 'bookmark_folders', 'notification_centre', 'continue_learning', 'learning_enrollments', 'progress_ring', 'track_card'].includes(widget.widget_type)}
+{:else if ['recent_content', 'space_list', 'trending_tags', 'suggested_spaces', 'suggested_content', 'leaderboard', 'featured_content', 'related_discussions', 'upcoming_events', 'tag_cloud', 'user_card', 'space_categories', 'bookmark_folders', 'notification_centre', 'continue_learning', 'academy_enrollments', 'progress_ring', 'track_card'].includes(widget.widget_type)}
 	<!-- Main-app / Learn-only widget type — the backend registry rejects
 	     creating these on docs sidebars; legacy rows render as a no-op
 	     instead of a permanent "Loading…" stub. -->

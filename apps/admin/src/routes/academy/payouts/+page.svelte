@@ -46,21 +46,21 @@
 	const canProcess = $derived(hasPermission("academy.payout.process"));
 
 	let payoutStatusOptions = $state<CatalogOption[]>([
-		{ value: "pending", label: t("university.pending", "Pending") },
-		{ value: "processing", label: t("university.processing", "Processing") },
-		{ value: "paid", label: t("university.paid", "Paid") },
-		{ value: "failed", label: t("university.failed", "Failed") }
+		{ value: "pending", label: t("academy.pending", "Pending") },
+		{ value: "processing", label: t("academy.processing", "Processing") },
+		{ value: "paid", label: t("academy.paid", "Paid") },
+		{ value: "failed", label: t("academy.failed", "Failed") }
 	]);
 
 	$effect(() => {
 		void (async () => {
-			const res = await adminCatalogApi.get("university.payouts.status");
+			const res = await adminCatalogApi.get("academy.payouts.status");
 			if (res.ok && res.data?.length) payoutStatusOptions = res.data;
 		})();
 	});
 
 	const statusFilters = $derived([
-		{ key: "status", label: t("university.status", "Status"), options: payoutStatusOptions }
+		{ key: "status", label: t("academy.status", "Status"), options: payoutStatusOptions }
 	]);
 
 	// §58 — managed currency symbols for payout amounts.
@@ -72,25 +72,25 @@
 	}
 
 	const columns = [
-		{ key: "instructor_name", label: t("university.instructor", "Instructor"), render: (v: string, row: Payout) => `<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + "..." : "—")}</span>` },
-		{ key: "period_start", label: t("university.period", "Period"), render: (_: any, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${row.period_start} → ${row.period_end}</span>` },
-		{ key: "gross_kobo", label: t("university.gross", "Gross"), render: (v: number, row: Payout) => `<span class="text-sm font-medium">${formatKobo(v, row.currency)}</span>` },
-		{ key: "platform_commission_kobo", label: t("university.commission", "Commission"), render: (v: number, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v, row.currency)}</span>` },
-		{ key: "net_kobo", label: t("university.net", "Net"), render: (v: number, row: Payout) => `<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v, row.currency)}</span>` },
-		{ key: "status", label: t("university.status", "Status"), componentSnippet: PayoutStatusBadge },
+		{ key: "instructor_name", label: t("academy.instructor", "Instructor"), render: (v: string, row: Payout) => `<span class="text-sm">${v || (row.instructor_id ? row.instructor_id.slice(0, 8) + "..." : "—")}</span>` },
+		{ key: "period_start", label: t("academy.period", "Period"), render: (_: any, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${row.period_start} → ${row.period_end}</span>` },
+		{ key: "gross_kobo", label: t("academy.gross", "Gross"), render: (v: number, row: Payout) => `<span class="text-sm font-medium">${formatKobo(v, row.currency)}</span>` },
+		{ key: "platform_commission_kobo", label: t("academy.commission", "Commission"), render: (v: number, row: Payout) => `<span class="text-xs" style="color: var(--color-muted)">${formatKobo(v, row.currency)}</span>` },
+		{ key: "net_kobo", label: t("academy.net", "Net"), render: (v: number, row: Payout) => `<span class="text-sm font-semibold" style="color: var(--color-success)">${formatKobo(v, row.currency)}</span>` },
+		{ key: "status", label: t("academy.status", "Status"), componentSnippet: PayoutStatusBadge },
 		{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
 	];
 
 	const rowActions: ActionItem[] = [
 		{ label: t("common.view", "View"), icon: Eye, onclick: (row) => openView(row) },
 		{
-			label: t("university.process", "Process"),
+			label: t("academy.process", "Process"),
 			icon: DollarSign,
 			onclick: (row) => openProcess(row),
 			show: (row: Payout) => canProcess && (row.status === "pending" || row.status === "failed")
 		},
 		{
-			label: t("university.mark_failed", "Mark Failed"),
+			label: t("academy.mark_failed", "Mark Failed"),
 			icon: AlertTriangle,
 			variant: "destructive",
 			onclick: (row) => openFail(row),
@@ -141,7 +141,7 @@
 		const result = await academyAdminApi.processPayout(target.id);
 		if (result.ok) {
 			showProcessModal = false;
-			successMessage = t("university.payout_processing", "Payout processing initiated");
+			successMessage = t("academy.payout_processing", "Payout processing initiated");
 			load();
 		} else {
 			errorMessage = result.error;
@@ -156,7 +156,7 @@
 		const result = await academyAdminApi.markPayoutFailed(target.id, { reason: failReason.trim() || undefined });
 		if (result.ok) {
 			showFailModal = false;
-			successMessage = t("university.payout_marked_failed", "Payout marked as failed");
+			successMessage = t("academy.payout_marked_failed", "Payout marked as failed");
 			load();
 		} else {
 			errorMessage = result.error;
@@ -170,12 +170,12 @@
 </script>
 
 <svelte:head>
-	<title>{t("university.payouts_title", "University Payouts")} — JapaConnect Admin</title>
+	<title>{t("academy.payouts_title", "Academy Payouts")} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title={t("university.payouts_title", "University Payouts")}
-	description={t("university.payouts_desc", "Process instructor payout transfers for the Japa Academy creator economy")}
+	title={t("academy.payouts_title", "Academy Payouts")}
+	description={t("academy.payouts_desc", "Process instructor payout transfers for the Japa Academy creator economy")}
 	actions={[
 		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "outline" as const, onclick: load }
 	]}
@@ -201,7 +201,7 @@
 		{columns}
 		data={filtered}
 		pageSize={25}
-		emptyMessage={t("university.no_payouts", "No payouts found")}
+		emptyMessage={t("academy.no_payouts", "No payouts found")}
 		searchable
 		onsearch={(q) => { searchQuery = q; load(); }}
 		filters={statusFilters}
@@ -214,19 +214,19 @@
 </div>
 
 <!-- Process Modal -->
-<Modal open={showProcessModal} onclose={() => { showProcessModal = false; }} title={t("university.process_payout", "Process Payout")}>
+<Modal open={showProcessModal} onclose={() => { showProcessModal = false; }} title={t("academy.process_payout", "Process Payout")}>
 	{#if target}
 		<div class="space-y-3">
-			<p class="text-sm" style="color: var(--color-muted)">{t("university.process_payout_confirm", "Process this payout transfer?")}</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t("academy.process_payout_confirm", "Process this payout transfer?")}</p>
 			<div class="rounded-lg border p-4 space-y-2" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("university.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("university.gross", "Gross")}</span><span class="font-medium">{formatKobo(target.gross_kobo, target.currency)}</span></div>
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("university.commission", "Platform Commission")}</span><span>{formatKobo(target.platform_commission_kobo, target.currency)}</span></div>
-				<div class="flex justify-between text-sm border-t pt-2" style="border-color: var(--color-border)"><span style="color: var(--color-muted)">{t("university.net", "Net to Instructor")}</span><span class="font-semibold" style="color: var(--color-success)">{formatKobo(target.net_kobo, target.currency)}</span></div>
+				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
+				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.gross", "Gross")}</span><span class="font-medium">{formatKobo(target.gross_kobo, target.currency)}</span></div>
+				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.commission", "Platform Commission")}</span><span>{formatKobo(target.platform_commission_kobo, target.currency)}</span></div>
+				<div class="flex justify-between text-sm border-t pt-2" style="border-color: var(--color-border)"><span style="color: var(--color-muted)">{t("academy.net", "Net to Instructor")}</span><span class="font-semibold" style="color: var(--color-success)">{formatKobo(target.net_kobo, target.currency)}</span></div>
 			</div>
 			{#if target.failure_reason}
 				<div class="rounded-md border px-3 py-2 text-xs" style="border-color: var(--color-danger); color: var(--color-danger)">
-					{t("university.previous_failure", "Previous failure")}: {target.failure_reason}
+					{t("academy.previous_failure", "Previous failure")}: {target.failure_reason}
 				</div>
 			{/if}
 		</div>
@@ -235,23 +235,23 @@
 		<Button variant="outline" onclick={() => { showProcessModal = false; }}>{t("common.cancel", "Cancel")}</Button>
 		<Button onclick={doProcess} disabled={actionLoading}>
 			<DollarSign class="h-3.5 w-3.5" />
-			{actionLoading ? t("common.processing", "Processing...") : t("university.process_payout", "Process Payout")}
+			{actionLoading ? t("common.processing", "Processing...") : t("academy.process_payout", "Process Payout")}
 		</Button>
 	</div>
 </Modal>
 
 <!-- Mark Failed Modal -->
-<Modal open={showFailModal} onclose={() => { showFailModal = false; }} title={t("university.mark_failed", "Mark Payout as Failed")}>
+<Modal open={showFailModal} onclose={() => { showFailModal = false; }} title={t("academy.mark_failed", "Mark Payout as Failed")}>
 	{#if target}
 		<div class="space-y-3">
-			<p class="text-sm" style="color: var(--color-muted)">{t("university.mark_failed_confirm", "Mark this payout as failed?")}</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t("academy.mark_failed_confirm", "Mark this payout as failed?")}</p>
 			<div class="rounded-lg border p-3 space-y-1" style="border-color: var(--color-border); background-color: var(--color-surface)">
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("university.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
-				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("university.net", "Net")}</span><span class="font-medium">{formatKobo(target.net_kobo, target.currency)}</span></div>
+				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.period", "Period")}</span><span>{target.period_start} → {target.period_end}</span></div>
+				<div class="flex justify-between text-sm"><span style="color: var(--color-muted)">{t("academy.net", "Net")}</span><span class="font-medium">{formatKobo(target.net_kobo, target.currency)}</span></div>
 			</div>
 			<div>
-				<label for="fail-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("university.failureReason", "Failure Reason")}</label>
-				<textarea id="fail-reason" bind:value={failReason} rows={3} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("university.failureReasonPlaceholder", "Reason for failure...")}></textarea>
+				<label for="fail-reason" class="mb-1 block text-sm font-medium" style="color: var(--color-foreground)">{t("academy.failureReason", "Failure Reason")}</label>
+				<textarea id="fail-reason" bind:value={failReason} rows={3} class="w-full rounded-lg border px-3 py-2 text-sm" style="border-color: var(--color-border); background: var(--color-surface); color: var(--color-foreground)" placeholder={t("academy.failureReasonPlaceholder", "Reason for failure...")}></textarea>
 			</div>
 		</div>
 	{/if}
@@ -259,29 +259,29 @@
 		<Button variant="outline" onclick={() => { showFailModal = false; }}>{t("common.cancel", "Cancel")}</Button>
 		<Button variant="destructive" onclick={doMarkFailed} disabled={actionLoading}>
 			<AlertTriangle class="h-3.5 w-3.5" />
-			{actionLoading ? t("common.processing", "Processing...") : t("university.mark_failed", "Mark Failed")}
+			{actionLoading ? t("common.processing", "Processing...") : t("academy.mark_failed", "Mark Failed")}
 		</Button>
 	</div>
 </Modal>
 
 <!-- View SlideOver -->
-<SlideOver bind:open={showViewSlideOver} title={t("university.payout_details", "Payout Details")}>
+<SlideOver bind:open={showViewSlideOver} title={t("academy.payout_details", "Payout Details")}>
 	{#if target}
 		<div class="grid grid-cols-2 gap-4">
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.instructor_id", "Instructor ID")}</p><p class="mt-1 text-sm font-mono">{target.instructor_id}</p></div>
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.status", "Status")}</p><p class="mt-1 text-sm font-medium">{target.status}</p></div>
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.period", "Period")}</p><p class="mt-1 text-sm">{target.period_start} → {target.period_end}</p></div>
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.gross", "Gross")}</p><p class="mt-1 text-sm font-medium">{formatKobo(target.gross_kobo, target.currency)}</p></div>
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.commission", "Commission")}</p><p class="mt-1 text-sm">{formatKobo(target.platform_commission_kobo, target.currency)}</p></div>
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.net", "Net")}</p><p class="mt-1 text-sm font-semibold" style="color: var(--color-success)">{formatKobo(target.net_kobo, target.currency)}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.instructor_id", "Instructor ID")}</p><p class="mt-1 text-sm font-mono">{target.instructor_id}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.status", "Status")}</p><p class="mt-1 text-sm font-medium">{target.status}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.period", "Period")}</p><p class="mt-1 text-sm">{target.period_start} → {target.period_end}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.gross", "Gross")}</p><p class="mt-1 text-sm font-medium">{formatKobo(target.gross_kobo, target.currency)}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.commission", "Commission")}</p><p class="mt-1 text-sm">{formatKobo(target.platform_commission_kobo, target.currency)}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.net", "Net")}</p><p class="mt-1 text-sm font-semibold" style="color: var(--color-success)">{formatKobo(target.net_kobo, target.currency)}</p></div>
 			{#if target.payout_reference}
-				<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.payoutReference", "Reference")}</p><p class="mt-1 text-sm font-mono">{target.payout_reference}</p></div>
+				<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.payoutReference", "Reference")}</p><p class="mt-1 text-sm font-mono">{target.payout_reference}</p></div>
 			{/if}
 			{#if target.processed_at}
-				<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.processedAt", "Processed At")}</p><p class="mt-1 text-sm">{new Date(target.processed_at).toLocaleString()}</p></div>
+				<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.processedAt", "Processed At")}</p><p class="mt-1 text-sm">{new Date(target.processed_at).toLocaleString()}</p></div>
 			{/if}
 			{#if target.failure_reason}
-				<div class="col-span-2"><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.failureReason", "Failure Reason")}</p><p class="mt-1 text-sm" style="color: var(--color-danger)">{target.failure_reason}</p></div>
+				<div class="col-span-2"><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.failureReason", "Failure Reason")}</p><p class="mt-1 text-sm" style="color: var(--color-danger)">{target.failure_reason}</p></div>
 			{/if}
 		</div>
 	{/if}

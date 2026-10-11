@@ -75,7 +75,7 @@ var ValidWidgetTypes = []string{
 	"job_listings",     // contents WHERE content_type='job_listing'
 	"achievements",     // contents + achievement_meta (visa approvals, etc.)
 	// --- Extended: domain-specific types ---
-	"academy_tracks",         // academy_tracks table
+	"academy_tracks",          // academy_tracks table
 	"community_digest",        // digest_editions table (§84)
 	"reviews",                 // reviews table (§29)
 	"comparisons",             // comparison_items table (§30)

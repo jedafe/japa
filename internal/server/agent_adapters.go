@@ -656,9 +656,9 @@ func (a *agentDraftProcessorAdapter) CreateAgentDraft(ctx context.Context, paylo
 // Phase 9 adapters (Section 103 — extended tool catalog)
 // ---------------------------------------------------------------------------
 
-// agentAcademyAdapter bridges academy.Store to the ai.LearningStore
+// agentAcademyAdapter bridges academy.Store to the ai.AcademyStore
 // interface. The ai package uses mirror types (ai.AcademyTrack,
-// ai.AcademyLesson, ai.LearningCreateTrackInput, etc.) to avoid an import
+// ai.AcademyLesson, ai.AcademyCreateTrackInput, etc.) to avoid an import
 // cycle with internal/academy. This adapter converts between the two.
 // // academy.lessons.reorder has no backing Store method — the adapter uses
 // UpdateLesson per entry to set the new sort_order. This is sequential
@@ -674,13 +674,13 @@ func (a *agentAcademyAdapter) ListTracks(ctx context.Context) ([]ai.AcademyTrack
 
 	out := make([]ai.AcademyTrack, 0, len(tracks))
 	for _, t := range tracks {
-		out = append(out, learningTrackToAI(t))
+		out = append(out, academyTrackToAI(t))
 	}
 
 	return out, nil
 }
 
-func (a *agentAcademyAdapter) CreateTrack(ctx context.Context, input ai.LearningCreateTrackInput) (*ai.AcademyTrack, error) {
+func (a *agentAcademyAdapter) CreateTrack(ctx context.Context, input ai.AcademyCreateTrackInput) (*ai.AcademyTrack, error) {
 	t, err := a.store.CreateTrack(ctx, academy.CreateTrackInput{
 		Title:                input.Title,
 		Slug:                 input.Slug,
@@ -696,12 +696,12 @@ func (a *agentAcademyAdapter) CreateTrack(ctx context.Context, input ai.Learning
 		return nil, err
 	}
 
-	aiT := learningTrackToAI(*t)
+	aiT := academyTrackToAI(*t)
 
 	return &aiT, nil
 }
 
-func (a *agentAcademyAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateTrackInput) (*ai.AcademyTrack, error) {
+func (a *agentAcademyAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, input ai.AcademyUpdateTrackInput) (*ai.AcademyTrack, error) {
 	t, err := a.store.UpdateTrack(ctx, id, academy.UpdateTrackInput{
 		Title:                ptrOrNil(input.Title),
 		Description:          input.Description,
@@ -716,7 +716,7 @@ func (a *agentAcademyAdapter) UpdateTrack(ctx context.Context, id pgtype.UUID, i
 		return nil, err
 	}
 
-	aiT := learningTrackToAI(*t)
+	aiT := academyTrackToAI(*t)
 
 	return &aiT, nil
 }
@@ -729,13 +729,13 @@ func (a *agentAcademyAdapter) ListLessons(ctx context.Context) ([]ai.AcademyLess
 
 	out := make([]ai.AcademyLesson, 0, len(lessons))
 	for _, l := range lessons {
-		out = append(out, learningLessonToAI(l))
+		out = append(out, academyLessonToAI(l))
 	}
 
 	return out, nil
 }
 
-func (a *agentAcademyAdapter) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input ai.LearningCreateLessonInput) (*ai.AcademyLesson, error) {
+func (a *agentAcademyAdapter) CreateLesson(ctx context.Context, moduleID pgtype.UUID, input ai.AcademyCreateLessonInput) (*ai.AcademyLesson, error) {
 	l, err := a.store.CreateLesson(ctx, moduleID, academy.CreateLessonInput{
 		Title:           input.Title,
 		Slug:            input.Slug,
@@ -751,12 +751,12 @@ func (a *agentAcademyAdapter) CreateLesson(ctx context.Context, moduleID pgtype.
 		return nil, err
 	}
 
-	aiL := learningLessonToAI(*l)
+	aiL := academyLessonToAI(*l)
 
 	return &aiL, nil
 }
 
-func (a *agentAcademyAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, input ai.LearningUpdateLessonInput) (*ai.AcademyLesson, error) {
+func (a *agentAcademyAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, input ai.AcademyUpdateLessonInput) (*ai.AcademyLesson, error) {
 	l, err := a.store.UpdateLesson(ctx, id, academy.UpdateLessonInput{
 		Title:           ptrOrNil(input.Title),
 		LessonType:      ptrOrNil(input.LessonType),
@@ -771,7 +771,7 @@ func (a *agentAcademyAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, 
 		return nil, err
 	}
 
-	aiL := learningLessonToAI(*l)
+	aiL := academyLessonToAI(*l)
 
 	return &aiL, nil
 }
@@ -781,7 +781,7 @@ func (a *agentAcademyAdapter) UpdateLesson(ctx context.Context, id pgtype.UUID, 
 // UpdateLesson per entry. A failure on one entry aborts the reorder
 // (the caller can retry). This is acceptable for the AI agent's use
 // case (small batches).
-func (a *agentAcademyAdapter) ReorderLessons(ctx context.Context, entries []ai.LearningReorderEntry) error {
+func (a *agentAcademyAdapter) ReorderLessons(ctx context.Context, entries []ai.AcademyReorderEntry) error {
 	for _, e := range entries {
 		// UpdateLessonInput is partial-update safe — nil fields are left
 		// untouched, so a reorder only needs to send sort_order.
@@ -796,7 +796,7 @@ func (a *agentAcademyAdapter) ReorderLessons(ctx context.Context, entries []ai.L
 	return nil
 }
 
-func learningTrackToAI(t academy.Track) ai.AcademyTrack {
+func academyTrackToAI(t academy.Track) ai.AcademyTrack {
 	return ai.AcademyTrack{
 		ID: t.ID,
 
@@ -811,7 +811,7 @@ func learningTrackToAI(t academy.Track) ai.AcademyTrack {
 	}
 }
 
-func learningLessonToAI(l academy.Lesson) ai.AcademyLesson {
+func academyLessonToAI(l academy.Lesson) ai.AcademyLesson {
 	return ai.AcademyLesson{
 		ID: l.ID,
 

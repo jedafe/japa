@@ -60,8 +60,8 @@
 				case 'generate':
 					label = t('ai.generate.title');
 					break;
-				case 'learning':
-					label = t('academy.title');
+				case 'curriculum':
+					label = t('app.academy.title');
 					break;
 				case 'mentorship':
 					label = t('mentorship.title');
@@ -139,13 +139,13 @@
 					label = t('universities.title');
 					break;
 				case 'instructors':
-					label = t('university.instructors_title', 'University Instructors');
+					label = t('academy.instructors_title', 'Academy Instructors');
 					break;
 				case 'tracks':
-					label = t('university.tracks_title', 'University Tracks');
+					label = t('academy.tracks_title', 'Academy Tracks');
 					break;
 				case 'payouts':
-					label = t('university.payouts_title', 'University Payouts');
+					label = t('academy.payouts_title', 'Academy Payouts');
 					break;
 				case 'ticket-types':
 					label = t('ticket_types.title');

@@ -97,7 +97,7 @@ type DismissTourParams struct {
 	TourDismissals []byte      `json:"tour_dismissals"`
 }
 
-// Upserts so tour dismissal also works on surfaces (docs, learn) where the
+// Upserts so tour dismissal also works on surfaces (docs, academy) where the
 // user may never have run the main onboarding wizard and therefore has no
 // onboarding_state row yet. tour_dismissals is merged per-surface; the
 // legacy tour_dismissed flag is only set for the "main" surface.

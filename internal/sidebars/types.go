@@ -1,7 +1,7 @@
 // Package sidebars implements the Sidebar Management System (Section 59, ADR-066).
 //
 // Sidebars are dedicated entities (not a special case of pages) that let admins
-// manage left and right sidebars across the Main, Docs, and Learn frontend apps.
+// manage left and right sidebars across the Main, Docs, and Academy frontend apps.
 // Each sidebar is scoped by app + position + page-pattern glob, and can be gated
 // by visibility (all/authenticated/guest) and required user groups. Sidebar widgets
 // inherit the sidebar's gating and add their own widget-level gating. Widgets use
@@ -16,7 +16,7 @@ var (
 	// ErrSidebarNotFound is a sentinel error: sidebar not found.
 	ErrSidebarNotFound       = errors.New("sidebar not found")
 	ErrSidebarWidgetNotFound = errors.New("sidebar widget not found")
-	ErrInvalidApp            = errors.New("invalid app; must be main, docs, or learn")
+	ErrInvalidApp            = errors.New("invalid app; must be main, docs, or academy")
 	ErrInvalidPosition       = errors.New("invalid position; must be left or right")
 	ErrInvalidVisibility     = errors.New("invalid visibility; must be all, authenticated, or guest")
 	ErrInvalidStatus         = errors.New("invalid status; must be active or inactive")

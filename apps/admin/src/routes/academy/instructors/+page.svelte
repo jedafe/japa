@@ -30,15 +30,15 @@
 	const canManage = $derived(hasPermission("academy.instructor.manage"));
 
 	let instructorStatusOptions = $state<CatalogOption[]>([
-		{ value: "pending", label: t("university.pending", "Pending") },
-		{ value: "approved", label: t("university.approved", "Approved") },
-		{ value: "rejected", label: t("university.rejected", "Rejected") },
-		{ value: "suspended", label: t("university.suspended", "Suspended") }
+		{ value: "pending", label: t("academy.pending", "Pending") },
+		{ value: "approved", label: t("academy.approved", "Approved") },
+		{ value: "rejected", label: t("academy.rejected", "Rejected") },
+		{ value: "suspended", label: t("academy.suspended", "Suspended") }
 	]);
 
 	$effect(() => {
 		void (async () => {
-			const res = await adminCatalogApi.get("university.instructors.status");
+			const res = await adminCatalogApi.get("academy.instructors.status");
 			if (res.ok && res.data?.length) instructorStatusOptions = res.data;
 		})();
 	});
@@ -47,7 +47,7 @@
 	const filterDefs = $derived<FilterDef[]>([
 		{
 			key: "status",
-			label: t("university.status", "Status"),
+			label: t("academy.status", "Status"),
 			options: instructorStatusOptions
 		}
 	]);
@@ -73,9 +73,9 @@
 	let editCommission = $state("");
 
 	const tierOptions = [
-		{ value: "standard", label: t("university.tier_standard", "Standard") },
-		{ value: "verified", label: t("university.tier_verified", "Verified") },
-		{ value: "partner", label: t("university.tier_partner", "Partner") }
+		{ value: "standard", label: t("academy.tier_standard", "Standard") },
+		{ value: "verified", label: t("academy.tier_verified", "Verified") },
+		{ value: "partner", label: t("academy.tier_partner", "Partner") }
 	];
 
 	// ── Row actions ─────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@
 				show: (row: AcademyInstructorProfile) => canApprove && row.status === "pending"
 			},
 			{
-				label: t("university.edit_tier", "Edit Tier"),
+				label: t("academy.edit_tier", "Edit Tier"),
 				icon: Pencil,
 				onclick: (row: AcademyInstructorProfile) => openEditTier(row),
 				show: (row: AcademyInstructorProfile) => canManage && row.status === "approved"
@@ -127,34 +127,34 @@
 
 	// ── Fields (readonly entity — no create; fields required by EntityPage) ──
 	const fields = $derived<FieldDef[]>([
-		{ key: "display_name", label: t("university.instructor", "Instructor"), type: "text", required: true },
-		{ key: "tier", label: t("university.tier", "Tier"), type: "select", options: tierOptions },
-		{ key: "commission_pct_override", label: t("university.commission_override", "Commission Override"), type: "number" }
+		{ key: "display_name", label: t("academy.instructor", "Instructor"), type: "text", required: true },
+		{ key: "tier", label: t("academy.tier", "Tier"), type: "select", options: tierOptions },
+		{ key: "commission_pct_override", label: t("academy.commission_override", "Commission Override"), type: "number" }
 	]);
 
 	// ── Config ──────────────────────────────────────────────────────────────
 	// Built as $derived so canApprove/canManage/rowActions updates propagate.
 	const config = $derived<EntityPageConfig>({
-		title: t("university.instructors_title", "University Instructors"),
-		description: t("university.instructors_desc", "Review and manage instructor applications for the Japa Academy creator economy"),
+		title: t("academy.instructors_title", "Academy Instructors"),
+		description: t("academy.instructors_desc", "Review and manage instructor applications for the Japa Academy creator economy"),
 		readonly: true,
 		pageSize: 25,
 		columns: [
-			{ key: "display_name", label: t("university.instructor", "Instructor"), render: (v: string) => `<span class="font-medium">${v}</span>` },
-			{ key: "headline", label: t("university.headline", "Headline"), render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? "—"}</span>` },
+			{ key: "display_name", label: t("academy.instructor", "Instructor"), render: (v: string) => `<span class="font-medium">${v}</span>` },
+			{ key: "headline", label: t("academy.headline", "Headline"), render: (v: string | null) => `<span class="text-xs" style="color: var(--color-muted)">${v ?? "—"}</span>` },
 			{
 				key: "tier",
-				label: t("university.tier", "Tier"),
+				label: t("academy.tier", "Tier"),
 				render: (v: string) => `<span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium ${v === "partner" ? "bg-primary/15 text-primary" : v === "verified" ? "bg-info/15 text-info" : "bg-muted/15 text-muted"}">${v}</span>`
 			},
 			{
 				key: "status",
-				label: t("university.status", "Status"),
+				label: t("academy.status", "Status"),
 				componentSnippet: StatusBadge
 			},
 			{
 				key: "kyc_status",
-				label: t("university.kyc", "KYC"),
+				label: t("academy.kyc", "KYC"),
 				render: (v: string) => `<span class="text-xs ${v === "verified" ? "text-success" : v === "pending" ? "text-warning" : "text-muted"}">${v}</span>`
 			},
 			{ key: "created_at", label: t("common.created", "Created"), render: (v: string) => `<span class="text-xs" style="color: var(--color-muted)">${new Date(v).toLocaleDateString()}</span>` }
@@ -281,7 +281,7 @@
 </script>
 
 <svelte:head>
-	<title>{t("university.instructors_title", "University Instructors")} — JapaConnect Admin</title>
+	<title>{t("academy.instructors_title", "Academy Instructors")} — JapaConnect Admin</title>
 </svelte:head>
 
 {#if pageError}
@@ -293,12 +293,12 @@
 <EntityPage {config} bind:controller={entityController} />
 
 <!-- ── Approve slide-over (page-local because approve isn't in EntityPage config) ── -->
-<SlideOver bind:open={showApproveSlideOver} title={t("university.approve_instructor", "Approve Instructor")}>
+<SlideOver bind:open={showApproveSlideOver} title={t("academy.approve_instructor", "Approve Instructor")}>
 	{#if target}
 		<div class="space-y-4">
-			<p class="text-sm" style="color: var(--color-muted)">{t("university.approve_confirm", "Approve")} <strong>{target.display_name}</strong>?</p>
+			<p class="text-sm" style="color: var(--color-muted)">{t("academy.approve_confirm", "Approve")} <strong>{target.display_name}</strong>?</p>
 			<div>
-				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
+				<label for="approve-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}</label>
 				<AutocompleteSelect
 					id="approve-tier"
 					bind:value={approveTier}
@@ -307,7 +307,7 @@
 				/>
 			</div>
 			<div>
-				<label for="approve-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.commission_override", "Commission Override (%) — optional")}</label>
+				<label for="approve-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}</label>
 				<input id="approve-commission" type="number" step="0.01" min="0" max="100" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="e.g. 70" bind:value={approveCommission} />
 			</div>
 		</div>
@@ -323,9 +323,9 @@
 </SlideOver>
 
 <!-- ── Reject modal ── -->
-<Modal bind:open={showRejectModal} title={t("university.reject_instructor", "Reject Instructor")}>
+<Modal bind:open={showRejectModal} title={t("academy.reject_instructor", "Reject Instructor")}>
 	{#if target}
-		<p class="text-sm" style="color: var(--color-muted)">{t("university.reject_confirm", "Reject instructor application from")} <strong>{target.display_name}</strong>?</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t("academy.reject_confirm", "Reject instructor application from")} <strong>{target.display_name}</strong>?</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showRejectModal = false; }}>{t("common.cancel", "Cancel")}</Button>
@@ -336,9 +336,9 @@
 </Modal>
 
 <!-- ── Suspend modal ── -->
-<Modal bind:open={showSuspendModal} title={t("university.suspend_instructor", "Suspend Instructor")}>
+<Modal bind:open={showSuspendModal} title={t("academy.suspend_instructor", "Suspend Instructor")}>
 	{#if target}
-		<p class="text-sm" style="color: var(--color-muted)">{t("university.suspend_confirm", "Suspend instructor")} <strong>{target.display_name}</strong>? {t("university.suspend_warning", "They will lose publishing access immediately.")}</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t("academy.suspend_confirm", "Suspend instructor")} <strong>{target.display_name}</strong>? {t("academy.suspend_warning", "They will lose publishing access immediately.")}</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showSuspendModal = false; }}>{t("common.cancel", "Cancel")}</Button>
@@ -349,9 +349,9 @@
 </Modal>
 
 <!-- ── Reinstate modal ── -->
-<Modal bind:open={showReinstateModal} title={t("university.reinstate_instructor", "Reinstate Instructor")}>
+<Modal bind:open={showReinstateModal} title={t("academy.reinstate_instructor", "Reinstate Instructor")}>
 	{#if target}
-		<p class="text-sm" style="color: var(--color-muted)">{t("university.reinstate_confirm", "Reinstate instructor")} <strong>{target.display_name}</strong>? {t("university.reinstate_warning", "They will regain publishing access.")}</p>
+		<p class="text-sm" style="color: var(--color-muted)">{t("academy.reinstate_confirm", "Reinstate instructor")} <strong>{target.display_name}</strong>? {t("academy.reinstate_warning", "They will regain publishing access.")}</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="outline" onclick={() => { showReinstateModal = false; }}>{t("common.cancel", "Cancel")}</Button>
@@ -364,7 +364,7 @@
 <!-- ── Delete confirmation ── -->
 <Modal bind:open={showDeleteModal} title={t("common.confirmDelete", "Confirm Delete")} size="sm">
 	{#if target}
-		<p class="text-sm" style="color: var(--color-foreground)">{t("university.delete_instructor_confirm", "Delete instructor profile for")} <strong>{target.display_name}</strong>? {t("universities.deleteWarning", "This cannot be undone.")}</p>
+		<p class="text-sm" style="color: var(--color-foreground)">{t("academy.delete_instructor_confirm", "Delete instructor profile for")} <strong>{target.display_name}</strong>? {t("universities.deleteWarning", "This cannot be undone.")}</p>
 	{/if}
 	<div class="mt-6 flex justify-end gap-2">
 		<Button variant="ghost" onclick={() => { showDeleteModal = false; }}>{t("common.cancel", "Cancel")}</Button>
@@ -373,12 +373,12 @@
 </Modal>
 
 <!-- ── Edit Tier & Commission slide-over (page-local) ── -->
-<SlideOver bind:open={showEditTierSlideOver} title={t("university.edit_tier", "Edit Tier & Commission")}>
+<SlideOver bind:open={showEditTierSlideOver} title={t("academy.edit_tier", "Edit Tier & Commission")}>
 	{#if target}
 		<div class="space-y-4">
-			<p class="text-sm" style="color: var(--color-muted)">{t("university.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
+			<p class="text-sm" style="color: var(--color-muted)">{t("academy.update_tier_for", "Update tier for")} <strong>{target.display_name}</strong></p>
 			<div>
-				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.tier", "Tier")}</label>
+				<label for="edit-tier" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.tier", "Tier")}</label>
 				<AutocompleteSelect
 					id="edit-tier"
 					bind:value={editTier}
@@ -387,7 +387,7 @@
 				/>
 			</div>
 			<div>
-				<label for="edit-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("university.commission_override", "Commission Override (%) — optional")}</label>
+				<label for="edit-commission" class="mb-1 block text-xs font-medium" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override (%) — optional")}</label>
 				<input id="edit-commission" type="number" step="0.01" min="0" max="100" class="w-full rounded-md border px-3 py-2 text-sm" style="border-color: var(--color-border); background-color: var(--color-surface)" placeholder="e.g. 70" bind:value={editCommission} />
 			</div>
 		</div>
@@ -404,44 +404,44 @@
 {#snippet InstructorView({ row }: { row: AcademyInstructorProfile })}
 	<div class="space-y-3">
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.instructor", "Instructor")}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.instructor", "Instructor")}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.display_name}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.headline", "Headline")}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.headline", "Headline")}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.headline ?? "—"}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.bio", "Bio")}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.bio", "Bio")}</p>
 			<p class="mt-1 text-sm whitespace-pre-wrap" style="color: var(--color-foreground)">{row.bio ?? "—"}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.tier", "Tier")}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.tier", "Tier")}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.tier}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.status", "Status")}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.status", "Status")}</p>
 			<p class="mt-1 text-sm font-medium" style="color: var(--color-foreground)">{row.status}</p>
 		</div>
 		<div>
-			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.kyc", "KYC")}</p>
+			<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.kyc", "KYC")}</p>
 			<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.kyc_status}</p>
 		</div>
 		{#if row.commission_pct_override != null}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.commission_override", "Commission Override")}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.commission_override", "Commission Override")}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{row.commission_pct_override}%</p>
 			</div>
 		{/if}
 		{#if row.application_note}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.application_note", "Application Note")}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.application_note", "Application Note")}</p>
 				<p class="mt-1 text-sm whitespace-pre-wrap" style="color: var(--color-foreground)">{row.application_note}</p>
 			</div>
 		{/if}
 		{#if row.reviewed_at}
 			<div>
-				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("university.reviewed_at", "Reviewed At")}</p>
+				<p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t("academy.reviewed_at", "Reviewed At")}</p>
 				<p class="mt-1 text-sm" style="color: var(--color-foreground)">{new Date(row.reviewed_at).toLocaleString()}</p>
 			</div>
 		{/if}

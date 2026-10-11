@@ -136,7 +136,7 @@
 		'/referral': 'referral.manage',
 		'/mentorship': 'mentorship.admin',
 		'/academy': 'academy.admin.manage',
-		'/academy/learning': 'academy.admin.manage',
+		'/academy/curriculum': 'academy.admin.manage',
 		'/reviews': 'reviews.moderate',
 		'/reports': 'reports.review',
 		'/notifications': 'notifications.manage',

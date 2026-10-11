@@ -350,7 +350,7 @@ WHERE c.id = $1
 -- doc_page→doc_pages). Unknown types get NULL title/slug; the frontend
 -- falls back to the entity_id.
 -- Platform-scoped (BL-006), optional folder_id filter (BL-002), and optional
--- entity_type filter (so the learn app can request only learning entities).
+-- entity_type filter (so the academy app can request only academy entities).
 SELECT
  b.id, b.entity_type, b.entity_id, b.folder, b.folder_id, b.created_at,
  CASE

@@ -1326,6 +1326,18 @@ func (q *Queries) GdprExportRevenueSplits(ctx context.Context, userID pgtype.UUI
 	return data, err
 }
 
+const gdprExportUserAcademyCertificates = `-- name: GdprExportUserAcademyCertificates :one
+SELECT coalesce(json_agg(t), '[]'::json) AS data
+FROM (SELECT id, user_id, track_id, certificate_number, media_id, issued_at FROM academy_certificates WHERE user_id = $1) t
+`
+
+func (q *Queries) GdprExportUserAcademyCertificates(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, gdprExportUserAcademyCertificates, userID)
+	var data interface{}
+	err := row.Scan(&data)
+	return data, err
+}
+
 const gdprExportUserActivityEvents = `-- name: GdprExportUserActivityEvents :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
 FROM (SELECT id, user_id, activity_key, reference, payload, processed, processed_at, created_at FROM activity_events WHERE user_id = $1) t
@@ -1866,18 +1878,6 @@ FROM (SELECT id, user_id, entity_type, entity_id, value, created_at FROM forum_v
 
 func (q *Queries) GdprExportUserForumVotes(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
 	row := q.db.QueryRow(ctx, gdprExportUserForumVotes, userID)
-	var data interface{}
-	err := row.Scan(&data)
-	return data, err
-}
-
-const gdprExportUserLearningCertificates = `-- name: GdprExportUserLearningCertificates :one
-SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, track_id, certificate_number, media_id, issued_at FROM academy_certificates WHERE user_id = $1) t
-`
-
-func (q *Queries) GdprExportUserLearningCertificates(ctx context.Context, userID pgtype.UUID) (interface{}, error) {
-	row := q.db.QueryRow(ctx, gdprExportUserLearningCertificates, userID)
 	var data interface{}
 	err := row.Scan(&data)
 	return data, err

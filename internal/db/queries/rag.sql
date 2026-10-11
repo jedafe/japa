@@ -82,7 +82,7 @@ WHERE entity_type = @entity_type AND entity_id = @entity_id
 -- ADR-069 §4 requires tier classification by content_type, not entity_type.
 --
 -- BUG-004 (rag-audit): add status/deleted filters for non-content entity types
--- as defense-in-depth. The forum/spaces/learning handlers purge embeddings on
+-- as defense-in-depth. The forum/spaces/academy handlers purge embeddings on
 -- delete, but those are fire-and-forget — a failed purge leaves orphaned
 -- embeddings. The CASE expression checks each entity type's status condition.
 -- §69 Citation Source Contract: entity_title/entity_slug let the API emit a
@@ -285,13 +285,13 @@ ORDER BY created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- =====================================================================
--- List all published learning track IDs for a platform (for full corpus
--- re-index). Learning tracks are part of the RAG corpus (ADR-069 §2).
+-- List all published academy track IDs for a platform (for full corpus
+-- re-index). Academy tracks are part of the RAG corpus (ADR-069 §2).
 -- Only published tracks are indexed; academy_tracks has no deleted_at
 -- column (tracks are hard-deleted).
 -- =====================================================================
 
--- name: ListLearningTrackIDsForReindex :many
+-- name: ListAcademyTrackIDsForReindex :many
 SELECT id FROM academy_tracks
 WHERE is_published = true
 ORDER BY created_at DESC

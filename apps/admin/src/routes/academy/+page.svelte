@@ -11,7 +11,7 @@
 	import { hasPermission } from "$lib/stores/permissions.svelte";
 
 	// Ref: japaconnect-engineering/adr/ADR-063-japa-academy-creator-economy.md
-	// The /university hub is the admin landing for the Japa Academy creator
+	// The /academy hub is the admin landing for the Japa Academy creator
 	// economy (ADR-063): instructor review, track approvals, payouts, and the
 	// read-only revenue-split audit viewer. "Japa Academy" is the brand name
 	// of a single platform-wide creator marketplace — it is NOT the Section 39
@@ -44,40 +44,40 @@
 
 	const cards = $derived<HubCard[]>([
 		{
-			label: t("university.instructors_title", "Instructors"),
-			description: t("university.instructors_desc", "Review and manage instructor applications for the Japa Academy creator economy"),
-			href: "/university/instructors",
+			label: t("academy.instructors_title", "Instructors"),
+			description: t("academy.instructors_desc", "Review and manage instructor applications for the Japa Academy creator economy"),
+			href: "/academy/instructors",
 			icon: Users,
 			permission: "academy.instructor.approve",
 			count: pendingInstructors,
-			countLabel: t("university.pending", "pending")
+			countLabel: t("academy.pending", "pending")
 		},
 		{
-			label: t("university.tracks_title", "Track Approvals"),
-			description: t("university.tracks_desc", "Review and approve instructor-submitted tracks for the Japa Academy marketplace"),
-			href: "/university/tracks",
+			label: t("academy.tracks_title", "Track Approvals"),
+			description: t("academy.tracks_desc", "Review and approve instructor-submitted tracks for the Japa Academy marketplace"),
+			href: "/academy/tracks",
 			icon: BookOpen,
 			permission: "academy.course.approve",
 			count: pendingTracks,
-			countLabel: t("university.pending", "pending")
+			countLabel: t("academy.pending", "pending")
 		},
 		{
-			label: t("university.payouts_title", "Payouts"),
-			description: t("university.payouts_desc", "Process instructor payout periods and mark failed transfers"),
-			href: "/university/payouts",
+			label: t("academy.payouts_title", "Payouts"),
+			description: t("academy.payouts_desc", "Process instructor payout periods and mark failed transfers"),
+			href: "/academy/payouts",
 			icon: DollarSign,
 			permission: "academy.payout.process",
 			count: pendingPayouts,
-			countLabel: t("university.pending", "pending")
+			countLabel: t("academy.pending", "pending")
 		},
 		{
-			label: t("university.revenue_splits_title", "Revenue Splits"),
-			description: t("university.revenue_splits_desc", "Read-only audit viewer over the immutable revenue-split ledger"),
-			href: "/university/revenue-splits",
+			label: t("academy.revenue_splits_title", "Revenue Splits"),
+			description: t("academy.revenue_splits_desc", "Read-only audit viewer over the immutable revenue-split ledger"),
+			href: "/academy/revenue-splits",
 			icon: TrendingUp,
 			permission: "academy.revenue.list",
 			count: revenueSplitCount,
-			countLabel: t("university.records", "records")
+			countLabel: t("academy.records", "records")
 		}
 	]);
 
@@ -156,12 +156,12 @@
 </script>
 
 <svelte:head>
-	<title>{t("university.hub_title", "Japa Academy")} — JapaConnect Admin</title>
+	<title>{t("academy.hub_title", "Japa Academy")} — JapaConnect Admin</title>
 </svelte:head>
 
 <PageHeader
-	title={t("university.hub_title", "Japa Academy")}
-	description={t("university.hub_desc", "Creator economy — manage instructors, track approvals, payouts, and the revenue-split audit ledger")}
+	title={t("academy.hub_title", "Japa Academy")}
+	description={t("academy.hub_desc", "Creator economy — manage instructors, track approvals, payouts, and the revenue-split audit ledger")}
 	actions={[
 		{ label: t("common.refresh", "Refresh"), icon: RefreshCw, variant: "ghost" as const, onclick: load }
 	]}
@@ -210,8 +210,8 @@
 		<CardContent>
 			<div class="flex flex-col items-center justify-center gap-2 py-12 text-center">
 				<Users class="h-8 w-8" style="color: var(--color-muted)" />
-				<p class="text-sm font-medium" style="color: var(--color-foreground)">{t("university.no_access", "No Japa Academy permissions")}</p>
-				<p class="text-xs" style="color: var(--color-muted)">{t("university.no_access_desc", "You need at least one academy.instructor.approve, academy.course.approve, academy.payout.process, or academy.revenue.list permission to manage the creator economy.")}</p>
+				<p class="text-sm font-medium" style="color: var(--color-foreground)">{t("academy.no_access", "No Japa Academy permissions")}</p>
+				<p class="text-xs" style="color: var(--color-muted)">{t("academy.no_access_desc", "You need at least one academy.instructor.approve, academy.course.approve, academy.payout.process, or academy.revenue.list permission to manage the creator economy.")}</p>
 			</div>
 		</CardContent>
 	</Card>

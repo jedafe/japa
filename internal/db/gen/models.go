@@ -108,7 +108,7 @@ type AcademyInstructorPayout struct {
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 }
 
-// Japa University creator identity; gated application/approval (ADR-063).
+// Japa Academy creator identity; gated application/approval (ADR-063).
 type AcademyInstructorProfile struct {
 	ID          pgtype.UUID `json:"id"`
 	UserID      pgtype.UUID `json:"user_id"`

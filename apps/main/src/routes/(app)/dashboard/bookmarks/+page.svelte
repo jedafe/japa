@@ -115,7 +115,7 @@
 	// Re-fetch bookmarks client-side with the folder_id filter (BL-002).
 	// The server load() only runs on full navigation; switching folders from
 	// the sidebar must call the API directly so the list reflects the filter
-	// without a full page reload. Mirrors the learn app pattern.
+	// without a full page reload. Mirrors the academy app pattern.
 	async function loadBookmarks(folderId: string | null, append = false) {
 		if (append) loadingMore = true;
 		else loadingBookmarks = true;
@@ -168,7 +168,7 @@
 
 	// academyUrl/docsUrl throw when the cross-app origin env var is unset — a
 	// throwing href expression would crash the render, so guard them.
-	function safeLearnUrl(path: string): string {
+	function safeAcademyUrl(path: string): string {
 		try { return academyUrl(path); } catch { return '#'; }
 	}
 	function safeDocsUrl(path: string): string {
@@ -196,10 +196,10 @@
 			// the bookmark row carries the page's audience slug.
 			case 'doc_page':
 				return safeDocsUrl(`/docs/${b.audience ?? 'users'}/${idOrSlug}`);
-			// Learning tracks live on the Learn app (:3003 in dev) — a relative
+			// Academy tracks live on the Academy app (:3003 in dev) — a relative
 			// /tracks/… link would 404 here. ADR-060 cross-app deep links.
 			case 'academy_track':
-				return safeLearnUrl(`/tracks/${idOrSlug}`);
+				return safeAcademyUrl(`/tracks/${idOrSlug}`);
 			default:
 				return `/content/${b.entity_id}`;
 		}

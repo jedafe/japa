@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Shared footer for unauthenticated users across all pages.
 	// Extracted from the GuestLanding homepage footer so every guest page
-	// (blog, explore, forum, docs, learn, homepage) has the same footer.
+	// (blog, explore, forum, docs, academy, homepage) has the same footer.
 	// Ref: ADR-054 — footer links are driven by the main_footer menu slug
 	// so admins can add/remove/reorder links from the admin panel without
 	// touching frontend code.

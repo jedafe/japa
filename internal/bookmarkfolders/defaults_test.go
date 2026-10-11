@@ -22,7 +22,7 @@ func TestResolveName(t *testing.T) {
 		{"content", "service_listing", "services"},
 		{"content", "unknown_type", ""},
 		{"blog_post", "", "blog"},
-		{"academy_track", "", "learn"},
+		{"academy_track", "", "academy"},
 		{"doc_page", "", "docs"},
 		{"forum_thread", "", "discussions"},
 		{"forum_reply", "", "discussions"},
@@ -51,8 +51,8 @@ func TestFolderPosition(t *testing.T) {
 		t.Errorf("folderPosition(discussions) = %d, want %d", got, want)
 	}
 
-	if got, want := folderPosition("learn"), int32(10); got != want {
-		t.Errorf("folderPosition(learn) = %d, want %d", got, want)
+	if got, want := folderPosition("academy"), int32(10); got != want {
+		t.Errorf("folderPosition(academy) = %d, want %d", got, want)
 	}
 
 	if got, want := folderPosition("unknown"), int32(0); got != want {

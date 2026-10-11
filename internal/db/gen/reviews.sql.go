@@ -571,7 +571,7 @@ type ListReviewsByEntityWithAuthorRow struct {
 	AuthorAvatarUrl   *string            `json:"author_avatar_url"`
 }
 
-// Reviews joined to users + user_profiles so the learning track reviews list
+// Reviews joined to users + user_profiles so the academy track reviews list
 // (GET /academy/tracks/{id}/reviews) can render author username, display name,
 // and avatar without N+1 lookups. Mirrors the polymorphic reviews table
 // (entity_type/entity_id) — the caller filters by entity_type='academy_track'.

@@ -356,7 +356,7 @@ func (s *Service) payWithCreditInternal(ctx context.Context, userID pgtype.UUID,
 	}
 
 	// Step 3: Mark the payment as succeeded and return the updated row —
-	// callers (e.g. the Learn checkout) read payment.status from the response,
+	// callers (e.g. the Academy checkout) read payment.status from the response,
 	// so returning the stale pending row would misreport a completed payment.
 	succeeded, err := s.store.updatePaymentStatus(ctx, payment.ID, PaymentStatusSucceeded)
 	if err != nil {

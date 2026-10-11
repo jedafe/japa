@@ -34,7 +34,7 @@ type Handlers struct {
 	lit     literalResolver // nil disables literal resolution (§14)
 }
 
-// NewHandlers creates university handlers bound to the provided service.
+// NewHandlers creates academy handlers bound to the provided service.
 func NewHandlers(service *Service) *Handlers {
 	return &Handlers{service: service}
 }
@@ -43,7 +43,7 @@ func NewHandlers(service *Service) *Handlers {
 // titles and descriptions render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
 
-// resolveLiterals resolves {{...}} placeholders on a university DTO or
+// resolveLiterals resolves {{...}} placeholders on an academy DTO or
 // slice. Best-effort — failures are logged inside the resolver.
 func (h *Handlers) resolveLiterals(r *http.Request, v any) {
 	if literals.IsRawRequest(r) {
@@ -1436,7 +1436,7 @@ func (h *Handlers) AdminFeatureTrack(w http.ResponseWriter, r *http.Request) {
 
 // ---------------------------------------------------------------------------
 // Track categories (ADR-063 §9.1)
-// Ref: japaconnect-engineering/sections/36-learning-platform.md (Track categories)
+// Ref: japaconnect-engineering/sections/36-academy-platform.md (Track categories)
 // ---------------------------------------------------------------------------
 
 // AdminListCategories handles GET /admin/academy/categories.

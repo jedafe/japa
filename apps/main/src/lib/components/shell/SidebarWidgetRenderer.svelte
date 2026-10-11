@@ -25,7 +25,7 @@
 	import { sanitizeSidebarHtml, safeHref } from '$lib/utils/safeHtml';
 	import { contentHref } from '$lib/utils/contentLink';
 	import { academyUrl } from '$lib/appOrigins';
-	import type { SessionUser, TrendingTag, SpaceSuggestion, LearnEnrollment, CatalogTrack } from '$lib/types';
+	import type { SessionUser, TrendingTag, SpaceSuggestion, AcademyEnrollment, CatalogTrack } from '$lib/types';
 
 	interface SidebarWidget {
 		id: string;
@@ -145,7 +145,7 @@
 	// throwing href expression would crash the whole renderer, so all
 	// learning-widget links go through this guard (returns '' → the
 	// template falls back to '#').
-	function safeLearnUrl(path: string): string {
+	function safeAcademyUrl(path: string): string {
 		try { return academyUrl(path); } catch { return ''; }
 	}
 
@@ -197,7 +197,7 @@
 	const nonEmptyBookmarkFolders = $derived(
 		bookmarkFolders.filter((f) => (f.bookmark_count ?? 0) > 0)
 	);
-	let academy_enrollments = $state<LearnEnrollment[]>([]);
+	let academy_enrollments = $state<AcademyEnrollment[]>([]);
 	let leaderboard = $state<LeaderboardUser[]>([]);
 	let events = $state<EventItem[]>([]);
 	let spaceTypes = $state<SpaceTypeItem[]>([]);
@@ -235,7 +235,7 @@
 		'user_dropdown', 'notification_centre', 'trending_tags',
 		'suggested_spaces', 'suggested_content', 'ad_slot', 'rich_text',
 		'custom_html', 'recent_content', 'space_list', 'continue_learning',
-		'learning_enrollments', 'progress_ring', 'track_card',
+		'academy_enrollments', 'progress_ring', 'track_card',
 		'related_discussions', 'leaderboard', 'helpful_widget', 'tag_cloud',
 		'metric_card', 'featured_content', 'bookmark_folders',
 		'upcoming_events', 'user_card', 'space_categories',
@@ -308,7 +308,7 @@
 			case 'forum_threads': return slug ? `/forum/${slug}` : '#';
 			case 'job_listings': return slug ? `/jobs/${slug}` : '#';
 			case 'achievements': return slug ? `/achievements/${slug}` : '#';
-			case 'academy_tracks': return slug ? safeLearnUrl(`/tracks/${encodeURIComponent(slug)}`) || '#' : '#';
+			case 'academy_tracks': return slug ? safeAcademyUrl(`/tracks/${encodeURIComponent(slug)}`) || '#' : '#';
 			case 'featured_spaces': return slug ? `/spaces/${slug}` : '#';
 			case 'professional_profiles': return slug ? `/profiles/${slug}` : '#';
 			case 'community_organisations': return slug ? `/org/${slug}` : '#';
@@ -584,18 +584,18 @@
 			dataLoaded = { ...dataLoaded, bookmark_folders: true };
 		}
 		async function fetchEnrollments() {
-			// learning_enrollments, continue_learning and progress_ring all share
+			// academy_enrollments, continue_learning and progress_ring all share
 			// the same /me/enrollments payload — every variant key must be marked
 			// loaded, otherwise dataLoaded[wt] stays falsy and the effect
 			// re-fetches in an infinite loop with a stuck "Loading…" state.
 			const loaded = {
 				...dataLoaded,
-				learning_enrollments: true,
+				academy_enrollments: true,
 				continue_learning: true,
 				progress_ring: true
 			};
 			if (!user) { dataLoaded = loaded; return; }
-			const res = await api.get<LearnEnrollment[]>('/me/enrollments');
+			const res = await api.get<AcademyEnrollment[]>('/me/enrollments');
 			academy_enrollments = res.data ?? [];
 			dataLoaded = loaded;
 		}
@@ -873,7 +873,7 @@
 		else if (wt === 'recent_content') void fetchRecent().finally(settled);
 		else if (wt === 'suggested_content') void fetchSuggestedContent().finally(settled);
 		else if (wt === 'bookmark_folders') void fetchBookmarks().finally(settled);
-		else if (wt === 'learning_enrollments' || wt === 'continue_learning' || wt === 'progress_ring') void fetchEnrollments().finally(settled);
+		else if (wt === 'academy_enrollments' || wt === 'continue_learning' || wt === 'progress_ring') void fetchEnrollments().finally(settled);
 		else if (wt === 'track_card') void fetchFeaturedTrack().finally(settled);
 		else if (wt === 'leaderboard') void fetchLeaderboard().finally(settled);
 		else if (wt === 'upcoming_events') void fetchEvents().finally(settled);
@@ -1339,7 +1339,7 @@
 			<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_categories', 'No categories available')}</p>
 		{/if}
 	</section>
-{:else if widget.widget_type === 'continue_learning' || widget.widget_type === 'learning_enrollments'}
+{:else if widget.widget_type === 'continue_learning' || widget.widget_type === 'academy_enrollments'}
 	{#if user}
 		<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 			<div class="mb-3 flex items-center gap-2">
@@ -1358,11 +1358,11 @@
 				<p class="text-xs text-[var(--color-muted)]">{t('sidebar.no_enrollments', 'No active academy_enrollments')}</p>
 			{:else}
 				<!-- continue_learning shows only the most recent enrollment per
-				     its registry contract; learning_enrollments shows the full list. -->
+				     its registry contract; academy_enrollments shows the full list. -->
 				<ul class="space-y-2">
 					{#each academy_enrollments.slice(0, widget.widget_type === 'continue_learning' ? 1 : limit) as enr (enr.id)}
 						<li>
-							<a href={safeLearnUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
+							<a href={safeAcademyUrl(`/tracks/${encodeURIComponent(enr.track_slug)}`) || '#'} class="block text-sm text-[var(--color-text)] hover:text-[var(--color-primary)]">
 								<span class="block truncate">{enr.track_title}</span>
 								{#if (enr.lessons_total ?? 0) > 0}
 									<span class="mt-0.5 block text-xs text-[var(--color-muted)]">
@@ -1393,7 +1393,7 @@
 				</div>
 				<p class="mt-2 text-xs text-[var(--color-muted)]">{t('academy.empty', 'No learning tracks yet.')}</p>
 				<a
-					href={safeLearnUrl('/tracks') || '#'}
+					href={safeAcademyUrl('/tracks') || '#'}
 					class="mt-2 inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
 				>
 					{t('academy.view_track', 'View track')}
@@ -1425,7 +1425,7 @@
 		{:else if featuredTrack}
 			{@const enrolledCount = featuredTrack.total_enrolled ?? (featuredTrack as unknown as { enrolled_count?: number }).enrolled_count}
 			<a
-				href={safeLearnUrl(`/tracks/${encodeURIComponent(featuredTrack.slug)}`) || '#'}
+				href={safeAcademyUrl(`/tracks/${encodeURIComponent(featuredTrack.slug)}`) || '#'}
 				class="block rounded-[var(--radius)] p-2 hover:bg-[var(--color-surface-subtle)]"
 			>
 				{#if featuredTrack.thumbnail_url}

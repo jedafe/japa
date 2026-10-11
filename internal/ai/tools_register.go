@@ -133,8 +133,8 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("spaces.create", SpacesCreateHandler(deps))
 	registry.RegisterHandler("spaces.update", SpacesUpdateHandler(deps))
 
-	// --- Learning tools (task 9.02) ---
-	// No privacy targets — learning data has no ai_exempt column.
+	// --- Academy tools (task 9.02) ---
+	// No privacy targets — academy data has no ai_exempt column.
 	registry.RegisterHandler("academy.tracks.list", AcademyTracksListHandler(deps))
 	registry.RegisterHandler("academy.tracks.create", AcademyTracksCreateHandler(deps))
 	registry.RegisterHandler("academy.tracks.update", AcademyTracksUpdateHandler(deps))

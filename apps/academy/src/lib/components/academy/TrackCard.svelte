@@ -32,7 +32,7 @@
 
 	const href = $derived(`/tracks/${track.slug}`);
 
-	// Price badge — always shown on the unified University surface.
+	// Price badge — always shown on the unified Academy surface.
 	const priceLabel = $derived.by(() => {
 		if (isFreeForUser(track.price_kobo, user?.is_pro)) {
 			return user?.is_pro ? t('academy.included_pro') : t('academy.free');

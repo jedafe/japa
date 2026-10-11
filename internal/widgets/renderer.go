@@ -67,7 +67,7 @@ func (r *Renderer) Render(ctx context.Context, w Widget) (json.RawMessage, error
 		return r.renderAchievements(ctx, w)
 	// --- Extended: domain-specific types ---
 	case "academy_tracks":
-		return r.renderLearningTracks(ctx, w)
+		return r.renderAcademyTracks(ctx, w)
 	case "community_digest":
 		return r.renderCommunityDigest(ctx, w)
 	case "reviews":
@@ -998,9 +998,9 @@ func (r *Renderer) renderAchievements(ctx context.Context, w Widget) (json.RawMe
 
 // ─── Extended: domain-specific types ────────────────────────────────────
 
-// renderLearningTracks returns published learning tracks.
-// Ref: §36 Learning Platform.
-func (r *Renderer) renderLearningTracks(ctx context.Context, w Widget) (json.RawMessage, error) {
+// renderAcademyTracks returns published academy tracks.
+// Ref: §36 Academy Platform.
+func (r *Renderer) renderAcademyTracks(ctx context.Context, w Widget) (json.RawMessage, error) {
 	limit := widgetConfigLimit(w.Config)
 	difficulty := widgetConfigString(w.Config, "difficulty")
 

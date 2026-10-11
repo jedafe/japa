@@ -3,7 +3,7 @@
 // The creator package implements this interface and registers itself at
 // startup via RegisterCreatorProcessor.
 //
-// Ref: japaconnect-engineering/sections/36-learning-platform.md (Japa Academy)
+// Ref: japaconnect-engineering/sections/36-academy-platform.md (Japa Academy)
 //
 //	japaconnect-engineering/adr/ADR-063-japa-academy-creator-economy.md
 package worker
