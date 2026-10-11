@@ -3,8 +3,9 @@
 	// RichTextEditor (the same TipTap editor used by the main app's /create
 	// composer). Keeps this app's bind:value JSON contract: the docs
 	// backend stores doc_pages.content as TipTap JSON (§44).
-	import { RichTextEditor } from '@japaconnect/ui';
+	import { RichTextEditor, MediaPickerModal } from '@japaconnect/ui';
 	import { t } from '$lib/i18n';
+	import { listMyMedia, uploadMediaImage, stockApi } from '$lib/api/media';
 
 	interface Props {
 		/**
@@ -28,6 +29,10 @@
 	}: Props = $props();
 
 	let rte: RichTextEditor | undefined = $state(undefined);
+	let mediaPickerOpen = $state(false);
+	// Stored insert callback — RichTextEditor hands us its insertImage so the
+	// picked asset lands at the current cursor position.
+	let pendingImageInsert: ((src: string, alt?: string) => void) | null = null;
 
 	/** Ensure any pending content sync is flushed before the host saves. */
 	export function flush() {
@@ -56,5 +61,28 @@
 	onjson={(json) => {
 		value = json;
 	}}
+	onPickImage={(insert) => {
+		pendingImageInsert = insert;
+		mediaPickerOpen = true;
+	}}
 	onedit={() => onUpdate?.()}
 />
+
+{#if mediaPickerOpen}
+	<MediaPickerModal
+		{t}
+		allowedType="image"
+		fetchItems={listMyMedia}
+		onUpload={uploadMediaImage}
+		stock={stockApi}
+		onSelect={(item) => {
+			pendingImageInsert?.(item.url, item.alt_text ?? item.filename);
+			pendingImageInsert = null;
+			mediaPickerOpen = false;
+		}}
+		onClose={() => {
+			pendingImageInsert = null;
+			mediaPickerOpen = false;
+		}}
+	/>
+{/if}

@@ -939,9 +939,14 @@
 	}
 
 	/* ---- WYSIWYG toolbar — docked at the top inside the editor card ---- */
+	/* The toolbar is always a single horizontally-scrollable row — items
+	 * never wrap to a second line. flex-shrink: 0 keeps buttons at their
+	 * set width instead of being compressed when the row overflows. */
 	.toolbar {
 		display: flex;
-		flex-wrap: wrap;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
 		align-items: center;
 		gap: 2px;
 		padding: 6px 8px;
@@ -951,21 +956,6 @@
 	}
 	.toolbar > * {
 		flex-shrink: 0;
-	}
-
-	/* On narrow viewports the full toolbar is a single horizontally-scrollable
-	 * row so the touch-friendly 40×40 buttons do not wrap and take up too much
-	 * vertical space. flex-shrink: 0 is required so items stay at their set
-	 * width instead of being compressed to fit the viewport. */
-	@media (max-width: 767px) {
-		.toolbar {
-			flex-wrap: nowrap;
-			overflow-x: auto;
-			-webkit-overflow-scrolling: touch;
-		}
-		.toolbar > * {
-			flex-shrink: 0;
-		}
 	}
 	.tb-btn {
 		display: inline-flex;
@@ -1030,7 +1020,6 @@
 		width: 100%;
 		min-height: var(--rte-min-height, 355px);
 		padding: 10px 14px;
-		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		background: var(--color-surface);
 		color: var(--color-text);
@@ -1042,8 +1031,7 @@
 		transition: border-color 0.15s, box-shadow 0.15s;
 	}
 	.markdown-source:focus {
-		border-color: var(--color-primary);
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 20%, transparent);
+		outline: none;
 	}
 
 	/* The editor card — a rounded surface wrapping the Tiptap mount and
@@ -1052,7 +1040,6 @@
 		display: flex;
 		flex-direction: column;
 		background: var(--color-surface);
-		border: 1px solid var(--color-border);
 		border-radius: var(--radius);
 		overflow: hidden;
 		transition: border-color 0.15s, box-shadow 0.15s;
@@ -1082,6 +1069,12 @@
 	 * scoped style hash. */
 	.prose-content :global(.ProseMirror) {
 		min-height: calc(var(--rte-min-height, 355px) - 50px);
+	}
+	/* The host apps' global *:focus-visible outline paints a border around
+	 * the contenteditable on focus — suppress it; the surface carries the
+	 * visual state instead. */
+	.prose-content :global(.ProseMirror:focus-visible) {
+		outline: none;
 	}
 	.prose-content :global(.ProseMirror p.is-editor-empty:first-child::before) {
 		content: attr(data-placeholder);

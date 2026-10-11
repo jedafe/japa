@@ -5,11 +5,11 @@
 	// CSR ONLY: /academy/my/* endpoints.
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
-	import { uploadLessonFile } from '$lib/api/media';
+	import { uploadLessonFile, listMyMedia, uploadMediaImage, stockApi } from '$lib/api/media';
 	import { page } from '$app/state';
 	import { beforeNavigate } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { RichTextEditor } from '@japaconnect/ui';
+	import { RichTextEditor, MediaPickerModal } from '@japaconnect/ui';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import {
 		ArrowLeft,
@@ -76,6 +76,10 @@
 	let lessonBaseline = $state<string | null>(null);
 	let lessonContentEdited = $state(false);
 	let openedLessonType = $state<LessonType | null>(null);
+	// Media picker for article images — RichTextEditor hands us its insert
+	// callback so the picked asset lands at the current cursor position.
+	let mediaPickerOpen = $state(false);
+	let pendingImageInsert: ((src: string, alt?: string) => void) | null = null;
 
 	// ---------------- quiz builder state ----------------
 	let quizQuestions = $state<QuizEditQuestion[]>([]);
@@ -722,6 +726,10 @@
 										minHeight={220}
 										features={{ image: true, youtube: true, markdown: true }}
 										onmarkdown={(md) => (lessonForm.content = md)}
+										onPickImage={(insert) => {
+											pendingImageInsert = insert;
+											mediaPickerOpen = true;
+										}}
 										onedit={() => (lessonContentEdited = true)}
 									/>
 								</div>
@@ -842,3 +850,22 @@
 		</div>
 	{/if}
 </main>
+
+{#if mediaPickerOpen}
+	<MediaPickerModal
+		{t}
+		allowedType="image"
+		fetchItems={listMyMedia}
+		onUpload={uploadMediaImage}
+		stock={stockApi}
+		onSelect={(item) => {
+			pendingImageInsert?.(item.url, item.alt_text ?? item.filename);
+			pendingImageInsert = null;
+			mediaPickerOpen = false;
+		}}
+		onClose={() => {
+			pendingImageInsert = null;
+			mediaPickerOpen = false;
+		}}
+	/>
+{/if}

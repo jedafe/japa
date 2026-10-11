@@ -30,10 +30,12 @@
 		"@tiptap/markdown": "^3.0.0",
 		"@tiptap/pm": "^3.0.0",
 		"@tiptap/starter-kit": "^3.0.0",
-		"@tiptap/suggestion": "^3.0.0"
+		"@tiptap/suggestion": "^3.0.0",
+		"heic2any": "^0.0.4"
 	},
 	"peerDependenciesMeta": {
 		"bits-ui": { "optional": true },
+		"heic2any": { "optional": true },
 		"@tiptap/core": { "optional": true },
 		"@tiptap/extension-image": { "optional": true },
 		"@tiptap/extension-link": { "optional": true },
@@ -64,6 +66,7 @@
 		"@tiptap/markdown": "^3.29.0",
 		"@tiptap/pm": "^3.29.0",
 		"@tiptap/starter-kit": "^3.29.0",
-		"@tiptap/suggestion": "^3.29.0"
+		"@tiptap/suggestion": "^3.29.0",
+		"heic2any": "0.0.4"
 	}
 }

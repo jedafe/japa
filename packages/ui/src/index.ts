@@ -23,6 +23,11 @@ export { default as RichTextEditor } from './editor/RichTextEditor.svelte';
 export { default as EmojiPicker } from './editor/EmojiPicker.svelte';
 export { default as EditorInsertModal } from './editor/EditorInsertModal.svelte';
 export { default as LinkPreviewCard } from './editor/LinkPreviewCard.svelte';
+// Media library picker + lightbox (ported from apps/main MediaLibraryModal —
+// §34 media, ADR-034). Hosts inject fetchItems/onUpload/stock API callbacks.
+export { default as MediaPickerModal } from './media/MediaPickerModal.svelte';
+export { default as MediaLightbox } from './media/MediaLightbox.svelte';
+export { convertImageToModernFormat } from './media/imageConvert';
 export { buildEditorExtensions } from './editor/extensions';
 export type { EditorExtensionOptions } from './editor/extensions';
 export { createSuggestionRenderer } from './editor/suggestionRenderer';
@@ -37,3 +42,11 @@ export type {
 	EditorTranslator,
 	LinkPreviewData
 } from './editor/types';
+export type {
+	MediaPickerItem,
+	StockApi,
+	StockPhoto,
+	StockProvider,
+	StockSearchResult
+} from './media/types';
+export type { LightboxItem } from './media/MediaLightbox.svelte';

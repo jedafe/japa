@@ -359,6 +359,7 @@
         "@tiptap/starter-kit": "^3.29.0",
         "@tiptap/suggestion": "^3.29.0",
         "bits-ui": "^2.18.1",
+        "heic2any": "0.0.4",
       },
       "peerDependencies": {
         "@sveltejs/kit": "^2.0.0",
@@ -377,6 +378,7 @@
         "@tiptap/starter-kit": "^3.0.0",
         "@tiptap/suggestion": "^3.0.0",
         "bits-ui": "^2.0.0",
+        "heic2any": "^0.0.4",
         "lucide-svelte": "^1.0.0",
         "svelte": "^5.0.0",
         "tailwindcss": "^4.0.0",
@@ -397,6 +399,7 @@
         "@tiptap/starter-kit",
         "@tiptap/suggestion",
         "bits-ui",
+        "heic2any",
       ],
     },
   },
