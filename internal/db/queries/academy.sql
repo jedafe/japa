@@ -291,10 +291,27 @@ WHERE lc.id = @id;
 -- =====================
 
 -- name: CreateEnrollment :one
-INSERT INTO academy_enrollments (user_id, track_id, access_type) VALUES (@user_id, @track_id, @access_type)
-
-ON CONFLICT (user_id, track_id) DO NOTHING
-RETURNING id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at;
+-- Idempotent enroll: the cached total_enrolled counter is bumped atomically
+-- and only when the INSERT actually creates a row. On conflict the existing
+-- enrollment is returned (re-enroll is a no-op, not an error).
+WITH ins AS (
+    INSERT INTO academy_enrollments (user_id, track_id, access_type)
+    VALUES (@user_id, @track_id, @access_type)
+    ON CONFLICT (user_id, track_id) DO NOTHING
+    RETURNING id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+),
+bump AS (
+    UPDATE academy_tracks
+    SET total_enrolled = total_enrolled + 1
+    WHERE id = @track_id AND EXISTS (SELECT 1 FROM ins)
+)
+SELECT * FROM ins
+UNION ALL
+SELECT id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+FROM academy_enrollments
+WHERE user_id = @user_id AND track_id = @track_id
+  AND NOT EXISTS (SELECT 1 FROM ins)
+LIMIT 1;
 
 -- name: ListEnrollmentsByUserID :many
 SELECT id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
@@ -387,6 +404,17 @@ FROM academy_quizzes lq
 JOIN academy_lessons ll ON ll.id = lq.lesson_id
 WHERE lq.lesson_id = @lesson_id
 ORDER BY lq.position ASC;
+
+-- name: CreateAcademyQuizQuestion :one
+INSERT INTO academy_quizzes (lesson_id, question, options, answer, explanation, position)
+VALUES (@lesson_id, @question, @options, @answer, sqlc.narg(explanation), @position)
+RETURNING id, lesson_id, question, options, answer, explanation, position, created_at;
+
+-- name: DeleteAcademyQuizQuestionsByLesson :exec
+DELETE FROM academy_quizzes WHERE lesson_id = @lesson_id;
+
+-- name: DeleteAcademyQuizQuestion :exec
+DELETE FROM academy_quizzes WHERE id = @id;
 
 -- =====================
 -- Admin List Operations

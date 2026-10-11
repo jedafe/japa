@@ -1334,6 +1334,22 @@ JOIN coupons c ON c.id = lc.coupon_id
 WHERE lc.listing_meta_id = @listing_meta_id
   AND lower(c.code) = lower(@code);
 
+-- Lock the coupon row for a redemption commit — the booking create path
+-- takes this inside the booking transaction so concurrent checkouts
+-- against the same coupon serialize on the row lock instead of
+-- oversubscribing max_redemptions / per_user_limit.
+-- name: LockCouponForRedemption :one
+SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
+       c.terms_url, c.referral_url, c.status, c.valid_from, c.expires_at,
+       c.applies_to,
+       c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
+       c.organization_id, lc.position, lc.overrides
+FROM service_listing_coupons lc
+JOIN coupons c ON c.id = lc.coupon_id
+WHERE lc.listing_meta_id = @listing_meta_id
+  AND lower(c.code) = lower(@code)
+FOR UPDATE OF c;
+
 -- name: DeleteServiceListingCoupons :exec
 DELETE FROM service_listing_coupons WHERE listing_meta_id = @listing_meta_id;
 

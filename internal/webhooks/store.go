@@ -108,7 +108,7 @@ func endpointFromListRow(row gen.ListWebhookEndpointsRow) WebhookEndpointWithSec
 		ID: row.ID, Name: row.Name, URL: row.Url,
 		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
-		Scope: row.Scope,
+		Scope:     row.Scope,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -119,7 +119,7 @@ func endpointFromUserRow(row gen.CreateUserWebhookEndpointRow) WebhookEndpointWi
 		ID: row.ID, Name: row.Name, URL: row.Url,
 		Secret: row.Secret, EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
-		Scope: row.Scope,
+		Scope:     row.Scope,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 }
@@ -548,7 +548,7 @@ func (s *Store) GetUserEndpoint(ctx context.Context, ownerID, id pgtype.UUID) (W
 		ID: row.ID, Name: row.Name, URL: row.Url,
 		EventTypes: row.EventTypes, Status: row.Status,
 		IsActive: row.IsActive, VerifiedAt: row.VerifiedAt, CreatedBy: row.CreatedBy,
-		Scope: row.Scope,
+		Scope:     row.Scope,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
 	if row.Secret != "" {

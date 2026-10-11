@@ -127,4 +127,3 @@ type FreshnessSummary struct {
 	TotalCount            int             `json:"total_count"`
 	ByItem                []FreshnessItem `json:"by_item"`
 }
-

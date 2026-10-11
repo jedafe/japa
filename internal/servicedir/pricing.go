@@ -294,6 +294,15 @@ func (s *Service) priceQuote(ctx context.Context, listing ServiceRow, bookerID p
 		}
 
 		q.Discount = q.Base - applyDiscount(q.Base, c.DiscountType, c.DiscountValue)
+
+		// A coupon that reduces nothing (unknown discount type, zero
+		// value) must not burn a redemption row or stamp the booking —
+		// reject it so the booker sees invalid_coupon instead of a
+		// phantom "applied" discount of zero.
+		if q.Discount <= 0 {
+			return Quote{}, ErrInvalidCoupon
+		}
+
 		q.CouponID = lc.ID
 		q.CouponCode = c.Code
 	}

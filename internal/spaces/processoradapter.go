@@ -751,19 +751,19 @@ func parseStudentCount(s string) (int, bool) {
 // the name it is the shared wbgetentities parse — attraction enrichment
 // (§80) additionally uses InstanceOf/Coords/LocatedIn/Sitelink.
 type wikidataUniversity struct {
-	Name         string   `json:"name"`
-	ShortName    string   `json:"short_name,omitempty"`
-	Description  string   `json:"description,omitempty"`
-	Country      string   `json:"country,omitempty"`
-	Founded      string   `json:"founded,omitempty"`
-	Students     string   `json:"students,omitempty"`
-	Website      string   `json:"website,omitempty"`
-	Logo         string   `json:"logo,omitempty"`
-	CoatOfArms   string   `json:"coat_of_arms,omitempty"`
-	Flag         string   `json:"flag,omitempty"`
-	Image        string   `json:"image,omitempty"`
-	WikidataID   string   `json:"wikidata_id,omitempty"`
-	WikipediaURL string   `json:"wikipedia_url,omitempty"`
+	Name         string `json:"name"`
+	ShortName    string `json:"short_name,omitempty"`
+	Description  string `json:"description,omitempty"`
+	Country      string `json:"country,omitempty"`
+	Founded      string `json:"founded,omitempty"`
+	Students     string `json:"students,omitempty"`
+	Website      string `json:"website,omitempty"`
+	Logo         string `json:"logo,omitempty"`
+	CoatOfArms   string `json:"coat_of_arms,omitempty"`
+	Flag         string `json:"flag,omitempty"`
+	Image        string `json:"image,omitempty"`
+	WikidataID   string `json:"wikidata_id,omitempty"`
+	WikipediaURL string `json:"wikipedia_url,omitempty"`
 	// §80 attractions: P31 instance-of QIDs (kind classification), P625
 	// coordinate ("lat,lon"), P131 located-in QIDs, and the enwiki article
 	// title (drives the Wikipedia summary fetch so "Victoria Falls" lands

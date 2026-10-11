@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	contentpkg "github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
@@ -54,14 +55,14 @@ type Track struct {
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
 	// Marketplace columns (migration 000166, ADR-063).
-	InstructorID            *pgtype.UUID `json:"instructor_id,omitempty"`
-	PriceKobo               *int64       `json:"price_kobo,omitempty"`
-	Currency                string       `json:"currency,omitempty"`
+	InstructorID         *pgtype.UUID `json:"instructor_id,omitempty"`
+	PriceKobo            *int64       `json:"price_kobo,omitempty"`
+	Currency             string       `json:"currency,omitempty"`
 	IsPublishedToAcademy bool         `json:"is_published_to_academy,omitempty"`
-	Category                *string      `json:"category,omitempty"`
-	Language                string       `json:"language,omitempty"`
-	TotalEnrolled           int32        `json:"total_enrolled,omitempty"`
-	SubscriptionEligible    bool         `json:"subscription_eligible,omitempty"`
+	Category             *string      `json:"category,omitempty"`
+	Language             string       `json:"language,omitempty"`
+	TotalEnrolled        int32        `json:"total_enrolled,omitempty"`
+	SubscriptionEligible bool         `json:"subscription_eligible,omitempty"`
 }
 
 // CreateTrackInput represents create track input.
@@ -127,24 +128,24 @@ func trackFromFields(
 	return Track{
 		ID: id,
 
-		Title:                   title,
-		Slug:                    slug,
-		Description:             description,
-		Difficulty:              difficulty,
-		Level:                   difficulty,
-		CoverMediaID:            cmID,
-		IsPublished:             isPublished,
-		SortOrder:               sortOrder,
-		CreatedAt:               createdAt.Time,
-		UpdatedAt:               updatedAt.Time,
-		InstructorID:            instrID,
-		PriceKobo:               priceKobo,
-		Currency:                currency,
+		Title:                title,
+		Slug:                 slug,
+		Description:          description,
+		Difficulty:           difficulty,
+		Level:                difficulty,
+		CoverMediaID:         cmID,
+		IsPublished:          isPublished,
+		SortOrder:            sortOrder,
+		CreatedAt:            createdAt.Time,
+		UpdatedAt:            updatedAt.Time,
+		InstructorID:         instrID,
+		PriceKobo:            priceKobo,
+		Currency:             currency,
 		IsPublishedToAcademy: isPublishedToAcademy,
-		Category:                category,
-		Language:                language,
-		TotalEnrolled:           totalEnrolled,
-		SubscriptionEligible:    subscriptionEligible,
+		Category:             category,
+		Language:             language,
+		TotalEnrolled:        totalEnrolled,
+		SubscriptionEligible: subscriptionEligible,
 	}
 }
 
@@ -188,24 +189,24 @@ LIMIT $2
 
 	for rows.Next() {
 		var r struct {
-			ID                      pgtype.UUID
-			Title                   string
-			Slug                    string
-			Description             *string
-			Difficulty              string
-			CoverMediaID            pgtype.UUID
-			IsPublished             bool
-			SortOrder               int32
-			CreatedAt               pgtype.Timestamptz
-			UpdatedAt               pgtype.Timestamptz
-			InstructorID            pgtype.UUID
-			PriceKobo               *int64
-			Currency                string
+			ID                   pgtype.UUID
+			Title                string
+			Slug                 string
+			Description          *string
+			Difficulty           string
+			CoverMediaID         pgtype.UUID
+			IsPublished          bool
+			SortOrder            int32
+			CreatedAt            pgtype.Timestamptz
+			UpdatedAt            pgtype.Timestamptz
+			InstructorID         pgtype.UUID
+			PriceKobo            *int64
+			Currency             string
 			IsPublishedToAcademy bool
-			Category                *string
-			Language                string
-			TotalEnrolled           int32
-			SubscriptionEligible    bool
+			Category             *string
+			Language             string
+			TotalEnrolled        int32
+			SubscriptionEligible bool
 		}
 
 		if err := rows.Scan(
@@ -438,12 +439,12 @@ type TrackDetail struct {
 	UpdatedAt    time.Time           `json:"updated_at"`
 	Modules      []ModuleWithLessons `json:"modules"`
 	// Marketplace / enrollment fields (migration 000166).
-	PriceKobo               *int64  `json:"price_kobo,omitempty"`
-	Currency                string  `json:"currency,omitempty"`
-	EnrolledCount           int32   `json:"enrolled_count,omitempty"`
+	PriceKobo            *int64  `json:"price_kobo,omitempty"`
+	Currency             string  `json:"currency,omitempty"`
+	EnrolledCount        int32   `json:"enrolled_count,omitempty"`
 	IsPublishedToAcademy bool    `json:"is_published_to_academy,omitempty"`
-	Category                *string `json:"category,omitempty"`
-	Language                string  `json:"language,omitempty"`
+	Category             *string `json:"category,omitempty"`
+	Language             string  `json:"language,omitempty"`
 	// Duration computed from the sum of lesson duration_minutes (ADR-060).
 	DurationLabel string `json:"duration_label,omitempty"`
 	DurationISO   string `json:"duration_iso,omitempty"`
@@ -597,28 +598,28 @@ func (s *Store) GetTrackDetail(ctx context.Context, slug string) (*TrackDetail, 
 	detail := &TrackDetail{
 		ID: track.ID,
 
-		Title:                   track.Title,
-		Slug:                    track.Slug,
-		Description:             track.Description,
-		Difficulty:              track.Difficulty,
-		Level:                   track.Difficulty,
-		CoverMediaID:            track.CoverMediaID,
-		IsPublished:             track.IsPublished,
-		SortOrder:               track.SortOrder,
-		CreatedAt:               track.CreatedAt,
-		UpdatedAt:               track.UpdatedAt,
-		Modules:                 modules,
-		PriceKobo:               track.PriceKobo,
-		Currency:                track.Currency,
-		EnrolledCount:           track.TotalEnrolled,
+		Title:                track.Title,
+		Slug:                 track.Slug,
+		Description:          track.Description,
+		Difficulty:           track.Difficulty,
+		Level:                track.Difficulty,
+		CoverMediaID:         track.CoverMediaID,
+		IsPublished:          track.IsPublished,
+		SortOrder:            track.SortOrder,
+		CreatedAt:            track.CreatedAt,
+		UpdatedAt:            track.UpdatedAt,
+		Modules:              modules,
+		PriceKobo:            track.PriceKobo,
+		Currency:             track.Currency,
+		EnrolledCount:        track.TotalEnrolled,
 		IsPublishedToAcademy: track.IsPublishedToAcademy,
-		Category:                track.Category,
-		Language:                track.Language,
-		DurationLabel:           durationLabel,
-		DurationISO:             durationISO,
-		ThumbnailURL:            media.URLFromParts(row.ThumbnailStorageBucket, row.ThumbnailStoragePath, media.ImageProxyOpts{}),
-		InstructorName:          row.InstructorName,
-		SubscriptionEligible:    track.SubscriptionEligible,
+		Category:             track.Category,
+		Language:             track.Language,
+		DurationLabel:        durationLabel,
+		DurationISO:          durationISO,
+		ThumbnailURL:         media.URLFromParts(row.ThumbnailStorageBucket, row.ThumbnailStoragePath, media.ImageProxyOpts{}),
+		InstructorName:       row.InstructorName,
+		SubscriptionEligible: track.SubscriptionEligible,
 	}
 
 	// Build the InstructorRef from the joined profile/user columns. The join
@@ -995,6 +996,16 @@ type LessonDetail struct {
 	// serve endpoint — imgproxy cannot transform video payloads.
 	VideoURL          *string  `json:"video_url,omitempty"`
 	VideoDurationSecs *float64 `json:"video_duration_secs,omitempty"`
+	// MediaURL is the same-origin serve URL for the lesson's attached media
+	// (document, screencast, audio). Populated whenever media_id resolves.
+	MediaURL *string `json:"media_url,omitempty"`
+	// ExternalURL surfaces the lesson's external resource URL for
+	// link/embed types (youtube, screencast, video, document, link) — the
+	// editor stores the URL in the content column.
+	ExternalURL *string `json:"external_url,omitempty"`
+	// Checklist is populated for lesson_type='checklist' — content stores a
+	// JSON array of strings or {id,label} objects.
+	Checklist []ChecklistItem `json:"checklist,omitempty"`
 	// ProgressSecs is the saved playback position for the requesting user
 	// (academy_lesson_progress.position_secs); the video player resumes from it.
 	ProgressSecs *int32 `json:"progress_secs,omitempty"`
@@ -1050,6 +1061,19 @@ func (s *Store) GetLessonDetail(ctx context.Context, moduleID pgtype.UUID, slug 
 		VideoURL:    media.ServeURLFromParts(r.VideoStorageBucket, r.VideoStoragePath),
 	}
 
+	// MediaURL aliases the media-row resolution for non-video resource types
+	// (document, screencast, audio). ExternalURL surfaces a URL stored in the
+	// content column for link/embed lesson types.
+	detail.MediaURL = detail.VideoURL
+	if r.Content != nil {
+		if url := strings.TrimSpace(*r.Content); isExternalURL(url) && r.LessonType != "article" && r.LessonType != "checklist" {
+			detail.ExternalURL = &url
+		}
+	}
+	if r.LessonType == "checklist" {
+		detail.Checklist = parseChecklistContent(r.Content)
+	}
+
 	if r.VideoDurationSecs.Valid {
 		if f, ferr := r.VideoDurationSecs.Float64Value(); ferr == nil && f.Valid {
 			detail.VideoDurationSecs = &f.Float64
@@ -1103,57 +1127,90 @@ func (s *Store) GetLessonDetail(ctx context.Context, moduleID pgtype.UUID, slug 
 	return detail, nil
 }
 
-// renderLessonContentHTML converts plain-text lesson content into basic,
-// escaped HTML paragraphs. The academy_lessons.content column is plain text
-// (migration 000039), not ProseMirror JSON, so the TipTap renderer does not
-// apply. Empty/nil content renders to an empty string.
+// renderLessonContentHTML converts lesson content into display HTML. The
+// academy_lessons.content column holds markdown/plain text (migration
+// 000039) — content.RenderBodyHTML runs the shared goldmark pipeline, which
+// escapes raw HTML in the source (§5.1 — no stored XSS) while still
+// formatting headings, lists, bold, tables, and links. Empty/nil content
+// renders to an empty string.
 func renderLessonContentHTML(content *string) string {
 	if content == nil || *content == "" {
 		return ""
 	}
-	// Escape HTML special characters to prevent stored XSS (§5.1).
-	text := *content
 
-	var b strings.Builder
+	return contentpkg.RenderBodyHTML(*content)
+}
 
-	b.Grow(len(text) + 64)
+// isExternalURL reports whether s is an absolute http(s) URL — used to
+// surface external resource links stored in a lesson's content column.
+func isExternalURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
 
-	for _, r := range text {
-		switch r {
-		case '&':
-			b.WriteString("&amp;")
-		case '<':
-			b.WriteString("&lt;")
-		case '>':
-			b.WriteString("&gt;")
-		case '"':
-			b.WriteString("&quot;")
-		case '\'':
-			b.WriteString("&#39;")
-		default:
-			b.WriteRune(r)
-		}
+// ChecklistItem is one item in a checklist lesson (frontend Lesson.checklist
+// contract — id + label).
+type ChecklistItem struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+// parseChecklistContent decodes a checklist lesson's content column: a JSON
+// array of strings or {id,label} objects. One plain-text line per item is
+// also accepted so simple editors work.
+func parseChecklistContent(content *string) []ChecklistItem {
+	if content == nil || strings.TrimSpace(*content) == "" {
+		return nil
 	}
-	// Split on blank lines into paragraphs; single-line content gets one <p>.
-	escaped := b.String()
-	paragraphs := strings.Split(escaped, "\n\n")
 
-	var out strings.Builder
+	raw := strings.TrimSpace(*content)
 
-	for _, p := range paragraphs {
-		p = strings.TrimSpace(p)
-		if p == "" {
+	var objects []struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+		Text  string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(raw), &objects); err == nil {
+		out := make([]ChecklistItem, 0, len(objects))
+		for i, o := range objects {
+			label := o.Label
+			if label == "" {
+				label = o.Text
+			}
+			if label == "" {
+				continue
+			}
+			id := o.ID
+			if id == "" {
+				id = fmt.Sprintf("item-%d", i+1)
+			}
+			out = append(out, ChecklistItem{ID: id, Label: label})
+		}
+		return out
+	}
+
+	var labels []string
+	if err := json.Unmarshal([]byte(raw), &labels); err == nil {
+		out := make([]ChecklistItem, 0, len(labels))
+		for i, label := range labels {
+			if label == "" {
+				continue
+			}
+			out = append(out, ChecklistItem{ID: fmt.Sprintf("item-%d", i+1), Label: label})
+		}
+		return out
+	}
+
+	// Fallback: newline-separated plain text.
+	lines := strings.Split(raw, "\n")
+	out := make([]ChecklistItem, 0, len(lines))
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
-		// Preserve single newlines within a paragraph as <br>.
-		p = strings.ReplaceAll(p, "\n", "<br>")
-
-		out.WriteString("<p>")
-		out.WriteString(p)
-		out.WriteString("</p>")
+		out = append(out, ChecklistItem{ID: fmt.Sprintf("item-%d", i+1), Label: line})
 	}
-
-	return out.String()
+	return out
 }
 
 // GetLessonByID retrieves a lesson by its ID.
@@ -1554,6 +1611,12 @@ func (s *Store) EnrollUser(ctx context.Context, userID, trackID pgtype.UUID, acc
 		AccessType: accessType,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Rare race: a concurrent enroll committed between the
+			// statement snapshot and ON CONFLICT resolution. Fetch the
+			// now-visible row and treat the call as already-enrolled.
+			return s.GetEnrollment(ctx, userID, trackID)
+		}
 		return nil, fmt.Errorf("enroll user: %w", err)
 	}
 

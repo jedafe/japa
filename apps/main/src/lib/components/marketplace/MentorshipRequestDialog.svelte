@@ -54,9 +54,13 @@
 			idemKey = crypto.randomUUID();
 			submitError = '';
 			submitOk = false;
-			// Tier-CTA prefill — only fills an untouched goals box so the
-			// mentor name/package choice never clobbers typed text.
-			if (initialGoals && !goals.trim()) goals = initialGoals;
+			// Fresh form per open — a stale goals/destination draft from a
+			// previous mentor must never leak into this request (same
+			// contract as BookingDialog). A tier-CTA prefill fills an
+			// empty box only.
+			goals = '';
+			destinationSpaceId = '';
+			if (initialGoals) goals = initialGoals;
 			if (countries === null) void loadCountries();
 		}
 		prevOpen = open;
@@ -89,7 +93,9 @@
 			: null
 	);
 
-	// Typed booking errors → friendly copy. Unknown codes fall back to the
+	// Typed booking errors → friendly copy. Codes are the writeServiceError
+	// snake_case contract (duplicate_mentorship_request, mentor_at_capacity,
+	// self_mentorship, mentorship_disabled). Unknown codes fall back to the
 	// server message, then the generic mentors.request_failed line.
 	function mentorErrorMessage(code: string, fallback?: string): string {
 		switch (code) {

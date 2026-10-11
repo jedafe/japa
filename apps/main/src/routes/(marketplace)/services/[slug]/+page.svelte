@@ -568,10 +568,11 @@
 		const res = await api.post<{ claim_status: string }>(`/services/${service.id}/claim`, {
 			org_id: claimOrgId
 		});
-		claiming = false;
 		if (res.data) {
+			claiming = false;
 			claimResult = { ok: true };
 		} else {
+			claiming = false;
 			claimResult = { error: res.error?.message ?? t('services.claim_failed', 'Claim failed') };
 		}
 	}
@@ -1099,7 +1100,7 @@
 							tiers={service.tiers ?? []}
 							{currencies}
 							heading={tiersHeading}
-							compareHref="/compare"
+							compareHref="/compare?type=mentors"
 							ctaEnabled={tierCtaEnabled}
 							onSelect={selectTier}
 						/>
@@ -1603,9 +1604,9 @@
 											→ {formatDate(dep.ends_on)}{/if}
 									</span>
 									<span class="text-xs text-[var(--color-muted)]">
-										{#if dep.capacity != null}
+										{#if (dep.capacity ?? service.capacity) != null}
 											{t('services.pkg_seats_left', '{n} seats left', {
-												n: Math.max(0, dep.capacity - dep.booked_count)
+												n: Math.max(0, (dep.capacity ?? service.capacity ?? 0) - dep.booked_count)
 											})}
 										{:else}
 											{t('services.pkg_unlimited', 'Unlimited seats')}

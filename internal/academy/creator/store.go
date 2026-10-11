@@ -45,6 +45,12 @@ func NewStore(database *db.DB) *Store {
 // DB exposes the underlying pool for transactional service methods.
 func (s *Store) DB() *db.DB { return s.db }
 
+// forTx returns a store clone bound to a transaction's queries so callers
+// can compose store methods atomically (db.WithTx).
+func (s *Store) forTx(q *gen.Queries) *Store {
+	return &Store{read: q, write: q, db: s.db}
+}
+
 // ---------------------------------------------------------------------------
 // Instructor profile DTOs
 // ---------------------------------------------------------------------------
@@ -284,25 +290,25 @@ type Track struct {
 	Difficulty  string  `json:"difficulty"`
 	/** Level is an alias for Difficulty, matching the frontend TrackSummary.level
 	 * contract (ADR-060). Always equal to Difficulty. */
-	Level                   string     `json:"level"`
-	CoverMediaID            *string    `json:"cover_media_id,omitempty"`
-	InstructorID            *string    `json:"instructor_id,omitempty"`
-	PriceKobo               *int64     `json:"price_kobo,omitempty"`
-	Currency                string     `json:"currency"`
-	Category                *string    `json:"category,omitempty"`
-	Language                string     `json:"language"`
-	GeoSpaceID              *string    `json:"geo_space_id,omitempty"`
-	TotalEnrolled           int32      `json:"total_enrolled"`
-	IsPublished             bool       `json:"is_published"`
+	Level                string     `json:"level"`
+	CoverMediaID         *string    `json:"cover_media_id,omitempty"`
+	InstructorID         *string    `json:"instructor_id,omitempty"`
+	PriceKobo            *int64     `json:"price_kobo,omitempty"`
+	Currency             string     `json:"currency"`
+	Category             *string    `json:"category,omitempty"`
+	Language             string     `json:"language"`
+	GeoSpaceID           *string    `json:"geo_space_id,omitempty"`
+	TotalEnrolled        int32      `json:"total_enrolled"`
+	IsPublished          bool       `json:"is_published"`
 	IsPublishedToAcademy bool       `json:"is_published_to_academy"`
-	SubmissionStatus        string     `json:"submission_status"`
-	SubmittedAt             *time.Time `json:"submitted_at,omitempty"`
-	ReviewedAt              *time.Time `json:"reviewed_at,omitempty"`
-	RejectionReason         *string    `json:"rejection_reason,omitempty"`
-	TotalRevenueKobo        int64      `json:"total_revenue_kobo"`
-	ThumbnailURL            *string    `json:"thumbnail_url,omitempty"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	SubmissionStatus     string     `json:"submission_status"`
+	SubmittedAt          *time.Time `json:"submitted_at,omitempty"`
+	ReviewedAt           *time.Time `json:"reviewed_at,omitempty"`
+	RejectionReason      *string    `json:"rejection_reason,omitempty"`
+	TotalRevenueKobo     int64      `json:"total_revenue_kobo"`
+	ThumbnailURL         *string    `json:"thumbnail_url,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 func trackFromRow(r gen.GetInstructorTrackByIDRow) Track {
@@ -311,9 +317,9 @@ func trackFromRow(r gen.GetInstructorTrackByIDRow) Track {
 		Difficulty: r.Difficulty, Level: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
 		IsPublishedToAcademy: r.IsPublishedToAcademy,
-		SubmissionStatus:        r.AcademySubmissionStatus,
-		RejectionReason:         r.AcademyRejectionReason,
-		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		SubmissionStatus:     r.AcademySubmissionStatus,
+		RejectionReason:      r.AcademyRejectionReason,
+		CreatedAt:            r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 
 	if r.CoverMediaID.Valid {
@@ -494,29 +500,29 @@ func (s *Store) GetCatalogTrackBySlug(ctx context.Context, slug string) (gen.Get
 type CatalogTrackDetail struct {
 	ID pgtype.UUID `json:"id"`
 
-	Title                   string             `json:"title"`
-	Slug                    string             `json:"slug"`
-	Description             *string            `json:"description,omitempty"`
-	Difficulty              string             `json:"difficulty"`
-	Level                   string             `json:"level"`
-	CoverMediaID            pgtype.UUID        `json:"cover_media_id,omitempty"`
-	InstructorID            pgtype.UUID        `json:"instructor_id,omitempty"`
-	PriceKobo               *int64             `json:"price_kobo,omitempty"`
-	Currency                string             `json:"currency"`
-	Category                *string            `json:"category,omitempty"`
-	Language                string             `json:"language"`
-	GeoSpaceID              *string            `json:"geo_space_id,omitempty"`
-	TotalEnrolled           int32              `json:"total_enrolled"`
-	SubscriptionEligible    bool               `json:"subscription_eligible"`
-	IsPublished             bool               `json:"is_published"`
+	Title                string             `json:"title"`
+	Slug                 string             `json:"slug"`
+	Description          *string            `json:"description,omitempty"`
+	Difficulty           string             `json:"difficulty"`
+	Level                string             `json:"level"`
+	CoverMediaID         pgtype.UUID        `json:"cover_media_id,omitempty"`
+	InstructorID         pgtype.UUID        `json:"instructor_id,omitempty"`
+	PriceKobo            *int64             `json:"price_kobo,omitempty"`
+	Currency             string             `json:"currency"`
+	Category             *string            `json:"category,omitempty"`
+	Language             string             `json:"language"`
+	GeoSpaceID           *string            `json:"geo_space_id,omitempty"`
+	TotalEnrolled        int32              `json:"total_enrolled"`
+	SubscriptionEligible bool               `json:"subscription_eligible"`
+	IsPublished          bool               `json:"is_published"`
 	IsPublishedToAcademy bool               `json:"is_published_to_academy"`
-	CreatedAt               pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
-	InstructorName          *string            `json:"instructor_name,omitempty"`
-	InstructorHeadline      *string            `json:"instructor_headline,omitempty"`
-	InstructorTier          *string            `json:"instructor_tier,omitempty"`
-	AvgRating               pgtype.Numeric     `json:"avg_rating"`
-	ReviewCount             int32              `json:"review_count"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	InstructorName       *string            `json:"instructor_name,omitempty"`
+	InstructorHeadline   *string            `json:"instructor_headline,omitempty"`
+	InstructorTier       *string            `json:"instructor_tier,omitempty"`
+	AvgRating            pgtype.Numeric     `json:"avg_rating"`
+	ReviewCount          int32              `json:"review_count"`
 }
 
 // CatalogTrackDetailFromRow maps the sqlc row to the response DTO, setting
@@ -624,16 +630,11 @@ func (s *Store) UpdateTrack(ctx context.Context, trackID, instructorID pgtype.UU
 	params := gen.UpdateInstructorTrackParams{
 		ID: trackID, InstructorID: instructorID,
 	}
-	if in.Title != nil {
-		params.Title = *in.Title
-	}
+	params.Title = in.Title
+	params.Difficulty = in.Difficulty
 
 	if in.Description != nil {
 		params.Description = in.Description
-	}
-
-	if in.Difficulty != nil {
-		params.Difficulty = *in.Difficulty
 	}
 
 	if in.CoverMediaID != nil {
@@ -665,6 +666,18 @@ func (s *Store) SubmitTrack(ctx context.Context, trackID, instructorID pgtype.UU
 	return s.write.SubmitAcademyTrack(ctx, gen.SubmitAcademyTrackParams{
 		ID: trackID, InstructorID: instructorID,
 	})
+}
+
+// GetTrackSubmissionReadiness returns curriculum completeness counts used by
+// SubmitTrack and ApproveTrack.
+func (s *Store) GetTrackSubmissionReadiness(ctx context.Context, trackID pgtype.UUID) (gen.GetTrackSubmissionReadinessRow, error) {
+	return s.read.GetTrackSubmissionReadiness(ctx, trackID)
+}
+
+// UnpublishTrack takes a live instructor track off the marketplace (reverts
+// to draft). ErrNoRows when the track is not in approved status.
+func (s *Store) UnpublishTrack(ctx context.Context, trackID pgtype.UUID) (gen.UnpublishAcademyTrackRow, error) {
+	return s.write.UnpublishAcademyTrack(ctx, trackID)
 }
 
 // ListTracksByInstructor returns all tracks owned by an instructor.

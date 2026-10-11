@@ -201,9 +201,9 @@ RETURNING id, title, slug, description, difficulty, cover_media_id,
 -- Creator-editable fields. is_published_to_academy is controlled by the
 -- submit/approve flow, not by this query.
 UPDATE academy_tracks
-SET title = COALESCE(@title, title),
+SET title = COALESCE(sqlc.narg(title), title),
  description = COALESCE(sqlc.narg(description), description),
- difficulty = COALESCE(@difficulty, difficulty),
+ difficulty = COALESCE(sqlc.narg(difficulty), difficulty),
  cover_media_id = COALESCE(sqlc.narg(cover_media_id), cover_media_id),
  price_kobo = COALESCE(sqlc.narg(price_kobo), price_kobo),
  currency = COALESCE(sqlc.narg(currency), currency),
@@ -220,6 +220,24 @@ RETURNING id, title, slug, description, difficulty, cover_media_id,
  academy_submission_status, academy_submitted_at,
  academy_reviewed_at, academy_rejection_reason,
  created_at, updated_at;
+
+-- name: GetTrackSubmissionReadiness :one
+-- Curriculum completeness check used before submit-for-review and before
+-- admin approval. Counts modules, published lessons, and published quiz
+-- lessons that have no questions — any of these being incomplete should
+-- block the track from reaching the marketplace.
+SELECT
+  (SELECT count(*) FROM academy_modules m
+    WHERE m.track_id = @track_id) AS module_count,
+  (SELECT count(*) FROM academy_lessons l
+    JOIN academy_modules m ON m.id = l.module_id
+    WHERE m.track_id = @track_id AND l.is_published = true) AS published_lesson_count,
+  (SELECT count(*) FROM academy_lessons l
+    JOIN academy_modules m ON m.id = l.module_id
+    WHERE m.track_id = @track_id AND l.is_published = true
+      AND l.lesson_type = 'quiz'
+      AND NOT EXISTS (SELECT 1 FROM academy_quizzes q WHERE q.lesson_id = l.id)
+  ) AS quizless_quiz_count;
 
 -- name: SubmitAcademyTrack :one
 -- Creator submits a track for marketplace approval. Sets submission_status
@@ -301,9 +319,11 @@ WHERE lt.instructor_id IS NOT NULL
 
 -- name: ApproveAcademyTrack :one
 -- Admin approves a submitted track to the marketplace. Sets submission_status
--- to 'approved' and stamps reviewed_at.
+-- to 'approved', stamps reviewed_at, and publishes the track (Section 36:
+-- "Admin approves the course → track goes live").
 UPDATE academy_tracks
 SET is_published_to_academy = true,
+ is_published = true,
  academy_submission_status = 'approved',
  academy_reviewed_at = now(),
  academy_rejection_reason = NULL,
@@ -634,6 +654,40 @@ RETURNING id, title, slug, description, difficulty, cover_media_id,
  academy_submission_status, academy_submitted_at,
  academy_reviewed_at, academy_rejection_reason,
  created_at, updated_at;
+
+-- name: UnpublishAcademyTrack :one
+-- Admin takes a live instructor track off the marketplace: publishes flags
+-- clear and the track reverts to draft. The creator must fix and re-submit
+-- for review — same terminal state as ResetApprovedAcademyTrackToDraft.
+UPDATE academy_tracks
+SET is_published = false,
+ is_published_to_academy = false,
+ academy_submission_status = 'draft',
+ academy_rejection_reason = NULL,
+ updated_at = now()
+WHERE id = @id
+ AND instructor_id IS NOT NULL
+ AND academy_submission_status = 'approved'
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_academy, category, language, geo_space_id, total_enrolled,
+ academy_submission_status, academy_submitted_at,
+ academy_reviewed_at, academy_rejection_reason,
+ created_at, updated_at;
+
+-- name: ResetApprovedAcademyTrackToDraft :execrows
+-- Re-review policy: when a creator edits a live (approved) track, it drops
+-- back to draft and leaves the marketplace until re-submitted and
+-- re-approved — unreviewed content must not stay published. No-op for
+-- non-approved or platform-authored tracks.
+UPDATE academy_tracks
+SET is_published = false,
+ is_published_to_academy = false,
+ academy_submission_status = 'draft',
+ updated_at = now()
+WHERE id = @id
+ AND instructor_id IS NOT NULL
+ AND academy_submission_status = 'approved';
 
 -- name: UpdateInstructorProfileAdmin :one
 -- Admin updates an instructor's tier and/or commission override (BUG-002).

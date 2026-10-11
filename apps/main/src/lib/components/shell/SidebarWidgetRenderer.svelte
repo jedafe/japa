@@ -315,7 +315,7 @@
 			case 'trending_tags': return slug ? `/tags/${slug}` : '#';
 			case 'upcoming_events': return id ? `/calendar/${id}` : '#';
 			case 'user_leaderboard': return username ? `/u/${username}` : '#';
-			case 'mentor_spotlight': return username ? `/mentors/${encodeURIComponent(username)}` : '#';
+			case 'mentor_spotlight': return username ? `/services/mentor-${encodeURIComponent(username)}` : '#';
 			case 'community_digest': return id ? `/digest/${id}` : '#';
 			case 'space_members': return username ? `/u/${username}` : '#';
 			default: return slug ? `/content/${slug}` : '#';

@@ -47,7 +47,7 @@
 	);
 	const emptyAction = $derived(
 		data.role === 'received'
-			? undefined
+			? { label: t('mentors.browse', 'Browse mentors'), href: '/services?kind=mentorship' }
 			: features['service_packages.enabled']
 				? { label: t('bookings.browse', 'Browse services'), href: '/services?kind=package' }
 				: features['mentorship.enabled']

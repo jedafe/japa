@@ -1051,16 +1051,16 @@ const reindexBatchSize = 500
 
 // ReindexSummary records the outcome of a bulk reindex run per entity type.
 type ReindexSummary struct {
-	Content       int `json:"content"`
-	ForumThread   int `json:"forum_thread"`
-	Space         int `json:"space"`
-	User          int `json:"user"`
-	Tag           int `json:"tag"`
-	DirectoryTag  int `json:"directory_tag"`
+	Content      int `json:"content"`
+	ForumThread  int `json:"forum_thread"`
+	Space        int `json:"space"`
+	User         int `json:"user"`
+	Tag          int `json:"tag"`
+	DirectoryTag int `json:"directory_tag"`
 	AcademyTrack int `json:"academy_track"`
-	DocPage       int `json:"doc_page"`
-	Organization  int `json:"organization"`
-	Errors        int `json:"errors"`
+	DocPage      int `json:"doc_page"`
+	Organization int `json:"organization"`
+	Errors       int `json:"errors"`
 }
 
 // ReindexAll iterates every entity for the given platform and upserts it into

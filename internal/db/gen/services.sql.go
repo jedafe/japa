@@ -5043,6 +5043,77 @@ func (q *Queries) ListingHasActiveCoupon(ctx context.Context, listingMetaID pgty
 	return has_coupon, err
 }
 
+const lockCouponForRedemption = `-- name: LockCouponForRedemption :one
+SELECT c.id, c.title, c.code, c.discount_type, c.discount_value, c.currency,
+       c.terms_url, c.referral_url, c.status, c.valid_from, c.expires_at,
+       c.applies_to,
+       c.max_redemptions, c.per_user_limit, c.min_spend, c.first_time_only,
+       c.organization_id, lc.position, lc.overrides
+FROM service_listing_coupons lc
+JOIN coupons c ON c.id = lc.coupon_id
+WHERE lc.listing_meta_id = $1
+  AND lower(c.code) = lower($2)
+FOR UPDATE OF c
+`
+
+type LockCouponForRedemptionParams struct {
+	ListingMetaID pgtype.UUID `json:"listing_meta_id"`
+	Code          string      `json:"code"`
+}
+
+type LockCouponForRedemptionRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Code           *string            `json:"code"`
+	DiscountType   *string            `json:"discount_type"`
+	DiscountValue  pgtype.Numeric     `json:"discount_value"`
+	Currency       *string            `json:"currency"`
+	TermsUrl       *string            `json:"terms_url"`
+	ReferralUrl    *string            `json:"referral_url"`
+	Status         string             `json:"status"`
+	ValidFrom      pgtype.Timestamptz `json:"valid_from"`
+	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	AppliesTo      string             `json:"applies_to"`
+	MaxRedemptions *int32             `json:"max_redemptions"`
+	PerUserLimit   *int32             `json:"per_user_limit"`
+	MinSpend       *int64             `json:"min_spend"`
+	FirstTimeOnly  bool               `json:"first_time_only"`
+	OrganizationID pgtype.UUID        `json:"organization_id"`
+	Position       int32              `json:"position"`
+	Overrides      []byte             `json:"overrides"`
+}
+
+// Lock the coupon row for a redemption commit — the booking create path
+// takes this inside the booking transaction so concurrent checkouts
+// against the same coupon serialize on the row lock instead of
+// oversubscribing max_redemptions / per_user_limit.
+func (q *Queries) LockCouponForRedemption(ctx context.Context, arg LockCouponForRedemptionParams) (LockCouponForRedemptionRow, error) {
+	row := q.db.QueryRow(ctx, lockCouponForRedemption, arg.ListingMetaID, arg.Code)
+	var i LockCouponForRedemptionRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Code,
+		&i.DiscountType,
+		&i.DiscountValue,
+		&i.Currency,
+		&i.TermsUrl,
+		&i.ReferralUrl,
+		&i.Status,
+		&i.ValidFrom,
+		&i.ExpiresAt,
+		&i.AppliesTo,
+		&i.MaxRedemptions,
+		&i.PerUserLimit,
+		&i.MinSpend,
+		&i.FirstTimeOnly,
+		&i.OrganizationID,
+		&i.Position,
+		&i.Overrides,
+	)
+	return i, err
+}
+
 const markServiceBookingRefunded = `-- name: MarkServiceBookingRefunded :one
 UPDATE service_bookings
 SET status = 'refunded', updated_at = now()

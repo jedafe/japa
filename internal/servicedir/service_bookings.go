@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -108,6 +109,15 @@ type BookingDTO struct {
 // maxBookingTextLen caps free-text booking inputs (note, goals,
 // cancel_reason, dispute_reason, respond note) — §111.
 const maxBookingTextLen = 4000
+
+// maxBookingPartySize is the absolute upper bound for a booking's
+// party_size — a backstop against absurd inputs; departure/package
+// capacity applies the tighter real limit below.
+const maxBookingPartySize = 500
+
+// ErrInvalidPartySize — party_size exceeds the absolute cap or the
+// listing's capacity (400 invalid_party_size).
+var ErrInvalidPartySize = errors.New("invalid party size")
 
 // BookingResult is the POST /services/:id/bookings response — the booking
 // plus a nested payment object when a platform-fee checkout was opened
@@ -545,6 +555,21 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 		partySize = 1
 	}
 
+	// Fail fast on absurd party sizes — previously an unbounded party
+	// spammed the inbox and failed only at confirm (departure_full).
+	// The departure/package capacity gates apply the tighter real limit
+	// when a departure is selected below.
+	if partySize > maxBookingPartySize {
+		return BookingResult{}, ErrInvalidPartySize
+	}
+
+	// departure_id and preferred_dates are mutually exclusive — both
+	// supplied is a malformed request, not a silent coin-flip on which
+	// date surface wins.
+	if input.DepartureID != "" && input.PreferredDates != nil {
+		return BookingResult{}, ErrInvalidDeparture
+	}
+
 	var departureID pgtype.UUID
 	if input.DepartureID != "" {
 		if err := departureID.Scan(input.DepartureID); err != nil {
@@ -564,6 +589,22 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 		if dep.StartsOn.Valid && dep.StartsOn.Time.Before(today) {
 			return BookingResult{}, ErrInvalidDeparture
 		}
+
+		// Capacity is knowable now — check it at create (400) rather
+		// than failing the org's confirm with departure_full later. A
+		// NULL departure capacity inherits the package-level capacity
+		// (same rule as departureFull); both NULL means unlimited.
+		capacity := dep.Capacity
+		if capacity == nil {
+			capacity = listing.Capacity
+		}
+		if capacity != nil && dep.BookedCount+partySize > *capacity {
+			return BookingResult{}, ErrDepartureFull
+		}
+	} else if listing.Capacity != nil && partySize > *listing.Capacity {
+		// Non-departure booking on a capacity-capped package — the org
+		// confirm path has no seat counter for these, so enforce here.
+		return BookingResult{}, ErrInvalidPartySize
 	}
 
 	var preferredDates []byte
@@ -638,6 +679,7 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 	// booking — a failed redemption insert rolls the booking back rather
 	// than silently losing the recorded discount (spec §2.3).
 	var redemption *gen.CreateCouponRedemptionParams
+	var guard *couponCommitGuard
 	if quote.CouponID.Valid {
 		redemption = &gen.CreateCouponRedemptionParams{
 			CouponID:      quote.CouponID,
@@ -646,9 +688,23 @@ func (s *Service) CreateBooking(ctx context.Context, bookerID pgtype.UUID, listi
 			AmountSaved:   quote.Discount,
 			Currency:      params.FeeCurrency,
 		}
+		// Cap re-validation under the coupon row lock — the priceQuote
+		// counts ran unlocked, so the commit path re-checks them inside
+		// the booking transaction. Trimmed like priceQuote so a padded
+		// code locks the same row it quoted.
+		guard = &couponCommitGuard{
+			Code:     strings.TrimSpace(input.CouponCode),
+			MetaID:   listing.MetaID,
+			BookerID: bookerID,
+			OrgID:    listing.OrgID,
+			Base:     quote.Base,
+			Kind:     listing.ListingKind,
+			Currency: quote.Currency,
+			Discount: quote.Discount,
+		}
 	}
 
-	booking, err := s.store.createBookingWithRedemption(ctx, params, redemption)
+	booking, err := s.store.createBookingWithRedemption(ctx, params, redemption, guard)
 	if err != nil {
 		return BookingResult{}, err
 	}
@@ -844,7 +900,7 @@ func (s *Service) createMentorshipBooking(ctx context.Context, bookerID, listing
 		params.Meta = meta
 	}
 
-	booking, err := s.store.createBookingWithRedemption(ctx, params, nil)
+	booking, err := s.store.createBookingWithRedemption(ctx, params, nil, nil)
 	if err != nil {
 		// 000825: the partial unique index
 		// idx_svc_bookings_mentorship_open_uniq is the DB-level guard for
@@ -1280,9 +1336,10 @@ func (s *Service) OrgTransition(ctx context.Context, orgID, bookingID, userID pg
 
 	// Paid bookings only become actionable once money moved — the inbox
 	// hides them before then, but a PATCH by ID would otherwise let the
-	// org confirm a booking whose fee was never captured.
+	// org confirm a booking whose fee was never captured. 403, not 404:
+	// the row is real, just not actionable yet.
 	if row.Intent == BookingIntentBooking && !feeSettled(row) {
-		return BookingDTO{}, pgx.ErrNoRows
+		return BookingDTO{}, ErrPaymentPending
 	}
 
 	var note *string
@@ -1469,7 +1526,7 @@ func (s *Service) DisputeMyBooking(ctx context.Context, bookingID, userID pgtype
 }
 
 // AdminListBookings returns all bookings for the admin view.
-func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDStr string, page, limit int32) ([]BookingDTO, int64, error) {
+func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDStr, kind, providerIDStr, bookerIDStr string, page, limit int32) ([]BookingDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -1485,8 +1542,27 @@ func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDSt
 		}
 	}
 
+	// Mentorship-compat filters (000824): kind/provider/booker narrow the
+	// dispute queue to mentor rows. Malformed UUIDs are 400, not silent
+	// ignore — a typo'd filter must not masquerade as "no results".
+	var providerID, bookerID pgtype.UUID
+	if providerIDStr != "" {
+		if err := providerID.Scan(providerIDStr); err != nil {
+			return nil, 0, ErrInvalidID
+		}
+	}
+	if bookerIDStr != "" {
+		if err := bookerID.Scan(bookerIDStr); err != nil {
+			return nil, 0, ErrInvalidID
+		}
+	}
+	if kind != "" && kind != ListingKindService && kind != ListingKindPackage && kind != ListingKindMentorship {
+		return nil, 0, ErrInvalidListingKind
+	}
+
 	rows, total, err := s.store.AdminListBookings(ctx, BookingsAdminFilter{
 		Status: status, Intent: intent, OrgID: orgID,
+		Kind: kind, ProviderUserID: providerID, BookerUserID: bookerID,
 		Limit: limit, Offset: (page - 1) * limit,
 	})
 	if err != nil {
@@ -1499,6 +1575,34 @@ func (s *Service) AdminListBookings(ctx context.Context, status, intent, orgIDSt
 	}
 
 	return out, total, nil
+}
+
+// adminAllowedTransitions is the §111 admin dispute-resolution matrix —
+// which target statuses are reachable from each source. Terminal rows
+// (cancelled/declined/refunded) stay terminal: reopening them would
+// resurrect dead money flows. 'refunded' is reachable only via the fee
+// worker, never by direct admin jump from a non-disputed source — the
+// refund itself is the audit trail.
+var adminAllowedTransitions = map[string]map[string]bool{
+	BookingStatusPending: {
+		BookingStatusConfirmed: true,
+		BookingStatusDeclined:  true,
+		BookingStatusCancelled: true,
+	},
+	BookingStatusConfirmed: {
+		BookingStatusFulfilled: true,
+		BookingStatusCancelled: true,
+		BookingStatusDisputed:  true,
+	},
+	BookingStatusFulfilled: {
+		BookingStatusDisputed: true,
+	},
+	BookingStatusDisputed: {
+		BookingStatusRefunded:  true,
+		BookingStatusConfirmed: true,
+		BookingStatusFulfilled: true,
+		BookingStatusCancelled: true,
+	},
 }
 
 // AdminSetBookingStatus is the admin dispute-resolution transition. Any
@@ -1523,6 +1627,18 @@ func (s *Service) AdminSetBookingStatus(ctx context.Context, bookingID pgtype.UU
 		}
 
 		return BookingDTO{}, fmt.Errorf("servicedir: admin set status: get booking: %w", err)
+	}
+
+	// No-op transitions are a no-op — same-status writes would bump
+	// updated_at and re-fire notifications for nothing.
+	if input.Status == row.Status {
+		return bookingToDTO(row), nil
+	}
+
+	// Enforce the transition matrix — previously any status jumped to any
+	// other (e.g. refunded→pending resurrecting dead money flows).
+	if !adminAllowedTransitions[row.Status][input.Status] {
+		return BookingDTO{}, ErrInvalidBookingTransition
 	}
 
 	var note *string

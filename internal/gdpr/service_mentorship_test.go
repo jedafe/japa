@@ -80,7 +80,7 @@ func insertGDPRTestUser(t *testing.T, database *db.DB, username string) pgtype.U
 }
 
 // insertShadowListing creates the 000824 shape: a published
-// service_listing contents row plus a listing_kind meta row. kind='' maps
+// service_listing contents row plus a listing_kind meta row. kind=” maps
 // to 'mentorship'; pass another kind for a non-mentorship control row.
 func insertShadowListing(t *testing.T, database *db.DB, authorID pgtype.UUID, kind, slug string) (contentID, metaID pgtype.UUID) {
 	t.Helper()

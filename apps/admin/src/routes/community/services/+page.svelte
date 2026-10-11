@@ -6,7 +6,7 @@
 	import { useCountries } from '$lib/utils/countries.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Eye, CheckCircle, BadgeCheck, XCircle } from 'lucide-svelte';
+	import { Eye, CheckCircle, BadgeCheck, XCircle, Upload, Archive } from 'lucide-svelte';
 	import { Modal } from '$lib/components/ui/modal';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 
@@ -102,6 +102,42 @@
 		}
 	}
 
+	// Review-queue publish path — in_review/draft → published. Without
+	// this the queue was verify-only with no way to go live.
+	async function publishService(item: ServiceItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await serviceDirectoryAdminApi.publish(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
+	async function unpublishService(item: ServiceItem) {
+		acting = true;
+		pageError = '';
+		try {
+			const result = await serviceDirectoryAdminApi.unpublish(item.id);
+			if (result.ok) {
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('common.error', 'An error occurred');
+			}
+		} catch {
+			pageError = t('common.error', 'An error occurred');
+		} finally {
+			acting = false;
+		}
+	}
+
 	async function resolveClaim(item: ServiceItem, approved: boolean) {
 		if (!item) return;
 		acting = true;
@@ -143,6 +179,18 @@
 				icon: XCircle,
 				onclick: unverifyService,
 				show: (row: ServiceItem) => row.is_verified
+			});
+			acts.push({
+				label: t('app.services.publish', 'Publish'),
+				icon: Upload,
+				onclick: publishService,
+				show: (row: ServiceItem) => row.status === 'in_review' || row.status === 'draft'
+			});
+			acts.push({
+				label: t('app.services.unpublish', 'Unpublish'),
+				icon: Archive,
+				onclick: unpublishService,
+				show: (row: ServiceItem) => row.status === 'published'
 			});
 			acts.push({
 				label: t('app.services.resolve_claim', 'Resolve claim'),

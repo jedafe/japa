@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 )
 
 // ---------------------------------------------------------------------------

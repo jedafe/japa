@@ -108,6 +108,13 @@
 	const loadingEnrollment = $derived(enrollmentsStore.loading && !enrollmentsStore.academy_enrollments);
 
 	const isEnrolled = $derived(!!enrollment);
+	// Platform admins bypass learner restrictions (backend grants the same
+	// bypass — this only mirrors it for UI visibility).
+	const isAdmin = $derived(
+		(data.user?.permissions ?? []).some(
+			(p) => p === '*' || p === 'academy.admin.manage' || p === 'academy.instructor.approve'
+		)
+	);
 	const progressPct = $derived(enrollment?.progress_pct ?? 0);
 	const isComplete = $derived(progressPct >= 100);
 
@@ -553,7 +560,7 @@
 					</div>
 				{/if}
 
-				{#if data.user}
+				{#if data.user && (isEnrolled || isAdmin)}
 					<form class="mb-6 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h3 class="mb-3 text-sm font-medium text-[var(--color-text)]">{t('academy.write_review')}</h3>
 						<div class="mb-3 flex items-center gap-1">
@@ -598,6 +605,8 @@
 							{reviewSubmitting ? t('common.processing') : t('academy.submit_review')}
 						</button>
 					</form>
+				{:else if data.user}
+					<p class="mb-6 text-sm text-[var(--color-muted)]">{t('academy.review_requires_enrollment', 'Enroll in this course to leave a review.')}</p>
 				{:else}
 					<p class="mb-6 text-sm text-[var(--color-muted)]">{t('academy.review_unauthenticated')}</p>
 				{/if}

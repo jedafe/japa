@@ -739,6 +739,11 @@ var (
 	// ErrInvalidFeaturedMedia — featured_media_id failed UUID parsing on a
 	// create/edit payload (400 invalid_featured_media_id).
 	ErrInvalidFeaturedMedia = errors.New("invalid featured_media_id")
+	// ErrPaymentPending — the booking's fee checkout hasn't settled yet:
+	// the booking exists but the org cannot act on it until money moves
+	// (403 payment_pending, not a 404 — the row is real, just not
+	// actionable).
+	ErrPaymentPending = errors.New("fee payment pending")
 )
 
 // §114 structured-content sentinels — faqs[]/steps[] write validation
@@ -2894,6 +2899,78 @@ func (s *Service) AdminVerify(ctx context.Context, contentID, verifiedBy pgtype.
 		}
 
 		return fmt.Errorf("servicedir: admin verify: %w", err)
+	}
+
+	return nil
+}
+
+// AdminPublish moves a listing out of the review queue into 'published'
+// (service.verify permission). Create mints listings as 'in_review' and
+// the verify flag alone never flips status — without this the review
+// queue had no path to go live. Only in_review/draft rows publish;
+// published rows are a no-op success.
+func (s *Service) AdminPublish(ctx context.Context, contentID, adminID pgtype.UUID) error {
+	existing, err := s.content.GetContent(ctx, contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("servicedir: admin publish: get content: %w", err)
+	}
+
+	if existing.Status == content.StatusPublished {
+		return nil
+	}
+
+	if existing.Status != content.StatusInReview && existing.Status != content.StatusDraft {
+		return ErrInvalidBookingTransition
+	}
+
+	// bypassEditWindow: admins publish other authors' listings past the
+	// author edit window — the moderator path, not the author path.
+	if _, err := s.content.UpdateContent(ctx, contentID, adminID, content.UpdateContentInput{
+		Status: content.StatusPublished,
+	}, true); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("servicedir: admin publish: %w", err)
+	}
+
+	return nil
+}
+
+// AdminUnpublish moves a published listing back to 'draft' — the reverse
+// of AdminPublish (takedown without deleting). Only published rows move;
+// anything else is an invalid transition.
+func (s *Service) AdminUnpublish(ctx context.Context, contentID, adminID pgtype.UUID) error {
+	existing, err := s.content.GetContent(ctx, contentID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("servicedir: admin unpublish: get content: %w", err)
+	}
+
+	if existing.Status == content.StatusDraft {
+		return nil
+	}
+
+	if existing.Status != content.StatusPublished {
+		return ErrInvalidBookingTransition
+	}
+
+	if _, err := s.content.UpdateContent(ctx, contentID, adminID, content.UpdateContentInput{
+		Status: content.StatusDraft,
+	}, true); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgx.ErrNoRows
+		}
+
+		return fmt.Errorf("servicedir: admin unpublish: %w", err)
 	}
 
 	return nil

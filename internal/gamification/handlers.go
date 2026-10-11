@@ -31,11 +31,11 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/httpx"
 	"github.com/jedafe/japa/internal/literals"
 )
 

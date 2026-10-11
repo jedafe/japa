@@ -34,8 +34,8 @@ type App string
 // Exported const values.
 const (
 	// AppMain is an exported constant.
-	AppMain  App = "main"
-	AppDocs  App = "docs"
+	AppMain    App = "main"
+	AppDocs    App = "docs"
 	AppAcademy App = "academy"
 )
 

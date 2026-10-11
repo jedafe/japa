@@ -1170,6 +1170,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	academyStore := academy.NewStore(database)
 	academyHandlers := academy.NewHandlers(academyStore, contentService)
 	academyHandlers.AsynqClient = asynqClient
+	academyHandlers.SetAdminChecker(rbacResolver) // platform admins bypass learner-side gates (§36)
 
 	// Register academy processor for the worker's academy tasks.
 	academyAdapter := academy.NewProcessorAdapter(academyStore)
@@ -5933,6 +5934,19 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.submit")).Post("/academy/my/tracks/{id}/submit", creatorHandlers.SubmitMyTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).Get("/academy/my/tracks/{id}/stats", creatorHandlers.GetMyTrackStats)
 
+			// Creator curriculum authoring (ADR-063): modules, lessons, and
+			// quiz questions on the instructor's own tracks. Platform admins
+			// bypass the ownership check inside the service.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Get("/academy/my/tracks/{id}/curriculum", creatorHandlers.GetMyCurriculum)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Post("/academy/my/tracks/{id}/modules", creatorHandlers.CreateMyModule)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Patch("/academy/my/modules/{id}", creatorHandlers.UpdateMyModule)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Delete("/academy/my/modules/{id}", creatorHandlers.DeleteMyModule)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Post("/academy/my/modules/{id}/lessons", creatorHandlers.CreateMyLesson)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Patch("/academy/my/lessons/{id}", creatorHandlers.UpdateMyLesson)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Delete("/academy/my/lessons/{id}", creatorHandlers.DeleteMyLesson)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Get("/academy/my/lessons/{id}/questions", creatorHandlers.ListMyQuizQuestions)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.create")).Put("/academy/my/lessons/{id}/questions", creatorHandlers.ReplaceMyQuizQuestions)
+
 			// Marketplace catalog
 			r.Get("/academy/catalog", creatorHandlers.ListCatalog)
 			// Catalog option lists are registered before the {slug} route so the
@@ -5975,6 +5989,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/academy/tracks/{id}", creatorHandlers.AdminGetTrack)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
 				Post("/admin/academy/tracks/{id}/approve", creatorHandlers.AdminApproveTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
+				Post("/admin/academy/tracks/{id}/unpublish", creatorHandlers.AdminUnpublishTrack)
 			// BUG-002: POST reject track.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.course.approve")).
 				Post("/admin/academy/tracks/{id}/reject", creatorHandlers.AdminRejectTrack)
@@ -7192,17 +7208,24 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/service-bookings", serviceDirHandlers.HandleMyBookings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/me/service-bookings/{id}", serviceDirHandlers.HandleMyBookingDetail)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+				// Cancel/complete/respond mutate booking state and enqueue
+				// fee-settle tasks — Rule 9 (same replay class as the
+				// create/pay routes): a retried POST must replay, not
+				// double-enqueue.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/cancel", serviceDirHandlers.HandleMyBookingCancel)
 				// Booker arm of "either party completes" (000824) — the
 				// mentee marks a confirmed mentorship booking fulfilled;
 				// user-provider rows only, service.booking.create mirrors
 				// the mentee-side create permission surface.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/complete", serviceDirHandlers.HandleMyBookingComplete)
 				// 000824 — provider responds to a user-owned (mentorship)
 				// booking: accept|decline|complete|cancel.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond"), mw.RateLimit(vkClient.Redis(), "moderate")).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "mentorship.respond"), mw.RateLimit(vkClient.Redis(), "moderate"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/respond", serviceDirHandlers.HandleMyBookingRespond)
 			})
 
@@ -7226,6 +7249,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Patch("/admin/services/{id}/verify", serviceDirHandlers.HandleAdminVerify)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
 					Patch("/admin/services/{id}/unverify", serviceDirHandlers.HandleAdminUnverify)
+				// Review-queue publish path — in_review/draft → published.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Patch("/admin/services/{id}/publish", serviceDirHandlers.HandleAdminPublish)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
+					Patch("/admin/services/{id}/unpublish", serviceDirHandlers.HandleAdminUnpublish)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.verify")).
 					Patch("/admin/services/{id}/claim/{claim_id}", serviceDirHandlers.HandleAdminResolveClaim)
 				// Marketplace upgrade — dynamic service_categories taxonomy CRUD.
@@ -7261,19 +7291,28 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/pay", serviceDirHandlers.HandleMyBookingPay)
 				// §111 booker dispute — report a problem on a confirmed|fulfilled booking.
+				// Rule 9 like every other booking mutation: a retried POST
+				// replays instead of double-firing the org notification.
 				r.With(auth.RequireAuth(kr, vkClient.Redis()),
-					rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate")).
+					rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/dispute", serviceDirHandlers.HandleMyBookingDispute)
 				r.Get("/org/{org_id}/packages", serviceDirHandlers.HandleOrgPackages)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).
 					Get("/org/{org_id}/service-bookings", serviceDirHandlers.HandleOrgBookings)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).
+				// Org transition — state change + fee-settle enqueue, so the
+				// same Rule 9 replay guarantee as the booker mutations.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Patch("/org/{org_id}/service-bookings/{id}", serviceDirHandlers.HandleOrgBookingTransition)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.admin")).
 					Get("/admin/service-bookings", serviceDirHandlers.HandleAdminBookings)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.admin")).
 					Get("/admin/service-bookings/{id}", serviceDirHandlers.AdminGetBooking)
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.admin")).
+				// Admin dispute resolution — same Rule 9 guarantee (a retried
+				// resolve must not double-enqueue fee_settle).
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.admin"),
+					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Patch("/admin/service-bookings/{id}", serviceDirHandlers.HandleAdminBookingTransition)
 			})
 

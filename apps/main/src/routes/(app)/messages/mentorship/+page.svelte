@@ -24,6 +24,7 @@
 	// viewerId is the root layout's dedicated viewer id — immune to page-level
 	// `user` overrides.
 	const viewerId = $derived(page.data.viewerId ?? '');
+	const viewerEmail = $derived(page.data.user?.email ?? '');
 	const selectedId = $derived(page.url.searchParams.get('b'));
 
 	const emptyTitle = $derived(
@@ -44,7 +45,7 @@
 	);
 	const emptyAction = $derived(
 		data.role === 'received'
-			? undefined
+			? { label: t('mentors.become_mentor', 'Become a mentor'), href: '/settings/mentorship' }
 			: { label: t('mentors.browse', 'Browse mentors'), href: '/services?kind=mentorship' }
 	);
 
@@ -99,6 +100,7 @@
 					booking={data.selected}
 					role={data.role}
 					{viewerId}
+					{viewerEmail}
 					{dmEnabled}
 					{packagesEnabled}
 					onClose={closeDetail}

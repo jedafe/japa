@@ -67,10 +67,10 @@ type UpdateDocPageRequest struct {
 // DocNavItem is a single navigation entry (a published page), optionally
 // nesting child pages one level deep.
 type DocNavItem struct {
-	ID       string       `json:"id"`
-	Title    string       `json:"title"`
-	Slug     string       `json:"slug"`
-	Audience string       `json:"audience"`
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	Slug        string       `json:"slug"`
+	Audience    string       `json:"audience"`
 	ParentID    *string      `json:"parent_id,omitempty"`
 	Position    int32        `json:"position"`
 	Category    *string      `json:"category,omitempty"`

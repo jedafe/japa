@@ -14,7 +14,10 @@ import (
 	"github.com/valkey-io/valkey-go/valkeycompat"
 
 	"github.com/jedafe/japa/internal/config"
+	"github.com/jedafe/japa/internal/content"
+	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
+	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/jedafe/japa/internal/worker"
 )
@@ -176,7 +179,7 @@ func (s *Service) provisionAdminProfile(ctx context.Context, userID pgtype.UUID)
 // queue — their application is approved immediately.
 func (s *Service) Apply(ctx context.Context, userID pgtype.UUID, in ApplyInput) (AcademyInstructorProfile, error) {
 	if in.DisplayName == "" {
-		return AcademyInstructorProfile{}, errors.New("display_name is required")
+		return AcademyInstructorProfile{}, fmt.Errorf("%w: display_name is required", errpkg.ErrRequired)
 	}
 
 	row, err := s.store.Apply(ctx, userID, in)
@@ -320,8 +323,14 @@ func (s *Service) DeleteInstructor(ctx context.Context, instructorID pgtype.UUID
 
 // CreateTrack creates a marketplace track owned by an approved instructor.
 func (s *Service) CreateTrack(ctx context.Context, instructorID pgtype.UUID, in CreateTrackInput) (gen.CreateInstructorTrackRow, error) {
-	if in.Title == "" || in.Slug == "" {
-		return gen.CreateInstructorTrackRow{}, errors.New("title and slug are required")
+	if in.Title == "" {
+		return gen.CreateInstructorTrackRow{}, fmt.Errorf("%w: title is required", errpkg.ErrRequired)
+	}
+
+	// Auto-derive the slug when the caller omits it — the frontend does the
+	// same client-side, so API-only callers get identical behavior.
+	if in.Slug == "" {
+		in.Slug = content.Slugify(in.Title)
 	}
 
 	if in.Difficulty == "" {
@@ -335,17 +344,86 @@ func (s *Service) CreateTrack(ctx context.Context, instructorID pgtype.UUID, in 
 
 // UpdateTrack updates a creator's own track.
 func (s *Service) UpdateTrack(ctx context.Context, trackID, instructorID pgtype.UUID, in UpdateTrackInput) (gen.UpdateInstructorTrackRow, error) {
-	return s.store.UpdateTrack(ctx, trackID, instructorID, in)
+	var reset bool
+	row, err := db.WithTxResult(ctx, s.store.db.Writer, func(q *gen.Queries) (gen.UpdateInstructorTrackRow, error) {
+		st := s.store.forTx(q)
+		r, err := st.UpdateTrack(ctx, trackID, instructorID, in)
+		if err != nil {
+			return r, err
+		}
+		// Re-review policy: editing a live track takes it back to draft,
+		// atomically with the edit itself.
+		n, err := q.ResetApprovedAcademyTrackToDraft(ctx, trackID)
+		if err != nil {
+			return r, err
+		}
+		reset = n > 0
+		return r, nil
+	})
+	if err != nil {
+		return row, err
+	}
+
+	if reset {
+		// The returned row predates the reset — mirror the flag changes.
+		row.IsPublished = false
+		row.IsPublishedToAcademy = false
+		row.AcademySubmissionStatus = "draft"
+		s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
+			"entity_id":   trackID.String(),
+			"entity_type": "academy_track",
+		})
+	}
+
+	return row, nil
+}
+
+// validateTrackCurriculum enforces the minimum curriculum requirements a
+// track must meet before it may enter or pass marketplace review: at least
+// one module, at least one published lesson, and every published quiz lesson
+// carrying at least one question. Applied at submit AND at approve so a
+// creator cannot gut a pending course mid-review.
+func (s *Service) validateTrackCurriculum(ctx context.Context, trackID pgtype.UUID) error {
+	r, err := s.store.GetTrackSubmissionReadiness(ctx, trackID)
+	if err != nil {
+		return fmt.Errorf("creator: submission readiness: %w", err)
+	}
+	switch {
+	case r.ModuleCount == 0:
+		return fmt.Errorf("%w: course must contain at least one module", errpkg.ErrInvalid)
+	case r.PublishedLessonCount == 0:
+		return fmt.Errorf("%w: course must contain at least one published lesson", errpkg.ErrInvalid)
+	case r.QuizlessQuizCount > 0:
+		return fmt.Errorf("%w: every published quiz lesson must have at least one question", errpkg.ErrInvalid)
+	}
+	return nil
 }
 
 // SubmitTrack submits a track for marketplace approval.
 func (s *Service) SubmitTrack(ctx context.Context, trackID, instructorID pgtype.UUID) (gen.SubmitAcademyTrackRow, error) {
+	// Verify ownership before running the readiness check so a creator
+	// cannot probe another track's curriculum via the validation errors.
+	track, err := s.store.read.GetInstructorTrackByID(ctx, trackID)
+	if err != nil {
+		return gen.SubmitAcademyTrackRow{}, err
+	}
+	if !track.InstructorID.Valid || track.InstructorID != instructorID {
+		return gen.SubmitAcademyTrackRow{}, fmt.Errorf("%w: you do not own this track", errpkg.ErrForbidden)
+	}
+
+	if err := s.validateTrackCurriculum(ctx, trackID); err != nil {
+		return gen.SubmitAcademyTrackRow{}, err
+	}
 	return s.store.SubmitTrack(ctx, trackID, instructorID)
 }
 
 // ApproveTrack publishes a submitted track to the marketplace and enqueues
 // the course-approved notification + search index sync.
 func (s *Service) ApproveTrack(ctx context.Context, trackID pgtype.UUID) (gen.ApproveAcademyTrackRow, error) {
+	if err := s.validateTrackCurriculum(ctx, trackID); err != nil {
+		return gen.ApproveAcademyTrackRow{}, err
+	}
+
 	row, err := s.store.ApproveTrack(ctx, trackID)
 	if err != nil {
 		return gen.ApproveAcademyTrackRow{}, err
@@ -353,6 +431,53 @@ func (s *Service) ApproveTrack(ctx context.Context, trackID pgtype.UUID) (gen.Ap
 
 	s.enqueueNotifyCourseApproved(ctx, trackID)
 	// Enqueue search index sync so the track appears in the marketplace index.
+	s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
+		"entity_id":   trackID.String(),
+		"entity_type": "academy_track",
+	})
+
+	return row, nil
+}
+
+// withMutationAndReset runs fn (a curriculum/track mutation) inside a
+// transaction together with the re-review reset, so a live track can never
+// be left published by a failed reset — both commit or neither does.
+// When the reset actually fires, the search-index sync is enqueued after
+// commit so the track drops out of marketplace results.
+func (s *Service) withMutationAndReset(ctx context.Context, trackID pgtype.UUID, fn func(q *gen.Queries) error) error {
+	var reset bool
+	err := db.WithTx(ctx, s.store.db.Writer, func(q *gen.Queries) error {
+		if err := fn(q); err != nil {
+			return err
+		}
+		n, err := q.ResetApprovedAcademyTrackToDraft(ctx, trackID)
+		if err != nil {
+			return err
+		}
+		reset = n > 0
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if reset {
+		s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
+			"entity_id":   trackID.String(),
+			"entity_type": "academy_track",
+		})
+	}
+	return nil
+}
+
+// UnpublishTrack takes a live instructor track off the marketplace. The
+// track reverts to draft and must be re-submitted and re-approved to return.
+func (s *Service) UnpublishTrack(ctx context.Context, trackID pgtype.UUID) (gen.UnpublishAcademyTrackRow, error) {
+	row, err := s.store.UnpublishTrack(ctx, trackID)
+	if err != nil {
+		return gen.UnpublishAcademyTrackRow{}, err
+	}
+
+	// Re-sync the search index so the track drops out of marketplace results.
 	s.enqueue(ctx, worker.TypeSearchIndexSync, map[string]string{
 		"entity_id":   trackID.String(),
 		"entity_type": "academy_track",
@@ -431,17 +556,29 @@ func (s *Service) ProcessEnrollment(ctx context.Context, userID, trackID, paymen
 		accessType = "subscription"
 	}
 
+	// Only a genuinely new enrollment row may bump the cached counters.
+	// The synchronous free/subscription path (CreateEnrollment) already
+	// counts atomically at insert time — pro_stream enrollments arrive here
+	// with the row already present, and a repeat purchase must not
+	// double-count.
+	alreadyEnrolled, err := s.store.HasEnrollment(ctx, userID, trackID)
+	if err != nil {
+		return fmt.Errorf("creator: enrollment existence check: %w", err)
+	}
+
 	enrollment, err := s.store.UpsertEnrollment(ctx, userID, trackID, accessType, payRef)
 	if err != nil {
 		return fmt.Errorf("creator: upsert enrollment: %w", err)
 	}
 
-	// Increment the cached counter (best-effort; non-fatal).
-	if err := s.store.IncrementTotalEnrolled(ctx, trackID); err != nil {
-		slog.Warn("creator: increment total_enrolled", "track_id", trackID.String(), "error", err)
+	if !alreadyEnrolled {
+		// Increment the cached counter (best-effort; non-fatal).
+		if err := s.store.IncrementTotalEnrolled(ctx, trackID); err != nil {
+			slog.Warn("creator: increment total_enrolled", "track_id", trackID.String(), "error", err)
+		}
+		// AUDIT-BE-VALKEY-008: increment the Valkey enrollment counter too.
+		s.incrementTrackEnrolledCache(ctx, trackID)
 	}
-	// AUDIT-BE-VALKEY-008: increment the Valkey enrollment counter too.
-	s.incrementTrackEnrolledCache(ctx, trackID)
 
 	// Resolve the creator/platform split percentages.
 	creatorPct, platformPct := s.resolveSplit(ctx, track.InstructorID)

@@ -1468,8 +1468,12 @@ func (h *Handlers) SeaweedFSUpload(w http.ResponseWriter, r *http.Request) {
 
 // verifyPendingUploadBytes applies the InitiateUpload MIME gates to bytes
 // already written by SeaweedFSUpload: DetectStorageMIME sniffing, the
-// service allowlist for the media context, and VerifyMIMEType content
-// inspection against the row's declared MIME.
+// service allowlist for the upload context the row was initiated with, and
+// VerifyMIMEType content inspection against the row's declared MIME. The
+// pending row does not record the context, so it is recovered from the
+// declared MIME — any context whose gates would have accepted the declared
+// type is a candidate (the sniffed type must pass the same gates; a context
+// mismatch is still caught by VerifyMIMEType).
 func (h *Handlers) verifyPendingUploadBytes(localPath, filename, declaredMIME string) error {
 	f, err := os.Open(localPath) // #nosec G304 -- path resolved via resolveMediaPath
 	if err != nil {
@@ -1480,7 +1484,15 @@ func (h *Handlers) verifyPendingUploadBytes(localPath, filename, declaredMIME st
 	head := make([]byte, 512)
 	n, _ := io.ReadFull(f, head)
 	sniffed := DetectStorageMIME(head[:n], filename)
-	if !h.service.isAllowedMIME(context.Background(), sniffed, UploadContextMedia) {
+	allowed := false
+	for _, ctx := range []UploadContext{UploadContextMedia, UploadContextAvatar, UploadContextDocument} {
+		if h.service.isAllowedMIME(context.Background(), declaredMIME, ctx) &&
+			h.service.isAllowedMIME(context.Background(), sniffed, ctx) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
 		return errors.New("media: sniffed type not allowed for upload")
 	}
 	if _, matches, verr := VerifyMIMEType(head[:n], declaredMIME); verr != nil || !matches {

@@ -322,7 +322,7 @@ func (r *Renderer) renderTrendingTags(ctx context.Context, w Widget) (json.RawMe
 		GROUP BY t.id, t.name, t.slug
 		ORDER BY usage_count DESC, t.name ASC
 		LIMIT $1
-	`,		limit)
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering trending_tags: %w", err)
 	}
@@ -422,7 +422,7 @@ func (r *Renderer) renderUserLeaderboard(ctx context.Context, w Widget) (json.Ra
 		GROUP BY u.id, u.username, up.display_name, up.avatar_url
 		ORDER BY points DESC
 		LIMIT $1
-	`,		limit)
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering user_leaderboard: %w", err)
 	}
@@ -508,7 +508,7 @@ func (r *Renderer) renderFeaturedSpaces(ctx context.Context, w Widget) (json.Raw
 		WHERE s.deleted_at IS NULL
 		ORDER BY s.created_at DESC
 		LIMIT $1
-	`,		limit)
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering featured_spaces: %w", err)
 	}
@@ -1218,7 +1218,7 @@ func (r *Renderer) renderComparisons(ctx context.Context, w Widget) (json.RawMes
 		WHERE ci.deleted_at IS NULL
 		ORDER BY ci.created_at DESC
 		LIMIT $1
-	`,		limit)
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering comparisons: %w", err)
 	}
@@ -1354,7 +1354,7 @@ func (r *Renderer) renderMentorSpotlight(ctx context.Context, w Widget) (json.Ra
 		  AND mp.is_available = true
 		ORDER BY mp.rating_avg DESC, mp.session_count DESC
 		LIMIT $1
-	`,		limit)
+	`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("rendering mentor_spotlight: %w", err)
 	}

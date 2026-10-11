@@ -231,6 +231,10 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "idempotency_key_required", "Idempotency-Key header is required")
 	case errors.Is(err, ErrInvalidDeparture):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_departure", "The selected departure is invalid for this package")
+	case errors.Is(err, ErrInvalidPartySize):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_party_size", "The party size exceeds the listing capacity")
+	case errors.Is(err, ErrPaymentPending):
+		errpkg.WriteError(w, http.StatusForbidden, "payment_pending", "The booking fee has not settled yet — the booking becomes actionable once payment succeeds")
 	case errors.Is(err, ErrNotPackage):
 		errpkg.WriteError(w, http.StatusBadRequest, "not_package", "This listing is not a package")
 	case errors.Is(err, ErrInvalidItem):
@@ -1085,6 +1089,73 @@ func (h *Handlers) HandleAdminUnverify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"verified": false}})
+}
+
+// HandleAdminPublish handles PATCH /admin/services/:id/publish — move an
+// in_review/draft listing to published (the review-queue "approve"
+// action). Admin-only (service.verify at route level).
+func (h *Handlers) HandleAdminPublish(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	if err := h.service.AdminPublish(r.Context(), contentID, user.UserID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		slog.Error("servicedir: admin publish failed", "error", err)
+		writeServiceError(w, err, "publish_failed", "Failed to publish service")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": content.StatusPublished}})
+}
+
+// HandleAdminUnpublish handles PATCH /admin/services/:id/unpublish —
+// takedown: published → draft. Admin-only (service.verify at route level).
+func (h *Handlers) HandleAdminUnpublish(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	contentID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "service_directory_unavailable", "Service directory not configured")
+		return
+	}
+
+	if err := h.service.AdminUnpublish(r.Context(), contentID, user.UserID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
+			return
+		}
+
+		slog.Error("servicedir: admin unpublish failed", "error", err)
+		writeServiceError(w, err, "unpublish_failed", "Failed to unpublish service")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"status": content.StatusDraft}})
 }
 
 // HandleAdminResolveClaim handles PATCH /admin/services/:id/claim/:claim_id

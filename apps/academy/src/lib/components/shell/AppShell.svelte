@@ -88,7 +88,7 @@
 	<!-- Guest layout: same 3-column shell as authed users. LeftNav shows
 	     a Login button for guests; RightSidebar renders admin-managed widgets. -->
 	<div
-		class="shell university"
+		class="shell"
 		class:hide-sidebar={hideRightSidebar}
 		class:show-left-rail={showLeftRail}
 		style="--current-nav-width: {navWidth}"
@@ -148,7 +148,7 @@
 	{/if}
 {:else}
 	<div
-		class="shell university"
+		class="shell"
 		class:hide-sidebar={hideRightSidebar}
 		class:show-left-rail={showLeftRail}
 		style="--current-nav-width: {navWidth}"

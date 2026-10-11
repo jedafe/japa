@@ -662,7 +662,8 @@ func (h *Handlers) HandleOrgBookingTransition(w http.ResponseWriter, r *http.Req
 }
 
 // HandleAdminBookings handles GET /admin/service-bookings — all bookings
-// (?status=&intent=&org_id=). Requires service.booking.admin (route).
+// (?status=&intent=&org_id=&kind=&provider_id=&booker_id=). Requires
+// service.booking.admin (route).
 func (h *Handlers) HandleAdminBookings(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireUser(w, r); !ok {
 		return
@@ -676,7 +677,9 @@ func (h *Handlers) HandleAdminBookings(w http.ResponseWriter, r *http.Request) {
 
 	bookings, total, err := h.service.AdminListBookings(r.Context(),
 		r.URL.Query().Get("status"), r.URL.Query().Get("intent"),
-		r.URL.Query().Get("org_id"), page, limit)
+		r.URL.Query().Get("org_id"), r.URL.Query().Get("kind"),
+		r.URL.Query().Get("provider_id"), r.URL.Query().Get("booker_id"),
+		page, limit)
 	if err != nil {
 		slog.Error("servicedir: admin bookings failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list bookings")

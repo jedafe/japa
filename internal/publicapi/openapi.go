@@ -152,11 +152,11 @@ func buildPublicPaths() map[string]any {
 		// (spec 2026-09-24-agent-data-api-phase2). Chi registers the static
 		// tag/space segments before {name} and scam-alerts/schema before
 		// scam-alerts/{id}; map order mirrors the router for readability.
-		"/public/feeds/tag/{tag}":       tagFeedPath(),
-		"/public/feeds/space/{slug}":    spaceFeedPath(),
-		"/public/feeds/{name}":          exploreFeedPath(),
-		"/public/me/feed":               myFeedPath(),
-		"/public/me/digest":             digestPath(),
+		"/public/feeds/tag/{tag}":    tagFeedPath(),
+		"/public/feeds/space/{slug}": spaceFeedPath(),
+		"/public/feeds/{name}":       exploreFeedPath(),
+		"/public/me/feed":            myFeedPath(),
+		"/public/me/digest":          digestPath(),
 		// Phase 3 (spec 2026-09-24-agent-data-api-phase3): key-scoped writes.
 		"/public/me/bookmarks":                myBookmarksPath(),
 		"/public/me/bookmarks/{content_id}":   myBookmarkByContentPath(),
@@ -164,11 +164,11 @@ func buildPublicPaths() map[string]any {
 		"/public/me/webhooks/{id}/verify":     myWebhookVerifyPath(),
 		"/public/me/webhooks/{id}/deliveries": myWebhookDeliveriesPath(),
 		"/public/me/webhooks/{id}":            myWebhookByIDPath(),
-		"/public/content/{id}/markdown": contentMarkdownPath(),
-		"/public/scam-alerts":           scamAlertsPath(),
-		"/public/scam-alerts/schema":    scamAlertSchemaPath(),
-		"/public/scam-alerts/{id}":      scamAlertByIDPath(),
-		"/public/search/semantic":       semanticSearchPath(),
+		"/public/content/{id}/markdown":       contentMarkdownPath(),
+		"/public/scam-alerts":                 scamAlertsPath(),
+		"/public/scam-alerts/schema":          scamAlertSchemaPath(),
+		"/public/scam-alerts/{id}":            scamAlertByIDPath(),
+		"/public/search/semantic":             semanticSearchPath(),
 
 		// Browser extension (Section 47 v1.3 — Browser-Extension Digest).
 		// /me/extension-tokens is session-authenticated (bearerAuth), not
@@ -222,14 +222,14 @@ func contentListPath() map[string]any {
 			"429": refResponse("RateLimited"),
 		}),
 		"post": map[string]any{
-			"operationId": "createContentDraft",
-			"summary":     "Create draft content",
-			"description": "Create a content draft owned by the API key holder. Publishing stays session-side — the draft is visible to the owner in the composer and can be published there. content_type is restricted to blog_post, guide, story, discussion. The Idempotency-Key header is required; retries with the same key return the original response. Requires the admin-granted api.write.content scope.",
-			"tags":        []any{"Content"},
+			"operationId":      "createContentDraft",
+			"summary":          "Create draft content",
+			"description":      "Create a content draft owned by the API key holder. Publishing stays session-side — the draft is visible to the owner in the composer and can be published there. content_type is restricted to blog_post, guide, story, discussion. The Idempotency-Key header is required; retries with the same key return the original response. Requires the admin-granted api.write.content scope.",
+			"tags":             []any{"Content"},
 			"x-required-scope": "api.write.content",
 			"parameters": []any{map[string]any{
 				"name": "Idempotency-Key", "in": "header", "required": true,
-				"schema":   map[string]any{"type": "string"},
+				"schema":      map[string]any{"type": "string"},
 				"description": "Unique key deduplicating retries for 24h",
 			}},
 			"requestBody": map[string]any{

@@ -69,6 +69,8 @@ export interface SessionUser {
 	displayName: string;
 	avatar_url?: string | null;
 	groups?: string[];
+	/** RBAC permission keys resolved for the session — '*' means platform admin. */
+	permissions?: string[];
 	primary_space?: SpaceRef | null;
 	/** UI preferences persisted via PATCH /me/account, e.g. nav_collapsed. */
 	ui?: { nav_collapsed?: boolean } & Record<string, unknown>;
@@ -241,7 +243,16 @@ export interface LessonSummary {
 	is_preview?: boolean;
 }
 
-export type LessonType = 'article' | 'video' | 'quiz' | 'checklist';
+export type LessonType =
+	| 'article'
+	| 'video'
+	| 'quiz'
+	| 'checklist'
+	| 'document'
+	| 'youtube'
+	| 'screencast'
+	| 'audio'
+	| 'link';
 
 /** Full lesson — GET /academy/lessons/{id} (authenticated). */
 export interface Lesson {
@@ -260,6 +271,10 @@ export interface Lesson {
 	/** Video: signed URL or HLS manifest (browser-guarded init). */
 	video_url?: string | null;
 	video_duration_secs?: number | null;
+	/** Attached media (document, screencast, audio) — same-origin serve URL. */
+	media_url?: string | null;
+	/** External resource URL for link/embed types (youtube, screencast). */
+	external_url?: string | null;
 	/** Quiz: question set. */
 	quiz?: Quiz | null;
 	/** Checklist: TaskList items. */
@@ -341,6 +356,65 @@ export interface ChecklistItem {
 	id: string;
 	label: string;
 	checked?: boolean;
+}
+
+/* ------------------------------------------------------------------ *
+ * Curriculum editor — /academy/my/* (creator authoring, ADR-063)
+ * ------------------------------------------------------------------ */
+
+/** Editable lesson record returned by the creator curriculum endpoints. */
+export interface CurriculumLesson {
+	id: string;
+	module_id: string;
+	title: string;
+	slug: string;
+	lesson_type: LessonType;
+	content?: string | null;
+	media_id?: string | null;
+	duration_minutes?: number | null;
+	sort_order: number;
+	is_published: boolean;
+	is_preview: boolean;
+	question_count: number;
+}
+
+/** Editable module with nested lessons — GET /academy/my/tracks/{id}/curriculum. */
+export interface CurriculumModule {
+	id: string;
+	track_id: string;
+	title: string;
+	slug: string;
+	description?: string | null;
+	sort_order: number;
+	lessons: CurriculumLesson[];
+}
+
+/** Track shape returned by GET /academy/my/tracks/{id}/curriculum. */
+export interface CurriculumTrack {
+	id: string;
+	title: string;
+	slug: string;
+	description?: string | null;
+	difficulty: string;
+	is_published: boolean;
+	instructor_id?: string | null;
+	academy_submission_status: 'draft' | 'pending' | 'approved' | 'rejected';
+	academy_rejection_reason?: string | null;
+}
+
+export interface Curriculum {
+	track: CurriculumTrack;
+	modules: CurriculumModule[];
+}
+
+/** Quiz question in the editor contract (includes the correct answer). */
+export interface QuizEditQuestion {
+	id?: string;
+	question: string;
+	options: string[];
+	answer: string;
+	explanation?: string | null;
+	position?: number;
 }
 
 /* ------------------------------------------------------------------ *

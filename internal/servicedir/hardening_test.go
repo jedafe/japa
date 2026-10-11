@@ -192,3 +192,60 @@ func TestReviewsCompositeGate(t *testing.T) {
 		t.Fatalf("code = %q, want service_directory_disabled", got)
 	}
 }
+
+// TestAdminAllowedTransitions — the dispute-resolution matrix pins which
+// target statuses are reachable: terminal rows stay terminal, refunded is
+// reachable only out of disputed (the fee worker owns the actual refund).
+func TestAdminAllowedTransitions(t *testing.T) {
+	allowed := [][2]string{
+		{"pending", "confirmed"}, {"pending", "declined"}, {"pending", "cancelled"},
+		{"confirmed", "fulfilled"}, {"confirmed", "cancelled"}, {"confirmed", "disputed"},
+		{"fulfilled", "disputed"},
+		{"disputed", "refunded"}, {"disputed", "confirmed"},
+		{"disputed", "fulfilled"}, {"disputed", "cancelled"},
+	}
+	for _, tc := range allowed {
+		if !adminAllowedTransitions[tc[0]][tc[1]] {
+			t.Errorf("%s → %s should be allowed", tc[0], tc[1])
+		}
+	}
+
+	denied := [][2]string{
+		{"pending", "fulfilled"}, {"pending", "disputed"}, {"pending", "refunded"},
+		{"confirmed", "refunded"}, {"confirmed", "declined"}, {"confirmed", "pending"},
+		{"fulfilled", "confirmed"}, {"fulfilled", "refunded"}, {"fulfilled", "cancelled"},
+		{"disputed", "pending"}, {"disputed", "declined"},
+		{"cancelled", "pending"}, {"cancelled", "confirmed"}, {"declined", "pending"},
+		{"refunded", "pending"}, {"refunded", "confirmed"}, {"refunded", "disputed"},
+	}
+	for _, tc := range denied {
+		if adminAllowedTransitions[tc[0]][tc[1]] {
+			t.Errorf("%s → %s should be denied", tc[0], tc[1])
+		}
+	}
+}
+
+// TestWriteServiceError_PartySize — the party-size sentinel maps to a 400
+// with the invalid_party_size code.
+func TestWriteServiceError_PartySize(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeServiceError(rec, ErrInvalidPartySize, "x", "y")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if got := errCode(t, rec); got != "invalid_party_size" {
+		t.Fatalf("code = %q, want invalid_party_size", got)
+	}
+}
+
+// TestApplyDiscount_ZeroIsNoop — documents the pricing.go contract the
+// commit guard relies on: an unknown discount type reduces nothing, so the
+// create path rejects it instead of stamping a phantom zero redemption.
+func TestApplyDiscount_ZeroIsNoop(t *testing.T) {
+	if got := applyDiscount(100_000, "free_shipping", 10); got != 100_000 {
+		t.Fatalf("unknown type should be a no-op, got %d", got)
+	}
+	if got := applyDiscount(100_000, "percent", 0); got != 100_000 {
+		t.Fatalf("zero percent should be a no-op, got %d", got)
+	}
+}

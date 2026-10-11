@@ -5,7 +5,7 @@
 	import { t } from '$lib/stores/i18n.svelte';
 	import { loadCurrencies, formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Check, Eye, X } from 'lucide-svelte';
+	import { Check, Eye, EyeOff, X } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Modal } from '$lib/components/ui/modal';
 	import type { ActionItem } from '$lib/components/ui/data-table';
@@ -38,6 +38,7 @@
 	let actionTarget = $state<Track | null>(null);
 	let showApproveConfirm = $state(false);
 	let showRejectModal = $state(false);
+	let showUnpublishConfirm = $state(false);
 	let rejectReason = $state('');
 
 	const canApprove = $derived(hasPermission('academy.course.approve'));
@@ -53,6 +54,7 @@
 
 	function openApprove(row: Track) { actionTarget = row; showApproveConfirm = true; }
 	function openReject(row: Track) { actionTarget = row; rejectReason = ''; showRejectModal = true; }
+	function openUnpublish(row: Track) { actionTarget = row; showUnpublishConfirm = true; }
 
 	async function confirmApprove() {
 		if (!actionTarget) return;
@@ -83,10 +85,29 @@
 				showRejectModal = false;
 				entityController?.reload();
 			} else {
-				pageError = result.error ?? t('university.reject_failed', 'Failed to reject track');
+				pageError = result.error ?? t('academy.reject_failed', 'Failed to reject track');
 			}
 		} catch (e) {
-			pageError = e instanceof Error ? e.message : t('university.reject_failed', 'Failed to reject track');
+			pageError = e instanceof Error ? e.message : t('academy.reject_failed', 'Failed to reject track');
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	async function confirmUnpublish() {
+		if (!actionTarget) return;
+		actionLoading = true;
+		pageError = '';
+		try {
+			const result = await academyAdminApi.unpublishTrack(actionTarget.id);
+			if (result.ok) {
+				showUnpublishConfirm = false;
+				entityController?.reload();
+			} else {
+				pageError = result.error ?? t('academy.unpublish_failed', 'Failed to unpublish track');
+			}
+		} catch (e) {
+			pageError = e instanceof Error ? e.message : t('academy.unpublish_failed', 'Failed to unpublish track');
 		} finally {
 			actionLoading = false;
 		}
@@ -117,6 +138,13 @@
 				variant: 'destructive',
 				onclick: openReject,
 				show: (row: Track) => row.academy_submission_status === 'pending'
+			});
+			acts.push({
+				label: t('academy.unpublish', 'Unpublish'),
+				icon: EyeOff,
+				variant: 'destructive',
+				onclick: openUnpublish,
+				show: (row: Track) => row.academy_submission_status === 'approved'
 			});
 		}
 		return acts;
@@ -284,20 +312,31 @@
 	</Modal>
 {/if}
 
+<!-- Unpublish Modal -->
+{#if actionTarget}
+	<Modal bind:open={showUnpublishConfirm} title={t('academy.unpublish_track', 'Unpublish Track')}>
+		<p class="text-sm" style="color: var(--color-muted)">{t('academy.unpublish_track_confirm', 'Take')} <strong>{actionTarget.title}</strong> {t('academy.unpublish_track_suffix', 'off the marketplace? It returns to draft and must be re-submitted for review.')}</p>
+		<div class="mt-6 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => { showUnpublishConfirm = false; }}>{t('common.cancel', 'Cancel')}</Button>
+			<Button variant="destructive" onclick={confirmUnpublish} disabled={actionLoading}>{actionLoading ? t('common.processing', 'Processing...') : t('academy.unpublish', 'Unpublish')}</Button>
+		</div>
+	</Modal>
+{/if}
+
 {#snippet TrackView({ row }: { row: Track })}
 	<div class="space-y-3">
-		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.track_title', 'Track')}</p><p class="mt-1 text-sm font-medium">{row.title}</p></div>
-		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.instructor', 'Instructor')}</p><p class="mt-1 text-sm">{row.instructor_name}</p></div>
-		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.slug', 'Slug')}</p><p class="mt-1 text-sm font-mono">{row.slug}</p></div>
+		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.track_title', 'Track')}</p><p class="mt-1 text-sm font-medium">{row.title}</p></div>
+		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.instructor', 'Instructor')}</p><p class="mt-1 text-sm">{row.instructor_name}</p></div>
+		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.slug', 'Slug')}</p><p class="mt-1 text-sm font-mono">{row.slug}</p></div>
 		{#if row.description}
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.description', 'Description')}</p><p class="mt-1 text-sm whitespace-pre-wrap">{row.description}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.description', 'Description')}</p><p class="mt-1 text-sm whitespace-pre-wrap">{row.description}</p></div>
 		{/if}
-		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.difficulty', 'Difficulty')}</p><p class="mt-1 text-sm">{row.difficulty}</p></div>
-		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.price', 'Price')}</p><p class="mt-1 text-sm">{formatPrice(row.price_kobo, row.currency)}</p></div>
+		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.difficulty', 'Difficulty')}</p><p class="mt-1 text-sm">{row.difficulty}</p></div>
+		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.price', 'Price')}</p><p class="mt-1 text-sm">{formatPrice(row.price_kobo, row.currency)}</p></div>
 		{#if row.category}
-			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.category', 'Category')}</p><p class="mt-1 text-sm">{row.category}</p></div>
+			<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.category', 'Category')}</p><p class="mt-1 text-sm">{row.category}</p></div>
 		{/if}
-		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.language', 'Language')}</p><p class="mt-1 text-sm">{row.language}</p></div>
-		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('university.enrolled', 'Enrolled')}</p><p class="mt-1 text-sm">{row.total_enrolled}</p></div>
+		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.language', 'Language')}</p><p class="mt-1 text-sm">{row.language}</p></div>
+		<div><p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-muted)">{t('academy.enrolled', 'Enrolled')}</p><p class="mt-1 text-sm">{row.total_enrolled}</p></div>
 	</div>
 {/snippet}

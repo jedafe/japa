@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -489,8 +490,19 @@ func bookingRowFromAdmin(r gen.AdminListServiceBookingsRow) BookingRow {
 // booking back rather than silently lose the recorded discount).
 // redemption.ServiceBookingID is stamped from the new booking row inside
 // the tx.
-func (s *Store) createBookingWithRedemption(ctx context.Context, p gen.CreateServiceBookingParams, redemption *gen.CreateCouponRedemptionParams) (gen.ServiceBooking, error) {
+//
+// When guard is non-nil the coupon row is locked first and the cap/window
+// rule set re-checked inside the same transaction: the priceQuote counts
+// ran outside any lock, so without this two concurrent checkouts could
+// both pass max_redemptions and both commit.
+func (s *Store) createBookingWithRedemption(ctx context.Context, p gen.CreateServiceBookingParams, redemption *gen.CreateCouponRedemptionParams, guard *couponCommitGuard) (gen.ServiceBooking, error) {
 	return db.WithTxResult(ctx, s.pool.Writer, func(q *gen.Queries) (gen.ServiceBooking, error) {
+		if guard != nil {
+			if err := checkCouponCapsTx(ctx, q, *guard); err != nil {
+				return gen.ServiceBooking{}, err
+			}
+		}
+
 		booking, err := q.CreateServiceBooking(ctx, p)
 		if err != nil {
 			return gen.ServiceBooking{}, fmt.Errorf("servicedir: create booking: %w", err)
@@ -505,6 +517,117 @@ func (s *Store) createBookingWithRedemption(ctx context.Context, p gen.CreateSer
 
 		return booking, nil
 	})
+}
+
+// couponCommitGuard carries the priceQuote resolution into the booking
+// transaction so cap/window enforcement re-runs under the coupon row
+// lock: concurrent checkouts against the same coupon serialize on the
+// FOR UPDATE lock instead of oversubscribing max_redemptions /
+// per_user_limit / first_time_only on a read-committed snapshot.
+type couponCommitGuard struct {
+	Code     string // original coupon code — the lock lookup is case-insensitive
+	MetaID   pgtype.UUID
+	BookerID pgtype.UUID
+	OrgID    pgtype.UUID // listing's org, for the ownership + first-time checks
+	Base     int64       // quoted base price — min_spend/discount recompute identically
+	Kind     string      // listing kind, for the applies_to check
+	Currency string      // quoted currency, for the unit-mismatch check
+	Discount int64       // quoted discount — a changed coupon value aborts the commit
+}
+
+// checkCouponCapsTx re-validates the coupon rule set under the coupon row
+// lock, using the tx-scoped queries so the counts observe every committed
+// redemption up to the lock. Stateless checks (status/window, org
+// ownership, applies_to, currency, min_spend, non-zero discount) mirror
+// priceQuote so a coupon muted or re-scoped after the quote can't commit
+// a stale discount; the live counters then enforce the caps.
+func checkCouponCapsTx(ctx context.Context, q *gen.Queries, g couponCommitGuard) error {
+	row, err := q.LockCouponForRedemption(ctx, gen.LockCouponForRedemptionParams{
+		ListingMetaID: g.MetaID, Code: g.Code,
+	})
+	if err != nil {
+		return fmt.Errorf("servicedir: lock coupon: %w", err)
+	}
+
+	c := mapListingCoupon(couponLinkRow{
+		ID: row.ID, Title: row.Title, Code: row.Code, DiscountType: row.DiscountType,
+		DiscountValue: row.DiscountValue, Currency: row.Currency,
+		TermsURL: row.TermsUrl, ReferralURL: row.ReferralUrl, Status: row.Status,
+		ValidFrom: row.ValidFrom, ExpiresAt: row.ExpiresAt, AppliesTo: row.AppliesTo,
+		MaxRedemptions: row.MaxRedemptions, PerUserLimit: row.PerUserLimit,
+		MinSpend: row.MinSpend, FirstTimeOnly: row.FirstTimeOnly,
+		OrganizationID: row.OrganizationID, Position: row.Position,
+		Overrides: row.Overrides,
+	})
+
+	// Status + validity window — same rule as priceQuote (an inactive,
+	// not-yet-valid, or expired coupon is invalid).
+	now := time.Now()
+	if c.Status != "active" ||
+		(row.ValidFrom.Valid && row.ValidFrom.Time.After(now)) ||
+		(row.ExpiresAt.Valid && !row.ExpiresAt.Time.After(now)) {
+		return ErrInvalidCoupon
+	}
+
+	if c.OrgID == "" || c.OrgID != g.OrgID.String() {
+		return ErrInvalidCoupon
+	}
+
+	if c.AppliesTo != "both" && c.AppliesTo != g.Kind {
+		return ErrCouponNotApplicable
+	}
+
+	if couponCurrencyMismatch(c, g.Currency) {
+		return ErrCouponNotApplicable
+	}
+
+	if belowMinSpend(g.Base, c.MinSpend) {
+		return ErrCouponMinSpend
+	}
+
+	discount := g.Base - applyDiscount(g.Base, c.DiscountType, c.DiscountValue)
+	if discount <= 0 || discount != g.Discount {
+		return ErrInvalidCoupon
+	}
+
+	if c.MaxRedemptions != nil {
+		n, err := q.CountCouponRedemptions(ctx, row.ID)
+		if err != nil {
+			return fmt.Errorf("servicedir: count coupon redemptions: %w", err)
+		}
+
+		if n >= *c.MaxRedemptions {
+			return ErrCouponCapReached
+		}
+	}
+
+	if c.PerUserLimit != nil {
+		n, err := q.CountCouponRedemptionsByUser(ctx, gen.CountCouponRedemptionsByUserParams{
+			CouponID: row.ID, UserID: g.BookerID,
+		})
+		if err != nil {
+			return fmt.Errorf("servicedir: count coupon redemptions by user: %w", err)
+		}
+
+		if n >= *c.PerUserLimit {
+			return ErrCouponUserLimit
+		}
+	}
+
+	if c.FirstTimeOnly {
+		n, err := q.CountServiceBookingsByUserOrg(ctx, gen.CountServiceBookingsByUserOrgParams{
+			UserID: g.BookerID, OrgID: g.OrgID,
+		})
+		if err != nil {
+			return fmt.Errorf("servicedir: count bookings by user+org: %w", err)
+		}
+
+		if n > 0 {
+			return ErrCouponFirstTime
+		}
+	}
+
+	return nil
 }
 
 // getPackageTier returns a service_package_tiers row scoped to the

@@ -212,7 +212,7 @@ func toCourseCatalog(row any) (CourseCatalog, error) {
 }
 
 // CatalogListFilters are the admin list filters for the course catalog.
-// Deleted is '' (live only), 'only' (soft-deleted), or 'all'.
+// Deleted is ” (live only), 'only' (soft-deleted), or 'all'.
 type CatalogListFilters struct {
 	Search      string
 	DegreeType  string
@@ -340,7 +340,7 @@ func (s *Store) HardDeleteCatalog(ctx context.Context, id pgtype.UUID) error {
 }
 
 // OfferingListFilters are the admin list filters for course offerings.
-// Deleted is '' (live only), 'only' (soft-deleted), or 'all'.
+// Deleted is ” (live only), 'only' (soft-deleted), or 'all'.
 type OfferingListFilters struct {
 	Search       string
 	UniversityID pgtype.UUID

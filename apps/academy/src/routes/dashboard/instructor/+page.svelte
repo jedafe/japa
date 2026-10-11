@@ -9,7 +9,7 @@
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
 	import AppealButton from '$lib/components/appeals/AppealButton.svelte';
 	import { formatPriceKobo, formatCount } from '$lib/format';
-	import { GraduationCap, DollarSign, Users, TrendingUp, PenLine, CheckCircle, Clock, XCircle, Plus, Pencil, BarChart3 } from 'lucide-svelte';
+	import { GraduationCap, DollarSign, Users, TrendingUp, PenLine, CheckCircle, Clock, XCircle, Plus, Pencil, BarChart3, BookOpen } from 'lucide-svelte';
 	import type { AcademyInstructorProfile, InstructorTrack, EarningsSummary, Payout } from '$lib/types';
 
 	let profile = $state<AcademyInstructorProfile | null>(null);
@@ -322,6 +322,13 @@
 										>
 											<Pencil size={12} />
 											{t('common.edit', 'Edit')}
+										</a>
+										<a
+											href="/dashboard/instructor/tracks/{tr.id}/curriculum"
+											class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2.5 py-1 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+										>
+											<BookOpen size={12} />
+											{t('academy.curriculum', 'Curriculum')}
 										</a>
 										{#if tr.submission_status === 'draft' || tr.submission_status === 'rejected'}
 											<button

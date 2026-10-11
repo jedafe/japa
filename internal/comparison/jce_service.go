@@ -763,8 +763,8 @@ func (s *Service) UpdateJCEComparison(ctx context.Context, id, userID pgtype.UUI
 		if err := s.store.updateComparisonContentMetadata(ctx, gen.UpdateComparisonContentMetadataParams{
 			ContentID: id,
 
-			Depth:        &metadata.Depth,
-			Config:       cfg,
+			Depth:  &metadata.Depth,
+			Config: cfg,
 		}); err != nil {
 			return JCEComparison{}, fmt.Errorf("updating comparison metadata: %w", err)
 		}

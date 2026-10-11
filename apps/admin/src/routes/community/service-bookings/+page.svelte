@@ -49,8 +49,16 @@
 
 	const canAdmin = $derived(hasPermission('service.booking.admin'));
 
-	// §111 terminal-ish statuses get no transition affordance — admins may
-	// still force any status via the modal on open states.
+	// Mirrors the backend adminAllowedTransitions matrix (§111): terminal
+	// rows (cancelled/declined/refunded) stay terminal, refunded is
+	// reachable only out of disputed. The modal offers only legal targets
+	// instead of every status.
+	const ADMIN_TARGETS: Record<string, string[]> = {
+		pending: ['confirmed', 'declined', 'cancelled'],
+		confirmed: ['fulfilled', 'cancelled', 'disputed'],
+		fulfilled: ['disputed'],
+		disputed: ['refunded', 'confirmed', 'fulfilled', 'cancelled']
+	};
 	const OPEN_STATUSES = new Set(['pending', 'confirmed', 'fulfilled', 'disputed']);
 	const ALL_STATUSES = ['pending', 'confirmed', 'declined', 'fulfilled', 'cancelled', 'disputed', 'refunded'];
 
@@ -126,6 +134,15 @@
 				{ value: 'inquiry', label: t('app.service_bookings.intent_inquiry', 'Inquiry') },
 				{ value: 'booking', label: t('app.service_bookings.intent_booking', 'Booking') }
 			]
+		},
+		{
+			key: 'kind',
+			label: t('app.service_bookings.col_kind', 'Kind'),
+			options: [
+				{ value: 'service', label: t('app.service_bookings.kind_service', 'Service') },
+				{ value: 'package', label: t('app.service_bookings.kind_package', 'Package') },
+				{ value: 'mentorship', label: t('app.service_bookings.kind_mentorship', 'Mentorship') }
+			]
 		}
 	]);
 
@@ -156,6 +173,12 @@
 				render: (v: string) => t(`app.service_bookings.status_${v}`, v)
 			},
 			{
+				key: 'listing_kind',
+				label: t('app.service_bookings.col_kind', 'Kind'),
+				sortable: true,
+				render: (v: string) => (v ? t(`app.service_bookings.kind_${v}`, v) : '—')
+			},
+			{
 				key: 'total_price',
 				label: t('app.service_bookings.col_total', 'Total'),
 				render: (_v: number | null, row: BookingItem) =>
@@ -176,6 +199,7 @@
 			if (params.pageSize) qs.set('limit', String(params.pageSize));
 			if (params.filter?.status) qs.set('status', params.filter.status);
 			if (params.filter?.intent) qs.set('intent', params.filter.intent);
+			if (params.filter?.kind) qs.set('kind', params.filter.kind);
 			const result = await serviceBookingsAdminApi.list(qs.toString());
 			if (result.ok && result.data) {
 				const envelope = result.data;
@@ -234,7 +258,7 @@
 				id="bk-status"
 				value={transitionStatus}
 				onValueChange={(v) => (transitionStatus = v)}
-				options={ALL_STATUSES.filter((s) => s !== transitionTarget!.status).map((s) => ({
+				options={(transitionTarget ? (ADMIN_TARGETS[transitionTarget.status] ?? []) : []).map((s) => ({
 					value: s,
 					label: t(`app.service_bookings.status_${s}`, s)
 				}))}

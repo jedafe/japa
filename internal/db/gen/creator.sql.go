@@ -14,6 +14,7 @@ import (
 const approveAcademyTrack = `-- name: ApproveAcademyTrack :one
 UPDATE academy_tracks
 SET is_published_to_academy = true,
+ is_published = true,
  academy_submission_status = 'approved',
  academy_reviewed_at = now(),
  academy_rejection_reason = NULL,
@@ -55,7 +56,8 @@ type ApproveAcademyTrackRow struct {
 }
 
 // Admin approves a submitted track to the marketplace. Sets submission_status
-// to 'approved' and stamps reviewed_at.
+// to 'approved', stamps reviewed_at, and publishes the track (Section 36:
+// "Admin approves the course → track goes live").
 func (q *Queries) ApproveAcademyTrack(ctx context.Context, id pgtype.UUID) (ApproveAcademyTrackRow, error) {
 	row := q.db.QueryRow(ctx, approveAcademyTrack, id)
 	var i ApproveAcademyTrackRow
@@ -1064,6 +1066,38 @@ func (q *Queries) GetTrackRevenueSeries(ctx context.Context, trackID pgtype.UUID
 		return nil, err
 	}
 	return items, nil
+}
+
+const getTrackSubmissionReadiness = `-- name: GetTrackSubmissionReadiness :one
+SELECT
+  (SELECT count(*) FROM academy_modules m
+    WHERE m.track_id = $1) AS module_count,
+  (SELECT count(*) FROM academy_lessons l
+    JOIN academy_modules m ON m.id = l.module_id
+    WHERE m.track_id = $1 AND l.is_published = true) AS published_lesson_count,
+  (SELECT count(*) FROM academy_lessons l
+    JOIN academy_modules m ON m.id = l.module_id
+    WHERE m.track_id = $1 AND l.is_published = true
+      AND l.lesson_type = 'quiz'
+      AND NOT EXISTS (SELECT 1 FROM academy_quizzes q WHERE q.lesson_id = l.id)
+  ) AS quizless_quiz_count
+`
+
+type GetTrackSubmissionReadinessRow struct {
+	ModuleCount          int64 `json:"module_count"`
+	PublishedLessonCount int64 `json:"published_lesson_count"`
+	QuizlessQuizCount    int64 `json:"quizless_quiz_count"`
+}
+
+// Curriculum completeness check used before submit-for-review and before
+// admin approval. Counts modules, published lessons, and published quiz
+// lessons that have no questions — any of these being incomplete should
+// block the track from reaching the marketplace.
+func (q *Queries) GetTrackSubmissionReadiness(ctx context.Context, trackID pgtype.UUID) (GetTrackSubmissionReadinessRow, error) {
+	row := q.db.QueryRow(ctx, getTrackSubmissionReadiness, trackID)
+	var i GetTrackSubmissionReadinessRow
+	err := row.Scan(&i.ModuleCount, &i.PublishedLessonCount, &i.QuizlessQuizCount)
+	return i, err
 }
 
 const getUserContentCountryPreference = `-- name: GetUserContentCountryPreference :one
@@ -2432,6 +2466,29 @@ func (q *Queries) RejectInstructorApplication(ctx context.Context, arg RejectIns
 	return i, err
 }
 
+const resetApprovedAcademyTrackToDraft = `-- name: ResetApprovedAcademyTrackToDraft :execrows
+UPDATE academy_tracks
+SET is_published = false,
+ is_published_to_academy = false,
+ academy_submission_status = 'draft',
+ updated_at = now()
+WHERE id = $1
+ AND instructor_id IS NOT NULL
+ AND academy_submission_status = 'approved'
+`
+
+// Re-review policy: when a creator edits a live (approved) track, it drops
+// back to draft and leaves the marketplace until re-submitted and
+// re-approved — unreviewed content must not stay published. No-op for
+// non-approved or platform-authored tracks.
+func (q *Queries) ResetApprovedAcademyTrackToDraft(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, resetApprovedAcademyTrackToDraft, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setAcademyTrackFeatured = `-- name: SetAcademyTrackFeatured :one
 UPDATE academy_tracks
 SET academy_featured = $1,
@@ -2737,6 +2794,82 @@ func (q *Queries) SuspendInstructor(ctx context.Context, arg SuspendInstructorPa
 	return i, err
 }
 
+const unpublishAcademyTrack = `-- name: UnpublishAcademyTrack :one
+UPDATE academy_tracks
+SET is_published = false,
+ is_published_to_academy = false,
+ academy_submission_status = 'draft',
+ academy_rejection_reason = NULL,
+ updated_at = now()
+WHERE id = $1
+ AND instructor_id IS NOT NULL
+ AND academy_submission_status = 'approved'
+RETURNING id, title, slug, description, difficulty, cover_media_id,
+ is_published, sort_order, instructor_id, price_kobo, currency,
+ is_published_to_academy, category, language, geo_space_id, total_enrolled,
+ academy_submission_status, academy_submitted_at,
+ academy_reviewed_at, academy_rejection_reason,
+ created_at, updated_at
+`
+
+type UnpublishAcademyTrackRow struct {
+	ID                      pgtype.UUID        `json:"id"`
+	Title                   string             `json:"title"`
+	Slug                    string             `json:"slug"`
+	Description             *string            `json:"description"`
+	Difficulty              string             `json:"difficulty"`
+	CoverMediaID            pgtype.UUID        `json:"cover_media_id"`
+	IsPublished             bool               `json:"is_published"`
+	SortOrder               int32              `json:"sort_order"`
+	InstructorID            pgtype.UUID        `json:"instructor_id"`
+	PriceKobo               *int64             `json:"price_kobo"`
+	Currency                string             `json:"currency"`
+	IsPublishedToAcademy    bool               `json:"is_published_to_academy"`
+	Category                *string            `json:"category"`
+	Language                string             `json:"language"`
+	GeoSpaceID              pgtype.UUID        `json:"geo_space_id"`
+	TotalEnrolled           int32              `json:"total_enrolled"`
+	AcademySubmissionStatus string             `json:"academy_submission_status"`
+	AcademySubmittedAt      pgtype.Timestamptz `json:"academy_submitted_at"`
+	AcademyReviewedAt       pgtype.Timestamptz `json:"academy_reviewed_at"`
+	AcademyRejectionReason  *string            `json:"academy_rejection_reason"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Admin takes a live instructor track off the marketplace: publishes flags
+// clear and the track reverts to draft. The creator must fix and re-submit
+// for review — same terminal state as ResetApprovedAcademyTrackToDraft.
+func (q *Queries) UnpublishAcademyTrack(ctx context.Context, id pgtype.UUID) (UnpublishAcademyTrackRow, error) {
+	row := q.db.QueryRow(ctx, unpublishAcademyTrack, id)
+	var i UnpublishAcademyTrackRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.Difficulty,
+		&i.CoverMediaID,
+		&i.IsPublished,
+		&i.SortOrder,
+		&i.InstructorID,
+		&i.PriceKobo,
+		&i.Currency,
+		&i.IsPublishedToAcademy,
+		&i.Category,
+		&i.Language,
+		&i.GeoSpaceID,
+		&i.TotalEnrolled,
+		&i.AcademySubmissionStatus,
+		&i.AcademySubmittedAt,
+		&i.AcademyReviewedAt,
+		&i.AcademyRejectionReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateAcademyTrackCategory = `-- name: UpdateAcademyTrackCategory :one
 UPDATE academy_track_categories
 SET name = COALESCE($1, name),
@@ -2897,9 +3030,9 @@ RETURNING id, title, slug, description, difficulty, cover_media_id,
 `
 
 type UpdateInstructorTrackParams struct {
-	Title                string      `json:"title"`
+	Title                *string     `json:"title"`
 	Description          *string     `json:"description"`
-	Difficulty           string      `json:"difficulty"`
+	Difficulty           *string     `json:"difficulty"`
 	CoverMediaID         pgtype.UUID `json:"cover_media_id"`
 	PriceKobo            *int64      `json:"price_kobo"`
 	Currency             *string     `json:"currency"`

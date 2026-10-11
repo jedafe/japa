@@ -985,6 +985,8 @@ export const academyAdminApi = {
 		api<unknown>(`/admin/academy/tracks/${id}/approve`, { method: 'POST', body: {} }),
 	rejectTrack: (id: string, body: { reason?: string }) =>
 		api<unknown>(`/admin/academy/tracks/${id}/reject`, { method: 'POST', body }),
+	unpublishTrack: (id: string) =>
+		api<unknown>(`/admin/academy/tracks/${id}/unpublish`, { method: 'POST', body: {} }),
 	listPayouts: (params?: string) =>
 		api<unknown>(`/admin/academy/payouts${params ? `?${params}` : ''}`),
 	listRevenueSplits: (params?: string) =>
@@ -2184,6 +2186,8 @@ export const serviceDirectoryAdminApi = {
 		),
 	verify: (id: string) => api<unknown>(`/admin/services/${id}/verify`, { method: 'PATCH', body: {} }),
 	unverify: (id: string) => api<unknown>(`/admin/services/${id}/unverify`, { method: 'PATCH', body: {} }),
+	publish: (id: string) => api<unknown>(`/admin/services/${id}/publish`, { method: 'PATCH', body: {} }),
+	unpublish: (id: string) => api<unknown>(`/admin/services/${id}/unpublish`, { method: 'PATCH', body: {} }),
 	resolveClaim: (serviceId: string, claimId: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/services/${serviceId}/claim/${claimId}`, { method: 'PATCH', body }),
 };

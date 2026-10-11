@@ -55,11 +55,11 @@ func TestIsSoft404(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name       string
-		body       string
-		ct         string
-		status     int
-		want       bool
+		name   string
+		body   string
+		ct     string
+		status int
+		want   bool
 	}{
 		{"hard 404", `<html><body>anything</body></html>`, "text/html", 404, true},
 		{"nairaland soft 404", `<html><head><title>404: Page Not Found</title></head><body><h1>404: Page Not Found.</h1><p>Nairaland Forum Welcome, Guest</p></body></html>`, "text/html", 200, true},

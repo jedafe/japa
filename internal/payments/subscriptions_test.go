@@ -13,10 +13,10 @@ import (
 
 func TestPlanBillingCycle(t *testing.T) {
 	cases := []struct {
-		plan     string
-		wantSlug string
+		plan      string
+		wantSlug  string
 		wantCycle string
-		wantOK   bool
+		wantOK    bool
 	}{
 		{"pro_monthly", "pro", "monthly", true},
 		{"pro_yearly", "pro", "yearly", true},
@@ -185,11 +185,11 @@ func TestRevokePlanTier_OnlyRevokesGrantedTier(t *testing.T) {
 
 func TestPayloadHelpers(t *testing.T) {
 	m := map[string]interface{}{
-		"id":                     "sub_1",
-		"cancel_at_period_end":   true,
-		"current_period_end":     float64(1800000000),
-		"amount_paid":            float64(500000),
-		"amount_str":             "2500",
+		"id":                   "sub_1",
+		"cancel_at_period_end": true,
+		"current_period_end":   float64(1800000000),
+		"amount_paid":          float64(500000),
+		"amount_str":           "2500",
 	}
 	if str(m, "id") != "sub_1" {
 		t.Error("str failed")

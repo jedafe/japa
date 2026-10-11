@@ -357,7 +357,7 @@ func (d *captureUpdateDBTX) CopyFrom(context.Context, pgx.Identifier, []string, 
 // Arg positions mirror the UpdateContentParams field order in the generated
 // QueryRow call (internal/db/gen/contents.sql.go).
 const (
-	argCanonicalUrl    = 7  //nolint:revive // matches sqlc-generated field name
+	argCanonicalUrl    = 7 //nolint:revive // matches sqlc-generated field name
 	argHeaderImageID   = 8
 	argFeaturedImageID = 9
 	argMetaTitle       = 10

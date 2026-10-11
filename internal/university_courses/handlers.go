@@ -134,21 +134,21 @@ func numericString(n pgtype.Numeric) any {
 // columns are emitted as numbers (or null); IDs as strings.
 func offeringToJSON(o CourseOffering) map[string]any {
 	return map[string]any{
-		"id":                uuidString(o.ID),
-		"course_id":         uuidString(o.CourseID),
-		"university_id":     uuidString(o.UniversityID),
-		"slug":              o.Slug,
-		"tuition":           numericString(o.Tuition),
-		"currency":          o.Currency,
-		"duration_years":    numericString(o.DurationYears),
-		"study_mode":        o.StudyMode,
-		"intake_months":     o.IntakeMonths,
+		"id":                 uuidString(o.ID),
+		"course_id":          uuidString(o.CourseID),
+		"university_id":      uuidString(o.UniversityID),
+		"slug":               o.Slug,
+		"tuition":            numericString(o.Tuition),
+		"currency":           o.Currency,
+		"duration_years":     numericString(o.DurationYears),
+		"study_mode":         o.StudyMode,
+		"intake_months":      o.IntakeMonths,
 		"entry_requirements": o.EntryRequirements,
-		"accreditation":     o.Accreditation,
-		"is_published":      o.IsPublished,
-		"deleted_at":        nullableTime(o.DeletedAt),
-		"created_at":        o.CreatedAt.Time,
-		"updated_at":        o.UpdatedAt.Time,
+		"accreditation":      o.Accreditation,
+		"is_published":       o.IsPublished,
+		"deleted_at":         nullableTime(o.DeletedAt),
+		"created_at":         o.CreatedAt.Time,
+		"updated_at":         o.UpdatedAt.Time,
 		"course": map[string]any{
 			"title":                  o.CourseTitle,
 			"slug":                   o.CourseSlug,
@@ -290,7 +290,7 @@ func (h *Handlers) AdminListCatalog(w http.ResponseWriter, r *http.Request) {
 		IsPublished: parseBoolPtr(r.URL.Query().Get("is_published")),
 		Deleted:     strings.TrimSpace(r.URL.Query().Get("deleted")),
 		Sort:        strings.TrimSpace(r.URL.Query().Get("sort")),
-		Limit:       int32(limit), // #nosec
+		Limit:       int32(limit),              // #nosec
 		Offset:      int32((page - 1) * limit), // #nosec
 	}
 
@@ -512,7 +512,7 @@ func (h *Handlers) AdminListOfferings(w http.ResponseWriter, r *http.Request) {
 		IsPublished: parseBoolPtr(r.URL.Query().Get("is_published")),
 		Deleted:     strings.TrimSpace(r.URL.Query().Get("deleted")),
 		Sort:        strings.TrimSpace(r.URL.Query().Get("sort")),
-		Limit:       int32(limit), // #nosec
+		Limit:       int32(limit),              // #nosec
 		Offset:      int32((page - 1) * limit), // #nosec
 	}
 	if id, ok := scanUUID(r.URL.Query().Get("university_id")); ok {

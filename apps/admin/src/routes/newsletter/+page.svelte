@@ -15,6 +15,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { BarChart } from 'layerchart';
 	import { api } from '$lib/api';
+	import { sanitizeHtml } from '$lib/utils/html';
 	import { Mail, Plus, Send, Users, BarChart3, Trash2, Eye, Pencil, Upload } from 'lucide-svelte';
 	import type { ActionItem, FilterDef } from '$lib/components/ui/data-table';
 

@@ -146,6 +146,9 @@
 	// One idempotency key + provider list per dialog open; the tier grid's
 	// preselection is applied here so choosing a different tier while the
 	// dialog is closed always wins over the previous session's pick.
+	// The whole form resets per open (same contract as the mentorship
+	// dialog) — a stale party size/note/coupon must never leak from one
+	// listing's booking into the next.
 	let prevOpen = false;
 	$effect(() => {
 		if (open && !prevOpen) {
@@ -154,6 +157,16 @@
 			submitOk = false;
 			tierError = '';
 			couponErrCode = '';
+			selectedTierId = '';
+			partySize = '1';
+			bookingDepartureId = '';
+			prefStartOn = '';
+			prefEndOn = '';
+			prefFlexible = false;
+			bookingNote = '';
+			couponCode = '';
+			appliedCode = '';
+			preview = null;
 			if (initialTierId) selectedTierId = initialTierId;
 			if (isPaid) loadProviders();
 		}
@@ -205,8 +218,8 @@
 		const res = await api.get<ServicePricePreview>(
 			`/services/${service.id}/price-preview?${params.toString()}`
 		);
-		couponBusy = false;
 		if (res.error) {
+			couponBusy = false;
 			appliedCode = '';
 			if (res.error.code === 'invalid_tier') {
 				// Stale tier id — deselect and surface the error under the picker.
@@ -220,6 +233,7 @@
 			}
 			return;
 		}
+		couponBusy = false;
 		if (!res.data?.coupon_valid) {
 			appliedCode = '';
 			couponErrCode = res.data?.error_code || 'invalid_coupon';
@@ -239,6 +253,16 @@
 
 		if (!Number.isInteger(size) || size < 1) {
 			submitError = t('services.book_party_size_invalid', 'Enter a valid party size');
+			return;
+		}
+		// Departure and preferred dates are mutually exclusive server-side
+		// (400 invalid_departure) — catch it here so the booker fixes the
+		// form instead of eating a server round-trip.
+		if (bookingDepartureId && (prefStartOn || prefEndOn)) {
+			submitError = t(
+				'services.book_dates_conflict',
+				'Choose either a departure or preferred dates, not both.'
+			);
 			return;
 		}
 		if (isPaid && (!bookingProvider || !bookingEmail.trim())) {
@@ -288,7 +312,6 @@
 		const res = await api.post<ServiceBookingResult>(`/services/${service.id}/bookings`, body, {
 			'Idempotency-Key': bookingIdemKey || crypto.randomUUID()
 		});
-		bookingBusy = false;
 
 		if (res.data) {
 			// Paid mode opens the §17 fee checkout — send the booker off-site.
@@ -297,9 +320,11 @@
 				window.location.href = checkout;
 				return;
 			}
+			bookingBusy = false;
 			submitOk = true;
 			bookingIdemKey = crypto.randomUUID();
 		} else {
+			bookingBusy = false;
 			const code = res.error?.code ?? '';
 			if (code === 'invalid_tier') {
 				selectedTierId = '';
@@ -311,6 +336,19 @@
 				appliedCode = '';
 				preview = null;
 				couponErrCode = code;
+			} else if (code === 'invalid_departure') {
+				// Both date surfaces, a started/past departure, or a
+				// now-full departure — the departure picker is the fix.
+				bookingDepartureId = '';
+				submitError = t(
+					'services.book_departure_invalid',
+					'That departure is no longer available — choose another date.'
+				);
+			} else if (code === 'departure_full' || code === 'invalid_party_size') {
+				submitError = t(
+					'services.book_capacity_exceeded',
+					'That date cannot take your party size — try fewer travellers or another date.'
+				);
 			} else {
 				submitError = res.error?.message ?? t('services.book_failed', 'Could not submit');
 			}

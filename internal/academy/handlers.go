@@ -71,9 +71,34 @@ type Handlers struct {
 	ragIndexer     RAGEntityIndexer // nil disables RAG indexing (§69)
 	settings       settingsReader   // nil falls back to defaults
 	lit            literalResolver  // nil disables literal resolution (§14)
+	adminChecker   AdminChecker     // nil disables the platform-admin bypass
 }
 
-// NewHandlers creates a learning handler bound to the provided store. A nil
+// AdminChecker reports platform-level academy admin rights. Implemented by
+// *rbac.RBAC; wired in server.go. A nil checker disables every bypass below.
+type AdminChecker interface {
+	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
+	HasPermission(ctx context.Context, userID pgtype.UUID, permKey string) bool
+}
+
+// SetAdminChecker wires the RBAC resolver used for the platform-admin bypass
+// (lesson access, enrollment-gated writes).
+func (h *Handlers) SetAdminChecker(c AdminChecker) { h.adminChecker = c }
+
+// isAcademyAdmin reports whether the user holds platform-level academy admin
+// rights — super_admin group membership or the academy.admin.manage node.
+// Admins bypass learner-side restrictions (enrollment gates, preview locks)
+// so they can inspect and manage every track (§36 / ADR-063).
+func (h *Handlers) isAcademyAdmin(ctx context.Context, userID pgtype.UUID) bool {
+	if h.adminChecker == nil || !userID.Valid {
+		return false
+	}
+
+	return h.adminChecker.IsSuperAdmin(ctx, userID) ||
+		h.adminChecker.HasPermission(ctx, userID, "academy.admin.manage")
+}
+
+// NewHandlers creates an academy handler bound to the provided store. A nil
 // resolver is acceptable — JSON-LD is simply omitted when unavailable.
 func NewHandlers(store *Store, resolver JSONLDResolver) *Handlers {
 	return &Handlers{store: store, jsonldResolver: resolver}
@@ -315,10 +340,11 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 
 	// Access control (Section 36 / ADR-060): preview lessons are public; every
 	// other lesson requires an authenticated enrollment in the parent track.
-	// The frontend redirects a 403 to the track's enroll page.
+	// The frontend redirects a 403 to the track's enroll page. Platform admins
+	// bypass the gate so they can inspect any lesson's content.
 	if !lesson.IsPreview {
-		enrolled := false
-		if userID.Valid {
+		enrolled := h.isAcademyAdmin(r.Context(), userID)
+		if !enrolled && userID.Valid {
 			if _, e := h.store.GetEnrollment(r.Context(), userID, track.ID); e == nil {
 				enrolled = true
 			} else if !errors.Is(e, pgx.ErrNoRows) {
@@ -347,6 +373,24 @@ func (h *Handlers) GetLesson(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": lesson})
 }
 
+// requireEnrollmentOrAdmin gates learner-side writes: the caller must hold an
+// enrollment in the parent track, or be a platform admin. Writes the error
+// response and returns false when denied — call sites must return early.
+func (h *Handlers) requireEnrollmentOrAdmin(w http.ResponseWriter, r *http.Request, userID, trackID pgtype.UUID) bool {
+	if h.isAcademyAdmin(r.Context(), userID) {
+		return true
+	}
+	if _, err := h.store.GetEnrollment(r.Context(), userID, trackID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to track your progress")
+			return false
+		}
+		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check enrollment")
+		return false
+	}
+	return true
+}
+
 // UpdateProgress records or updates a user's progress on a lesson.
 func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 
@@ -372,8 +416,6 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = lesson // lesson validated; proceed with progress update
-
 	var input UpdateProgressInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
@@ -393,6 +435,26 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Quiz lessons complete only via a passing SubmitQuiz — same guard as
+	// CompleteLesson.
+	if input.Status == "completed" && lesson.LessonType == "quiz" {
+		errpkg.WriteError(w, http.StatusBadRequest, "quiz_required", "Pass the quiz to complete this lesson")
+		return
+	}
+
+	// Progress writes require enrollment — otherwise any authenticated user
+	// could accumulate progress (and eventually a certificate) on tracks
+	// they never enrolled in.
+	mod, err := h.store.GetModuleByID(r.Context(), lesson.ModuleID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "module_not_found", "Module not found")
+		return
+	}
+
+	if !h.requireEnrollmentOrAdmin(w, r, user.UserID, mod.TrackID) {
+		return
+	}
+
 	progress, err := h.store.UpsertProgress(r.Context(), user.UserID, lessonID, input)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to update progress")
@@ -403,14 +465,11 @@ func (h *Handlers) UpdateProgress(w http.ResponseWriter, r *http.Request) {
 	// progress_pct (same rationale as CompleteLesson — the async worker may
 	// not be running).
 	if input.Status == "completed" {
-		mod, merr := h.store.GetModuleByID(r.Context(), lesson.ModuleID)
-		if merr == nil {
-			completed, total, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID)
-			if perr == nil && total > 0 {
-				pct := calculatePercent(completed, total)
-				if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
-					slog.Warn("academy: update_progress — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
-				}
+		completed, total, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID)
+		if perr == nil && total > 0 {
+			pct := calculatePercent(completed, total)
+			if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, pct); uerr != nil {
+				slog.Warn("academy: update_progress — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 			}
 		}
 
@@ -925,9 +984,9 @@ func (h *Handlers) GetLessonByID(w http.ResponseWriter, r *http.Request) {
 	// require an enrollment in the parent track. Lesson UUIDs are exposed in
 	// the public track-detail payload, so authentication alone is not enough.
 	if !lesson.IsPreview {
-		enrolled := false
-		if module, e := h.store.GetModuleByID(r.Context(), lesson.ModuleID); e == nil {
-			user := auth.FromContext(r.Context())
+		user := auth.FromContext(r.Context())
+		enrolled := user != nil && h.isAcademyAdmin(r.Context(), user.UserID)
+		if module, e := h.store.GetModuleByID(r.Context(), lesson.ModuleID); e == nil && !enrolled {
 			if user == nil {
 				errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
 				return
@@ -977,10 +1036,24 @@ func (h *Handlers) CompleteLesson(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Quiz lessons complete only through a passing quiz submission
+	// (SubmitQuiz). Marking one complete directly would let a learner bypass
+	// the assessment entirely.
+	if lesson.LessonType == "quiz" {
+		errpkg.WriteError(w, http.StatusBadRequest, "quiz_required", "Pass the quiz to complete this lesson")
+		return
+	}
+
 	// Resolve the module to get the correct track ID.
 	mod, err := h.store.GetModuleByID(r.Context(), lesson.ModuleID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusNotFound, "module_not_found", "Module not found")
+		return
+	}
+
+	// Progress writes require enrollment (admin bypass) — same gate as
+	// UpdateProgress and SubmitQuiz.
+	if !h.requireEnrollmentOrAdmin(w, r, user.UserID, mod.TrackID) {
 		return
 	}
 
@@ -1084,6 +1157,32 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Quiz submission is a progress write — it requires enrollment in the
+	// parent track (admin bypass). Without this gate, any authenticated user
+	// could complete lessons and earn certificates on tracks they never
+	// enrolled in.
+	user := auth.FromContext(r.Context())
+	if user == nil {
+		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+		return
+	}
+
+	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
+	mod, err := h.store.GetModuleByID(r.Context(), lesson.ModuleID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "module_not_found", "Module not found")
+		return
+	}
+
+	if !h.requireEnrollmentOrAdmin(w, r, user.UserID, mod.TrackID) {
+		return
+	}
+
 	type questionResult struct {
 		QuestionID     string   `json:"question_id"`
 		Correct        bool     `json:"correct"`
@@ -1126,22 +1225,16 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 	// completion sync) so a learner who passes the final quiz doesn't have
 	// to also press "Mark as complete" to finish the track.
 	if passed {
-		if user := auth.FromContext(r.Context()); user != nil {
-			if lesson, lerr := h.store.GetLessonByID(r.Context(), lessonID); lerr == nil {
-				if _, uerr := h.store.UpsertProgress(r.Context(), user.UserID, lessonID, UpdateProgressInput{Status: "completed"}); uerr != nil {
-					slog.Warn("academy: submit_quiz — lesson progress update failed", "user_id", user.UserID.String(), "lesson_id", lessonID.String(), "error", uerr)
-				}
-				if mod, merr := h.store.GetModuleByID(r.Context(), lesson.ModuleID); merr == nil {
-					if completed, ltotal, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID); perr == nil && ltotal > 0 {
-						if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, calculatePercent(completed, ltotal)); uerr != nil {
-							slog.Warn("academy: submit_quiz — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
-						}
-					}
-					h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
-				}
-				h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
+		if _, uerr := h.store.UpsertProgress(r.Context(), user.UserID, lessonID, UpdateProgressInput{Status: "completed"}); uerr != nil {
+			slog.Warn("academy: submit_quiz — lesson progress update failed", "user_id", user.UserID.String(), "lesson_id", lessonID.String(), "error", uerr)
+		}
+		if completed, ltotal, perr := h.store.GetUserTrackProgress(r.Context(), user.UserID, mod.TrackID); perr == nil && ltotal > 0 {
+			if uerr := h.store.UpdateEnrollmentProgress(r.Context(), user.UserID, mod.TrackID, calculatePercent(completed, ltotal)); uerr != nil {
+				slog.Warn("academy: submit_quiz — enrollment progress update failed", "user_id", user.UserID.String(), "track_id", mod.TrackID.String(), "error", uerr)
 			}
 		}
+		h.enqueueTrackCompletionUpdate(user.UserID, mod.TrackID)
+		h.maybeIssueCertificate(r.Context(), user.UserID, lesson.ModuleID)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
@@ -1331,6 +1424,13 @@ func (h *Handlers) maybeIssueCertificate(ctx context.Context, userID, moduleID p
 	// Resolve the module to find its track_id.
 	mod, err := h.store.GetModuleByID(ctx, moduleID)
 	if err != nil {
+		return
+	}
+
+	// Defense in depth: a certificate is only meaningful to an enrolled
+	// learner. Even if stray progress rows exist (e.g. written before the
+	// enrollment gate), never certify a non-enrolled user.
+	if _, err := h.store.GetEnrollment(ctx, userID, mod.TrackID); err != nil {
 		return
 	}
 
@@ -1542,6 +1642,19 @@ func (h *Handlers) CreateTrackReview(w http.ResponseWriter, r *http.Request) {
 	var body *string
 	if input.Body != "" {
 		body = &input.Body
+	}
+
+	// Only enrolled learners may review a track — the reviews table is
+	// polymorphic so no FK enforces this. Platform admins are exempt.
+	if !h.isAcademyAdmin(r.Context(), user.UserID) {
+		if _, e := h.store.GetEnrollment(r.Context(), user.UserID, trackID); e != nil {
+			if errors.Is(e, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "You must be enrolled to review this track")
+				return
+			}
+			errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check enrollment")
+			return
+		}
 	}
 
 	review, err := h.store.CreateTrackReview(r.Context(), trackID, user.UserID, input.Rating, title, body)

@@ -114,6 +114,44 @@ func (q *Queries) CreateAcademyModule(ctx context.Context, arg CreateAcademyModu
 	return i, err
 }
 
+const createAcademyQuizQuestion = `-- name: CreateAcademyQuizQuestion :one
+INSERT INTO academy_quizzes (lesson_id, question, options, answer, explanation, position)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, lesson_id, question, options, answer, explanation, position, created_at
+`
+
+type CreateAcademyQuizQuestionParams struct {
+	LessonID    pgtype.UUID `json:"lesson_id"`
+	Question    string      `json:"question"`
+	Options     string      `json:"options"`
+	Answer      string      `json:"answer"`
+	Explanation *string     `json:"explanation"`
+	Position    int32       `json:"position"`
+}
+
+func (q *Queries) CreateAcademyQuizQuestion(ctx context.Context, arg CreateAcademyQuizQuestionParams) (AcademyQuiz, error) {
+	row := q.db.QueryRow(ctx, createAcademyQuizQuestion,
+		arg.LessonID,
+		arg.Question,
+		arg.Options,
+		arg.Answer,
+		arg.Explanation,
+		arg.Position,
+	)
+	var i AcademyQuiz
+	err := row.Scan(
+		&i.ID,
+		&i.LessonID,
+		&i.Question,
+		&i.Options,
+		&i.Answer,
+		&i.Explanation,
+		&i.Position,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createAcademyTrack = `-- name: CreateAcademyTrack :one
 INSERT INTO academy_tracks (title, slug, description, difficulty, cover_media_id, is_published, sort_order, category, subscription_eligible) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 
@@ -192,10 +230,24 @@ func (q *Queries) CreateAcademyTrack(ctx context.Context, arg CreateAcademyTrack
 
 const createEnrollment = `-- name: CreateEnrollment :one
 
-INSERT INTO academy_enrollments (user_id, track_id, access_type) VALUES ($1, $2, $3)
-
-ON CONFLICT (user_id, track_id) DO NOTHING
-RETURNING id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+WITH ins AS (
+    INSERT INTO academy_enrollments (user_id, track_id, access_type)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (user_id, track_id) DO NOTHING
+    RETURNING id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+),
+bump AS (
+    UPDATE academy_tracks
+    SET total_enrolled = total_enrolled + 1
+    WHERE id = $2 AND EXISTS (SELECT 1 FROM ins)
+)
+SELECT id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at FROM ins
+UNION ALL
+SELECT id, user_id, track_id, access_type, progress_pct, enrolled_at, completed_at
+FROM academy_enrollments
+WHERE user_id = $1 AND track_id = $2
+  AND NOT EXISTS (SELECT 1 FROM ins)
+LIMIT 1
 `
 
 type CreateEnrollmentParams struct {
@@ -217,6 +269,9 @@ type CreateEnrollmentRow struct {
 // =====================
 // Enrollment Operations
 // =====================
+// Idempotent enroll: the cached total_enrolled counter is bumped atomically
+// and only when the INSERT actually creates a row. On conflict the existing
+// enrollment is returned (re-enroll is a no-op, not an error).
 func (q *Queries) CreateEnrollment(ctx context.Context, arg CreateEnrollmentParams) (CreateEnrollmentRow, error) {
 	row := q.db.QueryRow(ctx, createEnrollment, arg.UserID, arg.TrackID, arg.AccessType)
 	var i CreateEnrollmentRow
@@ -247,6 +302,24 @@ DELETE FROM academy_modules WHERE id = $1
 
 func (q *Queries) DeleteAcademyModule(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAcademyModule, id)
+	return err
+}
+
+const deleteAcademyQuizQuestion = `-- name: DeleteAcademyQuizQuestion :exec
+DELETE FROM academy_quizzes WHERE id = $1
+`
+
+func (q *Queries) DeleteAcademyQuizQuestion(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAcademyQuizQuestion, id)
+	return err
+}
+
+const deleteAcademyQuizQuestionsByLesson = `-- name: DeleteAcademyQuizQuestionsByLesson :exec
+DELETE FROM academy_quizzes WHERE lesson_id = $1
+`
+
+func (q *Queries) DeleteAcademyQuizQuestionsByLesson(ctx context.Context, lessonID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAcademyQuizQuestionsByLesson, lessonID)
 	return err
 }
 

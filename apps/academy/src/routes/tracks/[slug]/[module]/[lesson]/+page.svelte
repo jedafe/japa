@@ -12,7 +12,7 @@
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import CurriculumRail from '$lib/components/academy/CurriculumRail.svelte';
 	import ProgressRing from '$lib/components/academy/ProgressRing.svelte';
-	import { CheckCircle, ArrowRight, ArrowLeft, NotebookPen } from 'lucide-svelte';
+	import { CheckCircle, ArrowRight, ArrowLeft, NotebookPen, ExternalLink, Download } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
@@ -22,6 +22,8 @@
 	let { data }: { data: PageData } = $props();
 	const track = $derived(data.track);
 	const lesson = $derived(data.lesson);
+	// YouTube embed URL for youtube/screencast lessons (null otherwise).
+	const ytEmbed = $derived(youtubeEmbedUrl(lesson.external_url));
 
 	// CSR ONLY — completed-lessons set + enrollment (ADR-060 SSR/CSR boundary).
 	// Uses the shared enrollmentsStore so sidebar widgets (Continue Learning,
@@ -64,10 +66,17 @@
 
 	// isEnrolled is strictly the enrollment record — it drives the curriculum
 	// rail's per-lesson lock state (locked = !enrolled && !is_preview).
-	// canInteract additionally admits guests on preview lessons for the
-	// mark-complete button (which redirects them to login).
+	// Platform admins bypass learner restrictions (backend grants the same
+	// bypass — this only mirrors it for UI visibility).
 	const isEnrolled = $derived(!!enrollment);
-	const canInteract = $derived(isEnrolled || !!lesson.is_preview);
+	const isAdmin = $derived(
+		(data.user?.permissions ?? []).some(
+			(p) => p === '*' || p === 'academy.admin.manage' || p === 'academy.instructor.approve'
+		)
+	);
+	// Progress writes require enrollment server-side — guests and
+	// non-enrolled viewers (e.g. on preview lessons) cannot mark complete.
+	const canInteract = $derived(isEnrolled || isAdmin);
 	const isCompleted = $derived(completedLessonIds.has(lesson.id));
 	const progressPct = $derived(enrollment?.progress_pct ?? 0);
 	const totalLessons = $derived(track.modules.reduce((n, m) => n + m.lessons.length, 0));
@@ -173,6 +182,7 @@
 	let quizTextAnswers = $state<Record<string, string>>({});
 	let quizSubmitted = $state(false);
 	let quizResult = $state<QuizResult | null>(null);
+	let quizSubmitError = $state<string | null>(null);
 	let quizSubmitting = $state(false);
 
 	// Reset quiz state when the lesson changes.
@@ -234,6 +244,9 @@
 		if (r.data) {
 			quizResult = r.data;
 			quizSubmitted = true;
+			quizSubmitError = null;
+		} else if (r.error) {
+			quizSubmitError = r.error.message;
 		}
 	}
 
@@ -242,11 +255,28 @@
 		quizTextAnswers = {};
 		quizSubmitted = false;
 		quizResult = null;
+		quizSubmitError = null;
 	}
 
 	// Look up per-question result after submission.
 	function questionResult(questionId: string) {
 		return quizResult?.results.find((r) => r.question_id === questionId) ?? null;
+	}
+
+	// youtube/screencast lessons may carry a YouTube URL in external_url —
+	// normalize watch/shorts/youtu.be forms into an embed URL for the iframe.
+	function youtubeEmbedUrl(url?: string | null): string | null {
+		if (!url) return null;
+		const m = url.match(
+			/(?:youtube\.com\/(?:watch\?[^#\s]*v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{6,})/i
+		);
+		return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+	}
+
+	// Direct video-file URLs (mp4/webm/mov/m3u8) can play in the native
+	// <video> element; other external URLs render as link cards.
+	function isDirectVideoUrl(url: string): boolean {
+		return /\.(mp4|webm|mov|m4v|m3u8)(\?[^#]*)?$/i.test(url);
 	}
 </script>
 
@@ -351,7 +381,9 @@
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
 				{/if}
 			{:else if lesson.lesson_type === 'video'}
-				<!-- Video: browser-guarded init, progress tracking -->
+				<!-- Video: browser-guarded init, progress tracking. Falls back to
+				     external_url — YouTube embeds inline, direct file URLs play in the
+				     same <video> element, anything else links out. -->
 				{#if lesson.video_url}
 					<!-- svelte-ignore a11y_media_has_caption -->
 					<video
@@ -362,6 +394,30 @@
 						ontimeupdate={onVideoTimeUpdate}
 						onloadedmetadata={onVideoLoaded}
 					></video>
+				{:else if ytEmbed}
+					<div class="aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-black">
+						<iframe
+							src={ytEmbed}
+							title={lesson.title}
+							class="h-full w-full"
+							allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+							allowfullscreen
+						></iframe>
+					</div>
+				{:else if lesson.external_url && isDirectVideoUrl(lesson.external_url)}
+					<!-- svelte-ignore a11y_media_has_caption -->
+					<video
+						bind:this={videoEl}
+						src={lesson.external_url}
+						controls
+						class="w-full rounded-[var(--radius-card)] bg-black"
+						ontimeupdate={onVideoTimeUpdate}
+						onloadedmetadata={onVideoLoaded}
+					></video>
+				{:else if lesson.external_url}
+					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
+						<ExternalLink size={16} /> {lesson.external_url}
+					</a>
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
 				{/if}
@@ -510,6 +566,10 @@
 							{/each}
 						</ol>
 
+						{#if quizSubmitError}
+							<p class="mt-4 text-sm text-[var(--color-danger)]">{quizSubmitError}</p>
+						{/if}
+
 						<!-- Submit / Retake controls -->
 						<div class="mt-6 flex items-center gap-3">
 							{#if !quizSubmitted}
@@ -553,6 +613,90 @@
 				{:else}
 					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
 				{/if}
+			{:else if lesson.lesson_type === 'youtube'}
+				<!-- YouTube: embed when external_url normalizes, else a link card. -->
+				{#if ytEmbed}
+					<div class="aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-black">
+						<iframe
+							src={ytEmbed}
+							title={lesson.title}
+							class="h-full w-full"
+							allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+							allowfullscreen
+						></iframe>
+					</div>
+				{:else if lesson.external_url}
+					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
+						<ExternalLink size={16} /> {lesson.external_url}
+					</a>
+				{:else}
+					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
+				{/if}
+			{:else if lesson.lesson_type === 'screencast'}
+				<!-- Screencast: attached media plays inline; external URL embeds or links. -->
+				{#if lesson.media_url}
+					<!-- svelte-ignore a11y_media_has_caption -->
+					<video
+						bind:this={videoEl}
+						src={lesson.media_url}
+						controls
+						class="w-full rounded-[var(--radius-card)] bg-black"
+						ontimeupdate={onVideoTimeUpdate}
+						onloadedmetadata={onVideoLoaded}
+					></video>
+				{:else if ytEmbed}
+					<div class="aspect-video w-full overflow-hidden rounded-[var(--radius-card)] bg-black">
+						<iframe
+							src={ytEmbed}
+							title={lesson.title}
+							class="h-full w-full"
+							allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+							allowfullscreen
+						></iframe>
+					</div>
+				{:else if lesson.external_url}
+					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
+						<ExternalLink size={16} /> {lesson.external_url}
+					</a>
+				{:else}
+					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
+				{/if}
+			{:else if lesson.lesson_type === 'document'}
+				<!-- Document: download/open card for attached media or external URL. -->
+				{#if lesson.media_url || lesson.external_url}
+					<a href={lesson.media_url ?? lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
+						<Download size={16} /> {t('academy.open_document', 'Open document')}
+					</a>
+					{#if lesson.content_html}
+						<div class="prose mt-4">{@html sanitizeContentHtml(lesson.content_html)}</div>
+					{/if}
+				{:else}
+					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
+				{/if}
+			{:else if lesson.lesson_type === 'audio'}
+				<!-- Audio: attached media plays inline; external URL links out. -->
+				{#if lesson.media_url}
+					<!-- svelte-ignore a11y_media_has_caption -->
+					<audio src={lesson.media_url} controls class="w-full"></audio>
+				{:else if lesson.external_url}
+					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
+						<ExternalLink size={16} /> {lesson.external_url}
+					</a>
+				{:else}
+					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
+				{/if}
+			{:else if lesson.lesson_type === 'link'}
+				<!-- Link: external resource card. -->
+				{#if lesson.external_url}
+					<a href={lesson.external_url} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-medium text-[var(--color-primary)] hover:bg-[var(--color-surface-subtle)]">
+						<ExternalLink size={16} /> {lesson.external_url}
+					</a>
+					{#if lesson.content_html}
+						<div class="prose mt-4">{@html sanitizeContentHtml(lesson.content_html)}</div>
+					{/if}
+				{:else}
+					<p class="text-[var(--color-muted)]">{t('common.empty')}</p>
+				{/if}
 			{/if}
 		</div>
 
@@ -569,20 +713,35 @@
 				<span></span>
 			{/if}
 
-			<button
-				type="button"
-				onclick={markComplete}
-				disabled={marking || isCompleted || !canInteract}
-				class="inline-flex items-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {isCompleted ? 'bg-[var(--color-surface-subtle)] text-[var(--color-progress)]' : 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'} disabled:opacity-60"
-			>
+			{#if !canInteract && !isCompleted}
+				<!-- Preview lessons are viewable by anyone, but progress writes
+				     require enrollment (backend enforces — same 403). -->
+				<span class="text-sm text-[var(--color-muted)]">{t('academy.enroll_to_save_progress', 'Enroll to save your progress')}</span>
+			{:else if lesson.lesson_type === 'quiz'}
+				<!-- Quiz lessons complete via a passing submission (backend enforces) — no manual mark-complete. -->
 				{#if isCompleted}
-					<CheckCircle size={16} /> {t('mark.completed')}
-				{:else if marking}
-					{t('academy.marking')}
+					<span class="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-progress)]">
+						<CheckCircle size={16} /> {t('mark.completed')}
+					</span>
 				{:else}
-					{t('academy.mark_complete')}
+					<span class="text-sm text-[var(--color-muted)]">{t('academy.quiz_required_to_complete', 'Pass the quiz to complete this lesson')}</span>
 				{/if}
-			</button>
+			{:else}
+				<button
+					type="button"
+					onclick={markComplete}
+					disabled={marking || isCompleted || !canInteract}
+					class="inline-flex items-center gap-2 rounded-[var(--radius)] px-4 py-2 text-sm font-medium transition-colors {isCompleted ? 'bg-[var(--color-surface-subtle)] text-[var(--color-progress)]' : 'bg-[var(--color-primary)] text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]'} disabled:opacity-60"
+				>
+					{#if isCompleted}
+						<CheckCircle size={16} /> {t('mark.completed')}
+					{:else if marking}
+						{t('academy.marking')}
+					{:else}
+						{t('academy.mark_complete')}
+					{/if}
+				</button>
+			{/if}
 
 			{#if lesson.next_lesson}
 				<a

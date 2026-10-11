@@ -99,12 +99,20 @@
 		const res = await api.patch<ServiceBooking>(`/org/${org.id}/service-bookings/${b.id}`, {
 			status,
 			org_response_note: note.trim()
-		});
-		busyId = '';
+		}, { 'Idempotency-Key': crypto.randomUUID() });
 		if (res.error) {
-			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
+			busyId = '';
+			if (res.error.code === 'payment_pending') {
+				actionError = t(
+					'bookings.org_payment_pending',
+					'The traveller has not completed the fee checkout yet — this booking becomes actionable once payment succeeds.'
+				);
+			} else {
+				actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
+			}
 			return;
 		}
+		busyId = '';
 		noteFor = null;
 		noteText = '';
 		await invalidateAll();
@@ -163,6 +171,7 @@
 				icon={Inbox}
 				title={t('bookings.org_empty', 'No bookings yet')}
 				body={t('bookings.org_empty_body', 'Inquiries and paid bookings for your packages land here.')}
+				action={{ label: t('services.new_package', 'Create a package'), href: '/services/new' }}
 			/>
 		{:else}
 			<div class="space-y-3">
@@ -170,9 +179,15 @@
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<div class="flex items-start justify-between gap-3">
 							<div class="min-w-0 flex-1">
-								<a href="/services/{b.listing_slug}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
-									{b.listing_title || t('bookings.untitled', 'Untitled listing')}
-								</a>
+								{#if b.listing_slug}
+									<a href="/services/{b.listing_slug}" class="text-sm font-medium text-[var(--color-text)] hover:underline">
+										{b.listing_title || t('bookings.untitled', 'Untitled listing')}
+									</a>
+								{:else}
+									<span class="text-sm font-medium text-[var(--color-text)]">
+										{b.listing_title || t('bookings.untitled', 'Untitled listing')}
+									</span>
+								{/if}
 								<div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--color-muted)]">
 									<span class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-subtle)] px-2 py-0.5 font-medium">
 										{t(`bookings.intent_${b.intent}`, b.intent)}

@@ -1165,11 +1165,11 @@ func trackFromGetRow(r gen.ListAcademyTracksByInstructorRow) Track {
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
 		IsPublishedToAcademy: r.IsPublishedToAcademy,
-		SubmissionStatus:        r.AcademySubmissionStatus,
-		TotalRevenueKobo:        r.TotalRevenueKobo,
-		RejectionReason:         r.AcademyRejectionReason,
-		ThumbnailURL:            media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
-		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		SubmissionStatus:     r.AcademySubmissionStatus,
+		TotalRevenueKobo:     r.TotalRevenueKobo,
+		RejectionReason:      r.AcademyRejectionReason,
+		ThumbnailURL:         media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
+		CreatedAt:            r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 
 	if r.CoverMediaID.Valid {
@@ -1216,10 +1216,10 @@ func trackFromPublishedRow(r gen.ListPublishedTracksByInstructorRow) Track {
 		Difficulty: r.Difficulty, Currency: r.Currency, Language: r.Language,
 		TotalEnrolled: r.TotalEnrolled, IsPublished: r.IsPublished,
 		IsPublishedToAcademy: r.IsPublishedToAcademy,
-		SubmissionStatus:        r.AcademySubmissionStatus,
-		RejectionReason:         r.AcademyRejectionReason,
-		ThumbnailURL:            media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
-		CreatedAt:               r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
+		SubmissionStatus:     r.AcademySubmissionStatus,
+		RejectionReason:      r.AcademyRejectionReason,
+		ThumbnailURL:         media.URLFromParts(r.ThumbnailStorageBucket, r.ThumbnailStoragePath, media.ImageProxyOpts{}),
+		CreatedAt:            r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}
 
 	if r.CoverMediaID.Valid {
@@ -1328,6 +1328,24 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
 	track, err := h.service.store.RejectTrack(r.Context(), trackID, body.Reason)
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})
+}
+
+// AdminUnpublishTrack handles POST /admin/academy/tracks/{id}/unpublish.
+// Takes a live instructor track off the marketplace — reverts to draft.
+func (h *Handlers) AdminUnpublishTrack(w http.ResponseWriter, r *http.Request) {
+
+	trackID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	track, err := h.service.UnpublishTrack(r.Context(), trackID)
 	if err != nil {
 		handleServiceError(w, err)
 		return

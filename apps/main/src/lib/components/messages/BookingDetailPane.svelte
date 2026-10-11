@@ -100,6 +100,16 @@
 			b.payment_status === 'pending' &&
 			HOSTED_PROVIDERS.has(b.payment_provider ?? '')
 	);
+	// A failed fee checkout is terminal for this payment row — the booker
+	// sees the failure with a support nudge rather than a dead resume
+	// button (ResumePayment only accepts payment_status='pending').
+	const feeFailed = $derived(
+		isBooker &&
+			b.intent === 'booking' &&
+			b.status === 'pending' &&
+			b.payment_id != null &&
+			b.payment_status === 'failed'
+	);
 
 	// Provider actions (000824) — pending → accept|decline, confirmed →
 	// complete|cancel. Only applies to user-provider (mentorship) rows.
@@ -126,6 +136,9 @@
 	let declineNote = $state('');
 	let cancelOpen = $state(false);
 	let cancelNote = $state('');
+	// Booker cancel (pending|confirmed) — confirm modal carrying the
+	// cancel reason (the server records it; the provider is notified).
+	let bookerCancelOpen = $state(false);
 	let completeOpen = $state(false);
 	let payOpen = $state(false);
 	let payEmail = $state(untrack(() => viewerEmail));
@@ -137,6 +150,16 @@
 		actionError = '';
 	}
 
+	// Every booking mutation carries an idempotency key (Rule 9 — the
+	// cancel/complete/respond/dispute routes replay on retry). One key per
+	// attempt so a failure followed by a retry replays instead of
+	// double-firing the transition + fee-settle tasks.
+	function idemHeaders(): Record<string, string> {
+		return { 'Idempotency-Key': crypto.randomUUID() };
+	}
+
+	// Svelte 5: $state must not be set in finally (no re-render) — set
+	// busy explicitly on both branches instead.
 	async function resumePayment() {
 		if (!payEmail.trim()) {
 			actionError = t('bookings.pay_email_required', 'Email is required for the payment receipt');
@@ -149,8 +172,8 @@
 			{ email: payEmail.trim(), return_url: page.url.href },
 			{ 'Idempotency-Key': payIdemKey || crypto.randomUUID() }
 		);
-		busy = false;
 		if (res.error) {
+			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
 			return;
 		}
@@ -159,19 +182,30 @@
 			window.location.href = url; // §17 hosted checkout — send booker off-site
 			return;
 		}
+		busy = false;
 		payOpen = false;
 		await invalidateAll();
 	}
 
 	async function cancelBooking() {
+		if (!cancelNote.trim()) {
+			actionError = t('bookings.cancel_reason_required', 'Add a short note so the provider knows why.');
+			return;
+		}
 		busy = true;
 		actionError = '';
-		const res = await api.post(`/me/service-bookings/${b.id}/cancel`, {});
-		busy = false;
+		const res = await api.post(`/me/service-bookings/${b.id}/cancel`, {
+			reason: cancelNote.trim()
+		}, idemHeaders());
 		if (res.error) {
+			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
 			return;
 		}
+		busy = false;
+		cancelOpen = false;
+		cancelNote = '';
+		bookerCancelOpen = false;
 		await invalidateAll();
 	}
 
@@ -180,12 +214,13 @@
 		actionError = '';
 		const res = await api.post(`/me/service-bookings/${b.id}/dispute`, {
 			reason: disputeReason.trim()
-		});
-		busy = false;
+		}, idemHeaders());
 		if (res.error) {
+			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
 			return;
 		}
+		busy = false;
 		disputeOpen = false;
 		disputeReason = '';
 		await invalidateAll();
@@ -201,12 +236,13 @@
 		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/respond`, {
 			action,
 			...(note.trim() ? { note: note.trim() } : {})
-		});
-		busy = false;
+		}, idemHeaders());
 		if (res.error) {
+			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
 			return;
 		}
+		busy = false;
 		declineOpen = false;
 		declineNote = '';
 		cancelOpen = false;
@@ -220,12 +256,13 @@
 	async function completeBooking() {
 		busy = true;
 		actionError = '';
-		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/complete`, {});
-		busy = false;
+		const res = await api.post<ServiceBooking>(`/me/service-bookings/${b.id}/complete`, {}, idemHeaders());
 		if (res.error) {
+			busy = false;
 			actionError = res.error.message ?? t('bookings.action_failed', 'Action failed');
 			return;
 		}
+		busy = false;
 		completeOpen = false;
 		await invalidateAll();
 	}
@@ -253,12 +290,18 @@
 
 	<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 		<div class="flex items-start justify-between gap-3">
-			<a
-				href="/services/{b.listing_slug}"
-				class="min-w-0 flex-1 text-base font-medium text-[var(--color-text)] hover:underline"
-			>
-				{b.listing_title || t('bookings.untitled', 'Untitled listing')}
-			</a>
+			{#if b.listing_slug}
+				<a
+					href="/services/{b.listing_slug}"
+					class="min-w-0 flex-1 text-base font-medium text-[var(--color-text)] hover:underline"
+				>
+					{b.listing_title || t('bookings.untitled', 'Untitled listing')}
+				</a>
+			{:else}
+				<span class="min-w-0 flex-1 text-base font-medium text-[var(--color-text)]">
+					{b.listing_title || t('bookings.untitled', 'Untitled listing')}
+				</span>
+			{/if}
 			<span class="shrink-0 text-sm font-medium capitalize {bookingStatusColor(bookingStatus(b))}">
 				{bookingStatusLabel(b)}
 			</span>
@@ -452,7 +495,7 @@
 		</div>
 	{/if}
 
-	{#if canResumePayment || canCancel || canDispute || canAcceptDecline || canComplete || canProviderCancel || canBookerComplete || dmEnabled}
+	{#if canResumePayment || canCancel || canDispute || canAcceptDecline || canComplete || canProviderCancel || canBookerComplete || feeFailed || dmEnabled}
 		<div class="flex flex-wrap gap-2">
 			{#if canResumePayment}
 				<button
@@ -461,6 +504,14 @@
 					onclick={openPayForm}
 					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 				>{t('bookings.pay_resume', 'Complete payment')}</button>
+			{/if}
+			{#if feeFailed}
+				<p class="w-full rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-xs text-red-500" role="alert">
+					{t(
+						'bookings.pay_failed',
+						'The fee payment failed. Contact support to reopen this booking.'
+					)}
+				</p>
 			{/if}
 			{#if canAcceptDecline}
 				<button
@@ -510,7 +561,10 @@
 				<button
 					type="button"
 					disabled={busy}
-					onclick={cancelBooking}
+					onclick={() => {
+						bookerCancelOpen = true;
+						cancelNote = '';
+					}}
 					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>{t('bookings.cancel', 'Cancel')}</button>
 			{/if}
@@ -534,6 +588,37 @@
 		</div>
 	{/if}
 </div>
+
+<Modal bind:open={bookerCancelOpen} title={t('bookings.cancel_title', 'Cancel booking')} size="md">
+	<p class="text-xs text-[var(--color-muted)]">
+		{t(
+			'bookings.cancel_hint',
+			'Let the provider know why you are cancelling. Paid bookings cancelled late may forfeit the platform fee.'
+		)}
+	</p>
+	<textarea
+		bind:value={cancelNote}
+		rows="3"
+		class="mt-3 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+		placeholder={t('bookings.cancel_reason_ph', 'Reason for cancelling')}
+	></textarea>
+	<div class="mt-3 flex justify-end gap-2">
+		<button
+			type="button"
+			onclick={() => (bookerCancelOpen = false)}
+			class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+		>{t('common.cancel', 'Cancel')}</button>
+		<button
+			type="button"
+			disabled={!cancelNote.trim() || busy}
+			onclick={cancelBooking}
+			class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-danger)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+		>
+			{#if busy}<CheckCircle2 size={14} />{/if}
+			{t('bookings.cancel_submit', 'Cancel booking')}
+		</button>
+	</div>
+</Modal>
 
 <Modal bind:open={disputeOpen} title={t('bookings.dispute_title', 'Report a problem')} size="md">
 	<p class="text-xs text-[var(--color-muted)]">

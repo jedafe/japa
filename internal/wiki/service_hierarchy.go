@@ -260,7 +260,7 @@ func directoryChildDTOs(
 		dto := WikiDirectoryChildDTO{
 			Slug: c.Slug, Name: c.Name, Level: c.Level,
 			TypeSlug: c.SpaceTypeSlug, GeoCode: c.GeoCode,
-			Blurb: c.Blurb,
+			Blurb:     c.Blurb,
 			PageCount: c.PageCount, Depth: c.Depth,
 		}
 		if url := imageURLs[c.ID]; url != "" {

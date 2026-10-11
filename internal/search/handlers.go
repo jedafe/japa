@@ -50,7 +50,7 @@ var indexTypeByUID = map[string]string{
 	IndexUsers:             "user",
 	IndexTags:              "tag",
 	IndexKnowledgeArticles: "article",
-	IndexAcademyTracks:    "course",
+	IndexAcademyTracks:     "course",
 	IndexDocPages:          "doc_page",
 	IndexOrganizations:     "organization",
 }
@@ -70,7 +70,7 @@ var searchAttributesToRetrieve = []string{
 // a `relevant_countries` filterable attribute (ADR-064 + ADR-064a). The
 // geo-boost filter is applied to these indexes only.
 var indexesWithRelevantCountries = map[string]bool{
-	IndexPosts:          true,
+	IndexPosts:         true,
 	IndexAcademyTracks: true,
 }
 

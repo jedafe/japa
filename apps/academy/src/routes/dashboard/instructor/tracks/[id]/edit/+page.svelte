@@ -9,7 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { LoadingSkeleton, EmptyState } from '$lib/components/ui';
-	import { Save, ArrowLeft } from 'lucide-svelte';
+	import { Save, ArrowLeft, BookOpen, Send } from 'lucide-svelte';
 	import { formatPriceKobo } from '$lib/format';
 	import { loadCurrencies, currencyLabel, type CurrencyInfo } from '$lib/utils/currency';
 	import type { InstructorTrack, GeoCountry, CatalogOption } from '$lib/types';
@@ -172,10 +172,32 @@
 		if (r.error) {
 			error = r.error.message;
 		} else {
-			success = t('academy.track_saved', 'Track saved successfully.');
+			// Edits to a live course take it offline pending re-review — tell
+			// the creator, not just "saved".
+			success = track?.submission_status === 'approved'
+				? t('academy.track_saved_offline', 'Saved — this course is now offline pending re-review.')
+				: t('academy.track_saved', 'Track saved successfully.');
 			// Redirect back to the instructor dashboard after a brief success flash.
 			setTimeout(() => goto('/dashboard/instructor'), 800);
 		}
+	}
+
+	let submitting = $state(false);
+
+	async function submitTrack() {
+		if (submitting) return;
+		submitting = true;
+		error = null;
+		const r = await api.post(`/academy/my/tracks/${trackId}/submit`);
+		submitting = false;
+		if (r.error) {
+			error = r.error.message;
+			return;
+		}
+		success = t('academy.track_submitted', 'Track submitted for review.');
+		// Reflect the new status in-page so the button disappears.
+		const list = await api.get<InstructorTrack[]>('/academy/my/tracks');
+		track = list.data?.find((tr) => tr.id === trackId) ?? track;
 	}
 </script>
 
@@ -213,6 +235,42 @@
 			description={t('academy.track_not_found_description', 'This track could not be found or you do not have access.')}
 		/>
 	{:else}
+		<!-- Track lifecycle actions — submission status, curriculum editor link,
+		     and submit-for-review (was API-only before). -->
+		<div class="mb-5 flex max-w-2xl flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+			<span class="text-sm font-medium text-[var(--color-text-subtle)]">
+				{t('academy.status', 'Status')}:
+				<span class="font-semibold text-[var(--color-text)]">{t(`academy.submission_${track.submission_status}`, track.submission_status)}</span>
+			</span>
+			<a
+				href="/dashboard/instructor/tracks/{trackId}/curriculum"
+				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+			>
+				<BookOpen size={13} />
+				{t('academy.manage_curriculum', 'Manage curriculum')}
+			</a>
+			{#if track.submission_status === 'draft' || track.submission_status === 'rejected'}
+				<button
+					type="button"
+					onclick={submitTrack}
+					disabled={submitting}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+				>
+					<Send size={13} />
+					{submitting ? t('common.processing', 'Processing...') : t('academy.submit_course', 'Submit for review')}
+				</button>
+			{/if}
+		</div>
+		{#if track.submission_status === 'rejected' && track.rejection_reason}
+			<p class="mb-5 max-w-2xl rounded-[var(--radius)] border border-[var(--color-destructive)] px-3 py-2 text-xs text-[var(--color-destructive)]">
+				{track.rejection_reason}
+			</p>
+		{/if}
+		{#if track.submission_status === 'approved'}
+			<p class="mb-5 max-w-2xl rounded-[var(--radius)] border border-[var(--color-warning,#d97706)] px-3 py-2 text-xs text-[var(--color-warning,#d97706)]">
+				{t('academy.live_edit_warning', 'This course is live. Saving changes takes it offline until it is re-approved.')}
+			</p>
+		{/if}
 		<form onsubmit={save} class="max-w-2xl space-y-5">
 			<!-- Title -->
 			<div>
