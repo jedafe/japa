@@ -44,6 +44,9 @@ export const load: PageServerLoad = async (event) => {
 	const spaceSlug = event.params.space_slug;
 	const authed = !!event.locals.user;
 	const userPermissions = event.locals.user?.permissions ?? [];
+	// Redirects from /spaces/[slug] for wiki-only spaces carry ?from_space=1
+	// so the index can explain why there is no community feed here.
+	const fromSpace = event.url.searchParams.get('from_space') === '1';
 
 	try {
 		const idx = await apiGetEnvelope<WikiPageIndex[]>(
@@ -71,6 +74,7 @@ export const load: PageServerLoad = async (event) => {
 			authed,
 			userPermissions,
 			loadError: false,
+			fromSpace,
 			spaceDetail,
 			apiCategories: catRes?.data ?? [],
 			wikiScope: catRes?.scope === 'university' ? 'university' : 'geo'
@@ -88,6 +92,7 @@ export const load: PageServerLoad = async (event) => {
 			authed,
 			userPermissions,
 			loadError: true,
+			fromSpace,
 			spaceDetail: null,
 			apiCategories: [] as WikiApiCategory[],
 			wikiScope: 'geo' as const

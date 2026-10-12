@@ -27,7 +27,8 @@
 		Lock,
 		Plus,
 		Star,
-		Table2
+		Table2,
+		X
 	} from 'lucide-svelte';
 	import type { WikiPageIndex } from '$lib/types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -247,6 +248,9 @@
 	// with optimistic UI + rollback — same toggle as the space page header.
 	let saved = $state(untrack(() => data.spaceDetail?.is_following ?? false));
 	let savePending = $state(false);
+	// Wiki-only explainer after a /spaces/[slug] redirect — dismissible,
+	// client-side only.
+	let showWikiOnlyBanner = $state(true);
 
 	async function toggleSave() {
 		if (savePending || !space) return;
@@ -372,6 +376,29 @@
 	</div>
 
 	<!-- Title block: flag/logo + name + tagline -->
+	{#if data.fromSpace && data.spaceDetail?.wiki_only && showWikiOnlyBanner}
+		<div class="mx-4 mt-4 flex items-start gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:mx-6">
+			<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)]">
+				<BookOpen size={18} class="text-[var(--color-primary)]" aria-hidden="true" />
+			</span>
+			<span class="min-w-0 flex-1">
+				<span class="block text-sm font-semibold text-[var(--color-text)]">
+					{t('wiki.wiki_only_banner_title', 'This place lives on the wiki')}
+				</span>
+				<span class="block text-xs text-[var(--color-muted)]">
+					{t('wiki.wiki_only_banner_body', '{name} is a wiki-only place — guides and facts live here instead of a community feed.', { name: spaceName })}
+				</span>
+			</span>
+			<button
+				type="button"
+				onclick={() => (showWikiOnlyBanner = false)}
+				aria-label={t('common.dismiss', 'Dismiss')}
+				class="inline-flex shrink-0 items-center rounded-[var(--radius)] border border-[var(--color-border)] p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+			>
+				<X size={14} aria-hidden="true" />
+			</button>
+		</div>
+	{/if}
 	<div class="flex items-start gap-3 px-4 pt-5 sm:px-6">
 		{#if logoUrl}
 			<img

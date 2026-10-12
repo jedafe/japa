@@ -85,9 +85,10 @@ export const load: PageServerLoad = async (event) => {
 	const spaceId = space.id;
 
 	// §80 attractions: wiki-only spaces have no community surface — redirect
-	// to the wiki index before the tab fan-out below runs.
+	// to the wiki index before the tab fan-out below runs. The from_space
+	// flag tells the wiki index to show the wiki-only explainer.
 	if (detail.wiki_only) {
-		throw redirect(302, `/wiki/${encodeURIComponent(slug)}`);
+		throw redirect(302, `/wiki/${encodeURIComponent(slug)}?from_space=1`);
 	}
 
 	// Determine whether this space is a university type so the Reviews tab is

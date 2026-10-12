@@ -5335,6 +5335,8 @@
   "wiki.city_label": "Ville",
   "wiki.coming_soon": "Le wiki n'est pas activé pour cette destination.",
   "wiki.coming_soon_body": "Le wiki est actuellement désactivé. Veuillez revenir plus tard.",
+  "wiki.wiki_only_banner_title": "Ce lieu vit sur le wiki",
+  "wiki.wiki_only_banner_body": "{name} est un lieu wiki uniquement — les guides et informations sont ici plutôt que dans un fil communautaire.",
   "wiki.community_data_note": "Les guides et les données de destination sont maintenus par la communauté — proposez des modifications sur n'importe quelle page wiki.",
   "wiki.community_edits_disabled": "Les modifications communautaires sont actuellement désactivées.",
   "wiki.community_help": "Notre communauté et nos conseillers experts sont là pour vous aider.",
