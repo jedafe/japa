@@ -161,10 +161,12 @@ func (s *Service) DeleteFieldGroup(ctx context.Context, id pgtype.UUID, force bo
 	if err := s.write.DeleteCustomFieldGroup(ctx,
 		id,
 	); err != nil {
-		// foreign_key_violation — the group is still referenced by a
-		// non-cascading table (e.g. ticket_types, comparison_type_definitions).
+		// foreign_key_violation (23503) or restrict_violation (23001, from
+		// ON DELETE RESTRICT guards like wiki_type_categories) — the group
+		// is still referenced by a non-cascading table
+		// (e.g. ticket_types, comparison_type_definitions).
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+		if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23001") {
 			return fmt.Errorf("%w: field group is still referenced by %s", errpkg.ErrInUse, pgErr.TableName)
 		}
 		return fmt.Errorf("deleting custom field group: %w", err)
