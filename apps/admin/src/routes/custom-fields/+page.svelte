@@ -10,10 +10,10 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import { api, fieldGroupsAdminApiExtended, userManagementApi } from '$lib/api';
+	import { api, fieldGroupsAdminApiExtended, fieldPermissionsApi, userManagementApi, type UserGroup } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
-	import { Trash2, List, Pencil, Plus, GripVertical, ArrowUp, ArrowDown } from 'lucide-svelte';
+	import { Trash2, List, Pencil, Plus, GripVertical, ArrowUp, ArrowDown, ShieldCheck } from 'lucide-svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 
 	type FieldGroup = {
@@ -260,6 +260,162 @@
 	// Delete field confirm
 	let showDeleteFieldConfirm = $state(false);
 	let deleteFieldTarget = $state<CustomField | null>(null);
+
+	// Per-field view/edit permissions (GET/PUT/DELETE /custom-fields/{id}/permissions).
+	type FieldPermissionRow = {
+		user_group_id: string;
+		can_view: boolean;
+		can_edit: boolean;
+	};
+
+	let permModalOpen = $state(false);
+	let permField = $state<CustomField | null>(null);
+	let permRows = $state<FieldPermissionRow[]>([]);
+	let permLoading = $state(false);
+	let permError = $state('');
+	let permSavingId = $state<string | null>(null);
+	let cachedGroups = $state<UserGroup[]>([]);
+	let groupsLoaded = $state(false);
+
+	// Add-permission row
+	let addGroupId = $state('');
+	let addCanView = $state(false);
+	let addCanEdit = $state(false);
+
+	// Remove-permission confirm (mirrors the field-delete confirm pattern)
+	let showDeletePermConfirm = $state(false);
+	let deletePermTarget = $state<FieldPermissionRow | null>(null);
+
+	function groupName(id: string): string {
+		return cachedGroups.find((g) => g.id === id)?.name ?? id;
+	}
+
+	const groupOptions = $derived(cachedGroups.map((g) => ({ value: g.id, label: g.name })));
+
+	async function ensureGroupsLoaded() {
+		if (groupsLoaded) return;
+		try {
+			const result = await userManagementApi.listGroups();
+			if (result.ok) {
+				cachedGroups = result.data?.groups ?? [];
+				groupsLoaded = true;
+			}
+		} catch {
+			cachedGroups = [];
+		}
+	}
+
+	async function openPermissions(f: CustomField) {
+		permField = f;
+		permRows = [];
+		permError = '';
+		addGroupId = '';
+		addCanView = false;
+		addCanEdit = false;
+		permModalOpen = true;
+		await ensureGroupsLoaded();
+		await loadPermissions();
+	}
+
+	async function loadPermissions() {
+		if (!permField) return;
+		permLoading = true;
+		permError = '';
+		try {
+			const result = await api<{ data: FieldPermissionRow[] } | FieldPermissionRow[]>(
+				`/custom-fields/${permField.id}/permissions`
+			);
+			if (result.ok) {
+				const body = result.data as { data?: FieldPermissionRow[] } | FieldPermissionRow[] | null;
+				permRows = Array.isArray(body) ? body : (body?.data ?? []);
+			} else {
+				permError = result.error ?? t('common.error', 'Failed to load permissions');
+				permRows = [];
+			}
+		} catch {
+			permError = t('common.error', 'Failed to load permissions');
+			permRows = [];
+		}
+		// Explicit set in both paths above (no finally) per page taste rules.
+		permLoading = false;
+	}
+
+	async function savePermRow(row: FieldPermissionRow) {
+		if (!permField) return;
+		permSavingId = row.user_group_id;
+		permError = '';
+		try {
+			const canView = row.can_view || row.can_edit;
+			const result = await fieldPermissionsApi.set(permField.id, {
+				user_group_id: row.user_group_id,
+				can_view: canView,
+				can_edit: row.can_edit
+			});
+			if (!result.ok) {
+				permError = result.error ?? t('common.error', 'Failed to save permission');
+				permSavingId = null;
+				return;
+			}
+			await loadPermissions();
+		} catch {
+			permError = t('common.error', 'Failed to save permission');
+		}
+		permSavingId = null;
+	}
+
+	async function addPermission() {
+		if (!permField || !addGroupId) return;
+		permSavingId = 'add';
+		permError = '';
+		try {
+			const result = await fieldPermissionsApi.set(permField.id, {
+				user_group_id: addGroupId,
+				can_view: addCanView || addCanEdit,
+				can_edit: addCanEdit
+			});
+			if (!result.ok) {
+				permError = result.error ?? t('common.error', 'Failed to add permission');
+				permSavingId = null;
+				return;
+			}
+			addGroupId = '';
+			addCanView = false;
+			addCanEdit = false;
+			await loadPermissions();
+		} catch {
+			permError = t('common.error', 'Failed to add permission');
+		}
+		permSavingId = null;
+	}
+
+	function confirmDeletePermission(row: FieldPermissionRow) {
+		deletePermTarget = row;
+		showDeletePermConfirm = true;
+	}
+
+	async function executeDeletePermission() {
+		if (!permField || !deletePermTarget) return;
+		showDeletePermConfirm = false;
+		const groupId = deletePermTarget.user_group_id;
+		deletePermTarget = null;
+		permSavingId = groupId;
+		permError = '';
+		try {
+			const result = await api(`/custom-fields/${permField.id}/permissions`, {
+				method: 'DELETE',
+				body: { user_group_id: groupId }
+			});
+			if (!result.ok) {
+				permError = result.error ?? t('common.error', 'Failed to remove permission');
+				permSavingId = null;
+				return;
+			}
+			await loadPermissions();
+		} catch {
+			permError = t('common.error', 'Failed to remove permission');
+		}
+		permSavingId = null;
+	}
 
 	// All supported field types (must match backend validFieldTypes).
 	const fieldTypes: Array<{ value: string; label: string }> = [
@@ -570,6 +726,9 @@
 									<td class="px-3 py-2">
 										<div class="flex items-center gap-1">
 											{#if canEditField}
+												<button type="button" class="p-1 rounded hover:opacity-70" onclick={() => openPermissions(f)} title={t('fieldGroups.permissions', 'Permissions')}>
+													<ShieldCheck class="h-3.5 w-3.5" style="color: var(--color-muted)" />
+												</button>
 												<button type="button" class="p-1 rounded hover:opacity-70" onclick={() => openEditField(f)} title={t('common.edit', 'Edit')}>
 													<Pencil class="h-3.5 w-3.5" style="color: var(--color-muted)" />
 												</button>
@@ -734,6 +893,127 @@
 		</Button>
 		<Button variant="destructive" onclick={executeDeleteField}>
 			{t('common.delete', 'Delete')}
+		</Button>
+	</div>
+</Modal>
+
+<!-- Field Permissions Modal -->
+<Modal bind:open={permModalOpen} title={permField ? `${t('fieldGroups.permissions', 'Permissions')}: ${permField.label}` : t('fieldGroups.permissions', 'Permissions')}>
+	<div class="space-y-4">
+		{#if permError}
+			<p class="text-sm" style="color: var(--color-danger)">{permError}</p>
+		{/if}
+		{#if permLoading}
+			<TableSkeleton rows={3} columns={3} />
+		{:else if permRows.length === 0}
+			<div class="py-4 text-center text-sm" style="color: var(--color-muted)">
+				{t('fieldGroups.no_permissions', 'No permissions set for this field')}
+			</div>
+		{:else}
+			<div class="overflow-x-auto rounded-lg border" style="border-color: var(--color-border)">
+				<table class="w-full text-sm">
+					<thead>
+						<tr style="border-bottom: 1px solid var(--color-border)">
+							<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_group', 'Group')}</th>
+							<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_view', 'Can view')}</th>
+							<th class="px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('fieldGroups.perm_edit', 'Can edit')}</th>
+							<th class="w-24 px-3 py-2 text-left font-medium" style="color: var(--color-muted)">{t('common.actions', 'Actions')}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each permRows as row (row.user_group_id)}
+							<tr class="border-t" style="border-color: var(--color-border)">
+								<td class="px-3 py-2 font-medium" style="color: var(--color-foreground)">{groupName(row.user_group_id)}</td>
+								<td class="px-3 py-2">
+									<input
+										type="checkbox"
+										class="rounded"
+										bind:checked={row.can_view}
+										onchange={() => {
+											if (row.can_edit) row.can_view = true;
+										}}
+									/>
+								</td>
+								<td class="px-3 py-2">
+									<input
+										type="checkbox"
+										class="rounded"
+										bind:checked={row.can_edit}
+										onchange={() => {
+											if (row.can_edit) row.can_view = true;
+										}}
+									/>
+								</td>
+								<td class="px-3 py-2">
+									<div class="flex items-center gap-1">
+										<Button size="sm" variant="outline" onclick={() => savePermRow(row)} disabled={permSavingId === row.user_group_id}>
+											{permSavingId === row.user_group_id ? t('common.saving', 'Saving...') : t('common.save', 'Save')}
+										</Button>
+										<button type="button" class="p-1 rounded hover:opacity-70" onclick={() => confirmDeletePermission(row)} disabled={permSavingId === row.user_group_id} title={t('fieldGroups.perm_remove', 'Remove')}>
+											<Trash2 class="h-3.5 w-3.5" style="color: var(--color-danger)" />
+										</button>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+
+		<div class="rounded-lg border p-4" style="border-color: var(--color-border)">
+			<span class="mb-2 block text-sm font-medium">{t('fieldGroups.perm_add', 'Add permission')}</span>
+			<div class="flex flex-wrap items-center gap-2">
+				<AutocompleteSelect
+					id="perm-add-group"
+					bind:value={addGroupId}
+					options={groupOptions}
+					placeholder={t('fieldGroups.perm_group', 'Group')}
+					class="min-w-48 flex-1"
+				/>
+				<label class="flex items-center gap-2 text-sm">
+					<input type="checkbox" bind:checked={addCanView} class="rounded" disabled={addCanEdit} />
+					{t('fieldGroups.perm_view', 'Can view')}
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input
+						type="checkbox"
+						bind:checked={addCanEdit}
+						onchange={() => {
+							if (addCanEdit) addCanView = true;
+						}}
+						class="rounded"
+					/>
+					{t('fieldGroups.perm_edit', 'Can edit')}
+				</label>
+				<Button size="sm" onclick={addPermission} disabled={!addGroupId || permSavingId === 'add'}>
+					{permSavingId === 'add' ? t('common.saving', 'Saving...') : t('common.add', 'Add')}
+				</Button>
+			</div>
+		</div>
+
+		<div class="mt-2 flex justify-end gap-2">
+			<Button variant="outline" onclick={() => (permModalOpen = false)}>
+				{t('common.close', 'Close')}
+			</Button>
+		</div>
+	</div>
+</Modal>
+
+<!-- Remove Permission Confirmation -->
+<Modal bind:open={showDeletePermConfirm} title={t('fieldGroups.perm_remove', 'Remove')}>
+	{#if deletePermTarget}
+		<p class="text-sm" style="color: var(--color-muted)">
+			{t('fieldGroups.perm_remove_confirm', 'Remove permission for')} <strong>{groupName(deletePermTarget.user_group_id)}</strong>?
+			{t('fieldGroups.delete_field_confirm', 'This cannot be undone.')}
+		</p>
+	{/if}
+	<div class="mt-4 flex justify-end gap-2">
+		<Button variant="ghost" onclick={() => (showDeletePermConfirm = false)}>
+			{t('common.cancel', 'Cancel')}
+		</Button>
+		<Button variant="destructive" onclick={executeDeletePermission}>
+			{t('fieldGroups.perm_remove', 'Remove')}
 		</Button>
 	</div>
 </Modal>
