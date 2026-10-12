@@ -437,6 +437,81 @@ func (s *Service) GetStats(ctx context.Context) (IndexStats, error) {
 	return s.store.GetStats(ctx)
 }
 
+// RecordIndexFailure records an exhausted index/purge retry for admin
+// visibility. Nil-safe: returns nil when the store is not wired. Callers
+// invoke this from fire-and-forget goroutines; the error return is only for
+// logging (Rule 8 — never block the HTTP response).
+func (s *Service) RecordIndexFailure(ctx context.Context, entityType string, entityID pgtype.UUID, operation string, indexErr error) error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	return s.store.RecordIndexFailure(ctx, entityType, entityID, operation, indexErr)
+}
+
+// RetryResult summarizes a POST /admin/rag/retry-failures pass.
+type RetryResult struct {
+	Requeued          int      `json:"requeued"`
+	ClearedNonContent int64    `json:"cleared_non_content"`
+	Note              string   `json:"note,omitempty"`
+	RequeueErrors     []string `json:"requeue_errors,omitempty"`
+}
+
+// RetryFailures re-enqueues content:generate_embedding tasks for content-type
+// index failures via the existing enqueuer (same payload shape as
+// QueueReindex) and clears non-content (wiki_page/space/...) rows
+// best-effort — those entity types have no generic re-indexer (out of
+// scope). Each successfully re-enqueued content ID is deleted; a per-ID
+// delete keeps the rows whose enqueue failed visible for the next pass.
+func (s *Service) RetryFailures(ctx context.Context) (RetryResult, error) {
+	var res RetryResult
+	if s.store == nil {
+		return res, errors.New("rag: retry-failures: no store configured")
+	}
+	if s.enqueuer == nil {
+		return res, errors.New("rag: retry-failures: no enqueuer configured")
+	}
+
+	ids, err := s.store.ListContentIndexFailureIDs(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	for _, id := range ids {
+		payload, err := json.Marshal(map[string]string{
+			"content_id": id.String(),
+		})
+		if err != nil {
+			slog.Warn("rag: retry-failures: marshal payload failed", "content_id", id.String(), "error", err)
+			res.RequeueErrors = append(res.RequeueErrors, id.String())
+			continue
+		}
+
+		if err := s.enqueuer.Enqueue(worker.TypeAIGenerateContentEmbedding, payload); err != nil {
+			slog.Warn("rag: retry-failures: enqueue failed", "content_id", id.String(), "error", err)
+			res.RequeueErrors = append(res.RequeueErrors, id.String())
+			continue
+		}
+
+		if err := s.store.ClearIndexFailure(ctx, EntityTypeContent, id, "index"); err != nil {
+			slog.Warn("rag: retry-failures: clear after requeue failed", "content_id", id.String(), "error", err)
+			continue
+		}
+		res.Requeued++
+	}
+
+	cleared, err := s.store.ClearNonContentIndexFailures(ctx)
+	if err != nil {
+		return res, err
+	}
+	res.ClearedNonContent = cleared
+
+	if cleared > 0 {
+		res.Note = "non-content failures (wiki_page, space, ...) were cleared without re-index: no generic entity re-indexer exists"
+	}
+
+	return res, nil
+}
+
 // QueueReindex enqueues a full corpus re-index by enumerating all published
 // content IDs and enqueueing the content:generate_embedding task for each.
 // The admin POST /admin/rag/reindex route calls this. Fire-and-forget per

@@ -15,11 +15,28 @@
 		entity_count: number;
 	};
 
+	type IndexFailure = {
+		entity_type: string;
+		entity_id: string;
+		operation: string;
+		error: string;
+		attempted_at: string;
+	};
+
 	type IndexStats = {
 		total_chunks: number;
 		total_entities: number;
 		last_indexed_at: string;
 		by_type: EntityTypeStats[];
+		recent_failures: IndexFailure[];
+		failure_count_24h: number;
+	};
+
+	type RetryFailuresResult = {
+		requeued: number;
+		cleared_non_content: number;
+		note?: string;
+		requeue_errors?: string[];
 	};
 
 	type RagSettings = {
@@ -35,6 +52,7 @@
 	let loading = $state(true);
 	let error = $state('');
 	let reindexing = $state(false);
+	let retrying = $state(false);
 	let message = $state('');
 	let messageType = $state('');
 
@@ -137,6 +155,27 @@
 			message = e instanceof Error ? e.message : t('rag.reindex_error');
 		} finally {
 			reindexing = false;
+		}
+	}
+
+	async function retryFailures() {
+		retrying = true;
+		message = '';
+		try {
+			const result = await api<RetryFailuresResult>('/admin/rag/retry-failures', { method: 'POST' });
+			if (result.ok) {
+				messageType = 'success';
+				message = t('rag.retry_queued', `Re-queued ${result.data.requeued} embedding task(s).`);
+				loadStats();
+			} else {
+				messageType = 'error';
+				message = result.error;
+			}
+		} catch (e) {
+			messageType = 'error';
+			message = e instanceof Error ? e.message : t('rag.retry_error');
+		} finally {
+			retrying = false;
 		}
 	}
 
@@ -244,6 +283,10 @@
 				<RefreshCw class="h-4 w-4 {reindexing ? 'animate-spin' : ''}" />
 				{reindexing ? t('rag.reindexing') : t('rag.trigger_reindex')}
 			</Button>
+			<Button variant="outline" onclick={retryFailures} disabled={retrying}>
+				<RefreshCw class="h-4 w-4 {retrying ? 'animate-spin' : ''}" />
+				{retrying ? t('rag.retrying') : t('rag.retry_failures')}
+			</Button>
 		{/if}
 	</div>
 
@@ -289,6 +332,47 @@
 			</div>
 		</div>
 	{/if}
+
+	<div class="mt-8">
+		<h3 class="mb-3 text-sm font-semibold" style="color: var(--color-foreground)">
+			{t('rag.recent_failures')}
+			{#if stats.failure_count_24h > 0}
+				<Badge variant="outline">{stats.failure_count_24h} / 24h</Badge>
+			{/if}
+		</h3>
+		{#if stats.recent_failures && stats.recent_failures.length > 0}
+			<div class="overflow-hidden rounded-lg border" style="border-color: var(--color-border)">
+				<table class="w-full text-sm">
+					<thead style="background: var(--color-surface-alt)">
+						<tr>
+							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.entity_type')}</th>
+							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.failure_entity')}</th>
+							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.failure_operation')}</th>
+							<th class="px-4 py-2 text-left font-medium" style="color: var(--color-muted)">{t('rag.failure_error')}</th>
+							<th class="px-4 py-2 text-right font-medium" style="color: var(--color-muted)">{t('rag.failure_attempted')}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each stats.recent_failures as f (`${f.entity_type}/${f.entity_id}/${f.operation}`)}
+							<tr class="border-t" style="border-color: var(--color-border)">
+								<td class="px-4 py-2" style="color: var(--color-foreground)">
+									<Badge variant="outline">{f.entity_type}</Badge>
+								</td>
+								<td class="px-4 py-2 font-mono text-xs" style="color: var(--color-foreground)">{f.entity_id}</td>
+								<td class="px-4 py-2" style="color: var(--color-foreground)">{f.operation}</td>
+								<td class="px-4 py-2 text-xs" style="color: var(--color-muted)">{f.error}</td>
+								<td class="px-4 py-2 text-right text-xs" style="color: var(--color-muted)">
+									{f.attempted_at ? new Date(f.attempted_at).toLocaleString() : '—'}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-sm" style="color: var(--color-muted)">{t('rag.no_failures')}</p>
+		{/if}
+	</div>
 {/if}
 
 {#if purgeModalOpen}

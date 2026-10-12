@@ -345,3 +345,44 @@ FROM forum_threads ft
 WHERE ce.entity_type = 'forum_thread' AND ce.entity_id = ft.id
   AND ft.space_id IS NULL
   AND (ce.visibility <> 'private' OR ce.space_id IS NOT NULL);
+
+-- =====================================================================
+-- Index failure records (Task 2: RAG indexing retry + failure visibility).
+-- Fire-and-forget index/purge calls retry in the background; when all
+-- attempts are exhausted the call site upserts a row here so the admin
+-- status route can surface it and the retry route can re-enqueue it.
+-- =====================================================================
+
+-- name: UpsertRAGIndexFailure :exec
+INSERT INTO rag_index_failures (entity_type, entity_id, operation, error, attempted_at)
+VALUES (@entity_type, @entity_id, @operation, @error, now())
+ON CONFLICT (entity_type, entity_id, operation)
+DO UPDATE SET error = EXCLUDED.error, attempted_at = now();
+
+-- name: ListRAGIndexFailures :many
+SELECT entity_type, entity_id, operation, error, attempted_at
+FROM rag_index_failures
+ORDER BY attempted_at DESC
+LIMIT @page_limit;
+
+-- name: CountRAGIndexFailures24h :one
+SELECT COUNT(*) AS count
+FROM rag_index_failures
+WHERE attempted_at >= now() - interval '24 hours';
+
+-- name: ListContentRAGIndexFailures :many
+SELECT entity_id
+FROM rag_index_failures
+WHERE entity_type = 'content' AND operation = 'index';
+
+-- name: DeleteRAGIndexFailures :exec
+DELETE FROM rag_index_failures
+WHERE (@entity_type::text = '' OR entity_type = @entity_type);
+
+-- name: DeleteRAGIndexFailure :exec
+DELETE FROM rag_index_failures
+WHERE entity_type = @entity_type AND entity_id = @entity_id AND operation = @operation;
+
+-- name: DeleteNonContentRAGIndexFailures :execrows
+DELETE FROM rag_index_failures
+WHERE entity_type <> 'content';

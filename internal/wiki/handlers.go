@@ -39,6 +39,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/jedafe/japa/internal/rag"
+
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/customfields"
@@ -86,6 +88,7 @@ type permissionChecker interface {
 // Implemented by rag.Service; nil disables RAG indexing (graceful degradation).
 type ragIndexer interface {
 	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
+	RecordIndexFailure(ctx context.Context, entityType string, entityID pgtype.UUID, operation string, indexErr error) error
 }
 
 // SetPointsChecker injects the points service for reputation checks on
@@ -252,9 +255,16 @@ func (h *Handlers) indexApprovedContent(r *http.Request, pageID pgtype.UUID, con
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		ctx := context.Background()
 		// Wiki pages are a public corpus — no scoped visibility (§69).
-		if err := h.rag.IndexEntity(ctx, "wiki_page", pageID, "public", pgtype.UUID{}, pgtype.UUID{}, string(content), language); err != nil {
+		err := rag.IndexWithRetry(ctx, "wiki_page", pageID.String(), "index", func(ctx context.Context) error {
+			return h.rag.IndexEntity(ctx, "wiki_page", pageID, "public", pgtype.UUID{}, pgtype.UUID{}, string(content), language)
+		})
+		if err != nil {
 			slog.Warn("wiki: RAG index failed on approval",
 				"page_id", pageID.String(), "error", err)
+			if recErr := h.rag.RecordIndexFailure(ctx, "wiki_page", pageID, "index", err); recErr != nil {
+				slog.Warn("wiki: RAG index failure record failed",
+					"page_id", pageID.String(), "error", recErr)
+			}
 		}
 	}()
 }

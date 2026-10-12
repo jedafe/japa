@@ -35,6 +35,19 @@ func (q *Queries) CountContentEmbeddingsByEntity(ctx context.Context, arg CountC
 	return count, err
 }
 
+const countRAGIndexFailures24h = `-- name: CountRAGIndexFailures24h :one
+SELECT COUNT(*) AS count
+FROM rag_index_failures
+WHERE attempted_at >= now() - interval '24 hours'
+`
+
+func (q *Queries) CountRAGIndexFailures24h(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countRAGIndexFailures24h)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteContentEmbeddingsAboveIndex = `-- name: DeleteContentEmbeddingsAboveIndex :exec
 
 DELETE FROM content_embeddings
@@ -90,6 +103,45 @@ WHERE entity_type = $1
 // =====================================================================
 func (q *Queries) DeleteContentEmbeddingsByType(ctx context.Context, entityType string) error {
 	_, err := q.db.Exec(ctx, deleteContentEmbeddingsByType, entityType)
+	return err
+}
+
+const deleteNonContentRAGIndexFailures = `-- name: DeleteNonContentRAGIndexFailures :execrows
+DELETE FROM rag_index_failures
+WHERE entity_type <> 'content'
+`
+
+func (q *Queries) DeleteNonContentRAGIndexFailures(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteNonContentRAGIndexFailures)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteRAGIndexFailure = `-- name: DeleteRAGIndexFailure :exec
+DELETE FROM rag_index_failures
+WHERE entity_type = $1 AND entity_id = $2 AND operation = $3
+`
+
+type DeleteRAGIndexFailureParams struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	Operation  string      `json:"operation"`
+}
+
+func (q *Queries) DeleteRAGIndexFailure(ctx context.Context, arg DeleteRAGIndexFailureParams) error {
+	_, err := q.db.Exec(ctx, deleteRAGIndexFailure, arg.EntityType, arg.EntityID, arg.Operation)
+	return err
+}
+
+const deleteRAGIndexFailures = `-- name: DeleteRAGIndexFailures :exec
+DELETE FROM rag_index_failures
+WHERE ($1::text = '' OR entity_type = $1)
+`
+
+func (q *Queries) DeleteRAGIndexFailures(ctx context.Context, entityType string) error {
+	_, err := q.db.Exec(ctx, deleteRAGIndexFailures, entityType)
 	return err
 }
 
@@ -224,6 +276,32 @@ func (q *Queries) ListAcademyTrackIDsForReindex(ctx context.Context, arg ListAca
 	return items, nil
 }
 
+const listContentRAGIndexFailures = `-- name: ListContentRAGIndexFailures :many
+SELECT entity_id
+FROM rag_index_failures
+WHERE entity_type = 'content' AND operation = 'index'
+`
+
+func (q *Queries) ListContentRAGIndexFailures(ctx context.Context) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listContentRAGIndexFailures)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var entity_id pgtype.UUID
+		if err := rows.Scan(&entity_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entity_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listForumThreadIDsForReindex = `-- name: ListForumThreadIDsForReindex :many
 
 SELECT ft.id, COALESCE(sp.visibility, 'private') AS visibility,
@@ -350,6 +428,47 @@ func (q *Queries) ListPublishedContentIDsForReindex(ctx context.Context, arg Lis
 			&i.Visibility,
 			&i.SpaceID,
 			&i.AuthorID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRAGIndexFailures = `-- name: ListRAGIndexFailures :many
+SELECT entity_type, entity_id, operation, error, attempted_at
+FROM rag_index_failures
+ORDER BY attempted_at DESC
+LIMIT $1
+`
+
+type ListRAGIndexFailuresRow struct {
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	Operation   string             `json:"operation"`
+	Error       string             `json:"error"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+}
+
+func (q *Queries) ListRAGIndexFailures(ctx context.Context, pageLimit int32) ([]ListRAGIndexFailuresRow, error) {
+	rows, err := q.db.Query(ctx, listRAGIndexFailures, pageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRAGIndexFailuresRow
+	for rows.Next() {
+		var i ListRAGIndexFailuresRow
+		if err := rows.Scan(
+			&i.EntityType,
+			&i.EntityID,
+			&i.Operation,
+			&i.Error,
+			&i.AttemptedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -829,4 +948,35 @@ func (q *Queries) UpsertContentEmbedding(ctx context.Context, arg UpsertContentE
 		&i.AuthorID,
 	)
 	return i, err
+}
+
+const upsertRAGIndexFailure = `-- name: UpsertRAGIndexFailure :exec
+
+INSERT INTO rag_index_failures (entity_type, entity_id, operation, error, attempted_at)
+VALUES ($1, $2, $3, $4, now())
+ON CONFLICT (entity_type, entity_id, operation)
+DO UPDATE SET error = EXCLUDED.error, attempted_at = now()
+`
+
+type UpsertRAGIndexFailureParams struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   pgtype.UUID `json:"entity_id"`
+	Operation  string      `json:"operation"`
+	Error      string      `json:"error"`
+}
+
+// =====================================================================
+// Index failure records (Task 2: RAG indexing retry + failure visibility).
+// Fire-and-forget index/purge calls retry in the background; when all
+// attempts are exhausted the call site upserts a row here so the admin
+// status route can surface it and the retry route can re-enqueue it.
+// =====================================================================
+func (q *Queries) UpsertRAGIndexFailure(ctx context.Context, arg UpsertRAGIndexFailureParams) error {
+	_, err := q.db.Exec(ctx, upsertRAGIndexFailure,
+		arg.EntityType,
+		arg.EntityID,
+		arg.Operation,
+		arg.Error,
+	)
+	return err
 }

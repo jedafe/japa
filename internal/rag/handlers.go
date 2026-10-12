@@ -5,6 +5,7 @@
 //
 //	POST   /api/v1/admin/rag/reindex            — queue full corpus re-index
 //	GET    /api/v1/admin/rag/status             — index stats (total chunks, last indexed)
+//	POST   /api/v1/admin/rag/retry-failures     — re-enqueue failed index operations
 //	DELETE /api/v1/admin/rag/entity/:type/:id   — purge embeddings for an entity
 //	GET    /api/v1/admin/settings/rag           — get RAG settings
 //	PUT    /api/v1/admin/settings/rag           — update RAG settings
@@ -143,6 +144,33 @@ func (h *Handlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": stats,
+	})
+}
+
+// HandleRetryFailures handles POST /api/v1/admin/rag/retry-failures —
+// re-enqueue content:generate_embedding tasks for content-type index
+// failures and clear non-content failure rows best-effort (those entity
+// types have no generic re-indexer). Gated by ai.rag.manage permission.
+func (h *Handlers) HandleRetryFailures(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "rag_unavailable", "RAG service not configured")
+		return
+	}
+
+	res, err := h.service.RetryFailures(r.Context())
+	if err != nil {
+		slog.Error("rag: retry-failures failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "retry_failed", "Failed to retry index failures")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": res,
 	})
 }
 

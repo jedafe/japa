@@ -3131,6 +3131,15 @@ type PushToken struct {
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 }
 
+type RagIndexFailure struct {
+	ID          pgtype.UUID        `json:"id"`
+	EntityType  string             `json:"entity_type"`
+	EntityID    pgtype.UUID        `json:"entity_id"`
+	Operation   string             `json:"operation"`
+	Error       string             `json:"error"`
+	AttemptedAt pgtype.Timestamptz `json:"attempted_at"`
+}
+
 type Reaction struct {
 	EntityType  string             `json:"entity_type"`
 	EntityID    pgtype.UUID        `json:"entity_id"`

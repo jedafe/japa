@@ -22,6 +22,7 @@ import (
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/literals"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/rag"
 )
 
 // ContentService is the subset of content.Service the space content/pinned
@@ -61,6 +62,7 @@ type MediaResolver interface {
 type RAGEntityIndexer interface {
 	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
 	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
+	RecordIndexFailure(ctx context.Context, entityType string, entityID pgtype.UUID, operation string, indexErr error) error
 	// ReconcileSpaceScope refreshes scope metadata for a space and its
 	// forum threads after a visibility/status change (§69 amendment).
 	ReconcileSpaceScope(ctx context.Context, spaceID pgtype.UUID, visibility string) error
@@ -164,9 +166,16 @@ func (h *Handlers) indexSpaceRAG(ctx context.Context, spaceID pgtype.UUID, visib
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.IndexEntity(bgCtx, "space", spaceID, visibility, spaceID, pgtype.UUID{}, text, language); err != nil {
+		err := rag.IndexWithRetry(bgCtx, "space", spaceID.String(), "index", func(ctx context.Context) error {
+			return h.ragIndexer.IndexEntity(ctx, "space", spaceID, visibility, spaceID, pgtype.UUID{}, text, language)
+		})
+		if err != nil {
 			slog.Warn("spaces: RAG index failed for space",
 				"space_id", spaceID.String(), "error", err)
+			if recErr := h.ragIndexer.RecordIndexFailure(bgCtx, "space", spaceID, "index", err); recErr != nil {
+				slog.Warn("spaces: RAG index failure record failed",
+					"space_id", spaceID.String(), "error", recErr)
+			}
 		}
 	}()
 }
@@ -179,9 +188,16 @@ func (h *Handlers) purgeSpaceRAG(ctx context.Context, spaceID pgtype.UUID) {
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		bgCtx := context.Background()
-		if err := h.ragIndexer.PurgeEntity(bgCtx, "space", spaceID); err != nil {
+		err := rag.IndexWithRetry(bgCtx, "space", spaceID.String(), "purge", func(ctx context.Context) error {
+			return h.ragIndexer.PurgeEntity(ctx, "space", spaceID)
+		})
+		if err != nil {
 			slog.Warn("spaces: RAG purge failed for space",
 				"space_id", spaceID.String(), "error", err)
+			if recErr := h.ragIndexer.RecordIndexFailure(bgCtx, "space", spaceID, "purge", err); recErr != nil {
+				slog.Warn("spaces: RAG purge failure record failed",
+					"space_id", spaceID.String(), "error", recErr)
+			}
 		}
 	}()
 }

@@ -486,12 +486,129 @@ func (s *Store) GetContentEmbeddingMeta(ctx context.Context, contentID pgtype.UU
 	}, nil
 }
 
+// IndexFailure is one exhausted index/purge retry record for admin display.
+type IndexFailure struct {
+	EntityType  string `json:"entity_type"`
+	EntityID    string `json:"entity_id"`
+	Operation   string `json:"operation"`
+	Error       string `json:"error"`
+	AttemptedAt string `json:"attempted_at"`
+}
+
+// RecordIndexFailure upserts an exhausted retry record. Best-effort: callers
+// log the error but never propagate it (Rule 8).
+func (s *Store) RecordIndexFailure(ctx context.Context, entityType string, entityID pgtype.UUID, operation string, indexErr error) error {
+	if s == nil || s.writeQueries == nil {
+		return nil
+	}
+	errStr := "<nil>"
+	if indexErr != nil {
+		errStr = indexErr.Error()
+	}
+	if err := s.writeQueries.UpsertRAGIndexFailure(ctx, gen.UpsertRAGIndexFailureParams{
+		EntityType: entityType,
+		EntityID:   entityID,
+		Operation:  operation,
+		Error:      errStr,
+	}); err != nil {
+		return fmt.Errorf("rag: record index failure: %w", err)
+	}
+	return nil
+}
+
+// ListIndexFailures returns the most recent failure records, newest first.
+func (s *Store) ListIndexFailures(ctx context.Context, limit int32) ([]IndexFailure, error) {
+	if s == nil || s.queries == nil {
+		return nil, nil
+	}
+	rows, err := s.queries.ListRAGIndexFailures(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("rag: list index failures: %w", err)
+	}
+	out := make([]IndexFailure, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, IndexFailure{
+			EntityType:  r.EntityType,
+			EntityID:    r.EntityID.String(),
+			Operation:   r.Operation,
+			Error:       r.Error,
+			AttemptedAt: r.AttemptedAt.Time.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+	return out, nil
+}
+
+// CountIndexFailures24h returns the number of failure records from the last
+// 24 hours for the admin status badge.
+func (s *Store) CountIndexFailures24h(ctx context.Context) (int64, error) {
+	if s == nil || s.queries == nil {
+		return 0, nil
+	}
+	n, err := s.queries.CountRAGIndexFailures24h(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("rag: count index failures: %w", err)
+	}
+	return n, nil
+}
+
+// ListContentIndexFailureIDs returns the entity IDs of content-type index
+// failures so the retry endpoint can re-enqueue them for embedding.
+func (s *Store) ListContentIndexFailureIDs(ctx context.Context) ([]pgtype.UUID, error) {
+	if s == nil || s.queries == nil {
+		return nil, nil
+	}
+	return s.queries.ListContentRAGIndexFailures(ctx)
+}
+
+// ClearIndexFailure deletes a single failure row after a successful retry.
+func (s *Store) ClearIndexFailure(ctx context.Context, entityType string, entityID pgtype.UUID, operation string) error {
+	if s == nil || s.writeQueries == nil {
+		return nil
+	}
+	if err := s.writeQueries.DeleteRAGIndexFailure(ctx, gen.DeleteRAGIndexFailureParams{
+		EntityType: entityType,
+		EntityID:   entityID,
+		Operation:  operation,
+	}); err != nil {
+		return fmt.Errorf("rag: clear index failure: %w", err)
+	}
+	return nil
+}
+
+// ClearIndexFailures deletes failure records; empty entityType clears all.
+// Returns (cleared_non_content, error); content-type rows are re-enqueued
+// first and deleted per-ID from Service.RetryFailures.
+func (s *Store) ClearIndexFailures(ctx context.Context, entityType string) error {
+	if s == nil || s.writeQueries == nil {
+		return nil
+	}
+	if err := s.writeQueries.DeleteRAGIndexFailures(ctx, entityType); err != nil {
+		return fmt.Errorf("rag: clear index failures: %w", err)
+	}
+	return nil
+}
+
+// ClearNonContentIndexFailures deletes all non-content failure rows after a
+// retry pass and returns the number cleared.
+func (s *Store) ClearNonContentIndexFailures(ctx context.Context) (int64, error) {
+	if s == nil || s.writeQueries == nil {
+		return 0, nil
+	}
+	n, err := s.writeQueries.DeleteNonContentRAGIndexFailures(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("rag: clear non-content index failures: %w", err)
+	}
+	return n, nil
+}
+
 // IndexStats holds aggregate statistics about the embedding index.
 type IndexStats struct {
-	TotalChunks   int64             `json:"total_chunks"`
-	TotalEntities int64             `json:"total_entities"`
-	LastIndexedAt string            `json:"last_indexed_at"`
-	ByType        []EntityTypeStats `json:"by_type"`
+	TotalChunks     int64             `json:"total_chunks"`
+	TotalEntities   int64             `json:"total_entities"`
+	LastIndexedAt   string            `json:"last_indexed_at"`
+	ByType          []EntityTypeStats `json:"by_type"`
+	RecentFailures  []IndexFailure    `json:"recent_failures"`
+	FailureCount24h int64             `json:"failure_count_24h"`
 }
 
 // EntityTypeStats is the per-entity-type breakdown within IndexStats.
@@ -527,11 +644,27 @@ func (s *Store) GetStats(ctx context.Context) (IndexStats, error) {
 		})
 	}
 
+	failures, err := s.ListIndexFailures(ctx, 50)
+	if err != nil {
+		return IndexStats{}, err
+	}
+
+	failureCount, err := s.CountIndexFailures24h(ctx)
+	if err != nil {
+		return IndexStats{}, err
+	}
+
+	if failures == nil {
+		failures = []IndexFailure{}
+	}
+
 	return IndexStats{
-		TotalChunks:   row.TotalChunks,
-		TotalEntities: row.TotalEntities,
-		LastIndexedAt: lastIndexed,
-		ByType:        byType,
+		TotalChunks:     row.TotalChunks,
+		TotalEntities:   row.TotalEntities,
+		LastIndexedAt:   lastIndexed,
+		ByType:          byType,
+		RecentFailures:  failures,
+		FailureCount24h: failureCount,
 	}, nil
 }
 

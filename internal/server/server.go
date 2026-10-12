@@ -5500,6 +5500,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
 				Get("/admin/rag/status", ragHandlers.HandleStatus)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
+				Post("/admin/rag/retry-failures", ragHandlers.HandleRetryFailures)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
 				Delete("/admin/rag/entity/{type}/{id}", ragHandlers.HandlePurgeEntity)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.rag.manage")).
 				Get("/admin/settings/rag", ragHandlers.HandleGetSettings)
