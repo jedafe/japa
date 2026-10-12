@@ -5562,6 +5562,8 @@
   "wiki.page_nav": "Page navigation",
   "wiki.page_not_found": "Wiki page not found",
   "wiki.page_not_found_body": "The wiki page you're looking for doesn't exist or has been removed.",
+  "wiki.page_removed": "This wiki page was removed",
+  "wiki.page_removed_body": "This page was removed by moderators. Its history is preserved for transparency.",
   "wiki.page_title_suffix": "Wiki",
   "wiki.page_x_of_y": "Page {page} of {total}",
   "wiki.pending_banner": "{count} suggested edit(s) awaiting review.",

@@ -17,7 +17,7 @@
 	import WikiSidebar from '$lib/components/wiki/WikiSidebar.svelte';
 	import { searchEntities } from '$lib/api/jce';
 	import type { ResolvedItem } from '$lib/types/jce';
-	import { BookOpen, Calculator, ChevronLeft, ChevronRight, Lock, Pencil, History, Send } from 'lucide-svelte';
+	import { BookOpen, Calculator, ChevronLeft, ChevronRight, Lock, Pencil, History, Send, Trash2 } from 'lucide-svelte';
 	import type { WikiCategory, WikiPage } from '$lib/types';
 	import type { PageData } from './$types';
 	import { sanitizeContentHtml, safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -404,6 +404,13 @@
 				icon={BookOpen}
 				title={t('wiki.coming_soon', 'Wiki is not enabled for this destination')}
 				body={t('wiki.coming_soon_body', 'Wiki is currently disabled. Please check back later.')}
+				action={{ label: t('wiki.back_to_index', 'Back to wiki'), href: `/wiki/${data.spaceSlug}` }}
+			/>
+		{:else if data.removed}
+			<EmptyState
+				icon={Trash2}
+				title={t('wiki.page_removed', 'This wiki page was removed')}
+				body={t('wiki.page_removed_body', 'This page was removed by moderators. Its history is preserved for transparency.')}
 				action={{ label: t('wiki.back_to_index', 'Back to wiki'), href: `/wiki/${data.spaceSlug}` }}
 			/>
 		{:else if data.loadError || !data.page}

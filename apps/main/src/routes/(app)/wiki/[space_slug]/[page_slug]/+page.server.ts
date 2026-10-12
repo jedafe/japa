@@ -60,13 +60,30 @@ export const load: PageServerLoad = async (event) => {
 			authed,
 			userPermissions,
 			loadError: false,
+			removed: false,
 			spaceDetail,
 			index: indexRes?.items ?? [],
 			apiCategories: catRes?.data ?? ([] as WikiApiCategory[]),
 			wikiScope: catRes?.scope === 'university' ? ('university' as const) : ('geo' as const)
 		};
 	} catch (e) {
-		if (e instanceof ApiError && e.status === 404) {
+		if (e instanceof ApiError && (e.status === 404 || e.status === 410)) {
+			if (e.status === 410 || e.code === 'page_removed') {
+				return {
+					spaceSlug,
+					pageSlug,
+					page: null,
+					section: event.url.searchParams.get('section') ?? '',
+					authed,
+					userPermissions,
+					loadError: true,
+					removed: true,
+					spaceDetail: null,
+					index: [] as WikiPageIndex[],
+					apiCategories: [] as WikiApiCategory[],
+					wikiScope: 'geo' as const
+				};
+			}
 			error(404, { code: 'wiki_page_not_found', message: 'Wiki page not found' });
 		}
 		return {
@@ -77,6 +94,7 @@ export const load: PageServerLoad = async (event) => {
 			authed,
 			userPermissions,
 			loadError: true,
+			removed: false,
 			spaceDetail: null,
 			index: [] as WikiPageIndex[],
 			apiCategories: [] as WikiApiCategory[],

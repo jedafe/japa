@@ -5504,6 +5504,8 @@
   "wiki.page_nav": "Navigation des pages",
   "wiki.page_not_found": "Page wiki introuvable",
   "wiki.page_not_found_body": "La page wiki que vous recherchez n'existe pas ou a été supprimée.",
+  "wiki.page_removed": "Cette page wiki a été supprimée",
+  "wiki.page_removed_body": "Cette page a été supprimée par les modérateurs. Son historique est préservé par transparence.",
   "wiki.page_title_suffix": "Wiki",
   "wiki.page_x_of_y": "Page {page} sur {total}",
   "wiki.pending_banner": "{count} suggestion(s) en attente d'examen.",

@@ -779,15 +779,16 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 			// (category-scoped) page templates renders without a
 			// wiki_pages row — the page materializes on the first
 			// prose/ops submission. A row that exists but is inactive or
-			// soft-deleted must stay dead — existence check first so the
-			// lazy path can't resurrect a deactivated/vandalized page.
+			// soft-deleted means the page was removed (410) — existence
+			// check first so the lazy path can't resurrect a
+			// deactivated/vandalized page.
 			exists, xerr := s.store.WikiPageRowExists(ctx, spaceSlug, pageSlug)
 			if xerr != nil {
 				return WikiPageDetailDTO{}, fmt.Errorf("wiki: get page: existence check: %w", xerr)
 			}
 
 			if exists {
-				return WikiPageDetailDTO{}, pgx.ErrNoRows
+				return WikiPageDetailDTO{}, ErrPageDeleted
 			}
 
 			lazy, lerr := s.getLazyPage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
@@ -1136,6 +1137,18 @@ func (s *Service) GetRevisionHistory(ctx context.Context, viewerID pgtype.UUID, 
 	wikiPage, err := s.store.GetWikiPageBySlug(ctx, spaceSlug, pageSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			// Removed pages surface as 410 (page_removed), like the
+			// GetWikiPage path — a tombstoned/inactive row is not a
+			// never-existed slug.
+			exists, xerr := s.store.WikiPageRowExists(ctx, spaceSlug, pageSlug)
+			if xerr != nil {
+				return nil, 0, fmt.Errorf("wiki: history: existence check: %w", xerr)
+			}
+
+			if exists {
+				return nil, 0, ErrPageDeleted
+			}
+
 			return nil, 0, pgx.ErrNoRows
 		}
 
@@ -1634,6 +1647,12 @@ var ErrPageLocked = errors.New("wiki page is locked to mod-only edits")
 // ErrEditInProgress is returned when the same user already has a concurrent
 // wiki edit submission in-flight for the same page (B6: jc:wiki_edit_lock).
 var ErrEditInProgress = errors.New("a wiki edit is already in progress for this page by this user")
+
+// ErrPageDeleted is returned when a wiki_pages row exists for the slug but
+// is soft-deleted or deactivated — the page was removed, not never-created.
+// Handlers map it to 410 Gone (page_removed); genuinely-missing slugs keep
+// pgx.ErrNoRows (404) so the lazy-template path still renders.
+var ErrPageDeleted = errors.New("wiki page has been removed")
 
 // ErrSpaceNotFound is returned when the destination space slug does not exist.
 var ErrSpaceNotFound = errors.New("destination space not found")

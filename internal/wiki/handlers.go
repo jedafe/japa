@@ -635,6 +635,11 @@ func (h *Handlers) HandleGetPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, ErrPageDeleted) {
+			errpkg.WriteError(w, http.StatusGone, "page_removed", "This wiki page has been removed")
+			return
+		}
+
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "page_not_found", "Wiki page not found")
 			return
@@ -682,6 +687,11 @@ func (h *Handlers) HandleGetHistory(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
+			return
+		}
+
+		if errors.Is(err, ErrPageDeleted) {
+			errpkg.WriteError(w, http.StatusGone, "page_removed", "This wiki page has been removed")
 			return
 		}
 

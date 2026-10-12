@@ -1674,14 +1674,14 @@ func TestGetWikiPage_LazyRespectsTombstones(t *testing.T) {
 		}
 	}
 
-	// Deactivated row → 404, no lazy render.
+	// Deactivated row → removed (410), no lazy render.
 	mk(false, false)
 
-	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices"); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("deactivated page: want pgx.ErrNoRows, got %v", err)
+	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices"); !errors.Is(err, ErrPageDeleted) {
+		t.Fatalf("deactivated page: want ErrPageDeleted, got %v", err)
 	}
 
-	// Soft-deleted row → 404 too.
+	// Soft-deleted row → removed too.
 	if _, err := database.Writer.Exec(ctx,
 		`DELETE FROM wiki_pages WHERE space_id = $1 AND slug = 'prices'`, spaceID); err != nil {
 		t.Fatalf("clear deactivated row: %v", err)
@@ -1689,8 +1689,8 @@ func TestGetWikiPage_LazyRespectsTombstones(t *testing.T) {
 
 	mk(false, true)
 
-	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices"); !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("soft-deleted page: want pgx.ErrNoRows, got %v", err)
+	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices"); !errors.Is(err, ErrPageDeleted) {
+		t.Fatalf("soft-deleted page: want ErrPageDeleted, got %v", err)
 	}
 
 	// And with the row gone entirely the lazy path still works.
@@ -1702,6 +1702,57 @@ func TestGetWikiPage_LazyRespectsTombstones(t *testing.T) {
 	page, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "prices")
 	if err != nil || !page.Lazy {
 		t.Fatalf("absent row should lazy-render: page=%+v err=%v", page, err)
+	}
+}
+
+// TestGetWikiPage_RemovedVsMissing — the removed/missing distinction: a
+// soft-deleted row yields ErrPageDeleted on both the page and history paths
+// (handlers map it to 410 page_removed), while a genuinely-missing slug
+// keeps pgx.ErrNoRows (404) on both paths.
+func TestGetWikiPage_RemovedVsMissing(t *testing.T) {
+	t.Parallel()
+
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	hf := seedHierarchyFixture(t, ctx, database)
+	fx := seedOpsFixture(t, ctx, database)
+
+	spaceID, spaceSlug := seedSpaceOfType(t, ctx, database, hf.typeID, "rmvd")
+
+	t.Cleanup(func() {
+		cctx := context.WithoutCancel(t.Context())
+		_, _ = database.Writer.Exec(cctx, `DELETE FROM wiki_pages WHERE space_id = $1`, spaceID)
+	})
+
+	svc := NewService(store, nil)
+	svc.SetPermissionChecker(allowAllPerms{})
+	svc.SetCustomFields(customfields.NewService(database))
+
+	// Seed a materialized page, then soft-delete it via the store guard.
+	pageID, err := store.CreatePage(ctx, spaceID, fx.userID, "gone-page", "Gone Page", "cost_of_living")
+	if err != nil {
+		t.Fatalf("create page: %v", err)
+	}
+
+	if err := store.DeleteWikiPage(ctx, pageID); err != nil {
+		t.Fatalf("soft delete page: %v", err)
+	}
+
+	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "gone-page"); !errors.Is(err, ErrPageDeleted) {
+		t.Fatalf("deleted page: want ErrPageDeleted, got %v", err)
+	}
+
+	if _, _, err := svc.GetRevisionHistory(ctx, pgtype.UUID{}, false, spaceSlug, "gone-page", 1, 20); !errors.Is(err, ErrPageDeleted) {
+		t.Fatalf("deleted page history: want ErrPageDeleted, got %v", err)
+	}
+
+	// Unknown slugs stay real 404s on both paths.
+	if _, err := svc.GetWikiPage(ctx, pgtype.UUID{}, spaceSlug, "never-existed"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("missing page: want pgx.ErrNoRows, got %v", err)
+	}
+
+	if _, _, err := svc.GetRevisionHistory(ctx, pgtype.UUID{}, false, spaceSlug, "never-existed", 1, 20); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("missing page history: want pgx.ErrNoRows, got %v", err)
 	}
 }
 
