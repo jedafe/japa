@@ -12,17 +12,26 @@
 	let downloading = $state(false);
 	let downloadError = $state('');
 
+	type DownloadState = { status?: string; download_url?: string; message?: string };
+	let certPending = $state(false);
+
 	async function downloadCertificate() {
 		downloading = true;
 		downloadError = '';
 		try {
-			const r = await api.get<{ download_url?: string; message?: string }>(`/certificates/${cert.id}/download`);
+			const r = await api.get<DownloadState>(`/certificates/${cert.id}/download`);
 			if (r.error) {
 				downloadError = r.error.message;
 				return;
 			}
 			if (r.data?.download_url) {
+				certPending = false;
 				window.open(r.data.download_url, '_blank');
+			} else if (r.data?.status === 'pending') {
+				// The certificate file is still being generated — neutral
+				// non-error state with retry (the file appears once the
+				// async issue task completes).
+				certPending = true;
 			} else if (r.data?.message) {
 				downloadError = r.data.message;
 			}
@@ -119,6 +128,17 @@
 			</button>
 		</div>
 
+		{#if certPending}
+			<p class="mt-3 text-sm text-[var(--color-muted)]">{t('academy.certificate_generating', 'Your certificate file is being generated — check back shortly.')}</p>
+			<button
+				type="button"
+				class="mt-2 text-sm font-medium text-[var(--color-primary)] hover:underline disabled:opacity-50"
+				onclick={downloadCertificate}
+				disabled={downloading}
+			>
+				{downloading ? t('common.loading', 'Loading…') : t('academy.retry', 'Try again')}
+			</button>
+		{/if}
 		{#if downloadError}
 			<p class="mt-3 text-sm text-[var(--color-muted)]">{downloadError}</p>
 		{/if}

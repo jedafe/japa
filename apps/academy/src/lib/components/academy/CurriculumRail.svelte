@@ -17,12 +17,16 @@
 		 *  is enrolled, no lessons are locked. If not enrolled, only preview
 		 *  lessons are unlocked. */
 		isEnrolled: boolean;
+		/** Mobile drawer state — the same rail payload renders as a fixed
+		 *  drawer below lg instead of being hidden (no duplicate jump-list). */
+		drawerOpen?: boolean;
 	}
 	let {
 		track,
 		currentLessonSlug,
 		completedLessonIds,
-		isEnrolled
+		isEnrolled,
+		drawerOpen = false
 	}: Props = $props();
 
 	function lessonState(lesson: LessonSummary): 'current' | 'completed' | 'locked' | 'not-started' {
@@ -60,7 +64,7 @@
 </script>
 
 <aside
-	class="curriculum-rail sticky top-0 h-screen overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface)]"
+	class="curriculum-rail sticky top-0 h-screen overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface)] {drawerOpen ? 'drawer-open' : ''}"
 >
 	<div class="px-4 py-4">
 		<a
@@ -118,6 +122,16 @@
 	@media (max-width: 1023px) {
 		.curriculum-rail {
 			display: none;
+		}
+		/* Mobile curriculum drawer: the same rail payload slides in as a
+		   drawer instead of rendering a second jump-list copy. */
+		.curriculum-rail.drawer-open {
+			display: block;
+			position: fixed;
+			inset: 0 auto 0 0;
+			z-index: 50;
+			width: min(20rem, 85vw);
+			box-shadow: 0 0 2rem rgb(0 0 0 / 0.25);
 		}
 	}
 </style>

@@ -12,7 +12,7 @@
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import CurriculumRail from '$lib/components/academy/CurriculumRail.svelte';
 	import ProgressRing from '$lib/components/academy/ProgressRing.svelte';
-	import { CheckCircle, ArrowRight, ArrowLeft, NotebookPen, ExternalLink, Download } from 'lucide-svelte';
+	import { CheckCircle, ArrowRight, ArrowLeft, NotebookPen, ExternalLink, Download, List } from 'lucide-svelte';
 	import { enrollmentsStore } from '$lib/stores/enrollments.svelte';
 	import type { PageData } from './$types';
 	import type { Enrollment, Quiz, QuizQuestion, QuizResult, QuizSubmission } from '$lib/types';
@@ -24,18 +24,21 @@
 	const lesson = $derived(data.lesson);
 	// YouTube embed URL for youtube/screencast lessons (null otherwise).
 	const ytEmbed = $derived(youtubeEmbedUrl(lesson.external_url));
+	const totalLessons = $derived(track.modules.reduce((n, m) => n + m.lessons.length, 0));
 
 	// CSR ONLY — completed-lessons set + enrollment (ADR-060 SSR/CSR boundary).
 	// Uses the shared enrollmentsStore so sidebar widgets (Continue Learning,
 	// My Progress, My Learning) stay in sync after mark-complete.
 	let completedLessonIds = $state<Set<string>>(new Set());
 	let marking = $state(false);
-	// Certificate polling — when the track reaches 100% completion, poll
-	// /me/certificates until the async academy:issue_certificate task
-	// generates the certificate (ROADMAP-ACADEMY 07.05).
-	let trackCompleted = $state(false);
-	let certPolling = $state(false);
-	let issuedCert = $state<{ id: string; certificate_number: string } | null>(null);
+	// Mobile curriculum drawer — reuses the CurriculumRail payload (no
+	// duplicate jump-list); hidden on lg where the rail is inline.
+	let curriculumOpen = $state(false);
+	// Track completion is derived synchronously — the backend issues the
+	// certificate inline via maybeIssueCertificate on lesson completion, so
+	// no async polling is needed. trackCompleted flips once every lesson in
+	// the track is in the completed set.
+	let trackCompleted = $derived(totalLessons > 0 && completedLessonIds.size >= totalLessons);
 
 	$effect(() => {
 		if (!data.user) {
@@ -79,7 +82,6 @@
 	const canInteract = $derived(isEnrolled || isAdmin);
 	const isCompleted = $derived(completedLessonIds.has(lesson.id));
 	const progressPct = $derived(enrollment?.progress_pct ?? 0);
-	const totalLessons = $derived(track.modules.reduce((n, m) => n + m.lessons.length, 0));
 
 	// Mark complete — optimistic Set, marking guard, rollback, auto-next.
 	// After success, refresh the shared academy_enrollments store so all sidebar
@@ -114,43 +116,10 @@
 		if (pr.data?.completed_lesson_ids) {
 			completedLessonIds = new Set(pr.data.completed_lesson_ids);
 		}
-		// Check if the track is now 100% complete → poll for the certificate.
-		// The backend issues the certificate asynchronously (academy:issue_certificate
-		// or the synchronous maybeIssueCertificate path). Poll /me/certificates
-		// for up to 15s (ROADMAP-ACADEMY 07.05).
-		if (completedLessonIds.size >= totalLessons && totalLessons > 0) {
-			trackCompleted = true;
-			pollForCertificate();
-		}
 		// Auto-next: navigate to the next lesson if one exists.
 		if (lesson.next_lesson) {
 			goto(`/tracks/${track.slug}/${lesson.next_lesson.module_slug}/${lesson.next_lesson.slug}`);
 		}
-	}
-
-	// Poll /me/certificates until a certificate for this track appears or
-	// the 15s timeout expires (ROADMAP-ACADEMY 07.05). The backend issues the
-	// certificate asynchronously on 100% completion.
-	async function pollForCertificate() {
-		if (certPolling) return;
-		certPolling = true;
-		const maxAttempts = 8; // 8 × 2s = 16s max
-		const interval = 2000;
-		for (let i = 0; i < maxAttempts; i++) {
-			await new Promise((r) => setTimeout(r, interval));
-			const r = await api.get<{ id: string; certificate_number: string; track_id: string }[]>(
-				'/me/certificates'
-			);
-			if (r.data) {
-				const cert = r.data.find((c) => c.track_id === track.id);
-				if (cert) {
-					issuedCert = cert;
-					certPolling = false;
-					return;
-				}
-			}
-		}
-		certPolling = false;
 	}
 
 	// Video progress tracking (browser-guarded init). The backend persists
@@ -357,12 +326,21 @@
 		currentLessonSlug={lesson.slug}
 		{completedLessonIds}
 		{isEnrolled}
+		drawerOpen={curriculumOpen}
 	/>
 
 	<!-- Zone 2: Lesson content (center, by type) -->
 	<article class="lesson-content px-4 py-6 md:px-8 lg:px-12">
 		<!-- Lesson header -->
 		<header class="mb-6 max-w-3xl">
+			<button
+				type="button"
+				onclick={() => (curriculumOpen = !curriculumOpen)}
+				class="mb-3 inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium text-[var(--color-text)] lg:hidden"
+				aria-expanded={curriculumOpen}
+			>
+				<List size={16} /> {t('academy.curriculum')}
+			</button>
 			{#if lesson.module_title}
 				<p class="text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
 					{lesson.module_title}
@@ -582,7 +560,7 @@
 									{#if quizSubmitting}
 										{t('academy.submitting', 'Submitting…')}
 									{:else}
-										{t('lesson.submit_quiz', 'Submit quiz')}
+										{t('academy.submit_quiz', 'Submit quiz')}
 									{/if}
 								</button>
 							{:else}
@@ -755,27 +733,30 @@
 			{/if}
 		</div>
 
-		<!-- Track completion celebration + certificate link (ROADMAP-ACADEMY 07.05) -->
+		<!-- Track completion celebration — the certificate is issued
+		     synchronously on 100% completion, so link straight to the
+		     certificates list instead of polling for a single cert. -->
 		{#if trackCompleted}
 			<div class="mt-6 max-w-3xl rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-primary)_6%,transparent)] p-6 text-center">
-				{#if issuedCert}
-					<p class="text-lg font-semibold text-[var(--color-text)]">{t('academy.track_complete', 'Track Complete!')}</p>
-					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('academy.certificate_issued', 'Your certificate is ready.')}</p>
-					<a
-						href="/certificates/{issuedCert.id}"
-						class="mt-3 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
-					>
-						{t('academy.view_certificate', 'View certificate')}
-					</a>
-				{:else if certPolling}
-					<p class="text-sm text-[var(--color-text-subtle)]">{t('academy.generating_certificate', 'Generating your certificate…')}</p>
-				{:else}
-					<p class="text-lg font-semibold text-[var(--color-text)]">{t('academy.track_complete', 'Track Complete!')}</p>
-					<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('academy.certificate_pending', 'Your certificate will appear in My Certificates shortly.')}</p>
-				{/if}
+				<p class="text-lg font-semibold text-[var(--color-text)]">{t('academy.track_complete', 'Track Complete!')}</p>
+				<p class="mt-1 text-sm text-[var(--color-text-subtle)]">{t('academy.certificate_pending', 'Your certificate will appear in My Certificates shortly.')}</p>
+				<a
+					href="/certificates"
+					class="mt-3 inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+				>
+					{t('academy.view_certificates', 'View certificates')}
+				</a>
 			</div>
 		{/if}
 	</article>
+	{#if curriculumOpen}
+		<button
+			type="button"
+			class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+			aria-label={t('a11y.close_menu')}
+			onclick={() => (curriculumOpen = false)}
+		></button>
+	{/if}
 </div>
 
 <style>

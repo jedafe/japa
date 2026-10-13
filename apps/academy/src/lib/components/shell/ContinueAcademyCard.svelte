@@ -22,13 +22,17 @@
 	const academy_enrollments = $derived(enrollmentsStore.academy_enrollments ?? []);
 	const loading = $derived(enrollmentsStore.loading && academy_enrollments.length === 0);
 
-	// The most recently active enrollment is the "continue" target.
-	const continueItem = $derived(
+	// The most recently active in-progress enrollment is the "continue"
+	// target — completed tracks (progress >= 100) are excluded so a finished
+	// course never shows as "continue". allCompleted flips the card into its
+	// explore state.
+	const sorted = $derived(
 		academy_enrollments
 			.slice()
 			.sort((a, b) => (b.last_activity_at ?? '').localeCompare(a.last_activity_at ?? ''))
-			.find((e) => e.progress_pct < 100) ?? academy_enrollments[0]
 	);
+	const continueItem = $derived(sorted.find((e) => e.progress_pct < 100) ?? null);
+	const allCompleted = $derived(academy_enrollments.length > 0 && continueItem === null);
 </script>
 
 {#if loading}
@@ -73,6 +77,20 @@
 				<span class="truncate">{t('academy.up_next')}: {continueItem.next_lesson.title}</span>
 			</a>
 		{/if}
+	</section>
+{:else if user && allCompleted}
+	<!-- Every enrollment is complete — celebrate + explore CTA -->
+	<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+		<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
+			{t('academy.continue_learning')}
+		</h2>
+		<p class="text-sm text-[var(--color-muted)]">{t('academy.all_complete', 'All caught up — every course is complete.')}</p>
+		<a
+			href="/"
+			class="mt-3 inline-block rounded-[var(--radius)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-hover)]"
+		>
+			{t('academy.explore')}
+		</a>
 	</section>
 {:else if user}
 	<!-- No academy_enrollments yet — show a streak placeholder + explore CTA -->
