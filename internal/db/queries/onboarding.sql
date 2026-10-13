@@ -106,3 +106,13 @@ ON CONFLICT (user_id) DO UPDATE SET
     updated_at = now()
 WHERE onboarding_state.last_reminder_at IS NULL
    OR onboarding_state.last_reminder_at < now() - make_interval(hours => @min_interval_hours::int);
+
+-- name: ListSpaceTypeSlugsByIDs :many
+-- ADR-128: resolve the space_types.slug for a set of space IDs so the
+-- onboarding recommendation assembly can demote types irrelevant to the
+-- member's journey class (geo_personalization.intent_matrix
+-- demote_space_types). One round-trip for the merged recommendation list.
+SELECT s.id, COALESCE(st.slug, '')::text AS space_type_slug
+FROM spaces s
+LEFT JOIN space_types st ON st.id = s.space_type_id
+WHERE s.id = ANY(@ids::uuid[]);

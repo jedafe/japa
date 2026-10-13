@@ -52,6 +52,7 @@ See [svelte/taste.md](svelte/taste.md)
 - The `apiFetch`/`api` client automatically unwraps the top-level `data` field from backend responses. When returning both collection data and metadata (e.g., pagination totals), nest them: `{"data": {"reviews": [...], "total": N}}` not `{"data": [...], "total": N}` — the latter loses `total`. Confidence: 0.90
 - The `api()` helper already calls `JSON.stringify()` on the `body` — do NOT pass `JSON.stringify({...})` yourself or you get double-stringified (invalid JSON) errors. Pass a plain object. Confidence: 0.90
 - API client `dispatch()` should read the response as text first (`res.text()`), then parse with `JSON.parse()` — never call `res.json()` directly. This gracefully handles empty bodies, server panics, and malformed responses without throwing. Confidence: 0.80
+- Error responses can carry machine-readable context in an optional `error.data` object (e.g., `session_id` on 409, `retry_after` on 429) via a `WriteErrorData` helper — put extra fields inside the `error` object, not at the top level, because the API client strips the top-level envelope but preserves `error` (so the data reaches the frontend without changing every call). Confidence: 0.80
 
 # workflow
 See [workflow/taste.md](workflow/taste.md)

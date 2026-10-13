@@ -3,14 +3,15 @@
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { afterNavigate, invalidate } from '$app/navigation';
-	import { FileText, MessageSquare, Image, Heart, Users, Info, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin } from 'lucide-svelte';
+	import { FileText, MessageSquare, Image, Heart, Users, BarChart3, Award, Pin, Ban, VolumeX, Compass, Flag, Video, MapPin, Tag, Activity, Calendar, Plane, User, Bookmark } from 'lucide-svelte';
 	import { MenuItem } from '$lib/components/ui';
-	import { Chart, Svg, Bars, Axis, LineChart } from 'layerchart';
+	import { Chart, Bars, LineChart, Tooltip } from 'layerchart';
 	import SetSidebar from '$lib/components/shell/SetSidebar.svelte';
 	import ProfileHeader from '$lib/components/profile/ProfileHeader.svelte';
 	import FollowButton from '$lib/components/ui/FollowButton.svelte';
 	import ReportDialog from '$lib/components/profile/ReportDialog.svelte';
 	import UserProfileSidebar from '$lib/components/profile/UserProfileSidebar.svelte';
+	import MessageUserDialog from '$lib/components/profile/MessageUserDialog.svelte';
 	import VideoGrid from '$lib/components/profile/VideoGrid.svelte';
 	import { EmptyState, LoadingSkeleton, UrlTabs, PaginationControls, SearchInput } from '$lib/components/ui';
 	import { openLightbox } from '$lib/lightbox.svelte';
@@ -25,6 +26,11 @@
 	import type { FollowableType } from '$lib/api/hub';
 	import type { PageData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { journeyIntentKey, journeyPercent } from '$lib/components/profile/journey';
+	import JourneyTimeline from '$lib/components/profile/JourneyTimeline.svelte';
+	import { bookmarkUrl, bookmarkLabel } from '$lib/components/profile/bookmarks';
+	import { contentHref } from '$lib/utils/contentLink';
+	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -76,8 +82,14 @@
 	// profile Videos tab alongside imported/uploaded video_sources.
 	const videoPosts = $derived(data.posts.filter((p) => p.content_type === 'video'));
 	const initiallyFollowing = $derived(data.initiallyFollowing);
-	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'posts'));
+	let activeTab = $state(untrack(() => page.url.searchParams.get('tab') ?? 'overview'));
 	let reportOpen = $state(false);
+	let messageOpen = $state(false);
+	let messageRecipient = $state<{ id: string; name: string }>({ id: '', name: '' });
+	function openMessage(recipient: { id: string; name: string }) {
+		messageRecipient = recipient;
+		messageOpen = true;
+	}
 
 	// Per-tab client-side filter / search / pagination over the SSR-loaded data.
 	// NOTE: `currentPage` (not `page`) avoids shadowing SvelteKit's `page` from `$app/state`.
@@ -100,10 +112,10 @@
 
 	// Unknown or unavailable ?tab= values (e.g. ?tab=bogus, or a conditional
 	// tab hidden for this profile) would render no panel at all — normalize
-	// to Posts so the page always shows content.
+	// to Overview so the page always shows content.
 	$effect(() => {
 		if (activeTab && !tabs.some((tab) => tab.value === activeTab)) {
-			activeTab = 'posts';
+			activeTab = 'overview';
 		}
 	});
 
@@ -117,7 +129,7 @@
 	// the entry's original navigation (without the shallow ?tab= param), while
 	// the browser location already carries the real URL.
 	afterNavigate(() => {
-		const urlTab = new URL(location.href).searchParams.get('tab') ?? 'posts';
+		const urlTab = new URL(location.href).searchParams.get('tab') ?? 'overview';
 		if (urlTab !== activeTab && tabs.some((tab) => tab.value === urlTab)) {
 			activeTab = urlTab;
 		}
@@ -195,9 +207,190 @@
 			: []
 	);
 
+	// Sidebar data — connections are the union of followers + following
+	// limited to user entities, deduped by id (a mutual appears once).
+	interface Connection {
+		id: string;
+		username: string;
+		display_name: string;
+		avatar_url?: string | null;
+		is_following?: boolean;
+	}
+	const connections = $derived.by(() => {
+		const map = new Map<string, Connection>();
+		for (const f of data.followers) {
+			map.set(f.id, {
+				id: f.id,
+				username: f.username,
+				display_name: f.display_name ?? f.username,
+				avatar_url: f.avatar_url,
+				is_following: f.is_following
+			});
+		}
+		for (const f of data.following) {
+			if (f.entity_type && f.entity_type !== 'user') continue;
+			const existing = map.get(f.id);
+			if (existing) {
+				existing.is_following = existing.is_following || f.is_following;
+			} else {
+				map.set(f.id, {
+					id: f.id,
+					username: f.username,
+					display_name: f.display_name ?? f.username,
+					avatar_url: f.avatar_url,
+					is_following: f.is_following
+				});
+			}
+		}
+		return [...map.values()];
+	});
+
+	// Bookmarks are private — the owner's Saved Items card reads
+	// /me/bookmarks; visitors get the public Likes list instead.
+	const savedLabel = $derived(
+		isOwnProfile ? t('profile.stats.saved', 'Saved') : t('profile.stats.likes', 'Likes')
+	);
+	const stats = $derived({
+		connections: user.follower_count,
+		posts: data.posts.length,
+		saved: isOwnProfile ? data.bookmarks.length : data.likes.length,
+		savedLabel
+	});
+
+	// Journey summary card at the top of the sidebar — "{intent} in
+	// {destination}" title, stage-position progress, current-stage subtitle.
+	const journeyCard = $derived.by(() => {
+		const js = data.japaStage;
+		if (!js?.stage) return null;
+		const dest = js.destination_space_name;
+		const title = dest
+			? t(`profile.journey.title_${journeyIntentKey(js.intent)}`, 'Move to {dest}').replace(
+					'{dest}',
+					dest
+				)
+			: t(`japa_stage.${js.stage}`, js.stage);
+		const subtitle =
+			js.stage === 'returned'
+				? t('japa_stage.returned', 'Returned')
+				: `${t('japa_stage.current_stage', 'Current stage')}: ${t(`japa_stage.${js.stage}`, js.stage)}`;
+		return { title, subtitle, percent: journeyPercent(js), href: '/japa-stage' };
+	});
+
+	// ---- Overview tab (mockup) ------------------------------------------------
+	// About Me detail grid — only rows backed by real profile fields render.
+	const aboutDetails = $derived.by(() => {
+		const js = data.japaStage;
+		const rows: { icon: typeof MapPin; label: string; value: string }[] = [];
+		if (user.location) {
+			rows.push({ icon: MapPin, label: t('profile.from', 'From'), value: user.location });
+		}
+		if (js?.intent) {
+			rows.push({
+				icon: Compass,
+				label: t('japa_intent.label', 'Journey type'),
+				value: t(`japa_intent.${journeyIntentKey(js.intent)}`, js.intent)
+			});
+		}
+		if (js?.destination_space_name) {
+			rows.push({
+				icon: Plane,
+				label: t('japa_stage.dest', 'Destination'),
+				value: js.destination_space_name
+			});
+		}
+		rows.push({
+			icon: Calendar,
+			label: t('profile.joined', 'Joined'),
+			value: new Date(user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+		});
+		rows.push({ icon: Users, label: t('profile.followers_label', 'Followers'), value: `${user.follower_count}` });
+		rows.push({ icon: Users, label: t('profile.following_label', 'Following'), value: `${user.following_count}` });
+		// §28 — points only when the member opted into public display.
+		if (user.points != null) {
+			rows.push({ icon: Award, label: t('profile.points_label', 'Points'), value: user.points.toLocaleString() });
+		}
+		return rows;
+	});
+
+	// Top Interests — the tags the member follows (entity_type 'tag' rows in
+	// the public following list). Real data only, no filler chips.
+	const interests = $derived(
+		data.following
+			.filter((f) => f.entity_type === 'tag' && f.username)
+			.slice(0, 8)
+			.map((f) => ({ label: f.display_name || f.username, href: `/tags/${f.username}` }))
+	);
+
+	const chipColors = [
+		'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+		'bg-red-500/10 text-red-600 dark:text-red-400',
+		'bg-green-500/10 text-green-600 dark:text-green-400',
+		'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+		'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+		'bg-teal-500/10 text-teal-600 dark:text-teal-400'
+	];
+	const chipColor = (i: number) => chipColors[i % chipColors.length];
+
+	// Recent activity — merged public timeline (posts, replies, likes) plus
+	// the owner's own bookmarks. Saved entries never render for visitors:
+	// bookmarks are private per the Saved tab contract.
+	interface ActivityItem {
+		kind: 'posted' | 'replied' | 'liked' | 'saved';
+		title: string;
+		href: string;
+		when: string;
+	}
+	const activityItems = $derived<ActivityItem[]>(
+		[
+			...data.posts.map((p): ActivityItem => ({
+				kind: 'posted',
+				title: p.title,
+				href: contentHref(p),
+				when: p.published_at || p.created_at
+			})),
+			...data.replies.map((r): ActivityItem => ({
+				kind: 'replied',
+				title: r.content_title,
+				href: `/content/${r.content_slug}`,
+				when: r.created_at
+			})),
+			...data.likes.map((l): ActivityItem => ({
+				kind: 'liked',
+				title: l.title,
+				href: contentHref(l),
+				when: l.reacted_at || l.created_at
+			})),
+			...(isOwnProfile
+				? data.bookmarks.map((b): ActivityItem => ({
+						kind: 'saved',
+						title: bookmarkLabel(b),
+						href: bookmarkUrl(b),
+						when: b.created_at
+					}))
+				: [])
+		]
+			.filter((a) => a.when)
+			.sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime())
+	);
+	const recentActivity = $derived(activityItems.slice(0, 6));
+
+	const activityIcons = { posted: FileText, replied: MessageSquare, liked: Heart, saved: Bookmark } as const;
+	function activityLabel(item: ActivityItem): string {
+		switch (item.kind) {
+			case 'posted':
+				return t('profile.activity.posted', 'Published');
+			case 'replied':
+				return t('profile.activity.replied', 'Replied to');
+			case 'liked':
+				return t('profile.activity.liked', 'Liked');
+			case 'saved':
+				return t('profile.saved_on', 'Saved');
+		}
+	}
+
 	const tabs = $derived<UrlTab[]>([
+		{ value: 'overview', label: t('profile.tab.overview', 'Overview') },
 		{ value: 'posts', label: t('profile.tab.posts', 'Posts') },
-		{ value: 'about', label: t('profile.tab.about', 'About') },
 		{ value: 'replies', label: t('profile.tab.replies', 'Replies') },
 		{ value: 'media', label: t('profile.tab.media', 'Media') },
 		// §106 video — Videos tab. Always shown for synthetic (imported)
@@ -240,16 +433,28 @@
 		}))
 	);
 
-	// Top posts series — vertical BarChart of view_count per content title.
-	// Ref: ADR-059
+	// Top posts series — vertical BarChart of view_count per content item.
+	// Titles are not rendered on the x-axis (they overlap); they surface in
+	// the band tooltip and in the linked list below the chart instead.
+	// `data.posts` only carries published+public items, so analytics rows
+	// for drafts/unpublished content render without a link. Ref: ADR-059
+	const topContentHrefs = $derived(
+		new Map(
+			data.posts
+				.filter((p) => p.slug)
+				.map((p) => [p.id, contentHref({ slug: p.slug, content_type: p.content_type })])
+		)
+	);
 	const topPostsSeries = $derived(
 		topContent
 			.slice(0, 10)
-			.map((item) => ({
+			.map((item, i) => ({
 				id: item.id,
-				x: item.title?.length > 20 ? item.title.slice(0, 20) + '…' : item.title ?? item.id,
+				x: i,
 				y: item.view_count ?? 0,
-				label: item.title?.length > 30 ? item.title.slice(0, 30) + '…' : item.title ?? item.id
+				title: item.title || item.id,
+				label: item.title?.length > 30 ? item.title.slice(0, 30) + '…' : item.title ?? item.id,
+				href: topContentHrefs.get(item.id) ?? null
 			}))
 	);
 
@@ -553,8 +758,25 @@
 
 <SetSidebar>
 	<UserProfileSidebar
-		certificates={data.certificates}
+		{user}
+		{isOwnProfile}
+		{isAuthenticated}
+		badges={data.badges ?? []}
+		lockedBadges={unearnedBadges}
+		posts={data.posts}
+		likes={data.likes}
+		bookmarks={data.bookmarks}
+		{connections}
 		spaces={data.spaces}
+		certificates={data.certificates}
+		{stats}
+		{savedLabel}
+		journey={journeyCard}
+		onMessage={openMessage}
+		onReport={() => (reportOpen = true)}
+		onToggleBlock={toggleBlock}
+		{isBlocked}
+		{blockPending}
 	/>
 </SetSidebar>
 
@@ -583,6 +805,7 @@
 </ProfileHeader>
 
 <ReportDialog bind:open={reportOpen} entityType="user" entityId={user.id} entityName={user.display_name ?? user.username} />
+<MessageUserDialog bind:open={messageOpen} recipientId={messageRecipient.id} recipientName={messageRecipient.name} authed={isAuthenticated} />
 
 
 <!-- §87 — Japa Stage badge. Shown when the profile user has a public stage
@@ -735,41 +958,118 @@ profile is private, or no stage is set. -->
 				</div>
 				{@render pager(postsView)}
 			{/if}
-		{:else if activeTab === 'about'}
-			<!-- Phase 11.06 — About tab -->
-			<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-				<h2 class="mb-3 text-sm font-medium text-[var(--color-text)]">
-					{t('profile.about', 'About')}
-				</h2>
-				{#if user.bio}
-					<p class="text-sm leading-relaxed text-[var(--color-text)]">{user.bio}</p>
-				{:else}
-					<EmptyState icon={Info} title={t('profile.no_about', 'No bio yet')} />
-				{/if}
-				<dl class="mt-4 space-y-2 border-t border-[var(--color-border)] pt-4">
-					<div class="flex justify-between gap-4">
-						<dt class="text-sm text-[var(--color-muted)]">{t('profile.joined', 'Joined')}</dt>
-						<dd class="text-sm text-[var(--color-text)]">
-							{new Date(user.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })}
-						</dd>
+		{:else if activeTab === 'overview'}
+			<!-- Overview tab (mockup) — About Me, Japa Journey, Top Interests,
+			     Recent Activity cards. -->
+			<div class="flex flex-col gap-4">
+				<!-- About Me — bio + public detail grid -->
+				<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="mb-3 flex items-center justify-between gap-2">
+						<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+							<User size={15} class="text-[var(--color-primary)]" />
+							{t('profile.about_me', 'About Me')}
+						</h2>
+						{#if isOwnProfile}
+							<a href="/settings/profile" class="text-xs font-medium text-[var(--color-primary)] hover:underline">
+								{t('profile.edit', 'Edit')}
+							</a>
+						{/if}
 					</div>
-					<div class="flex justify-between gap-4">
-						<dt class="text-sm text-[var(--color-muted)]">{t('profile.followers_label', 'Followers')}</dt>
-						<dd class="text-sm text-[var(--color-text)]">{user.follower_count}</dd>
-					</div>
-					<div class="flex justify-between gap-4">
-						<dt class="text-sm text-[var(--color-muted)]">{t('profile.following_label', 'Following')}</dt>
-						<dd class="text-sm text-[var(--color-text)]">{user.following_count}</dd>
-					</div>
-					{#if user.points != null}
-						<!-- Section 28 — Points shown only when the user has opted in via show_points_publicly. Credits are never exposed. -->
-						<div class="flex justify-between gap-4">
-							<dt class="text-sm text-[var(--color-muted)]">{t('profile.points_label', 'Points')}</dt>
-							<dd class="text-sm text-[var(--color-text)]">{user.points.toLocaleString()}</dd>
-						</div>
+					{#if user.bio}
+						<p class="text-sm leading-relaxed text-[var(--color-text)]">{user.bio}</p>
+					{:else}
+						<p class="text-sm text-[var(--color-muted)]">{t('profile.no_about', 'No bio yet')}</p>
 					{/if}
-				</dl>
-			</section>
+					<div class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-4">
+						{#each aboutDetails as d (d.label)}
+							{@const Icon = d.icon}
+							<div>
+								<span class="flex items-center gap-1 text-xs text-[var(--color-muted)]">
+									<Icon size={12} /> {d.label}
+								</span>
+								<span class="mt-0.5 block truncate text-sm font-medium text-[var(--color-text)]" title={d.value}>
+									{d.value}
+								</span>
+							</div>
+						{/each}
+					</div>
+				</section>
+
+				<!-- My Japa Journey — §87 milestone timeline; only when the member
+				     has published a public stage. -->
+				{#if data.japaStage?.stage}
+					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<div class="mb-4 flex items-center justify-between gap-2">
+							<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+								<Plane size={15} class="text-[var(--color-primary)]" />
+								{isOwnProfile ? t('profile.journey.title', 'My Japa Journey') : t('profile.journey.label', 'Japa Journey')}
+							</h2>
+							<a href="/japa-stage" class="text-xs font-medium text-[var(--color-primary)] hover:underline">
+								{t('profile.view_all', 'View all')}
+							</a>
+						</div>
+						<JourneyTimeline japaStage={data.japaStage} />
+					</section>
+				{/if}
+
+				<!-- Top Interests — followed tags -->
+				{#if interests.length > 0}
+					<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+						<div class="mb-3 flex items-center justify-between gap-2">
+							<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+								<Tag size={15} class="text-[var(--color-primary)]" />
+								{t('profile.interests', 'Top Interests')}
+							</h2>
+							{#if isOwnProfile}
+								<a href="/tags?sort=popular" class="text-xs font-medium text-[var(--color-primary)] hover:underline">
+									{t('profile.edit_interests', 'Edit Interests')}
+								</a>
+							{/if}
+						</div>
+						<div class="flex flex-wrap gap-2">
+							{#each interests as interest, i (interest.label)}
+								<a
+									href={interest.href}
+									class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-80 {chipColor(i)}"
+								>
+									<Tag size={11} /> {interest.label}
+								</a>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
+				<!-- Recent Activity — merged posts/replies/likes (+ owner Saved) -->
+				<section class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+					<div class="mb-3 flex items-center justify-between gap-2">
+						<h2 class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text)]">
+							<Activity size={15} class="text-[var(--color-primary)]" />
+							{t('profile.recent_activity', 'Recent Activity')}
+						</h2>
+					</div>
+					{#if recentActivity.length === 0}
+						<p class="py-4 text-center text-sm text-[var(--color-muted)]">{t('profile.activity_empty', 'No activity yet')}</p>
+					{:else}
+						<ul class="space-y-3">
+							{#each recentActivity as item (`${item.kind}-${item.href}-${item.when}`)}
+								{@const Icon = activityIcons[item.kind]}
+								<li class="flex items-start gap-3">
+									<span class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+										<Icon size={14} />
+									</span>
+									<div class="min-w-0 flex-1">
+										<p class="text-sm text-[var(--color-text)]">
+											{activityLabel(item)}
+											<a href={item.href} class="font-medium hover:text-[var(--color-primary)] hover:underline">{item.title}</a>
+										</p>
+									</div>
+									<span class="shrink-0 text-xs text-[var(--color-muted)]"><RelativeTime iso={item.when} /></span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</section>
+			</div>
 		{:else if activeTab === 'replies'}
 			{@render toolbar(repliesFilterOptions, data.replies.length, true)}
 			{#if data.replies.length === 0}
@@ -1042,7 +1342,7 @@ profile is private, or no stage is set. -->
 		{:else if activeTab === 'analytics'}
 			<!-- Phase 11.07 — Analytics tab with LayerChart visualizations (ADR-059) -->
 			{#if analytics}
-				<div class="space-y-4">
+				<div class="profile-analytics space-y-4">
 					<!-- Follower growth — LineChart (ADR-059) -->
 					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 						<h3 class="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
@@ -1079,23 +1379,51 @@ profile is private, or no stage is set. -->
 						</h3>
 						{#if topPostsSeries.length > 0}
 							<div class="h-64">
-								<Chart data={topPostsSeries} x="x" y="y" bandPadding={0.3} padding={{ left: 48, bottom: 60 }}>
-									<Svg>
-										<Axis placement="left" ticks={4} grid rule />
-										<Axis placement="bottom" format={(v: string) => v} />
+								<Chart
+									data={topPostsSeries}
+									x="x"
+									y="y"
+									bandPadding={0.3}
+									padding={{ left: 48 }}
+									axis="y"
+									grid
+									rule
+									tooltipContext={{ mode: 'band' }}
+									props={{ yAxis: { ticks: 4 } }}
+								>
+									{#snippet tooltip({ context })}
+										{@const d = context.tooltip.data as { title: string; y: number } | null}
+										{#if d}
+											<Tooltip.Root>
+												<Tooltip.Header value={d.title} />
+												<Tooltip.List>
+													<Tooltip.Item
+														label={t('profile.views', 'views')}
+														value={d.y}
+														color="var(--chart-1, var(--color-primary))"
+													/>
+												</Tooltip.List>
+											</Tooltip.Root>
+										{/if}
+									{/snippet}
+									{#snippet marks()}
 										<Bars
 											fill="var(--chart-1, var(--color-primary))"
 											stroke="var(--color-surface)"
 											strokeWidth={1}
 											radius={4}
 										/>
-									</Svg>
+									{/snippet}
 								</Chart>
 							</div>
 							<div class="mt-2 space-y-1 text-xs text-[var(--color-muted)]">
 								{#each topPostsSeries as point (point.id)}
 									<div class="flex items-center justify-between">
-										<span class="truncate">{point.label}</span>
+										{#if point.href}
+											<a href={point.href} title={point.title} class="truncate hover:text-[var(--color-primary)] hover:underline">{point.label}</a>
+										{:else}
+											<span class="truncate" title={point.title}>{point.label}</span>
+										{/if}
 										<span class="shrink-0 pl-2">{formatMetric(point.y)} {t('profile.views', 'views')}</span>
 									</div>
 								{/each}
@@ -1153,3 +1481,17 @@ profile is private, or no stage is set. -->
 		{/if}
 	</div>
 </div>
+
+<style>
+	/* LayerChart defaults axis labels to a --color-surface-100 halo stroke;
+	   that var is not set in this app so the light-dark() fallback paints a
+	   light halo around light text (labels look bold/blobby). Same override
+	   as hub/dashboard AnalyticsView. */
+	.profile-analytics :global(.lc-axis-tick-label),
+	.profile-analytics :global(.lc-axis-label) {
+		font-size: 12px;
+		font-weight: 500;
+		fill: var(--color-text);
+		stroke: none;
+	}
+</style>

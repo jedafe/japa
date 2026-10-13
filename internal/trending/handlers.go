@@ -41,11 +41,18 @@ type literalResolver interface {
 	ResolveFields(ctx context.Context, v any, rc literals.RenderContext)
 }
 
+// stringSettingsReader is the minimal system_settings reader contract for
+// the ADR-128 intent matrix; *config.Settings satisfies it.
+type stringSettingsReader interface {
+	GetStringOr(ctx context.Context, key, fallback string) string
+}
+
 // Handlers holds dependencies for trending HTTP handlers.
 type Handlers struct {
-	Store *Store
-	cache valkey.Client   // nil disables caching (tests)
-	lit   literalResolver // nil disables literal resolution (§14)
+	Store    *Store
+	cache    valkey.Client        // nil disables caching (tests)
+	lit      literalResolver      // nil disables literal resolution (§14)
+	settings stringSettingsReader // nil disables intent-based demotion (ADR-128)
 }
 
 // NewHandlers creates Handlers with the given Store.
@@ -56,6 +63,11 @@ func NewHandlers(store *Store) *Handlers {
 // SetLiteralResolver injects the template-literal catalog so trending
 // titles/names render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// SetSettings injects the system_settings reader for
+// geo_personalization.intent_matrix space-type demotion (ADR-128). Nil
+// disables it.
+func (h *Handlers) SetSettings(r stringSettingsReader) { h.settings = r }
 
 // resolveLiterals resolves {{...}} placeholders on a response DTO or slice.
 // Best-effort — failures are logged inside the resolver.
@@ -505,13 +517,18 @@ func (h *Handlers) GetSuggestedSpaces(w http.ResponseWriter, r *http.Request) {
 	limit := parseLimit(r)
 	geoCode := parseGeoCodePtr(r)
 
+	// ADR-128: demote space types irrelevant to the requester's journey class
+	// (e.g. university spaces for visit/business intents). Resolved from
+	// geo_personalization.intent_matrix via the VisitorContext.
+	demote := visitor.IntentRuleFor(r.Context(), h.settings, visitor.FromContext(r.Context()).JapaIntent).DemoteSpaceTypes
+
 	// Valkey cache (jc:suggestions:spaces:{user_id}, Section 53, TTL 1hr).
 	// Uses distributed lock stampede protection (BUG-008).
 	userStr := user.UserID.String()
 	cacheKey := vkcache.MustKey("suggestions:spaces:%s", userStr)
 
 	data, err := vkcache.GetOrComputeNative(r.Context(), h.cache, cacheKey, suggestionsCacheTTL, func(ctx context.Context) ([]gen.GetSuggestedSpacesRow, error) {
-		rows, err := h.Store.GetSuggestedSpaces(ctx, user.UserID, limit, geoCode)
+		rows, err := h.Store.GetSuggestedSpaces(ctx, user.UserID, limit, geoCode, demote)
 		if err != nil {
 			return nil, err
 		}

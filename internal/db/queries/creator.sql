@@ -753,7 +753,8 @@ SELECT
  COALESCE(MAX(CASE WHEN cf.key = 'origin_country' THEN cfv.value_text END), '')::text AS origin_country,
  COALESCE(MAX(CASE WHEN cf.key = 'visa_route' THEN cfv.value_text END), '')::text AS visa_route,
  COALESCE(MAX(CASE WHEN cf.key = 'purpose' THEN cfv.value_text END), '')::text AS purpose,
- COALESCE(MAX(CASE WHEN cf.key = 'planned_travel_date' THEN cfv.value_text END), '')::text AS planned_travel_date
+ COALESCE(MAX(CASE WHEN cf.key = 'planned_travel_date' THEN cfv.value_text END), '')::text AS planned_travel_date,
+ COALESCE(MAX(up.japa_intent), '')::text AS japa_intent
 FROM user_profiles up
 LEFT JOIN custom_field_values cfv
  ON cfv.entity_type = 'user_profile' AND cfv.entity_id = up.id

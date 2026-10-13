@@ -194,6 +194,54 @@ ON CONFLICT (user_id) DO UPDATE SET
 	return nil
 }
 
+// UpsertJourneyClass sets japa_intent and/or japa_stage without touching
+// the destination or visibility fields. Unlike UpdateStage, both values are
+// "set only" — an empty value leaves the column unchanged and nothing is
+// ever cleared. Used by surfaces that learn the journey class indirectly
+// (onboarding primary_goal / japa_status, the purpose custom field) so they
+// can merge into the canonical columns without an intent×stage error path
+// (ADR-128). A history entry tagged `source` records the effective pair
+// after the write so the log stays self-describing.
+func (s *Store) UpsertJourneyClass(ctx context.Context, userID pgtype.UUID, intent, stage, source string) error {
+	const q = `
+INSERT INTO user_profiles (user_id, japa_intent, japa_stage, japa_stage_updated_at, japa_stage_history)
+VALUES (
+    $1, NULLIF($2::text, ''), NULLIF($3::text, ''), now(),
+    jsonb_build_array(
+        jsonb_build_object(
+            'intent', to_jsonb(NULLIF($2::text, '')),
+            'stage', to_jsonb(NULLIF($3::text, '')),
+            'source', to_jsonb($4::text),
+            'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        )
+    )
+)
+ON CONFLICT (user_id) DO UPDATE SET
+    japa_intent = COALESCE(NULLIF($2::text, ''), user_profiles.japa_intent),
+    japa_stage = COALESCE(NULLIF($3::text, ''), user_profiles.japa_stage),
+    japa_stage_updated_at = now(),
+    japa_stage_history = user_profiles.japa_stage_history || jsonb_build_array(
+        jsonb_build_object(
+            'intent', to_jsonb(COALESCE(NULLIF($2::text, ''), user_profiles.japa_intent)),
+            'stage', to_jsonb(COALESCE(NULLIF($3::text, ''), user_profiles.japa_stage)),
+            'source', to_jsonb($4::text),
+            'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+        )
+    )
+`
+
+	cmd, err := s.pool.Writer.Exec(ctx, q, userID, intent, stage, source)
+	if err != nil {
+		return fmt.Errorf("japastage: upsert journey class: %w", err)
+	}
+
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
 // SetPublic updates the japa_stage_is_public visibility toggle.
 func (s *Store) SetPublic(ctx context.Context, userID pgtype.UUID, isPublic bool) error {
 	const q = `

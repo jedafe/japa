@@ -17,7 +17,8 @@ import type {
 	PublicJapaStage,
 	ProfileFollower,
 	ProfileFollowing,
-	VideoSource
+	VideoSource,
+	Bookmark
 } from '$lib/types';
 
 // Raw shape returned by GET /users/{id}/following (FollowingInfo). The backend
@@ -213,7 +214,7 @@ export const load: PageServerLoad = async (event) => {
 		};
 	}
 
-	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos] = await Promise.all([
+	const [posts, replies, media, spaces, certificates, likes, analytics, isFollowing, badges, allBadges, followerGrowth, topContent, isBlocked, isMuted, japaStage, followers, following, videos, bookmarks] = await Promise.all([
 		// Tabs paginate client-side over the loaded list — fetch every page so
 		// totals, search, and paging reflect the whole dataset (capped at
 		// MAX_LIST_PAGES × 100).
@@ -276,7 +277,12 @@ export const load: PageServerLoad = async (event) => {
 		// tab (GET /u/{username}/videos returns VideoSource rows; it paginates
 		// with limit/offset rather than page_size/page_offset). Best-effort:
 		// a failure degrades to an empty list so the tab never blanks the page.
-		listAllPages<VideoSource>(`/u/${username}/videos`, { sizeParam: 'limit', offsetParam: 'offset' }).catch(catchEmpty<VideoSource>('videos'))
+		listAllPages<VideoSource>(`/u/${username}/videos`, { sizeParam: 'limit', offsetParam: 'offset' }).catch(catchEmpty<VideoSource>('videos')),
+		// Saved tab + sidebar — bookmarks are private, so only the profile
+		// owner's list is fetched. Visitors see the public Likes list instead.
+		isOwnProfile
+			? listAllPages<Bookmark>('/me/bookmarks').catch(catchEmpty<Bookmark>('bookmarks'))
+			: Promise.resolve([] as Bookmark[])
 	]);
 
 	return {
@@ -302,6 +308,7 @@ export const load: PageServerLoad = async (event) => {
 		followers,
 		following,
 		videos,
+		bookmarks,
 		jsonLd
 	};
 };

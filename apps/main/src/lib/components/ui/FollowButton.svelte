@@ -25,6 +25,9 @@
 		onChange?: (following: boolean) => void;
 		/** Optional callback invoked with the updated follower count (source follows include this). */
 		onFollowerCountChange?: (count: number) => void;
+		/** Optional label overrides (e.g. "Connect" on the profile hero). */
+		followLabel?: string;
+		followingLabel?: string;
 	}
 
 	let {
@@ -34,7 +37,9 @@
 		initiallyFollowing = false,
 		compact = false,
 		onChange,
-		onFollowerCountChange
+		onFollowerCountChange,
+		followLabel,
+		followingLabel
 	}: Props = $props();
 
 	let following = $state(untrack(() => initiallyFollowing));
@@ -87,9 +92,9 @@
 		<Loader2 size={compact ? 12 : 16} class="animate-spin" />
 	{:else if following}
 		<UserCheck size={compact ? 12 : 16} />
-		{t('profile.following_label', 'Following')}
+		{followingLabel ?? t('profile.following_label', 'Following')}
 	{:else}
 		<UserPlus size={compact ? 12 : 16} />
-		{t('profile.follow', 'Follow')}
+		{followLabel ?? t('profile.follow', 'Follow')}
 	{/if}
 </button>

@@ -611,13 +611,18 @@ func (h *Handlers) resolveToolSlugs(ctx context.Context, vc visitor.VisitorConte
 		stage = "unknown"
 	}
 
-	// Try keys in priority order: exact → archetype:* → *:stage → *:*
-	keys := []string{
-		vc.Archetype + ":" + stage,
-		vc.Archetype + ":*",
-		"*:" + stage,
-		"*:*",
+	// Try keys in priority order (ADR-128): intent-scoped keys resolve first
+	// — the japa_intent journey class is the canonical personalization axis —
+	// then archetype keys, then stage-only and full wildcards. Seed data
+	// predating ADR-128 uses archetype keys, so both keyspaces are honored.
+	keys := []string{}
+	if vc.JapaIntent != "" {
+		keys = append(keys, vc.JapaIntent+":"+stage, vc.JapaIntent+":*")
 	}
+	if vc.Archetype != "" {
+		keys = append(keys, vc.Archetype+":"+stage, vc.Archetype+":*")
+	}
+	keys = append(keys, "*:"+stage, "*:*")
 
 	seen := make(map[string]bool)
 
@@ -644,7 +649,19 @@ func (h *Handlers) resolveToolSlugs(ctx context.Context, vc visitor.VisitorConte
 
 // defaultToolSlugs returns a sensible default when the config matrix is
 // missing or invalid. Mirrors the fallback values in the migration seed.
+// Intent takes precedence over archetype (ADR-128).
 func defaultToolSlugs(vc visitor.VisitorContext) []string {
+	switch vc.JapaIntent {
+	case "visit":
+		return []string{"destination-wiki", "embassy-alerter", "scam-alert", "community-locator"}
+	case "business":
+		return []string{"service-directory", "destination-wiki", "tax-calculator", "community-locator"}
+	case "study":
+		return []string{"credential-checker", "language-test-hub", "japa-academy", "visa-route-comparison"}
+	case "work":
+		return []string{"cv-formatter", "credential-checker", "visa-route-comparison", "community-locator"}
+	}
+
 	switch {
 	case vc.Archetype == visitor.ArchetypeOriginVisitor && vc.JapaStage == "planning":
 		return []string{"visa-route-comparison", "embassy-alerter", "processing-time-tracker", "credential-checker"}

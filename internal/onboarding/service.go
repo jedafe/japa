@@ -16,6 +16,8 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/japastage"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // Follower is the subset of the follow-system service that onboarding needs
@@ -24,12 +26,20 @@ type Follower interface {
 	EnsureFollow(ctx context.Context, followerID pgtype.UUID, entityType string, entityID pgtype.UUID) (bool, error)
 }
 
+// JourneyClassWriter merges journey-class values (primary_goal → japa_intent,
+// japa_status → japa_stage) into the canonical user_profiles columns.
+// *japastage.Service satisfies it (ADR-128).
+type JourneyClassWriter interface {
+	ApplyJourneyClass(ctx context.Context, userID pgtype.UUID, rawIntent, stage, source string) error
+}
+
 // Service provides onboarding business logic with reader/writer pool separation.
 type Service struct {
-	store    *Store
-	db       *db.DB
-	settings *config.Settings
-	follower Follower
+	store         *Store
+	db            *db.DB
+	settings      *config.Settings
+	follower      Follower
+	journeyWriter JourneyClassWriter
 }
 
 // NewService creates a Service backed by the given database pool.
@@ -45,6 +55,13 @@ func NewService(database *db.DB, settings *config.Settings) *Service {
 // tags, spaces, and users into actual follow relationships.
 func (s *Service) SetFollower(f Follower) {
 	s.follower = f
+}
+
+// SetJourneyClassWriter wires the journey-class writer (japastage.Service) so
+// wizard answers promote into japa_intent / japa_stage (ADR-128). Nil skips
+// the promotion writes.
+func (s *Service) SetJourneyClassWriter(w JourneyClassWriter) {
+	s.journeyWriter = w
 }
 
 // GetState returns the current onboarding state for the given user.
@@ -234,6 +251,34 @@ func (s *Service) persistStep(ctx context.Context, userID pgtype.UUID, submitSte
 		if err := s.setDestinationCountry(ctx, userID, fields.DestinationCountryCode); err != nil {
 			slog.Warn("onboarding: failed to save destination_country custom field", "error", err)
 			// Non-fatal — don't block onboarding.
+		}
+	}
+
+	// ADR-128: promote the journey answers into the canonical fields so
+	// intent-aware personalization (menus, recommendations, space discovery)
+	// is active from onboarding rather than only after the member discovers
+	// /japa-stage/me. Step 1 japa_status feeds the japa_status custom field
+	// and the japa_stage column; Step 2 primary_goal feeds japa_intent and
+	// the purpose custom field. All writes are best-effort — failures log
+	// and never block onboarding.
+	if submitStep == 1 && fields.JapaStatus != "" {
+		if err := s.setProfileCustomField(ctx, userID, "japa_status", fields.JapaStatus); err != nil {
+			slog.Warn("onboarding: failed to save japa_status custom field", "error", err)
+		}
+	}
+
+	if submitStep == 2 {
+		if purpose := japastage.PurposeForIntent(fields.PrimaryGoal); purpose != "" {
+			if err := s.setProfileCustomField(ctx, userID, "purpose", purpose); err != nil {
+				slog.Warn("onboarding: failed to save purpose custom field", "error", err)
+			}
+		}
+	}
+
+	if s.journeyWriter != nil && (submitStep == 1 || submitStep == 2) {
+		stage := visitor.NormalizeJourneyStage(fields.JapaStatus)
+		if err := s.journeyWriter.ApplyJourneyClass(ctx, userID, fields.PrimaryGoal, stage, "onboarding"); err != nil {
+			slog.Warn("onboarding: failed to apply journey class", "error", err)
 		}
 	}
 
@@ -647,7 +692,69 @@ func (s *Service) GetRecommendations(ctx context.Context, userID pgtype.UUID) ([
 		popular = nil
 	}
 
-	return mergeRecommendations(merged, popular), nil
+	merged = mergeRecommendations(merged, popular)
+
+	// ADR-128: demote space types irrelevant to the member's declared journey
+	// class — Step 2 primary_goal resolves via geo_personalization.intent_matrix
+	// demote_space_types. Demoted spaces move to the tail of the space
+	// results; they stay discoverable.
+	if rule := visitor.IntentRuleFor(ctx, s.settings, japastage.NormalizeIntent(stepData.PrimaryGoal)); len(rule.DemoteSpaceTypes) > 0 {
+		if out, err := s.demoteSpaceTypes(ctx, merged, rule.DemoteSpaceTypes); err == nil {
+			merged = out
+		} else {
+			slog.Warn("onboarding: space-type demotion failed", "error", err)
+		}
+	}
+
+	return merged, nil
+}
+
+// demoteSpaceTypes stable-sorts recs so space entries whose space_types.slug
+// is in demote move to the tail while everything else keeps its tier order
+// (ADR-128). One batch lookup resolves the type slugs.
+func (s *Service) demoteSpaceTypes(ctx context.Context, recs []OnboardingRecommendation, demote []string) ([]OnboardingRecommendation, error) {
+	demoteSet := make(map[string]bool, len(demote))
+	for _, d := range demote {
+		demoteSet[d] = true
+	}
+
+	var spaceIDs []pgtype.UUID
+	for _, r := range recs {
+		if r.Type != "space" {
+			continue
+		}
+		var id pgtype.UUID
+		if err := id.Scan(r.ID); err == nil {
+			spaceIDs = append(spaceIDs, id)
+		}
+	}
+
+	if len(spaceIDs) == 0 {
+		return recs, nil
+	}
+
+	rows, err := s.store.read.ListSpaceTypeSlugsByIDs(ctx, spaceIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing space type slugs: %w", err)
+	}
+
+	demoted := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if demoteSet[row.SpaceTypeSlug] {
+			demoted[row.ID.String()] = true
+		}
+	}
+
+	var head, tail []OnboardingRecommendation
+	for _, r := range recs {
+		if r.Type == "space" && demoted[r.ID] {
+			tail = append(tail, r)
+		} else {
+			head = append(head, r)
+		}
+	}
+
+	return append(head, tail...), nil
 }
 
 // mergeRecommendations concatenates recommendation tiers in order, skipping
@@ -1157,16 +1264,21 @@ func (s *Service) autoJoinGeoSpaces(ctx context.Context, userID pgtype.UUID, fie
 // VisitorContext resolver picks up the destination selected during onboarding
 // without the user having to re-enter it in Settings.
 func (s *Service) setDestinationCountry(ctx context.Context, userID pgtype.UUID, geoCode string) error {
-	code := strings.ToUpper(strings.TrimSpace(geoCode))
-	if code == "" {
+	return s.setProfileCustomField(ctx, userID, "destination_country", strings.ToUpper(strings.TrimSpace(geoCode)))
+}
+
+// setProfileCustomField upserts a value_text custom field on the user's
+// profile (ADR-064a: entity_type='user_profile', entity_id=profile id).
+// Empty values are skipped; the field key must already be seeded in
+// custom_fields.
+func (s *Service) setProfileCustomField(ctx context.Context, userID pgtype.UUID, key, value string) error {
+	if value == "" {
 		return nil
 	}
 
-	field, err := s.store.read.GetCustomFieldByKey(ctx,
-		"destination_country",
-	)
+	field, err := s.store.read.GetCustomFieldByKey(ctx, key)
 	if err != nil {
-		return fmt.Errorf("looking up destination_country custom field: %w", err)
+		return fmt.Errorf("looking up %s custom field: %w", key, err)
 	}
 
 	profileID, err := s.store.read.GetUserProfileID(ctx,
@@ -1180,9 +1292,9 @@ func (s *Service) setDestinationCountry(ctx context.Context, userID pgtype.UUID,
 		FieldID:    field.ID,
 		EntityType: "user_profile",
 		EntityID:   profileID,
-		ValueText:  &code,
+		ValueText:  &value,
 	}); err != nil {
-		return fmt.Errorf("upserting destination_country custom field value: %w", err)
+		return fmt.Errorf("upserting %s custom field value: %w", key, err)
 	}
 
 	return nil

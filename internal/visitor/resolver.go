@@ -39,6 +39,7 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/geoip"
+	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -111,6 +112,12 @@ type VisitorContext struct {
 	// |vacation|tourism). It may be set by the Japa Readiness Assessment or
 	// the guest onboarding selector.
 	Purpose string `json:"purpose"`
+
+	// JapaIntent is the member's ADR-122 journey class (relocation|study|work
+	// |family|visit|business) resolved from the user_profiles.japa_intent
+	// column, or derived from Purpose when the column is unset. It is the
+	// canonical personalization axis for nav/surface adaptation (ADR-128).
+	JapaIntent string `json:"japa_intent"`
 
 	// TravelDate is the user's planned travel/departure date in YYYY-MM-DD
 	// format, or empty. Used to shift journey-stage urgency.
@@ -376,6 +383,7 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 			vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
 			vc.VisaRoute = normalizeVisaRoute(fields.VisaRoute)
 			vc.Purpose = normalizePurpose(fields.Purpose)
+			vc.JapaIntent = japastage.NormalizeIntent(fields.JapaIntent)
 			vc.TravelDate = strings.TrimSpace(fields.PlannedTravelDate)
 			vc.DestinationCountry = normalizeCountry(fields.DestinationCountry)
 			// ADR-064a: Use origin_country from profile when set; falls back
@@ -425,6 +433,19 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 				}
 			}
 		}
+	}
+
+	// ADR-128: reconcile the two journey vocabularies so consumers key on a
+	// single value. The declared japa_intent column wins; an empty intent
+	// derives from Purpose (vacation/tourism → visit); an empty Purpose
+	// derives from intent (visit → tourism). Covers guests too — their
+	// journey_purpose cookie/param is applied before this runs.
+	if vc.JapaIntent == "" {
+		vc.JapaIntent = japastage.NormalizeIntent(vc.Purpose)
+	}
+
+	if vc.Purpose == "" {
+		vc.Purpose = japastage.PurposeForIntent(vc.JapaIntent)
 	}
 
 	// Resolve archetype (ADR-064). CurrentCountry is the primary signal
@@ -625,6 +646,7 @@ type storedJourneyContext struct {
 	OriginCountry      string `json:"origin_country"`
 	DestinationCountry string `json:"destination_country"`
 	JapaStage          string `json:"japa_stage"`
+	JapaIntent         string `json:"japa_intent"`
 	VisaRoute          string `json:"visa_route"`
 	Purpose            string `json:"purpose"`
 	TravelDate         string `json:"travel_date"`
@@ -669,6 +691,11 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 		loaded = true
 	}
 
+	if v := q.Get("journey_intent"); v != "" {
+		stored.JapaIntent = v
+		loaded = true
+	}
+
 	if v := q.Get("journey_visa"); v != "" {
 		stored.VisaRoute = v
 		loaded = true
@@ -702,6 +729,10 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 	if stored.JapaStage != "" {
 		vc.JapaStage = strings.ToLower(strings.TrimSpace(stored.JapaStage))
 		vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
+	}
+
+	if stored.JapaIntent != "" {
+		vc.JapaIntent = japastage.NormalizeIntent(stored.JapaIntent)
 	}
 
 	if stored.VisaRoute != "" {
@@ -952,6 +983,13 @@ func normalizeJourneyStage(s string) string {
 // NormalizePurpose normalises free-text travel purpose values.
 func NormalizePurpose(s string) string {
 	return normalizePurpose(s)
+}
+
+// NormalizeIntent maps a free-form journey value onto the ADR-122
+// japa_intent set. The canonical mapping lives in japastage (ADR-128); this
+// wrapper exists for callers that already depend on visitor.
+func NormalizeIntent(s string) string {
+	return japastage.NormalizeIntent(s)
 }
 
 // normalizePurpose normalises free-text travel purpose values.

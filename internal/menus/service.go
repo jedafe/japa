@@ -27,12 +27,19 @@ type FeatureChecker interface {
 	IsEnabled(ctx context.Context, key string) bool
 }
 
+// stringSettingsReader is the minimal system_settings reader contract for
+// the ADR-128 intent matrix; *config.Settings satisfies it.
+type stringSettingsReader interface {
+	GetStringOr(ctx context.Context, key, fallback string) string
+}
+
 // Service provides business logic for navigating menus and managing items.
 type Service struct {
 	store    *Store
 	db       *db.DB
 	perms    PermissionResolver
 	features FeatureChecker
+	settings stringSettingsReader
 }
 
 // NewService constructs a menus Service without RBAC permission resolution
@@ -59,6 +66,13 @@ func NewServiceWithPerms(database *db.DB, perms PermissionResolver) *Service {
 // SetFeatureChecker wires a feature flag resolver for menu item filtering.
 func (s *Service) SetFeatureChecker(f FeatureChecker) {
 	s.features = f
+}
+
+// SetSettings wires a system_settings reader for the
+// geo_personalization.intent_matrix experience rules (ADR-128). Nil disables
+// intent-based nav adaptation.
+func (s *Service) SetSettings(r stringSettingsReader) {
+	s.settings = r
 }
 
 // ── Menu CRUD ─────────────────────────────────────────────────────────
@@ -153,7 +167,9 @@ func (s *Service) GetMenuBySlug(ctx context.Context, slug string, userGroupIDs m
 	}
 
 	filteredItems := filterMenuItems(ctx, jsonItems, userGroupIDs, isAuthenticated, userPerms, s.features)
-	treeItems := buildMenuTree(filteredItems)
+	// ADR-128: shape the tree for the requester's journey class — hide_paths
+	// drop items, pin_paths promote them ahead of unpinned siblings.
+	treeItems := s.applyIntentExperience(ctx, buildMenuTree(filteredItems))
 
 	return &MenuResponse{
 		ID: menu.ID.String(),

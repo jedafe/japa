@@ -362,6 +362,49 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 	return profileRowToDTO(row), nil
 }
 
+// ApplyJourneyClass merges journey-class writes from surfaces that learn
+// the intent indirectly — onboarding primary_goal / japa_status answers and
+// the purpose custom field on PUT /me/journey (ADR-128). rawIntent is
+// normalized through NormalizeIntent (accepts primary_goal and purpose
+// vocabularies); stage must already be a canonical §87 stage or empty.
+// Unlike UpdateOwn the write is a merge: nothing is cleared, an empty
+// argument leaves the column unchanged, and a stage that would violate the
+// ADR-122 intent×stage CHECK is skipped rather than rejected. Both values
+// are validated before the upsert so an invalid pair cannot clobber a
+// stored one.
+func (s *Service) ApplyJourneyClass(ctx context.Context, userID pgtype.UUID, rawIntent, stage, source string) error {
+	intent := NormalizeIntent(rawIntent)
+	if intent == "" && stage == "" {
+		return nil
+	}
+
+	var currentIntent string
+	if cur, err := s.store.GetUserProfile(ctx, userID); err == nil {
+		if cur.JapaIntent != nil {
+			currentIntent = *cur.JapaIntent
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("japastage: apply journey class: read profile: %w", err)
+	}
+
+	effectiveIntent := intent
+	if effectiveIntent == "" {
+		effectiveIntent = currentIntent
+	}
+	if effectiveIntent == "" {
+		effectiveIntent = "relocation" // DB default journey class (ADR-122)
+	}
+	if stage != "" && !ValidStageForIntent(stage, effectiveIntent) {
+		stage = "" // ADR-128: skip rather than reject or clear
+	}
+
+	if err := s.store.UpsertJourneyClass(ctx, userID, intent, stage, source); err != nil {
+		return fmt.Errorf("japastage: apply journey class: %w", err)
+	}
+
+	return nil
+}
+
 // RecommendForStage implements the japa_stage:recommend fan-out (§87 Stage-
 // Based Recommendations). It is invoked by the Asynq worker after a
 // successful PATCH /me/japa-stage and:
@@ -464,6 +507,9 @@ func (s *Service) resolveToolSlugs(ctx context.Context, stage, intent string) []
 
 	if intent != "" {
 		if v, ok := matrix[intent+":"+stage]; ok && len(v) > 0 {
+			return v
+		}
+		if v, ok := matrix[intent+":*"]; ok && len(v) > 0 {
 			return v
 		}
 	}

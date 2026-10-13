@@ -167,17 +167,24 @@ LIMIT $2;
 -- ADR-064: when geoCode is provided, spaces matching the visitor's
 -- ContentCountry are preferred (re-weighted, not hidden). Empty geoCode =
 -- global ranking (original behavior).
+-- ADR-128: spaces whose space_types.slug appears in demote_space_types are
+-- ordered last after geo weighting (demoted, not hidden — the member can
+-- still discover them). NULL/empty array = no demotion.
 SELECT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
+ st.slug AS space_type_slug,
  COUNT(DISTINCT sm2.user_id) AS shared_members
 FROM spaces s
 JOIN space_members sm ON sm.user_id = $1
 JOIN space_members sm2 ON sm2.space_id = s.id
+LEFT JOIN space_types st ON st.id = s.space_type_id
 WHERE s.id NOT IN (
  SELECT space_id FROM space_members WHERE user_id = $1
 )
 AND s.deleted_at IS NULL
-GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code
-ORDER BY (CASE WHEN s.geo_code = sqlc.narg(geo_code) THEN 0 ELSE 1 END), shared_members DESC
+GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code, st.slug
+ORDER BY (CASE WHEN s.geo_code = sqlc.narg(geo_code) THEN 0 ELSE 1 END),
+ (CASE WHEN st.slug = ANY(COALESCE(sqlc.narg(demote_space_types)::text[], '{}'::text[])) THEN 1 ELSE 0 END),
+ shared_members DESC
 LIMIT $2;
 
 -- name: GetSuggestedTags :many

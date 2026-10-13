@@ -100,6 +100,9 @@ func (h *Handlers) invalidateVisitorCache(ctx context.Context, user *auth.Authen
 
 	_ = h.redis.Del(ctx, valkey.MustKey("visitor:ctx:user:%s", user.UserID.String())).Err()
 	_ = h.redis.Del(ctx, valkey.MustKey("recommendations:user:%s", user.UserID.String())).Err()
+	// ADR-128: suggested-space ranking is intent-aware, so an intent change
+	// must also drop the suggestions entry.
+	_ = h.redis.Del(ctx, valkey.MustKey("suggestions:spaces:%s", user.UserID.String())).Err()
 }
 
 // ---------------------------------------------------------------------------

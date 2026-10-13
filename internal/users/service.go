@@ -17,6 +17,7 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/tiers"
 	"github.com/jedafe/japa/internal/worker"
 	"golang.org/x/sync/errgroup"
@@ -56,6 +57,9 @@ type Service struct {
 	tierService *tiers.Service
 	sources     sourceManager
 	siteURL     string
+	// journeyWriter promotes purpose/japa_status edits into the canonical
+	// japa_intent / japa_stage columns (ADR-128). Optional.
+	journeyWriter journeyClassWriter
 }
 
 // userEnqueuer is the subset of worker.Enqueuer that users needs.
@@ -73,6 +77,20 @@ type sourceManager interface {
 // type pair. Implemented by bookmarkfolders.DefaultFolderResolver.
 type folderResolver interface {
 	Resolve(ctx context.Context, userID pgtype.UUID, entityType, contentType string) (bookmarkfolders.FolderResponse, error)
+}
+
+// journeyClassWriter merges journey-class values into the canonical
+// user_profiles.japa_intent / japa_stage columns (ADR-128). *japastage.Service
+// satisfies it.
+type journeyClassWriter interface {
+	ApplyJourneyClass(ctx context.Context, userID pgtype.UUID, rawIntent, stage, source string) error
+}
+
+// SetJourneyClassWriter wires the journey-class writer so PUT /me/journey
+// purpose and japa_stage edits promote into the canonical columns. Nil skips
+// the promotion.
+func (s *Service) SetJourneyClassWriter(w journeyClassWriter) {
+	s.journeyWriter = w
 }
 
 // SetEnqueuer injects the Asynq enqueuer for async user tasks (search index
@@ -585,6 +603,23 @@ func (s *Service) UpdateJourney(ctx context.Context, userID pgtype.UUID, req *Up
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	// ADR-128: keep the two journey vocabularies aligned — a submitted
+	// purpose promotes to japa_intent and a submitted japa_status promotes
+	// to japa_stage (canonical §87 values). Best-effort: the journey columns
+	// are derived convenience, not part of the custom-field transaction.
+	if s.journeyWriter != nil && (req.Purpose != nil || req.JapaStage != nil) {
+		var rawIntent, stage string
+		if req.Purpose != nil {
+			rawIntent = *req.Purpose
+		}
+		if req.JapaStage != nil {
+			stage = normalizeJourneyValue(*req.JapaStage)
+		}
+		if err := s.journeyWriter.ApplyJourneyClass(ctx, userID, rawIntent, stage, "me/journey"); err != nil {
+			slog.Warn("users: failed to apply journey class", "error", err)
+		}
 	}
 
 	return nil

@@ -177,19 +177,22 @@ func (s *Store) GetSuggestedUsers(
 
 // GetSuggestedSpaces returns spaces the authenticated user might want to join.
 // geoCode (ADR-064) re-weights the ranking to prefer spaces matching the
-// visitor's ContentCountry; nil = global ranking.
+// visitor's ContentCountry; nil = global ranking. demoteSpaceTypes (ADR-128)
+// orders spaces of the listed space_types.slug values last; nil = no demotion.
 func (s *Store) GetSuggestedSpaces(
 	ctx context.Context,
 	userID pgtype.UUID,
 
 	limit int32,
 	geoCode *string,
+	demoteSpaceTypes []string,
 ) ([]gen.GetSuggestedSpacesRow, error) {
 	return s.queries.GetSuggestedSpaces(ctx, gen.GetSuggestedSpacesParams{
 		UserID: userID,
 
-		Limit:   limit,
-		GeoCode: geoCode,
+		Limit:            limit,
+		GeoCode:          geoCode,
+		DemoteSpaceTypes: demoteSpaceTypes,
 	})
 }
 

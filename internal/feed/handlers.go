@@ -392,6 +392,7 @@ type feedContextRequest struct {
 	OriginCountry      string `json:"origin_country"`
 	DestinationCountry string `json:"destination_country"`
 	JapaStage          string `json:"japa_stage"`
+	JapaIntent         string `json:"japa_intent"`
 	VisaRoute          string `json:"visa_route"`
 	Purpose            string `json:"purpose"`
 	TravelDate         string `json:"travel_date"`
@@ -424,6 +425,10 @@ func (h *Handlers) SetFeedContext(w http.ResponseWriter, r *http.Request) {
 
 	if v := visitor.NormalizeJourneyStage(req.JapaStage); v != "" {
 		stored["japa_stage"] = v
+	}
+
+	if v := visitor.NormalizeIntent(req.JapaIntent); v != "" {
+		stored["japa_intent"] = v
 	}
 
 	if v := visitor.NormalizeVisaRoute(req.VisaRoute); v != "" {
