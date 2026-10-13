@@ -131,9 +131,33 @@ async function clientFetch<T>(path: string, init: RequestInit = {}): Promise<Cli
 	}
 }
 
+/** Raw envelope body (data + sidecar fields like meta/pagination). */
+export interface ClientEnvelopeResult<T> extends ClientResult<T> {
+	envelope: Record<string, unknown> | null;
+}
+
+async function clientFetchRaw<T>(path: string, init: RequestInit = {}): Promise<ClientEnvelopeResult<T>> {
+	const res = await clientFetch<T>(path, init);
+	// clientFetch already unwraps data+meta; re-expose meta via envelope
+	// for callers that need the raw sidecar fields.
+	return { ...res, envelope: res.meta ? { meta: res.meta } : null };
+}
+
+/**
+ * GET a list endpoint with meta. Standard envelope is `{ data, meta }`;
+ * a `pagination` alias is accepted for back-compat (e.g. visa routes).
+ */
+async function getList<T>(path: string, init?: RequestInit): Promise<ClientResult<T[]>> {
+	return clientFetch<T[]>(path, { ...init, method: 'GET' });
+}
+
 /** Convenience method wrappers — return the full ClientResult for error handling. */
 export const api = {
 	get: <T>(path: string, init?: RequestInit) => clientFetch<T>(path, { ...init, method: 'GET' }),
+	/** Like get() but also returns the raw envelope (sidecar fields like meta). */
+	getEnvelope: <T>(path: string, init?: RequestInit) => clientFetchRaw<T>(path, { ...init, method: 'GET' }),
+	/** List reader with meta (standard `{ data, meta }`, `pagination` alias accepted). */
+	getList: <T>(path: string, init?: RequestInit) => getList<T>(path, init),
 	post: <T>(path: string, body?: unknown, init?: RequestInit) =>
 		clientFetch<T>(path, { ...init, method: 'POST', body: JSON.stringify(body) }),
 	patch: <T>(path: string, body?: unknown, init?: RequestInit) =>

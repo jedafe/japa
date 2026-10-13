@@ -40,6 +40,8 @@
 	let filterDeadlineFrom = $state(initialParams.get('deadline_from') ?? '');
 	let filterDeadlineTo = $state(initialParams.get('deadline_to') ?? '');
 	let filterQuery = $state(initialParams.get('q') ?? '');
+	let filterSort = $state(initialParams.get('sort') ?? '');
+	let filterIncludeExpired = $state(initialParams.get('include_expired') === 'true');
 	let loading = $state(false);
 	let showRegisterPrompt = $state(false);
 
@@ -70,7 +72,22 @@
 		})
 	);
 
+	let amountError = $state('');
+
 	async function applyFilters(resetPage = true) {
+		amountError = '';
+		if (filterMinAmount !== '' && Number.isNaN(Number(filterMinAmount))) {
+			amountError = t('scholarships.invalid_amount', 'Min and max amounts must be numbers.');
+			return;
+		}
+		if (filterMaxAmount !== '' && Number.isNaN(Number(filterMaxAmount))) {
+			amountError = t('scholarships.invalid_amount', 'Min and max amounts must be numbers.');
+			return;
+		}
+		if (filterMinAmount !== '' && filterMaxAmount !== '' && Number(filterMinAmount) > Number(filterMaxAmount)) {
+			amountError = t('scholarships.invalid_amount_range', 'Min amount cannot exceed max amount.');
+			return;
+		}
 		loading = true;
 		if (resetPage) currentPage = 1;
 		const params = new URLSearchParams();
@@ -82,10 +99,12 @@
 		if (filterDeadlineFrom) params.set('deadline_from', filterDeadlineFrom);
 		if (filterDeadlineTo) params.set('deadline_to', filterDeadlineTo);
 		if (filterQuery) params.set('q', filterQuery);
+		if (filterSort) params.set('sort', filterSort);
+		if (filterIncludeExpired) params.set('include_expired', 'true');
 		params.set('page', String(currentPage));
 		params.set('page_size', String(pageSize));
 		const qs = params.toString();
-		const res = await api.get<Scholarship[]>(`/scholarships${qs ? `?${qs}` : ''}`);
+		const res = await api.getList<Scholarship>(`/scholarships${qs ? `?${qs}` : ''}`);
 		loading = false;
 		if (res.error) return;
 		scholarships = res.data ?? [];
@@ -351,6 +370,28 @@
 					</div>
 				</div>
 
+				<div>
+					<label class="block text-xs font-medium text-muted mb-1" for="scholarship-sort">{t('scholarships.sort', 'Sort')}</label>
+					<AutocompleteSelect
+						id="scholarship-sort"
+						bind:value={filterSort}
+						options={[
+							{ value: '', label: t('scholarships.sort_default', 'Default') },
+							{ value: 'deadline_asc', label: t('scholarships.sort_deadline', 'Deadline (soonest)') },
+							{ value: 'amount_desc', label: t('scholarships.sort_amount', 'Award (highest)') }
+						]}
+						class="w-full"
+					/>
+				</div>
+
+				<label class="flex items-center gap-2 text-sm text-muted">
+					<input type="checkbox" bind:checked={filterIncludeExpired} class="accent-[var(--tool-accent)]" />
+					{t('scholarships.include_expired', 'Include expired')}
+				</label>
+
+				{#if amountError}
+					<p class="text-xs text-red-600" role="alert">{amountError}</p>
+				{/if}
 				<button
 					onclick={() => applyFilters()}
 					disabled={loading}

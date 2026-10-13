@@ -69,7 +69,7 @@
 			return;
 		}
 		loadingRoutes = true;
-		const res = await api.get<VisaRouteWithAi[]>(`/visa-routes?dest=${selectedDestId}`);
+		const res = await api.getList<VisaRouteWithAi>(`/visa-routes?dest=${selectedDestId}`);
 		loadingRoutes = false;
 		if (!res.error) routes = res.data ?? [];
 		else routes = [];
@@ -98,8 +98,12 @@
 		loadingComparison = true;
 		showComparison = true;
 		const ids = Array.from(selectedRouteIds).join(',');
-		const res = await api.get<VisaRouteWithAi[]>(`/visa-routes/compare?ids=${ids}`);
+		const res = await api.getEnvelope<VisaRouteWithAi[]>(`/visa-routes/compare?ids=${ids}`);
 		loadingComparison = false;
+		// Compare may return 207 multi-status with missing_ids; render the
+		// resolved routes and drop the missing ones (logged for diagnosis).
+		const missing = (res.envelope?.missing_ids as string[] | undefined) ?? [];
+		if (missing.length > 0) console.warn('visa compare: missing routes', missing);
 		if (!res.error) comparisonData = res.data ?? [];
 		else comparisonData = [];
 	}

@@ -1,15 +1,16 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
 import { getTool, isToolEnabled } from '$lib/tools/registry';
-import type { ChatConversationSummary } from '$lib/types';
+import { mainAppUrl } from '$lib/seo';
 
 /**
  * JapaBot standalone — §20, §69.
- * SSR loads the user's conversation list (if authenticated). The chat
- * interaction is client-side via POST /ai/chat.
  *
- * API: GET /ai/conversations — user's conversation history (auth only).
- *      POST /ai/chat — send message (client-side).
+ * The canonical JapaBot chat UI lives on the main app's unified /ai
+ * surface, chat mode (single implementation: conversation sidebar, RAG
+ * citations, model/voice pickers). This page is now a landing surface
+ * only: guests see the tool's SEO + sign-in prompt; signed-in users are
+ * redirected to /ai?mode=chat so there is exactly one chat experience.
  *
  * Ref: §20 (AI Core), §69 (RAG Knowledge Layer), ROADMAP-TOOLS 02.07.
  */
@@ -18,25 +19,13 @@ export const load: PageServerLoad = async (event) => {
 	// Ref: conventions/system-settings-catalog.md, Rule 3.
 	const tool = getTool('japabot')!;
 	if (!isToolEnabled(tool, event.locals.features)) {
-		return { enabled: false, tool, conversations: [], user: event.locals.user };
+		return { enabled: false, tool, user: event.locals.user };
 	}
 
-	const ctx = apiContext(event);
-
-	let conversations: ChatConversationSummary[] = [];
+	// Signed-in users go straight to the canonical chat surface.
 	if (event.locals.user) {
-		try {
-			const res = await apiList<ChatConversationSummary>(ctx, '/ai/conversations');
-			conversations = res.items;
-		} catch {
-			conversations = [];
-		}
+		throw redirect(302, mainAppUrl('/ai?mode=chat'));
 	}
 
-	return {
-		enabled: true,
-		tool,
-		conversations,
-		user: event.locals.user
-	};
+	return { enabled: true, tool, user: null };
 };
