@@ -91,6 +91,9 @@ All tools are registered in `internal/ai/tools_register.go` (or a new `internal/
 | `source.discover` | `query`, `category`, `country`, `limit` | List of proposed source objects | Calls `external.search`, lets the LLM evaluate candidate URLs, and creates `intel_sources` rows with `status=proposed` and `enabled=false`. |
 | `content.regenerate_from_source` | `content_id`, `intel_record_id` | Job ID | Enqueues the new `content:regenerate_from_source` worker to rewrite the body from the latest extraction. |
 | `source.propose` / `source.approve` (admin) | `source_id` | Status | Control Panel / admin tools to review and enable proposed sources. |
+| `intel.source.get` | `source_id` | Source row | Read the source registry row: status, enabled, trust, crawl method/frequency, crawl health. Read-only; gates on `intel.sources.view`. Added by migration 000842. |
+| `intel.record.get` | `record_id` | Record row | Read a single intel record incl. full `extracted` payload, confidence map, and evidence — closes the loop after `record.update_now`/`source.crawl_now` return "queued". Gates on `intel.review.view`. Added by migration 000842. |
+| `intel.record.list` | `source_id?`, `status?`, `entity_type?`, `limit?`, `offset?` | Record list | Lightweight record browser (max 25, newest first, payloads omitted). Gates on `intel.review.view`. Added by migration 000842. |
 
 ### Tool registration references
 
@@ -180,7 +183,7 @@ This worker is enqueued by:
 
 ### Optional auto-enable
 
-A tenant setting `agent.auto_enable_discovered_sources` controls whether proposed sources from trusted domains or high-confidence evaluations can skip admin review and be enabled immediately. Default is `false`.
+A tenant setting `agent.auto_enable_discovered_sources` controls whether discovered sources can skip the proposal queue and be enabled immediately. Default is `false`. When enabled, direct activation additionally requires the tool caller to hold `intel.sources.manage` — the setting only unlocks the shortcut for callers who could approve the proposal anyway; member-level callers always get `status='proposed'` rows for admin review regardless of the setting.
 
 ---
 
@@ -222,7 +225,7 @@ New permission nodes (seeded via migration):
 | `intel.sources.propose` | Create proposed sources (agent). |
 | `intel.sources.approve` | Approve/reject proposed sources (admin). |
 
-Existing `intel.sources.manage`, `intel.sources.crawl_now`, `intel.review.*` are reused where applicable.
+Existing `intel.sources.manage`, `intel.sources.crawl_now`, `intel.review.*` are reused where applicable. The `intel.*.get`/`intel.record.list` read tools (migration 000842) gate directly on `intel.sources.view` / `intel.review.view` — no new `agent.*` nodes are minted for read paths.
 
 ---
 
@@ -233,7 +236,7 @@ New settings (seeded via migration):
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `agent.source_discovery.enabled` | bool | `false` | Master switch for `source.discover`. |
-| `agent.auto_enable_discovered_sources` | bool | `false` | Auto-enable proposed sources from trusted domains or high-confidence evaluations. |
+| `agent.auto_enable_discovered_sources` | bool | `false` | Auto-enable discovered sources (caller must also hold `intel.sources.manage`; members always get proposed rows). |
 | `agent.discovery_trust_level_default` | int | `3` | Default trust level for discovered sources (3 = Aggregator). |
 | `agent.discovery_default_crawl_method` | string | `'static'` | Default crawl method for proposed sources. |
 | `agent.max_discovered_sources_per_query` | int | `5` | Max sources inserted per `source.discover` call. |
