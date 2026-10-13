@@ -334,6 +334,14 @@ func (h *Handlers) CreateJCEComparison(w http.ResponseWriter, r *http.Request) {
 			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "Your group cannot create comparisons of this type")
 			return
 		}
+		if errors.Is(err, ErrNestedNotAllowed) {
+			errpkg.WriteError(w, http.StatusBadRequest, "nested_not_allowed", err.Error())
+			return
+		}
+		if errors.Is(err, errpkg.ErrRateLimited) {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "daily_limit", "Daily comparison limit reached — try again tomorrow")
+			return
+		}
 
 		handleServiceError(w, err)
 		return
@@ -769,6 +777,11 @@ func (h *Handlers) CreateJCEComparisonFromToken(w http.ResponseWriter, r *http.R
 
 		if err.Error() == "selection token not found or expired" {
 			errpkg.WriteError(w, http.StatusNotFound, "token_not_found", err.Error())
+			return
+		}
+
+		if errors.Is(err, errpkg.ErrRateLimited) {
+			errpkg.WriteError(w, http.StatusTooManyRequests, "daily_limit", "Daily comparison limit reached — try again tomorrow")
 			return
 		}
 

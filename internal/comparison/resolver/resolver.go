@@ -107,6 +107,49 @@ func (r *Registry) Resolve(ctx context.Context, ref map[string]any) (ResolvedIte
 	return item, nil
 }
 
+// ResolveResult is the multi-status payload for batch resolution: the
+// items that resolved plus the indexes/ids that did not.
+type ResolveResult struct {
+	Items      []ResolvedItem
+	MissingIDs []string
+}
+
+// ResolveBatch resolves many item_refs of the same entity type. Each ref
+// resolves independently; missing items are collected in MissingIDs
+// (request order) instead of failing the batch so callers can return a
+// 207 multi-status with missing_ids.
+func (r *Registry) ResolveBatch(ctx context.Context, entityType string, refs []map[string]any) (ResolveResult, error) {
+	if r == nil || r.resolvers == nil {
+		return ResolveResult{}, errors.New("resolver registry not initialized")
+	}
+
+	res, ok := r.resolvers[entityType]
+	if !ok {
+		return ResolveResult{}, fmt.Errorf("unsupported entity type: %s", entityType)
+	}
+
+	out := ResolveResult{Items: []ResolvedItem{}}
+	for i, ref := range refs {
+		item, found, err := res.Resolve(ctx, ref)
+		if err != nil || !found {
+			out.MissingIDs = append(out.MissingIDs, missingIDForRef(ref, i))
+			continue
+		}
+		item.Type = entityType
+		out.Items = append(out.Items, item)
+	}
+	return out, nil
+}
+
+func missingIDForRef(ref map[string]any, i int) string {
+	for _, key := range []string{"id", "guide_id", "slug"} {
+		if v, ok := ref[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return "index:" + strconv.Itoa(i)
+}
+
 // Search searches for items of a given entity type.
 func (r *Registry) Search(ctx context.Context, entityType, query string, filters map[string]any, limit, offset int32) ([]ResolvedItem, error) {
 	if r == nil || r.resolvers == nil {

@@ -236,6 +236,12 @@ func sliceContains(ss []string, s string) bool {
 	return false
 }
 
+// ErrNestedNotAllowed is returned when a comparison item nests another
+// comparison whose type the parent type does not allow — distinct from a
+// generic invalid input so the picker can render an inline hint naming the
+// allowed nested types.
+var ErrNestedNotAllowed = fmt.Errorf("%w: nested comparison type is not allowed", errpkg.ErrInvalid)
+
 // defaultDailyComparisonLimits are the per-tier fallbacks for
 // jce.comparisons.max_per_day.{tier} from the system-settings catalog.
 // A negative value means unlimited.
@@ -358,7 +364,7 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 			return JCEComparisonResult{}, fmt.Errorf("listing field-group fields: %w", ferr)
 		}
 
-		autoFields = fields
+		autoFields = filterFieldsByConfigSections(fields, typeDef.Config)
 	}
 
 	// Enforce the per-tier daily creation quota
@@ -393,13 +399,13 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 
 				if refType == "comparison" {
 					if !typeCfg.AllowNestedComparisons {
-						return JCEComparisonResult{}, fmt.Errorf("%w: nested comparisons are not enabled for this type", errpkg.ErrInvalid)
+						return JCEComparisonResult{}, fmt.Errorf("%w: nested comparisons are not enabled for this type", ErrNestedNotAllowed)
 					}
 
 					if len(typeCfg.AllowedNestedTypes) > 0 {
 						nestedSlug, _ := resolved.Metadata["type_slug"].(string)
 						if !sliceContains(typeCfg.AllowedNestedTypes, nestedSlug) {
-							return JCEComparisonResult{}, fmt.Errorf("%w: nested comparison type %q is not allowed", errpkg.ErrInvalid, nestedSlug)
+							return JCEComparisonResult{}, fmt.Errorf("%w: nested comparison type %q is not allowed", ErrNestedNotAllowed, nestedSlug)
 						}
 					}
 				}
@@ -442,12 +448,21 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 
 		if autoFields != nil {
 			for i, f := range autoFields {
+				if f.Key == "" {
+					continue
+				}
+				dimType := fieldToDimensionType(f.FieldType, f.Options)
+				if dimType == "" {
+					// Non-comparable composite (§80 Wiki Topic Pages — a
+					// price_parts field with no usable primary_part).
+					continue
+				}
 				_, derr := q.CreateComparisonDimension(ctx, gen.CreateComparisonDimensionParams{
 					ContentID: contentRow.ID,
 
 					TypeID:        input.TypeID,
 					Label:         f.Label,
-					DimensionType: fieldTypeToDimensionType(f.FieldType),
+					DimensionType: dimType,
 					Position:      toInt32(i),
 					// §30 Sub-spec 5: link the dimension to its source field so
 					// matrix cells can hydrate from entity field values.
@@ -1059,9 +1074,31 @@ type CreateSelectionTokenInput struct {
 }
 
 // CreateSelectionToken stores a guest selection in Valkey and returns the token.
+// The type_slug must resolve to a real comparison type; the refs are deduped
+// (same key as the matrix assembler) and capped at the type's max_item_count
+// so an oversized guest selection fails at mint time, not after login.
 func (s *Service) CreateSelectionToken(ctx context.Context, input CreateSelectionTokenInput) (string, error) {
 	if s.vk == nil {
 		return "", errors.New("valkey not configured")
+	}
+
+	if input.TypeSlug == "" {
+		return "", fmt.Errorf("%w: type_slug is required", errpkg.ErrInvalid)
+	}
+
+	td, err := s.store.getComparisonTypeBySlug(ctx, input.TypeSlug)
+	if err != nil {
+		return "", fmt.Errorf("resolving selection token type: %w", err)
+	}
+
+	cfg, cerr := parseJCETypeConfig(td.Config)
+	if cerr != nil {
+		return "", fmt.Errorf("parsing comparison type config: %w", cerr)
+	}
+
+	refs := dedupeTokenItemRefs(input.ItemRefs)
+	if cfg.MaxItemCount > 0 && len(refs) > cfg.MaxItemCount {
+		return "", fmt.Errorf("%w: too many items (max %d)", errpkg.ErrInvalid, cfg.MaxItemCount)
 	}
 
 	token, err := generateToken()
@@ -1070,8 +1107,8 @@ func (s *Service) CreateSelectionToken(ctx context.Context, input CreateSelectio
 	}
 
 	payload := map[string]any{
-		"type_slug":  input.TypeSlug,
-		"item_refs":  input.ItemRefs,
+		"type_slug":  td.Slug,
+		"item_refs":  refs,
 		"created_at": time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -1114,6 +1151,18 @@ func (s *Service) CreateJCEComparisonFromToken(ctx context.Context, userID pgtyp
 
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return JCEComparisonResult{}, fmt.Errorf("decoding selection token payload: %w", err)
+	}
+
+	// The redeeming type must match the minted one — a token minted for
+	// universities must not fund a banks comparison after login.
+	if input.TypeID.Valid {
+		td, terr := s.store.getComparisonTypeByID(ctx, input.TypeID)
+		if terr != nil {
+			return JCEComparisonResult{}, fmt.Errorf("resolving comparison type: %w", terr)
+		}
+		if payload.TypeSlug != "" && td.Slug != payload.TypeSlug {
+			return JCEComparisonResult{}, fmt.Errorf("%w: selection token is for type %q", errpkg.ErrInvalid, payload.TypeSlug)
+		}
 	}
 
 	items := make([]JCEItemInput, 0, len(payload.ItemRefs))

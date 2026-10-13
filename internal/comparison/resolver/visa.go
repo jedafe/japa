@@ -80,9 +80,17 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 		offset = 0
 	}
 
+	// Destination filter: accept a space UUID (country_id/geo_space_id/
+	// destination_space_id) directly; otherwise leave the destination
+	// unfiltered rather than silently matching nothing.
 	var destSpaceID pgtype.UUID
-	if v, ok := filters["country_id"].(string); ok && v != "" {
-		destSpaceID, _ = ParseUUID(v)
+	for _, key := range []string{"country_id", "geo_space_id", "destination_space_id", "dest"} {
+		if v, ok := filters[key].(string); ok && v != "" {
+			if id, err := ParseUUID(v); err == nil && id.Valid {
+				destSpaceID = id
+				break
+			}
+		}
 	}
 
 	var category string
@@ -98,6 +106,12 @@ func (r *visaRouteResolver) Search(ctx context.Context, query string, filters ma
 	routes, _, err := r.svc.AdminList(ctx, destSpaceID, "published", category, query, "", "", boolPtr(true), page, limit)
 	if err != nil {
 		return nil, fmt.Errorf("searching visa routes: %w", err)
+	}
+
+	// Textual destination filter (country name/code): AdminList only
+	// filters by space ID, so narrow the page when a name/code was given.
+	if dest, ok := filters["destination"].(string); ok && dest != "" {
+		routes = filterVisaRoutesByDestination(routes, dest)
 	}
 
 	// AdminList intentionally returns the stored bag (§80 admin surfaces),
@@ -394,4 +408,22 @@ func workAllowedFromCategory(category string) any {
 	}
 
 	return nil
+}
+
+// filterVisaRoutesByDestination narrows routes by destination name or
+// geo code (case-insensitive substring). Used when the caller passed a
+// textual destination instead of a space UUID.
+func filterVisaRoutesByDestination(routes []visaroutes.RouteDTO, dest string) []visaroutes.RouteDTO {
+	needle := strings.ToLower(strings.TrimSpace(dest))
+	if needle == "" {
+		return routes
+	}
+	kept := routes[:0]
+	for _, route := range routes {
+		if strings.Contains(strings.ToLower(route.DestinationSpaceName), needle) ||
+			strings.Contains(strings.ToLower(route.DestinationSpaceCode), needle) {
+			kept = append(kept, route)
+		}
+	}
+	return kept
 }

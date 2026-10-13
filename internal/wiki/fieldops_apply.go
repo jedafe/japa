@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -123,17 +124,71 @@ func applySetValue(ctx context.Context, q *gen.Queries, tx pgx.Tx, op FieldOp, s
 	// Denormalized merge into the entity's field_values jsonb column. The
 	// column is NOT NULL DEFAULT '{}' on every whitelisted table, so plain
 	// jsonb concatenation is safe (last write wins per key, matching cfv's
-	// upsert semantics).
+	// upsert semantics). CF12: write the normalized bytes produced by
+	// valueToUpsertParams (the cfv row's canonical value), never the raw op
+	// payload — the mirror must converge with cfv. cfv stays canonical: on
+	// any dual-write divergence the cfv row wins at read time (CF11), and a
+	// mismatch here is logged by the caller-side audit, not silently kept.
 	if table, ok := entityFieldValuesTable[op.EntityType]; ok {
+		denorm := denormValueJSON(params, op.Value)
 		if _, err := tx.Exec(ctx,
 			"UPDATE "+table+" SET field_values = field_values || jsonb_build_object($1, $2::jsonb) WHERE id = $3",
-			op.FieldKey, string(op.Value), entityID,
+			op.FieldKey, string(denorm), entityID,
 		); err != nil {
 			return fmt.Errorf("denorm merge into %s.field_values: %w", table, err)
+		}
+		if diverges(denorm, op.Value) {
+			logDivergence(ctx, op.EntityType, op.FieldKey, entityID, op.Value, denorm)
 		}
 	}
 
 	return nil
+}
+
+// denormValueJSON renders the cfv row's canonical stored value for the
+// denormalized mirror: the typed column wins, falling back to the raw op
+// payload only when no typed column was set (null-clear).
+func denormValueJSON(params gen.UpsertCustomFieldValueParams, raw json.RawMessage) json.RawMessage {
+	switch {
+	case params.ValueText != nil:
+		if b, err := json.Marshal(*params.ValueText); err == nil {
+			return b
+		}
+	case params.ValueNumber.Valid:
+		if f, err := params.ValueNumber.Float64Value(); err == nil && f.Valid {
+			if b, err := json.Marshal(f.Float64); err == nil {
+				return b
+			}
+		}
+	case params.ValueBool != nil:
+		if b, err := json.Marshal(*params.ValueBool); err == nil {
+			return b
+		}
+	case params.ValueDate.Valid:
+		if b, err := json.Marshal(params.ValueDate.Time.UTC().Format(time.RFC3339)); err == nil {
+			return b
+		}
+	case len(params.ValueJson) > 0:
+		return json.RawMessage(params.ValueJson)
+	}
+	return raw
+}
+
+// diverges reports whether the normalized denorm bytes differ from the raw
+// op payload beyond whitespace — i.e. normalization rewrote the value.
+func diverges(normalized, raw json.RawMessage) bool {
+	return strings.TrimSpace(string(normalized)) != strings.TrimSpace(string(raw))
+}
+
+// logDivergence warns on a dual-write normalization gap: the cfv row and the
+// denorm mirror now hold different bytes for the same key. The cfv row is
+// canonical (CF11); this log is the audit trail, not a second write.
+func logDivergence(ctx context.Context, entityType, fieldKey string, entityID pgtype.UUID, raw, normalized json.RawMessage) {
+	_ = ctx
+	slog.Warn("wiki: denorm divergence normalized",
+		"entity_type", entityType, "entity_id", entityID.String(),
+		"field_key", fieldKey,
+		"raw_bytes", len(raw), "normalized_bytes", len(normalized))
 }
 
 // applyProposeField adds one community-proposed field to an existing group.
@@ -433,6 +488,20 @@ func valueToUpsertParams(field schemaField, entityType string, entityID pgtype.U
 		v = norm
 	}
 
+	// CF2: sanitize rich_text HTML at apply time — the same pass the submit
+	// path runs, so revisions approved from queues written before the submit
+	// gate still land clean. Scrubbed before the column setter marshals.
+	if field.fieldType == customfields.FieldTypeRichText && len(v) > 0 && wikiRichTextSanitizer != nil {
+		v = customfields.SanitizeRichTextJSON(v, wikiRichTextSanitizer)
+	}
+
+	// CF3: canonical select matching is value-only — normalize labels to
+	// values before the column setter so stored bytes converge with the REST
+	// value handler.
+	if (field.fieldType == customfields.FieldTypeSelect || field.fieldType == customfields.FieldTypeMultiselect) && len(v) > 0 {
+		v = customfields.CanonicalizeSelectJSON(field.fieldType, field.options, v)
+	}
+
 	setter, ok := valueColumnSetters[column]
 	if !ok {
 		return params, fmt.Errorf("field %q maps to unhandled value column %q", field.key, column)
@@ -534,12 +603,19 @@ func parseDateValue(s string) (pgtype.Timestamptz, error) {
 // normalizePriceRange coerces a set_value payload into the canonical
 // price_range object {"avg":n,"min":n,"max":n} (§80 Itemized Pricing).
 // Each key is optional but at least one must be present; min <= max is
-// enforced when both are supplied. Only the three keys survive — stray
-// payload members are dropped so value_json stays diff-stable.
+// enforced when both are supplied. Unknown keys are rejected (like
+// normalizePriceParts) — silently dropping a typo'd bound would store a
+// value the submitter did not intend.
 func normalizePriceRange(v json.RawMessage, key string) (json.RawMessage, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(v, &raw); err != nil {
 		return nil, fmt.Errorf("field %q expects an {avg,min,max} object: %w", key, err)
+	}
+
+	for k := range raw {
+		if k != "avg" && k != "min" && k != "max" {
+			return nil, fmt.Errorf("%w: field %q: unknown price_range key %q", ErrInvalidInput, key, k)
+		}
 	}
 
 	out := make(map[string]float64, 3)

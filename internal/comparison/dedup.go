@@ -1,6 +1,7 @@
 package comparison
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -107,6 +108,32 @@ func dedupeJCEItemInputs(items []JCEItemInput) []JCEItemInput {
 	}
 
 	return deduped
+}
+
+// dedupeTokenItemRefs collapses duplicate guest-selection refs by their
+// canonical item_ref bytes — the same normalization the matrix assembler
+// uses — so mint-time max_item_count enforcement counts logical items.
+func dedupeTokenItemRefs(refs []map[string]any) []map[string]any {
+	seen := make(map[string]bool, len(refs))
+	out := make([]map[string]any, 0, len(refs))
+
+	for _, ref := range refs {
+		b, err := json.Marshal(ref)
+		if err != nil {
+			continue
+		}
+		key := itemRefDedupKey(b)
+		if key == "" {
+			key = string(b)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, ref)
+	}
+
+	return out
 }
 
 // dedupeComparisonItemInputs removes duplicate legacy comparison item inputs,

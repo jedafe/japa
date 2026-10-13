@@ -640,6 +640,13 @@ func TestUpsertWikiType_ParentsMustBeWikiTypes(t *testing.T) {
 		`INSERT INTO wiki_type_configs (space_type_id, enabled) VALUES ($1, true) ON CONFLICT DO NOTHING`, parentID); err != nil {
 		t.Fatalf("ensure parent config: %v", err)
 	}
+	// Clear any pre-existing parent edges around the two nodes (seed data
+	// declares real hierarchies — an arbitrary OFFSET pick may already
+	// descend from the fixture type, which is now correctly a cycle).
+	if _, err := database.Writer.Exec(ctx,
+		`DELETE FROM wiki_type_parents WHERE space_type_id = $1 OR space_type_id = $2`, typeID, parentID); err != nil {
+		t.Fatalf("clear parent edges: %v", err)
+	}
 	t.Cleanup(func() {
 		database.Writer.Exec(context.Background(), `DELETE FROM wiki_type_parents WHERE space_type_id = $1`, typeID)
 	})
@@ -654,4 +661,65 @@ func TestUpsertWikiType_ParentsMustBeWikiTypes(t *testing.T) {
 	if len(dto.ParentTypeIDs) == 0 {
 		t.Fatal("expected parent edge in returned DTO")
 	}
+}
+
+func TestUpsertWikiType_RejectsTransitiveParentCycle(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	typeID := seedWikiTypeFixture(t, ctx, database)
+
+	// Pick two more distinct space types and ensure wiki configs for all.
+	var otherA, otherB pgtype.UUID
+	if err := database.Writer.QueryRow(ctx, `SELECT id FROM space_types WHERE id <> $1 ORDER BY id LIMIT 1`, typeID).Scan(&otherA); err != nil {
+		t.Skip("need ≥2 space_types for a cycle test")
+	}
+	if err := database.Writer.QueryRow(ctx, `SELECT id FROM space_types WHERE id NOT IN ($1, $2) ORDER BY id LIMIT 1`, typeID, otherA).Scan(&otherB); err != nil {
+		t.Skip("need ≥3 space_types for a cycle test")
+	}
+	for _, id := range []pgtype.UUID{otherA, otherB} {
+		if _, err := database.Writer.Exec(ctx,
+			`INSERT INTO wiki_type_configs (space_type_id, enabled) VALUES ($1, true) ON CONFLICT DO NOTHING`, id); err != nil {
+			t.Fatalf("ensure config: %v", err)
+		}
+	}
+	// Isolate the three nodes from seed hierarchy edges.
+	if _, err := database.Writer.Exec(ctx,
+		`DELETE FROM wiki_type_parents WHERE space_type_id = ANY($1)`,
+		[]pgtype.UUID{typeID, otherA, otherB}); err != nil {
+		t.Fatalf("clear edges: %v", err)
+	}
+
+	svc := &Service{store: store}
+
+	// Build chain typeID → otherA → otherB (each upsert sets that node's parents).
+	if _, err := svc.UpsertWikiType(ctx, UpsertWikiTypeRequest{
+		SpaceTypeID: typeID.String(), ParentTypeIDs: []string{otherA.String()},
+	}); err != nil {
+		t.Fatalf("chain link 1: %v", err)
+	}
+	if _, err := svc.UpsertWikiType(ctx, UpsertWikiTypeRequest{
+		SpaceTypeID: otherA.String(), ParentTypeIDs: []string{otherB.String()},
+	}); err != nil {
+		t.Fatalf("chain link 2: %v", err)
+	}
+
+	// Closing the loop otherB → typeID must fail with ErrInvalidInput.
+	if _, err := svc.UpsertWikiType(ctx, UpsertWikiTypeRequest{
+		SpaceTypeID: otherB.String(), ParentTypeIDs: []string{typeID.String()},
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("transitive cycle: want ErrInvalidInput, got %v", err)
+	}
+
+	// Update path rejects the same loop.
+	if err := svc.UpdateWikiType(ctx, otherB.String(), UpdateWikiTypeRequest{
+		ParentTypeIDs: []string{typeID.String()},
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("update transitive cycle: want ErrInvalidInput, got %v", err)
+	}
+
+	t.Cleanup(func() {
+		database.Writer.Exec(context.Background(),
+			`DELETE FROM wiki_type_parents WHERE space_type_id = ANY($1)`,
+			[]pgtype.UUID{typeID, otherA, otherB})
+	})
 }

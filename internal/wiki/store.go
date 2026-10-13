@@ -32,6 +32,21 @@ type Store struct {
 	pool  *db.DB
 	read  *gen.Queries
 	write *gen.Queries
+	// pageLifecycleHook fires after mutations that change a page's
+	// is_japabot_indexed state — UpdatePage when is_active/is_locked are
+	// passed, and both delete paths. Registered by Service so every write
+	// path — REST handlers and the agent tool registry, which invokes
+	// these store methods directly — keeps content_embeddings in step
+	// (§69/ADR-069). Nil hook is a no-op.
+	pageLifecycleHook func(ctx context.Context, pageID pgtype.UUID)
+}
+
+// SetPageLifecycleHook registers the post-mutation callback for
+// indexability-affecting writes. Called synchronously after the write
+// succeeds; the implementation decides whether to run the work inline or
+// fan out (the Service's hook fans out per Rule 8).
+func (s *Store) SetPageLifecycleHook(f func(ctx context.Context, pageID pgtype.UUID)) {
+	s.pageLifecycleHook = f
 }
 
 // NewStore creates a wiki store backed by the given database.
@@ -346,6 +361,22 @@ func (s *Store) WikiPageRowExists(ctx context.Context, spaceSlug, pageSlug strin
 	}
 
 	return exists, nil
+}
+
+// PageIndexState returns whether the page's embeddings are retrievable —
+// mirrors the generated is_japabot_indexed flag (is_active AND NOT
+// is_locked), with soft-deleted rows reporting false. Used by the admin
+// lifecycle handlers to decide between RAG purge and re-index.
+func (s *Store) PageIndexState(ctx context.Context, pageID pgtype.UUID) (indexable bool, err error) {
+	r, err := s.read.GetWikiPageIndexState(ctx, pageID)
+	if err != nil {
+		return false, fmt.Errorf("wiki: get page index state: %w", err)
+	}
+	// sqlc emits interface{} for the boolean expression and *bool for the
+	// generated column — assert both.
+	deleted, _ := r.IsDeleted.(bool)
+	indexed := r.IsJapabotIndexed != nil && *r.IsJapabotIndexed
+	return indexed && !deleted, nil
 }
 
 // ListWikiPagesBySpace returns all active wiki pages for a space, with the
@@ -1017,6 +1048,12 @@ func (s *Store) UpdatePage(ctx context.Context, pageID pgtype.UUID, isLocked, is
 		return pgx.ErrNoRows
 	}
 
+	// Only is_active/is_locked flip is_japabot_indexed — is_featured,
+	// data_entity_type and position leave the flag alone.
+	if s.pageLifecycleHook != nil && (isActive != nil || isLocked != nil) {
+		s.pageLifecycleHook(ctx, pageID)
+	}
+
 	return nil
 }
 
@@ -1036,6 +1073,10 @@ func (s *Store) DeleteWikiPage(ctx context.Context, pageID pgtype.UUID) error {
 
 	if affected == 0 {
 		return pgx.ErrNoRows
+	}
+
+	if s.pageLifecycleHook != nil {
+		s.pageLifecycleHook(ctx, pageID)
 	}
 
 	return nil
@@ -1059,6 +1100,10 @@ func (s *Store) HardDeleteWikiPage(ctx context.Context, pageID pgtype.UUID) erro
 			return pgx.ErrNoRows
 		}
 		return ErrPageNotDeleted
+	}
+
+	if s.pageLifecycleHook != nil {
+		s.pageLifecycleHook(ctx, pageID)
 	}
 
 	return nil

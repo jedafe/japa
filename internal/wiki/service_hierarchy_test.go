@@ -329,13 +329,11 @@ func TestNormalizePriceRange(t *testing.T) {
 	if m := ok(`{"avg":5}`); len(m) != 1 {
 		t.Fatalf("avg-only wrong: %v", m)
 	}
-	if m := ok(`{"min":1,"currency":"CAD"}`); len(m) != 1 || m["min"] != 1 {
-		t.Fatalf("stray keys must be dropped: %v", m)
-	}
 
-	bad(`{}`)                    // no recognized key
-	bad(`{"foo":1}`)             // unknown-only object
-	bad(`{"min":"cheap"}`)       // non-numeric bound
+	bad(`{}`)                               // no recognized key
+	bad(`{"foo":1}`)                        // unknown-only object
+	bad(`{"min":1,"currency":"CAD"}`)       // unknown keys rejected, not dropped
+	bad(`{"min":"cheap"}`)                  // non-numeric bound
 	bad(`{"min":3,"max":1}`)     // min > max
 	bad(`5`)                     // not an object
 	bad(`{"min":null}`)          // explicit nulls count as absent
@@ -420,14 +418,17 @@ func TestFieldSections(t *testing.T) {
 		return EntityFieldDTO{Key: key, Section: section}
 	}
 
-	if got := fieldSections(nil); got != nil {
-		t.Fatalf("nil input should yield nil, got %+v", got)
+	// Sections are always emitted (even a single one) so panel renderers
+	// can rely on the section label fallback instead of special-casing a
+	// flat fields list.
+	if got := fieldSections(nil); got == nil || len(got) != 0 {
+		t.Fatalf("nil input should yield empty sections, got %+v", got)
 	}
-	if got := fieldSections([]EntityFieldDTO{fld("a", ""), fld("b", "")}); got != nil {
-		t.Fatalf("single implicit section should yield nil, got %+v", got)
+	if got := fieldSections([]EntityFieldDTO{fld("a", ""), fld("b", "")}); len(got) != 1 || got[0].Key != "" {
+		t.Fatalf("single implicit section should be emitted, got %+v", got)
 	}
-	if got := fieldSections([]EntityFieldDTO{fld("a", "food"), fld("b", "food")}); got != nil {
-		t.Fatalf("single named section should yield nil, got %+v", got)
+	if got := fieldSections([]EntityFieldDTO{fld("a", "food"), fld("b", "food")}); len(got) != 1 || got[0].Key != "food" {
+		t.Fatalf("single named section should be emitted, got %+v", got)
 	}
 
 	// First-seen order preserved; "" bucket promoted to front.

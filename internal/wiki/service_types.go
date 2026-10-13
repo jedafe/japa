@@ -194,8 +194,10 @@ func (s *Service) resolveSpaceTypeID(ctx context.Context, idStr, slug string) (p
 }
 
 // resolveParentIDs parses + validates the parent edge set: each parent must
-// itself be a wiki type (wiki_type_configs row), and self-parenting is
-// rejected (the DB CHECK also guards it).
+// itself be a wiki type (wiki_type_configs row), self-parenting is rejected
+// (the DB CHECK also guards it), and no parent may already descend from the
+// type — a transitive cycle (A→B→C→A) would loop the breadcrumb walk,
+// rollup type closure, and landing drill-down.
 func (s *Service) resolveParentIDs(ctx context.Context, spaceTypeID pgtype.UUID, raw []string) ([]pgtype.UUID, error) {
 	ids := make([]pgtype.UUID, 0, len(raw))
 	for _, p := range raw {
@@ -204,7 +206,7 @@ func (s *Service) resolveParentIDs(ctx context.Context, spaceTypeID pgtype.UUID,
 			return nil, ErrInvalidInput
 		}
 		if id == spaceTypeID {
-			return nil, ErrInvalidInput
+			return nil, fmt.Errorf("%w: parent cycle", ErrInvalidInput)
 		}
 		if _, err := s.store.GetWikiType(ctx, id); err != nil {
 			if errors.Is(err, ErrWikiTypeNotFound) {
@@ -215,7 +217,48 @@ func (s *Service) resolveParentIDs(ctx context.Context, spaceTypeID pgtype.UUID,
 		ids = append(ids, id)
 	}
 
+	// Transitive cycle check: walk each candidate parent's ancestor chain
+	// (depth ≤ 8 — deeper than the read-side horizons) and reject when the
+	// type being edited appears in it.
+	for _, pid := range ids {
+		cycle, err := s.parentChainReaches(ctx, pid, spaceTypeID, 8)
+		if err != nil {
+			return nil, err
+		}
+		if cycle {
+			return nil, fmt.Errorf("%w: parent cycle", ErrInvalidInput)
+		}
+	}
+
 	return ids, nil
+}
+
+// parentChainReaches reports whether walking parent edges up from start
+// reaches target within maxDepth hops (visited-guarded, cycle-safe).
+func (s *Service) parentChainReaches(ctx context.Context, start, target pgtype.UUID, maxDepth int) (bool, error) {
+	visited := map[pgtype.UUID]bool{start: true}
+	frontier := []pgtype.UUID{start}
+	for depth := 0; depth < maxDepth && len(frontier) > 0; depth++ {
+		next := []pgtype.UUID{}
+		for _, tid := range frontier {
+			parents, err := s.store.ListTypeParentIDs(ctx, tid)
+			if err != nil {
+				return false, err
+			}
+			for _, p := range parents {
+				if p == target {
+					return true, nil
+				}
+				if !visited[p] {
+					visited[p] = true
+					next = append(next, p)
+				}
+			}
+		}
+		frontier = next
+	}
+
+	return false, nil
 }
 
 // UpsertWikiType creates or re-enables a wiki type for a space type.

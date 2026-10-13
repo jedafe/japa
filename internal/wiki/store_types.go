@@ -223,6 +223,7 @@ func (s *Store) ListEnabledWikiTypes(ctx context.Context) ([]WikiType, error) {
 			Enabled:       true,
 			Label:         r.Label,
 			Icon:          r.Icon,
+			SeedStubs:     r.SeedStubs,
 			Position:      r.Position,
 			ParentTypeIDs: parents,
 		})

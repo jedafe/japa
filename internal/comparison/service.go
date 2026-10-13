@@ -1021,9 +1021,10 @@ func (s *Service) VerifyComparisonDimensionOwnership(ctx context.Context, dimens
 }
 
 // DeleteComparisonType removes a comparison type and its cascaded children.
-// It refuses to delete a type that is still referenced by comparison_items
-// (Section 30 — in-use guard, BUG-006). System types (is_system=true) are
-// also protected from deletion.
+// It refuses to delete a type that is still referenced by comparison
+// contents, items, or dimensions (Section 30 — in-use guard, BUG-006):
+// items alone undercount when only auto-generated dimensions survive.
+// System types (is_system=true) are also protected from deletion.
 func (s *Service) DeleteComparisonType(ctx context.Context, id pgtype.UUID) error {
 	td, err := s.store.getComparisonTypeByID(ctx, id)
 	if err != nil {
@@ -1034,12 +1035,22 @@ func (s *Service) DeleteComparisonType(ctx context.Context, id pgtype.UUID) erro
 		return errors.New("system comparison types cannot be deleted")
 	}
 
-	count, err := s.store.countComparisonItemsByType(ctx, id)
+	contents, err := s.store.countComparisonContentsByType(ctx, id)
 	if err != nil {
 		return fmt.Errorf("checking comparison type usage: %w", err)
 	}
 
-	if count > 0 {
+	items, err := s.store.countComparisonItemsByType(ctx, id)
+	if err != nil {
+		return fmt.Errorf("checking comparison type usage: %w", err)
+	}
+
+	dims, err := s.store.countComparisonDimensionsByType(ctx, id)
+	if err != nil {
+		return fmt.Errorf("checking comparison type usage: %w", err)
+	}
+
+	if contents > 0 || items > 0 || dims > 0 {
 		return ErrComparisonTypeInUse
 	}
 
@@ -1742,10 +1753,8 @@ func matrixCellNumber(v any) (float64, bool) {
 		return float64(n), true
 	case int64:
 		return float64(n), true
-	case uint, uint8, uint16, uint32:
+	case uint, uint8, uint16, uint32, uint64:
 		return float64(reflectUint(n)), true
-	case uint64:
-		return 0, false
 	case json.Number:
 		if f, err := n.Float64(); err == nil {
 			return f, true
@@ -1779,6 +1788,8 @@ func reflectUint(v any) uint64 {
 		return uint64(n)
 	case uint32:
 		return uint64(n)
+	case uint64:
+		return n
 	}
 
 	return 0

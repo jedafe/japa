@@ -351,6 +351,30 @@ func (s *Store) countComparisonItemsByType(ctx context.Context, typeID pgtype.UU
 	return count, nil
 }
 
+// countComparisonContentsByType returns the number of distinct comparison
+// content rows carrying an item of the type — items alone undercount when
+// only dimensions were auto-generated.
+func (s *Store) countComparisonContentsByType(ctx context.Context, typeID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountComparisonContentsByType(ctx, typeID)
+	if err != nil {
+		return 0, fmt.Errorf("counting comparison contents by type: %w", err)
+	}
+
+	return count, nil
+}
+
+// countComparisonDimensionsByType returns the number of live dimensions
+// stamped with the type — the auto-generated matrix rows that survive item
+// deletion.
+func (s *Store) countComparisonDimensionsByType(ctx context.Context, typeID pgtype.UUID) (int32, error) {
+	count, err := s.read.CountComparisonDimensionsByType(ctx, typeID)
+	if err != nil {
+		return 0, fmt.Errorf("counting comparison dimensions by type: %w", err)
+	}
+
+	return count, nil
+}
+
 // listUserGroupIDsForUser returns the user_group_ids the user belongs to.
 func (s *Store) listUserGroupIDsForUser(ctx context.Context, userID pgtype.UUID) ([]string, error) {
 	ids, err := s.read.GetUserGroupIDs(ctx,

@@ -88,6 +88,10 @@ type permissionChecker interface {
 // Implemented by rag.Service; nil disables RAG indexing (graceful degradation).
 type ragIndexer interface {
 	IndexEntity(ctx context.Context, entityType string, entityID pgtype.UUID, visibility string, spaceID, authorID pgtype.UUID, body, language string) error
+	// PurgeEntity deletes all chunks for an entity — called when a page
+	// leaves the indexable state (deactivate, lock, delete) so JapaBot
+	// never cites content the page lifecycle has withdrawn.
+	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 	RecordIndexFailure(ctx context.Context, entityType string, entityID pgtype.UUID, operation string, indexErr error) error
 }
 
@@ -211,6 +215,10 @@ func (h *Handlers) checkReputationGate(w http.ResponseWriter, r *http.Request, u
 // resolution failures map to their sentinels, ErrDuplicateContent and
 // ErrEditInProgress conflict, and the wrapped validation errors the service
 // produces ("wiki: submit fields:"/"wiki: suggest:" prefixes) map to 400.
+// Server error-code map (CF23, report surface — no schema change):
+//   op_not_permitted → 403, entity_not_found → 404, duplicate_content /
+//   edit_in_progress → 409, invalid_ops / missing_* / schema_load_failed →
+//   400, fields_submit_failed → 500.
 func writeFieldOpsError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrOpNotPermitted):
@@ -225,6 +233,9 @@ func writeFieldOpsError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrEditInProgress):
 		errpkg.WriteError(w, http.StatusConflict, "edit_in_progress",
 			"A wiki edit is already in progress for this page")
+	case errors.Is(err, ErrFieldSchemaUnavailable):
+		errpkg.WriteError(w, http.StatusBadRequest, "schema_load_failed",
+			"Field schema could not be loaded; retry with explicit schema context")
 	case strings.HasPrefix(err.Error(), "wiki: submit fields:"),
 		strings.HasPrefix(err.Error(), "wiki: suggest:"):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_ops", err.Error())
@@ -254,8 +265,19 @@ func (h *Handlers) indexApprovedContent(r *http.Request, pageID pgtype.UUID, con
 
 	go func() { // #nosec G118 -- fire-and-forget: request ctx is cancelled on HTTP return (Rule 8)
 		ctx := context.Background()
+		// An approval landing on a page that is already locked/inactive
+		// must not re-index it — is_japabot_indexed governs retrieval.
+		indexable, err := h.service.PageIndexState(ctx, pageID)
+		if err != nil {
+			slog.Warn("wiki: page index state check failed, skipping RAG index",
+				"page_id", pageID.String(), "error", err)
+			return
+		}
+		if !indexable {
+			return
+		}
 		// Wiki pages are a public corpus — no scoped visibility (§69).
-		err := rag.IndexWithRetry(ctx, "wiki_page", pageID.String(), "index", func(ctx context.Context) error {
+		err = rag.IndexWithRetry(ctx, "wiki_page", pageID.String(), "index", func(ctx context.Context) error {
 			return h.rag.IndexEntity(ctx, "wiki_page", pageID, "public", pgtype.UUID{}, pgtype.UUID{}, string(content), language)
 		})
 		if err != nil {
@@ -456,12 +478,17 @@ func (h *Handlers) HandleGetCategories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out := make([]wikiCategoryItem, 0, len(cats))
+	// The union fallback merges every enabled type's template — dedupe by
+	// (space_type_slug, category) so two types sharing a token (e.g. a
+	// "Universities" directory on both country and state) each keep their
+	// own tab/card instead of one shadowing the other.
 	seen := make(map[string]bool, len(cats))
 	for _, c := range cats {
-		if seen[c.Category] {
+		key := c.SpaceTypeSlug + "\x00" + c.Category
+		if seen[key] {
 			continue
 		}
-		seen[c.Category] = true
+		seen[key] = true
 		item := categoryItem(c)
 		item.PageTemplates = templatesByCat[c.ID]
 		out = append(out, item)

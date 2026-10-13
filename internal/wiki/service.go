@@ -26,6 +26,7 @@ import (
 	contentpkg "github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/media"
+	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/valkey"
 )
 
@@ -348,6 +349,7 @@ type Service struct {
 	enqueuer         TaskEnqueuer          // Asynq enqueue for wiki:fields_propagate
 	perms            permissionChecker     // per-op RBAC node checks
 	media            mediaURLResolver      // destination logo_url resolution (§80 Reader UX)
+	rag              ragIndexer            // lifecycle-driven embedding sync (§69/ADR-069)
 }
 
 // mediaURLResolver is the subset of media.Service used to resolve a space's
@@ -1527,6 +1529,107 @@ func (s *Service) UpdatePage(ctx context.Context, pageID pgtype.UUID, input Upda
 	}
 
 	return nil
+}
+
+// PageIndexState reports whether the page's RAG embeddings may be
+// retrieved — the generated is_japabot_indexed flag (is_active AND NOT
+// is_locked), false for soft-deleted rows. The admin handlers call this
+// after is_active/is_locked mutations and on delete to keep
+// content_embeddings in step with the page lifecycle (§69/ADR-069).
+func (s *Service) PageIndexState(ctx context.Context, pageID pgtype.UUID) (bool, error) {
+	return s.store.PageIndexState(ctx, pageID)
+}
+
+// ApprovedPageContent returns the latest approved revision's body — the
+// payload for a re-index after a page returns to an indexable state
+// (unlock/reactivate). pgx.ErrNoRows means the page has no approved
+// prose; callers treat that as "nothing to index".
+func (s *Service) ApprovedPageContent(ctx context.Context, pageID pgtype.UUID) ([]byte, error) {
+	rev, err := s.store.GetApprovedRevision(ctx, pageID)
+	if err != nil {
+		return nil, err
+	}
+	return rev.Content, nil
+}
+
+// SetRAGIndexer injects the RAG indexer for lifecycle-driven embedding
+// sync (§69/ADR-069). Installing it also registers the store's page
+// lifecycle hook, so writes that reach the store directly — the agent
+// tool registry's wiki_page update/delete path — keep content_embeddings
+// in step exactly like the REST handlers.
+func (s *Service) SetRAGIndexer(ri ragIndexer) {
+	s.rag = ri
+	if ri != nil {
+		s.store.SetPageLifecycleHook(s.onPageLifecycle)
+	}
+}
+
+// onPageLifecycle re-aligns a page's content_embeddings with its
+// is_japabot_indexed state after a flag mutation or delete, regardless
+// of which layer performed the write. Not-indexable → purge chunks so
+// JapaBot stops citing the page; indexable → re-index the latest approved
+// prose so chunks purged by an earlier lock/deactivate come back.
+// Fire-and-forget (Rule 8) — errors are logged, never propagated. The
+// is_japabot_indexed arm of SearchContentEmbeddings is the defense-in-
+// depth counterpart: even a failed sync can never serve a withdrawn page.
+func (s *Service) onPageLifecycle(ctx context.Context, pageID pgtype.UUID) {
+	if s.rag == nil || !pageID.Valid {
+		return
+	}
+
+	go func() { // #nosec G118 -- fire-and-forget (Rule 8)
+		ctx := context.Background()
+
+		indexable, err := s.PageIndexState(ctx, pageID)
+		if err != nil {
+			// A deleted row reports ErrNoRows — purge unconditionally since
+			// either way the page must not stay retrievable.
+			if !errors.Is(err, pgx.ErrNoRows) {
+				slog.Warn("wiki: page index state check failed, purging embeddings",
+					"page_id", pageID.String(), "error", err)
+			}
+			if pErr := s.rag.PurgeEntity(ctx, "wiki_page", pageID); pErr != nil {
+				slog.Warn("wiki: RAG purge failed", "page_id", pageID.String(), "error", pErr)
+			}
+			return
+		}
+
+		if !indexable {
+			if err := s.rag.PurgeEntity(ctx, "wiki_page", pageID); err != nil {
+				slog.Warn("wiki: RAG purge failed", "page_id", pageID.String(), "error", err)
+			}
+			return
+		}
+
+		content, err := s.ApprovedPageContent(ctx, pageID)
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				slog.Warn("wiki: approved content fetch for re-index failed",
+					"page_id", pageID.String(), "error", err)
+			}
+			return
+		}
+		if len(content) == 0 {
+			return
+		}
+
+		language := "en"
+		if s.settings != nil {
+			language = s.settings.GetStringOr(ctx, "i18n.default_language", "en")
+		}
+
+		err = rag.IndexWithRetry(ctx, "wiki_page", pageID.String(), "index", func(ctx context.Context) error {
+			return s.rag.IndexEntity(ctx, "wiki_page", pageID, "public", pgtype.UUID{}, pgtype.UUID{}, string(content), language)
+		})
+		if err != nil {
+			slog.Warn("wiki: RAG re-index failed after lifecycle change",
+				"page_id", pageID.String(), "error", err)
+			if recErr := s.rag.RecordIndexFailure(ctx, "wiki_page", pageID, "index", err); recErr != nil {
+				slog.Warn("wiki: RAG index failure record failed",
+					"page_id", pageID.String(), "error", recErr)
+			}
+		}
+	}()
 }
 
 // AdminListPages returns all wiki pages for admin management (paginated).

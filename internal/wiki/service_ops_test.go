@@ -247,7 +247,7 @@ func TestSubmitFieldOps_RejectsWhenCanEditFalse(t *testing.T) {
 		// schema — a bare fieldsByKey entry no longer satisfies set_value.
 		assignments: []gen.CustomFieldGroupAssignment{{GroupID: groupID, EntityClass: "space_type"}},
 		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
-			groupID.String(): {{ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber}},
+			groupID.String(): {{ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber, ShowInFrontend: true}},
 		},
 		perms: map[string][2]bool{fieldID.String(): {true, false}}, // can_view yes, can_edit no
 	})
@@ -667,7 +667,7 @@ func TestSuggestFields_Pageless(t *testing.T) {
 		// schema map needs the assignment so set_value can find the field.
 		assignments: []gen.CustomFieldGroupAssignment{{GroupID: groupID, EntityClass: "jce_entity:visa_route"}},
 		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
-			groupID.String(): {{ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber}},
+			groupID.String(): {{ID: fieldID, Key: "tuition_ug", FieldType: customfields.FieldTypeNumber, ShowInFrontend: true}},
 		},
 		perms: map[string][2]bool{fieldID.String(): {true, true}},
 	})
@@ -860,10 +860,10 @@ func TestApproveRevisionByID_DirectBustFallback(t *testing.T) {
 	}
 }
 
-// TestApproveRevisionByID_SchemaOpsDoNotPropagate: propose/assign-only
-// revisions apply but never enqueue wiki:fields_propagate — only
-// value-affecting ops propagate (§6 step 4).
-func TestApproveRevisionByID_SchemaOpsDoNotPropagate(t *testing.T) {
+// TestApproveRevisionByID_SchemaOpsPropagate: propose/assign revisions apply
+// AND enqueue wiki:fields_propagate — new fields/dims change the matrix
+// shape, so JCE freshness must bust alongside value-affecting ops.
+func TestApproveRevisionByID_SchemaOpsPropagate(t *testing.T) {
 	store, database := opsTestStore(t)
 	ctx := t.Context()
 	fx := seedOpsFixture(t, ctx, database)
@@ -907,8 +907,10 @@ func TestApproveRevisionByID_SchemaOpsDoNotPropagate(t *testing.T) {
 		t.Fatalf("group assignment missing: assigned=%v err=%v", assigned, err)
 	}
 
-	if len(enq.calls) != 0 || len(buster.calls) != 0 {
-		t.Fatalf("schema-only ops must not propagate: enq=%#v bust=%#v", enq.calls, buster.calls)
+	// The enqueuer is wired, so propagation enqueues (the sync buster is
+	// the no-enqueuer fallback and stays untouched).
+	if len(enq.calls) != 1 || enq.calls[0].taskType != TaskFieldsPropagate || len(buster.calls) != 0 {
+		t.Fatalf("schema ops must propagate freshness: enq=%#v bust=%#v", enq.calls, buster.calls)
 	}
 }
 
@@ -1035,9 +1037,9 @@ func TestGetEntityFields_BatchedFieldPerms(t *testing.T) {
 	groupID := mustUUID(t, genUUID(t, ctx, database))
 	entityClass := "space_type:" + spaceTypeID.String()
 
-	fieldA := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "a", Label: "A", FieldType: customfields.FieldTypeText}
-	fieldB := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "b", Label: "B", FieldType: customfields.FieldTypeText}
-	fieldC := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "c", Label: "C", FieldType: customfields.FieldTypeText}
+	fieldA := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "a", Label: "A", FieldType: customfields.FieldTypeText, ShowInFrontend: true}
+	fieldB := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "b", Label: "B", FieldType: customfields.FieldTypeText, ShowInFrontend: true}
+	fieldC := gen.ListCustomFieldsByGroupRow{ID: mustUUID(t, genUUID(t, ctx, database)), Key: "c", Label: "C", FieldType: customfields.FieldTypeText, ShowInFrontend: true}
 
 	hidden := "secret"
 	fake := &fakeFieldReader{
@@ -1112,7 +1114,7 @@ func TestGetEntityFields_PermLookupFailsClosed(t *testing.T) {
 		assignments: []gen.CustomFieldGroupAssignment{{GroupID: groupID, EntityClass: "space_type:" + spaceTypeID.String()}},
 		groups:      map[string]gen.CustomFieldGroup{groupID.String(): {ID: groupID, Slug: "g", Name: "G"}},
 		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{groupID.String(): {
-			{ID: fieldID, Key: "k", Label: "K", FieldType: customfields.FieldTypeText},
+			{ID: fieldID, Key: "k", Label: "K", FieldType: customfields.FieldTypeText, ShowInFrontend: true},
 		}},
 		values: []gen.ListCustomFieldValuesWithDefsByEntityRow{
 			{FieldID: fieldID, FieldType: customfields.FieldTypeText, ValueText: &val},
@@ -1161,7 +1163,7 @@ func TestSubmitFieldOps_MixedRevision(t *testing.T) {
 	svc.SetCustomFields(&fakeFieldReader{
 		assignments: []gen.CustomFieldGroupAssignment{{GroupID: ff.groupID, EntityClass: "space_type"}},
 		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
-			ff.groupID.String(): {{ID: ff.fieldID, Key: ff.key, FieldType: customfields.FieldTypeText}},
+			ff.groupID.String(): {{ID: ff.fieldID, Key: ff.key, FieldType: customfields.FieldTypeText, ShowInFrontend: true}},
 		},
 		perms: map[string][2]bool{ff.fieldID.String(): {true, true}},
 	})

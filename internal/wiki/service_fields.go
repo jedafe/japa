@@ -57,6 +57,17 @@ var ErrOpNotPermitted = errors.New("wiki: field op not permitted")
 // the entity does not exist or the type has no registered resolver.
 var ErrEntityNotResolvable = errors.New("wiki: entity not resolvable")
 
+// ErrFieldSchemaUnavailable marks a schema-load failure on an entity-
+// targeted submission (CF21): the assignment/field reads errored, so the
+// entity's field map cannot be built. Handlers map this to 400
+// schema_load_failed with an explicit retry hint — the submitter must either
+// retry (transient read) or resubmit carrying explicit schema context
+// (propose the field in the same ops array). The flag lives on the ops
+// payload (accept-no-schema): set_value ops carry target entity fields, and
+// proposal ops carry their own definitions, so the review queue only
+// accepts schema-free array shapes it can validate without a DB read.
+var ErrFieldSchemaUnavailable = errors.New("wiki: field schema unavailable")
+
 // guestGroupSlug is the user_groups.slug of the anonymous/guest group
 // (§03 system group). Anonymous readers have no user_group_memberships row,
 // so the wiki schema resolves their can_view grants by group slug instead.
@@ -91,6 +102,34 @@ type fieldGroupProvisioner interface {
 	GetFieldGroupBySlug(ctx context.Context, slug string) (gen.CustomFieldGroup, error)
 	CreateFieldGroup(ctx context.Context, name, slug string, description *string, isSystem bool) (gen.CustomFieldGroup, error)
 	CreateAssignment(ctx context.Context, params gen.CreateAssignmentParams) (gen.CustomFieldGroupAssignment, error)
+}
+
+// richTextSanitizer scrubs rich_text HTML before it is coerced for storage
+// (CF2 — submit + apply paths share it via valueToUpsertParams and
+// checkSetValueFields). Injected from server.go to avoid an import cycle
+// (wiki already imports content; this is the same content.SanitizeHTML the
+// prose path uses). Nil disables scrubbing (test-only).
+// SetRichTextSanitizer wires the HTML sanitizer used to scrub rich_text
+// field values on the wiki ops path (CF2 — submit-time validation and
+// apply-time coercion). Production wires content.SanitizeHTML from
+// server.go; tests may omit it.
+var wikiRichTextSanitizer func(string) string
+
+// SetRichTextSanitizer wires the HTML sanitizer used to scrub rich_text
+// field values on the wiki ops path (CF2 — submit-time validation and
+// apply-time coercion). Production wires content.SanitizeHTML from
+// server.go; tests may omit it.
+func SetRichTextSanitizer(sanitize func(string) string) {
+	wikiRichTextSanitizer = sanitize
+}
+
+// sanitizeRichTextValue scrubs one rich_text string leaf when a sanitizer is
+// wired; passthrough otherwise so tests without wiring keep exact bytes.
+func sanitizeRichTextValue(s string) string {
+	if wikiRichTextSanitizer == nil {
+		return s
+	}
+	return wikiRichTextSanitizer(s)
 }
 
 // entityResolver resolves a JCE item_ref ({type, id}) into a normalized item.
@@ -505,6 +544,13 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 		dtos := make([]EntityFieldDTO, 0, len(fields))
 
 		for _, f := range fields {
+			// show_in_frontend gates display for every caller — including
+			// wiki.fields.manage holders, whose bypass is edit-only
+			// (CanEdit below). Admin-only fields stay out of the read
+			// surface instead of leaking through the manage bypass.
+			if !f.ShowInFrontend {
+				continue
+			}
 			dto := EntityFieldDTO{
 				ID:        f.ID.String(),
 				Key:       f.Key,
@@ -693,6 +739,11 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 
 	dtos := make([]EntityFieldDTO, 0, len(fields))
 	for _, f := range fields {
+		// show_in_frontend gates display for every caller — the manage
+		// bypass is edit-only (CanEdit), never a display bypass.
+		if !f.ShowInFrontend {
+			continue
+		}
 		dto := EntityFieldDTO{
 			ID:        f.ID.String(),
 			Key:       f.Key,
@@ -736,7 +787,9 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 
 // fieldSections groups fields by their section token preserving first-seen
 // order — the "" bucket (section-less fields) sorts first so unsectioned
-// rows render before the named item tables (§80 Itemized Pricing).
+// rows render before the named item tables (§80 Itemized Pricing). Sections
+// are always emitted (even a single one) so panel renderers can rely on the
+// section label fallback instead of special-casing a flat fields list.
 func fieldSections(fields []EntityFieldDTO) []EntityFieldSectionDTO {
 	order := []string{}
 	byKey := map[string][]EntityFieldDTO{}
@@ -748,13 +801,9 @@ func fieldSections(fields []EntityFieldDTO) []EntityFieldSectionDTO {
 		byKey[f.Section] = append(byKey[f.Section], f)
 	}
 
-	if len(order) <= 1 {
-		return nil // single implicit section — the flat fields list suffices
-	}
-
 	// The "" bucket (unsectioned fields) renders first regardless of
 	// where it first appeared in field order.
-	if order[0] != "" {
+	if len(order) > 0 && order[0] != "" {
 		for i, k := range order {
 			if k == "" {
 				copy(order[1:i+1], order[:i])
@@ -1018,8 +1067,10 @@ func (s *Service) PropagateFields(ctx context.Context, entityType, entityID stri
 }
 
 // propagateFields enqueues wiki:fields_propagate for the revision's target
-// entity after a successful commit — but only when the ops array contains a
-// value-affecting op (set_value or upsert_field, §6 step 4). When no
+// entity after a successful commit — when the ops array contains a
+// value-affecting op (set_value or upsert_field, §6 step 4) OR a schema op
+// (propose_field, propose_group, assign_group — new fields/dims change the
+// matrix shape, so JCE freshness must bust too). When no
 // enqueuer is wired it falls back to a synchronous bust so correctness never
 // depends on worker wiring order.
 func (s *Service) propagateFields(ctx context.Context, rev WikiRevision, ops []FieldOp) {
@@ -1030,8 +1081,11 @@ func (s *Service) propagateFields(ctx context.Context, rev WikiRevision, ops []F
 	affectsValues := false
 
 	for _, op := range ops {
-		if op.Op == OpSetValue || op.Op == OpUpsertField {
+		switch op.Op {
+		case OpSetValue, OpUpsertField, OpProposeField, OpProposeGroup, OpAssignGroup:
 			affectsValues = true
+		}
+		if affectsValues {
 			break
 		}
 	}
@@ -1209,11 +1263,25 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 			return fmt.Errorf("wiki: submit fields: ops[%d] entity_id %q is not a UUID: %w", i, op.EntityID, err)
 		}
 
-		if _, err := valueToUpsertParams(field, customfields.ValueEntityType(op.EntityType), eid, op.Value); err != nil {
+		// CF2: sanitize rich_text HTML at submit time, before the same
+		// coercion the apply path runs — the queued ops carry clean bytes.
+		opValue := op.Value
+		if field.fieldType == customfields.FieldTypeRichText && len(opValue) > 0 && wikiRichTextSanitizer != nil {
+			opValue = customfields.SanitizeRichTextJSON(opValue, wikiRichTextSanitizer)
+		}
+
+		// CF3: canonical select matching is value-only — normalize a
+		// submitted label to its option value before membership checks so
+		// submit and apply agree with the REST value handler.
+		if (field.fieldType == customfields.FieldTypeSelect || field.fieldType == customfields.FieldTypeMultiselect) && len(opValue) > 0 {
+			opValue = customfields.CanonicalizeSelectJSON(field.fieldType, field.options, opValue)
+		}
+
+		if _, err := valueToUpsertParams(field, customfields.ValueEntityType(op.EntityType), eid, opValue); err != nil {
 			return fmt.Errorf("wiki: submit fields: ops[%d]: %w", i, err)
 		}
 
-		if err := valueWithinOptions(field, op.Value); err != nil {
+		if err := valueWithinOptions(field, opValue); err != nil {
 			return fmt.Errorf("wiki: submit fields: ops[%d]: %w", i, err)
 		}
 
@@ -1372,10 +1440,13 @@ func resolveOpsTarget(entityType string, entityID pgtype.UUID, ops []FieldOp) (s
 	return targetType, targetID, nil
 }
 
-// valueWithinOptions enforces select/multiselect membership: a set_value on
-// a select field must name one of the field's option values, and a
-// multiselect must name a subset. Other field types (and select fields with
-// no options configured) pass through.
+// valueWithinOptions enforces select/multiselect membership (CF3): a
+// set_value on a select field must name one of the field's option values,
+// and a multiselect must name a subset. Matching is value-only — callers
+// normalize labels to values before invoking. The payload may be a bare
+// JSON string/array or a {"value": …} / {"values": […]} envelope (CF4,
+// via customfields.ChoiceStrings). Other field types (and select fields
+// with no options configured) pass through.
 func valueWithinOptions(field schemaField, v json.RawMessage) error {
 	if field.fieldType != customfields.FieldTypeSelect && field.fieldType != customfields.FieldTypeMultiselect {
 		return nil
@@ -1395,35 +1466,40 @@ func valueWithinOptions(field schemaField, v json.RawMessage) error {
 		allowed[o.Value] = true
 	}
 
-	check := func(val string) error {
+	for _, val := range customfields.ChoiceStrings(v) {
 		if !allowed[val] {
 			return fmt.Errorf("field %q: value %q is not one of the field's options", field.key, val)
 		}
-
-		return nil
 	}
 
-	if field.fieldType == customfields.FieldTypeSelect {
-		var s string
-		if err := json.Unmarshal(v, &s); err != nil {
-			return fmt.Errorf("field %q expects a JSON string value: %w", field.key, err)
-		}
-
-		return check(s)
-	}
-
-	var arr []string
-	if err := json.Unmarshal(v, &arr); err != nil {
-		return fmt.Errorf("field %q expects a JSON array of option values: %w", field.key, err)
-	}
-
-	for _, s := range arr {
-		if err := check(s); err != nil {
-			return err
-		}
+	// A payload with no readable choice strings but non-null bytes (e.g. a
+	// JSON number) is a shape error for choice fields.
+	if strings.TrimSpace(string(v)) != "" && !isChoiceShape(v) {
+		return fmt.Errorf("field %q expects a JSON string value", field.key)
 	}
 
 	return nil
+}
+
+// isChoiceShape reports whether raw is a choice-shaped payload: a bare
+// string/array or a {"value": …} / {"values": […]} envelope.
+func isChoiceShape(raw json.RawMessage) bool {
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	switch t := probe.(type) {
+	case string:
+		return true
+	case []any:
+		return true
+	case map[string]any:
+		_, hasValue := t["value"]
+		_, hasValues := t["values"]
+		return hasValue || hasValues
+	default:
+		return false
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1441,7 +1517,12 @@ func isSpaceBackedEntityType(entityType string) bool {
 }
 
 // entityClassesFor maps an item_ref entity type to the entity_class tokens
-// used in custom_field_group_assignments (§8.1). Space-backed entities match
+// used in custom_field_group_assignments (§8.1 / CF17). This is the wiki-side
+// half of the single entity-class resolver pair: customfields'
+// EntityTypeFromClass resolves class tokens back to frontend entity_types,
+// and CF handlers call that function (never a local copy) so both sides
+// share the mapping matrix — see the matrix test in
+// internal/customfields (CF17). Space-backed entities match
 // the full seeded convention — per-type slug (space_type:university), per-type
 // id (space_type:{uuid}, used by ops-created assignments), and the class-wide
 // space_type token — so a wiki page surfaces every group associated with its
