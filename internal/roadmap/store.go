@@ -196,6 +196,23 @@ func (s *Store) listChangelog(ctx context.Context) ([]gen.ListRoadmapChangelogRo
 	return rows, nil
 }
 
+// listRelatedItems returns up to 3 public items in the same category,
+// excluding the item itself. Unauthenticated viewers pass the zero UUID
+// (NULL → has_voted false for every row).
+func (s *Store) listRelatedItems(ctx context.Context, viewerID, excludeID, categoryID pgtype.UUID) ([]gen.ListRoadmapRelatedItemsRow, error) {
+	rows, err := s.read.ListRoadmapRelatedItems(ctx, gen.ListRoadmapRelatedItemsParams{
+		ViewerID:   viewerID,
+		Statuses:   PublicStatuses,
+		ExcludeID:  excludeID,
+		CategoryID: categoryID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing roadmap related items: %w", err)
+	}
+
+	return rows, nil
+}
+
 func (s *Store) listAdminItems(ctx context.Context, f AdminListFilter) (AdminListResponse, error) {
 	limit := f.PageSize
 	if limit <= 0 || limit > MaxPageSize {

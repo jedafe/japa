@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -33,6 +34,13 @@ type literalResolver interface {
 type Handlers struct {
 	service *Service
 	lit     literalResolver // nil disables literal resolution (§14)
+	rag     ragIndexer      // nil disables RAG purge on unpublish
+}
+
+// ragIndexer purges an entity from the RAG corpus. Implemented by the RAG
+// service; nil disables the purge (tests / misconfigured server).
+type ragIndexer interface {
+	PurgeEntity(ctx context.Context, entityType string, entityID pgtype.UUID) error
 }
 
 // NewHandlers creates academy handlers bound to the provided service.
@@ -43,6 +51,10 @@ func NewHandlers(service *Service) *Handlers {
 // SetLiteralResolver injects the template-literal catalog so track/instructor
 // titles and descriptions render {{...}} placeholders (§14).
 func (h *Handlers) SetLiteralResolver(l literalResolver) { h.lit = l }
+
+// SetRAGIndexer injects the RAG indexer so unpublish purges the track from
+// the RAG corpus. nil disables the purge (tests / misconfigured server).
+func (h *Handlers) SetRAGIndexer(r ragIndexer) { h.rag = r }
 
 // resolveLiterals resolves {{...}} placeholders on an academy DTO or
 // slice. Best-effort — failures are logged inside the resolver.
@@ -1346,6 +1358,8 @@ func (h *Handlers) AdminRejectTrack(w http.ResponseWriter, r *http.Request) {
 
 // AdminUnpublishTrack handles POST /admin/academy/tracks/{id}/unpublish.
 // Takes a live instructor track off the marketplace — reverts to draft.
+// The RAG purge keeps the corpus honest: an unpublished track must stop
+// being retrievable, same as the curriculum DeleteTrack/UpdateTrack path.
 func (h *Handlers) AdminUnpublishTrack(w http.ResponseWriter, r *http.Request) {
 
 	trackID, ok := scanUUIDParam(w, r, "id")
@@ -1357,6 +1371,15 @@ func (h *Handlers) AdminUnpublishTrack(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		handleServiceError(w, err)
 		return
+	}
+
+	if h.rag != nil {
+		go func() {
+			bgCtx := context.Background()
+			if err := h.rag.PurgeEntity(bgCtx, "academy_track", trackID); err != nil {
+				slog.Warn("academy: RAG purge failed for unpublished track", "track_id", trackID.String(), "error", err)
+			}
+		}()
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": track})

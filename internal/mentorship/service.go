@@ -692,7 +692,8 @@ func (s *Service) UpdateMentorProfile(ctx context.Context, userID pgtype.UUID, i
 		var err error
 		shadow, err = s.bookings.MentorShadowContent(ctx, userID)
 		if err != nil {
-			return MentorProfile{}, fmt.Errorf("getting mentor shadow content: %w", err)
+			slog.Warn("mentorship: shadow content read failed — returning profile without shadow", "user_id", userID.String(), "error", err)
+			shadow = nil
 		}
 	}
 
@@ -912,12 +913,15 @@ func (s *Service) GetMentorsByIDs(ctx context.Context, userIDs []pgtype.UUID) ([
 // bookingStatus translates the legacy connection vocabulary into the
 // service_bookings state machine: active → confirmed, completed →
 // fulfilled; every other token passes through verbatim (pending,
-// declined, cancelled share the name).
+// declined, cancelled share the name). Duplicate spellings from the
+// pre-000824 enum surface are aliased to their canonical token at this
+// compat boundary — the unified pipeline only ever sees canonical
+// vocabulary downstream.
 func bookingStatus(status string) string {
 	switch status {
-	case "active":
+	case "active", "accepted":
 		return servicedir.BookingStatusConfirmed
-	case "completed":
+	case "completed", "fulfilled":
 		return servicedir.BookingStatusFulfilled
 	default:
 		return status

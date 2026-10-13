@@ -197,6 +197,9 @@ type ItemDetail struct {
 	// owner-only affordances (e.g. the §22 appeal button on declined items)
 	// without exposing the raw submitted_by id publicly.
 	IsSubmitter bool `json:"is_submitter"`
+	// Related holds up to 3 public items in the same category (excl. self),
+	// resolved SQL-side so the detail route needs no board refetch.
+	Related []BoardItem `json:"related"`
 }
 
 // BoardColumn groups items under one status on the public board.

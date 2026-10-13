@@ -1100,6 +1100,38 @@ func (h *Handlers) GetQuiz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enrollment/preview gate (same contract as GetLessonByID): the quiz
+	// carries the lesson's questions, so a non-preview lesson's quiz requires
+	// an enrollment in the parent track. Lesson UUIDs are exposed in the
+	// public track-detail payload, so authentication alone is not enough.
+	// Platform admins bypass the gate.
+	lesson, err := h.store.GetLessonByID(r.Context(), lessonID)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "lesson_not_found", "Lesson not found")
+		return
+	}
+
+	if !lesson.IsPreview {
+		user := auth.FromContext(r.Context())
+		enrolled := user != nil && h.isAcademyAdmin(r.Context(), user.UserID)
+		if module, e := h.store.GetModuleByID(r.Context(), lesson.ModuleID); e == nil && !enrolled {
+			if user == nil {
+				errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
+				return
+			}
+			if _, e := h.store.GetEnrollment(r.Context(), user.UserID, module.TrackID); e == nil {
+				enrolled = true
+			} else if !errors.Is(e, pgx.ErrNoRows) {
+				errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to check enrollment")
+				return
+			}
+		}
+		if !enrolled {
+			errpkg.WriteError(w, http.StatusForbidden, "not_enrolled", "Enroll in this track to access this quiz")
+			return
+		}
+	}
+
 	quiz, err := h.store.GetQuiz(r.Context(), lessonID)
 	if err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "db_error", "Failed to get quiz questions")
@@ -1197,13 +1229,8 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 	for _, q := range questions {
 		qID := q.ID.String()
 		selected := answers[qID]
-		matched := false
-		for _, a := range selected {
-			if strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(q.Answer)) {
-				matched = true
-				break
-			}
-		}
+		correctAnswers := parseCorrectAnswers(q.Answer)
+		matched := answersMatch(selected, correctAnswers)
 		if matched {
 			correct++
 		}
@@ -1211,7 +1238,7 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 			QuestionID:     qID,
 			Correct:        matched,
 			Selected:       selected,
-			CorrectAnswers: []string{q.Answer},
+			CorrectAnswers: correctAnswers,
 			Explanation:    q.Explanation,
 		})
 	}
@@ -1251,6 +1278,68 @@ func (h *Handlers) SubmitQuiz(w http.ResponseWriter, r *http.Request) {
 			"correct": correct,
 		},
 	})
+}
+
+// normalizeQuizAnswer trims, collapses inner whitespace, and folds case so
+// free-text and option-label comparisons ignore insignificant differences
+// ("  Paris " matches "paris"). Unicode-aware via strings.ToLower.
+func normalizeQuizAnswer(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// parseCorrectAnswers decodes a stored answer column value into the set of
+// accepted answers. The answer column is either a single option label/text
+// ("Paris") or a JSON array of accepted values (["Paris","City of Light"])
+// for multiple/text questions — accept both.
+func parseCorrectAnswers(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal([]byte(trimmed), &arr); err == nil {
+		out := make([]string, 0, len(arr))
+		for _, a := range arr {
+			if a = strings.TrimSpace(a); a != "" {
+				out = append(out, a)
+			}
+		}
+		return out
+	}
+	return []string{trimmed}
+}
+
+// answersMatch reports whether the learner's selection equals the accepted
+// answer set — order-insensitive, duplicates ignored, each value compared
+// after normalizeQuizAnswer. A multiple-answer question requires ALL
+// correct options and NO extras (partial credit is not awarded).
+func answersMatch(selected, correct []string) bool {
+	normSel := make([]string, 0, len(selected))
+	for _, s := range selected {
+		if s = normalizeQuizAnswer(s); s != "" {
+			normSel = append(normSel, s)
+		}
+	}
+	normCor := make([]string, 0, len(correct))
+	for _, c := range correct {
+		if c = normalizeQuizAnswer(c); c != "" {
+			normCor = append(normCor, c)
+		}
+	}
+	if len(normSel) != len(normCor) {
+		return false
+	}
+	counts := make(map[string]int, len(normCor))
+	for _, c := range normCor {
+		counts[c]++
+	}
+	for _, s := range normSel {
+		counts[s]--
+		if counts[s] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // parseQuizSubmission normalizes the answers payload into a question_id →
@@ -1362,9 +1451,10 @@ func (h *Handlers) DownloadCertificate(w http.ResponseWriter, r *http.Request) {
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
+			"status":             "pending",
 			"certificate_number": cert.CertificateNumber,
 			"issued_at":          cert.IssuedAt,
-			"message":            "PDF generation pending",
+			"message":            "Certificate file is being generated — check back shortly",
 		},
 	})
 }
@@ -1593,6 +1683,46 @@ func (h *Handlers) PublishTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": trackID.String(), "published": true}})
+}
+
+// UnpublishTrack handles POST /admin/academy/curriculum/tracks/:id/unpublish.
+// It reuses Store.PublishTrack(id, false) — the single write path for the
+// published flag — and purges the track from the RAG corpus so unpublished
+// tracks stop being retrievable (same purge as DeleteTrack/UpdateTrack).
+func (h *Handlers) UnpublishTrack(w http.ResponseWriter, r *http.Request) {
+
+	var trackID pgtype.UUID
+	if err := trackID.Scan(chi.URLParam(r, "id")); err != nil {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid track ID")
+		return
+	}
+
+	// Accept an optional {published:false} body for symmetry with generic
+	// publish toggles; the route is unpublish-only so a true value is rejected.
+	var body struct {
+		Published *bool `json:"published,omitempty"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
+			return
+		}
+		if body.Published != nil && *body.Published {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_published", "Use the publish route to publish a track")
+			return
+		}
+	}
+
+	if err := h.store.PublishTrack(r.Context(), trackID, false); err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to unpublish track")
+		return
+	}
+
+	// RAG purge — fire-and-forget (§69/ADR-069 BUG-001 fix: unpublished
+	// tracks must not be retrievable in RAG).
+	h.purgeTrackRAG(r.Context(), trackID)
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"id": trackID.String(), "published": false}})
 }
 
 // ---------------------------------------------------------------------------

@@ -578,7 +578,41 @@ func (s *Service) GetItem(ctx context.Context, slug string, viewerID pgtype.UUID
 		HasVoted:       row.HasVoted,
 	})
 
-	return &ItemDetail{BoardItem: item, Body: row.Body, IsSubmitter: row.SubmittedBy == viewerID && viewerID.Valid}, nil
+	detail := &ItemDetail{BoardItem: item, Body: row.Body, IsSubmitter: row.SubmittedBy == viewerID && viewerID.Valid}
+
+	// Related items — same category, excluding self, capped at 3 (SQL-side).
+	// The category join is NULL when the item is uncategorized → no related
+	// items rather than a cross-category fallback.
+	if row.CategoryID.Valid {
+		if rel, err := s.store.listRelatedItems(ctx, viewerID, row.ID, row.CategoryID); err == nil {
+			detail.Related = make([]BoardItem, 0, len(rel))
+			for _, r := range rel {
+				detail.Related = append(detail.Related, boardItemFromRow(gen.ListPublicRoadmapItemsRow{
+					ID:             r.ID,
+					Title:          r.Title,
+					Slug:           r.Slug,
+					Summary:        r.Summary,
+					CategoryID:     r.CategoryID,
+					Status:         r.Status,
+					IsFlagship:     r.IsFlagship,
+					TargetWindow:   r.TargetWindow,
+					FeatureFlagKey: r.FeatureFlagKey,
+					ContentID:      r.ContentID,
+					VoteCount:      r.VoteCount,
+					ShippedAt:      r.ShippedAt,
+					CreatedAt:      r.CreatedAt,
+					CategoryName:   r.CategoryName,
+					CategorySlug:   r.CategorySlug,
+					CategoryColor:  r.CategoryColor,
+					HasVoted:       r.HasVoted,
+				}))
+			}
+		} else {
+			slog.Warn("roadmap related items failed", "item_id", row.ID, "error", err)
+		}
+	}
+
+	return detail, nil
 }
 
 // GetChangelog returns all shipped items ordered by shipped_at DESC —
