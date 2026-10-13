@@ -3918,6 +3918,32 @@ export interface MyJapaStage {
 	updated_at?: string;
 }
 
+/** ADR-129: journey lifecycle status — planned→active→completed/cancelled. */
+export type JourneyStatus = 'planned' | 'active' | 'completed' | 'cancelled';
+
+/**
+ * GET/POST /me/japa-stage/journeys item — a concurrent or past journey
+ * beside the primary profile journey (ADR-129). `in_window` is computed
+ * server-side: today within the travel window.
+ */
+export interface UserJourney {
+	id: string;
+	intent: JapaIntent;
+	stage: JapaStage;
+	destination_space_id?: string;
+	destination_space_name?: string;
+	destination_space_code?: string;
+	label?: string;
+	travel_start?: string;
+	travel_end?: string;
+	status: JourneyStatus;
+	in_window: boolean;
+	is_public: boolean;
+	history?: unknown;
+	created_at?: string;
+	updated_at?: string;
+}
+
 /** GET /members/by-stage item — a public member's stage card. */
 export interface MemberStage {
 	user_id: string;

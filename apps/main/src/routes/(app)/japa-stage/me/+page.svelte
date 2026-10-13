@@ -12,6 +12,7 @@
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import RelativeTime from '$lib/components/ui/RelativeTime.svelte';
 	import { ArrowLeft, Compass, Save } from 'lucide-svelte';
+	import JourneysPanel from '$lib/components/profile/JourneysPanel.svelte';
 	import { japaStageColors, japaStageLabel, japaStageOptions, japaStagesForIntent, japaIntentLabel, japaIntentOptions } from '$lib/enumOptions';
 	import type { JapaStage, JapaIntent, MyJapaStage } from '$lib/types';
 	import type { PageData } from './$types';
@@ -311,4 +312,12 @@
 			</ol>
 		</div>
 	{/if}
+
+	<!-- ADR-129: concurrent/past journey records beside the primary stage -->
+	<JourneysPanel
+		journeys={data.journeys}
+		countries={data.countries}
+		stages={data.stages}
+		intents={data.intents}
+	/>
 </section>

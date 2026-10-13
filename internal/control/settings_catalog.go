@@ -448,6 +448,7 @@ var settingsCatalog = map[string]settingMeta{
 
 	// Japa Stage Progress Profiles (§87, ADR-095)
 	"japa_stage.enabled": {Type: "bool", DefaultValue: "false", Description: "Global japa stage profiles toggle.", Panel: "control"},
+	"japa_stage.max_journeys": {Type: "int", DefaultValue: "10", Description: "Max non-deleted user_journeys rows a member may hold; POST /me/japa-stage/journeys returns journey_limit_reached at the cap (ADR-129).", Panel: "control"},
 
 	// Ask an Expat AMA (§88, ADR-096)
 	"forum.ama.enabled": {Type: "bool", DefaultValue: "false", Description: "Global AMA thread format toggle.", Panel: "control"},

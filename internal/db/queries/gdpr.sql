@@ -252,6 +252,23 @@ SET display_name = 'Deleted User',
  updated_at = now()
 WHERE user_id = @user_id;
 
+-- name: AnonymizeUserJourneys :exec
+-- Scrubs PII from user_journeys rows (ADR-129): the member-supplied label,
+-- destination, per-journey stage history, and visibility flag are erased
+-- and every row is soft-deleted so nothing renders during the retention
+-- window. Rows hard-delete with the user (user_id ON DELETE CASCADE) in
+-- the later phase. Best-effort: a failure logs a warning but does not
+-- abort the erasure.
+UPDATE user_journeys
+SET label = NULL,
+    destination_space_id = NULL,
+    history = '[]'::jsonb,
+    is_public = false,
+    deleted_at = now(),
+    updated_at = now()
+WHERE user_id = @user_id
+  AND deleted_at IS NULL;
+
 -- name: AnonymizeAffiliateLinkEvents :exec
 -- Scrubs PII (ip_hash, user_agent_hash) from affiliate_link_events owned by
 -- the deleted user's affiliate links during the GDPR retention window

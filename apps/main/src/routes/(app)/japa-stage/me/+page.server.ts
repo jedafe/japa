@@ -2,7 +2,7 @@
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList } from '$lib/server/api';
 import { redirect } from '@sveltejs/kit';
-import type { MyJapaStage, JapaStageOption, JapaIntent, GeoCountry } from '$lib/types';
+import type { MyJapaStage, JapaStageOption, JapaIntent, GeoCountry, UserJourney } from '$lib/types';
 
 /**
  * My Japa Stage at /japa-stage/me. Auth-gated: redirects to login when not
@@ -46,5 +46,13 @@ export const load: PageServerLoad = async (event) => {
 		intents = [];
 	}
 
-	return { myStage, countries, stages, intents };
+	// ADR-129: concurrent/past journey records beside the primary stage.
+	let journeys: UserJourney[] = [];
+	try {
+		journeys = (await apiGet<UserJourney[]>(ctx, '/me/japa-stage/journeys')) ?? [];
+	} catch {
+		journeys = [];
+	}
+
+	return { myStage, countries, stages, intents, journeys };
 };

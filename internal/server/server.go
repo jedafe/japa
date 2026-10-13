@@ -732,6 +732,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	trendingHandlers := trending.NewHandlers(trendingStore)
 	trendingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {{...}} in trending titles
 	trendingHandlers.SetCache(vkClient.Valkey())
+	trendingHandlers.SetSettings(settingsService) // ADR-128: intent_matrix space-type demotion
 
 	// Recommendation engine (ADR-064a) — geo-aware tool/feature suggestions.
 	recommendationsHandlers := recommendations.NewHandlers(settingsService, vkClient.Redis(), trendingStore)
@@ -958,6 +959,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// permission_node is not held and items tied to disabled features.
 	menusService := menus.NewServiceWithPerms(database, rbacResolver)
 	menusService.SetFeatureChecker(featureChecker)
+	menusService.SetSettings(settingsService) // ADR-128: geo_personalization.intent_matrix nav adaptation
 	menusHandlers := menus.NewHandlersWithPerms(menusService, rbacResolver)
 	// §14: resolve {{...}} literals in menu labels on the public resolution
 	// endpoint (admin CRUD keeps authored source for editing).
@@ -2909,6 +2911,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// Onboarding subsystem (Section 09).
 	onboardingService := onboarding.NewService(database, settingsService)
 	onboardingService.SetFollower(followService)
+	// ADR-128: promote onboarding journey answers (primary_goal → japa_intent,
+	// japa_status → japa_stage) into the canonical profile columns.
+	onboardingService.SetJourneyClassWriter(japaStageService)
+	// ADR-128: PUT /me/journey purpose/japa_status edits promote into the
+	// canonical journey columns so both vocabularies stay aligned.
+	usersService.SetJourneyClassWriter(japaStageService)
 	onboardingHandlers := onboarding.NewHandlers(onboardingService)
 	onboardingHandlers.SetLiteralResolver(literalsCatalog) // §14: resolve {...} in onboarding responses
 
@@ -7206,6 +7214,17 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Get("/me/japa-stage", japaStageHandlers.HandleGetOwn)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
 					Patch("/me/japa-stage", japaStageHandlers.HandleUpdateOwn)
+				// ADR-129: concurrent journey instances beside the primary
+				// profile journey. Same permission node; record-only —
+				// personalization keys on japa_intent, not these rows.
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
+					Get("/me/japa-stage/journeys", japaStageHandlers.HandleListJourneys)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
+					Post("/me/japa-stage/journeys", japaStageHandlers.HandleCreateJourney)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
+					Patch("/me/japa-stage/journeys/{id}", japaStageHandlers.HandleUpdateJourney)
+				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "profile.japa_stage.edit")).
+					Delete("/me/japa-stage/journeys/{id}", japaStageHandlers.HandleDeleteJourney)
 			})
 
 			// Section 88 — Ask an Expat AMA (ADR-096)

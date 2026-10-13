@@ -311,6 +311,29 @@ func (q *Queries) AnonymizeUser(ctx context.Context, userID pgtype.UUID) error {
 	return err
 }
 
+const anonymizeUserJourneys = `-- name: AnonymizeUserJourneys :exec
+UPDATE user_journeys
+SET label = NULL,
+    destination_space_id = NULL,
+    history = '[]'::jsonb,
+    is_public = false,
+    deleted_at = now(),
+    updated_at = now()
+WHERE user_id = $1
+  AND deleted_at IS NULL
+`
+
+// Scrubs PII from user_journeys rows (ADR-129): the member-supplied label,
+// destination, per-journey stage history, and visibility flag are erased
+// and every row is soft-deleted so nothing renders during the retention
+// window. Rows hard-delete with the user (user_id ON DELETE CASCADE) in
+// the later phase. Best-effort: a failure logs a warning but does not
+// abort the erasure.
+func (q *Queries) AnonymizeUserJourneys(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, anonymizeUserJourneys, userID)
+	return err
+}
+
 const anonymizeUserProfile = `-- name: AnonymizeUserProfile :exec
 UPDATE user_profiles
 SET display_name = 'Deleted User',
