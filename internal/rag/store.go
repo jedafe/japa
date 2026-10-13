@@ -27,6 +27,7 @@ const (
 	EntityTypeForumThread  = "forum_thread"
 	EntityTypeSpace        = "space"
 	EntityTypeAcademyTrack = "academy_track"
+	EntityTypeWikiPage     = "wiki_page"
 )
 
 // SourceTier classifies an entity as editorial (Tier 1) or community (Tier 2).
@@ -137,6 +138,10 @@ func SourceURL(entityType, contentType, slug string) string {
 		return "/spaces/" + slug
 	case EntityTypeAcademyTrack:
 		return "/academy/tracks/" + slug
+	case EntityTypeWikiPage:
+		// entity_slug carries "space_slug/page_slug" — see the wiki_page
+		// arm of SearchContentEmbeddings.
+		return "/wiki/" + slug
 	default:
 		return ""
 	}
@@ -373,13 +378,15 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, language stri
 	return results, nil
 }
 
-// SearchGeoFiltered performs HNSW cosine retrieval restricted to content
-// chunks whose source contents row is geo-scoped to the given space or its
-// direct children (§103 Geo-Filtered RAG amendment to §69). Only
-// entity_type = 'content' chunks are geo-filterable; other entity types
-// are excluded when a geo scope is supplied. geoSpaceID must be non-nil
-// and valid — callers dispatch to Search (unfiltered) when no geo scope
-// is resolved. language may be empty to skip the language filter.
+// SearchGeoFiltered performs HNSW cosine retrieval restricted to chunks
+// geo-scoped to the given space or its direct children (§103 Geo-Filtered
+// RAG amendment to §69). 'content' chunks scope on contents.geo_space_id;
+// 'wiki_page' chunks scope on wiki_pages.space_id — the wiki is the
+// canonical geo corpus so it must not be excluded when a geo scope is
+// supplied. Other entity types have no geo scope and are excluded.
+// geoSpaceID must be non-nil and valid — callers dispatch to Search
+// (unfiltered) when no geo scope is resolved. language may be empty to
+// skip the language filter.
 func (s *Store) SearchGeoFiltered(ctx context.Context, queryVector []float32, language string, topK int32, geoSpaceID pgtype.UUID, scope RetrievalScope) ([]RetrievedChunk, error) {
 	vec := pgvector.NewVector(queryVector)
 

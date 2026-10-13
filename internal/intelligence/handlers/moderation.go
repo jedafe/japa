@@ -104,26 +104,58 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 	// OptionalAuth: platform may or may not be present. When absent, fall
 	// back to the default platform so the public directory still renders.
 
-	category := r.URL.Query().Get("category")
-	includeDisabled := r.URL.Query().Get("include_disabled") == "true" || r.URL.Query().Get("include_disabled") == "1"
+	q := r.URL.Query()
+	category := q.Get("category")
+	includeDisabled := q.Get("include_disabled") == "true" || q.Get("include_disabled") == "1"
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
 
-	var rows []sources.Source
-
-	var err error
-
-	if category != "" {
-		rows, err = h.intelSources.ListByCategory(r.Context(), sources.Category(category))
+	// Server-side filtering/pagination for both surfaces: the public shape
+	// filters enabled=true; include_disabled (control panel registry) sees
+	// everything. ?q= searches name/domain/source_url/keywords, ?status= and
+	// ?sort=/dir= (whitelisted) apply to the registry view.
+	listParams := gen.ListIntelSourcesFilteredParams{
+		Search:    q.Get("q"),
+		Category:  category,
+		SortKey:   q.Get("sort"),
+		SortDir:   q.Get("dir"),
+		RowLimit:  clampInt32(limit),
+		RowOffset: offset,
+	}
+	if !includeDisabled {
+		enabledOnly := true
+		listParams.Enabled = &enabledOnly
+		listParams.Status = "active"
 	} else {
-		rows, err = h.intelSources.List(r.Context(), gen.ListIntelSourcesParams{
-			Limit:  clampInt32(limit),
-			Offset: offset,
-		})
+		listParams.Status = q.Get("status")
+	}
+	if enabledParam := q.Get("enabled"); includeDisabled && (enabledParam == "true" || enabledParam == "false") {
+		v := enabledParam == "true"
+		listParams.Enabled = &v
+	}
+	if _, ok := intelSourceSortKeys[listParams.SortKey]; !ok {
+		listParams.SortKey = ""
+	}
+	if listParams.SortDir != "desc" {
+		listParams.SortDir = "asc"
 	}
 
+	rows, err := h.intelSources.ListFiltered(r.Context(), listParams)
 	if err != nil {
 		slog.Error("intel: sources directory list failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "sources_list_failed", "Failed to list sources")
+
+		return
+	}
+
+	total, err := h.intelSources.CountFiltered(r.Context(), gen.CountIntelSourcesFilteredParams{
+		Search:   listParams.Search,
+		Category: listParams.Category,
+		Status:   listParams.Status,
+		Enabled:  listParams.Enabled,
+	})
+	if err != nil {
+		slog.Error("intel: sources directory count failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "sources_list_failed", "Failed to list sources")
 
 		return
@@ -144,6 +176,7 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 				"page_size":   limit,
 				"page_offset": (page - 1) * limit,
 				"count":       len(fullEntries),
+				"total":       total,
 			},
 		})
 
@@ -153,11 +186,6 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 	entries := make([]sourceDirectoryEntry, 0, len(rows))
 
 	for _, s := range rows {
-		// Only expose enabled sources in the public directory.
-		if !s.Enabled {
-			continue
-		}
-
 		entries = append(entries, sourceToDirectoryEntry(s))
 	}
 
@@ -167,8 +195,24 @@ func (h *Handlers) HandleSourcesDirectory(w http.ResponseWriter, r *http.Request
 			"page_size":   limit,
 			"page_offset": (page - 1) * limit,
 			"count":       len(entries),
+			"total":       total,
 		},
 	})
+}
+
+// intelSourceSortKeys is the whitelist of ?sort= column names accepted by
+// the filtered sources registry list. Anything else falls back to the
+// default created_at DESC ordering.
+var intelSourceSortKeys = map[string]bool{
+	"name":            true,
+	"domain":          true,
+	"category":        true,
+	"status":          true,
+	"trust_level":     true,
+	"crawl_method":    true,
+	"enabled":         true,
+	"last_crawled_at": true,
+	"created_at":      true,
 }
 
 // sourceToFullEntry returns the full source row as a map for the control
@@ -287,6 +331,13 @@ func sourceToFullEntry(s sources.Source) map[string]interface{} {
 		entry["approved_by"] = nil
 	}
 
+	entry["rejected_at"] = s.RejectedAt
+	if s.RejectedBy.Valid {
+		entry["rejected_by"] = s.RejectedBy.String()
+	} else {
+		entry["rejected_by"] = nil
+	}
+
 	return entry
 }
 
@@ -326,8 +377,25 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	// extraction first (PATCH .../edit) or reject the record.
 	record, err := h.intelStores.GetIntelRecord(r.Context(), recordID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "record_not_found", "Intel record not found")
+			return
+		}
+
 		slog.Error("intel: approve load record failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to load record")
+
+		return
+	}
+
+	// State guard: only a record awaiting review may be approved. Approving
+	// an already-approved/rejected/published record — or one still moving
+	// through the pipeline — would silently overwrite another reviewer's
+	// decision or skip the publication gate. 409 lets the client refresh
+	// instead of believing its write won.
+	if record.Status != "review_required" {
+		errpkg.WriteError(w, http.StatusConflict, "invalid_record_state",
+			"Record is not awaiting review (current status: "+record.Status+")")
 
 		return
 	}
@@ -338,13 +406,19 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set the record status to 'approved'.
-	if err := h.intelStores.UpdateIntelRecordStatus(r.Context(), gen.UpdateIntelRecordStatusParams{
-		ID:     recordID,
-		Status: "approved",
-	}); err != nil {
+	// Atomic transition: the UPDATE only applies while the record is still
+	// review_required, so a racing reviewer cannot both pass the state check
+	// and overwrite each other's decision. 0 rows → the other write won.
+	moved, err := h.intelStores.TransitionIntelRecordStatus(r.Context(), recordID, "review_required", "approved")
+	if err != nil {
 		slog.Error("intel: approve status update failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "approve_failed", "Failed to approve record")
+
+		return
+	}
+
+	if !moved {
+		errpkg.WriteError(w, http.StatusConflict, "invalid_record_state", "Record is no longer awaiting review — refresh to see its current state")
 
 		return
 	}
@@ -373,15 +447,19 @@ func (h *Handlers) HandleReviewApprove(w http.ResponseWriter, r *http.Request) {
 	// Without this the approval is silently lost — re-crawl creates a NEW
 	// record rather than promoting the approved one. Fire-and-forget per
 	// Rule 8; an enqueue failure is logged but does not roll back the
-	// approval (the control panel can re-trigger promotion manually).
+	// approval. promote_queued surfaces the failure so the reviewer knows
+	// to use the re-promote action instead of assuming it will publish.
+	promoteQueued := true
 	if err := h.enqueueIntelPromote(r.Context(), recordID, userID); err != nil {
 		slog.Error("intel: approve enqueue promote failed", "record_id", recordID.String(), "error", err)
+		promoteQueued = false
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
-			"record_id": recordID.String(),
-			"status":    "approved",
+			"record_id":      recordID.String(),
+			"status":         "approved",
+			"promote_queued": promoteQueued,
 		},
 	})
 }
@@ -414,13 +492,41 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body) // note is optional
 	}
 
-	// Set the record status to 'rejected'.
-	if err := h.intelStores.UpdateIntelRecordStatus(r.Context(), gen.UpdateIntelRecordStatusParams{
-		ID:     recordID,
-		Status: "rejected",
-	}); err != nil {
+	// State guard mirrors approve: only a record awaiting review may be
+	// rejected — a raced/duplicate reject must not overwrite another
+	// reviewer's decision.
+	record, err := h.intelStores.GetIntelRecord(r.Context(), recordID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "record_not_found", "Intel record not found")
+			return
+		}
+
+		slog.Error("intel: reject load record failed", "record_id", recordID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to load record")
+
+		return
+	}
+
+	if record.Status != "review_required" {
+		errpkg.WriteError(w, http.StatusConflict, "invalid_record_state",
+			"Record is not awaiting review (current status: "+record.Status+")")
+
+		return
+	}
+
+	// Atomic transition (same rationale as approve): a racing decision can
+	// no longer slip between the check and the write.
+	moved, err := h.intelStores.TransitionIntelRecordStatus(r.Context(), recordID, "review_required", "rejected")
+	if err != nil {
 		slog.Error("intel: reject status update failed", "record_id", recordID.String(), "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject record")
+
+		return
+	}
+
+	if !moved {
+		errpkg.WriteError(w, http.StatusConflict, "invalid_record_state", "Record is no longer awaiting review — refresh to see its current state")
 
 		return
 	}
@@ -448,6 +554,70 @@ func (h *Handlers) HandleReviewReject(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]interface{}{
 			"record_id": recordID.String(),
 			"status":    "rejected",
+		},
+	})
+}
+
+// HandleRequeuePromote re-enqueues intel:promote for a record stuck in
+// 'approved'. Approve enqueues promotion fire-and-forget, so a queue outage
+// leaves the record approved-but-never-published with no built-in recovery —
+// this endpoint is the operator-visible retry path. Records already
+// promoted (promoted_record_id set) or in any other status get 409.
+// // POST /api/v1/intel/records/{id}/promote
+// // Requires: intel.review.approve
+func (h *Handlers) HandleRequeuePromote(w http.ResponseWriter, r *http.Request) {
+	if h.intelStores == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	recordID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	record, err := h.intelStores.GetIntelRecord(r.Context(), recordID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "record_not_found", "Intel record not found")
+			return
+		}
+
+		slog.Error("intel: re-promote load record failed", "record_id", recordID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "repromote_failed", "Failed to load record")
+
+		return
+	}
+
+	if record.PromotedRecordID.Valid {
+		errpkg.WriteError(w, http.StatusConflict, "already_promoted", "Record has already been promoted")
+
+		return
+	}
+
+	if record.Status != "approved" {
+		errpkg.WriteError(w, http.StatusConflict, "invalid_record_state",
+			"Only approved records can be promoted (current status: "+record.Status+")")
+
+		return
+	}
+
+	if err := h.enqueueIntelPromote(r.Context(), recordID, userID); err != nil {
+		slog.Error("intel: re-promote enqueue failed", "record_id", recordID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "promote_enqueue_failed", "Failed to queue promotion — try again later")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"record_id": recordID.String(),
+			"queued":    true,
 		},
 	})
 }

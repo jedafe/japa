@@ -342,6 +342,16 @@ func (h *Handlers) HandleUpdateSource(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Enabling is reserved for approved (status='active') sources. Flipping
+	// enabled on a proposed/rejected row would mark it live without the
+	// verify probe + channel materialization that ApproveProposed runs — a
+	// silently dead source. Point the caller at the approve flow instead.
+	if body.Enabled != nil && *body.Enabled && existing.Status != "active" {
+		errpkg.WriteError(w, http.StatusConflict, "source_not_active",
+			"Cannot enable a "+existing.Status+" source — approve it first (POST /intel/sources/{id}/approve)")
+		return
+	}
+
 	// source_kind is patchable (the merge below applies it); validate the
 	// 10-kind enum here so an unknown value is a 400, not a CHECK violation.
 	if body.SourceKind != nil && *body.SourceKind != "" && !sources.SourceKind(*body.SourceKind).IsValid() {
@@ -920,8 +930,9 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 
 	page, limit := h.parsePagination(r)
 	offset := clampInt32((page - 1) * limit)
+	search := r.URL.Query().Get("q")
 
-	rows, err := h.intelSources.ListProposed(r.Context(), clampInt32(limit), offset)
+	rows, err := h.intelSources.ListProposed(r.Context(), clampInt32(limit), offset, search)
 	if err != nil {
 		slog.Error("intel: list proposed sources failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_proposed_failed", "Failed to list proposed sources")
@@ -929,9 +940,19 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	total, err := h.intelSources.CountProposed(r.Context(), search)
+	if err != nil {
+		slog.Error("intel: count proposed sources failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "list_proposed_failed", "Failed to list proposed sources")
+
+		return
+	}
+
 	entries := make([]map[string]interface{}, 0, len(rows))
 	for _, s := range rows {
-		entries = append(entries, sourceToFullEntry(s))
+		entry := sourceToFullEntry(s.Source)
+		entry["proposer_name"] = s.ProposerName
+		entries = append(entries, entry)
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -940,6 +961,7 @@ func (h *Handlers) HandleListProposedSources(w http.ResponseWriter, r *http.Requ
 			"page_size":   limit,
 			"page_offset": (page - 1) * limit,
 			"count":       len(entries),
+			"total":       total,
 		},
 	})
 }
@@ -993,6 +1015,90 @@ func (h *Handlers) HandleApproveProposedSource(w http.ResponseWriter, r *http.Re
 			"status":    src.Status,
 			"enabled":   src.Enabled,
 		},
+	})
+}
+
+// HandleRejectProposedSource rejects a proposed source: status='rejected',
+// enabled=false. The row is kept (with the reviewer recorded) so repeat
+// spam proposals remain auditable — the alternative, DELETE, would erase
+// the provenance and let the same URL be re-proposed silently. A row no
+// longer in 'proposed' returns 404, mirroring the approve precondition.
+// // POST /api/v1/intel/sources/{id}/reject
+// // Requires: intel.sources.manage
+func (h *Handlers) HandleRejectProposedSource(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	src, err := h.intelSources.RejectProposed(r.Context(), sourceID, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Proposed source not found")
+			return
+		}
+
+		slog.Error("intel: reject proposed source failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "reject_failed", "Failed to reject source")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"source_id": sourceID.String(),
+			"status":    src.Status,
+			"enabled":   src.Enabled,
+		},
+	})
+}
+
+// HandleGetSourceByID returns a single intel source by id with the full
+// crawl-state fields — the control-panel equivalent of the public
+// /sources/{slug} detail. The review detail page uses it to resolve a
+// record's source without scanning the whole registry.
+// // GET /api/v1/intel/sources/{id}
+// // Requires: intel.sources.view or intel.sources.manage
+func (h *Handlers) HandleGetSourceByID(w http.ResponseWriter, r *http.Request) {
+	if h.intelSources == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "intel_unavailable", "Intelligence system is not configured")
+		return
+	}
+
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+
+	sourceID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	src, err := h.intelSources.Get(r.Context(), sourceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "not_found", "Source not found")
+			return
+		}
+
+		slog.Error("intel: get source failed", "source_id", sourceID.String(), "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "lookup_failed", "Failed to load source")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": sourceToFullEntry(src),
 	})
 }
 

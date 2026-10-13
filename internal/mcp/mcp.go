@@ -129,6 +129,17 @@ var apiKeyToolGates = map[string]toolGate{
 	"persona_voices.read": {scope: agentUsePermission},
 	"personas.list":       {scope: agentUsePermission},
 	"personas.read":       {scope: agentUsePermission},
+	// Intel read tools (migration 000842) — agent infrastructure like the
+	// persona catalog, so they gate on agent.use for key callers. The
+	// executor still enforces each tool's catalog permission
+	// (intel.sources.view / intel.review.view) on the key owner.
+	"intel.source.get":  {scope: agentUsePermission},
+	"intel.record.get":  {scope: agentUsePermission},
+	"intel.record.list": {scope: agentUsePermission},
+	// col.city.get (migration 000843) — §72 cost-of-living data is public
+	// on the calculator surface but has no api.read.* scope of its own, so
+	// it gates on agent.use like the other agent-infrastructure reads.
+	"col.city.get": {scope: agentUsePermission},
 	// §120 ChatGPT deep-research aliases — same gate as the underlying
 	// content.search / content.read tools.
 	"search": {scope: "api.read.content"},

@@ -276,18 +276,114 @@ func (s *Store) Update(ctx context.Context, arg gen.UpdateIntelSourceParams) (So
 	return row, nil
 }
 
+// ProposedSource is a proposed-queue row plus the resolved proposer display
+// name (display_name → username → raw UUID string) so the review surface
+// never renders a bare UUID.
+type ProposedSource struct {
+	Source
+	ProposerName string
+}
+
 // ListProposed returns a page of sources with status='proposed' for admin
-// review. Platform-scoped.
-func (s *Store) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
+// review; search (” disables) narrows by name/domain/source_url/category.
+// Platform-scoped.
+func (s *Store) ListProposed(ctx context.Context, limit, offset int32, search string) ([]ProposedSource, error) {
 	rows, err := s.queries.ListProposedIntelSources(ctx, gen.ListProposedIntelSourcesParams{
-		Limit:  limit,
-		Offset: offset,
+		RowLimit:  limit,
+		RowOffset: offset,
+		Search:    search,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("sources: list proposed: %w", err)
 	}
 
+	out := make([]ProposedSource, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ProposedSource{
+			Source:       proposedRowToSource(r),
+			ProposerName: r.ProposerName,
+		})
+	}
+
+	return out, nil
+}
+
+// CountProposed returns the total number of proposed sources matching the
+// same search filter as ListProposed so the review surface can
+// server-paginate.
+func (s *Store) CountProposed(ctx context.Context, search string) (int64, error) {
+	n, err := s.queries.CountProposedIntelSources(ctx, search)
+	if err != nil {
+		return 0, fmt.Errorf("sources: count proposed: %w", err)
+	}
+	return n, nil
+}
+
+// ListFiltered runs the filtered registry list used by the control-panel
+// sources management page. Platform-scoped.
+func (s *Store) ListFiltered(ctx context.Context, arg gen.ListIntelSourcesFilteredParams) ([]Source, error) {
+	rows, err := s.queries.ListIntelSourcesFiltered(ctx, arg)
+	if err != nil {
+		return nil, fmt.Errorf("sources: list filtered: %w", err)
+	}
 	return rows, nil
+}
+
+// CountFiltered returns the matching-row total for ListFiltered.
+func (s *Store) CountFiltered(ctx context.Context, arg gen.CountIntelSourcesFilteredParams) (int64, error) {
+	n, err := s.queries.CountIntelSourcesFiltered(ctx, arg)
+	if err != nil {
+		return 0, fmt.Errorf("sources: count filtered: %w", err)
+	}
+	return n, nil
+}
+
+// proposedRowToSource converts the flattened ListProposedIntelSources row
+// (s.* + proposer_name) back into the canonical Source shape.
+func proposedRowToSource(r gen.ListProposedIntelSourcesRow) Source {
+	return Source{
+		ID:                  r.ID,
+		Name:                r.Name,
+		Domain:              r.Domain,
+		SourceUrl:           r.SourceUrl,
+		Category:            r.Category,
+		SourceType:          r.SourceType,
+		TrustLevel:          r.TrustLevel,
+		CrawlMethod:         r.CrawlMethod,
+		CrawlFrequency:      r.CrawlFrequency,
+		CrawlFrequencyMins:  r.CrawlFrequencyMins,
+		RobotsPolicy:        r.RobotsPolicy,
+		SourceLicense:       r.SourceLicense,
+		AttributionRequired: r.AttributionRequired,
+		UsageRestriction:    r.UsageRestriction,
+		ProviderConfig:      r.ProviderConfig,
+		Enabled:             r.Enabled,
+		LastCrawledAt:       r.LastCrawledAt,
+		LastSuccessAt:       r.LastSuccessAt,
+		LastErrorAt:         r.LastErrorAt,
+		LastErrorMessage:    r.LastErrorMessage,
+		LastChangedAt:       r.LastChangedAt,
+		ConsecutiveFailures: r.ConsecutiveFailures,
+		CreatedAt:           r.CreatedAt,
+		UpdatedAt:           r.UpdatedAt,
+		PersonaID:           r.PersonaID,
+		Status:              r.Status,
+		ProposedBy:          r.ProposedBy,
+		ProposedAt:          r.ProposedAt,
+		ApprovedBy:          r.ApprovedBy,
+		ApprovedAt:          r.ApprovedAt,
+		Slug:                r.Slug,
+		Description:         r.Description,
+		LogoUrl:             r.LogoUrl,
+		FollowerCount:       r.FollowerCount,
+		PostCount:           r.PostCount,
+		SourceKind:          r.SourceKind,
+		Keywords:            r.Keywords,
+		Categories:          r.Categories,
+		ProbeReport:         r.ProbeReport,
+		DetectedMethods:     r.DetectedMethods,
+		LastProbedAt:        r.LastProbedAt,
+	}
 }
 
 // --- Source blocks ---
@@ -350,6 +446,23 @@ func (s *Store) ApproveProposed(ctx context.Context, id, approvedBy pgtype.UUID)
 	})
 	if err != nil {
 		return Source{}, fmt.Errorf("sources: approve proposed: %w", err)
+	}
+
+	return row, nil
+}
+
+// RejectProposed marks a proposed source as rejected (status='rejected',
+// enabled=false) and records the reviewer in rejected_by/rejected_at —
+// approved_* stays NULL so a rejected row never reads as approved. The
+// query's status='proposed' precondition makes a repeat reject (or a race
+// with an approve) return pgx.ErrNoRows instead of a last-write-wins.
+func (s *Store) RejectProposed(ctx context.Context, id, reviewedBy pgtype.UUID) (Source, error) {
+	row, err := s.queries.RejectProposedIntelSource(ctx, gen.RejectProposedIntelSourceParams{
+		ID:         id,
+		RejectedBy: reviewedBy,
+	})
+	if err != nil {
+		return Source{}, fmt.Errorf("sources: reject proposed: %w", err)
 	}
 
 	return row, nil

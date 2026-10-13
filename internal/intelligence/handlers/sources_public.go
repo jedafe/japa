@@ -918,7 +918,7 @@ func (h *Handlers) HandleProposeSource(w http.ResponseWriter, r *http.Request) {
 			"slug":             slug,
 			"name":             src.Name,
 			"status":           src.Status,
-			"admin_review_url": "/admin/sources/proposed", // surfaced for UI navigation
+			"admin_review_url": "/intelligence/sources/proposed", // control-panel review surface
 		},
 	})
 }

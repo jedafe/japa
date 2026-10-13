@@ -16,6 +16,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
@@ -136,6 +137,18 @@ type Handlers struct {
 	prober       previewProber        // optional; enables POST /sources/probe (intel-channels §2)
 	rdb          valkeycompat.Cmdable // optional; probe quota counter (jc:intel:probe_quota:{user_id})
 	lit          literalResolver      // nil disables literal resolution (§14)
+
+	// quotaFailOpenTotal counts quota-store failures where a request was
+	// allowed through without quota accounting. Logged on every occurrence
+	// so a sustained Valkey outage shows a rising total rather than a
+	// stream of indistinguishable warnings.
+	quotaFailOpenTotal atomic.Int64
+}
+
+// noteQuotaFailOpen records a quota-store fail-open event and returns the
+// running process total for structured log output.
+func (h *Handlers) noteQuotaFailOpen() int64 {
+	return h.quotaFailOpenTotal.Add(1)
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text

@@ -386,6 +386,23 @@ func (s *Store) UpdateIntelRecordStatus(ctx context.Context, arg gen.UpdateIntel
 	return nil
 }
 
+// TransitionIntelRecordStatus atomically moves a record from `from` to `to`
+// — the UPDATE only applies while the record is still in `from`, so a
+// racing transition returns false instead of silently winning. Callers map
+// false to a 409 invalid_record_state.
+func (s *Store) TransitionIntelRecordStatus(ctx context.Context, id pgtype.UUID, from, to string) (bool, error) {
+	affected, err := s.queries.TransitionIntelRecordStatus(ctx, gen.TransitionIntelRecordStatusParams{
+		ID:       id,
+		Status:   to,
+		Status_2: from,
+	})
+	if err != nil {
+		return false, fmt.Errorf("stores: transition intel record status: %w", err)
+	}
+
+	return affected > 0, nil
+}
+
 // UpdateIntelRecordFreshness sets the freshness score of an intel record and
 // automatically transitions the status to 'stale' when the score drops to
 // 40 or below. The ID is stamped into the query params regardless of

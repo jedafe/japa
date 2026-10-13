@@ -59,7 +59,7 @@ func (h *Handlers) HandleOneshotSource(w http.ResponseWriter, r *http.Request) {
 
 		count, incrErr := h.incrProbeQuota(r.Context(), userID)
 		if incrErr != nil {
-			slog.Warn("intel: oneshot quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr)
+			slog.Warn("intel: oneshot quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr, "quota_fail_open_total", h.noteQuotaFailOpen())
 		} else if count > int64(limit) {
 			errpkg.WriteError(w, http.StatusTooManyRequests, "quota_exceeded", "Hourly limit reached; try again later")
 			return

@@ -123,7 +123,7 @@ func (h *Handlers) HandleProbeSource(w http.ResponseWriter, r *http.Request) {
 
 		count, incrErr := h.incrProbeQuota(r.Context(), userID)
 		if incrErr != nil {
-			slog.Warn("intel: probe quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr)
+			slog.Warn("intel: probe quota increment failed; allowing request", "user_id", userID.String(), "error", incrErr, "quota_fail_open_total", h.noteQuotaFailOpen())
 		} else if count > int64(limit) {
 			errpkg.WriteError(w, http.StatusTooManyRequests, "probe_quota_exceeded", "Hourly probe limit reached; try again later")
 			return

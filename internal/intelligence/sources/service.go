@@ -181,6 +181,18 @@ func (s *Service) Create(ctx context.Context, arg gen.CreateIntelSourceParams) (
 		arg.ProviderConfig = []byte("{}")
 	}
 
+	// A slug-less row is unreachable in the public directory (the detail
+	// route is slug-keyed) — derive one from the name/domain when the caller
+	// did not supply it so every create path produces a linkable source.
+	if arg.Slug == nil || *arg.Slug == "" {
+		base := arg.Name
+		if strings.TrimSpace(base) == "" {
+			base = arg.Domain
+		}
+		slug := s.uniqueSlug(ctx, slugify(base))
+		arg.Slug = &slug
+	}
+
 	src, err := s.store.Create(ctx, arg)
 	if err != nil {
 		return Source{}, err
@@ -383,9 +395,35 @@ func (s *Service) UpdateCategories(ctx context.Context, arg gen.UpdateIntelSourc
 }
 
 // ListProposed returns a page of sources with status='proposed' for admin
-// review. Platform-scoped.
-func (s *Service) ListProposed(ctx context.Context, limit, offset int32) ([]Source, error) {
-	return s.store.ListProposed(ctx, limit, offset)
+// review — with the proposer's display name resolved. Platform-scoped.
+func (s *Service) ListProposed(ctx context.Context, limit, offset int32, search string) ([]ProposedSource, error) {
+	return s.store.ListProposed(ctx, limit, offset, search)
+}
+
+// CountProposed returns the total number of proposed sources matching the
+// same search filter as ListProposed so the review surface can
+// server-paginate.
+func (s *Service) CountProposed(ctx context.Context, search string) (int64, error) {
+	return s.store.CountProposed(ctx, search)
+}
+
+// ListFiltered runs the filtered registry list used by the control-panel
+// sources management page (search/category/status/enabled + whitelisted
+// sort + pagination). Platform-scoped.
+func (s *Service) ListFiltered(ctx context.Context, arg gen.ListIntelSourcesFilteredParams) ([]Source, error) {
+	return s.store.ListFiltered(ctx, arg)
+}
+
+// CountFiltered returns the matching-row total for ListFiltered.
+func (s *Service) CountFiltered(ctx context.Context, arg gen.CountIntelSourcesFilteredParams) (int64, error) {
+	return s.store.CountFiltered(ctx, arg)
+}
+
+// RejectProposed marks a proposed source as rejected and records the
+// reviewer as the decision actor. Unlike ApproveProposed it enqueues no
+// follow-up work — a rejected source never verifies or crawls.
+func (s *Service) RejectProposed(ctx context.Context, id, reviewedBy pgtype.UUID) (Source, error) {
+	return s.store.RejectProposed(ctx, id, reviewedBy)
 }
 
 // ApproveProposed activates a proposed source (status='active', enabled=true)
