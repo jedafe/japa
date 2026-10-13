@@ -10,7 +10,7 @@
 	import { Modal } from '$lib/components/ui/modal';
 	import { Button } from '$lib/components/ui/button';
 	import { TableSkeleton } from '$lib/components/ui/skeleton';
-	import { api, fieldGroupsAdminApiExtended, fieldPermissionsApi, userManagementApi, type UserGroup } from '$lib/api';
+	import { api, fieldGroupsAdminApiExtended, fieldPermissionsApi, fieldTypesAdminApi, userManagementApi, type FieldTypeInfo, type UserGroup } from '$lib/api';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import { Trash2, List, Pencil, Plus, GripVertical, ArrowUp, ArrowDown, ShieldCheck } from 'lucide-svelte';
@@ -417,37 +417,30 @@
 		permSavingId = null;
 	}
 
-	// All supported field types (must match backend validFieldTypes).
-	const fieldTypes: Array<{ value: string; label: string }> = [
-		{ value: 'text', label: 'Text' },
-		{ value: 'textarea', label: 'Textarea' },
-		{ value: 'rich_text', label: 'Rich Text' },
-		{ value: 'number', label: 'Number' },
-		{ value: 'currency', label: 'Currency' },
-		{ value: 'percentage', label: 'Percentage' },
-		{ value: 'boolean', label: 'Boolean (Toggle)' },
-		{ value: 'date', label: 'Date' },
-		{ value: 'datetime', label: 'Date & Time' },
-		{ value: 'time', label: 'Time' },
-		{ value: 'duration', label: 'Duration' },
-		{ value: 'select', label: 'Select (Single)' },
-		{ value: 'multiselect', label: 'Multi-Select' },
-		{ value: 'url', label: 'URL' },
-		{ value: 'email', label: 'Email' },
-		{ value: 'phone', label: 'Phone' },
-		{ value: 'color', label: 'Color Picker' },
-		{ value: 'rating', label: 'Rating (1-5)' },
-		{ value: 'image_single', label: 'Image (Single Upload)' },
-		{ value: 'image_multi', label: 'Images (Multi Upload)' },
-		{ value: 'media', label: 'Media (File Upload)' },
-		{ value: 'platform_embed', label: 'Platform Embed' },
-		{ value: 'reference', label: 'Reference (Link to Entity)' },
-		{ value: 'repeater', label: 'Repeater (Add Multiple Items)' },
-		{ value: 'group', label: 'Group (Visual Container)' }
-	];
+	// Field types come from GET /admin/field-types — the backend's §06
+	// catalog — so the picker never drifts from validFieldTypes (Rule 16).
+	let fieldTypes = $state<FieldTypeInfo[]>([]);
+
+	$effect(() => {
+		void loadFieldTypes();
+	});
+
+	async function loadFieldTypes() {
+		try {
+			const result = await fieldTypesAdminApi.list();
+			if (result.ok && Array.isArray(result.data)) {
+				fieldTypes = result.data;
+			}
+		} catch {
+			fieldTypes = [];
+		}
+	}
 
 	const fieldTypeLabel = (ft: string) => fieldTypes.find((f) => f.value === ft)?.label ?? ft;
-	const needsOptions = $derived(fieldType === 'select' || fieldType === 'multiselect');
+	const needsOptions = $derived(
+		fieldTypes.find((f) => f.value === fieldType)?.needs_options ??
+			(fieldType === 'select' || fieldType === 'multiselect')
+	);
 
 	async function openFieldEditor(group: FieldGroup) {
 		editorGroup = group;

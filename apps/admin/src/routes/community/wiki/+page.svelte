@@ -12,7 +12,7 @@
 	import { useCountries } from '$lib/utils/countries.svelte';
 	import { initTabParam } from '$lib/utils/url-sync.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
-	import { hasPermission } from '$lib/stores/permissions.svelte';
+	import { hasPermission, isPermissionsLoaded } from '$lib/stores/permissions.svelte';
 	import { Eye, CheckCircle, XCircle, Sparkles, Lock, LockOpen, Star, StarOff, FileDiff, Trash2 } from 'lucide-svelte';
 	import type { ActionItem, BulkAction, FilterDef } from '$lib/components/ui/data-table';
 
@@ -69,7 +69,18 @@
 	// component's tabParam prop; the 'types' tab is permission-gated so it is
 	// validated against the tabs array once permissions resolve). List state
 	// (q/page/sort/filters) is per-tab, so tabPreserve=[] wipes it on switch.
-	let view = $state<'pages' | 'revisions' | 'types'>(initTabParam('pages', { valid: ['pages', 'revisions'] }));
+	let view = $state<'pages' | 'revisions' | 'types'>(
+		initTabParam('pages', { valid: ['pages', 'revisions', 'types'] })
+	);
+
+	// 'types' is wiki.manage-gated — deep links to it degrade to 'pages'
+	// once permissions resolve (don't reset earlier or a valid deep link
+	// would bounce while the permission store is still loading).
+	$effect(() => {
+		if (isPermissionsLoaded() && view === 'types' && !canManage) {
+			view = 'pages';
+		}
+	});
 
 	// ── State-action confirmation modal (reject with optional reason) ────────
 	let entityController = $state<EntityPageController | undefined>(undefined);

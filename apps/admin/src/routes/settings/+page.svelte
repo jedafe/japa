@@ -12,6 +12,10 @@
 	import { settingsAdminApi, api } from '$lib/api';
 	import { hasPermission } from '$lib/stores/permissions.svelte';
 	import AuthBrandSlidesEditor from '$lib/components/settings/AuthBrandSlidesEditor.svelte';
+	import PinnedPagesEditor from '$lib/components/settings/PinnedPagesEditor.svelte';
+	import DocsVersionsEditor from '$lib/components/settings/DocsVersionsEditor.svelte';
+	import LinkListEditor from '$lib/components/settings/LinkListEditor.svelte';
+
 	import MediaPickerModal from '$lib/components/ui/MediaPickerModal.svelte';
 	import { convertImageToModernFormat } from '$lib/utils/imageConvert';
 
@@ -29,6 +33,7 @@
 		type: string;
 		value?: unknown;
 		options?: string[];
+		max?: number;
 		accept?: string;
 		placeholder?: string;
 		description?: string;
@@ -92,7 +97,8 @@
 		i18n: t('settings.cat_i18n_desc', 'Language and localization settings'),
 		gdpr: t('settings.cat_gdpr_desc', 'Data protection and deletion settings'),
 		search: t('settings.cat_search_desc', 'Search and autocomplete settings'),
-		affiliate: t('settings.cat_affiliate_desc', 'Affiliate program commission settings')
+		affiliate: t('settings.cat_affiliate_desc', 'Affiliate program commission settings'),
+		docs: t('settings.cat_docs_desc', 'Docs portal links, pins, versions, and changelog')
 	};
 
 	// Tab definitions derived from the loaded categories. The count badge shows
@@ -589,7 +595,8 @@
 						{#each category.settings as setting (setting.key)}
 							{@const toggleId = `${category.key}.${setting.key}`}
 							{@const dirty = isSettingDirty(category.key, setting.key, setting.type)}
-							<div class="grid grid-cols-1 gap-4 px-5 py-3.5 sm:grid-cols-2 sm:items-center" style={dirty ? "background: color-mix(in srgb, var(--color-warning) 5%, transparent)" : ''}>
+							{@const wideField = ['textarea', 'brand-slides', 'pinned-pages', 'docs-versions', 'link-list', 'link-cards'].includes(setting.type)}
+							<div class="grid grid-cols-1 gap-4 px-5 py-3.5 {wideField ? '' : 'sm:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] sm:items-center'}" style={dirty ? "background: color-mix(in srgb, var(--color-warning) 5%, transparent)" : ''}>
 								<div>
 									<div class="flex items-center gap-2">
 										<label for={toggleId} class="text-sm font-medium" style="color: var(--color-foreground)">
@@ -690,7 +697,35 @@
 											disabled={!canManage}
 											oninput={(e) => updateSettingValue(category.key, setting.key, (e.target as HTMLTextAreaElement).value)}
 										></textarea>
-									{:else if setting.type === 'multiselect'}
+									{:else if setting.type === 'pinned-pages'}
+										<PinnedPagesEditor
+											value={setting.value}
+											disabled={!canManage}
+											onchange={(next) => updateSettingValue(category.key, setting.key, next)}
+										/>
+									{:else if setting.type === 'docs-versions'}
+										<DocsVersionsEditor
+											value={setting.value}
+											disabled={!canManage}
+											onchange={(next) => updateSettingValue(category.key, setting.key, next)}
+										/>
+									{:else if setting.type === 'link-list'}
+										<LinkListEditor
+											value={setting.value}
+											disabled={!canManage}
+											maxItems={setting.max ?? 3}
+											onchange={(next) => updateSettingValue(category.key, setting.key, next)}
+										/>
+									{:else if setting.type === 'link-cards'}
+										<LinkListEditor
+											value={setting.value}
+											disabled={!canManage}
+											maxItems={setting.max ?? 8}
+											showDescription
+											showIcon
+											onchange={(next) => updateSettingValue(category.key, setting.key, next)}
+										/>
+								{:else if setting.type === 'multiselect'}
 										{@const selectedValues = Array.isArray(setting.value) ? setting.value : (typeof setting.value === 'string' && setting.value ? setting.value.split(',').map((v: string) => v.trim()) : [])}
 										<div class="flex flex-wrap gap-2">
 											{#each (setting.options ?? []) as option (option)}

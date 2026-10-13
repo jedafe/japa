@@ -271,9 +271,10 @@ export const impersonationApi = {
 
 export const docsApi = {
 	list: (params?: string) => api<unknown>(`/admin/docs/pages${params ? `?${params}` : ''}`),
-	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string }) =>
+	get: (id: string) => api<unknown>(`/admin/docs/pages/${id}`),
+	create: (body: { title: string; slug: string; audience: string; content: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string }) =>
 		api('/admin/docs/pages', { method: 'POST', body }),
-	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: unknown; review_status?: string }) =>
+	update: (id: string, body: { title?: string; slug?: string; audience?: string; content?: unknown; review_status?: string; parent_id?: string; position?: number; category?: string; subcategory?: string }) =>
 		api(`/admin/docs/pages/${id}`, { method: 'PATCH', body }),
 	approve: (id: string) =>
 		api(`/admin/docs/pages/${id}/approve`, { method: 'POST' }),
@@ -286,7 +287,14 @@ export const docsApi = {
 	generate: (body: {
 		category: 'docs';
 		prompt: string;
-		context?: { title: string; slug?: string; audience?: string; related_features?: string[] };
+		context?: {
+			title: string;
+			slug?: string;
+			audience?: string;
+			related_features?: string[];
+			doc_category?: string;
+			doc_subcategory?: string;
+		};
 	}) => api<{ task_id: string; task_type: string }>('/admin/docs/ai-generate', { method: 'POST', body })
 };
 
@@ -1327,6 +1335,19 @@ export const fieldGroupsAdminApiExtended = {
 		api<{ deleted: boolean }>(`/admin/field-groups/${id}/fields/${fid}`, { method: 'DELETE' }),
 	reorderFields: (id: string, body: Record<string, unknown>) =>
 		api<unknown>(`/admin/field-groups/${id}/fields/reorder`, { method: 'POST', body }),
+};
+
+export interface FieldTypeInfo {
+	value: string;
+	label: string;
+	needs_options: boolean;
+}
+
+// §06 field-type catalog — backend-driven so the field create/edit pickers
+// always match validFieldTypes (Rule 16; includes suggest/price_range/
+// price_parts which a previous hardcoded list omitted).
+export const fieldTypesAdminApi = {
+	list: () => api<FieldTypeInfo[]>('/admin/field-types'),
 };
 
 export interface CustomFieldEntityType {
