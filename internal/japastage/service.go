@@ -368,48 +368,22 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 // the purpose custom field on PUT /me/journey (ADR-128). rawIntent is
 // normalized through NormalizeIntent (accepts primary_goal and purpose
 // vocabularies); stage must already be a canonical §87 stage or empty.
-// Unlike UpdateOwn the write is a merge: nothing is cleared, an empty
-// argument leaves the column unchanged, and a stage that would violate the
-// ADR-122 intent×stage CHECK is skipped rather than rejected. Both values
-// are validated before the upsert so an invalid pair cannot clobber a
-// stored one.
+// Unlike UpdateOwn the write is a merge: empty arguments leave the column
+// unchanged, and the intent×stage rule is resolved atomically inside
+// UpsertJourneyClass — a submitted stage that is invalid for the effective
+// intent is ignored, and a stored stage invalidated by a class switch is
+// cleared in the same statement (no read-then-write race).
 func (s *Service) ApplyJourneyClass(ctx context.Context, userID pgtype.UUID, rawIntent, stage, source string) error {
 	intent := visitor.NormalizeIntent(rawIntent)
 	if intent == "" && stage == "" {
 		return nil
 	}
 
-	var currentIntent, currentStage string
-	if cur, err := s.store.GetUserProfile(ctx, userID); err == nil {
-		if cur.JapaIntent != nil {
-			currentIntent = *cur.JapaIntent
-		}
-		if cur.JapaStage != nil {
-			currentStage = *cur.JapaStage
-		}
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("japastage: apply journey class: read profile: %w", err)
+	if stage != "" && !ValidStage(stage) {
+		stage = "" // never a canonical §87 stage — drop rather than write
 	}
 
-	effectiveIntent := intent
-	if effectiveIntent == "" {
-		effectiveIntent = currentIntent
-	}
-	if effectiveIntent == "" {
-		effectiveIntent = "relocation" // DB default journey class (ADR-122)
-	}
-	if stage != "" && !ValidStageForIntent(stage, effectiveIntent) {
-		stage = "" // ADR-128: skip rather than reject or clear
-	}
-
-	// ADR-122 class-switch rule (same as UpdateOwn): when a new intent makes
-	// the stored stage incompatible — e.g. settled → visit — the stage must
-	// be cleared, otherwise the intent×stage CHECK rejects the whole write
-	// and the intent is silently lost.
-	clearStage := intent != "" && stage == "" && currentStage != "" &&
-		!ValidStageForIntent(currentStage, intent)
-
-	if err := s.store.UpsertJourneyClass(ctx, userID, intent, stage, source, clearStage); err != nil {
+	if err := s.store.UpsertJourneyClass(ctx, userID, intent, stage, source); err != nil {
 		return fmt.Errorf("japastage: apply journey class: %w", err)
 	}
 

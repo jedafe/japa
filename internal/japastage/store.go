@@ -194,25 +194,39 @@ ON CONFLICT (user_id) DO UPDATE SET
 	return nil
 }
 
+// stageValidCase is the SQL expression for "<stage expr> is valid for
+// the effective intent". %s is substituted with a column/expr name; the
+// effective intent is the second %s (a COALESCE expr or NULLIF param).
+const stageValidCase = `(%[2]s IS NULL OR %[2]s IN ('relocation','study','work','family'))
+           AND %[1]s IN ('considering','planning','preparing','applied','approved','relocated','settled')
+        OR %[2]s IN ('visit','business')
+           AND %[1]s IN ('considering','planning','preparing','applied','approved','traveled','returned')`
+
 // UpsertJourneyClass sets japa_intent and/or japa_stage without touching
-// the destination or visibility fields. Unlike UpdateStage, both values are
-// "set only" — an empty value leaves the column unchanged — except when
-// clearStage is true, which clears japa_stage to NULL (the ADR-122
-// class-switch rule: the stored stage is invalid for the new intent).
-// Used by surfaces that learn the journey class indirectly (onboarding
-// primary_goal / japa_status, the purpose custom field) so they can merge
-// into the canonical columns without an intent×stage error path (ADR-128).
-// A history entry tagged `source` records the effective pair after the
-// write so the log stays self-describing.
-func (s *Store) UpsertJourneyClass(ctx context.Context, userID pgtype.UUID, intent, stage, source string, clearStage bool) error {
-	const q = `
+// the destination or visibility fields — and without a read: the ADR-122
+// intent×stage rule is resolved atomically inside the upsert so
+// concurrent writers can't produce a rejected row or a stale cleared
+// stage (ADR-128). The contract:
+//
+//   - a submitted stage wins when it is valid for the effective intent
+//     (submitted intent, else stored, else relocation class);
+//   - a stored stage is kept only while it remains valid for the
+//     effective intent — an incompatible stage on class switch clears;
+//   - otherwise japa_stage becomes NULL.
+//
+// The history entry records the effective post-write pair so the log
+// stays self-describing.
+func (s *Store) UpsertJourneyClass(ctx context.Context, userID pgtype.UUID, intent, stage, source string) error {
+	q := fmt.Sprintf(`
 INSERT INTO user_profiles (user_id, japa_intent, japa_stage, japa_stage_updated_at, japa_stage_history)
 VALUES (
-    $1, NULLIF($2::text, ''), NULLIF($3::text, ''), now(),
+    $1, NULLIF($2::text, ''),
+    CASE WHEN %[1]s THEN NULLIF($3::text, '') ELSE NULL END,
+    now(),
     jsonb_build_array(
         jsonb_build_object(
             'intent', to_jsonb(NULLIF($2::text, '')),
-            'stage', to_jsonb(NULLIF($3::text, '')),
+            'stage', to_jsonb(CASE WHEN %[1]s THEN NULLIF($3::text, '') ELSE NULL END),
             'source', to_jsonb($4::text),
             'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
         )
@@ -220,19 +234,34 @@ VALUES (
 )
 ON CONFLICT (user_id) DO UPDATE SET
     japa_intent = COALESCE(NULLIF($2::text, ''), user_profiles.japa_intent),
-    japa_stage = CASE WHEN $5::bool THEN NULL ELSE COALESCE(NULLIF($3::text, ''), user_profiles.japa_stage) END,
+    japa_stage = CASE
+        WHEN %[2]s THEN NULLIF($3::text, '')
+        WHEN %[3]s THEN user_profiles.japa_stage
+        ELSE NULL
+    END,
     japa_stage_updated_at = now(),
     japa_stage_history = user_profiles.japa_stage_history || jsonb_build_array(
         jsonb_build_object(
             'intent', to_jsonb(COALESCE(NULLIF($2::text, ''), user_profiles.japa_intent)),
-            'stage', to_jsonb(CASE WHEN $5::bool THEN NULL ELSE COALESCE(NULLIF($3::text, ''), user_profiles.japa_stage) END),
+            'stage', to_jsonb(CASE
+                WHEN %[2]s THEN NULLIF($3::text, '')
+                WHEN %[3]s THEN user_profiles.japa_stage
+                ELSE NULL
+            END),
             'source', to_jsonb($4::text),
             'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
         )
     )
-`
+`,
+		// %[1]s — submitted stage valid for the submitted intent (INSERT).
+		fmt.Sprintf(stageValidCase, "NULLIF($3::text, '')", "NULLIF($2::text, '')"),
+		// %[2]s — submitted stage valid for the effective intent (UPDATE).
+		fmt.Sprintf(stageValidCase, "NULLIF($3::text, '')", "COALESCE(NULLIF($2::text, ''), user_profiles.japa_intent)"),
+		// %[3]s — stored stage valid for the effective intent (UPDATE).
+		fmt.Sprintf(stageValidCase, "user_profiles.japa_stage", "COALESCE(NULLIF($2::text, ''), user_profiles.japa_intent)"),
+	)
 
-	cmd, err := s.pool.Writer.Exec(ctx, q, userID, intent, stage, source, clearStage)
+	cmd, err := s.pool.Writer.Exec(ctx, q, userID, intent, stage, source)
 	if err != nil {
 		return fmt.Errorf("japastage: upsert journey class: %w", err)
 	}

@@ -119,10 +119,12 @@ LIMIT 1
 	return found[0], nil
 }
 
-// CountJourneys counts the member's non-deleted journeys — the input to
-// the japa_stage.max_journeys cap (ADR-129).
-func (s *Store) CountJourneys(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	const q = `SELECT COUNT(*) FROM user_journeys WHERE user_id = $1 AND deleted_at IS NULL`
+// CountLiveJourneys counts the member's non-deleted journeys in a live
+// lifecycle state (planned|active) — the input to the
+// japa_stage.max_journeys cap (ADR-129). Completed and cancelled journeys
+// are history and do not count against the cap.
+func (s *Store) CountLiveJourneys(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	const q = `SELECT COUNT(*) FROM user_journeys WHERE user_id = $1 AND deleted_at IS NULL AND status IN ('planned','active')`
 
 	var n int64
 	if err := s.pool.Reader.QueryRow(ctx, q, userID).Scan(&n); err != nil {
@@ -179,49 +181,64 @@ RETURNING id, user_id, intent, stage, destination_space_id, label,
 }
 
 // UpdateJourney applies a partial update validated by the service. The
-// effective intent+stage (already class-checked) are written; history
-// appends the transition. ClearDest/ClearWindow/ClearLabel null the
-// nullable columns explicitly.
-func (s *Store) UpdateJourney(ctx context.Context, journeyID pgtype.UUID, intent, stage string, in JourneyPatchInput) (JourneyRow, error) {
+// effective intent+stage (already class-checked) are written. A submitted
+// value always wins over its Clear* flag; the flag only nulls the column
+// when no replacement was submitted. History appends only when
+// recordHistory is set — i.e. intent/stage/status actually changed —
+// recording the effective triple plus the effective destination
+// (destSpaceID, resolved by the service).
+func (s *Store) UpdateJourney(ctx context.Context, userID, journeyID pgtype.UUID, intent, stage string, destSpaceID pgtype.UUID, recordHistory bool, in JourneyPatchInput) (JourneyRow, error) {
 	const q = `
 UPDATE user_journeys SET
-    intent = $2,
-    stage = $3,
+    intent = $3,
+    stage = $4,
     destination_space_id = CASE
-        WHEN $4::bool THEN NULL
         WHEN NULLIF($5::text, '') IS NOT NULL THEN $5::uuid
+        WHEN $6::bool THEN NULL
         ELSE destination_space_id
     END,
     label = CASE
-        WHEN $6::bool THEN NULL
         WHEN NULLIF($7::text, '') IS NOT NULL THEN $7::text
+        WHEN $8::bool THEN NULL
         ELSE label
     END,
-    travel_start = CASE WHEN $8::bool THEN NULL WHEN NULLIF($9::text, '') IS NOT NULL THEN $9::date ELSE travel_start END,
-    travel_end   = CASE WHEN $8::bool THEN NULL WHEN NULLIF($10::text, '') IS NOT NULL THEN $10::date ELSE travel_end END,
-    status = COALESCE(NULLIF($11::text, ''), status),
-    is_public = COALESCE($12::bool, is_public),
+    travel_start = CASE
+        WHEN NULLIF($9::text, '') IS NOT NULL THEN $9::date
+        WHEN $10::bool THEN NULL
+        ELSE travel_start
+    END,
+    travel_end = CASE
+        WHEN NULLIF($11::text, '') IS NOT NULL THEN $11::date
+        WHEN $10::bool THEN NULL
+        ELSE travel_end
+    END,
+    status = COALESCE(NULLIF($12::text, ''), status),
+    is_public = COALESCE($13::bool, is_public),
     updated_at = now(),
-    history = history || jsonb_build_array(
-        jsonb_build_object(
-            'intent', to_jsonb($2::text),
-            'stage', to_jsonb($3::text),
-            'status', to_jsonb(COALESCE(NULLIF($11::text, ''), status)),
-            'source', to_jsonb('journey_ui'::text),
-            'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+    history = CASE
+        WHEN $14::bool THEN history || jsonb_build_array(
+            jsonb_build_object(
+                'intent', to_jsonb($3::text),
+                'stage', to_jsonb($4::text),
+                'status', to_jsonb(COALESCE(NULLIF($12::text, ''), status)),
+                'dest_space_id', to_jsonb($15::uuid),
+                'source', to_jsonb('journey_ui'::text),
+                'set_at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+            )
         )
-    )
-WHERE id = $1 AND deleted_at IS NULL
+        ELSE history
+    END
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id, user_id, intent, stage, destination_space_id, label,
           travel_start, travel_end, status, is_public, history,
           created_at, updated_at
 `
 
 	row, err := s.pool.Writer.Query(ctx, q,
-		journeyID, intent, stage,
-		in.ClearDest, in.DestSpaceID, in.ClearLabel, in.Label,
-		in.ClearWindow, in.TravelStart, in.TravelEnd,
-		in.Status, in.IsPublic,
+		journeyID, userID, intent, stage,
+		in.DestSpaceID, in.ClearDest, in.Label, in.ClearLabel,
+		in.TravelStart, in.ClearWindow, in.TravelEnd,
+		in.Status, in.IsPublic, recordHistory, destSpaceID,
 	)
 	if err != nil {
 		return JourneyRow{}, fmt.Errorf("japastage: update journey: %w", err)

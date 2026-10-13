@@ -67,6 +67,10 @@
 		cancelled: 'var(--color-text-subtle)'
 	};
 
+	function destLabel(j: UserJourney): string {
+		return j.destination_space_name || (j.destination_space_id ? destName(j.destination_space_id) : '');
+	}
+
 	function destName(id?: string): string {
 		if (!id) return '';
 		return countries.find((c) => c.id === id)?.name ?? '';
@@ -323,7 +327,7 @@
 								>
 									{t(`journeys.status_${j.status}`, j.status)}
 								</span>
-								{#if j.in_window && j.status !== 'cancelled'}
+								{#if j.in_window && (j.status === 'active' || j.status === 'planned')}
 									<span class="text-[10px] font-medium uppercase tracking-wide text-green-600">
 										{t('journeys.in_window', 'in travel window')}
 									</span>
@@ -331,8 +335,8 @@
 							</div>
 							<p class="mt-1 text-xs text-[var(--color-muted)]">
 								{japaStageLabel(t, j.stage)}
-								{#if j.destination_space_name || j.destination_space_id}
-									· {j.destination_space_name || destName(j.destination_space_id)}
+								{#if destLabel(j)}
+									· {destLabel(j)}
 								{/if}
 								{#if windowText(j)}
 									· {windowText(j)}

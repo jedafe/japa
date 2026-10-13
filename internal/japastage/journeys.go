@@ -69,6 +69,10 @@ var ErrJourneyLimitReached = errors.New("japastage: journey limit reached")
 // travel_end is not a YYYY-MM-DD date, or end precedes start.
 var ErrInvalidJourneyDate = errors.New("japastage: invalid travel window")
 
+// maxJourneyLabelLen caps the member-supplied journey label (a hard
+// input bound, not a configurable value — Rule 3 covers tunables).
+const maxJourneyLabelLen = 200
+
 // ErrInvalidJourneyInput is returned when a submitted field fails basic
 // validation (unknown intent or lifecycle status). The HTTP layer maps
 // the specific field error before the service is called — this is the
@@ -158,7 +162,8 @@ type JourneyInput struct {
 
 // JourneyPatchInput is the PATCH body. Non-empty strings set; empty means
 // "leave unchanged". Status is validated against the lifecycle graph.
-// ClearDest/ClearDates clear nullable fields explicitly.
+// A submitted value always wins over its Clear* flag — the flag only
+// nulls the column when no replacement was submitted.
 type JourneyPatchInput struct {
 	Intent      string `json:"intent"`
 	Stage       string `json:"stage"`
@@ -197,6 +202,10 @@ func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in Jour
 		return JourneyDTO{}, ErrInvalidJourneyInput
 	}
 
+	if len(in.Label) > maxJourneyLabelLen {
+		return JourneyDTO{}, ErrInvalidJourneyInput
+	}
+
 	stage := in.Stage
 	if stage == "" {
 		stage = "planning"
@@ -227,7 +236,7 @@ func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in Jour
 
 	max := s.settings.GetIntOr(ctx, "japa_stage.max_journeys", 10)
 
-	count, err := s.store.CountJourneys(ctx, userID)
+	count, err := s.store.CountLiveJourneys(ctx, userID)
 	if err != nil {
 		return JourneyDTO{}, err
 	}
@@ -245,11 +254,17 @@ func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in Jour
 }
 
 // UpdateJourney applies a partial update. Stage/intent changes are
-// validated against the ADR-122 class rule (an intent switch that
-// invalidates the stored stage clears it — same contract as
-// UpdateJourneyClass). Status moves must be legal edges in the lifecycle
-// graph. Every write appends a history entry recording the effective pair.
+// validated against the ADR-122 class rule — an intent switch that
+// invalidates the stored stage resets it to the class default "planning"
+// (journey stage is NOT NULL, unlike the profile column which Upsert-
+// JourneyClass clears). Status moves must be legal edges in the lifecycle
+// graph. History only appends when intent, stage, or status actually
+// changed — a label- or window-only edit is not a transition.
 func (s *Service) UpdateJourney(ctx context.Context, userID, journeyID pgtype.UUID, in JourneyPatchInput) (JourneyDTO, error) {
+	if len(in.Label) > maxJourneyLabelLen {
+		return JourneyDTO{}, ErrInvalidJourneyInput
+	}
+
 	if in.Intent != "" && !ValidIntent(in.Intent) {
 		return JourneyDTO{}, ErrInvalidJourneyInput
 	}
@@ -313,7 +328,21 @@ func (s *Service) UpdateJourney(ctx context.Context, userID, journeyID pgtype.UU
 		return JourneyDTO{}, err
 	}
 
-	row, err := s.store.UpdateJourney(ctx, journeyID, intent, stage, in)
+	// History records transitions, not edits — append only when the
+	// effective intent/stage/status changed. Label, window, and visibility
+	// edits bump updated_at without polluting the stage log.
+	statusChanged := in.Status != "" && in.Status != derefStr(current.Status)
+	recordHistory := intent != derefStr(current.Intent) || stage != derefStr(current.Stage) || statusChanged
+
+	// Effective destination for the history entry mirrors the store CASE.
+	effectiveDest := current.DestSpaceID
+	if in.DestSpaceID != "" {
+		effectiveDest = uuidOrNil(in.DestSpaceID)
+	} else if in.ClearDest {
+		effectiveDest = pgtype.UUID{}
+	}
+
+	row, err := s.store.UpdateJourney(ctx, userID, journeyID, intent, stage, effectiveDest, recordHistory, in)
 	if err != nil {
 		return JourneyDTO{}, err
 	}
