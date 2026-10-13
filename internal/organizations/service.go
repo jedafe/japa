@@ -850,6 +850,21 @@ func (s *Service) ReviewOwnershipClaim(ctx context.Context, claimID, reviewedBy 
 		return fmt.Errorf("fetching claim for review: %w", err)
 	}
 
+	// Only pending claims are reviewable. A withdrawn claim is terminal —
+	// reopening it via review would silently undo the claimant's own
+	// withdrawal, so it is rejected here.
+	if claim.Status == ClaimStatusWithdrawn {
+		return fmt.Errorf("%w: withdrawn claims cannot be reviewed", errpkg.ErrInvalid)
+	}
+
+	// The review decision is closed: only approve or reject. Any other
+	// value (e.g. a client-set "withdrawn") is rejected instead of passing
+	// through to the UPDATE — withdrawal is claimant-only via
+	// WithdrawOwnershipClaim.
+	if input.Status != ClaimStatusApproved && input.Status != ClaimStatusRejected {
+		return fmt.Errorf("%w: status must be 'approved' or 'rejected'", errpkg.ErrInvalid)
+	}
+
 	tx, err := s.db.Writer.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)

@@ -348,6 +348,9 @@ func (s *Service) MarkFulfilled(ctx context.Context, id, userID pgtype.UUID) err
 }
 
 // Renew extends a post's expiry by 30 days from now. Author-only.
+// Q1: only active|expired posts are renewable — a moderator-removed
+// post cannot be resurrected via renew, and a fulfilled post stays
+// fulfilled (renewing it would contradict the §85 lifecycle).
 func (s *Service) Renew(ctx context.Context, id, userID pgtype.UUID) (PostDTO, error) {
 	existing, err := s.store.GetPost(ctx, id)
 	if err != nil {
@@ -360,6 +363,17 @@ func (s *Service) Renew(ctx context.Context, id, userID pgtype.UUID) (PostDTO, e
 
 	if existing.UserID != userID {
 		return PostDTO{}, ErrNotOwner
+	}
+
+	switch existing.Status {
+	case StatusRemoved:
+		return PostDTO{}, ErrPostRemoved
+	case StatusFulfilled:
+		return PostDTO{}, ErrPostFulfilled
+	case StatusActive, StatusExpired:
+		// renewable
+	default:
+		return PostDTO{}, fmt.Errorf("%w: post status %q is not renewable", ErrInvalid, existing.Status)
 	}
 
 	newExpiry := pgtype.Timestamptz{Time: time.Now().UTC().Add(PostExpiry), Valid: true}
@@ -497,6 +511,17 @@ func (s *Service) ExpirePosts(ctx context.Context) (int64, error) {
 // ErrNotOwner is returned when a user tries to edit, delete, fulfill, or
 // renew a post they did not author.
 var ErrNotOwner = errors.New("not the post author")
+
+// ErrPostRemoved is returned when renewing a moderator-removed post —
+// removal is terminal for the author (§22 appeals are the only path back).
+var ErrPostRemoved = errors.New("post was removed by moderation")
+
+// ErrPostFulfilled is returned when renewing a fulfilled post —
+// fulfillment is a terminal lifecycle state (§85).
+var ErrPostFulfilled = errors.New("post is already fulfilled")
+
+// ErrInvalid is the generic validation sentinel for lifecycle rejections.
+var ErrInvalid = errors.New("invalid post state")
 
 // rowToDTO converts a PostRow (joined query result) to a PostDTO.
 func rowToDTO(r PostRow) PostDTO {

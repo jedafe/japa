@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -356,6 +357,21 @@ func (s *Service) Update(ctx context.Context, id, callerID pgtype.UUID, input Up
 	return entryToDTO(updated), nil
 }
 
+// validRecurrencePatterns is the L3 allow-list for recurrence_pattern.
+// Only these patterns are accepted; anything else is rejected with
+// invalid_recurrence_pattern so garbage strings never get recurring
+// treatment from the staleness logic.
+var validRecurrencePatterns = map[string]bool{
+	"daily":   true,
+	"weekly":  true,
+	"monthly": true,
+	"yearly":  true,
+}
+
+func isValidRecurrencePattern(pattern string) bool {
+	return validRecurrencePatterns[strings.ToLower(strings.TrimSpace(pattern))]
+}
+
 // buildEntry validates a submit/update input and converts it into a
 // CalendarEntry value. The caller is responsible for setting Status,
 // SubmittedBy and ID (for update) as appropriate.
@@ -432,6 +448,9 @@ func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (Calen
 	}
 
 	if input.RecurrencePattern != "" {
+		if !isValidRecurrencePattern(input.RecurrencePattern) {
+			return CalendarEntry{}, errors.New("recurrence_pattern must be one of: daily, weekly, monthly, yearly")
+		}
 		entry.RecurrencePattern = &input.RecurrencePattern
 	}
 

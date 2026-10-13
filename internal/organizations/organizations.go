@@ -8,6 +8,7 @@ package organizations
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -227,8 +228,19 @@ func orgProfileCacheKey(slug string) string {
 }
 
 // orgListCacheKey builds jc:org:list:{}:{page}.
-func orgListCacheKey(page int32) string {
-	return valkey.MustKey("org:list::%d", page)
+func orgListCacheKey(search, orgType, verified string, limit, offset int32) string {
+	// Normalize the search term (trim + lowercase) so "Japa" and " japa "
+	// share one cache entry, then hash the full filter tuple so the key
+	// stays fixed-length and unambiguous regardless of filter content.
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(search)),
+		strings.ToLower(strings.TrimSpace(orgType)),
+		strings.ToLower(strings.TrimSpace(verified)),
+		fmt.Sprintf("%d", limit),
+		fmt.Sprintf("%d", offset),
+	}, "\x00")))
+	page := offset / max(limit, 1)
+	return valkey.MustKey("org:list::%d:%x", page, sum)
 }
 
 // InvalidateOrgCache flushes all cached org entries for a platform. Call after
@@ -342,17 +354,12 @@ func (s *Service) getOrSetOrgProfile(ctx context.Context, slug string) (gen.Orga
 }
 
 // getOrSetOrgList implements read-through cache for ListPublicOrganizations.
-// The cache key includes the page number; filter variations (search, orgType,
-// verified) are part of the key to avoid returning stale filtered results.
 func (s *Service) getOrSetOrgList(ctx context.Context, search, orgType, verified string, limit, offset int32) ([]gen.ListPublicOrganizationsRow, int64, error) {
 	if s.vk == nil {
 		return s.fetchOrgList(ctx, search, orgType, verified, limit, offset)
 	}
 
-	page := offset / max(limit, 1)
-	cacheKey := orgListCacheKey(page)
-	// Include filter params in the key to avoid cross-filter cache pollution.
-	cacheKey = fmt.Sprintf("%s:%s:%s:%s:%d:%d", cacheKey, search, orgType, verified, limit, offset)
+	cacheKey := orgListCacheKey(search, orgType, verified, limit, offset)
 
 	if cached, err := s.vk.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 		var entry cachedPublicOrgList

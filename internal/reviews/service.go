@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/content"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -20,6 +21,11 @@ type CreateReviewInput struct {
 	Title      string
 	Body       string
 }
+
+// ErrAlreadyReviewed is the typed one-per-user violation. Handlers map it
+// to 409 already_reviewed; the DB unique guard (entity_type, entity_id,
+// reviewer_user_id) is the authoritative backstop for concurrent submits.
+var ErrAlreadyReviewed = errors.New("user has already reviewed this entity")
 
 // CreateReview creates a new review, enforcing one-per-user-per-entity.
 func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, input CreateReviewInput) (gen.Review, error) {
@@ -55,7 +61,7 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 	}
 
 	if exists {
-		return gen.Review{}, errors.New("already_exists: user has already reviewed this entity")
+		return gen.Review{}, ErrAlreadyReviewed
 	}
 
 	var title *string
@@ -78,6 +84,13 @@ func (s *Service) CreateReview(ctx context.Context, reviewerUserID pgtype.UUID, 
 		Body:           body,
 	})
 	if err != nil {
+		// Concurrent double-submit can win the check-then-insert race; the
+		// unique guard is authoritative — map its violation to the sentinel
+		// so handlers return 409 instead of 500 (R1).
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return gen.Review{}, ErrAlreadyReviewed
+		}
 		return gen.Review{}, err
 	}
 

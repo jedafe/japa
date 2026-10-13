@@ -430,11 +430,30 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"message": "Organization deleted"}})
 }
 
-// ListMembers handles GET /organizations/{id}/members.
+// ListMembers handles GET /organizations/{id}/members (staff view). Unlike
+// ListPublicMembers it returns the full member rows (invited_by included),
+// so it requires auth plus a member-or-admin role on the org. The public
+// Members tab calls ListPublicMembers (ACTIVE members, lean rows) instead.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+
 	orgID, err := parseUUIDParam(r, "id")
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid organization ID")
+		return
+	}
+
+	// Membership gate: non-members cannot see the internal member rows
+	// (a missing row reads as 403, not 404, per BUG-021).
+	if _, err := h.service.MemberRole(r.Context(), orgID, user.UserID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You are not a member of this organization")
+			return
+		}
+		handleServiceError(w, err)
 		return
 	}
 
@@ -744,10 +763,16 @@ func (h *Handlers) GetClaim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Non-admin users can only view their own claims. The admin gate is
-	// enforced at the route level (RequirePermission admin.moderation) for
-	// the list endpoint; this GET route is auth-only so we check ownership.
-	if claim.ClaimantUserID.Bytes != user.UserID.Bytes {
+	// Branch admins of the claimed org may inspect claims filed against it,
+	// so the org-role check runs before the claimant-ownership check. The
+	// ownership comparison uses full UUID equality (including Valid) so a
+	// zero-value row can never match a caller.
+	if role, roleErr := h.service.MemberRole(r.Context(), claim.OrganizationID, user.UserID); roleErr == nil && (role == MemberRoleOwner || role == MemberRoleAdmin) {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": claim})
+		return
+	}
+
+	if !claim.ClaimantUserID.Valid || claim.ClaimantUserID != user.UserID {
 		errpkg.WriteError(w, http.StatusForbidden, "forbidden", "You can only view your own claims")
 		return
 	}

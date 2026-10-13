@@ -643,6 +643,23 @@ func (h *Handlers) HandleRenew(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Q1: removed posts are gone for the author (410); fulfilled
+		// posts are terminal (409); anything else is a bad state (400).
+		if errors.Is(err, ErrPostRemoved) {
+			errpkg.WriteError(w, http.StatusGone, "post_removed", "This post was removed by moderation and cannot be renewed")
+			return
+		}
+
+		if errors.Is(err, ErrPostFulfilled) {
+			errpkg.WriteError(w, http.StatusConflict, "post_fulfilled", "This post is already fulfilled")
+			return
+		}
+
+		if errors.Is(err, ErrInvalid) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_post_state", "This post cannot be renewed in its current state")
+			return
+		}
+
 		slog.Error("mutualaid: renew failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "renew_failed", "Failed to renew post")
 

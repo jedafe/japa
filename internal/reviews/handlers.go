@@ -9,6 +9,7 @@ package reviews
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -118,6 +119,12 @@ func (h *Handlers) requireUser(w http.ResponseWriter, r *http.Request) (*auth.Au
 
 // handleServiceError translates a Service-layer error into the appropriate HTTP response.
 func handleServiceError(w http.ResponseWriter, err error) {
+	// R1: one-per-user violation is a typed conflict, not a generic 500.
+	if errors.Is(err, ErrAlreadyReviewed) {
+		errpkg.WriteError(w, http.StatusConflict, "already_reviewed",
+			"You have already reviewed this entity")
+		return
+	}
 	errpkg.HandleServiceError(w, err)
 }
 

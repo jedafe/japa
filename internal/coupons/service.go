@@ -354,7 +354,9 @@ func (s *Service) CreateCoupon(ctx context.Context, userID pgtype.UUID, input Cr
 		Details: detailsParam(input.Details), CreatedBy: userID,
 	})
 	if err != nil {
-		return gen.CreateCouponRow{}, mapCouponWriteErr(err)
+		// A code collision on the global coupons_code_key index surfaces
+		// as coupon_code_taken (409), not a generic conflict.
+		return gen.CreateCouponRow{}, mapOrgCouponWriteErr(err)
 	}
 
 	s.invalidateCouponCaches(ctx, c.ID, c.Slug)
@@ -571,7 +573,8 @@ func (s *Service) UpdateCoupon(ctx context.Context, id pgtype.UUID, input Update
 		Details: detailsParam(input.Details),
 	})
 	if err != nil {
-		return gen.UpdateCouponRow{}, mapCouponWriteErr(err)
+		// Same code-taken mapping as the create path.
+		return gen.UpdateCouponRow{}, mapOrgCouponWriteErr(err)
 	}
 
 	// Record a slug redirect so old /deal/{provider}/{slug} URLs keep

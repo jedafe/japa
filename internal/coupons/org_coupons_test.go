@@ -195,3 +195,40 @@ func TestResolveOrgCouponStatus(t *testing.T) {
 		})
 	}
 }
+
+// TestMergeOrgCouponInputFreeShipping verifies the update path rejects
+// free_shipping: a PATCH carrying discount_type=free_shipping, and a PATCH
+// that inherits it from the stored row, both fail merged validation with
+// ErrUnsupportedDiscount (create+update parity).
+func TestMergeOrgCouponInputFreeShipping(t *testing.T) {
+	stored := gen.Coupon{
+		Title:        "10% off",
+		Code:         strPtrOrNil("SAVE10"),
+		DiscountType: strPtrOrNil(string(DiscountTypePercent)),
+		DiscountValue: func() pgtype.Numeric {
+			n := pgtype.Numeric{}
+			if err := n.Scan("10"); err != nil {
+				t.Fatalf("scan numeric: %v", err)
+			}
+			return n
+		}(),
+	}
+
+	// PATCH explicitly sets free_shipping.
+	patch := OrgCouponInput{
+		Title:        "Free shipping?!",
+		Code:         "SAVE10",
+		DiscountType: string(DiscountTypeFreeShipping),
+	}
+	if err := validateOrgCouponInput(mergeOrgCouponInput(patch, stored)); !errors.Is(err, ErrUnsupportedDiscount) {
+		t.Fatalf("explicit free_shipping PATCH: expected ErrUnsupportedDiscount, got %v", err)
+	}
+
+	// PATCH inherits free_shipping from the stored row.
+	storedFree := stored
+	storedFree.DiscountType = strPtrOrNil(string(DiscountTypeFreeShipping))
+	keep := OrgCouponInput{Code: "SAVE10"}
+	if err := validateOrgCouponInput(mergeOrgCouponInput(keep, storedFree)); !errors.Is(err, ErrUnsupportedDiscount) {
+		t.Fatalf("inherited free_shipping PATCH: expected ErrUnsupportedDiscount, got %v", err)
+	}
+}
