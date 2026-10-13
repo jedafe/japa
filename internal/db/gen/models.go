@@ -4392,6 +4392,23 @@ type UserGroupPromotion struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
+type UserJourney struct {
+	ID                 pgtype.UUID        `json:"id"`
+	UserID             pgtype.UUID        `json:"user_id"`
+	Intent             string             `json:"intent"`
+	Stage              string             `json:"stage"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	Label              *string            `json:"label"`
+	TravelStart        pgtype.Date        `json:"travel_start"`
+	TravelEnd          pgtype.Date        `json:"travel_end"`
+	Status             string             `json:"status"`
+	IsPublic           bool               `json:"is_public"`
+	History            []byte             `json:"history"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type UserModerationAction struct {
 	ID            pgtype.UUID        `json:"id"`
 	UserID        pgtype.UUID        `json:"user_id"`

@@ -15,11 +15,11 @@ BEGIN;
 
 INSERT INTO system_settings (key, value, is_public)
 SELECT 'geo_personalization.intent_matrix', '{
-  "visit":    {"hide_paths": ["/universities", "/scholarships", "/academy", "/tools/credential-checker", "/tools/language-test"], "pin_paths": ["/tools/travel", "/wiki", "/scam-alerts", "/services"], "demote_space_types": ["university"]},
-  "business": {"hide_paths": ["/universities", "/scholarships", "/academy", "/tools/language-test"], "pin_paths": ["/services", "/tools/travel", "/tools/tax-calculator", "/tools/remittance"], "demote_space_types": ["university"]},
-  "study":    {"pin_paths": ["/universities", "/scholarships", "/academy", "/tools/credential-checker", "/tools/language-test"]},
+  "visit":    {"hide_paths": ["/academy", "/scholarships", "/tools/credential-checker", "/tools/language-test", "/tools/readiness", "/universities"], "pin_paths": ["/tools/travel", "/wiki", "/scam-alerts", "/services", "/tools/community-locator"], "demote_space_types": ["university"]},
+  "business": {"hide_paths": ["/academy", "/scholarships", "/tools/language-test", "/tools/readiness", "/universities"], "pin_paths": ["/services", "/tools/travel", "/tools/tax-calculator", "/tools/remittance"], "demote_space_types": ["university"]},
+  "study":    {"pin_paths": ["/academy", "/scholarships", "/tools/credential-checker", "/tools/language-test"]},
   "work":     {"pin_paths": ["/jobs", "/tools/cv-formatter", "/tools/credential-checker"]},
-  "family":   {"pin_paths": ["/planning-groups", "/mutual-aid", "/community-locator"]}
+  "family":   {"pin_paths": ["/planning-groups", "/mutual-aid", "/ama"]}
 }'::jsonb, false
 WHERE NOT EXISTS (SELECT 1 FROM system_settings WHERE system_settings.key = 'geo_personalization.intent_matrix');
 

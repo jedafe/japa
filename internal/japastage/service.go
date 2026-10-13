@@ -27,6 +27,7 @@ import (
 
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/honcho"
+	"github.com/jedafe/japa/internal/visitor"
 )
 
 // ProfileDTO is the API response shape for a single japa stage profile
@@ -373,15 +374,18 @@ func (s *Service) UpdateOwn(ctx context.Context, userID pgtype.UUID, input Updat
 // are validated before the upsert so an invalid pair cannot clobber a
 // stored one.
 func (s *Service) ApplyJourneyClass(ctx context.Context, userID pgtype.UUID, rawIntent, stage, source string) error {
-	intent := NormalizeIntent(rawIntent)
+	intent := visitor.NormalizeIntent(rawIntent)
 	if intent == "" && stage == "" {
 		return nil
 	}
 
-	var currentIntent string
+	var currentIntent, currentStage string
 	if cur, err := s.store.GetUserProfile(ctx, userID); err == nil {
 		if cur.JapaIntent != nil {
 			currentIntent = *cur.JapaIntent
+		}
+		if cur.JapaStage != nil {
+			currentStage = *cur.JapaStage
 		}
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("japastage: apply journey class: read profile: %w", err)
@@ -398,7 +402,14 @@ func (s *Service) ApplyJourneyClass(ctx context.Context, userID pgtype.UUID, raw
 		stage = "" // ADR-128: skip rather than reject or clear
 	}
 
-	if err := s.store.UpsertJourneyClass(ctx, userID, intent, stage, source); err != nil {
+	// ADR-122 class-switch rule (same as UpdateOwn): when a new intent makes
+	// the stored stage incompatible — e.g. settled → visit — the stage must
+	// be cleared, otherwise the intent×stage CHECK rejects the whole write
+	// and the intent is silently lost.
+	clearStage := intent != "" && stage == "" && currentStage != "" &&
+		!ValidStageForIntent(currentStage, intent)
+
+	if err := s.store.UpsertJourneyClass(ctx, userID, intent, stage, source, clearStage); err != nil {
 		return fmt.Errorf("japastage: apply journey class: %w", err)
 	}
 

@@ -260,6 +260,42 @@ func (q *Queries) ListOnboardingTemplates(ctx context.Context) ([]OnboardingTemp
 	return items, nil
 }
 
+const listSpaceTypeSlugsByIDs = `-- name: ListSpaceTypeSlugsByIDs :many
+SELECT s.id, COALESCE(st.slug, '')::text AS space_type_slug
+FROM spaces s
+LEFT JOIN space_types st ON st.id = s.space_type_id
+WHERE s.id = ANY($1::uuid[])
+`
+
+type ListSpaceTypeSlugsByIDsRow struct {
+	ID            pgtype.UUID `json:"id"`
+	SpaceTypeSlug string      `json:"space_type_slug"`
+}
+
+// ADR-128: resolve the space_types.slug for a set of space IDs so the
+// onboarding recommendation assembly can demote types irrelevant to the
+// member's journey class (geo_personalization.intent_matrix
+// demote_space_types). One round-trip for the merged recommendation list.
+func (q *Queries) ListSpaceTypeSlugsByIDs(ctx context.Context, ids []pgtype.UUID) ([]ListSpaceTypeSlugsByIDsRow, error) {
+	rows, err := q.db.Query(ctx, listSpaceTypeSlugsByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSpaceTypeSlugsByIDsRow
+	for rows.Next() {
+		var i ListSpaceTypeSlugsByIDsRow
+		if err := rows.Scan(&i.ID, &i.SpaceTypeSlug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markOnboardingReminded = `-- name: MarkOnboardingReminded :execrows
 INSERT INTO onboarding_state (user_id, reminder_count, last_reminder_at)
 VALUES ($1, 1, now())

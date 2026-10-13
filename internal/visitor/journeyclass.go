@@ -1,16 +1,21 @@
-// Package japastage — intent.go owns the canonical mapping between the
-// journey vocabularies that predate and surround ADR-122:
+// journeyclass.go — canonical mapping between the journey vocabularies
+// that predate and surround ADR-122:
 //
 //   - japa_intent (ADR-122): relocation | study | work | family | visit |
 //     business — the column on user_profiles.
-//   - purpose (ADR-064): the `purpose` custom field used by the visitor
-//     resolver and journey API — same concept, different enum (it has
-//     vacation/tourism instead of visit and no family).
+//   - purpose (ADR-064): the `purpose` custom field — same concept,
+//     different enum (it has vacation/tourism instead of visit and no
+//     family).
 //   - Onboarding primary_goal option IDs (§09) — a superset vocabulary
-//     (lifestyle, unsure, …) that needs to collapse onto japa_intent.
+//     (lifestyle, unsure, …) that collapses onto japa_intent.
+//
+// The mapping lives in visitor (not japastage) because visitor is the
+// journey-vocabulary resolver and sits lower in the import graph —
+// japastage imports literals, which imports visitor, so the reverse would
+// create a cycle.
 //
 // Ref: japaconnect-engineering/adr/ADR-128-intent-experience-personalization.md
-package japastage
+package visitor
 
 import "strings"
 

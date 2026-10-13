@@ -17,8 +17,8 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/tiers"
+	"github.com/jedafe/japa/internal/visitor"
 	"github.com/jedafe/japa/internal/worker"
 	"golang.org/x/sync/errgroup"
 )
@@ -615,7 +615,10 @@ func (s *Service) UpdateJourney(ctx context.Context, userID pgtype.UUID, req *Up
 			rawIntent = *req.Purpose
 		}
 		if req.JapaStage != nil {
-			stage = normalizeJourneyValue(*req.JapaStage)
+			// The japa_status custom field stores legacy vocabulary
+			// (newly_japa, settling_in…); the column wants canonical §87
+			// stages.
+			stage = visitor.NormalizeJourneyStage(normalizeJourneyValue(*req.JapaStage))
 		}
 		if err := s.journeyWriter.ApplyJourneyClass(ctx, userID, rawIntent, stage, "me/journey"); err != nil {
 			slog.Warn("users: failed to apply journey class", "error", err)

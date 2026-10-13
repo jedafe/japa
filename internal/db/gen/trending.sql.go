@@ -133,23 +133,28 @@ func (q *Queries) GetSuggestedContent(ctx context.Context, arg GetSuggestedConte
 
 const getSuggestedSpaces = `-- name: GetSuggestedSpaces :many
 SELECT s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code,
+ st.slug AS space_type_slug,
  COUNT(DISTINCT sm2.user_id) AS shared_members
 FROM spaces s
 JOIN space_members sm ON sm.user_id = $1
 JOIN space_members sm2 ON sm2.space_id = s.id
+LEFT JOIN space_types st ON st.id = s.space_type_id
 WHERE s.id NOT IN (
  SELECT space_id FROM space_members WHERE user_id = $1
 )
 AND s.deleted_at IS NULL
-GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code
-ORDER BY (CASE WHEN s.geo_code = $3 THEN 0 ELSE 1 END), shared_members DESC
+GROUP BY s.id, s.name, s.slug, s.member_count, s.post_count, s.geo_code, st.slug
+ORDER BY (CASE WHEN s.geo_code = $3 THEN 0 ELSE 1 END),
+ (CASE WHEN st.slug = ANY(COALESCE($4::text[], '{}'::text[])) THEN 1 ELSE 0 END),
+ shared_members DESC
 LIMIT $2
 `
 
 type GetSuggestedSpacesParams struct {
-	UserID  pgtype.UUID `json:"user_id"`
-	Limit   int32       `json:"limit"`
-	GeoCode *string     `json:"geo_code"`
+	UserID           pgtype.UUID `json:"user_id"`
+	Limit            int32       `json:"limit"`
+	GeoCode          *string     `json:"geo_code"`
+	DemoteSpaceTypes []string    `json:"demote_space_types"`
 }
 
 type GetSuggestedSpacesRow struct {
@@ -159,14 +164,23 @@ type GetSuggestedSpacesRow struct {
 	MemberCount   int32       `json:"member_count"`
 	PostCount     int32       `json:"post_count"`
 	GeoCode       *string     `json:"geo_code"`
+	SpaceTypeSlug *string     `json:"space_type_slug"`
 	SharedMembers int64       `json:"shared_members"`
 }
 
 // ADR-064: when geoCode is provided, spaces matching the visitor's
 // ContentCountry are preferred (re-weighted, not hidden). Empty geoCode =
 // global ranking (original behavior).
+// ADR-128: spaces whose space_types.slug appears in demote_space_types are
+// ordered last after geo weighting (demoted, not hidden — the member can
+// still discover them). NULL/empty array = no demotion.
 func (q *Queries) GetSuggestedSpaces(ctx context.Context, arg GetSuggestedSpacesParams) ([]GetSuggestedSpacesRow, error) {
-	rows, err := q.db.Query(ctx, getSuggestedSpaces, arg.UserID, arg.Limit, arg.GeoCode)
+	rows, err := q.db.Query(ctx, getSuggestedSpaces,
+		arg.UserID,
+		arg.Limit,
+		arg.GeoCode,
+		arg.DemoteSpaceTypes,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +195,7 @@ func (q *Queries) GetSuggestedSpaces(ctx context.Context, arg GetSuggestedSpaces
 			&i.MemberCount,
 			&i.PostCount,
 			&i.GeoCode,
+			&i.SpaceTypeSlug,
 			&i.SharedMembers,
 		); err != nil {
 			return nil, err

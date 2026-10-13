@@ -16,7 +16,6 @@ import (
 	"github.com/jedafe/japa/internal/db"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
-	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/visitor"
 )
 
@@ -268,7 +267,7 @@ func (s *Service) persistStep(ctx context.Context, userID pgtype.UUID, submitSte
 	}
 
 	if submitStep == 2 {
-		if purpose := japastage.PurposeForIntent(fields.PrimaryGoal); purpose != "" {
+		if purpose := visitor.PurposeForIntent(fields.PrimaryGoal); purpose != "" {
 			if err := s.setProfileCustomField(ctx, userID, "purpose", purpose); err != nil {
 				slog.Warn("onboarding: failed to save purpose custom field", "error", err)
 			}
@@ -698,7 +697,7 @@ func (s *Service) GetRecommendations(ctx context.Context, userID pgtype.UUID) ([
 	// class — Step 2 primary_goal resolves via geo_personalization.intent_matrix
 	// demote_space_types. Demoted spaces move to the tail of the space
 	// results; they stay discoverable.
-	if rule := visitor.IntentRuleFor(ctx, s.settings, japastage.NormalizeIntent(stepData.PrimaryGoal)); len(rule.DemoteSpaceTypes) > 0 {
+	if rule := visitor.IntentRuleFor(ctx, s.settings, visitor.NormalizeIntent(stepData.PrimaryGoal)); len(rule.DemoteSpaceTypes) > 0 {
 		if out, err := s.demoteSpaceTypes(ctx, merged, rule.DemoteSpaceTypes); err == nil {
 			merged = out
 		} else {

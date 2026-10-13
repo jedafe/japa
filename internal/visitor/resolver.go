@@ -39,7 +39,6 @@ import (
 	"github.com/jedafe/japa/internal/config"
 	"github.com/jedafe/japa/internal/db/gen"
 	"github.com/jedafe/japa/internal/geoip"
-	"github.com/jedafe/japa/internal/japastage"
 	"github.com/jedafe/japa/internal/valkey"
 	"github.com/valkey-io/valkey-go/valkeycompat"
 )
@@ -383,7 +382,7 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 			vc.JourneyStage = normalizeJourneyStage(vc.JapaStage)
 			vc.VisaRoute = normalizeVisaRoute(fields.VisaRoute)
 			vc.Purpose = normalizePurpose(fields.Purpose)
-			vc.JapaIntent = japastage.NormalizeIntent(fields.JapaIntent)
+			vc.JapaIntent = NormalizeIntent(fields.JapaIntent)
 			vc.TravelDate = strings.TrimSpace(fields.PlannedTravelDate)
 			vc.DestinationCountry = normalizeCountry(fields.DestinationCountry)
 			// ADR-064a: Use origin_country from profile when set; falls back
@@ -441,11 +440,11 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 	// derives from intent (visit → tourism). Covers guests too — their
 	// journey_purpose cookie/param is applied before this runs.
 	if vc.JapaIntent == "" {
-		vc.JapaIntent = japastage.NormalizeIntent(vc.Purpose)
+		vc.JapaIntent = NormalizeIntent(vc.Purpose)
 	}
 
 	if vc.Purpose == "" {
-		vc.Purpose = japastage.PurposeForIntent(vc.JapaIntent)
+		vc.Purpose = PurposeForIntent(vc.JapaIntent)
 	}
 
 	// Resolve archetype (ADR-064). CurrentCountry is the primary signal
@@ -732,7 +731,7 @@ func (res *Resolver) enrichGuestJourney(r *http.Request, vc *VisitorContext) {
 	}
 
 	if stored.JapaIntent != "" {
-		vc.JapaIntent = japastage.NormalizeIntent(stored.JapaIntent)
+		vc.JapaIntent = NormalizeIntent(stored.JapaIntent)
 	}
 
 	if stored.VisaRoute != "" {
@@ -983,13 +982,6 @@ func normalizeJourneyStage(s string) string {
 // NormalizePurpose normalises free-text travel purpose values.
 func NormalizePurpose(s string) string {
 	return normalizePurpose(s)
-}
-
-// NormalizeIntent maps a free-form journey value onto the ADR-122
-// japa_intent set. The canonical mapping lives in japastage (ADR-128); this
-// wrapper exists for callers that already depend on visitor.
-func NormalizeIntent(s string) string {
-	return japastage.NormalizeIntent(s)
 }
 
 // normalizePurpose normalises free-text travel purpose values.
