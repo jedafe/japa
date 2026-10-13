@@ -183,7 +183,12 @@ func (s *Service) CreateAMA(ctx context.Context, authorUserID pgtype.UUID, in Cr
 	}
 
 	if active {
-		return AMAThreadDTO{}, ErrActiveAMAExists
+		sessionID, idErr := s.store.GetActiveAMAID(ctx, authorUserID)
+		if idErr != nil {
+			return AMAThreadDTO{}, ErrActiveAMAExists
+		}
+
+		return AMAThreadDTO{}, &ActiveAMAError{SessionID: sessionID}
 	}
 
 	// Rate limit 2: cooldown between sessions (§88, ama_cooldown_days).
@@ -195,7 +200,12 @@ func (s *Service) CreateAMA(ctx context.Context, authorUserID pgtype.UUID, in Cr
 	}
 
 	if inCooldown {
-		return AMAThreadDTO{}, ErrAMACooldown
+		last, lastErr := s.store.GetLastAMACreatedAt(ctx, authorUserID)
+		if lastErr != nil || last.IsZero() {
+			return AMAThreadDTO{}, ErrAMACooldown
+		}
+
+		return AMAThreadDTO{}, &CooldownError{RetryAt: last.AddDate(0, 0, cooldown)}
 	}
 
 	// Compute closes_at from open_duration_hours (default 48) when not set.
@@ -462,6 +472,26 @@ var (
 	ErrCloseForbidden  = errors.New("only the host or a moderator may close this AMA")
 	ErrEditForbidden   = errors.New("only the host or a moderator may edit this AMA")
 )
+
+// ActiveAMAError is returned when a host already has an open AMA
+// session. It wraps ErrActiveAMAExists and carries the existing
+// session id so the handler can link the host to it (409).
+type ActiveAMAError struct {
+	SessionID pgtype.UUID
+}
+
+func (e *ActiveAMAError) Error() string { return ErrActiveAMAExists.Error() }
+func (e *ActiveAMAError) Unwrap() error { return ErrActiveAMAExists }
+
+// CooldownError is returned when the host is within the AMA cooldown
+// window. It wraps ErrAMACooldown and carries the time the cooldown
+// lifts so the handler can surface a retry_at (429).
+type CooldownError struct {
+	RetryAt time.Time
+}
+
+func (e *CooldownError) Error() string { return ErrAMACooldown.Error() }
+func (e *CooldownError) Unwrap() error { return ErrAMACooldown }
 
 // UpdateAMAInput is the validated payload for editing an AMA session.
 type UpdateAMAInput struct {

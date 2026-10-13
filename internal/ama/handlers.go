@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -260,6 +261,26 @@ func (h *Handlers) HandleCreate(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateError maps service errors to the standard error envelope.
 func handleCreateError(w http.ResponseWriter, err error) {
+	var activeErr *ActiveAMAError
+	if errors.As(err, &activeErr) {
+		data := map[string]any{}
+		if activeErr.SessionID.Valid {
+			data["session_id"] = activeErr.SessionID.String()
+		}
+		errpkg.WriteErrorData(w, http.StatusConflict, "ama_active_exists", "You already have an active AMA session.", data)
+		return
+	}
+
+	var cooldownErr *CooldownError
+	if errors.As(err, &cooldownErr) {
+		data := map[string]any{}
+		if !cooldownErr.RetryAt.IsZero() {
+			data["retry_after"] = cooldownErr.RetryAt.UTC().Format(time.RFC3339)
+		}
+		errpkg.WriteErrorData(w, http.StatusTooManyRequests, "ama_cooldown", "The AMA cooldown period has not elapsed.", data)
+		return
+	}
+
 	switch {
 	case errors.Is(err, ErrActiveAMAExists):
 		errpkg.WriteError(w, http.StatusConflict, "ama_active_exists", "You already have an active AMA session.")

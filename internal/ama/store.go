@@ -9,6 +9,8 @@ package ama
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -238,6 +240,41 @@ func (s *Store) CheckCooldown(ctx context.Context, userID pgtype.UUID, cooldownD
 
 		CooldownDays: int32(cooldownDays), // #nosec
 	})
+}
+
+// GetActiveAMAID returns the id of the author's currently-open AMA
+// session, or pgtype.UUID{} when none is open. Used to link the host
+// to their existing session when a create is rejected.
+func (s *Store) GetActiveAMAID(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
+	id, err := s.read.GetActiveAMAIDByAuthor(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, nil
+		}
+
+		return pgtype.UUID{}, fmt.Errorf("ama: get active id: %w", err)
+	}
+
+	return id, nil
+}
+
+// GetLastAMACreatedAt returns the most recent AMA creation time for the
+// author, or the zero time when the author has never created an AMA.
+func (s *Store) GetLastAMACreatedAt(ctx context.Context, userID pgtype.UUID) (time.Time, error) {
+	v, err := s.read.GetLastAMACreatedAt(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return time.Time{}, nil
+		}
+
+		return time.Time{}, fmt.Errorf("ama: get last created_at: %w", err)
+	}
+
+	if ts, ok := v.(pgtype.Timestamptz); ok && ts.Valid {
+		return ts.Time, nil
+	}
+
+	return time.Time{}, nil
 }
 
 // rowToAMAThread converts sqlc-generated row fields (with interface{} for

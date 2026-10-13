@@ -16,7 +16,7 @@ import type { ListMeta } from '$lib/types';
 
 export interface ClientResult<T> {
 	data: T | null;
-	error: { code: string; message: string; status: number } | null;
+	error: { code: string; message: string; status: number; data?: Record<string, unknown> } | null;
 	status: number;
 }
 
@@ -173,14 +173,15 @@ async function clientFetchRaw<T>(
 		}
 
 		if (!res.ok || (body && typeof body === 'object' && 'error' in body)) {
-			const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+			const err = (body as { error?: { code?: string; message?: string; data?: Record<string, unknown> } } | null)?.error;
 			return {
 				data: null,
 				envelope: null,
 				error: {
 					code: err?.code ?? 'request_failed',
 					message: err?.message ?? res.statusText,
-					status: res.status
+					status: res.status,
+					data: err?.data
 				},
 				status: res.status
 			};

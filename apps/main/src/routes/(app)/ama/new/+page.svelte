@@ -23,6 +23,8 @@
 	let loading = $state(false);
 	let errorKey = $state('');
 	let errorCode = $state('');
+	let activeSessionId = $state('');
+	let cooldownUntil = $state('');
 
 	const canSubmit = $derived(title.trim().length > 0 && hostDestCountryId.length > 0 && !loading);
 
@@ -67,8 +69,12 @@
 				errorCode = res.error.code ?? '';
 				if (errorCode === 'ama_active_exists') {
 					errorKey = 'ama.errors.active_exists';
+					activeSessionId =
+						((res.error.data as { session_id?: string } | undefined)?.session_id ?? '');
 				} else if (errorCode === 'ama_cooldown') {
 					errorKey = 'ama.errors.cooldown';
+					cooldownUntil =
+						((res.error.data as { retry_after?: string } | undefined)?.retry_after ?? '');
 				} else {
 					errorKey = 'ama.errors.submit_failed';
 				}
@@ -238,6 +244,22 @@
 		{#if errorKey}
 			<p class="rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
 				{t(errorKey, 'Failed to start your AMA. Please try again.')}
+			</p>
+		{/if}
+
+		{#if errorCode === 'ama_active_exists' && activeSessionId}
+			<a
+				href={`/ama/${activeSessionId}`}
+				class="block rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-primary)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('ama.view_active_session', 'View your active session')}
+			</a>
+		{/if}
+
+		{#if errorCode === 'ama_cooldown' && cooldownUntil}
+			<p class="px-1 text-sm text-[var(--color-muted)]">
+				{t('ama.retry_after', 'You can start a new session after:')}
+				<time datetime={cooldownUntil}>{new Date(cooldownUntil).toLocaleString()}</time>
 			</p>
 		{/if}
 

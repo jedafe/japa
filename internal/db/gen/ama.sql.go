@@ -254,6 +254,42 @@ func (q *Queries) GetAMAByID(ctx context.Context, id pgtype.UUID) (GetAMAByIDRow
 	return i, err
 }
 
+const getActiveAMAIDByAuthor = `-- name: GetActiveAMAIDByAuthor :one
+SELECT id FROM forum_threads
+WHERE author_user_id = $1
+AND ama_config IS NOT NULL
+AND deleted_at IS NULL
+AND (ama_config->>'closes_at' IS NULL
+OR (ama_config->>'closes_at')::timestamptz > now())
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+// Returns the id of the author's currently-open AMA session, used to
+// link the host to it when a create is rejected with ama_active_exists.
+func (q *Queries) GetActiveAMAIDByAuthor(ctx context.Context, authorUserID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getActiveAMAIDByAuthor, authorUserID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getLastAMACreatedAt = `-- name: GetLastAMACreatedAt :one
+SELECT max(created_at) AS created_at FROM forum_threads
+WHERE author_user_id = $1
+AND ama_config IS NOT NULL
+AND deleted_at IS NULL
+`
+
+// Returns the most recent AMA creation time for the author, used to
+// compute the cooldown retry_at for ama_cooldown rejections.
+func (q *Queries) GetLastAMACreatedAt(ctx context.Context, authorUserID pgtype.UUID) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getLastAMACreatedAt, authorUserID)
+	var created_at interface{}
+	err := row.Scan(&created_at)
+	return created_at, err
+}
+
 const hasActiveAMA = `-- name: HasActiveAMA :one
 
 SELECT EXISTS(

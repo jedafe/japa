@@ -26,8 +26,9 @@ type errorResponse struct {
 }
 
 type errorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Data    map[string]any `json:"data,omitempty"`
 }
 
 // WriteJSON serializes the given value as JSON and writes it to the
@@ -59,6 +60,22 @@ func WriteError(w http.ResponseWriter, status int, code, message string) {
 			Message: message,
 		},
 	})
+}
+
+// WriteErrorData writes a JSON error response following the JapaConnect
+// API error format, with an optional data object carrying
+// machine-readable context (e.g. a conflicting resource id or a
+// retry timestamp). The data field is omitted when nil or empty.
+func WriteErrorData(w http.ResponseWriter, status int, code, message string, data map[string]any) {
+	body := errorBody{
+		Code:    code,
+		Message: message,
+	}
+	if len(data) > 0 {
+		body.Data = data
+	}
+
+	WriteJSON(w, status, errorResponse{Error: body})
 }
 
 // stripSentinelPrefix removes the sentinel error's message prefix from
