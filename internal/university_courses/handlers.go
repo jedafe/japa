@@ -32,8 +32,43 @@ import (
 // SpacesResolver is the subset of spaces.Service the handlers need to resolve
 // a university slug/ID to its space row.
 type SpacesResolver interface {
+	GetSpaceTypeBySlug(ctx context.Context, slug string) (gen.SpaceType, error)
 	GetSpaceBySlug(ctx context.Context, slug string) (gen.GetSpaceBySlugRow, error)
 	GetSpace(ctx context.Context, id pgtype.UUID) (gen.GetSpaceByIDRow, error)
+}
+
+// universitySpaceTypeSlug is the space_types.slug seeded for universities
+// (migrations/000009_geo_first_space_system.sql).
+const universitySpaceTypeSlug = "university"
+
+// resolveUniversitySpace resolves a university slug to its space row and
+// verifies it belongs to the university space-type. Non-university spaces
+// (cities, states, …) 404 so course listings can never leak through another
+// type's slug. It writes the error response itself; callers return on !ok.
+func (h *Handlers) resolveUniversitySpace(w http.ResponseWriter, r *http.Request, slug string) (gen.GetSpaceBySlugRow, bool) {
+	if h.spaces == nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "University lookup unavailable")
+		return gen.GetSpaceBySlugRow{}, false
+	}
+
+	space, err := h.spaces.GetSpaceBySlug(r.Context(), slug)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return gen.GetSpaceBySlugRow{}, false
+	}
+
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "University lookup unavailable")
+		return gen.GetSpaceBySlugRow{}, false
+	}
+
+	if space.SpaceTypeID != spaceType.ID {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+		return gen.GetSpaceBySlugRow{}, false
+	}
+
+	return space, true
 }
 
 // Handlers owns the public + admin university course HTTP endpoints.
@@ -194,15 +229,9 @@ func catalogToJSON(c CourseCatalog) map[string]any {
 // published course offerings at a university, paginated. Honors
 // ?q=&degree_type=&page=&limit= per Section 39. [public]
 func (h *Handlers) ListUniversityCourses(w http.ResponseWriter, r *http.Request) {
-	if h.spaces == nil {
-		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "University lookup unavailable")
-		return
-	}
-
 	slug := chi.URLParam(r, "slug")
-	space, err := h.spaces.GetSpaceBySlug(r.Context(), slug)
-	if err != nil {
-		errpkg.HandleServiceError(w, err)
+	space, ok := h.resolveUniversitySpace(w, r, slug)
+	if !ok {
 		return
 	}
 
@@ -434,26 +463,59 @@ func (h *Handlers) AdminUpdateCatalog(w http.ResponseWriter, r *http.Request) {
 		slug = slugify(req.Title)
 	}
 
-	lang := "English"
+	// Omitted scalars keep their current values — a bare {title} PATCH must
+	// not reset language to English or unpublish the row.
+	current, err := h.svc.GetCatalogByID(r.Context(), id)
+	if err != nil {
+		errpkg.HandleServiceError(w, err)
+		return
+	}
+
+	lang := current.Language
 	if req.Language != nil && strings.TrimSpace(*req.Language) != "" {
 		lang = strings.TrimSpace(*req.Language)
 	}
 
-	published := true
+	published := current.IsPublished
 	if req.IsPublished != nil {
 		published = *req.IsPublished
+	}
+
+	duration := current.DefaultDurationYears
+	if req.DefaultDurationYears != nil {
+		duration = numericFromFloat(req.DefaultDurationYears)
+	}
+
+	description := current.Description
+	if req.Description != nil {
+		description = req.Description
+	}
+
+	degreeType := current.DegreeType
+	if req.DegreeType != nil {
+		degreeType = req.DegreeType
+	}
+
+	department := current.Department
+	if req.Department != nil {
+		department = req.Department
+	}
+
+	fieldOfStudy := current.FieldOfStudy
+	if req.FieldOfStudy != nil {
+		fieldOfStudy = req.FieldOfStudy
 	}
 
 	c, err := h.svc.UpdateCatalog(r.Context(), gen.UpdateCourseCatalogParams{
 		ID:                   id,
 		Title:                req.Title,
 		Slug:                 slug,
-		Description:          req.Description,
-		DegreeType:           req.DegreeType,
-		Department:           req.Department,
-		FieldOfStudy:         req.FieldOfStudy,
+		Description:          description,
+		DegreeType:           degreeType,
+		Department:           department,
+		FieldOfStudy:         fieldOfStudy,
 		Language:             lang,
-		DefaultDurationYears: numericFromFloat(req.DefaultDurationYears),
+		DefaultDurationYears: duration,
 		IsPublished:          published,
 	})
 	if err != nil {
@@ -585,6 +647,8 @@ type offeringRequest struct {
 
 // defaultOfferingSlug builds the conventional offering slug
 // ({university_slug}-{course_slug}) when the admin leaves slug empty.
+// The university space must be university-typed — a non-university space
+// 404s rather than minting a slug for it.
 func (h *Handlers) defaultOfferingSlug(ctx context.Context, courseID, universityID pgtype.UUID) (string, error) {
 	course, err := h.svc.GetCatalogByID(ctx, courseID)
 	if err != nil {
@@ -598,6 +662,15 @@ func (h *Handlers) defaultOfferingSlug(ctx context.Context, courseID, university
 	space, err := h.spaces.GetSpace(ctx, universityID)
 	if err != nil {
 		return "", err
+	}
+
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(ctx, universitySpaceTypeSlug)
+	if err != nil {
+		return "", err
+	}
+
+	if space.SpaceTypeID != spaceType.ID {
+		return "", errpkg.ErrNotFound
 	}
 
 	return slugify(space.Slug + "-" + course.Slug), nil
@@ -715,18 +788,50 @@ func (h *Handlers) AdminUpdateOffering(w http.ResponseWriter, r *http.Request) {
 		published = *req.IsPublished
 	}
 
+	// Omitted scalars keep their current values — a bare {slug} PATCH must
+	// not zero tuition/duration or clear currency/mode/entry/accreditation.
+	tuition := current.Tuition
+	if req.Tuition != nil {
+		tuition = numericFromFloat(req.Tuition)
+	}
+
+	duration := current.DurationYears
+	if req.DurationYears != nil {
+		duration = numericFromFloat(req.DurationYears)
+	}
+
+	currency := current.Currency
+	if req.Currency != nil {
+		currency = req.Currency
+	}
+
+	studyMode := current.StudyMode
+	if req.StudyMode != nil {
+		studyMode = req.StudyMode
+	}
+
+	entryRequirements := current.EntryRequirements
+	if req.EntryRequirements != nil {
+		entryRequirements = req.EntryRequirements
+	}
+
+	accreditation := current.Accreditation
+	if req.Accreditation != nil {
+		accreditation = req.Accreditation
+	}
+
 	if _, err := h.svc.UpdateOffering(r.Context(), gen.UpdateCourseOfferingParams{
 		ID:                id,
 		CourseID:          courseID,
 		UniversityID:      universityID,
 		Slug:              slug,
-		Tuition:           numericFromFloat(req.Tuition),
-		Currency:          req.Currency,
-		DurationYears:     numericFromFloat(req.DurationYears),
-		StudyMode:         req.StudyMode,
+		Tuition:           tuition,
+		Currency:          currency,
+		DurationYears:     duration,
+		StudyMode:         studyMode,
 		IntakeMonths:      intake,
-		EntryRequirements: req.EntryRequirements,
-		Accreditation:     req.Accreditation,
+		EntryRequirements: entryRequirements,
+		Accreditation:     accreditation,
 		IsPublished:       published,
 	}); err != nil {
 		errpkg.HandleServiceError(w, err)
@@ -797,14 +902,15 @@ func (h *Handlers) AdminBulkOfferings(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, id)
 	}
 
+	var affected int64
 	var err error
 	switch strings.ToLower(strings.TrimSpace(req.Action)) {
 	case "publish":
-		err = h.svc.BulkSetOfferingsPublished(r.Context(), ids, true)
+		affected, err = h.svc.BulkSetOfferingsPublished(r.Context(), ids, true)
 	case "unpublish":
-		err = h.svc.BulkSetOfferingsPublished(r.Context(), ids, false)
+		affected, err = h.svc.BulkSetOfferingsPublished(r.Context(), ids, false)
 	case "delete":
-		err = h.svc.BulkSoftDeleteOfferings(r.Context(), ids)
+		affected, err = h.svc.BulkSoftDeleteOfferings(r.Context(), ids)
 	default:
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "action must be publish, unpublish, or delete")
 		return
@@ -814,5 +920,5 @@ func (h *Handlers) AdminBulkOfferings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "affected": len(ids)})
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "affected": affected})
 }

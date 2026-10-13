@@ -449,23 +449,27 @@ func (s *Store) HardDeleteOffering(ctx context.Context, id pgtype.UUID) error {
 	return nil
 }
 
-// BulkSetOfferingsPublished sets is_published on a set of offering ids.
-func (s *Store) BulkSetOfferingsPublished(ctx context.Context, ids []pgtype.UUID, published bool) error {
-	if err := s.write.BulkSetCourseOfferingsPublished(ctx, gen.BulkSetCourseOfferingsPublishedParams{
+// BulkSetOfferingsPublished sets is_published on a set of offering ids and
+// returns the number of rows actually updated.
+func (s *Store) BulkSetOfferingsPublished(ctx context.Context, ids []pgtype.UUID, published bool) (int64, error) {
+	affected, err := s.write.BulkSetCourseOfferingsPublished(ctx, gen.BulkSetCourseOfferingsPublishedParams{
 		IsPublished: published,
 		Ids:         ids,
-	}); err != nil {
-		return fmt.Errorf("university_courses: bulk set published: %w", err)
+	})
+	if err != nil {
+		return 0, fmt.Errorf("university_courses: bulk set published: %w", err)
 	}
 
-	return nil
+	return affected, nil
 }
 
-// BulkSoftDeleteOfferings marks a set of offering ids deleted.
-func (s *Store) BulkSoftDeleteOfferings(ctx context.Context, ids []pgtype.UUID) error {
-	if err := s.write.BulkSoftDeleteCourseOfferings(ctx, ids); err != nil {
-		return fmt.Errorf("university_courses: bulk delete: %w", err)
+// BulkSoftDeleteOfferings marks a set of offering ids deleted and returns
+// the number of rows actually updated.
+func (s *Store) BulkSoftDeleteOfferings(ctx context.Context, ids []pgtype.UUID) (int64, error) {
+	affected, err := s.write.BulkSoftDeleteCourseOfferings(ctx, ids)
+	if err != nil {
+		return 0, fmt.Errorf("university_courses: bulk delete: %w", err)
 	}
 
-	return nil
+	return affected, nil
 }

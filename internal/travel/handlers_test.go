@@ -202,3 +202,54 @@ func TestHashSearchQuery_HotelParams(t *testing.T) {
 		t.Fatal("identical hotel params produced different hashes")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T6 — coverage-hash normalization: case/whitespace variants of the same
+// query share one coverage key, distinct queries do not.
+// ---------------------------------------------------------------------------
+
+func TestFlightCoverageHash_NormalizesCaseAndWhitespace(t *testing.T) {
+	base := FlightSearchParams{Origin: "los", Destination: "lhr", Date: "2026-10-01", Adults: 1, CabinClass: "Economy"}
+	variant := FlightSearchParams{Origin: " LOS ", Destination: " LHR", Date: "2026-10-01", Adults: 1, CabinClass: " economy "}
+
+	if flightCoverageHash(base) != flightCoverageHash(variant) {
+		t.Fatal("case/whitespace variants produced different flight coverage hashes")
+	}
+}
+
+func TestFlightCoverageHash_DistinctQueries(t *testing.T) {
+	base := FlightSearchParams{Origin: "LOS", Destination: "LHR", Date: "2026-10-01", Adults: 1}
+	other := FlightSearchParams{Origin: "LOS", Destination: "CDG", Date: "2026-10-01", Adults: 1}
+
+	if flightCoverageHash(base) == flightCoverageHash(other) {
+		t.Fatal("different flight queries produced the same coverage hash")
+	}
+}
+
+func TestHotelCoverageHash_NormalizesCaseAndWhitespace(t *testing.T) {
+	base := HotelSearchParams{Destination: "London", CheckIn: "2026-10-01", CheckOut: "2026-10-07", Guests: 2, Rooms: 1}
+	variant := HotelSearchParams{Destination: " LONDON ", CheckIn: "2026-10-01", CheckOut: "2026-10-07", Guests: 2, Rooms: 1}
+
+	if hotelCoverageHash(base) != hotelCoverageHash(variant) {
+		t.Fatal("case/whitespace variants produced different hotel coverage hashes")
+	}
+}
+
+func TestHotelCoverageHash_DistinctQueries(t *testing.T) {
+	base := HotelSearchParams{Destination: "London", CheckIn: "2026-10-01", CheckOut: "2026-10-07", Guests: 2, Rooms: 1}
+	other := HotelSearchParams{Destination: "Paris", CheckIn: "2026-10-01", CheckOut: "2026-10-07", Guests: 2, Rooms: 1}
+
+	if hotelCoverageHash(base) == hotelCoverageHash(other) {
+		t.Fatal("different hotel queries produced the same coverage hash")
+	}
+}
+
+func TestCoverageKeys_MatchHashNormalization(t *testing.T) {
+	if flightRouteKey(FlightSearchParams{Origin: " los", Destination: "LHR "}) != "LOS-LHR" {
+		t.Fatalf("unexpected flight route key: %q", flightRouteKey(FlightSearchParams{Origin: " los", Destination: "LHR "}))
+	}
+
+	if hotelCityKey(HotelSearchParams{Destination: " London "}) != "london" {
+		t.Fatalf("unexpected hotel city key: %q", hotelCityKey(HotelSearchParams{Destination: " London "}))
+	}
+}

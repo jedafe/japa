@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -520,17 +521,10 @@ func (h *Handlers) GetUniversity(w http.ResponseWriter, r *http.Request) {
 	// logo_url, and the frontend falls back to the GraduationCap icon.
 	logoURL := h.resolveLogoURL(r.Context(), space.LogoMediaID)
 
-	// Pull initials out of the display-ready fields for convenient top-level use.
-	var initials *string
-
-	for _, df := range displayFields {
-		if df.Key == "initials" && df.Value != "" {
-			v := df.Value
-			initials = &v
-
-			break
-		}
-	}
+	// Pull initials out of the display-ready fields for convenient top-level use,
+	// falling back to the raw field-value row so initials resolve even when
+	// the field is not flagged show_in_frontend.
+	initials := h.resolveInitials(r.Context(), displayFields, fields)
 
 	// Viewer-scoped relation flags for the detail page CTA (Join/Follow).
 	isMember, isPending, isFollowing := false, false, false
@@ -809,6 +803,62 @@ func (h *Handlers) CreateUniversity(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": space})
 }
 
+// requireUniversitySpace loads a space by ID and verifies it belongs to the
+// university space-type. Non-university spaces 404 so admin ID routes can
+// never mutate a city, state, or other space through the university surface.
+// It writes the error response itself; callers return when ok is false.
+func (h *Handlers) requireUniversitySpace(w http.ResponseWriter, r *http.Request, id pgtype.UUID) (gen.GetSpaceByIDRow, bool) {
+	existing, err := h.spaces.GetSpace(r.Context(), id)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+		return gen.GetSpaceByIDRow{}, false
+	}
+
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		return gen.GetSpaceByIDRow{}, false
+	}
+
+	if existing.SpaceTypeID != spaceType.ID {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+		return gen.GetSpaceByIDRow{}, false
+	}
+
+	return existing, true
+}
+
+// resolveInitials returns the university short code, preferring the
+// display-ready (show_in_frontend) value and falling back to the raw
+// field-value row matched by field ID. The fallback covers initials fields
+// that are not flagged show_in_frontend, which the display join filters out.
+func (h *Handlers) resolveInitials(ctx context.Context, displayFields []universityField, raw []gen.CustomFieldValue) *string {
+	for _, df := range displayFields {
+		if df.Key == "initials" && df.Value != "" {
+			v := df.Value
+			return &v
+		}
+	}
+
+	if h.customFields == nil {
+		return nil
+	}
+
+	fieldID, err := h.resolveInitialsFieldID(ctx)
+	if err != nil {
+		return nil
+	}
+
+	for _, f := range raw {
+		if f.FieldID == fieldID && f.ValueText != nil && strings.TrimSpace(*f.ValueText) != "" {
+			v := strings.TrimSpace(*f.ValueText)
+			return &v
+		}
+	}
+
+	return nil
+}
+
 // UpdateUniversity handles PATCH /admin/universities/:id.
 func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 
@@ -818,9 +868,8 @@ func (h *Handlers) UpdateUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+	existing, ok := h.requireUniversitySpace(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -918,6 +967,10 @@ func (h *Handlers) DeleteUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := h.requireUniversitySpace(w, r, id); !ok {
+		return
+	}
+
 	if err := h.spaces.DeleteSpace(r.Context(), id); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "delete_failed", "Failed to delete university")
 		return
@@ -935,9 +988,8 @@ func (h *Handlers) VerifyUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+	existing, ok := h.requireUniversitySpace(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -974,9 +1026,8 @@ func (h *Handlers) UnverifyUniversity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+	existing, ok := h.requireUniversitySpace(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -1038,9 +1089,8 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	existing, err := h.spaces.GetSpace(r.Context(), id)
-	if err != nil {
-		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+	existing, ok := h.requireUniversitySpace(w, r, id)
+	if !ok {
 		return
 	}
 
@@ -1064,6 +1114,14 @@ func (h *Handlers) UpdateUniversityStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": space})
+}
+
+// isDuplicateSlugError reports whether err is a Postgres 23505
+// unique-violation (a bulk-import row whose slug already exists). Only that
+// code counts as skipped; every other create error counts as failed.
+func isDuplicateSlugError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // BulkImportUniversities handles POST /admin/universities/bulk-import —
@@ -1182,8 +1240,14 @@ func (h *Handlers) BulkImportUniversities(w http.ResponseWriter, r *http.Request
 			Status:         "pending",
 		})
 		if err != nil {
-			// Duplicate slug (UNIQUE violation) → skip, not a failure.
-			skipped++
+			// A 23505 UNIQUE(slug) violation means the row already exists —
+			// skipping keeps re-imports idempotent. Any other create error
+			// is a real failure.
+			if isDuplicateSlugError(err) {
+				skipped++
+			} else {
+				failed++
+			}
 			continue
 		}
 
@@ -1228,8 +1292,21 @@ func (h *Handlers) CompareUniversities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Verify the university exists so a bad slug 404s rather than redirecting
-	// to a picker with a dead pre-selection.
-	if _, err := h.spaces.GetSpaceBySlug(r.Context(), slug); err != nil {
+	// to a picker with a dead pre-selection. Non-university spaces 404 too —
+	// the same space-type check as GetUniversity.
+	space, err := h.spaces.GetSpaceBySlug(r.Context(), slug)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
+		return
+	}
+
+	spaceType, err := h.spaces.GetSpaceTypeBySlug(r.Context(), universitySpaceTypeSlug)
+	if err != nil {
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to resolve university space type")
+		return
+	}
+
+	if space.SpaceTypeID != spaceType.ID {
 		errpkg.WriteError(w, http.StatusNotFound, "not_found", "University not found")
 		return
 	}

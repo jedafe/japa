@@ -271,7 +271,11 @@ func (s *Service) priceQuote(ctx context.Context, listing ServiceRow, bookerID p
 			}
 		}
 
-		if c.PerUserLimit != nil {
+		// M4 anonymous preview: per-user caps only apply to a known
+		// viewer — a zero bookerID means "unknown", never "over limit".
+		// (Mutation-time CreateBooking always has a real user and keeps
+		// the full enforcement.)
+		if c.PerUserLimit != nil && bookerID.Valid {
 			n, err := s.store.countCouponRedemptionsByUser(ctx, lc.ID, bookerID)
 			if err != nil {
 				return Quote{}, err
@@ -282,7 +286,7 @@ func (s *Service) priceQuote(ctx context.Context, listing ServiceRow, bookerID p
 			}
 		}
 
-		if c.FirstTimeOnly {
+		if c.FirstTimeOnly && bookerID.Valid {
 			n, err := s.store.countBookingsByUserOrg(ctx, bookerID, listing.OrgID)
 			if err != nil {
 				return Quote{}, err

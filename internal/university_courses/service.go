@@ -178,12 +178,24 @@ func (s *Service) HardDeleteOffering(ctx context.Context, id pgtype.UUID) error 
 	return mapStoreError(s.store.HardDeleteOffering(ctx, id))
 }
 
-// BulkSetOfferingsPublished sets is_published on a set of offering ids.
-func (s *Service) BulkSetOfferingsPublished(ctx context.Context, ids []pgtype.UUID, published bool) error {
-	return mapStoreError(s.store.BulkSetOfferingsPublished(ctx, ids, published))
+// BulkSetOfferingsPublished sets is_published on a set of offering ids and
+// returns the number of rows actually updated.
+func (s *Service) BulkSetOfferingsPublished(ctx context.Context, ids []pgtype.UUID, published bool) (int64, error) {
+	affected, err := s.store.BulkSetOfferingsPublished(ctx, ids, published)
+	if err != nil {
+		return 0, mapStoreError(err)
+	}
+
+	return affected, nil
 }
 
-// BulkSoftDeleteOfferings marks a set of offering ids deleted.
-func (s *Service) BulkSoftDeleteOfferings(ctx context.Context, ids []pgtype.UUID) error {
-	return mapStoreError(s.store.BulkSoftDeleteOfferings(ctx, ids))
+// BulkSoftDeleteOfferings marks a set of offering ids deleted and returns
+// the number of rows actually updated.
+func (s *Service) BulkSoftDeleteOfferings(ctx context.Context, ids []pgtype.UUID) (int64, error) {
+	affected, err := s.store.BulkSoftDeleteOfferings(ctx, ids)
+	if err != nil {
+		return 0, mapStoreError(err)
+	}
+
+	return affected, nil
 }

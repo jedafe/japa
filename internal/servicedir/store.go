@@ -437,6 +437,8 @@ func rowFromContentID(r gen.GetServiceListingByContentIDRow) ServiceRow {
 }
 
 // rowFromAdmin maps a generated admin list row to the shared domain row.
+// M7: carries the live-coupon EXISTS + rating rollup so AdminList can
+// stamp the same §114 derived badge as the public list.
 func rowFromAdmin(r gen.AdminListServiceListingsRow) ServiceRow {
 	return ServiceRow{
 		ID: r.ID, AuthorID: r.AuthorID, Title: r.Title, Slug: r.Slug,
@@ -463,6 +465,8 @@ func rowFromAdmin(r gen.AdminListServiceListingsRow) ServiceRow {
 		PurchaseMode: r.PurchaseMode, Capacity: r.Capacity,
 		AvailableFrom: r.AvailableFrom, AvailableUntil: r.AvailableUntil,
 		Faqs: r.Faqs, Steps: r.Steps,
+		RatingCount: r.RatingCount, RatingAvg: r.RatingAvg,
+		HasCoupon: r.HasCoupon,
 	}
 }
 
@@ -759,6 +763,30 @@ func (s *Store) ListByOrg(ctx context.Context, orgID pgtype.UUID, status, listin
 	}
 
 	return out, nil
+}
+
+// CountByOrg returns the total org listings under the ListByOrg filter
+// set — the M3 count twin backing ListOrgPackages pagination meta.
+func (s *Store) CountByOrg(ctx context.Context, orgID pgtype.UUID, status, listingKind string) (int64, error) {
+	var statusPtr *string
+	if status != "" {
+		statusPtr = &status
+	}
+
+	params := gen.CountServiceListingsByOrgParams{
+		Status: statusPtr,
+		OrgID:  orgID,
+	}
+	if listingKind != "" {
+		params.ListingKind = &listingKind
+	}
+
+	n, err := s.read.CountServiceListingsByOrg(ctx, params)
+	if err != nil {
+		return 0, fmt.Errorf("servicedir: count by org: %w", err)
+	}
+
+	return n, nil
 }
 
 // ---------------------------------------------------------------------------

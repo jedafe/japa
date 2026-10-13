@@ -45,14 +45,24 @@ const (
 )
 
 // ErrTravelDisabled is returned when the travel surface is globally disabled
-// via the travel.enabled system_setting (default false until a provider is
-// configured).
+// via the travel.enabled feature flag (default false until a provider is
+// configured). The public search handlers surface this before the provider
+// lookup, so the status/code contract is:
+//
+//	ErrTravelDisabled → 503 travel_disabled (surface switched off)
+//	ErrNoProvider     → 503 provider_not_configured (surface on, no usable provider)
+//
+// The route-level features.Gate(travel.enabled) 404s first (ADR-042); the
+// service check covers direct service callers and flag races between the
+// gate and the search.
 var ErrTravelDisabled = errors.New("travel: feature disabled")
 
 // ErrNoProvider is returned when a search is attempted but no active provider
 // exists for the requested type (flight or hotel). The handler maps this to a
 // 503 provider_not_configured so the UI can show a friendly "not configured
-// yet" state instead of a generic failure.
+// yet" state instead of a generic failure. Unlike ErrTravelDisabled it means
+// the surface is enabled but has no usable upstream — never returned when
+// the feature flag itself is off.
 var ErrNoProvider = errors.New("travel: no provider configured")
 
 // errProviderUnconfigured marks a provider whose api_config carries no
@@ -67,6 +77,19 @@ const defaultCacheTTL = 5 * time.Minute
 // ---------------------------------------------------------------------------
 // Search parameter and result DTOs
 // ---------------------------------------------------------------------------
+
+// normalizeCoverageString lowercases and trims a value for coverage hashing.
+// Every coverage hash funnels through this so route/city/cabin keys share
+// one normalization instead of drifting per call site.
+func normalizeCoverageString(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// normalizeCoverageRoute uppercases and trims an IATA code pair for coverage
+// hashing.
+func normalizeCoverageCode(s string) string {
+	return strings.ToUpper(strings.TrimSpace(s))
+}
 
 // FlightSearchParams is the user-facing flight search query. All timestamps
 // are RFC 3339 UTC date strings.
@@ -1037,11 +1060,11 @@ func flightCoverageHash(p FlightSearchParams) string {
 		Children   int    `json:"children"`
 	}{
 		Type:       ProviderTypeFlight,
-		Origin:     strings.ToUpper(strings.TrimSpace(p.Origin)),
-		Dest:       strings.ToUpper(strings.TrimSpace(p.Destination)),
+		Origin:     normalizeCoverageCode(p.Origin),
+		Dest:       normalizeCoverageCode(p.Destination),
 		Date:       p.Date,
 		ReturnDate: p.ReturnDate,
-		Cabin:      strings.ToLower(strings.TrimSpace(p.CabinClass)),
+		Cabin:      normalizeCoverageString(p.CabinClass),
 		Adults:     p.Adults,
 		Children:   p.Children,
 	})
@@ -1058,7 +1081,7 @@ func hotelCoverageHash(p HotelSearchParams) string {
 		Rooms    int    `json:"rooms"`
 	}{
 		Type:     ProviderTypeHotel,
-		Dest:     strings.ToLower(strings.TrimSpace(p.Destination)),
+		Dest:     normalizeCoverageString(p.Destination),
 		CheckIn:  p.CheckIn,
 		CheckOut: p.CheckOut,
 		Guests:   p.Guests,
@@ -1068,13 +1091,13 @@ func hotelCoverageHash(p HotelSearchParams) string {
 
 // flightRouteKey is the coverage dimension stored on each flight offer row.
 func flightRouteKey(p FlightSearchParams) string {
-	return strings.ToUpper(strings.TrimSpace(p.Origin)) + "-" +
-		strings.ToUpper(strings.TrimSpace(p.Destination))
+	return normalizeCoverageCode(p.Origin) + "-" +
+		normalizeCoverageCode(p.Destination)
 }
 
 // hotelCityKey is the coverage dimension stored on each hotel offer row.
 func hotelCityKey(p HotelSearchParams) string {
-	return strings.ToLower(strings.TrimSpace(p.Destination))
+	return normalizeCoverageString(p.Destination)
 }
 
 // flightOfferKey derives the dedup identity of a provider offer, scoped to
@@ -1173,8 +1196,13 @@ func (s *Service) upsertHotelDirectoryRow(ctx context.Context, providerID pgtype
 
 // HotelDirectory serves GET /travel/hotels — a pure local read over
 // travel_hotels. It never calls a provider; the table is filled by search
-// upserts and the sync task.
+// upserts and the sync task. Disabled surfaces return ErrTravelDisabled so
+// the directory honors the same travel.enabled gate as search.
 func (s *Service) HotelDirectory(ctx context.Context, city, q string, minStars int, page, pageSize int) ([]HotelDirectoryItem, int64, error) {
+	if !s.IsEnabled(ctx) {
+		return nil, 0, ErrTravelDisabled
+	}
+
 	if pageSize <= 0 {
 		pageSize = 50
 	}
@@ -1187,7 +1215,7 @@ func (s *Service) HotelDirectory(ctx context.Context, city, q string, minStars i
 		page = 1
 	}
 
-	cityKey := strings.ToLower(strings.TrimSpace(city))
+	cityKey := normalizeCoverageString(city)
 	nameQ := strings.TrimSpace(q)
 
 	filter := gen.ListTravelHotelsParams{
@@ -1308,7 +1336,13 @@ func airlineSlug(name string) string {
 // AirlineDirectory serves GET /travel/airlines — a pure local read over
 // travel_airlines joined to provider coverage. It never calls a provider;
 // rows come from the OpenFlights seed and offer-persistence observations.
+// Disabled surfaces return ErrTravelDisabled so the directory honors the
+// same travel.enabled gate as search.
 func (s *Service) AirlineDirectory(ctx context.Context, q, country, providerSlug string, page, pageSize int) ([]AirlineDirectoryItem, int64, error) {
+	if !s.IsEnabled(ctx) {
+		return nil, 0, ErrTravelDisabled
+	}
+
 	if pageSize <= 0 {
 		pageSize = 50
 	}
@@ -1323,7 +1357,7 @@ func (s *Service) AirlineDirectory(ctx context.Context, q, country, providerSlug
 
 	query := strings.TrimSpace(q)
 	countryFilter := strings.TrimSpace(country)
-	providerFilter := strings.ToLower(strings.TrimSpace(providerSlug))
+	providerFilter := normalizeCoverageString(providerSlug)
 
 	filter := gen.ListTravelAirlinesParams{
 		Q:            query,
@@ -1406,7 +1440,7 @@ func (s *Service) SyncHotelDirectory(ctx context.Context) error {
 				continue
 			}
 
-			cityKey := strings.ToLower(strings.TrimSpace(item.City))
+			cityKey := normalizeCoverageString(item.City)
 			if cityKey == "" {
 				continue
 			}
@@ -2121,18 +2155,20 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 
 	// (3) Offer inventory — fresh coverage row means this query shape was
 	// fetched recently; serve the indexed offers with zero upstream calls.
+	// Served offers never touched the provider, so cache_hit stays false.
 	if inventoryOn && hasProvider {
 		if offers := s.inventoryFlights(ctx, provider, params, coverageKey, false); len(offers) > 0 {
 			injectAffiliateIntoFlights(offers, affiliate)
 			s.cacheSearchResults(ctx, cacheKey, offers)
 
-			return serveFlights(offers, opts, "inventory", true, start), nil
+			return serveFlights(offers, opts, "inventory", false, start), nil
 		}
 	}
 
 	// (4) Fresh replay row — the exact-query fallback (also coverage-keyed
 	// now, so presentation variants share it). Stored payloads are
-	// pre-affiliate, so inject before serving.
+	// pre-affiliate, so inject before serving. Like inventory, a replay row
+	// never touched the provider on this request, so cache_hit stays false.
 	if stored != nil && stored.ExpiresAt.Valid && stored.ExpiresAt.Time.After(time.Now()) {
 		var results []FlightResult
 		if err := json.Unmarshal(stored.Results, &results); err == nil {
@@ -2144,7 +2180,7 @@ func (s *Service) SearchFlights(ctx context.Context, params FlightSearchParams, 
 
 			s.store.BumpSearchResultHit(ctx, stored.ID)
 
-			return serveFlights(results, opts, "stored", true, start), nil
+			return serveFlights(results, opts, "stored", false, start), nil
 		}
 	}
 
@@ -2270,17 +2306,18 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 	}
 
 	// (3) Offer inventory — fresh coverage serves the indexed offers with
-	// zero upstream calls (ADR-124).
+	// zero upstream calls (ADR-124). cache_hit stays false: only the Valkey
+	// layer counts as a cache hit.
 	if inventoryOn && hasProvider {
 		if offers := s.inventoryHotels(ctx, provider, params, coverageKey, false); len(offers) > 0 {
 			injectAffiliateIntoHotels(offers, affiliate)
 			s.cacheSearchResults(ctx, cacheKey, offers)
 
-			return serveHotels(offers, opts, "inventory", true, start), nil
+			return serveHotels(offers, opts, "inventory", false, start), nil
 		}
 	}
 
-	// (4) Fresh replay row.
+	// (4) Fresh replay row. cache_hit stays false — same reasoning as flights.
 	if stored != nil && stored.ExpiresAt.Valid && stored.ExpiresAt.Time.After(time.Now()) {
 		var results []HotelResult
 		if err := json.Unmarshal(stored.Results, &results); err == nil {
@@ -2292,7 +2329,7 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 
 			s.store.BumpSearchResultHit(ctx, stored.ID)
 
-			return serveHotels(results, opts, "stored", true, start), nil
+			return serveHotels(results, opts, "stored", false, start), nil
 		}
 	}
 
@@ -2373,9 +2410,15 @@ func (s *Service) SearchHotels(ctx context.Context, params HotelSearchParams, op
 // travel_airports catalog is the primary source; when the active flight
 // provider exposes a locations endpoint (api_config.extra.locations_endpoint)
 // its matches are merged in (deduped by IATA). Provider failures degrade to
-// local results only (§67).
+// local results only (§67). Disabled surfaces return ErrTravelDisabled — the
+// same gate as the search paths — so the endpoint is never reachable while
+// travel.enabled is off.
 func (s *Service) SearchLocations(ctx context.Context, q string, limit int32) ([]LocationResult, error) {
-	q = strings.ToLower(strings.TrimSpace(q))
+	if !s.IsEnabled(ctx) {
+		return nil, ErrTravelDisabled
+	}
+
+	q = normalizeCoverageString(q)
 
 	if q == "" {
 		return []LocationResult{}, nil

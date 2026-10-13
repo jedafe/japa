@@ -250,6 +250,8 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 		errpkg.WriteError(w, http.StatusBadRequest, "checkout_fields_required", "provider and email are required for paid bookings")
 	case errors.Is(err, ErrInvalidProvider):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_provider", "provider must be one of: paystack, stripe, nowpayments, manual_transfer, credit")
+	case errors.Is(err, ErrInvalidReturnURL):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_url", "return_url must be a site-relative path or a same-origin URL")
 	case errors.Is(err, ErrInvalidPreferredDates):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_preferred_dates", "preferred_dates must be {start_on, end_on, flexible} with start_on <= end_on")
 	case errors.Is(err, ErrInvalidInput):

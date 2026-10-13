@@ -131,6 +131,14 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// M5: return_url becomes the payment provider's success_url — an
+	// open-redirect vector unless it stays same-origin. Rejected before
+	// any booking row is written.
+	if !validReturnURL(input.ReturnURL, r.Host) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_url", "return_url must be a site-relative path or a same-origin URL")
+		return
+	}
+
 	result, err := h.service.CreateBooking(r.Context(), user.UserID, contentID, input)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -149,13 +157,19 @@ func (h *Handlers) HandleCreateBooking(w http.ResponseWriter, r *http.Request) {
 
 // HandlePricePreview handles GET /services/:id/price-preview — the live
 // quote behind the booking modal's Apply button (?tier_id=&coupon_code=).
-// No mutation. Coupon rejections return 200 with coupon_valid:false +
-// error_code so the UI can show the undiscounted quote beside the failure
-// reason; an unknown/inactive tier is a hard 400 invalid_tier.
+// No mutation. Read-only, so guests may preview too (M4): the route uses
+// OptionalAuth and per-user coupon caps (per_user_limit, first_time_only)
+// only apply when a viewer is present — anonymous previews quote the base
+// numbers without consuming or validating personal caps. Coupon rejections
+// return 200 with coupon_valid:false + error_code so the UI can show the
+// undiscounted quote beside the failure reason; an unknown/inactive tier
+// is a hard 400 invalid_tier.
 func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireUser(w, r)
-	if !ok {
-		return
+	// Optional viewer — nil for anonymous previews (M4).
+	user := auth.FromContext(r.Context())
+	var bookerID pgtype.UUID
+	if user != nil {
+		bookerID = user.UserID
 	}
 
 	if !h.packagesAvailable(w, r) {
@@ -187,7 +201,7 @@ func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	quote, err := h.service.PricePreview(r.Context(), user.UserID, contentID, tierID, couponCode)
+	quote, err := h.service.PricePreview(r.Context(), bookerID, contentID, tierID, couponCode)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
@@ -198,7 +212,7 @@ func (h *Handlers) HandlePricePreview(w http.ResponseWriter, r *http.Request) {
 			// Re-quote without the coupon so the base numbers still render;
 			// the tier was already validated (it resolves before the coupon
 			// chain), so a second failure is a genuine error.
-			baseQuote, berr := h.service.PricePreview(r.Context(), user.UserID, contentID, tierID, "")
+			baseQuote, berr := h.service.PricePreview(r.Context(), bookerID, contentID, tierID, "")
 			if berr != nil {
 				if errors.Is(berr, pgx.ErrNoRows) {
 					errpkg.WriteError(w, http.StatusNotFound, "service_not_found", "Service not found")
@@ -391,6 +405,13 @@ func (h *Handlers) HandleMyBookingPay(w http.ResponseWriter, r *http.Request) {
 
 	var input BookingPayInput
 	_ = json.NewDecoder(r.Body).Decode(&input) // email/return_url optional for non-Paystack providers
+
+	// M5: same same-origin gate as the create path — the resume mints a
+	// fresh provider session carrying return_url as its success_url.
+	if !validReturnURL(input.ReturnURL, r.Host) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_return_url", "return_url must be a site-relative path or a same-origin URL")
+		return
+	}
 
 	payment, err := h.service.ResumeBookingPayment(r.Context(), bookingID, user.UserID, input)
 	if err != nil {

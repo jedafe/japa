@@ -342,6 +342,26 @@ func (h *Handlers) HandleSearchHotels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// requireTravelEnabled maps the service-level travel.enabled check to the
+// same 503 travel_disabled contract as the search handlers. Locations and
+// directory routes share it — they are part of the travel surface, so they
+// must not stay reachable when the feature is switched off. (The
+// route-level features.Gate 404s first; this covers direct callers and
+// flag races.)
+func (h *Handlers) requireTravelEnabled(w http.ResponseWriter, r *http.Request) bool {
+	if h.service == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+		return false
+	}
+
+	if !h.service.IsEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_disabled", "Travel search is disabled")
+		return false
+	}
+
+	return true
+}
+
 // HandleSearchLocations handles GET /api/v1/travel/locations — airport
 // autocomplete backed by the seeded IATA catalog, merged with the provider's
 // locations API when configured (§67 amendment).
@@ -354,8 +374,7 @@ func (h *Handlers) HandleSearchLocations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if h.service == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+	if !h.requireTravelEnabled(w, r) {
 		return
 	}
 
@@ -377,8 +396,7 @@ func (h *Handlers) HandleSearchLocations(w http.ResponseWriter, r *http.Request)
 // searches and the travel:sync_hotel_directory feed task (§67, ADR-124).
 // Query: city, q (name substring), min_stars, page, page_size (default 50).
 func (h *Handlers) HandleHotelDirectory(w http.ResponseWriter, r *http.Request) {
-	if h.service == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+	if !h.requireTravelEnabled(w, r) {
 		return
 	}
 
@@ -411,8 +429,7 @@ func (h *Handlers) HandleHotelDirectory(w http.ResponseWriter, r *http.Request) 
 // HandleAirlineDirectory handles GET /api/v1/travel/airlines — browse the
 // airline catalog joined to observed provider coverage. Pure local read.
 func (h *Handlers) HandleAirlineDirectory(w http.ResponseWriter, r *http.Request) {
-	if h.service == nil {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "travel_unavailable", "Travel service not configured")
+	if !h.requireTravelEnabled(w, r) {
 		return
 	}
 

@@ -1325,20 +1325,26 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 		slog.Error("servicedir: create service_listing_meta failed after content creation", "content_id", contentRow.ID, "error", err)
 		// Compensating cleanup: without a meta row the content is an
 		// orphaned 'service_listing' that no query can reach.
-		if delErr := s.content.DeleteContent(ctx, contentRow.ID); delErr != nil {
-			slog.Error("servicedir: failed to clean up orphaned content", "content_id", contentRow.ID, "error", delErr)
-		}
+		s.deleteCreatedListing(ctx, contentRow.ID)
 		return ServiceDTO{}, fmt.Errorf("servicedir: create service_listing_meta: %w", err)
 	}
 
 	if isPackage {
+		// M1: the items/departures/tiers writes below run after the meta
+		// commit, so any of them failing would leave a half-built package
+		// (meta without items, or items without departures). The child
+		// rows all hang off service_listing_meta with ON DELETE CASCADE
+		// and the meta hangs off contents the same way — deleting the
+		// content row rolls the whole partial package back.
 		if err := s.store.ReplacePackageItems(ctx, metaRow.ID, itemParams); err != nil {
 			slog.Error("servicedir: create package items failed", "meta_id", metaRow.ID, "error", err)
+			s.deleteCreatedListing(ctx, contentRow.ID)
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package items: %w", err)
 		}
 
 		if err := s.store.ReplacePackageDepartures(ctx, metaRow.ID, nil, depParams); err != nil {
 			slog.Error("servicedir: create package departures failed", "meta_id", metaRow.ID, "error", err)
+			s.deleteCreatedListing(ctx, contentRow.ID)
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package departures: %w", err)
 		}
 	}
@@ -1348,11 +1354,23 @@ func (s *Service) Create(ctx context.Context, authorID pgtype.UUID, input Create
 	if s.TiersEnabled(ctx) {
 		if err := s.store.ReplacePackageTiers(ctx, metaRow.ID, tierParams); err != nil {
 			slog.Error("servicedir: create package tiers failed", "meta_id", metaRow.ID, "error", err)
+			s.deleteCreatedListing(ctx, contentRow.ID)
 			return ServiceDTO{}, fmt.Errorf("servicedir: create package tiers: %w", err)
 		}
 	}
 
 	return s.getServiceDTOByID(ctx, contentRow.ID)
+}
+
+// deleteCreatedListing removes a just-created contents row after a
+// post-meta failure (M1). Best-effort: the ON DELETE CASCADE chain
+// (contents → service_listing_meta → items/departures/tiers) reclaims
+// every partial row; a cleanup failure is logged, never surfaced, so the
+// caller still sees the original write error.
+func (s *Service) deleteCreatedListing(ctx context.Context, contentID pgtype.UUID) {
+	if delErr := s.content.DeleteContent(ctx, contentID); delErr != nil {
+		slog.Error("servicedir: failed to clean up orphaned content", "content_id", contentID, "error", delErr)
+	}
 }
 
 // validatePackageItems validates the §111 items[] payload and converts it
@@ -2872,6 +2890,11 @@ func (s *Service) AdminList(ctx context.Context, status, claimStatus, serviceCat
 		// the admin surface emits the meta price unconditionally (no
 		// flag gating on the moderation queue).
 		dto.MinPrice = r.PriceAmount
+		// M7: same §114 derived ribbon as the public list — has_coupon
+		// rides the row unconditionally here (the moderation queue shows
+		// the true coupon state, not the flag-gated public one).
+		dto.HasCoupon = r.HasCoupon
+		dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, r.HasCoupon)
 
 		dtos = append(dtos, dto)
 	}

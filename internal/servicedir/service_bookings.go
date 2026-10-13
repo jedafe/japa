@@ -25,6 +25,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -388,6 +390,42 @@ func validatePreferredDates(d *PreferredDatesInput) error {
 	return nil
 }
 
+// ErrInvalidReturnURL — return_url failed same-origin validation (M5).
+var ErrInvalidReturnURL = errors.New("invalid return_url")
+
+// validReturnURL reports whether raw is an acceptable fee-checkout
+// return target (M5): empty (no override), a site-relative path ("/...",
+// never protocol-relative "//" or backslash tricks), or an absolute URL
+// on the request's own host (the client allowlist mirrors this — only
+// same-origin hrefs are ever sent). Anything else is an open-redirect
+// vector through the payment provider's success_url.
+func validReturnURL(raw, host string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+
+	if strings.HasPrefix(raw, "/") && !strings.HasPrefix(raw, "//") {
+		return !strings.Contains(raw, "\\") && !strings.Contains(raw, "://")
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() {
+		return false
+	}
+
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return false
+	}
+
+	want := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		want = h
+	}
+
+	return strings.EqualFold(u.Hostname(), want)
+}
+
 // validBookingProviders mirrors the §17 provider enum
 // (payments.IsValidProvider) so CreateBooking can reject an unknown
 // provider with a structured 400 before any row is written — servicedir
@@ -404,8 +442,17 @@ var validBookingProviders = map[string]bool{
 
 // computeFee calculates the §111 platform fee for a package price (both
 // minor units). fee_type='percent' → price × fee_pct / 100; 'fixed' →
-// fee_fixed. The fee never exceeds the package price.
+// fee_fixed. The fee never exceeds the package price. M2: a nil settings
+// reader (unwired tests, degraded deploys) falls back to the 10%-of-price
+// default instead of dereferencing nil.
 func (s *Service) computeFee(ctx context.Context, priceAmount int64) int64 {
+	if s.settings == nil {
+		fee := priceAmount * 10 / 100
+		if fee > priceAmount {
+			return priceAmount
+		}
+		return fee
+	}
 	if s.settings.GetStringOr(ctx, "service_packages.fee_type", "percent") == "fixed" {
 		fee := int64(s.settings.GetIntOr(ctx, "service_packages.fee_fixed", 0))
 		if fee > priceAmount {
@@ -425,9 +472,13 @@ func (s *Service) computeFee(ctx context.Context, priceAmount int64) int64 {
 	return fee
 }
 
-// bookingExpiresAt computes the pending SLA deadline.
+// bookingExpiresAt computes the pending SLA deadline. A nil settings
+// reader falls back to the 72h default (same nil-guard as computeFee).
 func (s *Service) bookingExpiresAt(ctx context.Context) pgtype.Timestamptz {
-	sla := s.settings.GetIntOr(ctx, "service_packages.org_response_sla_hours", 72)
+	sla := 72
+	if s.settings != nil {
+		sla = s.settings.GetIntOr(ctx, "service_packages.org_response_sla_hours", 72)
+	}
 
 	return pgtype.Timestamptz{Time: time.Now().Add(time.Duration(sla) * time.Hour), Valid: true}
 }
@@ -1246,7 +1297,9 @@ func (s *Service) ListOrgBookings(ctx context.Context, orgID, userID pgtype.UUID
 
 // ListOrgPackages returns the org's package listings. Anonymous callers
 // and non-members see published packages only; org members see every
-// status — the dashboard view includes drafts/in_review (§111).
+// status — the dashboard view includes drafts/in_review (§111). M3: the
+// total rides a COUNT query over the same filter set (not the page
+// length) so paginated org dashboards page correctly.
 func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UUID, page, limit int32) ([]ServiceDTO, int64, error) {
 	if limit <= 0 {
 		limit = 20
@@ -1265,6 +1318,11 @@ func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UU
 	}
 
 	rows, err := s.store.ListByOrg(ctx, orgID, status, ListingKindPackage, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	total, err := s.store.CountByOrg(ctx, orgID, status, ListingKindPackage)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1293,7 +1351,7 @@ func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UU
 		out = append(out, dto)
 	}
 
-	return out, int64(len(out)), nil
+	return out, total, nil
 }
 
 // OrgTransition applies the org-facing status transition
@@ -1806,7 +1864,10 @@ func (s *Service) cancelFeeAction(ctx context.Context, row BookingRow) string {
 		return "refund"
 	}
 
-	window := s.settings.GetIntOr(ctx, "service_packages.refund_window_days", 7)
+	window := 7
+	if s.settings != nil {
+		window = s.settings.GetIntOr(ctx, "service_packages.refund_window_days", 7)
+	}
 	if row.ConfirmedAt.Valid && time.Since(row.ConfirmedAt.Time) <= time.Duration(window)*24*time.Hour {
 		return "refund"
 	}
