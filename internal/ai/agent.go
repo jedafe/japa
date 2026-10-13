@@ -128,6 +128,7 @@ type AgentHandler struct {
 	rateLimiter RateLimiter
 	cache       CacheClient     // for jc:agent:tools:{user_id} catalog cache
 	persona     PersonaResolver // Phase 8: resolve agent.default_persona_id → user_id for draft requests
+	preflight   *Preflight      // §20 amendment: shared consent + unified daily budget (nil = skip)
 
 	// llmCategory is the gateway provider category used for ChatWithTools
 	// dispatch. Defaults to "chat" — the agent uses the same chat-capable
@@ -212,6 +213,15 @@ func WithAgentPersona(p PersonaResolver) AgentOption {
 	return func(h *AgentHandler) { h.persona = p }
 }
 
+// WithAgentPreflight injects the shared §20 AI admission pipeline
+// (ai_processing consent + the unified jc:ai:queries/jc:ai:cost daily
+// budget). The agent's own feature gate and per-surface limits
+// (jc:agent:rate, jc:agent:cost, per-request cost cap) still apply on
+// top. Nil skips the shared checks.
+func WithAgentPreflight(p *Preflight) AgentOption {
+	return func(h *AgentHandler) { h.preflight = p }
+}
+
 // ---------------------------------------------------------------------------
 // HandleAgentRequest (tasks 5.04-5.12)
 // ---------------------------------------------------------------------------
@@ -276,6 +286,23 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 	if h.perms != nil {
 		if !h.perms.HasPermission(ctx, userID, "agent.use") {
 			return nil, errAgentNoPermission
+		}
+	}
+
+	// --- Shared §20 preflight: ai_processing consent + the unified daily
+	// budget (jc:ai:queries/jc:ai:cost). Runs after the surface gates;
+	// the per-surface agent limits below still apply on top. ---
+	if h.preflight != nil {
+		if perr := h.preflight.CheckConsent(ctx, userID); perr != nil {
+			return nil, errAgentConsentRequired
+		}
+
+		if perr := h.preflight.CheckBudget(ctx, userID); perr != nil {
+			if perr.Code == "ai_daily_budget" {
+				return nil, errAgentBudgetExceeded
+			}
+
+			return nil, errAgentRateLimited
 		}
 	}
 
@@ -835,6 +862,13 @@ func (h *AgentHandler) trackCost(ctx context.Context, userID pgtype.UUID, cost f
 	}
 
 	key := valkey.MustKey("agent:cost:%s:%s", userID.String(), time.Now().UTC().Format("2006-01-02"))
+
+	// Accumulate the same cost into the unified daily spend key
+	// (jc:ai:cost:{user_id}:{date}) so the shared §20 budget sees the
+	// agent's spend alongside chat and assist.
+	if h.preflight != nil {
+		h.preflight.RecordCost(ctx, userID, cost)
+	}
 
 	total, err := h.rateLimiter.IncrByFloat(ctx, key, cost)
 	if err != nil {

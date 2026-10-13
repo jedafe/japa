@@ -2058,6 +2058,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// jc:ai:response:* semantic caching can short-circuit repeated prompts.
 	aiHandlers.SetCacheClient(agentCache)
 
+	// Shared §20 AI preflight — feature gate → ai_processing consent →
+	// unified daily budget (jc:ai:queries + jc:ai:cost) for every
+	// user-facing AI surface (chat, assist, agent). Per-surface limits
+	// (agent.rate_limit_per_day et al.) still apply on top for the agent.
+	aiPreflight := ai.NewPreflight(featureChecker, settingsService, gdprService, agentRateLimiter, tierService)
+	aiHandlers.SetPreflight(aiPreflight)
+
 	contentCreatorBridge := &agentContentCreatorBridge{svc: contentService}
 	contentUpdaterBridge := &agentContentUpdaterBridge{svc: contentService}
 
@@ -2182,6 +2189,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// the wiki.min_reputation_to_edit community-submission gate.
 	agentDeps.Wiki = &agentWikiAdapter{svc: wikiService, store: wikiStore}
 	agentDeps.Points = walletService
+	// §20 V1 assist tools (migration 000847): the agent executor shares
+	// the same AssistRunner implementation as POST /ai/assist/*.
+	agentDeps.Assist = aiHandlers
 
 	agentRegistry := ai.NewToolHandlerRegistry()
 	ai.RegisterPhase4Tools(agentRegistry, agentDeps)
@@ -2213,6 +2223,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ai.WithAgentRateLimiter(agentRateLimiter),
 		ai.WithAgentCache(agentCache),
 		ai.WithAgentPersona(&agentPersonaAdapter{store: personasStore}),
+		ai.WithAgentPreflight(aiPreflight), // §20 shared consent + unified daily budget
 	)
 
 	agentHTTPHandlers := ai.NewAgentHTTPHandlers(
@@ -5390,20 +5401,22 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/chat", aiHandlers.HandleChat)
 
-			// Content AI Assist endpoints (catalog: /ai/assist/*), gated by
-			// ai.editor.assist (Section 20 V1 Tool Catalog: content.editor_assist
-			// behind ai.editor.assist), moderate rate limit.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			// Content AI Assist endpoints (catalog: /ai/assist/*), gated by the
+			// feature.ai_content_gen flag — the same flag as /ai/generate — plus
+			// ai.editor.assist (Section 20 V1 Tool Catalog), moderate rate limit.
+			// The legacy ai.content_assist_enabled setting is the deprecated
+			// nil-checker fallback inside the handlers.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/improve", aiHandlers.HandleImprove)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/summarize", aiHandlers.HandleSummarize)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/translate", aiHandlers.HandleTranslate)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/generate-tags", aiHandlers.HandleGenerateTags)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/generate-og", aiHandlers.HandleGenerateOG)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.editor.assist"), mw.RateLimit(vkClient.Redis(), "moderate")).
 				Post("/ai/assist/draft", aiHandlers.HandleDraft)
 
 			// HITL review routes — rate-limited to prevent review queue flooding and
@@ -5511,16 +5524,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// AI Agent Executor routes (Section 103, ADR-111) — Phase 6.
 			// The agent SSE endpoint, capabilities, session history, and
 			// session management. All gated by the agent.use RBAC permission
-			// (seeded by migration 000372) + RequireAuth.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+			// (seeded by migration 000372) + RequireAuth + the feature.ai_agent
+			// flag — previously only the UI hid the surface while the API
+			// stayed reachable when the flag was off.
+			r.With(features.Gate(featureChecker, "feature.ai_agent"),
+				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Post("/ai/agent", agentHTTPHandlers.HandleAgent)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+			r.With(features.Gate(featureChecker, "feature.ai_agent"),
+				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Get("/ai/agent/capabilities", agentHTTPHandlers.HandleGetCapabilities)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+			r.With(features.Gate(featureChecker, "feature.ai_agent"),
+				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Get("/ai/agent/sessions", agentHTTPHandlers.HandleListSessions)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+			r.With(features.Gate(featureChecker, "feature.ai_agent"),
+				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Get("/ai/agent/sessions/{id}", agentHTTPHandlers.HandleGetSession)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+			r.With(features.Gate(featureChecker, "feature.ai_agent"),
+				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Post("/ai/agent/sessions/{id}/cancel", agentHTTPHandlers.HandleCancelSession)
 
 			// MCP server bridge (§119, ADR-116). Deterministic JSON-RPC 2.0

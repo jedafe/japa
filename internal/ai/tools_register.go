@@ -36,6 +36,19 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("content_types.list", ContentTypesListHandler(deps))
 	registry.RegisterHandler("guide_categories.list", GuideCategoriesListHandler(deps))
 
+	// --- Assist tools (§20 V1 catalog; migration 000847) ---
+	// The six in-editor assist ops, shared with POST /ai/assist/* via
+	// deps.Assist. All six ai_tools rows carry
+	// required_permission='ai.editor.assist' so unauthorized users never
+	// see them in the catalog. content.editor_assist (the v1 umbrella row)
+	// stays disabled — superseded by the granular ops.
+	registry.RegisterHandler("content.improve", AssistImproveHandler(deps))
+	registry.RegisterHandler("content.summarize", AssistSummarizeHandler(deps))
+	registry.RegisterHandler("platform.translate_string", AssistTranslateHandler(deps))
+	registry.RegisterHandler("content.suggest_tags", AssistSuggestTagsHandler(deps))
+	registry.RegisterHandler("content.generate_og", AssistGenerateOGHandler(deps))
+	registry.RegisterHandler("content.generate_draft", AssistGenerateDraftHandler(deps))
+
 	// --- Content draft-request tool (Phase 8, tasks 8.01 + 8.02 + 8.05) ---
 	// content.create_draft is gated by agent.draft_request (not
 	// content.create) at the catalog layer. It forces status="draft",

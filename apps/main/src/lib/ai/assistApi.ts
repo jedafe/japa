@@ -4,8 +4,11 @@ import type { ClientResult } from '$lib/api/client';
 /**
  * Client wrappers for the Section 20 V1 in-editor assist endpoints:
  * POST /api/v1/ai/assist/{improve,summarize,translate,generate-tags,generate-og}.
- * All are RBAC-gated by ai.editor.assist and short-circuit with 503
- * ai_assist_disabled when the ai.content_assist_enabled setting is off.
+ * All are RBAC-gated by ai.editor.assist + the feature.ai_content_gen flag
+ * and short-circuit with 503 ai_assist_disabled when the flag is off (the
+ * deprecated ai.content_assist_enabled setting is the fallback). They also
+ * enforce ai_processing consent (403 ai_consent_required) and the shared
+ * daily AI budget (429 ai_daily_limit / 402 ai_daily_budget).
  */
 
 /** Raw dispatcher response shape returned by the assist endpoints. */

@@ -254,6 +254,8 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusPaymentRequired, "budget_exceeded", "Daily AI spend budget exceeded")
 	case errors.Is(err, errAgentEmptyPrompt):
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
+	case errors.Is(err, errAgentConsentRequired):
+		errpkg.WriteError(w, http.StatusForbidden, "ai_consent_required", "You must consent to AI processing before using the AI agent")
 	case errors.Is(err, errAgentNotConfigured):
 		errpkg.WriteError(w, http.StatusServiceUnavailable, "agent_not_configured", "The AI agent is not configured")
 	default:
@@ -266,12 +268,13 @@ func writeAgentError(w http.ResponseWriter, err error) {
 // AgentHandler's error returns via the wrapAgentError helper below so the
 // HTTP layer can map them to status codes without string matching.
 var (
-	errAgentDisabled       = errors.New("ai: agent is disabled")
-	errAgentNoPermission   = errors.New("ai: user lacks agent.use permission")
-	errAgentRateLimited    = errors.New("ai: daily agent rate limit exceeded")
-	errAgentBudgetExceeded = errors.New("ai: daily agent budget exceeded")
-	errAgentEmptyPrompt    = errors.New("ai: prompt is required")
-	errAgentNotConfigured  = errors.New("ai: agent handler not configured")
+	errAgentDisabled        = errors.New("ai: agent is disabled")
+	errAgentNoPermission    = errors.New("ai: user lacks agent.use permission")
+	errAgentRateLimited     = errors.New("ai: daily agent rate limit exceeded")
+	errAgentBudgetExceeded  = errors.New("ai: daily agent budget exceeded")
+	errAgentEmptyPrompt     = errors.New("ai: prompt is required")
+	errAgentNotConfigured   = errors.New("ai: agent handler not configured")
+	errAgentConsentRequired = errors.New("ai: user has not consented to AI processing")
 )
 
 // ---------------------------------------------------------------------------

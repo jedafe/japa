@@ -671,6 +671,13 @@ type ToolDeps struct {
 	// nil → the reputation check fails closed when the threshold is > 0
 	// (same convention as the REST handler's BUG-004 fix).
 	Points PointsBalanceReader
+
+	// Assist backs the §20 V1 assist tools (content.improve,
+	// content.summarize, platform.translate_string, content.suggest_tags,
+	// content.generate_og, content.generate_draft) — the same shared
+	// implementation as POST /ai/assist/*. nil → the tools return
+	// "not configured".
+	Assist AssistRunner
 }
 
 // ---------------------------------------------------------------------------

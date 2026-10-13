@@ -137,8 +137,9 @@ var settingsCatalog = map[string]settingMeta{
 	"ads.min_campaign_budget":   {Type: "float", DefaultValue: "10", Description: "Minimum campaign budget in credits.", Panel: "admin"},
 	// AI
 	"ai.monthly_budget_usd":      {Type: "float", DefaultValue: "100", Description: "Alert threshold for AI spend (not hard cap).", Panel: "admin"},
-	"ai.japabot_enabled":         {Type: "bool", DefaultValue: "true", Description: "Global JapaBot toggle.", Panel: "admin"},
-	"ai.content_assist_enabled":  {Type: "bool", DefaultValue: "true", Description: "In-editor AI assist toggle.", Panel: "admin"},
+	"ai.japabot_enabled":         {Type: "bool", DefaultValue: "true", Description: "DEPRECATED — managed via feature_flags/feature.japabot. Global JapaBot toggle.", Panel: "admin"},
+	"ai.content_assist_enabled":  {Type: "bool", DefaultValue: "true", Description: "DEPRECATED — managed via feature_flags/feature.ai_content_gen. In-editor AI assist toggle.", Panel: "admin"},
+	"ai.daily_cost_limit_usd":    {Type: "float", DefaultValue: "0", Description: "Per-user daily AI spend hard cap in USD (UTC) shared across JapaBot chat, in-editor assist, and the AI agent. 0 = disabled.", Panel: "control"},
 	"ai.cost_per_1k_tokens_usd":  {Type: "float", DefaultValue: "0.002", Description: "Default USD cost per 1,000 tokens for AI usage monitoring and cost limits.", Panel: "control"},
 	"ai.cache_enabled":           {Type: "bool", DefaultValue: "false", Description: "Enable Valkey semantic cache for repeated AI prompts (generate, chat, assist).", Panel: "control"},
 	"ai.cache_ttl_seconds":       {Type: "int", DefaultValue: "300", Description: "TTL for cached AI responses (seconds).", Panel: "control"},

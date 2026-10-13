@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -89,6 +90,7 @@ type Handlers struct {
 	checker              FeatureChecker // feature_flags reachability (feature.japabot); nil → settings fallback
 	Perms                PermissionChecker
 	consents             ConsentChecker      // §19: ai_processing consent gate (nil = skip check)
+	preflight            *Preflight          // §20 amendment: shared admission + unified daily budget (nil = degrade to checker/Settings)
 	ragService           RAGRetriever        // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
 	HTTPClient           *http.Client        // nil → http.DefaultClient (external search / HITL verify)
 	cache                CacheClient         // nil → ai.cache_enabled must be true to have any effect
@@ -132,6 +134,13 @@ func (h *Handlers) SetDraftPublishHook(dh DraftPublishHook) {
 // providers (§19, ADR-014). When nil, consent checks are skipped.
 func (h *Handlers) SetConsentChecker(c ConsentChecker) {
 	h.consents = c
+}
+
+// SetPreflight injects the shared §20 AI admission pipeline (feature gate
+// → ai_processing consent → unified daily budget). When nil, handlers
+// degrade to their own feature checker / settings / consent fields.
+func (h *Handlers) SetPreflight(p *Preflight) {
+	h.preflight = p
 }
 
 // enqueueAIProcessTask enqueues an async AI processing task.
@@ -204,42 +213,27 @@ func (h *Handlers) applyModelAndVoice(
 	payload map[string]any,
 	model, voiceID, category, defaultKey string,
 ) bool {
-	effectiveModel := model
-	if effectiveModel == "" && defaultKey != "" && h.Settings != nil {
-		effectiveModel = h.Settings.GetStringOr(r.Context(), defaultKey, "")
+	// Visibility: only system voices or voices created by the caller may
+	// be applied. Invisible voices resolve to an empty prompt (no-op)
+	// instead of an error so the request continues without the override
+	// (BUG-009).
+	caller := auth.FromContext(r.Context())
+
+	var userID pgtype.UUID
+
+	if caller != nil {
+		userID = caller.UserID
 	}
 
-	if effectiveModel != "" {
-		if !h.isValidModelForCategory(effectiveModel, category) {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available for this category")
-			return false
+	if err := h.resolveModelAndVoice(r.Context(), userID, payload, model, voiceID, category, defaultKey); err != nil {
+		var ae *AssistError
+		if errors.As(err, &ae) {
+			errpkg.WriteError(w, ae.Status, ae.Code, ae.Message)
+		} else {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 		}
 
-		payload["model"] = effectiveModel
-	}
-
-	if voiceID != "" {
-		// Visibility: only system voices or voices created by the caller may
-		// be applied. Invisible voices resolve to an empty prompt (no-op)
-		// instead of an error so the request continues without the override
-		// (BUG-009).
-		caller := auth.FromContext(r.Context())
-
-		var userID pgtype.UUID
-
-		if caller != nil {
-			userID = caller.UserID
-		}
-
-		voicePrompt, err := h.resolveVoicePrompt(r.Context(), userID, voiceID)
-		if err != nil {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_voice", "The requested voice could not be found")
-			return false
-		}
-
-		if voicePrompt != "" {
-			payload["voice_prompt"] = voicePrompt
-		}
+		return false
 	}
 
 	return true
@@ -268,26 +262,12 @@ func (h *Handlers) SetSettings(s SettingsReader) {
 	h.costs = NewCostEstimator(s)
 }
 
-// SetFeatureChecker injects the feature flag checker so JapaBot reachability
-// reads the same feature.japabot flag the route gate enforces instead of the
-// legacy ai.japabot_enabled system_setting (kept as the nil-checker fallback).
+// SetFeatureChecker injects the feature flag checker so AI surface
+// reachability reads the same feature_flags keys the route gates enforce
+// (feature.japabot, feature.ai_content_gen) instead of the legacy
+// system_settings keys (kept as the nil-checker fallback).
 func (h *Handlers) SetFeatureChecker(c FeatureChecker) {
 	h.checker = c
-}
-
-// japaBotEnabled resolves the feature.japabot flag; the legacy
-// ai.japabot_enabled system_setting is consulted only when no checker is
-// injected.
-func (h *Handlers) japaBotEnabled(ctx context.Context) bool {
-	if h.checker != nil {
-		return h.checker.IsEnabled(ctx, "feature.japabot")
-	}
-
-	if h.Settings == nil {
-		return true
-	}
-
-	return h.Settings.GetBoolOr(ctx, "ai.japabot_enabled", true)
 }
 
 // SetCacheClient injects the Valkey cache client used for the
@@ -430,12 +410,61 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	return user, true
 }
 
-// requireContentAssistEnabled short-circuits the in-editor AI assist endpoints
-// when the ai.content_assist_enabled system setting is false (Section 20 V1
-// Tool Catalog; conventions/system-settings-catalog.md).
-func (h *Handlers) requireContentAssistEnabled(ctx context.Context, w http.ResponseWriter) bool {
-	if h.Settings != nil && !h.Settings.GetBoolOr(ctx, "ai.content_assist_enabled", true) {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "ai_assist_disabled", "AI content assist is currently disabled")
+// requireAIAdmission runs the shared §20 admission gates for a user-facing
+// AI surface — surface reachability (feature_flags authoritative, legacy
+// system_settings as the nil-checker fallback) then ai_processing consent
+// (§19/ADR-014). With a wired preflight the checks run through the shared
+// pipeline; without one the handler's own checker/Settings/consents fields
+// reproduce the same semantics.
+func (h *Handlers) requireAIAdmission(ctx context.Context, w http.ResponseWriter, userID pgtype.UUID, gate SurfaceGate) bool {
+	if h.preflight != nil {
+		if perr := h.preflight.CheckAdmission(ctx, userID, gate); perr != nil {
+			errpkg.WriteError(w, perr.Status, perr.Code, perr.Message)
+			return false
+		}
+
+		return true
+	}
+
+	// Degraded wiring (tests construct Handlers without a preflight):
+	// resolve reachability + consent from the handler's own fields with
+	// the same semantics as Preflight.CheckAdmission.
+	enabled := true
+
+	if h.checker != nil {
+		enabled = h.checker.IsEnabled(ctx, gate.FeatureKey)
+	} else if h.Settings != nil {
+		enabled = h.Settings.GetBoolOr(ctx, gate.SettingKey, gate.SettingDefault)
+	}
+
+	if !enabled {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, gate.DisabledCode, gate.DisabledMsg)
+		return false
+	}
+
+	if h.consents != nil && userID.Valid {
+		consented, err := h.consents.HasConsent(ctx, userID, "ai_processing")
+		if err != nil {
+			slog.Warn("ai: consent check failed, allowing request", "error", err)
+		} else if !consented {
+			errpkg.WriteError(w, http.StatusForbidden, "ai_consent_required", "You must consent to AI processing before using AI features")
+			return false
+		}
+	}
+
+	return true
+}
+
+// requireAIBudget runs the shared §20 unified daily budget check
+// (jc:ai:queries + jc:ai:cost). Call after input validation so malformed
+// requests do not consume quota. Nil preflight skips the check.
+func (h *Handlers) requireAIBudget(ctx context.Context, w http.ResponseWriter, userID pgtype.UUID) bool {
+	if h.preflight == nil {
+		return true
+	}
+
+	if perr := h.preflight.CheckBudget(ctx, userID); perr != nil {
+		errpkg.WriteError(w, perr.Status, perr.Code, perr.Message)
 		return false
 	}
 
@@ -637,6 +666,13 @@ func (h *Handlers) dispatchAndRecordUsage(ctx context.Context, userID pgtype.UUI
 	var costUSD float64
 	if h.costs != nil {
 		costUSD = h.costs.Estimate(ctx, resp.ProviderName, model, int(totalTokens))
+	}
+
+	// Accumulate the unified daily AI spend (jc:ai:cost:{user}:{date}) so the
+	// §20 shared budget covers every surface dispatched through this path —
+	// generate, chat, and all assist ops.
+	if h.preflight != nil {
+		h.preflight.RecordCost(ctx, userID, costUSD)
 	}
 
 	// Fire-and-forget usage log. A failure here must not fail the request.
@@ -924,27 +960,12 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Honor the global JapaBot toggle (feature_flags 'feature.japabot' — the
-	// same key the route gate enforces; the legacy ai.japabot_enabled setting
-	// is the nil-checker fallback). Disabled short-circuits before any
+	// Shared §20 admission: feature.japabot reachability (legacy
+	// ai.japabot_enabled setting is the nil-checker fallback) then
+	// §19/ADR-014 ai_processing consent — short-circuits before any
 	// provider call.
-	if !h.japaBotEnabled(r.Context()) {
-		errpkg.WriteError(w, http.StatusServiceUnavailable, "japabot_disabled", "JapaBot is currently disabled")
+	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateJapaBot) {
 		return
-	}
-
-	// §19/ADR-014: verify ai_processing consent before sending user prompts
-	// to external AI providers. When the consent checker is nil, the check
-	// is skipped (graceful degradation — the wiring layer SHOULD provide one).
-	if h.consents != nil {
-		consented, err := h.consents.HasConsent(r.Context(), user.UserID, "ai_processing")
-		if err != nil {
-			slog.Warn("ai: consent check failed, allowing request", "error", err)
-		} else if !consented {
-			errpkg.WriteError(w, http.StatusForbidden, "ai_consent_required",
-				"You must consent to AI processing before using JapaBot")
-			return
-		}
 	}
 
 	var input struct {
@@ -972,6 +993,18 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// Sanitize client-supplied context to prevent prompt injection and cache
 	// poisoning (ADR-010, BUG-007). Only allowed scalar keys survive.
 	input.Context = sanitizeClientContext(input.Context)
+
+	// Shared §20 unified daily budget (jc:ai:queries + jc:ai:cost). Checked
+	// after validation so malformed requests don't consume quota.
+	if !h.requireAIBudget(r.Context(), w, user.UserID) {
+		return
+	}
+
+	// Keep the raw user text for memory persistence — input.Message is
+	// rewritten below with the RAG context prefix, and persisting that
+	// augmented prompt would pollute Honcho long-term memory with retrieved
+	// passages on every turn.
+	rawUserMessage := input.Message
 
 	// Build the AI context payload (ADR-025): prior Honcho memory (Section 20)
 	// + per-category site-activity context gated by ai.context.* nodes. The
@@ -1090,7 +1123,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// Persist the full chat turn to Honcho only after the response has been
 	// successfully shaped and written to the client (BUG-017). Fire-and-forget:
 	// errors are logged, never propagated (Rule 8 spirit).
-	h.persistChatTurn(r.Context(), user.UserID.String(), input.Message, reply, conversationID)
+	h.persistChatTurn(r.Context(), user.UserID.String(), rawUserMessage, reply, conversationID)
 }
 
 // ExtractReplyText pulls the human-readable reply string out of a provider
@@ -1127,25 +1160,19 @@ func ExtractReplyText(resp Response) string {
 
 // HandleImprove handles POST /api/v1/ai/assist/improve — improve writing quality.
 // Request body: { "text": "...", "tone": "professional|casual|academic" }.
+// Thin adapter over AssistImprove — the shared service also backs the
+// content.improve agent tool.
 func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w) {
+	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateAssist) {
 		return
 	}
 
-	var input struct {
-		Text          string `json:"text"`
-		Tone          string `json:"tone"`
-		Humanize      *bool  `json:"humanize,omitempty"`
-		HumanizeLevel string `json:"humanize_level,omitempty"`
-		VoiceID       string `json:"voice_id,omitempty"`
-		Model         string `json:"model,omitempty"`
-	}
-
+	var input AssistImproveInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
@@ -1158,34 +1185,13 @@ func (h *Handlers) HandleImprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tone := input.Tone
-	if tone == "" {
-		tone = "professional"
-	}
-
-	payload := map[string]any{
-		"prompt":  "Improve the following text for clarity, grammar, and style. Tone: " + tone + ".\n\n" + input.Text,
-		"user_id": user.UserID.String(),
-		"task":    "improve",
-		"tone":    tone,
-	}
-
-	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.requireAIBudget(r.Context(), w, user.UserID) {
 		return
 	}
 
-	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
-	writeHumanizePayload(payload, hEnabled, hLevel)
-
-	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_improve", "content_generation", Request{
-		Category: "content_generation",
-		Payload:  payload,
-	})
+	resp, err := h.AssistImprove(r.Context(), user.UserID, input)
 	if err != nil {
-		slog.Error("ai improve failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI improvement failed")
-
+		writeAssistError(w, "AI improvement failed", err)
 		return
 	}
 
@@ -1200,19 +1206,11 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w) {
+	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateAssist) {
 		return
 	}
 
-	var input struct {
-		Text          string `json:"text"`
-		MaxWords      int    `json:"max_words"`
-		Humanize      *bool  `json:"humanize,omitempty"`
-		HumanizeLevel string `json:"humanize_level,omitempty"`
-		VoiceID       string `json:"voice_id,omitempty"`
-		Model         string `json:"model,omitempty"`
-	}
-
+	var input AssistSummarizeInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
@@ -1225,34 +1223,13 @@ func (h *Handlers) HandleSummarize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	maxWords := input.MaxWords
-	if maxWords <= 0 {
-		maxWords = 100
-	}
-
-	payload := map[string]any{
-		"prompt":    "Summarize the following text in at most " + strconv.Itoa(maxWords) + " words.\n\n" + input.Text,
-		"user_id":   user.UserID.String(),
-		"task":      "summarize",
-		"max_words": maxWords,
-	}
-
-	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.requireAIBudget(r.Context(), w, user.UserID) {
 		return
 	}
 
-	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
-	writeHumanizePayload(payload, hEnabled, hLevel)
-
-	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_summarize", "content_generation", Request{
-		Category: "content_generation",
-		Payload:  payload,
-	})
+	resp, err := h.AssistSummarize(r.Context(), user.UserID, input)
 	if err != nil {
-		slog.Error("ai summarize failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI summarization failed")
-
+		writeAssistError(w, "AI summarization failed", err)
 		return
 	}
 
@@ -1267,19 +1244,11 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w) {
+	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateAssist) {
 		return
 	}
 
-	var input struct {
-		Text          string `json:"text"`
-		TargetLocale  string `json:"target_locale"`
-		Humanize      *bool  `json:"humanize,omitempty"`
-		HumanizeLevel string `json:"humanize_level,omitempty"`
-		VoiceID       string `json:"voice_id,omitempty"`
-		Model         string `json:"model,omitempty"`
-	}
-
+	var input AssistTranslateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
@@ -1298,29 +1267,13 @@ func (h *Handlers) HandleTranslate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload := map[string]any{
-		"prompt":        "Translate the following text to locale " + input.TargetLocale + ".\n\n" + input.Text,
-		"user_id":       user.UserID.String(),
-		"task":          "translate",
-		"target_locale": input.TargetLocale,
-	}
-
-	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.requireAIBudget(r.Context(), w, user.UserID) {
 		return
 	}
 
-	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
-	writeHumanizePayload(payload, hEnabled, hLevel)
-
-	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_translate", "content_generation", Request{
-		Category: "content_generation",
-		Payload:  payload,
-	})
+	resp, err := h.AssistTranslate(r.Context(), user.UserID, input)
 	if err != nil {
-		slog.Error("ai translate failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI translation failed")
-
+		writeAssistError(w, "AI translation failed", err)
 		return
 	}
 
@@ -1335,17 +1288,11 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w) {
+	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateAssist) {
 		return
 	}
 
-	var input struct {
-		Title   string `json:"title"`
-		Text    string `json:"text"`
-		VoiceID string `json:"voice_id,omitempty"`
-		Model   string `json:"model,omitempty"`
-	}
-
+	var input AssistTagsInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
@@ -1358,24 +1305,13 @@ func (h *Handlers) HandleGenerateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload := map[string]any{
-		"prompt":  "Generate relevant content tags for the following. Return as a JSON array of strings.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
-		"user_id": user.UserID.String(),
-		"task":    "generate_tags",
-	}
-
-	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.requireAIBudget(r.Context(), w, user.UserID) {
 		return
 	}
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_generate_tags", "content_generation", Request{
-		Category: "content_generation",
-		Payload:  payload,
-	})
+	resp, err := h.AssistGenerateTags(r.Context(), user.UserID, input)
 	if err != nil {
-		slog.Error("ai generate-tags failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI tag generation failed")
-
+		writeAssistError(w, "AI tag generation failed", err)
 		return
 	}
 
@@ -1390,18 +1326,11 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w) {
+	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateAssist) {
 		return
 	}
 
-	var input struct {
-		Title       string `json:"title"`
-		Text        string `json:"text"`
-		ContentType string `json:"content_type"`
-		VoiceID     string `json:"voice_id,omitempty"`
-		Model       string `json:"model,omitempty"`
-	}
-
+	var input AssistOGInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
 
@@ -1414,30 +1343,13 @@ func (h *Handlers) HandleGenerateOG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	contentType := input.ContentType
-	if contentType == "" {
-		contentType = "post"
-	}
-
-	payload := map[string]any{
-		"prompt":       "Generate Open Graph metadata (og:title, og:description, og:image alt text) for the following " + contentType + ". Return as JSON.\n\nTitle: " + input.Title + "\n\nText: " + input.Text,
-		"user_id":      user.UserID.String(),
-		"task":         "generate_og",
-		"content_type": contentType,
-	}
-
-	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.requireAIBudget(r.Context(), w, user.UserID) {
 		return
 	}
 
-	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_generate_og", "content_generation", Request{
-		Category: "content_generation",
-		Payload:  payload,
-	})
+	resp, err := h.AssistGenerateOG(r.Context(), user.UserID, input)
 	if err != nil {
-		slog.Error("ai generate-og failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI OG generation failed")
-
+		writeAssistError(w, "AI OG generation failed", err)
 		return
 	}
 
@@ -1501,14 +1413,15 @@ type DraftResult struct {
 }
 
 // HandleDraft handles POST /api/v1/ai/assist/draft — generate or improve a body
-// and optionally fill custom fields.
+// and optionally fill custom fields. Thin adapter over AssistDraft — the
+// shared service also backs the content.generate_draft agent tool.
 func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 	user, ok := requireUser(w, r)
 	if !ok {
 		return
 	}
 
-	if !h.requireContentAssistEnabled(r.Context(), w) {
+	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateAssist) {
 		return
 	}
 
@@ -1523,49 +1436,15 @@ func (h *Handlers) HandleDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Tone == "" {
-		input.Tone = "professional"
-	}
-
-	prompt := buildDraftPrompt(input)
-
-	payload := map[string]any{
-		"prompt":          prompt,
-		"user_id":         user.UserID.String(),
-		"content_type":    input.ContentType,
-		"tone":            input.Tone,
-		"task":            "draft",
-		"response_format": map[string]any{"type": "json_object"},
-		"max_tokens":      4096,
-	}
-
-	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "content_generation", "ai.model.default.content_generation") {
+	if !h.requireAIBudget(r.Context(), w, user.UserID) {
 		return
 	}
 
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
-	writeHumanizePayload(payload, hEnabled, hLevel)
-
-	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "assist_draft", "content_generation", Request{
-		Category: "content_generation",
-		Payload:  payload,
-	})
+	result, err := h.AssistDraft(r.Context(), user.UserID, input)
 	if err != nil {
-		slog.Error("ai draft failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "AI draft failed")
-
+		writeAssistError(w, "AI draft failed", err)
 		return
 	}
-
-	result, err := parseDraftResponse(resp)
-	if err != nil {
-		slog.Error("ai draft parse failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "Failed to parse AI draft")
-
-		return
-	}
-
-	result.FieldValues = normalizeFieldValues(result.FieldValues, input.FieldSchema)
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": result})
 }
