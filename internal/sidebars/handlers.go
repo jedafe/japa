@@ -109,7 +109,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrInvalidApp), errors.Is(err, ErrInvalidPosition),
 		errors.Is(err, ErrInvalidVisibility), errors.Is(err, ErrInvalidStatus),
 		errors.Is(err, ErrInvalidWidgetType), errors.Is(err, ErrInvalidPagePattern),
-		errors.Is(err, ErrWidgetTypeNotAllowedForApp):
+		errors.Is(err, ErrWidgetTypeNotAllowedForApp), errors.Is(err, ErrLeftRailWidgetType),
+		errors.Is(err, ErrInvalidSort):
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", err.Error())
 	case errors.Is(err, ErrDuplicateSlug):
 		errpkg.WriteError(w, http.StatusConflict, "already_exists", err.Error())
@@ -421,7 +422,10 @@ func (h *Handlers) Resolve(w http.ResponseWriter, r *http.Request) {
 	position := r.URL.Query().Get("position")
 	requestPath := r.URL.Query().Get("path")
 
-	// Legacy alias: the Learn surface was renamed to Academy.
+	// W2: the legacy "learn" surface was renamed to Academy (000800) but old
+	// admin clients may still send it — normalize rather than 400.
+	// normalizeApp also runs in the service (Create/List) so storage only
+	// ever sees the canonical value.
 	if app == "learn" {
 		app = "academy"
 	}

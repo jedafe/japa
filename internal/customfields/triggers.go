@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -206,10 +207,16 @@ func (d *TriggerDispatcher) fireSendEmail(ctx context.Context, cfg, values map[s
 }
 
 // fireSendWebhook POSTs the submission payload to the configured URL.
+// The URL scheme allowlist (http/https) is enforced at trigger create/update
+// time (validateTriggerConfig) and re-checked here so rows predating the
+// gate can never fire a non-http(s) sink (CF14).
 func (d *TriggerDispatcher) fireSendWebhook(ctx context.Context, cfg map[string]any, submissionID pgtype.UUID, values map[string]any) error {
 	url, _ := cfg["url"].(string)
 	if url == "" {
 		return errors.New("send_webhook: missing 'url' in config")
+	}
+	if !validWebhookURL(url) {
+		return errors.New("send_webhook: 'url' must be an http(s) URL")
 	}
 
 	payload := map[string]any{
@@ -291,6 +298,17 @@ func (d *TriggerDispatcher) fireNotifyAdmin(ctx context.Context, cfg map[string]
 	actionURL, _ := cfg["action_url"].(string)
 
 	return d.notifyAdmin(ctx, expandTemplate(title, values), expandTemplate(body, values), actionURL)
+}
+
+// validWebhookURL reports whether raw is an http(s) URL with a host — the
+// CF14 scheme allowlist shared by the create/update validator and the
+// fire-time re-check.
+func validWebhookURL(raw string) bool {
+	parsed, err := neturl.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
 }
 
 // expandTemplate replaces {{key}} placeholders in s with the corresponding

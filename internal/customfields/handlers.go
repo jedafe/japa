@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/clientip"
@@ -629,6 +630,11 @@ func slugify(name string) string {
 }
 
 // UpdateFieldGroup handles PATCH /api/v1/custom-field-groups/{id}.
+// Accepts an optional entity_type: when present the group's assignment is
+// upserted to the derived entity_class (ON CONFLICT DO NOTHING —
+// reassignment is idempotent), so the admin can re-home a group without a
+// separate assign call (CF7). The response carries an assignment_hint when
+// no entity_type was sent and the group has no assignment yet.
 func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -639,6 +645,7 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string  `json:"name"`
 		Description *string `json:"description"`
+		EntityType  string  `json:"entity_type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -657,7 +664,45 @@ func (h *Handlers) UpdateFieldGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
+	// CF7: accept entity_type reassignment via upsert assignment.
+	// CreateAssignment is ON CONFLICT DO NOTHING, so repeating the same
+	// entity_type is a safe no-op and switching types adds the new class
+	// binding (old bindings are preserved — removal stays explicit via
+	// DELETE /assignments).
+	if entityType := strings.TrimSpace(req.EntityType); entityType != "" {
+		entityClass := EntityClassFromType(entityType)
+		if _, err := h.Service.CreateAssignment(r.Context(), gen.CreateAssignmentParams{
+			GroupID:     group.ID,
+			EntityClass: entityClass,
+			EntityID:    pgtype.UUID{},
+			Position:    0,
+		}); err != nil {
+			// Duplicate rows surface as pgx.ErrNoRows (no RETURNING row) —
+			// treat as success; anything else fails the request.
+			if !errors.Is(err, pgx.ErrNoRows) {
+				handleServiceError(w, err)
+				return
+			}
+		}
+		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": group})
+		return
+	}
+
+	resp := map[string]any{"data": group}
+	if assignments, err := h.Service.ListAllAssignmentsByPlatform(r.Context()); err == nil {
+		assigned := false
+		for _, a := range assignments {
+			if a.GroupID == group.ID {
+				assigned = true
+				break
+			}
+		}
+		if !assigned {
+			resp["assignment_hint"] = "Group has no entity assignment — send entity_type to attach it (e.g. via /entity-types)."
+		}
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, resp)
 }
 
 // DeleteFieldGroup handles DELETE /api/v1/custom-field-groups/{id}.
@@ -988,10 +1033,25 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 
 	// §06 canonical shape: ordered_field_ids. Position is the array index.
 	if len(req.OrderedFieldIDs) > 0 {
+		// CF16: reject system/foreign IDs explicitly — the position update is
+		// group-scoped, so an ID from another group (or a system field)
+		// would no-op per row; fail the reorder instead of half-applying.
+		known := map[string]bool{}
+		if fields, err := h.Service.ListFieldsByGroup(r.Context(), groupID); err == nil {
+			for _, f := range fields {
+				known[f.ID.String()] = true
+			}
+		} else {
+			slog.Warn("customfields: reorder pre-check failed", "group_id", groupID.String(), "error", err)
+		}
 		for i, idStr := range req.OrderedFieldIDs {
 			var fieldID pgtype.UUID
 			if err := fieldID.Scan(idStr); err != nil {
 				errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+idStr)
+				return
+			}
+			if len(known) > 0 && !known[fieldID.String()] {
+				errpkg.WriteError(w, http.StatusBadRequest, "unknown_field_id", "Field "+idStr+" is not in this group (system or foreign fields cannot be reordered)")
 				return
 			}
 
@@ -1008,10 +1068,22 @@ func (h *Handlers) ReorderFields(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Legacy shape: fields with explicit positions.
+	legacyKnown := map[string]bool{}
+	if len(req.Fields) > 0 {
+		if fields, err := h.Service.ListFieldsByGroup(r.Context(), groupID); err == nil {
+			for _, f := range fields {
+				legacyKnown[f.ID.String()] = true
+			}
+		}
+	}
 	for _, f := range req.Fields {
 		var fieldID pgtype.UUID
 		if err := fieldID.Scan(f.ID); err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_field_id", "Invalid field id: "+f.ID)
+			return
+		}
+		if len(legacyKnown) > 0 && !legacyKnown[fieldID.String()] {
+			errpkg.WriteError(w, http.StatusBadRequest, "unknown_field_id", "Field "+f.ID+" is not in this group (system or foreign fields cannot be reordered)")
 			return
 		}
 
@@ -1138,6 +1210,8 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch the field definition so we can validate the value column matches
 	// the field type (e.g., text fields must write to value_text, not value_number).
+	// Fetched before payload normalization: sanitization and canonical
+	// matching operate on the raw payload, then marshal produces storable bytes.
 	// Also used to validate platform_embed URLs against allowed platforms.
 	field, err := h.Service.GetField(r.Context(), fieldID)
 	if err != nil {
@@ -1217,16 +1291,31 @@ func (h *Handlers) SetFieldValue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BUG-005: validate select/multiselect values against allowed options.
+	// Canonical matching is value-only: a submitted label is normalized to
+	// its option value at write, so readers only ever see values.
 	if req.ValueJson != nil && (field.FieldType == FieldTypeSelect || field.FieldType == FieldTypeMultiselect) {
-		fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
-		if msg, ok := validateSelectValue(fd, req.ValueJson); !ok {
-			errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", msg)
-			return
+		jsonBytes = CanonicalizeSelectJSON(field.FieldType, field.Options, jsonBytes)
+		var vj map[string]any
+		if err := json.Unmarshal(jsonBytes, &vj); err == nil {
+			fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
+			if msg, ok := validateSelectValue(fd, vj); !ok {
+				errpkg.WriteError(w, http.StatusBadRequest, "invalid_value", msg)
+				return
+			}
 		}
 	}
 
+	// CF1: rich_text stores in value_json, so scrub the JSON string leaves
+	// before marshal — the text-column sanitizer below cannot reach them.
+	// JSON shape validation happens in the value_json column setter path;
+	// this only rewrites string leaves when a sanitizer is wired.
+	if field.FieldType == FieldTypeRichText && len(jsonBytes) > 0 && h.richTextSanitizer != nil {
+		jsonBytes = SanitizeRichTextJSON(jsonBytes, h.richTextSanitizer)
+	}
+
 	// BUG-001: sanitize rich_text HTML before storage to prevent stored XSS.
-	// rich_text fields write to value_text; we scrub the HTML in-place.
+	// rich_text fields may write to value_text on legacy paths; scrub the
+	// HTML in-place when a sanitizer is wired.
 	if field.FieldType == FieldTypeRichText && req.ValueText != nil && *req.ValueText != "" && h.richTextSanitizer != nil {
 		sanitized := h.richTextSanitizer(*req.ValueText)
 		req.ValueText = &sanitized
@@ -1620,7 +1709,14 @@ func (h *Handlers) CreateForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Auto-create a backing field group so the admin UI can manage fields.
-	_ = h.Service.EnsureFormGroup(r.Context(), form.ID, req.Name, req.Slug)
+	// CF15: surface provisioning errors — a form without its group is
+	// unusable in the admin field editor, so fail loudly instead of
+	// returning a half-provisioned form.
+	if err := h.Service.EnsureFormGroup(r.Context(), form.ID, req.Name, req.Slug); err != nil {
+		slog.Error("customfields: provisioning form field group", "form_id", form.ID, "error", err)
+		handleServiceError(w, err)
+		return
+	}
 
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": form})
 }
@@ -1830,8 +1926,10 @@ func (h *Handlers) DeleteForm(w http.ResponseWriter, r *http.Request) {
 }
 
 // EnsureFormGroup handles POST /api/v1/forms/{id}/ensure-field-group.
-// It creates a backing field group and assignment for a form if one doesn't exist.
-// This is called by the admin UI before adding fields to a form.
+// It get-or-creates a backing field group and assignment for a form
+// (CF15): the lookup runs first so repeat calls reuse the existing group,
+// and a concurrent create racing this call surfaces as a conflict the
+// caller can retry — never a silent duplicate.
 func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -1855,6 +1953,13 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 
 	// Return the field_group_id
 	fieldGroupID := h.Service.GetFormGroupID(r.Context(), id)
+	if fieldGroupID == nil {
+		// CF15: the form should always carry a backing group — surface the
+		// provisioning gap explicitly instead of returning a null id the
+		// admin UI cannot act on.
+		errpkg.WriteError(w, http.StatusConflict, "field_group_missing", "This form has no backing field group; retry the request")
+		return
+	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"field_group_id": fieldGroupID,
@@ -1871,6 +1976,38 @@ func (h *Handlers) EnsureFormGroup(w http.ResponseWriter, r *http.Request) {
 // The flat `fields` array is still returned (as the concatenation of all step
 // fields) for backward compatibility with embeds that don't yet understand
 // steps.
+//
+// filterGuestViewableFields narrows embed field rows to the public schema
+// (CF13): only fields the guest group can_view AND flagged
+// show_in_frontend survive. A lookup error fails closed to an empty list —
+// the embed renders no fields rather than leaking admin-only ones.
+func filterGuestViewableFields(ctx context.Context, svc *Service, fields []gen.ListCustomFieldsByGroupRow) []gen.ListCustomFieldsByGroupRow {
+	if len(fields) == 0 || svc == nil {
+		return fields
+	}
+
+	ids, err := svc.ListVisibleFieldIDsForGroupSlug(ctx, "guest")
+	if err != nil {
+		slog.Warn("customfields: guest-visible field lookup failed, hiding embed fields", "error", err)
+		return nil
+	}
+
+	visible := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		visible[id.String()] = true
+	}
+
+	out := fields[:0]
+	for _, f := range fields {
+		if !f.ShowInFrontend || !visible[f.ID.String()] {
+			continue
+		}
+		out = append(out, f)
+	}
+
+	return out
+}
+
 func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
@@ -1887,12 +2024,22 @@ func (h *Handlers) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch fields attached via the custom field group assignment so the
 	// public embed can render the full form without authentication.
+	// CF13: the embed is gated to published forms carrying guest-viewable
+	// fields only. A draft form has no public schema — its embed is a 404
+	// (not a leak of in-progress fields). Field rows are additionally
+	// narrowed to guest can_view grants + show_in_frontend, so admin-only
+	// fields never reach the unauthenticated surface.
 	fields, err := h.Service.GetFormFields(r.Context(), form.ID)
 	if err != nil {
 		slog.Warn("get form embed fields", "slug", slug, "error", err)
 
 		fields = nil
 	}
+	if form.Status != "published" {
+		errpkg.WriteError(w, http.StatusNotFound, "form_not_published", "This form is not published")
+		return
+	}
+	fields = filterGuestViewableFields(r.Context(), h.Service, fields)
 
 	type fieldJSON struct {
 		ID        string   `json:"id"`
@@ -2324,7 +2471,9 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUI
 	}
 
 	// 2. Check each provided value corresponds to a known field, and validate
-	// the value against the field type.
+	// the value against the field type. Canonical select matching is
+	// value-only here too: a submitted label is normalized to its option
+	// value in-place so storage converges on values (CF3).
 	for rawKey, rawVal := range fieldValues {
 		f, ok := byLabel[rawKey]
 		if !ok {
@@ -2333,6 +2482,40 @@ func (h *Handlers) validateFormSubmission(ctx context.Context, formID pgtype.UUI
 
 		if !ok {
 			return fmt.Sprintf("Unknown field %q — this field is not defined on the form", rawKey), false
+		}
+
+		if f.FieldType == FieldTypeSelect {
+			if s, isStr := rawVal.(string); isStr && s != "" {
+				rawVal = NormalizeChoiceValue(f.Options, s)
+				fieldValues[rawKey] = rawVal
+			}
+		}
+		if f.FieldType == FieldTypeMultiselect {
+			switch v := rawVal.(type) {
+			case string:
+				if v != "" {
+					rawVal = NormalizeChoiceValue(f.Options, v)
+					fieldValues[rawKey] = rawVal
+				}
+			case []any:
+				norm := make([]any, len(v))
+				for i, item := range v {
+					if s, isStr := item.(string); isStr {
+						norm[i] = NormalizeChoiceValue(f.Options, s)
+					} else {
+						norm[i] = item
+					}
+				}
+				fieldValues[rawKey] = norm
+				rawVal = norm
+			case []string:
+				norm := make([]string, len(v))
+				for i, item := range v {
+					norm[i] = NormalizeChoiceValue(f.Options, item)
+				}
+				fieldValues[rawKey] = norm
+				rawVal = norm
+			}
 		}
 
 		// BUG-001: sanitize rich_text HTML before storage. Mutate the map
@@ -2364,7 +2547,11 @@ func lookupFieldValue(m map[string]any, label, key string) (any, bool) {
 	return nil, false
 }
 
-// isEmptyValue returns true for nil, empty string, or empty slice/array values.
+// isEmptyValue mirrors the backend required gate: nil, blank strings
+// (whitespace-only counts as empty), and empty slices/arrays are empty.
+// Booleans (including false) and numbers (including 0) are real values and
+// never empty — a required boolean checkbox storing false still counts as
+// filled (CF22 composer gate semantics).
 func isEmptyValue(v any) bool {
 	switch val := v.(type) {
 	case nil:
@@ -2439,8 +2626,7 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		if strVal == "" {
 			return "", true
 		}
-
-		if !valueInOptions(f.Options, strVal) {
+		if !valueInOptions(f.Options, NormalizeChoiceValue(f.Options, strVal)) {
 			return fmt.Sprintf("Field %q value is not one of the allowed options", f.Label), false
 		}
 
@@ -2451,19 +2637,19 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 		// Multiselect can be a string (single) or an array.
 		switch v := raw.(type) {
 		case string:
-			if !valueInOptions(f.Options, v) {
+			if !valueInOptions(f.Options, NormalizeChoiceValue(f.Options, v)) {
 				return fmt.Sprintf("Field %q value is not one of the allowed options", f.Label), false
 			}
 		case []any:
 			for _, item := range v {
 				s, _ := item.(string)
-				if !valueInOptions(f.Options, s) {
+				if !valueInOptions(f.Options, NormalizeChoiceValue(f.Options, s)) {
 					return fmt.Sprintf("Field %q value %q is not one of the allowed options", f.Label, s), false
 				}
 			}
 		case []string:
 			for _, item := range v {
-				if !valueInOptions(f.Options, item) {
+				if !valueInOptions(f.Options, NormalizeChoiceValue(f.Options, item)) {
 					return fmt.Sprintf("Field %q value %q is not one of the allowed options", f.Label, item), false
 				}
 			}
@@ -2474,8 +2660,8 @@ func (h *Handlers) validateFieldValue(f fieldDef, raw any) (string, bool) {
 }
 
 // valueInOptions checks whether a value matches one of the field's select
-// options. The options JSONB is [{value, label}]; we match against both
-// value and label for flexibility (the frontend sometimes sends labels).
+// options. Canonical matching is value-only: labels are normalized to values
+// at write (NormalizeChoiceValue), so this only compares option values.
 func valueInOptions(optionsJSON []byte, target string) bool {
 	if optionsJSON == nil || target == "" {
 		return false
@@ -2491,7 +2677,7 @@ func valueInOptions(optionsJSON []byte, target string) bool {
 	}
 
 	for _, o := range opts {
-		if o.Value == target || o.Label == target {
+		if o.Value == target {
 			return true
 		}
 	}
@@ -2530,35 +2716,18 @@ func validateTextValue(field fieldDef, val string) (string, bool) {
 }
 
 // validateSelectValue validates a select/multiselect value_json against the
-// field's allowed options (BUG-005). The value_json is expected to be a
-// string (select) or array of strings (multiselect). Returns an error
-// message and false when validation fails.
+// field's allowed options (BUG-005). Canonical matching is value-only:
+// callers normalize labels to values before invoking this, and the choice
+// payload is unwrapped via ChoiceStrings so bare strings/arrays and the
+// {"value": …} / {"values": […]} envelopes validate identically (CF4).
+// Returns an error message and false when validation fails.
 func validateSelectValue(field fieldDef, valueJson map[string]any) (string, bool) {
-	// Select fields store the selected value(s) in value_json. The shape
-	// can be {"value": "..."} or just a string array. We check each value
-	// against the field's options.
-	var values []string
-	if v, ok := valueJson["value"].(string); ok {
-		values = append(values, v)
+	raw, err := json.Marshal(valueJson)
+	if err != nil {
+		return fmt.Sprintf("Field %q value is not valid JSON", field.Label), false
 	}
 
-	if arr, ok := valueJson["values"].([]any); ok {
-		for _, item := range arr {
-			if s, ok := item.(string); ok {
-				values = append(values, s)
-			}
-		}
-	}
-	// Also accept a top-level array.
-	if arr, ok := valueJson[""].([]any); ok {
-		for _, item := range arr {
-			if s, ok := item.(string); ok {
-				values = append(values, s)
-			}
-		}
-	}
-
-	for _, v := range values {
+	for _, v := range ChoiceStrings(raw) {
 		if !valueInOptions(field.Options, v) {
 			return fmt.Sprintf("Field %q value %q is not one of the allowed options", field.Label, v), false
 		}
@@ -2777,6 +2946,8 @@ func (h *Handlers) ListFormTriggers(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateFormTrigger handles POST /forms/{id}/triggers — creates a new trigger.
+// The per-type config schema is validated here (CF14): each trigger type
+// declares required config keys, and send_webhook URLs must be http/https.
 func (h *Handlers) CreateFormTrigger(w http.ResponseWriter, r *http.Request) {
 	formID, err := parseUUIDParam(r, "id")
 	if err != nil {
@@ -2803,6 +2974,11 @@ func (h *Handlers) CreateFormTrigger(w http.ResponseWriter, r *http.Request) {
 
 	if req.Config == nil {
 		req.Config = json.RawMessage("{}")
+	}
+
+	if msg, ok := validateTriggerConfig(req.TriggerType, req.Config); !ok {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_config", msg)
+		return
 	}
 
 	trigger, err := h.Service.CreateFormTrigger(r.Context(), gen.CreateFormSubmissionTriggerParams{
@@ -2854,6 +3030,11 @@ func (h *Handlers) UpdateFormTrigger(w http.ResponseWriter, r *http.Request) {
 		req.Config = json.RawMessage("{}")
 	}
 
+	if msg, ok := validateTriggerConfig(req.TriggerType, req.Config); !ok {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_trigger_config", msg)
+		return
+	}
+
 	trigger, err := h.Service.UpdateFormTrigger(r.Context(), gen.UpdateFormSubmissionTriggerParams{
 		ID:          triggerID,
 		FormID:      formID,
@@ -2889,6 +3070,55 @@ func (h *Handlers) DeleteFormTrigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "deleted"}})
+}
+
+// validateTriggerConfig enforces the per-type config schema (CF14) for form
+// submission triggers: required keys per trigger_type, and a scheme
+// allowlist for send_webhook URLs (http/https only — no file/data/javascript
+// sinks). Returns a user-facing message and false when invalid.
+func validateTriggerConfig(triggerType string, raw json.RawMessage) (string, bool) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		trimmed = []byte("{}")
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal(trimmed, &cfg); err != nil {
+		return "trigger config must be a JSON object", false
+	}
+
+	nonEmpty := func(key string) bool {
+		v, _ := cfg[key].(string)
+		return strings.TrimSpace(v) != ""
+	}
+
+	switch triggerType {
+	case "assign_user_group":
+		if !nonEmpty("user_group_id") {
+			return "assign_user_group requires config.user_group_id", false
+		}
+	case "send_email":
+		if !nonEmpty("to") {
+			return "send_email requires config.to", false
+		}
+	case "send_webhook":
+		u, _ := cfg["url"].(string)
+		if strings.TrimSpace(u) == "" {
+			return "send_webhook requires config.url", false
+		}
+		parsed, err := neturl.Parse(u)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return "send_webhook config.url must be an http(s) URL", false
+		}
+	case "create_ticket":
+		// subject/description both default server-side; no required keys.
+	case "notify_admin":
+		// title/body/action_url all default server-side; no required keys.
+	default:
+		return "unknown trigger_type", false
+	}
+
+	return "", true
 }
 
 // ReorderFormTriggers handles POST /forms/{id}/triggers/reorder — updates the
@@ -3137,6 +3367,13 @@ func (h *Handlers) ReorderFormSteps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"status": "reordered"}})
+}
+
+// ListFieldTypes handles GET /admin/field-types — returns the full §06
+// field-type catalog (value + label + needs_options) so admin pickers
+// consume the backend contract instead of a hardcoded list (Rule 16).
+func (h *Handlers) ListFieldTypes(w http.ResponseWriter, r *http.Request) {
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": FieldTypeCatalog()})
 }
 
 // ListEntityTypes handles GET /custom-field-entity-types — returns available

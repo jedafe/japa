@@ -195,6 +195,52 @@ func IsValidFieldType(ft string) bool {
 	return validFieldTypes[ft]
 }
 
+// FieldTypeInfo describes one field type for admin pickers — the §06
+// catalog surface. NeedsOptions mirrors the create/update validation that
+// requires an options array for select/multiselect.
+type FieldTypeInfo struct {
+	Value        string `json:"value"`
+	Label        string `json:"label"`
+	NeedsOptions bool   `json:"needs_options"`
+}
+
+// FieldTypeCatalog returns every valid field type with its admin label, in
+// a stable display order. Single source of truth for the admin field-type
+// dropdown — the frontend consumes GET /admin/field-types rather than
+// hardcoding this list (Rule 16).
+func FieldTypeCatalog() []FieldTypeInfo {
+	return []FieldTypeInfo{
+		{FieldTypeText, "Text", false},
+		{FieldTypeTextarea, "Textarea", false},
+		{FieldTypeRichText, "Rich Text", false},
+		{FieldTypeNumber, "Number", false},
+		{FieldTypeCurrency, "Currency", false},
+		{FieldTypePercentage, "Percentage", false},
+		{FieldTypeBoolean, "Boolean (Toggle)", false},
+		{FieldTypeDate, "Date", false},
+		{FieldTypeDatetime, "Date & Time", false},
+		{FieldTypeTime, "Time", false},
+		{FieldTypeDuration, "Duration", false},
+		{FieldTypeSelect, "Select (Single)", true},
+		{FieldTypeSuggest, "Suggest (Single with Suggestions)", false},
+		{FieldTypeMultiselect, "Multi-Select", true},
+		{FieldTypeURL, "URL", false},
+		{FieldTypeEmail, "Email", false},
+		{FieldTypePhone, "Phone", false},
+		{FieldTypeColor, "Color Picker", false},
+		{FieldTypeRating, "Rating (1-5)", false},
+		{FieldTypeImageSingle, "Image (Single Upload)", false},
+		{FieldTypeImageMulti, "Images (Multi Upload)", false},
+		{FieldTypeMedia, "Media (File Upload)", false},
+		{FieldTypePlatformEmbed, "Platform Embed", false},
+		{FieldTypeReference, "Reference (Link to Entity)", false},
+		{FieldTypeRepeater, "Repeater (Add Multiple Items)", false},
+		{FieldTypeGroup, "Group (Visual Container)", false},
+		{FieldTypePriceRange, "Price Range (Min-Max)", false},
+		{FieldTypePriceParts, "Itemized Price Parts", false},
+	}
+}
+
 // SectionTokenPattern constrains custom_fields.section — the §80
 // itemized-pricing sub-grouping token — to a URL/query-safe identifier.
 var SectionTokenPattern = regexp.MustCompile(`^[a-z0-9_]+$`)
@@ -367,7 +413,21 @@ var SupportedEmbedPlatforms = []string{
 }
 
 // EntityTypeFromClass derives a simplified entity_type token from a full
-// entity_class assignment string (Section 06). For example:
+// entity_class assignment string (Section 06 / CF17). This is the single
+// entity-class resolver for customfields-side reads — promoted from the
+// wiki package's entityClassesFor convention: wiki resolves item_ref types
+// to assignment-class tokens for schema reads, and this resolves those
+// class tokens back to the frontend-facing entity_type. CF handlers call
+// this (not a local copy) so both sides share the mapping matrix:
+//
+//	entity_class                    → entity_type
+//	content_type[:slug]             → content
+//	content_type:guide:{slug}       → guide_category:{slug}
+//	space_type[:slug|:id]           → space
+//	ticket_type[:…]                 → ticket_type
+//	user_profile|organization|...   → itself
+//
+// For example:
 //   - "content_type:blog_post"            → "content"
 //   - "content_type:discussion"           → "content"
 //   - "content_type:guide:health_insurance" → "guide_category:health_insurance"
@@ -438,7 +498,22 @@ func EntityClassFromType(entityType string) string {
 const entityTypeSpace = "space"
 
 // ValueEntityType normalizes an entity type to the custom_field_values
-// entity_type convention (§06): space-backed types all store under 'space'.
+// entity_type convention (§06/CF11): space-backed types all store under
+// 'space'. This is the single resolver for the entity-class question on the
+// customfields side — wiki's entityClassesFor maps item_ref types to
+// assignment-class tokens, and this maps them to the value bucket. The
+// canonical-per-entity-type table:
+//
+//	space/university/country/state/city → bucket 'space' (shared cfv rows)
+//	organization/bank                   → bucket 'organization'
+//	content (+ content:{slug})          → bucket 'content'
+//	guide_category:{slug}               → bucket 'guide_category:{slug}'
+//	everything else                     → bucket 'jce_entity:{type}' read,
+//	                                      stored under its own entity_type
+//
+// Read precedence: normalized bucket first (canonical), denormalized
+// per-entity field_values columns are read-cache mirrors only and must never
+// override a cfv row (CF11; divergence resolves in favor of cfv).
 func ValueEntityType(entityType string) string {
 	switch entityType {
 	case entityTypeSpace, "university", "country", "state", "city":

@@ -76,6 +76,15 @@ type ListSidebarsResponse struct {
 
 // ListSidebars is an exported method.
 func (s *Service) ListSidebars(ctx context.Context, app, position, status, q, sort string, limit, offset int32) (*ListSidebarsResponse, error) {
+	// W11: unknown sort keys must 400 via ErrInvalidSort instead of silently
+	// falling back to the default ORDER BY.
+	if err := ValidateSort(sort); err != nil {
+		return nil, err
+	}
+
+	// W2: normalize the legacy "learn" alias so old admin filters keep working.
+	app = normalizeApp(app)
+
 	rows, err := s.store.listSidebars(ctx, app, position, status, q, sort, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("listing sidebars: %w", err)
@@ -135,6 +144,9 @@ func (s *Service) CreateSidebar(ctx context.Context, input CreateSidebarInput) (
 		return gen.Sidebar{}, ErrInvalidApp
 	}
 
+	// W2: fold the legacy alias before persisting (DB CHECK stores academy).
+	input.App = normalizeApp(input.App)
+
 	if !ValidPosition(input.Position) {
 		return gen.Sidebar{}, ErrInvalidPosition
 	}
@@ -149,6 +161,12 @@ func (s *Service) CreateSidebar(ctx context.Context, input CreateSidebarInput) (
 
 	if input.PagePattern == "" {
 		input.PagePattern = "*"
+	}
+
+	// W5: ErrInvalidPagePattern is dead code unless this runs — reject
+	// whitespace-only patterns ("" already defaulted to "*" above).
+	if !ValidPagePattern(input.PagePattern) {
+		return gen.Sidebar{}, ErrInvalidPagePattern
 	}
 
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
@@ -203,6 +221,11 @@ func (s *Service) UpdateSidebar(ctx context.Context, id pgtype.UUID, input Updat
 		input.PagePattern = "*"
 	}
 
+	// W5: reject whitespace-only patterns ("" already defaulted to "*").
+	if !ValidPagePattern(input.PagePattern) {
+		return gen.Sidebar{}, ErrInvalidPagePattern
+	}
+
 	groupIDsJSON, err := json.Marshal(input.RequiredGroupIDs)
 	if err != nil {
 		return gen.Sidebar{}, fmt.Errorf("encoding required_group_ids: %w", err)
@@ -231,6 +254,12 @@ func (s *Service) UpdateSidebar(ctx context.Context, id pgtype.UUID, input Updat
 
 // DeleteSidebar is an exported method.
 func (s *Service) DeleteSidebar(ctx context.Context, id pgtype.UUID) error {
+	// W7: the generated DeleteSidebar is :exec — it reports success even when
+	// the row never existed. Check first so the handler can return 404.
+	if _, err := s.store.getSidebarByID(ctx, id); err != nil {
+		return err
+	}
+
 	if err := s.store.deleteSidebar(ctx, id); err != nil {
 		return err
 	}
@@ -283,6 +312,11 @@ func (s *Service) CreateSidebarWidget(ctx context.Context, sidebarID pgtype.UUID
 	}
 	if !WidgetTypeAllowedForApp(input.WidgetType, sidebar.App) {
 		return gen.SidebarWidget{}, ErrWidgetTypeNotAllowedForApp
+	}
+	// W8: position==left feeds the 160px LeftRail, which renders only ad_slot
+	// widgets — any other type would resolve but never display.
+	if sidebar.Position == string(PositionLeft) && input.WidgetType != "ad_slot" {
+		return gen.SidebarWidget{}, ErrLeftRailWidgetType
 	}
 
 	if !ValidVisibility(input.Visibility) {
@@ -385,6 +419,11 @@ func (s *Service) UpdateSidebarWidget(ctx context.Context, id, sidebarID pgtype.
 	}
 	if !WidgetTypeAllowedForApp(input.WidgetType, sidebar.App) {
 		return gen.SidebarWidget{}, ErrWidgetTypeNotAllowedForApp
+	}
+	// W8: position==left feeds the 160px LeftRail, which renders only ad_slot
+	// widgets — same rule as create.
+	if sidebar.Position == string(PositionLeft) && input.WidgetType != "ad_slot" {
+		return gen.SidebarWidget{}, ErrLeftRailWidgetType
 	}
 
 	var props []byte
@@ -567,6 +606,9 @@ func (s *Service) Resolve(ctx context.Context, app, position, requestPath string
 	}
 
 	// Filter by visibility + required_group_ids, then pick the most-specific page_pattern match.
+	// W10: ties keep the earliest created_at — listActiveSidebarsForResolve
+	// returns created_at ASC and the loop only replaces on strictly-greater
+	// specificity (effective ORDER BY: specificity DESC, created_at ASC).
 	var bestSidebar *gen.Sidebar
 
 	bestSpecificity := -1
@@ -674,8 +716,10 @@ func (s *Service) GetUserGroupIDs(ctx context.Context, userID string) ([]string,
 }
 
 // sidebarResolveCacheKey builds the Valkey cache key for a resolve request.
-// Format: jc:sidebar:resolve:{}:{app}:{position}:{path_hash}:{auth_state}:{group_hash}:{perm_hash}
-// Ref: Section 59 §5, valkey-keys-catalog. The perm_hash ensures two users
+// Format: jc:sidebar:resolve:{app}:{position}:{path_hash}:{auth_state}:{group_hash}:{perm_hash}
+// (single-colon separators throughout — an earlier comment draft showed a
+// "{}" placeholder and doubled colons, never the code; audit fix W9).
+// Ref: Section 59 §5, .jeos/conventions/valkey-keys-catalog.md. The perm_hash ensures two users
 // with the same groups but different roles do not share a cache entry —
 // permission-gated widgets must not leak across users with different perms.
 func sidebarResolveCacheKey(app, position, requestPath string, isAuthenticated bool, userGroupIDs, userPerms map[string]bool) string {
@@ -776,7 +820,11 @@ func globMatch(pattern, p string) bool {
 }
 
 // patternSpecificity returns a score for how specific a glob pattern is.
-// More non-wildcard characters = more specific. Ties broken by length.
+// More non-wildcard characters = more specific. Exact ties (same score)
+// keep the earliest-created sidebar: candidates arrive in created_at ASC
+// order (see ListActiveSidebarsForResolve) and the loop only replaces on
+// strictly-greater scores. So ORDER BY is effectively specificity DESC,
+// created_at ASC (audit fix W10).
 func patternSpecificity(pattern string) int {
 	nonWild := len(strings.ReplaceAll(pattern, "*", ""))
 	return nonWild*10 + len(pattern)

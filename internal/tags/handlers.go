@@ -55,10 +55,12 @@ type Handlers struct {
 // TagFieldDefLister supplies custom field definitions for the tag entity
 // class so GET /tags/{slug} can emit field labels to guests — the
 // /custom-field-groups endpoint is auth-gated. Satisfied by
-// customfields.Service.
+// customfields.Service. The guest can_view lister narrows to guest-visible
+// fields so the defs never advertise admin-only fields (CF9).
 type TagFieldDefLister interface {
 	ListFieldGroupsByEntityClass(ctx context.Context, entityClass string) ([]gen.CustomFieldGroup, error)
 	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
+	ListVisibleFieldIDsForGroupSlug(ctx context.Context, groupSlug string) ([]pgtype.UUID, error)
 }
 
 // NewHandlers creates Handlers with the given services.
@@ -272,13 +274,26 @@ type tagFieldDef struct {
 }
 
 // tagFieldDefs loads the custom field definitions assigned to the "tag"
-// entity class, deduplicated by key (multiple groups may define the same
-// key — the page's keyed each block would break). Returns an empty slice on
-// failure or when no lister is wired.
+// entity class (CF9): only fields the guest group can_view AND flagged
+// show_in_frontend are emitted — guests must never see admin-only defs.
+// Deduplicated by key (multiple groups may define the same key — the page's
+// keyed each block would break). Returns an empty slice on failure or when
+// no lister is wired.
 func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 	defs := make([]tagFieldDef, 0)
 	if h.fieldDefs == nil {
 		return defs
+	}
+
+	// CF9: the guest group's can_view grants bound the def list. A lookup
+	// error fails closed to an empty set (no defs leak on outage).
+	guestVisible := map[string]bool{}
+	if ids, err := h.fieldDefs.ListVisibleFieldIDsForGroupSlug(ctx, "guest"); err != nil {
+		slog.Warn("tags: failed to load guest-visible field ids", "error", err)
+	} else {
+		for _, id := range ids {
+			guestVisible[id.String()] = true
+		}
 	}
 
 	groups, err := h.fieldDefs.ListFieldGroupsByEntityClass(ctx, "tag")
@@ -296,6 +311,11 @@ func (h *Handlers) tagFieldDefs(ctx context.Context) []tagFieldDef {
 		}
 		for _, f := range fields {
 			if f.Key == "" || seen[f.Key] {
+				continue
+			}
+			// CF9: guest can_view + show_in_frontend both required. When the
+			// guest set is empty (outage or no grants) nothing is emitted.
+			if !guestVisible[f.ID.String()] || !f.ShowInFrontend {
 				continue
 			}
 			seen[f.Key] = true

@@ -455,27 +455,19 @@ func (s *Service) CheckFieldPermissionForUser(ctx context.Context, fieldID, user
 
 // ListVisibleFieldIDsForUser returns the set of field IDs the user is allowed
 // to view per field-level RBAC (Section 06). Results are cached in Valkey
-// under jc:field_perm:{user_id} with a 5-minute TTL (BUG-016). When the
-// cache is unavailable or not configured, the DB is queried directly.
+// under jc:field_perm:{user_id} with a 5-minute TTL (BUG-016), including
+// empty sets: unmarshalled-[] is a hit, so a user with no grants stops
+// hitting the DB on every call (CF8). When the cache is unavailable or not
+// configured, the DB is queried directly.
 func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
 	// BUG-016: try Valkey cache first.
 	if s.cache != nil {
 		key := valkey.MustKey("field_perm:%s", userID.String())
-		if cached, err := s.cache.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
+		if cached, err := s.cache.Get(ctx, key).Bytes(); err == nil {
 			var ids []string
-			if json.Unmarshal(cached, &ids) == nil && len(ids) > 0 {
-				result := make([]pgtype.UUID, 0, len(ids))
-
-				for _, idStr := range ids {
-					var id pgtype.UUID
-					if err := id.Scan(idStr); err == nil {
-						result = append(result, id)
-					}
-				}
-
-				if len(result) > 0 {
-					return result, nil
-				}
+			if json.Unmarshal(cached, &ids) == nil {
+				// CF8: a successful unmarshal — even of [] — is a hit.
+				return uuidsFromStrings(ids), nil
 			}
 		}
 	}
@@ -486,7 +478,7 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 	}
 
 	// BUG-016: cache the result for 5 minutes.
-	if s.cache != nil && len(ids) > 0 {
+	if s.cache != nil {
 		key := valkey.MustKey("field_perm:%s", userID.String())
 
 		idStrs := make([]string, 0, len(ids))
@@ -500,6 +492,20 @@ func (s *Service) ListVisibleFieldIDsForUser(ctx context.Context, userID pgtype.
 	}
 
 	return ids, nil
+}
+
+// uuidsFromStrings scans UUID strings, skipping invalid entries. An empty
+// input yields an empty (non-nil) set so cached-empty reads stay fail-closed
+// downstream.
+func uuidsFromStrings(ids []string) []pgtype.UUID {
+	result := make([]pgtype.UUID, 0, len(ids))
+	for _, idStr := range ids {
+		var id pgtype.UUID
+		if err := id.Scan(idStr); err == nil {
+			result = append(result, id)
+		}
+	}
+	return result
 }
 
 // ListVisibleFieldIDsForGroupSlug returns the field IDs a user group —
@@ -528,21 +534,11 @@ func (s *Service) ListVisibleFieldIDsForGroupSlug(ctx context.Context, groupSlug
 func (s *Service) ListEditableFieldIDsForUser(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
 	if s.cache != nil {
 		key := valkey.MustKey("field_perm_edit:%s", userID.String())
-		if cached, err := s.cache.Get(ctx, key).Bytes(); err == nil && len(cached) > 0 {
+		if cached, err := s.cache.Get(ctx, key).Bytes(); err == nil {
 			var ids []string
-			if json.Unmarshal(cached, &ids) == nil && len(ids) > 0 {
-				result := make([]pgtype.UUID, 0, len(ids))
-
-				for _, idStr := range ids {
-					var id pgtype.UUID
-					if err := id.Scan(idStr); err == nil {
-						result = append(result, id)
-					}
-				}
-
-				if len(result) > 0 {
-					return result, nil
-				}
+			if json.Unmarshal(cached, &ids) == nil {
+				// CF8: a successful unmarshal — even of [] — is a hit.
+				return uuidsFromStrings(ids), nil
 			}
 		}
 	}
@@ -552,7 +548,7 @@ func (s *Service) ListEditableFieldIDsForUser(ctx context.Context, userID pgtype
 		return nil, fmt.Errorf("listing editable field ids: %w", err)
 	}
 
-	if s.cache != nil && len(ids) > 0 {
+	if s.cache != nil {
 		key := valkey.MustKey("field_perm_edit:%s", userID.String())
 
 		idStrs := make([]string, 0, len(ids))
@@ -604,6 +600,93 @@ func (s *Service) InvalidateFieldPermissionCacheForGroup(ctx context.Context, gr
 	for _, userID := range memberIDs {
 		s.InvalidateFieldPermissionCache(ctx, userID)
 	}
+}
+
+// ErrFieldNotEditable marks a §06 field-level RBAC denial — the caller's
+// user group grants no can_edit row for the field (fail-closed when the
+// field has no permission rows at all).
+var ErrFieldNotEditable = errors.New("field is not editable by this user")
+
+// ErrInvalidFieldValue marks a value that violates the field type's
+// storage contract — wrong value column for the field type, malformed
+// text value, or a select option not in the field's options list.
+var ErrInvalidFieldValue = errors.New("invalid field value")
+
+// ValidateFieldValueWriteForUser enforces the same write rules as the
+// REST PUT /custom-field-values handler for one field value:
+//
+//  1. §06 field-level RBAC — the user must hold can_edit on the field
+//     (skipRBAC mirrors the handler's super-admin bypass; the AI agent
+//     passes rbac.IsSuperAdmin).
+//  2. FieldTypeValueColumn — the supplied value must land in the column
+//     the field's field_type writes to.
+//  3. Type validation — text/email/url format (validateTextValue) and
+//     select/multiselect option membership (validateSelectValue).
+//
+// Embed-platform URL resolution and rich_text sanitization remain
+// handler-layer concerns — they need the EmbedResolver/sanitizer deps
+// the service does not hold. Callers upsert via UpsertFieldValue only
+// after this returns nil.
+func (s *Service) ValidateFieldValueWriteForUser(ctx context.Context, fieldID, userID pgtype.UUID, skipRBAC bool, params gen.UpsertCustomFieldValueParams) error {
+	field, err := s.GetField(ctx, fieldID)
+	if err != nil {
+		return fmt.Errorf("validating field value: %w", err)
+	}
+
+	if !skipRBAC {
+		_, canEdit, pErr := s.CheckFieldPermissionForUser(ctx, fieldID, userID)
+		if pErr != nil {
+			return pErr
+		}
+		if !canEdit {
+			return fmt.Errorf("%w (field %s)", ErrFieldNotEditable, field.Key)
+		}
+	}
+
+	expectedCol, known := FieldTypeValueColumn(field.FieldType)
+	if known {
+		hasText := params.ValueText != nil
+		hasNumber := params.ValueNumber.Valid
+		hasBool := params.ValueBool != nil
+		hasDate := params.ValueDate.Valid
+		hasJSON := len(params.ValueJson) > 0 && string(params.ValueJson) != "null"
+
+		wrongCol := false
+		switch expectedCol {
+		case "value_text":
+			wrongCol = hasNumber || hasBool || hasDate || hasJSON
+		case "value_number":
+			wrongCol = hasText || hasBool || hasDate || hasJSON
+		case "value_bool":
+			wrongCol = hasText || hasNumber || hasDate || hasJSON
+		case "value_date":
+			wrongCol = hasText || hasNumber || hasBool || hasJSON
+		case "value_json":
+			wrongCol = hasText || hasNumber || hasBool || hasDate
+		}
+		if wrongCol {
+			return fmt.Errorf("%w: field type %q writes to %s — received a value for a different column", ErrInvalidFieldValue, field.FieldType, expectedCol)
+		}
+	}
+
+	fd := fieldDef{Label: field.Label, Key: field.Key, FieldType: field.FieldType, Options: field.Options, IsRequired: field.IsRequired}
+
+	if params.ValueText != nil && *params.ValueText != "" {
+		if msg, ok := validateTextValue(fd, *params.ValueText); !ok {
+			return fmt.Errorf("%w: %s", ErrInvalidFieldValue, msg)
+		}
+	}
+
+	if len(params.ValueJson) > 0 && (field.FieldType == FieldTypeSelect || field.FieldType == FieldTypeMultiselect) {
+		var vj map[string]any
+		if err := json.Unmarshal(params.ValueJson, &vj); err == nil {
+			if msg, ok := validateSelectValue(fd, vj); !ok {
+				return fmt.Errorf("%w: %s", ErrInvalidFieldValue, msg)
+			}
+		}
+	}
+
+	return nil
 }
 
 // UpsertFieldValue inserts or updates the stored value for a field on a given
@@ -837,9 +920,12 @@ func (s *Service) GetFormGroupID(ctx context.Context, formID pgtype.UUID) *strin
 	return &gid
 }
 
-// EnsureFormGroup creates a backing field group and assignment for a form
-// if one doesn't already exist. Called by CreateForm to ensure every form
-// has a field group for the admin UI to add fields to.
+// EnsureFormGroup get-or-creates a backing field group and assignment for
+// a form (CF15): the assignment lookup runs first so repeat calls reuse the
+// existing group, and a slug conflict on the create path re-reads the group
+// (ON CONFLICT DO NOTHING style) instead of failing — a concurrent create
+// racing this call converges on one group. Surfaces creation errors to the
+// caller instead of swallowing them.
 func (s *Service) EnsureFormGroup(ctx context.Context, formID pgtype.UUID, formName, formSlug string) error {
 	// Check if assignment already exists
 	_, err := s.read.GetAssignmentByEntity(ctx, gen.GetAssignmentByEntityParams{
@@ -860,7 +946,17 @@ func (s *Service) EnsureFormGroup(ctx context.Context, formID pgtype.UUID, formN
 		IsSystem: false,
 	})
 	if err != nil {
-		return fmt.Errorf("creating form field group: %w", err)
+		// A concurrent EnsureFormGroup (or a retried CreateForm) may have
+		// taken the slug — reuse it rather than fail.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			group, err = s.read.GetCustomFieldGroupBySlug(ctx, groupSlug)
+			if err != nil {
+				return fmt.Errorf("getting form field group after conflict: %w", err)
+			}
+		} else {
+			return fmt.Errorf("creating form field group: %w", err)
+		}
 	}
 
 	// Assign the group to this form
@@ -1155,18 +1251,33 @@ func (s *Service) DeleteFormTrigger(ctx context.Context, id, formID pgtype.UUID)
 
 // ReorderFormTriggers updates the position of each trigger by ID. The
 // trigger_ids array is in the desired order; position is assigned by index.
+// CF14 tx reorder: the two-phase offset dance runs in one transaction so a
+// mid-reorder failure cannot leave duplicate positions behind.
 func (s *Service) ReorderFormTriggers(ctx context.Context, formID pgtype.UUID, triggerIDs []pgtype.UUID) error {
-	for i, id := range triggerIDs {
-		if err := s.write.UpdateFormSubmissionTriggerPosition(ctx, gen.UpdateFormSubmissionTriggerPositionParams{
-			ID:       id,
-			FormID:   formID,
-			Position: int32(i), // #nosec
-		}); err != nil {
-			return fmt.Errorf("reordering form submission triggers at index %d: %w", i, err)
-		}
-	}
+	offset := int32(len(triggerIDs) + 1) // #nosec
 
-	return nil
+	return db.WithTx(ctx, s.pool, func(q *gen.Queries) error {
+		for i, id := range triggerIDs {
+			if err := q.UpdateFormSubmissionTriggerPosition(ctx, gen.UpdateFormSubmissionTriggerPositionParams{
+				ID:       id,
+				FormID:   formID,
+				Position: int32(i) + offset, // #nosec
+			}); err != nil {
+				return fmt.Errorf("reordering form submission triggers (temp) at index %d: %w", i, err)
+			}
+		}
+		for i, id := range triggerIDs {
+			if err := q.UpdateFormSubmissionTriggerPosition(ctx, gen.UpdateFormSubmissionTriggerPositionParams{
+				ID:       id,
+				FormID:   formID,
+				Position: int32(i), // #nosec
+			}); err != nil {
+				return fmt.Errorf("reordering form submission triggers (final) at index %d: %w", i, err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // =====================

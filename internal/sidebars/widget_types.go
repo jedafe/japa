@@ -139,7 +139,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "search",
 		Name:        "Search",
-		Description: "Search input scoped to the current app",
+		Description: "Search input scoped to the current app. Guests: renders for everyone (visibility-gated like any widget)",
 		Icon:        "search",
 		Slot:        WidgetSlotTopbar,
 		Category:    WidgetCategoryNavigation,
@@ -152,7 +152,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "search_launcher",
 		Name:        "Search Launcher",
-		Description: "Search launcher button for Docs/Academy (opens cmd+k palette or inline search)",
+		Description: "Search launcher button for Docs/Academy (opens cmd+k palette or inline search). Guests: renders for everyone (visibility-gated like any widget). NOTE: Main renders it as a live SearchLauncher, not a stub (W12: no dead branch)",
 		Icon:        "search",
 		Slot:        WidgetSlotTopbar,
 		Category:    WidgetCategoryNavigation,
@@ -165,7 +165,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:         "theme_toggle",
 		Name:         "Theme Toggle",
-		Description:  "Light/dark mode toggle button",
+		Description:  "Light/dark mode toggle button. Guests: fully functional (no auth needed)",
 		Icon:         "sun-moon",
 		Slot:         WidgetSlotTopbar,
 		Category:     WidgetCategoryNavigation,
@@ -175,7 +175,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "language_toggle",
 		Name:        "Language Toggle",
-		Description: "Language switcher dropdown",
+		Description: "Language switcher dropdown. Guests: fully functional (no auth needed)",
 		Icon:        "globe",
 		Slot:        WidgetSlotTopbar,
 		Category:    WidgetCategoryNavigation,
@@ -188,7 +188,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:         "user_dropdown",
 		Name:         "User Dropdown",
-		Description:  "Authenticated user menu (profile, settings, logout)",
+		Description:  "Authenticated user menu (profile, settings, logout). Guests: shows login/signup entries instead",
 		Icon:         "user",
 		Slot:         WidgetSlotTopbar,
 		Category:     WidgetCategoryNavigation,
@@ -198,7 +198,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:         "notification_centre",
 		Name:         "Notification Centre",
-		Description:  "Notification bell + dropdown",
+		Description:  "Notification bell + dropdown. Guests: renders nothing (no notifications without a session)",
 		Icon:         "bell",
 		Slot:         WidgetSlotTopbar,
 		Category:     WidgetCategoryNavigation,
@@ -208,7 +208,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "trending_tags",
 		Name:        "Trending Tags",
-		Description: "Trending hashtag list — data fetched from /trending/tags",
+		Description: "Trending hashtag list — data fetched from /trending/tags. Guests: same public list, renders while non-empty, hidden while empty",
 		Icon:        "hash",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -222,7 +222,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "suggested_spaces",
 		Name:        "Suggested Spaces",
-		Description: "Suggested spaces to join — data fetched from /suggestions/spaces (authenticated users only)",
+		Description: "Suggested spaces to join — data fetched from /suggestions/spaces. Guests: hidden while empty (no personalized data without a session); signed in with no suggestions also hidden",
 		Icon:        "users",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -236,7 +236,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "suggested_content",
 		Name:        "Suggested Content",
-		Description: "Personalised content suggestions — data fetched from /suggestions/content (authenticated users only)",
+		Description: "Personalised content suggestions — data fetched from /suggestions/content. Guests: sign-in prompt card (not hidden); signed-in with no suggestions shows an empty-state card",
 		Icon:        "sparkles",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -250,7 +250,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "ad_slot",
 		Name:        "Ad Slot",
-		Description: "Advertisement slot — data fetched from /ads/serve?slot= (requires the feature.ads flag; renders nothing when no campaign is served). The only widget type the left rail renders",
+		Description: "Advertisement slot — data fetched from /ads/serve?slot= (requires the feature.ads flag; renders nothing when no campaign is served). Guests: same ad serving as signed-in users. The only widget type the left rail renders",
 		Icon:        "megaphone",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryMonetization,
@@ -272,7 +272,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "rich_text",
 		Name:        "Rich Text",
-		Description: "Free-form HTML/text block (sanitized server-side)",
+		Description: "Free-form HTML/text block (sanitized server-side). Guests: same content (visibility-gated like any widget); renders nothing when content is blank",
 		Icon:        "type",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryCustom,
@@ -285,7 +285,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "custom_html",
 		Name:        "Custom HTML",
-		Description: "Raw HTML block rendered inside a sandboxed frame — scripts, iframes and embeds are always stripped",
+		Description: "Raw HTML block rendered inside a sandboxed frame — scripts, iframes and embeds are always stripped. Guests: same content (visibility-gated like any widget); renders nothing when html is blank",
 		Icon:        "code",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryCustom,
@@ -300,7 +300,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "recent_content",
 		Name:        "Recent Content",
-		Description: "Latest published content items — data fetched from /content (optionally scoped via the space_id prop)",
+		Description: "Latest published content items — data fetched from /content (optionally scoped via the space_id prop). Guests: sign-in prompt card, not hidden",
 		Icon:        "file-text",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -315,7 +315,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "space_list",
 		Name:        "Space List",
-		Description: "List of spaces — data fetched from /spaces (optionally filtered via the level prop)",
+		Description: "List of spaces — data fetched from /spaces (optionally filtered via the level prop). Guests: renders the same public list; empty-state card when no spaces",
 		Icon:        "layout-grid",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -340,7 +340,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "continue_learning",
 		Name:        "Continue Learning",
-		Description: "User's most recent enrollment with progress — data fetched from /me/enrollments (authenticated users only)",
+		Description: "User's most recent enrollment with progress — data fetched from /me/enrollments. Guests: renders nothing (no enrollments without a session)",
 		Icon:        "play-circle",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryAcademy,
@@ -356,7 +356,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "academy_enrollments",
 		Name:        "Academy Enrollments",
-		Description: "User's active academy tracks with progress — data fetched from /me/enrollments (authenticated users only)",
+		Description: "User's active academy tracks with progress — data fetched from /me/enrollments. Guests: renders nothing (no enrollments without a session)",
 		Icon:        "graduation-cap",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryAcademy,
@@ -370,7 +370,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "progress_ring",
 		Name:        "Learning Progress Ring",
-		Description: "Aggregate learning progress indicator — data fetched from /me/enrollments (authenticated users only)",
+		Description: "Aggregate learning progress indicator — data fetched from /me/enrollments. Guests: renders nothing (no progress without a session)",
 		Icon:        "circle-dashed",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryAcademy,
@@ -384,7 +384,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "track_card",
 		Name:        "Featured Track Card",
-		Description: "Featured learning track card — data fetched from /academy/tracks/{slug} (track_slug prop) or /academy/catalog (fallback)",
+		Description: "Featured learning track card — data fetched from /academy/tracks/{slug} (track_slug prop) or /academy/catalog (fallback). Guests: renders the same public track card",
 		Icon:        "book-open",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryAcademy,
@@ -399,7 +399,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "related_discussions",
 		Name:        "Related Discussions",
-		Description: "Contextual forum/comment threads — data fetched from /organizations/{id}/content, /users/{id}/content, or /content/{id}/discussions depending on page context",
+		Description: "Contextual forum/comment threads — data fetched from /organizations/{id}/content, /users/{id}/content, or /content/{id}/discussions depending on page context. Guests: same public threads; hidden while empty (no permanent empty card). CONTEXT: requires /org/*, /u/* or content-single (/content/*, /blog/*, /story/*) pages — on other pages it resolves but renders nothing, so prefer a specific page_pattern over '*'",
 		Icon:        "message-square",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
@@ -413,7 +413,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "leaderboard",
 		Name:        "Leaderboard",
-		Description: "Top contributors — data fetched from /gamification/leaderboard (hidden when gamification.enabled is off)",
+		Description: "Top contributors — data fetched from /gamification/leaderboard (hidden when gamification.enabled is off). Guests: same public list; hidden while empty",
 		Icon:        "trophy",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
@@ -427,7 +427,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "helpful_widget",
 		Name:        "Was this helpful?",
-		Description: "Docs feedback widget — posts to /docs/{audience}/{slug}/feedback (authenticated users only)",
+		Description: "Docs feedback widget — posts to /docs/{audience}/{slug}/feedback. Guests: renders nothing (feedback requires a session). CONTEXT: requires a doc page (page + audience + slug in page data) — on other pages it resolves but renders nothing, so scope to doc routes",
 		Icon:        "thumbs-up",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryNavigation,
@@ -440,7 +440,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "tag_cloud",
 		Name:        "Tag Cloud",
-		Description: "Visual tag cloud — uses the same trending tag data as the trending_tags widget",
+		Description: "Visual tag cloud — uses the same trending tag data as the trending_tags widget. Guests: same public list; hidden while empty",
 		Icon:        "cloud",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -454,7 +454,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "metric_card",
 		Name:        "Metric Card",
-		Description: "Small stat card (icon, value, label)",
+		Description: "Small stat card (icon, value, label). Guests: same static content (visibility-gated like any widget)",
 		Icon:        "bar-chart-3",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryDashboard,
@@ -474,7 +474,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "featured_content",
 		Name:        "Featured Content",
-		Description: "Curated featured posts — data fetched from /blog/featured, or /content?type=forum_thread&featured=1 on forum pages",
+		Description: "Curated featured posts — data fetched from /blog/featured, or /content?type=forum_thread&featured=1 on forum pages. Guests: same public posts; hidden while empty",
 		Icon:        "star",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -488,7 +488,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "bookmark_folders",
 		Name:        "Bookmark Folders",
-		Description: "User's bookmark folders — data fetched from /me/bookmark-folders (authenticated users only)",
+		Description: "User's bookmark folders — data fetched from /me/bookmark-folders. Guests: renders nothing (no bookmarks without a session); signed-in with no folders shows an empty-state card",
 		Icon:        "bookmark",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryDashboard,
@@ -502,7 +502,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "upcoming_events",
 		Name:        "Upcoming Events",
-		Description: "Calendar upcoming events — data fetched from /calendar?view=list (requires the calendar.enabled feature flag; hidden when the calendar is disabled or empty)",
+		Description: "Calendar upcoming events — data fetched from /calendar?view=list (requires the calendar.enabled feature flag; hidden when the calendar is disabled or empty). Guests: same public events; hidden while empty",
 		Icon:        "calendar",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -516,7 +516,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "user_card",
 		Name:        "User / Profile Card",
-		Description: "User or organization profile card — data fetched from /users/{username} or /organizations/{slug} based on page context or props",
+		Description: "User or organization profile card — data fetched from /users/{username} or /organizations/{slug} based on page context or props. Guests: same public profile; renders nothing when no user resolves (no permanent empty card). CONTEXT: requires /u/*, /org/*, or content-single (/content/*, /blog/*, /story/*) pages — or a fixed username prop, which wins on every route — so prefer a specific page_pattern over '*'",
 		Icon:        "user-circle",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategorySocial,
@@ -536,7 +536,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "space_categories",
 		Name:        "Space Categories",
-		Description: "Space type/category chips — data fetched from /space-types",
+		Description: "Space type/category chips — data fetched from /space-types. Guests: same public chips; empty-state card when none",
 		Icon:        "folder-tree",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
@@ -549,7 +549,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "newsletter_signup",
 		Name:        "Newsletter Signup",
-		Description: "Email newsletter subscription form — posts to /newsletter/subscribe (requires the feature.newsletter flag; hidden when disabled)",
+		Description: "Email newsletter subscription form — posts to /newsletter/subscribe (requires the feature.newsletter flag; hidden when disabled). Guests: fully usable (email capture needs no session)",
 		Icon:        "mail",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryMarketing,
@@ -563,7 +563,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "social_links",
 		Name:        "Social Links",
-		Description: "Row of social profile links",
+		Description: "Row of social profile links. Guests: same links (visibility-gated like any widget); renders nothing when no link has a URL",
 		Icon:        "share-2",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryMarketing,
@@ -577,7 +577,7 @@ var widgetRegistry = []WidgetType{
 	{
 		Type:        "cta_button",
 		Name:        "Call to Action",
-		Description: "Prominent CTA button",
+		Description: "Prominent CTA button. Guests: same button (visibility-gated like any widget)",
 		Icon:        "mouse-pointer-click",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryMarketing,
@@ -604,7 +604,7 @@ var widgetRegistry = []WidgetType{
 		// resolved at render time, never embedded at write time (Section 59).
 		Type:        "configured_widget",
 		Name:        "Configured Widget",
-		Description: "Embeds a Widget from the Widgets manager (/widgets, Section 16) — rendered data fetched from /widgets/{widget_id}",
+		Description: "Embeds a Widget from the Widgets manager (/widgets, Section 16) — rendered data fetched from /widgets/{widget_id}. Guests: delegates to the referenced type's own guest behavior; renders nothing until an admin picks a widget",
 		Icon:        "boxes",
 		Slot:        WidgetSlotContent,
 		Category:    WidgetCategoryContent,
