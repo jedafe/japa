@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, apiList } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
@@ -36,6 +36,7 @@
 		source_license?: string | null;
 		usage_restriction?: string | null;
 		enabled: boolean;
+		status?: string;
 		persona_id?: string | null;
 		/** Extraction-domain override from provider_config.entity_types —
 		 *  a mixed-domain source declares every entity type it publishes. */
@@ -64,7 +65,7 @@
 
 	// RBAC CRUD gate: managing sources requires intel.sources.manage (or
 	// wildcard). Viewing the registry requires intel.sources.view.
-	const canView = $derived(hasAnyPermission(['intel.sources.view', 'intel.sources.*']));
+	const canView = $derived(hasAnyPermission(['intel.sources.view', 'intel.sources.manage', 'intel.sources.*']));
 	const canManage = $derived(hasAnyPermission(['intel.sources.manage', 'intel.sources.*']));
 	// INTEL-018 fix: crawl-now and disable-source permissions.
 	const canCrawlNow = $derived(hasAnyPermission(['intel.sources.crawl_now', 'intel.sources.*']));
@@ -91,6 +92,7 @@
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let errorMessage = $state('');
+	let noticeMessage = $state('');
 	let filter = $state('');
 	let filterCategory = $state('all');
 
@@ -99,6 +101,8 @@
 	let sortKey = $state('');
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 	let selectedIds = $state(new Set<string>());
+	let totalRows = $state(0);
+	let bulkBusy = $state(false);
 
 	let formOpen = $state(false);
 	let editingSource = $state<IntelSource | null>(null);
@@ -114,16 +118,26 @@
 
 	async function load() {
 		refreshing = true;
-		errorMessage = '';
-		// Use include_disabled=true so ALL sources (including disabled) are
-		// returned with full crawl-state fields. The public directory endpoint
-		// only returns enabled sources with a trimmed shape — the control panel
-		// needs disabled sources visible to re-enable them (BUG-004 fix).
-		const result = await api<IntelSource[]>(
-			'/api/v1/intel/sources?page_size=100&include_disabled=true'
+		// Use include_disabled=true so ALL sources (including disabled and
+		// proposed/rejected rows) are returned with full crawl-state fields
+		// (BUG-004 fix). Filtering, sorting, and pagination run server-side so
+		// the registry isn't silently capped at one page.
+		const params = new URLSearchParams();
+		params.set('include_disabled', 'true');
+		params.set('page_size', String(pageSize));
+		params.set('page', String(page + 1)); // backend pagination is 1-based
+		if (debouncedFilter) params.set('q', debouncedFilter);
+		if (filterCategory !== 'all') params.set('category', filterCategory);
+		if (sortKey) {
+			params.set('sort', sortKey);
+			params.set('dir', sortDirection);
+		}
+		const result = await apiList<IntelSource[]>(
+			`/api/v1/intel/sources?${params.toString()}`
 		);
 		if (result.ok) {
 			sources = Array.isArray(result.data) ? (result.data as IntelSource[]) : [];
+			totalRows = Number(result.meta?.total ?? sources.length);
 		} else {
 			errorMessage = result.error;
 		}
@@ -167,43 +181,43 @@
 		refreshing = false;
 	}
 
+	// Server-side list: debounce the search box, then reload whenever any
+	// server parameter (page/page-size/sort/category/search) changes.
+	let filterDebounce: ReturnType<typeof setTimeout> | null = null;
+	let debouncedFilter = $state('');
+
 	$effect(() => {
+		void filter;
+		if (filterDebounce) clearTimeout(filterDebounce);
+		filterDebounce = setTimeout(() => {
+			if (debouncedFilter !== filter) page = 0;
+			debouncedFilter = filter;
+		}, 300);
+	});
+
+	$effect(() => {
+		void page;
+		void pageSize;
+		void sortKey;
+		void sortDirection;
+		void filterCategory;
+		void debouncedFilter;
 		load();
 	});
 
+	// Category options come from the API taxonomy (admin_categories via
+	// /sources/meta) — the filtered list is server-side, so deriving the
+	// picker from the loaded page would hide most categories.
 	const categoryItems = $derived.by(() => {
 		const items = [{ value: 'all', label: t('intel.filter_all_categories', 'All categories') }];
-		const seen = new Set<string>();
-		for (const s of sources) {
-			if (s.category && !seen.has(s.category)) {
-				seen.add(s.category);
-				items.push({
-					value: s.category,
-					label: t(`intel.category_${s.category}`, s.category)
-				});
-			}
+		for (const c of categoryOptions) {
+			items.push({
+				value: c,
+				label: t(`intel.category_${c}`, c)
+			});
 		}
 		return items;
 	});
-
-	let filtered = $derived(
-		sources
-			.filter((s) => {
-				if (filterCategory !== 'all' && s.category !== filterCategory) return false;
-				if (filter) {
-					const q = filter.toLowerCase();
-					if (
-						!s.name?.toLowerCase().includes(q) &&
-						!s.domain?.toLowerCase().includes(q) &&
-						!s.source_url?.toLowerCase().includes(q)
-					)
-						return false;
-				}
-				return true;
-			})
-	);
-
-	let totalRows = $derived(filtered.length);
 
 	function trustColor(level: number): string {
 		switch (level) {
@@ -221,7 +235,8 @@
 			case 2: return t('intel.trust_trusted', 'Trusted');
 			case 3: return t('intel.trust_aggregator', 'Aggregator');
 			case 4: return t('intel.trust_community', 'Community');
-			default: return String(level);
+			case 5: return t('intel.trust_unverified', 'Unverified');
+			default: return t('intel.trust_unrated', 'Unrated');
 		}
 	}
 
@@ -284,12 +299,25 @@
 		},
 		{
 			key: 'enabled',
-			label: t('intel.field_enabled', 'Status'),
+			label: t('intel.field_enabled', 'Enabled'),
 			sortable: true,
 			render: (val) =>
 				val
 					? `<span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-500"><span class="size-1.5 rounded-full bg-emerald-500"></span>${t('intel.enabled', 'Enabled')}</span>`
 					: `<span class="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground"><span class="size-1.5 rounded-full bg-muted-foreground/40"></span>${t('intel.disabled', 'Disabled')}</span>`
+		},
+		{
+			key: 'status',
+			label: t('intel.status', 'Status'),
+			sortable: true,
+			render: (val) => {
+				const cls = val === 'active'
+					? 'text-emerald-500 bg-emerald-500/10'
+					: val === 'proposed'
+						? 'text-amber-500 bg-amber-500/10'
+						: 'text-muted-foreground bg-muted';
+				return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${escapeHtml(String(val))}</span>`;
+			}
 		}
 	];
 
@@ -318,6 +346,10 @@
 			acts.push({
 				label: t('intel.toggle_enable', 'Toggle Enable'),
 				icon: Power,
+				// Enabling is only valid on approved (active) sources — a
+				// proposed/rejected row must go through the approve/reject
+				// flow on the Proposed queue, not a raw enabled toggle.
+				hidden: (row) => (row as unknown as IntelSource).status !== 'active',
 				onClick: (row) => toggleEnable(row as unknown as IntelSource)
 			});
 		}
@@ -446,10 +478,39 @@
 	}
 
 	async function bulkToggle(ids: string[], enabled: boolean) {
-		await Promise.allSettled(
-			ids.map((id) => api(`/api/v1/intel/sources/${id}`, { method: 'PATCH', body: { enabled } }))
+		if (bulkBusy) return;
+		bulkBusy = true;
+		noticeMessage = '';
+		errorMessage = '';
+		const results = await Promise.allSettled(
+			ids.map((id) =>
+				api(`/api/v1/intel/sources/${id}`, { method: 'PATCH', body: { enabled } })
+					.then((r) => (r.ok ? null : r.error))
+			)
 		);
+		const failures: string[] = [];
+		results.forEach((r, i) => {
+			if (r.status === 'rejected') {
+				failures.push(ids[i].slice(0, 8));
+			} else if (r.value) {
+				failures.push(`${ids[i].slice(0, 8)}: ${r.value}`);
+			}
+		});
+		const succeeded = ids.length - failures.length;
+		if (failures.length === 0) {
+			noticeMessage = t('intel.bulk_done', '{done} of {total} sources updated.')
+				.replace('{done}', String(succeeded))
+				.replace('{total}', String(ids.length));
+		} else {
+			errorMessage = t('intel.bulk_partial', '{done} of {total} sources updated; {failed} failed: {list}')
+				.replace('{done}', String(succeeded))
+				.replace('{total}', String(ids.length))
+				.replace('{failed}', String(failures.length))
+				.replace('{list}', failures.slice(0, 5).join('; '));
+		}
+		selectedIds = new Set();
 		await load();
+		bulkBusy = false;
 	}
 
 	function openDelete(s: IntelSource) {
@@ -502,6 +563,11 @@
 			{errorMessage}
 		</div>
 	{/if}
+	{#if noticeMessage}
+		<div class="bg-emerald-500/10 text-emerald-500 mb-4 rounded-md p-3 text-sm">
+			{noticeMessage}
+		</div>
+	{/if}
 
 	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 		<div class="flex flex-1 flex-wrap items-center gap-2">
@@ -540,7 +606,7 @@
 
 	<DataTable
 		{columns}
-		rows={filtered}
+		rows={sources}
 		{totalRows}
 		bind:page
 		bind:pageSize

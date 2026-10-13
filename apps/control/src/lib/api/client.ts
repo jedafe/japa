@@ -11,6 +11,7 @@ export interface ApiErr {
 
 export interface ApiResult<T> {
 	data: T | null;
+	meta: Record<string, unknown> | null;
 	error: ApiErr['error'] | null;
 	status: number;
 }
@@ -208,23 +209,25 @@ export async function apiFetch<T>(
 		// reason rather than a misleading "Session expired".
 		if (res.status === 401) {
 			const msg = (body && 'error' in body && body.error.message) || 'Session expired';
-			return { data: null, error: { code: 'unauthorized', message: msg, status: 401 }, status: 401 };
+			return { data: null, meta: null, error: { code: 'unauthorized', message: msg, status: 401 }, status: 401 };
 		}
 
 		if (res.status === 403) {
 			const msg = (body && 'error' in body && body.error.message) || 'Insufficient privileges';
-			return { data: null, error: { code: 'forbidden', message: msg, status: 403 }, status: 403 };
+			return { data: null, meta: null, error: { code: 'forbidden', message: msg, status: 403 }, status: 403 };
 		}
 
 		if (!res.ok || (body && 'error' in body)) {
 			const err = body && 'error' in body ? body.error : { code: 'unknown', message: res.statusText, status: res.status };
-			return { data: null, error: err, status: res.status };
+			return { data: null, meta: null, error: err, status: res.status };
 		}
 
-		return { data: (body as ApiOk<T>).data, error: null, status: res.status };
+		const meta = (body as ApiOk<T> & { meta?: Record<string, unknown> })?.meta ?? null;
+		return { data: (body as ApiOk<T>).data, meta, error: null, status: res.status };
 	} catch (err) {
 		return {
 			data: null,
+			meta: null,
 			error: { code: 'network_error', message: err instanceof Error ? err.message : 'Network error', status: 0 },
 			status: 0,
 		};

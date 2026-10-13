@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, apiList } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
@@ -41,6 +41,7 @@
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let errorMessage = $state('');
+	let noticeMessage = $state('');
 	let filter = $state('');
 	let filterEntity = $state('all');
 
@@ -49,8 +50,10 @@
 	let sortKey = $state('');
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 	let selectedIds = $state(new Set<string>());
+	let totalRows = $state(0);
 
 	let actionLoading = $state<string | null>(null);
+	let bulkBusy = $state(false);
 
 	// Status filter: read from URL query param ?status=. Defaults to
 	// 'review_required' (the standard review queue). Supported values:
@@ -67,18 +70,30 @@
 	};
 
 	const statusIsReviewable = $derived(statusFilter === 'review_required');
+	const statusIsApproved = $derived(statusFilter === 'approved');
 
 	async function load() {
 		refreshing = true;
 		errorMessage = '';
+		const params = new URLSearchParams();
+		params.set('page_size', String(pageSize));
+		params.set('page', String(page + 1)); // backend pagination is 1-based
+		if (debouncedFilter) params.set('q', debouncedFilter);
+		if (filterEntity !== 'all') params.set('entity_type', filterEntity);
+		if (sortKey) {
+			params.set('sort', sortKey);
+			params.set('dir', sortDirection);
+		}
 		// When status is review_required, use the dedicated review queue
-		// endpoint. For other statuses, use the generic records endpoint.
+		// endpoint. For other statuses, use the generic records endpoint —
+		// both honor the same filter/sort/page params server-side.
 		const endpoint = statusFilter === 'review_required'
-			? '/api/v1/intel/review/queue?page_size=100'
-			: `/api/v1/intel/records?status=${statusFilter}&page_size=100`;
-		const result = await api<IntelRecord[]>(endpoint);
+			? `/api/v1/intel/review/queue?${params.toString()}`
+			: `/api/v1/intel/records?status=${statusFilter}&${params.toString()}`;
+		const result = await apiList<IntelRecord[]>(endpoint);
 		if (result.ok) {
 			records = Array.isArray(result.data) ? (result.data as IntelRecord[]) : [];
+			totalRows = Number(result.meta?.total ?? records.length);
 		} else {
 			errorMessage = result.error;
 		}
@@ -86,10 +101,29 @@
 		refreshing = false;
 	}
 
-	// Reload when the status filter changes (URL query param changes).
+	// Server-side list: reload whenever page/page-size/sort/entity/status
+	// or the debounced search text changes.
+	let filterDebounce: ReturnType<typeof setTimeout> | null = null;
+	let debouncedFilter = $state('');
+
 	$effect(() => {
-		// Track statusFilter so the effect re-runs when it changes.
-		statusFilter;
+		void filter;
+		if (filterDebounce) clearTimeout(filterDebounce);
+		filterDebounce = setTimeout(() => {
+			if (debouncedFilter !== filter) page = 0;
+			debouncedFilter = filter;
+		}, 300);
+	});
+
+	$effect(() => {
+		// Track every server-side list parameter so a change re-runs load().
+		void statusFilter;
+		void page;
+		void pageSize;
+		void sortKey;
+		void sortDirection;
+		void filterEntity;
+		void debouncedFilter;
 		load();
 	});
 
@@ -106,30 +140,6 @@
 		{ value: 'community', label: t('intel.category_community', 'Community') },
 		{ value: 'mentorship', label: t('intel.category_mentorship', 'Mentorship') }
 	]);
-
-	let filtered = $derived(
-		records.filter((r) => {
-			if (filterEntity !== 'all' && r.entity_type !== filterEntity) return false;
-			if (filter) {
-				const q = filter.toLowerCase();
-				if (
-					!r.id?.toLowerCase().includes(q) &&
-					!r.external_key?.toLowerCase().includes(q) &&
-					!r.entity_type?.toLowerCase().includes(q)
-				)
-					return false;
-			}
-			return true;
-		})
-	);
-
-	let totalRows = $derived(filtered.length);
-
-	// The backend caps the response at page_size=100. When the fetched page
-	// is full, more records likely exist beyond the cap — surface a notice so
-	// the operator knows the list is truncated (the DataTable paginates the
-	// fetched 100 client-side, so it is not a true total).
-	let truncated = $derived(records.length >= 100);
 
 	function formatTime(ts?: string): string {
 		if (!ts) return '—';
@@ -203,6 +213,14 @@
 			variant: 'destructive',
 			hidden: () => !canReject || !statusIsReviewable,
 			onClick: (row) => rejectRecord((row as unknown as IntelRecord).id)
+		},
+		{
+			// Recovery path for records stuck in 'approved' when the promote
+			// enqueue failed after approval — re-queues intel:promote.
+			label: t('intel.retry_promote', 'Retry promote'),
+			icon: RefreshCw,
+			hidden: () => !canApprove || !statusIsApproved,
+			onClick: (row) => repromoteRecord((row as unknown as IntelRecord).id)
 		}
 	]);
 
@@ -227,36 +245,105 @@
 			: []
 	);
 
+	// doReviewAction is the shared core for row and bulk actions: it returns
+	// the backend error string (or null on success) plus the promote_queued
+	// flag the approve endpoint reports, so bulk callers can build a
+	// per-item failure summary and approves can surface a queue outage.
+	async function doReviewAction(
+		id: string,
+		action: 'approve' | 'reject' | 'promote'
+	): Promise<{ err: string | null; promoteQueued: boolean }> {
+		const path = action === 'promote'
+			? `/api/v1/intel/records/${id}/promote`
+			: `/api/v1/intel/review/${id}/${action}`;
+		const result = await api<{ promote_queued?: boolean }>(path, { method: 'POST' });
+		if (!result.ok) return { err: result.error, promoteQueued: false };
+		return { err: null, promoteQueued: result.data?.promote_queued !== false };
+	}
+
 	async function approveRecord(id: string) {
 		actionLoading = id;
-		const result = await api(`/api/v1/intel/review/${id}/approve`, { method: 'POST' });
+		noticeMessage = '';
+		const r = await doReviewAction(id, 'approve');
 		actionLoading = null;
-		if (result.ok) {
+		if (!r.err) {
+			if (!r.promoteQueued) {
+				noticeMessage = t('intel.promote_not_queued', 'Approved, but the promotion queue is unreachable — use Retry promote once it recovers.');
+			}
 			await load();
 		} else {
-			errorMessage = result.error;
+			errorMessage = r.err;
 		}
 	}
 
 	async function rejectRecord(id: string) {
 		actionLoading = id;
-		const result = await api(`/api/v1/intel/review/${id}/reject`, { method: 'POST' });
+		const r = await doReviewAction(id, 'reject');
 		actionLoading = null;
-		if (result.ok) {
+		if (!r.err) {
 			await load();
 		} else {
-			errorMessage = result.error;
+			errorMessage = r.err;
 		}
 	}
 
-	async function bulkApprove(ids: string[]) {
-		await Promise.allSettled(ids.map((id) => approveRecord(id)));
+	async function repromoteRecord(id: string) {
+		actionLoading = id;
+		noticeMessage = '';
+		const r = await doReviewAction(id, 'promote');
+		actionLoading = null;
+		if (!r.err) {
+			noticeMessage = t('intel.repromote_queued', 'Promotion re-queued.');
+			await load();
+		} else {
+			errorMessage = r.err;
+		}
+	}
+
+	async function bulkReview(ids: string[], action: 'approve' | 'reject') {
+		if (bulkBusy) return;
+		bulkBusy = true;
+		noticeMessage = '';
+		errorMessage = '';
+		const results = await Promise.allSettled(ids.map((id) => doReviewAction(id, action)));
+		const failures: string[] = [];
+		let unqueued = 0;
+		results.forEach((r, i) => {
+			if (r.status === 'rejected') {
+				failures.push(ids[i]);
+			} else if (r.value.err) {
+				failures.push(`${ids[i].slice(0, 8)}: ${r.value.err}`);
+			} else if (!r.value.promoteQueued) {
+				unqueued++;
+			}
+		});
+		const succeeded = ids.length - failures.length;
+		if (failures.length === 0) {
+			noticeMessage = t('intel.bulk_done', '{done} of {total} records updated.')
+				.replace('{done}', String(succeeded))
+				.replace('{total}', String(ids.length));
+			if (unqueued > 0) {
+				noticeMessage += ' ' + t('intel.promote_not_queued_bulk', '{n} approved record(s) could not reach the promotion queue — retry them from the Approved view.')
+					.replace('{n}', String(unqueued));
+			}
+		} else {
+			errorMessage = t('intel.bulk_partial', '{done} of {total} records updated; {failed} failed: {list}')
+				.replace('{done}', String(succeeded))
+				.replace('{total}', String(ids.length))
+				.replace('{failed}', String(failures.length))
+				.replace('{list}', failures.slice(0, 5).join('; '));
+		}
+		selectedIds = new Set();
 		await load();
+		bulkBusy = false;
+	}
+
+	async function bulkApprove(ids: string[]) {
+		await bulkReview(ids, 'approve');
 	}
 
 	async function bulkReject(ids: string[]) {
-		await Promise.allSettled(ids.map((id) => rejectRecord(id)));
-		await load();
+		await bulkReview(ids, 'reject');
 	}
 </script>
 
@@ -290,6 +377,7 @@
 			<AutocompleteSelect
 				value={statusFilter}
 				onValueChange={(v) => {
+					page = 0;
 					const url = new URL(window.location.href);
 					if (v === 'review_required') {
 						url.searchParams.delete('status');
@@ -312,16 +400,16 @@
 		</button>
 	</div>
 
-	{#if truncated && !loading}
-		<div class="bg-amber-500/10 text-amber-500 mb-3 flex items-center gap-2 rounded-md p-2.5 text-xs">
-			<ClipboardList class="size-3.5 shrink-0" />
-			{t('intel.truncated_notice', 'Showing the first 100 records. Refine the filter above to narrow the list.')}
+	{#if noticeMessage}
+		<div class="bg-emerald-500/10 text-emerald-500 mb-3 flex items-center gap-2 rounded-md p-2.5 text-xs">
+			<CheckCircle2 class="size-3.5 shrink-0" />
+			{noticeMessage}
 		</div>
 	{/if}
 
 	<DataTable
 		{columns}
-		rows={filtered}
+		rows={records}
 		{totalRows}
 		bind:page
 		bind:pageSize

@@ -22,7 +22,8 @@
 		ExternalLink,
 		Ban,
 		ChevronRight,
-		MessageSquare
+		MessageSquare,
+		RefreshCw
 	} from 'lucide-svelte';
 
 	// SPA: read the route id from client-side page state (no SSR load()).
@@ -83,11 +84,17 @@
 	}
 
 	let record = $state<IntelRecord | null>(null);
+
+	// Action visibility mirrors the backend state guard: review actions only
+	// make sense on a record still awaiting review; an approved-but-not-yet-
+	// promoted record instead offers the promote retry.
+	const isReviewable = $derived(record?.status === 'review_required');
+	const isPromotable = $derived(record?.status === 'approved' && !record?.promoted_record_id);
 	let source = $state<IntelSource | null>(null);
 	let rawDoc = $state<RawDocument | null>(null);
 	let loading = $state(true);
 	let errorMessage = $state('');
-	let actionLoading = $state<'approve' | 'reject' | 'save' | 'disable' | null>(null);
+	let actionLoading = $state<'approve' | 'reject' | 'save' | 'disable' | 'promote' | null>(null);
 	let actionMessage = $state('');
 	let actionType = $state<'success' | 'error' | ''>('');
 
@@ -182,16 +189,15 @@
 	}
 
 	async function loadSource(sourceId: string, gen: number) {
-		// Fetch all sources (including disabled) to find the one for this
-		// record. There is no single-source GET endpoint, so we fetch the
-		// full list and find by id. include_disabled=true ensures disabled
-		// sources are still resolved (BUG-004 fix).
-		const result = await api<IntelSource[]>(
-			'/api/v1/intel/sources?page_size=100&include_disabled=true'
+		// Direct source lookup — the dedicated GET by ID resolves records
+		// beyond the first page of the registry (previous whole-list scan
+		// could silently miss sources past row 100).
+		const result = await api<IntelSource>(
+			`/api/v1/intel/sources/${sourceId}`
 		);
 		if (gen !== loadGeneration) return;
-		if (result.ok && Array.isArray(result.data)) {
-			source = (result.data as IntelSource[]).find((s) => s.id === sourceId) ?? null;
+		if (result.ok && result.data && !Array.isArray(result.data)) {
+			source = result.data as IntelSource;
 		}
 	}
 
@@ -261,12 +267,20 @@
 		if (!record) return;
 		actionLoading = 'approve';
 		actionMessage = '';
-		const result = await api(`/api/v1/intel/review/${record.id}/approve`, {
+		const result = await api<{ promote_queued?: boolean }>(`/api/v1/intel/review/${record.id}/approve`, {
 			method: 'POST',
 			body: { note: approveNote.trim() || undefined }
 		});
 		actionLoading = null;
 		if (result.ok) {
+			// The approve succeeded but the intel:promote enqueue failed —
+			// stay on this record and surface the retry affordance rather
+			// than navigating away and leaving it silently stuck approved.
+			if (result.data?.promote_queued === false) {
+				record = { ...record, status: 'approved' };
+				notify('error', t('intel.promote_not_queued', 'Approved, but the promotion queue is unreachable — use Retry promote once it recovers.'));
+				return;
+			}
 			// Advance to the next record in the queue when available; otherwise
 			// return to the queue list. The approved record is no longer in
 			// the review_required queue, so reloading this page would show
@@ -297,6 +311,19 @@
 			} else {
 				goto('/intelligence/review');
 			}
+		} else {
+			notify('error', result.error);
+		}
+	}
+
+	async function repromote() {
+		if (!record) return;
+		actionLoading = 'promote';
+		actionMessage = '';
+		const result = await api(`/api/v1/intel/records/${record.id}/promote`, { method: 'POST' });
+		actionLoading = null;
+		if (result.ok) {
+			notify('success', t('intel.repromote_queued', 'Promotion re-queued. The record will publish when the promote task runs.'));
 		} else {
 			notify('error', result.error);
 		}
@@ -427,7 +454,7 @@
 						<ChevronRight class="size-4" />
 					</button>
 				{/if}
-				{#if canApprove}
+				{#if canApprove && isReviewable}
 					<button
 						class="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 						disabled={actionLoading !== null}
@@ -441,7 +468,22 @@
 						{t('intel.approve', 'Approve')}
 					</button>
 				{/if}
-				{#if canReject}
+				{#if canApprove && isPromotable}
+					<button
+						class="bg-sky-500/10 text-sky-500 hover:bg-sky-500/20 flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+						disabled={actionLoading !== null}
+						onclick={repromote}
+						title={t('intel.retry_promote_title', 'Re-enqueue promotion — the original queue dispatch may have failed')}
+					>
+						{#if actionLoading === 'promote'}
+							<Loader2 class="size-4 animate-spin" />
+						{:else}
+							<RefreshCw class="size-4" />
+						{/if}
+						{t('intel.retry_promote', 'Retry promote')}
+					</button>
+				{/if}
+				{#if canReject && isReviewable}
 					<button
 						class="bg-destructive/10 text-destructive hover:bg-destructive/20 flex items-center gap-1.5 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 						disabled={actionLoading !== null}

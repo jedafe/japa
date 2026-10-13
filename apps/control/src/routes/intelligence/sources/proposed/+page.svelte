@@ -1,14 +1,15 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, apiList } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import DataTable from '$lib/components/DataTable.svelte';
 	import SearchInput from '$lib/components/ui/SearchInput.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
+	import ConfirmModal from '$lib/components/ui/ConfirmModal.svelte';
 	import type { DataTableColumn, DataTableRowAction, DataTableBulkAction } from '$lib/api/types';
 	import { t } from '$lib/stores/i18n.svelte';
 	import { hasAnyPermission } from '$lib/stores/auth.svelte';
 	import { escapeHtml } from '$lib/utils';
-	import { RefreshCw, Database, Eye, CheckCircle, Search } from 'lucide-svelte';
+	import { RefreshCw, Database, Eye, CheckCircle, XCircle } from 'lucide-svelte';
 	import Modal from '$lib/components/ui/Modal.svelte';
 
 	// ProbeReport mirrors probe.Report (intel-channels Phase 1, spec §2) —
@@ -59,6 +60,8 @@
 		status: string;
 		proposed_at?: string | null;
 		proposed_by?: string | null;
+		/** Resolved display name for proposed_by (display_name → username → UUID). */
+		proposer_name?: string | null;
 		approved_at?: string | null;
 		approved_by?: string | null;
 		last_crawled_at?: string | null;
@@ -77,6 +80,7 @@
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let errorMessage = $state('');
+	let noticeMessage = $state('');
 	let filter = $state('');
 
 	let page = $state(0);
@@ -84,11 +88,19 @@
 	let sortKey = $state('proposed_at');
 	let sortDirection = $state<'asc' | 'desc'>('desc');
 	let selectedIds = $state(new Set<string>());
+	let totalRows = $state(0);
 
 	let detailOpen = $state(false);
 	let detailSource = $state<ProposedSource | null>(null);
 	let approving = $state<string | null>(null);
-	let bulkApproving = $state(false);
+	let bulkBusy = $state(false);
+	let rejectConfirm = $state<ProposedSource | null>(null);
+	let rejectOpen = $state(false);
+
+	function openReject(s: ProposedSource) {
+		rejectConfirm = s;
+		rejectOpen = true;
+	}
 
 	function trustColor(level: number): string {
 		switch (level) {
@@ -106,7 +118,8 @@
 			case 2: return t('intel.trust_trusted', 'Trusted');
 			case 3: return t('intel.trust_aggregator', 'Aggregator');
 			case 4: return t('intel.trust_community', 'Community');
-			default: return String(level);
+			case 5: return t('intel.trust_unverified', 'Unverified');
+			default: return t('intel.trust_unrated', 'Unrated');
 		}
 	}
 
@@ -121,12 +134,16 @@
 
 	async function load() {
 		refreshing = true;
-		errorMessage = '';
-		const result = await api<ProposedSource[]>(
-			'/api/v1/intel/sources/proposed?page_size=100'
+		const params = new URLSearchParams();
+		params.set('page_size', String(pageSize));
+		params.set('page', String(page + 1)); // backend pagination is 1-based
+		if (debouncedFilter) params.set('q', debouncedFilter);
+		const result = await apiList<ProposedSource[]>(
+			`/api/v1/intel/sources/proposed?${params.toString()}`
 		);
 		if (result.ok) {
 			sources = Array.isArray(result.data) ? (result.data as ProposedSource[]) : [];
+			totalRows = Number(result.meta?.total ?? sources.length);
 		} else {
 			errorMessage = result.error;
 		}
@@ -134,42 +151,89 @@
 		refreshing = false;
 	}
 
+	// Server-side list: debounce the search box, reload on page/size/search.
+	let filterDebounce: ReturnType<typeof setTimeout> | null = null;
+	let debouncedFilter = $state('');
+
 	$effect(() => {
+		void filter;
+		if (filterDebounce) clearTimeout(filterDebounce);
+		filterDebounce = setTimeout(() => {
+			if (debouncedFilter !== filter) page = 0;
+			debouncedFilter = filter;
+		}, 300);
+	});
+
+	$effect(() => {
+		void page;
+		void pageSize;
+		void debouncedFilter;
 		load();
 	});
 
-	let filtered = $derived(
-		sources.filter((s) => {
-			if (!filter) return true;
-			const q = filter.toLowerCase();
-			return (
-				s.name?.toLowerCase().includes(q) ||
-				s.domain?.toLowerCase().includes(q) ||
-				s.source_url?.toLowerCase().includes(q) ||
-				s.category?.toLowerCase().includes(q)
-			);
-		})
-	);
+	// doProposedAction is the shared core for row and bulk approve/reject:
+	// it returns the backend error string (or null on success) so bulk
+	// callers can build a per-item failure summary.
+	async function doProposedAction(id: string, action: 'approve' | 'reject'): Promise<string | null> {
+		const result = await api<{ source_id: string; status: string; enabled: boolean }>(
+			`/api/v1/intel/sources/${id}/${action}`,
+			{ method: 'POST' }
+		);
+		return result.ok ? null : result.error;
+	}
 
 	async function approveSource(id: string) {
 		approving = id;
-		const result = await api<{ source_id: string; status: string; enabled: boolean }>(
-			`/api/v1/intel/sources/${id}/approve`,
-			{ method: 'POST' }
-		);
+		const err = await doProposedAction(id, 'approve');
 		approving = null;
-		if (result.ok) {
+		if (!err) {
 			await load();
 		} else {
-			errorMessage = result.error;
+			errorMessage = err;
 		}
 	}
 
-	async function bulkApprove(ids: string[]) {
-		bulkApproving = true;
-		await Promise.allSettled(ids.map((id) => approveSource(id)));
+	async function confirmRejectSource() {
+		if (!rejectConfirm) return;
+		const err = await doProposedAction(rejectConfirm.id, 'reject');
+		if (!err) {
+			rejectConfirm = null;
+			rejectOpen = false;
+			await load();
+		} else {
+			errorMessage = err;
+		}
+	}
+
+	async function bulkAction(ids: string[], action: 'approve' | 'reject') {
+		if (bulkBusy) return;
+		bulkBusy = true;
+		noticeMessage = '';
+		errorMessage = '';
+		const results = await Promise.allSettled(ids.map((id) => doProposedAction(id, action)));
+		const failures: string[] = [];
+		results.forEach((r, i) => {
+			if (r.status === 'rejected') {
+				failures.push(ids[i].slice(0, 8));
+			} else if (r.value) {
+				failures.push(`${ids[i].slice(0, 8)}: ${r.value}`);
+			}
+		});
+		const succeeded = ids.length - failures.length;
+		if (failures.length === 0) {
+			noticeMessage = t('intel.bulk_done', '{done} of {total} sources updated.')
+				.replace('{done}', String(succeeded))
+				.replace('{total}', String(ids.length));
+		} else {
+			errorMessage = t('intel.bulk_partial', '{done} of {total} sources updated; {failed} failed: {list}')
+				.replace('{done}', String(succeeded))
+				.replace('{total}', String(ids.length))
+				.replace('{failed}', String(failures.length))
+				.replace('{list}', failures.slice(0, 5).join('; '));
+		}
 		selectedIds = new Set();
-		bulkApproving = false;
+		await load();
+		bulkBusy = false;
 	}
 
 	function openDetail(s: ProposedSource) {
@@ -228,7 +292,14 @@
 				label: t('intel.approve', 'Approve'),
 				icon: CheckCircle,
 				onClick: (row) => approveSource((row as unknown as ProposedSource).id),
-				disabled: () => !!approving
+				disabled: () => !!approving || bulkBusy
+			});
+			acts.push({
+				label: t('intel.reject', 'Reject'),
+				icon: XCircle,
+				variant: 'destructive',
+				onClick: (row) => openReject(row as unknown as ProposedSource),
+				disabled: () => !!approving || bulkBusy
 			});
 		}
 		acts.push({
@@ -245,7 +316,13 @@
 					{
 						label: t('intel.approve_selected', 'Approve selected'),
 						icon: CheckCircle,
-						onClick: (ids) => bulkApprove(ids)
+						onClick: (ids) => bulkAction(ids, 'approve')
+					},
+					{
+						label: t('intel.reject_selected', 'Reject selected'),
+						icon: XCircle,
+						variant: 'destructive',
+						onClick: (ids) => bulkAction(ids, 'reject')
 					}
 				]
 			: []
@@ -263,6 +340,11 @@
 	{#if errorMessage}
 		<div class="bg-destructive/10 text-destructive mb-4 rounded-md p-3 text-sm">
 			{errorMessage}
+		</div>
+	{/if}
+	{#if noticeMessage}
+		<div class="bg-emerald-500/10 text-emerald-500 mb-4 rounded-md p-3 text-sm">
+			{noticeMessage}
 		</div>
 	{/if}
 
@@ -284,8 +366,8 @@
 
 	<DataTable
 		{columns}
-		rows={filtered}
-		totalRows={filtered.length}
+		rows={sources}
+		{totalRows}
 		bind:page
 		bind:pageSize
 		bind:sortKey
@@ -331,7 +413,13 @@
 						<div>{formatTime(detailSource.proposed_at)}</div>
 
 						<div class="text-muted-foreground">{t('intel.proposed_by', 'Proposed by')}</div>
-						<div class="font-mono text-xs">{detailSource.proposed_by ?? '—'}</div>
+						<div class="text-xs">
+							{#if detailSource.proposer_name}
+								{detailSource.proposer_name}
+							{:else}
+								<span class="font-mono">{detailSource.proposed_by ?? '—'}</span>
+							{/if}
+						</div>
 
 						<div class="col-span-2 text-muted-foreground">{t('intel.source_url', 'URL')}</div>
 						<div class="col-span-2">
@@ -460,6 +548,13 @@
 					</button>
 					{#if canManage && detailSource}
 						<button
+							class="border-destructive/40 text-destructive hover:bg-destructive/10 rounded-9px border px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+							disabled={!!approving}
+							onclick={() => { if (detailSource) { detailOpen = false; openReject(detailSource); } }}
+						>
+							{t('intel.reject', 'Reject')}
+						</button>
+						<button
 							class="bg-foreground text-background hover:bg-foreground/90 rounded-9px px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50"
 							disabled={!!approving}
 							onclick={() => { if (detailSource) { detailOpen = false; approveSource(detailSource.id); } }}
@@ -470,4 +565,12 @@
 				</div>
 		</div>
 	</Modal>
+
+	<ConfirmModal
+		bind:open={rejectOpen}
+		title={t('intel.reject_source', 'Reject Source')}
+		consequence={t('intel.reject_consequence', 'This marks the proposal as rejected — it will not be crawled or appear in the directory. The row is kept for audit.')}
+		confirmText={rejectConfirm?.name ?? ''}
+		onConfirm={confirmRejectSource}
+	/>
 {/if}

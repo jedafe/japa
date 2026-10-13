@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { api } from '$lib/api';
+	import { api, apiList } from '$lib/api';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import AccessDenied from '$lib/components/AccessDenied.svelte';
 	import { t } from '$lib/stores/i18n.svelte';
@@ -67,10 +67,14 @@
 	}
 
 	let sources = $state<SourceEntry[]>([]);
-	let reviewRecords = $state<ReviewRecord[]>([]);
+	let reviewTotal = $state(0);
+	let approvedTotal = $state(0);
+	let publishedTotal = $state(0);
+	let proposedTotal = $state(0);
+	let sourcesTotal = $state(0);
+	let enabledTotal = $state(0);
 	let radarCounts = $state<RadarCountsData | null>(null);
 	let promotedRecords = $state<IntelRecord[]>([]);
-	let approvedRecords = $state<IntelRecord[]>([]);
 	let loading = $state(true);
 	let refreshing = $state(false);
 	let errorMessage = $state('');
@@ -79,39 +83,51 @@
 	async function load(signal?: AbortSignal) {
 		refreshing = true;
 		errorMessage = '';
-		// Fetch the three intelligence endpoints in parallel. Each is
-		// best-effort: a failure on one does not abort the others, so the
-		// overview degrades gracefully when an endpoint is unavailable.
-		const [srcRes, reviewRes, countsRes, promotedRes, approvedRes] = await Promise.allSettled([
-			api<SourceEntry[]>('/api/v1/intel/sources?page_size=100&include_disabled=true', { signal }),
-			api<ReviewRecord[]>('/api/v1/intel/review/queue', { signal }),
+		// Fetch the intelligence endpoints in parallel. Each is best-effort:
+		// a failure on one does not abort the others, so the overview
+		// degrades gracefully when an endpoint is unavailable. Queue cards
+		// use meta.total so the counts reflect the true pipeline depth
+		// rather than just the rows fetched for display.
+		const [srcRes, reviewRes, countsRes, promotedRes, approvedRes, proposedRes, enabledRes] = await Promise.allSettled([
+			apiList<SourceEntry[]>('/api/v1/intel/sources?page_size=100&include_disabled=true', { signal }),
+			apiList<ReviewRecord[]>('/api/v1/intel/review/queue?page_size=1', { signal }),
 			api<RadarCountsData>('/api/v1/intel/radar/counts', { signal }),
-			api<IntelRecord[]>('/api/v1/intel/records?status=published&page_size=50', { signal }),
-			api<IntelRecord[]>('/api/v1/intel/records?status=approved&page_size=50', { signal })
+			apiList<IntelRecord[]>('/api/v1/intel/records?status=published&page_size=50', { signal }),
+			apiList<IntelRecord[]>('/api/v1/intel/records?status=approved&page_size=1', { signal }),
+			apiList<SourceEntry[]>('/api/v1/intel/sources/proposed?page_size=1', { signal }),
+			apiList<SourceEntry[]>('/api/v1/intel/sources?page_size=1&enabled=true', { signal })
 		]);
 
 		if (srcRes.status === 'fulfilled' && srcRes.value.ok) {
 			sources = Array.isArray(srcRes.value.data) ? (srcRes.value.data as SourceEntry[]) : [];
+			sourcesTotal = srcRes.value.meta.total ?? sources.length;
 		}
 		if (reviewRes.status === 'fulfilled' && reviewRes.value.ok) {
-			reviewRecords = Array.isArray(reviewRes.value.data) ? (reviewRes.value.data as ReviewRecord[]) : [];
+			reviewTotal = reviewRes.value.meta.total ?? 0;
 		}
 		if (countsRes.status === 'fulfilled' && countsRes.value.ok) {
 			radarCounts = countsRes.value.data;
 		}
 		if (promotedRes.status === 'fulfilled' && promotedRes.value.ok) {
 			promotedRecords = Array.isArray(promotedRes.value.data) ? (promotedRes.value.data as IntelRecord[]) : [];
+			publishedTotal = promotedRes.value.meta.total ?? promotedRecords.length;
 		}
 		if (approvedRes.status === 'fulfilled' && approvedRes.value.ok) {
-			approvedRecords = Array.isArray(approvedRes.value.data) ? (approvedRes.value.data as IntelRecord[]) : [];
+			approvedTotal = approvedRes.value.meta.total ?? 0;
+		}
+		if (proposedRes.status === 'fulfilled' && proposedRes.value.ok) {
+			proposedTotal = proposedRes.value.meta.total ?? 0;
+		}
+		if (enabledRes.status === 'fulfilled' && enabledRes.value.ok) {
+			enabledTotal = enabledRes.value.meta.total ?? 0;
 		}
 
 		// Surface the first non-abort error so the operator knows something
 		// is wrong, but only if every endpoint failed.
-		const failed = [srcRes, reviewRes, countsRes, promotedRes, approvedRes].filter(
+		const failed = [srcRes, reviewRes, countsRes, promotedRes, approvedRes, proposedRes, enabledRes].filter(
 			(r) => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.ok)
 		);
-		if (failed.length === 5) {
+		if (failed.length === 7) {
 			const first = failed[0];
 			errorMessage =
 				first.status === 'fulfilled' && !first.value.ok
@@ -143,30 +159,27 @@
 
 	// --- Queue counts (all derived from API responses, never hardcoded) ---
 
-	// Fetch queue: registered sources awaiting/eligible for crawl.
-	const fetchQueueCount = $derived(sources.length);
+	// Fetch queue: registered sources awaiting/eligible for crawl (total
+	// from the sources directory meta).
+	const fetchQueueCount = $derived(sourcesTotal);
 
 	// Extract queue: records that have been extracted and are flowing
-	// through the pipeline toward review. The review queue endpoint only
-	// returns review_required records, so this count reflects records that
-	// have completed extraction and are awaiting moderation.
-	const extractQueueCount = $derived(reviewRecords.length);
+	// through the pipeline toward review — mirrors the review queue depth.
+	const extractQueueCount = $derived(reviewTotal);
 
 	// Dedup queue: records that have been approved but not yet promoted.
 	// These are records in 'approved' status waiting for the intel:promote
 	// task to project them into domain tables.
-	const dedupQueueCount = $derived(approvedRecords.length);
+	const dedupQueueCount = $derived(approvedTotal);
 
-	// Review queue: records awaiting human moderation. The backend returns
-	// only 'review_required' status records (migration 000428 CHECK
-	// constraint), so all records in reviewRecords are review_required.
-	const reviewQueueCount = $derived(reviewRecords.length);
+	// Review queue: records awaiting human moderation (server-side total).
+	const reviewQueueCount = $derived(reviewTotal);
 
 	// Publish queue: promoted records that are live in domain projections.
-	const publishQueueCount = $derived(promotedRecords.length);
+	const publishQueueCount = $derived(publishedTotal);
 
-	// Proposed queue: sources discovered by the agent awaiting admin approval.
-	const proposedQueueCount = $derived(sources.filter((s) => s.status === 'proposed').length);
+	// Proposed queue: sources awaiting admin approval (server-side total).
+	const proposedQueueCount = $derived(proposedTotal);
 
 	// Freshness queue: sources whose last crawl is stale relative to their
 	// crawl interval (computed from source metadata, not hardcoded).
@@ -181,7 +194,7 @@
 		}).length;
 	});
 
-	const enabledSources = $derived(sources.filter((s) => s.enabled).length);
+	const enabledSources = $derived(enabledTotal);
 	// Countries covered: count of distinct countries in the radar counts.
 	const countriesCovered = $derived(
 		radarCounts?.by_country ? Object.keys(radarCounts.by_country).length : 0
@@ -421,7 +434,7 @@
 			<Database class="text-muted-foreground size-5" />
 			<div>
 				<p class="text-muted-foreground text-xs font-medium uppercase tracking-wider">{t('intel.sources_registered', 'Sources Registered')}</p>
-				<p class="text-foreground text-lg font-bold">{formatNumber(sources.length)}</p>
+				<p class="text-foreground text-lg font-bold">{formatNumber(sourcesTotal)}</p>
 				<p class="text-muted-foreground text-xs">{enabledSources} {t('intel.enabled', 'enabled')}</p>
 			</div>
 		</div>
@@ -451,7 +464,7 @@
 						{t('intel.promoted_records', 'Promoted Records')}
 					</h2>
 					<span class="bg-emerald-500/15 text-emerald-400 rounded-full px-2 py-0.5 text-xs font-medium">
-						{promotedRecords.length}
+						{publishedTotal}
 					</span>
 				</div>
 				{#if Object.keys(promotedByType).length > 0}
@@ -523,9 +536,9 @@
 							</div>
 						{/each}
 					</div>
-					{#if promotedRecords.length > 20}
+					{#if publishedTotal > promotedRecords.length}
 						<div class="border-t-border-card text-muted-foreground border-t px-4 py-2.5 text-center text-xs">
-							Showing 20 of {promotedRecords.length} promoted records
+							Showing {promotedRecords.length} of {publishedTotal} promoted records
 						</div>
 					{/if}
 				</div>

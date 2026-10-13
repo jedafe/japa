@@ -68,3 +68,43 @@ export async function api<T>(path: string, opts: FetchOptions = {}): Promise<Api
 	}
 	return { ok: true, data: result.data as T };
 }
+
+export type ApiListMeta = {
+	page_size?: number;
+	page_offset?: number;
+	count?: number;
+	total?: number;
+};
+
+export type ApiListResult<T> =
+	| { ok: true; data: T; meta: ApiListMeta }
+	| { ok: false; error: string };
+
+// apiList is api() plus the response meta — pages that server-paginate need
+// meta.total/page_offset to drive the table's page controls.
+export async function apiList<T>(path: string, opts: FetchOptions = {}): Promise<ApiListResult<T>> {
+	const headers: Record<string, string> = {};
+	if (jwtToken) {
+		headers['Authorization'] = `Bearer ${jwtToken}`;
+	}
+
+	const method = opts.method ?? 'GET';
+	if (isMutating(method)) {
+		const csrf = readCookie('csrf_token');
+		if (csrf) {
+			headers['X-CSRF-Token'] = csrf;
+		}
+	}
+
+	const result = await apiFetch<T>(path, {
+		method,
+		headers,
+		body: opts.body ? JSON.stringify(opts.body) : undefined,
+		signal: opts.signal,
+	});
+
+	if (result.error) {
+		return { ok: false, error: result.error.message };
+	}
+	return { ok: true, data: result.data as T, meta: (result.meta ?? {}) as ApiListMeta };
+}
