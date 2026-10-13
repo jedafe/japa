@@ -209,7 +209,30 @@ type PostCard struct {
 // MakeExcerpt strips HTML tags from bodyHtml, collapses whitespace, and
 // truncates to maxLen characters for use as a post preview.
 func MakeExcerpt(bodyHtml string, maxLen int) string {
-	plain := htmlTagPattern.ReplaceAllString(bodyHtml, "")
+	return ExcerptFromBody("", bodyHtml, maxLen)
+}
+
+// ExcerptFromBody is the single excerpt helper for internal/content and
+// internal/blog (U4): it handles TipTap/ProseMirror JSON (plain body),
+// HTML (rendered body_html), and plain text, preferring whichever input
+// carries text. Pass both the raw body and the rendered body_html; empty
+// inputs are skipped.
+func ExcerptFromBody(body, bodyHtml string, maxLen int) string {
+	plain := ""
+	if strings.TrimSpace(body) != "" {
+		trimmed := strings.TrimSpace(body)
+		if trimmed[0] == '{' || trimmed[0] == '[' {
+			if text, ok := ExtractTipTapText([]byte(trimmed)); ok && strings.TrimSpace(text) != "" {
+				plain = text
+			}
+		}
+		if plain == "" && trimmed[0] != '<' {
+			plain = trimmed
+		}
+	}
+	if strings.TrimSpace(plain) == "" && strings.TrimSpace(bodyHtml) != "" {
+		plain = htmlTagPattern.ReplaceAllString(bodyHtml, "")
+	}
 	plain = strings.Join(strings.Fields(plain), " ")
 
 	if len(plain) > maxLen {

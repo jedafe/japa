@@ -101,6 +101,35 @@ func (s *Store) ListActive(ctx context.Context, dest, profession string, pageSiz
 	return out, nil
 }
 
+// ListClosed returns closed AMA sessions (closes_at <= now()), with the
+// same dest/profession filters and cursor pagination as ListActive.
+func (s *Store) ListClosed(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThread, error) {
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	rows, err := s.read.ListClosedAMAs(ctx, gen.ListClosedAMAsParams{
+		Dest:            strPtr(dest),
+		Profession:      strPtr(profession),
+		CursorCreatedAt: cursorCreatedAt,
+		PageLimit:       pageSize,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]AMAThread, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, rowToAMAThread(r.ID, r.Title, r.Slug, r.Body, r.AmaConfig, r.AuthorUserID, r.AuthorUsername, r.AuthorAvatarUrl, r.IsAnonymous, r.CreatedAt, r.UpdatedAt))
+	}
+
+	return out, nil
+}
+
 // GetByID returns a single AMA thread by its ID.
 func (s *Store) GetByID(ctx context.Context, id pgtype.UUID) (AMAThread, error) {
 	r, err := s.read.GetAMAByID(ctx, id)

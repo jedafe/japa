@@ -973,6 +973,11 @@ type UpdateContentInput struct {
 	// set. An invalid UUID alone now means "keep the stored image".
 	ClearFeaturedImageID bool
 	ClearHeaderImageID   bool
+	// ExpectedUpdatedAt is the optimistic-lock precondition (U1): when valid,
+	// the update only proceeds if the stored updated_at still equals it. A
+	// mismatch returns ErrStaleWrite so the composer can reload-merge instead
+	// of silently overwriting a concurrent edit.
+	ExpectedUpdatedAt pgtype.Timestamptz
 	// ClearCanonicalUrl/ClearMetaTitle/ClearMetaDescription/ClearOgImageUrl
 	// write NULL to the nullable SEO columns. A nil *string alone now means
 	// "keep the stored value" — these flags restore the explicit JSON null
@@ -1051,6 +1056,13 @@ func (s *Service) UpdateContent(ctx context.Context, id, editedBy pgtype.UUID, i
 	)
 	if err != nil {
 		return gen.UpdateContentRow{}, fmt.Errorf("getting existing content for update: %w", err)
+	}
+
+	// U1 optimistic lock: when the caller supplies expected_updated_at,
+	// reject the write if the row moved since the editor loaded it.
+	if input.ExpectedUpdatedAt.Valid && existing.UpdatedAt.Valid &&
+		!input.ExpectedUpdatedAt.Time.Equal(existing.UpdatedAt.Time) {
+		return gen.UpdateContentRow{}, errpkg.ErrStaleWrite
 	}
 
 	// Edit-window enforcement (BL-008 / Section 49): the original author may

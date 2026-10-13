@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
@@ -17,6 +18,10 @@ var ErrTooManyTags = errors.New("too many tags: maximum tags per thread exceeded
 // ErrTagInUse is returned when deleting a tag that still has content attached.
 // Ref: Section 08 Admin Tags — "delete tag (only if no content tagged)".
 var ErrTagInUse = errors.New("tag is still attached to content")
+
+// ErrEditWindowExpired is returned when the author edits after
+// edit_window_minutes has elapsed (moderators bypass the window).
+var ErrEditWindowExpired = errors.New("edit window has expired")
 
 // Forum tags are universal (Sections 08, 14): they live in the shared `tags`
 // and `content_tags` tables, attached to a thread through its backing
@@ -112,7 +117,7 @@ func (s *Service) AddThreadTag(ctx context.Context, threadID, tagID pgtype.UUID)
 	}
 
 	if count >= maxTags {
-		return fmt.Errorf("thread already has the maximum of %d tags", maxTags)
+		return fmt.Errorf("%w: thread already has the maximum of %d tags", ErrTooManyTags, maxTags)
 	}
 
 	if err := s.store.addThreadTag(ctx, threadID, tagID); err != nil {
@@ -152,7 +157,7 @@ func (s *Service) AddThreadTagsBulk(ctx context.Context, threadID pgtype.UUID, t
 
 	//nolint:gosec // G115: bounded
 	if existing+int32(len(unique)) > maxTags { // #nosec G115 -- len() of a deduped tag slice, bounded by maxTags //nolint:gosec // G115: bounded
-		return fmt.Errorf("adding these tags would exceed the maximum of %d tags per thread", maxTags)
+		return fmt.Errorf("%w: adding these tags would exceed the maximum of %d tags per thread", ErrTooManyTags, maxTags)
 	}
 
 	for _, tagID := range unique {
@@ -279,6 +284,15 @@ func (s *Service) invalidateModeratorCache(ctx context.Context, userID pgtype.UU
 	if err := s.permCache.InvalidatePermCache(ctx, userID); err != nil {
 		slog.Warn("failed to invalidate tag moderator perm cache", "user_id", userID, "error", err)
 	}
+}
+
+// editWindowExpired reports whether createdAt + windowMinutes has elapsed.
+// A non-positive window or invalid timestamp means no expiry.
+func editWindowExpired(windowMinutes int32, createdAt pgtype.Timestamptz) bool {
+	if windowMinutes <= 0 || !createdAt.Valid {
+		return false
+	}
+	return time.Since(createdAt.Time) > time.Duration(windowMinutes)*time.Minute
 }
 
 // uuidEqual reports whether two pgtype.UUID values are equal.

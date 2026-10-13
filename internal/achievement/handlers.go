@@ -27,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/rbac"
 
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/config"
@@ -82,6 +83,21 @@ func requireUser(w http.ResponseWriter, r *http.Request) (*auth.AuthenticatedUse
 	}
 
 	return u, true
+}
+
+// hasPermission reports whether the authenticated user holds permKey.
+// Mirrors story/handlers.go hasPermission.
+func hasPermission(r *http.Request, user *auth.AuthenticatedUser, permKey string) bool {
+	if user == nil {
+		return false
+	}
+
+	resolver, ok := r.Context().Value(rbac.ResolverKey).(*rbac.RBAC)
+	if !ok || resolver == nil {
+		return false
+	}
+
+	return resolver.HasPermission(r.Context(), user.UserID, permKey)
 }
 
 func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.UUID, bool) {
@@ -295,7 +311,8 @@ func (h *Handlers) HandleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	achievement, err := h.service.EditOwn(r.Context(), contentID, user.UserID, input)
+	achievement, err := h.service.EditOwn(r.Context(), contentID, user.UserID, input,
+		hasPermission(r, user, "achievement.edit_any"))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			errpkg.WriteError(w, http.StatusNotFound, "achievement_not_found", "Achievement not found")

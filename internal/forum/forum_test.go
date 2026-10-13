@@ -220,3 +220,21 @@ func TestUUIDZeroValue(t *testing.T) {
 		t.Error("zero pgtype.UUID should not be valid")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tag cap sentinel (F1: errors.Is(ErrTooManyTags) for single + bulk paths)
+// ---------------------------------------------------------------------------
+
+func TestTagCapErrorWrapping(t *testing.T) {
+	t.Parallel()
+
+	single := wrapTagCapForTest(5)
+	if got := errorIsTagCapForTest(single); !got {
+		t.Errorf("single-path tag-cap error should match ErrTooManyTags, got %v", single)
+	}
+
+	bulk := wrapTagCapBulkForTest(5)
+	if got := errorIsTagCapForTest(bulk); !got {
+		t.Errorf("bulk-path tag-cap error should match ErrTooManyTags, got %v", bulk)
+	}
+}

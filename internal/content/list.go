@@ -67,6 +67,13 @@ func validateListFieldValues(raw json.RawMessage, maxItems int) (json.RawMessage
 			return nil, &listValidationError{"invalid_list_items", "items must be an array"}
 		}
 	}
+	// U7: an absent items array defaults to [] (never null) so stored
+	// field_values always carry an array. Empty is still valid at
+	// draft/create time — the composer creates the row before items exist
+	// (list_test.go empty cases) — but the normalized output is [] not null.
+	if items == nil {
+		items = []listItem{}
+	}
 	if len(items) > maxItems {
 		return nil, &listValidationError{"too_many_items", fmt.Sprintf("list supports at most %d items", maxItems)}
 	}

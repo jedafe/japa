@@ -138,8 +138,15 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 	profession := r.URL.Query().Get("profession")
 	pageSize := parsePageSize(r)
 	cursor := parseCursor(r)
+	status := r.URL.Query().Get("status")
 
-	dtos, err := h.service.ListActive(r.Context(), dest, profession, pageSize, cursor)
+	var dtos []AMAThreadDTO
+	var err error
+	if status == "closed" {
+		dtos, err = h.service.ListClosed(r.Context(), dest, profession, pageSize, cursor)
+	} else {
+		dtos, err = h.service.ListActive(r.Context(), dest, profession, pageSize, cursor)
+	}
 	if err != nil {
 		slog.Error("ama: list failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "list_failed", "Failed to list AMA sessions")

@@ -278,6 +278,9 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	case errors.As(err, &wikiOnly):
 		errpkg.WriteError(w, http.StatusConflict, "wiki_only_space",
 			"This space is wiki-only")
+	case errors.Is(err, errpkg.ErrStaleWrite):
+		errpkg.WriteError(w, http.StatusConflict, "stale_write",
+			"This content was modified by someone else. Reload and retry.")
 	case errors.Is(err, ErrDuplicateContent):
 		errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
 	case errors.Is(err, ErrOrgPostForbidden):
@@ -1246,6 +1249,13 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// U17: the list content type is behind the list.enabled killswitch —
+	// when disabled, list singles 404 like the create path rejects them.
+	if content.ContentType == TypeList && !h.listContentEnabled(r.Context()) {
+		errpkg.WriteError(w, http.StatusNotFound, "not_found", "Content not found")
+		return
+	}
+
 	// Visibility/status gate (§5.3 RBAC / §14 public content SSR):
 	// - Published public content is visible to everyone (authed or not).
 	// - Published members-only content requires an authenticated user.
@@ -1346,6 +1356,7 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"comment_count":     content.CommentCount,
 		"share_count":       content.ShareCount,
 		"reshare_count":     content.ReshareCount,
+		"reaction_count":    content.ReactionCount,
 		"publish_at":        content.PublishAt,
 		"published_at":      content.PublishedAt,
 		"created_at":        content.CreatedAt,
@@ -1361,7 +1372,9 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		"author_avatar_url": content.AuthorAvatarUrl,
 		"space_name":        content.SpaceName,
 		"space_slug":        content.SpaceSlug,
-		"excerpt":           MakeExcerpt(content.BodyHtml, 160),
+		"space_avatar_url":  mediaURL(content.SpaceAvatarStorageBucket, content.SpaceAvatarStoragePath),
+		"organization":      orgRefFrom(content.OrganizationID, content.OrganizationName, content.OrganizationSlug, content.OrganizationLogoStorageBucket, content.OrganizationLogoStoragePath),
+		"excerpt":           ExcerptFromBody(content.Body, content.BodyHtml, 160),
 	}
 
 	// field_values is stored as JSONB — emit the decoded object, not the
@@ -1381,9 +1394,10 @@ func (h *Handlers) GetContent(w http.ResponseWriter, r *http.Request) {
 		dto["header_image_url"] = media.MediaURL(*content.HeaderStorageBucket, *content.HeaderStoragePath, media.ImageProxyOpts{})
 	}
 
-	// Tags — split the CSV string into an array.
+	// Tags — split the CSV string into an array, trimming whitespace and
+	// dropping empties so "a, ,b" yields ["a","b"] (U6).
 	if content.TagsCsv != "" {
-		dto["tags"] = strings.Split(content.TagsCsv, ",")
+		dto["tags"] = splitTags(content.TagsCsv)
 	} else {
 		dto["tags"] = []string{}
 	}
@@ -1657,6 +1671,10 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		IsLocked        *bool           `json:"is_locked"`
 		IsPinned        *bool           `json:"is_pinned"`
 		GuideCategory   *string         `json:"guide_category"`
+		// U1 optimistic lock: RFC3339 instant the editor loaded (updated_at).
+		// When present the store compares it and returns 409 stale_write on
+		// mismatch so the composer can reload-merge instead of overwriting.
+		ExpectedUpdatedAt *string `json:"expected_updated_at"`
 		// Journey-aware recommendation metadata.
 		JourneyStage  *string `json:"journey_stage"`
 		VisaRoute     *string `json:"visa_route"`
@@ -1783,6 +1801,17 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 		VisaRoute:       input.VisaRoute,
 		SourceCountry:   input.SourceCountry,
 		TargetCountry:   input.TargetCountry,
+	}
+
+	// U1 optimistic lock: parse expected_updated_at (RFC3339) into the store
+	// precondition. A blank value means "no precondition".
+	if input.ExpectedUpdatedAt != nil && strings.TrimSpace(*input.ExpectedUpdatedAt) != "" {
+		parsed, perr := timeparse.ParseTimestamptz(strings.TrimSpace(*input.ExpectedUpdatedAt))
+		if perr != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_expected_updated_at", "expected_updated_at must be RFC3339")
+			return
+		}
+		updateInput.ExpectedUpdatedAt = parsed
 	}
 
 	// A literal JSON null on a nullable key is an explicit clear; an absent
@@ -1913,6 +1942,23 @@ func (h *Handlers) UpdateContent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrOrgPostForbidden) {
 			errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "You are not authorized to edit as this organization")
+			return
+		}
+		// U1: stale precondition — return 409 with the current row so the
+		// composer can offer reload-merge instead of a blind overwrite.
+		if errors.Is(err, errpkg.ErrStaleWrite) {
+			current, gerr := h.Service.GetContent(r.Context(), id)
+			if gerr != nil {
+				errpkg.WriteError(w, http.StatusConflict, "stale_write",
+					"This content was modified by someone else. Reload and retry.")
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{"code": "stale_write", "message": "This content was modified by someone else. Reload and retry."},
+				"data":  current,
+			})
 			return
 		}
 

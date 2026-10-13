@@ -178,9 +178,9 @@ func (s *Service) ListThreadsByTag(ctx context.Context, tagID pgtype.UUID, curso
 	return s.store.listThreadsByTag(ctx, tagID, cursorCreatedAt, limit)
 }
 
-// UpdateThread updates a forum thread. The author can edit; a moderator
-// (or any holder of forum.thread.edit_any / super-admin wildcard) may also
-// edit. Ref: Section 08 + §26 RBAC CRUD.
+// UpdateThread updates a forum thread. The author can edit within
+// edit_window_minutes; a moderator (or any holder of forum.thread.edit_any /
+// super-admin wildcard) may edit at any time. Ref: Section 08 + §26 RBAC CRUD.
 func (s *Service) UpdateThread(ctx context.Context, id, userID pgtype.UUID, title string, body []byte, isAnonymous bool) (gen.ForumThread, error) {
 	thread, err := s.store.getThreadByID(ctx, id)
 	if err != nil {
@@ -189,6 +189,12 @@ func (s *Service) UpdateThread(ctx context.Context, id, userID pgtype.UUID, titl
 
 	if !s.canModerateThread(ctx, thread, userID, "forum.thread.edit_any") {
 		return gen.ForumThread{}, errors.New("only the author or a moderator can edit this thread")
+	}
+
+	if !s.canModerateAny(ctx, thread.SpaceID, userID, "forum.thread.edit_any") && thread.AuthorUserID == userID {
+		if expired := editWindowExpired(thread.EditWindowMinutes, thread.CreatedAt); expired {
+			return gen.ForumThread{}, fmt.Errorf("%w: thread edit window has expired", ErrEditWindowExpired)
+		}
 	}
 
 	if title == "" {
@@ -472,8 +478,9 @@ func (s *Service) ListRepliesByThread(ctx context.Context, threadID pgtype.UUID)
 	return s.store.listRepliesByThread(ctx, threadID)
 }
 
-// UpdateReply updates a reply's body. The author can edit; a moderator
-// (forum.reply.edit_any / super-admin) may also edit. Ref: §26 RBAC CRUD.
+// UpdateReply updates a reply's body. The author can edit within the parent
+// thread's edit_window_minutes; a moderator (forum.reply.edit_any /
+// super-admin) may edit at any time. Ref: §26 RBAC CRUD.
 func (s *Service) UpdateReply(ctx context.Context, id, userID pgtype.UUID, body []byte) (gen.ForumReply, error) {
 	reply, err := s.store.getReplyByID(ctx, id)
 	if err != nil {
@@ -482,6 +489,15 @@ func (s *Service) UpdateReply(ctx context.Context, id, userID pgtype.UUID, body 
 
 	if reply.AuthorUserID != userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
 		return gen.ForumReply{}, errors.New("only the author or a moderator can edit this reply")
+	}
+
+	if reply.AuthorUserID == userID && !s.canModerateReply(ctx, reply, userID, "forum.reply.edit_any") {
+		thread, terr := s.store.getThreadByID(ctx, reply.ThreadID)
+		if terr == nil {
+			if expired := editWindowExpired(thread.EditWindowMinutes, reply.CreatedAt); expired {
+				return gen.ForumReply{}, fmt.Errorf("%w: reply edit window has expired", ErrEditWindowExpired)
+			}
+		}
 	}
 
 	if body == nil {

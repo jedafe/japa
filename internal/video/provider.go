@@ -107,20 +107,20 @@ func (r *resolver) Resolve(ctx context.Context, rawURL string) (*Metadata, error
 	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
 
 	switch host {
-	case "youtube.com", "youtu.be":
+	case "youtube.com", "youtu.be", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com":
 		p, ok := r.providers[SourceYouTube]
 		if !ok {
 			return nil, ErrUnsupportedPlatform
 		}
 
 		return p.Resolve(ctx, rawURL)
-	case "vimeo.com":
+	case "vimeo.com", "player.vimeo.com":
 		if p, ok := r.providers[SourceVimeo]; ok {
 			return p.Resolve(ctx, rawURL)
 		}
 
 		return nil, ErrUnsupportedPlatform
-	case "tiktok.com", "vm.tiktok.com":
+	case "tiktok.com", "vm.tiktok.com", "m.tiktok.com":
 		if p, ok := r.providers[SourceTikTok]; ok {
 			return p.Resolve(ctx, rawURL)
 		}

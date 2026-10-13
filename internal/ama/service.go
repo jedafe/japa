@@ -134,6 +134,22 @@ func (s *Service) ListActive(ctx context.Context, dest, profession string, pageS
 	return dtos, nil
 }
 
+// ListClosed returns closed AMA sessions (closes_at elapsed), filtered by
+// destination country and host profession and cursor-paginated by created_at.
+func (s *Service) ListClosed(ctx context.Context, dest, profession string, pageSize int32, cursorCreatedAt pgtype.Timestamptz) ([]AMAThreadDTO, error) {
+	threads, err := s.store.ListClosed(ctx, dest, profession, pageSize, cursorCreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("ama: list closed: %w", err)
+	}
+
+	dtos := make([]AMAThreadDTO, 0, len(threads))
+	for _, t := range threads {
+		dtos = append(dtos, threadToDTO(t))
+	}
+
+	return dtos, nil
+}
+
 // GetByID returns a single AMA thread by ID.
 func (s *Service) GetByID(ctx context.Context, id pgtype.UUID) (AMAThreadDTO, error) {
 	thread, err := s.store.GetByID(ctx, id)

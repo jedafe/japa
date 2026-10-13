@@ -400,9 +400,11 @@ func (s *Service) ListBySpace(ctx context.Context, spaceSlug string, limit int32
 }
 
 // EditOwn updates the author's own achievement. The caller must verify
-// ownership (achievement.edit_own permission + author_id match). Only the
-// provided (non-nil) fields are updated.
-func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, input EditInput) (AchievementDTO, error) {
+// ownership (achievement.edit_own permission + author_id match).
+// bypassOwnership=true (caller holds achievement.edit_any) skips the
+// author check so moderators/admins can edit any achievement, mirroring
+// the stories surface (S3). Only the provided (non-nil) fields update.
+func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, input EditInput, bypassOwnership bool) (AchievementDTO, error) {
 	// Fetch existing content to verify ownership.
 	existing, err := s.content.GetContent(ctx, contentID)
 	if err != nil {
@@ -413,7 +415,7 @@ func (s *Service) EditOwn(ctx context.Context, contentID, userID pgtype.UUID, in
 		return AchievementDTO{}, fmt.Errorf("achievement: edit: get content: %w", err)
 	}
 
-	if existing.AuthorID != userID {
+	if !bypassOwnership && existing.AuthorID != userID {
 		return AchievementDTO{}, ErrNotOwner
 	}
 

@@ -312,6 +312,33 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	errpkg.HandleServiceError(w, err)
 }
 
+// handleContentError maps typed content-service errors to their HTTP
+// equivalents instead of a blanket 500 (B1+B3): duplicate → 409,
+// org-post forbidden → 403, edit-window expired → 403, missing primary
+// space → 422, invalid status/visibility → 400. Anything else falls back
+// to the shared service-error mapping.
+func handleContentError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, content.ErrDuplicateContent):
+		errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "Content with this body already exists")
+	case errors.Is(err, content.ErrOrgPostForbidden):
+		errpkg.WriteError(w, http.StatusForbidden, "org_post_forbidden", "Not authorized to post as this organization")
+	case errors.Is(err, content.ErrEditWindowExpired):
+		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", "The edit window for this content has expired")
+	case errors.Is(err, content.ErrMissingPrimarySpace):
+		errpkg.WriteError(w, http.StatusUnprocessableEntity, "missing_primary_space", "Content requires a primary space before publishing or scheduling")
+	case errors.Is(err, content.ErrInvalidStatus):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_status", err.Error())
+	case errors.Is(err, content.ErrInvalidVisibility):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_visibility", err.Error())
+	case errors.Is(err, errpkg.ErrStaleWrite):
+		errpkg.WriteError(w, http.StatusConflict, "stale_write",
+			"This content was modified by someone else. Reload and retry.")
+	default:
+		errpkg.HandleServiceError(w, err)
+	}
+}
+
 // parsePageSize extracts and clamps the page_size query parameter.
 func parsePageSize(r *http.Request) int32 {
 	s := r.URL.Query().Get("page_size")
@@ -359,6 +386,24 @@ func mediaURL(storageBucket, storagePath string) string {
 // excerptMaxLen is the maximum length of an auto-generated excerpt.
 const excerptMaxLen = 160
 
+// splitTagCsv splits a comma-separated tag string into a slice, trimming
+// whitespace and dropping empties so "a, ,b" yields ["a","b"] (U6).
+func splitTagCsv(csv string) []string {
+	if csv == "" {
+		return []string{}
+	}
+
+	parts := strings.Split(csv, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+
+	return out
+}
+
 // stringValue coerces a sqlc-scalar (interface{}) value to a string. This is
 // needed for columns that come from scalar subqueries (excerpt, tags_csv) and
 // are typed as interface{} by sqlc.
@@ -374,108 +419,11 @@ func stringValue(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// excerptFromBody returns a plain-text excerpt from the post body, used as
-// a fallback when no explicit excerpt is stored. It handles three body
-// formats:
-// - Tiptap/ProseMirror JSON (starts with `{`) — recursively extracts text
-// from "text" nodes.
-// - HTML (starts with `<`) — strips tags via a simple scanner.
-// - Plain text — used as-is.
-// // The result is trimmed and truncated to excerptMaxLen characters with an
-// ellipsis. Empty/whitespace-only input returns "".
+// excerptFromBody returns a plain-text excerpt from the post body via the
+// shared content excerpt helper (U4 — single TipTap-JSON-aware helper in
+// internal/content shared by both packages).
 func excerptFromBody(body string) string {
-	plain := plainTextFromContent(body)
-	plain = strings.TrimSpace(plain)
-
-	if len(plain) <= excerptMaxLen {
-		return plain
-	}
-
-	return plain[:excerptMaxLen] + "…"
-}
-
-// plainTextFromContent extracts readable text from a content body that may
-// be Tiptap JSON, HTML, or plain text.
-func plainTextFromContent(body string) string {
-	trimmed := strings.TrimSpace(body)
-	if trimmed == "" {
-		return ""
-	}
-
-	// Tiptap/ProseMirror JSON document.
-	if trimmed[0] == '{' {
-		if text, ok := extractTiptapText([]byte(trimmed)); ok {
-			return text
-		}
-		// Not valid Tiptap JSON — fall through to plain text.
-	}
-
-	// HTML — strip tags.
-	if trimmed[0] == '<' {
-		return stripHTMLTags(trimmed)
-	}
-
-	// Plain text.
-	return trimmed
-}
-
-// extractTiptapText recursively walks a Tiptap/ProseMirror JSON document and
-// concatenates the "text" field of all text nodes.
-func extractTiptapText(data []byte) (string, bool) {
-	var doc map[string]any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return "", false
-	}
-
-	if t, ok := doc["type"].(string); !ok || t != "doc" {
-		return "", false
-	}
-
-	var sb strings.Builder
-
-	walkTiptapNodes(doc, &sb)
-
-	return sb.String(), true
-}
-
-// walkTiptapNodes recursively traverses a Tiptap node, appending text from
-// "text" leaf nodes.
-func walkTiptapNodes(node any, sb *strings.Builder) {
-	m, ok := node.(map[string]any)
-	if !ok {
-		return
-	}
-
-	if text, ok := m["text"].(string); ok {
-		sb.WriteString(text)
-		sb.WriteByte(' ')
-	}
-
-	if content, ok := m["content"].([]any); ok {
-		for _, child := range content {
-			walkTiptapNodes(child, sb)
-		}
-	}
-}
-
-// stripHTMLTags removes HTML tags from a string, preserving the text content.
-func stripHTMLTags(s string) string {
-	var sb strings.Builder
-
-	inTag := false
-
-	for _, r := range s {
-		switch {
-		case r == '<':
-			inTag = true
-		case r == '>':
-			inTag = false
-		case !inTag:
-			sb.WriteRune(r)
-		}
-	}
-
-	return sb.String()
+	return content.ExcerptFromBody(body, "", excerptMaxLen)
 }
 
 // ---------------------------------------------------------------------------
@@ -1283,7 +1231,7 @@ func (h *Handlers) ListFeatured(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if tagsCsv := stringValue(c.TagsCsv); tagsCsv != "" {
-			card["tags"] = strings.Split(tagsCsv, ",")
+			card["tags"] = splitTagCsv(tagsCsv)
 		} else {
 			card["tags"] = []string{}
 		}
@@ -1467,7 +1415,6 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"slug":              post.Slug,
 		"body":              post.Body,
 		"body_html":         post.BodyHtml,
-		"field_values":      post.FieldValues,
 		"content_hash":      post.ContentHash,
 		"geo_space_id":      post.GeoSpaceID,
 		"header_image_id":   post.HeaderImageID,
@@ -1498,6 +1445,14 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 		"excerpt":           excerptFromBody(post.Body),
 	}
 
+	// U5: field_values is stored as JSONB — emit the decoded object, not the
+	// base64 blob a raw []byte would serialize as (same guard as content).
+	if len(post.FieldValues) > 0 && json.Valid(post.FieldValues) {
+		dto["field_values"] = json.RawMessage(post.FieldValues)
+	} else {
+		dto["field_values"] = map[string]any{}
+	}
+
 	// Construct featured_image_url from storage_bucket/storage_path.
 	if post.FeaturedStorageBucket != nil && post.FeaturedStoragePath != nil {
 		dto["featured_image_url"] = mediaURL(*post.FeaturedStorageBucket, *post.FeaturedStoragePath)
@@ -1505,7 +1460,7 @@ func (h *Handlers) GetPost(w http.ResponseWriter, r *http.Request) {
 
 	// Tags — split the CSV string into an array.
 	if post.TagsCsv != "" {
-		dto["tags"] = strings.Split(post.TagsCsv, ",")
+		dto["tags"] = splitTagCsv(post.TagsCsv)
 	} else {
 		dto["tags"] = []string{}
 	}
@@ -1701,7 +1656,6 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 			"slug":              p.Slug,
 			"body":              p.Body,
 			"body_html":         p.BodyHtml,
-			"field_values":      p.FieldValues,
 			"content_hash":      p.ContentHash,
 			"geo_space_id":      p.GeoSpaceID,
 			"header_image_id":   p.HeaderImageID,
@@ -1734,8 +1688,16 @@ func (h *Handlers) ListPosts(w http.ResponseWriter, r *http.Request) {
 			card["featured_image_url"] = mediaURL(*p.FeaturedStorageBucket, *p.FeaturedStoragePath)
 		}
 
+		// U5: field_values is stored as JSONB — emit the decoded object, not
+		// the base64 blob a raw []byte would serialize as.
+		if len(p.FieldValues) > 0 && json.Valid(p.FieldValues) {
+			card["field_values"] = json.RawMessage(p.FieldValues)
+		} else {
+			card["field_values"] = map[string]any{}
+		}
+
 		if tagsCsv := stringValue(p.TagsCsv); tagsCsv != "" {
-			card["tags"] = strings.Split(tagsCsv, ",")
+			card["tags"] = splitTagCsv(tagsCsv)
 		} else {
 			card["tags"] = []string{}
 		}

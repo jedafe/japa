@@ -327,6 +327,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusConflict, "too_many_tags", err.Error())
 	case errors.Is(err, ErrTagInUse):
 		errpkg.WriteError(w, http.StatusConflict, "tag_in_use", err.Error())
+	case errors.Is(err, ErrEditWindowExpired):
+		errpkg.WriteError(w, http.StatusForbidden, "edit_window_expired", err.Error())
 	default:
 		errpkg.HandleServiceError(w, err)
 	}
