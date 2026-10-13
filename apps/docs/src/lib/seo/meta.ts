@@ -20,6 +20,8 @@ export interface BuildMetaOptions {
 	/** Path on the docs site (without origin), e.g. "/docs/api/spaces". */
 	path?: string;
 	image?: string;
+	/** Open Graph type — "article" for doc pages, "website" for index/listing pages. */
+	ogType?: 'article' | 'website';
 	jsonLd?: object;
 }
 
@@ -54,7 +56,7 @@ export function buildMeta(opts: BuildMetaOptions): SeoMeta {
 	return {
 		title,
 		description,
-		ogType: 'article',
+		ogType: opts.ogType ?? 'article',
 		ogUrl,
 		ogImage,
 		twitterCard: ogImage ? 'summary_large_image' : 'summary',
@@ -78,6 +80,22 @@ export function techArticleLd(opts: {
 		headline: opts.headline,
 		description: opts.description ?? undefined,
 		dateModified: opts.dateModified,
+		url: opts.url,
+		publisher: { '@type': 'Organization', name: 'JapaConnect' }
+	};
+}
+
+/** CollectionPage JSON-LD for listing pages (audience landings, categories, API index). */
+export function collectionPageLd(opts: {
+	name: string;
+	url: string;
+	description?: string;
+}): object {
+	return {
+		'@context': 'https://schema.org',
+		'@type': 'CollectionPage',
+		name: opts.name,
+		description: opts.description ?? undefined,
 		url: opts.url,
 		publisher: { '@type': 'Organization', name: 'JapaConnect' }
 	};

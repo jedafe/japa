@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { goto } from '$app/navigation';
 	import { navigating } from '$app/state';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
@@ -68,10 +69,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.meta.title}</title>
-	<meta name="description" content={data.meta.description} />
-	<link rel="canonical" href={data.meta.ogUrl} />
-	{#if data.q}<meta name="robots" content="noindex" />{/if}
+	<SeoHead meta={data.meta} noindex />
 </svelte:head>
 
 <AppShell

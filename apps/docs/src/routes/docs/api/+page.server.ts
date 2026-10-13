@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError, API_BASE, JC_SURFACE } from '$lib/server/api';
-import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
+import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPageSummary, DocNavItem } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
 import type { ExistingPage } from '$lib/server/docs-author';
@@ -79,9 +79,9 @@ export const load: PageServerLoad = async (event) => {
 		title,
 		description,
 		path: '/docs/api',
-		jsonLd: techArticleLd({
-			headline: title,
-			dateModified: new Date().toISOString(),
+		ogType: 'website',
+		jsonLd: collectionPageLd({
+			name: title,
 			url: `${DOCS_ORIGIN}/docs/api`,
 			description
 		})

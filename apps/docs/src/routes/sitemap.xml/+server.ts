@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { API_V1 } from '$lib/server/api';
 import { DOCS_ORIGIN } from '$lib/seo/meta';
+import { categoryHref } from '$lib/docs/catalog';
 import type { DocNavTree, DocNavItem } from '$lib/types';
 
 /**
@@ -13,7 +14,9 @@ import type { DocNavTree, DocNavItem } from '$lib/types';
  * are excluded by construction. Fails open to a minimal index on API error.
  */
 export const GET: RequestHandler = async ({ fetch }) => {
-	const urls = new Set<string>(['/docs']);
+	// Index pages every visitor can reach — categories/groups/api are public
+	// regardless of which audiences the nav tree contains.
+	const urls = new Set<string>(['/docs', '/docs/categories', '/docs/groups', '/docs/api']);
 	try {
 		const res = await fetch(`${API_V1}/docs/nav`, {
 			headers: { 'x-jc-surface': 'docs' }
@@ -45,5 +48,6 @@ export const GET: RequestHandler = async ({ fetch }) => {
 
 function walk(item: DocNavItem, audience: string, urls: Set<string>): void {
 	if (item.slug) urls.add(`/docs/${audience}/${item.slug}`);
+	if (item.category?.trim()) urls.add(categoryHref(item.category.trim()));
 	for (const child of item.children ?? []) walk(child, audience, urls);
 }

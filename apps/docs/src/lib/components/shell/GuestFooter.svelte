@@ -32,16 +32,23 @@
 
 <footer class="guest-footer">
 	<div class="guest-footer-inner">
+		<div class="footer-copy">
+			&copy; {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
+		</div>
 		{#if footerItems.length > 0}
 			<nav class="footer-nav" aria-label={t('landing.footer_nav', 'Footer navigation')}>
 				<ul class="footer-list">
 					{#each footerItems as item (item.id)}
+						{@const href = resolveMenuHref(item.url, mainOrigin)}
 						<li>
 							<a
-								href={resolveMenuHref(item.url, mainOrigin)}
+								{href}
 								class="footer-link"
 								target={item.target === '_blank' ? '_blank' : undefined}
 								rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
+								data-sveltekit-reload={item.target === '_blank' || href.startsWith('http')
+									? undefined
+									: /\.[a-z0-9]+$/i.test(href.split('/').pop() ?? '') || undefined}
 							>
 								{item.label}
 							</a>
@@ -50,9 +57,6 @@
 				</ul>
 			</nav>
 		{/if}
-		<div class="footer-bottom">
-			&copy; {new Date().getFullYear()} {t('app.name')}. {t('landing.footer_rights', 'All rights reserved.')}
-		</div>
 	</div>
 </footer>
 
@@ -64,11 +68,19 @@
 	.guest-footer-inner {
 		max-width: 72rem;
 		margin: 0 auto;
-		padding: 3rem 1.5rem;
+		padding: 1.5rem;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.footer-copy {
+		font-size: 0.8125rem;
+		color: var(--color-muted);
 	}
 	.footer-nav {
 		display: flex;
-		justify-content: center;
+		justify-content: flex-end;
 	}
 	.footer-list {
 		list-style: none;
@@ -76,28 +88,25 @@
 		padding: 0;
 		display: flex;
 		flex-wrap: wrap;
-		gap: 1.5rem;
-		justify-content: center;
+		gap: 0.75rem 1.5rem;
+		justify-content: flex-end;
 	}
 	.footer-link {
-		font-size: 0.875rem;
+		font-size: 0.8125rem;
 		color: var(--color-text-subtle);
 		transition: color 0.15s;
 	}
 	.footer-link:hover {
 		color: var(--color-text);
 	}
-	.footer-bottom {
-		margin-top: 2.5rem;
-		border-top: 1px solid var(--color-border);
-		padding-top: 1.5rem;
-		text-align: center;
-		font-size: 0.875rem;
-		color: var(--color-muted);
-	}
-	@media (min-width: 640px) {
+	@media (max-width: 640px) {
+		.guest-footer-inner {
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 0.75rem;
+		}
 		.footer-list {
-			gap: 2rem;
+			justify-content: flex-start;
 		}
 	}
 </style>

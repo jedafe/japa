@@ -46,7 +46,7 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 
 	// Footer menu — ADR-054 cross-app menu system. The docs footer slug is
-	// `docs_footer`. Degrades to null if unseeded; GuestFooter renders nothing.
+	// `docs_footer`; rendered in the sidebar mini-footer. Degrades to null.
 	let footerMenu: Menu | null = null;
 	try {
 		footerMenu = await apiGet<Menu>(ctx, '/menus/docs_footer');

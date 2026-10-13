@@ -8,7 +8,8 @@
 	import ApiRefTabs from '$lib/components/docs/ApiRefTabs.svelte';
 	import MethodBadge from '$lib/components/docs/MethodBadge.svelte';
 	import { t } from '$lib/i18n';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import { parseManagedCategories } from '$lib/docs/catalog';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { page } from '$app/state';
 	import { CalendarClock, ChevronRight, Clock, Eye, ListTree, Pencil } from 'lucide-svelte';
@@ -35,12 +36,18 @@
 		}
 	});
 
-	// Category/subcategory datalist suggestions — case-folded dedupe.
+	// Category/subcategory datalist suggestions — case-folded dedupe, merged
+	// with the admin-managed catalog (docs.categories).
+	const managedCatalog = $derived(
+		parseManagedCategories(page.data?.siteSettings?.['docs.categories'])
+	);
 	const existingCategories = $derived(
 		[
 			...new Map(
-				data.existingPages
-					.map((p) => p.category?.trim())
+				[
+					...managedCatalog.map((c) => c.name),
+					...data.existingPages.map((p) => p.category?.trim())
+				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
 			).values()
@@ -49,8 +56,10 @@
 	const existingSubcategories = $derived(
 		[
 			...new Map(
-				data.existingPages
-					.map((p) => p.subcategory?.trim())
+				[
+					...managedCatalog.flatMap((c) => c.subcategories),
+					...data.existingPages.map((p) => p.subcategory?.trim())
+				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
 			).values()
@@ -73,16 +82,6 @@
 		}
 	});
 
-	// Dynamic hreflang from enabled languages (copies [audience]/[slug] pattern).
-	// NOTE: this page load has no `locale` field — read the default from the
-	// request-scoped layout siteSettings, falling back to 'en' (Rule 16).
-	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en')
-			.split(',').map((l) => l.trim()).filter(Boolean)
-	);
-	const defaultLanguage = $derived(
-		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
-	);
 
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
@@ -138,40 +137,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.meta.title}</title>
-	<meta name="description" content={data.meta.description} />
-	<link rel="canonical" href={data.meta.ogUrl} />
-	{#if data.isGated}
-		<meta name="robots" content="noindex, nofollow" />
-	{:else}
-		<meta name="robots" content="index, follow" />
-	{/if}
-	{#each enabledLanguages as lang (lang)}
-		<link
-			rel="alternate"
-			hreflang={lang}
-			href={lang === defaultLanguage
-				? data.meta.ogUrl
-				: data.meta.ogUrl.replace(/\/docs\//, `/${lang}/docs/`)}
-		/>
-	{/each}
-	<link rel="alternate" hreflang="x-default" href={data.meta.ogUrl} />
-	<meta property="og:title" content={data.meta.title} />
-	<meta property="og:description" content={data.meta.description} />
-	<meta property="og:type" content={data.meta.ogType} />
-	<meta property="og:url" content={data.meta.ogUrl} />
-	{#if data.meta.ogImage}
-		<meta property="og:image" content={data.meta.ogImage} />
-	{/if}
-	<meta name="twitter:card" content={data.meta.twitterCard} />
-	<meta name="twitter:title" content={data.meta.twitterTitle} />
-	<meta name="twitter:description" content={data.meta.twitterDescription} />
-	{#if data.meta.twitterImage}
-		<meta name="twitter:image" content={data.meta.twitterImage} />
-	{/if}
-	{#if data.meta.jsonLdString}
-		{@html safeJsonLdScript(data.meta.jsonLdString)}
-	{/if}
+	<SeoHead meta={data.meta} gated={data.isGated} />
 </svelte:head>
 
 <AppShell
@@ -265,6 +231,7 @@
 				editSeed={data.editSeed}
 				categories={existingCategories}
 				subcategories={existingSubcategories}
+				managed={managedCatalog}
 				{form}
 				{viewPath}
 			/>

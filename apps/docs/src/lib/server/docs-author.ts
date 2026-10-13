@@ -59,15 +59,24 @@ export async function fetchAuthoringData(
 	return { statuses, existingPages };
 }
 
-/** Statuses PATCH may set directly (§44 amendment 2): approved/published are
- *  endpoint-only, so the create/edit UI should never offer them as choices —
- *  but the current status must remain selectable so a page can be re-saved. */
+/** Statuses the edit select offers a docs.manage editor: the PATCH-writable
+ *  set plus approved/published, which the save action chains through the
+ *  dedicated transition endpoints so reviewer metadata stays truthful
+ *  (§44 amendment 2). The current status stays selectable for re-saves. */
 export function editableStatuses(all: string[], current?: string): string[] {
-	const allowed = all.filter((s) => s === 'draft' || s === 'in_review' || s === current);
+	const forward: string[] = [];
+	if (current !== 'approved' && current !== 'published') forward.push('approved');
+	if (current !== 'published') forward.push('published');
+	const allowed = [
+		...all.filter(
+			(s) => s === 'draft' || s === 'in_review' || s === current || forward.includes(s)
+		),
+		...forward.filter((s) => !all.includes(s))
+	];
 	if (allowed.length) return allowed;
 	// /docs/statuses fetch failed — still offer the writable states plus the
 	// current one so the select's bound value is always a valid option.
-	return [...new Set(['draft', 'in_review', ...(current ? [current] : [])])];
+	return [...new Set(['draft', 'in_review', ...forward, ...(current ? [current] : [])])];
 }
 
 /**
@@ -204,9 +213,12 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 	if (!slug || !SLUG_RE.test(slug)) {
 		return fail(400, { ...values, error: 'slug_invalid' });
 	}
-	if (reviewStatus === 'approved' || reviewStatus === 'published') {
-		return fail(400, { ...values, error: 'status_not_allowed' });
-	}
+
+	// approved/published are endpoint-only transitions — a docs.manage author
+	// may still pick them at create time; we create a draft then chain the
+	// dedicated endpoints so reviewer metadata stays truthful (§44 am. 2).
+	const desired = reviewStatus === 'approved' || reviewStatus === 'published' ? reviewStatus : null;
+	const writableStatus = reviewStatus === 'in_review' ? 'in_review' : 'draft';
 
 	let content: unknown;
 	if (contentRaw) {
@@ -222,7 +234,7 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 		slug,
 		audience,
 		content: content ?? { type: 'doc', content: [{ type: 'paragraph' }] },
-		review_status: reviewStatus,
+		review_status: writableStatus,
 		position: Number.isFinite(positionRaw) ? Math.trunc(positionRaw) : 0,
 		category: category || null,
 		subcategory: subcategory || null,
@@ -238,6 +250,23 @@ export async function createDocPageAction(event: RequestEvent, audience: DocAudi
 			return fail(err.status, { ...values, error: err.code, message: err.message });
 		}
 		return fail(500, { ...values, error: 'internal_error' });
+	}
+
+	// Chain the review transitions after create when the author picked an
+	// endpoint-only status. A failed transition leaves the page at its last
+	// good status — the redirect still carries the real state so the author
+	// can finish it from the review bar on the page.
+	if (desired) {
+		try {
+			await apiPost(ctx, `/admin/docs/pages/${created.id}/approve`);
+			created.review_status = 'approved';
+			if (desired === 'published') {
+				await apiPost(ctx, `/admin/docs/pages/${created.id}/publish`);
+				created.review_status = 'published';
+			}
+		} catch {
+			// Partial transition failure — the created status stays truthful.
+		}
 	}
 
 	// Any status lands on the page URL — non-published pages resolve to the
@@ -300,21 +329,22 @@ export async function saveDocPageAction(event: RequestEvent, audience: string, s
 		return fail(400, { ...values, error: 'page_mismatch' });
 	}
 
-	// approved/published may not be *set* via PATCH — but the status select
-	// carries the current status, so a re-sent current value is a no-op the
-	// backend accepts. Reject only when it differs from the stored status.
-	if (
+	// approved/published may not be *set* via PATCH — a requested transition
+	// runs through the dedicated endpoints after the save so reviewer
+	// metadata stays truthful (§44 amendment 2).
+	const desiredTransition =
 		(reviewStatus === 'approved' || reviewStatus === 'published') &&
 		reviewStatus !== target.review_status
-	) {
-		return fail(400, { ...values, error: 'status_not_allowed' });
-	}
+			? reviewStatus
+			: null;
 
 	const body: DocPageUpdateRequest = {
 		title,
-		// Re-send the current status: absent preserves it server-side, but the
-		// select always carries a valid option so this is belt-and-suspenders.
-		review_status: reviewStatus || target.review_status,
+		// Re-send the current status when the select carries an endpoint-only
+		// value: absent preserves it server-side, and a re-sent current value
+		// is a no-op the backend accepts.
+		review_status:
+			desiredTransition || !reviewStatus ? target.review_status : reviewStatus,
 		category,
 		subcategory
 	};
@@ -336,12 +366,31 @@ export async function saveDocPageAction(event: RequestEvent, audience: string, s
 		return fail(500, { ...values, error: 'internal_error' });
 	}
 
-	const nextSlug = body.slug ?? slug;
-	if (nextSlug !== slug) {
-		throw redirect(303, `/docs/${audience}/${nextSlug}?saved=${encodeURIComponent(body.review_status ?? '')}`);
+	// Save landed — run the requested status transition. publish implies
+	// approve first when the page isn't approved yet.
+	let finalStatus = body.review_status ?? target.review_status;
+	if (desiredTransition) {
+		try {
+			if (finalStatus !== 'approved' && finalStatus !== 'published') {
+				await apiPost(ctx, `/admin/docs/pages/${pageId}/approve`);
+				finalStatus = 'approved';
+			}
+			if (desiredTransition === 'published' && finalStatus !== 'published') {
+				await apiPost(ctx, `/admin/docs/pages/${pageId}/publish`);
+				finalStatus = 'published';
+			}
+		} catch {
+			// Transition failure keeps the saved page at its last good status;
+			// the redirect below reports the real outcome.
+		}
 	}
 
-	return { saved: true, error: '', message: '' };
+	const nextSlug = body.slug ?? slug;
+	if (nextSlug !== slug) {
+		throw redirect(303, `/docs/${audience}/${nextSlug}?saved=${encodeURIComponent(finalStatus)}`);
+	}
+
+	return { saved: true, savedStatus: finalStatus, error: '', message: '' };
 }
 
 /** Shared approve/publish actions — the dedicated endpoints own those

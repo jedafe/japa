@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Dialog, Command } from 'bits-ui';
-	import { Search, X, CornerDownLeft } from 'lucide-svelte';
+	import { Search, X, CornerDownLeft, FileText } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -138,12 +138,15 @@
 										onSelect={() => navigate(r)}
 										class="result"
 									>
-										<span class="result-title">{r.title}</span>
-										<span class="result-meta">
-											<span class="result-audience">
-												{t(AUDIENCE_LABEL_KEY[r.audience], r.audience)}
+										<FileText size={15} class="result-icon" />
+										<span class="result-body">
+											<span class="result-title">{r.title}</span>
+											<span class="result-meta">
+												<span class="result-audience">
+													{t(AUDIENCE_LABEL_KEY[r.audience], r.audience)}
+												</span>
+												{#if r.excerpt}<span class="result-excerpt">{r.excerpt}</span>{/if}
 											</span>
-											{#if r.excerpt}<span class="result-excerpt">{r.excerpt}</span>{/if}
 										</span>
 									</Command.Item>
 								{/each}
@@ -188,7 +191,7 @@
 	.input-row {
 		display: flex;
 		align-items: center;
-		gap: 0.625rem;
+		gap: 0.5rem;
 		padding: 0.75rem 1rem;
 		border-bottom: 1px solid var(--color-border);
 	}
@@ -219,8 +222,8 @@
 	.result-list { list-style: none; margin: 0; padding: 0.25rem; }
 	:global(.palette .result) {
 		display: flex;
-		flex-direction: column;
-		gap: 0.125rem;
+		align-items: flex-start;
+		gap: 0.625rem;
 		width: 100%;
 		padding: 0.625rem 0.75rem;
 		border-radius: var(--radius);
@@ -233,6 +236,18 @@
 	}
 	/* Command.Item exposes data-highlighted for the keyboard-active state. */
 	:global(.palette .result[data-highlighted]) { background: var(--color-surface-subtle); }
+	/* Icon nudged down so it optically centers on the title's first line. */
+	:global(.palette .result-icon) {
+		flex-shrink: 0;
+		margin-top: 0.125rem;
+		color: var(--color-muted);
+	}
+	.result-body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		min-width: 0;
+	}
 	.result-title { font-size: 0.875rem; font-weight: 500; color: var(--color-text); }
 	.result-meta { display: flex; align-items: center; gap: 0.5rem; }
 	.result-audience {

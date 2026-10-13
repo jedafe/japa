@@ -23,11 +23,14 @@ function resolveAudiences(
 	audienceOrder: DocAudience[]
 ): DocAudience[] {
 	const permissions = new Set(user?.permissions ?? []);
+	// The "*" system wildcard (super_admin) implicitly holds every node —
+	// mirror the backend's HasPermission semantics.
+	const wildcard = permissions.has('*');
 	// Mirror the backend's accessibleAudiences: an audience absent from the
 	// gates map is public; a gated audience requires its permission node.
 	return audienceOrder.filter((aud) => {
 		const required = audienceGates[aud];
-		return !required || permissions.has(required);
+		return !required || wildcard || permissions.has(required);
 	});
 }
 

@@ -18,7 +18,8 @@
 		ListTree,
 		Pencil
 	} from 'lucide-svelte';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
+	import { parseManagedCategories } from '$lib/docs/catalog';
 	import type { PageData, ActionData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -59,12 +60,19 @@
 	);
 
 	// Category/subcategory suggestions — case-folded so "Guides"/"guides"
-	// don't surface as two near-duplicate groups (§44 amendment 2).
+	// don't surface as two near-duplicate groups (§44 amendment 2). The
+	// admin-managed catalog (docs.categories) merges in so curated names
+	// are suggested even before any page uses them.
+	const managedCatalog = $derived(
+		parseManagedCategories(page.data?.siteSettings?.['docs.categories'])
+	);
 	const existingCategories = $derived(
 		[
 			...new Map(
-				data.existingPages
-					.map((p) => p.category?.trim())
+				[
+					...managedCatalog.map((c) => c.name),
+					...data.existingPages.map((p) => p.category?.trim())
+				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
 			).values()
@@ -73,25 +81,16 @@
 	const existingSubcategories = $derived(
 		[
 			...new Map(
-				data.existingPages
-					.map((p) => p.subcategory?.trim())
+				[
+					...managedCatalog.flatMap((c) => c.subcategories),
+					...data.existingPages.map((p) => p.subcategory?.trim())
+				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
 			).values()
 		]
 	);
 
-	// Dynamic hreflang from enabled languages (§18, ADR-013). The canonical
-	// list lives in the public site settings (i18n.enabled_languages). If the
-	// setting is not available, fall back to the active locale rather than a
-	// hardcoded list (Rule 16).
-	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? data.locale)
-			.split(',').map((l) => l.trim()).filter(Boolean)
-	);
-	const defaultLanguage = $derived(
-		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
-	);
 
 	const navIndex = $derived(flatNav.findIndex((i) => i.slug === data.page.slug));
 	const breadcrumb = $derived.by(() => {
@@ -141,41 +140,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.meta.title}</title>
-	<meta name="description" content={data.meta.description} />
-	<link rel="canonical" href={data.meta.ogUrl} />
-	{#if data.isGated}
-		<meta name="robots" content="noindex, nofollow" />
-	{:else}
-		<meta name="robots" content="index, follow" />
-		<!-- hreflang for public audiences (Ref: §18 ROADMAP 07.05) -->
-		{#each enabledLanguages as lang (lang)}
-			<link
-				rel="alternate"
-				hreflang={lang}
-				href={lang === defaultLanguage
-					? data.meta.ogUrl
-					: data.meta.ogUrl.replace(/\/docs\//, `/${lang}/docs/`)}
-			/>
-		{/each}
-		<link rel="alternate" hreflang="x-default" href={data.meta.ogUrl} />
-	{/if}
-	<meta property="og:title" content={data.meta.title} />
-	<meta property="og:description" content={data.meta.description} />
-	<meta property="og:type" content={data.meta.ogType} />
-	<meta property="og:url" content={data.meta.ogUrl} />
-	{#if data.meta.ogImage}
-		<meta property="og:image" content={data.meta.ogImage} />
-	{/if}
-	<meta name="twitter:card" content={data.meta.twitterCard} />
-	<meta name="twitter:title" content={data.meta.twitterTitle} />
-	<meta name="twitter:description" content={data.meta.twitterDescription} />
-	{#if data.meta.twitterImage}
-		<meta name="twitter:image" content={data.meta.twitterImage} />
-	{/if}
-	{#if data.meta.jsonLdString}
-		{@html safeJsonLdScript(data.meta.jsonLdString)}
-	{/if}
+	<SeoHead meta={data.meta} gated={data.isGated} />
 </svelte:head>
 
 <AppShell
@@ -190,11 +155,11 @@
 	collapsed={collapsed}
 	onToggleCollapse={toggleCollapse}
 >
-	{#snippet sidebar()}
-		{#if !editing}
+	{#if !editing && data.toc.length > 0}
+		{#snippet sidebar()}
 			<TableOfContents headings={data.toc} />
-		{/if}
-	{/snippet}
+		{/snippet}
+	{/if}
 
 	<article class="doc-article">
 		<header class="doc-header">
@@ -263,6 +228,7 @@
 				editSeed={data.editSeed}
 				categories={existingCategories}
 				subcategories={existingSubcategories}
+				managed={managedCatalog}
 				{form}
 				{viewPath}
 			/>

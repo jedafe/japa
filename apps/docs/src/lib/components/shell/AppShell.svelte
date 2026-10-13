@@ -1,16 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
-	import { Menu as MenuIcon, PanelLeftClose, PanelLeft } from 'lucide-svelte';
-	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import DocNavTree from './DocNavTree.svelte';
-	import TableOfContents from './TableOfContents.svelte';
-	import SearchLauncher from './SearchLauncher.svelte';
 	import LeftRail from './LeftRail.svelte';
-	import UserDropdown from './UserDropdown.svelte';
-	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
+	import DocsHeader from './DocsHeader.svelte';
 	import GuestFooter from './GuestFooter.svelte';
-	import GuestAuthButtons from './GuestAuthButtons.svelte';
+	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
 	import { t } from '$lib/i18n';
 	import type { DocNavTree as DocNavTreeType, DocAudience, SessionUser, Menu } from '$lib/types';
 
@@ -44,6 +39,9 @@
 		/** Admin-managed left-position widgets — only `ad_slot` widgets render,
 		 *  as a 160×600 rail while the nav is collapsed (Section 59, ADR-066). */
 		leftSidebarWidgets?: unknown[];
+		/** Portal landing mode: content spans the full center width — no right
+		 *  sidebar column at all (the mockup homepage has none). */
+		hideRightSidebar?: boolean;
 		children: Snippet;
 	}
 
@@ -62,6 +60,7 @@
 		footerMenu = null,
 		rightSidebarWidgets = [],
 		leftSidebarWidgets = [],
+		hideRightSidebar = false,
 		children
 	}: Props = $props();
 
@@ -72,12 +71,11 @@
 		)
 	);
 
-	// Split widgets into topbar (sticky) and content (scrollable) slots using
+	// Split widgets into topbar (header) and content (sidebar body) slots using
 	// the `slot` field from the widget type registry (Section 59 §6, BE-S3).
 	// Falls back to a hardcoded topbar type set for backward compat with older
-	// cached payloads that do not include `slot`. This replaces the previously
-	// hardcoded sidebar-topbar (SearchLauncher + UserDropdown), which
-	// duplicated the admin-managed topbar widgets seeded by migration 000223.
+	// cached payloads that do not include `slot`. Topbar widgets render inside
+	// the global header — the header deduplicates types it provides natively.
 	const topbarWidgetTypes = new Set(['search', 'search_launcher', 'theme_toggle', 'language_toggle', 'user_dropdown']);
 	function isTopbar(w: { slot?: string; widget_type: string; props?: Record<string, unknown> }): boolean {
 		// Explicit slot field on the widget (from the sidebar API)
@@ -92,6 +90,25 @@
 	}
 	let topbarWidgets = $derived(sidebarWidgets.filter((w) => isTopbar(w)));
 	let contentWidgets = $derived(sidebarWidgets.filter((w) => !isTopbar(w)));
+
+	// Render the right rail only when it actually carries content — a route TOC
+	// snippet, the API code pane, or admin-managed content-slot widgets.
+	// Listing pages that pass nothing get a full-width center column instead
+	// of a bordered empty column. ad_slot widgets count only while the ads
+	// feature is enabled — when off they can never render (AdSlot skips its
+	// fetch entirely), so they must not hold the rail open.
+	const adsEnabled = $derived(
+		(page.data?.features as Record<string, boolean> | undefined)?.['feature.ads'] !== false
+	);
+	const visibleContentWidgets = $derived(
+		contentWidgets.filter((w) => w.widget_type !== 'ad_slot' || adsEnabled)
+	);
+	const hasRightSidebar = $derived(
+		!hideRightSidebar &&
+			Boolean(
+				sidebar || (variant === 'api' && apiPane) || visibleContentWidgets.length > 0
+			)
+	);
 
 	// Left rail (Section 59): ad-only 160px column between the collapsed nav
 	// and the content, only while the nav is collapsed and an ad_slot widget
@@ -121,212 +138,80 @@
 {#if isFull}
 	<!-- ADR-060 full-width exception: the API playground breaks the shell. -->
 	<div class="shell-full">
-		<div class="full-topbar">
-			<a href="/docs" class="full-brand">
-				{#if logoUrl}
-					<ThemeLogo {logoUrl} logoDarkUrl={resolvedLogoDarkUrl} alt={t('app.name')} class="h-7 w-auto max-w-[140px] object-contain" />
-				{:else}
-					<span class="brand-mark">JC</span>
-				{/if}
-				<span class="hidden whitespace-nowrap sm:inline">{t('app.name')}</span>
-			</a>
-			<div class="full-topbar-actions">
-				<SearchLauncher />
-				<UserDropdown {user} />
-			</div>
-		</div>
+		<DocsHeader
+			{user}
+			{logoUrl}
+			logoDarkUrl={resolvedLogoDarkUrl}
+			{topbarWidgets}
+			showMenuButton={false}
+		/>
 		<main class="full-main">
 			{@render children()}
 		</main>
 	</div>
-{:else if !user}
-	<!-- Guest layout: same 3-column shell as authed users. The DocNavTree
-	     doesn't depend on user; the sidebar shows admin-managed widgets.
-	     UserDropdown is hidden for guests (no avatar to show). -->
-	<div
-		class="shell"
-		class:show-left-rail={showLeftRail}
-		style="--current-nav-width: {navWidth}; --current-right-width: {rightWidth};"
-	>
-		<div class="shell-nav">
-			<DocNavTree
-				{nav}
-				{accessibleAudiences}
-				{activeAudience}
-				{collapsed}
-				{onToggleCollapse}
-				{logoUrl}
-				logoDarkUrl={resolvedLogoDarkUrl}
-			/>
-		</div>
-
-		{#if showLeftRail}
-			<LeftRail widgets={leftSidebarWidgets} />
-		{/if}
-
-		<main class="shell-center">
-			<!-- Mobile topbar (hidden on desktop) -->
-			<div class="mobile-topbar">
-				<button
-					type="button"
-					data-tour="docs-nav"
-					onclick={() => (mobileNavOpen = true)}
-					class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-					aria-label={t('a11y.open_menu')}
-				>
-					<MenuIcon size={20} />
-				</button>
-				<a href="/docs" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-					{#if logoUrl}
-						<ThemeLogo {logoUrl} logoDarkUrl={resolvedLogoDarkUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
-					{:else}
-						<span class="brand-mark">JC</span>
-					{/if}
-					<span class="hidden whitespace-nowrap sm:inline">{t('app.name')}</span>
-				</a>
-				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
-				<!-- Topbar widgets (theme/language toggles) — the sidebar topbar is
-				     hidden below 768px, so render them here. Search is already in the
-				     bar and the dropdown is handled by the auth affordance. -->
-				{#each topbarWidgets.filter((w) => !['search', 'search_launcher', 'user_dropdown'].includes(w.widget_type)) as widget (widget.id)}
-					<SidebarWidgetRenderer {widget} {user} />
-				{/each}
-				{#if !user}<GuestAuthButtons compact />{/if}
-			</div>
-			{@render children()}
-		</main>
-
-		<div class="shell-sidebar" data-tour="docs-sidebar">
-			<div class="sidebar-topbar" data-tour="docs-topbar">
-				{#each topbarWidgets as widget (widget.id)}
-					<SidebarWidgetRenderer {widget} {user} />
-				{/each}
-				{#if !user}
-					<GuestAuthButtons />
-				{/if}
-			</div>
-			<div class="sidebar-body">
-				{#if variant === 'api' && apiPane}
-					{@render apiPane()}
-				{:else if sidebar}
-					{@render sidebar()}
-				{:else}
-					<div class="sidebar-empty"></div>
-				{/if}
-
-				{#each contentWidgets as widget (widget.id)}
-					<div class="mt-4">
-						<SidebarWidgetRenderer {widget} {user} />
-					</div>
-				{/each}
-			</div>
-		</div>
-	</div>
-
 	<GuestFooter menu={footerMenu} {user} />
-
-	{#if mobileNavOpen}
-		<button
-			type="button"
-			class="drawer-backdrop"
-			aria-label={t('a11y.close_menu')}
-			onclick={() => (mobileNavOpen = false)}
-		></button>
-		<div class="drawer">
-			<DocNavTree
-				{nav}
-				{accessibleAudiences}
-				{activeAudience}
-				collapsed={false}
-				onToggleCollapse={() => (mobileNavOpen = false)}
-				{logoUrl}
-				logoDarkUrl={resolvedLogoDarkUrl}
-			/>
-		</div>
-	{/if}
 {:else}
 	<div
 		class="shell"
 		class:variant-api={variant === 'api'}
 		class:show-left-rail={showLeftRail}
+		class:no-right-sidebar={!hasRightSidebar}
 		style="--current-nav-width: {navWidth}; --current-right-width: {rightWidth};"
 	>
-		<div class="shell-nav">
-			<DocNavTree
-				{nav}
-				{accessibleAudiences}
-				{activeAudience}
-				{collapsed}
-				{onToggleCollapse}
-				{logoUrl}
-				logoDarkUrl={resolvedLogoDarkUrl}
-			/>
-		</div>
+		<DocsHeader
+			{user}
+			{logoUrl}
+			logoDarkUrl={resolvedLogoDarkUrl}
+			{topbarWidgets}
+			onOpenMenu={() => (mobileNavOpen = true)}
+		/>
 
-		{#if showLeftRail}
-			<LeftRail widgets={leftSidebarWidgets} />
-		{/if}
+		<div class="shell-grid">
+			<div class="shell-nav">
+				<DocNavTree
+					{nav}
+					{accessibleAudiences}
+					{activeAudience}
+					{collapsed}
+					{onToggleCollapse}
+					{logoUrl}
+					logoDarkUrl={resolvedLogoDarkUrl}
+				/>
+			</div>
 
-		<main class="shell-center">
-			<!-- Mobile topbar (hidden on desktop) -->
-			<div class="mobile-topbar">
-				<button
-					type="button"
-					data-tour="docs-nav"
-					onclick={() => (mobileNavOpen = true)}
-					class="grid h-9 w-9 place-items-center rounded-[var(--radius)] text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-					aria-label={t('a11y.open_menu')}
-				>
-					<MenuIcon size={20} />
-				</button>
-				<a href="/docs" class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-					{#if logoUrl}
-						<ThemeLogo {logoUrl} logoDarkUrl={resolvedLogoDarkUrl} alt={t('app.name')} class="h-6 w-auto object-contain" />
+			{#if showLeftRail}
+				<LeftRail widgets={leftSidebarWidgets} />
+			{/if}
+
+			<main class="shell-center">
+				{@render children()}
+			</main>
+
+			{#if hasRightSidebar}
+			<div class="shell-sidebar" data-tour="docs-sidebar">
+				<div class="sidebar-body">
+					{#if variant === 'api' && apiPane}
+						{@render apiPane()}
+					{:else if sidebar}
+						{@render sidebar()}
 					{:else}
-						<span class="brand-mark">JC</span>
+						<!-- No route-specific sidebar: show a minimal spacer so the grid
+						stays consistent on landing/listing pages. -->
+						<div class="sidebar-empty"></div>
 					{/if}
-					<span class="hidden whitespace-nowrap sm:inline">{t('app.name')}</span>
-				</a>
-				<div class="ml-auto"><SearchLauncher keyboardShortcut={false} /></div>
-				<!-- Topbar widgets (theme/language toggles) + account menu — the
-				     sidebar topbar is hidden below 768px. -->
-				{#each topbarWidgets.filter((w) => !['search', 'search_launcher', 'user_dropdown'].includes(w.widget_type)) as widget (widget.id)}
-					<SidebarWidgetRenderer {widget} {user} />
-				{/each}
-				<UserDropdown {user} />
-			</div>
-			{@render children()}
-		</main>
 
-		<div class="shell-sidebar" data-tour="docs-sidebar">
-			<div class="sidebar-topbar" data-tour="docs-topbar">
-				{#each topbarWidgets as widget (widget.id)}
-					<SidebarWidgetRenderer {widget} {user} />
-				{/each}
+					<!-- Admin-managed content-slot sidebar widgets (Section 59,
+					     ADR-066). Rendered below the route-specific snippet (TOC). -->
+					{#each contentWidgets as widget (widget.id)}
+						<div class="mt-4">
+							<SidebarWidgetRenderer {widget} {user} />
+						</div>
+					{/each}
+				</div>
 			</div>
-			<div class="sidebar-body">
-				{#if variant === 'api' && apiPane}
-					{@render apiPane()}
-				{:else if sidebar}
-					{@render sidebar()}
-				{:else}
-					<!-- No route-specific sidebar: show a minimal spacer so the grid
-					stays consistent on landing/listing pages. -->
-					<div class="sidebar-empty"></div>
-				{/if}
-
-				<!-- Admin-managed content-slot sidebar widgets (Section 59,
-				     ADR-066). Rendered below the route-specific snippet (TOC). -->
-				{#each contentWidgets as widget (widget.id)}
-					<div class="mt-4">
-						<SidebarWidgetRenderer {widget} {user} />
-					</div>
-				{/each}
-			</div>
+			{/if}
 		</div>
 	</div>
-
-	<GuestFooter menu={footerMenu} {user} />
 
 	{#if mobileNavOpen}
 		<button
@@ -347,20 +232,43 @@
 			/>
 		</div>
 	{/if}
+
+	<GuestFooter menu={footerMenu} {user} />
 {/if}
 
 <style>
 	/* ---- Standard shell (doc + api variants) ---- */
+	/* The header sits in normal flow so position:sticky can pin it for the
+	   whole document scroll; the three columns live in .shell-grid below. */
 	.shell {
-		display: grid;
-		grid-template-columns: var(--current-nav-width) 1fr var(--current-right-width);
 		min-height: 100vh;
 		background-color: var(--color-bg);
 	}
+	.shell-grid {
+		display: grid;
+		grid-template-columns: var(--current-nav-width) 1fr var(--current-right-width);
+		min-height: calc(100vh - var(--nav-height));
+	}
+	/* The left ad rail inserts a fixed-width column between nav and center. */
+	.show-left-rail .shell-grid {
+		grid-template-columns:
+			var(--current-nav-width) var(--left-rail-width) 1fr var(--current-right-width);
+	}
+	/* Portal landing: content spans full width — no right sidebar column. */
+	.no-right-sidebar .shell-grid {
+		grid-template-columns: var(--current-nav-width) 1fr;
+	}
+	.no-right-sidebar.show-left-rail .shell-grid {
+		grid-template-columns:
+			var(--current-nav-width) var(--left-rail-width) 1fr;
+	}
+	.no-right-sidebar .shell-center {
+		border-right: none;
+	}
 	.shell-nav {
 		position: sticky;
-		top: 0;
-		height: 100vh;
+		top: var(--nav-height);
+		height: calc(100vh - var(--nav-height));
 	}
 	.shell-center {
 		min-width: 0;
@@ -368,22 +276,16 @@
 	}
 	.shell-sidebar {
 		position: sticky;
-		top: 0;
-		height: 100vh;
+		top: var(--nav-height);
+		height: calc(100vh - var(--nav-height));
 		display: flex;
 		flex-direction: column;
 		border-left: 1px solid var(--color-border);
 		background: var(--color-surface);
 	}
-	.sidebar-topbar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-		height: var(--nav-height);
-		padding: 0 0.75rem;
-		border-bottom: 1px solid var(--color-border);
-		flex-shrink: 0;
+	.shell :global(.left-rail) {
+		top: var(--nav-height);
+		height: calc(100vh - var(--nav-height));
 	}
 	.sidebar-body {
 		flex: 1;
@@ -393,32 +295,6 @@
 	}
 	.sidebar-empty {
 		height: 100%;
-	}
-
-	.mobile-topbar {
-		display: none;
-		position: sticky;
-		top: 0;
-		z-index: 20;
-		align-items: center;
-		gap: 0.5rem;
-		height: var(--nav-height);
-		padding: 0 0.75rem;
-		border-bottom: 1px solid var(--color-border);
-		background-color: var(--color-surface);
-	}
-
-	.brand-mark {
-		display: inline-grid;
-		place-items: center;
-		height: 1.5rem;
-		width: 1.5rem;
-		border-radius: var(--radius);
-		background: var(--color-primary);
-		color: var(--color-primary-contrast);
-		font-size: 0.6875rem;
-		font-weight: 700;
-		font-family: var(--font-sans);
 	}
 
 	.drawer-backdrop {
@@ -443,42 +319,17 @@
 		min-height: 100vh;
 		background: var(--color-bg);
 	}
-	.full-topbar {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		height: var(--nav-height);
-		padding: 0 1rem;
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-surface);
-		position: sticky;
-		top: 0;
-		z-index: 20;
-	}
-	.full-topbar-actions {
-		margin-left: auto;
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-	.full-brand {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-weight: 600;
-		color: var(--color-text);
-		flex-shrink: 0;
-	}
 	.full-main {
 		min-width: 0;
 	}
 
-	/* ---- Desktop topbar ---- */
 	/* ---- Responsive ---- */
 	/* Below 1280px: drop the right sidebar (TOC/code pane) and the left rail. */
 	@media (max-width: 1279px) {
-		.shell,
-		.shell.show-left-rail {
+		.shell-grid,
+		.show-left-rail .shell-grid,
+		.no-right-sidebar .shell-grid,
+		.no-right-sidebar.show-left-rail .shell-grid {
 			grid-template-columns: var(--current-nav-width) 1fr;
 		}
 		.shell-sidebar {
@@ -488,10 +339,15 @@
 			display: none;
 		}
 	}
-	/* Below 768px: single column, nav becomes a drawer. */
+	/* Below 768px: single column, nav becomes a drawer. The
+	   .no-right-sidebar variants must be listed explicitly — their two-class
+	   selectors outrank the one-class rules here and would otherwise keep a
+	   phantom nav-width track next to the (hidden) drawer nav. */
 	@media (max-width: 767px) {
-		.shell,
-		.shell.show-left-rail {
+		.shell-grid,
+		.show-left-rail .shell-grid,
+		.no-right-sidebar .shell-grid,
+		.no-right-sidebar.show-left-rail .shell-grid {
 			grid-template-columns: 1fr;
 		}
 		.shell-nav {
@@ -499,9 +355,6 @@
 		}
 		.shell-center {
 			border-right: none;
-		}
-		.mobile-topbar {
-			display: flex;
 		}
 	}
 </style>

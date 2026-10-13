@@ -3,6 +3,9 @@
 	import { beforeNavigate } from '$app/navigation';
 	import { onMount, untrack } from 'svelte';
 	import DocEditor from '$lib/components/docs/DocEditor.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import type { ManagedCategory } from '$lib/docs/catalog';
 	import { t } from '$lib/i18n';
 	import type { DocPage } from '$lib/types';
 	import type { ExistingPage } from '$lib/server/docs-author';
@@ -23,6 +26,8 @@
 		editSeed: unknown;
 		categories: string[];
 		subcategories: string[];
+		/** Managed catalog — drives category→subcategory suggestion filtering. */
+		managed?: ManagedCategory[];
 		form?: FormValues | null;
 		/** Cancel link target (view URL without ?edit=1). */
 		viewPath: string;
@@ -35,6 +40,7 @@
 		editSeed,
 		categories,
 		subcategories,
+		managed = [],
 		form = null,
 		viewPath
 	}: Props = $props();
@@ -67,6 +73,55 @@
 			contentEdited = false;
 		}
 	});
+
+	// Subcategory suggestions follow the selected category: its managed subs
+	// plus subs already used by pages in that category. No category selected
+	// → the union of managed + page-derived subs (the `subcategories` prop).
+	const filteredSubcategories = $derived.by(() => {
+		const cat = editCategory.trim().toLowerCase();
+		if (!cat) return subcategories;
+		const seen = new Map<string, string>();
+		const managedSubs =
+			managed.find((c) => c.name.toLowerCase() === cat)?.subcategories ?? [];
+		for (const s of managedSubs) if (s.trim()) seen.set(s.toLowerCase(), s);
+		for (const p of existingPages) {
+			if ((p.category ?? '').trim().toLowerCase() !== cat) continue;
+			if (p.subcategory?.trim()) seen.set(p.subcategory.toLowerCase(), p.subcategory.trim());
+		}
+		return [...seen.values()];
+	});
+
+	const toItems = (list: string[]): AutocompleteItem[] =>
+		list.map((s) => ({ id: s, label: s }));
+	const suggestItems =
+		(list: string[]) =>
+		(q: string): Promise<AutocompleteItem[]> =>
+			Promise.resolve(
+				toItems(list.filter((s) => s.toLowerCase().includes(q.toLowerCase())))
+			);
+	const suggestInitial =
+		(list: string[]) =>
+		(): Promise<AutocompleteItem[]> =>
+			Promise.resolve(toItems(list));
+
+	const parentItems = $derived(
+		existingPages.map((p) => ({
+			id: p.id,
+			label: p.title,
+			sublabel:
+				p.slug +
+				(p.review_status !== 'published'
+					? ` · ${t(`new_page.status.${p.review_status}`, p.review_status)}`
+					: '')
+		}))
+	);
+	const parentFetcher = (q: string): Promise<AutocompleteItem[]> =>
+		Promise.resolve(
+			parentItems.filter((p) => p.label.toLowerCase().includes(q.toLowerCase()))
+		);
+	const parentLabel = $derived(
+		existingPages.find((p) => p.id === editParentId)?.title ?? null
+	);
 
 	const dirty = $derived(
 		contentEdited ||
@@ -124,6 +179,10 @@
 	class="edit-form"
 	use:enhance={({ formData }) => {
 		formData.set('content', JSON.stringify(contentJson ?? page.content ?? {}));
+		// Autocomplete fields carry no name attribute — push tracked values.
+		formData.set('category', editCategory);
+		formData.set('subcategory', editSubcategory);
+		formData.set('parent_id', editParentId);
 		saving = true;
 		return async ({ update, result }) => {
 			// Keep saving=true through update(): a redirect result runs goto()
@@ -150,41 +209,44 @@
 	</label>
 
 	<div class="ef-grid">
-		<label class="ef-field">
-			<span class="ef-label">{t('new_page.field_category', 'Category')}</span>
-			<input
-				type="text"
-				name="category"
-				class="ef-input"
-				list="doc-categories"
-				maxlength="120"
-				bind:value={editCategory}
+		<div class="ef-field">
+			<label class="ef-label" for="doc-edit-category">{t('new_page.field_category', 'Category')}</label>
+			<Autocomplete
+				id="doc-edit-category"
 				placeholder={t('new_page.optional', 'Optional')}
+				emptyMessage={t('new_page.no_matches', 'No matches — type to use a new value')}
+				fetcher={suggestItems(categories)}
+				initialFetcher={suggestInitial(categories)}
+				selectedId={editCategory || null}
+				selectedLabel={editCategory || null}
+				freeText
+				allowFreeText
+				onSelect={(item) => (editCategory = item.id)}
+				onInput={(v) => (editCategory = v)}
+				onFreeTextBlur={(v) => (editCategory = v.trim())}
+				onClear={() => (editCategory = '')}
 			/>
-			<datalist id="doc-categories">
-				{#each categories as c (c)}
-					<option value={c}></option>
-				{/each}
-			</datalist>
-		</label>
+		</div>
 
-		<label class="ef-field">
-			<span class="ef-label">{t('new_page.field_subcategory', 'Subcategory')}</span>
-			<input
-				type="text"
-				name="subcategory"
-				class="ef-input"
-				list="doc-subcategories"
-				maxlength="120"
-				bind:value={editSubcategory}
-				placeholder={t('new_page.optional', 'Optional')}
+		<div class="ef-field">
+			<label class="ef-label" for="doc-edit-subcategory">{t('new_page.field_subcategory', 'Subcategory')}</label>
+			<Autocomplete
+				id="doc-edit-subcategory"
+				disabled={!editCategory.trim()}
+				placeholder={editCategory.trim() ? t('new_page.optional', 'Optional') : t('new_page.subcategory_pick_first', 'Pick a category first')}
+				emptyMessage={t('new_page.no_matches', 'No matches — type to use a new value')}
+				fetcher={suggestItems(filteredSubcategories)}
+				initialFetcher={suggestInitial(filteredSubcategories)}
+				selectedId={editSubcategory || null}
+				selectedLabel={editSubcategory || null}
+				freeText
+				allowFreeText
+				onSelect={(item) => (editSubcategory = item.id)}
+				onInput={(v) => (editSubcategory = v)}
+				onFreeTextBlur={(v) => (editSubcategory = v.trim())}
+				onClear={() => (editSubcategory = '')}
 			/>
-			<datalist id="doc-subcategories">
-				{#each subcategories as s (s)}
-					<option value={s}></option>
-				{/each}
-			</datalist>
-		</label>
+		</div>
 
 		<label class="ef-field">
 			<span class="ef-label">{t('new_page.field_status', 'Review status')}</span>
@@ -210,17 +272,20 @@
 				/>
 				<span class="ef-hint">{t('edit.slug_hint', 'Renaming the slug changes the page URL.')}</span>
 			</label>
-			<label class="ef-field">
-				<span class="ef-label">{t('new_page.field_parent', 'Parent page')}</span>
-				<select name="parent_id" class="ef-input" bind:value={editParentId}>
-					<option value="">{t('new_page.no_parent', '— Top level —')}</option>
-					{#each existingPages as p (p.id)}
-						<option value={p.id}>
-							{p.title}{p.review_status !== 'published' ? ` (${t(`new_page.status.${p.review_status}`, p.review_status)})` : ''}
-						</option>
-					{/each}
-				</select>
-			</label>
+			<div class="ef-field">
+				<label class="ef-label" for="doc-edit-parent">{t('new_page.field_parent', 'Parent page')}</label>
+				<Autocomplete
+					id="doc-edit-parent"
+					placeholder={t('new_page.no_parent', '— Top level —')}
+					emptyMessage={t('new_page.no_parent_matches', 'No matching pages')}
+					fetcher={parentFetcher}
+					initialFetcher={() => Promise.resolve(parentItems)}
+					selectedId={editParentId || null}
+					selectedLabel={parentLabel}
+					onSelect={(item) => (editParentId = item.id)}
+					onClear={() => (editParentId = '')}
+				/>
+			</div>
 			<label class="ef-field">
 				<span class="ef-label">{t('new_page.field_position', 'Position')}</span>
 				<input type="number" name="position" class="ef-input" min="0" step="1" bind:value={editPosition} />

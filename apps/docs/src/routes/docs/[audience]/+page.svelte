@@ -5,7 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
 	import { persistNavCollapse } from '$lib/nav-collapse';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { AUDIENCE_ICON, AUDIENCE_DESC_KEY } from '$lib/audience-meta';
 	import { groupNavItems } from '$lib/docs/grouping';
 	import { ArrowRight, ArrowUpRight, ChevronRight, FileText, Plus } from 'lucide-svelte';
@@ -21,15 +21,6 @@
 		await persistNavCollapse(collapsed);
 	}
 
-	// Dynamic hreflang from enabled languages (§18, ADR-013). Falls back to the
-	// active locale instead of a hardcoded list when the setting is unavailable.
-	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? data.locale)
-			.split(',').map((l) => l.trim()).filter(Boolean)
-	);
-	const defaultLanguage = $derived(
-		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
-	);
 
 	// The nav tree (layout data) carries parent→children hierarchy — the flat
 	// pages list doesn't. Build the section cards from it (Rule 16: same API
@@ -77,41 +68,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.meta.title}</title>
-	<meta name="description" content={data.meta.description} />
-	<link rel="canonical" href={data.meta.ogUrl} />
-	{#if data.isGated}
-		<meta name="robots" content="noindex, nofollow" />
-	{:else}
-		<meta name="robots" content="index, follow" />
-		<!-- hreflang for public audiences (Ref: §18 ROADMAP 07.05) -->
-		{#each enabledLanguages as lang (lang)}
-			<link
-				rel="alternate"
-				hreflang={lang}
-				href={lang === defaultLanguage
-					? data.meta.ogUrl
-					: data.meta.ogUrl.replace(/\/docs\//, `/${lang}/docs/`)}
-			/>
-		{/each}
-		<link rel="alternate" hreflang="x-default" href={data.meta.ogUrl} />
-	{/if}
-	<meta property="og:title" content={data.meta.title} />
-	<meta property="og:description" content={data.meta.description} />
-	<meta property="og:type" content={data.meta.ogType} />
-	<meta property="og:url" content={data.meta.ogUrl} />
-	{#if data.meta.ogImage}
-		<meta property="og:image" content={data.meta.ogImage} />
-	{/if}
-	<meta name="twitter:card" content={data.meta.twitterCard} />
-	<meta name="twitter:title" content={data.meta.twitterTitle} />
-	<meta name="twitter:description" content={data.meta.twitterDescription} />
-	{#if data.meta.twitterImage}
-		<meta name="twitter:image" content={data.meta.twitterImage} />
-	{/if}
-	{#if data.meta.jsonLdString}
-		{@html safeJsonLdScript(data.meta.jsonLdString)}
-	{/if}
+	<SeoHead meta={data.meta} gated={data.isGated} />
 </svelte:head>
 
 <AppShell

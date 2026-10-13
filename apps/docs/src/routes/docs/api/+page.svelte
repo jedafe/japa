@@ -3,10 +3,9 @@
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { t } from '$lib/i18n';
-	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import SeoHead from '$lib/seo/SeoHead.svelte';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { groupNavItems } from '$lib/docs/grouping';
-	import { page } from '$app/state';
 	import { ArrowRight, ArrowUpRight, FileText, Play, Download, Plus, Search } from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { DocNavItem } from '$lib/types';
@@ -20,16 +19,6 @@
 	);
 	const grouped = $derived(groupNavItems(navItems));
 
-	// Dynamic hreflang from enabled languages (copies [audience]/[slug] pattern).
-	// NOTE: this page load has no `locale` field — read the default from the
-	// request-scoped layout siteSettings, falling back to 'en' (Rule 16).
-	const enabledLanguages = $derived(
-		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? 'en')
-			.split(',').map((l) => l.trim()).filter(Boolean)
-	);
-	const defaultLanguage = $derived(
-		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
-	);
 
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
@@ -81,35 +70,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.meta.title}</title>
-	<meta name="description" content={data.meta.description} />
-	<link rel="canonical" href={data.meta.ogUrl} />
-	{#each enabledLanguages as lang (lang)}
-		<link
-			rel="alternate"
-			hreflang={lang}
-			href={lang === defaultLanguage
-				? data.meta.ogUrl
-				: data.meta.ogUrl.replace(/\/docs\//, `/${lang}/docs/`)}
-		/>
-	{/each}
-	<link rel="alternate" hreflang="x-default" href={data.meta.ogUrl} />
-	<meta property="og:title" content={data.meta.title} />
-	<meta property="og:description" content={data.meta.description} />
-	<meta property="og:type" content={data.meta.ogType} />
-	<meta property="og:url" content={data.meta.ogUrl} />
-	{#if data.meta.ogImage}
-		<meta property="og:image" content={data.meta.ogImage} />
-	{/if}
-	<meta name="twitter:card" content={data.meta.twitterCard} />
-	<meta name="twitter:title" content={data.meta.twitterTitle} />
-	<meta name="twitter:description" content={data.meta.twitterDescription} />
-	{#if data.meta.twitterImage}
-		<meta name="twitter:image" content={data.meta.twitterImage} />
-	{/if}
-	{#if data.meta.jsonLdString}
-		{@html safeJsonLdScript(data.meta.jsonLdString)}
-	{/if}
+	<SeoHead meta={data.meta} />
 </svelte:head>
 
 <AppShell
@@ -468,14 +429,23 @@
 		font-family: var(--font-mono, monospace);
 		font-size: 0.8125rem;
 		color: var(--color-text);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.endpoint-summary {
 		font-size: 0.8125rem;
 		color: var(--color-muted);
 		margin-left: auto;
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	@media (max-width: 640px) {
+		/* Hover-revealed CTA is dead space on touch — the row itself links. */
+		.endpoint-cta { display: none; }
 	}
 	.method-badge {
 		font-size: 0.625rem;

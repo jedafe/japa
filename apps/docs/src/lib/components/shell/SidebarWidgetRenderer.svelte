@@ -13,12 +13,12 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { i18n } from '$lib/i18n';
 	import { apiPost } from '$lib/api/client';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import SearchLauncher from './SearchLauncher.svelte';
 	import UserDropdown from './UserDropdown.svelte';
 	import AdSlot from './AdSlot.svelte';
 	import { sanitizeSidebarHtml, safeHref, resolveMenuHref } from '$lib/utils/safeHtml';
+	import { localeLabel, switchLanguage } from '$lib/locale';
 	import { env } from '$env/dynamic/public';
 	import type { SessionUser } from '$lib/types';
 
@@ -55,9 +55,6 @@
 		((page.data?.siteSettings?.['i18n.enabled_languages'] as string | undefined) ?? (page.data?.locale as string) ?? 'en')
 			.split(',').map((l) => l.trim()).filter(Boolean)
 	);
-	const defaultLanguage = $derived(
-		(page.data?.siteSettings?.['i18n.default_language'] as string | undefined) ?? 'en'
-	);
 	// The language_toggle `languages` prop restricts the offered locales to a
 	// subset of the site-enabled list — empty means all enabled languages.
 	const configuredLanguages = $derived(
@@ -71,38 +68,8 @@
 	);
 	const showLanguageToggle = $derived(langList.length > 1);
 
-	const currentPath = $derived(page.url.pathname.replace(/^\//, ''));
-
-	const displayNames = (() => {
-		try { return new Intl.DisplayNames(undefined, { type: 'language' }); }
-		catch { return null; }
-	})();
-	function localeLabel(code: string): string {
-		return displayNames?.of(code) ?? code;
-	}
-	function localeHref(lang: string): string {
-		let path = currentPath || '';
-		// Strip an existing locale prefix — page.url.pathname can retain it on
-		// prefixed URLs, which would produce /fr/fr/... double-prefixed links.
-		const firstSeg = path.split('/')[0];
-		if (enabledLanguages.includes(firstSeg)) path = path.slice(firstSeg.length).replace(/^\//, '');
-		return lang === defaultLanguage ? `/${path}` : `/${lang}${path ? `/${path}` : ''}`;
-	}
-
-	// Switch locale: persist the choice in the jc_locale cookie AND navigate
-	// to the locale-prefixed URL. The cookie write is required — the hooks
-	// fall back to the cookie when the URL has no prefix, so without it,
-	// switching to the default language keeps rendering the previous locale.
-	// Uses SvelteKit's goto() for client-side navigation (ADR-013) rather
-	// than a full window.location reload.
-	function switchLanguage(lang: string) {
-		document.cookie = `jc_locale=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-		// invalidateAll forces a load re-run even when the target URL equals
-		// the current one — switching back to the default language strips the
-		// prefix, producing a same-URL navigation that would otherwise leave
-		// the previous locale rendered.
-		goto(localeHref(lang), { invalidateAll: true });
-	}
+	// Locale helpers (href building, label display, switch + cookie persist)
+	// live in $lib/locale — shared with the header language menu.
 
 	// lucide icon lookup for admin-configured icon names (metric_card.icon,
 	// social_links.platform). Unknown names fall back to a neutral icon so a

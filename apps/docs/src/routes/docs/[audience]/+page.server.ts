@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, ApiError } from '$lib/server/api';
-import { buildMeta, techArticleLd, DOCS_ORIGIN } from '$lib/seo/meta';
+import { buildMeta, collectionPageLd, DOCS_ORIGIN } from '$lib/seo/meta';
 import type { DocPageSummary, DocAudience, DocNavItem } from '$lib/types';
 import { AUDIENCE_LABEL_KEY } from '$lib/types';
 import { tServer } from '$lib/i18n/dict';
@@ -93,9 +93,9 @@ export const load: PageServerLoad = async (event) => {
 		title,
 		description,
 		path: `/docs/${audience}`,
-		jsonLd: techArticleLd({
-			headline: title,
-			dateModified: new Date().toISOString(),
+		ogType: 'website',
+		jsonLd: collectionPageLd({
+			name: title,
 			url: `${DOCS_ORIGIN}/docs/${audience}`,
 			description
 		})

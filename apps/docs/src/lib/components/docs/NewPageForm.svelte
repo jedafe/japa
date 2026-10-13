@@ -4,6 +4,9 @@
 	import { beforeNavigate } from '$app/navigation';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import DocEditor from '$lib/components/docs/DocEditor.svelte';
+	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
+	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { parseManagedCategories } from '$lib/docs/catalog';
 	import { t } from '$lib/i18n';
 	import { persistNavCollapse } from '$lib/nav-collapse';
 	import { AUDIENCE_ICON } from '$lib/audience-meta';
@@ -71,10 +74,13 @@
 	let submitting = $state(false);
 	let contentEdited = $state(false);
 
-	// §44 amendment 2: create accepts only draft/in_review — approve/publish
-	// belong to the review workflow, not the create form.
+	// §44 amendment 2: create writes only draft/in_review directly — the
+	// server action chains approve/publish via the dedicated endpoints when
+	// an author picks them here, so reviewer metadata stays truthful.
 	const statusChoices = $derived(
-		data.statuses.filter((s) => s === 'draft' || s === 'in_review')
+		data.statuses.filter((s) =>
+			['draft', 'in_review', 'approved', 'published'].includes(s)
+		)
 	);
 
 	function slugify(s: string): string {
@@ -93,32 +99,79 @@
 		if (!slugTouched) slug = slugify(title);
 	}
 
-	// Datalist suggestions from existing pages in this audience (API-sourced).
-	// Compared case-insensitively so "Guides"/"guides" offer one suggestion.
-	const existingCategories = $derived(
+	// Category/subcategory suggestions — managed catalog (docs.categories)
+	// merged with the taxonomy already in use on this audience's pages.
+	// Fields stay free-text; these are suggestions only. Compared
+	// case-insensitively so "Guides"/"guides" offer one suggestion.
+	const managedCategories = $derived(
+		parseManagedCategories(data.siteSettings?.['docs.categories'])
+	);
+	const categorySuggestions = $derived(
 		[
 			...new Map(
-				data.existingPages
-					.map((p) => p.category?.trim())
+				[
+					...managedCategories.map((c) => c.name),
+					...data.existingPages.map((p) => p.category?.trim())
+				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
 			).values()
 		]
 	);
-	const existingSubcategories = $derived(
+	const subcategorySuggestions = $derived(
 		[
 			...new Map(
-				data.existingPages
-					.filter(
-						(p) =>
-							!category ||
-							(p.category ?? '').trim().toLowerCase() === category.trim().toLowerCase()
-					)
-					.map((p) => p.subcategory?.trim())
+				[
+					...(category.trim()
+						? (managedCategories.find(
+								(c) => c.name.toLowerCase() === category.trim().toLowerCase()
+							)?.subcategories ?? [])
+						: managedCategories.flatMap((c) => c.subcategories)),
+					...data.existingPages
+						.filter(
+							(p) =>
+								!category.trim() ||
+								(p.category ?? '').trim().toLowerCase() ===
+									category.trim().toLowerCase()
+						)
+						.map((p) => p.subcategory?.trim())
+				]
 					.filter((c): c is string => !!c)
 					.map((c) => [c.toLowerCase(), c])
 			).values()
 		]
+	);
+
+	const toItems = (list: string[]): AutocompleteItem[] =>
+		list.map((s) => ({ id: s, label: s }));
+	const suggestItems =
+		(list: string[]) =>
+		(q: string): Promise<AutocompleteItem[]> =>
+			Promise.resolve(
+				toItems(list.filter((s) => s.toLowerCase().includes(q.toLowerCase())))
+			);
+	const suggestInitial =
+		(list: string[]) =>
+		(): Promise<AutocompleteItem[]> =>
+			Promise.resolve(toItems(list));
+
+	const parentItems = $derived(
+		data.existingPages.map((p) => ({
+			id: p.id,
+			label: p.title,
+			sublabel:
+				p.slug +
+				(p.review_status !== 'published'
+					? ` · ${t(`new_page.status.${p.review_status}`, p.review_status)}`
+					: '')
+		}))
+	);
+	const parentFetcher = (q: string): Promise<AutocompleteItem[]> =>
+		Promise.resolve(
+			parentItems.filter((p) => p.label.toLowerCase().includes(q.toLowerCase()))
+		);
+	const parentLabel = $derived(
+		data.existingPages.find((p) => p.id === parentId)?.title ?? null
 	);
 
 	// Unsaved-changes guard: dirty once any field diverges from its seed.
@@ -201,6 +254,11 @@
 			use:enhance={({ formData }) => {
 				formData.set('content', JSON.stringify(contentJson ?? {}));
 				formData.set('slug_touched', slugTouched ? '1' : '');
+				// Autocomplete fields carry no name attribute — push the tracked
+				// values explicitly.
+				formData.set('category', category);
+				formData.set('subcategory', subcategory);
+				formData.set('parent_id', parentId);
 				submitting = true;
 				return async ({ update }) => {
 					// Keep submitting=true through update(): a redirect result runs
@@ -244,56 +302,62 @@
 					<span class="field-hint">/docs/{data.audience}/<strong>{slug || '…'}</strong></span>
 				</label>
 
-				<label class="field">
-					<span class="field-label">{t('new_page.field_category', 'Category')}</span>
-					<input
-						type="text"
-						name="category"
-						class="field-input"
-						list="doc-categories"
-						maxlength="120"
-						bind:value={category}
+				<div class="field">
+					<label class="field-label" for="doc-category">{t('new_page.field_category', 'Category')}</label>
+					<Autocomplete
+						id="doc-category"
 						placeholder={t('new_page.category_placeholder', 'e.g. Guides')}
+						emptyMessage={t('new_page.no_matches', 'No matches — type to use a new value')}
+						fetcher={suggestItems(categorySuggestions)}
+						initialFetcher={suggestInitial(categorySuggestions)}
+						selectedId={category || null}
+						selectedLabel={category || null}
+						freeText
+						allowFreeText
+						onSelect={(item) => (category = item.id)}
+						onInput={(v) => (category = v)}
+						onFreeTextBlur={(v) => (category = v.trim())}
+						onClear={() => (category = '')}
 					/>
-					<datalist id="doc-categories">
-						{#each existingCategories as c (c)}
-							<option value={c}></option>
-						{/each}
-					</datalist>
-				</label>
+				</div>
 
-				<label class="field">
-					<span class="field-label">{t('new_page.field_subcategory', 'Subcategory')}</span>
-					<input
-						type="text"
-						name="subcategory"
-						class="field-input"
-						list="doc-subcategories"
-						maxlength="120"
-						bind:value={subcategory}
-						placeholder={t('new_page.optional', 'Optional')}
+				<div class="field">
+					<label class="field-label" for="doc-subcategory">{t('new_page.field_subcategory', 'Subcategory')}</label>
+					<Autocomplete
+						id="doc-subcategory"
+						disabled={!category.trim()}
+						placeholder={category.trim() ? t('new_page.optional', 'Optional') : t('new_page.subcategory_pick_first', 'Pick a category first')}
+						emptyMessage={t('new_page.no_matches', 'No matches — type to use a new value')}
+						fetcher={suggestItems(subcategorySuggestions)}
+						initialFetcher={suggestInitial(subcategorySuggestions)}
+						selectedId={subcategory || null}
+						selectedLabel={subcategory || null}
+						freeText
+						allowFreeText
+						onSelect={(item) => (subcategory = item.id)}
+						onInput={(v) => (subcategory = v)}
+						onFreeTextBlur={(v) => (subcategory = v.trim())}
+						onClear={() => (subcategory = '')}
 					/>
-					<datalist id="doc-subcategories">
-						{#each existingSubcategories as s (s)}
-							<option value={s}></option>
-						{/each}
-					</datalist>
-				</label>
+				</div>
 
-				<label class="field">
-					<span class="field-label">{t('new_page.field_parent', 'Parent page')}</span>
-					<select name="parent_id" class="field-input" bind:value={parentId}>
-						<option value="">{t('new_page.no_parent', '— Top level —')}</option>
-						{#each data.existingPages as p (p.id)}
-							<option value={p.id}>
-								{p.title}{p.review_status !== 'published' ? ` (${t(`new_page.status.${p.review_status}`, p.review_status)})` : ''}
-							</option>
-						{/each}
-					</select>
+				<div class="field">
+					<label class="field-label" for="doc-parent">{t('new_page.field_parent', 'Parent page')}</label>
+					<Autocomplete
+						id="doc-parent"
+						placeholder={t('new_page.no_parent', '— Top level —')}
+						emptyMessage={t('new_page.no_parent_matches', 'No matching pages')}
+						fetcher={parentFetcher}
+						initialFetcher={() => Promise.resolve(parentItems)}
+						selectedId={parentId || null}
+						selectedLabel={parentLabel}
+						onSelect={(item) => (parentId = item.id)}
+						onClear={() => (parentId = '')}
+					/>
 					<span class="field-hint">
 						{t('new_page.parent_hint', 'A non-published parent hides this page from the nav until it publishes.')}
 					</span>
-				</label>
+				</div>
 
 				<label class="field">
 					<span class="field-label">{t('new_page.field_position', 'Position')}</span>
@@ -315,7 +379,7 @@
 						{/each}
 					</select>
 					<span class="field-hint">
-						{t('new_page.status_hint', 'Draft stays private. In review queues it for a reviewer to approve and publish.')}
+						{t('new_page.status_hint', 'Draft stays private. In review queues it for a reviewer. Approve/publish run the review steps for you.')}
 					</span>
 				</label>
 			</div>
@@ -335,7 +399,11 @@
 						? t('new_page.saving', 'Creating…')
 						: reviewStatus === 'in_review'
 							? t('new_page.submit_review', 'Create & submit for review')
-							: t('new_page.submit', 'Create page')}
+							: reviewStatus === 'approved'
+								? t('new_page.submit_approve', 'Create & approve')
+								: reviewStatus === 'published'
+									? t('new_page.submit_publish', 'Create & publish')
+									: t('new_page.submit', 'Create page')}
 				</button>
 				<a href="/docs/{data.audience}" class="cancel-link">{t('editor.cancel', 'Cancel')}</a>
 			</div>

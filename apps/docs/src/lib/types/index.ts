@@ -151,6 +151,8 @@ export interface DocPageSummary {
 	category?: string | null;
 	subcategory?: string | null;
 	created_at: string;
+	/** Plain-text preview derived server-side from the page content. */
+	excerpt?: string;
 }
 
 /** A single nav entry (a published page), nesting children one level deep. */
