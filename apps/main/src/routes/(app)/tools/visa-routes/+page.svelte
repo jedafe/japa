@@ -36,6 +36,7 @@
 	// Comparison state
 	let selectedRouteIds = $state<Set<string>>(new Set());
 	let comparisonData = $state<VisaRouteWithAi[]>([]);
+	let comparisonMissing = $state<string[]>([]);
 	let loadingComparison = $state(false);
 	let showComparison = $state(false);
 	let savingJCE = $state(false);
@@ -50,7 +51,8 @@
 			return;
 		}
 		loadingRoutes = true;
-		const res = await api.get<VisaRouteWithAi[]>(`/visa-routes?dest=${selectedDestId}`);
+		const res = await api.getEnvelope<VisaRouteWithAi[]>(`/visa-routes?dest=${selectedDestId}`);
+		void res.envelope?.meta;
 		loadingRoutes = false;
 		if (!res.error) routes = res.data ?? [];
 		else routes = [];
@@ -79,10 +81,14 @@
 		loadingComparison = true;
 		showComparison = true;
 		const ids = Array.from(selectedRouteIds).join(',');
-		const res = await api.get<VisaRouteWithAi[]>(`/visa-routes/compare?dest=${selectedDestId}&ids=${ids}`);
+		const res = await api.getEnvelope<VisaRouteWithAi[]>(`/visa-routes/compare?dest=${selectedDestId}&ids=${ids}`);
+		// 207 multi-status: surface missing_ids instead of silently dropping routes.
+		const missing = (res.envelope?.missing_ids as string[] | undefined) ?? [];
+		if (missing.length > 0) console.warn('visa compare: missing routes', missing);
 		loadingComparison = false;
 		if (!res.error) comparisonData = res.data ?? [];
 		else comparisonData = [];
+		comparisonMissing = missing;
 	}
 
 	function onDestChange(id: string) {
@@ -343,6 +349,11 @@
 						<h2 class="text-sm font-semibold text-[var(--color-muted)] uppercase tracking-wide mb-3">
 							{t('visa_routes.comparison', 'Comparison')}
 						</h2>
+						{#if comparisonMissing.length > 0}
+							<p class="mb-2 text-xs text-[var(--color-muted)]">
+								{t('visa_routes.partial_comparison', '{count} selected route(s) are no longer available.').replace('{count}', String(comparisonMissing.length))}
+							</p>
+						{/if}
 						{#if loadingComparison}
 							<LoadingSkeleton variant="lines" count={5} />
 						{:else if comparisonData.length === 0}

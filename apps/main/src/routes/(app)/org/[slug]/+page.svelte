@@ -127,7 +127,7 @@
 </svelte:head>
 
 <SetSidebar>
-	<OrgProfileSidebar members={data.members} />
+	<OrgProfileSidebar members={data.members} owner={data.org.owner ?? null} />
 </SetSidebar>
 
 <OrgHeader {org} {canManage}>

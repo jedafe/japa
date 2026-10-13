@@ -84,14 +84,26 @@
 		voting = true;
 		error = '';
 		try {
-			// Vote on each selected option (supports multi-select).
-			for (const optionId of selected) {
-				await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+			// Vote on each selected option (supports multi-select). Each
+			// call is checked individually so a partial failure surfaces
+			// instead of silently refreshing stale results.
+			const ids = [...selected];
+			let failures = 0;
+			for (const optionId of ids) {
+				const res = await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+				if (res.error) failures += 1;
 			}
-			await refreshResults();
+			if (failures === 0) {
+				await refreshResults();
+			} else if (failures === ids.length) {
+				error = t('forum.poll_error', 'Failed to submit your vote. Please try again.');
+			} else {
+				await refreshResults();
+				error = t('forum.poll_partial_error', 'Some votes were not recorded. Please try again.');
+			}
+			voting = false;
 		} catch {
-			error = t('forum.poll_error');
-		} finally {
+			error = t('forum.poll_error', 'Failed to submit your vote. Please try again.');
 			voting = false;
 		}
 	}
@@ -106,15 +118,18 @@
 		voting = true;
 		error = '';
 		try {
-			if (selected.has(optionId)) {
-				await api.delete(`/poll-options/${optionId}/vote`);
+			const res = selected.has(optionId)
+				? await api.delete(`/poll-options/${optionId}/vote`)
+				: await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+			if (res.error) {
+				error = t('forum.poll_error', 'Failed to submit your vote. Please try again.');
+				voting = false;
 			} else {
-				await api.post(`/forum/polls/${poll.id}/vote`, { option_id: optionId });
+				await refreshResults();
+				voting = false;
 			}
-			await refreshResults();
 		} catch {
-			error = t('forum.poll_error');
-		} finally {
+			error = t('forum.poll_error', 'Failed to submit your vote. Please try again.');
 			voting = false;
 		}
 	}

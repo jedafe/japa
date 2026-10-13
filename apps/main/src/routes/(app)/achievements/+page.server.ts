@@ -38,11 +38,12 @@ export const load: PageServerLoad = async (event) => {
 		if (dest) params.set('dest', dest);
 		if (milestone) params.set('milestone', milestone);
 		params.set('sort', sort);
-		const { items } = await apiList<Achievement>(ctx, `/achievements?${params.toString()}`);
-		return { achievements: items, authed, pageSize: PAGE_SIZE, loadError: false, filters, countries };
+		const { items, meta } = await apiList<Achievement>(ctx, `/achievements?${params.toString()}`);
+		return { achievements: items, total: meta?.total, authed, pageSize: PAGE_SIZE, loadError: false, filters, countries };
 	} catch {
 		return {
 			achievements: [] as Achievement[],
+			total: undefined as number | undefined,
 			authed,
 			pageSize: PAGE_SIZE,
 			loadError: true,

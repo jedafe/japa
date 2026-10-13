@@ -191,19 +191,43 @@
 
 	// Click-through goes through the backend /go redirect so the click is
 	// recorded server-side even without JS (Section 55 Deal Pages).
-	const goUrl = (coupon: Coupon) => `${apiBaseUrl}/deals/${coupon.slug}/go`;
+	const goUrl = (coupon: Coupon) => `${apiBaseUrl}/deals/${encodeURIComponent(coupon.slug ?? '')}/go`;
 
 	let copiedId = $state<string | null>(null);
+	let copyError = $state<string | null>(null);
 
 	async function copyCode(coupon: Coupon) {
 		if (!coupon.code) return;
+		copyError = null;
+		// Primary path: async Clipboard API (requires a secure context).
 		try {
 			await navigator.clipboard.writeText(coupon.code);
 			copiedId = coupon.id;
 			recordEvent(coupon.id, 'copy');
 			setTimeout(() => (copiedId = null), 2000);
+			return;
 		} catch {
-			// Clipboard may be unavailable; ignore silently.
+			// Fall through to the execCommand fallback below.
+		}
+		// Fallback for non-secure contexts / older browsers: hidden textarea + execCommand.
+		try {
+			const ta = document.createElement('textarea');
+			ta.value = coupon.code;
+			ta.setAttribute('readonly', '');
+			ta.style.position = 'fixed';
+			ta.style.opacity = '0';
+			document.body.appendChild(ta);
+			ta.select();
+			const ok = document.execCommand('copy');
+			ta.remove();
+			if (!ok) throw new Error('copy failed');
+			copiedId = coupon.id;
+			recordEvent(coupon.id, 'copy');
+			setTimeout(() => (copiedId = null), 2000);
+		} catch {
+			// Copy failed on every path — surface an error toast instead of
+			// recording a copy event that never happened.
+			copyError = t('coupons.copy_failed', 'Could not copy the code — please copy it manually.');
 		}
 	}
 </script>
@@ -392,6 +416,14 @@
 				)}
 			/>
 		{:else}
+			{#if copyError}
+				<div
+					class="mb-3 flex items-center gap-2 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500"
+					role="alert"
+				>
+					<AlertCircle size={16} /> {copyError}
+				</div>
+			{/if}
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each coupons as coupon (coupon.id)}
 					<div

@@ -38,6 +38,17 @@
 	let remote = $state(page.url.searchParams.get('remote') ?? page.url.searchParams.get('location_type') ?? '');
 	let visaSponsorship = $state(page.url.searchParams.get('visa_sponsorship') === 'true');
 	let sort = $state(page.url.searchParams.get('sort') ?? 'newest');
+	let includeExpired = $state(page.url.searchParams.get('include_expired') === 'true');
+
+	// A listing is expired when its application_deadline is past (the
+	// backend hides these by default; the toggle opts back in).
+	function isExpired(job: JobListing): boolean {
+		const raw = job.field_values?.application_deadline;
+		if (!raw) return false;
+		const d = new Date(raw);
+		if (Number.isNaN(d.getTime())) return false;
+		return d.getTime() < Date.now();
+	}
 
 	const locationTypeOptions = $derived([
 		{ value: '', label: t('jobs.any_location', 'Any location') },
@@ -59,6 +70,7 @@
 		if (remote) params.set('remote', remote);
 		if (visaSponsorship) params.set('visa_sponsorship', 'true');
 		if (sort && sort !== 'newest') params.set('sort', sort);
+		if (includeExpired) params.set('include_expired', 'true');
 		goto(`/jobs?${params.toString()}`, { keepFocus: true, noScroll: true });
 	}
 
@@ -76,6 +88,7 @@
 		remote = '';
 		visaSponsorship = false;
 		sort = 'newest';
+		includeExpired = false;
 		goto('/jobs');
 	}
 
@@ -153,9 +166,11 @@
 	}
 
 	async function jobSearchFetcher(query: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<JobListing[]>(`/jobs?q=${encodeURIComponent(query)}&limit=8`);
+		const res = await api.getEnvelope<JobListing[]>(`/jobs?q=${encodeURIComponent(query)}&limit=8`);
 		if (res.error || !res.data) return [];
-		return (res.data ?? []).map((j) => ({
+		const items = res.data ?? [];
+		void res.envelope?.meta;
+		return (items ?? []).map((j) => ({
 			id: j.id,
 			title: j.title,
 			url: `/jobs/${j.slug}`,
@@ -289,6 +304,15 @@
 						class="accent-[var(--color-primary)]"
 					/>
 					{t('jobs.visa_sponsorship', 'Visa sponsorship')}
+				</label>
+				<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+					<input
+						type="checkbox"
+						checked={includeExpired}
+						onchange={() => { includeExpired = !includeExpired; applyFilters(); }}
+						class="accent-[var(--color-primary)]"
+					/>
+					{t('jobs.include_expired', 'Include expired')}
 				</label>
 			</form>
 			{#if hasActiveFilters}
@@ -479,6 +503,11 @@
 									{#if jt}
 										<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide {jobTypeBadge(jt)}">
 											{jobTypeLabel(jt)}
+										</span>
+									{/if}
+									{#if isExpired(job)}
+										<span class="inline-flex items-center rounded-full bg-[var(--color-danger)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--color-danger)]">
+											{t('jobs.expired', 'Expired')}
 										</span>
 									{/if}
 									{#if field(job, 'is_featured') === 'true'}

@@ -1,5 +1,5 @@
-import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiGet, apiGetEnvelope, apiList, apiPost, ApiError } from '$lib/server/api';
+import type { PageServerLoad } from './$types';
+import { apiContext, apiGet, apiGetEnvelope, apiList, ApiError } from '$lib/server/api';
 import { error } from '@sveltejs/kit';
 import type { ComposerOrganization, FormEmbed, JobDetail, ProfilePost, PublicOrganization } from '$lib/types';
 import type { ContentArticle } from '$lib/types/content';
@@ -95,33 +95,5 @@ export const load: PageServerLoad = async (event) => {
 	return { job, authed, canEdit, applicationFormId, recommendedContent, org, moreJobs };
 };
 
-export const actions: Actions = {
-	apply: async (event) => {
-		if (!event.locals.user) {
-			return { error: 'auth_required' };
-		}
-
-		const ctx = apiContext(event);
-		const form = await event.request.formData();
-		const jobId = (form.get('job_id') as string | null)?.trim() ?? '';
-		const submissionId = (form.get('submission_id') as string | null)?.trim() ?? '';
-
-		if (!jobId) {
-			return { error: 'missing_job_id' };
-		}
-
-		try {
-			const result = await apiPost<{ id: string; status: string }>(
-				ctx,
-				`/jobs/${jobId}/apply`,
-				submissionId ? { submission_id: submissionId } : {}
-			);
-			return { ok: true, applicationId: result.id, status: result.status };
-		} catch (err) {
-			if (err instanceof ApiError) {
-				return { error: err.code, message: err.message };
-			}
-			return { error: 'apply_failed' };
-		}
-	}
-};
+// Apply uses the client-direct path (api.post /jobs/{id}/apply) plus a
+// my_application refresh — no server action (single apply path).

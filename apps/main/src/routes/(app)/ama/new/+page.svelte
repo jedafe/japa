@@ -22,6 +22,7 @@
 
 	let loading = $state(false);
 	let errorKey = $state('');
+	let errorCode = $state('');
 
 	const canSubmit = $derived(title.trim().length > 0 && hostDestCountryId.length > 0 && !loading);
 
@@ -60,15 +61,24 @@
 
 			const res = await api.post<{ id: string }>('/forum/ama', bodyPayload);
 			if (res.data?.id) {
+				loading = false;
 				await goto(`/ama/${res.data.id}`);
 			} else if (res.error) {
-				errorKey = 'ama.errors.submit_failed';
+				errorCode = res.error.code ?? '';
+				if (errorCode === 'ama_active_exists') {
+					errorKey = 'ama.errors.active_exists';
+				} else if (errorCode === 'ama_cooldown') {
+					errorKey = 'ama.errors.cooldown';
+				} else {
+					errorKey = 'ama.errors.submit_failed';
+				}
+				loading = false;
 			} else {
 				errorKey = 'ama.errors.submit_failed';
+				loading = false;
 			}
 		} catch {
 			errorKey = 'ama.errors.submit_failed';
-		} finally {
 			loading = false;
 		}
 	}

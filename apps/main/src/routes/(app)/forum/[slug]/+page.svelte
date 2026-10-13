@@ -9,6 +9,7 @@
 	import { relativeTime } from '$lib/feed/time';
 	import { tiptapBodyToHtml, tiptapExcerpt } from '$lib/tiptap/serialize';
 	import { api } from '$lib/api/client';
+	import { optimisticAction } from '$lib/components/hub/optimisticAction';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import VoteRail from '$lib/components/forum/VoteRail.svelte';
 	import AdSlot from '$lib/components/ui/AdSlot.svelte';
@@ -111,8 +112,8 @@ import { contentHref } from '$lib/utils/contentLink';
 	});
 
 	// Tag management — tags are universal (Sections 08/14). Attach/detach go
-	// through the content tag endpoints on the thread's backing content row:
-	// POST /content/{id}/tags {tag_slugs} and DELETE /content/{id}/tags/{tagId}.
+	// through the thread tag endpoints: POST /forum/{id}/tags {tag_ids}
+	// and DELETE /forum/{id}/tags/{tagId} (cap errors surface too_many_tags).
 	const canManageTags = $derived(data.authed && (data.canEdit || data.canModerate));
 	const tagSlotsLeft = $derived(Math.max(0, 5 - (data.tags?.length ?? 0)));
 	let addingTags = $state(false);
@@ -122,13 +123,18 @@ import { contentHref } from '$lib/utils/contentLink';
 	let removingTagId = $state<string | null>(null);
 
 	async function saveTags() {
-		if (tagSaving || !thread.content_id || newTagSlugs.length === 0) return;
+		if (tagSaving || newTagSlugs.length === 0) return;
 		tagSaving = true;
 		tagError = null;
-		const res = await api.post(`/content/${thread.content_id}/tags`, { tag_slugs: newTagSlugs });
+		// Thread tags attach via POST /forum/{id}/tags {tag_ids} (single +
+		// bulk paths enforce the per-thread cap with too_many_tags).
+		const res = await api.post(`/forum/${thread.id}/tags`, { tag_ids: newTagSlugs });
 		tagSaving = false;
 		if (res.error) {
-			tagError = res.error.message || t('forum.tags.add_error', 'Failed to add tags.');
+			tagError =
+				res.error.code === 'too_many_tags'
+					? t('forum.tags.too_many', 'You can add up to 5 tags per discussion.')
+					: res.error.message || t('forum.tags.add_error', 'Failed to add tags.');
 			return;
 		}
 		newTagSlugs = [];
@@ -137,12 +143,15 @@ import { contentHref } from '$lib/utils/contentLink';
 	}
 
 	async function removeTag(tagId: string) {
-		if (removingTagId || !thread.content_id) return;
+		if (removingTagId) return;
 		removingTagId = tagId;
-		const res = await api.delete(`/content/${thread.content_id}/tags/${tagId}`);
+		const res = await api.delete(`/forum/${thread.id}/tags/${tagId}`);
 		removingTagId = null;
 		if (res.error) {
-			tagError = res.error.message || t('forum.tags.remove_error', 'Failed to remove tag.');
+			tagError =
+				res.error.code === 'too_many_tags'
+					? t('forum.tags.too_many', 'You can add up to 5 tags per discussion.')
+					: res.error.message || t('forum.tags.remove_error', 'Failed to remove tag.');
 			return;
 		}
 		tagError = null;
@@ -204,16 +213,24 @@ import { contentHref } from '$lib/utils/contentLink';
 		if (solving || !data.canSolve) return;
 		solving = true;
 		const wasSolved = solved;
-		solved = !wasSolved; // optimistic
-		const res = wasSolved
-			? await api.delete(`/forum/${thread.id}/solve`)
-			: await api.post(`/forum/${thread.id}/solve`, replyId ? { reply_id: replyId } : {});
+		const prevAccepted = acceptedReplyId;
+		const res = await optimisticAction({
+			apply: () => {
+				solved = !wasSolved;
+				if (!wasSolved && replyId) acceptedReplyId = replyId;
+				else if (wasSolved) acceptedReplyId = null;
+			},
+			rollback: () => {
+				solved = wasSolved;
+				acceptedReplyId = prevAccepted;
+			},
+			call: () =>
+				wasSolved
+					? api.delete(`/forum/${thread.id}/solve`)
+					: api.post(`/forum/${thread.id}/solve`, replyId ? { reply_id: replyId } : {})
+		});
 		solving = false;
-		if (res.error) {
-			solved = wasSolved;
-		} else if (!wasSolved && replyId) {
-			acceptedReplyId = replyId;
-		}
+		if (res.ok) await invalidateAll();
 	}
 
 	// Bookmark toggle — POST/DELETE /forum/bookmarks with entity_type=thread.
@@ -234,27 +251,39 @@ import { contentHref } from '$lib/utils/contentLink';
 		if (!data.authed || bookmarking) return;
 		bookmarking = true;
 		const wasBookmarked = bookmarked;
-		bookmarked = !wasBookmarked; // optimistic
-		bookmarkCount += wasBookmarked ? -1 : 1;
+		const prevCount = bookmarkCount;
+		const prevId = bookmarkId;
 		if (wasBookmarked && bookmarkId) {
-			const res = await api.delete(`/forum/bookmarks/${bookmarkId}`);
-			if (res.error) {
-				bookmarked = true;
-				bookmarkCount = thread.bookmark_count;
-			} else {
-				bookmarkId = '';
-			}
-		} else {
-			const res = await api.post<{ id: string }>(`/forum/bookmarks`, {
-				entity_type: 'thread',
-				entity_id: thread.id
+			const res = await optimisticAction({
+				apply: () => {
+					bookmarked = false;
+					bookmarkCount = prevCount - 1;
+				},
+				rollback: () => {
+					bookmarked = true;
+					bookmarkCount = prevCount;
+				},
+				call: () => api.delete(`/forum/bookmarks/${bookmarkId}`)
 			});
-			if (res.error) {
-				bookmarked = false;
-				bookmarkCount = thread.bookmark_count;
-			} else if (res.data?.id) {
-				bookmarkId = res.data.id;
-			}
+			if (res.ok) bookmarkId = '';
+			bookmarkId = res.ok ? '' : prevId;
+		} else {
+			const res = await optimisticAction<{ id: string }>({
+				apply: () => {
+					bookmarked = true;
+					bookmarkCount = prevCount + 1;
+				},
+				rollback: () => {
+					bookmarked = false;
+					bookmarkCount = prevCount;
+				},
+				call: () =>
+					api.post<{ id: string }>(`/forum/bookmarks`, {
+						entity_type: 'thread',
+						entity_id: thread.id
+					})
+			});
+			if (res.ok && res.data?.id) bookmarkId = res.data.id;
 		}
 		bookmarking = false;
 	}
@@ -341,7 +370,7 @@ import { contentHref } from '$lib/utils/contentLink';
 	let deleteError = $state<string | null>(null);
 
 	async function startEdit() {
-		if (!data.canEdit) return;
+		if (!canEditThread) return;
 		editTitle = thread.title;
 		// The PostEditor initialises from HTML. Render the stored TipTap
 		// JSON to HTML so the editor starts with the current content.
@@ -367,6 +396,20 @@ import { contentHref } from '$lib/utils/contentLink';
 		editError = null;
 	}
 
+	// Edit window (edit_window_minutes) — authors see a countdown; the menu
+	// edit entry disables once the window lapses (moderators bypass it).
+	const editWindowMs = $derived((thread.edit_window_minutes ?? 30) * 60 * 1000);
+	const editExpiresAt = $derived(new Date(thread.created_at).getTime() + editWindowMs);
+	const editMsLeft = $derived(editExpiresAt - Date.now());
+	const editWindowExpired = $derived(editMsLeft <= 0);
+	const editCountdown = $derived.by(() => {
+		if (editMsLeft <= 0) return '';
+		const mins = Math.floor(editMsLeft / 60000);
+		if (mins >= 60) return t('forum.edit_hours_left', '{n}h left to edit').replace('{n}', String(Math.floor(mins / 60)));
+		return t('forum.edit_minutes_left', '{n}m left to edit').replace('{n}', String(Math.max(1, mins)));
+	});
+	const canEditThread = $derived(data.canEdit && (data.canModerate || !editWindowExpired));
+
 	async function saveEdit() {
 		if (savingEdit || !editTitle.trim()) return;
 		savingEdit = true;
@@ -378,7 +421,10 @@ import { contentHref } from '$lib/utils/contentLink';
 		});
 		savingEdit = false;
 		if (res.error) {
-			editError = res.error.message || t('forum.edit_error', 'Failed to save edits.');
+			editError =
+				res.error.code === 'edit_window_expired'
+					? t('forum.edit_window_expired', 'The edit window has expired.')
+					: res.error.message || t('forum.edit_error', 'Failed to save edits.');
 			return;
 		}
 		editing = false;
@@ -391,7 +437,11 @@ import { contentHref } from '$lib/utils/contentLink';
 		if (!confirm(t('forum.delete_confirm', 'Delete this discussion? This cannot be undone.'))) return;
 		deleting = true;
 		deleteError = null;
-		const res = await api.delete(`/forum/${thread.id}`);
+		const res = await optimisticAction({
+			apply: () => {},
+			rollback: () => {},
+			call: () => api.delete(`/forum/${thread.id}`)
+		});
 		deleting = false;
 		if (res.error) {
 			deleteError = res.error.message || t('forum.delete_error', 'Failed to delete discussion.');
@@ -602,6 +652,9 @@ import { contentHref } from '$lib/utils/contentLink';
 						{editError}
 					</p>
 				{/if}
+				{#if !data.canModerate && editCountdown}
+					<p class="text-xs text-[var(--color-muted)]">{editCountdown}</p>
+				{/if}
 				<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
 					<PostEditor
 						html={editBodyHtml}
@@ -749,7 +802,7 @@ import { contentHref } from '$lib/utils/contentLink';
 			<!-- Thread actions menu — edit/delete for author or moderator,
 			     report for everyone (can_* flags come from the backend).
 			     Opens upward: the rail is fixed to the viewport bottom below sm. -->
-			{#if !editing && (data.canEdit || data.canDelete || thread.content_id)}
+			{#if !editing && (canEditThread || data.canDelete || thread.content_id)}
 				<Menu side="top" contentClass="min-w-44">
 					{#snippet trigger(props)}
 						<button
@@ -764,7 +817,7 @@ import { contentHref } from '$lib/utils/contentLink';
 							</span>
 						</button>
 					{/snippet}
-					{#if data.canEdit}
+					{#if canEditThread}
 						<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
 					{/if}
 					{#if data.canDelete}

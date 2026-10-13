@@ -207,17 +207,26 @@ export const load: PageServerLoad = async (event) => {
 		);
 	}
 
-	// Destination wiki index for this space, gated by the wiki feature flag
-	// and the space being a destination (country/state/city/university per the
-	// §80 University Spaces amendment). A 404 from the wiki index simply means
-	// the space has no wiki or is not a wiki-capable level.
+	// Destination wiki index for this space, gated by the wiki feature flag.
+	// §80 Wiki Types amendment: a space has a wiki when its space_type has an
+	// enabled wiki_type_configs row — resolved from /wiki/types so newly
+	// enabled wiki types appear automatically instead of a hardcoded level
+	// list (Rule 16). A 404 from the wiki index simply means the space has
+	// no wiki yet.
 	let wikiPages: WikiPageIndex[] | null = null;
 	let wikiCategories: WikiApiCategory[] = [];
 	const wikiEnabled = !!features['wiki.enabled'];
-	// University spaces are typed via space_types.slug = 'university' (most
-	// carry level = 'custom'), so include isUniversity alongside the level set.
-	const isDestination = ['country', 'state', 'city', 'university'].includes(space.level) || isUniversity;
-	if (wikiEnabled && isDestination) {
+	let hasWiki = false;
+	if (wikiEnabled && space.space_type_id) {
+		const wikiTypes = await apiGetEnvelope<Array<{ space_type_id: string; enabled: boolean }>>(
+			ctx,
+			'/wiki/types'
+		).catch(() => ({ data: [] as Array<{ space_type_id: string; enabled: boolean }> }));
+		hasWiki = (wikiTypes.data ?? []).some(
+			(wt) => wt.enabled && wt.space_type_id === space.space_type_id
+		);
+	}
+	if (wikiEnabled && hasWiki) {
 		[wikiPages, wikiCategories] = await Promise.all([
 			apiList<WikiPageIndex>(ctx, `/wiki/${slug}`)
 				.then((r) => r.items)

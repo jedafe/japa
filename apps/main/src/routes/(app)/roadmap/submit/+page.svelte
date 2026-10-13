@@ -23,6 +23,7 @@
 	let body = $state('');
 	let loading = $state(false);
 	let submitted = $state(false);
+	let submittedSlug = $state<string | null>(null);
 	let errorKey = $state('');
 
 	const inputClass =
@@ -42,7 +43,7 @@
 		if (!validate()) return;
 		loading = true;
 		try {
-			const res = await api.post<{ id: string }>('/roadmap/submissions', {
+			const res = await api.post<{ id: string; slug?: string }>('/roadmap/submissions', {
 				title: title.trim(),
 				summary: summary.trim(),
 				// Non-empty bodies go out as base64 TipTap JSON (§49 convention);
@@ -52,6 +53,7 @@
 			});
 			if (res.data) {
 				submitted = true;
+				submittedSlug = res.data.slug ?? null;
 				title = '';
 				categoryId = '';
 				summary = '';
@@ -105,15 +107,24 @@
 				{t('roadmap.submit.success', 'Request submitted')}
 			</p>
 			<p class="mt-1 text-sm text-[var(--color-text-subtle)]">
-				{t('roadmap.submit.success_body', 'Thanks — your request is in the review queue and will appear on the board once approved.')}
+				{t('roadmap.submit.success_body', 'Thanks — your request is pending review and will appear on the board once approved.')}
 			</p>
 			<div class="mt-4 flex justify-center gap-2">
-				<a
-					href="/roadmap"
-					class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90"
-				>
-					{t('roadmap.back_to_board', 'Back to roadmap')}
-				</a>
+				{#if submittedSlug}
+					<a
+						href="/roadmap/{submittedSlug}"
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90"
+					>
+						{t('roadmap.submit.view_request', 'View your request')}
+					</a>
+				{:else}
+					<a
+						href="/roadmap"
+						class="rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition hover:opacity-90"
+					>
+						{t('roadmap.back_to_board', 'Back to roadmap')}
+					</a>
+				{/if}
 				<button
 					type="button"
 					onclick={() => (submitted = false)}

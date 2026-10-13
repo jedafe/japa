@@ -25,6 +25,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
+	import { safeSameOriginHref } from '$lib/utils/safeUrl';
 	import { AlertCircle, CheckCircle2, Loader2, Send, TicketPercent } from 'lucide-svelte';
 	import type {
 		PackageTier,
@@ -300,7 +301,10 @@
 		if (isPaid) {
 			body.provider = bookingProvider;
 			body.email = bookingEmail.trim();
-			body.return_url = page.url.href;
+			// M5 client allowlist — mirror the server same-origin gate: only
+			// send return_url when it stays on this origin, else omit it.
+			const returnUrl = safeSameOriginHref(page.url.href);
+			if (returnUrl) body.return_url = returnUrl;
 			// Pass the code through even without a preview — the backend
 			// revalidates on submit and coupon_* errors map back onto the
 			// coupon error line.
@@ -364,8 +368,8 @@
 	size="lg"
 >
 	{#if !authed}
-		<!-- Guests get a login prompt — bookings require an account and the
-		     price-preview endpoint is authed. -->
+		<!-- Guests get a login prompt — bookings require an account (the
+		     price-preview endpoint itself accepts anonymous quotes). -->
 		<p class="text-sm text-[var(--color-muted)]">
 			<a href={loginHref} class="text-[var(--color-primary)] hover:underline">
 				{isPaid

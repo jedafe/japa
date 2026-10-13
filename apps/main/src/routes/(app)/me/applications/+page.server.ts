@@ -1,6 +1,6 @@
-import type { PageServerLoad } from './$types';
-import { apiContext, apiList } from '$lib/server/api';
-import { redirect } from '@sveltejs/kit';
+import type { PageServerLoad, Actions } from './$types';
+import { apiContext, apiList, apiPatch } from '$lib/server/api';
+import { redirect, fail } from '@sveltejs/kit';
 import type { JobApplication } from '$lib/types';
 
 /**
@@ -31,4 +31,29 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	return { applications, meta, currentPage: Number(page) || 1 };
+};
+
+/**
+ * Withdraw an application — PATCH /me/jobs/applications/{id} (owner-only,
+ * only transitions to withdrawn).
+ */
+export const actions: Actions = {
+	withdraw: async (event) => {
+		if (!event.locals.user) {
+			return fail(401, { error: 'unauthenticated', message: 'Sign in to withdraw' });
+		}
+		const form = await event.request.formData();
+		const id = (form.get('id') as string | null)?.trim() ?? '';
+		if (!id) {
+			return fail(400, { error: 'missing_id', message: 'Application id is required' });
+		}
+		const ctx = apiContext(event);
+		try {
+			await apiPatch(ctx, `/me/jobs/applications/${encodeURIComponent(id)}`, {});
+			return { ok: true, id };
+		} catch (e) {
+			const err = e as { code?: string; message?: string };
+			return fail(400, { error: err?.code ?? 'withdraw_failed', message: err?.message ?? 'Could not withdraw' });
+		}
+	}
 };

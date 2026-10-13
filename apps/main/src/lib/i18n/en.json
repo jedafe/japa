@@ -3220,6 +3220,7 @@
   "roadmap.submit.field_title": "Title",
   "roadmap.submit.field_title_placeholder": "A short name for your request",
   "roadmap.submit.submit": "Submit request",
+  "roadmap.submit.view_request": "View your request",
   "roadmap.submit.submit_another": "Submit another",
   "roadmap.submit.subtitle": "Tell us what you would like to see on JapaConnect.",
   "roadmap.submit.success": "Request submitted",
@@ -5655,5 +5656,15 @@
   "wiki.update_failed": "Failed to update the page. Please try again.",
   "wiki.updated_on": "Updated {date}",
   "wiki.view_all_articles": "View all articles",
-  "wiki.view_more_prices": "View more {section} prices"
+  "wiki.view_more_prices": "View more {section} prices",
+  "forum.poll_partial_error": "Some votes were not recorded. Please try again.",
+  "forum.tags.too_many": "You can add up to 5 tags per discussion.",
+  "forum.edit_window_expired": "The edit window has expired.",
+  "forum.edit_minutes_left": "{n}m left to edit",
+  "forum.edit_hours_left": "{n}h left to edit",
+  "forum.new.tags_remaining": "{n} of 5 tags remaining",
+  "ama.errors.active_exists": "You already have an active AMA session.",
+  "ama.errors.cooldown": "The AMA cooldown period has not elapsed.",
+  "ama.view_active": "View your active session",
+  "ama.cooldown_until": "Available {date}"
 }

@@ -193,6 +193,27 @@
 	});
 
 	const canEditReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
+	// Reply edit window mirrors the parent thread's edit_window_minutes: the
+	// thread page passes it via `reply.edit_window_minutes` when present,
+	// defaulting to 30. Authors see a countdown; the edit entry disables
+	// once the window lapses (moderators bypass it).
+	const replyWindowMinutes = $derived((reply as { edit_window_minutes?: number }).edit_window_minutes ?? 30);
+	const replyEditExpired = $derived.by(() => {
+		if (canModerate || currentUserId !== reply.author_user_id) return false;
+		const created = new Date(reply.created_at).getTime();
+		if (Number.isNaN(created)) return false;
+		return Date.now() - created > replyWindowMinutes * 60 * 1000;
+	});
+	const replyEditCountdown = $derived.by(() => {
+		if (replyEditExpired || canModerate || currentUserId !== reply.author_user_id) return '';
+		const created = new Date(reply.created_at).getTime();
+		const left = replyWindowMinutes * 60 * 1000 - (Date.now() - created);
+		if (left <= 0) return '';
+		const mins = Math.floor(left / 60000);
+		if (mins >= 60) return t('forum.edit_hours_left', '{n}h left to edit').replace('{n}', String(Math.floor(mins / 60)));
+		return t('forum.edit_minutes_left', '{n}m left to edit').replace('{n}', String(Math.max(1, mins)));
+	});
+	const canEditReplyInWindow = $derived(canEditReply && !replyEditExpired);
 	const canDeleteReply = $derived.by(() => authed && (canModerate || currentUserId === reply.author_user_id));
 	const canMarkSolved = $derived.by(() => canSolve && !isAccepted && !removed && typeof onMarkSolved === 'function');
 
@@ -234,7 +255,7 @@
 	}
 
 	async function saveEdit() {
-		if (savingEdit || !canEditReply || !editBody) return;
+		if (savingEdit || !canEditReplyInWindow || !editBody) return;
 		savingEdit = true;
 		editError = null;
 		const res = await api.patch<ForumReply>(`/forum/replies/${reply.id}`, {
@@ -243,7 +264,10 @@
 		});
 		savingEdit = false;
 		if (res.error || !res.data) {
-			editError = res.error?.message || t('forum.edit_error', 'Failed to save edits.');
+			editError =
+				res.error?.code === 'edit_window_expired'
+					? t('forum.edit_window_expired', 'The edit window has expired.')
+					: res.error?.message || t('forum.edit_error', 'Failed to save edits.');
 			return;
 		}
 		// Mutate the local reply so the UI updates without a full reload.
@@ -396,6 +420,9 @@
 							{editError}
 						</p>
 					{/if}
+					{#if replyEditCountdown}
+						<p class="text-xs text-[var(--color-muted)]">{replyEditCountdown}</p>
+					{/if}
 					<CommentEditor
 						initialBody={editBody}
 						oninput={(b) => (editBody = b)}
@@ -426,6 +453,9 @@
 			{/if}
 
 			<!-- Actions -->
+			{#if !editing && replyEditExpired && currentUserId === reply.author_user_id && !canModerate}
+				<p class="mt-1 text-xs italic text-[var(--color-muted)]">{t('forum.edit_window_expired', 'The edit window has expired.')}</p>
+			{/if}
 			{#if !editing}
 				<div class="relative mt-2 flex flex-row items-center gap-3">
 					{#if allChildren.length > 0 && !collapsed}
@@ -484,7 +514,7 @@
 									<MoreHorizontal size={18} />
 								</button>
 							{/snippet}
-							{#if canEditReply}
+							{#if canEditReplyInWindow}
 								<MenuItem icon={Pencil} onSelect={startEdit}>{t('forum.edit', 'Edit')}</MenuItem>
 							{/if}
 							{#if canDeleteReply}

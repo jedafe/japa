@@ -92,9 +92,11 @@
 			// Revert on failure.
 			bookmarked = !next;
 			updateViewerState(listing.id, { bookmarked: !next });
-		} finally {
 			bookmarkPending = false;
+			return;
 		}
+		// No finally: Svelte 5 $state set in finally does not re-render.
+		bookmarkPending = false;
 	}
 </script>
 

@@ -534,15 +534,17 @@
 		const next = !bookmarked;
 		bookmarked = next;
 		updateViewerState(service.id, { bookmarked: next });
+		// No finally: Svelte 5 $state set in finally does not re-render —
+		// clear the lock on both branches instead.
 		try {
 			const res = next
 				? await api.post(`/content/${service.id}/bookmark`, {})
 				: await api.delete(`/content/${service.id}/bookmark`);
 			if (res.error) throw new Error(res.error.message);
+			bookmarkPending = false;
 		} catch {
 			bookmarked = !next;
 			updateViewerState(service.id, { bookmarked: !next });
-		} finally {
 			bookmarkPending = false;
 		}
 	}

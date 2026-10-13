@@ -122,7 +122,22 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 	}
 
+	let amountError = $state('');
+
 	function applyFilters() {
+		amountError = '';
+		if (minAmount !== '' && Number.isNaN(Number(minAmount))) {
+			amountError = t('scholarships.invalid_amount', 'Min and max amounts must be numbers.');
+			return;
+		}
+		if (maxAmount !== '' && Number.isNaN(Number(maxAmount))) {
+			amountError = t('scholarships.invalid_amount', 'Min and max amounts must be numbers.');
+			return;
+		}
+		if (minAmount !== '' && maxAmount !== '' && Number(minAmount) > Number(maxAmount)) {
+			amountError = t('scholarships.invalid_amount_range', 'Min amount cannot exceed max amount.');
+			return;
+		}
 		const params = new URLSearchParams();
 		if (q) params.set('q', q);
 		if (country) params.set('country', country);
@@ -236,8 +251,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	}
 
 	async function scholarshipSearchFetcher(q: string): Promise<SearchSuggestion[]> {
-		const res = await api.get<Scholarship[]>(`/scholarships?q=${encodeURIComponent(q)}&limit=8`);
+		const res = await api.getEnvelope<Scholarship[]>(`/scholarships?q=${encodeURIComponent(q)}&limit=8`);
 		if (res.error || !res.data) return [];
+		void res.envelope?.meta;
 		// The backend returns the scholarship array directly in `data`
 		// (`{ data: [...], meta: {...} }`), not wrapped in a `scholarships`
 		// key — reading `res.data.scholarships` here made suggestions empty.
@@ -381,6 +397,9 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		<!-- Advanced filter panel -->
 		{#if showFilters}
 		<div id="scholarships-filter-panel" class="border-b border-[var(--color-border)] px-4 py-3">
+			{#if amountError}
+				<p class="mb-2 text-xs text-[var(--color-danger)]" role="alert">{amountError}</p>
+				{/if}
 			<form onsubmit={(e) => { e.preventDefault(); applyFilters(); }} class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
 				<input
 					type="number"

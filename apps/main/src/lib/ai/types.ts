@@ -52,3 +52,16 @@ export interface DraftResponse {
 	field_values: Record<string, unknown>;
 	tokens_used: number;
 }
+
+/** RAG citation source emitted by /ai/chat (§69 Citation Source Contract). */
+export interface AiCitationSource {
+	entity_type?: string;
+	entity_id?: string;
+	similarity?: number;
+	tier?: string;
+	// Canonical frontend path emitted by the backend; empty when the entity
+	// no longer resolves. Never derive hrefs from entity_id.
+	title?: string;
+	slug?: string;
+	url?: string;
+}

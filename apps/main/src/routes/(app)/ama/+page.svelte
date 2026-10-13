@@ -92,6 +92,7 @@
 		});
 		if (destFilter) params.set('dest', destFilter);
 		if (professionFilter) params.set('profession', professionFilter);
+		if (view === 'closed') params.set('status', 'closed');
 		const res = await api.get<AMAThread[]>(`/forum/ama?${params.toString()}`);
 		if (res.error) {
 			loading = false;
@@ -131,18 +132,37 @@
 		return new Date(cfg.closes_at).getTime() > Date.now();
 	}
 
-	// Live/closed is derived from ama_config.closes_at client-side, so the
-	// tab axis filters the loaded list rather than a server param.
+	// Live/closed tabs query the server (?status=closed for past sessions);
+	// the client-side isLive check only splits the unfiltered initial load.
 	let view = $state('all');
 	const tabs = $derived<UrlTab[]>([
 		{ value: 'all', label: t('common.all', 'All') },
 		{ value: 'live', label: t('ama.live', 'Live') },
 		{ value: 'closed', label: t('ama.closed', 'Closed') }
 	]);
+	async function loadClosedTab() {
+		loading = true;
+		const params = new URLSearchParams({ page_size: String(data.pageSize) });
+		if (destFilter) params.set('dest', destFilter);
+		if (professionFilter) params.set('profession', professionFilter);
+		params.set('status', 'closed');
+		const res = await api.get<AMAThread[]>(`/forum/ama?${params.toString()}`);
+		loading = false;
+		if (res.error) return;
+		sessions = res.data ?? [];
+		atEnd = (res.data ?? []).length < data.pageSize;
+	}
+
+	$effect(() => {
+		if (view === 'closed') void loadClosedTab();
+	});
+
 	const visibleSessions = $derived(
 		view === 'all'
 			? sessions
-			: sessions.filter((s) => (view === 'live' ? isLive(s) : !isLive(s)))
+			: view === 'closed'
+				? sessions.filter((s) => !isLive(s))
+				: sessions.filter((s) => isLive(s))
 	);
 
 	// host_profession is a free-text server filter — suggest professions seen

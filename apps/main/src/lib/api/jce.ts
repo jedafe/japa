@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, type ClientResult } from './client';
 import type {
 	ComparisonType,
 	CreateQuickComparisonInput,
@@ -69,14 +69,13 @@ export async function createGuestSelection(payload: {
 
 export async function createQuickComparison(
 	input: CreateQuickComparisonInput
-): Promise<JCEComparisonSummary | null> {
-	const res = await api.post<JCEComparisonSummary>('/jce/comparisons', {
+): Promise<ClientResult<JCEComparisonSummary>> {
+	return api.post<JCEComparisonSummary>('/jce/comparisons', {
 		...input,
 		depth: 'quick',
 		status: 'draft',
 		visibility: 'private'
 	});
-	return res.data;
 }
 
 export async function getQuickComparison(slug: string): Promise<JCEComparisonSummary | null> {
@@ -84,13 +83,12 @@ export async function getQuickComparison(slug: string): Promise<JCEComparisonSum
 	return res.data;
 }
 
-export async function deleteComparison(id: string): Promise<void> {
-	await api.delete<unknown>(`/jce/comparisons/${id}`);
+export function deleteComparison(id: string): Promise<ClientResult<unknown>> {
+	return api.delete<unknown>(`/jce/comparisons/${id}`);
 }
 
-export async function promoteComparison(id: string): Promise<JCEComparisonSummary | null> {
-	const res = await api.post<JCEComparisonSummary>(`/jce/comparisons/${id}/promote`);
-	return res.data;
+export function promoteComparison(id: string): Promise<ClientResult<JCEComparisonSummary>> {
+	return api.post<JCEComparisonSummary>(`/jce/comparisons/${id}/promote`);
 }
 
 export async function getFreshness(comparisonID: string): Promise<FreshnessSummary | null> {

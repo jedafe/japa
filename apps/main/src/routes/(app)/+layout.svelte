@@ -111,13 +111,13 @@
 	// The store is a no-op during SSR; onMount guarantees a browser-only connect.
 	// Ref: sections/10-realtime-websockets.md, sections/35-notification-system.md
 
-	// §23 — JapaBot floating action button: links to /ai/chat from every
-	// app-shell page, gated by the same feature.japabot flag as the route.
-	// Hidden on /ai/chat itself (self-link). Guests can click — the route
+	// §23 — JapaBot floating action button: links to the JapaBot chat tab on
+	// /ai from every app-shell page, gated by the same feature.japabot flag.
+	// Hidden on all /ai pages (self-link). Guests can click — the route
 	// redirects to login.
 	const showChatFab = $derived(
 		data.features?.['feature.japabot'] === true &&
-			!page.route.id?.startsWith('/(app)/ai/chat')
+			!page.route.id?.startsWith('/(app)/ai')
 	);
 	onMount(() => {
 		if (data.user) realtime.connect();
@@ -254,7 +254,7 @@
 		<!-- §23 JapaBot FAB — sits above the mobile tab bar (bottom-20),
 		     flush to the right edge on desktop (bottom-5). -->
 		<a
-			href="/ai/chat"
+			href="/ai?mode=chat"
 			aria-label={t('ai.chat.title') ?? 'JapaBot Chat'}
 			title={t('ai.chat.title') ?? 'JapaBot Chat'}
 			class="fixed bottom-20 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"

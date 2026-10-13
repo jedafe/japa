@@ -117,7 +117,7 @@
 							<span
 								class="w-8 shrink-0 pt-0.5 text-center text-sm font-semibold text-[var(--color-muted)] [font-variant-numeric:tabular-nums]"
 							>
-								{dayLabel(item.shipped_at)}
+								{dayLabel(item.shipped_at ?? item.created_at)}
 							</span>
 							<div class="min-w-0 flex-1">
 								<a

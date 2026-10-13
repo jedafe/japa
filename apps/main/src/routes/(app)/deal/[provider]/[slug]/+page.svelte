@@ -117,9 +117,10 @@
 
 	// Click-through goes through the backend /go redirect so the click is
 	// recorded server-side even without JS (Section 55 Deal Pages).
-	const goUrl = $derived(`${apiBaseUrl}/deals/${coupon.slug}/go`);
+	const goUrl = $derived(`${apiBaseUrl}/deals/${encodeURIComponent(coupon.slug ?? '')}/go`);
 
 	let copied = $state(false);
+	let copyError = $state('');
 
 	// recordEvent fires-and-forgets a copy event to the backend (Section 55).
 	// Clicks are recorded by the /go redirect — no client-side call needed.
@@ -129,13 +130,34 @@
 
 	async function copyCode() {
 		if (!coupon.code) return;
+		copyError = '';
 		try {
 			await navigator.clipboard.writeText(coupon.code);
 			copied = true;
 			recordEvent('copy');
 			setTimeout(() => (copied = false), 2000);
+			return;
 		} catch {
-			// Clipboard may be unavailable; ignore silently.
+			// Fall through to the execCommand fallback below.
+		}
+		try {
+			const ta = document.createElement('textarea');
+			ta.value = coupon.code;
+			ta.setAttribute('readonly', '');
+			ta.style.position = 'fixed';
+			ta.style.opacity = '0';
+			document.body.appendChild(ta);
+			ta.select();
+			const ok = document.execCommand('copy');
+			ta.remove();
+			if (!ok) throw new Error('copy failed');
+			copied = true;
+			recordEvent('copy');
+			setTimeout(() => (copied = false), 2000);
+		} catch {
+			// Copy failed on every path — surface an error instead of
+			// recording a copy event that never happened.
+			copyError = t('coupons.copy_failed', 'Could not copy the code — please copy it manually.');
 		}
 	}
 </script>
@@ -271,6 +293,9 @@
 							<Copy size={16} />
 							{copied ? t('coupons.copied', 'Copied!') : t('coupons.copy_code', 'Copy code')}
 						</button>
+					{/if}
+					{#if copyError}
+						<p class="mt-2 text-sm text-red-500" role="alert">{copyError}</p>
 					{/if}
 					{#if discountLabel}
 						<span class="text-base font-semibold text-[var(--color-primary)]"

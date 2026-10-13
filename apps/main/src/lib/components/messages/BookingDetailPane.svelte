@@ -23,6 +23,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { formatMoney } from '$lib/utils/currency';
+	import { safeSameOriginHref } from '$lib/utils/safeUrl';
 	import {
 		CalendarDays,
 		Users,
@@ -169,7 +170,13 @@
 		actionError = '';
 		const res = await api.post<{ id: string; checkout_url: string }>(
 			`/me/service-bookings/${b.id}/pay`,
-			{ email: payEmail.trim(), return_url: page.url.href },
+			// M5 client allowlist — only send a same-origin return_url.
+			{
+				email: payEmail.trim(),
+				...(safeSameOriginHref(page.url.href)
+					? { return_url: safeSameOriginHref(page.url.href) }
+					: {})
+			},
 			{ 'Idempotency-Key': payIdemKey || crypto.randomUUID() }
 		);
 		if (res.error) {

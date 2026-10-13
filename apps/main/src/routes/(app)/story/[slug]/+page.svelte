@@ -60,11 +60,15 @@
 		try {
 			const res = await api.delete(`/stories/${story.id}`);
 			if (res.error === null) {
+				deleting = false;
+				showDeleteConfirm = false;
 				goto('/stories');
+			} else {
+				deleting = false;
+				showDeleteConfirm = false;
 			}
 		} catch {
 			// stay on page — the error is transient
-		} finally {
 			deleting = false;
 			showDeleteConfirm = false;
 		}

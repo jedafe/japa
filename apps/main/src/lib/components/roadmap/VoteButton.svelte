@@ -89,7 +89,7 @@
 		e.stopPropagation();
 		toggle();
 	}}
-	disabled={pending || (authed && !votable)}
+	disabled={pending || !votable}
 	aria-pressed={voted}
 	aria-label={voted ? t('roadmap.unvote', 'Remove vote') : t('roadmap.vote', 'Vote')}
 	title={!authed

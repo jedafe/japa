@@ -226,8 +226,14 @@ export const load: PageServerLoad = async (event) => {
 	const preselectFailures: string[] = [];
 	const preselect = searchParams.get('preselect') ?? '';
 	if (preselect && selectedType) {
-		const ids = preselect.split(',').filter(Boolean);
-		for (const id of ids.slice(0, 4)) {
+		// Cap pre-selections at the type's max_item_count so a crafted URL
+		// cannot stage more items than the tray (and create) allows.
+		const preselectCap =
+			typeof selectedType.config?.max_item_count === 'number' && selectedType.config.max_item_count > 0
+				? selectedType.config.max_item_count
+				: 4;
+		const ids = preselect.split(',').filter(Boolean).slice(0, preselectCap);
+		for (const id of ids) {
 			try {
 				const item = await apiGet<ResolvedItem>(ctx, `/jce/entities/${source}/${id}`);
 				if (item) preselectedItems.push(item);

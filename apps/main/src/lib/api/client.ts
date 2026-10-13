@@ -1,6 +1,7 @@
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
 import { buildApiUrl } from '@japaconnect/api-url';
+import type { ListMeta } from '$lib/types';
 
 /**
  * Browser-side API client for mutations and client-initiated reads.
@@ -153,10 +154,22 @@ async function clientFetchRaw<T>(
 		}
 
 		let body: unknown = null;
-		try {
-			body = await res.json();
-		} catch {
-			body = null;
+		// 204 No Content carries no body — res.json() would throw on the
+		// empty stream, so data stays null (callers treat null as success
+		// with no payload, e.g. wiki/jce delete paths).
+		if (res.status !== 204) {
+			// Sniff the content type: text/plain (or empty) bodies that
+			// carry JSON (proxies/health shims) still decode; anything else
+			// yields null instead of a json() throw.
+			const contentType = res.headers.get('content-type') ?? '';
+			if (contentType.includes('json') || contentType.includes('text') || contentType === '') {
+				try {
+					const text = await res.text();
+					body = text.trim() === '' ? null : (JSON.parse(text) as unknown);
+				} catch {
+					body = null;
+				}
+			}
 		}
 
 		if (!res.ok || (body && typeof body === 'object' && 'error' in body)) {

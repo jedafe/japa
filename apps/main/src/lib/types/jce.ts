@@ -129,6 +129,9 @@ export interface MatrixItem {
 	description?: string;
 	image_url?: string;
 	position?: number;
+	/** The entity reference backing this row (when the item is entity-linked)
+	 *  — part of the client dedup key alongside position + title. */
+	item_ref?: Record<string, unknown> | null;
 	dimensions: MatrixDimension[];
 }
 

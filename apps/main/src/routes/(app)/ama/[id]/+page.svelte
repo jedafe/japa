@@ -107,11 +107,18 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	// Host-only control: close the AMA via PATCH /forum/ama/{id}. The backend
 	// sets closes_at = now() server-side (no body needed) and enforces the
 	// host-or-moderator permission. Ref: sections/88-ask-an-expat.md
+	// Close is gated on host-or-moderator (backend enforces CanClose; the
+	// server payload exposes isHost and the layout exposes the moderator
+	// permission so guests never see the control).
+	const canClose = $derived(
+		!!session && isLive && (data.isHost || (page.data.user?.permissions?.includes('forum.ama.moderate') ?? false))
+	);
+
 	async function closeAma() {
 		if (!session || closing) return;
 		closing = true;
 		closeError = null;
-		const res = await api.patch<AMAThread>(`/forum/ama/${session.id}`, {});
+		const res = await api.patch<AMAThread>(`/forum/ama/${session.id}`, { closed: true });
 		closing = false;
 		if (res.error) {
 			closeError = res.error.message || t('ama.close_error', 'Failed to close the AMA.');
@@ -168,7 +175,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 						</span>
 					{/if}
 
-					{#if data.isHost}
+					{#if canClose}
 						<button
 							type="button"
 							onclick={closeAma}

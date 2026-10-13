@@ -20,6 +20,7 @@
 	} from './assistApi';
 	import type { DraftRequest, DraftResponse, FieldSchema, DraftOptions } from './types';
 	import { AutocompleteSelect } from '$lib/components/ui';
+	import AiModelVoicePicker from './AiModelVoicePicker.svelte';
 	import { sanitizeContentHtml } from '$lib/utils/safeHtml';
 
 	interface Props {
@@ -677,24 +678,16 @@
 					</div>
 				{/if}
 			{:else}
-				<div class="grid grid-cols-2 gap-2">
-					<div class="flex flex-col gap-1">
-						<label class="text-xs text-[var(--color-muted)]" for="ai-model">{t('ai.body.model_label', 'Model')}</label>
-						<AutocompleteSelect
-							id="ai-model"
-							bind:value={selectedModel}
-							options={models.map((m) => ({ value: m.id, label: m.label }))}
-						/>
-					</div>
-					<div class="flex flex-col gap-1">
-						<label class="text-xs text-[var(--color-muted)]" for="ai-humanize">{t('ai.body.humanize_label')}</label>
-						<AutocompleteSelect
-							id="ai-humanize"
-							bind:value={humanizeLevel}
-							options={HUMANIZE_LEVELS}
-						/>
-					</div>
-				</div>
+				<!-- Shared model/voice picker; voice options stay filtered by the
+				     tone selected below (voiceToneFromLabel). -->
+				<AiModelVoicePicker
+					idPrefix="ai-draft"
+					showLabels
+					modelOptions={models.map((m) => ({ value: m.id, label: m.label }))}
+					voiceOptions={filteredVoices.map((v) => ({ value: v.id, label: v.label }))}
+					bind:model={selectedModel}
+					bind:voice={selectedVoice}
+				/>
 
 				<div class="grid grid-cols-2 gap-2">
 					<div class="flex flex-col gap-1">
@@ -702,11 +695,11 @@
 						<AutocompleteSelect id="ai-tone" bind:value={tone} options={TONES} />
 					</div>
 					<div class="flex flex-col gap-1">
-						<label class="text-xs text-[var(--color-muted)]" for="ai-voice">{t('ai.body.voice_label', 'Voice / Tone')}</label>
+						<label class="text-xs text-[var(--color-muted)]" for="ai-humanize">{t('ai.body.humanize_label')}</label>
 						<AutocompleteSelect
-							id="ai-voice"
-							bind:value={selectedVoice}
-							options={filteredVoices.map((v) => ({ value: v.id, label: v.label }))}
+							id="ai-humanize"
+							bind:value={humanizeLevel}
+							options={HUMANIZE_LEVELS}
 						/>
 					</div>
 				</div>

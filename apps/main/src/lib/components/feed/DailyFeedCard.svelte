@@ -158,9 +158,11 @@
 			bookmarked = !next;
 			bookmarkCount += next ? -1 : 1;
 			updateViewerState(item.id, { bookmarked: !next });
-		} finally {
 			bookmarkPending = false;
+			return;
 		}
+		// No finally: Svelte 5 $state set in finally does not re-render.
+		bookmarkPending = false;
 	}
 
 	async function reportPost(e: Event) {

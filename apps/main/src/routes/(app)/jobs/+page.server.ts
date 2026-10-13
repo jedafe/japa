@@ -38,6 +38,8 @@ export const load: PageServerLoad = async (event) => {
 	if (remote) params.set('remote', remote);
 	if (visaSponsorship) params.set('visa_sponsorship', visaSponsorship);
 	if (sort) params.set('sort', sort);
+	const includeExpired = event.url.searchParams.get('include_expired');
+	if (includeExpired === 'true' || includeExpired === '1') params.set('include_expired', 'true');
 	params.set('page', page);
 	params.set('limit', String(PAGE_SIZE));
 
@@ -64,7 +66,7 @@ export const load: PageServerLoad = async (event) => {
 		countries = [];
 	}
 
-	return { jobs, total, disabled, authed, pageSize: PAGE_SIZE, currentPage: parseInt(page, 10), countries };
+	return { jobs, total, disabled, authed, pageSize: PAGE_SIZE, currentPage: parseInt(page, 10), countries, includeExpired: includeExpired === 'true' || includeExpired === '1' };
 };
 
 /**

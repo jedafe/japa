@@ -30,6 +30,7 @@ export const load: PageServerLoad = async (event) => {
 	const params = new URLSearchParams({ page_size: String(PAGE_SIZE) });
 	if (url.searchParams.get('dest')) params.set('dest', url.searchParams.get('dest')!);
 	if (url.searchParams.get('profession')) params.set('profession', url.searchParams.get('profession')!);
+	if (url.searchParams.get('status') === 'closed') params.set('status', 'closed');
 
 	try {
 		const { items } = await apiList<AMAThread>(ctx, `/forum/ama?${params.toString()}`);

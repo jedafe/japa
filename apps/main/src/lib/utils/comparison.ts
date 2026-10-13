@@ -8,9 +8,11 @@ export function uniqueBy<T, K>(items: T[], keyFn: (item: T) => K): T[] {
 	return [...new Map(items.map((i) => [keyFn(i), i])).values()];
 }
 
-/** Deduplicate resolved item cards by position + title. */
+/** Deduplicate resolved item cards by position + item_ref + title — the
+ *  item_ref (type:id) is part of the key so two different entities with the
+ *  same title never collapse (mirrors the backend's itemRefDedupKey). */
 export function uniqueResolvedItems(items: ResolvedItem[]): ResolvedItem[] {
-	return uniqueBy(items, (i) => `${i.position ?? ''}:${i.title}`);
+	return uniqueBy(items, (i) => `${i.position ?? ''}:${i.type ?? ''}:${i.id ?? ''}:${i.title}`);
 }
 
 /** Deduplicate comparison dimensions by position + label, preserving the first. */
@@ -18,12 +20,16 @@ export function uniqueDimensions(dimensions: JCEDimension[]): JCEDimension[] {
 	return uniqueBy(dimensions, (d) => `${d.position ?? ''}:${d.label}`);
 }
 
-/** Deduplicate matrix rows by position + title and merge any split dimension values. */
+/** Deduplicate matrix rows by position + item_ref + title and merge any
+ *  split dimension values — the row key mirrors the backend's
+ *  (position, item_ref, title) and the per-cell merge mirrors
+ *  mergeComparisonValues (first non-null wins). */
 export function deduplicateMatrix(matrix: MatrixItem[]): MatrixItem[] {
 	const byItem = new Map<string, MatrixItem>();
 
 	for (const item of matrix) {
-		const key = `${item.position ?? ''}:${item.title}`;
+		const ref = item.item_ref as { type?: string; id?: string } | undefined;
+		const key = `${item.position ?? ''}:${ref?.type ?? ''}:${ref?.id ?? ''}:${item.title}`;
 		let merged = byItem.get(key);
 		if (!merged) {
 			merged = { ...item, dimensions: [] };

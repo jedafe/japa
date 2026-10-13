@@ -90,9 +90,9 @@
 		error = '';
 		try {
 			const promoted = await promoteComparison(comparison.content.id);
-			if (promoted?.id) {
+			if (promoted.data?.id) {
 				// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
-				navigateToMain(`/create?type=comparison&draft=${promoted.id}`);
+				navigateToMain(`/create?type=comparison&draft=${promoted.data.id}`);
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : t('jce.compare.errors.promote_failed');

@@ -2013,9 +2013,10 @@ export const INTERNAL_DEAL_PROVIDER_SLUG = 'japaconnect';
 /** Returns the /deal/{provider}/{slug} canonical path for a coupon. */
 export function dealPath(coupon: Pick<Coupon, 'slug' | 'provider_slug'>): string {
 	// A coupon without a slug has no canonical deal page — fall back to the
-	// index rather than emitting a malformed URL segment.
+	// index rather than emitting a malformed URL segment. Both segments are
+	// encoded so slugs carrying spaces or unicode resolve correctly.
 	if (!coupon.slug) return '/deals';
-	return `/deal/${coupon.provider_slug || INTERNAL_DEAL_PROVIDER_SLUG}/${coupon.slug}`;
+	return `/deal/${encodeURIComponent(coupon.provider_slug || INTERNAL_DEAL_PROVIDER_SLUG)}/${encodeURIComponent(coupon.slug)}`;
 }
 
 /**

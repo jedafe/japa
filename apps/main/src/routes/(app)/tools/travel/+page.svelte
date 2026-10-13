@@ -7,7 +7,8 @@
 		Lock,
 		Hotel,
 		ExternalLink,
-		Search
+		Search,
+		Hourglass
 	} from 'lucide-svelte';
 	import {
 		EmptyState,
@@ -172,12 +173,20 @@
 	let hotelError = $state<string | null>(null);
 	let flightProviderMissing = $state(false);
 	let hotelProviderMissing = $state(false);
+	let flightQuotaExceeded = $state(false);
+	let hotelQuotaExceeded = $state(false);
 	let flightsSearched = $state(false);
 	let hotelsSearched = $state(false);
-	let flightMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number } | null>(null);
-	let hotelMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number } | null>(null);
+	let flightMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number; total?: number; page?: number; page_size?: number } | null>(null);
+	let hotelMeta = $state<{ cache_hit: boolean; source?: string; search_time_ms: number; total?: number; page?: number; page_size?: number } | null>(null);
 	let flights = $state<TravelFlightResult[]>([]);
 	let hotels = $state<TravelHotelResult[]>([]);
+	let flightTotal = $state<number | null>(null);
+	let hotelTotal = $state<number | null>(null);
+
+	function isQuotaError(code?: string): boolean {
+		return code === 'travel_quota_exceeded' || code === 'rate_limit_exceeded';
+	}
 
 	// ── Flight result list state (sort / filter / page) ─────────────────────
 	let flightSort = $state('');
@@ -291,7 +300,9 @@
 		flightLoading = true;
 		flightError = null;
 		flightProviderMissing = false;
+		flightQuotaExceeded = false;
 		flights = [];
+		flightTotal = null;
 		flightsSearched = false;
 		flightMeta = null;
 
@@ -304,6 +315,12 @@
 		});
 		if (flightReturn) params.set('return_date', flightReturn);
 		if (flightCabin) params.set('cabin_class', flightCabin);
+		// Sort/filter/page ride on the request — the backend applies them
+		// server-side over the coverage offer set.
+		if (flightSort) params.set('sort', flightSort);
+		if (flightAirline) params.set('airline', flightAirline);
+		params.set('page', String(flightPage));
+		params.set('page_size', flightPageSize);
 
 		const res = await api.get<TravelSearchResponse>(
 			`/travel/search/flights?${params.toString()}`
@@ -322,16 +339,18 @@
 				flightProviderMissing = true;
 				return;
 			}
+			if (isQuotaError(res.error.code)) {
+				flightQuotaExceeded = true;
+				return;
+			}
 			flightError = res.error.message;
 			return;
 		}
 		flights = (res.data?.results as TravelFlightResult[] | undefined) ?? [];
+		flightTotal = res.data?.total ?? flights.length;
 		flightMeta = res.data
-			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms }
+			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms, total: res.data.total, page: res.data.page, page_size: res.data.page_size }
 			: null;
-		flightPage = 1;
-		flightAirline = '';
-		flightSort = '';
 	}
 
 	async function searchHotels() {
@@ -348,7 +367,9 @@
 		hotelLoading = true;
 		hotelError = null;
 		hotelProviderMissing = false;
+		hotelQuotaExceeded = false;
 		hotels = [];
+		hotelTotal = null;
 		hotelsSearched = false;
 		hotelMeta = null;
 
@@ -359,6 +380,11 @@
 			guests: hotelGuests,
 			rooms: hotelRooms
 		});
+		// Sort/page ride on the request — the backend applies them
+		// server-side over the coverage offer set.
+		if (hotelSort) params.set('sort', hotelSort);
+		params.set('page', String(hotelPage));
+		params.set('page_size', hotelPageSize);
 		const res = await api.get<TravelSearchResponse>(
 			`/travel/search/hotels?${params.toString()}`
 		);
@@ -373,15 +399,18 @@
 				hotelProviderMissing = true;
 				return;
 			}
+			if (isQuotaError(res.error.code)) {
+				hotelQuotaExceeded = true;
+				return;
+			}
 			hotelError = res.error.message;
 			return;
 		}
 		hotels = (res.data?.results as TravelHotelResult[] | undefined) ?? [];
+		hotelTotal = res.data?.total ?? hotels.length;
 		hotelMeta = res.data
-			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms }
+			? { cache_hit: res.data.cache_hit, source: res.data.source, search_time_ms: res.data.search_time_ms, total: res.data.total, page: res.data.page, page_size: res.data.page_size }
 			: null;
-		hotelPage = 1;
-		hotelSort = '';
 	}
 
 	// ── Hotel directory (ADR-124) — server-paginated browse over
@@ -637,7 +666,14 @@
 						title={t('travel.provider_unavailable', 'No provider configured yet')}
 						body={t('travel.provider_unavailable_body', 'Flight search will be available once a provider is configured.')}
 					/>
-				{:else if sortedFlights.length > 0}
+				{:else if flightQuotaExceeded}
+					<EmptyState
+						icon={Hourglass}
+						title={t('travel.quota_exceeded', 'Search quota reached')}
+						body={t('travel.quota_exceeded_body', 'Too many provider requests right now. Wait a few minutes and try again.')}
+						action={{ label: t('common.retry', 'Try again'), onclick: () => searchFlights() }}
+					/>
+				{:else if flights.length > 0}
 					<div class="mb-3 flex flex-wrap items-center gap-2">
 						<p class="mr-auto text-xs text-[var(--color-muted)]">
 							{t('travel.results', '{count} results', { count: sortedFlights.length })}
@@ -734,7 +770,14 @@
 						title={t('travel.provider_unavailable', 'No provider configured yet')}
 						body={t('travel.provider_unavailable_hotels_body', 'Hotel search will be available once a provider is configured.')}
 					/>
-				{:else if sortedHotels.length > 0}
+				{:else if hotelQuotaExceeded}
+					<EmptyState
+						icon={Hourglass}
+						title={t('travel.quota_exceeded', 'Search quota reached')}
+						body={t('travel.quota_exceeded_body', 'Too many provider requests right now. Wait a few minutes and try again.')}
+						action={{ label: t('common.retry', 'Try again'), onclick: () => searchHotels() }}
+					/>
+				{:else if hotels.length > 0}
 					<div class="mb-3 flex flex-wrap items-center gap-2">
 						<p class="mr-auto text-xs text-[var(--color-muted)]">
 							{t('travel.results', '{count} results', { count: sortedHotels.length })}

@@ -35,17 +35,13 @@
 		authed
 	}: Props = $props();
 
-	let score = $state(0);
-	let userVote = $state<1 | -1 | 0>(0);
+	// Score and the viewer's vote track the server props directly — derived
+	// state stays in sync across navigations without an imperative $effect.
+	let optimisticDelta = $state(0);
+	let optimisticVote = $state<1 | -1 | 0 | null>(null);
+	let score = $derived(initialScore + optimisticDelta);
+	let userVote = $derived<1 | -1 | 0>(optimisticVote ?? initialVote);
 	let pending = $state(false);
-
-	// Sync from the server payload on mount and whenever it changes
-	// (e.g. navigation between threads). Declared as a derived read so Svelte
-	// does not warn about capturing the initial prop value only.
-	$effect(() => {
-		score = initialScore;
-		userVote = initialVote;
-	});
 
 	let resolvedId = $state('');
 	let resolving: Promise<string | null> | null = null;
@@ -62,11 +58,11 @@
 			const res = await api.getEnvelope<ForumThread>(`/forum/${slug}`);
 			if (!res.data?.id) return null;
 			resolvedId = res.data.id;
-			score = res.data.vote_score;
+			optimisticDelta = res.data.vote_score - initialScore;
 			const uv = (res.envelope?.['user_votes'] as Record<string, number> | undefined)?.[
 				res.data.id
 			];
-			if (uv === 1 || uv === -1) userVote = uv;
+			if (uv === 1 || uv === -1) optimisticVote = uv;
 			return resolvedId;
 		})();
 		return resolving;
@@ -82,11 +78,11 @@
 		}
 		// Optimistic: toggling the same direction retracts it (score reverts);
 		// switching directions adjusts by 2.
-		const prev = userVote;
-		const prevScore = score;
-		const next = value === prev ? 0 : value;
-		score = prevScore + (next - prev);
-		userVote = next;
+		const prevVote = userVote;
+		const prevDelta = optimisticDelta;
+		const next = value === prevVote ? 0 : value;
+		optimisticVote = next;
+		optimisticDelta = prevDelta + (next - prevVote);
 
 		const res =
 			next === 0
@@ -99,8 +95,8 @@
 
 		if (res.error) {
 			// Rollback on failure.
-			score = prevScore;
-			userVote = prev;
+			optimisticVote = prevVote === initialVote ? null : prevVote;
+			optimisticDelta = prevDelta;
 		}
 	}
 

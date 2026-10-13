@@ -27,6 +27,7 @@
 
 	let loading = $state(false);
 	let errorKey = $state('');
+	let errorCode = $state('');
 
 	const canSubmit = $derived(title.trim().length > 0 && !loading);
 
@@ -54,15 +55,18 @@
 				is_anonymous: isAnonymous
 			});
 			if (res.data?.id) {
+				loading = false;
 				await goto(`/ama/${res.data.id}`);
 			} else if (res.error) {
-				errorKey = 'ama.errors.edit_failed';
+				errorCode = res.error.code ?? '';
+				errorKey = errorCode === 'ama_active_exists' ? 'ama.errors.active_exists' : errorCode === 'ama_cooldown' ? 'ama.errors.cooldown' : 'ama.errors.edit_failed';
+				loading = false;
 			} else {
 				errorKey = 'ama.errors.edit_failed';
+				loading = false;
 			}
 		} catch {
 			errorKey = 'ama.errors.edit_failed';
-		} finally {
 			loading = false;
 		}
 	}

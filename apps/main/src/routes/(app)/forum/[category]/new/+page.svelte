@@ -138,11 +138,14 @@
 			<input type="hidden" name="space_id" value={spaceId} />
 		</div>
 
-		<!-- Tags (Section 08 — tags are first-class on discussions) -->
+		<!-- Tags (Section 08 — tags are first-class on discussions, max 5) -->
 		<div>
 			<label for="tags" class="mb-1.5 block text-sm font-medium text-[var(--color-text)]">{t('create.label.tags', 'Tags')}</label>
 			<input type="hidden" name="tags" value={tags.join(',')} />
-			<TagInput {tags} onTags={(next) => (tags = next)} />
+			<TagInput {tags} onTags={(next) => (tags = next)} maxTags={5} />
+			<p class="mt-1 text-xs text-[var(--color-muted)]">
+				{t('forum.new.tags_remaining', '{n} of 5 tags remaining').replace('{n}', String(Math.max(0, 5 - tags.length)))}
+			</p>
 		</div>
 
 		<!-- Title -->

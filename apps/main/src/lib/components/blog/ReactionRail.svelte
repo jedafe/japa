@@ -193,9 +193,11 @@
 			reactionCounts[reactionKey] = (reactionCounts[reactionKey] || 0) + rollbackDelta;
 			if (inflightDeltas) inflightDeltas[reactionKey] = (inflightDeltas[reactionKey] ?? 0) + rollbackDelta;
 			updateViewerState(contentId, { reactionKeys: [...rollback] });
-		} finally {
 			reactionPending = null;
+			return;
 		}
+		// No finally: Svelte 5 $state set in finally does not re-render.
+		reactionPending = null;
 	}
 
 	async function toggleBookmark() {
@@ -215,9 +217,11 @@
 			}
 		} catch {
 			isBookmarked = wasBookmarked;
-		} finally {
 			bookmarkPending = false;
+			return;
 		}
+		// No finally: Svelte 5 $state set in finally does not re-render.
+		bookmarkPending = false;
 	}
 
 	function buildShareUrl(template: string): string {

@@ -13,6 +13,7 @@
 	import RecommendedContentCard from '$lib/components/content/RecommendedContentCard.svelte';
 	import { api } from '$lib/api/client';
 	import { initiateUpload, uploadToPresigned, confirmMedia } from '$lib/api/create';
+	import { invalidateAll } from '$app/navigation';
 	import { getViewerState, updateViewerState } from '$lib/api/viewerState';
 	import { requireAuthOrRedirect } from '$lib/auth/guest';
 	import { relativeTime } from '$lib/feed/time';
@@ -157,6 +158,10 @@
 				return;
 			}
 			applyResult = { ok: true, status: res.data?.status ?? 'applied' };
+			// Refresh SSR-derived state (my_application) after a successful apply.
+			await invalidateAll().catch(() => {});
+		} catch {
+			applyResult = { error: 'apply_failed' };
 		} finally {
 			applying = false;
 		}
@@ -505,9 +510,9 @@
 									{t('jobs.source', 'Source')}: {source.name}
 								{/snippet}
 							</EntityHoverChip>
-							{#if source.source_url}
+							{#if safeHttpUrl(source.source_url)}
 								<a
-									href={source.source_url}
+									href={safeHttpUrl(source.source_url)}
 									target="_blank"
 									rel="noopener noreferrer"
 									class="inline-flex items-center gap-0.5 text-[var(--color-muted)] hover:text-[var(--color-primary)]"

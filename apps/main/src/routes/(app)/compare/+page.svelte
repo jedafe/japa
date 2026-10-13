@@ -151,7 +151,9 @@
 		if (selectedItems.length === 0 && preselectedItems.length > 0 &&
 				lastPreselect !== preselectedItems) {
 			lastPreselect = preselectedItems;
-			selectedItems = [...preselectedItems];
+			// Cap server pre-selections at maxItems so a crafted URL cannot
+			// stage more items than the tray allows.
+			selectedItems = [...preselectedItems.slice(0, Math.max(0, maxItems))];
 		}
 	});
 
@@ -532,32 +534,40 @@
 	async function create() {
 		if (!selectedType || selectedItems.length < 2) return;
 		const type = selectedType;
+		// C2 pre-flight: the backend caps guest/minted selections at the
+		// type's max_item_count — fail locally with the max_items key
+		// instead of a round-trip.
+		const maxItems = type.config?.max_item_count ?? 0;
+		if (maxItems > 0 && selectedItems.length > maxItems) {
+			error = 'jce.compare.errors.max_items';
+			errorParams = { max: String(maxItems), count: String(selectedItems.length) };
+			return;
+		}
 		creating = true;
 		error = '';
-		try {
-			const title = selectedItems.map((i) => i.title).join(t('jce.compare.title_separator'));
-			const input = {
-				title,
+		const title = selectedItems.map((i) => i.title).join(t('jce.compare.title_separator'));
+		const res = await createQuickComparison({
+			title,
+			type_id: type.id,
+			depth: 'quick' as const,
+			status: 'draft' as const,
+			visibility: 'private' as const,
+			items: selectedItems.map((i) => ({
+				title: i.title,
+				description: i.description ?? '',
 				type_id: type.id,
-				depth: 'quick' as const,
-				status: 'draft' as const,
-				visibility: 'private' as const,
-				items: selectedItems.map((i) => ({
-					title: i.title,
-					description: i.description ?? '',
-					type_id: type.id,
-					item_ref: { type: i.type, id: i.id, title: i.title, slug: (i.metadata?.slug as string) ?? '' }
-				})),
-				dimensions: []
-			};
-			const cmp = await createQuickComparison(input);
-			if (cmp?.slug) goto(`/compare/${cmp.slug}`);
-		} catch (e) {
-			error = 'jce.compare.errors.create_failed';
-			errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
-		} finally {
-			creating = false;
+				item_ref: { type: i.type, id: i.id, title: i.title, slug: (i.metadata?.slug as string) ?? '' }
+			})),
+			dimensions: []
+		});
+		creating = false;
+		if (res.error) {
+			error = res.error.code === 'daily_limit' ? 'jce.compare.errors.daily_limit' : 'jce.compare.errors.create_failed';
+			errorParams = { message: res.error.message };
+			return;
 		}
+		const slug = res.data?.slug;
+		if (slug) goto(`/compare/${slug}`);
 	}
 
 	async function runAiQuick(opts: { focus: string; fields: string; createPost: boolean }) {
@@ -565,32 +575,30 @@
 		aiQuickLoading = true;
 		aiQuickError = '';
 		aiQuickResult = null;
-		try {
-			const fields = opts.fields
-				.split(',')
-				.map((f) => f.trim())
-				.filter(Boolean);
-			const res = await compareEntities({
-				entity_type: selectedType.slug,
-				entity_ids: selectedItems.map((i) => i.title),
-				...(fields.length > 0 ? { comparison_fields: fields } : {}),
-				...(opts.focus.trim() ? { focus: opts.focus.trim() } : {}),
-				...(user?.current_geo_space_id ? { geo_space_id: user.current_geo_space_id } : {}),
-				create_post: opts.createPost
-			});
-			if (res.error || !res.data) {
-				aiQuickError = res.error?.message ?? t('jce.compare.ai_quick.errors.unknown');
-			} else {
-				aiQuickResult = res.data;
-			}
-		} catch (e) {
-			aiQuickError = e instanceof Error ? e.message : t('jce.compare.ai_quick.errors.unknown');
-		} finally {
-			aiQuickLoading = false;
+		const fields = opts.fields
+			.split(',')
+			.map((f) => f.trim())
+			.filter(Boolean);
+		const res = await compareEntities({
+			entity_type: selectedType.slug,
+			entity_ids: selectedItems.map((i) => i.title),
+			...(fields.length > 0 ? { comparison_fields: fields } : {}),
+			...(opts.focus.trim() ? { focus: opts.focus.trim() } : {}),
+			...(user?.current_geo_space_id ? { geo_space_id: user.current_geo_space_id } : {}),
+			create_post: opts.createPost
+		});
+		aiQuickLoading = false;
+		if (res.error || !res.data) {
+			aiQuickError = res.error?.message ?? t('jce.compare.ai_quick.errors.unknown');
+		} else {
+			aiQuickResult = res.data;
 		}
 	}
 
 	function navigateToMain(path: string) {
+		// C11: allowlist the redirect target — same-origin app paths only
+		// (a single leading slash, never //evil or a scheme).
+		if (!/^\/[^/]/.test(path) && path !== '/') return;
 		const target = mainOrigin ?? page.url.origin;
 		if (target === page.url.origin) {
 			goto(path);
@@ -602,6 +610,14 @@
 	async function saveGuestSelectionAndLogin() {
 		if (!selectedType || selectedItems.length < 2) return;
 		const type = selectedType;
+		// C2 pre-flight on token redeem: minting caps at max_item_count, so
+		// check before asking the guest to log in.
+		const maxItems = type.config?.max_item_count ?? 0;
+		if (maxItems > 0 && selectedItems.length > maxItems) {
+			error = 'jce.compare.errors.max_items';
+			errorParams = { max: String(maxItems), count: String(selectedItems.length) };
+			return;
+		}
 		const itemRefs = selectedItems.map((i) => ({
 			type: i.type,
 			id: i.id,
@@ -618,30 +634,29 @@
 
 	async function removeComparison(id: string) {
 		deleting = id;
-		try {
-			await deleteComparison(id);
-			goto(page.url, { invalidateAll: true });
-		} catch (e) {
+		const res = await deleteComparison(id);
+		deleting = null;
+		if (res.error) {
 			error = 'jce.compare.errors.delete_failed';
-			errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
-		} finally {
-			deleting = null;
+			errorParams = { message: res.error.message };
+			return;
 		}
+		goto(page.url, { invalidateAll: true });
 	}
 
 	async function promote(id: string) {
 		promoting = id;
-		try {
-			const cmp = await promoteComparison(id);
-			if (cmp?.id) {
-				// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
-				navigateToMain(`/create?type=comparison&draft=${cmp.id}`);
-			}
-		} catch (e) {
-			error = 'jce.compare.errors.promote_failed';
-			errorParams = { message: e instanceof Error ? e.message : t('jce.compare.errors.unknown') };
-		} finally {
-			promoting = null;
+		const res = await promoteComparison(id);
+		promoting = null;
+		if (res.error) {
+			error = res.error.code === 'nested_not_allowed' ? 'jce.compare.errors.nested_not_allowed' : 'jce.compare.errors.promote_failed';
+			errorParams = { message: res.error.message };
+			return;
+		}
+		const cmpId = res.data?.id;
+		if (cmpId) {
+			// Ref: sections/30-generic-comparison-system.md (JCE promotion to detailed composer)
+			navigateToMain(`/create?type=comparison&draft=${cmpId}`);
 		}
 	}
 

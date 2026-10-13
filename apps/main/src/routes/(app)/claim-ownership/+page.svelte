@@ -24,20 +24,20 @@
 
 	// Withdraw a pending claim via DELETE /claim-ownership/{id} (claimant-only),
 	// then invalidate so the list reflects the server state (Rule 16).
+	// The busy flag is cleared explicitly on every exit path — never in a
+	// finally that could reset Svelte 5 $state mid-flush.
 	async function withdrawClaim(id: string) {
 		if (withdrawing || !confirm(t('claim_ownership.withdraw_confirm', 'Withdraw this claim?'))) return;
 		withdrawing = id;
 		claimsError = '';
-		try {
-			const res = await api.delete(`/claim-ownership/${id}`);
-			if (res.error) {
-				claimsError = res.error.message;
-				return;
-			}
-			await invalidateAll();
-		} finally {
+		const res = await api.delete(`/claim-ownership/${id}`);
+		if (res.error) {
+			claimsError = res.error.message;
 			withdrawing = '';
+			return;
 		}
+		await invalidateAll();
+		withdrawing = '';
 	}
 
 	// Field values keyed by field label (matches the backend's field_values contract).

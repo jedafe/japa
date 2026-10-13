@@ -87,9 +87,9 @@
 			if (res.error) {
 				reactionError = res.error.message || t('achievements.reaction_error', 'Failed to react.');
 			}
+			reacting = false;
 		} catch {
 			reactionError = t('achievements.reaction_error', 'Failed to react.');
-		} finally {
 			reacting = false;
 		}
 	}

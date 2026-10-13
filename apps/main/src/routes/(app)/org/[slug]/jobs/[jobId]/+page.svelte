@@ -6,6 +6,7 @@
 	import { Briefcase, FileText, ArrowLeft } from 'lucide-svelte';
 	import { EmptyState, PaginationControls, RelativeTime } from '$lib/components/ui';
 	import SelectField from '$lib/components/ui/SelectField.svelte';
+	import { safeHttpUrl } from '$lib/utils/safeUrl';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -111,9 +112,9 @@
 						</div>
 						{#if app.submission}
 							<div class="mt-3 space-y-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-3 text-xs">
-								{#if typeof app.submission.resume_url === 'string' && app.submission.resume_url}
+								{#if typeof app.submission.resume_url === 'string' && safeHttpUrl(app.submission.resume_url)}
 									<a
-										href={app.submission.resume_url}
+										href={safeHttpUrl(app.submission.resume_url)}
 										target="_blank"
 										rel="noopener noreferrer"
 										class="inline-flex items-center gap-1.5 text-[var(--color-primary)] hover:underline"

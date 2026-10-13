@@ -38,6 +38,8 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const [members, posts, media, isFollowing, comparisons] = await Promise.all([
+		// Public Members tab — ListPublicMembers (ACTIVE members, lean rows).
+		// The full member list (invited_by) is auth + member-gated server-side.
 		apiList<OrgMember>(ctx, `/organizations/${org.id}/members`).then((r) => r.items).catch(() => []),
 		// page_size 60 — this feed backs the Posts tab and the public Jobs tab
 		// (job_listing items filtered client-side); the default page would cap it.
