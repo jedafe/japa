@@ -107,12 +107,18 @@ SELECT
  WHEN 'forum_thread' THEN (SELECT ft.title FROM forum_threads ft WHERE ft.id = ce.entity_id)
  WHEN 'space' THEN (SELECT s.name FROM spaces s WHERE s.id = ce.entity_id)
  WHEN 'academy_track' THEN (SELECT lt.title FROM academy_tracks lt WHERE lt.id = ce.entity_id)
+ WHEN 'wiki_page' THEN (SELECT wp.title FROM wiki_pages wp WHERE wp.id = ce.entity_id)
  ELSE NULL END AS entity_title,
  CASE ce.entity_type
  WHEN 'content' THEN (SELECT c.slug FROM contents c WHERE c.id = ce.entity_id)
  WHEN 'forum_thread' THEN (SELECT ft.slug FROM forum_threads ft WHERE ft.id = ce.entity_id)
  WHEN 'space' THEN (SELECT s.slug FROM spaces s WHERE s.id = ce.entity_id)
  WHEN 'academy_track' THEN (SELECT lt.slug FROM academy_tracks lt WHERE lt.id = ce.entity_id)
+ -- Wiki pages cite as "space_slug/page_slug" — SourceURL maps that pair
+ -- to /wiki/{space_slug}/{page_slug} (§69 Citation Source Contract).
+ WHEN 'wiki_page' THEN (SELECT s.slug || '/' || wp.slug
+   FROM wiki_pages wp JOIN spaces s ON s.id = wp.space_id
+   WHERE wp.id = ce.entity_id)
  ELSE NULL END AS entity_slug
 FROM content_embeddings ce
 WHERE (@language::text = '' OR ce.language = @language)
@@ -137,6 +143,17 @@ WHERE (@language::text = '' OR ce.language = @language)
  WHERE lt.id = ce.entity_id
  AND lt.is_published = true
  )
+ -- wiki_page chunks gate on the generated is_japabot_indexed flag
+ -- (is_active AND NOT is_locked) — soft-delete flips is_active=false,
+ -- so this one flag covers delete, deactivate, and lock. Defense-in-
+ -- depth alongside the fire-and-forget PurgeEntity calls in the wiki
+ -- admin handlers: a failed purge can never leave a non-indexable page
+ -- retrievable.
+ WHEN 'wiki_page' THEN EXISTS (
+ SELECT 1 FROM wiki_pages wp
+ WHERE wp.id = ce.entity_id
+ AND wp.is_japabot_indexed = true
+ )
  ELSE true
  END
  -- Scoped retrieval (§69 amendment): the caller sees public rows, their own
@@ -157,12 +174,12 @@ LIMIT @top_k;
 
 -- =====================================================================
 -- Geo-filtered HNSW cosine retrieval (§103 Geo-Filtered RAG amendment to §69).
--- Same shape as SearchContentEmbeddings but JOINs to contents and restricts
--- to chunks whose source content is geo-scoped to the given space or its
--- direct children. When geo_space_id is NULL the geo filter is a no-op
--- (backward-compatible with §69 unfiltered retrieval). Only entity_type =
--- 'content' chunks are geo-filterable (other entity types have no
--- geo_space_id); non-content chunks are excluded when a geo scope is set.
+-- Same shape as SearchContentEmbeddings but geo-scopes each entity type:
+-- 'content' chunks filter on contents.geo_space_id, 'wiki_page' chunks on
+-- wiki_pages.space_id — both matching the given space or its direct
+-- children. When geo_space_id is NULL the geo filter is a no-op
+-- (backward-compatible with §69 unfiltered retrieval). Other entity types
+-- have no geo scope and are excluded when a geo scope is set.
 -- Used by the AI agent's rag.search tool and the agent pre-search step.
 -- =====================================================================
 
@@ -175,6 +192,11 @@ LIMIT @top_k;
 -- BUG-001 (rag-audit): return c.content_type so the store layer can classify
 -- the source tier correctly (editorial vs community). The geo-filtered query
 -- already JOINs to contents, so c.content_type is always available.
+--
+-- §80 wiki amendment: wiki pages UNIONed in — the wiki is the canonical
+-- geo knowledge corpus, so geo-scoped agent search would otherwise miss
+-- exactly the content it was built to surface. Gated on the generated
+-- is_japabot_indexed flag like the unfiltered query above.
 SELECT
  ce.id,
  ce.entity_type,
@@ -207,7 +229,39 @@ WHERE (@language::text = '' OR ce.language = @language)
  OR (ce.visibility = 'members' AND @viewer_id::uuid IS NOT NULL)
  OR (ce.visibility = 'private' AND @can_see_private::boolean)
  )
-ORDER BY ce.embedding <=> @query_embedding
+UNION ALL
+SELECT
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> @query_embedding))::float8 AS similarity,
+ ''::text AS content_type,
+ wp.title AS entity_title,
+ (s.slug || '/' || wp.slug) AS entity_slug
+FROM content_embeddings ce
+JOIN wiki_pages wp ON wp.id = ce.entity_id AND ce.entity_type = 'wiki_page'
+JOIN spaces s ON s.id = wp.space_id
+WHERE (@language::text = '' OR ce.language = @language)
+ AND wp.is_japabot_indexed = true
+ AND (
+ sqlc.narg(geo_space_id)::uuid IS NULL
+ OR wp.space_id = sqlc.narg(geo_space_id)
+ OR wp.space_id IN (SELECT id FROM spaces WHERE parent_id = sqlc.narg(geo_space_id))
+ )
+ -- Wiki chunks are always indexed 'public' (wiki/handlers.go); the clause
+ -- mirrors the content branch for consistency and forward-compat if
+ -- scoped wiki visibility is ever introduced.
+ AND (
+ ce.visibility = 'public'
+ OR ce.author_id = @viewer_id
+ OR (ce.visibility = 'members' AND @viewer_id::uuid IS NOT NULL)
+ OR (ce.visibility = 'private' AND @can_see_private::boolean)
+ )
+ORDER BY similarity DESC
 LIMIT @top_k;
 
 -- =====================================================================

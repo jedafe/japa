@@ -295,7 +295,20 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
-       up.mentor_areas, up.mentor_since
+       up.mentor_areas, up.mentor_since,
+       -- M7: the admin queue stamps the same §114 derived badge as the
+       -- public list — needs the live-coupon EXISTS and the rating
+       -- rollup on the row.
+       EXISTS(
+           SELECT 1 FROM service_listing_coupons lc
+           JOIN coupons cp ON cp.id = lc.coupon_id
+           WHERE lc.listing_meta_id = sm.id
+             AND cp.status = 'active'
+             AND (cp.valid_from IS NULL OR cp.valid_from <= now())
+             AND (cp.expires_at IS NULL OR cp.expires_at > now())
+       ) AS has_coupon,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -304,6 +317,7 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND ($1::text IS NULL OR c.status = $1::text)
@@ -384,6 +398,9 @@ type AdminListServiceListingsRow struct {
 	ActiveMenteeCount  *int16             `json:"active_mentee_count"`
 	MentorAreas        []string           `json:"mentor_areas"`
 	MentorSince        pgtype.Timestamptz `json:"mentor_since"`
+	HasCoupon          bool               `json:"has_coupon"`
+	RatingCount        *int32             `json:"rating_count"`
+	RatingAvg          pgtype.Numeric     `json:"rating_avg"`
 }
 
 // Admin moderation list — same join, any status when not filtered,
@@ -462,6 +479,9 @@ func (q *Queries) AdminListServiceListings(ctx context.Context, arg AdminListSer
 			&i.ActiveMenteeCount,
 			&i.MentorAreas,
 			&i.MentorSince,
+			&i.HasCoupon,
+			&i.RatingCount,
+			&i.RatingAvg,
 		); err != nil {
 			return nil, err
 		}
@@ -1110,6 +1130,32 @@ SELECT COUNT(*) FROM service_listing_meta WHERE service_category = $1
 
 func (q *Queries) CountServiceListingsByCategory(ctx context.Context, slug string) (int64, error) {
 	row := q.db.QueryRow(ctx, countServiceListingsByCategory, slug)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countServiceListingsByOrg = `-- name: CountServiceListingsByOrg :one
+SELECT COUNT(*)
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND sm.org_id = $1
+  AND ($2::text IS NULL OR c.status = $2::text)
+  AND ($3::text IS NULL OR sm.listing_kind = $3::text)
+`
+
+type CountServiceListingsByOrgParams struct {
+	OrgID       pgtype.UUID `json:"org_id"`
+	Status      *string     `json:"status"`
+	ListingKind *string     `json:"listing_kind"`
+}
+
+// M3: count twin of ListServiceListingsByOrg — same filter set so the
+// /org/:org_id/packages total reflects the full set, not the page length.
+func (q *Queries) CountServiceListingsByOrg(ctx context.Context, arg CountServiceListingsByOrgParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countServiceListingsByOrg, arg.OrgID, arg.Status, arg.ListingKind)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

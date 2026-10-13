@@ -387,7 +387,7 @@ WHERE user_id = @user_id AND track_id = @track_id;
 -- name: UpdateEnrollmentProgress :exec
 UPDATE academy_enrollments
 SET progress_pct = @progress_pct,
- completed_at = CASE WHEN @progress_pct::numeric >= 100 THEN now() ELSE completed_at END
+ completed_at = CASE WHEN @progress_pct::numeric >= 100 THEN now() ELSE NULL END
 WHERE user_id = @user_id AND track_id = @track_id;
 
 -- name: ListEnrollmentsByTrackID :many

@@ -193,6 +193,12 @@ SELECT * FROM intel_records WHERE status = $1 ORDER BY extracted_at DESC LIMIT $
 -- name: UpdateIntelRecordStatus :exec
 UPDATE intel_records SET status = $2, last_verified_at = now() WHERE id = $1;
 
+-- name: TransitionIntelRecordStatus :execrows
+-- Atomic review-gate transition: only applies when the record is still in
+-- the expected prior state. 0 rows affected means a racing transition won —
+-- the caller maps that to 409 invalid_record_state.
+UPDATE intel_records SET status = $2, last_verified_at = now() WHERE id = $1 AND status = $3;
+
 -- name: UpdateIntelRecordFreshness :exec
 UPDATE intel_records SET freshness_score = $2, status = CASE WHEN $2 <= 40 THEN 'stale' ELSE status END WHERE id = $1;
 
@@ -286,11 +292,29 @@ FROM ai_personas ap
 WHERE ap.id = $1;
 
 -- name: ListProposedIntelSources :many
--- Returns sources with status='proposed' for admin review.
-SELECT * FROM intel_sources
-WHERE status = 'proposed'
-ORDER BY proposed_at DESC NULLS LAST
-LIMIT $1 OFFSET $2;
+-- Returns sources with status='proposed' for admin review. The LEFT JOINs
+-- resolve proposed_by into a human-readable name (display_name falling back
+-- to username, then the raw UUID string) so the review surface never shows
+-- a bare UUID.
+SELECT s.*, COALESCE(up.display_name, u.username, s.proposed_by::text) AS proposer_name
+FROM intel_sources s
+LEFT JOIN users u ON u.id = s.proposed_by
+LEFT JOIN user_profiles up ON up.user_id = s.proposed_by
+WHERE s.status = 'proposed'
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%'
+       OR s.domain ILIKE '%' || @search || '%'
+       OR s.source_url ILIKE '%' || @search || '%'
+       OR s.category ILIKE '%' || @search || '%')
+ORDER BY s.proposed_at DESC NULLS LAST
+LIMIT @row_limit OFFSET @row_offset;
+
+-- name: CountProposedIntelSources :one
+SELECT COUNT(*) FROM intel_sources s
+WHERE s.status = 'proposed'
+  AND (@search::text = '' OR s.name ILIKE '%' || @search || '%'
+       OR s.domain ILIKE '%' || @search || '%'
+       OR s.source_url ILIKE '%' || @search || '%'
+       OR s.category ILIKE '%' || @search || '%');
 
 -- name: ApproveProposedIntelSource :one
 -- Approves a proposed source: status='active', enabled=true, record approver.
@@ -303,13 +327,73 @@ SET status = 'active',
 WHERE id = $1 AND status = 'proposed'
 RETURNING *;
 
+-- name: RejectProposedIntelSource :one
+-- Rejects a proposed source: status='rejected', disabled, records the
+-- reviewer in rejected_by/rejected_at as the decision actor (migration
+-- 000844 — approved_* stays NULL so a rejected row never reads as
+-- approved). The status precondition makes a re-reject (or
+-- reject-after-approve race) a no-row conflict instead of a silent
+-- last-write-wins.
+UPDATE intel_sources
+SET status = 'rejected',
+ enabled = false,
+ rejected_by = $2,
+ rejected_at = now(),
+ updated_at = now()
+WHERE id = $1 AND status = 'proposed'
+RETURNING *;
+
+-- name: ListIntelSourcesFiltered :many
+-- Filtered registry list for the control-panel sources management page:
+-- optional free-text search (?q matches name/domain/source_url/keywords),
+-- optional category (matches the scalar OR categories[]), optional status
+-- and enabled filters, whitelisted sort, server-side pagination.
+SELECT * FROM intel_sources
+WHERE (@search::text = '' OR name ILIKE '%' || @search || '%'
+       OR domain ILIKE '%' || @search || '%'
+       OR source_url ILIKE '%' || @search || '%'
+       OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || @search || '%'))
+  AND (@category::text = '' OR category = @category OR @category = ANY(categories))
+  AND (@status::text = '' OR status = @status)
+  AND (sqlc.narg(enabled)::bool IS NULL OR enabled = sqlc.narg(enabled)::bool)
+ORDER BY
+  CASE WHEN @sort_key::text = 'name'             AND @sort_dir::text = 'asc'  THEN name             END ASC,
+  CASE WHEN @sort_key::text = 'name'             AND @sort_dir::text = 'desc' THEN name             END DESC,
+  CASE WHEN @sort_key::text = 'domain'           AND @sort_dir::text = 'asc'  THEN domain           END ASC,
+  CASE WHEN @sort_key::text = 'domain'           AND @sort_dir::text = 'desc' THEN domain           END DESC,
+  CASE WHEN @sort_key::text = 'category'         AND @sort_dir::text = 'asc'  THEN category         END ASC,
+  CASE WHEN @sort_key::text = 'category'         AND @sort_dir::text = 'desc' THEN category         END DESC,
+  CASE WHEN @sort_key::text = 'status'           AND @sort_dir::text = 'asc'  THEN status           END ASC,
+  CASE WHEN @sort_key::text = 'status'           AND @sort_dir::text = 'desc' THEN status           END DESC,
+  CASE WHEN @sort_key::text = 'trust_level'      AND @sort_dir::text = 'asc'  THEN trust_level      END ASC,
+  CASE WHEN @sort_key::text = 'trust_level'      AND @sort_dir::text = 'desc' THEN trust_level      END DESC,
+  CASE WHEN @sort_key::text = 'crawl_method'     AND @sort_dir::text = 'asc'  THEN crawl_method     END ASC,
+  CASE WHEN @sort_key::text = 'crawl_method'     AND @sort_dir::text = 'desc' THEN crawl_method     END DESC,
+  CASE WHEN @sort_key::text = 'enabled'          AND @sort_dir::text = 'asc'  THEN enabled          END ASC,
+  CASE WHEN @sort_key::text = 'enabled'          AND @sort_dir::text = 'desc' THEN enabled          END DESC,
+  CASE WHEN @sort_key::text = 'last_crawled_at'  AND @sort_dir::text = 'asc'  THEN last_crawled_at  END ASC NULLS FIRST,
+  CASE WHEN @sort_key::text = 'last_crawled_at'  AND @sort_dir::text = 'desc' THEN last_crawled_at  END DESC NULLS LAST,
+  CASE WHEN @sort_key::text = 'created_at'       AND @sort_dir::text = 'asc'  THEN created_at       END ASC,
+  created_at DESC
+LIMIT @row_limit OFFSET @row_offset;
+
+-- name: CountIntelSourcesFiltered :one
+SELECT COUNT(*) FROM intel_sources
+WHERE (@search::text = '' OR name ILIKE '%' || @search || '%'
+       OR domain ILIKE '%' || @search || '%'
+       OR source_url ILIKE '%' || @search || '%'
+       OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || @search || '%'))
+  AND (@category::text = '' OR category = @category OR @category = ANY(categories))
+  AND (@status::text = '' OR status = @status)
+  AND (sqlc.narg(enabled)::bool IS NULL OR enabled = sqlc.narg(enabled)::bool);
+
 -- name: ListPublicSourcesPopular :many
 SELECT * FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
 ORDER BY follower_count DESC, name ASC
 LIMIT $4 OFFSET $5;
 
@@ -317,9 +401,9 @@ LIMIT $4 OFFSET $5;
 SELECT * FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
 ORDER BY created_at DESC, name ASC
 LIMIT $4 OFFSET $5;
 
@@ -327,9 +411,9 @@ LIMIT $4 OFFSET $5;
 SELECT * FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
  AND created_at > now() - interval '30 days'
 ORDER BY follower_count DESC, post_count DESC
 LIMIT $4 OFFSET $5;
@@ -341,9 +425,9 @@ LIMIT $4 OFFSET $5;
 SELECT * FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
  AND created_at > now() - interval '7 days'
 ORDER BY follower_count DESC, post_count DESC
 LIMIT $4 OFFSET $5;
@@ -352,9 +436,9 @@ LIMIT $4 OFFSET $5;
 SELECT COUNT(*) FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%');
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'));
 
 -- name: IncrementSourcePostCount :exec
 UPDATE intel_sources
@@ -486,3 +570,16 @@ SELECT COUNT(*) FROM intel_records WHERE status = $1;
 SELECT EXISTS(
     SELECT 1 FROM intel_sources WHERE lower(domain) = lower($1)
 ) AS exists;
+
+-- name: ListIntelRecordsForAgent :many
+-- Agent/MCP read surface (§103): browsable record list without the heavy
+-- JSONB payloads (extracted/confidence/evidence). intel.record.get returns
+-- the full row for a single record. Optional source/status/entity_type
+-- filters; newest first.
+SELECT id, source_id, entity_type, external_key, confidence_overall, status, freshness_score, extracted_at, last_verified_at, promoted_record_id
+FROM intel_records
+WHERE (sqlc.narg(source_id)::uuid IS NULL OR source_id = sqlc.narg(source_id)::uuid)
+  AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
+  AND (sqlc.narg(entity_type)::text IS NULL OR entity_type = sqlc.narg(entity_type)::text)
+ORDER BY extracted_at DESC
+LIMIT sqlc.arg(row_limit) OFFSET sqlc.arg(row_offset);

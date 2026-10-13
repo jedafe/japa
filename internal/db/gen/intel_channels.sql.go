@@ -667,7 +667,7 @@ func (q *Queries) UpdateIntelChannelRelevance(ctx context.Context, arg UpdateInt
 
 const updateIntelSourceCategories = `-- name: UpdateIntelSourceCategories :one
 UPDATE intel_sources SET categories = $2, updated_at = now()
-WHERE id = $1 RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at
+WHERE id = $1 RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at
 `
 
 type UpdateIntelSourceCategoriesParams struct {
@@ -723,6 +723,8 @@ func (q *Queries) UpdateIntelSourceCategories(ctx context.Context, arg UpdateInt
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 	)
 	return i, err
 }

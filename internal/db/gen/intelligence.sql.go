@@ -19,7 +19,7 @@ SET status = 'active',
  approved_at = now(),
  updated_at = now()
 WHERE id = $1 AND status = 'proposed'
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at
 `
 
 type ApproveProposedIntelSourceParams struct {
@@ -73,6 +73,8 @@ func (q *Queries) ApproveProposedIntelSource(ctx context.Context, arg ApprovePro
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 	)
 	return i, err
 }
@@ -157,6 +159,36 @@ func (q *Queries) CountIntelRecordsFiltered(ctx context.Context, arg CountIntelR
 	return count, err
 }
 
+const countIntelSourcesFiltered = `-- name: CountIntelSourcesFiltered :one
+SELECT COUNT(*) FROM intel_sources
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%'
+       OR domain ILIKE '%' || $1 || '%'
+       OR source_url ILIKE '%' || $1 || '%'
+       OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $1 || '%'))
+  AND ($2::text = '' OR category = $2 OR $2 = ANY(categories))
+  AND ($3::text = '' OR status = $3)
+  AND ($4::bool IS NULL OR enabled = $4::bool)
+`
+
+type CountIntelSourcesFilteredParams struct {
+	Search   string `json:"search"`
+	Category string `json:"category"`
+	Status   string `json:"status"`
+	Enabled  *bool  `json:"enabled"`
+}
+
+func (q *Queries) CountIntelSourcesFiltered(ctx context.Context, arg CountIntelSourcesFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countIntelSourcesFiltered,
+		arg.Search,
+		arg.Category,
+		arg.Status,
+		arg.Enabled,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPromotedIntelRecordsBySource = `-- name: CountPromotedIntelRecordsBySource :one
 SELECT count(*) FROM intel_records
 WHERE source_id = $1 AND promoted_record_id IS NOT NULL
@@ -174,13 +206,29 @@ func (q *Queries) CountPromotedIntelRecordsBySource(ctx context.Context, sourceI
 	return count, err
 }
 
+const countProposedIntelSources = `-- name: CountProposedIntelSources :one
+SELECT COUNT(*) FROM intel_sources s
+WHERE s.status = 'proposed'
+  AND ($1::text = '' OR s.name ILIKE '%' || $1 || '%'
+       OR s.domain ILIKE '%' || $1 || '%'
+       OR s.source_url ILIKE '%' || $1 || '%'
+       OR s.category ILIKE '%' || $1 || '%')
+`
+
+func (q *Queries) CountProposedIntelSources(ctx context.Context, search string) (int64, error) {
+	row := q.db.QueryRow(ctx, countProposedIntelSources, search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPublicSources = `-- name: CountPublicSources :one
 SELECT COUNT(*) FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
 `
 
 type CountPublicSourcesParams struct {
@@ -321,7 +369,7 @@ const createIntelSource = `-- name: CreateIntelSource :one
 
 INSERT INTO intel_sources (name, slug, domain, source_url, description, category, source_type, source_kind, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, logo_url, keywords, enabled, status, proposed_by, proposed_at, approved_by, approved_at, persona_id, categories, probe_report) VALUES ($1, $16, $2, $3, $17, $4, $5, COALESCE($18, 'publisher'), $6, $7, $8, $9, $10, $11, $12, $13, $14, $19, $20, $15, COALESCE($21, 'active'), $22, $23, $24, $25, $26, COALESCE($27::text[], CASE WHEN $4 = '' THEN '{}'::text[] ELSE ARRAY[$4] END), COALESCE($28::jsonb, '{}'::jsonb))
 
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at
 `
 
 type CreateIntelSourceParams struct {
@@ -438,6 +486,8 @@ func (q *Queries) CreateIntelSource(ctx context.Context, arg CreateIntelSourcePa
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 	)
 	return i, err
 }
@@ -632,7 +682,7 @@ func (q *Queries) GetIntelRecordByExternalKey(ctx context.Context, arg GetIntelR
 }
 
 const getIntelSource = `-- name: GetIntelSource :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources WHERE id = $1
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources WHERE id = $1
 `
 
 func (q *Queries) GetIntelSource(ctx context.Context, id pgtype.UUID) (IntelSource, error) {
@@ -680,12 +730,14 @@ func (q *Queries) GetIntelSource(ctx context.Context, id pgtype.UUID) (IntelSour
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 	)
 	return i, err
 }
 
 const getIntelSourceBySlug = `-- name: GetIntelSourceBySlug :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources WHERE slug = $1
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources WHERE slug = $1
 `
 
 func (q *Queries) GetIntelSourceBySlug(ctx context.Context, slug *string) (IntelSource, error) {
@@ -733,12 +785,14 @@ func (q *Queries) GetIntelSourceBySlug(ctx context.Context, slug *string) (Intel
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 	)
 	return i, err
 }
 
 const getIntelSourceBySlugWithLinkedEntity = `-- name: GetIntelSourceBySlugWithLinkedEntity :one
-SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords, s.categories, s.probe_report, s.detected_methods, s.last_probed_at,
+SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords, s.categories, s.probe_report, s.detected_methods, s.last_probed_at, s.rejected_by, s.rejected_at,
  sp.slug AS space_slug, sp.name AS space_name,
  o.slug AS org_slug, o.name AS org_name,
  u.username AS user_slug, COALESCE(up.display_name, u.username, '') AS user_name
@@ -792,6 +846,8 @@ type GetIntelSourceBySlugWithLinkedEntityRow struct {
 	ProbeReport         []byte             `json:"probe_report"`
 	DetectedMethods     []string           `json:"detected_methods"`
 	LastProbedAt        pgtype.Timestamptz `json:"last_probed_at"`
+	RejectedBy          pgtype.UUID        `json:"rejected_by"`
+	RejectedAt          pgtype.Timestamptz `json:"rejected_at"`
 	SpaceSlug           *string            `json:"space_slug"`
 	SpaceName           *string            `json:"space_name"`
 	OrgSlug             *string            `json:"org_slug"`
@@ -845,6 +901,8 @@ func (q *Queries) GetIntelSourceBySlugWithLinkedEntity(ctx context.Context, slug
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 		&i.SpaceSlug,
 		&i.SpaceName,
 		&i.OrgSlug,
@@ -856,7 +914,7 @@ func (q *Queries) GetIntelSourceBySlugWithLinkedEntity(ctx context.Context, slug
 }
 
 const getIntelSourceByURL = `-- name: GetIntelSourceByURL :one
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources WHERE source_url = $1
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources WHERE source_url = $1
 `
 
 func (q *Queries) GetIntelSourceByURL(ctx context.Context, sourceUrl string) (IntelSource, error) {
@@ -904,6 +962,8 @@ func (q *Queries) GetIntelSourceByURL(ctx context.Context, sourceUrl string) (In
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 	)
 	return i, err
 }
@@ -1118,7 +1178,7 @@ func (q *Queries) ListDistinctIntelRecordEntityTypesBySource(ctx context.Context
 }
 
 const listDueIntelSources = `-- name: ListDueIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
  -- Manual sources (§106 video channels, entity-linked rows) are never
@@ -1182,6 +1242,8 @@ func (q *Queries) ListDueIntelSources(ctx context.Context, limit int32) ([]Intel
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1490,6 +1552,78 @@ func (q *Queries) ListIntelRecordsFiltered(ctx context.Context, arg ListIntelRec
 	return items, nil
 }
 
+const listIntelRecordsForAgent = `-- name: ListIntelRecordsForAgent :many
+SELECT id, source_id, entity_type, external_key, confidence_overall, status, freshness_score, extracted_at, last_verified_at, promoted_record_id
+FROM intel_records
+WHERE ($1::uuid IS NULL OR source_id = $1::uuid)
+  AND ($2::text IS NULL OR status = $2::text)
+  AND ($3::text IS NULL OR entity_type = $3::text)
+ORDER BY extracted_at DESC
+LIMIT $5 OFFSET $4
+`
+
+type ListIntelRecordsForAgentParams struct {
+	SourceID   pgtype.UUID `json:"source_id"`
+	Status     *string     `json:"status"`
+	EntityType *string     `json:"entity_type"`
+	RowOffset  int32       `json:"row_offset"`
+	RowLimit   int32       `json:"row_limit"`
+}
+
+type ListIntelRecordsForAgentRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	SourceID          pgtype.UUID        `json:"source_id"`
+	EntityType        string             `json:"entity_type"`
+	ExternalKey       string             `json:"external_key"`
+	ConfidenceOverall float32            `json:"confidence_overall"`
+	Status            string             `json:"status"`
+	FreshnessScore    int32              `json:"freshness_score"`
+	ExtractedAt       pgtype.Timestamptz `json:"extracted_at"`
+	LastVerifiedAt    pgtype.Timestamptz `json:"last_verified_at"`
+	PromotedRecordID  pgtype.UUID        `json:"promoted_record_id"`
+}
+
+// Agent/MCP read surface (§103): browsable record list without the heavy
+// JSONB payloads (extracted/confidence/evidence). intel.record.get returns
+// the full row for a single record. Optional source/status/entity_type
+// filters; newest first.
+func (q *Queries) ListIntelRecordsForAgent(ctx context.Context, arg ListIntelRecordsForAgentParams) ([]ListIntelRecordsForAgentRow, error) {
+	rows, err := q.db.Query(ctx, listIntelRecordsForAgent,
+		arg.SourceID,
+		arg.Status,
+		arg.EntityType,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIntelRecordsForAgentRow
+	for rows.Next() {
+		var i ListIntelRecordsForAgentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceID,
+			&i.EntityType,
+			&i.ExternalKey,
+			&i.ConfidenceOverall,
+			&i.Status,
+			&i.FreshnessScore,
+			&i.ExtractedAt,
+			&i.LastVerifiedAt,
+			&i.PromotedRecordID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIntelReviewLog = `-- name: ListIntelReviewLog :many
 SELECT id, intel_record_id, actor_user_id, action, field_changes, note, created_at FROM intel_review_log WHERE intel_record_id = $1 ORDER BY created_at DESC
 `
@@ -1523,7 +1657,7 @@ func (q *Queries) ListIntelReviewLog(ctx context.Context, intelRecordID pgtype.U
 }
 
 const listIntelSources = `-- name: ListIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources WHERE true ORDER BY created_at DESC LIMIT $1 OFFSET $2
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources WHERE true ORDER BY created_at DESC LIMIT $1 OFFSET $2
 `
 
 type ListIntelSourcesParams struct {
@@ -1582,6 +1716,8 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1594,7 +1730,7 @@ func (q *Queries) ListIntelSources(ctx context.Context, arg ListIntelSourcesPara
 }
 
 const listIntelSourcesByCategory = `-- name: ListIntelSourcesByCategory :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources WHERE category = $1 AND enabled = true AND status = 'active' ORDER BY trust_level, name
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources WHERE category = $1 AND enabled = true AND status = 'active' ORDER BY trust_level, name
 `
 
 func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, category string) ([]IntelSource, error) {
@@ -1648,6 +1784,8 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, category strin
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1659,21 +1797,63 @@ func (q *Queries) ListIntelSourcesByCategory(ctx context.Context, category strin
 	return items, nil
 }
 
-const listProposedIntelSources = `-- name: ListProposedIntelSources :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
-WHERE status = 'proposed'
-ORDER BY proposed_at DESC NULLS LAST
-LIMIT $1 OFFSET $2
+const listIntelSourcesFiltered = `-- name: ListIntelSourcesFiltered :many
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
+WHERE ($1::text = '' OR name ILIKE '%' || $1 || '%'
+       OR domain ILIKE '%' || $1 || '%'
+       OR source_url ILIKE '%' || $1 || '%'
+       OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $1 || '%'))
+  AND ($2::text = '' OR category = $2 OR $2 = ANY(categories))
+  AND ($3::text = '' OR status = $3)
+  AND ($4::bool IS NULL OR enabled = $4::bool)
+ORDER BY
+  CASE WHEN $5::text = 'name'             AND $6::text = 'asc'  THEN name             END ASC,
+  CASE WHEN $5::text = 'name'             AND $6::text = 'desc' THEN name             END DESC,
+  CASE WHEN $5::text = 'domain'           AND $6::text = 'asc'  THEN domain           END ASC,
+  CASE WHEN $5::text = 'domain'           AND $6::text = 'desc' THEN domain           END DESC,
+  CASE WHEN $5::text = 'category'         AND $6::text = 'asc'  THEN category         END ASC,
+  CASE WHEN $5::text = 'category'         AND $6::text = 'desc' THEN category         END DESC,
+  CASE WHEN $5::text = 'status'           AND $6::text = 'asc'  THEN status           END ASC,
+  CASE WHEN $5::text = 'status'           AND $6::text = 'desc' THEN status           END DESC,
+  CASE WHEN $5::text = 'trust_level'      AND $6::text = 'asc'  THEN trust_level      END ASC,
+  CASE WHEN $5::text = 'trust_level'      AND $6::text = 'desc' THEN trust_level      END DESC,
+  CASE WHEN $5::text = 'crawl_method'     AND $6::text = 'asc'  THEN crawl_method     END ASC,
+  CASE WHEN $5::text = 'crawl_method'     AND $6::text = 'desc' THEN crawl_method     END DESC,
+  CASE WHEN $5::text = 'enabled'          AND $6::text = 'asc'  THEN enabled          END ASC,
+  CASE WHEN $5::text = 'enabled'          AND $6::text = 'desc' THEN enabled          END DESC,
+  CASE WHEN $5::text = 'last_crawled_at'  AND $6::text = 'asc'  THEN last_crawled_at  END ASC NULLS FIRST,
+  CASE WHEN $5::text = 'last_crawled_at'  AND $6::text = 'desc' THEN last_crawled_at  END DESC NULLS LAST,
+  CASE WHEN $5::text = 'created_at'       AND $6::text = 'asc'  THEN created_at       END ASC,
+  created_at DESC
+LIMIT $8 OFFSET $7
 `
 
-type ListProposedIntelSourcesParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+type ListIntelSourcesFilteredParams struct {
+	Search    string `json:"search"`
+	Category  string `json:"category"`
+	Status    string `json:"status"`
+	Enabled   *bool  `json:"enabled"`
+	SortKey   string `json:"sort_key"`
+	SortDir   string `json:"sort_dir"`
+	RowOffset int32  `json:"row_offset"`
+	RowLimit  int32  `json:"row_limit"`
 }
 
-// Returns sources with status='proposed' for admin review.
-func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposedIntelSourcesParams) ([]IntelSource, error) {
-	rows, err := q.db.Query(ctx, listProposedIntelSources, arg.Limit, arg.Offset)
+// Filtered registry list for the control-panel sources management page:
+// optional free-text search (?q matches name/domain/source_url/keywords),
+// optional category (matches the scalar OR categories[]), optional status
+// and enabled filters, whitelisted sort, server-side pagination.
+func (q *Queries) ListIntelSourcesFiltered(ctx context.Context, arg ListIntelSourcesFilteredParams) ([]IntelSource, error) {
+	rows, err := q.db.Query(ctx, listIntelSourcesFiltered,
+		arg.Search,
+		arg.Category,
+		arg.Status,
+		arg.Enabled,
+		arg.SortKey,
+		arg.SortDir,
+		arg.RowOffset,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1723,6 +1903,144 @@ func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposed
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProposedIntelSources = `-- name: ListProposedIntelSources :many
+SELECT s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords, s.categories, s.probe_report, s.detected_methods, s.last_probed_at, s.rejected_by, s.rejected_at, COALESCE(up.display_name, u.username, s.proposed_by::text) AS proposer_name
+FROM intel_sources s
+LEFT JOIN users u ON u.id = s.proposed_by
+LEFT JOIN user_profiles up ON up.user_id = s.proposed_by
+WHERE s.status = 'proposed'
+  AND ($1::text = '' OR s.name ILIKE '%' || $1 || '%'
+       OR s.domain ILIKE '%' || $1 || '%'
+       OR s.source_url ILIKE '%' || $1 || '%'
+       OR s.category ILIKE '%' || $1 || '%')
+ORDER BY s.proposed_at DESC NULLS LAST
+LIMIT $3 OFFSET $2
+`
+
+type ListProposedIntelSourcesParams struct {
+	Search    string `json:"search"`
+	RowOffset int32  `json:"row_offset"`
+	RowLimit  int32  `json:"row_limit"`
+}
+
+type ListProposedIntelSourcesRow struct {
+	ID                  pgtype.UUID        `json:"id"`
+	Name                string             `json:"name"`
+	Domain              string             `json:"domain"`
+	SourceUrl           string             `json:"source_url"`
+	Category            string             `json:"category"`
+	SourceType          string             `json:"source_type"`
+	TrustLevel          int16              `json:"trust_level"`
+	CrawlMethod         string             `json:"crawl_method"`
+	CrawlFrequency      string             `json:"crawl_frequency"`
+	CrawlFrequencyMins  int32              `json:"crawl_frequency_mins"`
+	RobotsPolicy        []byte             `json:"robots_policy"`
+	SourceLicense       *string            `json:"source_license"`
+	AttributionRequired bool               `json:"attribution_required"`
+	UsageRestriction    *string            `json:"usage_restriction"`
+	ProviderConfig      []byte             `json:"provider_config"`
+	Enabled             bool               `json:"enabled"`
+	LastCrawledAt       pgtype.Timestamptz `json:"last_crawled_at"`
+	LastSuccessAt       pgtype.Timestamptz `json:"last_success_at"`
+	LastErrorAt         pgtype.Timestamptz `json:"last_error_at"`
+	LastErrorMessage    *string            `json:"last_error_message"`
+	LastChangedAt       pgtype.Timestamptz `json:"last_changed_at"`
+	ConsecutiveFailures int32              `json:"consecutive_failures"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	PersonaID           pgtype.UUID        `json:"persona_id"`
+	Status              string             `json:"status"`
+	ProposedBy          pgtype.UUID        `json:"proposed_by"`
+	ProposedAt          pgtype.Timestamptz `json:"proposed_at"`
+	ApprovedBy          pgtype.UUID        `json:"approved_by"`
+	ApprovedAt          pgtype.Timestamptz `json:"approved_at"`
+	Slug                *string            `json:"slug"`
+	Description         *string            `json:"description"`
+	LogoUrl             *string            `json:"logo_url"`
+	FollowerCount       int32              `json:"follower_count"`
+	PostCount           int32              `json:"post_count"`
+	SourceKind          string             `json:"source_kind"`
+	Keywords            []string           `json:"keywords"`
+	Categories          []string           `json:"categories"`
+	ProbeReport         []byte             `json:"probe_report"`
+	DetectedMethods     []string           `json:"detected_methods"`
+	LastProbedAt        pgtype.Timestamptz `json:"last_probed_at"`
+	RejectedBy          pgtype.UUID        `json:"rejected_by"`
+	RejectedAt          pgtype.Timestamptz `json:"rejected_at"`
+	ProposerName        string             `json:"proposer_name"`
+}
+
+// Returns sources with status='proposed' for admin review. The LEFT JOINs
+// resolve proposed_by into a human-readable name (display_name falling back
+// to username, then the raw UUID string) so the review surface never shows
+// a bare UUID.
+func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposedIntelSourcesParams) ([]ListProposedIntelSourcesRow, error) {
+	rows, err := q.db.Query(ctx, listProposedIntelSources, arg.Search, arg.RowOffset, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProposedIntelSourcesRow
+	for rows.Next() {
+		var i ListProposedIntelSourcesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Domain,
+			&i.SourceUrl,
+			&i.Category,
+			&i.SourceType,
+			&i.TrustLevel,
+			&i.CrawlMethod,
+			&i.CrawlFrequency,
+			&i.CrawlFrequencyMins,
+			&i.RobotsPolicy,
+			&i.SourceLicense,
+			&i.AttributionRequired,
+			&i.UsageRestriction,
+			&i.ProviderConfig,
+			&i.Enabled,
+			&i.LastCrawledAt,
+			&i.LastSuccessAt,
+			&i.LastErrorAt,
+			&i.LastErrorMessage,
+			&i.LastChangedAt,
+			&i.ConsecutiveFailures,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PersonaID,
+			&i.Status,
+			&i.ProposedBy,
+			&i.ProposedAt,
+			&i.ApprovedBy,
+			&i.ApprovedAt,
+			&i.Slug,
+			&i.Description,
+			&i.LogoUrl,
+			&i.FollowerCount,
+			&i.PostCount,
+			&i.SourceKind,
+			&i.Keywords,
+			&i.Categories,
+			&i.ProbeReport,
+			&i.DetectedMethods,
+			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
+			&i.ProposerName,
 		); err != nil {
 			return nil, err
 		}
@@ -1735,12 +2053,12 @@ func (q *Queries) ListProposedIntelSources(ctx context.Context, arg ListProposed
 }
 
 const listPublicSourcesPopular = `-- name: ListPublicSourcesPopular :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
 ORDER BY follower_count DESC, name ASC
 LIMIT $4 OFFSET $5
 `
@@ -1810,6 +2128,8 @@ func (q *Queries) ListPublicSourcesPopular(ctx context.Context, arg ListPublicSo
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1822,12 +2142,12 @@ func (q *Queries) ListPublicSourcesPopular(ctx context.Context, arg ListPublicSo
 }
 
 const listPublicSourcesRecent = `-- name: ListPublicSourcesRecent :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
 ORDER BY created_at DESC, name ASC
 LIMIT $4 OFFSET $5
 `
@@ -1897,6 +2217,8 @@ func (q *Queries) ListPublicSourcesRecent(ctx context.Context, arg ListPublicSou
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1909,12 +2231,12 @@ func (q *Queries) ListPublicSourcesRecent(ctx context.Context, arg ListPublicSou
 }
 
 const listPublicSourcesRising = `-- name: ListPublicSourcesRising :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
  AND created_at > now() - interval '7 days'
 ORDER BY follower_count DESC, post_count DESC
 LIMIT $4 OFFSET $5
@@ -1988,6 +2310,8 @@ func (q *Queries) ListPublicSourcesRising(ctx context.Context, arg ListPublicSou
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2000,12 +2324,12 @@ func (q *Queries) ListPublicSourcesRising(ctx context.Context, arg ListPublicSou
 }
 
 const listPublicSourcesTrending = `-- name: ListPublicSourcesTrending :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
 WHERE enabled = true
  AND status = 'active'
- AND ($1::text IS NULL OR $1 = '' OR category = $1)
+ AND ($1::text IS NULL OR $1 = '' OR category = $1 OR $1 = ANY(categories))
  AND ($2::text IS NULL OR $2 = '' OR source_kind = $2)
- AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%')
+ AND ($3::text IS NULL OR $3 = '' OR name ILIKE '%' || $3 || '%' OR description ILIKE '%' || $3 || '%' OR domain ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(keywords) kw WHERE kw ILIKE '%' || $3 || '%'))
  AND created_at > now() - interval '30 days'
 ORDER BY follower_count DESC, post_count DESC
 LIMIT $4 OFFSET $5
@@ -2076,6 +2400,8 @@ func (q *Queries) ListPublicSourcesTrending(ctx context.Context, arg ListPublicS
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2090,7 +2416,7 @@ func (q *Queries) ListPublicSourcesTrending(ctx context.Context, arg ListPublicS
 const listSourceCollectionItems = `-- name: ListSourceCollectionItems :many
 SELECT
  i.position,
- s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords, s.categories, s.probe_report, s.detected_methods, s.last_probed_at
+ s.id, s.name, s.domain, s.source_url, s.category, s.source_type, s.trust_level, s.crawl_method, s.crawl_frequency, s.crawl_frequency_mins, s.robots_policy, s.source_license, s.attribution_required, s.usage_restriction, s.provider_config, s.enabled, s.last_crawled_at, s.last_success_at, s.last_error_at, s.last_error_message, s.last_changed_at, s.consecutive_failures, s.created_at, s.updated_at, s.persona_id, s.status, s.proposed_by, s.proposed_at, s.approved_by, s.approved_at, s.slug, s.description, s.logo_url, s.follower_count, s.post_count, s.source_kind, s.keywords, s.categories, s.probe_report, s.detected_methods, s.last_probed_at, s.rejected_by, s.rejected_at
 FROM source_collection_items i
 JOIN intel_sources s ON s.id = i.source_id
 WHERE i.collection_id = $1
@@ -2140,6 +2466,8 @@ type ListSourceCollectionItemsRow struct {
 	ProbeReport         []byte             `json:"probe_report"`
 	DetectedMethods     []string           `json:"detected_methods"`
 	LastProbedAt        pgtype.Timestamptz `json:"last_probed_at"`
+	RejectedBy          pgtype.UUID        `json:"rejected_by"`
+	RejectedAt          pgtype.Timestamptz `json:"rejected_at"`
 }
 
 func (q *Queries) ListSourceCollectionItems(ctx context.Context, collectionID pgtype.UUID) ([]ListSourceCollectionItemsRow, error) {
@@ -2194,6 +2522,8 @@ func (q *Queries) ListSourceCollectionItems(ctx context.Context, collectionID pg
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2337,7 +2667,7 @@ func (q *Queries) ListStaleIntelRecords(ctx context.Context, limit int32) ([]Int
 }
 
 const listVideoChannelSourcesDue = `-- name: ListVideoChannelSourcesDue :many
-SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at FROM intel_sources
+SELECT id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at FROM intel_sources
 WHERE source_type = 'video_channel'
  AND enabled = true
  AND status = 'active'
@@ -2406,6 +2736,8 @@ func (q *Queries) ListVideoChannelSourcesDue(ctx context.Context, arg ListVideoC
 			&i.ProbeReport,
 			&i.DetectedMethods,
 			&i.LastProbedAt,
+			&i.RejectedBy,
+			&i.RejectedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2433,6 +2765,100 @@ WHERE status = 'rejected' AND $1::int > 0
 // Returns the deleted row count.
 func (q *Queries) PurgeRejectedIntelRecords(ctx context.Context, dollar_1 int32) (int64, error) {
 	result, err := q.db.Exec(ctx, purgeRejectedIntelRecords, dollar_1)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const rejectProposedIntelSource = `-- name: RejectProposedIntelSource :one
+UPDATE intel_sources
+SET status = 'rejected',
+ enabled = false,
+ rejected_by = $2,
+ rejected_at = now(),
+ updated_at = now()
+WHERE id = $1 AND status = 'proposed'
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at
+`
+
+type RejectProposedIntelSourceParams struct {
+	ID         pgtype.UUID `json:"id"`
+	RejectedBy pgtype.UUID `json:"rejected_by"`
+}
+
+// Rejects a proposed source: status='rejected', disabled, records the
+// reviewer in rejected_by/rejected_at as the decision actor (migration
+// 000844 — approved_* stays NULL so a rejected row never reads as
+// approved). The status precondition makes a re-reject (or
+// reject-after-approve race) a no-row conflict instead of a silent
+// last-write-wins.
+func (q *Queries) RejectProposedIntelSource(ctx context.Context, arg RejectProposedIntelSourceParams) (IntelSource, error) {
+	row := q.db.QueryRow(ctx, rejectProposedIntelSource, arg.ID, arg.RejectedBy)
+	var i IntelSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Domain,
+		&i.SourceUrl,
+		&i.Category,
+		&i.SourceType,
+		&i.TrustLevel,
+		&i.CrawlMethod,
+		&i.CrawlFrequency,
+		&i.CrawlFrequencyMins,
+		&i.RobotsPolicy,
+		&i.SourceLicense,
+		&i.AttributionRequired,
+		&i.UsageRestriction,
+		&i.ProviderConfig,
+		&i.Enabled,
+		&i.LastCrawledAt,
+		&i.LastSuccessAt,
+		&i.LastErrorAt,
+		&i.LastErrorMessage,
+		&i.LastChangedAt,
+		&i.ConsecutiveFailures,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PersonaID,
+		&i.Status,
+		&i.ProposedBy,
+		&i.ProposedAt,
+		&i.ApprovedBy,
+		&i.ApprovedAt,
+		&i.Slug,
+		&i.Description,
+		&i.LogoUrl,
+		&i.FollowerCount,
+		&i.PostCount,
+		&i.SourceKind,
+		&i.Keywords,
+		&i.Categories,
+		&i.ProbeReport,
+		&i.DetectedMethods,
+		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
+	)
+	return i, err
+}
+
+const transitionIntelRecordStatus = `-- name: TransitionIntelRecordStatus :execrows
+UPDATE intel_records SET status = $2, last_verified_at = now() WHERE id = $1 AND status = $3
+`
+
+type TransitionIntelRecordStatusParams struct {
+	ID       pgtype.UUID `json:"id"`
+	Status   string      `json:"status"`
+	Status_2 string      `json:"status_2"`
+}
+
+// Atomic review-gate transition: only applies when the record is still in
+// the expected prior state. 0 rows affected means a racing transition won —
+// the caller maps that to 409 invalid_record_state.
+func (q *Queries) TransitionIntelRecordStatus(ctx context.Context, arg TransitionIntelRecordStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, transitionIntelRecordStatus, arg.ID, arg.Status, arg.Status_2)
 	if err != nil {
 		return 0, err
 	}
@@ -2527,7 +2953,7 @@ SET name = $2,
  persona_id = COALESCE($25, persona_id),
  updated_at = now()
 WHERE id = $1
-RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at
+RETURNING id, name, domain, source_url, category, source_type, trust_level, crawl_method, crawl_frequency, crawl_frequency_mins, robots_policy, source_license, attribution_required, usage_restriction, provider_config, enabled, last_crawled_at, last_success_at, last_error_at, last_error_message, last_changed_at, consecutive_failures, created_at, updated_at, persona_id, status, proposed_by, proposed_at, approved_by, approved_at, slug, description, logo_url, follower_count, post_count, source_kind, keywords, categories, probe_report, detected_methods, last_probed_at, rejected_by, rejected_at
 `
 
 type UpdateIntelSourceParams struct {
@@ -2629,6 +3055,8 @@ func (q *Queries) UpdateIntelSource(ctx context.Context, arg UpdateIntelSourcePa
 		&i.ProbeReport,
 		&i.DetectedMethods,
 		&i.LastProbedAt,
+		&i.RejectedBy,
+		&i.RejectedAt,
 	)
 	return i, err
 }

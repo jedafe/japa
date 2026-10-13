@@ -383,6 +383,16 @@ WHERE c.content_type = 'comparison'
 -- name: CountComparisonItemsByType :one
 SELECT count(*)::int FROM comparison_items WHERE type_id = @type_id AND deleted_at IS NULL;
 
+-- name: CountComparisonContentsByType :one
+-- Delete-type guard companion: distinct comparison content rows that carry an
+-- item of this type (contents carry no type_id of their own).
+SELECT count(DISTINCT content_id)::int FROM comparison_items WHERE type_id = @type_id AND deleted_at IS NULL;
+
+-- name: CountComparisonDimensionsByType :one
+-- Delete-type guard companion: dimensions auto-generated from this type's
+-- field group (they keep rendering the matrix after items are removed).
+SELECT count(*)::int FROM comparison_dimensions WHERE type_id = @type_id AND deleted_at IS NULL;
+
 -- =====================
 -- Nested comparison item search (JCE nested item resolver)
 -- =====================

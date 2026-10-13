@@ -251,12 +251,12 @@ DELETE FROM university_course_offerings WHERE id = @id AND deleted_at IS NOT NUL
 -- from 409 not_deleted when the DELETE affects no row.
 SELECT EXISTS(SELECT 1 FROM university_course_offerings WHERE id = @id) AS exists;
 
--- name: BulkSetCourseOfferingsPublished :exec
+-- name: BulkSetCourseOfferingsPublished :execrows
 UPDATE university_course_offerings
 SET is_published = @is_published, updated_at = now()
 WHERE id = ANY(@ids::uuid[]) AND deleted_at IS NULL;
 
--- name: BulkSoftDeleteCourseOfferings :exec
+-- name: BulkSoftDeleteCourseOfferings :execrows
 UPDATE university_course_offerings
 SET deleted_at = now(), updated_at = now()
 WHERE id = ANY(@ids::uuid[]) AND deleted_at IS NULL;

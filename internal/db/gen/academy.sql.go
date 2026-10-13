@@ -1982,7 +1982,7 @@ func (q *Queries) UpdateAcademyTrack(ctx context.Context, arg UpdateAcademyTrack
 const updateEnrollmentProgress = `-- name: UpdateEnrollmentProgress :exec
 UPDATE academy_enrollments
 SET progress_pct = $1,
- completed_at = CASE WHEN $1::numeric >= 100 THEN now() ELSE completed_at END
+ completed_at = CASE WHEN $1::numeric >= 100 THEN now() ELSE NULL END
 WHERE user_id = $2 AND track_id = $3
 `
 

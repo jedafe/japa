@@ -385,6 +385,114 @@ func (q *Queries) ListActiveAMAs(ctx context.Context, arg ListActiveAMAsParams) 
 	return items, nil
 }
 
+const listClosedAMAs = `-- name: ListClosedAMAs :many
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+FROM forum_threads ft
+LEFT JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+WHERE ft.ama_config IS NOT NULL
+ AND ft.deleted_at IS NULL
+ AND (ft.ama_config->>'closes_at')::timestamptz <= now()
+ AND ($1::text IS NULL
+ OR ft.ama_config->>'host_dest_country_id' = $1)
+ AND ($2::text IS NULL
+ OR ft.ama_config->>'host_profession' ILIKE '%' || $2 || '%')
+ AND ($3::timestamptz IS NULL
+ OR ft.created_at < $3)
+ORDER BY ft.created_at DESC, ft.id DESC
+LIMIT $4
+`
+
+type ListClosedAMAsParams struct {
+	Dest            *string            `json:"dest"`
+	Profession      *string            `json:"profession"`
+	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	PageLimit       int32              `json:"page_limit"`
+}
+
+type ListClosedAMAsRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	ContentID         pgtype.UUID        `json:"content_id"`
+	SpaceID           pgtype.UUID        `json:"space_id"`
+	AuthorUserID      pgtype.UUID        `json:"author_user_id"`
+	ParentReplyID     pgtype.UUID        `json:"parent_reply_id"`
+	Title             string             `json:"title"`
+	Slug              string             `json:"slug"`
+	Body              []byte             `json:"body"`
+	IsAnonymous       bool               `json:"is_anonymous"`
+	Solved            bool               `json:"solved"`
+	SolvedAt          pgtype.Timestamptz `json:"solved_at"`
+	SolvedByUserID    pgtype.UUID        `json:"solved_by_user_id"`
+	VoteScore         int32              `json:"vote_score"`
+	ReplyCount        int32              `json:"reply_count"`
+	ViewCount         int32              `json:"view_count"`
+	BookmarkCount     int32              `json:"bookmark_count"`
+	EditWindowMinutes int32              `json:"edit_window_minutes"`
+	IsEdited          bool               `json:"is_edited"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	AmaConfig         []byte             `json:"ama_config"`
+	AuthorUsername    interface{}        `json:"author_username"`
+	AuthorAvatarUrl   interface{}        `json:"author_avatar_url"`
+}
+
+func (q *Queries) ListClosedAMAs(ctx context.Context, arg ListClosedAMAsParams) ([]ListClosedAMAsRow, error) {
+	rows, err := q.db.Query(ctx, listClosedAMAs,
+		arg.Dest,
+		arg.Profession,
+		arg.CursorCreatedAt,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListClosedAMAsRow
+	for rows.Next() {
+		var i ListClosedAMAsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ContentID,
+			&i.SpaceID,
+			&i.AuthorUserID,
+			&i.ParentReplyID,
+			&i.Title,
+			&i.Slug,
+			&i.Body,
+			&i.IsAnonymous,
+			&i.Solved,
+			&i.SolvedAt,
+			&i.SolvedByUserID,
+			&i.VoteScore,
+			&i.ReplyCount,
+			&i.ViewCount,
+			&i.BookmarkCount,
+			&i.EditWindowMinutes,
+			&i.IsEdited,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.AmaConfig,
+			&i.AuthorUsername,
+			&i.AuthorAvatarUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setReplyAMAPending = `-- name: SetReplyAMAPending :exec
 
 UPDATE forum_replies

@@ -574,12 +574,18 @@ SELECT
  WHEN 'forum_thread' THEN (SELECT ft.title FROM forum_threads ft WHERE ft.id = ce.entity_id)
  WHEN 'space' THEN (SELECT s.name FROM spaces s WHERE s.id = ce.entity_id)
  WHEN 'academy_track' THEN (SELECT lt.title FROM academy_tracks lt WHERE lt.id = ce.entity_id)
+ WHEN 'wiki_page' THEN (SELECT wp.title FROM wiki_pages wp WHERE wp.id = ce.entity_id)
  ELSE NULL END AS entity_title,
  CASE ce.entity_type
  WHEN 'content' THEN (SELECT c.slug FROM contents c WHERE c.id = ce.entity_id)
  WHEN 'forum_thread' THEN (SELECT ft.slug FROM forum_threads ft WHERE ft.id = ce.entity_id)
  WHEN 'space' THEN (SELECT s.slug FROM spaces s WHERE s.id = ce.entity_id)
  WHEN 'academy_track' THEN (SELECT lt.slug FROM academy_tracks lt WHERE lt.id = ce.entity_id)
+ -- Wiki pages cite as "space_slug/page_slug" — SourceURL maps that pair
+ -- to /wiki/{space_slug}/{page_slug} (§69 Citation Source Contract).
+ WHEN 'wiki_page' THEN (SELECT s.slug || '/' || wp.slug
+   FROM wiki_pages wp JOIN spaces s ON s.id = wp.space_id
+   WHERE wp.id = ce.entity_id)
  ELSE NULL END AS entity_slug
 FROM content_embeddings ce
 WHERE ($2::text = '' OR ce.language = $2)
@@ -603,6 +609,17 @@ WHERE ($2::text = '' OR ce.language = $2)
  SELECT 1 FROM academy_tracks lt
  WHERE lt.id = ce.entity_id
  AND lt.is_published = true
+ )
+ -- wiki_page chunks gate on the generated is_japabot_indexed flag
+ -- (is_active AND NOT is_locked) — soft-delete flips is_active=false,
+ -- so this one flag covers delete, deactivate, and lock. Defense-in-
+ -- depth alongside the fire-and-forget PurgeEntity calls in the wiki
+ -- admin handlers: a failed purge can never leave a non-indexable page
+ -- retrievable.
+ WHEN 'wiki_page' THEN EXISTS (
+ SELECT 1 FROM wiki_pages wp
+ WHERE wp.id = ce.entity_id
+ AND wp.is_japabot_indexed = true
  )
  ELSE true
  END
@@ -723,7 +740,7 @@ SELECT
  ce.chunk_text,
  ce.language,
  ce.created_at,
- (1.0 - (ce.embedding <=> $1))::float8 AS similarity,
+ (1.0 - (ce.embedding <=> $2))::float8 AS similarity,
  c.content_type,
  -- §69 Citation Source Contract: content-only query — title/slug come
  -- straight from the joined contents row.
@@ -731,33 +748,65 @@ SELECT
  c.slug AS entity_slug
 FROM content_embeddings ce
 JOIN contents c ON c.id = ce.entity_id AND ce.entity_type = 'content'
-WHERE ($2::text = '' OR ce.language = $2)
+WHERE ($3::text = '' OR ce.language = $3)
  AND c.status = 'published'
  AND c.deleted_at IS NULL
  AND (
- $3::uuid IS NULL
- OR c.geo_space_id = $3
- OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = $3)
+ $4::uuid IS NULL
+ OR c.geo_space_id = $4
+ OR c.geo_space_id IN (SELECT id FROM spaces WHERE parent_id = $4)
  )
  -- Scoped retrieval (§69 amendment): content-only clause — content
  -- visibility is self-contained (no space_membership join for content).
  AND (
  ce.visibility = 'public'
- OR ce.author_id = $4
- OR (ce.visibility = 'members' AND $4::uuid IS NOT NULL)
- OR (ce.visibility = 'private' AND $5::boolean)
+ OR ce.author_id = $5
+ OR (ce.visibility = 'members' AND $5::uuid IS NOT NULL)
+ OR (ce.visibility = 'private' AND $6::boolean)
  )
-ORDER BY ce.embedding <=> $1
-LIMIT $6
+UNION ALL
+SELECT
+ ce.id,
+ ce.entity_type,
+ ce.entity_id,
+ ce.chunk_index,
+ ce.chunk_text,
+ ce.language,
+ ce.created_at,
+ (1.0 - (ce.embedding <=> $2))::float8 AS similarity,
+ ''::text AS content_type,
+ wp.title AS entity_title,
+ (s.slug || '/' || wp.slug) AS entity_slug
+FROM content_embeddings ce
+JOIN wiki_pages wp ON wp.id = ce.entity_id AND ce.entity_type = 'wiki_page'
+JOIN spaces s ON s.id = wp.space_id
+WHERE ($3::text = '' OR ce.language = $3)
+ AND wp.is_japabot_indexed = true
+ AND (
+ $4::uuid IS NULL
+ OR wp.space_id = $4
+ OR wp.space_id IN (SELECT id FROM spaces WHERE parent_id = $4)
+ )
+ -- Wiki chunks are always indexed 'public' (wiki/handlers.go); the clause
+ -- mirrors the content branch for consistency and forward-compat if
+ -- scoped wiki visibility is ever introduced.
+ AND (
+ ce.visibility = 'public'
+ OR ce.author_id = $5
+ OR (ce.visibility = 'members' AND $5::uuid IS NOT NULL)
+ OR (ce.visibility = 'private' AND $6::boolean)
+ )
+ORDER BY similarity DESC
+LIMIT $1
 `
 
 type SearchContentEmbeddingsGeoFilteredParams struct {
+	TopK           int32               `json:"top_k"`
 	QueryEmbedding *pgvector_go.Vector `json:"query_embedding"`
 	Language       string              `json:"language"`
 	GeoSpaceID     pgtype.UUID         `json:"geo_space_id"`
 	ViewerID       pgtype.UUID         `json:"viewer_id"`
 	CanSeePrivate  bool                `json:"can_see_private"`
-	TopK           int32               `json:"top_k"`
 }
 
 type SearchContentEmbeddingsGeoFilteredRow struct {
@@ -776,12 +825,12 @@ type SearchContentEmbeddingsGeoFilteredRow struct {
 
 // =====================================================================
 // Geo-filtered HNSW cosine retrieval (§103 Geo-Filtered RAG amendment to §69).
-// Same shape as SearchContentEmbeddings but JOINs to contents and restricts
-// to chunks whose source content is geo-scoped to the given space or its
-// direct children. When geo_space_id is NULL the geo filter is a no-op
-// (backward-compatible with §69 unfiltered retrieval). Only entity_type =
-// 'content' chunks are geo-filterable (other entity types have no
-// geo_space_id); non-content chunks are excluded when a geo scope is set.
+// Same shape as SearchContentEmbeddings but geo-scopes each entity type:
+// 'content' chunks filter on contents.geo_space_id, 'wiki_page' chunks on
+// wiki_pages.space_id — both matching the given space or its direct
+// children. When geo_space_id is NULL the geo filter is a no-op
+// (backward-compatible with §69 unfiltered retrieval). Other entity types
+// have no geo scope and are excluded when a geo scope is set.
 // Used by the AI agent's rag.search tool and the agent pre-search step.
 // =====================================================================
 // BUG-001 fix: also filter by c.status = 'published' AND c.deleted_at IS NULL
@@ -792,14 +841,19 @@ type SearchContentEmbeddingsGeoFilteredRow struct {
 // BUG-001 (rag-audit): return c.content_type so the store layer can classify
 // the source tier correctly (editorial vs community). The geo-filtered query
 // already JOINs to contents, so c.content_type is always available.
+//
+// §80 wiki amendment: wiki pages UNIONed in — the wiki is the canonical
+// geo knowledge corpus, so geo-scoped agent search would otherwise miss
+// exactly the content it was built to surface. Gated on the generated
+// is_japabot_indexed flag like the unfiltered query above.
 func (q *Queries) SearchContentEmbeddingsGeoFiltered(ctx context.Context, arg SearchContentEmbeddingsGeoFilteredParams) ([]SearchContentEmbeddingsGeoFilteredRow, error) {
 	rows, err := q.db.Query(ctx, searchContentEmbeddingsGeoFiltered,
+		arg.TopK,
 		arg.QueryEmbedding,
 		arg.Language,
 		arg.GeoSpaceID,
 		arg.ViewerID,
 		arg.CanSeePrivate,
-		arg.TopK,
 	)
 	if err != nil {
 		return nil, err

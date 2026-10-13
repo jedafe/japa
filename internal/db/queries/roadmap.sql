@@ -51,6 +51,21 @@ LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
 WHERE i.status = 'shipped' AND i.deleted_at IS NULL
 ORDER BY i.shipped_at DESC;
 
+-- name: ListRoadmapRelatedItems :many
+-- Lightweight related-items lookup for the item detail page: public items
+-- in the same category, excluding the item itself, capped at 3. Replaces
+-- the full board refetch + client-side filter the detail route used before.
+SELECT i.*, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+       (v.user_id IS NOT NULL)::bool AS has_voted
+FROM roadmap_items i
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
+LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = sqlc.narg(viewer_id)
+WHERE i.status = ANY(@statuses::text[]) AND i.deleted_at IS NULL
+  AND i.id <> @exclude_id
+  AND i.category_id = @category_id
+ORDER BY i.is_flagship DESC, i.sort_order ASC, i.vote_count DESC, i.created_at DESC
+LIMIT 3;
+
 -- name: ListAdminRoadmapItems :many
 SELECT i.*, c.name AS category_name
 FROM roadmap_items i

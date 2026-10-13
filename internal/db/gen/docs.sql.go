@@ -424,7 +424,7 @@ func (q *Queries) ListAllDocPagesByAudience(ctx context.Context, audience string
 }
 
 const listDocPagesByAudience = `-- name: ListDocPagesByAudience :many
-SELECT id, title, slug, audience, review_status, parent_id, position, category, subcategory, created_at
+SELECT id, title, slug, audience, review_status, parent_id, position, category, subcategory, created_at, content
 FROM doc_pages
 WHERE audience = $1 AND review_status = 'published'
 ORDER BY position ASC, title ASC
@@ -441,8 +441,11 @@ type ListDocPagesByAudienceRow struct {
 	Category     *string            `json:"category"`
 	Subcategory  *string            `json:"subcategory"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	Content      []byte             `json:"content"`
 }
 
+// content is selected so the service can derive a plain-text excerpt for
+// summary consumers (changelog, portal listings) — it is never returned raw.
 func (q *Queries) ListDocPagesByAudience(ctx context.Context, audience string) ([]ListDocPagesByAudienceRow, error) {
 	rows, err := q.db.Query(ctx, listDocPagesByAudience, audience)
 	if err != nil {
@@ -463,6 +466,7 @@ func (q *Queries) ListDocPagesByAudience(ctx context.Context, audience string) (
 			&i.Category,
 			&i.Subcategory,
 			&i.CreatedAt,
+			&i.Content,
 		); err != nil {
 			return nil, err
 		}

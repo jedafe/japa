@@ -290,6 +290,9 @@ type ListActiveSidebarsForResolveParams struct {
 // =====================
 // Public Resolution
 // =====================
+// Created_at ASC feeds the resolve tie-break: equal-specificity patterns
+// keep the earliest-created sidebar (effective ORDER BY: specificity DESC,
+// created_at ASC — see patternSpecificity; audit fix W10).
 func (q *Queries) ListActiveSidebarsForResolve(ctx context.Context, arg ListActiveSidebarsForResolveParams) ([]Sidebar, error) {
 	rows, err := q.db.Query(ctx, listActiveSidebarsForResolve, arg.App, arg.Position)
 	if err != nil {
@@ -429,6 +432,9 @@ type ListSidebarsRow struct {
 	WidgetCount      int32              `json:"widget_count"`
 }
 
+// Sort keys are allowlisted by the service (ValidateSort → ErrInvalidSort →
+// 400). Unknown @sort values intentionally hit NO case arm and fall through
+// to the default order; they must never reach here unvalidated (W11).
 func (q *Queries) ListSidebars(ctx context.Context, arg ListSidebarsParams) ([]ListSidebarsRow, error) {
 	rows, err := q.db.Query(ctx, listSidebars,
 		arg.App,

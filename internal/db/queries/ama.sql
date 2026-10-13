@@ -55,6 +55,29 @@ WHERE ft.ama_config IS NOT NULL
 ORDER BY ft.created_at DESC, ft.id DESC
 LIMIT @page_limit;
 
+-- name: ListClosedAMAs :many
+SELECT ft.id, ft.content_id, ft.space_id, ft.author_user_id,
+ ft.parent_reply_id, ft.title, ft.slug, ft.body, ft.is_anonymous,
+ ft.solved, ft.solved_at, ft.solved_by_user_id, ft.vote_score,
+ ft.reply_count, ft.view_count, ft.bookmark_count, ft.edit_window_minutes,
+ ft.is_edited, ft.created_at, ft.updated_at, ft.deleted_at, ft.ama_config,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE u.username END AS author_username,
+ CASE WHEN ft.is_anonymous THEN NULL ELSE up.avatar_url END AS author_avatar_url
+FROM forum_threads ft
+LEFT JOIN users u ON u.id = ft.author_user_id
+LEFT JOIN user_profiles up ON up.user_id = ft.author_user_id
+WHERE ft.ama_config IS NOT NULL
+ AND ft.deleted_at IS NULL
+ AND (ft.ama_config->>'closes_at')::timestamptz <= now()
+ AND (sqlc.narg(dest)::text IS NULL
+ OR ft.ama_config->>'host_dest_country_id' = @dest)
+ AND (sqlc.narg(profession)::text IS NULL
+ OR ft.ama_config->>'host_profession' ILIKE '%' || @profession || '%')
+ AND (sqlc.narg(cursor_created_at)::timestamptz IS NULL
+ OR ft.created_at < @cursor_created_at)
+ORDER BY ft.created_at DESC, ft.id DESC
+LIMIT @page_limit;
+
 -- =====================
 -- Authorization helpers
 -- =====================

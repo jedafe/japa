@@ -915,6 +915,37 @@ func (q *Queries) GetWikiPageFeedbackCounts(ctx context.Context, wikiPageID pgty
 	return i, err
 }
 
+const getWikiPageIndexState = `-- name: GetWikiPageIndexState :one
+SELECT wp.is_active, wp.is_locked, wp.is_japabot_indexed,
+       wp.deleted_at IS NOT NULL AS is_deleted
+FROM wiki_pages wp
+WHERE wp.id = $1
+`
+
+type GetWikiPageIndexStateRow struct {
+	IsActive         bool        `json:"is_active"`
+	IsLocked         bool        `json:"is_locked"`
+	IsJapabotIndexed *bool       `json:"is_japabot_indexed"`
+	IsDeleted        interface{} `json:"is_deleted"`
+}
+
+// RAG lifecycle probe (§69/ADR-069): the generated is_japabot_indexed flag
+// (is_active AND NOT is_locked) decides whether the page's
+// content_embeddings chunks may be retrieved. The wiki admin handlers
+// read this after flag mutations to decide between PurgeEntity and
+// re-index.
+func (q *Queries) GetWikiPageIndexState(ctx context.Context, pageID pgtype.UUID) (GetWikiPageIndexStateRow, error) {
+	row := q.db.QueryRow(ctx, getWikiPageIndexState, pageID)
+	var i GetWikiPageIndexStateRow
+	err := row.Scan(
+		&i.IsActive,
+		&i.IsLocked,
+		&i.IsJapabotIndexed,
+		&i.IsDeleted,
+	)
+	return i, err
+}
+
 const getWikiPageViewerVote = `-- name: GetWikiPageViewerVote :one
 SELECT vote FROM wiki_page_feedback
 WHERE wiki_page_id = $1 AND user_id = $2

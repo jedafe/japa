@@ -11,6 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countComparisonContentsByType = `-- name: CountComparisonContentsByType :one
+SELECT count(DISTINCT content_id)::int FROM comparison_items WHERE type_id = $1 AND deleted_at IS NULL
+`
+
+// Delete-type guard companion: distinct comparison content rows that carry an
+// item of this type (contents carry no type_id of their own).
+func (q *Queries) CountComparisonContentsByType(ctx context.Context, typeID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countComparisonContentsByType, typeID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countComparisonDimensionsByType = `-- name: CountComparisonDimensionsByType :one
+SELECT count(*)::int FROM comparison_dimensions WHERE type_id = $1 AND deleted_at IS NULL
+`
+
+// Delete-type guard companion: dimensions auto-generated from this type's
+// field group (they keep rendering the matrix after items are removed).
+func (q *Queries) CountComparisonDimensionsByType(ctx context.Context, typeID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countComparisonDimensionsByType, typeID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countComparisonItemsByType = `-- name: CountComparisonItemsByType :one
 SELECT count(*)::int FROM comparison_items WHERE type_id = $1 AND deleted_at IS NULL
 `

@@ -2178,6 +2178,8 @@ type IntelSource struct {
 	ProbeReport     []byte             `json:"probe_report"`
 	DetectedMethods []string           `json:"detected_methods"`
 	LastProbedAt    pgtype.Timestamptz `json:"last_probed_at"`
+	RejectedBy      pgtype.UUID        `json:"rejected_by"`
+	RejectedAt      pgtype.Timestamptz `json:"rejected_at"`
 }
 
 type IntelSourceChannel struct {

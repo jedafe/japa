@@ -1028,6 +1028,7 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  AND status = 'published') AS comment_count,
  c.share_count,
  (SELECT COUNT(*) FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reshare_count,
+ (SELECT COUNT(*)::int FROM reactions WHERE entity_id = c.id AND entity_type = 'content') AS reaction_count,
  c.publish_at, c.published_at,
  c.created_at, c.updated_at, c.guide_category, c.journey_stage, c.visa_route, c.source_country, c.target_country, c.video_source_id,
  c.intel_source_id, c.intel_record_id,
@@ -1037,6 +1038,12 @@ SELECT c.id, c.author_id, c.space_id, c.organization_id,
  COALESCE(up.avatar_url, '') AS author_avatar_url,
  COALESCE(s.name, '') AS space_name,
  COALESCE(s.slug, '') AS space_slug,
+ sm.storage_bucket AS space_avatar_storage_bucket,
+ sm.storage_path AS space_avatar_storage_path,
+ o.name AS organization_name,
+ o.slug AS organization_slug,
+ om.storage_bucket AS organization_logo_storage_bucket,
+ om.storage_path AS organization_logo_storage_path,
  m.storage_bucket AS featured_storage_bucket,
  m.storage_path AS featured_storage_path,
  hm.storage_bucket AS header_storage_bucket,
@@ -1056,6 +1063,9 @@ LEFT JOIN spaces s ON s.id = c.space_id
 LEFT JOIN intel_sources src ON src.id = c.intel_source_id
 LEFT JOIN media m ON m.id = c.featured_image_id AND m.deleted_at IS NULL
 LEFT JOIN media hm ON hm.id = c.header_image_id AND hm.deleted_at IS NULL
+LEFT JOIN media sm ON sm.id = s.logo_media_id AND sm.deleted_at IS NULL
+LEFT JOIN organizations o ON o.id = c.organization_id
+LEFT JOIN media om ON om.id = o.logo_media_id AND om.deleted_at IS NULL
 LEFT JOIN content_tags ct ON ct.content_id = c.id
 LEFT JOIN tags t ON t.id = ct.tag_id
 LEFT JOIN blog_series_posts bsp ON bsp.content_id = c.id
@@ -1078,6 +1088,7 @@ LEFT JOIN LATERAL (
 ) next_c ON true
 WHERE c.slug = $1 AND c.deleted_at IS NULL
 GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
+ sm.storage_bucket, sm.storage_path, o.name, o.slug, om.storage_bucket, om.storage_path,
  m.storage_bucket, m.storage_path, hm.storage_bucket, hm.storage_path,
  bs.id, bs.title, bs.slug, bsp.position,
  prev_c.slug, next_c.slug, c.video_source_id,
@@ -1086,69 +1097,76 @@ GROUP BY c.id, up.display_name, up.avatar_url, u.username, s.name, s.slug,
 `
 
 type GetContentDetailBySlugRow struct {
-	ID                    pgtype.UUID        `json:"id"`
-	AuthorID              pgtype.UUID        `json:"author_id"`
-	SpaceID               pgtype.UUID        `json:"space_id"`
-	OrganizationID        pgtype.UUID        `json:"organization_id"`
-	ContentType           string             `json:"content_type"`
-	Title                 string             `json:"title"`
-	Slug                  string             `json:"slug"`
-	Body                  string             `json:"body"`
-	BodyHtml              string             `json:"body_html"`
-	FieldValues           []byte             `json:"field_values"`
-	ContentHash           *string            `json:"content_hash"`
-	GeoSpaceID            pgtype.UUID        `json:"geo_space_id"`
-	HeaderImageID         pgtype.UUID        `json:"header_image_id"`
-	FeaturedImageID       pgtype.UUID        `json:"featured_image_id"`
-	CanonicalUrl          *string            `json:"canonical_url"`
-	MetaTitle             *string            `json:"meta_title"`
-	MetaDescription       *string            `json:"meta_description"`
-	OgImageUrl            *string            `json:"og_image_url"`
-	SeoIndexable          bool               `json:"seo_indexable"`
-	Status                string             `json:"status"`
-	Visibility            string             `json:"visibility"`
-	IsLocked              bool               `json:"is_locked"`
-	IsPinned              bool               `json:"is_pinned"`
-	ReadTimeMinutes       int32              `json:"read_time_minutes"`
-	ViewCount             int32              `json:"view_count"`
-	CommentCount          int64              `json:"comment_count"`
-	ShareCount            int32              `json:"share_count"`
-	ReshareCount          int64              `json:"reshare_count"`
-	PublishAt             pgtype.Timestamptz `json:"publish_at"`
-	PublishedAt           pgtype.Timestamptz `json:"published_at"`
-	CreatedAt             pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
-	GuideCategory         *string            `json:"guide_category"`
-	JourneyStage          *string            `json:"journey_stage"`
-	VisaRoute             *string            `json:"visa_route"`
-	SourceCountry         *string            `json:"source_country"`
-	TargetCountry         *string            `json:"target_country"`
-	VideoSourceID         pgtype.UUID        `json:"video_source_id"`
-	IntelSourceID         pgtype.UUID        `json:"intel_source_id"`
-	IntelRecordID         pgtype.UUID        `json:"intel_record_id"`
-	SourceID              pgtype.UUID        `json:"source_id"`
-	SourceName            *string            `json:"source_name"`
-	SourceSlug            *string            `json:"source_slug"`
-	SourceLogoUrl         *string            `json:"source_logo_url"`
-	SourceSourceUrl       *string            `json:"source_source_url"`
-	SourceTrustLevel      *int16             `json:"source_trust_level"`
-	AuthorName            string             `json:"author_name"`
-	AuthorUsername        string             `json:"author_username"`
-	AuthorAvatarUrl       string             `json:"author_avatar_url"`
-	SpaceName             string             `json:"space_name"`
-	SpaceSlug             string             `json:"space_slug"`
-	FeaturedStorageBucket *string            `json:"featured_storage_bucket"`
-	FeaturedStoragePath   *string            `json:"featured_storage_path"`
-	HeaderStorageBucket   *string            `json:"header_storage_bucket"`
-	HeaderStoragePath     *string            `json:"header_storage_path"`
-	TagsCsv               string             `json:"tags_csv"`
-	SeriesID              pgtype.UUID        `json:"series_id"`
-	SeriesTitle           *string            `json:"series_title"`
-	SeriesSlug            *string            `json:"series_slug"`
-	SeriesPart            *int32             `json:"series_part"`
-	SeriesTotal           int64              `json:"series_total"`
-	SeriesPrevSlug        string             `json:"series_prev_slug"`
-	SeriesNextSlug        string             `json:"series_next_slug"`
+	ID                            pgtype.UUID        `json:"id"`
+	AuthorID                      pgtype.UUID        `json:"author_id"`
+	SpaceID                       pgtype.UUID        `json:"space_id"`
+	OrganizationID                pgtype.UUID        `json:"organization_id"`
+	ContentType                   string             `json:"content_type"`
+	Title                         string             `json:"title"`
+	Slug                          string             `json:"slug"`
+	Body                          string             `json:"body"`
+	BodyHtml                      string             `json:"body_html"`
+	FieldValues                   []byte             `json:"field_values"`
+	ContentHash                   *string            `json:"content_hash"`
+	GeoSpaceID                    pgtype.UUID        `json:"geo_space_id"`
+	HeaderImageID                 pgtype.UUID        `json:"header_image_id"`
+	FeaturedImageID               pgtype.UUID        `json:"featured_image_id"`
+	CanonicalUrl                  *string            `json:"canonical_url"`
+	MetaTitle                     *string            `json:"meta_title"`
+	MetaDescription               *string            `json:"meta_description"`
+	OgImageUrl                    *string            `json:"og_image_url"`
+	SeoIndexable                  bool               `json:"seo_indexable"`
+	Status                        string             `json:"status"`
+	Visibility                    string             `json:"visibility"`
+	IsLocked                      bool               `json:"is_locked"`
+	IsPinned                      bool               `json:"is_pinned"`
+	ReadTimeMinutes               int32              `json:"read_time_minutes"`
+	ViewCount                     int32              `json:"view_count"`
+	CommentCount                  int64              `json:"comment_count"`
+	ShareCount                    int32              `json:"share_count"`
+	ReshareCount                  int64              `json:"reshare_count"`
+	ReactionCount                 int32              `json:"reaction_count"`
+	PublishAt                     pgtype.Timestamptz `json:"publish_at"`
+	PublishedAt                   pgtype.Timestamptz `json:"published_at"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
+	GuideCategory                 *string            `json:"guide_category"`
+	JourneyStage                  *string            `json:"journey_stage"`
+	VisaRoute                     *string            `json:"visa_route"`
+	SourceCountry                 *string            `json:"source_country"`
+	TargetCountry                 *string            `json:"target_country"`
+	VideoSourceID                 pgtype.UUID        `json:"video_source_id"`
+	IntelSourceID                 pgtype.UUID        `json:"intel_source_id"`
+	IntelRecordID                 pgtype.UUID        `json:"intel_record_id"`
+	SourceID                      pgtype.UUID        `json:"source_id"`
+	SourceName                    *string            `json:"source_name"`
+	SourceSlug                    *string            `json:"source_slug"`
+	SourceLogoUrl                 *string            `json:"source_logo_url"`
+	SourceSourceUrl               *string            `json:"source_source_url"`
+	SourceTrustLevel              *int16             `json:"source_trust_level"`
+	AuthorName                    string             `json:"author_name"`
+	AuthorUsername                string             `json:"author_username"`
+	AuthorAvatarUrl               string             `json:"author_avatar_url"`
+	SpaceName                     string             `json:"space_name"`
+	SpaceSlug                     string             `json:"space_slug"`
+	SpaceAvatarStorageBucket      *string            `json:"space_avatar_storage_bucket"`
+	SpaceAvatarStoragePath        *string            `json:"space_avatar_storage_path"`
+	OrganizationName              *string            `json:"organization_name"`
+	OrganizationSlug              *string            `json:"organization_slug"`
+	OrganizationLogoStorageBucket *string            `json:"organization_logo_storage_bucket"`
+	OrganizationLogoStoragePath   *string            `json:"organization_logo_storage_path"`
+	FeaturedStorageBucket         *string            `json:"featured_storage_bucket"`
+	FeaturedStoragePath           *string            `json:"featured_storage_path"`
+	HeaderStorageBucket           *string            `json:"header_storage_bucket"`
+	HeaderStoragePath             *string            `json:"header_storage_path"`
+	TagsCsv                       string             `json:"tags_csv"`
+	SeriesID                      pgtype.UUID        `json:"series_id"`
+	SeriesTitle                   *string            `json:"series_title"`
+	SeriesSlug                    *string            `json:"series_slug"`
+	SeriesPart                    *int32             `json:"series_part"`
+	SeriesTotal                   int64              `json:"series_total"`
+	SeriesPrevSlug                string             `json:"series_prev_slug"`
+	SeriesNextSlug                string             `json:"series_next_slug"`
 }
 
 // Enriched single-content row for the public /content/[slug] reading page.
@@ -1188,6 +1206,7 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.CommentCount,
 		&i.ShareCount,
 		&i.ReshareCount,
+		&i.ReactionCount,
 		&i.PublishAt,
 		&i.PublishedAt,
 		&i.CreatedAt,
@@ -1211,6 +1230,12 @@ func (q *Queries) GetContentDetailBySlug(ctx context.Context, slug string) (GetC
 		&i.AuthorAvatarUrl,
 		&i.SpaceName,
 		&i.SpaceSlug,
+		&i.SpaceAvatarStorageBucket,
+		&i.SpaceAvatarStoragePath,
+		&i.OrganizationName,
+		&i.OrganizationSlug,
+		&i.OrganizationLogoStorageBucket,
+		&i.OrganizationLogoStoragePath,
 		&i.FeaturedStorageBucket,
 		&i.FeaturedStoragePath,
 		&i.HeaderStorageBucket,

@@ -12,6 +12,9 @@ WHERE (@app::text = '' OR s.app = @app)
  AND (@position::text = '' OR s.position = @position)
  AND (@status::text = '' OR s.status = @status)
  AND (@q::text = '' OR s.name ILIKE '%' || @q || '%' OR s.slug ILIKE '%' || @q || '%')
+-- Sort keys are allowlisted by the service (ValidateSort → ErrInvalidSort →
+-- 400). Unknown @sort values intentionally hit NO case arm and fall through
+-- to the default order; they must never reach here unvalidated (W11).
 ORDER BY
  CASE WHEN @sort::text = 'name:asc' THEN s.name END ASC,
  CASE WHEN @sort::text = 'name:desc' THEN s.name END DESC,
@@ -121,6 +124,9 @@ WHERE sidebar_widgets.id = u.id;
 -- =====================
 
 -- name: ListActiveSidebarsForResolve :many
+-- Created_at ASC feeds the resolve tie-break: equal-specificity patterns
+-- keep the earliest-created sidebar (effective ORDER BY: specificity DESC,
+-- created_at ASC — see patternSpecificity; audit fix W10).
 SELECT id, app, position, slug, name, page_pattern, visibility,
  required_group_ids, status, created_at, updated_at
 FROM sidebars

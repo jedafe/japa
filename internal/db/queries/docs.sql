@@ -17,7 +17,9 @@ FROM doc_pages
 WHERE audience = @audience AND slug = @slug;
 
 -- name: ListDocPagesByAudience :many
-SELECT id, title, slug, audience, review_status, parent_id, position, category, subcategory, created_at
+-- content is selected so the service can derive a plain-text excerpt for
+-- summary consumers (changelog, portal listings) — it is never returned raw.
+SELECT id, title, slug, audience, review_status, parent_id, position, category, subcategory, created_at, content
 FROM doc_pages
 WHERE audience = @audience AND review_status = 'published'
 ORDER BY position ASC, title ASC;

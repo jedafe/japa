@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const bulkSetCourseOfferingsPublished = `-- name: BulkSetCourseOfferingsPublished :exec
+const bulkSetCourseOfferingsPublished = `-- name: BulkSetCourseOfferingsPublished :execrows
 UPDATE university_course_offerings
 SET is_published = $1, updated_at = now()
 WHERE id = ANY($2::uuid[]) AND deleted_at IS NULL
@@ -22,20 +22,26 @@ type BulkSetCourseOfferingsPublishedParams struct {
 	Ids         []pgtype.UUID `json:"ids"`
 }
 
-func (q *Queries) BulkSetCourseOfferingsPublished(ctx context.Context, arg BulkSetCourseOfferingsPublishedParams) error {
-	_, err := q.db.Exec(ctx, bulkSetCourseOfferingsPublished, arg.IsPublished, arg.Ids)
-	return err
+func (q *Queries) BulkSetCourseOfferingsPublished(ctx context.Context, arg BulkSetCourseOfferingsPublishedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, bulkSetCourseOfferingsPublished, arg.IsPublished, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const bulkSoftDeleteCourseOfferings = `-- name: BulkSoftDeleteCourseOfferings :exec
+const bulkSoftDeleteCourseOfferings = `-- name: BulkSoftDeleteCourseOfferings :execrows
 UPDATE university_course_offerings
 SET deleted_at = now(), updated_at = now()
 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
 `
 
-func (q *Queries) BulkSoftDeleteCourseOfferings(ctx context.Context, ids []pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, bulkSoftDeleteCourseOfferings, ids)
-	return err
+func (q *Queries) BulkSoftDeleteCourseOfferings(ctx context.Context, ids []pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, bulkSoftDeleteCourseOfferings, ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const countCourseCatalogAdmin = `-- name: CountCourseCatalogAdmin :one

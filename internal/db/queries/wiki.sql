@@ -466,6 +466,17 @@ DELETE FROM wiki_pages WHERE id = @id AND deleted_at IS NOT NULL;
 -- 409 page_not_deleted.
 SELECT EXISTS(SELECT 1 FROM wiki_pages WHERE id = @id) AS exists;
 
+-- name: GetWikiPageIndexState :one
+-- RAG lifecycle probe (§69/ADR-069): the generated is_japabot_indexed flag
+-- (is_active AND NOT is_locked) decides whether the page's
+-- content_embeddings chunks may be retrieved. The wiki admin handlers
+-- read this after flag mutations to decide between PurgeEntity and
+-- re-index.
+SELECT wp.is_active, wp.is_locked, wp.is_japabot_indexed,
+       wp.deleted_at IS NOT NULL AS is_deleted
+FROM wiki_pages wp
+WHERE wp.id = @page_id;
+
 -- name: GetWikiSpaceBySlug :one
 -- Resolves a wiki-bearing space slug: the space's type must have an enabled
 -- wiki_type_configs row (§80 Wiki Types amendment). Returns the display name —

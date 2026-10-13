@@ -861,6 +861,104 @@ func (q *Queries) ListRoadmapItemsByFlagKeys(ctx context.Context, flagKeys []str
 	return items, nil
 }
 
+const listRoadmapRelatedItems = `-- name: ListRoadmapRelatedItems :many
+SELECT i.id, i.title, i.slug, i.summary, i.body, i.category_id, i.status, i.sort_order, i.is_flagship, i.target_window, i.feature_flag_key, i.content_id, i.vote_count, i.submitted_by, i.approved_by, i.shipped_at, i.created_at, i.updated_at, i.deleted_at, c.name AS category_name, c.slug AS category_slug, c.color AS category_color,
+       (v.user_id IS NOT NULL)::bool AS has_voted
+FROM roadmap_items i
+LEFT JOIN roadmap_categories c ON c.id = i.category_id AND c.deleted_at IS NULL
+LEFT JOIN roadmap_votes v ON v.item_id = i.id AND v.user_id = $1
+WHERE i.status = ANY($2::text[]) AND i.deleted_at IS NULL
+  AND i.id <> $3
+  AND i.category_id = $4
+ORDER BY i.is_flagship DESC, i.sort_order ASC, i.vote_count DESC, i.created_at DESC
+LIMIT 3
+`
+
+type ListRoadmapRelatedItemsParams struct {
+	ViewerID   pgtype.UUID `json:"viewer_id"`
+	Statuses   []string    `json:"statuses"`
+	ExcludeID  pgtype.UUID `json:"exclude_id"`
+	CategoryID pgtype.UUID `json:"category_id"`
+}
+
+type ListRoadmapRelatedItemsRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Title          string             `json:"title"`
+	Slug           string             `json:"slug"`
+	Summary        *string            `json:"summary"`
+	Body           *string            `json:"body"`
+	CategoryID     pgtype.UUID        `json:"category_id"`
+	Status         string             `json:"status"`
+	SortOrder      int32              `json:"sort_order"`
+	IsFlagship     bool               `json:"is_flagship"`
+	TargetWindow   *string            `json:"target_window"`
+	FeatureFlagKey *string            `json:"feature_flag_key"`
+	ContentID      pgtype.UUID        `json:"content_id"`
+	VoteCount      int32              `json:"vote_count"`
+	SubmittedBy    pgtype.UUID        `json:"submitted_by"`
+	ApprovedBy     pgtype.UUID        `json:"approved_by"`
+	ShippedAt      pgtype.Timestamptz `json:"shipped_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	CategoryName   *string            `json:"category_name"`
+	CategorySlug   *string            `json:"category_slug"`
+	CategoryColor  *string            `json:"category_color"`
+	HasVoted       bool               `json:"has_voted"`
+}
+
+// Lightweight related-items lookup for the item detail page: public items
+// in the same category, excluding the item itself, capped at 3. Replaces
+// the full board refetch + client-side filter the detail route used before.
+func (q *Queries) ListRoadmapRelatedItems(ctx context.Context, arg ListRoadmapRelatedItemsParams) ([]ListRoadmapRelatedItemsRow, error) {
+	rows, err := q.db.Query(ctx, listRoadmapRelatedItems,
+		arg.ViewerID,
+		arg.Statuses,
+		arg.ExcludeID,
+		arg.CategoryID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoadmapRelatedItemsRow
+	for rows.Next() {
+		var i ListRoadmapRelatedItemsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Slug,
+			&i.Summary,
+			&i.Body,
+			&i.CategoryID,
+			&i.Status,
+			&i.SortOrder,
+			&i.IsFlagship,
+			&i.TargetWindow,
+			&i.FeatureFlagKey,
+			&i.ContentID,
+			&i.VoteCount,
+			&i.SubmittedBy,
+			&i.ApprovedBy,
+			&i.ShippedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CategoryName,
+			&i.CategorySlug,
+			&i.CategoryColor,
+			&i.HasVoted,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoadmapSitemapItems = `-- name: ListRoadmapSitemapItems :many
 
 SELECT slug, updated_at FROM roadmap_items

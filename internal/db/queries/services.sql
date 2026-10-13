@@ -456,7 +456,20 @@ SELECT c.id, c.author_id, c.title, c.slug, c.body, c.body_html,
        -- (listing_kind='mentorship') is read off the author profile join.
        up.display_name AS author_display_name,
        up.is_mentor, up.mentor_capacity, up.active_mentee_count,
-       up.mentor_areas, up.mentor_since
+       up.mentor_areas, up.mentor_since,
+       -- M7: the admin queue stamps the same §114 derived badge as the
+       -- public list — needs the live-coupon EXISTS and the rating
+       -- rollup on the row.
+       EXISTS(
+           SELECT 1 FROM service_listing_coupons lc
+           JOIN coupons cp ON cp.id = lc.coupon_id
+           WHERE lc.listing_meta_id = sm.id
+             AND cp.status = 'active'
+             AND (cp.valid_from IS NULL OR cp.valid_from <= now())
+             AND (cp.expires_at IS NULL OR cp.expires_at > now())
+       ) AS has_coupon,
+       ra.review_count AS rating_count,
+       ra.average_rating AS rating_avg
 FROM contents c
 JOIN service_listing_meta sm ON sm.content_id = c.id
 LEFT JOIN organizations o ON o.id = sm.org_id
@@ -465,6 +478,7 @@ LEFT JOIN spaces cs ON cs.id = sm.city_space_id
 LEFT JOIN organizations co ON co.id = sm.claimed_by_org_id
 LEFT JOIN users u ON u.id = c.author_id
 LEFT JOIN user_profiles up ON up.user_id = c.author_id
+LEFT JOIN review_aggregates ra ON ra.entity_type = 'service_listing' AND ra.entity_id = c.id
 WHERE c.content_type = 'service_listing'
   AND c.deleted_at IS NULL
   AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status)::text)
@@ -549,6 +563,18 @@ WHERE c.content_type = 'service_listing'
   AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text)
 ORDER BY c.created_at DESC
 LIMIT @page_limit OFFSET @page_offset;
+
+-- M3: count twin of ListServiceListingsByOrg — same filter set so the
+-- /org/:org_id/packages total reflects the full set, not the page length.
+-- name: CountServiceListingsByOrg :one
+SELECT COUNT(*)
+FROM contents c
+JOIN service_listing_meta sm ON sm.content_id = c.id
+WHERE c.content_type = 'service_listing'
+  AND c.deleted_at IS NULL
+  AND sm.org_id = @org_id
+  AND (sqlc.narg(status)::text IS NULL OR c.status = sqlc.narg(status)::text)
+  AND (sqlc.narg(listing_kind)::text IS NULL OR sm.listing_kind = sqlc.narg(listing_kind)::text);
 
 -- ---------------------------------------------------------------------
 -- Verification + claim workflow (§98)

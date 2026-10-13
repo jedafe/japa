@@ -684,7 +684,7 @@ func (q *Queries) ListAllWikiCategories(ctx context.Context) ([]ListAllWikiCateg
 
 const listEnabledWikiTypes = `-- name: ListEnabledWikiTypes :many
 SELECT wtc.space_type_id, st.slug AS space_type_slug, st.name AS space_type_name,
-       COALESCE(wtc.label, st.name) AS label, wtc.icon, wtc.position,
+       COALESCE(wtc.label, st.name) AS label, wtc.icon, wtc.seed_stubs, wtc.position,
        COALESCE(array_agg(DISTINCT wtp.parent_space_type_id::text)
                 FILTER (WHERE wtp.parent_space_type_id IS NOT NULL),
                 '{}')::text[] AS parent_type_ids
@@ -692,7 +692,7 @@ FROM wiki_type_configs wtc
 JOIN space_types st ON st.id = wtc.space_type_id
 LEFT JOIN wiki_type_parents wtp ON wtp.space_type_id = wtc.space_type_id
 WHERE wtc.enabled = true
-GROUP BY wtc.space_type_id, st.slug, st.name, wtc.label, wtc.icon, wtc.position
+GROUP BY wtc.space_type_id, st.slug, st.name, wtc.label, wtc.icon, wtc.seed_stubs, wtc.position
 ORDER BY wtc.position, st.name
 `
 
@@ -702,6 +702,7 @@ type ListEnabledWikiTypesRow struct {
 	SpaceTypeName string      `json:"space_type_name"`
 	Label         string      `json:"label"`
 	Icon          *string     `json:"icon"`
+	SeedStubs     bool        `json:"seed_stubs"`
 	Position      int32       `json:"position"`
 	ParentTypeIds []string    `json:"parent_type_ids"`
 }
@@ -722,6 +723,7 @@ func (q *Queries) ListEnabledWikiTypes(ctx context.Context) ([]ListEnabledWikiTy
 			&i.SpaceTypeName,
 			&i.Label,
 			&i.Icon,
+			&i.SeedStubs,
 			&i.Position,
 			&i.ParentTypeIds,
 		); err != nil {
