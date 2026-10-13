@@ -37,6 +37,12 @@
 
 	let items = $state<UserJourney[]>(untrack(() => initialJourneys));
 
+	// Re-seed when SSR data refreshes (navigation/invalidation) — the
+	// server list is the source of truth.
+	$effect(() => {
+		items = initialJourneys;
+	});
+
 	const intentOpts = $derived(japaIntentOptions(t, intents));
 
 	// Create-form state.
@@ -148,12 +154,12 @@
 	async function remove(j: UserJourney) {
 		if (!confirm(t('journeys.delete_confirm', 'Delete this journey record?'))) return;
 		errorKey = '';
-		try {
-			await api.delete(`/me/japa-stage/journeys/${j.id}`);
-			items = items.filter((i) => i.id !== j.id);
-		} catch {
+		const res = await api.delete(`/me/japa-stage/journeys/${j.id}`);
+		if (res.error) {
 			errorKey = 'journeys.delete_failed';
+			return;
 		}
+		items = items.filter((i) => i.id !== j.id);
 	}
 
 	const inputClass =

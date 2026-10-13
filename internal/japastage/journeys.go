@@ -17,6 +17,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -78,6 +79,21 @@ const maxJourneyLabelLen = 200
 // the specific field error before the service is called — this is the
 // service's own belt-and-braces check.
 var ErrInvalidJourneyInput = errors.New("japastage: invalid journey input")
+
+// ErrJourneyDestinationInvalid is returned when destination_space_id is a
+// well-formed UUID that does not reference a spaces row (FK violation).
+var ErrJourneyDestinationInvalid = errors.New("japastage: invalid destination space")
+
+// asDestFKError reports whether err is a foreign-key violation (23503) on
+// destination_space_id — surfaces as ErrJourneyDestinationInvalid.
+func asDestFKError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+		return ErrJourneyDestinationInvalid
+	}
+
+	return err
+}
 
 // validJourneyDate parses a YYYY-MM-DD string; empty is allowed (NULL).
 // Returns ErrInvalidJourneyDate on a malformed value.
@@ -163,7 +179,8 @@ type JourneyInput struct {
 // JourneyPatchInput is the PATCH body. Non-empty strings set; empty means
 // "leave unchanged". Status is validated against the lifecycle graph.
 // A submitted value always wins over its Clear* flag — the flag only
-// nulls the column when no replacement was submitted.
+// nulls the column when no replacement was submitted. ClearLabel and
+// ClearWindow (both dates) follow the same rule.
 type JourneyPatchInput struct {
 	Intent      string `json:"intent"`
 	Stage       string `json:"stage"`
@@ -234,7 +251,12 @@ func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in Jour
 		return JourneyDTO{}, err
 	}
 
-	max := s.settings.GetIntOr(ctx, "japa_stage.max_journeys", 10)
+	// japa_stage.max_journeys caps live journeys (ADR-129); fall back to
+	// the seeded default when settings are unavailable (tests).
+	max := 10
+	if s.settings != nil {
+		max = s.settings.GetIntOr(ctx, "japa_stage.max_journeys", 10)
+	}
 
 	count, err := s.store.CountLiveJourneys(ctx, userID)
 	if err != nil {
@@ -247,7 +269,7 @@ func (s *Service) CreateJourney(ctx context.Context, userID pgtype.UUID, in Jour
 
 	row, err := s.store.CreateJourney(ctx, userID, in.Intent, stage, in.DestSpaceID, in.Label, in.TravelStart, in.TravelEnd, status, in.IsPublic)
 	if err != nil {
-		return JourneyDTO{}, err
+		return JourneyDTO{}, asDestFKError(err)
 	}
 
 	return journeyDTO(row), nil
@@ -344,7 +366,7 @@ func (s *Service) UpdateJourney(ctx context.Context, userID, journeyID pgtype.UU
 
 	row, err := s.store.UpdateJourney(ctx, userID, journeyID, intent, stage, effectiveDest, recordHistory, in)
 	if err != nil {
-		return JourneyDTO{}, err
+		return JourneyDTO{}, asDestFKError(err)
 	}
 
 	return journeyDTO(row), nil

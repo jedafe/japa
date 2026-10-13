@@ -119,6 +119,11 @@ func (h *Handlers) HandleCreateJourney(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, ErrJourneyDestinationInvalid) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Destination is not a valid country space")
+			return
+		}
+
 		if errors.Is(err, ErrInvalidJourneyInput) || errors.Is(err, ErrInvalidStageForIntent) || errors.Is(err, ErrInvalidJourneyDate) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_journey", "Invalid journey fields")
 			return
@@ -201,6 +206,11 @@ func (h *Handlers) HandleUpdateJourney(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, ErrInvalidJourneyDate) {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_travel_window", "Travel end must be on or after start")
+			return
+		}
+
+		if errors.Is(err, ErrJourneyDestinationInvalid) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_destination", "Destination is not a valid country space")
 			return
 		}
 

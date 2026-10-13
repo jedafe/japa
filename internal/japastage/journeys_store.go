@@ -141,7 +141,7 @@ func (s *Store) CreateJourney(ctx context.Context, userID pgtype.UUID, intent, s
 	const q = `
 INSERT INTO user_journeys (user_id, intent, stage, destination_space_id, label, travel_start, travel_end, status, is_public, history)
 VALUES (
-    $1, $2, $3, $4, NULLIF($5::text, ''), $6, $7, $8, COALESCE($9::bool, false),
+    $1, $2, $3, $4, NULLIF(BTRIM($5::text), ''), $6, $7, $8, COALESCE($9::bool, false),
     jsonb_build_array(
         jsonb_build_object(
             'intent', to_jsonb($2::text),
@@ -198,7 +198,7 @@ UPDATE user_journeys SET
         ELSE destination_space_id
     END,
     label = CASE
-        WHEN NULLIF($7::text, '') IS NOT NULL THEN $7::text
+        WHEN NULLIF(BTRIM($7::text), '') IS NOT NULL THEN BTRIM($7::text)
         WHEN $8::bool THEN NULL
         ELSE label
     END,
