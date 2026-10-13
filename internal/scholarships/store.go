@@ -125,6 +125,49 @@ func (s *Store) MapSourcesByRecordIDs(ctx context.Context, recordIDs []pgtype.UU
 	return m, nil
 }
 
+// CountUpcomingDeadlines returns the COUNT(*) of saved scholarships with a
+// non-null application_deadline custom-field value (admin aggregate).
+func (s *Store) CountUpcomingDeadlines(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.pool.Reader.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM saved_scholarships ss
+		JOIN custom_field_values cfv ON cfv.entity_id = ss.guide_id
+		 AND cfv.entity_type = 'content'
+		JOIN custom_fields cf ON cf.id = cfv.field_id
+		 AND cf.key = 'application_deadline'
+		WHERE cfv.value_text IS NOT NULL`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("scholarships: count upcoming deadlines: %w", err)
+	}
+	return n, nil
+}
+
+// CountReminderLog returns the COUNT(*) of saved scholarships that have had
+// a reminder sent (admin aggregate).
+func (s *Store) CountReminderLog(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.pool.Reader.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM saved_scholarships
+		WHERE last_reminded_at IS NOT NULL`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("scholarships: count reminder log: %w", err)
+	}
+	return n, nil
+}
+
+// CountUniqueSaverUsers returns the COUNT(DISTINCT user_id) of tracker
+// owners (admin aggregate).
+func (s *Store) CountUniqueSaverUsers(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.pool.Reader.QueryRow(ctx, `SELECT COUNT(DISTINCT user_id) FROM saved_scholarships`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("scholarships: count unique users: %w", err)
+	}
+	return n, nil
+}
+
 // AdminStatusDistribution returns per-status scholarship counts for the admin dashboard.
 func (s *Store) AdminStatusDistribution(ctx context.Context) ([]gen.AdminScholarshipStatusDistributionRow, error) {
 	rows, err := s.queries.AdminScholarshipStatusDistribution(ctx)

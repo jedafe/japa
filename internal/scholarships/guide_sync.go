@@ -387,7 +387,11 @@ func (s *Store) buildScholarshipFromGuide(ctx context.Context, content gen.GetCo
 		appURL = strings.TrimSpace(fields["application_url"])
 	}
 	if appURL != "" {
-		p.ApplicationURL = &appURL
+		if _, ok := sanitizeScholarshipURL(appURL); !ok {
+			slog.Warn("scholarships: guide_sync quarantined invalid application_url", "value", appURL)
+		} else {
+			p.ApplicationURL = &appURL
+		}
 	}
 
 	p.RequiredDocuments = splitList(fields["required_documents"])
@@ -456,22 +460,32 @@ func splitList(s string) []string {
 
 // buildFundingJSON assembles the funding JSONB from award, renewable, and
 // coverage custom fields. It returns a non-nil byte slice (at least `{}`).
+// Non-numeric award values are quarantined: logged and dropped from the
+// structured blob (kept in editorial_overrides) instead of persisted.
 func buildFundingJSON(fields fieldMap) []byte {
 	m := map[string]interface{}{}
+
+	quarantineAward := func(raw string) {
+		slog.Warn("scholarships: guide_sync quarantined invalid award_amount", "value", raw)
+	}
 
 	if v := fields["award_amount_usd"]; v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			m["award_amount_usd"] = f
 		} else {
-			m["award_amount_usd"] = v
+			quarantineAward(v)
 		}
 	} else if v := fields["award_amount"]; v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			m["award_amount_usd"] = f
+		} else {
+			quarantineAward(v)
 		}
 	} else if v := fields["grant_amount_usd"]; v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			m["award_amount_usd"] = f
+		} else {
+			quarantineAward(v)
 		}
 	}
 
@@ -544,6 +558,7 @@ func parseDate(v string) pgtype.Date {
 			return d
 		}
 	}
+	slog.Warn("scholarships: guide_sync quarantined invalid application_deadline", "value", v)
 	return d
 }
 

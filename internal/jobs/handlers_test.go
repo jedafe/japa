@@ -320,3 +320,45 @@ func TestValidateJobFieldValues(t *testing.T) {
 		}
 	}
 }
+
+// validateJobFieldValues rejects non-numeric and non-boolean typed values
+// before any write (J2 → 400 invalid_field_value).
+func TestValidateJobFieldValues_Typed(t *testing.T) {
+	cases := []struct {
+		name    string
+		values  map[string]string
+		wantErr bool
+	}{
+		{"valid number", map[string]string{"salary_min": "5000"}, false},
+		{"valid float", map[string]string{"salary_max": "12.50"}, false},
+		{"bad number", map[string]string{"salary_min": "five-k"}, true},
+		{"bad number empty-space", map[string]string{"salary_max": "  "}, false},
+		{"valid bool true", map[string]string{"visa_sponsorship": "true"}, false},
+		{"valid bool 1", map[string]string{"visa_sponsorship": "1"}, false},
+		{"valid bool FALSE", map[string]string{"is_featured": "FALSE"}, false},
+		{"bad bool", map[string]string{"visa_sponsorship": "maybe"}, true},
+	}
+	for _, tc := range cases {
+		err := validateJobFieldValues(tc.values)
+		if tc.wantErr && !errors.Is(err, ErrInvalidFieldValue) {
+			t.Errorf("%s: want ErrInvalidFieldValue, got %v", tc.name, err)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("%s: unexpected error %v", tc.name, err)
+		}
+	}
+}
+
+// UpdateJobListingInput uses pointers (nil=unchanged) — an omitted title
+// must not overwrite the existing value (J4).
+func TestUpdateJobListingInput_PointerSemantics(t *testing.T) {
+	var in UpdateJobListingInput
+	if in.Title != nil || in.Body != nil || in.Slug != nil {
+		t.Fatal("zero UpdateJobListingInput must have nil Title/Body/Slug (nil=unchanged)")
+	}
+	title := ""
+	in.Title = &title
+	if in.Title == nil {
+		t.Fatal("explicit empty title must be non-nil")
+	}
+}

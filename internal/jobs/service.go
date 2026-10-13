@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,8 +91,12 @@ type JobFilters struct {
 	VisaSponsorship *bool
 	Q               string // text search on title
 	Sort            string // newest, deadline_asc, salary_desc
-	Page            int
-	Limit           int
+	// IncludeExpired disables the default hide-expired behavior. By
+	// default listings whose application_deadline is past are hidden;
+	// ?include_expired=true shows them (J10).
+	IncludeExpired bool
+	Page           int
+	Limit          int
 }
 
 // SourceAttribution is a lightweight source snapshot attached to job listings
@@ -164,11 +169,14 @@ type ViewerApplication struct {
 }
 
 // UpdateJobListingInput is the request body for the public PATCH
-// /org/:org_id/jobs/:id endpoint.
+// /org/:org_id/jobs/:id endpoint. Pointer fields use nil=unchanged so
+// callers can clear nothing accidentally and can distinguish "not
+// provided" from "set to empty". FieldValues nil means unchanged; a
+// non-nil (possibly empty) map upserts the provided keys.
 type UpdateJobListingInput struct {
-	Title       string
-	Slug        string
-	Body        string
+	Title       *string
+	Slug        *string
+	Body        *string
 	FieldValues map[string]string
 	PublishedAt *string
 }
@@ -253,6 +261,9 @@ func (s *Service) IsEnabled(ctx context.Context) bool {
 }
 
 // FeaturedCredits reads the jobs.featured_credits system_setting (default 1000).
+// DEAD CODE (flagged, not removed): no callers in the tree — the featured
+// flow goes through ToggleFeature / the is_featured custom field value.
+// Kept intentionally; remove only with product sign-off.
 func (s *Service) FeaturedCredits(ctx context.Context) int {
 	if s.settings == nil {
 		return 1000
@@ -342,12 +353,25 @@ func (s *Service) FindJobs(ctx context.Context, filters JobFilters) ([]JobResult
 	// Base clauses — platform + content_type + published + not soft-deleted.
 	// custom_field_values is EAV (field_id → custom_fields.id, entity_type,
 	// entity_id); filters join through custom_fields to resolve the key.
+	// By default listings whose application_deadline is past are hidden;
+	// ?include_expired=true disables that clause (J10).
 	clauses = append(
 		clauses,
 		"c.content_type = 'job_listing'",
 		"c.status = 'published'",
 		"c.deleted_at IS NULL",
 	)
+	if !filters.IncludeExpired {
+		clauses = append(clauses, `
+			NOT EXISTS (
+				SELECT 1 FROM custom_field_values cfv
+				JOIN custom_fields cf ON cf.id = cfv.field_id
+				WHERE cfv.entity_type = 'content' AND cfv.entity_id = c.id
+				  AND cf.key = 'application_deadline'
+				  AND cfv.value_text <> ''
+				  AND cfv.value_text::date < CURRENT_DATE
+			)`)
+	}
 
 	argIdx = 1
 
@@ -875,14 +899,27 @@ func (s *Service) ListOrgJobs(ctx context.Context, orgID pgtype.UUID, page, limi
 }
 
 // CreateJobListing creates a job_listing content row with the given field
-// values and returns the created listing detail.
-func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.UUID, title, slug, summary, body string, fieldValues map[string]string) (JobDetail, error) {
+// values and returns the created listing detail. Listings publish
+// immediately (status='published'); publishedAt is an RFC3339 pass-through
+// for the published_at timestamp (nil/empty = now).
+func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.UUID, title, slug, summary, body string, fieldValues map[string]string, publishedAt *string) (JobDetail, error) {
 	if err := validateJobFieldValues(fieldValues); err != nil {
 		return JobDetail{}, err
 	}
 
 	if slug == "" {
 		slug = generateJobSlug(title)
+	}
+
+	var publishedExpr any = "now()"
+	var publishedStr string
+	if publishedAt != nil && strings.TrimSpace(*publishedAt) != "" {
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(*publishedAt))
+		if err != nil {
+			return JobDetail{}, fmt.Errorf("%w: published_at must be RFC3339", ErrInvalidFieldValue)
+		}
+		publishedExpr = pgtype.Timestamptz{Time: t, Valid: true}
+		publishedStr = t.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
 
 	// Rule 12: compute content_hash before every contents insert so the
@@ -902,9 +939,9 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 
 	err := s.store.pool.Writer.QueryRow(ctx, `
 		INSERT INTO contents (organization_id, author_id, content_type, title, slug, body, content_hash, status, published_at)
-		VALUES ($1, $2, 'job_listing', $3, $4, $5, $6, 'published', now())
+		VALUES ($1, $2, 'job_listing', $3, $4, $5, $6, 'published', $7)
 		RETURNING id`,
-		orgID, authorID, title, slug, body, contentHash).Scan(&contentID)
+		orgID, authorID, title, slug, body, contentHash, publishedExpr).Scan(&contentID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -916,7 +953,9 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 	// Insert custom field values via the typed upsert helper (EAV schema,
 	// correct value_* column per field type — JOBS-002/007).
 	for fieldKey, value := range fieldValues {
-		s.upsertJobFieldValue(ctx, contentID, fieldKey, value)
+		if err := s.upsertJobFieldValue(ctx, contentID, fieldKey, value); err != nil {
+			return JobDetail{}, err
+		}
 	}
 
 	return JobDetail{
@@ -926,7 +965,7 @@ func (s *Service) CreateJobListing(ctx context.Context, orgID, authorID pgtype.U
 		Summary:     deriveSummary(body),
 		Body:        body,
 		FieldValues: fieldValues,
-		PublishedAt: "",
+		PublishedAt: publishedStr,
 	}, nil
 }
 
@@ -1028,7 +1067,7 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 		return JobDetail{}, fmt.Errorf("jobs: update listing: %w", err)
 	}
 
-	if input.Title == "" && input.Body == "" && input.Slug == "" && input.PublishedAt == nil && len(input.FieldValues) == 0 {
+	if input.Title == nil && input.Body == nil && input.Slug == nil && input.PublishedAt == nil && input.FieldValues == nil {
 		// Nothing to change; return the existing listing as-is.
 		return existing, nil
 	}
@@ -1037,20 +1076,22 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 		return JobDetail{}, err
 	}
 
-	// Fill in any omitted fields with the existing values.
-	title := input.Title
-	if title == "" {
-		title = existing.Title
+	// Fill in any omitted (nil) fields with the existing values. An
+	// explicit empty string clears nothing: values fall back to existing
+	// so PATCH is nil=unchanged.
+	title := existing.Title
+	if input.Title != nil && *input.Title != "" {
+		title = *input.Title
 	}
 
-	slug := input.Slug
-	if slug == "" {
-		slug = existing.Slug
+	slug := existing.Slug
+	if input.Slug != nil && *input.Slug != "" {
+		slug = *input.Slug
 	}
 
-	body := input.Body
-	if body == "" {
-		body = existing.Body
+	body := existing.Body
+	if input.Body != nil && *input.Body != "" {
+		body = *input.Body
 	}
 
 	var publishedAt pgtype.Timestamptz
@@ -1118,7 +1159,9 @@ func (s *Service) UpdateJobListing(ctx context.Context, orgID, jobID, callerID p
 
 	// Upsert any custom field values provided.
 	for fieldKey, value := range input.FieldValues {
-		s.upsertJobFieldValue(ctx, jobID, fieldKey, value)
+		if err := s.upsertJobFieldValue(ctx, jobID, fieldKey, value); err != nil {
+			return JobDetail{}, err
+		}
 	}
 
 	// Re-fetch from the writer to avoid read-replica lag.
@@ -1256,19 +1299,55 @@ func jobFieldURLSanitizer(key string) func(string) (string, bool) {
 	return sanitizeJobFieldURL
 }
 
-// validateJobFieldValues checks all url-typed values before any write so a
-// bad URL fails the whole request with a 400 instead of partially writing.
-// Runs before the contents insert/update in every write path.
+// validateJobFieldValues checks all typed values before any write so a
+// bad value fails the whole request with a 400 instead of partially
+// writing. URL fields must be absolute http(s) (or a same-origin media
+// path for company_logo); number fields must parse as float; boolean
+// fields must be true/false/1/0 (case-insensitive). Runs before the
+// contents insert/update in every write path.
 func validateJobFieldValues(fieldValues map[string]string) error {
 	for key, value := range fieldValues {
-		if jobFieldTypes[key] != fieldTypeURL {
+		ft, ok := jobFieldTypes[key]
+		if !ok {
 			continue
 		}
-		if _, ok := jobFieldURLSanitizer(key)(value); !ok {
-			return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidFieldValue, key)
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		switch ft {
+		case fieldTypeURL:
+			if _, ok := jobFieldURLSanitizer(key)(value); !ok {
+				return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidFieldValue, key)
+			}
+		case fieldTypeNumber:
+			if _, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err != nil {
+				return fmt.Errorf("%w: %s must be a number", ErrInvalidFieldValue, key)
+			}
+		case fieldTypeBoolean:
+			if !isJobBoolValue(value) {
+				return fmt.Errorf("%w: %s must be a boolean (true/false/1/0)", ErrInvalidFieldValue, key)
+			}
 		}
 	}
 	return nil
+}
+
+// isJobBoolValue reports whether a raw field value is a valid boolean.
+func isJobBoolValue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "false", "1", "0":
+		return true
+	}
+	return false
+}
+
+// parseJobBool parses a validated boolean field value.
+func parseJobBool(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "1":
+		return true
+	}
+	return false
 }
 
 // upsertJobFieldValue upserts a single custom_field_values row with the
@@ -1276,15 +1355,18 @@ func validateJobFieldValues(fieldValues map[string]string) error {
 // custom_fields by key + platform, and verifies the target content is a
 // job_listing in the platform (prevents cross-platform / non-job writes).
 // Empty values are skipped. Unknown keys are skipped with a warning.
-func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID, key, value string) {
+// Number/boolean values are pre-validated by validateJobFieldValues in
+// every write path; invalid values here fail closed with
+// ErrInvalidFieldValue so no caller can persist junk via a direct call.
+func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID, key, value string) error {
 	if value == "" {
-		return
+		return nil
 	}
 
 	ft, ok := jobFieldTypes[key]
 	if !ok {
 		slog.Warn("jobs: unknown field key, skipping", "field_key", key)
-		return
+		return nil
 	}
 
 	// url fields are pre-validated by validateJobFieldValues in every write
@@ -1293,14 +1375,24 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 		v, ok := jobFieldURLSanitizer(key)(value)
 		if !ok {
 			slog.Warn("jobs: invalid url field value, skipping", "field_key", key)
-			return
+			return fmt.Errorf("%w: %s must be an absolute http(s) URL", ErrInvalidFieldValue, key)
 		}
 		value = v
 	}
 
+	if ft == fieldTypeNumber {
+		if _, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err != nil {
+			return fmt.Errorf("%w: %s must be a number", ErrInvalidFieldValue, key)
+		}
+	}
+
+	if ft == fieldTypeBoolean && !isJobBoolValue(value) {
+		return fmt.Errorf("%w: %s must be a boolean (true/false/1/0)", ErrInvalidFieldValue, key)
+	}
+
 	switch ft {
 	case fieldTypeBoolean:
-		b := strings.EqualFold(value, "true") || value == "1"
+		b := parseJobBool(value)
 		if _, err := s.store.pool.Writer.Exec(ctx, `
 			INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_bool)
 			SELECT cf.id, 'content', $1, $3
@@ -1314,6 +1406,7 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 			DO UPDATE SET value_bool = $3, updated_at = now()`,
 			contentID, key, b); err != nil {
 			slog.Warn("jobs: field value upsert failed", "field_key", key, "error", err)
+			return fmt.Errorf("jobs: field value upsert %s: %w", key, err)
 		}
 	case fieldTypeNumber:
 		if _, err := s.store.pool.Writer.Exec(ctx, `
@@ -1329,6 +1422,7 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 			DO UPDATE SET value_number = $3::numeric, updated_at = now()`,
 			contentID, key, value); err != nil {
 			slog.Warn("jobs: field value upsert failed", "field_key", key, "error", err)
+			return fmt.Errorf("jobs: field value upsert %s: %w", key, err)
 		}
 	default:
 		if _, err := s.store.pool.Writer.Exec(ctx, `
@@ -1344,8 +1438,11 @@ func (s *Service) upsertJobFieldValue(ctx context.Context, contentID pgtype.UUID
 			DO UPDATE SET value_text = $3, updated_at = now()`,
 			contentID, key, value); err != nil {
 			slog.Warn("jobs: field value upsert failed", "field_key", key, "error", err)
+			return fmt.Errorf("jobs: field value upsert %s: %w", key, err)
 		}
 	}
+
+	return nil
 }
 
 // ApplyToJob creates a job_applications record. Checks for duplicate — a user
@@ -1452,6 +1549,27 @@ func (s *Service) UpdateApplicationStatus(ctx context.Context, appID pgtype.UUID
 // ADR-081).
 func (s *Service) GetApplicationForNotification(ctx context.Context, applicationID pgtype.UUID) (gen.JobApplication, error) {
 	return s.store.GetJobApplicationByID(ctx, applicationID)
+}
+
+// WithdrawApplication sets an applicant's own application to withdrawn.
+// Owner-only: the applicant_id must match the caller. Terminal states
+// (withdrawn) cannot be re-withdrawn.
+func (s *Service) WithdrawApplication(ctx context.Context, appID, callerID pgtype.UUID) (gen.JobApplication, error) {
+	app, err := s.store.GetJobApplicationByID(ctx, appID)
+	if err != nil {
+		return gen.JobApplication{}, fmt.Errorf("jobs: withdraw: get: %w", err)
+	}
+	if app.ApplicantID != callerID {
+		return gen.JobApplication{}, ErrNotOrgMember
+	}
+	if app.Status == StatusWithdrawn {
+		return app, nil
+	}
+	updated, err := s.store.UpdateJobApplicationStatus(ctx, appID, StatusWithdrawn, nil)
+	if err != nil {
+		return gen.JobApplication{}, fmt.Errorf("jobs: withdraw: update: %w", err)
+	}
+	return updated, nil
 }
 
 // ListUserApplications returns an applicant's application history with
@@ -1879,7 +1997,9 @@ func (s *Service) AdminUpdateJob(ctx context.Context, jobID pgtype.UUID, title, 
 	// Update custom field values via the typed upsert helper (correct
 	// value_* column per field type — JOBS-007).
 	for fieldKey, value := range fieldValues {
-		s.upsertJobFieldValue(ctx, jobID, fieldKey, value)
+		if err := s.upsertJobFieldValue(ctx, jobID, fieldKey, value); err != nil {
+			return err
+		}
 	}
 
 	return nil

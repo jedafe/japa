@@ -55,3 +55,19 @@ func TestRequirementsWithCFVPreservesNonMapPayload(t *testing.T) {
 		t.Fatalf("expected cfv key present, got %v", merged["fee_usd"])
 	}
 }
+
+// sanitizeVisaGovURL accepts only absolute http(s) URLs with a host (V1).
+func TestSanitizeVisaGovURL(t *testing.T) {
+	valid := []string{"https://www.canada.ca/visa", "http://example.com/a?b=c"}
+	for _, v := range valid {
+		if _, ok := sanitizeVisaGovURL(v); !ok {
+			t.Errorf("sanitizeVisaGovURL(%q) rejected a valid URL", v)
+		}
+	}
+	invalid := []string{"", "javascript:alert(1)", "data:text/html,x", "//evil.example.com/x", "example.com", "ftp://example.com/x", "https://", "https:///path"}
+	for _, v := range invalid {
+		if _, ok := sanitizeVisaGovURL(v); ok {
+			t.Errorf("sanitizeVisaGovURL(%q) accepted an unsafe URL", v)
+		}
+	}
+}

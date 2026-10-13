@@ -164,13 +164,17 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &routes)
 
+	// Standard list envelope: canonical `meta` plus a `pagination` alias
+	// for back-compat with older clients.
+	pageMeta := map[string]any{
+		"page":  page,
+		"limit": limit,
+		"total": total,
+	}
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": routes,
-		"pagination": map[string]any{
-			"page":  page,
-			"limit": limit,
-			"total": total,
-		},
+		"data":       routes,
+		"meta":       pageMeta,
+		"pagination": pageMeta,
 	})
 }
 
@@ -187,6 +191,18 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 	if idsParam == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_ids", "ids query parameter is required")
 		return
+	}
+
+	// Optional ?dest= filter: when present, only routes for that
+	// destination space are returned (unknown dest → 400).
+	var destFilter pgtype.UUID
+	var filterByDest bool
+	if v := r.URL.Query().Get("dest"); v != "" {
+		if err := destFilter.Scan(v); err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_id", "Invalid destination space ID")
+			return
+		}
+		filterByDest = true
 	}
 
 	parts := strings.Split(idsParam, ",")
@@ -222,7 +238,7 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes, err := h.service.Compare(r.Context(), ids)
+	result, err := h.service.CompareWithMissing(r.Context(), ids)
 	if err != nil {
 		slog.Error("visaroutes: compare failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "compare_failed", "Failed to compare visa routes")
@@ -230,7 +246,29 @@ func (h *Handlers) HandleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	routes := result.Routes
+	missing := result.MissingIDs
+	if filterByDest {
+		kept := routes[:0]
+		var destMissing []string
+		for _, route := range routes {
+			if route.DestinationSpaceID == destFilter.String() {
+				kept = append(kept, route)
+			} else {
+				destMissing = append(destMissing, route.ID)
+			}
+		}
+		routes = kept
+		missing = append(missing, destMissing...)
+	}
+
 	h.resolveLiterals(r, &routes)
+
+	if len(missing) > 0 {
+		// 207 Multi-Status: some requested IDs did not resolve.
+		errpkg.WriteJSON(w, http.StatusMultiStatus, map[string]any{"data": routes, "missing_ids": missing})
+		return
+	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": routes})
 }

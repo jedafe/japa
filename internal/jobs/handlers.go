@@ -50,10 +50,12 @@ type createJobListingRequest struct {
 }
 
 // updateJobListingRequest is the JSON body for PATCH /org/{org_id}/jobs/{id}.
+// Pointer fields use nil=unchanged so omitted keys are not mistaken for
+// explicit empty values.
 type updateJobListingRequest struct {
-	Title       string            `json:"title"`
-	Slug        string            `json:"slug"`
-	Body        string            `json:"body"`
+	Title       *string           `json:"title"`
+	Slug        *string           `json:"slug"`
+	Body        *string           `json:"body"`
 	FieldValues map[string]string `json:"field_values"`
 	PublishedAt *string           `json:"published_at,omitempty"`
 }
@@ -180,6 +182,7 @@ func (h *Handlers) HandleFindJobs(w http.ResponseWriter, r *http.Request) {
 		VisaSponsorship: parseBoolParam(r, "visa_sponsorship"),
 		Q:               q.Get("q"),
 		Sort:            q.Get("sort"),
+		IncludeExpired:  q.Get("include_expired") == "true" || q.Get("include_expired") == "1",
 		Page:            page,
 		Limit:           limit,
 	}
@@ -338,6 +341,45 @@ func (h *Handlers) HandleMyApplications(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// HandleWithdrawApplication handles PATCH /api/v1/me/jobs/applications/{id}
+// — owner-only withdraw: the caller must own the application. Sets status
+// to withdrawn.
+func (h *Handlers) HandleWithdrawApplication(w http.ResponseWriter, r *http.Request) {
+	user, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	appID, ok := scanUUIDParam(w, r, "id")
+	if !ok {
+		return
+	}
+
+	app, err := h.service.WithdrawApplication(r.Context(), appID, user.UserID)
+	if err != nil {
+		if errors.Is(err, ErrNotOrgMember) {
+			errpkg.WriteError(w, http.StatusForbidden, "not_application_owner", "You can only withdraw your own applications")
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			errpkg.WriteError(w, http.StatusNotFound, "application_not_found", "Application not found")
+			return
+		}
+		slog.Error("jobs: withdraw application failed", "error", err)
+		errpkg.WriteError(w, http.StatusInternalServerError, "withdraw_failed", "Failed to withdraw application")
+
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
+		"data": map[string]any{
+			"id":                app.ID.String(),
+			"status":            app.Status,
+			"status_updated_at": formatTimestamptz(app.StatusUpdatedAt),
+		},
+	})
+}
+
 // HandleListOrgJobs handles GET /api/v1/org/:org_id/jobs — lists the org's
 // published job listings. Auth required (org admin / jobs.post). The caller
 // must be a member of the org with an editor-or-above role (JOBS-012).
@@ -429,7 +471,7 @@ func (h *Handlers) HandleCreateJobListing(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	listing, err := h.service.CreateJobListing(r.Context(), orgID, user.UserID, req.Title, req.Slug, "", req.Body, req.FieldValues)
+	listing, err := h.service.CreateJobListing(r.Context(), orgID, user.UserID, req.Title, req.Slug, "", req.Body, req.FieldValues, req.PublishedAt)
 	if err != nil {
 		if errors.Is(err, ErrDuplicateContent) {
 			errpkg.WriteError(w, http.StatusConflict, "duplicate_content", "A listing with identical content already exists")

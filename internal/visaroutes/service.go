@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -202,10 +203,20 @@ func (s *Service) List(ctx context.Context, destSpaceID pgtype.UUID, profession,
 	return dtos, total, nil
 }
 
-// Compare returns up to 4 visa routes by ID for side-by-side comparison.
-func (s *Service) Compare(ctx context.Context, ids []pgtype.UUID) ([]RouteDTO, error) {
+// CompareResult is the multi-status payload for the compare endpoint:
+// the routes that resolved plus the requested IDs that did not.
+type CompareResult struct {
+	Routes     []RouteDTO
+	MissingIDs []string
+}
+
+// CompareWithMissing returns up to 4 visa routes by ID for side-by-side
+// comparison, preserving request order. IDs that do not resolve (unknown,
+// unpublished, or inactive) are reported in MissingIDs so callers can
+// render a 207 multi-status instead of silently dropping them.
+func (s *Service) CompareWithMissing(ctx context.Context, ids []pgtype.UUID) (CompareResult, error) {
 	if len(ids) == 0 {
-		return []RouteDTO{}, nil
+		return CompareResult{Routes: []RouteDTO{}}, nil
 	}
 
 	if len(ids) > 4 {
@@ -214,17 +225,38 @@ func (s *Service) Compare(ctx context.Context, ids []pgtype.UUID) ([]RouteDTO, e
 
 	rows, err := s.store.GetByIDs(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("visaroutes: compare: %w", err)
+		return CompareResult{}, fmt.Errorf("visaroutes: compare: %w", err)
+	}
+
+	byID := make(map[string]RouteRow, len(rows))
+	for _, r := range rows {
+		byID[r.ID.String()] = r
 	}
 
 	dtos := make([]RouteDTO, 0, len(rows))
-	for _, r := range rows {
-		dtos = append(dtos, rowToDTO(r))
+	var missing []string
+	for _, id := range ids {
+		if r, ok := byID[id.String()]; ok {
+			dtos = append(dtos, rowToDTO(r))
+		} else {
+			missing = append(missing, id.String())
+		}
 	}
 
 	s.mergeRouteFieldValues(ctx, dtos)
 
-	return dtos, nil
+	return CompareResult{Routes: dtos, MissingIDs: missing}, nil
+}
+
+// Compare returns up to 4 visa routes by ID (request order preserved).
+// It satisfies the public-api VisaRouteReader interface; the HTTP compare
+// handler uses CompareWithMissing for the 207 multi-status payload.
+func (s *Service) Compare(ctx context.Context, ids []pgtype.UUID) ([]RouteDTO, error) {
+	res, err := s.CompareWithMissing(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	return res.Routes, nil
 }
 
 // GetByID returns a single published+active visa route for public view.
@@ -302,7 +334,33 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID pgtype.UUID, status
 	return dtos, total, nil
 }
 
-// Create creates a new visa route (admin).
+// ErrInvalidGovSourceURL is returned when gov_source_url is not an
+// absolute http(s) URL with a host.
+var ErrInvalidGovSourceURL = errors.New("gov_source_url must be an absolute http(s) URL")
+
+// sanitizeVisaGovURL validates a government source URL. Only absolute
+// http(s) URLs with a host are accepted — javascript:, data:,
+// protocol-relative, and bare strings are rejected so the stored value is
+// safe to render as an outbound link.
+func sanitizeVisaGovURL(raw string) (string, bool) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", false
+	}
+	lower := strings.ToLower(v)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return "", false
+	}
+	host := v[strings.Index(v, "://")+3:]
+	if host == "" || strings.HasPrefix(host, "/") {
+		return "", false
+	}
+	return v, true
+}
+
+// Create creates a new visa route (admin). New routes default to
+// status=draft, is_active=false — they must be HITL-approved before the
+// public surface serves them.
 func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO, error) {
 	if input.Name == "" {
 		return RouteDTO{}, errors.New("name is required")
@@ -314,6 +372,10 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 
 	if input.GovSourceURL == "" {
 		return RouteDTO{}, errors.New("gov_source_url is required")
+	}
+
+	if _, ok := sanitizeVisaGovURL(input.GovSourceURL); !ok {
+		return RouteDTO{}, ErrInvalidGovSourceURL
 	}
 
 	var destSpaceID pgtype.UUID
@@ -372,9 +434,14 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		}
 	}
 
-	isActive := true
+	isActive := false
 	if input.IsActive != nil {
 		isActive = *input.IsActive
+	}
+
+	status := input.Status
+	if status == "" {
+		status = StatusDraft
 	}
 
 	aiGenerated := false
@@ -395,7 +462,7 @@ func (s *Service) Create(ctx context.Context, input CreateRouteInput) (RouteDTO,
 		Restrictions:         restrictions,
 		GovSourceURL:         input.GovSourceURL,
 		SourceURLLastChecked: sourceLastChecked,
-		Status:               input.Status,
+		Status:               status,
 		IsActive:             isActive,
 		AIGenerated:          aiGenerated,
 		AIModel:              aiModel,
@@ -466,6 +533,9 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 	}
 
 	if input.GovSourceURL != nil {
+		if _, ok := sanitizeVisaGovURL(*input.GovSourceURL); !ok {
+			return RouteDTO{}, ErrInvalidGovSourceURL
+		}
 		update.GovSourceURL = input.GovSourceURL
 	}
 
@@ -511,8 +581,21 @@ func (s *Service) Update(ctx context.Context, id pgtype.UUID, input UpdateRouteI
 }
 
 // Approve marks a visa route as HITL-reviewed and published (admin).
+// Blocked until gov_source_url is a valid absolute http(s) URL —
+// approving a route with a missing or unsafe source link would publish an
+// unverifiable route to the public surface.
 // Returns the updated route DTO per the ADR-088 HITL approve pattern.
 func (s *Service) Approve(ctx context.Context, id, reviewerID pgtype.UUID, input ApproveInput) (RouteDTO, error) {
+	current, err := s.store.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return RouteDTO{}, pgx.ErrNoRows
+		}
+		return RouteDTO{}, fmt.Errorf("visaroutes: approve: read: %w", err)
+	}
+	if _, ok := sanitizeVisaGovURL(current.GovSourceURL); !ok {
+		return RouteDTO{}, ErrInvalidGovSourceURL
+	}
 	row, err := s.store.Approve(ctx, id, reviewerID, input.Notes)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

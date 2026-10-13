@@ -81,15 +81,21 @@ func (h *Handlers) HandleFindScholarships(w http.ResponseWriter, r *http.Request
 	}
 
 	if v := q.Get("min_amount"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			filters.MinAmount = f
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "min_amount must be a number")
+			return
 		}
+		filters.MinAmount = f
 	}
 
 	if v := q.Get("max_amount"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			filters.MaxAmount = f
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_amount", "max_amount must be a number")
+			return
 		}
+		filters.MaxAmount = f
 	}
 
 	if v := q.Get("renewable"); v != "" {
@@ -265,7 +271,13 @@ func (h *Handlers) HandleUpdateSavedScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": saved})
+	resp, err := h.svc.SavedScholarshipResponse(r.Context(), userID, guideID)
+	if err != nil {
+		errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": saved})
+		return
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]interface{}{"data": resp})
 }
 
 // HandleDeleteSavedScholarship removes a scholarship from the tracker.
@@ -443,6 +455,32 @@ func decodeScholarshipBody(r *http.Request) (*scholarshipBody, error) {
 	}
 
 	return &body, nil
+}
+
+// sanitizeScholarshipURL validates an application/source URL field. Only
+// absolute http(s) URLs with a host are accepted — anything else
+// (javascript:, data:, protocol-relative, bare strings) is rejected so the
+// stored value is safe to render as a link.
+func sanitizeScholarshipURL(raw string) (string, bool) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", true
+	}
+	if strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
+		return "", false
+	}
+	lower := strings.ToLower(v)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return "", false
+	}
+	if len(v) <= len("https://") {
+		return "", false
+	}
+	host := v[strings.Index(v, "://")+3:]
+	if host == "" || strings.HasPrefix(host, "/") {
+		return "", false
+	}
+	return v, true
 }
 
 // requireScholarshipFields enforces the required create fields.
@@ -786,6 +824,13 @@ func (h *Handlers) HandleAdminCreateScholarship(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if body.ApplicationURL != nil && *body.ApplicationURL != "" {
+		if _, ok := sanitizeScholarshipURL(*body.ApplicationURL); !ok {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_application_url", "application_url must be an absolute http(s) URL")
+			return
+		}
+	}
+
 	// Build the guide body from the description or title.
 	guideBody := scholarshipGuideBody(body)
 	slug := content.Slugify(*body.Title)
@@ -864,6 +909,13 @@ func (h *Handlers) HandleAdminUpdateScholarship(w http.ResponseWriter, r *http.R
 	if err != nil {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
+	}
+
+	if body.ApplicationURL != nil && *body.ApplicationURL != "" {
+		if _, ok := sanitizeScholarshipURL(*body.ApplicationURL); !ok {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_application_url", "application_url must be an absolute http(s) URL")
+			return
+		}
 	}
 
 	// Merge: use provided values or fall back to existing.

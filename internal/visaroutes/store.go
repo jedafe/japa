@@ -551,10 +551,12 @@ type CreateRoute struct {
 }
 
 // Create inserts a new visa route and returns the created row.
+// V2: an omitted status defaults to draft (inactive) — publish is
+// an explicit Approve transition, never a side effect of create.
 func (s *Store) Create(ctx context.Context, input CreateRoute) (RouteRow, error) {
 	status := input.Status
 	if status == "" {
-		status = StatusPublished
+		status = StatusDraft
 	}
 
 	requirementsJSON := input.RequirementsJSON

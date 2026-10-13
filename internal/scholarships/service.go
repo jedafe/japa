@@ -644,6 +644,9 @@ func findScholarshipsQuery(filters ScholarshipFilters, now time.Time) (string, [
 	return dataQuery, args
 }
 
+// ErrInvalidAmount is returned when min/max amount filters are not numeric.
+var ErrInvalidAmount = errors.New("scholarships: invalid amount filter")
+
 // FindScholarships queries published scholarship guides with server-side
 // filtering. Per ADR-112 the structured fields live in the dedicated
 // `scholarships` table (country, degree_level, deadline, application_url,
@@ -850,7 +853,10 @@ func (s *Service) SaveScholarship(ctx context.Context, userID, guideID pgtype.UU
 		return gen.SavedScholarship{}, ErrGuideNotFound
 	}
 
-	defaultReminderDays := safeInt32(s.settings.GetIntOr(ctx, "scholarship_finder.default_reminder_days", 14))
+	defaultReminderDays := int32(14)
+	if s.settings != nil {
+		defaultReminderDays = safeInt32(s.settings.GetIntOr(ctx, "scholarship_finder.default_reminder_days", 14))
+	}
 
 	saved, err := s.store.SaveScholarship(ctx, gen.SaveScholarshipParams{
 
@@ -880,7 +886,10 @@ func (s *Service) SaveScholarship(ctx context.Context, userID, guideID pgtype.UU
 
 	// Award completion points if this is the user's first save (fire-and-forget).
 	if s.enqueuer != nil {
-		completionPoints := s.settings.GetIntOr(ctx, "scholarship_finder.completion_points", 10)
+		completionPoints := 10
+		if s.settings != nil {
+			completionPoints = s.settings.GetIntOr(ctx, "scholarship_finder.completion_points", 10)
+		}
 		if completionPoints > 0 {
 			payload, _ := json.Marshal(map[string]interface{}{
 
@@ -923,6 +932,44 @@ func (s *Service) UpdateSavedScholarship(ctx context.Context, userID, guideID pg
 		Notes:            notes,
 		RemindBeforeDays: remindArg,
 	})
+}
+
+// SavedScholarshipResponse returns the saved-tracker row for a guide as a
+// SavedScholarshipResponse (nested scholarship object) — the PATCH save
+// response contract.
+func (s *Service) SavedScholarshipResponse(ctx context.Context, userID, guideID pgtype.UUID) (SavedScholarshipResponse, error) {
+	row, err := s.store.GetSavedScholarship(ctx, gen.GetSavedScholarshipParams{
+
+		UserID:  userID,
+		GuideID: guideID,
+	})
+	if err != nil {
+		return SavedScholarshipResponse{}, err
+	}
+
+	details, err := s.getScholarshipDetails(ctx, []pgtype.UUID{guideID})
+	if err != nil {
+		return SavedScholarshipResponse{}, err
+	}
+
+	sch, ok := details[guideID]
+	if !ok {
+		sch = ScholarshipResult{
+			GuideID: pgtypeUUIDString(guideID),
+			ID:      pgtypeUUIDString(guideID),
+		}
+	}
+
+	return SavedScholarshipResponse{
+		ID:               pgtypeUUIDString(row.ID),
+		Scholarship:      sch,
+		Status:           row.Status,
+		Notes:            pgtypeStringRef(row.Notes),
+		RemindBeforeDays: row.RemindBeforeDays,
+		LastRemindedAt:   pgtypeTimestampString(row.LastRemindedAt),
+		CreatedAt:        pgtypeTimestampString(row.CreatedAt),
+		UpdatedAt:        pgtypeTimestampString(row.UpdatedAt),
+	}, nil
 }
 
 // DeleteSavedScholarship removes a scholarship from the tracker.
@@ -1183,43 +1230,33 @@ func (s *Service) getScholarshipDetails(ctx context.Context, guideIDs []pgtype.U
 
 // AdminStats returns aggregate save counts, upcoming-deadline count,
 // reminders-sent count, unique-users count, and the per-status
-// distribution for the admin panel.
+// distribution for the admin panel. Counts use dedicated COUNT(*) queries
+// so the aggregates stay correct regardless of page size.
 func (s *Service) AdminStats(ctx context.Context) (AdminStats, error) {
 	dist, err := s.store.AdminStatusDistribution(ctx)
 	if err != nil {
 		return AdminStats{}, err
 	}
 
-	var total, remindersSent int64
+	var total int64
 	for _, d := range dist {
 		total += d.Count
 	}
-	// Upcoming deadlines + reminders sent come from the deadlines +
-	// reminder-log stores. We reuse the existing paginated stores with a
-	// large page to get aggregate counts (acceptable for v2 scale per
-	// ADR-073; a dedicated count query is the future migration path).
-	dl, err := s.store.AdminUpcomingDeadlines(ctx, gen.AdminScholarshipUpcomingDeadlinesParams{
 
-		PageLimit:  1000,
-		PageOffset: 0,
-	})
+	upcoming, err := s.store.CountUpcomingDeadlines(ctx)
 	if err != nil {
 		return AdminStats{}, err
 	}
 
-	upcoming := int64(len(dl))
-
-	rl, err := s.store.AdminReminderLog(ctx, gen.AdminScholarshipReminderLogParams{
-
-		PageLimit:  1000,
-		PageOffset: 0,
-	})
+	remindersSent, err := s.store.CountReminderLog(ctx)
 	if err != nil {
 		return AdminStats{}, err
 	}
 
-	remindersSent = int64(len(rl))
-	uniqueUsers := int64(len(uniqueUserIDsFromDeadlines(dl)))
+	uniqueUsers, err := s.store.CountUniqueSaverUsers(ctx)
+	if err != nil {
+		return AdminStats{}, err
+	}
 
 	return AdminStats{
 		TotalScholarships: total,
