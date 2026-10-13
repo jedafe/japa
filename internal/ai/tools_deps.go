@@ -46,6 +46,11 @@ type CustomFieldsService interface {
 	ListFieldsByGroup(ctx context.Context, groupID pgtype.UUID) ([]gen.ListCustomFieldsByGroupRow, error)
 	ListFieldValuesByEntity(ctx context.Context, entityType string, entityID pgtype.UUID) ([]gen.CustomFieldValue, error)
 	UpsertFieldValue(ctx context.Context, params gen.UpsertCustomFieldValueParams) (gen.CustomFieldValue, error)
+	// ValidateFieldValueWriteForUser applies the REST write rules to an
+	// upsert before it runs: §06 field-level can_edit for the acting user
+	// (skipRBAC mirrors the handler's super-admin bypass), the field
+	// type's value-column contract, and type-specific value validation.
+	ValidateFieldValueWriteForUser(ctx context.Context, fieldID, userID pgtype.UUID, skipRBAC bool, params gen.UpsertCustomFieldValueParams) error
 }
 
 // RAGService is the subset of internal/rag.Service the knowledge tools call.
@@ -79,6 +84,11 @@ type ComparisonService interface {
 
 	// Cache invalidation for JCE freshness after value mutations.
 	DeleteJCEComparisonCaches(ctx context.Context, contentID pgtype.UUID)
+
+	// PromoteComparison promotes a quick JCE comparison into a new detailed
+	// draft, cloning items + dimensions. bypassOwnership mirrors the REST
+	// comparison.edit_any gate (§30 JCE, jce_handlers.PromoteJCEComparison).
+	PromoteComparison(ctx context.Context, id, userID pgtype.UUID, bypassOwnership bool) (ComparisonPromoteResult, error)
 }
 
 // JCEService is the subset of internal/jce.Service the JCE comparison.refresh
@@ -136,6 +146,20 @@ type ComparisonCreateResult struct {
 	Visibility string      `json:"visibility"`
 	SpaceID    pgtype.UUID `json:"space_id"`
 	Depth      string      `json:"depth"`
+}
+
+// ComparisonPromoteResult mirrors comparison.JCEComparisonResult for the
+// promote flow (quick → detailed draft).
+type ComparisonPromoteResult struct {
+	ID pgtype.UUID `json:"id"`
+
+	AuthorID   pgtype.UUID `json:"author_id"`
+	Title      string      `json:"title"`
+	Slug       string      `json:"slug"`
+	Visibility string      `json:"visibility"`
+	Status     string      `json:"status"`
+	Depth      string      `json:"depth"`
+	SpaceID    pgtype.UUID `json:"space_id"`
 }
 
 // ComparisonDimensionCreateInput mirrors comparison.CreateComparisonDimensionInput.
@@ -666,6 +690,11 @@ type ToolDeps struct {
 	// ops stay on the generic catalog writer; these cover the
 	// revision-gated content path.
 	Wiki WikiAgentService
+
+	// COLReader backs col.city.get — the §72 cost-of-living read surface
+	// (city item + dimension values + the §80 community cfv overlay).
+	// nil → the tool returns "not configured".
+	COL COLReader
 	// Points reads the caller's lifetime reputation balance for the
 	// wiki.min_reputation_to_edit gate on community submissions.
 	// nil → the reputation check fails closed when the threshold is > 0
@@ -855,6 +884,18 @@ type PointsBalanceReader interface {
 	GetPointsBalance(ctx context.Context, userID pgtype.UUID) (int64, error)
 }
 
+// COLReader is the subset of internal/costofliving.Store the col.city.get
+// tool calls — a single city comparison_item, its dimension-value matrix,
+// and the geo-space custom_field_values overlay (§80 Tool Surface
+// Hydration). costofliving.Store satisfies it directly.
+// // Ref: japaconnect-engineering/sections/72-cost-of-living.md.
+type COLReader interface {
+	GetCityByID(ctx context.Context, id pgtype.UUID) (gen.GetCOLCityByIDRow, error)
+	GetCityByGeoSpaceID(ctx context.Context, geoSpaceID pgtype.UUID) (gen.GetCOLByGeoSpaceIDRow, error)
+	GetValuesForCities(ctx context.Context, itemIDs []pgtype.UUID) ([]gen.GetCOLValuesForCitiesRow, error)
+	ListSpaceFieldValues(ctx context.Context, spaceIDs []pgtype.UUID) map[pgtype.UUID]map[string]any
+}
+
 // ---------------------------------------------------------------------------
 // Section 104 — AI Content Campaigns tool dependencies
 // ---------------------------------------------------------------------------
@@ -1027,6 +1068,7 @@ type IntelQuerier interface {
 	GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error)
 	GetIntelRecord(ctx context.Context, id pgtype.UUID) (gen.IntelRecord, error)
 	GetIntelSourceByURL(ctx context.Context, sourceUrl string) (gen.IntelSource, error)
+	ListIntelRecordsForAgent(ctx context.Context, arg gen.ListIntelRecordsForAgentParams) ([]gen.ListIntelRecordsForAgentRow, error)
 }
 
 // IntelSourceManager creates and looks up sources for the source.discover
@@ -1131,6 +1173,9 @@ func (d *ToolDeps) WithComparison(s ComparisonService) *ToolDeps { d.Comparison 
 
 // WithJCE injects the JCE advisor/refresh service (Sub-spec 4).
 func (d *ToolDeps) WithJCE(s JCEService) *ToolDeps { d.JCE = s; return d }
+
+// WithCOL injects the cost-of-living reader used by col.city.get (§72).
+func (d *ToolDeps) WithCOL(r COLReader) *ToolDeps { d.COL = r; return d }
 
 // WithPrivacy injects the privacy exemption checker.
 func (d *ToolDeps) WithPrivacy(p PrivacyExemptionChecker) *ToolDeps { d.Privacy = p; return d }

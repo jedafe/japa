@@ -173,10 +173,26 @@ type cfvSetArgs struct {
 	ValueJson   json.RawMessage `json:"value_json,omitempty"`
 }
 
+// superAdminChecker is satisfied by the concrete RBAC resolver wired as
+// deps.Permission and lets write tools mirror the REST layer's
+// super-admin bypass for §06 field-level checks.
+type superAdminChecker interface {
+	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
+}
+
+// actorIsSuperAdmin reports whether the acting user is a super admin.
+// Returns false when the permission dep is unset or does not expose the
+// check — fail-closed, matching the REST handler when h.rbac is nil.
+func actorIsSuperAdmin(ctx context.Context, deps *ToolDeps, userID pgtype.UUID) bool {
+	sa, ok := deps.Permission.(superAdminChecker)
+	return ok && sa.IsSuperAdmin(ctx, userID)
+}
+
 // CFVSetHandler returns a ToolHandler that sets a single custom field value.
 // The executor's RBAC gate checks the required_permission; the privacy gate
 // checks the target entity's ai_exempt flag. The handler itself performs a
-// defense-in-depth privacy re-check before the upsert.
+// defense-in-depth privacy re-check, then routes the write through the same
+// field-type + §06 field-level validation the REST handler applies.
 func CFVSetHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.CustomFields == nil {
@@ -225,9 +241,16 @@ func CFVSetHandler(deps *ToolDeps) ToolHandler {
 
 		if a.ValueDate != nil {
 			var t pgtype.Timestamptz
-			if err := t.Scan(*a.ValueDate); err == nil {
-				params.ValueDate = t
+			if err := t.Scan(*a.ValueDate); err != nil {
+				return errorToolResult("invalid_value_date", "value_date is not a valid timestamp"), nil
 			}
+			params.ValueDate = t
+		}
+
+		// REST parity: §06 field-level can_edit + field-type column/value
+		// validation run before the upsert reaches the database.
+		if err := deps.CustomFields.ValidateFieldValueWriteForUser(ctx, fieldID, userID, actorIsSuperAdmin(ctx, deps, userID), params); err != nil {
+			return errorToolResult("field_write_rejected", err.Error()), nil
 		}
 
 		cfv, err := deps.CustomFields.UpsertFieldValue(ctx, params)
@@ -379,9 +402,28 @@ func CFVBulkSetHandler(deps *ToolDeps) ToolHandler {
 
 			if v.ValueDate != nil {
 				var t pgtype.Timestamptz
-				if err := t.Scan(*v.ValueDate); err == nil {
-					params.ValueDate = t
+				if err := t.Scan(*v.ValueDate); err != nil {
+					results = append(results, map[string]any{
+						"field_id": v.FieldID,
+						"status":   "error",
+						"error":    "invalid value_date",
+					})
+
+					continue
 				}
+				params.ValueDate = t
+			}
+
+			// REST parity: §06 field-level can_edit + field-type
+			// column/value validation per entry.
+			if err := deps.CustomFields.ValidateFieldValueWriteForUser(ctx, fieldID, userID, actorIsSuperAdmin(ctx, deps, userID), params); err != nil {
+				results = append(results, map[string]any{
+					"field_id": v.FieldID,
+					"status":   "error",
+					"error":    err.Error(),
+				})
+
+				continue
 			}
 
 			cfv, err := deps.CustomFields.UpsertFieldValue(ctx, params)

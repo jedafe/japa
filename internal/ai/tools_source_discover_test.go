@@ -49,13 +49,18 @@ func (s stubWebSearcher) Search(ctx context.Context, client *http.Client, settin
 	return s(ctx, client, settings, query, limit)
 }
 
-type stubSettingsForDiscover struct{}
+type stubSettingsForDiscover struct {
+	bools map[string]bool
+}
 
 func (stubSettingsForDiscover) GetStringOr(ctx context.Context, key, defaultValue string) string {
 	return defaultValue
 }
 
-func (stubSettingsForDiscover) GetBoolOr(ctx context.Context, key string, defaultValue bool) bool {
+func (s stubSettingsForDiscover) GetBoolOr(ctx context.Context, key string, defaultValue bool) bool {
+	if v, ok := s.bools[key]; ok {
+		return v
+	}
 	return defaultValue
 }
 
@@ -165,5 +170,57 @@ func TestSourceDiscoverHandler_NoDeps(t *testing.T) {
 	tr, _ := handler(t.Context(), json.RawMessage(`{"query":"test"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
+	}
+}
+
+func TestSourceDiscoverHandler_AutoEnableGate(t *testing.T) {
+	t.Parallel()
+
+	settings := stubSettingsForDiscover{
+		bools: map[string]bool{"agent.auto_enable_discovered_sources": true},
+	}
+	searcher := func(ctx context.Context, client *http.Client, s SettingsReader, query string, limit int) (string, []WebSearchResult, error) {
+		return "test", []WebSearchResult{{Title: "Source", URL: "https://example.com/feed"}}, nil
+	}
+
+	newDeps := func(perms *stubPerms) (*ToolDeps, *stubIntelSourceManager) {
+		manager := &stubIntelSourceManager{byURL: map[string]gen.IntelSource{}}
+		return &ToolDeps{
+			IntelSourceManager: manager,
+			Settings:           settings,
+			HTTPClient:         http.DefaultClient,
+			SearchWebFunc:      searcher,
+			Permission:         perms,
+		}, manager
+	}
+
+	args := json.RawMessage(`{"query":"jobs Lagos","category":"job"}`)
+
+	// Setting on but no intel.sources.manage — member-level callers still
+	// get proposed rows; the setting is not a privilege escalation.
+	deps, manager := newDeps(&stubPerms{granted: map[string]bool{}})
+	tr, err := SourceDiscoverHandler(deps)(t.Context(), args, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q: %s", tr.Status, tr.Content)
+	}
+	if len(manager.created) != 1 || manager.created[0].Status != "proposed" || manager.created[0].Enabled {
+		t.Fatalf("without intel.sources.manage expected proposed+disabled, got %+v", manager.created)
+	}
+
+	// Setting on AND intel.sources.manage — the caller could approve the
+	// proposal anyway, so direct activation is allowed.
+	deps, manager = newDeps(&stubPerms{granted: map[string]bool{"intel.sources.manage": true}})
+	tr, err = SourceDiscoverHandler(deps)(t.Context(), args, pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q: %s", tr.Status, tr.Content)
+	}
+	if len(manager.created) != 1 || manager.created[0].Status != "active" || !manager.created[0].Enabled {
+		t.Fatalf("with intel.sources.manage expected active+enabled, got %+v", manager.created)
 	}
 }

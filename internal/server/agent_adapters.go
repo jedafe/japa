@@ -386,6 +386,24 @@ func (a *agentComparisonAdapter) GetComparisonDetail(ctx context.Context, id pgt
 	}, nil
 }
 
+func (a *agentComparisonAdapter) PromoteComparison(ctx context.Context, id, userID pgtype.UUID, bypassOwnership bool) (ai.ComparisonPromoteResult, error) {
+	res, err := a.svc.PromoteJCEComparison(ctx, id, userID, bypassOwnership)
+	if err != nil {
+		return ai.ComparisonPromoteResult{}, err
+	}
+
+	return ai.ComparisonPromoteResult{
+		ID:         res.ID,
+		AuthorID:   res.AuthorID,
+		Title:      res.Title,
+		Slug:       res.Slug,
+		Visibility: res.Visibility,
+		Status:     res.Status,
+		Depth:      res.Depth,
+		SpaceID:    res.SpaceID,
+	}, nil
+}
+
 func (a *agentComparisonAdapter) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID) ([]ai.ComparisonMatrixItem, error) {
 	matrix, err := a.svc.GetComparisonMatrix(ctx, contentID)
 	if err != nil {

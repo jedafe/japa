@@ -51,6 +51,10 @@ type stubComparisonService struct {
 
 	upsertedValues []stubUpsertedValue
 	upsertErr      error
+
+	promoteResult ComparisonPromoteResult
+	promoteErr    error
+	promoteBypass bool
 }
 
 type stubUpsertedValue struct {
@@ -117,6 +121,15 @@ func (s *stubComparisonService) UpsertComparisonValueWithMetadata(_ context.Cont
 }
 
 func (s *stubComparisonService) DeleteJCEComparisonCaches(_ context.Context, _ pgtype.UUID) {}
+
+func (s *stubComparisonService) PromoteComparison(_ context.Context, id, userID pgtype.UUID, bypassOwnership bool) (ComparisonPromoteResult, error) {
+	s.promoteBypass = bypassOwnership
+	if s.promoteErr != nil {
+		return ComparisonPromoteResult{}, s.promoteErr
+	}
+
+	return s.promoteResult, nil
+}
 
 // ---------------------------------------------------------------------------
 // Provenance
@@ -1430,5 +1443,63 @@ func TestNormalizeLabel(t *testing.T) {
 
 	if normalizeLabel("  Healthcare  ") != "healthcare" {
 		t.Error("trim failed")
+	}
+}
+
+func TestComparisonPromoteHandler(t *testing.T) {
+	t.Parallel()
+
+	promotedID := mustUUID(t, "00000000-0000-0000-0000-000000000009")
+	svc := newStubComparisonService()
+	svc.promoteResult = ComparisonPromoteResult{
+		ID:     promotedID,
+		Title:  "Lagos vs Accra",
+		Slug:   "lagos-vs-accra",
+		Status: "draft",
+		Depth:  "detailed",
+	}
+	deps := &ToolDeps{Comparison: svc, Permission: &stubPerms{granted: map[string]bool{}}}
+
+	tr, err := ComparisonPromoteHandler(deps)(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success: %s", tr.Status, tr.Content)
+	}
+	if !strings.Contains(tr.Content, promotedID.String()) {
+		t.Fatalf("expected new comparison id in result, got %s", tr.Content)
+	}
+	if svc.promoteBypass {
+		t.Error("expected bypassOwnership=false without comparison.edit_any")
+	}
+}
+
+func TestComparisonPromoteHandler_EditAnyBypassesOwnership(t *testing.T) {
+	t.Parallel()
+
+	svc := newStubComparisonService()
+	deps := &ToolDeps{
+		Comparison: svc,
+		Permission: &stubPerms{granted: map[string]bool{"comparison.edit_any": true}},
+	}
+
+	_, err := ComparisonPromoteHandler(deps)(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !svc.promoteBypass {
+		t.Error("expected bypassOwnership=true for comparison.edit_any holder")
+	}
+}
+
+func TestComparisonPromoteHandler_MissingID(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{Comparison: newStubComparisonService()}
+
+	tr, _ := ComparisonPromoteHandler(deps)(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
 	}
 }

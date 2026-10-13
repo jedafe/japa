@@ -50,12 +50,14 @@ func (s *stubContentService) GetContent(ctx context.Context, id pgtype.UUID) (ge
 
 // stubCustomFieldsService implements CustomFieldsService for testing.
 type stubCustomFieldsService struct {
-	fields    []gen.ListCustomFieldsByGroupRow
-	fieldsErr error
-	cfvs      []gen.CustomFieldValue
-	cfvsErr   error
-	upserted  []gen.UpsertCustomFieldValueParams
-	upsertErr error
+	fields       []gen.ListCustomFieldsByGroupRow
+	fieldsErr    error
+	cfvs         []gen.CustomFieldValue
+	cfvsErr      error
+	upserted     []gen.UpsertCustomFieldValueParams
+	upsertErr    error
+	validateErr  error
+	validatedFor []pgtype.UUID
 }
 
 // stubGuideCategoryService implements GuideCategoryService for testing.
@@ -97,6 +99,11 @@ func (s *stubCustomFieldsService) UpsertFieldValue(ctx context.Context, params g
 		EntityType: params.EntityType,
 		EntityID:   params.EntityID,
 	}, nil
+}
+
+func (s *stubCustomFieldsService) ValidateFieldValueWriteForUser(ctx context.Context, fieldID, userID pgtype.UUID, skipRBAC bool, params gen.UpsertCustomFieldValueParams) error {
+	s.validatedFor = append(s.validatedFor, fieldID)
+	return s.validateErr
 }
 
 // stubPrivacyChecker implements PrivacyExemptionChecker for testing.

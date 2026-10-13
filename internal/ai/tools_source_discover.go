@@ -2,9 +2,12 @@
 // tool for the on-demand intelligence-to-content pipeline.
 //
 // The tool runs an external search, evaluates the result URLs, and creates
-// new intel_sources rows with status='proposed' and enabled=false. If the
-// agent.auto_enable_discovered_sources setting is true and the candidate
-// passes a trust heuristic, the source may be created as active instead.
+// new intel_sources rows with status='proposed' and enabled=false. When the
+// agent.auto_enable_discovered_sources setting is true AND the caller holds
+// intel.sources.manage (anyone who could approve the proposal anyway), the
+// source is instead created active + enabled — the caller stamped as
+// approver — and follows the same probe-verify/channel materialization path
+// as an admin approval.
 //
 // Ref: docs/superpowers/specs/2026-08-19-on-demand-intel-to-content.md
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
@@ -21,6 +24,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
+	"github.com/jedafe/japa/internal/intelligence/extractor/schemas"
+	"github.com/jedafe/japa/internal/intelligence/sources"
 )
 
 type sourceDiscoverArgs struct {
@@ -88,9 +93,15 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("external_search_failed", err.Error()), nil
 		}
 
+		// The setting alone must not let every agent caller activate
+		// sources: it only unlocks direct activation for callers who could
+		// approve the proposal anyway (intel.sources.manage). Member-level
+		// callers always get proposed rows regardless of the setting.
 		autoEnable := false
 		if deps.Settings != nil {
-			autoEnable = deps.Settings.GetBoolOr(ctx, "agent.auto_enable_discovered_sources", false)
+			autoEnable = deps.Settings.GetBoolOr(ctx, "agent.auto_enable_discovered_sources", false) &&
+				deps.Permission != nil &&
+				deps.Permission.HasPermission(ctx, userID, "intel.sources.manage")
 		}
 
 		var proposed, existing []sourceDiscoverCandidate
@@ -128,32 +139,27 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 				continue
 			}
 
-			// Simple trust heuristic: HTTPS and non-empty title.
-			trustLevel := int16(50)
-			if u.Scheme == "https" {
-				trustLevel += 10
-			}
-
-			if r.Title != "" {
-				trustLevel += 10
-			}
-
-			category := a.Category
-			if category == "" {
-				category = "general"
-			}
+			category := discoverCategory(a.Category)
 
 			name := r.Title
 			if name == "" {
-				name = r.URL
+				name = domain
 			}
 
+			// agent.auto_enable_discovered_sources activates the proposal
+			// immediately — status='active' + enabled=true with the tool
+			// caller recorded as approver so the audit trail is intact.
+			// The created row then follows the same verify-probe/channel
+			// materialization path as an admin approval.
 			status := "proposed"
 			enabled := false
-
-			if autoEnable && trustLevel >= 80 {
+			var approvedBy pgtype.UUID
+			var approvedAt pgtype.Timestamptz
+			if autoEnable {
 				status = "active"
 				enabled = true
+				approvedBy = userID
+				approvedAt = now
 			}
 
 			src, cerr := deps.IntelSourceManager.Create(ctx, gen.CreateIntelSourceParams{
@@ -162,11 +168,11 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 				Domain:              domain,
 				SourceUrl:           r.URL,
 				Category:            category,
-				SourceType:          "web_page",
-				TrustLevel:          trustLevel,
-				CrawlMethod:         "http",
-				CrawlFrequency:      "daily",
-				CrawlFrequencyMins:  1440,
+				SourceType:          "auto",
+				TrustLevel:          5, // unverified on the 1-5 scale (lower = more trusted)
+				CrawlMethod:         "manual",
+				CrawlFrequency:      "manual",
+				CrawlFrequencyMins:  0,
 				RobotsPolicy:        nil,
 				SourceLicense:       nil,
 				AttributionRequired: true,
@@ -176,9 +182,10 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 				Status:              status,
 				ProposedBy:          userID,
 				ProposedAt:          now,
-				ApprovedBy:          pgtype.UUID{},
-				ApprovedAt:          pgtype.Timestamptz{},
+				ApprovedBy:          approvedBy,
+				ApprovedAt:          approvedAt,
 				PersonaID:           pgtype.UUID{},
+				Categories:          []string{category},
 			})
 			if cerr != nil {
 				slog.Warn("ai: source discover create failed", "url", r.URL, "error", cerr)
@@ -207,4 +214,18 @@ func SourceDiscoverHandler(deps *ToolDeps) ToolHandler {
 			"total_existing": len(existing),
 		}), nil
 	}
+}
+
+// discoverCategory resolves the requested category to a taxonomy-registered
+// value. A category that maps to no extraction domain (e.g. "general")
+// would leave the approved source's channels with empty entity_types, so it
+// falls back to "news" — the broadest curated domain.
+func discoverCategory(requested string) string {
+	for _, c := range sources.NormalizeCategories([]string{requested}) {
+		if schemas.CategoryToEntityType(c) != "" {
+			return c
+		}
+	}
+
+	return string(sources.CategoryNews)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -28,9 +29,10 @@ func (s *stubTaskEnqueuer) Enqueue(taskType string, payload []byte, opts ...any)
 }
 
 type stubIntelQuerier struct {
-	source gen.IntelSource
-	record gen.IntelRecord
-	err    error
+	source  gen.IntelSource
+	record  gen.IntelRecord
+	records []gen.ListIntelRecordsForAgentRow
+	err     error
 }
 
 func (s *stubIntelQuerier) GetIntelSource(ctx context.Context, id pgtype.UUID) (gen.IntelSource, error) {
@@ -55,6 +57,14 @@ func (s *stubIntelQuerier) GetIntelSourceByURL(ctx context.Context, sourceUrl st
 	}
 
 	return s.source, nil
+}
+
+func (s *stubIntelQuerier) ListIntelRecordsForAgent(ctx context.Context, arg gen.ListIntelRecordsForAgentParams) ([]gen.ListIntelRecordsForAgentRow, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return s.records, nil
 }
 
 func TestSourceCrawlNowHandler(t *testing.T) {
@@ -211,5 +221,87 @@ func TestContentRegenerateFromSourceHandler_EnqueueFailure(t *testing.T) {
 	tr, _ := handler(t.Context(), json.RawMessage(`{"content_id":"00000000-0000-0000-0000-000000000001","intel_record_id":"00000000-0000-0000-0000-000000000002"}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
+	}
+}
+
+func TestIntelRecordGetHandler(t *testing.T) {
+	t.Parallel()
+
+	q := &stubIntelQuerier{record: gen.IntelRecord{
+		Status:            "extracted",
+		EntityType:        "scholarship",
+		Extracted:         []byte(`{"title":"Chevening"}`),
+		ConfidenceOverall: 0.9,
+	}}
+	deps := &ToolDeps{IntelQuerier: q}
+
+	tr, err := IntelRecordGetHandler(deps)(t.Context(), json.RawMessage(`{"record_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+	if !strings.Contains(tr.Content, `"extracted"`) || !strings.Contains(tr.Content, "Chevening") {
+		t.Fatalf("expected extracted payload in result, got %s", tr.Content)
+	}
+}
+
+func TestIntelRecordGetHandler_MissingID(t *testing.T) {
+	t.Parallel()
+
+	deps := &ToolDeps{IntelQuerier: &stubIntelQuerier{}}
+
+	tr, _ := IntelRecordGetHandler(deps)(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
+	if tr.Status != ToolCallStatusError {
+		t.Fatalf("status = %q, want error", tr.Status)
+	}
+}
+
+func TestIntelRecordListHandler(t *testing.T) {
+	t.Parallel()
+
+	q := &stubIntelQuerier{records: []gen.ListIntelRecordsForAgentRow{
+		{EntityType: "job", Status: "published"},
+		{EntityType: "job", Status: "review_required"},
+	}}
+	deps := &ToolDeps{IntelQuerier: q}
+
+	tr, err := IntelRecordListHandler(deps)(t.Context(), json.RawMessage(`{"status":"published","limit":10}`), pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+	if !strings.Contains(tr.Content, `"count":2`) {
+		t.Fatalf("expected 2 records in result, got %s", tr.Content)
+	}
+	// The list surface must omit the heavy extraction payloads.
+	if strings.Contains(tr.Content, `"extracted"`) {
+		t.Fatalf("list result must not contain extracted payloads: %s", tr.Content)
+	}
+}
+
+func TestIntelSourceGetHandler(t *testing.T) {
+	t.Parallel()
+
+	q := &stubIntelQuerier{source: gen.IntelSource{
+		Name:       "Example Feed",
+		Status:     "active",
+		Enabled:    true,
+		TrustLevel: 2,
+	}}
+	deps := &ToolDeps{IntelQuerier: q}
+
+	tr, err := IntelSourceGetHandler(deps)(t.Context(), json.RawMessage(`{"source_id":"00000000-0000-0000-0000-000000000001"}`), pgtype.UUID{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tr.Status != ToolCallStatusSuccess {
+		t.Fatalf("status = %q, want success", tr.Status)
+	}
+	if !strings.Contains(tr.Content, "Example Feed") {
+		t.Fatalf("expected source name in result, got %s", tr.Content)
 	}
 }

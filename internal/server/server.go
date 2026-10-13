@@ -409,6 +409,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	cfService := customfields.NewService(database)
 	cfService.SetCache(vkClient.Redis()) // BUG-016: cache field-level RBAC checks
 
+	// CF8: membership add/remove flushes the member's cached field permission
+	// sets so grant changes are visible immediately (not after the TTL).
+	rbacHandlers.SetFieldPermissionCacheInvalidator(cfService)
+
 	embedResolver := customfields.NewEmbedResolver()
 	cfHandlers := customfields.NewHandlers(cfService, embedResolver)
 	cfHandlers.SetRBAC(rbacResolver) // SEC-005: field-level RBAC enforcement
@@ -879,6 +883,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// before storage (stored XSS prevention). content.SanitizeHTML is the
 	// whitelist-based sanitizer shared across the platform.
 	cfHandlers.SetRichTextSanitizer(content.SanitizeHTML)
+	// CF2: the wiki field-ops path (submit + apply) shares the same sanitizer
+	// so rich_text in ops payloads and cfv rows converge on clean bytes.
+	wiki.SetRichTextSanitizer(content.SanitizeHTML)
 
 	// Advertising subsystem (Section 25 — Ad Placement).
 	adService := advertising.NewService(database, settingsService)
@@ -2028,12 +2035,18 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// is created above; the wiki handlers were created earlier at line ~1028.
 	wikiService.SetValkey(vkClient.Redis())
 	wikiHandlers.SetRAGIndexer(ragService)
+	// Service-level RAG injection registers the store's page lifecycle
+	// hook — the agent tool registry calls wikiStore.UpdatePage /
+	// DeleteWikiPage directly, so embedding sync must live below the
+	// handler layer to cover that path too (§69/ADR-069).
+	wikiService.SetRAGIndexer(ragService)
 	// BUG-001 fix: wire RAG indexer into the spaces and academy handlers so
 	// spaces and learning tracks are embedded into content_embeddings
 	// (§69/ADR-069). These handlers were created earlier; ragService is
 	// created above.
 	spaceHandlers.SetRAGIndexer(ragService)
 	academyHandlers.SetRAGIndexer(ragService)
+	creatorHandlers.SetRAGIndexer(ragService)
 	// BUG-002 (rag-audit): inject the settings reader so the spaces and
 	// academy handlers can resolve i18n.default_language for RAG indexing
 	// instead of hardcoding "en".
@@ -2082,6 +2095,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		WithRAG(agentRAG).
 		WithComparison(&agentComparisonAdapter{svc: comparisonService}).
 		WithJCE(jce.NewToolAdapter(jceService)).
+		WithCOL(costOfLivingStore).
 		WithPrivacy(ai.NewPrivacyChecker(gen.New(database.Reader))).
 		WithPermission(rbacResolver).
 		WithSettings(settingsService).
@@ -3402,6 +3416,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Delete("/admin/field-groups/{id}/fields/{fid}", cfHandlers.DeleteFieldInGroup)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.field.edit")).
 				Post("/admin/field-groups/{id}/fields/reorder", cfHandlers.ReorderFields)
+			// §06 field-type catalog — the admin create/edit field pickers
+			// consume this instead of a hardcoded list (Rule 16).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "custom_fields.group.view")).
+				Get("/admin/field-types", cfHandlers.ListFieldTypes)
 
 			// Admin form submission single-item routes — the list already
 			// exists at /forms/{id}/submissions above; these add the
@@ -5557,7 +5575,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// the ComparisonEngine: classifies the tier, gathers knowledge
 			// via pre-search, and optionally creates a comparison content
 			// row for Tier 3.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
+			r.With(features.Gate(featureChecker, "feature.ai_agent"),
+				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Post("/ai/compare-entities", agentHTTPHandlers.HandleCompareEntities)
 
 			// Authorship reassignment (Section 103 — Authorship Assignment).
@@ -6434,6 +6453,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/academy/curriculum/tracks/{id}/enrollments", academyHandlers.ListTrackEnrollments)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
 				Post("/admin/academy/curriculum/tracks/{id}/publish", academyHandlers.PublishTrack)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "academy.admin.manage")).
+				Post("/admin/academy/curriculum/tracks/{id}/unpublish", academyHandlers.UnpublishTrack)
 
 			// Task 15: Payments/coupons admin + subscription
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "payments.discount_codes.manage")).
@@ -6687,6 +6708,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/jobs/{id}/apply", jobsHandlers.HandleApply)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.apply")).
 				Get("/me/jobs/applications", jobsHandlers.HandleMyApplications)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.apply")).
+				Patch("/me/jobs/applications/{id}", jobsHandlers.HandleWithdrawApplication)
 			// Org-scoped employer routes (Section 63).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "jobs.post")).
 				Get("/org/{org_id}/jobs", jobsHandlers.HandleListOrgJobs)
@@ -7322,7 +7345,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// above.
 				// Live quote for the booking modal (?tier_id=&coupon_code=)
 				// — read-only; coupon rejections return 200 coupon_valid:false.
-				r.With(auth.RequireAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
+				// M4: OptionalAuth so guests can preview tier/coupon quotes;
+				// per-user caps are skipped for anonymous previews.
+				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 					Get("/services/{id}/price-preview", serviceDirHandlers.HandlePricePreview)
 				r.With(auth.RequireAuth(kr, vkClient.Redis())).
 					Get("/services/{id}/departures", serviceDirHandlers.HandlePackageDepartures)
@@ -7475,11 +7500,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/intel/scholarships", intelHandlers.HandleSearchScholarships)
 			r.With(auth.OptionalAuth(kr, vkClient.Redis()), rbac.OptionalPermission(rbacResolver, "intel.radar.view")).
 				Get("/intel/scholarships/{id}", intelHandlers.HandleScholarshipDetail)
-			// Sources directory — RBAC-gated by intel.sources.manage (control
-			// panel admin only). The source registry is admin data, not a public
-			// surface; extracted intelligence data is what the main app shows.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
+			// Sources directory — readable with intel.sources.view or
+			// intel.sources.manage so view-only reviewers can browse the
+			// registry; mutations below stay manage-only.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "intel.sources.manage", "intel.sources.view")).
 				Get("/intel/sources", intelHandlers.HandleSourcesDirectory)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequireAnyPermission(rbacResolver, "intel.sources.manage", "intel.sources.view")).
+				Get("/intel/sources/{id}", intelHandlers.HandleGetSourceByID)
 			// Sources CRUD — RBAC-gated by intel.sources.manage (control panel
 			// admin only). BUG-002 fix: the control panel calls these routes but
 			// they were not registered, so source create/edit/delete returned 404.
@@ -7495,6 +7522,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/intel/sources/proposed", intelHandlers.HandleListProposedSources)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
 				Post("/intel/sources/{id}/approve", intelHandlers.HandleApproveProposedSource)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.sources.manage")).
+				Post("/intel/sources/{id}/reject", intelHandlers.HandleRejectProposedSource)
 
 			// Public source directory and source detail.
 			// These are intentionally not under /intel/ and are public so they can
@@ -7602,6 +7631,10 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/intel/review/{record_id}/approve", intelHandlers.HandleReviewApprove)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.reject")).
 				Post("/intel/review/{record_id}/reject", intelHandlers.HandleReviewReject)
+			// Re-promote — retries the fire-and-forget intel:promote enqueue
+			// for records stuck in 'approved' after a queue outage.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.approve")).
+				Post("/intel/records/{id}/promote", intelHandlers.HandleRequeuePromote)
 			// Review edit — saves admin field edits to editorial_overrides.
 			// RBAC-gated by intel.review.edit. BUG-004 fix.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "intel.review.edit")).

@@ -13,6 +13,8 @@ type GenerateDocsPageRequest struct {
 	Slug            string
 	Audience        string
 	RelatedFeatures []string
+	DocCategory     string
+	DocSubcategory  string
 	UserID          string
 }
 

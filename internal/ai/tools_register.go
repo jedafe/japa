@@ -77,6 +77,14 @@ func RegisterPhase4Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	registry.RegisterHandler("scholarship.search", ScholarshipSearchHandler(deps))
 	registry.RegisterHandler("source.discover", SourceDiscoverHandler(deps))
 
+	// --- Intelligence read tools (migration 000842) ---
+	// Read-only counterparts that close the loop on the enqueue-only tools
+	// above: after crawl_now/update_now return "queued", the agent and MCP
+	// callers can inspect the source + extracted records that resulted.
+	registry.RegisterHandler("intel.source.get", IntelSourceGetHandler(deps))
+	registry.RegisterHandler("intel.record.get", IntelRecordGetHandler(deps))
+	registry.RegisterHandler("intel.record.list", IntelRecordListHandler(deps))
+
 	// --- Comparison tools (Phase 7, task 7.06) ---
 	RegisterPhase7ComparisonTools(registry, deps)
 }
@@ -121,6 +129,18 @@ func RegisterPhase7ComparisonTools(registry *ToolHandlerRegistry, deps *ToolDeps
 	// comparison.refresh — trigger a refresh of stale comparison values.
 	registry.RegisterHandler("comparison.refresh", JCERefreshHandler(deps))
 	registry.RegisterPrivacyTarget("comparison.refresh", JCERefreshPrivacyTarget)
+
+	// --- Comparison promote + COL read (migration 000843) ---
+	// comparison.promote — quick → detailed draft (REST parity with
+	// POST /jce/comparisons/{id}/promote). Ownership bypass resolves
+	// comparison.edit_any inside the handler.
+	registry.RegisterHandler("comparison.promote", ComparisonPromoteHandler(deps))
+	registry.RegisterPrivacyTarget("comparison.promote", ComparisonPromotePrivacyTarget)
+
+	// col.city.get — canonical city cost-of-living record (§72): city item,
+	// dimension-value matrix, and the §80 community cfv overlay merged
+	// (cfv wins per key, same as the calculator resolver).
+	registry.RegisterHandler("col.city.get", COLCityGetHandler(deps))
 }
 
 // RegisterPhase9Tools registers all Phase 9 extended tool catalog handlers

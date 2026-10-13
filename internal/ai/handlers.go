@@ -512,6 +512,8 @@ var allowedContextKeys = map[string]bool{
 	"slug":             true,
 	"audience":         true,
 	"related_features": true,
+	"doc_category":     true,
+	"doc_subcategory":  true,
 	"language":         true,
 	"content_id":       true,
 	"space_id":         true,
@@ -784,6 +786,9 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		docCategory, _ := input.Context["doc_category"].(string)
+		docSubcategory, _ := input.Context["doc_subcategory"].(string)
+
 		payload, err := json.Marshal(map[string]any{
 			"prompt":           input.Prompt,
 			"title":            title,
@@ -791,6 +796,8 @@ func (h *Handlers) HandleGenerate(w http.ResponseWriter, r *http.Request) {
 			"user_id":          user.UserID.String(),
 			"audience":         audience,
 			"related_features": relatedFeatures,
+			"doc_category":     docCategory,
+			"doc_subcategory":  docSubcategory,
 		})
 		if err != nil {
 			errpkg.WriteError(w, http.StatusInternalServerError, "marshal_error", "Failed to marshal task payload")

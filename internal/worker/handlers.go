@@ -1660,6 +1660,8 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 
 		Audience        string   `json:"audience"`
 		RelatedFeatures []string `json:"related_features"`
+		DocCategory     string   `json:"doc_category"`
+		DocSubcategory  string   `json:"doc_subcategory"`
 	}
 
 	if err := parsePayload(t, &payload); err != nil {
@@ -1677,6 +1679,8 @@ func HandleDocsGeneratePage(ctx context.Context, t *asynq.Task) error {
 		Slug:            payload.Slug,
 		Audience:        payload.Audience,
 		RelatedFeatures: payload.RelatedFeatures,
+		DocCategory:     payload.DocCategory,
+		DocSubcategory:  payload.DocSubcategory,
 		UserID:          payload.UserID,
 	}); err != nil {
 		slog.Error("task:docs:generate_page: failed", "error", err, "audience", payload.Audience)

@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -17,11 +18,30 @@ import (
 type Handlers struct {
 	store *Store
 	rbac  *RBAC
+	// fieldPermInvalidator clears a user's cached custom-field permission
+	// sets (jc:field_perm:{user_id} + jc:field_perm_edit:{user_id}) after
+	// membership add/remove (CF8). Nil disables the hook (no customfields
+	// wiring in that deployment); failures never fail the request.
+	fieldPermInvalidator FieldPermissionCacheInvalidator
+}
+
+// FieldPermissionCacheInvalidator clears cached custom-field permission
+// sets for one user. Implemented by *customfields.Service via
+// InvalidateFieldPermissionCache (wired in server.go to avoid an
+// rbac→customfields import cycle).
+type FieldPermissionCacheInvalidator interface {
+	InvalidateFieldPermissionCache(ctx context.Context, userID pgtype.UUID)
 }
 
 // NewHandlers creates RBAC management handlers.
 func NewHandlers(store *Store, rbac *RBAC) *Handlers {
 	return &Handlers{store: store, rbac: rbac}
+}
+
+// SetFieldPermissionCacheInvalidator wires the customfields cache hook
+// (CF8). Production wires *customfields.Service; tests may omit it.
+func (h *Handlers) SetFieldPermissionCacheInvalidator(f FieldPermissionCacheInvalidator) {
+	h.fieldPermInvalidator = f
 }
 
 // ListGroups handles GET /api/v1/admin/user-groups.
@@ -242,6 +262,12 @@ func (h *Handlers) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// CF8: membership changes the user's field-level grants — flush their
+	// cached field permission sets so the change is visible immediately.
+	if h.fieldPermInvalidator != nil {
+		h.fieldPermInvalidator.InvalidateFieldPermissionCache(r.Context(), userID)
+	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{"user_id": input.UserID, "group_id": chi.URLParam(r, "id")}})
 }
 
@@ -263,6 +289,11 @@ func (h *Handlers) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 	if err := h.store.RemoveUserFromGroup(r.Context(), userID, groupID); err != nil {
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to remove user from group")
 		return
+	}
+
+	// CF8: membership removal revokes field-level grants — flush the cache.
+	if h.fieldPermInvalidator != nil {
+		h.fieldPermInvalidator.InvalidateFieldPermissionCache(r.Context(), userID)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

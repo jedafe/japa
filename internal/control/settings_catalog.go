@@ -300,6 +300,19 @@ var settingsCatalog = map[string]settingMeta{
 	"appearance.favicon_url":       {Type: "string", DefaultValue: "", Description: "URL to the platform favicon image; empty = use default favicon.svg.", Public: true, Panel: "admin"},
 	"appearance.primary_color":     {Type: "string", DefaultValue: "#c615a6", Description: "Primary brand color (hex).", Public: true, Panel: "admin"},
 	"appearance.auth_brand_slides": {Type: "json", DefaultValue: "[]", Description: "Carousel slides for the auth brand panel: [{image, headline, subheading}].", Public: true, Panel: "admin"},
+	// Documentation portal (docs app) — public so docs.japaconnect.com renders
+	// its header chrome, sidebar sections, and landing cards from settings.
+	"docs.pinned_pages":       {Type: "json", DefaultValue: "[]", Description: "Get Started pinned pages for the docs portal: [{audience, slug, label?}]. Label falls back to the page title; unresolvable pins are skipped.", Public: true, Panel: "admin"},
+	"docs.versions":           {Type: "json", DefaultValue: "[]", Description: "Docs portal version switcher entries: [{label, url}]. Empty hides the version dropdown.", Public: true, Panel: "admin"},
+	"docs.changelog_category": {Type: "csv", DefaultValue: "Changelog", Description: "Doc page categories surfaced in the docs portal 'What's new' section.", Public: true, Panel: "admin"},
+	"docs.changelog_new_days": {Type: "int", DefaultValue: "14", Min: 0, Description: "Changelog entries newer than this many days get the NEW badge.", Public: true, Panel: "admin"},
+	"docs.help_center_url":    {Type: "string", DefaultValue: "", Description: "Help center URL for the docs portal 'Need help' card; empty links to the main app.", Public: true, Panel: "admin"},
+	"docs.support_url":        {Type: "string", DefaultValue: "", Description: "Support/contact URL for the docs portal 'Need help' card; empty hides the button.", Public: true, Panel: "admin"},
+	"docs.repo_url":           {Type: "string", DefaultValue: "", Description: "Public docs repository URL powering the 'Contribute to Docs' card (suggest changes / report issue); empty hides the card.", Public: true, Panel: "admin"},
+	"docs.help_links":         {Type: "json", DefaultValue: "[]", Description: "Docs portal 'Need help' card links: [{label, url}]. Empty/absent falls back to docs.help_center_url/docs.support_url defaults.", Public: true, Panel: "admin"},
+	"docs.contribute_links":   {Type: "json", DefaultValue: "[]", Description: "Docs portal 'Contribute to Docs' card links: [{label, url}]. Absent falls back to docs.repo_url defaults; [] hides the card.", Public: true, Panel: "admin"},
+	"docs.dev_resources":      {Type: "json", DefaultValue: "[]", Description: "Docs portal developer-resource cards: [{label, url, description?, icon?}]. Absent falls back to the built-in defaults.", Public: true, Panel: "admin"},
+	"docs.categories":         {Type: "json", DefaultValue: "[]", Description: "Managed docs-portal category catalog: [{name, description?, icon?, subcategories[]}]. Curates display order/card metadata/subcategory suggestions; page-level taxonomy stays free-text.", Public: true, Panel: "admin"},
 	// Content settings (§14, content type system).
 	"content.allow_anonymous_posts": {Type: "bool", DefaultValue: "false", Description: "Whether anonymous (logged-out) users can create posts.", Panel: "admin"},
 	// Default mirrors the media upload-context allowlist so a materialized

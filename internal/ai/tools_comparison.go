@@ -550,6 +550,82 @@ func ComparisonReadPrivacyTarget(ctx context.Context, args json.RawMessage) (Pri
 }
 
 // ---------------------------------------------------------------------------
+// comparison.promote (migration 000843)
+// ---------------------------------------------------------------------------
+
+// comparisonPromoteArgs is the LLM-produced argument shape for
+// comparison.promote.
+type comparisonPromoteArgs struct {
+	ContentID string `json:"content_id"`
+}
+
+// ComparisonPromoteHandler returns a ToolHandler that promotes a quick JCE
+// comparison into a new detailed draft (items + dimensions cloned).
+// Ownership mirrors the REST route: callers may promote their own
+// comparisons; comparison.edit_any holders may promote anyone's.
+func ComparisonPromoteHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Comparison == nil {
+			return errorToolResult("comparison_unavailable", "comparison service is not configured"), nil
+		}
+
+		var a comparisonPromoteArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		if a.ContentID == "" {
+			return errorToolResult("missing_content_id", "content_id is required"), nil
+		}
+
+		contentID, err := scanUUID(a.ContentID)
+		if err != nil {
+			return errorToolResult("invalid_content_id", "content_id must be a valid UUID"), nil
+		}
+
+		bypass := deps.Permission != nil &&
+			deps.Permission.HasPermission(ctx, userID, "comparison.edit_any")
+
+		res, err := deps.Comparison.PromoteComparison(ctx, contentID, userID, bypass)
+		if err != nil {
+			return errorToolResult("promote_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"status":         "promoted",
+			"content_id":     uuidString(res.ID),
+			"title":          res.Title,
+			"slug":           res.Slug,
+			"visibility":     res.Visibility,
+			"content_status": res.Status,
+			"depth":          res.Depth,
+			"promoted_from":  a.ContentID,
+		}), nil
+	}
+}
+
+// ComparisonPromotePrivacyTarget extracts the content_id from
+// comparison.promote arguments so the executor's privacy gate can block the
+// call when the backing content row is ai_exempt.
+func ComparisonPromotePrivacyTarget(ctx context.Context, args json.RawMessage) (PrivacyEntityType, pgtype.UUID, error) {
+	var a comparisonPromoteArgs
+	if err := json.Unmarshal(args, &a); err != nil {
+		return PrivacyEntityType(""), pgtype.UUID{}, nil
+	}
+
+	if a.ContentID == "" {
+		return PrivacyEntityType(""), pgtype.UUID{}, nil
+	}
+
+	id, err := scanUUID(a.ContentID)
+	if err != nil || !id.Valid {
+		return PrivacyEntityType(""), pgtype.UUID{}, nil
+	}
+
+	return PrivacyEntityContent, id, nil
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
