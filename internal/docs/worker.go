@@ -36,10 +36,12 @@ func (s *Service) GenerateDocsPage(ctx context.Context, req worker.GenerateDocsP
 	}
 
 	_, err := s.GenerateDraft(ctx, GenerateDraftRequest{
-		Title:    req.Title,
-		Slug:     req.Slug,
-		Audience: audience,
-		Prompt:   prompt,
+		Title:       req.Title,
+		Slug:        req.Slug,
+		Audience:    audience,
+		Prompt:      prompt,
+		Category:    req.DocCategory,
+		Subcategory: req.DocSubcategory,
 	})
 
 	return err

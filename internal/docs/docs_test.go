@@ -22,6 +22,39 @@ func TestValidAudiences(t *testing.T) {
 	}
 }
 
+func TestAudienceGatesOnlyInternal(t *testing.T) {
+	t.Parallel()
+
+	// Only internal/admin/control-panel documentation is gated; every other
+	// audience is public regardless of the group its docs target.
+	expected := map[string]bool{"admin": true, "superadmin": true}
+	for aud := range AudienceGates {
+		if !expected[aud] {
+			t.Errorf("audience %q must not be gated — only internal docs are", aud)
+		}
+	}
+	for aud := range expected {
+		if _, ok := AudienceGates[aud]; !ok {
+			t.Errorf("internal audience %q must be gated", aud)
+		}
+	}
+}
+
+func TestPublicAudiences(t *testing.T) {
+	t.Parallel()
+
+	got := publicAudiences()
+	want := []string{"users", "premium", "organizations", "moderators", "api"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d public audiences, got %d (%v)", len(want), len(got), got)
+	}
+	for i, a := range want {
+		if got[i] != a {
+			t.Errorf("public audience[%d]: expected %q, got %q", i, a, got[i])
+		}
+	}
+}
+
 func TestValidReviewStatuses(t *testing.T) {
 	t.Parallel()
 

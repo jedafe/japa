@@ -32,14 +32,14 @@ type PermissionChecker interface {
 }
 
 // AudienceGates maps each audience to the RBAC permission node required to read
-// it. Audiences not in this map (users, api) are public — no auth required.
+// it. Only documentation meant for internal development, the admin panel, and
+// the control panel is gated (admin, superadmin). Every other audience —
+// users, premium, organizations, moderators, api — is public: readable by
+// anyone regardless of which group the docs target.
 // Ref: japaconnect-engineering/sections/44-documentation-system.md.
 var AudienceGates = map[string]string{
-	"premium":       "membership.pro",
-	"organizations": "organizations.member",
-	"moderators":    "moderation.queue.view",
-	"admin":         "admin.panel.access",
-	"superadmin":    "admin.panel.access", // super_admin group holds wildcard
+	"admin":      "admin.panel.access",
+	"superadmin": "admin.panel.access", // super_admin group holds wildcard
 }
 
 // literalResolver resolves {{...}} template literals in user-facing text
@@ -117,8 +117,9 @@ func (h *Handlers) enqueueSearchIndex(pageID pgtype.UUID, operation string) {
 }
 
 // checkAudienceGate verifies the requester may read the given audience.
-// Public audiences (users, api) always pass. Gated audiences require auth
-// and the RBAC permission node mapped in audienceGates (§44).
+// Ungated audiences (users, premium, organizations, moderators, api) always
+// pass. Gated audiences (admin, superadmin — internal/admin/control docs)
+// require auth and the RBAC permission node mapped in AudienceGates (§44).
 // Returns true if access is allowed; false and writes a 403 if denied.
 func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, audience string) bool {
 	requiredPerm, gated := AudienceGates[audience]
@@ -151,8 +152,8 @@ func (h *Handlers) checkAudienceGate(w http.ResponseWriter, r *http.Request, aud
 func (h *Handlers) accessibleAudiences(r *http.Request) []string {
 	user := auth.FromContext(r.Context())
 	if user == nil || h.rbac == nil {
-		// Guest or no RBAC: only public audiences.
-		return []string{"users", "api"}
+		// Guest or no RBAC: all ungated (public) audiences in canonical order.
+		return publicAudiences()
 	}
 
 	allowed := make([]string, 0, len(AudienceOrder))
@@ -169,6 +170,18 @@ func (h *Handlers) accessibleAudiences(r *http.Request) []string {
 		}
 	}
 
+	return allowed
+}
+
+// publicAudiences returns the ungated audiences in canonical display order —
+// the set readable without authentication.
+func publicAudiences() []string {
+	allowed := make([]string, 0, len(AudienceOrder))
+	for _, aud := range AudienceOrder {
+		if _, gated := AudienceGates[aud]; !gated {
+			allowed = append(allowed, aud)
+		}
+	}
 	return allowed
 }
 
@@ -396,7 +409,7 @@ func (h *Handlers) SubmitDocPageFeedback(w http.ResponseWriter, r *http.Request)
 
 // ListDocAudienceGates handles GET /api/v1/docs/audience-gates.
 // Returns the RBAC permission node required to read each gated audience.
-// Public audiences (users, api) are omitted — absence of a gate means public.
+// Ungated audiences are omitted — absence of a gate means public.
 func (h *Handlers) ListDocAudienceGates(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": AudienceGates})
 }

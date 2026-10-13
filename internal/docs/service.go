@@ -72,10 +72,12 @@ func NewService(database *db.DB) *Service {
 // GenerateDraftRequest is the input for AI-generated doc page drafts
 // (ADR-088, routed from the Content Studio).
 type GenerateDraftRequest struct {
-	Title    string `json:"title"`
-	Slug     string `json:"slug"`
-	Audience string `json:"audience"`
-	Prompt   string `json:"prompt"`
+	Title       string `json:"title"`
+	Slug        string `json:"slug"`
+	Audience    string `json:"audience"`
+	Prompt      string `json:"prompt"`
+	Category    string `json:"category,omitempty"`
+	Subcategory string `json:"subcategory,omitempty"`
 }
 
 // GenerateDraftResponse is the response from Content Agent draft generation.
@@ -147,6 +149,7 @@ func (s *Service) ListDocPagesByAudience(ctx context.Context, audience string) (
 			Category:     r.Category,
 			Subcategory:  r.Subcategory,
 			CreatedAt:    r.CreatedAt.Time.Format(time.RFC3339Nano),
+			Excerpt:      extractExcerpt(r.Content, excerptMaxLen),
 		}
 	}
 
@@ -1154,6 +1157,15 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 	// Build TipTap JSON content from the generated text.
 	contentBytes := []byte(fmt.Sprintf(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":%q}]}]}`, generatedText))
 
+	category, err := normalizeTaxonomy(&input.Category)
+	if err != nil {
+		return GenerateDraftResponse{}, err
+	}
+	subcategory, err := normalizeTaxonomy(&input.Subcategory)
+	if err != nil {
+		return GenerateDraftResponse{}, err
+	}
+
 	// Create the doc page with ai_generated=true, review_status='draft'.
 	id, err := s.store.create(ctx, gen.CreateDocPageParams{
 
@@ -1165,6 +1177,8 @@ func (s *Service) GenerateDraft(ctx context.Context, input GenerateDraftRequest)
 		ReviewStatus: "draft",
 		ParentID:     pgtype.UUID{},
 		Position:     0,
+		Category:     category,
+		Subcategory:  subcategory,
 	})
 	if err != nil {
 		return GenerateDraftResponse{}, fmt.Errorf("docs: generate draft: %w", err)

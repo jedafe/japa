@@ -39,6 +39,8 @@ type DocPageSummary struct {
 	Category     *string `json:"category,omitempty"`
 	Subcategory  *string `json:"subcategory,omitempty"`
 	CreatedAt    string  `json:"created_at"`
+	// Excerpt is a plain-text preview derived from content (≤140 runes).
+	Excerpt string `json:"excerpt"`
 }
 
 // CreateDocPageRequest is the JSON body for POST /api/v1/admin/docs.

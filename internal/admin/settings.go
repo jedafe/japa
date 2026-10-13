@@ -31,10 +31,16 @@ type SettingDef struct {
 	Type        string   `json:"type"` // "text", "number", "toggle", "select", "multiselect", "color", "file", "media", "textarea"
 	Value       any      `json:"value,omitempty"`
 	Options     []string `json:"options,omitempty"`
+	Max         int      `json:"max,omitempty"`         // item cap for repeater types (link-list, link-cards)
 	Accept      string   `json:"accept,omitempty"`      // file type filter for "file" type
 	Placeholder string   `json:"placeholder,omitempty"` // placeholder text
 	Description string   `json:"description,omitempty"` // helper text below label
 	Masked      bool     `json:"masked,omitempty"`      // true for secrets — API returns "***"
+	// Hidden keeps the key writable via PUT /admin/settings/{category} but
+	// omits it from ListSettings — for settings managed on a dedicated admin
+	// surface (e.g. docs.categories on /docs/categories) rather than the
+	// generic settings page.
+	Hidden bool `json:"-"`
 }
 
 // SettingCategory groups related settings with display metadata.
@@ -584,6 +590,24 @@ var defaultSettings = map[string]SettingCategory{
 		},
 	},
 
+	"docs": {
+		Key:   "docs",
+		Label: "Documentation",
+		Settings: []SettingDef{
+			// Managed on the dedicated /docs/categories admin page — hidden
+			// from the generic settings UI but still writable via
+			// PUT /admin/settings/docs.
+			{Key: "categories", Label: "Categories & Subcategories", Type: "docs-categories", Hidden: true, Description: "Managed category catalog for the docs portal: display order, card descriptions/icons, and canonical subcategory names. Categories pages actually use stay free-text; this catalog curates presentation and suggestions. Empty derives categories from published pages."},
+			{Key: "help_links", Label: "Need Help Links", Type: "link-list", Max: 3, Description: "Links shown in the docs portal 'Need help' card. Empty uses the default Help Center / Support links."},
+			{Key: "contribute_links", Label: "Contribute to Docs Links", Type: "link-list", Max: 3, Description: "Links shown in the docs portal 'Contribute to Docs' card. Removing all links hides the card."},
+			{Key: "dev_resources", Label: "Developer Resources", Type: "link-cards", Max: 8, Description: "Resource cards shown at the bottom of the docs portal landing page. Empty uses the built-in defaults."},
+			{Key: "pinned_pages", Label: "Get Started Pinned Pages", Type: "pinned-pages", Description: "Pinned pages powering the sidebar GET STARTED section and the 'New to JapaConnect?' card. Unresolvable pins are skipped."},
+			{Key: "versions", Label: "Version Switcher Entries", Type: "docs-versions", Description: "Version entries powering the docs header version dropdown. Empty hides it."},
+			{Key: "changelog_category", Label: "Changelog Categories", Type: "text", Description: "Comma-separated doc page categories surfaced in the docs portal 'What's new' section.", Value: "Changelog"},
+			{Key: "changelog_new_days", Label: "NEW Badge Days", Type: "number", Description: "Changelog entries newer than this many days get the NEW badge.", Value: 14},
+		},
+	},
+
 	"trending": {
 		Key:   "trending",
 		Label: "Trending",
@@ -619,6 +643,7 @@ var settingCategoryOrder = []string{
 	"organizations",
 	"page",
 	"site",
+	"docs",
 	"trending",
 }
 
@@ -715,22 +740,27 @@ func (h *Handlers) ListSettings(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		settings := make([]SettingDef, len(def.Settings))
-		for i, s := range def.Settings {
-			settings[i] = s
+		settings := make([]SettingDef, 0, len(def.Settings))
+		for _, s := range def.Settings {
+			// Hidden settings stay writable via UpdateSettings but are managed
+			// on a dedicated admin surface — omit them from this response.
+			if s.Hidden {
+				continue
+			}
 
 			if len(currencyCodes) > 0 && isCurrencySetting(catKey, s.Key) {
-				settings[i].Type = "select"
-				settings[i].Options = currencyCodes
+				s.Type = "select"
+				s.Options = currencyCodes
 			}
 
 			if val, exists := stored[s.Key]; exists {
 				if s.Masked {
-					settings[i].Value = "***"
+					s.Value = "***"
 				} else {
-					settings[i].Value = val
+					s.Value = val
 				}
 			}
+			settings = append(settings, s)
 		}
 
 		result = append(result, SettingCategory{
