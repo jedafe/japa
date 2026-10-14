@@ -230,21 +230,29 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 	out := []convoSummary{}
 	dbIDs := map[string]bool{}
 
-	// New relational threads.
+	// New relational threads — drain every page so the union below merges
+	// the full set; a fixed cap would silently drop older threads.
 	if h.Convos != nil {
-		rows, _, err := h.Convos.List(r.Context(), user.UserID, 200, 0)
-		if err != nil {
-			slog.Warn("ai: listing ai_conversations", "error", err)
-		}
-		for _, c := range rows {
-			dbIDs[c.ID.String()] = true
-			out = append(out, convoSummary{
-				ConversationID: c.ID.String(),
-				Title:          c.Title,
-				Preview:        c.LastMessage,
-				TurnCount:      int(c.TurnCount),
-				LastEntryAt:    c.UpdatedAt.Time,
-			})
+		const convoPage = 200
+		for off := int32(0); ; off += convoPage {
+			rows, _, err := h.Convos.List(r.Context(), user.UserID, convoPage, off)
+			if err != nil {
+				slog.Warn("ai: listing ai_conversations", "error", err)
+				break
+			}
+			for _, c := range rows {
+				dbIDs[c.ID.String()] = true
+				out = append(out, convoSummary{
+					ConversationID: c.ID.String(),
+					Title:          c.Title,
+					Preview:        c.LastMessage,
+					TurnCount:      int(c.TurnCount),
+					LastEntryAt:    c.UpdatedAt.Time,
+				})
+			}
+			if len(rows) < convoPage {
+				break
+			}
 		}
 	}
 
