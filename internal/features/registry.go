@@ -71,6 +71,7 @@ var Registry = []Feature{
 	{Key: "feature.japabot", Label: "JapaBot", Description: "RAG-grounded AI japa guide chatbot on the Tools surface", Default: false, Category: "AI", SettingsCategory: "japabot"},
 	{Key: "feature.ai_content_gen", Label: "AI Assistant", Description: "AI-powered content assistance and moderation", Default: false, Category: "AI", SettingsCategory: "rag"},
 	{Key: "feature.ai_agent", Label: "AI Agent", Description: "AI agent executor for multi-step tool-using workflows (§103)", Default: false, Category: "AI"},
+	{Key: "feature.japa_ai_unified", Label: "Unified Japa AI", Description: "Merged JapaBot + agent chat surface on POST /ai/chat (ADR-130). feature.japabot remains the surface on/off flag; this gates the rollout", Default: false, Category: "AI", SettingsCategory: "japabot"},
 	// Section 70 — Visa Document Checklist Generator (ADR-070).
 	// Default true per ADR-070 §5 / §70 system_settings (checklist.enabled).
 	// The feature_flags row is optional; when absent the registry default

@@ -11,6 +11,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -178,6 +179,24 @@ func (h *Handlers) SetConversationService(s *ConversationService) {
 // tool calls in conversation detail responses.
 func (h *Handlers) SetAgentSessionQueries(q AgentSessionQueries) {
 	h.agentSessions = q
+}
+
+// UserAIContextFunc exposes buildUserAIContext for wiring into the agent
+// handler's unified memory/context injection (ADR-130).
+func (h *Handlers) UserAIContextFunc() func(ctx context.Context, userID pgtype.UUID, clientCtx map[string]any) map[string]any {
+	return h.buildUserAIContext
+}
+
+// PersistChatTurnFunc exposes persistChatTurn for wiring into the agent
+// handler's Honcho long-term-memory write (ADR-130).
+func (h *Handlers) PersistChatTurnFunc() func(ctx context.Context, userID, message, reply, conversationID string) {
+	return h.persistChatTurn
+}
+
+// ChatModelValidator exposes isValidModelForCategory for wiring into the
+// agent handler's per-turn model override validation (ADR-130).
+func (h *Handlers) ChatModelValidator() func(model, category string) bool {
+	return h.isValidModelForCategory
 }
 
 // HandleListConversationsV2 handles GET /ai/conversations for the unified

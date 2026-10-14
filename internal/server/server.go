@@ -1998,6 +1998,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.SetPersonaVoiceResolver(personasService)
 	aiHandlers.AsynqClient = asynqClient
 
+	// ADR-130 unified Japa AI transcript store + preferences. Always wired —
+	// the unified surface is gated per-request by feature.japa_ai_unified.
+	convoService := ai.NewConversationService(gen.New(database.Writer), database.Writer)
+	aiHandlers.SetConversationService(convoService)
+	aiHandlers.SetAgentSessionQueries(gen.New(database.Reader))
+
 	// Wire the AI dispatcher into the i18n handlers + processor adapter so
 	// POST /admin/i18n/strings/{id}/translate and the
 	// i18n:translate_language_pack Asynq task actually translate via the AI
@@ -2240,6 +2246,13 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		ai.WithAgentCache(agentCache),
 		ai.WithAgentPersona(&agentPersonaAdapter{store: personasStore}),
 		ai.WithAgentPreflight(aiPreflight), // §20 shared consent + unified daily budget
+		// ADR-130 unified chat plumbing — transcript persistence, Honcho
+		// memory/AI context injection, voice + model override validation.
+		ai.WithAgentConversations(convoService),
+		ai.WithAgentAIContext(aiHandlers.UserAIContextFunc()),
+		ai.WithAgentChatPersist(aiHandlers.PersistChatTurnFunc()),
+		ai.WithAgentVoiceResolver(personasService),
+		ai.WithAgentModelValidator(aiHandlers.ChatModelValidator()),
 	)
 
 	agentHTTPHandlers := ai.NewAgentHTTPHandlers(
@@ -5421,11 +5434,29 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.generate")).
 				Post("/ai/generate", aiHandlers.HandleGenerate)
 
-			// JapaBot chat — gated by feature.japabot flag + ai.context.use RBAC
-			// (Section 20: "Auth required + ai.context.use permission"). Per §19,
-			// ai.context.* nodes default OFF including for super_admin.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
-				Post("/ai/chat", aiHandlers.HandleChat)
+			// JapaBot chat — gated by feature.japabot flag (Section 20). ADR-130:
+			// when feature.japa_ai_unified is on, the unified handler serves
+			// SSE (Accept: text/event-stream) or JSON with OR admission
+			// (ai.context.use OR agent.use); off, the legacy JSON handler keeps
+			// its historical ai.context.use gate — re-checked inside the
+			// dispatch because RequireAnyPermission now admits agent.use-only
+			// users for the unified surface.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
+				Post("/ai/chat", func(w http.ResponseWriter, r *http.Request) {
+					if featureChecker.IsEnabled(r.Context(), "feature.japa_ai_unified") {
+						agentHTTPHandlers.HandleUnifiedChat(w, r)
+						return
+					}
+					user := auth.FromContext(r.Context())
+					if user == nil || (!rbacResolver.IsSuperAdmin(r.Context(), user.UserID) &&
+						!rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")) {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusForbidden)
+						_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+						return
+					}
+					aiHandlers.HandleChat(w, r)
+				})
 
 			// Content AI Assist endpoints (catalog: /ai/assist/*), gated by the
 			// feature.ai_content_gen flag — the same flag as /ai/generate — plus
@@ -6653,15 +6684,27 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
 				Delete("/me/push-tokens/{id}", notificationHandlers.HandlePushUnsubscribeByID)
 
-			// Task 29: AI conversations — gated by feature.japabot +
-			// ai.context.use RBAC, matching /ai/chat (Section 20: JapaBot
-			// conversational AI is gated by ai.context.* RBAC). Without
-			// these gates a user whose JapaBot access was revoked could
-			// still list/read their Honcho conversation history.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use")).
-				Get("/ai/conversations", aiHandlers.HandleListConversations)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use")).
-				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversation)
+			// Task 29 / ADR-130: AI conversations — gated by feature.japabot +
+			// OR admission (ai.context.use OR agent.use) matching unified
+			// /ai/chat. The V2 handlers union ai_conversations with legacy
+			// Honcho threads and fall back to the legacy path for non-UUID
+			// ids, so flag-off behavior is unchanged (ai_conversations is
+			// empty until the unified flag turns on).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
+				Get("/ai/conversations", aiHandlers.HandleListConversationsV2)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
+				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversationV2)
+			// ADR-130: soft-delete a unified conversation. Session audit rows
+			// are unlinked, not deleted (Rule 11 carve-out).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
+				Delete("/ai/conversations/{id}", aiHandlers.HandleDeleteConversation)
+
+			// ADR-130: per-user AI preferences (default mode, tool/category
+			// toggles) — only meaningful while the unified surface is on.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified")).
+				Get("/me/ai-preferences", aiHandlers.HandleGetAIPrefs)
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified")).
+				Put("/me/ai-preferences", aiHandlers.HandlePutAIPrefs)
 
 			// Task 33: Content public extras
 			r.With(auth.RequireAuth(kr, vkClient.Redis())).
@@ -7368,8 +7411,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				// per-user caps are skipped for anonymous previews.
 				r.With(auth.OptionalAuth(kr, vkClient.Redis()), mw.RateLimit(vkClient.Redis(), "moderate")).
 					Get("/services/{id}/price-preview", serviceDirHandlers.HandlePricePreview)
-				r.With(auth.RequireAuth(kr, vkClient.Redis())).
-					Get("/services/{id}/departures", serviceDirHandlers.HandlePackageDepartures)
 				// §111 checkout resume — re-initiates a provider session, so
 				// Rule 9 applies: permission node + Idempotency-Key required.
 				// pay/dispute are pure-packages surfaces (mentorship bookings
@@ -7386,7 +7427,6 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					rbac.RequirePermission(rbacResolver, "service.booking.create"), mw.RateLimit(vkClient.Redis(), "moderate"),
 					mw.IdempotencyMiddleware(vkClient.Redis(), settingsService)).
 					Post("/me/service-bookings/{id}/dispute", serviceDirHandlers.HandleMyBookingDispute)
-				r.Get("/org/{org_id}/packages", serviceDirHandlers.HandleOrgPackages)
 				r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "service.booking.manage")).
 					Get("/org/{org_id}/service-bookings", serviceDirHandlers.HandleOrgBookings)
 				// Org transition — state change + fee-settle enqueue, so the
