@@ -279,7 +279,7 @@ func findEvent(events []AgentEvent, typ string) *AgentEvent {
 // newTestAgentHandler builds an AgentHandler with the given mock provider
 // and optional deps. The executor and registry are real (with a test handler
 // registered for "content.search").
-func newTestAgentHandler(t *testing.T, provider *mockAgentProvider, opts ...AgentOption) *AgentHandler {
+func newTestAgentHandler(t *testing.T, provider Provider, opts ...AgentOption) *AgentHandler {
 	t.Helper()
 
 	disp := NewDispatcher()
@@ -1141,5 +1141,49 @@ func (s *slowAgentProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 		return ChatWithToolsResponse{Content: "Done.", Usage: TokenUsage{TotalTokens: 10}}, nil
 	case <-ctx.Done():
 		return ChatWithToolsResponse{}, ctx.Err()
+	}
+}
+
+// panicAgentProvider is a Provider that panics inside ChatWithTools — used to
+// verify runLoop recovers panics in the background goroutine instead of
+// crashing the process.
+type panicAgentProvider struct {
+	name string
+}
+
+func (p *panicAgentProvider) Name() string                                            { return p.name }
+func (p *panicAgentProvider) Models() []ModelInfo                                     { return nil }
+func (p *panicAgentProvider) FetchModels(ctx context.Context) ([]ModelInfo, error)    { return nil, nil }
+func (p *panicAgentProvider) VerifyWebhookSignature(payload []byte, sig string) error { return nil }
+func (p *panicAgentProvider) Send(ctx context.Context, req Request) (Response, error) {
+	return Response{}, errors.New("not supported")
+}
+
+func (p *panicAgentProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	panic("provider exploded")
+}
+
+func TestHandleAgentRequest_ProviderPanicRecovered(t *testing.T) {
+	t.Parallel()
+
+	sessions := &stubSessionStore{}
+	h := newTestAgentHandler(t, &panicAgentProvider{name: "mock"}, WithAgentSessions(sessions))
+
+	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	events := collectEvents(t, ch)
+
+	errEv := findEvent(events, EventError)
+	if errEv == nil {
+		t.Fatal("expected error event after provider panic")
+	}
+	if !strings.Contains(errEv.Error, "internal error") {
+		t.Errorf("expected internal error, got: %v", errEv.Error)
+	}
+	if sessions.failed == nil {
+		t.Error("expected session to be failed after panic")
 	}
 }

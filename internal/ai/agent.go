@@ -556,6 +556,39 @@ func (h *AgentHandler) runLoop(
 ) {
 	defer close(events)
 
+	// sendEvent writes an event to the channel, respecting the original
+	// request context cancellation. If the SSE consumer stops reading
+	// (client disconnect → ctx cancelled), the loop unblocks via
+	// ctx.Done() instead of blocking forever. The loopCtx timeout does
+	// NOT close the event channel — the timeout only cancels LLM calls.
+	// This ensures the terminal error/final_response events can still be
+	// sent after the timeout fires, as long as the consumer is reading.
+	sendEvent := func(ev AgentEvent) bool {
+		select {
+		case events <- ev:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	// runLoop runs outside the net/http handler goroutine — an unrecovered
+	// panic here would take down the whole API process. Recover, fail the
+	// session, and surface a normal error event so the client gets the
+	// standard terminal contract instead of a dropped stream.
+	defer func() {
+		if r := recover(); r != nil {
+			panicErr := fmt.Errorf("agent: internal error: %v", r)
+			slog.Error("ai: panic in agent run loop", "session_id", session.ID, "error", r)
+			h.failSession(context.WithoutCancel(ctx), session, panicErr, 0, 0, 0)
+			sendEvent(AgentEvent{
+				Type:      EventError,
+				SessionID: session.ID.String(),
+				Error:     panicErr.Error(),
+			})
+		}
+	}()
+
 	prompt := p.prompt
 	geoSummary := p.geoSummary
 	preSearchResult := p.preSearch
@@ -575,22 +608,6 @@ func (h *AgentHandler) runLoop(
 	// Cost estimator uses per-provider/model price settings so the agent's
 	// per-request cost limit reflects the actual configured LLM price.
 	costEstimator := NewCostEstimator(h.settings)
-
-	// sendEvent writes an event to the channel, respecting the original
-	// request context cancellation. If the SSE consumer stops reading
-	// (client disconnect → ctx cancelled), the loop unblocks via
-	// ctx.Done() instead of blocking forever. The loopCtx timeout does
-	// NOT close the event channel — the timeout only cancels LLM calls.
-	// This ensures the terminal error/final_response events can still be
-	// sent after the timeout fires, as long as the consumer is reading.
-	sendEvent := func(ev AgentEvent) bool {
-		select {
-		case events <- ev:
-			return true
-		case <-ctx.Done():
-			return false
-		}
-	}
 
 	// convID is the ADR-130 transcript thread this turn belongs to ("" on
 	// the legacy /ai/agent path or when the transcript store isn't wired).
