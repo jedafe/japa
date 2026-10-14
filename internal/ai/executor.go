@@ -157,6 +157,7 @@ type loadedTool struct {
 	config             ToolConfig
 	requiredPermission string      // from ai_tools.required_permission; empty = no permission gate
 	toolID             pgtype.UUID // from ai_tools.id; used for ai_tool_usage tracking (§20)
+	category           string      // from ai_tools.category; drives ADR-130 category-level user prefs/overrides
 }
 
 // NewToolHandlerRegistry creates an empty registry.
@@ -200,11 +201,31 @@ func (r *ToolHandlerRegistry) RegisterPrivacyTarget(functionName string, fn Priv
 // loaded from the ai_tools table. Called by LoadFromDB for each enabled row.
 // The toolID is the ai_tools.id UUID, used for ai_tool_usage tracking (§20).
 func (r *ToolHandlerRegistry) RegisterConfig(functionName string, cfg ToolConfig, requiredPermission string, toolID pgtype.UUID) {
+	r.RegisterConfigFull(functionName, cfg, requiredPermission, toolID, "")
+}
+
+// RegisterConfigFull is RegisterConfig plus the ai_tools.category value.
+// Category powers the ADR-130 user-level toggles (disabled_categories,
+// per-message category selection) without a second DB read.
+func (r *ToolHandlerRegistry) RegisterConfigFull(functionName string, cfg ToolConfig, requiredPermission string, toolID pgtype.UUID, category string) {
 	if r == nil {
 		return
 	}
 
-	r.configs[functionName] = loadedTool{config: cfg, requiredPermission: requiredPermission, toolID: toolID}
+	r.configs[functionName] = loadedTool{config: cfg, requiredPermission: requiredPermission, toolID: toolID, category: category}
+}
+
+// Categories returns a functionName → ai_tools.category map covering every
+// loaded tool (not RBAC-filtered — callers pair it with CatalogForUser).
+func (r *ToolHandlerRegistry) Categories() map[string]string {
+	if r == nil {
+		return nil
+	}
+	out := make(map[string]string, len(r.configs))
+	for name, lt := range r.configs {
+		out[name] = lt.category
+	}
+	return out
 }
 
 // LoadFromDB loads enabled ai_tools rows for the platform, parses each row's
@@ -250,7 +271,7 @@ func (r *ToolHandlerRegistry) LoadFromDB(ctx context.Context, registry *ToolRegi
 			requiredPerm = *t.RequiredPermission
 		}
 
-		r.RegisterConfig(functionName, cfg, requiredPerm, t.ID)
+		r.RegisterConfigFull(functionName, cfg, requiredPerm, t.ID, t.Category)
 	}
 
 	return nil

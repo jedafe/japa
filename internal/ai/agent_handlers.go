@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -295,6 +296,30 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	// cache (10-min TTL) when a cache is configured.
 	tools := h.agent.buildToolCatalog(r.Context(), user.UserID)
 
+	// ADR-130: group the same catalog by ai_tools.category so the unified
+	// composer can render category chips + per-tool toggles. The flat
+	// `tools` array stays for back-compat.
+	catByName := h.agent.registry.Categories()
+	catIdx := map[string]int{}
+	categories := make([]map[string]any, 0, 8)
+	for _, tc := range tools {
+		cat := catByName[tc.FunctionName]
+		if cat == "" {
+			cat = "other"
+		}
+		i, ok := catIdx[cat]
+		if !ok {
+			i = len(categories)
+			catIdx[cat] = i
+			categories = append(categories, map[string]any{"name": cat, "tools": []map[string]any{}})
+		}
+		categories[i]["tools"] = append(categories[i]["tools"].([]map[string]any), map[string]any{
+			"name":        tc.FunctionName,
+			"description": tc.Description,
+		})
+	}
+	sort.Slice(categories, func(i, j int) bool { return categories[i]["name"].(string) < categories[j]["name"].(string) })
+
 	// Resolve geo context for the response. The agent handler's
 	// resolveGeoContext returns (geoSpaceID, summary); we surface the
 	// summary as geo_context.
@@ -303,6 +328,7 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": map[string]any{
 			"tools":       tools,
+			"categories":  categories,
 			"geo_context": geoSummary,
 		},
 	})
