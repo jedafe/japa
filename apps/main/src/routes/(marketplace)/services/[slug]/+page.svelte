@@ -31,7 +31,6 @@
 		MapPin,
 		MessageSquare,
 		Send,
-		ShieldAlert,
 		ShieldCheck,
 		Star,
 		Users
@@ -191,7 +190,6 @@
 	const currencies = $derived(
 		(page.data.currencies ?? []) as { code: string; name: string; symbol: string }[]
 	);
-	const isPackage = $derived(service?.listing_kind === 'package');
 	const isMentorship = $derived(service?.listing_kind === 'mentorship');
 	const mentor = $derived(service?.mentor ?? null);
 	const mentorUnavailable = $derived(!mentor || mentor.is_mentor === false);
@@ -239,10 +237,6 @@
 				? t('services.pkg_per_group', 'per group')
 				: t('services.pkg_per_package', 'per package')
 	);
-	const openDepartures = $derived(
-		(service?.departures ?? []).filter((d) => d.status === 'open')
-	);
-
 	// Bookings: any published org-owned listing with purchase_mode inquiry
 	// accepts inquiries; 'paid' opens the fee checkout; 'external' points at
 	// booking_url. Owners/org members manage via the inbox instead.
@@ -336,18 +330,14 @@
 		}
 		if (bookingOutbound && service.booking_url) {
 			return {
-				label: isPackage
-					? t('services.book_partner', 'Book on partner site')
-					: t('services.get_started', 'Get Started'),
+				label: t('services.get_started', 'Get Started'),
 				href: service.booking_url,
 				external: true
 			};
 		}
 		if (bookSurface && service.purchase_mode === 'paid') {
 			return {
-				label: isPackage
-					? t('services.choose_package', 'Choose a Package')
-					: t('services.get_started', 'Get Started'),
+				label: t('services.get_started', 'Get Started'),
 				href: '#book',
 				external: false,
 				dialog: true
@@ -355,9 +345,7 @@
 		}
 		if (bookSurface && service.purchase_mode === 'inquiry') {
 			return {
-				label: isPackage
-					? t('services.choose_package', 'Choose a Package')
-					: t('services.get_started', 'Get Started'),
+				label: t('services.get_started', 'Get Started'),
 				href: '#book',
 				external: false,
 				dialog: true
@@ -420,9 +408,7 @@
 			}
 			if (bookingOutbound && service.booking_url) {
 				return {
-					label: isPackage
-						? t('services.book_partner', 'Book on partner site')
-						: t('services.book_now', 'Book now'),
+					label: t('services.book_now', 'Book now'),
 					href: service.booking_url,
 					external: true
 				};
@@ -479,12 +465,6 @@
 								n: service.capacity
 							})
 						},
-						service.price_per &&
-							isPackage && {
-								icon: 'hand-coins',
-								label: t('services.fact_pricing', 'Pricing'),
-								value: pricePerLabel
-							},
 						service.is_remote && {
 							icon: 'wifi',
 							label: t('services.fact_delivery', 'Delivery'),
@@ -492,17 +472,6 @@
 						}
 					].filter(Boolean) as ServiceFact[])
 				: []
-	);
-
-	// Package highlights card under the hero image — authored highlights[],
-	// else the first included titles so the card keeps the mockup shape.
-	const highlights = $derived<string[]>(
-		service?.highlights?.length
-			? service.highlights
-			: (service?.included ?? service?.items ?? [])
-					.map((entry) => ('title' in entry ? entry.title : ''))
-					.filter(Boolean)
-					.slice(0, 5)
 	);
 
 	const mentorName = $derived(mentor?.display_name || mentor?.username || '');
@@ -579,37 +548,29 @@
 		}
 	}
 
-	// Breadcrumb middle segment — kind-aware ("Packages" lists under
-	// /services?kind=package; mentorship under ?kind=mentorship).
+	// Breadcrumb middle segment — mentorship lists under
+	// ?kind=mentorship; everything else under plain services.
 	const breadcrumbMid = $derived(
-		isPackage
-			? { label: t('services.kind_packages', 'Packages'), href: '/services?kind=package' }
-			: isMentorship
-				? { label: t('services.kind_mentorship', 'Mentorship'), href: '/services?kind=mentorship' }
-				: { label: t('marketplace.nav_services', 'Services'), href: '/services' }
+		isMentorship
+			? { label: t('services.kind_mentorship', 'Mentorship'), href: '/services?kind=mentorship' }
+			: { label: t('marketplace.nav_services', 'Services'), href: '/services' }
 	);
 
 	// Per-kind section headings (the mockups name these differently).
 	const includedHeading = $derived(
-		isPackage
-			? t('services.included_heading_pkg', "What's Included in This Package")
-			: isMentorship
-				? t('services.included_heading_mentor', "What You'll Get")
-				: t('services.included_heading', "What's Included")
+		isMentorship
+			? t('services.included_heading_mentor', "What You'll Get")
+			: t('services.included_heading', "What's Included")
 	);
 	const reviewsHeading = $derived(
-		isPackage
-			? t('services.reviews_heading_pkg', 'What Our Students Say')
-			: isMentorship
-				? t('services.reviews_heading_mentor', 'What Mentees Say')
-				: t('services.reviews_heading_svc', 'What Our Clients Say')
+		isMentorship
+			? t('services.reviews_heading_mentor', 'What Mentees Say')
+			: t('services.reviews_heading_svc', 'What Our Clients Say')
 	);
 	const tiersHeading = $derived(
 		isMentorship
 			? t('services.tiers_heading_mentor', 'Mentorship Packages')
-			: isPackage
-				? t('services.tiers_heading_pkg', 'Choose Your Package')
-				: t('services.tiers_heading', 'Packages & pricing')
+			: t('services.tiers_heading', 'Packages & pricing')
 	);
 
 	// CTA banner copy per kind — primary reuses the mode-aware dispatcher.
@@ -623,23 +584,14 @@
 						'Apply for mentorship today and get the guidance you need to succeed.'
 					)
 				}
-			: isPackage
-				? {
-						eyebrow: '',
-						heading: t('services.banner_pkg_heading', 'Ready to start your journey?'),
-						body: t(
-							'services.banner_pkg_body',
-							'Let our experts handle the process while you focus on your future.'
-						)
-					}
-				: {
-						eyebrow: '',
-						heading: t('services.banner_svc_heading', 'Ready to get started?'),
-						body: t(
-							'services.banner_svc_body',
-							'Let our experts handle the process while you focus on your journey.'
-						)
-					}
+			: {
+					eyebrow: '',
+					heading: t('services.banner_svc_heading', 'Ready to get started?'),
+					body: t(
+						'services.banner_svc_body',
+						'Let our experts handle the process while you focus on your journey.'
+					)
+				}
 	);
 
 	// JSON-LD — schema.org Service + provider/offer/aggregateRating (§3.3).
@@ -1376,9 +1328,7 @@
 				<div>
 					<div class="relative">
 						<div
-							class="relative w-full overflow-hidden rounded-2xl border border-[var(--color-border)] {isPackage
-								? 'aspect-[16/9]'
-								: 'aspect-[4/3]'}"
+							class="relative w-full overflow-hidden rounded-2xl border border-[var(--color-border)] aspect-[4/3]"
 						>
 							{#if service.featured_image_url}
 								<img
@@ -1399,54 +1349,13 @@
 								</span>
 							{/if}
 						</div>
-						{#if isPackage && heroFacts.length > 0}
-							<!-- Overlay facts bar at the bottom of the hero image -->
-							<div class="absolute inset-x-3 -bottom-2 translate-y-1/2 sm:inset-x-6">
-								<FactsCard facts={heroFacts.slice(0, 4)} variant="grid" />
+						{#if heroFacts.length > 0}
+							<!-- Facts card under the image -->
+							<div class="mt-4">
+								<FactsCard facts={heroFacts} variant="rows" />
 							</div>
 						{/if}
 					</div>
-
-					{#if isPackage}
-						<div class={heroFacts.length > 0 ? 'mt-14' : 'mt-4'}>
-							<!-- Package Highlights checklist card -->
-							{#if highlights.length > 0}
-								<div
-									class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
-								>
-									<h2 class="text-sm font-bold text-[var(--color-text)]">
-										{t('services.highlights_heading', 'Package Highlights')}
-									</h2>
-									<ul class="mt-3 grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
-										{#each highlights.slice(0, 6) as line, i (i)}
-											<li class="flex items-start gap-2 text-xs text-[var(--color-text-subtle)]">
-												<CheckCircle2
-													size={14}
-													class="mt-px shrink-0 text-[var(--color-primary)]"
-													aria-hidden="true"
-												/>
-												<span>{line}</span>
-											</li>
-										{/each}
-									</ul>
-									{#if service.body}
-										<a
-											href="#details"
-											class="mt-4 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline"
-										>
-											{t('services.view_all_details', 'View all details')}
-											<ArrowRight size={12} aria-hidden="true" />
-										</a>
-									{/if}
-								</div>
-							{/if}
-						</div>
-					{:else if heroFacts.length > 0}
-						<!-- Service facts card under the image -->
-						<div class="mt-4">
-							<FactsCard facts={heroFacts} variant="rows" />
-						</div>
-					{/if}
 				</div>
 			</section>
 
@@ -1455,9 +1364,7 @@
 				{#if service.body}
 					<section id="details" aria-labelledby="details-heading" class="scroll-mt-20">
 						<h2 id="details-heading" class="text-xl font-bold text-[var(--color-text)]">
-							{isPackage
-								? t('services.about_heading_pkg', 'About this package')
-								: t('services.about_heading', 'About this service')}
+							{t('services.about_heading', 'About this service')}
 						</h2>
 						<div class="prose prose-sm mt-4 max-w-none text-[var(--color-text-subtle)]">
 							{@html sanitizeContentHtml(service.body_html || service.body)}
@@ -1472,22 +1379,20 @@
 					items={service.items ?? []}
 				/>
 
-				<!-- Highlights as its own section when authored (service kind) -->
-				{#if !isPackage}
-					<ChecklistSection
-						heading={service.highlights?.length
-							? t('services.highlights_heading_svc', 'Service Highlights')
-							: ''}
-						lines={service.highlights ?? []}
-						columns={2}
-					/>
-					<ChecklistSection
-						heading={service.audience?.length
-							? t('services.audience_heading_svc', 'Who This Is For')
-							: ''}
-						lines={service.audience ?? []}
-					/>
-				{/if}
+				<!-- Highlights as its own section when authored -->
+				<ChecklistSection
+					heading={service.highlights?.length
+						? t('services.highlights_heading_svc', 'Service Highlights')
+						: ''}
+					lines={service.highlights ?? []}
+					columns={2}
+				/>
+				<ChecklistSection
+					heading={service.audience?.length
+						? t('services.audience_heading_svc', 'Who This Is For')
+						: ''}
+					lines={service.audience ?? []}
+				/>
 
 				<!-- How it works -->
 				{#if service.steps && service.steps.length > 0}
@@ -1519,7 +1424,7 @@
 							</span>
 						</p>
 					</div>
-				{:else if isPackage || heroPrice || service.price_range}
+				{:else if heroPrice || service.price_range}
 					<section
 						aria-labelledby="pricing-heading"
 						class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
@@ -1589,37 +1494,6 @@
 					</section>
 				{/if}
 
-				<!-- Open departures -->
-				{#if openDepartures.length > 0}
-					<section aria-labelledby="departures-heading">
-						<h2 id="departures-heading" class="text-xl font-bold text-[var(--color-text)]">
-							{t('services.pkg_departures_heading', 'Upcoming departures')}
-						</h2>
-						<ul class="mt-4 grid gap-2 sm:grid-cols-2">
-							{#each openDepartures as dep (dep.id)}
-								<li
-									class="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm"
-								>
-									<span class="flex items-center gap-1.5 text-[var(--color-text)]">
-										<CalendarDays size={14} class="text-[var(--color-muted)]" aria-hidden="true" />
-										{formatDate(dep.starts_on)}{#if dep.ends_on}
-											→ {formatDate(dep.ends_on)}{/if}
-									</span>
-									<span class="text-xs text-[var(--color-muted)]">
-										{#if (dep.capacity ?? service.capacity) != null}
-											{t('services.pkg_seats_left', '{n} seats left', {
-												n: Math.max(0, (dep.capacity ?? service.capacity ?? 0) - dep.booked_count)
-											})}
-										{:else}
-											{t('services.pkg_unlimited', 'Unlimited seats')}
-										{/if}
-									</span>
-								</li>
-							{/each}
-						</ul>
-					</section>
-				{/if}
-
 				<!-- Outbound links — booking_url + website_url render for any
 				     listing that sets them -->
 				{#if service.website_url || service.booking_url}
@@ -1642,9 +1516,7 @@
 								class="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)]"
 							>
 								<ExternalLink size={16} aria-hidden="true" />
-								{isPackage && service.purchase_mode === 'external'
-									? t('services.book_partner', 'Book on partner site')
-									: t('services.book_now', 'Book now')}
+								{t('services.book_now', 'Book now')}
 							</a>
 						{/if}
 					</div>
@@ -1693,36 +1565,7 @@
 				onSecondary={isMentorship ? () => (messageOpen = true) : secondaryCta?.dialog === 'message' ? () => (messageOpen = true) : secondaryCta?.dialog === 'booking' ? openBookingDialog : undefined}
 				secondaryHref={isMentorship || secondaryCta?.dialog ? '' : (secondaryCta?.href ?? '')}
 			/>
-			{#if isPackage}
-				<p class="mt-3 text-center text-[11px] text-[var(--color-muted)]">
-					{t('services.tnc_note', '*Terms and conditions apply')}
-				</p>
-			{/if}
 		</div>
-
-		<!-- §111 scam disclaimer — packages render a standing notice + a
-		     link to the §81 board filtered to this destination. -->
-		{#if isPackage}
-			<div
-				class="mt-6 flex items-start gap-2 rounded-[var(--radius)] border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-4 py-3 text-xs text-[var(--color-text-subtle)]"
-			>
-				<ShieldAlert size={16} class="mt-0.5 shrink-0 text-[var(--color-warning)]" aria-hidden="true" />
-				<span>
-					{t(
-						'services.pkg_scam_disclaimer',
-						'Always verify providers before paying. JapaConnect never guarantees outcomes — report suspicious packages.'
-					)}
-					<a
-						href="/scam-alerts?dest={service.destination_space_id}"
-						class="ml-1 text-[var(--color-primary)] hover:underline"
-					>
-						{t('services.pkg_scam_link', 'See scam alerts for {dest}', {
-							dest: service.destination_space_name ?? ''
-						})}
-					</a>
-				</span>
-			</div>
-		{/if}
 
 		<!-- Owner actions: edit + claim + appeal -->
 		{#if data.authed}
@@ -1737,14 +1580,6 @@
 							class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 						>
 							{t('services.edit', 'Edit listing')}
-						</a>
-					{/if}
-					{#if isPackage && service.org_slug}
-						<a
-							href="/org/{service.org_slug}/service-bookings"
-							class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-						>
-							{t('bookings.org_inbox_link', 'Bookings inbox')}
 						</a>
 					{/if}
 				{/if}

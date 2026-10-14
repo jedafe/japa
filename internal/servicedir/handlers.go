@@ -28,7 +28,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -204,7 +203,7 @@ func writeServiceError(w http.ResponseWriter, err error, code, msg string) {
 	case errors.Is(err, ErrPurchaseModeUnavailable):
 		errpkg.WriteError(w, http.StatusForbidden, "purchase_mode_unavailable", "This purchase mode is not available")
 	case errors.Is(err, ErrInvalidListingKind):
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_listing_kind", "listing_kind must be service|package|mentorship and cannot change after creation")
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_listing_kind", "listing_kind must be service|mentorship and cannot change after creation")
 	case errors.Is(err, ErrInvalidPurchaseMode):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_purchase_mode", "purchase_mode must be inquiry|external|paid")
 	case errors.Is(err, ErrInvalidPricePer):
@@ -385,31 +384,17 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// §111 filters — kind is gated by service_packages.enabled in the
-	// service layer (flag off → 404). 'all' is the explicit no-filter
-	// value per the §111 route contract.
+	// §98 filters — 'all' is the explicit no-filter value per the
+	// route contract. (The package-era price_max/date_from filters
+	// went with the removed 'package' kind.)
 	listingKind := r.URL.Query().Get("kind")
 	if listingKind == "all" {
 		listingKind = ""
 	}
 
-	var priceMax *int64
-	if v := r.URL.Query().Get("price_max"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
-			priceMax = &n
-		}
-	}
-
-	var dateFrom pgtype.Date
-	if v := r.URL.Query().Get("date_from"); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			dateFrom = pgtype.Date{Time: t, Valid: true}
-		}
-	}
-
 	page, limit := parsePageParams(r)
 
-	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, listingKind, priceMax, dateFrom, q, sort, page, limit)
+	services, total, err := h.service.List(r.Context(), destSpaceID, citySpaceID, serviceCategory, originCommunity, verifiedPtr, listingKind, nil, pgtype.Date{}, q, sort, page, limit)
 	if err != nil {
 		if errors.Is(err, ErrPackagesDisabled) {
 			errpkg.WriteError(w, http.StatusNotFound, "service_packages_disabled", "Service packages are not available")

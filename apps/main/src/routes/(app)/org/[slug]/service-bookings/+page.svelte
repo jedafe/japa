@@ -170,8 +170,7 @@
 			<EmptyState
 				icon={Inbox}
 				title={t('bookings.org_empty', 'No bookings yet')}
-				body={t('bookings.org_empty_body', 'Inquiries and paid bookings for your packages land here.')}
-				action={{ label: t('services.new_package', 'Create a package'), href: '/services/new' }}
+				body={t('bookings.org_empty_body', 'Inquiries and bookings for your listings land here.')}
 			/>
 		{:else}
 			<div class="space-y-3">

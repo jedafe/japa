@@ -46,7 +46,7 @@ const paidService = {
 	id: 'svc-1',
 	slug: 'test-pkg',
 	title: 'Test Package',
-	listing_kind: 'package',
+	listing_kind: 'service',
 	purchase_mode: 'paid',
 	price_currency: 'NGN',
 	org_id: 'org-1',

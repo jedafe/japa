@@ -1295,65 +1295,6 @@ func (s *Service) ListOrgBookings(ctx context.Context, orgID, userID pgtype.UUID
 	return out, total, nil
 }
 
-// ListOrgPackages returns the org's package listings. Anonymous callers
-// and non-members see published packages only; org members see every
-// status — the dashboard view includes drafts/in_review (§111). M3: the
-// total rides a COUNT query over the same filter set (not the page
-// length) so paginated org dashboards page correctly.
-func (s *Service) ListOrgPackages(ctx context.Context, orgID, viewerID pgtype.UUID, page, limit int32) ([]ServiceDTO, int64, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-
-	if page <= 0 {
-		page = 1
-	}
-
-	status := content.StatusPublished
-
-	if viewerID.Valid {
-		if member, err := s.store.IsOrgMember(ctx, orgID, viewerID); err == nil && member {
-			status = "" // member: all statuses
-		}
-	}
-
-	rows, err := s.store.ListByOrg(ctx, orgID, status, ListingKindPackage, limit, (page-1)*limit)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	total, err := s.store.CountByOrg(ctx, orgID, status, ListingKindPackage)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	couponsOn := s.CouponsEnabled(ctx)
-	tiersOn := s.TiersEnabled(ctx)
-
-	out := make([]ServiceDTO, 0, len(rows))
-	for _, r := range rows {
-		dto := rowToDTO(r)
-		if couponsOn {
-			dto.HasCoupon = r.HasCoupon
-		}
-		// Same tiers-flag gate as the public list — min_price COALESCEs
-		// the lowest active tier over price_amount, so with tiers off a
-		// stale tier row would leak a hidden price surface.
-		if tiersOn {
-			dto.MinPrice = r.MinPrice
-		} else {
-			dto.MinPrice = r.PriceAmount
-		}
-
-		// §114 derived ribbon — has_coupon is already flag-gated above.
-		dto.Badge = s.deriveBadge(ctx, dto.ReviewCount, dto.RatingAvg, dto.HasCoupon)
-
-		out = append(out, dto)
-	}
-
-	return out, total, nil
-}
-
 // OrgTransition applies the org-facing status transition
 // (confirmed|declined|fulfilled|cancelled) with org-membership and
 // state-machine guards. Side effects (notifications, fee settlement,

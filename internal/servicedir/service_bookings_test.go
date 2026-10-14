@@ -72,14 +72,16 @@ func (f fakeSettings) GetStringOr(_ context.Context, key, fallback string) strin
 }
 
 func TestIsValidListingKind(t *testing.T) {
-	valid := []string{"service", "package", "mentorship"}
+	valid := []string{"service", "mentorship"}
 	for _, v := range valid {
 		if !IsValidListingKind(v) {
 			t.Errorf("expected %q to be a valid listing_kind", v)
 		}
 	}
 
-	for _, v := range []string{"", "bundle", "SERVICE", "pkg"} {
+	// 'package' was removed from the feature — legacy rows stay
+	// in the DB but the kind is no longer writable.
+	for _, v := range []string{"", "bundle", "SERVICE", "pkg", "package"} {
 		if IsValidListingKind(v) {
 			t.Errorf("expected %q to be rejected", v)
 		}
@@ -865,7 +867,7 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 		return out
 	}
 
-	t.Run("all flags on: unfiltered shows every kind", func(t *testing.T) {
+	t.Run("all flags on: unfiltered shows service+mentorship", func(t *testing.T) {
 		svc := newTestService(database, fakeFlags{
 			"service_packages.enabled": true,
 			"mentorship.enabled":       true,
@@ -879,10 +881,15 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 		for _, r := range rows {
 			got[r.ID] = true
 		}
-		for _, id := range []pgtype.UUID{svcContentID, menContentID, pkgContentID} {
+		for _, id := range []pgtype.UUID{svcContentID, menContentID} {
 			if !got[id.String()] {
 				t.Errorf("unfiltered list missing %s", id)
 			}
+		}
+		// The 'package' kind was removed from the feature — its
+		// rows stay hidden even with service_packages.enabled on.
+		if got[pkgContentID.String()] {
+			t.Error("package listing leaked into unfiltered list")
 		}
 	})
 
@@ -896,18 +903,23 @@ func TestListMentorshipKind_LiveDB(t *testing.T) {
 			t.Error("missing mentorship listing — should surface in unfiltered list")
 		}
 		if got[pkgContentID.String()] {
-			t.Error("package listing leaked while service_packages.enabled off")
+			t.Error("package listing leaked into unfiltered list")
 		}
 	})
 
-	t.Run("packages on + mentorship off: unfiltered hides mentorship", func(t *testing.T) {
+	t.Run("mentorship off: unfiltered shows only service", func(t *testing.T) {
 		svc := newTestService(database, fakeFlags{"service_packages.enabled": true})
 		got := listIDs(svc, "")
 		if got[menContentID.String()] {
 			t.Error("mentorship listing leaked while mentorship.enabled off")
 		}
-		if !got[pkgContentID.String()] {
-			t.Error("missing package listing")
+		if !got[svcContentID.String()] {
+			t.Error("missing service listing")
+		}
+		// The 'package' kind was removed — hidden even with the
+		// packages flag on.
+		if got[pkgContentID.String()] {
+			t.Error("package listing leaked into unfiltered list")
 		}
 	})
 

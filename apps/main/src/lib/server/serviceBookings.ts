@@ -19,7 +19,7 @@ const BOOKING_STATUSES = new Set([
 	'refunded'
 ]);
 const BOOKING_INTENTS = new Set(['inquiry', 'booking']);
-const BOOKING_KINDS = new Set(['service', 'package', 'mentorship']);
+const BOOKING_KINDS = new Set(['service', 'mentorship']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE_LIMIT = 20;
 

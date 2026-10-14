@@ -26,9 +26,8 @@
 	const viewerEmail = $derived(page.data.user?.email ?? '');
 	const selectedId = $derived(page.url.searchParams.get('b'));
 
-	// Empty-state copy per role; the browse action prefers the surface whose
-	// flag is actually on (packages → /services, mentorship-only → the
-	// directory's mentorship kind).
+	// Empty-state copy per role; the browse action prefers the
+	// mentorship kind when that flag is on, else the directory.
 	const emptyTitle = $derived(
 		data.role === 'received'
 			? t('bookings.empty_received', 'Nothing received yet')
@@ -42,17 +41,15 @@
 				)
 			: t(
 					'bookings.empty_body',
-					'Browse service packages to send an inquiry or book a departure.'
+					'Browse services to send an inquiry or book a session.'
 				)
 	);
 	const emptyAction = $derived(
 		data.role === 'received'
 			? { label: t('mentors.browse', 'Browse mentors'), href: '/services?kind=mentorship' }
-			: features['service_packages.enabled']
-				? { label: t('bookings.browse', 'Browse services'), href: '/services?kind=package' }
-				: features['mentorship.enabled']
-					? { label: t('mentors.browse', 'Browse mentors'), href: '/services?kind=mentorship' }
-					: { label: t('bookings.browse', 'Browse services'), href: '/services' }
+			: features['mentorship.enabled']
+				? { label: t('mentors.browse', 'Browse mentors'), href: '/services?kind=mentorship' }
+				: { label: t('bookings.browse', 'Browse services'), href: '/services' }
 	);
 
 	function closeDetail() {

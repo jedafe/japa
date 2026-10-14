@@ -7,7 +7,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api/client';
-	import { Briefcase, Plus, Loader2, AlertCircle, Package, Trash2 } from 'lucide-svelte';
+	import { Briefcase, Plus, Loader2, AlertCircle, Package } from 'lucide-svelte';
 	import { serviceCategoryOptions } from '$lib/enumOptions';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { ServiceCategory, ServiceListing, Space } from '$lib/types';
@@ -15,7 +15,6 @@
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 	import CoverUploader from '$lib/components/create/CoverUploader.svelte';
 	import ServiceTierEditor from '$lib/components/services/ServiceTierEditor.svelte';
-	import ServiceCouponSelector from '$lib/components/services/ServiceCouponSelector.svelte';
 	import ServiceContentEditor from '$lib/components/services/ServiceContentEditor.svelte';
 	import type {
 		FactEntry,
@@ -29,12 +28,6 @@
 	let { data }: { data: PageData } = $props();
 
 	const packagesEnabled = $derived(data.packagesEnabled ?? false);
-	// §111: package create/edit needs the service.package.create node —
-	// without it the backend rejects with 403, so hide the option.
-	const canCreatePackage = $derived(
-		(data.user?.permissions ?? []).includes('service.package.create') ||
-			(data.user?.permissions ?? []).includes('service.edit_any')
-	);
 
 	const pageTitle = $derived(t('services.new_title', 'List a Service — JapaConnect'));
 	const pageDescription = $derived(
@@ -56,27 +49,21 @@
 	let bookingUrl = $state('');
 	let priceRange = $state('');
 
-	// §111 package fields — only sent when listing_kind='package'.
-	let listingKind = $state<'service' | 'package'>('service');
-	let orgId = $state('');
-	let purchaseMode = $state<'inquiry' | 'external' | 'paid'>('inquiry');
+	// Booking/pricing fields (§114 amendment) — apply to every
+	// listing kind. The 'package' listing kind was removed from
+	// the feature (2026-10): packages are gone, so these fields
+	// describe the service itself.
+	let purchaseMode = $state<'inquiry' | 'external'>('inquiry');
 	let priceAmount = $state(''); // major units; ×100 on submit
 	let priceCurrency = $state('');
-	let pricePer = $state<'person' | 'package' | 'group'>('package');
-	let capacity = $state('');
-	let availableFrom = $state('');
-	let availableUntil = $state('');
-	let pkgItems = $state<{ title: string; description: string; included: boolean; optional: boolean }[]>([]);
-	let departures = $state<{ starts_on: string; ends_on: string; capacity: string }[]>([]);
+	let pricePer = $state<'person' | 'package' | 'group'>('person');
 
 	// §114 marketplace fields — featured image on all listing kinds;
-	// tiers + coupon attach are package-only and flag-gated.
+	// tiers are flag-gated and apply to every kind.
 	const tiersEnabled = $derived(!!data.features?.['service_packages.tiers_enabled']);
-	const couponsEnabled = $derived(!!data.features?.['service_coupons.enabled']);
 	let featuredMediaId = $state('');
 	let featuredPreview = $state('');
 	let tiers = $state<EditableTier[]>([]);
-	let couponIds = $state<string[]>([]);
 	const currenciesList = $derived((page.data.currencies ?? []) as CurrencyInfo[]);
 
 	// §114/000829 structured content — faqs[]/steps[]/selling_points[]/
@@ -103,44 +90,14 @@
 		serviceCategory ? (categoryItems.find((o) => o.id === serviceCategory)?.label ?? null) : null
 	);
 
-	// §111 org picker — packages are org-authored; the selling org must be
-	// verified with a business/professional_body verification type unless
-	// the backend test setting relaxes it. Ineligible orgs stay visible
-	// (with an eligibility sublabel) so the member can see why their org
-	// is missing rather than guessing.
-	function orgEligible(o: { verified: boolean; verification_type?: string | null }): boolean {
-		return o.verified && (o.verification_type === 'business' || o.verification_type === 'professional_body');
-	}
-	const orgItems = $derived<AutocompleteItem[]>(
-		(data.myOrgs ?? []).map((o) => ({
-			id: o.id,
-			label: o.name,
-			sublabel: orgEligible(o)
-				? t('services.pkg_org_eligible', 'Verified — can publish packages')
-				: t('services.pkg_org_ineligible', 'Not eligible — org must be verified (business/professional body)')
-		}))
-	);
-	const orgFetcher = $derived(staticAutocompleteFetcher(orgItems));
-	const selectedOrgLabel = $derived(
-		orgId ? (orgItems.find((o) => o.id === orgId)?.label ?? null) : null
-	);
-
-	// §114 2026-10-10 amendment: 'paid' mode is package-bound (§111) —
-	// services offer inquiry/external only.
+	// §114 2026-10-10 amendment: 'paid' mode was package-bound
+	// (§111) and the package kind is gone — services offer
+	// inquiry/external only.
 	const purchaseModeItems = $derived<AutocompleteItem[]>([
 		{ id: 'inquiry', label: t('services.pkg_mode_inquiry', 'Inquiry — travellers message you') },
-		{ id: 'external', label: t('services.pkg_mode_external', 'External — book on your site') },
-		...(listingKind === 'package'
-			? [{ id: 'paid', label: t('services.pkg_mode_paid', 'Paid — reserve with a platform fee') }]
-			: [])
+		{ id: 'external', label: t('services.pkg_mode_external', 'External — book on your site') }
 	]);
 	const purchaseModeFetcher = $derived(staticAutocompleteFetcher(purchaseModeItems));
-
-	// Switching a paid-mode package back to service kind must not submit
-	// the package-only 'paid' value.
-	$effect(() => {
-		if (listingKind !== 'package' && purchaseMode === 'paid') purchaseMode = 'inquiry';
-	});
 
 	const pricePerItems = $derived<AutocompleteItem[]>([
 		{ id: 'person', label: t('services.pkg_per_person', 'per person') },
@@ -235,32 +192,6 @@
 			errorMsg = t('services.errors.fact_required', 'Every fact needs a label and a value');
 			return false;
 		}
-		if (listingKind === 'package') {
-			if (!orgId) {
-				errorMsg = t('services.errors.pkg_org_required', 'Select the organization selling this package');
-				return false;
-			}
-			if (pkgItems.some((i) => !i.title.trim())) {
-				errorMsg = t('services.errors.pkg_item_title_required', 'Every package item needs a title');
-				return false;
-			}
-			if (departures.some((d) => !d.starts_on)) {
-				errorMsg = t('services.errors.pkg_departure_start_required', 'Every departure needs a start date');
-				return false;
-			}
-		}
-		// Booking/pricing fields apply to every listing kind (§114
-		// 2026-10-10 amendment) — an org pickup + purchase mode is how
-		// service listings take bookings too.
-		const org = orgId ? (data.myOrgs ?? []).find((o) => o.id === orgId) : undefined;
-		if (org && !orgEligible(org)) {
-			errorMsg = t('services.errors.pkg_org_ineligible', 'Only verified organizations (business or professional body) can sell on the marketplace');
-			return false;
-		}
-		if (purchaseMode === 'paid' && (!String(priceAmount ?? '').trim() || !priceCurrency)) {
-			errorMsg = t('services.errors.pkg_price_required', 'Paid packages require a price and currency');
-			return false;
-		}
 		if (purchaseMode === 'external' && !bookingUrl.trim()) {
 			errorMsg = t('services.errors.pkg_booking_url_required', 'External listings need a booking URL — that is the "book" link travellers follow');
 			return false;
@@ -338,14 +269,9 @@
 		const trimmedAudience = audience.map((a) => a.trim()).filter(Boolean);
 		if (trimmedAudience.length > 0) payload.audience = trimmedAudience;
 
-		// §114 2026-10-10 amendment: org + purchase-mode + price + tiers
-		// apply to service kind too (tiered pricing cards on the service
-		// detail page); capacity/available window/items/departures stay
-		// package-only.
-		if (listingKind === 'package') payload.listing_kind = 'package';
-		if (orgId) payload.org_id = orgId;
-		// Both kinds carry the chosen mode — a service on 'external' must
-		// persist it or the detail page keeps rendering the inquiry CTA.
+		// §114 2026-10-10 amendment: purchase mode, price and
+		// tiers apply to service kind too (tiered pricing cards
+		// on the service detail page).
 		payload.purchase_mode = purchaseMode;
 		{
 			// bind:value on type="number" yields number|null — coerce
@@ -362,54 +288,12 @@
 				payload.tiers = tiersToPayload(tiers);
 			}
 		}
-		if (listingKind === 'package') {
-			const capStr = String(capacity ?? '').trim();
-			if (capStr) {
-				const cap = Number(capStr);
-				if (Number.isInteger(cap) && cap > 0) payload.capacity = cap;
-			}
-			if (availableFrom) payload.available_from = availableFrom;
-			if (availableUntil) payload.available_until = availableUntil;
-			if (pkgItems.length > 0) {
-				payload.items = pkgItems.map((i) => ({
-					title: i.title.trim(),
-					description: i.description.trim(),
-					included: i.included,
-					optional: i.optional
-				}));
-			}
-			if (departures.length > 0) {
-				payload.departures = departures.map((d) => {
-					// bind:value on type="number" yields number|null.
-					const depCap = String(d.capacity ?? '').trim();
-					return {
-						starts_on: d.starts_on,
-						ends_on: d.ends_on || undefined,
-						capacity: depCap && Number.isInteger(Number(depCap)) ? Number(depCap) : null,
-						status: 'open'
-					};
-				});
-			}
-		}
 
 		submitting = true;
 		const res = await api.post<ServiceListing>('/services', payload);
 		submitting = false;
 
 		if (res.data) {
-			// §114: coupon attachment is a separate endpoint — the listing has
-			// to exist before PUT /services/{id}/coupons can reference it. A
-			// failed attach keeps the listing; the editor retries from edit.
-			if (couponsEnabled && couponIds.length > 0) {
-				const attach = await api.put(`/services/${res.data.id}/coupons`, { coupon_ids: couponIds });
-				if (attach.error) {
-					errorMsg = t(
-						'services.errors.coupon_attach_failed',
-						'Listing created, but attaching coupons failed — retry from the edit page.'
-					);
-					return;
-				}
-			}
 			// §111: new listings enter `in_review` unless review_before_publish
 			// is off — land on the detail page when the listing went live,
 			// else the directory with a "submitted for review" banner (the
@@ -467,44 +351,6 @@
 
 	<div class="p-4">
 		<form onsubmit={submit} class="space-y-4 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-6" novalidate>
-			<!-- §111 listing kind — packages are org-authored bundles sold as
-				one unit; services are plain directory listings. -->
-			{#if packagesEnabled && canCreatePackage}
-				<div>
-					<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-						{t('services.field_listing_kind', 'Listing type')}
-					</span>
-					<div class="grid gap-3 sm:grid-cols-2">
-						<button
-							type="button"
-							onclick={() => (listingKind = 'service')}
-							class="flex items-start gap-2 rounded-[var(--radius)] border px-3 py-2.5 text-left transition-colors {listingKind === 'service'
-								? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
-								: 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
-						>
-							<Briefcase size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
-							<span>
-								<span class="block text-sm font-medium text-[var(--color-text)]">{t('services.kind_service', 'Service')}</span>
-								<span class="block text-xs text-[var(--color-muted)]">{t('services.kind_service_hint', 'A single service listing in the directory')}</span>
-							</span>
-						</button>
-						<button
-							type="button"
-							onclick={() => (listingKind = 'package')}
-							class="flex items-start gap-2 rounded-[var(--radius)] border px-3 py-2.5 text-left transition-colors {listingKind === 'package'
-								? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5'
-								: 'border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-subtle)]'}"
-						>
-							<Package size={18} class="mt-0.5 shrink-0 text-[var(--color-primary)]" />
-							<span>
-								<span class="block text-sm font-medium text-[var(--color-text)]">{t('services.kind_package', 'Package')}</span>
-								<span class="block text-xs text-[var(--color-muted)]">{t('services.kind_package_hint', 'A priced bundle sold by your organization')}</span>
-							</span>
-						</button>
-					</div>
-				</div>
-			{/if}
-
 			<!-- Title -->
 			<div>
 				<label for="title" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
@@ -701,44 +547,13 @@
 				bind:audience
 			/>
 
-			<!-- §111 package fields + §114 booking/pricing (all kinds) -->
+			<!-- §114 booking/pricing (all kinds) -->
 			{#if packagesEnabled}
 				<div class="space-y-4 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)]/40 p-4">
 					<h2 class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
 						<Package size={16} />
-						{listingKind === 'package'
-							? t('services.pkg_section', 'Package details')
-							: t('services.booking_section', 'Booking & pricing')}
+						{t('services.booking_section', 'Booking & pricing')}
 					</h2>
-
-					<!-- Selling org -->
-					<div>
-						<label for="pkg-org" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-							{t('services.pkg_org', 'Selling organization')}{#if listingKind === 'package'} <span class="text-red-500">*</span>{/if}
-						</label>
-						{#if (data.myOrgs ?? []).length > 0}
-							<Autocomplete
-								id="pkg-org"
-								placeholder={t('services.pkg_org_select', 'Select your organization')}
-								emptyMessage={t('common.no_results', 'No results found')}
-								fetcher={orgFetcher}
-								initialFetcher={orgFetcher}
-								selectedId={orgId || null}
-								selectedLabel={selectedOrgLabel}
-								onSelect={(item) => (orgId = item.id)}
-								onClear={() => (orgId = '')}
-							/>
-							<p class="mt-1 text-xs text-[var(--color-muted)]">
-								{listingKind === 'package'
-									? t('services.pkg_org_hint', 'Only verified organizations (business or professional body) can publish packages.')
-									: t('services.svc_org_hint', 'Pick the org that receives booking inquiries — leave empty for a personal listing.')}
-							</p>
-						{:else if listingKind === 'package'}
-							<p class="text-sm text-[var(--color-muted)]">
-								{t('services.pkg_no_orgs', 'You must be a member of a verified organization to publish a package.')}
-							</p>
-						{/if}
-					</div>
 
 					<!-- Purchase mode + price -->
 					<div class="grid gap-4 sm:grid-cols-2">
@@ -759,7 +574,7 @@
 						</div>
 						<div>
 							<label for="pkg-price" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-								{t('services.pkg_price', 'Price')}{#if purchaseMode === 'paid'} <span class="text-red-500">*</span>{/if}
+								{t('services.pkg_price', 'Price')}
 							</label>
 							<div class="flex gap-2">
 								<input
@@ -788,168 +603,27 @@
 						</div>
 					</div>
 
-					<!-- price_per + capacity -->
-					<div class="grid gap-4 sm:grid-cols-2">
-						<div>
-							<label for="pkg-price-per" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-								{t('services.pkg_price_per', 'Price is per')}
-							</label>
-							<Autocomplete
-								id="pkg-price-per"
-								placeholder={t('services.pkg_price_per', 'Price is per')}
-								emptyMessage={t('common.no_results', 'No results found')}
-								fetcher={pricePerFetcher}
-								initialFetcher={pricePerFetcher}
-								selectedId={pricePer}
-								selectedLabel={pricePerItems.find((o) => o.id === pricePer)?.label ?? null}
-								onSelect={(item) => (pricePer = item.id as typeof pricePer)}
-							/>
-						</div>
-						{#if listingKind === 'package'}
-							<div>
-								<label for="pkg-capacity" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-									{t('services.pkg_capacity', 'Total capacity')}
-								</label>
-								<input
-									id="pkg-capacity"
-									type="number"
-									min="1"
-									bind:value={capacity}
-									placeholder={t('services.pkg_capacity_ph', 'Leave empty for unlimited')}
-									class={inputClass}
-								/>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Availability window -->
-					{#if listingKind === 'package'}
-					<div class="grid gap-4 sm:grid-cols-2">
-						<div>
-							<label for="pkg-from" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-								{t('services.pkg_available_from', 'Available from')}
-							</label>
-							<input id="pkg-from" type="date" bind:value={availableFrom} class={inputClass} />
-						</div>
-						<div>
-							<label for="pkg-until" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-								{t('services.pkg_available_until', 'Available until')}
-							</label>
-							<input id="pkg-until" type="date" bind:value={availableUntil} class={inputClass} />
-						</div>
-					</div>
-					{/if}
-
-					<!-- Items editor -->
-					{#if listingKind === 'package'}
+					<!-- price_per -->
 					<div>
-						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-							{t('services.pkg_items', 'Included items')}
-						</span>
-						<div class="space-y-2">
-							{#each pkgItems as item, idx (idx)}
-								<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-									<div class="flex items-start gap-2">
-										<div class="flex-1 space-y-2">
-											<input
-												type="text"
-												bind:value={item.title}
-												placeholder={t('services.pkg_item_title_ph', 'Item title (e.g. Visa processing)')}
-												class={inputClass}
-											/>
-											<input
-												type="text"
-												bind:value={item.description}
-												placeholder={t('services.pkg_item_desc_ph', 'Short description (optional)')}
-												class={inputClass}
-											/>
-											<div class="flex gap-4 text-xs text-[var(--color-muted)]">
-												<label class="flex items-center gap-1.5">
-													<input type="checkbox" checked={item.included} onchange={(e) => (item.included = e.currentTarget.checked)} class="h-3.5 w-3.5 rounded border-[var(--color-border)]" />
-													{t('services.pkg_item_included', 'Included')}
-												</label>
-												<label class="flex items-center gap-1.5">
-													<input type="checkbox" checked={item.optional} onchange={(e) => (item.optional = e.currentTarget.checked)} class="h-3.5 w-3.5 rounded border-[var(--color-border)]" />
-													{t('services.pkg_item_optional', 'Optional add-on')}
-												</label>
-											</div>
-										</div>
-										<button
-											type="button"
-											onclick={() => (pkgItems = pkgItems.filter((_, i) => i !== idx))}
-											class="mt-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-											aria-label={t('common.remove', 'Remove')}
-										>
-											<Trash2 size={16} />
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-						<button
-							type="button"
-							onclick={() => (pkgItems = [...pkgItems, { title: '', description: '', included: true, optional: false }])}
-							class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-						>
-							<Plus size={14} /> {t('services.pkg_add_item', 'Add item')}
-						</button>
+						<label for="pkg-price-per" class="mb-1 block text-sm font-medium text-[var(--color-text)]">
+							{t('services.pkg_price_per', 'Price is per')}
+						</label>
+						<Autocomplete
+							id="pkg-price-per"
+							placeholder={t('services.pkg_price_per', 'Price is per')}
+							emptyMessage={t('common.no_results', 'No results found')}
+							fetcher={pricePerFetcher}
+							initialFetcher={pricePerFetcher}
+							selectedId={pricePer}
+							selectedLabel={pricePerItems.find((o) => o.id === pricePer)?.label ?? null}
+							onSelect={(item) => (pricePer = item.id as typeof pricePer)}
+						/>
 					</div>
-
-					<!-- Departures editor -->
-					<div>
-						<span class="mb-1 block text-sm font-medium text-[var(--color-text)]">
-							{t('services.pkg_departures', 'Scheduled departures')}
-						</span>
-						<p class="mb-2 text-xs text-[var(--color-muted)]">
-							{t('services.pkg_departures_hint', 'Optional fixed dates (tours, cohort intakes). Leave empty for request-based packages.')}
-						</p>
-						<div class="space-y-2">
-							{#each departures as dep, idx (idx)}
-								<div class="flex flex-wrap items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-									<input type="date" bind:value={dep.starts_on} class="{inputClass} sm:w-auto" aria-label={t('services.pkg_dep_start', 'Start date')} />
-									<span class="text-xs text-[var(--color-muted)]">→</span>
-									<input type="date" bind:value={dep.ends_on} class="{inputClass} sm:w-auto" aria-label={t('services.pkg_dep_end', 'End date (optional)')} />
-									<input
-										type="number"
-										min="1"
-										bind:value={dep.capacity}
-										placeholder={t('services.pkg_dep_capacity_ph', 'Seats')}
-										class="{inputClass} sm:w-24"
-										aria-label={t('services.pkg_dep_capacity_ph', 'Seats')}
-									/>
-									<button
-										type="button"
-										onclick={() => (departures = departures.filter((_, i) => i !== idx))}
-										class="ml-auto text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-										aria-label={t('common.remove', 'Remove')}
-									>
-										<Trash2 size={16} />
-									</button>
-								</div>
-							{/each}
-						</div>
-						<button
-							type="button"
-							onclick={() => (departures = [...departures, { starts_on: '', ends_on: '', capacity: '' }])}
-							class="mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
-						>
-							<Plus size={14} /> {t('services.pkg_add_departure', 'Add departure')}
-						</button>
-					</div>
-					{/if}
 
 					<!-- §114 pricing tiers — service_packages.tiers_enabled; all
 						listing kinds (service + mentorship cards too). -->
 					{#if tiersEnabled}
 						<ServiceTierEditor bind:tiers {inputClass} currencies={currenciesList} />
-					{/if}
-
-					<!-- §114 coupon attach — service_coupons.enabled; needs the
-						selling org picked first (coupons are org-owned). Paid
-						redemption is package-bound, so the selector stays on the
-						package kind. -->
-					{#if couponsEnabled && listingKind === 'package'}
-						<ServiceCouponSelector bind:selectedIds={couponIds} {orgId} listingKind="package" />
 					{/if}
 				</div>
 			{/if}

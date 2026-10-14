@@ -89,8 +89,6 @@
 	let cityLabelInput = $state(untrack(() => data.filters.cityLabel));
 	let originInput = $state(untrack(() => data.filters.origin));
 	let verifiedInput = $state(untrack(() => data.filters.verified === 'true'));
-	let priceMaxInput = $state(untrack(() => data.filters.priceMaxMajor));
-	let dateFromInput = $state(untrack(() => data.filters.date_from));
 
 	$effect(() => {
 		destInput = data.filters.dest;
@@ -98,19 +96,15 @@
 		cityLabelInput = data.filters.cityLabel;
 		originInput = data.filters.origin;
 		verifiedInput = data.filters.verified === 'true';
-		priceMaxInput = data.filters.priceMaxMajor;
-		dateFromInput = data.filters.date_from;
 	});
 
-	// §111/000824 kind tabs — the row renders once either gated kind exists
-	// (service_packages.enabled / mentorship.enabled); each flag-gated tab
-	// only appears under its own flag.
+	// §111/000824 kind tabs — the row renders once the gated
+	// mentorship kind exists (mentorship.enabled); the tab
+	// only appears under its own flag. The 'package' kind
+	// was removed from the feature (2026-10).
 	const kindTabs = $derived<UrlTab[]>([
 		{ value: 'all', label: t('services.kind_all', 'All listings') },
 		{ value: 'service', label: t('services.kind_service', 'Services') },
-		...(data.packagesEnabled
-			? [{ value: 'package', label: t('services.kind_package', 'Packages') }]
-			: []),
 		...(data.mentorshipEnabled
 			? [{ value: 'mentorship', label: t('services.kind_mentorship', 'Mentorship') }]
 			: [])
@@ -214,11 +208,6 @@
 			paramsWith((p) => {
 				if (v === 'all') p.delete('kind');
 				else p.set('kind', v);
-				// §111 — price_max/date_from are package-only filters.
-				if (v !== 'package') {
-					p.delete('price_max');
-					p.delete('date_from');
-				}
 			}),
 			{ keepFocus: true }
 		);
@@ -246,24 +235,6 @@
 				else p.delete('origin');
 				if (verifiedInput) p.set('verified', 'true');
 				else p.delete('verified');
-				// §111 package-only filters — the API takes price_max in minor
-				// units; the input collects major units like the create form.
-				if (data.filters.kind === 'package') {
-					// bind:value on type="number" yields number|null — coerce
-					// back to string before trimming.
-					const priceMaxStr = String(priceMaxInput ?? '').trim();
-					const major = Number(priceMaxStr);
-					if (priceMaxStr && Number.isFinite(major) && major >= 0) {
-						p.set('price_max', String(Math.round(major * 100)));
-					} else {
-						p.delete('price_max');
-					}
-					if (dateFromInput) p.set('date_from', dateFromInput);
-					else p.delete('date_from');
-				} else {
-					p.delete('price_max');
-					p.delete('date_from');
-				}
 			}),
 			{ keepFocus: true }
 		);
@@ -275,8 +246,6 @@
 		cityLabelInput = '';
 		originInput = '';
 		verifiedInput = false;
-		priceMaxInput = '';
-		dateFromInput = '';
 		goto('/services');
 	}
 
@@ -288,9 +257,7 @@
 			!!data.filters.category ||
 			!!data.filters.origin ||
 			!!data.filters.verified ||
-			!!data.filters.kind ||
-			!!data.filters.priceMaxMajor ||
-			!!data.filters.date_from
+			!!data.filters.kind
 	);
 
 	let showFilters = $state(false);
@@ -357,7 +324,7 @@
 
 	<!-- Toolbar: kind tabs + filters + sort + list action -->
 	<div class="mb-4 flex flex-wrap items-center gap-2">
-		{#if data.packagesEnabled || data.mentorshipEnabled}
+		{#if data.mentorshipEnabled}
 			<UrlTabs
 				tabs={kindTabs}
 				value={activeKind}
@@ -454,32 +421,6 @@
 						class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 					/>
 				</div>
-				{#if data.filters.kind === 'package'}
-					<!-- §111 package filters — price_max (major-unit input, minor-unit
-					     URL param) and date_from (availability start). -->
-					<div>
-						<label for="services-price-max" class="sr-only">{t('services.filter_price_max', 'Max price')}</label>
-						<input
-							id="services-price-max"
-							type="number"
-							min="0"
-							step="0.01"
-							bind:value={priceMaxInput}
-							placeholder={t('services.filter_price_max', 'Max price')}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-						/>
-					</div>
-					<div>
-						<label for="services-date-from" class="sr-only">{t('services.filter_date_from', 'Available from')}</label>
-						<input
-							id="services-date-from"
-							type="date"
-							bind:value={dateFromInput}
-							aria-label={t('services.filter_date_from', 'Available from')}
-							class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-						/>
-					</div>
-				{/if}
 				<div class="flex items-center gap-2">
 					<label class="flex items-center gap-1.5 text-sm text-[var(--color-text)]">
 						<input

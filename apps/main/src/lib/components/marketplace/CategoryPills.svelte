@@ -18,7 +18,7 @@
 		categories: ServiceCategoryInfo[];
 		/** Current ?category= slug ('' = all). */
 		active: string;
-		/** Current ?kind= filter (''|'all'|'service'|'package'). */
+		/** Current ?kind= filter (''|'all'|'service'|'mentorship'). */
 		kind: string;
 	}
 	let { categories, active, kind }: Props = $props();
@@ -28,7 +28,7 @@
 	// 'both' applies to every kind; kind-scoped categories only show on their
 	// own tab. No filter when kind is ''/'all'.
 	const filtered = $derived(
-		kind === 'service' || kind === 'package'
+		kind === 'service'
 			? categories.filter(
 					(c) => !c.applies_to || c.applies_to === 'both' || c.applies_to === kind
 				)

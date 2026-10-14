@@ -103,9 +103,12 @@ const (
 // this space; the ensure path writes shadows here directly.
 const mentorSlugPrefix = "mentor-"
 
-// IsValidListingKind reports whether s is a canonical §111 listing_kind.
+// IsValidListingKind reports whether s is a canonical listing_kind.
+// The 'package' kind was removed from the feature (2026-10): legacy
+// package rows stay in the DB — hidden from the directory — but new
+// listings can only be service or mentorship.
 func IsValidListingKind(s string) bool {
-	return s == ListingKindService || s == ListingKindPackage || s == ListingKindMentorship
+	return s == ListingKindService || s == ListingKindMentorship
 }
 
 // §111 purchase modes. 'full' is intentionally absent — deferred until

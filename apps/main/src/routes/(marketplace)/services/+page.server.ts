@@ -18,7 +18,7 @@ import type { ServiceListing, ServiceCategoryInfo, GeoCountry, Space } from '$li
 const DEFAULT_PAGE_SIZE = 8;
 const MAX_PAGE_SIZE = 100; // backend caps ?limit= at 100
 const VALID_SORTS = new Set(['latest', 'top']);
-const VALID_KINDS = new Set(['service', 'package', 'mentorship', 'all']);
+const VALID_KINDS = new Set(['service', 'mentorship', 'all']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function parsePositiveInt(raw: string | null, fallback: number, max: number): number {
@@ -49,7 +49,6 @@ async function resolveSpaceRef(
 
 export const load: PageServerLoad = async (event) => {
 	const { features } = await event.parent();
-	const packagesEnabled = !!features['service_packages.enabled'];
 	const mentorshipEnabled = !!features['mentorship.enabled'];
 
 	const get = (k: string) => event.url.searchParams.get(k)?.trim() ?? '';
@@ -80,25 +79,13 @@ export const load: PageServerLoad = async (event) => {
 	const verified = verifiedRaw === '1' ? 'true' : verifiedRaw;
 	const sortRaw = get('sort');
 	const sort = VALID_SORTS.has(sortRaw) ? sortRaw : 'latest';
-	// §111/000824: kind tabs are flag-gated — kind=package needs
-	// service_packages.enabled, kind=mentorship needs mentorship.enabled;
-	// a dark-launched kind is a backend 404, so it is dropped here. The
-	// 'service'/'all' kinds exist once either flag is on (the tab row then
-	// renders — see +page.svelte).
-	const kindEnabled = (k: string): boolean => {
-		if (!VALID_KINDS.has(k)) return false;
-		if (k === 'package') return packagesEnabled;
-		if (k === 'mentorship') return mentorshipEnabled;
-		return packagesEnabled || mentorshipEnabled;
-	};
+	// §111/000824: kind tabs are flag-gated — kind=mentorship
+	// needs mentorship.enabled; a dark-launched kind is a
+	// backend 404, so it is dropped here. The 'package' kind
+	// was removed from the feature (2026-10): only service
+	// and mentorship listings exist.
+	const kindEnabled = (k: string): boolean => VALID_KINDS.has(k) && mentorshipEnabled;
 	const kind = kindEnabled(kindRaw) ? kindRaw : '';
-	// §111 package filters — price_max is minor units on the API contract;
-	// date_from is an ISO availability-start filter. Both are pass-through
-	// and only meaningful when packages are enabled.
-	const priceMaxRaw = get('price_max');
-	const priceMax = packagesEnabled && /^\d+$/.test(priceMaxRaw) ? priceMaxRaw : '';
-	const dateFromRaw = get('date_from');
-	const dateFrom = packagesEnabled && /^\d{4}-\d{2}-\d{2}$/.test(dateFromRaw) ? dateFromRaw : '';
 	const page = parsePositiveInt(event.url.searchParams.get('page'), 1, Number.MAX_SAFE_INTEGER);
 	const limit = parsePositiveInt(event.url.searchParams.get('limit'), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
 
@@ -123,10 +110,6 @@ export const load: PageServerLoad = async (event) => {
 		verified,
 		sort,
 		kind,
-		// price_max echoes as minor units (contract); the UI input collects
-		// major units, so seed it pre-divided.
-		priceMaxMajor: priceMax ? String(Number(priceMax) / 100) : '',
-		date_from: dateFrom,
 		page,
 		limit
 	};
@@ -142,8 +125,6 @@ export const load: PageServerLoad = async (event) => {
 	if (verified === 'true') params.set('verified', 'true');
 	if (sort !== 'latest') params.set('sort', sort);
 	if (kind) params.set('kind', kind);
-	if (priceMax) params.set('price_max', priceMax);
-	if (dateFrom) params.set('date_from', dateFrom);
 
 	// ?submitted=1 — set by /services/new after a successful create, since
 	// the new listing enters `in_review` and its detail URL is gated to
@@ -168,7 +149,6 @@ export const load: PageServerLoad = async (event) => {
 			services: items,
 			meta,
 			authed,
-			packagesEnabled,
 			mentorshipEnabled,
 			filters,
 			countries,
@@ -181,7 +161,6 @@ export const load: PageServerLoad = async (event) => {
 			services: [] as ServiceListing[],
 			meta: undefined,
 			authed,
-			packagesEnabled,
 			mentorshipEnabled,
 			filters,
 			countries,

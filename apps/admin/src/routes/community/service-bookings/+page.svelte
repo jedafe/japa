@@ -140,7 +140,6 @@
 			label: t('app.service_bookings.col_kind', 'Kind'),
 			options: [
 				{ value: 'service', label: t('app.service_bookings.kind_service', 'Service') },
-				{ value: 'package', label: t('app.service_bookings.kind_package', 'Package') },
 				{ value: 'mentorship', label: t('app.service_bookings.kind_mentorship', 'Mentorship') }
 			]
 		}
@@ -149,7 +148,7 @@
 	const config = $derived<EntityPageConfig>({
 		filters,
 		title: t('app.service_bookings.heading', 'Service Bookings'),
-		description: t('app.service_bookings.desc', 'Package bookings, inquiries, and dispute resolution'),
+		description: t('app.service_bookings.desc', 'Service bookings, inquiries, and dispute resolution'),
 		readonly: true,
 		pageSize: 25,
 		columns: [

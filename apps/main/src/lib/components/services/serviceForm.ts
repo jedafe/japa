@@ -47,12 +47,3 @@ export function tiersToPayload(tiers: EditableTier[]): Record<string, unknown>[]
 		};
 	});
 }
-
-/** does a coupon's applies_to cover this listing kind ('both' covers all). */
-export function couponAppliesToKind(
-	appliesTo: string | null | undefined,
-	kind: 'service' | 'package'
-): boolean {
-	if (!appliesTo || appliesTo === 'both') return true;
-	return appliesTo === kind;
-}

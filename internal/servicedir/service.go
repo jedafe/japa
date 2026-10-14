@@ -2177,65 +2177,6 @@ func departureToDTO(d gen.ServicePackageDeparture) PackageDepartureDTO {
 	return dep
 }
 
-// ListPackageDeparturesForEdit returns ALL departures of a package —
-// including past/cancelled/full rows the public detail hides — for the
-// §111 editor. Same permission shape as EditOwn: author, org member, or
-// service.edit_any.
-func (s *Service) ListPackageDeparturesForEdit(ctx context.Context, contentID, userID pgtype.UUID, isEditAny bool) ([]PackageDepartureDTO, error) {
-	if !s.PackagesEnabled(ctx) {
-		return nil, ErrPackagesDisabled
-	}
-
-	existing, err := s.content.GetContent(ctx, contentID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, pgx.ErrNoRows
-		}
-
-		return nil, fmt.Errorf("servicedir: departures: get content: %w", err)
-	}
-
-	meta, err := s.store.GetMeta(ctx, contentID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, pgx.ErrNoRows
-		}
-
-		return nil, fmt.Errorf("servicedir: departures: get meta: %w", err)
-	}
-
-	if meta.ListingKind != ListingKindPackage {
-		return nil, ErrNotPackage
-	}
-
-	if !isEditAny && existing.AuthorID != userID {
-		if !meta.OrgID.Valid {
-			return nil, ErrNotOwner
-		}
-
-		isMember, err := s.store.IsOrgMember(ctx, meta.OrgID, userID)
-		if err != nil {
-			return nil, fmt.Errorf("servicedir: departures: check org membership: %w", err)
-		}
-
-		if !isMember {
-			return nil, ErrNotOwner
-		}
-	}
-
-	rows, err := s.store.ListPackageDepartures(ctx, meta.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]PackageDepartureDTO, 0, len(rows))
-	for _, d := range rows {
-		out = append(out, departureToDTO(d))
-	}
-
-	return out, nil
-}
-
 // List returns a paginated, filtered list of published service listings.
 // destSpaceID, citySpaceID, serviceCategory, originCommunity are optional
 // geo-aware filters (§98: ?dest=&city=&category=&origin=&verified=&sort=).
@@ -2250,13 +2191,14 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 
 	offset := (page - 1) * limit
 
-	// §111/000824 kind gates: an explicit kind=package needs
-	// service_packages.enabled and kind=mentorship needs
-	// mentorship.enabled — a request for a dark-launched kind is a 404.
-	packagesOn := s.PackagesEnabled(ctx)
+	// 000824 kind gate: kind=mentorship needs mentorship.enabled — a
+	// request for a dark-launched kind is a 404. The 'package' kind
+	// was removed from the feature: kind=package is always a 404 and
+	// package rows never surface in the unfiltered directory, even
+	// with service_packages.enabled on (legacy rows only).
 	mentorshipOn := s.MentorshipEnabled(ctx)
 
-	if listingKind == ListingKindPackage && !packagesOn {
+	if listingKind == ListingKindPackage {
 		return nil, 0, ErrPackagesDisabled
 	}
 
@@ -2264,19 +2206,16 @@ func (s *Service) List(ctx context.Context, destSpaceID, citySpaceID pgtype.UUID
 		return nil, 0, ErrMentorshipDisabled
 	}
 
-	// The unfiltered pin keeps flag-gated kinds out of the directory: with
-	// both flags off the list collapses to kind=service (the pre-000824
-	// behaviour); with one flag off the unfiltered query excludes that
-	// kind and still surfaces the rest together.
+	// The unfiltered pin keeps the removed package kind and the
+	// dark-launched mentorship kind out of the directory: with
+	// mentorship off the list collapses to kind=service (the
+	// pre-000824 behaviour); with it on, package rows are excluded
+	// and service + mentorship surface together.
 	var excludeKind string
 	if listingKind == "" {
-		switch {
-		case !packagesOn && !mentorshipOn:
+		excludeKind = ListingKindPackage
+		if !mentorshipOn {
 			listingKind = ListingKindService
-		case !packagesOn:
-			excludeKind = ListingKindPackage
-		case !mentorshipOn:
-			excludeKind = ListingKindMentorship
 		}
 	}
 
