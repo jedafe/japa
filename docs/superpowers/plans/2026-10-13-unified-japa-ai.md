@@ -172,7 +172,7 @@ DROP TABLE IF EXISTS ai_conversations;
 - [ ] **Step 3: Apply + verify**
 
 ```bash
-make migrate-up 2>/dev/null || go run ./cmd/migrate up   # use the repo's migration entrypoint
+make migrate                                             # go run ./cmd/migrate/ — no args; applies pending files alphabetically
 psql "$JC_DATABASE_URL" -c '\d ai_messages'              # columns + FK present
 ```
 
@@ -266,6 +266,14 @@ UPDATE ai_agent_sessions
 SET conversation_id = @conversation_id,
     message_id = @message_id
 WHERE id = @id;
+
+-- name: UnlinkAgentSessionsForConversation :exec
+-- Conversation delete keeps session rows for audit retention but drops the
+-- link (ON DELETE SET NULL on the FK would also work; explicit unlink makes
+-- the intent visible in code review).
+UPDATE ai_agent_sessions
+SET conversation_id = NULL
+WHERE conversation_id = @conversation_id;
 ```
 
 - [ ] **Step 3: Append to `internal/db/queries/users.sql`**
@@ -482,16 +490,16 @@ func contains(xs []string, s string) bool {
 - Produces:
   - `type ConversationStore interface` — subset of gen.Queries (the Task 3 methods); `*gen.Queries` satisfies it.
   - `type ConversationService struct` with:
-    - `Resolve(ctx, userID pgtype.UUID, conversationID *pgtype.UUID, title string) (gen.AiConversation, error)` — get-or-create; `title` is the already-truncated auto-title (caller truncates `firstMessage` to `ai.conversation_title_length` chars; on create, title is stored; on existing conversation it's ignored).
+    - `Resolve(ctx, userID pgtype.UUID, conversationID *pgtype.UUID, title string) (gen.AiConversation, error)` — get-or-create; `title` is the already-truncated auto-title (caller truncates `firstMessage` to `ai.conversation_title_length` chars; on create, title is stored; on existing conversation it's ignored). **Unknown or not-owned `conversation_id` → create a fresh conversation** (never 404) — legacy clients send Honcho-era IDs that don't exist in the table.
     - `AppendUserMessage(ctx, convID, content) (gen.AiMessage, error)`
     - `AppendAssistantMessage(ctx, convID, content, model string, tokens int, cost float64, sessionID *pgtype.UUID) (gen.AiMessage, error)`
     - `History(ctx, convID, limit int) ([]ChatMessage, error)` — maps rows to `ChatMessage{Role, Content}` oldest-first
     - `List(ctx, userID, limit, offset) ([]gen.AiConversation, error)`
     - `Detail(ctx, userID, convID) (gen.AiConversation, []gen.AiMessage, error)` — 404 on wrong owner
-    - `Delete(ctx, userID, convID) error` — also NULLs `ai_agent_sessions.conversation_id` (audit retention, Rule 11 carve-out)
+    - `Delete(ctx, userID, convID) error` — owner-scoped delete + `UnlinkAgentSessionsForConversation` in the same tx (audit retention, Rule 11 carve-out)
     - `Prefs(ctx, userID) (AIPrefs, error)` / `SavePrefs(ctx, userID, AIPrefs) error`
 
-- [ ] **Step 1: Failing tests** — stub `ConversationStore` (map-backed, mirroring `agent_test.go` stub style); cover: Resolve creates once then reuses, history window ordering (insert 25, window 20 → oldest 5 dropped), owner-scoping 404, auto-title truncation, prefs round-trip.
+- [ ] **Step 1: Failing tests** — stub `ConversationStore` (map-backed, mirroring `agent_test.go` stub style); cover: Resolve creates once then reuses, **Resolve with an unknown/foreign id creates fresh instead of erroring**, history window ordering (insert 25, window 20 → oldest 5 dropped), Detail owner-scoping 404, Delete unlinks sessions, prefs round-trip.
 - [ ] **Step 2: Run → fail** (types undefined).
 - [ ] **Step 3: Implement** — thin wrapper over the store; `floatToNumeric` already exists in package for cost.
 - [ ] **Step 4: Run → PASS.** Commit: `feat(ai): conversation service — threads, messages, history window, prefs`
@@ -509,19 +517,28 @@ func contains(xs []string, s string) bool {
 - Produces:
   - `type UnifiedChatRequest struct { Prompt string; ConversationID *pgtype.UUID; Model, VoiceID string; Humanize bool; Tools *ToolSelection }`
   - `func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID, req UnifiedChatRequest) (<-chan AgentEvent, error)` — superset of `HandleAgentRequest`; the old method becomes a thin wrapper: `HandleUnifiedChat(ctx, userID, UnifiedChatRequest{Prompt: prompt, Tools: &ToolSelection{Enabled: &truth}})`.
-  - New event types: `EventSources = "sources"` (payload `Sources []map[string]any` on AgentEvent — add field), `EventConversation = "conversation"` (reuse `SessionID` field for session + add `ConversationID`, `MessageID` fields to `AgentEvent`).
-  - `WithAgentConversations(svc *ConversationService) AgentOption`, `WithAgentAIContext(fn func(ctx, userID, clientCtx) map[string]any) AgentOption` (injects `buildUserAIContext` from handlers.go — avoids an import cycle since both live in package `ai`, a plain func field works), `WithAgentChatPersist(fn func(ctx, userID, msg, reply, convID string)) AgentOption` (injects `persistChatTurn`).
+  - New event types: `EventSources = "sources"` (payload `Sources []map[string]any` on AgentEvent — add field), `EventConversation = "conversation"` (add `ConversationID` and `MessageID` string fields to `AgentEvent`, all `omitempty`).
+  - Options: `WithAgentConversations(svc *ConversationService)`, `WithAgentAIContext(fn func(ctx context.Context, userID pgtype.UUID, clientCtx map[string]any) map[string]any)` (wraps `aiHandlers.buildUserAIContext` — same package, plain func field), `WithAgentChatPersist(fn func(ctx context.Context, userID, msg, reply, convID string))` (wraps `persistChatTurn`), `WithAgentVoiceResolver(v PersonaVoiceResolver)` (personas.Service satisfies it), `WithAgentModelValidator(fn func(model, category string) bool)` (wraps `aiHandlers.isValidModelForCategory`).
 
-- [ ] **Step 1: Failing test** — multi-turn: run `HandleUnifiedChat` twice on the same conversation with a stub gateway that records `req.Messages`; assert second call's messages contain turn-1 user+assistant. Also: `Tools{Enabled:false}` → `ChatWithToolsRequest.Tools` empty; `sources` event emitted before `final_response`; `conversation` event carries `conversation_id`.
+- [ ] **Step 1: Failing test** — multi-turn: run `HandleUnifiedChat` twice on the same conversation with a stub gateway that records `req.Messages`; assert second call's messages contain turn-1 user+assistant. Also: `Tools{Enabled:false}` → `ChatWithToolsRequest.Tools` empty AND `jc:agent:rate` counter NOT incremented; `sources` event emitted before `final_response`; `conversation` event carries `conversation_id`; user holding `agent.use` but NOT `ai.context.use` is admitted (OR-gate).
 - [ ] **Step 2: Run → fail.**
-- [ ] **Step 3: Implement** — in `HandleUnifiedChat`, after the existing pre-checks (`agentEnabled` skipped when it would force-empty the catalog rather than erroring — see below), add:
-  1. Surface gate: `feature.japabot` must be on (reuse checker; error `errAgentDisabled` maps to `chat_disabled` — add sentinel or reuse with new code).
-  2. Chat permission: `ai.context.use` required (mirrors route middleware — the handler must still check because `/ai/agent` adapter path may differ).
-  3. Tool eligibility: `agent.use` AND `feature.ai_agent` — if either fails, catalog = empty (no error).
-  4. Resolve conversation + append user message; load `History` (window = `ai.history_window`, default 20).
-  5. `runLoop` changes: `messages = system + history + current user`; build catalog → `FilterCatalog(tools, registry.Categories(), prefs, req.Tools)`; emit `conversation` event (with session_start), emit `sources` after pre-search (map `RAGChunks` → citation shape: entity_type, entity_id, title, slug, url, similarity, tier).
-  6. Voice prompt (reuse `resolveVoicePrompt` via injected resolver) prepends to system prompt; `req.Model` → `ChatWithToolsRequest.Model`; `req.Humanize` → apply existing humanize post-processing to `finalResponse` before emit.
-  7. On completion: `AppendAssistantMessage` + `LinkAgentSessionToConversation` + `TouchAIConversation` + injected `persistChatTurn` (Honcho, best-effort).
+- [ ] **Step 3: Implement** — `HandleUnifiedChat` pre-check order (do NOT reuse `HandleAgentRequest`'s `agentEnabled` hard-fail; the unified surface degrades to chat instead):
+
+  1. `preflight.CheckAdmission(ctx, userID, GateJapaBot)` — covers `feature.japabot` + `ai_processing` consent.
+  2. `preflight.CheckBudget(ctx, userID)` — shared `jc:ai:*` budget (every turn).
+  3. **Permission OR-gate:** `hasChat := perms.HasPermission(ctx, userID, "ai.context.use")`, `hasAgent := perms.HasPermission(ctx, userID, "agent.use")`. Neither → `errAgentNoPermission` (map to `ai_permission_required` 403 in `writeAgentError`). Rationale: `/ai/agent` historically gates `agent.use` only — an agent-only user must not lose access because the engine merged.
+  4. **Tool eligibility:** `toolsEligible := hasAgent && h.agentEnabled(ctx)` (feature.ai_agent = global tools kill-switch; off → chat still works).
+  5. **Resolve catalog EARLY** (moved out of `runLoop`): `catalog := nil; if toolsEligible { catalog = FilterCatalog(h.buildToolCatalog(ctx, userID), h.registry.Categories(), prefs, req.Tools) }`. Prefs loaded via `ConversationService.Prefs`.
+  6. **Agent-scoped counters only when `len(catalog) > 0`:** `checkRateLimit` + `checkDailyBudget` run after catalog resolution — pure-chat turns never touch `jc:agent:*`.
+  7. Geo + pre-search + session create (unchanged) → `conversation_id`/`message_id` populated on the session via `LinkAgentSessionToConversation` after the assistant message exists.
+  8. `runLoop` signature gains `catalog []ToolConfig`, `history []ChatMessage`, `req UnifiedChatRequest`, `conv gen.AiConversation`:
+     - `messages = system + history + current user` (history from `ConversationService.History`, window `ai.history_window` default 20).
+     - `aiContext` (Honcho prior_memory + ADR-025 categories) merged into the system prompt via `buildSystemPrompt` extension.
+     - Voice prompt prepends to system prompt when `req.VoiceID` resolves (resolver = injected `PersonaVoiceResolver`; invisible voices no-op per BUG-009).
+     - Model: `eff := req.Model; if eff == "" { eff = settings("ai.model.default.chat") }; if eff != "" && !modelValidator(eff, "chat") → emit error event invalid_model; else ChatWithToolsRequest.Model = eff`.
+     - Emit `conversation` event with `session_start`; emit `sources` right after pre-search.
+     - `req.Humanize` → `ResolveHumanize(globalEnabled, globalLevel, &req.Humanize, req.HumanizeLevel)` then `ApplyHumanization(finalResponse, level)` before emit (existing helpers in `humanize.go`; add `HumanizeLevel string` to `UnifiedChatRequest`).
+  9. On completion: `AppendAssistantMessage` → `LinkAgentSessionToConversation(session.ID, conv.ID, msg.ID)` → `TouchAIConversation` → injected `persistChatTurn` (Honcho, best-effort, raw user text only).
 - [ ] **Step 4: Run → PASS.** Commit: `feat(ai): unified chat engine — multi-turn, prefs/override tool filter, citations + conversation events, memory`
 
 ---
@@ -530,15 +547,16 @@ func contains(xs []string, s string) bool {
 
 **Files:**
 - Create: `internal/ai/unified_handlers.go`
-- Modify: `internal/ai/agent_handlers.go` (`HandleAgent` delegates to unified)
+- Modify: `internal/ai/agent_handlers.go` (`HandleAgent` delegates to unified; `writeAgentError` gains the `ai_permission_required` mapping)
+- Modify: `internal/ai/handlers.go` (`Handlers` gains `Convos *ConversationService` + `SetConversationService`; the conversation/prefs endpoints live here because `*Handlers` already owns `Honcho` — needed for the legacy-union list)
 - Test: `internal/ai/unified_handlers_test.go`
 
 **Interfaces:**
 - Produces:
-  - `func (h *AgentHTTPHandlers) HandleUnifiedChat(w, r)` — body `{message, conversation_id?, model?, voice_id?, humanize?, tools?}`; `Accept: text/event-stream` → SSE drain (same loop as `HandleAgent`); else drain events → `{data:{reply, conversation_id, sources}}` (legacy §20 shape).
-  - `func (h *AgentHTTPHandlers) HandleGetAIPrefs(w, r)` / `HandlePutAIPrefs(w, r)` — validate: `default_mode ∈ {chat, agent}`; categories/tools arrays of strings; unknown categories allowed (forward-compat).
-  - `func (h *AgentHTTPHandlers) HandleListConversationsV2` / `HandleGetConversationV2` / `HandleDeleteConversation` — list unions `ConversationService.List` with Honcho-derived legacy summaries (each entry gets `"legacy": true`); detail returns `{conversation, messages}` where each assistant message embeds its tool calls via `ListAgentToolCallsBySession(agent_session_id)`.
-- Errors: `conversation_not_found` 404, `validation_error` 400, reuse `writeAgentError` sentinels.
+  - `func (h *AgentHTTPHandlers) HandleUnifiedChat(w, r)` — body `{message, conversation_id?, model?, voice_id?, humanize?, humanize_level?, tools?}`; `strings.Contains(r.Header.Get("Accept"), "text/event-stream")` → SSE drain (same loop as `HandleAgent`); else drain events → `{data:{reply, conversation_id, sources}}` (legacy §20 shape).
+  - `func (h *Handlers) HandleGetAIPrefs(w, r)` / `HandlePutAIPrefs(w, r)` — validate: `default_mode ∈ {"", "chat", "agent"}`; categories/tools arrays of strings; unknown categories allowed (forward-compat). PUT merges into `ai_prefs` only — dark_mode/language untouched.
+  - `func (h *Handlers) HandleListConversationsV2` / `HandleGetConversationV2` / `HandleDeleteConversation` — list unions `Convos.List` with Honcho-derived legacy summaries (each gets `"legacy": true`); detail returns `{conversation, messages}` where each assistant message embeds its tool calls via `Convos`-adjacent `ListAgentToolCallsBySession(agent_session_id)`; delete uses `Convos.Delete` (unlink sessions in tx).
+- Errors: `conversation_not_found` 404, `validation_error` 400, `ai_permission_required` 403 (new — add to `writeAgentError`), reuse the other `writeAgentError` sentinels.
 
 - [ ] **Step 1: Failing tests** — SSE path emits `data:` lines ending with `final_response`; JSON path returns the §20 envelope; PUT prefs rejects bad `default_mode`; DELETE removes thread and is owner-scoped.
 - [ ] **Step 2: Run → fail.**
@@ -554,7 +572,7 @@ func contains(xs []string, s string) bool {
 - Modify: `internal/server/server.go` (~5424–5428 chat route; ~6661–6664 conversations; new prefs routes)
 
 **Interfaces:**
-- Consumes: `agentHTTPHandlers.HandleUnifiedChat`, `HandleGetAIPrefs`, `HandlePutAIPrefs`, `HandleListConversationsV2`, `HandleGetConversationV2`, `HandleDeleteConversation`.
+- Consumes: `agentHTTPHandlers.HandleUnifiedChat`; `aiHandlers.HandleGetAIPrefs`, `HandlePutAIPrefs`, `HandleListConversationsV2`, `HandleGetConversationV2`, `HandleDeleteConversation` (conversation/prefs handlers live on `*Handlers` per Task 8).
 
 - [ ] **Step 1: Registry entry**
 
@@ -583,9 +601,9 @@ Conversations routes swap `aiHandlers.HandleListConversations/HandleGetConversat
 
 ```go
 r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use")).
-    Get("/me/ai-preferences", agentHTTPHandlers.HandleGetAIPrefs)
+    Get("/me/ai-preferences", aiHandlers.HandleGetAIPrefs)
 r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequirePermission(rbacResolver, "ai.context.use")).
-    Put("/me/ai-preferences", agentHTTPHandlers.HandlePutAIPrefs)
+    Put("/me/ai-preferences", aiHandlers.HandlePutAIPrefs)
 ```
 
 `/ai/agent` (`HandleAgent`) stays unchanged — it delegates to `HandleUnifiedChat` internally now.
@@ -626,10 +644,10 @@ Expected: `TestRegistryCoversAllGatedKeys` and `TestNoDuplicateRoutes` pass.
 }
 ```
 
-- [ ] **Step 1: `agentStream.ts`** — extend `agentTypes.ts` with `sources`, `conversation`, `message` event types; parser already generic.
+- [ ] **Step 1: `chatStream.ts`** — clone `agentStream.ts`'s fetch+reader pattern (already sends `accept: text/event-stream` + CSRF retry) into a `streamChat(opts)` hitting `/ai/chat` with body `{message, conversation_id, model, voice_id, humanize, tools}`. **Do NOT use the `?/send` form action** — form actions can't stream SSE. Extend `agentTypes.ts` with the `sources`, `conversation`, `message` event payloads.
 - [ ] **Step 2: `AiToolsMenu.svelte`** — popover: master switch + category chips + expandable per-tool checkboxes; props `{ categories, prefs, onchange }`; emit `ToolSelection` for composer, or full `AIPrefs` for settings (mode prop).
 - [ ] **Step 3: `JapaAIChat.svelte`** — merge of `JapaBotChat.svelte` (364 lines: conversations sidebar, model/voice pickers, citations via `AiSourceCitations`) and `AgentChat.svelte` (513 lines: SSE via `agentStream.ts`, tool-call cards, cancel). Transcript renders: user msg → assistant msg (+ `sources` citation row) + tool-call cards inline. Composer gets `AiToolsMenu` when `capabilities.categories` non-empty.
-- [ ] **Step 4: `/ai` page** — when `data.unified`, render `JapaAIChat` alone (no tab switcher); else today's behavior. `/settings/ai` page.
+- [ ] **Step 4: `/ai` page** — when `data.unified` (`feature.japa_ai_unified` in `parent.features`), render `JapaAIChat` alone (no tab switcher); else today's behavior. `/settings/ai` page (GET/PUT `/me/ai-preferences`).
 - [ ] **Step 5: i18n** — keys: `ai.tools.toggle`, `ai.tools.categories`, `ai.tools.settings_title`, `ai.mode.agent_default`, `ai.conversation.legacy` etc. in en + fr.
 - [ ] **Step 6: Verify**
 

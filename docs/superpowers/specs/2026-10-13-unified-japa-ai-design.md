@@ -162,7 +162,7 @@ Changes inside the loop:
 | Check | Behavior |
 |---|---|
 | `feature.japabot` off | surface disabled entirely (503/disabled response) |
-| `ai.context.use` missing | cannot chat at all |
+| `ai.context.use` AND `agent.use` both missing | cannot chat at all (OR-gate — `/ai/agent` historically gates `agent.use` alone, so agent-only users must keep working) |
 | `feature.ai_agent` off | surface works, catalog forced empty |
 | `agent.use` missing | user chats normally; no tool UI; `tools` request fields ignored (not an error) |
 
