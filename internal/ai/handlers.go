@@ -2660,6 +2660,14 @@ func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Reques
 	convos := map[string]*convoSummary{}
 
 	for _, e := range entries {
+		// ADR-130: unified threads write Honcho entries too (long-term
+		// memory), marked metadata.unified — they belong to the V2 surface,
+		// not this legacy list, and a deleted thread must not resurface.
+		if e.Metadata != nil {
+			if u, ok := e.Metadata["unified"].(bool); ok && u {
+				continue
+			}
+		}
 		cid := ""
 
 		if e.Metadata != nil {
@@ -2753,7 +2761,13 @@ func (h *Handlers) HandleGetConversation(w http.ResponseWriter, r *http.Request)
 	var matched []honcho.ContextEntry
 
 	for _, e := range entries {
+		// ADR-130: unified-marked entries belong to an ai_conversations
+		// thread — skip them here so a soft-deleted thread can't resurface
+		// through this legacy fallback.
 		if e.Metadata != nil {
+			if u, ok := e.Metadata["unified"].(bool); ok && u {
+				continue
+			}
 			if cid, ok := e.Metadata["conversation_id"].(string); ok && cid == conversationID {
 				matched = append(matched, e)
 				continue

@@ -275,7 +275,10 @@ func (h *AgentHTTPHandlers) HandleGetCapabilities(w http.ResponseWriter, r *http
 	// ADR-130: group the same catalog by ai_tools.category so the unified
 	// composer can render category chips + per-tool toggles. The flat
 	// `tools` array stays for back-compat.
-	catByName := h.agent.registry.Categories()
+	var catByName map[string]string
+	if h.agent.registry != nil {
+		catByName = h.agent.registry.Categories()
+	}
 	catIdx := map[string]int{}
 	categories := make([]map[string]any, 0, 8)
 	for _, tc := range tools {

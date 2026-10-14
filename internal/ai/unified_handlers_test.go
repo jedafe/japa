@@ -120,6 +120,27 @@ func TestHandleUnifiedChat_SanitizesContext(t *testing.T) {
 	}
 }
 
+func TestHandleGetCapabilities_NilRegistry(t *testing.T) {
+	// The capabilities endpoint dereferences agent.registry for category
+	// grouping — a nil registry must degrade to an empty, uncategorized
+	// response rather than panic.
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	disp := NewDispatcher()
+	disp.RegisterProvider("chat", provider)
+	agent := NewAgentHandler(disp, NewExecutor(NewToolHandlerRegistry()), nil,
+		&stubPreSearcher{res: &PreSearchResult{Level: PreSearchNone}},
+		WithAgentPerms(&stubPerms{granted: map[string]bool{"agent.use": true}}))
+
+	hh := NewAgentHTTPHandlers(agent, newStubAgentSessions())
+	r := authedRequest(t, http.MethodGet, "/api/v1/ai/agent/capabilities", "", 1)
+	w := httptest.NewRecorder()
+	hh.HandleGetCapabilities(w, r)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("nil registry capabilities should 200, got %d: %s", w.Result().StatusCode, w.Body.String())
+	}
+}
+
 func TestAIPrefsHandlers(t *testing.T) {
 	h := &Handlers{Convos: NewConversationService(newStubConvoStore(), nil)}
 

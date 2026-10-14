@@ -109,6 +109,10 @@
 	let scrollEl: HTMLElement | undefined = $state();
 	let loadingConversation = $state(false);
 	let sidebarOpen = $state(false);
+	// True while viewing a read-only legacy (Honcho-era) thread — the
+	// composer is locked so a reply can't silently fork it into a new
+	// unified thread that has none of the legacy history.
+	let viewingLegacy = $state(false);
 	let turnSeq = 0;
 	let toolSeq = 0;
 
@@ -300,6 +304,9 @@
 		}
 		conversationId = res.data.conversation_id;
 		error = '';
+		// Unified threads return `messages`; legacy Honcho threads return
+		// `entries` and are read-only.
+		viewingLegacy = res.data.messages === undefined;
 		if (res.data.messages) {
 			// Unified thread — assistant messages may carry tool_calls.
 			turns = res.data.messages.map((m) => ({
@@ -331,13 +338,14 @@
 	function startNewChat() {
 		conversationId = '';
 		turns = [];
+		viewingLegacy = false;
 		sidebarOpen = false;
 	}
 
 	// --- Send / stream -------------------------------------------------------
 	async function send() {
 		const message = input.trim();
-		if (!message || sending) return;
+		if (!message || sending || viewingLegacy) return;
 
 		error = '';
 		input = '';
@@ -415,12 +423,16 @@
 				if (ev.conversation_id) {
 					conversationId = ev.conversation_id;
 					if (!convos.some((c) => c.conversation_id === ev.conversation_id)) {
+						// Latest user turn, not the first — the first message of
+						// the transcript is stale when this event re-inserts a
+						// row for a conversation the sidebar didn't have loaded.
+						const lastUser = turns.filter((tn) => tn.role === 'user').pop();
 						convos = [
 							{
 								conversation_id: ev.conversation_id,
 								turn_count: 0,
 								legacy: false,
-								preview: turns.find((tn) => tn.role === 'user')?.content?.slice(0, 80) ?? ''
+								preview: lastUser?.content?.slice(0, 80) ?? ''
 							},
 							...convos
 						];
@@ -837,6 +849,12 @@
 			/>
 		</div>
 
+		{#if viewingLegacy}
+			<p class="mt-2 rounded-lg border px-3 py-2 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
+				{t('ai.chat.legacy_readonly', 'This is an older conversation — it’s view-only. Start a new chat to keep going.')}
+			</p>
+		{/if}
+
 		<!-- Composer -->
 		<div class="relative mt-2 flex items-end gap-2">
 			<!-- Tools controls — only for users whose catalog is non-empty -->
@@ -950,7 +968,7 @@
 				class="flex-1 resize-none rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-background)"
 				onkeydown={onKeydown}
-				disabled={sending}
+				disabled={sending || viewingLegacy}
 			></textarea>
 			{#if sending}
 				<button
@@ -972,7 +990,7 @@
 				<button
 					type="button"
 					onclick={send}
-					disabled={!input.trim()}
+					disabled={!input.trim() || viewingLegacy}
 					class="flex h-10 w-10 items-center justify-center rounded-lg text-white transition-colors disabled:opacity-50"
 					style="background-color: var(--color-primary)"
 					aria-label={t('ai.chat.send', 'Send')}
