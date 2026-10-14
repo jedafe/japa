@@ -15,7 +15,7 @@
 -- name: CreateAgentSession :one
 -- conversation_id is the ADR-130 link to the unified transcript thread;
 -- NULL for legacy /ai/agent calls that predate or bypass the merge.
-INSERT INTO ai_agent_sessions (user_id, prompt, geo_space_id, presearch_level, status, started_at, conversation_id) VALUES (@user_id, @prompt, sqlc.narg(geo_space_id), @presearch_level, @status, now(), sqlc.narg(conversation_id))
+INSERT INTO ai_agent_sessions (user_id, prompt, geo_space_id, presearch_level, status, started_at, conversation_id, project_id) VALUES (@user_id, @prompt, sqlc.narg(geo_space_id), @presearch_level, @status, now(), sqlc.narg(conversation_id), sqlc.narg(project_id))
 RETURNING *;
 
 -- name: GetAgentSession :one

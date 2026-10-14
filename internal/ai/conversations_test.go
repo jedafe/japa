@@ -46,6 +46,7 @@ func (s *stubConvoStore) nextID() pgtype.UUID {
 
 func (s *stubConvoStore) CreateAIConversation(_ context.Context, arg gen.CreateAIConversationParams) (gen.AiConversation, error) {
 	c := gen.AiConversation{ID: s.nextID(), UserID: arg.UserID, Title: arg.Title,
+		ProjectID: arg.ProjectID,
 		CreatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}}
 	s.convs[uuidStr(c.ID)] = c
@@ -75,7 +76,7 @@ func (s *stubConvoStore) ListAIConversationsForUser(_ context.Context, arg gen.L
 	for _, c := range s.convs {
 		if uuidStr(c.UserID) == uuidStr(arg.UserID) && !c.DeletedAt.Valid {
 			row := gen.ListAIConversationsForUserRow{
-				ID: c.ID, UserID: c.UserID, Title: c.Title,
+				ID: c.ID, UserID: c.UserID, Title: c.Title, ProjectID: c.ProjectID,
 				CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, DeletedAt: c.DeletedAt,
 			}
 			for _, m := range s.msgs[uuidStr(c.ID)] {
@@ -216,26 +217,26 @@ func TestConversationService_Resolve(t *testing.T) {
 	other := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
 
 	// No id → creates.
-	c1, err := svc.Resolve(context.Background(), uid, nil, "hello world")
+	c1, err := svc.Resolve(context.Background(), uid, nil, nil, "hello world")
 	if err != nil || c1.Title != "hello world" {
 		t.Fatalf("create failed: %v %+v", err, c1)
 	}
 
 	// Same id → reuses.
-	c2, err := svc.Resolve(context.Background(), uid, &c1.ID, "ignored")
+	c2, err := svc.Resolve(context.Background(), uid, &c1.ID, nil, "ignored")
 	if err != nil || c2.ID != c1.ID {
 		t.Fatalf("reuse failed: %v %+v", err, c2)
 	}
 
 	// Unknown id → creates fresh (legacy Honcho-era ids must not 404).
 	bogus := pgtype.UUID{Bytes: [16]byte{9, 9}, Valid: true}
-	c3, err := svc.Resolve(context.Background(), uid, &bogus, "fresh")
+	c3, err := svc.Resolve(context.Background(), uid, &bogus, nil, "fresh")
 	if err != nil || c3.ID == bogus {
 		t.Fatalf("unknown id should create fresh: %v %+v", err, c3)
 	}
 
 	// Foreign id → creates fresh too.
-	c4, err := svc.Resolve(context.Background(), other, &c1.ID, "foreign")
+	c4, err := svc.Resolve(context.Background(), other, &c1.ID, nil, "foreign")
 	if err != nil || c4.ID == c1.ID {
 		t.Fatalf("foreign id should create fresh: %v %+v", err, c4)
 	}
@@ -245,7 +246,7 @@ func TestConversationService_HistoryWindow(t *testing.T) {
 	st := newStubConvoStore()
 	svc := NewConversationService(st, nil)
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	conv, _ := svc.Resolve(context.Background(), uid, nil, "t")
+	conv, _ := svc.Resolve(context.Background(), uid, nil, nil, "t")
 
 	for i := 0; i < 25; i++ {
 		role := "user"
@@ -276,7 +277,7 @@ func TestConversationService_DetailOwnerScoped(t *testing.T) {
 	svc := NewConversationService(st, nil)
 	owner := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	stranger := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
-	conv, _ := svc.Resolve(context.Background(), owner, nil, "t")
+	conv, _ := svc.Resolve(context.Background(), owner, nil, nil, "t")
 
 	if _, _, err := svc.Detail(context.Background(), stranger, conv.ID, 50, 0); !errors.Is(err, ErrConversationNotFound) {
 		t.Fatalf("expected ErrConversationNotFound, got %v", err)
@@ -290,7 +291,7 @@ func TestConversationService_DeleteUnlinksSessions(t *testing.T) {
 	st := newStubConvoStore()
 	svc := NewConversationService(st, nil)
 	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
-	conv, _ := svc.Resolve(context.Background(), uid, nil, "t")
+	conv, _ := svc.Resolve(context.Background(), uid, nil, nil, "t")
 
 	sessID := pgtype.UUID{Bytes: [16]byte{7}, Valid: true}
 	st.sessions[uuidStr(sessID)] = gen.AiAgentSession{ID: sessID, ConversationID: conv.ID}

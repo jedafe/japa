@@ -58,11 +58,29 @@ func NewConversationService(store ConversationStore, pool *pgxpool.Pool) *Conver
 	return &ConversationService{store: store, pool: pool}
 }
 
+// Get returns a live, owned conversation by id — ErrConversationNotFound
+// when it doesn't exist, is deleted, or belongs to another user.
+func (s *ConversationService) Get(ctx context.Context, userID, convID pgtype.UUID) (gen.AiConversation, error) {
+	conv, err := s.store.GetAIConversationForUser(ctx, gen.GetAIConversationForUserParams{
+		ID:     convID,
+		UserID: userID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.AiConversation{}, ErrConversationNotFound
+		}
+		return gen.AiConversation{}, fmt.Errorf("loading conversation: %w", err)
+	}
+	return conv, nil
+}
+
 // Resolve returns the existing conversation when conversationID is a live,
 // owned row; otherwise it creates a fresh one. Unknown/foreign IDs never
 // error — legacy clients may send Honcho-era IDs that never existed in the
-// table (ADR-130). title is stored only on create.
-func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, conversationID *pgtype.UUID, title string) (gen.AiConversation, error) {
+// table (ADR-130). title is stored only on create. projectID (when valid)
+// is stamped on the newly created row only — existing threads keep their
+// membership; reassignment goes through the PUT …/project endpoint.
+func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, conversationID *pgtype.UUID, projectID *pgtype.UUID, title string) (gen.AiConversation, error) {
 	if conversationID != nil && conversationID.Valid {
 		conv, err := s.store.GetAIConversationForUser(ctx, gen.GetAIConversationForUserParams{
 			ID:     *conversationID,
@@ -76,9 +94,14 @@ func (s *ConversationService) Resolve(ctx context.Context, userID pgtype.UUID, c
 		}
 		// Unknown or foreign → fall through to create.
 	}
+	var pid pgtype.UUID
+	if projectID != nil && projectID.Valid {
+		pid = *projectID
+	}
 	return s.store.CreateAIConversation(ctx, gen.CreateAIConversationParams{
-		UserID: userID,
-		Title:  title,
+		UserID:    userID,
+		Title:     title,
+		ProjectID: pid,
 	})
 }
 
@@ -87,6 +110,9 @@ func (s *ConversationService) AppendUserMessage(ctx context.Context, convID pgty
 		ConversationID: convID,
 		Role:           "user",
 		Content:        content,
+		// cost_usd is NOT NULL — an unset pgtype.Numeric marshals to SQL
+		// NULL and the insert fails, silently dropping the user turn.
+		CostUsd: floatToNumeric(0),
 	})
 }
 

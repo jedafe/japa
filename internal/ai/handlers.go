@@ -100,6 +100,7 @@ type Handlers struct {
 	DraftPublishHook                          // optional hook — publish non-studio review targets on approve
 	userContext          UserContextProvider  // per-category user activity data (BUG-001)
 	Convos               *ConversationService // ADR-130 unified transcript store (nil = unified surface off)
+	Projects             *ProjectService      // §103 amendment: AI project collections
 	agentSessions        AgentSessionQueries  // tool-call reader for conversation detail (ADR-130)
 }
 

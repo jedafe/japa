@@ -10,8 +10,11 @@
 	interface Props {
 		modelOptions: { value: string; label: string }[];
 		voiceOptions: { value: string; label: string }[];
+		/** Optional tone list — renders a middle picker when non-empty. */
+		toneOptions?: { value: string; label: string }[];
 		model: string;
 		voice: string;
+		tone?: string;
 		/** Optional id prefix when more than one picker lives on a page. */
 		idPrefix?: string;
 		/** Show visible labels above each select (default: sr-only labels). */
@@ -21,17 +24,19 @@
 	let {
 		modelOptions,
 		voiceOptions,
+		toneOptions = [],
 		model = $bindable(''),
 		voice = $bindable(''),
+		tone = $bindable(''),
 		idPrefix = 'ai',
 		showLabels = false
 	}: Props = $props();
 </script>
 
-{#if modelOptions.length > 0 || voiceOptions.length > 0}
+{#if modelOptions.length > 0 || voiceOptions.length > 0 || toneOptions.length > 0}
 	<div class="flex items-end gap-2">
 		{#if modelOptions.length > 0}
-			<div class="flex flex-1 flex-col gap-1">
+			<div class="flex min-w-0 flex-1 flex-col gap-1">
 				<label
 					for="{idPrefix}-model"
 					class={showLabels ? 'text-xs text-[var(--color-muted)]' : 'sr-only'}
@@ -40,12 +45,22 @@
 				<AutocompleteSelect id="{idPrefix}-model" bind:value={model} options={modelOptions} />
 			</div>
 		{/if}
+		{#if toneOptions.length > 0}
+			<div class="flex min-w-0 flex-1 flex-col gap-1">
+				<label
+					for="{idPrefix}-tone"
+					class={showLabels ? 'text-xs text-[var(--color-muted)]' : 'sr-only'}
+					>{t('ai.picker.tone_label', 'Tone')}</label
+				>
+				<AutocompleteSelect id="{idPrefix}-tone" bind:value={tone} options={toneOptions} />
+			</div>
+		{/if}
 		{#if voiceOptions.length > 0}
-			<div class="flex flex-1 flex-col gap-1">
+			<div class="flex min-w-0 flex-1 flex-col gap-1">
 				<label
 					for="{idPrefix}-voice"
 					class={showLabels ? 'text-xs text-[var(--color-muted)]' : 'sr-only'}
-					>{t('ai.picker.voice_label', 'Voice / Tone')}</label
+					>{t('ai.picker.voice_label', 'Voice')}</label
 				>
 				<AutocompleteSelect id="{idPrefix}-voice" bind:value={voice} options={voiceOptions} />
 			</div>

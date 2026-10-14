@@ -11,7 +11,7 @@
 -- =====================================================================
 
 -- name: CreateAIConversation :one
-INSERT INTO ai_conversations (user_id, title) VALUES (@user_id, @title)
+INSERT INTO ai_conversations (user_id, title, project_id) VALUES (@user_id, @title, @project_id)
 RETURNING *;
 
 -- Owner-scoped fetch — a foreign or unknown id returns no rows so the

@@ -447,6 +447,7 @@ type AiAgentSession struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	ConversationID pgtype.UUID        `json:"conversation_id"`
 	MessageID      pgtype.UUID        `json:"message_id"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
 }
 
 type AiAgentToolCall struct {
@@ -472,6 +473,7 @@ type AiConversation struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
 	LegacyRef string             `json:"legacy_ref"`
+	ProjectID pgtype.UUID        `json:"project_id"`
 }
 
 type AiHitlReview struct {
@@ -515,6 +517,20 @@ type AiPersona struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	VoiceID        pgtype.UUID        `json:"voice_id"`
+}
+
+type AiProject struct {
+	ID             pgtype.UUID        `json:"id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	Name           string             `json:"name"`
+	Instructions   string             `json:"instructions"`
+	DefaultModel   string             `json:"default_model"`
+	DefaultTone    string             `json:"default_tone"`
+	DefaultVoiceID string             `json:"default_voice_id"`
+	DefaultTools   []byte             `json:"default_tools"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type AiProvider struct {

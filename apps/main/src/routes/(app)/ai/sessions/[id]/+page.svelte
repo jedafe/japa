@@ -20,7 +20,8 @@
 		Shield,
 		Lock,
 		ArrowLeft,
-		BookOpen
+		BookOpen,
+		Folder
 	} from 'lucide-svelte';
 	import type { PageData } from './$types';
 	import type { AgentSession, AgentToolCall } from '$lib/ai/agentTypes';
@@ -30,6 +31,7 @@
 	const detail = $derived(data.detail);
 	const session = $derived(detail?.session as AgentSession | undefined);
 	const toolCalls = $derived(detail?.tool_calls as AgentToolCall[] | undefined);
+	const projectName = $derived(data.projectName ?? '');
 
 	function statusColor(status: string | undefined): string {
 		switch (status) {
@@ -47,6 +49,29 @@
 			case 'failed': return XCircle;
 			case 'running': return Loader2;
 			default: return Clock;
+		}
+	}
+
+	function statusLabel(status: string | undefined): string {
+		switch (status) {
+			case 'completed': return t('ai.agent.status_completed', 'Completed');
+			case 'failed': return t('ai.agent.status_failed', 'Failed');
+			case 'cancelled': return t('ai.agent.status_cancelled', 'Cancelled');
+			case 'running': return t('ai.agent.status_running', 'Running');
+			case 'pending': return t('ai.agent.status_pending', 'Pending');
+			default: return status ?? '';
+		}
+	}
+
+	function toolStatusLabel(status: string): string {
+		switch (status) {
+			case 'success': return t('ai.agent.tool.success', 'Success');
+			case 'error': return t('ai.agent.tool.error', 'Error');
+			case 'unauthorized': return t('ai.agent.tool.unauthorized', 'Denied');
+			case 'privacy_blocked': return t('ai.agent.tool.privacy_blocked', 'Privacy blocked');
+			case 'hitl_queued': return t('ai.agent.tool.hitl_queued', 'Awaiting review');
+			case 'pending': return t('ai.agent.tool.pending', 'Running');
+			default: return status;
 		}
 	}
 
@@ -140,7 +165,7 @@
 					style="background-color: color-mix(in srgb, {statusColor(session.status)} 12%, transparent); color: {statusColor(session.status)}"
 				>
 					<StatusIcon size={12} class={session.status === 'running' ? 'animate-spin' : ''} />
-					{session.status}
+					{statusLabel(session.status)}
 				</span>
 			</div>
 
@@ -169,6 +194,15 @@
 			</div>
 
 			<div class="mt-3 flex flex-wrap items-center gap-3 text-xs" style="color: var(--color-muted)">
+				{#if projectName}
+					<span
+						class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+						style="background-color: var(--color-primary-subtle); color: var(--color-primary)"
+					>
+						<Folder size={10} />
+						{projectName}
+					</span>
+				{/if}
 				{#if session.presearch_level}
 					<span class="inline-flex items-center gap-1"><BookOpen size={11} /> {t('ai.agent.presearch', 'Pre-search')}: {session.presearch_level}</span>
 				{/if}
@@ -203,7 +237,7 @@
 									class="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
 									style="background-color: color-mix(in srgb, {toolStatusColor(tc.status)} 12%, transparent); color: {toolStatusColor(tc.status)}"
 								>
-									{tc.status}
+									{toolStatusLabel(tc.status)}
 								</span>
 							</div>
 

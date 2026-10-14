@@ -2,7 +2,7 @@ import { redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
 import { isMainToolEnabled, MAIN_TOOLS } from '$lib/tools/registry';
-import type { AgentCapabilities, AIPrefs } from '$lib/ai/agentTypes';
+import type { AgentCapabilities, AIPrefs, AiProject } from '$lib/ai/agentTypes';
 
 /**
  * /ai — the unified AI surface. Two modes share one route behind a tab
@@ -40,6 +40,8 @@ export interface ConversationSummary {
 	last_entry_at: string;
 	/** ADR-130: Honcho-era thread — read-only, not deletable. */
 	legacy?: boolean;
+	/** §103 AI Projects — owning project's id; absent when ungrouped. */
+	project_id?: string;
 }
 
 export interface ChatModelOption {
@@ -77,6 +79,7 @@ export const load: PageServerLoad = async (event) => {
 			conversations: [],
 			models: [],
 			voices: [],
+			projects: [],
 			prefs: null
 		};
 	}
@@ -101,6 +104,7 @@ export const load: PageServerLoad = async (event) => {
 	let conversations: ConversationSummary[] = [];
 	let models: ChatModelOption[] = [];
 	let voices: ChatVoiceOption[] = [];
+	let projects: AiProject[] = [];
 	if (chatEnabled) {
 		try {
 			conversations = (await apiList<ConversationSummary>(ctx, '/ai/conversations')).items;
@@ -113,9 +117,21 @@ export const load: PageServerLoad = async (event) => {
 			models = [];
 		}
 		try {
-			voices = (await apiList<ChatVoiceOption>(ctx, '/ai/voices?page_size=100')).items;
+			// page_size=5000 = the handler's max (parsePaginationWithMax) — the
+			// full catalog is needed so client-side tone filtering sees every
+			// voice, not just the first alphabetical page.
+			voices = (await apiList<ChatVoiceOption>(ctx, '/ai/voices?page_size=5000')).items;
 		} catch {
 			voices = [];
+		}
+		// §103 AI Projects — sidebar grouping collections. Best-effort like
+		// the rest: an empty list renders a flat conversation sidebar.
+		try {
+			// page_size=100 matches the ai package's parsePageSize ceiling —
+			// anything larger is silently clamped server-side.
+			projects = (await apiList<AiProject>(ctx, '/ai/projects?page_size=100')).items;
+		} catch {
+			projects = [];
 		}
 	}
 
@@ -131,7 +147,7 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { agentEnabled, chatEnabled, unifiedEnabled, capabilities, conversations, models, voices, prefs };
+	return { agentEnabled, chatEnabled, unifiedEnabled, capabilities, conversations, models, voices, projects, prefs };
 };
 
 export const actions: Actions = {

@@ -41,12 +41,23 @@
 		Users as UsersIcon,
 		GraduationCap,
 		LayoutGrid,
-		Square
+		Square,
+		Copy,
+		Check,
+		Folder,
+		FolderPlus,
+		FolderInput,
+		FolderOutput,
+		Ellipsis,
+		Pencil,
+		ChevronDown,
+		ChevronRight
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { AgentRequestError } from './agentStream';
 	import { streamChat, type ToolSelectionOverride } from './unifiedStream';
 	import AiModelVoicePicker from './AiModelVoicePicker.svelte';
+	import { AutocompleteSelect } from '$lib/components/ui';
 	import AiSourceCitations from './AiSourceCitations.svelte';
 	import type { AiCitationSource } from './types';
 	import type {
@@ -57,16 +68,18 @@
 		ConversationToolCall,
 		UnifiedConversationSummary
 	} from './agentTypes';
+	import type { AiProject } from './agentTypes';
 
 	interface Props {
 		conversations: UnifiedConversationSummary[];
 		models: { id: string; label: string }[];
 		voices: { id: string; name: string }[];
+		projects: AiProject[];
 		capabilities: AgentCapabilities | null;
 		prefs: AIPrefs | null;
 	}
 
-	let { conversations, models, voices, capabilities, prefs }: Props = $props();
+	let { conversations, models, voices, projects, capabilities, prefs }: Props = $props();
 
 	type ToolStatus = 'pending' | 'success' | 'error' | 'unauthorized' | 'privacy_blocked' | 'hitl_queued';
 
@@ -105,9 +118,278 @@
 		convos = [...conversations];
 	});
 
+	// --- §103 AI Projects ---------------------------------------------------
+	// Local copy of the projects prop — create/update/delete/assign mutate
+	// it in place rather than re-fetching the list.
+	let projs = $state<AiProject[]>([]);
+	$effect(() => {
+		projs = [...projects];
+	});
+
+	// Collapsed project groups in the sidebar (expanded by default).
+	let collapsedProjects = $state<Set<string>>(new Set());
+	function toggleProjectCollapsed(id: string) {
+		const next = new Set(collapsedProjects);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		collapsedProjects = next;
+	}
+
+	// Sidebar grouping: each project owns its member threads; threads with
+	// no project (or pointing at a deleted one) fall under "ungrouped".
+	const ungroupedConvos = $derived(
+		convos.filter((c) => !c.project_id || !projs.some((p) => p.id === c.project_id))
+	);
+	function convsInProject(id: string): UnifiedConversationSummary[] {
+		return convos.filter((c) => c.project_id === id);
+	}
+
+	// Apply a project's pinned defaults on entry — empty pins leave the
+	// current composer selections untouched.
+	function applyProjectPins(p: AiProject) {
+		if (p.default_model) selectedModel = p.default_model;
+		if (p.default_tone) selectedTone = p.default_tone;
+		if (p.default_voice_id) selectedVoice = p.default_voice_id;
+		const tools = p.default_tools as ToolSelectionOverride | undefined;
+		if (tools && typeof tools === 'object' && toolsAvailable) {
+			if ('enabled' in tools) toolsOn = tools.enabled !== false;
+			// Pinned tool/category whitelists narrow the composer selection;
+			// prefs-disabled tools still stay off. Only apply after the
+			// per-tool map has been seeded — an early project entry before
+			// capabilities arrive must not lock every tool off.
+			const hasWhitelist = Array.isArray(tools.tools) || Array.isArray(tools.categories);
+			if (toolsOn && hasWhitelist && Object.keys(toolEnabled).length > 0) {
+				const pinTools = new Set(tools.tools ?? []);
+				const pinCats = new Set(tools.categories ?? []);
+				const next = { ...toolEnabled };
+				for (const cat of categories) {
+					for (const tool of cat.tools) {
+						next[tool.name] =
+							prefsAllows(tool.name, cat.name) &&
+							(pinTools.has(tool.name) || pinCats.has(cat.name));
+					}
+				}
+				toolEnabled = next;
+			}
+		}
+	}
+
+	// Restore the composer's global defaults — empty pickers + prefs-derived
+	// tool state. Runs when entering an ungrouped thread or starting a
+	// plain new chat so project pins don't leak across contexts.
+	function resetComposerDefaults() {
+		selectedModel = '';
+		selectedVoice = '';
+		selectedTone = '';
+		if (toolsAvailable) {
+			toolsOn = prefs?.default_mode !== 'chat';
+			const next: Record<string, boolean> = {};
+			for (const cat of categories) {
+				for (const tool of cat.tools) {
+					next[tool.name] = prefsAllows(tool.name, cat.name);
+				}
+			}
+			toolEnabled = next;
+		}
+	}
+
+	// Start a fresh chat stamped into a project — pins apply immediately and
+	// the first send carries project_id so the thread is created inside it.
+	function startNewChatInProject(p: AiProject) {
+		startNewChat();
+		pendingProjectId = p.id;
+		applyProjectPins(p);
+	}
+
+	// --- Project dialog + membership ----------------------------------------
+	let projectDialog = $state<{ mode: 'create' } | { mode: 'edit'; project: AiProject } | null>(null);
+	let projName = $state('');
+	let projInstructions = $state('');
+	let projModel = $state('');
+	let projTone = $state('');
+	let projVoice = $state('');
+	let projToolsOn = $state(true);
+	let projSaving = $state(false);
+	let projError = $state('');
+
+	// Voice pin options follow the dialog's tone pin — same mapping as the
+	// composer's tone→voice filter. The currently stored pin is always kept
+	// in the list (v.id === projVoice) so editing a project whose stored
+	// voice doesn't map to the stored tone doesn't silently drop the pin —
+	// the user can still clear it explicitly via "Default voice".
+	const projVoiceOptions = $derived([
+		{ value: '', label: t('ai.chat.voice_default', 'Default voice') },
+		...voices
+			.filter((v) => !projTone || voiceToneFromLabel(v.name) === projTone || v.id === projVoice)
+			.map((v) => ({ value: v.id, label: v.name }))
+	]);
+	$effect(() => {
+		if (projVoice !== '' && !projVoiceOptions.some((v) => v.value === projVoice)) {
+			projVoice = '';
+		}
+	});
+
+	function openProjectDialog(mode: 'create' | AiProject) {
+		const editing = typeof mode === 'object' ? mode : null;
+		projectDialog = editing ? { mode: 'edit', project: editing } : { mode: 'create' };
+		projName = editing?.name ?? '';
+		projInstructions = editing?.instructions ?? '';
+		projModel = editing?.default_model ?? '';
+		projTone = editing?.default_tone ?? '';
+		projVoice = editing?.default_voice_id ?? '';
+		const tools = editing?.default_tools as ToolSelectionOverride | undefined;
+		projToolsOn = tools?.enabled !== false;
+		projError = '';
+	}
+
+	async function saveProject() {
+		const name = projName.trim();
+		if (!name || projSaving) return;
+		projSaving = true;
+		projError = '';
+		// Merge `enabled` over the stored tools object rather than replacing
+		// it — a project whose default_tools carries a tools/categories
+		// whitelist (set via API) must not lose it on an unrelated edit.
+		const existingTools =
+			projectDialog?.mode === 'edit' && typeof projectDialog.project.default_tools === 'object'
+				? (projectDialog.project.default_tools as Record<string, unknown>)
+				: {};
+		const body = {
+			name,
+			instructions: projInstructions,
+			default_model: projModel,
+			default_tone: projTone,
+			default_voice_id: projVoice,
+			default_tools: { ...existingTools, enabled: projToolsOn }
+		};
+		try {
+			if (projectDialog?.mode === 'edit') {
+				const res = await api.patch<AiProject>(
+					`/ai/projects/${projectDialog.project.id}`,
+					body
+				);
+				if (res.error) {
+					projError =
+						res.error.code === 'project_name_taken'
+							? t('ai.projects.name_taken', 'You already have a project with this name.')
+							: res.error.message || 'save failed';
+					return;
+				}
+				if (res.data) {
+					const updated = res.data;
+					projs = projs.map((p) => (p.id === updated.id ? { ...p, ...updated } : p));
+				}
+			} else {
+				const res = await api.post<AiProject>('/ai/projects', body);
+				if (res.error) {
+					projError =
+						res.error.code === 'project_name_taken'
+							? t('ai.projects.name_taken', 'You already have a project with this name.')
+							: res.error.message || 'save failed';
+					return;
+				}
+				// List is updated_at-DESC — prepend so the new group
+				// matches server ordering without a reload.
+				if (res.data) projs = [res.data, ...projs];
+			}
+			projectDialog = null;
+		} catch (e) {
+			projError = e instanceof Error ? e.message : 'save failed';
+		} finally {
+			projSaving = false;
+		}
+	}
+
+	async function deleteProject(p: AiProject) {
+		// Destructive-ish: instructions and pins are lost (threads survive
+		// un-grouped) — confirm before the API call.
+		if (
+			!confirm(
+				t(
+					'ai.projects.delete_confirm',
+					'Delete this project? Its conversations are kept, but the instructions and defaults are lost.'
+				)
+			)
+		)
+			return;
+		const res = await api.delete(`/ai/projects/${p.id}`);
+		if (res.error) return;
+		projs = projs.filter((x) => x.id !== p.id);
+		// The backend clears membership (SET NULL) — mirror it locally.
+		convos = convos.map((c) => (c.project_id === p.id ? { ...c, project_id: undefined } : c));
+		// If the deleted project was driving the composer, drop its pins.
+		if (activeConvo?.project_id === p.id || pendingProjectId === p.id) {
+			pendingProjectId = null;
+			resetComposerDefaults();
+		}
+	}
+
+	// Overflow-menu state — which row's menu is open and whether the
+	// "Move to project" flyout is expanded inside it. projMenuFor tracks
+	// the overflow menu on a project group header.
+	let moveMenuFor = $state<string | null>(null);
+	let moveSubOpen = $state(false);
+	// The "Move to project" flyout is position:fixed — the sidebar's
+	// overflow-y-auto would clip an absolutely-positioned submenu, so we
+	// anchor it to the trigger's viewport rect instead.
+	let flyoutPos = $state<{ top: number; left: number } | null>(null);
+	let projMenuFor = $state<string | null>(null);
+
+	function toggleMoveSub(e: MouseEvent) {
+		e.stopPropagation();
+		if (!moveSubOpen) {
+			const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+			flyoutPos = { top: r.top, left: r.right - 8 };
+		}
+		moveSubOpen = !moveSubOpen;
+	}
+
+	async function assignProject(convID: string, projectID: string | null) {
+		const res = await api.put(`/ai/conversations/${convID}/project`, {
+			project_id: projectID
+		});
+		if (res.error) {
+			moveMenuFor = null;
+			moveSubOpen = false;
+			error =
+				res.error.message ||
+				t('ai.projects.assign_failed', 'Could not update the project assignment.');
+			return;
+		}
+		convos = convos.map((c) =>
+			c.conversation_id === convID ? { ...c, project_id: projectID ?? undefined } : c
+		);
+		moveMenuFor = null;
+		moveSubOpen = false;
+		if (convID === conversationId) {
+			if (projectID) {
+				const p = projs.find((x) => x.id === projectID);
+				if (p) applyProjectPins(p);
+			} else {
+				// Just un-grouped the open thread — restore global defaults.
+				resetComposerDefaults();
+			}
+		}
+	}
+
 	let turns = $state<UnifiedTurn[]>([]);
 	let input = $state('');
+	let inputEl: HTMLTextAreaElement | undefined = $state();
 	let conversationId = $state('');
+	// The project the open thread belongs to — its pins pre-fill the
+	// composer pickers (defaults, not locks). On a fresh chat, a pending
+	// project selection (new-chat-in-project) supplies the same context.
+	let pendingProjectId = $state<string | null>(null);
+	const activeConvo = $derived(convos.find((c) => c.conversation_id === conversationId));
+	const activeProject = $derived(
+		conversationId
+			? activeConvo?.project_id
+				? projs.find((p) => p.id === activeConvo.project_id)
+				: undefined
+			: pendingProjectId
+				? projs.find((p) => p.id === pendingProjectId)
+				: undefined
+	);
 	let sending = $state(false);
 	let error = $state('');
 	let scrollEl: HTMLElement | undefined = $state();
@@ -256,14 +538,70 @@
 	// --- Composer pickers ---------------------------------------------------
 	let selectedModel = $state('');
 	let selectedVoice = $state('');
+	let selectedTone = $state('');
+	// The backend already emits an empty-id "Default" entry for models
+	// (/ai/models), so only prepend our own when none exists — two value:''
+	// options would collide on the picker's __none__ key.
 	const modelOptions = $derived([
-		{ value: '', label: t('ai.chat.model_default', 'Default model') },
+		...(models.some((m) => m.id === '')
+			? []
+			: [{ value: '', label: t('ai.chat.model_default', 'Default model') }]),
 		...models.map((m) => ({ value: m.id, label: m.label }))
 	]);
+	// Voice option sets populate from the selected tone — the persona catalog
+	// prefixes each voice label with its tone ("Witty ...", "Academic ...").
+	// Same mapping as AiDraftPanel: unlabelled voices count as 'natural';
+	// no tone selected shows the full catalog.
+	function voiceToneFromLabel(label: string): string {
+		const lower = label.toLowerCase();
+		for (const value of TONE_VALUES) {
+			if (value === 'natural') continue;
+			if (lower.startsWith(value + ' ')) {
+				return value;
+			}
+		}
+		return 'natural';
+	}
 	const voiceOptions = $derived([
-		{ value: '', label: t('ai.chat.voice_default', 'Default voice') },
-		...voices.map((v) => ({ value: v.id, label: v.name }))
+		...(voices.some((v) => v.id === '')
+			? []
+			: [{ value: '', label: t('ai.chat.voice_default', 'Default voice') }]),
+		...voices
+			.filter((v) => !selectedTone || voiceToneFromLabel(v.name) === selectedTone)
+			.map((v) => ({ value: v.id, label: v.name }))
 	]);
+	// A previously selected voice that the new tone filters out falls back
+	// to the default — never send a voice the picker no longer offers.
+	$effect(() => {
+		const available = new Set(voiceOptions.map((v) => v.value));
+		if (selectedVoice !== '' && !available.has(selectedVoice)) {
+			selectedVoice = '';
+		}
+	});
+	// Response-style steering sent via context.tone (merged into the AI
+	// context payload — same allowlisted key used by the assist endpoints).
+	// Empty value = no override; the server default applies.
+	const toneOptions = $derived([
+		{ value: '', label: t('ai.picker.tone_default', 'Default tone') },
+		{ value: 'natural', label: t('ai.body.tone_natural', 'Natural') },
+		{ value: 'friendly', label: t('ai.body.tone_friendly', 'Friendly') },
+		{ value: 'witty', label: t('ai.body.tone_witty', 'Witty') },
+		{ value: 'empathetic', label: t('ai.body.tone_empathetic', 'Empathetic') },
+		{ value: 'direct', label: t('ai.body.tone_direct', 'Direct') },
+		{ value: 'eloquent', label: t('ai.body.tone_eloquent', 'Eloquent') },
+		{ value: 'professional', label: t('ai.body.tone_professional', 'Professional') },
+		{ value: 'persuasive', label: t('ai.body.tone_persuasive', 'Persuasive') },
+		{ value: 'motivational', label: t('ai.body.tone_motivational', 'Motivational') },
+		{ value: 'promoter', label: t('ai.body.tone_promoter', 'Promoter') },
+		{ value: 'influencer', label: t('ai.body.tone_influencer', 'Influencer') },
+		{ value: 'marketer', label: t('ai.body.tone_marketer', 'Marketer') },
+		{ value: 'concise', label: t('ai.body.tone_concise', 'Concise') },
+		{ value: 'academic', label: t('ai.body.tone_academic', 'Academic') },
+		{ value: 'casual', label: t('ai.body.tone_casual', 'Casual') }
+	]);
+	const TONE_VALUES = $derived(
+		toneOptions.map((o) => o.value).filter((v) => v !== '')
+	);
 
 	const suggestions = $derived([
 		t('ai.chat.suggestion_1', 'What documents do I need for a UK student visa?'),
@@ -298,6 +636,7 @@
 		loadingConversation = true;
 		const res = await api.get<{
 			conversation_id: string;
+			project_id?: string;
 			messages?: ConversationMessage[];
 			entries?: { id: string; content: string; metadata?: Record<string, unknown>; created_at: string }[];
 		}>(`/ai/conversations/${id}`);
@@ -308,6 +647,23 @@
 		}
 		conversationId = res.data.conversation_id;
 		error = '';
+		// §103 AI Projects — keep the sidebar entry's membership in sync with
+		// the detail response in BOTH directions (a membership changed on
+		// another device must un-group here too) and pre-fill the composer
+		// from the project's pinned defaults (overridable, per §103).
+		const detailProject = res.data.project_id || undefined;
+		convos = convos.map((c) =>
+			c.conversation_id === conversationId ? { ...c, project_id: detailProject } : c
+		);
+		pendingProjectId = null;
+		if (detailProject) {
+			const p = projs.find((x) => x.id === detailProject);
+			if (p) applyProjectPins(p);
+		} else {
+			// Ungrouped thread — restore global composer defaults so a
+			// previous project's pins don't leak into it.
+			resetComposerDefaults();
+		}
 		// Unified threads return `messages`; legacy Honcho threads return
 		// `entries` and are read-only.
 		viewingLegacy = res.data.messages === undefined;
@@ -343,7 +699,29 @@
 		conversationId = '';
 		turns = [];
 		viewingLegacy = false;
+		pendingProjectId = null;
+		// Plain new chat returns to global defaults — a previous project's
+		// pins don't carry over.
+		resetComposerDefaults();
 		sidebarOpen = false;
+	}
+
+	// Copy-to-clipboard feedback — which turn id most recently copied; the
+	// check icon resets after a short window.
+	let copiedTurn = $state<number | null>(null);
+	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function copyTurn(turn: UnifiedTurn) {
+		const text = turn.streamed || turn.content;
+		if (!text) return;
+		try {
+			await navigator.clipboard.writeText(text);
+			copiedTurn = turn.id;
+			clearTimeout(copyTimer);
+			copyTimer = setTimeout(() => (copiedTurn = null), 1500);
+		} catch {
+			// Clipboard API unavailable (insecure context / denied) — no-op.
+		}
 	}
 
 	// --- Send / stream -------------------------------------------------------
@@ -375,8 +753,12 @@
 			for await (const ev of streamChat({
 				message,
 				conversationId: conversationId || undefined,
+				// §103 AI Projects: a pending project stamps the NEW thread —
+				// existing conversations keep their own membership.
+				projectId: conversationId ? undefined : (pendingProjectId ?? undefined),
 				model: selectedModel || undefined,
 				voiceId: selectedVoice || undefined,
+				context: selectedTone ? { tone: selectedTone } : undefined,
 				tools: toolsOverride(),
 				signal: abort.signal
 			})) {
@@ -392,6 +774,14 @@
 		} catch (e) {
 			liveTurn.in_progress = false;
 			if (e instanceof AgentRequestError) {
+				// The pending project vanished elsewhere (deleted in another
+				// tab) — drop it so a retry creates a plain ungrouped thread
+				// instead of 404ing forever.
+				if (e.code === 'project_not_found' && pendingProjectId) {
+					projs = projs.filter((p) => p.id !== pendingProjectId);
+					pendingProjectId = null;
+					resetComposerDefaults();
+				}
 				liveTurn.error = e.message;
 				error = e.message;
 				if (!liveTurn.content && !liveTurn.tool_calls?.length) {
@@ -434,6 +824,7 @@
 						convos = [
 							{
 								conversation_id: ev.conversation_id,
+								project_id: ev.project_id || pendingProjectId || undefined,
 								turn_count: ev.turn_count ?? 1,
 								legacy: false,
 								preview: lastUser?.content?.slice(0, 80) ?? ''
@@ -441,6 +832,7 @@
 							...convos
 						];
 					}
+					pendingProjectId = null;
 				}
 				break;
 			}
@@ -552,6 +944,25 @@
 		}
 	}
 
+	function resizeInput() {
+		if (!inputEl) return;
+		inputEl.style.height = 'auto';
+		inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+	}
+
+	$effect(() => {
+		// Keep the composer height in sync with its content (incl. reset
+		// after send and wrapped placeholder text). Measure after paint —
+		// on mount the flex width may not be resolved yet.
+		input;
+		const id = requestAnimationFrame(resizeInput);
+		window.addEventListener('resize', resizeInput);
+		return () => {
+			cancelAnimationFrame(id);
+			window.removeEventListener('resize', resizeInput);
+		};
+	});
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
@@ -627,63 +1038,272 @@
 	<aside
 		class="w-full lg:w-64 lg:shrink-0 {sidebarOpen
 			? 'flex'
-			: 'hidden lg:flex'} max-h-[50vh] lg:max-h-full flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
+			: 'hidden lg:flex'} lg:ml-4 max-h-[50vh] lg:max-h-full flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]"
 	>
 		<div class="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
 			<h2 class="text-sm font-semibold text-[var(--color-text)]">{t('ai.chat.history', 'Conversations')}</h2>
-			<button
-				type="button"
-				onclick={startNewChat}
-				class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
-			>
-				<Plus size={14} />
-				{t('ai.chat.new', 'New')}
-			</button>
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					onclick={() => openProjectDialog('create')}
+					class="inline-flex items-center gap-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-primary)]"
+					aria-label={t('ai.projects.new', 'New project')}
+					title={t('ai.projects.new', 'New project')}
+				>
+					<FolderPlus size={14} />
+				</button>
+				<button
+					type="button"
+					onclick={startNewChat}
+					class="inline-flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
+				>
+					<Plus size={14} />
+					{t('ai.chat.new', 'New')}
+				</button>
+			</div>
 		</div>
-		<div class="flex-1 overflow-y-auto p-2">
-			{#if convos.length === 0}
+		<!-- Scrolling detaches a fixed-position flyout from its anchor —
+			close any open menus instead of leaving a floating submenu. -->
+		<div
+			class="flex-1 overflow-y-auto p-2"
+			onscroll={() => {
+				moveMenuFor = null;
+				moveSubOpen = false;
+				projMenuFor = null;
+			}}
+		>
+			{#if convos.length === 0 && projs.length === 0}
 				<p class="p-2 text-center text-xs text-[var(--color-muted)]">{t('ai.chat.no_history', 'No previous conversations.')}</p>
 			{:else}
 				<ul class="space-y-1">
-					{#each convos as conv (conv.conversation_id)}
-						<li class="group relative">
-							<button
-								type="button"
-								onclick={() => loadConversation(conv.conversation_id)}
-								class="w-full rounded-[var(--radius)] px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {conversationId === conv.conversation_id ? 'bg-[var(--color-primary)]/10 font-medium' : ''}"
-							>
-								<div class="flex items-center gap-1.5">
-									<span class="truncate">{conv.title || conv.preview || t('ai.chat.unnamed', 'Conversation')}</span>
-									{#if conv.legacy}
-										<span class="shrink-0 rounded-full border px-1.5 py-px text-[10px]" style="border-color: var(--color-border); color: var(--color-muted)">
-											{t('ai.chat.legacy', 'legacy')}
-										</span>
-									{/if}
-								</div>
-								<div class="mt-0.5 text-xs text-[var(--color-muted)]">
-									{conv.turn_count} {conv.turn_count === 1 ? t('ai.chat.turn', 'turn') : t('ai.chat.turns', 'turns')}
-								</div>
-							</button>
-							{#if !conv.legacy}
+					{#each projs as proj (proj.id)}
+						{@const members = convsInProject(proj.id)}
+						<li>
+							<div class="group/proj relative">
 								<button
 									type="button"
-									onclick={() => deleteConversation(conv.conversation_id)}
-									class="absolute right-1.5 top-1.5 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-									aria-label={t('ai.chat.delete', 'Delete conversation')}
-									title={t('ai.chat.delete', 'Delete conversation')}
+									onclick={() => toggleProjectCollapsed(proj.id)}
+									class="flex w-full items-center gap-1.5 rounded-[var(--radius)] px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-text)]"
 								>
-									<Trash2 size={13} />
+									{#if collapsedProjects.has(proj.id)}
+										<ChevronRight size={12} />
+									{:else}
+										<ChevronDown size={12} />
+									{/if}
+									<Folder size={13} class="shrink-0" />
+									<span class="truncate">{proj.name}</span>
+									<span class="ml-auto shrink-0 pr-5">{members.length}</span>
 								</button>
+								<div class="absolute right-1 top-1 opacity-0 transition-opacity group-hover/proj:opacity-100 group-focus-within/proj:opacity-100">
+									<button
+										type="button"
+										onclick={(e) => {
+											e.stopPropagation();
+											projMenuFor = projMenuFor === proj.id ? null : proj.id;
+										}}
+										class="rounded p-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+										aria-label={t('ai.chat.more_actions', 'More actions')}
+										title={t('ai.chat.more_actions', 'More actions')}
+									>
+										<Ellipsis size={12} />
+									</button>
+									{#if projMenuFor === proj.id}
+										<div
+											class="absolute right-0 top-6 z-30 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+											role="menu"
+										>
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													projMenuFor = null;
+													startNewChatInProject(proj);
+												}}
+												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+											>
+												<Plus size={12} class="shrink-0 text-[var(--color-muted)]" />
+												<span class="flex-1 truncate">{t('ai.projects.new_chat', 'New chat in project')}</span>
+											</button>
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													projMenuFor = null;
+													openProjectDialog(proj);
+												}}
+												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+											>
+												<Pencil size={12} class="shrink-0 text-[var(--color-muted)]" />
+												<span class="flex-1 truncate">{t('ai.projects.edit', 'Edit project')}</span>
+											</button>
+											<div class="my-1 border-t border-[var(--color-border)]"></div>
+											<button
+												type="button"
+												onclick={(e) => {
+													e.stopPropagation();
+													projMenuFor = null;
+													deleteProject(proj);
+												}}
+												class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+											>
+												<Trash2 size={12} class="shrink-0" />
+												<span class="flex-1 truncate">{t('ai.projects.delete', 'Delete project')}</span>
+											</button>
+										</div>
+									{/if}
+								</div>
+							</div>
+							{#if !collapsedProjects.has(proj.id)}
+								{#if members.length > 0}
+									<ul class="ml-3 space-y-1 border-l border-[var(--color-border)] pl-2">
+										{#each members as conv (conv.conversation_id)}
+											{@render convItem(conv)}
+										{/each}
+									</ul>
+								{/if}
 							{/if}
 						</li>
 					{/each}
+					{#if ungroupedConvos.length > 0}
+						{#if projs.length > 0}
+							<li class="px-2 pb-1 pt-2 text-xs font-semibold text-[var(--color-muted)]">
+								{t('ai.projects.ungrouped', 'Ungrouped')}
+							</li>
+						{/if}
+						{#each ungroupedConvos as conv (conv.conversation_id)}
+							{@render convItem(conv)}
+						{/each}
+					{/if}
 				</ul>
 			{/if}
 		</div>
 	</aside>
 
-	<!-- Main chat -->
-	<div class="flex flex-1 flex-col min-h-0">
+	<!-- One conversation card — rendered inside each project group and the
+	     ungrouped section so both share the row markup. -->
+	{#snippet convItem(conv: UnifiedConversationSummary)}
+		<li class="group relative">
+			<button
+				type="button"
+				onclick={() => loadConversation(conv.conversation_id)}
+				class="w-full rounded-[var(--radius)] px-3 py-2 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {conversationId === conv.conversation_id ? 'bg-[var(--color-primary)]/10 font-medium' : ''}"
+			>
+				<div class="flex items-center gap-1.5">
+					<span class="truncate">{conv.title || conv.preview || t('ai.chat.unnamed', 'Conversation')}</span>
+					{#if conv.legacy}
+						<span class="shrink-0 rounded-full border px-1.5 py-px text-[10px]" style="border-color: var(--color-border); color: var(--color-muted)">
+							{t('ai.chat.legacy', 'legacy')}
+						</span>
+					{/if}
+				</div>
+				<div class="mt-0.5 text-xs text-[var(--color-muted)]">
+					{conv.turn_count} {conv.turn_count === 1 ? t('ai.chat.turn', 'turn') : t('ai.chat.turns', 'turns')}
+				</div>
+			</button>
+			{#if !conv.legacy}
+				<!-- §103 — overflow menu (ChatGPT-style): row actions plus a
+					"Move to project" flyout listing the catalog. -->
+				<button
+					type="button"
+					onclick={(e) => {
+						e.stopPropagation();
+						moveSubOpen = false;
+						moveMenuFor = moveMenuFor === conv.conversation_id ? null : conv.conversation_id;
+					}}
+					class="absolute right-1.5 top-1.5 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-text)] focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+					aria-label={t('ai.chat.more_actions', 'More actions')}
+					title={t('ai.chat.more_actions', 'More actions')}
+				>
+					<Ellipsis size={13} />
+				</button>
+				{#if moveMenuFor === conv.conversation_id}
+					<div
+						class="absolute right-0 top-8 z-30 w-48 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+						role="menu"
+					>
+						<button
+							type="button"
+							onclick={toggleMoveSub}
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							aria-haspopup="menu"
+							aria-expanded={moveSubOpen}
+						>
+							<FolderInput size={12} class="shrink-0 text-[var(--color-muted)]" />
+							<span class="flex-1 truncate">{t('ai.projects.move', 'Move to project')}</span>
+							<ChevronRight size={11} class="shrink-0 text-[var(--color-muted)]" />
+						</button>
+						{#if conv.project_id}
+							<button
+								type="button"
+								onclick={(e) => {
+									e.stopPropagation();
+									assignProject(conv.conversation_id, null);
+								}}
+								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<FolderOutput size={12} class="shrink-0 text-[var(--color-muted)]" />
+								<span class="flex-1 truncate">{t('ai.projects.remove', 'Remove from project')}</span>
+							</button>
+						{/if}
+						<div class="my-1 border-t border-[var(--color-border)]"></div>
+						<button
+							type="button"
+							onclick={(e) => {
+								e.stopPropagation();
+								deleteConversation(conv.conversation_id);
+							}}
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Trash2 size={12} class="shrink-0" />
+							<span class="flex-1 truncate">{t('ai.chat.delete', 'Delete conversation')}</span>
+						</button>
+					</div>
+					{#if moveSubOpen}
+						<div
+							class="fixed z-40 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+							style="top: {flyoutPos?.top ?? 0}px; left: {flyoutPos?.left ?? 0}px"
+							role="menu"
+						>
+							<button
+								type="button"
+								onclick={(e) => {
+									e.stopPropagation();
+									moveMenuFor = null;
+									moveSubOpen = false;
+									openProjectDialog('create');
+								}}
+								class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+							>
+								<Plus size={12} class="shrink-0 text-[var(--color-muted)]" />
+								<span class="flex-1 truncate">{t('ai.projects.new', 'New project')}</span>
+							</button>
+							{#if projs.length > 0}
+								<div class="my-1 border-t border-[var(--color-border)]"></div>
+							{/if}
+							{#each projs as p (p.id)}
+								<button
+									type="button"
+									onclick={(e) => {
+										e.stopPropagation();
+										assignProject(conv.conversation_id, p.id);
+									}}
+									class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--color-surface-subtle)] {conv.project_id === p.id ? 'font-medium text-[var(--color-primary)]' : 'text-[var(--color-text)]'}"
+								>
+									<Folder size={11} class="shrink-0 text-[var(--color-muted)]" />
+									<span class="flex-1 truncate">{p.name}</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				{/if}
+			{/if}
+		</li>
+	{/snippet}
+	<!-- Main chat — min-w-0 lets the column shrink below its content's
+	     min-content width so the transcript/composer never overflow the
+	     shell's center column (a <pre> or wide grid would otherwise push
+	     the Send button under the right rail). -->
+	<div class="flex min-w-0 flex-1 flex-col min-h-0">
 		<header class="mb-4 flex items-center gap-3">
 			<button
 				type="button"
@@ -708,6 +1328,15 @@
 						: t('ai.chat.subtitle', 'Your AI assistant')}
 				</p>
 			</div>
+			{#if activeProject}
+				<span
+					class="ml-auto inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)]"
+					title={activeProject.name}
+				>
+					<Folder size={12} />
+					<span class="max-w-32 truncate">{activeProject.name}</span>
+				</span>
+			{/if}
 		</header>
 
 		<!-- Transcript -->
@@ -746,7 +1375,25 @@
 				<div class="space-y-4">
 					{#each turns as turn (turn.id)}
 						<div class="flex {turn.role === 'user' ? 'justify-end' : 'justify-start'}">
-							<div class="max-w-[85%] w-full">
+							<div class="group relative w-fit min-w-0 max-w-[85%]">
+								{#if turn.streamed || turn.content}
+									<button
+										type="button"
+										onclick={() => copyTurn(turn)}
+										class="absolute top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100 {turn.role ===
+										'user'
+											? '-left-9'
+											: '-right-9'}"
+										aria-label={t('common.copy', 'Copy')}
+										title={t('common.copy', 'Copy')}
+									>
+										{#if copiedTurn === turn.id}
+											<Check size={14} />
+										{:else}
+											<Copy size={14} />
+										{/if}
+									</button>
+								{/if}
 								<div
 									class="rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
 									style={turn.role === 'user'
@@ -868,8 +1515,10 @@
 			<AiModelVoicePicker
 				bind:model={selectedModel}
 				bind:voice={selectedVoice}
+				bind:tone={selectedTone}
 				{modelOptions}
 				{voiceOptions}
+				{toneOptions}
 				idPrefix="japaai"
 			/>
 		</div>
@@ -985,12 +1634,14 @@
 			{/if}
 
 			<textarea
+				bind:this={inputEl}
 				bind:value={input}
 				rows="1"
 				placeholder={toolsOn
 					? t('ai.agent.placeholder', 'Ask the agent to search, draft, or analyze...')
 					: t('ai.chat.placeholder', 'Ask Japa AI anything...')}
-				class="flex-1 resize-none rounded-lg border px-3 py-2 text-sm"
+				class="flex-1 resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm"
+				oninput={resizeInput}
 				style="border-color: var(--color-border); background-color: var(--color-background)"
 				onkeydown={onKeydown}
 				disabled={sending || viewingLegacy}
@@ -1026,3 +1677,131 @@
 		</div>
 	</div>
 </div>
+
+<!-- Click-away / Escape closes an open "Move to project" menu or the
+     project dialog. -->
+<svelte:window
+	onclick={() => {
+		moveMenuFor = null;
+		moveSubOpen = false;
+		projMenuFor = null;
+	}}
+	onkeydown={(e) => {
+		if (e.key !== 'Escape') return;
+		if (projectDialog) projectDialog = null;
+		else if (moveSubOpen) moveSubOpen = false;
+		else if (moveMenuFor) moveMenuFor = null;
+		else if (projMenuFor) projMenuFor = null;
+	}}
+/>
+
+<!-- §103 AI Projects — create/edit dialog. -->
+{#if projectDialog}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		role="presentation"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) projectDialog = null;
+		}}
+	>
+		<div
+			class="w-full max-w-md space-y-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xl"
+			role="dialog"
+			aria-modal="true"
+			aria-label={projectDialog.mode === 'create'
+				? t('ai.projects.new', 'New project')
+				: t('ai.projects.edit', 'Edit project')}
+		>
+			<div class="flex items-center justify-between">
+				<h3 class="text-sm font-semibold text-[var(--color-text)]">
+					{projectDialog.mode === 'create'
+						? t('ai.projects.new', 'New project')
+						: t('ai.projects.edit', 'Edit project')}
+				</h3>
+				<button
+					type="button"
+					onclick={() => (projectDialog = null)}
+					class="rounded p-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+					aria-label={t('common.close', 'Close')}
+				>
+					<X size={15} />
+				</button>
+			</div>
+
+			<label class="block">
+				<span class="text-xs text-[var(--color-muted)]">{t('ai.projects.name', 'Project name')}</span>
+				<input
+					type="text"
+					bind:value={projName}
+					maxlength="200"
+					class="mt-1 w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
+					placeholder={t('ai.projects.name_placeholder', 'e.g. UK student visa')}
+				/>
+			</label>
+
+			<label class="block">
+				<span class="text-xs text-[var(--color-muted)]">{t('ai.projects.instructions', 'Instructions')}</span>
+				<textarea
+					bind:value={projInstructions}
+					rows="3"
+					maxlength="4000"
+					class="mt-1 w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm text-[var(--color-text)]"
+					placeholder={t('ai.projects.instructions_placeholder', 'Context the AI applies to every conversation in this project')}
+				></textarea>
+				<span class="mt-0.5 block text-[10px] text-[var(--color-muted)]">
+					{t('ai.projects.instructions_hint', 'Sent with each message in this project’s conversations.')}
+				</span>
+			</label>
+
+			<div>
+				<span class="text-xs text-[var(--color-muted)]">{t('ai.projects.pins', 'Default pickers')}</span>
+				<div class="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-3">
+					<AutocompleteSelect
+						bind:value={projModel}
+						options={modelOptions}
+						ariaLabel={t('ai.picker.model_label', 'Model')}
+					/>
+					<AutocompleteSelect
+						bind:value={projTone}
+						options={toneOptions}
+						ariaLabel={t('ai.picker.tone_label', 'Tone')}
+					/>
+					<AutocompleteSelect
+						bind:value={projVoice}
+						options={projVoiceOptions}
+						ariaLabel={t('ai.picker.voice_label', 'Voice')}
+					/>
+				</div>
+			</div>
+
+			<label class="flex items-center gap-2 text-sm text-[var(--color-text)]">
+				<input type="checkbox" bind:checked={projToolsOn} class="rounded border-[var(--color-border)]" />
+				{t('ai.projects.tools_default', 'Enable tools by default')}
+			</label>
+
+			{#if projError}
+				<p class="text-xs" style="color: var(--color-danger)">{projError}</p>
+			{/if}
+
+			<div class="flex justify-end gap-2 pt-1">
+				<button
+					type="button"
+					onclick={() => (projectDialog = null)}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				>
+					{t('common.cancel', 'Cancel')}
+				</button>
+				<button
+					type="button"
+					onclick={saveProject}
+					disabled={projSaving || !projName.trim()}
+					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] px-3 py-1.5 text-sm text-white disabled:opacity-50"
+					style="background-color: var(--color-primary)"
+				>
+					{#if projSaving}<Loader2 size={13} class="animate-spin" />{/if}
+					{t('common.save', 'Save')}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

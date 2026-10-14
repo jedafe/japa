@@ -73,12 +73,17 @@
 	const NONE = '__none__';
 	const hasNoneOption = $derived(options.some((o) => o.value === ''));
 
+	// Dedupe by resolved id — two options mapping to the same id (e.g. an
+	// API-provided "default" entry plus a locally prepended value:'' option)
+	// would otherwise produce duplicate each-block keys and crash the render.
 	const items = $derived<AutocompleteItem[]>(
-		options.map((o) => ({
-			id: o.value === '' ? NONE : o.value,
-			label: o.label,
-			sublabel: o.sublabel
-		}))
+		options
+			.map((o) => ({
+				id: o.value === '' ? NONE : o.value,
+				label: o.label,
+				sublabel: o.sublabel
+			}))
+			.filter((item, i, arr) => arr.findIndex((x) => x.id === item.id) === i)
 	);
 	const fetcher = $derived(staticAutocompleteFetcher(items));
 

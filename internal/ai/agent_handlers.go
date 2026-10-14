@@ -223,6 +223,8 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available")
 	case errors.Is(err, errConversationBusy):
 		errpkg.WriteError(w, http.StatusConflict, "conversation_busy", "A response is already in progress for this conversation")
+	case errors.Is(err, errProjectNotFound):
+		errpkg.WriteError(w, http.StatusNotFound, "project_not_found", "Project not found")
 	case errors.Is(err, errAgentDisabled):
 		errpkg.WriteError(w, http.StatusForbidden, "agent_disabled", "The AI agent is currently disabled")
 	case errors.Is(err, errAgentNoPermission):
@@ -1232,6 +1234,16 @@ func sessionToJSON(s gen.AiAgentSession) map[string]any {
 	}
 	if s.GeoSpaceID.Valid {
 		out["geo_space_id"] = s.GeoSpaceID.String()
+	}
+
+	// §103 AI Projects — sidebar grouping key for session history.
+	if s.ProjectID.Valid {
+		out["project_id"] = s.ProjectID.String()
+	}
+	// Linked sessions mirror their thread's project — the client needs the
+	// link to hide the direct-assign control.
+	if s.ConversationID.Valid {
+		out["conversation_id"] = s.ConversationID.String()
 	}
 
 	if s.ResultSummary != nil {

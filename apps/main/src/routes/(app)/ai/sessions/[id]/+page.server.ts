@@ -34,5 +34,16 @@ export const load: PageServerLoad = async (event) => {
 		loadError = true;
 	}
 
-	return { detail, loadError };
+	// §103 AI Projects — resolve the owning project's name for the header
+	// chip. Best-effort: a missing/deleted project just renders no chip.
+	let projectName = '';
+	if (detail?.session.project_id) {
+		try {
+			projectName = (await apiGet<{ name?: string }>(ctx, `/ai/projects/${detail.session.project_id}`))?.name ?? '';
+		} catch {
+			projectName = '';
+		}
+	}
+
+	return { detail, loadError, projectName };
 };

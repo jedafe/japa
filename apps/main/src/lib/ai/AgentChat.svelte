@@ -67,6 +67,7 @@
 
 	let turns = $state<ChatTurn[]>([]);
 	let input = $state('');
+	let inputEl: HTMLTextAreaElement | undefined = $state();
 	let sending = $state(false);
 	let error = $state('');
 	let scrollEl: HTMLElement | undefined = $state();
@@ -321,6 +322,24 @@
 		}
 	}
 
+	function resizeInput() {
+		if (!inputEl) return;
+		inputEl.style.height = 'auto';
+		inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+	}
+
+	$effect(() => {
+		// Grow/shrink the composer with its content (incl. reset after send).
+		// Measure after paint — on mount the flex width may not be resolved.
+		input;
+		const id = requestAnimationFrame(resizeInput);
+		window.addEventListener('resize', resizeInput);
+		return () => {
+			cancelAnimationFrame(id);
+			window.removeEventListener('resize', resizeInput);
+		};
+	});
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
@@ -497,9 +516,11 @@
 	<!-- Composer -->
 	<div class="mt-3 flex items-end gap-2">
 		<textarea
+			bind:this={inputEl}
 			bind:value={input}
 			rows="1"
 			placeholder={t('ai.agent.placeholder', 'Ask the agent to search, draft, or analyze...')}
+			oninput={resizeInput}
 			class="flex-1 resize-none rounded-lg border px-3 py-2 text-sm"
 			style="border-color: var(--color-border); background-color: var(--color-background)"
 			onkeydown={onKeydown}

@@ -62,13 +62,14 @@ func (q *Queries) CountAIConversationsForUser(ctx context.Context, userID pgtype
 const createAIConversation = `-- name: CreateAIConversation :one
 
 
-INSERT INTO ai_conversations (user_id, title) VALUES ($1, $2)
-RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref
+INSERT INTO ai_conversations (user_id, title, project_id) VALUES ($1, $2, $3)
+RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id
 `
 
 type CreateAIConversationParams struct {
-	UserID pgtype.UUID `json:"user_id"`
-	Title  string      `json:"title"`
+	UserID    pgtype.UUID `json:"user_id"`
+	Title     string      `json:"title"`
+	ProjectID pgtype.UUID `json:"project_id"`
 }
 
 // ai_conversations.sql — Unified Japa AI transcript store (ADR-130).
@@ -82,7 +83,7 @@ type CreateAIConversationParams struct {
 // Conversations
 // =====================================================================
 func (q *Queries) CreateAIConversation(ctx context.Context, arg CreateAIConversationParams) (AiConversation, error) {
-	row := q.db.QueryRow(ctx, createAIConversation, arg.UserID, arg.Title)
+	row := q.db.QueryRow(ctx, createAIConversation, arg.UserID, arg.Title, arg.ProjectID)
 	var i AiConversation
 	err := row.Scan(
 		&i.ID,
@@ -92,6 +93,7 @@ func (q *Queries) CreateAIConversation(ctx context.Context, arg CreateAIConversa
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.LegacyRef,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -101,7 +103,7 @@ const createAIConversationWithLegacyRef = `-- name: CreateAIConversationWithLega
 INSERT INTO ai_conversations (id, user_id, title, legacy_ref, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT DO NOTHING
-RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref
+RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id
 `
 
 type CreateAIConversationWithLegacyRefParams struct {
@@ -139,12 +141,13 @@ func (q *Queries) CreateAIConversationWithLegacyRef(ctx context.Context, arg Cre
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.LegacyRef,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const getAIConversationByLegacyRef = `-- name: GetAIConversationByLegacyRef :one
-SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref FROM ai_conversations
+SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id FROM ai_conversations
 WHERE user_id = $1 AND legacy_ref = $2
 `
 
@@ -167,12 +170,13 @@ func (q *Queries) GetAIConversationByLegacyRef(ctx context.Context, arg GetAICon
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.LegacyRef,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const getAIConversationForUser = `-- name: GetAIConversationForUser :one
-SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref FROM ai_conversations
+SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref, project_id FROM ai_conversations
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
@@ -195,6 +199,7 @@ func (q *Queries) GetAIConversationForUser(ctx context.Context, arg GetAIConvers
 		&i.UpdatedAt,
 		&i.DeletedAt,
 		&i.LegacyRef,
+		&i.ProjectID,
 	)
 	return i, err
 }
@@ -479,7 +484,7 @@ func (q *Queries) ListAIConversationMessages(ctx context.Context, arg ListAIConv
 }
 
 const listAIConversationsForUser = `-- name: ListAIConversationsForUser :many
-SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.deleted_at, c.legacy_ref,
+SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.deleted_at, c.legacy_ref, c.project_id,
     (SELECT COUNT(*) FROM ai_messages m WHERE m.conversation_id = c.id) AS turn_count,
     COALESCE((SELECT m.content FROM ai_messages m WHERE m.conversation_id = c.id
      ORDER BY m.created_at DESC LIMIT 1), '')::text AS last_message
@@ -503,6 +508,7 @@ type ListAIConversationsForUserRow struct {
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
 	LegacyRef   string             `json:"legacy_ref"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
 	TurnCount   int64              `json:"turn_count"`
 	LastMessage string             `json:"last_message"`
 }
@@ -527,6 +533,7 @@ func (q *Queries) ListAIConversationsForUser(ctx context.Context, arg ListAIConv
 			&i.UpdatedAt,
 			&i.DeletedAt,
 			&i.LegacyRef,
+			&i.ProjectID,
 			&i.TurnCount,
 			&i.LastMessage,
 		); err != nil {

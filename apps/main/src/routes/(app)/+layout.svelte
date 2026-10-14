@@ -72,6 +72,11 @@
 	// hidden). Subpages (item detail, changelog, submit) keep the shell.
 	const isRoadmap = $derived(page.route.id === '/(app)/roadmap');
 
+	// §103 Japa AI surface (/ai, /ai/sessions) needs its full center column
+	// for the transcript + composer — the left rail auto-collapses on entry
+	// like the settings/dashboard zones.
+	const isAi = $derived(page.route.id?.startsWith('/(app)/ai') ?? false);
+
 	// ADR-058 Exception #1: content single pages (blog, content, guide,
 	// story, comparisons) still render the unified shell's left ad rail. The
 	// /studio surface is the exception exception: it owns its own layout
@@ -83,12 +88,12 @@
 	// Seed from the server value once; thereafter this is user-controlled.
 	let collapsed = $state(untrack(() => data.navCollapsed));
 
-	// Auto-collapse when entering settings, dashboard or roadmap (once per
-	// transition). The user can still expand via the toggle — we only
+	// Auto-collapse when entering settings, dashboard, roadmap or /ai (once
+	// per transition). The user can still expand via the toggle — we only
 	// collapse on entry, not force.
 	let prevWasCollapsedZone = $state(false);
 	$effect(() => {
-		const inCollapsedZone = isSettings || isDashboard || isRoadmap;
+		const inCollapsedZone = isSettings || isDashboard || isRoadmap || isAi;
 		if (inCollapsedZone && !prevWasCollapsedZone) {
 			collapsed = true;
 		}
@@ -235,7 +240,7 @@
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
 		hideRightSidebar={exception || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}
-		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard || isRoadmap ? [] : data.leftSidebarWidgets}
+		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard || isRoadmap || isAi ? [] : data.leftSidebarWidgets}
 
 		composeEnabled={!exception && !!data.user}
 		features={data.features}

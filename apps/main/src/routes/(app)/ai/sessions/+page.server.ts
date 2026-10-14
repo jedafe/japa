@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiList } from '$lib/server/api';
-import type { AgentSession } from '$lib/ai/agentTypes';
+import type { AgentSession, AiProject } from '$lib/ai/agentTypes';
 
 /**
  * /ai/sessions — agent session history list. Auth-gated. Loads the first
@@ -34,5 +34,14 @@ export const load: PageServerLoad = async (event) => {
 		total = 0;
 	}
 
-	return { sessions, total, pageSize, offset };
+	// §103 AI Projects — the per-row "Move to project" menu needs the
+	// catalog. Best-effort: an empty list hides the control.
+	let projects: AiProject[] = [];
+	try {
+		projects = (await apiList<AiProject>(ctx, '/ai/projects?page_size=100')).items;
+	} catch {
+		projects = [];
+	}
+
+	return { sessions, total, pageSize, offset, projects };
 };

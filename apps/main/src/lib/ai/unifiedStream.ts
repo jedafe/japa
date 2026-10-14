@@ -29,8 +29,14 @@ export interface ToolSelectionOverride {
 export interface StreamChatOptions {
 	message: string;
 	conversationId?: string;
+	/** §103 AI Projects — stamps a newly created conversation into this
+	 * project. Ignored when conversationId resolves to an existing thread. */
+	projectId?: string;
 	model?: string;
 	voiceId?: string;
+	/** Client context merged into the AI context payload (allowlisted
+	 * server-side — e.g. `tone` steers response style). */
+	context?: Record<string, unknown>;
 	humanize?: boolean;
 	humanizeLevel?: string;
 	tools?: ToolSelectionOverride;
@@ -61,8 +67,10 @@ export async function* streamChat(
 	const body = JSON.stringify({
 		message: opts.message,
 		conversation_id: opts.conversationId ?? undefined,
+		project_id: opts.projectId ?? undefined,
 		model: opts.model || undefined,
 		voice_id: opts.voiceId || undefined,
+		context: opts.context,
 		humanize: opts.humanize,
 		humanize_level: opts.humanizeLevel || undefined,
 		tools: opts.tools

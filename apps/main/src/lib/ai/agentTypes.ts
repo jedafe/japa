@@ -6,6 +6,7 @@
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 6, Phase 10)
 
 import type { AiCitationSource } from './types';
+import type { ToolSelectionOverride } from './unifiedStream';
 
 /** SSE event types emitted by the agent loop (internal/ai/agent.go constants). */
 export type AgentEventType =
@@ -42,6 +43,8 @@ export interface AgentEvent {
 	estimated_cost?: number;
 	// ADR-130: conversation + final_response
 	conversation_id?: string;
+	// §103 AI Projects: owning project id on conversation events.
+	project_id?: string;
 	message_id?: string;
 	// ADR-130: server-authoritative persisted message count on
 	// conversation/final_response — sidebar assigns, never increments.
@@ -99,6 +102,23 @@ export interface UnifiedConversationSummary {
 	last_entry_at?: string;
 	/** true = Honcho-era thread — read-only, not deletable. */
 	legacy: boolean;
+	/** §103 AI Projects — owning project's id; absent when ungrouped. */
+	project_id?: string;
+}
+
+/** AI project row (GET /api/v1/ai/projects → data[] or single). */
+export interface AiProject {
+	id: string;
+	name: string;
+	instructions: string;
+	default_model: string;
+	default_tone: string;
+	default_voice_id: string;
+	default_tools: ToolSelectionOverride | Record<string, unknown>;
+	conversation_count?: number;
+	session_count?: number;
+	created_at?: string;
+	updated_at?: string;
 }
 
 /** Tool call embedded on a conversation-detail assistant message. */
@@ -136,6 +156,10 @@ export interface ConversationMessage {
 export interface AgentSession {
 	id: string;
 	user_id: string;
+	/** §103 AI Projects — owning project's id; absent when ungrouped. */
+	project_id?: string;
+	/** §103 — linked conversation id; such sessions mirror the thread's project. */
+	conversation_id?: string;
 	prompt: string;
 	presearch_level: string;
 	status: string;

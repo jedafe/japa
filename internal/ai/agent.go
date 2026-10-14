@@ -69,6 +69,9 @@ type AgentEvent struct {
 
 	// ADR-130 unified surface
 	ConversationID string     `json:"conversation_id,omitempty"`
+	// §103 AI Projects: owning project id on `conversation` events — lets
+	// the sidebar group a thread created inside a project immediately.
+	ProjectID      string     `json:"project_id,omitempty"`
 	MessageID      string     `json:"message_id,omitempty"` // persisted ai_messages id on final_response
 	Sources        []RAGChunk `json:"sources,omitempty"`    // pre-search RAG citations (§69 contract)
 	// TurnCount is the thread's persisted message count at event time —
@@ -155,6 +158,7 @@ type AgentHandler struct {
 	// ADR-130 unified surface dependencies (nil → unified features degrade
 	// gracefully: no transcript persistence, no memory injection).
 	convos         *ConversationService
+	projects       *ProjectService // §103 amendment: project grouping + instructions injection
 	aiContextFn    func(ctx context.Context, userID pgtype.UUID, clientCtx map[string]any) map[string]any
 	persistTurnFn  func(ctx context.Context, userID, message, reply, conversationID string, unified bool)
 	voiceResolver  PersonaVoiceResolver
@@ -256,6 +260,13 @@ func WithAgentPreflight(p *Preflight) AgentOption {
 // Nil → the unified path still answers but does not persist turns.
 func WithAgentConversations(s *ConversationService) AgentOption {
 	return func(h *AgentHandler) { h.convos = s }
+}
+
+// WithAgentProjects injects the AI projects store (§103 amendment). Nil →
+// conversations in a project simply carry no injected instructions and
+// audit sessions stay ungrouped.
+func WithAgentProjects(s *ProjectService) AgentOption {
+	return func(h *AgentHandler) { h.projects = s }
 }
 
 // WithAgentAIContext injects the ADR-025 user-context builder (Honcho
@@ -388,7 +399,7 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 	preSearchResult := h.runPreSearch(ctx, prompt, geoSpaceID, userID)
 
 	// --- Task 5.09: create ai_agent_sessions record ---
-	session, err := h.createSession(ctx, userID, prompt, geoSpaceID, preSearchResult.Level, pgtype.UUID{})
+	session, err := h.createSession(ctx, userID, prompt, geoSpaceID, preSearchResult.Level, pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
 		return nil, fmt.Errorf("ai: creating agent session: %w", err)
 	}
@@ -636,7 +647,11 @@ func (h *AgentHandler) runLoop(
 		if p.unified.userMsgPersisted {
 			turnCount++
 		}
-		if !sendEvent(AgentEvent{Type: EventConversation, SessionID: session.ID.String(), ConversationID: convID, TurnCount: turnCount}) {
+		var projectID string
+		if p.unified.conv.ProjectID.Valid {
+			projectID = p.unified.conv.ProjectID.String()
+		}
+		if !sendEvent(AgentEvent{Type: EventConversation, SessionID: session.ID.String(), ConversationID: convID, ProjectID: projectID, TurnCount: turnCount}) {
 			h.failSession(ctx, session, loopCtx.Err(), 0, 0, 0)
 			return
 		}
@@ -1200,11 +1215,11 @@ func (h *AgentHandler) buildToolCatalog(ctx context.Context, userID pgtype.UUID)
 // the pre-search level. Returns the created session. convID links the audit
 // row to the unified transcript thread (ADR-130); zero value = unlinked
 // (legacy /ai/agent path).
-func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID, level PreSearchLevel, convID pgtype.UUID) (gen.AiAgentSession, error) {
+func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID, level PreSearchLevel, convID, projectID pgtype.UUID) (gen.AiAgentSession, error) {
 	if h.sessions == nil {
 		// No session store configured — return a zero-value session so
 		// the loop can proceed (useful for tests).
-		return gen.AiAgentSession{ID: randomUUID(), UserID: userID, Prompt: prompt, PresearchLevel: string(level), Status: "running", ConversationID: convID}, nil
+		return gen.AiAgentSession{ID: randomUUID(), UserID: userID, Prompt: prompt, PresearchLevel: string(level), Status: "running", ConversationID: convID, ProjectID: projectID}, nil
 	}
 
 	var geoID pgtype.UUID
@@ -1220,6 +1235,7 @@ func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, pr
 		PresearchLevel: string(level),
 		Status:         "running",
 		ConversationID: convID,
+		ProjectID:      projectID,
 	})
 }
 

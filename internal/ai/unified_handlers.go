@@ -36,6 +36,8 @@ type unifiedChatInput struct {
 	Message        string         `json:"message"`
 	Prompt         string         `json:"prompt"` // legacy alias
 	ConversationID string         `json:"conversation_id,omitempty"`
+	// §103 AI Projects: start the new thread inside this project.
+	ProjectID      string         `json:"project_id,omitempty"`
 	Context        map[string]any `json:"context,omitempty"`
 	Model          string         `json:"model,omitempty"`
 	VoiceID        string         `json:"voice_id,omitempty"`
@@ -80,9 +82,20 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 		// thread rather than erroring.
 	}
 
+	var projectID *pgtype.UUID
+	if input.ProjectID != "" {
+		u, err := scanUUID(input.ProjectID)
+		if err != nil || !u.Valid {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "project_id must be a UUID")
+			return
+		}
+		projectID = &u
+	}
+
 	req := UnifiedChatRequest{
 		Prompt:         prompt,
 		ConversationID: convID,
+		ProjectID:      projectID,
 		Context:        input.Context,
 		Model:          input.Model,
 		VoiceID:        input.VoiceID,
@@ -225,6 +238,8 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 		TurnCount      int       `json:"turn_count"`
 		LastEntryAt    time.Time `json:"last_entry_at"`
 		Legacy         bool      `json:"legacy"`
+		// §103 AI Projects — sidebar grouping key; empty when ungrouped.
+		ProjectID string `json:"project_id,omitempty"`
 	}
 
 	out := []convoSummary{}
@@ -242,13 +257,17 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 			}
 			for _, c := range rows {
 				dbIDs[c.ID.String()] = true
-				out = append(out, convoSummary{
+				sum := convoSummary{
 					ConversationID: c.ID.String(),
 					Title:          c.Title,
 					Preview:        c.LastMessage,
 					TurnCount:      int(c.TurnCount),
 					LastEntryAt:    c.UpdatedAt.Time,
-				})
+				}
+				if c.ProjectID.Valid {
+					sum.ProjectID = c.ProjectID.String()
+				}
+				out = append(out, sum)
 			}
 			if len(rows) < convoPage {
 				break
@@ -457,13 +476,18 @@ func (h *Handlers) serveUnifiedDetail(w http.ResponseWriter, r *http.Request, us
 		out = append(out, dto)
 	}
 
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+	detail := map[string]any{
 		"conversation_id": conv.ID.String(),
 		"title":           conv.Title,
 		"messages":        out,
 		"created_at":      conv.CreatedAt.Time,
 		"updated_at":      conv.UpdatedAt.Time,
-	}})
+	}
+	if conv.ProjectID.Valid {
+		detail["project_id"] = conv.ProjectID.String()
+	}
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
 	return true
 }
 

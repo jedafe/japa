@@ -32,6 +32,10 @@ import (
 type UnifiedChatRequest struct {
 	Prompt         string
 	ConversationID *pgtype.UUID
+	// §103 AI Projects: stamps a newly created conversation into the
+	// project. Validated owner-side before Resolve; ignored for existing
+	// threads (explicit moves go through PUT …/project).
+	ProjectID      *pgtype.UUID
 	Context        map[string]any // client-supplied context (lowest precedence, ADR-025)
 	Model          string
 	VoiceID        string
@@ -46,6 +50,7 @@ var (
 	errAINoPermission   = errors.New("ai: user lacks ai.context.use or agent.use permission")
 	errInvalidModel     = errors.New("ai: model is not available for the chat category")
 	errConversationBusy = errors.New("ai: conversation already has a running turn")
+	errProjectNotFound  = errors.New("ai: project not found")
 )
 
 const (
@@ -159,6 +164,31 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		return nil, errInvalidModel
 	}
 
+	// --- §103 AI Projects: a project_id on the request stamps a NEW
+	// conversation into the project. On an existing owned conversation the
+	// field is ignored entirely — no validation, no 404 — so stale clients
+	// sending it keep working. Validation only runs when the id could
+	// actually be applied (fresh chat, or a conversation_id that doesn't
+	// resolve → Resolve creates a new row). ---
+	if req.ProjectID != nil && req.ProjectID.Valid {
+		applies := true
+		if req.ConversationID != nil && req.ConversationID.Valid && h.convos != nil {
+			if _, err := h.convos.Get(ctx, userID, *req.ConversationID); err == nil {
+				applies = false
+			}
+		}
+		if applies {
+			// No projects service → can't validate ownership; fail closed
+			// rather than stamping an unchecked foreign id.
+			if h.projects == nil {
+				return nil, errProjectNotFound
+			}
+			if _, perr := h.projects.Get(ctx, userID, *req.ProjectID); perr != nil {
+				return nil, errProjectNotFound
+			}
+		}
+	}
+
 	// --- Resolve the transcript thread and snapshot history BEFORE
 	// appending the current user message, so runLoop can append it itself
 	// as the final user turn. ---
@@ -172,7 +202,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	if h.convos != nil {
 		titleLen := h.getIntSetting(ctx, "ai.conversation_title_length", defaultConversationTitleLen)
 
-		c, err := h.convos.Resolve(ctx, userID, req.ConversationID, truncateRunes(req.Prompt, titleLen))
+		c, err := h.convos.Resolve(ctx, userID, req.ConversationID, req.ProjectID, truncateRunes(req.Prompt, titleLen))
 		if err != nil {
 			return nil, fmt.Errorf("ai: resolving conversation: %w", err)
 		}
@@ -197,6 +227,20 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		}
 	}
 
+	// --- §103 AI Projects: merge the project's instructions into the
+	// request context server-side (lands in the USER CONTEXT system-prompt
+	// block). `project_instructions` is not in the client context allowlist
+	// so it can't be forged; setting it here also overwrites anything a
+	// client tried to inject. ---
+	if hasConv && h.projects != nil {
+		if instructions := h.projects.InstructionsFor(ctx, userID, conv); instructions != "" {
+			if req.Context == nil {
+				req.Context = map[string]any{}
+			}
+			req.Context["project_instructions"] = instructions
+		}
+	}
+
 	// --- Geo + pre-search (same as legacy path). ---
 	geoSpaceID, geoSummary := h.resolveGeoContext(ctx, userID)
 	preSearchResult := h.runPreSearch(ctx, req.Prompt, geoSpaceID, userID)
@@ -207,7 +251,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		convUUID = conv.ID
 	}
 
-	session, err := h.createSession(ctx, userID, req.Prompt, geoSpaceID, preSearchResult.Level, convUUID)
+	session, err := h.createSession(ctx, userID, req.Prompt, geoSpaceID, preSearchResult.Level, convUUID, conv.ProjectID)
 	if err != nil {
 		// The ai_agent_sessions_one_running_per_conv partial unique index
 		// makes "one running turn per conversation" a DB invariant — a
@@ -224,7 +268,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 				StaleBefore:    pgtype.Timestamptz{Time: time.Now().Add(-time.Duration(timeout) * time.Second), Valid: true},
 			}); serr == nil && swept > 0 {
 				slog.Info("ai: swept stale running session(s) for conversation", "conversation_id", conv.ID, "swept", swept)
-				session, err = h.createSession(ctx, userID, req.Prompt, geoSpaceID, preSearchResult.Level, convUUID)
+				session, err = h.createSession(ctx, userID, req.Prompt, geoSpaceID, preSearchResult.Level, convUUID, conv.ProjectID)
 			}
 		}
 		if err != nil {

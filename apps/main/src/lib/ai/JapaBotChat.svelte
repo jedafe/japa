@@ -49,6 +49,25 @@
 
 	let messages = $state<ChatMessage[]>([]);
 	let input = $state('');
+	let inputEl: HTMLTextAreaElement | undefined = $state();
+
+	function resizeInput() {
+		if (!inputEl) return;
+		inputEl.style.height = 'auto';
+		inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+	}
+
+	$effect(() => {
+		// Grow/shrink the composer with its content (incl. reset after send).
+		// Measure after paint — on mount the flex width may not be resolved.
+		input;
+		const id = requestAnimationFrame(resizeInput);
+		window.addEventListener('resize', resizeInput);
+		return () => {
+			cancelAnimationFrame(id);
+			window.removeEventListener('resize', resizeInput);
+		};
+	});
 	let conversationId = $state<string>('');
 	let sending = $state(false);
 	let error = $state('');
@@ -62,12 +81,19 @@
 	let selectedModel = $state('');
 	let selectedVoice = $state('');
 	let composerForm: HTMLFormElement | undefined = $state();
+	// The backend already emits an empty-id "Default" entry for models
+	// (/ai/models), so only prepend our own when none exists — two value:''
+	// options would collide on the picker's __none__ key.
 	const modelOptions = $derived([
-		{ value: '', label: t('ai.chat.model_default', 'Default model') },
+		...(models.some((m) => m.id === '')
+			? []
+			: [{ value: '', label: t('ai.chat.model_default', 'Default model') }]),
 		...models.map((m) => ({ value: m.id, label: m.label }))
 	]);
 	const voiceOptions = $derived([
-		{ value: '', label: t('ai.chat.voice_default', 'Default voice') },
+		...(voices.some((v) => v.id === '')
+			? []
+			: [{ value: '', label: t('ai.chat.voice_default', 'Default voice') }]),
 		...voices.map((v) => ({ value: v.id, label: v.name }))
 	]);
 
@@ -161,8 +187,10 @@
 		</div>
 	</aside>
 
-	<!-- Main chat -->
-	<div class="flex flex-1 flex-col">
+	<!-- Main chat — min-w-0 so the column shrinks below min-content width
+	     (overflow into the right rail); min-h-0 so the transcript scrolls
+	     instead of growing the page. -->
+	<div class="flex min-w-0 min-h-0 flex-1 flex-col">
 		<header class="mb-4 flex items-center gap-3">
 			<button
 				type="button"
@@ -331,9 +359,11 @@
 			<input type="hidden" name="voice_id" value={selectedVoice} />
 			<textarea
 				name="message"
+				bind:this={inputEl}
 				bind:value={input}
 				rows="1"
 				placeholder={t('ai.chat.placeholder') ?? 'Ask JapaBot anything...'}
+				oninput={resizeInput}
 				class="flex-1 resize-none rounded-lg border px-3 py-2 text-sm"
 				style="border-color: var(--color-border); background-color: var(--color-background)"
 				onkeydown={(e) => {

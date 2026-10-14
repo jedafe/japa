@@ -2007,6 +2007,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.SetConversationService(convoService)
 	aiHandlers.SetAgentSessionQueries(gen.New(database.Reader))
 
+	// §103 AI Projects — conversation/session grouping, instructions
+	// injection, pinned defaults. Same always-wired/unified-gated pattern.
+	projectService := ai.NewProjectService(gen.New(database.Writer), database.Writer)
+	aiHandlers.SetProjectService(projectService)
+
 	// Wire the AI dispatcher into the i18n handlers + processor adapter so
 	// POST /admin/i18n/strings/{id}/translate and the
 	// i18n:translate_language_pack Asynq task actually translate via the AI
@@ -2252,6 +2257,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 		// ADR-130 unified chat plumbing — transcript persistence, Honcho
 		// memory/AI context injection, voice + model override validation.
 		ai.WithAgentConversations(convoService),
+		ai.WithAgentProjects(projectService),
 		ai.WithAgentAIContext(aiHandlers.UserAIContextFunc()),
 		ai.WithAgentChatPersist(aiHandlers.PersistChatTurnFunc()),
 		ai.WithAgentVoiceResolver(personasService),
@@ -6735,6 +6741,23 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// are unlinked, not deleted (Rule 11 carve-out).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), features.Gate(featureChecker, "feature.japa_ai_unified"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
 				Delete("/ai/conversations/{id}", aiHandlers.HandleDeleteConversation)
+
+			// §103 AI Projects — CRUD + thread/session membership. Unified-only:
+			// same gate stack as conversation delete (japabot + unified flag +
+			// OR admission).
+			projectGate := []func(http.Handler) http.Handler{
+				auth.RequireAuth(kr, vkClient.Redis()),
+				features.Gate(featureChecker, "feature.japabot"),
+				features.Gate(featureChecker, "feature.japa_ai_unified"),
+				rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use"),
+			}
+			r.With(projectGate...).Put("/ai/conversations/{id}/project", aiHandlers.HandleAssignConversationProject)
+			r.With(projectGate...).Put("/ai/agent/sessions/{id}/project", aiHandlers.HandleAssignSessionProject)
+			r.With(projectGate...).Get("/ai/projects", aiHandlers.HandleListProjects)
+			r.With(projectGate...).Post("/ai/projects", aiHandlers.HandleCreateProject)
+			r.With(projectGate...).Get("/ai/projects/{id}", aiHandlers.HandleGetProject)
+			r.With(projectGate...).Patch("/ai/projects/{id}", aiHandlers.HandleUpdateProject)
+			r.With(projectGate...).Delete("/ai/projects/{id}", aiHandlers.HandleDeleteProject)
 
 			// ADR-130: per-user AI preferences (default mode, tool/category
 			// toggles) — only meaningful while the unified surface is on.
