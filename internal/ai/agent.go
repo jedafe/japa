@@ -104,6 +104,7 @@ type SessionStore interface {
 	CompleteAgentSession(ctx context.Context, arg gen.CompleteAgentSessionParams) (gen.AiAgentSession, error)
 	FailAgentSession(ctx context.Context, arg gen.FailAgentSessionParams) (gen.AiAgentSession, error)
 	CancelAgentSession(ctx context.Context, id pgtype.UUID) (gen.AiAgentSession, error)
+	FailStaleRunningAgentSessionsForConversation(ctx context.Context, arg gen.FailStaleRunningAgentSessionsForConversationParams) (int64, error)
 }
 
 // GeoSpaceResolver resolves the user's current geo space. *gen.Queries
@@ -516,10 +517,12 @@ type unifiedTurn struct {
 	req     UnifiedChatRequest
 	conv    gen.AiConversation
 	hasConv bool
-	// historyLen is the persisted message count before this turn; combined
-	// with userMsgPersisted/assistant-persist it yields the turn_count the
-	// sidebar shows — emitted on conversation/final_response events.
-	historyLen       int
+	// msgCount is the thread's persisted message count before this turn;
+	// combined with userMsgPersisted/assistant-persist it yields the
+	// turn_count the sidebar shows — emitted on conversation/final_response
+	// events. It must be the true COUNT(*), not the windowed history
+	// length, or long threads report a shrunken count.
+	msgCount         int
 	userMsgPersisted bool
 }
 
@@ -612,7 +615,7 @@ func (h *AgentHandler) runLoop(
 	// to the right conversation before the reply lands. TurnCount is the
 	// persisted message count including the just-appended user turn.
 	if convID != "" {
-		turnCount := p.unified.historyLen
+		turnCount := p.unified.msgCount
 		if p.unified.userMsgPersisted {
 			turnCount++
 		}
@@ -930,7 +933,7 @@ func (h *AgentHandler) runLoop(
 	// persisted user turn + the persisted assistant turn.
 	finalTurnCount := 0
 	if p.unified != nil {
-		finalTurnCount = p.unified.historyLen
+		finalTurnCount = p.unified.msgCount
 		if p.unified.userMsgPersisted {
 			finalTurnCount++
 		}

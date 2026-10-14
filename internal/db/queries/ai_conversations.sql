@@ -88,6 +88,12 @@ SELECT * FROM (
 ) t
 ORDER BY created_at ASC;
 
+-- Total message count for turn_count bookkeeping — the SSE events report
+-- the true thread size, not the windowed history length.
+-- name: CountAIConversationMessages :one
+SELECT COUNT(*) FROM ai_messages
+WHERE conversation_id = @conversation_id;
+
 -- Full transcript for the detail endpoint, chronological.
 -- name: ListAIConversationMessages :many
 SELECT * FROM ai_messages

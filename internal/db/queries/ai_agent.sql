@@ -61,6 +61,22 @@ WHERE id = @id
  AND status = 'running'
 RETURNING *;
 
+-- ADR-130: sweep "running" rows older than the agent timeout for one
+-- conversation. A crashed/killed turn leaves a permanent 'running' row
+-- that the one-running-per-conversation unique index keeps enforcing even
+-- though the busy pre-check treats it as stale — every subsequent send to
+-- that thread would fail with a spurious conversation_busy. Failing rows
+-- past the timeout frees the index slot; a genuinely live turn started
+-- within the window is untouched.
+-- name: FailStaleRunningAgentSessionsForConversation :execrows
+UPDATE ai_agent_sessions SET
+ status = 'failed',
+ error_message = 'agent: session timed out',
+ completed_at = now()
+WHERE conversation_id = @conversation_id
+  AND status = 'running'
+  AND started_at < @stale_before;
+
 -- User-facing history (newest first), offset-paginated.
 -- name: ListAgentSessionsByUser :many
 SELECT * FROM ai_agent_sessions

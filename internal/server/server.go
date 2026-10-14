@@ -6696,13 +6696,44 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// Honcho threads and fall back to the legacy path for non-UUID
 			// ids, so flag-off behavior is unchanged (ai_conversations is
 			// empty until the unified flag turns on).
+			// The OR middleware admits agent.use-only callers for the unified
+			// surface; when feature.japa_ai_unified is off, re-check the
+			// historical ai.context.use gate and serve the legacy handlers so
+			// flag-off behavior is byte-for-byte identical to pre-ADR-130.
+			requireLegacyChatPerm := func(w http.ResponseWriter, r *http.Request) bool {
+				user := auth.FromContext(r.Context())
+				if user == nil || (!rbacResolver.IsSuperAdmin(r.Context(), user.UserID) &&
+					!rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
+					return false
+				}
+				return true
+			}
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
-				Get("/ai/conversations", aiHandlers.HandleListConversationsV2)
+				Get("/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
+					if featureChecker.IsEnabled(r.Context(), "feature.japa_ai_unified") {
+						aiHandlers.HandleListConversationsV2(w, r)
+						return
+					}
+					if requireLegacyChatPerm(w, r) {
+						aiHandlers.HandleListConversations(w, r)
+					}
+				})
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
-				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversationV2)
+				Get("/ai/conversations/{id}", func(w http.ResponseWriter, r *http.Request) {
+					if featureChecker.IsEnabled(r.Context(), "feature.japa_ai_unified") {
+						aiHandlers.HandleGetConversationV2(w, r)
+						return
+					}
+					if requireLegacyChatPerm(w, r) {
+						aiHandlers.HandleGetConversation(w, r)
+					}
+				})
 			// ADR-130: soft-delete a unified conversation. Session audit rows
 			// are unlinked, not deleted (Rule 11 carve-out).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), features.Gate(featureChecker, "feature.japa_ai_unified"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
 				Delete("/ai/conversations/{id}", aiHandlers.HandleDeleteConversation)
 
 			// ADR-130: per-user AI preferences (default mode, tool/category

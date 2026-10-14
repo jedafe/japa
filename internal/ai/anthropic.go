@@ -279,12 +279,13 @@ type anthropicToolDef struct {
 // Messages use a richer shape than anthropicMessage because content can be
 // an array of typed blocks (text, tool_use, tool_result).
 type anthropicToolsRequest struct {
-	Model     string              `json:"model"`
-	Messages  []anthropicToolsMsg `json:"messages"`
-	System    string              `json:"system,omitempty"`
-	Tools     []anthropicToolDef  `json:"tools,omitempty"`
-	MaxTokens int                 `json:"max_tokens"`
-	Stream    bool                `json:"stream,omitempty"`
+	Model       string              `json:"model"`
+	Messages    []anthropicToolsMsg `json:"messages"`
+	System      string              `json:"system,omitempty"`
+	Tools       []anthropicToolDef  `json:"tools,omitempty"`
+	MaxTokens   int                 `json:"max_tokens"`
+	Temperature float64             `json:"temperature,omitempty"`
+	Stream      bool                `json:"stream,omitempty"`
 }
 
 // anthropicToolsMsg is a message with block-array content for function calling.
@@ -351,11 +352,12 @@ func (p *AnthropicProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 	}
 
 	chatReq := anthropicToolsRequest{
-		Model:     model,
-		Messages:  msgs,
-		System:    systemPrompt,
-		Tools:     toAnthropicToolDefs(req.Tools),
-		MaxTokens: maxTokens,
+		Model:       model,
+		Messages:    msgs,
+		System:      systemPrompt,
+		Tools:       toAnthropicToolDefs(req.Tools),
+		MaxTokens:   maxTokens,
+		Temperature: req.Temperature,
 	}
 
 	body, err := json.Marshal(chatReq)

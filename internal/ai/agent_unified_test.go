@@ -341,6 +341,29 @@ func TestUnifiedChat_SessionCreateUniqueViolationMapsToBusy(t *testing.T) {
 	}
 }
 
+func TestUnifiedChat_SessionCreateSweepsStaleRunningRow(t *testing.T) {
+	// A crashed turn leaves a 'running' session row that trips the
+	// one-running-per-conversation unique index even though the busy
+	// pre-check treats it as stale. The handler must sweep stale rows and
+	// retry once — the send succeeds instead of 409ing forever.
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+	swept := int64(1)
+	h.sessions = &stubSessionStore{
+		createErr:     &pgconn.PgError{Code: "23505"},
+		createErrOnce: true,
+		staleFail:     &swept,
+	}
+
+	ev, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("stale-running sweep should let the send proceed, got %v", err)
+	}
+	if !hasEventType(collectEvents(t, ev), EventFinalResponse) {
+		t.Fatal("expected final_response after stale sweep + retry")
+	}
+}
+
 func TestUnifiedChat_TurnCountEvents(t *testing.T) {
 	// conversation + final_response carry the server-side persisted message
 	// count so the sidebar assigns rather than increments.

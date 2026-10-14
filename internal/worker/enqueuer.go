@@ -405,6 +405,7 @@ var taskTypeCatalog = []struct {
 	{TypeSearchReindexEngagementScores, "default", "Batched re-index of content whose engagement_score changed (§13)"},
 	{TypeImageProcessing, "default", "Resize/optimize uploaded images"},
 	{TypeAITaskProcessing, "default", "Process AI task"},
+	{TypeAIMigrateConversations, "default", "Backfill Honcho conversations into ai_conversations (ADR-130 Phase 4)"},
 	{TypeEngagementCountUpdate, "default", "Update engagement counters"},
 	{TypeModerationScan, "default", "Run moderation scan on content"},
 	{TypeScheduledPublish, "default", "Publish scheduled content"},

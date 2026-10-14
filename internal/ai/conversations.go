@@ -33,6 +33,7 @@ type ConversationStore interface {
 	InsertAIMessage(ctx context.Context, arg gen.InsertAIMessageParams) (gen.AiMessage, error)
 	SetAIMessageAgentSession(ctx context.Context, arg gen.SetAIMessageAgentSessionParams) error
 	ListAIConversationHistory(ctx context.Context, arg gen.ListAIConversationHistoryParams) ([]gen.AiMessage, error)
+	CountAIConversationMessages(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	ListAIConversationMessages(ctx context.Context, arg gen.ListAIConversationMessagesParams) ([]gen.AiMessage, error)
 	LinkAgentSessionToConversation(ctx context.Context, arg gen.LinkAgentSessionToConversationParams) error
 	UnlinkAgentSessionsForConversation(ctx context.Context, conversationID pgtype.UUID) error
@@ -128,6 +129,13 @@ func (s *ConversationService) History(ctx context.Context, convID pgtype.UUID, l
 		out = append(out, ChatMessage{Role: m.Role, Content: m.Content})
 	}
 	return out, nil
+}
+
+// MessageCount is the thread's real persisted message count — used for
+// turn_count bookkeeping where the windowed history length would
+// under-count long conversations.
+func (s *ConversationService) MessageCount(ctx context.Context, convID pgtype.UUID) (int64, error) {
+	return s.store.CountAIConversationMessages(ctx, convID)
 }
 
 func (s *ConversationService) List(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListAIConversationsForUserRow, int64, error) {

@@ -103,7 +103,9 @@ func (s *Server) handleJapaChat(ctx context.Context, user *auth.AuthenticatedUse
 		Tools:          tools,
 	})
 	if err != nil {
-		return s.errorResp(req.ID, -32602, "Invalid params", err.Error()), false
+		// Engine pre-check failures (permission, busy thread, budget) are
+		// not argument errors — -32603 carries the real reason.
+		return s.errorResp(req.ID, -32603, "Internal error", err.Error()), false
 	}
 
 	var reply, conversationID, messageID, sessionID string

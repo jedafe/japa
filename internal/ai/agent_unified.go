@@ -166,6 +166,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	hasConv := false
 
 	var history []ChatMessage
+	msgCount := 0
 	userMsgPersisted := false
 
 	if h.convos != nil {
@@ -185,12 +186,14 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 			slog.Warn("ai: loading conversation history", "conversation_id", conv.ID, "error", err)
 		}
 
-		if _, err := h.convos.AppendUserMessage(ctx, conv.ID, req.Prompt); err != nil {
-			// Degrade: the reply still streams; the transcript just lacks
-			// this user turn.
-			slog.Warn("ai: failed to persist user message", "conversation_id", conv.ID, "error", err)
+		// turn_count bookkeeping needs the true message count — the windowed
+		// history length under-counts long threads. Degrade to the history
+		// length if the count query fails.
+		if n, err := h.convos.MessageCount(ctx, conv.ID); err == nil {
+			msgCount = int(n) // #nosec G115 -- message counts fit int
 		} else {
-			userMsgPersisted = true
+			slog.Warn("ai: counting conversation messages", "conversation_id", conv.ID, "error", err)
+			msgCount = len(history)
 		}
 	}
 
@@ -209,11 +212,41 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		// The ai_agent_sessions_one_running_per_conv partial unique index
 		// makes "one running turn per conversation" a DB invariant — a
 		// concurrent send that slipped past the busy pre-check lands here.
+		// A crashed/killed turn also lands here: its 'running' row outlives
+		// the busy check's staleness window and would lock the thread
+		// forever. Sweep rows past the timeout and retry once; a still-
+		// failing insert means a genuinely live turn is in flight.
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, errConversationBusy
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && hasConv {
+			timeout := h.getIntSetting(ctx, "agent.timeout_seconds", defaultTimeoutSeconds)
+			if swept, serr := h.sessions.FailStaleRunningAgentSessionsForConversation(ctx, gen.FailStaleRunningAgentSessionsForConversationParams{
+				ConversationID: conv.ID,
+				StaleBefore:    pgtype.Timestamptz{Time: time.Now().Add(-time.Duration(timeout) * time.Second), Valid: true},
+			}); serr == nil && swept > 0 {
+				slog.Info("ai: swept stale running session(s) for conversation", "conversation_id", conv.ID, "swept", swept)
+				session, err = h.createSession(ctx, userID, req.Prompt, geoSpaceID, preSearchResult.Level, convUUID)
+			}
 		}
-		return nil, fmt.Errorf("ai: creating agent session: %w", err)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return nil, errConversationBusy
+			}
+			return nil, fmt.Errorf("ai: creating agent session: %w", err)
+		}
+	}
+
+	// Persist the user turn only after the session exists — a rejected send
+	// (busy race, DB failure) must not leave an unanswered user message in
+	// the transcript polluting the next turn's history.
+	if hasConv {
+		if _, err := h.convos.AppendUserMessage(ctx, conv.ID, req.Prompt); err != nil {
+			// Degrade: the reply still streams; the transcript just lacks
+			// this user turn.
+			slog.Warn("ai: failed to persist user message", "conversation_id", conv.ID, "error", err)
+		} else {
+			userMsgPersisted = true
+		}
 	}
 
 	h.setSessionState(ctx, session.ID)
@@ -239,7 +272,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		agentCounters: len(catalog) > 0, // ADR-130: pure chat never touches jc:agent:* counters
 		history:       history,
 		model:         effModel,
-		unified:       &unifiedTurn{req: req, conv: conv, hasConv: hasConv, historyLen: len(history), userMsgPersisted: userMsgPersisted},
+		unified:       &unifiedTurn{req: req, conv: conv, hasConv: hasConv, msgCount: msgCount, userMsgPersisted: userMsgPersisted},
 	}, events)
 
 	return events, nil

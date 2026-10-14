@@ -58,6 +58,9 @@ func (s *chatStubSessions) FailAgentSession(_ context.Context, arg gen.FailAgent
 func (s *chatStubSessions) CancelAgentSession(_ context.Context, id pgtype.UUID) (gen.AiAgentSession, error) {
 	return gen.AiAgentSession{ID: id, Status: "cancelled"}, nil
 }
+func (s *chatStubSessions) FailStaleRunningAgentSessionsForConversation(context.Context, gen.FailStaleRunningAgentSessionsForConversationParams) (int64, error) {
+	return 0, nil
+}
 
 // newChatServer builds an MCP Server with the unified engine wired: an
 // AgentHandler on a stub provider, empty registry (pure chat turn), and

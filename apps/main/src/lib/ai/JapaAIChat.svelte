@@ -525,7 +525,9 @@
 			case 'error': {
 				// Promote any streamed partial into committed content so the
 				// bubble shows what arrived before the failure, then the error.
-				if (!turn.content && turn.streamed) {
+				// The partial wins over the transient progress placeholder
+				// that progress events write into content.
+				if (turn.streamed) {
 					turn.content = turn.streamed;
 				}
 				turn.streamed = '';

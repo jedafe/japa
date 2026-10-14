@@ -92,12 +92,13 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 	}
 
 	chatReq := anthropicToolsRequest{
-		Model:     model,
-		Messages:  msgs,
-		System:    systemPrompt,
-		Tools:     toAnthropicToolDefs(req.Tools),
-		MaxTokens: maxTokens,
-		Stream:    true,
+		Model:       model,
+		Messages:    msgs,
+		System:      systemPrompt,
+		Tools:       toAnthropicToolDefs(req.Tools),
+		MaxTokens:   maxTokens,
+		Temperature: req.Temperature,
+		Stream:      true,
 	}
 
 	body, err := json.Marshal(chatReq)

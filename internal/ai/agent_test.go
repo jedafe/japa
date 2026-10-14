@@ -77,19 +77,25 @@ func (m *mockAgentProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 
 // stubSessionStore implements SessionStore for testing.
 type stubSessionStore struct {
-	created   gen.AiAgentSession
-	createErr error // returned verbatim from CreateAgentSession when set
-	completed *gen.AiAgentSession
-	failed    *gen.AiAgentSession
-	cancelled *gen.AiAgentSession
-	complete  gen.CompleteAgentSessionParams
-	fail      gen.FailAgentSessionParams
-	cancel    pgtype.UUID
+	created       gen.AiAgentSession
+	createErr     error // returned verbatim from CreateAgentSession when set
+	createErrOnce bool  // consume createErr on the first call only
+	completed     *gen.AiAgentSession
+	failed        *gen.AiAgentSession
+	cancelled     *gen.AiAgentSession
+	complete      gen.CompleteAgentSessionParams
+	fail          gen.FailAgentSessionParams
+	cancel        pgtype.UUID
+	staleFail     *int64 // rows swept by FailStaleRunningAgentSessionsForConversation
 }
 
 func (s *stubSessionStore) CreateAgentSession(ctx context.Context, arg gen.CreateAgentSessionParams) (gen.AiAgentSession, error) {
 	if s.createErr != nil {
-		return gen.AiAgentSession{}, s.createErr
+		err := s.createErr
+		if s.createErrOnce {
+			s.createErr = nil
+		}
+		return gen.AiAgentSession{}, err
 	}
 	s.created = gen.AiAgentSession{
 		ID: randomUUID(),
@@ -133,6 +139,13 @@ func (s *stubSessionStore) CancelAgentSession(ctx context.Context, id pgtype.UUI
 	s.cancelled = &c
 
 	return c, nil
+}
+
+func (s *stubSessionStore) FailStaleRunningAgentSessionsForConversation(ctx context.Context, arg gen.FailStaleRunningAgentSessionsForConversationParams) (int64, error) {
+	if s.staleFail != nil {
+		return *s.staleFail, nil
+	}
+	return 0, nil
 }
 
 // stubGeoResolver implements GeoSpaceResolver for testing.

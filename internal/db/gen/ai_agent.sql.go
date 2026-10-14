@@ -280,6 +280,36 @@ func (q *Queries) FailAgentSession(ctx context.Context, arg FailAgentSessionPara
 	return i, err
 }
 
+const failStaleRunningAgentSessionsForConversation = `-- name: FailStaleRunningAgentSessionsForConversation :execrows
+UPDATE ai_agent_sessions SET
+ status = 'failed',
+ error_message = 'agent: session timed out',
+ completed_at = now()
+WHERE conversation_id = $1
+  AND status = 'running'
+  AND started_at < $2
+`
+
+type FailStaleRunningAgentSessionsForConversationParams struct {
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	StaleBefore    pgtype.Timestamptz `json:"stale_before"`
+}
+
+// ADR-130: sweep "running" rows older than the agent timeout for one
+// conversation. A crashed/killed turn leaves a permanent 'running' row
+// that the one-running-per-conversation unique index keeps enforcing even
+// though the busy pre-check treats it as stale — every subsequent send to
+// that thread would fail with a spurious conversation_busy. Failing rows
+// past the timeout frees the index slot; a genuinely live turn started
+// within the window is untouched.
+func (q *Queries) FailStaleRunningAgentSessionsForConversation(ctx context.Context, arg FailStaleRunningAgentSessionsForConversationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, failStaleRunningAgentSessionsForConversation, arg.ConversationID, arg.StaleBefore)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAgentCostReport = `-- name: GetAgentCostReport :many
 SELECT s.user_id,
  u.username,

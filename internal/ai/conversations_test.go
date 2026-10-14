@@ -167,6 +167,10 @@ func (s *stubConvoStore) ListAIConversationHistory(_ context.Context, arg gen.Li
 	return msgs, nil
 }
 
+func (s *stubConvoStore) CountAIConversationMessages(_ context.Context, conversationID pgtype.UUID) (int64, error) {
+	return int64(len(s.msgs[uuidStr(conversationID)])), nil
+}
+
 func (s *stubConvoStore) ListAIConversationMessages(_ context.Context, arg gen.ListAIConversationMessagesParams) ([]gen.AiMessage, error) {
 	return s.msgs[uuidStr(arg.ConversationID)], nil
 }

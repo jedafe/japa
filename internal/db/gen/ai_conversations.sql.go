@@ -33,6 +33,20 @@ func (q *Queries) AIConversationExistsIncludingDeleted(ctx context.Context, arg 
 	return present, err
 }
 
+const countAIConversationMessages = `-- name: CountAIConversationMessages :one
+SELECT COUNT(*) FROM ai_messages
+WHERE conversation_id = $1
+`
+
+// Total message count for turn_count bookkeeping — the SSE events report
+// the true thread size, not the windowed history length.
+func (q *Queries) CountAIConversationMessages(ctx context.Context, conversationID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAIConversationMessages, conversationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAIConversationsForUser = `-- name: CountAIConversationsForUser :one
 SELECT COUNT(*) FROM ai_conversations
 WHERE user_id = $1 AND deleted_at IS NULL
