@@ -6,10 +6,25 @@ import "encoding/json"
 // are optional; the zero value means defaults — chat mode, no restrictions.
 // Ref: japaconnect-engineering/adr/ADR-130-unified-japa-ai.md
 type AIPrefs struct {
-	DefaultMode        string   `json:"default_mode,omitempty"` // "" | "chat" | "agent"
-	DisabledCategories []string `json:"disabled_categories,omitempty"`
-	DisabledTools      []string `json:"disabled_tools,omitempty"`
-	EnabledTools       []string `json:"enabled_tools,omitempty"` // per-tool exceptions vs disabled_categories
+	DefaultMode        string         `json:"default_mode,omitempty"` // "" | "chat" | "agent"
+	DisabledCategories []string       `json:"disabled_categories,omitempty"`
+	DisabledTools      []string       `json:"disabled_tools,omitempty"`
+	EnabledTools       []string       `json:"enabled_tools,omitempty"` // per-tool exceptions vs disabled_categories
+	ChatTemplates      []ChatTemplate `json:"chat_templates,omitempty"`
+}
+
+// ChatTemplate is a saved generation-spec preset for the /ai composer — a
+// named, client-managed blob of structured drafting options (content_type,
+// tone, framework, word/heading/link counts, include_* flags) that the web
+// surface serializes into outgoing messages. The backend stores and returns
+// it verbatim: Values is opaque so template fields can evolve without a
+// schema change here.
+type ChatTemplate struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Values    json.RawMessage `json:"values,omitempty"`
+	CreatedAt string          `json:"created_at,omitempty"`
+	UpdatedAt string          `json:"updated_at,omitempty"`
 }
 
 // ParseAIPrefs decodes the ai_prefs column; malformed payloads degrade to

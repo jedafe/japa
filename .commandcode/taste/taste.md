@@ -17,6 +17,7 @@
 
 # testing
 - Use Playwright for end-to-end testing in this project. Confidence: 0.65
+- Playwright text/regex `find` searches must account for the active UI locale (the site defaults to French) — search locale-appropriate strings, or evaluate the DOM directly by element id (e.g. `document.getElementById('wiki-rollup')`) instead of by visible text. Confidence: 0.7
 
 # communication
 - Present bug hunt results as a structured table with columns: #, Section (with code section reference), Bug description, Fix description. Include a summary header with counts (found/fixed/remaining), a verification results section, and a files-changed list. Confidence: 0.75

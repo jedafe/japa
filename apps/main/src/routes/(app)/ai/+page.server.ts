@@ -3,6 +3,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
 import { isMainToolEnabled, MAIN_TOOLS } from '$lib/tools/registry';
 import type { AgentCapabilities, AIPrefs, AiProject } from '$lib/ai/agentTypes';
+import type { MeSpace, BlogSeries, AssessmentForm, ContentTypeMeta } from '$lib/types';
 
 /**
  * /ai — the unified AI surface. Two modes share one route behind a tab
@@ -80,7 +81,13 @@ export const load: PageServerLoad = async (event) => {
 			models: [],
 			voices: [],
 			projects: [],
-			prefs: null
+			prefs: null,
+			contentTypes: [],
+			spaces: [],
+			series: [],
+			statusOptions: [],
+			visibilityOptions: [],
+			assessmentDimensions: []
 		};
 	}
 
@@ -147,7 +154,54 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { agentEnabled, chatEnabled, unifiedEnabled, capabilities, conversations, models, voices, projects, prefs };
+	// Chat template panel catalogs (content types, spaces, series,
+	// status/visibility options, assessment dimensions) — the same lists
+	// the studio prompt rail loads (Rule 16). All best-effort: empty
+	// lists degrade the picker rather than the page.
+	let contentTypes: ContentTypeMeta[] = [];
+	let spaces: MeSpace[] = [];
+	let series: BlogSeries[] = [];
+	let statusOptions: { value: string; label: string }[] = [];
+	let visibilityOptions: { value: string; label: string }[] = [];
+	let assessmentDimensions: string[] = [];
+	if (unifiedEnabled) {
+		const [typesRes, spacesRes, seriesRes, statusRes, visRes, assessmentRes] =
+			await Promise.allSettled([
+				apiList<ContentTypeMeta>(ctx, '/content-types'),
+				apiList<MeSpace>(ctx, '/me/spaces'),
+				apiList<BlogSeries>(ctx, '/series'),
+				apiGet<{ value: string; label: string }[]>(ctx, '/content/status-options'),
+				apiGet<{ value: string; label: string }[]>(ctx, '/content/visibility-options'),
+				// §71 — active assessment form; dimensions populate the Journey
+				// tab's roadmap pickers.
+				apiGet<AssessmentForm>(ctx, '/assessment')
+			]);
+		contentTypes = typesRes.status === 'fulfilled' ? typesRes.value.items : [];
+		spaces = spacesRes.status === 'fulfilled' ? spacesRes.value.items : [];
+		series = seriesRes.status === 'fulfilled' ? seriesRes.value.items : [];
+		statusOptions = statusRes.status === 'fulfilled' ? statusRes.value : [];
+		visibilityOptions = visRes.status === 'fulfilled' ? visRes.value : [];
+		assessmentDimensions =
+			assessmentRes.status === 'fulfilled' ? (assessmentRes.value?.dimensions ?? []) : [];
+	}
+
+	return {
+		agentEnabled,
+		chatEnabled,
+		unifiedEnabled,
+		capabilities,
+		conversations,
+		models,
+		voices,
+		projects,
+		prefs,
+		contentTypes,
+		spaces,
+		series,
+		statusOptions,
+		visibilityOptions,
+		assessmentDimensions
+	};
 };
 
 export const actions: Actions = {

@@ -15,7 +15,7 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 
 	import { t } from '$lib/i18n';
-	import { tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import {
 		Send,
 		Sparkles,
@@ -51,15 +51,29 @@
 		Ellipsis,
 		Pencil,
 		ChevronDown,
-		ChevronRight
+		ChevronRight,
+		PanelRight
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
 	import { AgentRequestError } from './agentStream';
 	import { streamChat, type ToolSelectionOverride } from './unifiedStream';
 	import AiModelVoicePicker from './AiModelVoicePicker.svelte';
+	import ChatTemplatePanel from './ChatTemplatePanel.svelte';
+	import {
+		DEFAULT_CHAT_TEMPLATE_VALUES,
+		buildTemplateBlock,
+		buildTemplateInsertText,
+		buildTemplateSpec,
+		normalizeTemplateValues,
+		templateFingerprint,
+		type ChatTemplate,
+		type ChatTemplateValues
+	} from './chatTemplate';
+	import { chatTemplateRail } from './chatTemplateRail.svelte';
 	import { AutocompleteSelect } from '$lib/components/ui';
 	import AiSourceCitations from './AiSourceCitations.svelte';
 	import type { AiCitationSource } from './types';
+	import type { MeSpace, BlogSeries, ContentTypeMeta } from '$lib/types';
 	import type {
 		AgentCapabilities,
 		AgentEvent,
@@ -77,9 +91,35 @@
 		projects: AiProject[];
 		capabilities: AgentCapabilities | null;
 		prefs: AIPrefs | null;
+		/** GET /content-types — options for the template editor's content
+		 * type field (has_category/categories drive the guide-category
+		 * selector). Empty renders a plain text input there. */
+		contentTypes: ContentTypeMeta[];
+		/** Settings/Journey tab data for the template panel — same catalogs
+		 * the studio prompt rail gets (best-effort; empty degrades the tab). */
+		spaces: MeSpace[];
+		series: BlogSeries[];
+		assessmentDimensions: string[];
+		maxTags: number;
+		statusOptions: { value: string; label: string }[];
+		visibilityOptions: { value: string; label: string }[];
 	}
 
-	let { conversations, models, voices, projects, capabilities, prefs }: Props = $props();
+	let {
+		conversations,
+		models,
+		voices,
+		projects,
+		capabilities,
+		prefs,
+		contentTypes,
+		spaces,
+		series,
+		assessmentDimensions,
+		maxTags,
+		statusOptions,
+		visibilityOptions
+	}: Props = $props();
 
 	type ToolStatus = 'pending' | 'success' | 'error' | 'unauthorized' | 'privacy_blocked' | 'hitl_queued';
 
@@ -109,6 +149,9 @@
 		estimated_cost?: number;
 		error?: string;
 		in_progress?: boolean;
+		/** Set when the turn was sent with a chat template attached — the
+		 * bubble shows the template name under the user's text. */
+		template_name?: string;
 	}
 
 	// Local copy of the sidebar list — a conversation created mid-session is
@@ -523,17 +566,123 @@
 				disabledTools.push(...off);
 			}
 		}
-		const res = await api.put('/me/ai-preferences', {
-			default_mode: toolsOn ? 'agent' : 'chat',
+		const body = {
+			default_mode: (toolsOn ? 'agent' : 'chat') as 'agent' | 'chat',
 			disabled_categories: disabledCats,
 			disabled_tools: disabledTools,
-			enabled_tools: enabledTools
-		});
+			enabled_tools: enabledTools,
+			// Carry the template list through every prefs PUT — the endpoint
+			// replaces the whole ai_prefs blob, so omitting it would wipe them.
+			chat_templates: templates
+		};
+		const res = await api.put('/me/ai-preferences', body);
 		if (!res.error) {
+			savedPrefs = body;
 			prefsSaved = true;
 			setTimeout(() => (prefsSaved = false), 2000);
 		}
 	}
+
+	// --- Chat templates ----------------------------------------------------
+	// Latest persisted prefs snapshot — PUT merges over it so a template
+	// save never silently reverts a tools-defaults save made earlier in the
+	// session (and vice versa). untrack seeds once from load data; the prop
+	// doesn't change after mount.
+	let savedPrefs = $state<AIPrefs | null>(untrack(() => prefs));
+	let templates = $state<ChatTemplate[]>(
+		untrack(() =>
+			(prefs?.chat_templates ?? []).map((tpl) => ({
+				...tpl,
+				values: normalizeTemplateValues(tpl.values)
+			}))
+		)
+	);
+	// Working editor copy — what the right rail edits and what an active
+	// send actually carries (WYSIWYG: unsaved edits apply to sends, Save
+	// only persists).
+	let tplValues = $state<ChatTemplateValues>(structuredClone(DEFAULT_CHAT_TEMPLATE_VALUES));
+	// Local copies for bind: — the panel's space/series selectors append
+	// newly created rows, and load-data props aren't valid bind targets.
+	let tplSpaces = $state(untrack(() => spaces));
+	let tplSeries = $state(untrack(() => series));
+	let activeTemplateId = $state('');
+	let templateActive = $state(false);
+	// SSR + first client paint render the rail closed — opening it here
+	// would emit a full-height overlay into mobile SSR HTML that covers
+	// the transcript until hydration flips it. onMount opens it on lg+.
+	let templatePanelOpen = $state(false);
+
+	const activeTemplate = $derived(templates.find((tpl) => tpl.id === activeTemplateId));
+	const templateDirty = $derived(
+		!!activeTemplate &&
+			templateFingerprint(tplValues) !==
+				templateFingerprint(normalizeTemplateValues(activeTemplate.values))
+	);
+	const activeTemplateLabel = $derived(
+		activeTemplate?.name || t('ai.templates.custom', 'Custom template')
+	);
+
+	// Persist the full template list inside ai_prefs. Returns an error
+	// message or null — the panel renders the error inline.
+	async function persistTemplates(next: ChatTemplate[]): Promise<string | null> {
+		// PUT replaces the whole ai_prefs blob. If the snapshot never
+		// loaded (initial GET failed), refetch before writing — sending
+		// empty fields here would silently wipe default_mode + tool prefs.
+		if (!savedPrefs) {
+			const res = await api.get<AIPrefs>('/me/ai-preferences');
+			if (res.error || !res.data) {
+				return (
+					res.error?.message || t('ai.templates.save_failed', 'Could not save templates.')
+				);
+			}
+			savedPrefs = res.data;
+		}
+		const body = {
+			default_mode: (savedPrefs?.default_mode ?? '') as AIPrefs['default_mode'],
+			disabled_categories: savedPrefs?.disabled_categories ?? [],
+			disabled_tools: savedPrefs?.disabled_tools ?? [],
+			enabled_tools: savedPrefs?.enabled_tools ?? [],
+			chat_templates: next
+		};
+		const res = await api.put('/me/ai-preferences', body);
+		if (res.error) {
+			return res.error.message || t('ai.templates.save_failed', 'Could not save templates.');
+		}
+		templates = next;
+		savedPrefs = body;
+		return null;
+	}
+
+	// "Insert as editable prompt" — drop the readable spec into the
+	// composer and detach so the send doesn't carry the spec twice. A
+	// draft already in the composer becomes the Topic line rather than
+	// being clobbered.
+	function insertTemplateText() {
+		const draft = input.trim();
+		input = buildTemplateInsertText(tplValues) + draft;
+		templateActive = false;
+		tick().then(() => {
+			resizeInput();
+			inputEl?.focus();
+		});
+	}
+
+	onMount(() => {
+		// Open the rail on desktop (it's a static column there); on small
+		// screens it stays closed as an on-demand overlay.
+		chatTemplateRail.mounted = true;
+		templatePanelOpen = window.matchMedia('(min-width: 1024px)').matches;
+		return () => {
+			chatTemplateRail.open = false;
+			chatTemplateRail.mounted = false;
+		};
+	});
+
+	// The layout hides the widget sidebar only while this rail owns the
+	// right edge — closing the panel brings the widgets back.
+	$effect(() => {
+		chatTemplateRail.open = templatePanelOpen;
+	});
 
 	// --- Composer pickers ---------------------------------------------------
 	let selectedModel = $state('');
@@ -688,6 +837,14 @@
 	}
 
 	async function deleteConversation(id: string) {
+		// Destructive: the thread is gone for good — same confirm the
+		// project delete uses.
+		if (
+			!confirm(
+				t('ai.chat.delete_confirm', 'Delete this conversation? This cannot be undone.')
+			)
+		)
+			return;
 		const res = await api.delete(`/ai/conversations/${id}`);
 		if (!res.error) {
 			convos = convos.filter((c) => c.conversation_id !== id);
@@ -733,7 +890,20 @@
 		input = '';
 		sending = true;
 
-		const userTurn: UnifiedTurn = { id: ++turnSeq, role: 'user', content: message };
+		// Active chat template: the serialized spec rides along inside the
+		// message — the model maps it onto content.generate_draft's arguments
+		// in agent mode or honors it as drafting constraints in plain chat.
+		const spec = templateActive ? buildTemplateSpec(tplValues) : null;
+		const outgoing = spec
+			? message + buildTemplateBlock(activeTemplateLabel, tplValues)
+			: message;
+
+		const userTurn: UnifiedTurn = {
+			id: ++turnSeq,
+			role: 'user',
+			content: message,
+			template_name: spec ? activeTemplateLabel : undefined
+		};
 		const assistantTurn: UnifiedTurn = {
 			id: ++turnSeq,
 			role: 'assistant',
@@ -744,6 +914,19 @@
 		// Mutate via the $state proxy — writes to the raw object bypass reactivity.
 		const liveTurn = turns[turns.length - 1];
 
+		// Merge template fields into the allowlisted context keys the
+		// endpoint accepts (tone/audience/content_type/space_id/tags) — the
+		// composer's own tone picker wins when set.
+		const ctxPayload: Record<string, unknown> = {};
+		if (selectedTone) ctxPayload.tone = selectedTone;
+		if (spec) {
+			if (!ctxPayload.tone && tplValues.tone) ctxPayload.tone = tplValues.tone;
+			if (tplValues.audience) ctxPayload.audience = tplValues.audience;
+			if (tplValues.content_type) ctxPayload.content_type = tplValues.content_type;
+			if (tplValues.space_id) ctxPayload.space_id = tplValues.space_id;
+			if (tplValues.tags.length) ctxPayload.tags = tplValues.tags;
+		}
+
 		const abort = new AbortController();
 		activeAbort = abort;
 		activeSessionId = null;
@@ -751,14 +934,21 @@
 
 		try {
 			for await (const ev of streamChat({
-				message,
+				message: outgoing,
 				conversationId: conversationId || undefined,
 				// §103 AI Projects: a pending project stamps the NEW thread —
 				// existing conversations keep their own membership.
 				projectId: conversationId ? undefined : (pendingProjectId ?? undefined),
 				model: selectedModel || undefined,
-				voiceId: selectedVoice || undefined,
-				context: selectedTone ? { tone: selectedTone } : undefined,
+				// Template voice fills in when the composer picker is unset —
+				// same precedence as the tone merge above.
+				voiceId: selectedVoice || (spec ? tplValues.voice_id : '') || undefined,
+				context: Object.keys(ctxPayload).length > 0 ? ctxPayload : undefined,
+				// An active template addresses humanization explicitly — 'off'
+				// sends humanize:false, any level sends the request-level value.
+				humanize: spec ? tplValues.humanize_level !== 'off' : undefined,
+				humanizeLevel:
+					spec && tplValues.humanize_level !== 'off' ? tplValues.humanize_level : undefined,
 				tools: toolsOverride(),
 				signal: abort.signal
 			})) {
@@ -1033,7 +1223,7 @@
 	}
 </script>
 
-<div class="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-4 lg:flex-row">
+<div class="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 lg:flex-row">
 	<!-- Conversation sidebar -->
 	<aside
 		class="w-full lg:w-64 lg:shrink-0 {sidebarOpen
@@ -1328,15 +1518,29 @@
 						: t('ai.chat.subtitle', 'Your AI assistant')}
 				</p>
 			</div>
-			{#if activeProject}
-				<span
-					class="ml-auto inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)]"
-					title={activeProject.name}
+			<div class="ml-auto flex items-center gap-2">
+				{#if activeProject}
+					<span
+						class="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] px-2.5 py-1 text-xs text-[var(--color-muted)]"
+						title={activeProject.name}
+					>
+						<Folder size={12} />
+						<span class="max-w-32 truncate">{activeProject.name}</span>
+					</span>
+				{/if}
+				<button
+					type="button"
+					onclick={() => (templatePanelOpen = !templatePanelOpen)}
+					class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
+					style={templatePanelOpen
+						? 'border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
+						: 'border-color: var(--color-border); color: var(--color-muted)'}
+					title={t('ai.templates.toggle', 'Chat templates')}
 				>
-					<Folder size={12} />
-					<span class="max-w-32 truncate">{activeProject.name}</span>
-				</span>
-			{/if}
+					<PanelRight size={13} />
+					<span class="hidden sm:inline">{t('ai.templates.title', 'Templates')}</span>
+				</button>
+			</div>
 		</header>
 
 		<!-- Transcript -->
@@ -1408,6 +1612,12 @@
 										</span>
 									{/if}
 								</div>
+
+								{#if turn.role === 'user' && turn.template_name}
+									<div class="mt-1 flex justify-end text-[10px]" style="color: var(--color-muted)">
+										{t('ai.templates.sent_with', 'Template')}: {turn.template_name}
+									</div>
+								{/if}
 
 								{#if turn.role === 'assistant' && turn.presearch_level}
 									<div class="mt-1.5 flex items-center gap-1.5 text-xs" style="color: var(--color-muted)">
@@ -1527,6 +1737,30 @@
 			<p class="mt-2 rounded-lg border px-3 py-2 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
 				{t('ai.chat.legacy_readonly', 'This is an older conversation — it’s view-only. Start a new chat to keep going.')}
 			</p>
+		{/if}
+
+		{#if templateActive}
+			<!-- Active chat template — every send carries the spec until detached. -->
+			<div class="mt-2 flex items-center gap-2 text-xs">
+				<span
+					class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1"
+					style="border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)"
+				>
+					{t('ai.templates.sent_with', 'Template')}: {activeTemplateLabel}
+					<button
+						type="button"
+						onclick={() => (templateActive = false)}
+						class="hover:opacity-70"
+						aria-label={t('ai.templates.detach', 'Detach template')}
+						title={t('ai.templates.detach', 'Detach template')}
+					>
+						<X size={11} />
+					</button>
+				</span>
+				{#if templateDirty}
+					<span style="color: var(--color-muted)">{t('ai.templates.live_edits', 'with unsaved edits')}</span>
+				{/if}
+			</div>
 		{/if}
 
 		<!-- Composer -->
@@ -1676,6 +1910,32 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Chat template rail — a column on lg+, a right-edge overlay on
+	     smaller viewports (close button lives in the panel header). -->
+	{#if templatePanelOpen}
+		<div
+			class="fixed inset-y-0 right-0 z-40 flex w-[21rem] max-w-[90vw] lg:static lg:z-auto lg:mr-4 lg:w-72 lg:shrink-0 xl:w-80"
+		>
+			<ChatTemplatePanel
+				{templates}
+				bind:values={tplValues}
+				bind:activeId={activeTemplateId}
+				bind:active={templateActive}
+				{contentTypes}
+				bind:spaces={tplSpaces}
+				bind:series={tplSeries}
+				{assessmentDimensions}
+				{voices}
+				{maxTags}
+				{statusOptions}
+				{visibilityOptions}
+				onpersist={persistTemplates}
+				oninsert={insertTemplateText}
+				onclose={() => (templatePanelOpen = false)}
+			/>
+		</div>
+	{/if}
 </div>
 
 <!-- Click-away / Escape closes an open "Move to project" menu or the
@@ -1692,6 +1952,9 @@
 		else if (moveSubOpen) moveSubOpen = false;
 		else if (moveMenuFor) moveMenuFor = null;
 		else if (projMenuFor) projMenuFor = null;
+		// The template rail is a fixed overlay below lg — Esc dismisses it.
+		else if (templatePanelOpen && !window.matchMedia('(min-width: 1024px)').matches)
+			templatePanelOpen = false;
 	}}
 />
 

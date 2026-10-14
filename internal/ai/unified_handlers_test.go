@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -212,5 +213,66 @@ func TestAIPrefsHandlers(t *testing.T) {
 	h.HandleGetAIPrefs(w, r)
 	if !strings.Contains(w.Body.String(), `"default_mode":"agent"`) {
 		t.Fatalf("prefs not persisted: %s", w.Body.String())
+	}
+}
+
+func TestAIPrefsChatTemplates(t *testing.T) {
+	h := &Handlers{Convos: NewConversationService(newStubConvoStore(), nil)}
+
+	// PUT with chat_templates round-trips through GET.
+	r := authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences",
+		`{"default_mode":"agent","chat_templates":[{"id":"t1","name":"Guide","values":{"content_type":"guide","min_words":1500},"created_at":"2026-01-01T00:00:00Z"}]}`, 1)
+	w := httptest.NewRecorder()
+	h.HandlePutAIPrefs(w, r)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("PUT status %d: %s", w.Result().StatusCode, w.Body.String())
+	}
+
+	r = authedRequest(t, http.MethodGet, "/api/v1/me/ai-preferences", "", 1)
+	w = httptest.NewRecorder()
+	h.HandleGetAIPrefs(w, r)
+	body := w.Body.String()
+	if !strings.Contains(body, `"chat_templates"`) || !strings.Contains(body, `"min_words":1500`) {
+		t.Fatalf("chat templates not persisted: %s", body)
+	}
+
+	// Non-object values payload → 400.
+	r = authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences",
+		`{"chat_templates":[{"id":"t1","name":"x","values":[1,2]}]}`, 1)
+	w = httptest.NewRecorder()
+	h.HandlePutAIPrefs(w, r)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("array values should 400, got %d", w.Result().StatusCode)
+	}
+
+	// Over the 32-template cap → 400.
+	var many strings.Builder
+	many.WriteString(`{"chat_templates":[`)
+	for i := 0; i < 33; i++ {
+		if i > 0 {
+			many.WriteString(",")
+		}
+		fmt.Fprintf(&many, `{"id":"t%d","name":"x"}`, i)
+	}
+	many.WriteString(`]}`)
+	r = authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences", many.String(), 1)
+	w = httptest.NewRecorder()
+	h.HandlePutAIPrefs(w, r)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("33 templates should 400, got %d", w.Result().StatusCode)
+	}
+
+	// Missing id/name → 400.
+	for _, payload := range []string{
+		`{"chat_templates":[{"name":"x"}]}`,
+		`{"chat_templates":[{"id":"t1"}]}`,
+		`{"chat_templates":[{"id":"t1","name":"a"},{"id":"t1","name":"b"}]}`,
+	} {
+		r = authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences", payload, 1)
+		w = httptest.NewRecorder()
+		h.HandlePutAIPrefs(w, r)
+		if w.Result().StatusCode != http.StatusBadRequest {
+			t.Fatalf("payload %s should 400, got %d", payload, w.Result().StatusCode)
+		}
 	}
 }

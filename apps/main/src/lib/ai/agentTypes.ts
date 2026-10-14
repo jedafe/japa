@@ -6,6 +6,7 @@
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 6, Phase 10)
 
 import type { AiCitationSource } from './types';
+import type { ChatTemplate } from './chatTemplate';
 import type { ToolSelectionOverride } from './unifiedStream';
 
 /** SSE event types emitted by the agent loop (internal/ai/agent.go constants). */
@@ -91,6 +92,9 @@ export interface AIPrefs {
 	disabled_categories?: string[];
 	disabled_tools?: string[];
 	enabled_tools?: string[];
+	/** Saved composer generation-spec presets (/ai chat templates). Values
+	 * is opaque to the backend — see ./chatTemplate.ts for the shape. */
+	chat_templates?: ChatTemplate[];
 }
 
 /** Unified conversation summary (GET /api/v1/ai/conversations → data[]). */

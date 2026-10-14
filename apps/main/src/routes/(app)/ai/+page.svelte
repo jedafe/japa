@@ -28,6 +28,13 @@
 	const capabilities = $derived(data.capabilities);
 	const geo = $derived(capabilities?.geo_context);
 	const toolCount = $derived(capabilities?.tools.length ?? 0);
+	// content.max_tags caps the template panel's tag input (same setting
+	// the composer enforces).
+	const maxTags = $derived(
+		typeof data.siteSettings?.['content.max_tags'] === 'number'
+			? (data.siteSettings['content.max_tags'] as number)
+			: 5
+	);
 
 	// Mode resolution: honor ?mode= when it names an enabled mode, otherwise
 	// fall back to whichever mode is available (agent first — /ai was the
@@ -87,7 +94,7 @@
 {#if data.unifiedEnabled}
 	<!-- ADR-130: single chat surface — the composer tools toggle, not a
 	     page-level tab, is what switches between chat and agent turns. -->
-	<div class="mx-auto mt-4 flex h-[calc(100vh-9rem)] w-full max-w-5xl flex-col">
+	<div class="mx-auto mt-2 flex h-[calc(100vh-7rem)] w-full max-w-7xl flex-col">
 		<JapaAIChat
 			conversations={data.conversations.map((c) => ({ ...c, legacy: c.legacy ?? false }))}
 			models={data.models}
@@ -95,6 +102,13 @@
 			projects={data.projects}
 			capabilities={data.capabilities}
 			prefs={data.prefs}
+			contentTypes={data.contentTypes}
+			spaces={data.spaces}
+			series={data.series}
+			assessmentDimensions={data.assessmentDimensions}
+			{maxTags}
+			statusOptions={data.statusOptions}
+			visibilityOptions={data.visibilityOptions}
 		/>
 	</div>
 {:else if mode === null}

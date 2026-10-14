@@ -533,10 +533,11 @@ func (h *Handlers) HandleDeleteConversation(w http.ResponseWriter, r *http.Reque
 // aiPrefsInput mirrors AIPrefs for the PUT body; kept separate so request
 // validation can reject malformed shapes before touching the store.
 type aiPrefsInput struct {
-	DefaultMode        string   `json:"default_mode"`
-	DisabledCategories []string `json:"disabled_categories"`
-	DisabledTools      []string `json:"disabled_tools"`
-	EnabledTools       []string `json:"enabled_tools"`
+	DefaultMode        string         `json:"default_mode"`
+	DisabledCategories []string       `json:"disabled_categories"`
+	DisabledTools      []string       `json:"disabled_tools"`
+	EnabledTools       []string       `json:"enabled_tools"`
+	ChatTemplates      []ChatTemplate `json:"chat_templates"`
 }
 
 // HandleGetAIPrefs handles GET /me/ai-preferences.
@@ -608,11 +609,48 @@ func (h *Handlers) HandlePutAIPrefs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Bound saved chat templates the same way — Values is an opaque client
+	// blob, so cap count and per-template size rather than inspecting it.
+	const maxChatTemplates, maxTemplateValuesBytes = 32, 16384
+	if len(input.ChatTemplates) > maxChatTemplates {
+		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates has too many entries")
+		return
+	}
+	seenTemplateIDs := make(map[string]bool, len(input.ChatTemplates))
+	for _, ct := range input.ChatTemplates {
+		if ct.ID == "" || ct.Name == "" {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates entries require id and name")
+			return
+		}
+		if seenTemplateIDs[ct.ID] {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates contains duplicate ids")
+			return
+		}
+		seenTemplateIDs[ct.ID] = true
+		if len(ct.ID) > 64 || len(ct.Name) > 200 || len(ct.CreatedAt) > 40 || len(ct.UpdatedAt) > 40 {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates contains an overlong entry")
+			return
+		}
+		if len(ct.Values) > maxTemplateValuesBytes {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates values payload too large")
+			return
+		}
+		// Values must be a JSON object when present (or absent entirely).
+		if len(ct.Values) > 0 {
+			var obj map[string]any
+			if err := json.Unmarshal(ct.Values, &obj); err != nil {
+				errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates values must be a JSON object")
+				return
+			}
+		}
+	}
+
 	prefs := AIPrefs{
 		DefaultMode:        input.DefaultMode,
 		DisabledCategories: input.DisabledCategories,
 		DisabledTools:      input.DisabledTools,
 		EnabledTools:       input.EnabledTools,
+		ChatTemplates:      input.ChatTemplates,
 	}
 
 	if err := h.Convos.SavePrefs(r.Context(), user.UserID, prefs); err != nil {

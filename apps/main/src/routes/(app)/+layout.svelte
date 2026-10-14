@@ -14,6 +14,7 @@
 	import StickyAnchorAd from '$lib/components/ads/StickyAnchorAd.svelte';
 	import AdConversionTracker from '$lib/components/ads/AdConversionTracker.svelte';
 	import { lightbox } from '$lib/lightbox.svelte';
+	import { chatTemplateRail } from '$lib/ai/chatTemplateRail.svelte';
 	import { Sparkles } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import type { LayoutData } from './$types';
@@ -76,6 +77,17 @@
 	// for the transcript + composer — the left rail auto-collapses on entry
 	// like the settings/dashboard zones.
 	const isAi = $derived(page.route.id?.startsWith('/(app)/ai') ?? false);
+
+	// The chat-template rail owns the right edge on /ai only while it is
+	// open — when the panel is closed the widget sidebar comes back. While
+	// the unified chat is still mounting (`!mounted`), assume the rail will
+	// open (its desktop default) so the widgets never flash into view.
+	const aiUnifiedRoute = $derived(
+		page.route.id === '/(app)/ai' && page.data.unifiedEnabled === true
+	);
+	const aiRailOpen = $derived(
+		aiUnifiedRoute && (!chatTemplateRail.mounted || chatTemplateRail.open)
+	);
 
 	// ADR-058 Exception #1: content single pages (blog, content, guide,
 	// story, comparisons) still render the unified shell's left ad rail. The
@@ -222,7 +234,8 @@
 {:else}
 	<!-- AppShell handles both authenticated and guest users. The LeftNav
 	     shows a Login button for guests and filters menu items by visibility.
-	     The RightSidebar renders admin-managed widgets for all users.
+	     The RightSidebar renders admin-managed widgets for all users —
+	     except on /ai, where the chat-template rail owns the right edge.
 	     The left rail is suppressed on /create and the auto-collapse zones
 	     (/settings, /dashboard). Content single pages (exception #1) keep the
 	     left ad rail so the article body can devote its full center column to
@@ -238,7 +251,7 @@
 		logoUrl={data.siteSettings?.['appearance.logo_url'] as string | undefined}
 		logoDarkUrl={data.siteSettings?.['appearance.logo_url_dark'] as string | undefined}
 		enabledLanguages={data.siteSettings?.['i18n.enabled_languages'] as string | undefined}
-		hideRightSidebar={exception || !data.rightSidebarEnabled}
+		hideRightSidebar={exception || aiRailOpen || !data.rightSidebarEnabled}
 		rightSidebarWidgets={data.rightSidebarWidgets}
 		leftSidebarWidgets={isCreateRoute || isSettings || isDashboard || isRoadmap || isAi ? [] : data.leftSidebarWidgets}
 
