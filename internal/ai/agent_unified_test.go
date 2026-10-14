@@ -34,14 +34,15 @@ func (m *recordingProvider) ChatWithTools(_ context.Context, req ChatWithToolsRe
 	}, nil
 }
 
-// countingRateLimiter tracks Incr calls per key so tests can assert the
-// jc:agent:* counters did (not) fire.
+// countingRateLimiter tracks Incr/IncrByFloat calls per key so tests can
+// assert which jc:agent:* / jc:ai:* counters did (not) fire.
 type countingRateLimiter struct {
-	incrKeys map[string]int64
+	incrKeys  map[string]int64
+	floatKeys map[string]float64
 }
 
 func newCountingRateLimiter() *countingRateLimiter {
-	return &countingRateLimiter{incrKeys: map[string]int64{}}
+	return &countingRateLimiter{incrKeys: map[string]int64{}, floatKeys: map[string]float64{}}
 }
 
 func (s *countingRateLimiter) Incr(_ context.Context, key string) (int64, error) {
@@ -49,7 +50,8 @@ func (s *countingRateLimiter) Incr(_ context.Context, key string) (int64, error)
 	return s.incrKeys[key], nil
 }
 func (s *countingRateLimiter) IncrByFloat(_ context.Context, key string, v float64) (float64, error) {
-	return v, nil
+	s.floatKeys[key] += v
+	return s.floatKeys[key], nil
 }
 func (s *countingRateLimiter) Expire(context.Context, string, int) error { return nil }
 func (s *countingRateLimiter) Get(context.Context, string) (string, error) {
@@ -101,6 +103,17 @@ func agentRateKeyCount(l *countingRateLimiter) int64 {
 		}
 	}
 	return 0
+}
+
+// floatKeyTotal sums IncrByFloat values across keys containing substr.
+func floatKeyTotal(l *countingRateLimiter, substr string) float64 {
+	var total float64
+	for k, v := range l.floatKeys {
+		if containsStr(k, substr) {
+			total += v
+		}
+	}
+	return total
 }
 
 func containsStr(hay, needle string) bool {
@@ -287,6 +300,80 @@ func TestUnifiedChat_GlobalToolsKillSwitch(t *testing.T) {
 	}
 	if agentRateKeyCount(limiter) != 0 {
 		t.Fatal("no tools → no agent counter")
+	}
+}
+
+func TestUnifiedChat_PureChatRecordsSharedCostOnly(t *testing.T) {
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, _, limiter := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}})
+
+	// Wire the shared §20 preflight with the same stub limiter so RecordCost
+	// lands on observable keys.
+	h.preflight = NewPreflight(nil, nil, nil, limiter, nil)
+
+	off := false
+	ev, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{
+		Prompt: "just chat",
+		Tools:  &ToolSelection{Enabled: &off},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collectEvents(t, ev)
+
+	if got := floatKeyTotal(limiter, "agent:cost:"); got != 0 {
+		t.Fatalf("pure chat must not write jc:agent:cost, got %.4f", got)
+	}
+	if got := floatKeyTotal(limiter, "ai:cost:"); got <= 0 {
+		t.Fatalf("pure chat must record shared jc:ai:cost, got %.4f", got)
+	}
+}
+
+func TestUnifiedChat_ToolTurnRecordsAgentAndSharedCost(t *testing.T) {
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, _, limiter := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}})
+	h.preflight = NewPreflight(nil, nil, nil, limiter, nil)
+
+	ev, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{Prompt: "use tools"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collectEvents(t, ev)
+
+	if got := floatKeyTotal(limiter, "agent:cost:"); got <= 0 {
+		t.Fatalf("tool-enabled turn must write jc:agent:cost, got %.4f", got)
+	}
+	if got := floatKeyTotal(limiter, "ai:cost:"); got <= 0 {
+		t.Fatalf("tool-enabled turn must record shared jc:ai:cost, got %.4f", got)
+	}
+}
+
+func TestUnifiedChat_PersistsVoiceID(t *testing.T) {
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, st, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+
+	ev, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{
+		Prompt:  "hi",
+		VoiceID: "voice-abc",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collectEvents(t, ev)
+	final := findEvent(events, EventFinalResponse)
+	if final == nil || final.MessageID == "" {
+		t.Fatal("expected persisted assistant message")
+	}
+	var found *string
+	for _, msgs := range st.msgs {
+		for i := range msgs {
+			if msgs[i].ID.String() == final.MessageID {
+				found = msgs[i].VoiceID
+			}
+		}
+	}
+	if found == nil || *found != "voice-abc" {
+		t.Fatalf("voice_id not persisted: %+v", found)
 	}
 }
 

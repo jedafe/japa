@@ -201,22 +201,41 @@
 		const selected = Object.entries(toolEnabled)
 			.filter(([, on]) => on)
 			.map(([name]) => name);
+		// FilterCatalog treats an empty whitelist as "no whitelist" — an
+		// all-unchecked composer must send enabled:false, not tools:[].
+		if (selected.length === 0) return { enabled: false };
 		if (selected.length === selectableCount) return undefined;
 		return { enabled: true, tools: selected };
 	}
 
+	// Serialize composer state back to AIPrefs without flattening category
+	// semantics: a fully-off category stays a category (so future tools added
+	// to it stay off); a partially-off category keeps the minority side as
+	// exceptions — mostly-off → disabled_categories + enabled_tools,
+	// mostly-on → disabled_tools.
 	async function savePrefsAsDefault() {
-		const disabledTools = Object.entries(toolEnabled)
-			.filter(([, on]) => !on)
-			.map(([name]) => name);
-		const disabledCats = categories
-			.filter((c) => c.tools.every((tl) => !prefsAllows(tl.name, c.name) || !toolEnabled[tl.name]))
-			.map((c) => c.name);
+		const disabledCats: string[] = [];
+		const disabledTools: string[] = [];
+		const enabledTools: string[] = [];
+		for (const cat of categories) {
+			const on = cat.tools.filter((tl) => toolEnabled[tl.name]).map((tl) => tl.name);
+			const off = cat.tools.filter((tl) => !toolEnabled[tl.name]).map((tl) => tl.name);
+			if (on.length === 0) {
+				disabledCats.push(cat.name);
+			} else if (off.length === 0) {
+				// fully on — no pref entries
+			} else if (on.length <= off.length) {
+				disabledCats.push(cat.name);
+				enabledTools.push(...on);
+			} else {
+				disabledTools.push(...off);
+			}
+		}
 		const res = await api.put('/me/ai-preferences', {
 			default_mode: toolsOn ? 'agent' : 'chat',
 			disabled_categories: disabledCats,
 			disabled_tools: disabledTools,
-			enabled_tools: []
+			enabled_tools: enabledTools
 		});
 		if (!res.error) {
 			prefsSaved = true;
@@ -602,7 +621,7 @@
 								<button
 									type="button"
 									onclick={() => deleteConversation(conv.conversation_id)}
-									class="absolute right-1.5 top-1.5 hidden rounded p-1 text-[var(--color-muted)] hover:text-[var(--color-danger)] group-hover:block"
+									class="absolute right-1.5 top-1.5 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
 									aria-label={t('ai.chat.delete', 'Delete conversation')}
 									title={t('ai.chat.delete', 'Delete conversation')}
 								>

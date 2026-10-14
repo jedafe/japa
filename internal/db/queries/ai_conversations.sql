@@ -25,11 +25,17 @@ WHERE id = @id AND user_id = @user_id AND deleted_at IS NULL;
 UPDATE ai_conversations SET updated_at = now()
 WHERE id = @id AND deleted_at IS NULL;
 
--- User-facing list, newest-active first, offset-paginated.
+-- User-facing list, newest-active first, offset-paginated. turn_count +
+-- last_message feed the sidebar preview (title is auto-derived from the
+-- first turn and often empty for very new threads).
 -- name: ListAIConversationsForUser :many
-SELECT * FROM ai_conversations
-WHERE user_id = @user_id AND deleted_at IS NULL
-ORDER BY updated_at DESC
+SELECT c.*,
+    (SELECT COUNT(*) FROM ai_messages m WHERE m.conversation_id = c.id) AS turn_count,
+    COALESCE((SELECT m.content FROM ai_messages m WHERE m.conversation_id = c.id
+     ORDER BY m.created_at DESC LIMIT 1), '')::text AS last_message
+FROM ai_conversations c
+WHERE c.user_id = @user_id AND c.deleted_at IS NULL
+ORDER BY c.updated_at DESC
 LIMIT @page_limit OFFSET @page_offset;
 
 -- name: CountAIConversationsForUser :one

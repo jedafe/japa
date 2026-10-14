@@ -194,16 +194,17 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	events := make(chan AgentEvent, 32)
 
 	go h.runLoop(ctx, session, userID, loopParams{
-		prompt:     req.Prompt,
-		geoSpaceID: geoSpaceID,
-		geoSummary: geoSummary,
-		preSearch:  preSearchResult,
-		draftCtx:   draftCtx,
-		catalog:    catalog,
-		catalogSet: true,
-		history:    history,
-		model:      effModel,
-		unified:    &unifiedTurn{req: req, conv: conv, hasConv: hasConv},
+		prompt:        req.Prompt,
+		geoSpaceID:    geoSpaceID,
+		geoSummary:    geoSummary,
+		preSearch:     preSearchResult,
+		draftCtx:      draftCtx,
+		catalog:       catalog,
+		catalogSet:    true,
+		agentCounters: len(catalog) > 0, // ADR-130: pure chat never touches jc:agent:* counters
+		history:       history,
+		model:         effModel,
+		unified:       &unifiedTurn{req: req, conv: conv, hasConv: hasConv},
 	}, events)
 
 	return events, nil

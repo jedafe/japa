@@ -272,9 +272,13 @@ func (q *Queries) ListAIConversationMessages(ctx context.Context, arg ListAIConv
 }
 
 const listAIConversationsForUser = `-- name: ListAIConversationsForUser :many
-SELECT id, user_id, title, created_at, updated_at, deleted_at FROM ai_conversations
-WHERE user_id = $1 AND deleted_at IS NULL
-ORDER BY updated_at DESC
+SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.deleted_at,
+    (SELECT COUNT(*) FROM ai_messages m WHERE m.conversation_id = c.id) AS turn_count,
+    COALESCE((SELECT m.content FROM ai_messages m WHERE m.conversation_id = c.id
+     ORDER BY m.created_at DESC LIMIT 1), '')::text AS last_message
+FROM ai_conversations c
+WHERE c.user_id = $1 AND c.deleted_at IS NULL
+ORDER BY c.updated_at DESC
 LIMIT $3 OFFSET $2
 `
 
@@ -284,16 +288,29 @@ type ListAIConversationsForUserParams struct {
 	PageLimit  int32       `json:"page_limit"`
 }
 
-// User-facing list, newest-active first, offset-paginated.
-func (q *Queries) ListAIConversationsForUser(ctx context.Context, arg ListAIConversationsForUserParams) ([]AiConversation, error) {
+type ListAIConversationsForUserRow struct {
+	ID          pgtype.UUID        `json:"id"`
+	UserID      pgtype.UUID        `json:"user_id"`
+	Title       string             `json:"title"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	TurnCount   int64              `json:"turn_count"`
+	LastMessage string             `json:"last_message"`
+}
+
+// User-facing list, newest-active first, offset-paginated. turn_count +
+// last_message feed the sidebar preview (title is auto-derived from the
+// first turn and often empty for very new threads).
+func (q *Queries) ListAIConversationsForUser(ctx context.Context, arg ListAIConversationsForUserParams) ([]ListAIConversationsForUserRow, error) {
 	rows, err := q.db.Query(ctx, listAIConversationsForUser, arg.UserID, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AiConversation
+	var items []ListAIConversationsForUserRow
 	for rows.Next() {
-		var i AiConversation
+		var i ListAIConversationsForUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -301,6 +318,8 @@ func (q *Queries) ListAIConversationsForUser(ctx context.Context, arg ListAIConv
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.TurnCount,
+			&i.LastMessage,
 		); err != nil {
 			return nil, err
 		}

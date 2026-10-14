@@ -65,6 +65,10 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Sanitize client-supplied context to prevent prompt injection and cache
+	// poisoning (ADR-010, BUG-007) — same allowlist as the legacy /ai/chat.
+	input.Context = sanitizeClientContext(input.Context)
+
 	var convID *pgtype.UUID
 	if input.ConversationID != "" {
 		if u, err := scanUUID(input.ConversationID); err == nil && u.Valid {
@@ -233,6 +237,8 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 			out = append(out, convoSummary{
 				ConversationID: c.ID.String(),
 				Title:          c.Title,
+				Preview:        c.LastMessage,
+				TurnCount:      int(c.TurnCount),
 				LastEntryAt:    c.UpdatedAt.Time,
 			})
 		}

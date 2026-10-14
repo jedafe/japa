@@ -26,7 +26,7 @@ type ConversationStore interface {
 	CreateAIConversation(ctx context.Context, arg gen.CreateAIConversationParams) (gen.AiConversation, error)
 	GetAIConversationForUser(ctx context.Context, arg gen.GetAIConversationForUserParams) (gen.AiConversation, error)
 	TouchAIConversation(ctx context.Context, id pgtype.UUID) error
-	ListAIConversationsForUser(ctx context.Context, arg gen.ListAIConversationsForUserParams) ([]gen.AiConversation, error)
+	ListAIConversationsForUser(ctx context.Context, arg gen.ListAIConversationsForUserParams) ([]gen.ListAIConversationsForUserRow, error)
 	CountAIConversationsForUser(ctx context.Context, userID pgtype.UUID) (int64, error)
 	SoftDeleteAIConversationForUser(ctx context.Context, arg gen.SoftDeleteAIConversationForUserParams) (pgtype.UUID, error)
 	InsertAIMessage(ctx context.Context, arg gen.InsertAIMessageParams) (gen.AiMessage, error)
@@ -84,10 +84,13 @@ func (s *ConversationService) AppendUserMessage(ctx context.Context, convID pgty
 	})
 }
 
-func (s *ConversationService) AppendAssistantMessage(ctx context.Context, convID pgtype.UUID, content, model string, tokens int, cost float64, sessionID *pgtype.UUID) (gen.AiMessage, error) {
-	var modelArg *string
+func (s *ConversationService) AppendAssistantMessage(ctx context.Context, convID pgtype.UUID, content, model, voiceID string, tokens int, cost float64, sessionID *pgtype.UUID) (gen.AiMessage, error) {
+	var modelArg, voiceArg *string
 	if model != "" {
 		modelArg = &model
+	}
+	if voiceID != "" {
+		voiceArg = &voiceID
 	}
 	var sess pgtype.UUID
 	if sessionID != nil {
@@ -98,6 +101,7 @@ func (s *ConversationService) AppendAssistantMessage(ctx context.Context, convID
 		Role:           "assistant",
 		Content:        content,
 		Model:          modelArg,
+		VoiceID:        voiceArg,
 		TokensUsed:     int32(tokens),
 		CostUsd:        floatToNumeric(cost),
 		AgentSessionID: sess,
@@ -121,7 +125,7 @@ func (s *ConversationService) History(ctx context.Context, convID pgtype.UUID, l
 	return out, nil
 }
 
-func (s *ConversationService) List(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.AiConversation, int64, error) {
+func (s *ConversationService) List(ctx context.Context, userID pgtype.UUID, limit, offset int32) ([]gen.ListAIConversationsForUserRow, int64, error) {
 	rows, err := s.store.ListAIConversationsForUser(ctx, gen.ListAIConversationsForUserParams{
 		UserID:     userID,
 		PageLimit:  limit,

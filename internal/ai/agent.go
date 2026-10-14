@@ -400,11 +400,12 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 	events := make(chan AgentEvent, 32)
 
 	go h.runLoop(ctx, session, userID, loopParams{
-		prompt:     prompt,
-		geoSpaceID: geoSpaceID,
-		geoSummary: geoSummary,
-		preSearch:  preSearchResult,
-		draftCtx:   draftCtx,
+		prompt:        prompt,
+		geoSpaceID:    geoSpaceID,
+		geoSummary:    geoSummary,
+		preSearch:     preSearchResult,
+		draftCtx:      draftCtx,
+		agentCounters: true, // legacy /ai/agent always accumulates jc:agent:cost
 	}, events)
 
 	return events, nil
@@ -522,9 +523,14 @@ type loopParams struct {
 	draftCtx   draftRequestContext
 	catalog    []ToolConfig
 	catalogSet bool
-	history    []ChatMessage // prior turns, oldest-first (unified only)
-	model      string        // validated model override (unified only)
-	unified    *unifiedTurn  // nil → legacy /ai/agent turn
+	// agentCounters controls whether jc:agent:cost accumulates post-loop.
+	// ADR-130: pure-chat turns (resolved empty catalog) must not consume
+	// agent quota — they record jc:ai:cost only. The legacy path always
+	// sets this true.
+	agentCounters bool
+	history       []ChatMessage // prior turns, oldest-first (unified only)
+	model         string        // validated model override (unified only)
+	unified       *unifiedTurn  // nil → legacy /ai/agent turn
 }
 
 func (h *AgentHandler) runLoop(
@@ -797,10 +803,21 @@ func (h *AgentHandler) runLoop(
 
 	// --- Task 5.09: complete, cancel, or fail the session ---
 
+	// Cost accounting: jc:agent:cost only when agent counters apply (tool
+	// catalog non-empty on the unified path, always on legacy). Pure-chat
+	// turns still record the shared jc:ai:cost via preflight (ADR-130).
+	trackCost := func() {
+		if p.agentCounters {
+			h.trackCost(ctx, userID, estimatedCost)
+		} else if h.preflight != nil {
+			h.preflight.RecordCost(ctx, userID, estimatedCost)
+		}
+	}
+
 	// User-initiated cancellation → CancelAgentSession (status = 'cancelled').
 	if cancelled {
 		h.cancelSession(ctx, session)
-		h.trackCost(ctx, userID, estimatedCost)
+		trackCost()
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -812,7 +829,7 @@ func (h *AgentHandler) runLoop(
 
 	if loopErr != nil {
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
-		h.trackCost(ctx, userID, estimatedCost)
+		trackCost()
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -826,7 +843,7 @@ func (h *AgentHandler) runLoop(
 	if maxedOut || finalResponse == "" {
 		loopErr = fmt.Errorf("agent: max tool calls exceeded (%d)", maxToolCalls)
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
-		h.trackCost(ctx, userID, estimatedCost)
+		trackCost()
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -837,7 +854,7 @@ func (h *AgentHandler) runLoop(
 	}
 
 	h.completeSession(ctx, session, finalResponse, toolCallCount, totalTokens, estimatedCost)
-	h.trackCost(ctx, userID, estimatedCost)
+	trackCost()
 
 	// ADR-130: persist the assistant turn to the transcript, link the audit
 	// session to it, bump the thread's updated_at, and write the turn to
@@ -847,7 +864,7 @@ func (h *AgentHandler) runLoop(
 	messageID := ""
 	if p.unified != nil && p.unified.hasConv && h.convos != nil {
 		persistCtx := context.WithoutCancel(ctx)
-		if msg, err := h.convos.AppendAssistantMessage(persistCtx, p.unified.conv.ID, finalResponse, p.model, totalTokens, estimatedCost, &session.ID); err == nil {
+		if msg, err := h.convos.AppendAssistantMessage(persistCtx, p.unified.conv.ID, finalResponse, p.model, p.unified.req.VoiceID, totalTokens, estimatedCost, &session.ID); err == nil {
 			messageID = msg.ID.String()
 			if err := h.convos.LinkSession(persistCtx, session.ID, p.unified.conv.ID, msg.ID); err != nil {
 				slog.Warn("ai: failed to link agent session to conversation", "session_id", session.ID, "error", err)

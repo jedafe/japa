@@ -67,11 +67,19 @@ func (s *stubConvoStore) TouchAIConversation(_ context.Context, id pgtype.UUID) 
 	return nil
 }
 
-func (s *stubConvoStore) ListAIConversationsForUser(_ context.Context, arg gen.ListAIConversationsForUserParams) ([]gen.AiConversation, error) {
-	var out []gen.AiConversation
+func (s *stubConvoStore) ListAIConversationsForUser(_ context.Context, arg gen.ListAIConversationsForUserParams) ([]gen.ListAIConversationsForUserRow, error) {
+	var out []gen.ListAIConversationsForUserRow
 	for _, c := range s.convs {
 		if uuidStr(c.UserID) == uuidStr(arg.UserID) && !c.DeletedAt.Valid {
-			out = append(out, c)
+			row := gen.ListAIConversationsForUserRow{
+				ID: c.ID, UserID: c.UserID, Title: c.Title,
+				CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, DeletedAt: c.DeletedAt,
+			}
+			for _, m := range s.msgs[uuidStr(c.ID)] {
+				row.TurnCount++
+				row.LastMessage = m.Content
+			}
+			out = append(out, row)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.Time.After(out[j].UpdatedAt.Time) })
@@ -100,7 +108,7 @@ func (s *stubConvoStore) SoftDeleteAIConversationForUser(_ context.Context, arg 
 
 func (s *stubConvoStore) InsertAIMessage(_ context.Context, arg gen.InsertAIMessageParams) (gen.AiMessage, error) {
 	m := gen.AiMessage{ID: s.nextID(), ConversationID: arg.ConversationID, Role: arg.Role,
-		Content: arg.Content, Model: arg.Model, TokensUsed: arg.TokensUsed,
+		Content: arg.Content, Model: arg.Model, VoiceID: arg.VoiceID, TokensUsed: arg.TokensUsed,
 		CostUsd: arg.CostUsd, AgentSessionID: arg.AgentSessionID,
 		CreatedAt: pgtype.Timestamptz{Time: time.Now().Add(time.Duration(s.seq) * time.Millisecond), Valid: true}}
 	k := uuidStr(arg.ConversationID)
