@@ -143,6 +143,8 @@ var settingsCatalog = map[string]settingMeta{
 	"ai.cost_per_1k_tokens_usd":  {Type: "float", DefaultValue: "0.002", Description: "Default USD cost per 1,000 tokens for AI usage monitoring and cost limits.", Panel: "control"},
 	"ai.cache_enabled":           {Type: "bool", DefaultValue: "false", Description: "Enable Valkey semantic cache for repeated AI prompts (generate, chat, assist).", Panel: "control"},
 	"ai.cache_ttl_seconds":       {Type: "int", DefaultValue: "300", Description: "TTL for cached AI responses (seconds).", Panel: "control"},
+	"ai.history_window":          {Type: "int", DefaultValue: "20", Description: "Max prior messages loaded into the unified chat prompt (ADR-130).", Panel: "control"},
+	"ai.conversation_title_length": {Type: "int", DefaultValue: "80", Description: "Chars of first user message used as auto-title for a new ai_conversations row (ADR-130).", Panel: "control"},
 	"ai.provider_cost_overrides": {Type: "json", DefaultValue: "{}", Description: `Per-provider/model price overrides. Keys are "provider" or "provider.model" (e.g. "xiaomi.mimo-v2-flash"), values are USD per 1,000 tokens.`, Panel: "control"},
 	// AI Humanization — injects natural-language style instructions into every
 	// AI generation surface (generate, chat, assist, persona/studio drafts).

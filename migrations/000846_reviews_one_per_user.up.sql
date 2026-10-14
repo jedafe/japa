@@ -7,17 +7,21 @@
 
 BEGIN;
 
--- Keep the newest review per (entity_type, entity_id, reviewer_user_id).
+-- Keep the newest non-removed review per (entity_type, entity_id,
+-- reviewer_user_id). reviews has no deleted_at — soft delete is
+-- status='removed' (+ removed_by), matching HasUserReviewedEntity.
 DELETE FROM reviews r1
 USING reviews r2
 WHERE r1.entity_type = r2.entity_type
   AND r1.entity_id = r2.entity_id
   AND r1.reviewer_user_id = r2.reviewer_user_id
+  AND r1.status != 'removed'
+  AND r2.status != 'removed'
   AND (r1.created_at < r2.created_at
        OR (r1.created_at = r2.created_at AND r1.id < r2.id));
 
 CREATE UNIQUE INDEX reviews_entity_reviewer_unique
     ON reviews (entity_type, entity_id, reviewer_user_id)
-    WHERE deleted_at IS NULL;
+    WHERE status != 'removed';
 
 COMMIT;

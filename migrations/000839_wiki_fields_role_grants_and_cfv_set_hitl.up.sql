@@ -22,7 +22,7 @@ SELECT r.id, p.id
 FROM user_roles r
 CROSS JOIN permissions p
 WHERE r.slug IN ('pro_member', 'business_member')
-  AND p.name IN ('wiki.fields.edit', 'wiki.fields.propose')
+  AND p.key IN ('wiki.fields.edit', 'wiki.fields.propose')
 ON CONFLICT DO NOTHING;
 
 UPDATE ai_tools
