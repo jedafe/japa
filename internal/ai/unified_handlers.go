@@ -332,16 +332,21 @@ func (h *Handlers) HandleGetConversationV2(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Embed tool calls on assistant messages that have an audit session.
+	// toolCallToJSON decodes the JSONB arguments/result columns to nested
+	// JSON (raw gen rows would serialize []byte as base64).
 	type messageDTO struct {
 		gen.AiMessage
-		ToolCalls []gen.AiAgentToolCall `json:"tool_calls,omitempty"`
+		ToolCalls []map[string]any `json:"tool_calls,omitempty"`
 	}
 	out := make([]messageDTO, 0, len(msgs))
 	for _, m := range msgs {
 		dto := messageDTO{AiMessage: m}
 		if m.AgentSessionID.Valid && h.agentSessions != nil {
 			if calls, err := h.agentSessions.ListAgentToolCallsBySession(r.Context(), m.AgentSessionID); err == nil && len(calls) > 0 {
-				dto.ToolCalls = calls
+				dto.ToolCalls = make([]map[string]any, 0, len(calls))
+				for _, tc := range calls {
+					dto.ToolCalls = append(dto.ToolCalls, toolCallToJSON(tc))
+				}
 			}
 		}
 		out = append(out, dto)

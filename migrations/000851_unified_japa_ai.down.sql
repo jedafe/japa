@@ -5,11 +5,14 @@
 BEGIN;
 
 DROP TABLE IF EXISTS ai_messages;
-DROP TABLE IF EXISTS ai_conversations;
 
+-- Drop the session link columns BEFORE ai_conversations — the
+-- ai_agent_sessions_conversation_id_fkey FK depends on the parent table.
 ALTER TABLE ai_agent_sessions
     DROP COLUMN IF EXISTS conversation_id,
     DROP COLUMN IF EXISTS message_id;
+
+DROP TABLE IF EXISTS ai_conversations;
 
 ALTER TABLE user_preferences
     DROP COLUMN IF EXISTS ai_prefs;
