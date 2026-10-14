@@ -15,11 +15,11 @@ import (
 
 // stubConvoStore is a map-backed ConversationStore for unit tests.
 type stubConvoStore struct {
-	convs   map[string]gen.AiConversation
-	msgs    map[string][]gen.AiMessage // conversation_id hex → messages
-	prefs   map[string][]byte          // user_id hex → ai_prefs
+	convs    map[string]gen.AiConversation
+	msgs     map[string][]gen.AiMessage // conversation_id hex → messages
+	prefs    map[string][]byte          // user_id hex → ai_prefs
 	sessions map[string]gen.AiAgentSession
-	seq     int
+	seq      int
 }
 
 func newStubConvoStore() *stubConvoStore {

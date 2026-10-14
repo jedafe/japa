@@ -89,16 +89,18 @@ type Handlers struct {
 	Settings             SettingsReader // hot-reloadable system_settings (sub-toggles, quotas)
 	checker              FeatureChecker // feature_flags reachability (feature.japabot); nil → settings fallback
 	Perms                PermissionChecker
-	consents             ConsentChecker      // §19: ai_processing consent gate (nil = skip check)
-	preflight            *Preflight          // §20 amendment: shared admission + unified daily budget (nil = degrade to checker/Settings)
-	ragService           RAGRetriever        // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
-	HTTPClient           *http.Client        // nil → http.DefaultClient (external search / HITL verify)
-	cache                CacheClient         // nil → ai.cache_enabled must be true to have any effect
-	costs                *CostEstimator      // estimates per-request USD cost from token usage
-	PersonaVoiceResolver                     // optional voice prompt resolver (persona_voices)
-	StudioReviewHook                         // optional hook for studio HITL review lifecycle
-	DraftPublishHook                         // optional hook — publish non-studio review targets on approve
-	userContext          UserContextProvider // per-category user activity data (BUG-001)
+	consents             ConsentChecker       // §19: ai_processing consent gate (nil = skip check)
+	preflight            *Preflight           // §20 amendment: shared admission + unified daily budget (nil = degrade to checker/Settings)
+	ragService           RAGRetriever         // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
+	HTTPClient           *http.Client         // nil → http.DefaultClient (external search / HITL verify)
+	cache                CacheClient          // nil → ai.cache_enabled must be true to have any effect
+	costs                *CostEstimator       // estimates per-request USD cost from token usage
+	PersonaVoiceResolver                      // optional voice prompt resolver (persona_voices)
+	StudioReviewHook                          // optional hook for studio HITL review lifecycle
+	DraftPublishHook                          // optional hook — publish non-studio review targets on approve
+	userContext          UserContextProvider  // per-category user activity data (BUG-001)
+	Convos               *ConversationService // ADR-130 unified transcript store (nil = unified surface off)
+	agentSessions        AgentSessionQueries  // tool-call reader for conversation detail (ADR-130)
 }
 
 // RAGRetriever is the interface for the RAG retrieval step (Section 69,

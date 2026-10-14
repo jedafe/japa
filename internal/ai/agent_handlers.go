@@ -203,48 +203,24 @@ func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Set SSE headers and get the flusher. Per §103, the codebase has no
-	// existing SSE endpoints — this is the reference implementation.
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // disable Nginx buffering
-	w.WriteHeader(http.StatusOK)
-
-	flusher, _ := w.(http.Flusher)
-	if flusher == nil {
-		// No flusher — the server doesn't support streaming. Log and fall
-		// back to writing all events at once (the client still gets them,
-		// just not incrementally).
-		slog.Warn("ai: response writer does not support flushing, SSE will not stream incrementally")
-	}
-
-	// Drain the event channel, writing each event as an SSE line. The agent
-	// loop closes the channel when it finishes (completion, failure, or
-	// cancellation), so this range exits naturally.
-	for ev := range events {
-		data, marshalErr := json.Marshal(ev)
-		if marshalErr != nil {
-			slog.Warn("ai: failed to marshal agent event", "type", ev.Type, "error", marshalErr)
-			continue
-		}
-
-		if _, writeErr := fmt.Fprintf(w, "data: %s\n\n", data); writeErr != nil {
-			// Client disconnected — stop draining. The agent loop detects
-			// ctx cancellation and stops on its own.
-			return
-		}
-
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}
+	// SSE wire format per §103 — shared with the unified /ai/chat handler.
+	streamAgentEvents(w, events)
 }
 
 // writeAgentError maps an agent pre-check error to the appropriate HTTP
 // status code and writes a standard error response (Rule 5).
 func writeAgentError(w http.ResponseWriter, err error) {
+	var perr *PreflightError
+
 	switch {
+	case errors.As(err, &perr):
+		// ADR-130: the shared §20 preflight returns typed errors carrying
+		// their own status/code — write them verbatim.
+		errpkg.WriteError(w, perr.Status, perr.Code, perr.Message)
+	case errors.Is(err, errAINoPermission):
+		errpkg.WriteError(w, http.StatusForbidden, "ai_permission_required", "You do not have permission to use Japa AI")
+	case errors.Is(err, errInvalidModel):
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available")
 	case errors.Is(err, errAgentDisabled):
 		errpkg.WriteError(w, http.StatusForbidden, "agent_disabled", "The AI agent is currently disabled")
 	case errors.Is(err, errAgentNoPermission):
