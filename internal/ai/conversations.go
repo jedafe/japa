@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -35,6 +36,8 @@ type ConversationStore interface {
 	ListAIConversationMessages(ctx context.Context, arg gen.ListAIConversationMessagesParams) ([]gen.AiMessage, error)
 	LinkAgentSessionToConversation(ctx context.Context, arg gen.LinkAgentSessionToConversationParams) error
 	UnlinkAgentSessionsForConversation(ctx context.Context, conversationID pgtype.UUID) error
+	HasRunningAgentTurnForConversation(ctx context.Context, arg gen.HasRunningAgentTurnForConversationParams) (bool, error)
+	AIConversationExistsIncludingDeleted(ctx context.Context, arg gen.AIConversationExistsIncludingDeletedParams) (bool, error)
 	GetAIPreferences(ctx context.Context, userID pgtype.UUID) ([]byte, error)
 	UpsertAIPreferences(ctx context.Context, arg gen.UpsertAIPreferencesParams) error
 }
@@ -193,6 +196,29 @@ func (s *ConversationService) Delete(ctx context.Context, userID, convID pgtype.
 // latest turn.
 func (s *ConversationService) Touch(ctx context.Context, convID pgtype.UUID) error {
 	return s.store.TouchAIConversation(ctx, convID)
+}
+
+// HasRunningTurn reports whether the conversation already has a running
+// agent session newer than `cutoff` (caller passes now − the agent loop
+// timeout, so a stale "running" row from a crashed turn doesn't lock the
+// thread). Concurrent sends against one thread interleave their
+// transcript — callers reject with 409 conversation_busy.
+func (s *ConversationService) HasRunningTurn(ctx context.Context, convID, userID pgtype.UUID, cutoff time.Time) (bool, error) {
+	return s.store.HasRunningAgentTurnForConversation(ctx, gen.HasRunningAgentTurnForConversationParams{
+		ConversationID: convID,
+		UserID:         userID,
+		RunningSince:   pgtype.Timestamptz{Time: cutoff, Valid: true},
+	})
+}
+
+// ExistsIncludingDeleted reports whether the conversation row exists for
+// this user regardless of soft-delete state — used to stop deleted unified
+// threads from resurfacing via the legacy Honcho fallback.
+func (s *ConversationService) ExistsIncludingDeleted(ctx context.Context, convID, userID pgtype.UUID) (bool, error) {
+	return s.store.AIConversationExistsIncludingDeleted(ctx, gen.AIConversationExistsIncludingDeletedParams{
+		ID:     convID,
+		UserID: userID,
+	})
 }
 
 // LinkSession points an agent audit session at its conversation and the

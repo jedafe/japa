@@ -49,6 +49,15 @@ UPDATE ai_conversations SET deleted_at = now()
 WHERE id = @id AND user_id = @user_id AND deleted_at IS NULL
 RETURNING id;
 
+-- Existence check that ignores deleted_at — used to keep soft-deleted
+-- threads out of the legacy Honcho fallback in GET /ai/conversations/:id
+-- (a deleted unified thread's memory entries must not resurrect it).
+-- name: AIConversationExistsIncludingDeleted :one
+SELECT EXISTS(
+    SELECT 1 FROM ai_conversations
+    WHERE id = @id AND user_id = @user_id
+) AS present;
+
 -- =====================================================================
 -- Messages
 -- =====================================================================
@@ -104,9 +113,23 @@ WHERE id = @id;
 UPDATE ai_agent_sessions SET conversation_id = NULL
 WHERE conversation_id = @conversation_id;
 
+-- ADR-130: is a turn already running on this thread? Concurrent sends
+-- against one conversation would interleave their transcript. The
+-- @running_since cutoff mirrors agent.timeout_seconds — a "running" row
+-- older than the loop's own timeout is dead, not busy.
+-- name: HasRunningAgentTurnForConversation :one
+SELECT EXISTS(
+    SELECT 1 FROM ai_agent_sessions
+    WHERE conversation_id = @conversation_id
+      AND user_id = @user_id
+      AND status = 'running'
+      AND started_at > @running_since
+) AS busy;
+
 -- =====================================================================
 -- Per-user AI preferences (user_preferences.ai_prefs jsonb)
 -- =====================================================================
+
 
 -- name: GetAIPreferences :one
 SELECT ai_prefs FROM user_preferences

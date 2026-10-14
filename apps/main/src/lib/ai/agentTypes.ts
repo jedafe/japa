@@ -40,6 +40,9 @@ export interface AgentEvent {
 	// ADR-130: conversation + final_response
 	conversation_id?: string;
 	message_id?: string;
+	// ADR-130: server-authoritative persisted message count on
+	// conversation/final_response — sidebar assigns, never increments.
+	turn_count?: number;
 	// ADR-130: sources event — RAG citations for the turn
 	sources?: AiCitationSource[];
 }

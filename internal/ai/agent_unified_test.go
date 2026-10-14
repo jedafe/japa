@@ -5,7 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 // recordingProvider captures the ChatWithToolsRequest of each call so tests
@@ -300,6 +302,80 @@ func TestUnifiedChat_DeniedDoesNotConsumeQueries(t *testing.T) {
 		if containsStr(k, "ai:queries:") {
 			t.Fatalf("denied request consumed shared query quota: %s", k)
 		}
+	}
+}
+
+func TestUnifiedChat_ConversationBusy(t *testing.T) {
+	// A second send while a turn is running on the same thread → 409-shaped
+	// error, no quota consumed (busy check runs before CheckBudget).
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, st, limiter := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+	h.preflight = NewPreflight(nil, nil, nil, limiter, nil)
+
+	convID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
+	st.busyConvs = map[string]bool{uuidStr(convID): true}
+
+	_, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{
+		Prompt: "hi again", ConversationID: &convID,
+	})
+	if !errors.Is(err, errConversationBusy) {
+		t.Fatalf("expected errConversationBusy, got %v", err)
+	}
+	for k := range limiter.incrKeys {
+		if containsStr(k, "ai:queries:") {
+			t.Fatalf("busy rejection consumed shared query quota: %s", k)
+		}
+	}
+}
+
+func TestUnifiedChat_SessionCreateUniqueViolationMapsToBusy(t *testing.T) {
+	// A send that slips past the busy pre-check still 409s: the unique index
+	// on ai_agent_sessions surfaces as a pg unique violation.
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+	h.sessions = &stubSessionStore{createErr: &pgconn.PgError{Code: "23505"}}
+
+	_, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{Prompt: "hi"})
+	if !errors.Is(err, errConversationBusy) {
+		t.Fatalf("unique violation should map to errConversationBusy, got %v", err)
+	}
+}
+
+func TestUnifiedChat_TurnCountEvents(t *testing.T) {
+	// conversation + final_response carry the server-side persisted message
+	// count so the sidebar assigns rather than increments.
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, st, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	// Seed a thread with two prior turns.
+	conv, err := st.CreateAIConversation(t.Context(), gen.CreateAIConversationParams{UserID: uid, Title: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.InsertAIMessage(t.Context(), gen.InsertAIMessageParams{ConversationID: conv.ID, Role: "user", Content: "u1"})
+	st.InsertAIMessage(t.Context(), gen.InsertAIMessageParams{ConversationID: conv.ID, Role: "assistant", Content: "a1"})
+
+	ev, err := h.HandleUnifiedChat(t.Context(), uid, UnifiedChatRequest{Prompt: "next", ConversationID: &conv.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := collectEvents(t, ev)
+
+	var convEv, finalEv *AgentEvent
+	for i := range events {
+		switch events[i].Type {
+		case EventConversation:
+			convEv = &events[i]
+		case EventFinalResponse:
+			finalEv = &events[i]
+		}
+	}
+	if convEv == nil || convEv.TurnCount != 3 {
+		t.Fatalf("conversation event turn_count should be history(2)+user(1)=3, got %+v", convEv)
+	}
+	if finalEv == nil || finalEv.TurnCount != 4 {
+		t.Fatalf("final_response turn_count should be 4, got %+v", finalEv)
 	}
 }
 

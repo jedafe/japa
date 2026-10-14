@@ -20,7 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/db/gen"
 )
@@ -41,8 +43,9 @@ type UnifiedChatRequest struct {
 // Unified-path sentinels. writeAgentError maps them alongside the existing
 // agent sentinels.
 var (
-	errAINoPermission = errors.New("ai: user lacks ai.context.use or agent.use permission")
-	errInvalidModel   = errors.New("ai: model is not available for the chat category")
+	errAINoPermission   = errors.New("ai: user lacks ai.context.use or agent.use permission")
+	errInvalidModel     = errors.New("ai: model is not available for the chat category")
+	errConversationBusy = errors.New("ai: conversation already has a running turn")
 )
 
 const (
@@ -83,6 +86,22 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 
 		if !hasChat && !hasAgent {
 			return nil, errAINoPermission
+		}
+	}
+
+	// --- One running turn per conversation: reject a second send while a
+	// turn on the same thread is still in flight (concurrent turns would
+	// interleave the transcript). Runs before CheckBudget so a busy
+	// rejection doesn't consume jc:ai:queries. Owner-scoped — a foreign id
+	// can never report busy (it's not the caller's thread anyway, so
+	// Resolve below would just create a fresh one). ---
+	if h.convos != nil && req.ConversationID != nil && req.ConversationID.Valid {
+		timeout := h.getIntSetting(ctx, "agent.timeout_seconds", defaultTimeoutSeconds)
+		busy, err := h.convos.HasRunningTurn(ctx, *req.ConversationID, userID, time.Now().Add(-time.Duration(timeout)*time.Second))
+		if err != nil {
+			slog.Warn("ai: conversation busy check failed, proceeding", "error", err)
+		} else if busy {
+			return nil, errConversationBusy
 		}
 	}
 
@@ -147,6 +166,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	hasConv := false
 
 	var history []ChatMessage
+	userMsgPersisted := false
 
 	if h.convos != nil {
 		titleLen := h.getIntSetting(ctx, "ai.conversation_title_length", defaultConversationTitleLen)
@@ -169,6 +189,8 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 			// Degrade: the reply still streams; the transcript just lacks
 			// this user turn.
 			slog.Warn("ai: failed to persist user message", "conversation_id", conv.ID, "error", err)
+		} else {
+			userMsgPersisted = true
 		}
 	}
 
@@ -184,6 +206,13 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 
 	session, err := h.createSession(ctx, userID, req.Prompt, geoSpaceID, preSearchResult.Level, convUUID)
 	if err != nil {
+		// The ai_agent_sessions_one_running_per_conv partial unique index
+		// makes "one running turn per conversation" a DB invariant — a
+		// concurrent send that slipped past the busy pre-check lands here.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, errConversationBusy
+		}
 		return nil, fmt.Errorf("ai: creating agent session: %w", err)
 	}
 
@@ -210,7 +239,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		agentCounters: len(catalog) > 0, // ADR-130: pure chat never touches jc:agent:* counters
 		history:       history,
 		model:         effModel,
-		unified:       &unifiedTurn{req: req, conv: conv, hasConv: hasConv},
+		unified:       &unifiedTurn{req: req, conv: conv, hasConv: hasConv, historyLen: len(history), userMsgPersisted: userMsgPersisted},
 	}, events)
 
 	return events, nil

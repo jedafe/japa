@@ -344,6 +344,15 @@ func (h *Handlers) HandleGetConversationV2(w http.ResponseWriter, r *http.Reques
 	conv, msgs, err := h.Convos.Detail(r.Context(), user.UserID, convID, pageSize, pageOffset)
 	if err != nil {
 		if errors.Is(err, ErrConversationNotFound) {
+			// Distinguish "Honcho-era UUID" (fall back to the legacy entry
+			// scan) from "unified thread, deleted" — the row still exists
+			// with deleted_at set, and its Honcho memory entries must not
+			// resurrect it.
+			exists, exErr := h.Convos.ExistsIncludingDeleted(r.Context(), convID, user.UserID)
+			if exErr == nil && exists {
+				errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
+				return
+			}
 			h.HandleGetConversation(w, r) // may be a Honcho-era UUID
 			return
 		}
@@ -476,6 +485,27 @@ func (h *Handlers) HandlePutAIPrefs(w http.ResponseWriter, r *http.Request) {
 	if input.DefaultMode != "" && input.DefaultMode != "chat" && input.DefaultMode != "agent" {
 		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "default_mode must be \"chat\" or \"agent\"")
 		return
+	}
+
+	// Bound the preference lists — an unbounded client payload would just
+	// bloat user_preferences.ai_prefs (names never match real tools anyway).
+	const maxPrefEntries, maxPrefLen = 512, 128
+	lists := map[string][]string{
+		"disabled_categories": input.DisabledCategories,
+		"disabled_tools":      input.DisabledTools,
+		"enabled_tools":       input.EnabledTools,
+	}
+	for field, xs := range lists {
+		if len(xs) > maxPrefEntries {
+			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", field+" has too many entries")
+			return
+		}
+		for _, x := range xs {
+			if len(x) > maxPrefLen {
+				errpkg.WriteError(w, http.StatusBadRequest, "validation_error", field+" contains an overlong entry")
+				return
+			}
+		}
 	}
 
 	prefs := AIPrefs{

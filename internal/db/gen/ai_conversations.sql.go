@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const aIConversationExistsIncludingDeleted = `-- name: AIConversationExistsIncludingDeleted :one
+SELECT EXISTS(
+    SELECT 1 FROM ai_conversations
+    WHERE id = $1 AND user_id = $2
+) AS present
+`
+
+type AIConversationExistsIncludingDeletedParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+// Existence check that ignores deleted_at — used to keep soft-deleted
+// threads out of the legacy Honcho fallback in GET /ai/conversations/:id
+// (a deleted unified thread's memory entries must not resurrect it).
+func (q *Queries) AIConversationExistsIncludingDeleted(ctx context.Context, arg AIConversationExistsIncludingDeletedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, aIConversationExistsIncludingDeleted, arg.ID, arg.UserID)
+	var present bool
+	err := row.Scan(&present)
+	return present, err
+}
+
 const countAIConversationsForUser = `-- name: CountAIConversationsForUser :one
 SELECT COUNT(*) FROM ai_conversations
 WHERE user_id = $1 AND deleted_at IS NULL
@@ -88,6 +110,7 @@ func (q *Queries) GetAIConversationForUser(ctx context.Context, arg GetAIConvers
 
 const getAIPreferences = `-- name: GetAIPreferences :one
 
+
 SELECT ai_prefs FROM user_preferences
 WHERE user_id = $1
 `
@@ -100,6 +123,33 @@ func (q *Queries) GetAIPreferences(ctx context.Context, userID pgtype.UUID) ([]b
 	var ai_prefs []byte
 	err := row.Scan(&ai_prefs)
 	return ai_prefs, err
+}
+
+const hasRunningAgentTurnForConversation = `-- name: HasRunningAgentTurnForConversation :one
+SELECT EXISTS(
+    SELECT 1 FROM ai_agent_sessions
+    WHERE conversation_id = $1
+      AND user_id = $2
+      AND status = 'running'
+      AND started_at > $3
+) AS busy
+`
+
+type HasRunningAgentTurnForConversationParams struct {
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	RunningSince   pgtype.Timestamptz `json:"running_since"`
+}
+
+// ADR-130: is a turn already running on this thread? Concurrent sends
+// against one conversation would interleave their transcript. The
+// @running_since cutoff mirrors agent.timeout_seconds — a "running" row
+// older than the loop's own timeout is dead, not busy.
+func (q *Queries) HasRunningAgentTurnForConversation(ctx context.Context, arg HasRunningAgentTurnForConversationParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasRunningAgentTurnForConversation, arg.ConversationID, arg.UserID, arg.RunningSince)
+	var busy bool
+	err := row.Scan(&busy)
+	return busy, err
 }
 
 const insertAIMessage = `-- name: InsertAIMessage :one

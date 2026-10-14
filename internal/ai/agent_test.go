@@ -78,6 +78,7 @@ func (m *mockAgentProvider) ChatWithTools(ctx context.Context, req ChatWithTools
 // stubSessionStore implements SessionStore for testing.
 type stubSessionStore struct {
 	created   gen.AiAgentSession
+	createErr error // returned verbatim from CreateAgentSession when set
 	completed *gen.AiAgentSession
 	failed    *gen.AiAgentSession
 	cancelled *gen.AiAgentSession
@@ -87,6 +88,9 @@ type stubSessionStore struct {
 }
 
 func (s *stubSessionStore) CreateAgentSession(ctx context.Context, arg gen.CreateAgentSessionParams) (gen.AiAgentSession, error) {
+	if s.createErr != nil {
+		return gen.AiAgentSession{}, s.createErr
+	}
 	s.created = gen.AiAgentSession{
 		ID: randomUUID(),
 

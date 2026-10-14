@@ -71,6 +71,11 @@ type AgentEvent struct {
 	ConversationID string     `json:"conversation_id,omitempty"`
 	MessageID      string     `json:"message_id,omitempty"` // persisted ai_messages id on final_response
 	Sources        []RAGChunk `json:"sources,omitempty"`    // pre-search RAG citations (§69 contract)
+	// TurnCount is the thread's persisted message count at event time —
+	// emitted on `conversation` (post user-append) and `final_response`
+	// (post assistant-append) so the sidebar renders server truth rather
+	// than incrementing blindly.
+	TurnCount int `json:"turn_count,omitempty"`
 }
 
 // Agent event type constants.
@@ -510,6 +515,11 @@ type unifiedTurn struct {
 	req     UnifiedChatRequest
 	conv    gen.AiConversation
 	hasConv bool
+	// historyLen is the persisted message count before this turn; combined
+	// with userMsgPersisted/assistant-persist it yields the turn_count the
+	// sidebar shows — emitted on conversation/final_response events.
+	historyLen       int
+	userMsgPersisted bool
 }
 
 // loopParams is everything runLoop needs. catalogSet distinguishes
@@ -598,9 +608,14 @@ func (h *AgentHandler) runLoop(
 	}
 
 	// ADR-130: announce the thread early so the client can attach the turn
-	// to the right conversation before the reply lands.
+	// to the right conversation before the reply lands. TurnCount is the
+	// persisted message count including the just-appended user turn.
 	if convID != "" {
-		if !sendEvent(AgentEvent{Type: EventConversation, SessionID: session.ID.String(), ConversationID: convID}) {
+		turnCount := p.unified.historyLen
+		if p.unified.userMsgPersisted {
+			turnCount++
+		}
+		if !sendEvent(AgentEvent{Type: EventConversation, SessionID: session.ID.String(), ConversationID: convID, TurnCount: turnCount}) {
 			h.failSession(ctx, session, loopCtx.Err(), 0, 0, 0)
 			return
 		}
@@ -881,6 +896,19 @@ func (h *AgentHandler) runLoop(
 		}
 	}
 
+	// Server-authoritative count for the sidebar: prior history + the
+	// persisted user turn + the persisted assistant turn.
+	finalTurnCount := 0
+	if p.unified != nil {
+		finalTurnCount = p.unified.historyLen
+		if p.unified.userMsgPersisted {
+			finalTurnCount++
+		}
+		if messageID != "" {
+			finalTurnCount++
+		}
+	}
+
 	sendEvent(AgentEvent{
 		Type:           EventFinalResponse,
 		SessionID:      session.ID.String(),
@@ -889,6 +917,7 @@ func (h *AgentHandler) runLoop(
 		Content:        finalResponse,
 		TokensUsed:     totalTokens,
 		EstimatedCost:  estimatedCost,
+		TurnCount:      finalTurnCount,
 	})
 }
 

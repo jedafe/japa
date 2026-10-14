@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
+	"github.com/jedafe/japa/internal/db/gen"
 )
 
 func unifiedHTTPHandlers(t *testing.T, provider *recordingProvider, perms *stubPerms) *AgentHTTPHandlers {
@@ -138,6 +140,41 @@ func TestHandleGetCapabilities_NilRegistry(t *testing.T) {
 
 	if w.Result().StatusCode != http.StatusOK {
 		t.Fatalf("nil registry capabilities should 200, got %d: %s", w.Result().StatusCode, w.Body.String())
+	}
+}
+
+func TestHandleGetConversationV2_DeletedDoesNotFallThrough(t *testing.T) {
+	// A soft-deleted unified thread must 404 — its Honcho memory entries
+	// (still carrying conversation_id) must not resurrect it via the
+	// legacy fallback. The distinguishing mark is the error code:
+	// "conversation_not_found" comes from the V2 path; the legacy handler
+	// (nil Honcho here) would return "not_found".
+	st := newStubConvoStore()
+	h := &Handlers{Convos: NewConversationService(st, nil)}
+
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	conv, err := st.CreateAIConversation(context.Background(), gen.CreateAIConversationParams{UserID: uid, Title: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SoftDeleteAIConversationForUser(context.Background(), gen.SoftDeleteAIConversationForUserParams{ID: conv.ID, UserID: uid}); err != nil {
+		t.Fatal(err)
+	}
+
+	// chi route context — URLParam needs the route param injected.
+	r := authedRequest(t, http.MethodGet, "/api/v1/ai/conversations/"+conv.ID.String(), "", 1)
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", conv.ID.String())
+	r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+	h.HandleGetConversationV2(w, r)
+
+	if w.Result().StatusCode != http.StatusNotFound {
+		t.Fatalf("deleted thread should 404, got %d", w.Result().StatusCode)
+	}
+	if !strings.Contains(w.Body.String(), "conversation_not_found") {
+		t.Fatalf("deleted thread must not fall through to legacy handler: %s", w.Body.String())
 	}
 }
 

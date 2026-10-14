@@ -221,6 +221,8 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		errpkg.WriteError(w, http.StatusForbidden, "ai_permission_required", "You do not have permission to use Japa AI")
 	case errors.Is(err, errInvalidModel):
 		errpkg.WriteError(w, http.StatusBadRequest, "invalid_model", "The requested model is not available")
+	case errors.Is(err, errConversationBusy):
+		errpkg.WriteError(w, http.StatusConflict, "conversation_busy", "A response is already in progress for this conversation")
 	case errors.Is(err, errAgentDisabled):
 		errpkg.WriteError(w, http.StatusForbidden, "agent_disabled", "The AI agent is currently disabled")
 	case errors.Is(err, errAgentNoPermission):

@@ -19,7 +19,10 @@ type stubConvoStore struct {
 	msgs     map[string][]gen.AiMessage // conversation_id hex → messages
 	prefs    map[string][]byte          // user_id hex → ai_prefs
 	sessions map[string]gen.AiAgentSession
-	seq      int
+	// busyConvs: conversation_ids reported as having a running turn
+	// (HasRunningTurn); absent → not busy.
+	busyConvs map[string]bool
+	seq       int
 }
 
 func newStubConvoStore() *stubConvoStore {
@@ -94,6 +97,15 @@ func (s *stubConvoStore) CountAIConversationsForUser(_ context.Context, userID p
 		}
 	}
 	return n, nil
+}
+
+func (s *stubConvoStore) HasRunningAgentTurnForConversation(_ context.Context, arg gen.HasRunningAgentTurnForConversationParams) (bool, error) {
+	return s.busyConvs[uuidStr(arg.ConversationID)], nil
+}
+
+func (s *stubConvoStore) AIConversationExistsIncludingDeleted(_ context.Context, arg gen.AIConversationExistsIncludingDeletedParams) (bool, error) {
+	c, ok := s.convs[uuidStr(arg.ID)]
+	return ok && uuidStr(c.UserID) == uuidStr(arg.UserID), nil
 }
 
 func (s *stubConvoStore) SoftDeleteAIConversationForUser(_ context.Context, arg gen.SoftDeleteAIConversationForUserParams) (pgtype.UUID, error) {
