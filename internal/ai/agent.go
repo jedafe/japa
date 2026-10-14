@@ -66,6 +66,11 @@ type AgentEvent struct {
 	// final_response
 	TokensUsed    int     `json:"tokens_used,omitempty"`
 	EstimatedCost float64 `json:"estimated_cost,omitempty"`
+
+	// ADR-130 unified surface
+	ConversationID string     `json:"conversation_id,omitempty"`
+	MessageID      string     `json:"message_id,omitempty"` // persisted ai_messages id on final_response
+	Sources        []RAGChunk `json:"sources,omitempty"`    // pre-search RAG citations (§69 contract)
 }
 
 // Agent event type constants.
@@ -76,6 +81,10 @@ const (
 	EventProgress       = "progress"
 	EventFinalResponse  = "final_response"
 	EventError          = "error"
+
+	// ADR-130 unified surface
+	EventConversation = "conversation" // carries conversation_id; emitted with session_start
+	EventSources      = "sources"      // carries pre-search RAG chunks for citation rendering
 )
 
 // ---------------------------------------------------------------------------
@@ -95,6 +104,12 @@ type SessionStore interface {
 // satisfies this via GetUserCurrentGeoSpace.
 type GeoSpaceResolver interface {
 	GetUserCurrentGeoSpace(ctx context.Context, userID pgtype.UUID) (gen.GetUserCurrentGeoSpaceRow, error)
+}
+
+// PreSearchRunner is the pre-search step (§103). *PreSearcher satisfies it;
+// the interface lets tests inject canned results.
+type PreSearchRunner interface {
+	PreSearch(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID, userID pgtype.UUID) (*PreSearchResult, error)
 }
 
 // RateLimiter is the subset of Valkey commands the agent uses for the
@@ -119,7 +134,7 @@ type AgentHandler struct {
 	gateway     *Dispatcher
 	executor    *Executor
 	registry    *ToolHandlerRegistry
-	presearch   *PreSearcher
+	presearch   PreSearchRunner
 	perms       PermissionChecker
 	settings    SettingsReader
 	checker     FeatureChecker // feature_flags reachability (feature.ai_agent); nil → settings fallback
@@ -129,6 +144,14 @@ type AgentHandler struct {
 	cache       CacheClient     // for jc:agent:tools:{user_id} catalog cache
 	persona     PersonaResolver // Phase 8: resolve agent.default_persona_id → user_id for draft requests
 	preflight   *Preflight      // §20 amendment: shared consent + unified daily budget (nil = skip)
+
+	// ADR-130 unified surface dependencies (nil → unified features degrade
+	// gracefully: no transcript persistence, no memory injection).
+	convos         *ConversationService
+	aiContextFn    func(ctx context.Context, userID pgtype.UUID, clientCtx map[string]any) map[string]any
+	persistTurnFn  func(ctx context.Context, userID, message, reply, conversationID string)
+	voiceResolver  PersonaVoiceResolver
+	modelValidator func(model, category string) bool
 
 	// llmCategory is the gateway provider category used for ChatWithTools
 	// dispatch. Defaults to "chat" — the agent uses the same chat-capable
@@ -144,7 +167,7 @@ type AgentOption func(*AgentHandler)
 // presearcher, permission checker, and settings reader are required; the
 // session store, geo resolver, rate limiter, and cache are optional but
 // should be provided by the wiring layer for full functionality.
-func NewAgentHandler(gateway *Dispatcher, executor *Executor, registry *ToolHandlerRegistry, presearch *PreSearcher, opts ...AgentOption) *AgentHandler {
+func NewAgentHandler(gateway *Dispatcher, executor *Executor, registry *ToolHandlerRegistry, presearch PreSearchRunner, opts ...AgentOption) *AgentHandler {
 	h := &AgentHandler{
 		gateway:     gateway,
 		executor:    executor,
@@ -220,6 +243,39 @@ func WithAgentPersona(p PersonaResolver) AgentOption {
 // top. Nil skips the shared checks.
 func WithAgentPreflight(p *Preflight) AgentOption {
 	return func(h *AgentHandler) { h.preflight = p }
+}
+
+// WithAgentConversations injects the unified transcript store (ADR-130).
+// Nil → the unified path still answers but does not persist turns.
+func WithAgentConversations(s *ConversationService) AgentOption {
+	return func(h *AgentHandler) { h.convos = s }
+}
+
+// WithAgentAIContext injects the ADR-025 user-context builder (Honcho
+// prior_memory + per-category site activity). Satisfied by
+// (*Handlers).buildUserAIContext at wiring time.
+func WithAgentAIContext(fn func(ctx context.Context, userID pgtype.UUID, clientCtx map[string]any) map[string]any) AgentOption {
+	return func(h *AgentHandler) { h.aiContextFn = fn }
+}
+
+// WithAgentChatPersist injects the Honcho turn-persistence hook
+// ((*Handlers).persistChatTurn). Long-term memory write; fire-and-forget.
+func WithAgentChatPersist(fn func(ctx context.Context, userID, message, reply, conversationID string)) AgentOption {
+	return func(h *AgentHandler) { h.persistTurnFn = fn }
+}
+
+// WithAgentVoiceResolver injects the persona voice prompt resolver
+// (personas.Service satisfies PersonaVoiceResolver). Invisible voices
+// resolve to an empty prompt and are ignored (BUG-009).
+func WithAgentVoiceResolver(v PersonaVoiceResolver) AgentOption {
+	return func(h *AgentHandler) { h.voiceResolver = v }
+}
+
+// WithAgentModelValidator injects the per-category model validator
+// ((*Handlers).isValidModelForCategory). Nil validator → any non-empty
+// model override is passed through to the gateway.
+func WithAgentModelValidator(fn func(model, category string) bool) AgentOption {
+	return func(h *AgentHandler) { h.modelValidator = fn }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,23 +378,10 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 	geoSpaceID, geoSummary := h.resolveGeoContext(ctx, userID)
 
 	// --- Tasks 5.01-5.03: pre-search ---
-	var preSearchResult *PreSearchResult
-
-	if h.presearch != nil {
-		var err error
-
-		preSearchResult, err = h.presearch.PreSearch(ctx, prompt, geoSpaceID, userID)
-		if err != nil {
-			slog.Warn("ai: pre-search failed, proceeding without it", "error", err)
-
-			preSearchResult = &PreSearchResult{Level: PreSearchNone}
-		}
-	} else {
-		preSearchResult = &PreSearchResult{Level: PreSearchNone}
-	}
+	preSearchResult := h.runPreSearch(ctx, prompt, geoSpaceID, userID)
 
 	// --- Task 5.09: create ai_agent_sessions record ---
-	session, err := h.createSession(ctx, userID, prompt, geoSpaceID, preSearchResult.Level)
+	session, err := h.createSession(ctx, userID, prompt, geoSpaceID, preSearchResult.Level, pgtype.UUID{})
 	if err != nil {
 		return nil, fmt.Errorf("ai: creating agent session: %w", err)
 	}
@@ -356,9 +399,32 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 	// --- Return channel and run the loop in a goroutine ---
 	events := make(chan AgentEvent, 32)
 
-	go h.runLoop(ctx, session, userID, prompt, geoSpaceID, geoSummary, preSearchResult, draftCtx, events)
+	go h.runLoop(ctx, session, userID, loopParams{
+		prompt:     prompt,
+		geoSpaceID: geoSpaceID,
+		geoSummary: geoSummary,
+		preSearch:  preSearchResult,
+		draftCtx:   draftCtx,
+	}, events)
 
 	return events, nil
+}
+
+// runPreSearch executes the §103 pre-search (content + RAG, privacy-filtered,
+// classified). A nil presearcher or a pre-search error degrades to
+// PreSearchNone rather than failing the request.
+func (h *AgentHandler) runPreSearch(ctx context.Context, prompt string, geoSpaceID *pgtype.UUID, userID pgtype.UUID) *PreSearchResult {
+	if h.presearch == nil {
+		return &PreSearchResult{Level: PreSearchNone}
+	}
+
+	res, err := h.presearch.PreSearch(ctx, prompt, geoSpaceID, userID)
+	if err != nil {
+		slog.Warn("ai: pre-search failed, proceeding without it", "error", err)
+		return &PreSearchResult{Level: PreSearchNone}
+	}
+
+	return res
 }
 
 // draftRequestContext holds the Phase 8 Content Request Flow context. When
@@ -433,21 +499,47 @@ func (h *AgentHandler) getStringSetting(ctx context.Context, key, fallback strin
 }
 
 // ---------------------------------------------------------------------------
-// runLoop — the LLM function-calling loop (tasks 5.06-5.10, 5.12)
+// runLoop — the LLM function-calling loop (tasks 5.06-5.10, 5.12; ADR-130)
 // ---------------------------------------------------------------------------
+
+// unifiedTurn carries the ADR-130 per-turn context: the unified request,
+// the resolved conversation, and everything the loop needs that the legacy
+// single-turn path doesn't have.
+type unifiedTurn struct {
+	req     UnifiedChatRequest
+	conv    gen.AiConversation
+	hasConv bool
+}
+
+// loopParams is everything runLoop needs. catalogSet distinguishes
+// "catalog resolved to empty" (unified path — counter ordering) from
+// "not resolved" (legacy path builds it here, preserving its old order).
+type loopParams struct {
+	prompt     string
+	geoSpaceID *pgtype.UUID
+	geoSummary string
+	preSearch  *PreSearchResult
+	draftCtx   draftRequestContext
+	catalog    []ToolConfig
+	catalogSet bool
+	history    []ChatMessage // prior turns, oldest-first (unified only)
+	model      string        // validated model override (unified only)
+	unified    *unifiedTurn  // nil → legacy /ai/agent turn
+}
 
 func (h *AgentHandler) runLoop(
 	ctx context.Context,
 	session gen.AiAgentSession,
 	userID pgtype.UUID,
-	prompt string,
-	geoSpaceID *pgtype.UUID,
-	geoSummary string,
-	preSearchResult *PreSearchResult,
-	draftCtx draftRequestContext,
+	p loopParams,
 	events chan<- AgentEvent,
 ) {
 	defer close(events)
+
+	prompt := p.prompt
+	geoSummary := p.geoSummary
+	preSearchResult := p.preSearch
+	draftCtx := p.draftCtx
 
 	// Enforce timeout (agent.timeout_seconds). The loop ctx is derived from
 	// the request ctx with the configured timeout.
@@ -480,10 +572,18 @@ func (h *AgentHandler) runLoop(
 		}
 	}
 
+	// convID is the ADR-130 transcript thread this turn belongs to ("" on
+	// the legacy /ai/agent path or when the transcript store isn't wired).
+	convID := ""
+	if p.unified != nil && p.unified.hasConv {
+		convID = p.unified.conv.ID.String()
+	}
+
 	// Emit session_start event.
 	if !sendEvent(AgentEvent{
 		Type:           EventSessionStart,
 		SessionID:      session.ID.String(),
+		ConversationID: convID,
 		PresearchLevel: string(preSearchResult.Level),
 		Message:        preSearchResult.Summary(),
 	}) {
@@ -491,12 +591,64 @@ func (h *AgentHandler) runLoop(
 		return
 	}
 
-	// --- Task 5.06: build tool catalog (cached) ---
-	tools := h.buildToolCatalog(loopCtx, userID)
+	// ADR-130: announce the thread early so the client can attach the turn
+	// to the right conversation before the reply lands.
+	if convID != "" {
+		if !sendEvent(AgentEvent{Type: EventConversation, SessionID: session.ID.String(), ConversationID: convID}) {
+			h.failSession(ctx, session, loopCtx.Err(), 0, 0, 0)
+			return
+		}
+	}
+
+	// ADR-130: emit pre-search RAG chunks as citation sources (§69
+	// contract) — they previously went into the system prompt only and
+	// never reached the client.
+	if len(preSearchResult.RAGChunks) > 0 {
+		if !sendEvent(AgentEvent{Type: EventSources, SessionID: session.ID.String(), ConversationID: convID, Sources: preSearchResult.RAGChunks}) {
+			h.failSession(ctx, session, loopCtx.Err(), 0, 0, 0)
+			return
+		}
+	}
+
+	// --- Task 5.06: tool catalog. The unified path resolves it BEFORE the
+	// agent-scoped counters (ADR-130: pure-chat turns must not burn
+	// jc:agent:* quota); the legacy path keeps building it here. ---
+	var tools []ToolConfig
+	if p.catalogSet {
+		tools = p.catalog
+	} else {
+		tools = h.buildToolCatalog(loopCtx, userID)
+	}
 	toolDefs := configsToToolDefinitions(tools)
 
 	// --- Task 5.07: build system prompt ---
 	systemPrompt := buildSystemPrompt(geoSummary, preSearchResult, tools)
+
+	// --- ADR-130 unified extras: user memory/context, persona voice,
+	// humanization. All degrade gracefully when deps aren't wired. ---
+	if p.unified != nil {
+		if h.aiContextFn != nil {
+			if actx := h.aiContextFn(ctx, userID, p.unified.req.Context); len(actx) > 0 {
+				if raw, err := json.Marshal(actx); err == nil {
+					systemPrompt += "\n\nUSER CONTEXT (JSON):\n" + string(raw)
+				}
+			}
+		}
+
+		if p.unified.req.VoiceID != "" && h.voiceResolver != nil {
+			if voiceUUID, err := scanUUID(p.unified.req.VoiceID); err == nil && voiceUUID.Valid {
+				if vp, err := h.voiceResolver.GetVoicePrompt(ctx, userID, voiceUUID); err == nil && vp != "" {
+					systemPrompt = "Respond using this persona voice:\n" + vp + "\n\n" + systemPrompt
+				}
+			}
+		}
+
+		globalEnabled := h.getBoolSetting(ctx, "ai.humanize.enabled", false)
+		globalLevel := HumanizeLevel(h.getStringSetting(ctx, "ai.humanize.level", "medium"))
+		if enabled, level := ResolveHumanize(globalEnabled, globalLevel, p.unified.req.Humanize, p.unified.req.HumanizeLevel); enabled {
+			systemPrompt = ApplyHumanization(systemPrompt, level)
+		}
+	}
 
 	// --- Phase 8: when the draft-request path is active, append the
 	// persona user_id + draft-request instructions so the LLM uses
@@ -506,10 +658,13 @@ func (h *AgentHandler) runLoop(
 	}
 
 	// --- Task 5.08: LLM function-calling loop ---
+	// ADR-130: prior turns slot between the system prompt and the current
+	// user message so tool on/off flips mid-thread keep full context.
 	messages := []ChatMessage{
 		{Role: "system", Content: systemPrompt},
-		{Role: "user", Content: prompt},
 	}
+	messages = append(messages, p.history...)
+	messages = append(messages, ChatMessage{Role: "user", Content: prompt})
 
 	var (
 		totalTokens   int
@@ -542,6 +697,7 @@ func (h *AgentHandler) runLoop(
 		resp, err := h.gateway.ChatWithTools(loopCtx, h.llmCategory, ChatWithToolsRequest{
 			Messages:    messages,
 			Tools:       toolDefs,
+			Model:       p.model,
 			Temperature: temperature,
 		})
 		if err != nil {
@@ -682,12 +838,40 @@ func (h *AgentHandler) runLoop(
 
 	h.completeSession(ctx, session, finalResponse, toolCallCount, totalTokens, estimatedCost)
 	h.trackCost(ctx, userID, estimatedCost)
+
+	// ADR-130: persist the assistant turn to the transcript, link the audit
+	// session to it, bump the thread's updated_at, and write the turn to
+	// Honcho long-term memory. All best-effort — a transcript write failure
+	// must not eat the answer the user is about to see. WithoutCancel so a
+	// disconnect mid-write doesn't lose the row.
+	messageID := ""
+	if p.unified != nil && p.unified.hasConv && h.convos != nil {
+		persistCtx := context.WithoutCancel(ctx)
+		if msg, err := h.convos.AppendAssistantMessage(persistCtx, p.unified.conv.ID, finalResponse, p.model, totalTokens, estimatedCost, &session.ID); err == nil {
+			messageID = msg.ID.String()
+			if err := h.convos.LinkSession(persistCtx, session.ID, p.unified.conv.ID, msg.ID); err != nil {
+				slog.Warn("ai: failed to link agent session to conversation", "session_id", session.ID, "error", err)
+			}
+			if err := h.convos.Touch(persistCtx, p.unified.conv.ID); err != nil {
+				slog.Warn("ai: failed to touch conversation", "conversation_id", convID, "error", err)
+			}
+		} else {
+			slog.Warn("ai: failed to persist assistant message", "conversation_id", convID, "error", err)
+		}
+
+		if h.persistTurnFn != nil {
+			h.persistTurnFn(persistCtx, userID.String(), prompt, finalResponse, convID)
+		}
+	}
+
 	sendEvent(AgentEvent{
-		Type:          EventFinalResponse,
-		SessionID:     session.ID.String(),
-		Content:       finalResponse,
-		TokensUsed:    totalTokens,
-		EstimatedCost: estimatedCost,
+		Type:           EventFinalResponse,
+		SessionID:      session.ID.String(),
+		ConversationID: convID,
+		MessageID:      messageID,
+		Content:        finalResponse,
+		TokensUsed:     totalTokens,
+		EstimatedCost:  estimatedCost,
 	})
 }
 
@@ -917,12 +1101,14 @@ func (h *AgentHandler) buildToolCatalog(ctx context.Context, userID pgtype.UUID)
 }
 
 // createSession inserts an ai_agent_sessions row with status "running" and
-// the pre-search level. Returns the created session.
-func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID, level PreSearchLevel) (gen.AiAgentSession, error) {
+// the pre-search level. Returns the created session. convID links the audit
+// row to the unified transcript thread (ADR-130); zero value = unlinked
+// (legacy /ai/agent path).
+func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, prompt string, geoSpaceID *pgtype.UUID, level PreSearchLevel, convID pgtype.UUID) (gen.AiAgentSession, error) {
 	if h.sessions == nil {
 		// No session store configured — return a zero-value session so
 		// the loop can proceed (useful for tests).
-		return gen.AiAgentSession{ID: randomUUID(), UserID: userID, Prompt: prompt, PresearchLevel: string(level), Status: "running"}, nil
+		return gen.AiAgentSession{ID: randomUUID(), UserID: userID, Prompt: prompt, PresearchLevel: string(level), Status: "running", ConversationID: convID}, nil
 	}
 
 	var geoID pgtype.UUID
@@ -937,6 +1123,7 @@ func (h *AgentHandler) createSession(ctx context.Context, userID pgtype.UUID, pr
 		GeoSpaceID:     geoID,
 		PresearchLevel: string(level),
 		Status:         "running",
+		ConversationID: convID,
 	})
 }
 

@@ -185,6 +185,12 @@ func (s *ConversationService) Delete(ctx context.Context, userID, convID pgtype.
 	return do(s.store)
 }
 
+// Touch bumps the thread's updated_at so the list ordering reflects the
+// latest turn.
+func (s *ConversationService) Touch(ctx context.Context, convID pgtype.UUID) error {
+	return s.store.TouchAIConversation(ctx, convID)
+}
+
 // LinkSession points an agent audit session at its conversation and the
 // assistant message it produced.
 func (s *ConversationService) LinkSession(ctx context.Context, sessionID, convID, messageID pgtype.UUID) error {
