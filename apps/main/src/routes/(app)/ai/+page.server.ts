@@ -2,7 +2,7 @@ import { redirect, fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
 import { isMainToolEnabled, MAIN_TOOLS } from '$lib/tools/registry';
-import type { AgentCapabilities } from '$lib/ai/agentTypes';
+import type { AgentCapabilities, AIPrefs } from '$lib/ai/agentTypes';
 
 /**
  * /ai — the unified AI surface. Two modes share one route behind a tab
@@ -34,9 +34,12 @@ export interface AiChatSource {
 
 export interface ConversationSummary {
 	conversation_id: string;
+	title?: string;
 	preview: string;
 	turn_count: number;
 	last_entry_at: string;
+	/** ADR-130: Honcho-era thread — read-only, not deletable. */
+	legacy?: boolean;
 }
 
 export interface ChatModelOption {
@@ -59,24 +62,32 @@ export const load: PageServerLoad = async (event) => {
 	const japabotTool = MAIN_TOOLS.find((t) => t.labelKey === 'tools.japabot')!;
 	const agentEnabled = isMainToolEnabled(agentTool, parent.features ?? {});
 	const chatEnabled = isMainToolEnabled(japabotTool, parent.features ?? {});
+	// ADR-130: when the rollout flag is on, /ai renders the single unified
+	// chat surface instead of the chat/agent tab switcher. The surface still
+	// requires feature.japabot (the backend gates /ai/chat on it).
+	const unifiedEnabled =
+		(parent.features ?? {})['feature.japa_ai_unified'] === true && chatEnabled;
 
 	if (!agentEnabled && !chatEnabled) {
 		return {
 			agentEnabled: false,
 			chatEnabled: false,
+			unifiedEnabled: false,
 			capabilities: null,
 			conversations: [],
 			models: [],
-			voices: []
+			voices: [],
+			prefs: null
 		};
 	}
 
 	const ctx = apiContext(event);
 
-	// Agent mode: tool catalog + geo context (best-effort — a null renders
-	// the capabilities warning and the composer surfaces the send error).
+	// Tool catalog + geo context. On the unified surface this also drives the
+	// composer's category chips + per-tool toggles (empty categories → plain
+	// chat). Best-effort — null renders without tool controls.
 	let capabilities: AgentCapabilities | null = null;
-	if (agentEnabled) {
+	if (agentEnabled || unifiedEnabled) {
 		try {
 			capabilities = await apiGet<AgentCapabilities>(ctx, '/ai/agent/capabilities');
 		} catch {
@@ -84,9 +95,9 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	// Chat mode: Honcho conversation list + composer picker options. All
-	// best-effort: empty picker lists just hide the selects so the backend
-	// default applies.
+	// Conversation list (V2 unions ai_conversations with legacy Honcho
+	// threads) + composer picker options. All best-effort: empty picker
+	// lists just hide the selects so the backend default applies.
 	let conversations: ConversationSummary[] = [];
 	let models: ChatModelOption[] = [];
 	let voices: ChatVoiceOption[] = [];
@@ -108,7 +119,19 @@ export const load: PageServerLoad = async (event) => {
 		}
 	}
 
-	return { agentEnabled, chatEnabled, capabilities, conversations, models, voices };
+	// ADR-130: user AI preferences (default mode, disabled categories/tools)
+	// seed the composer's tools popover. Best-effort — defaults are chat mode
+	// with nothing disabled.
+	let prefs: AIPrefs | null = null;
+	if (unifiedEnabled) {
+		try {
+			prefs = await apiGet<AIPrefs>(ctx, '/me/ai-preferences');
+		} catch {
+			prefs = null;
+		}
+	}
+
+	return { agentEnabled, chatEnabled, unifiedEnabled, capabilities, conversations, models, voices, prefs };
 };
 
 export const actions: Actions = {

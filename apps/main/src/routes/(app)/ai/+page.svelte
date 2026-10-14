@@ -20,6 +20,7 @@
 	import { Sparkles, AlertCircle, MapPin, Wrench, Clock, MessageSquare } from 'lucide-svelte';
 	import AgentChat from '$lib/ai/AgentChat.svelte';
 	import JapaBotChat from '$lib/ai/JapaBotChat.svelte';
+	import JapaAIChat from '$lib/ai/JapaAIChat.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -83,7 +84,19 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-{#if mode === null}
+{#if data.unifiedEnabled}
+	<!-- ADR-130: single chat surface — the composer tools toggle, not a
+	     page-level tab, is what switches between chat and agent turns. -->
+	<div class="mx-auto flex h-[calc(100vh-8rem)] w-full max-w-5xl flex-col">
+		<JapaAIChat
+			conversations={data.conversations.map((c) => ({ ...c, legacy: c.legacy ?? false }))}
+			models={data.models}
+			voices={data.voices}
+			capabilities={data.capabilities}
+			prefs={data.prefs}
+		/>
+	</div>
+{:else if mode === null}
 	<div class="mx-auto flex h-[calc(100vh-8rem)] max-w-5xl flex-col items-center justify-center gap-4 text-center">
 		<Sparkles class="h-12 w-12" style="color: var(--color-muted)" />
 		<h1 class="text-xl font-semibold" style="color: var(--color-text)">

@@ -5,6 +5,8 @@
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 // Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 6, Phase 10)
 
+import type { AiCitationSource } from './types';
+
 /** SSE event types emitted by the agent loop (internal/ai/agent.go constants). */
 export type AgentEventType =
 	| 'session_start'
@@ -12,9 +14,12 @@ export type AgentEventType =
 	| 'tool_call_result'
 	| 'progress'
 	| 'final_response'
-	| 'error';
+	| 'error'
+	// ADR-130 unified surface additions
+	| 'conversation'
+	| 'sources';
 
-/** Single SSE event from POST /api/v1/ai/agent. Fields are optional per event type. */
+/** Single SSE event from POST /api/v1/ai/agent or /api/v1/ai/chat. Fields are optional per event type. */
 export interface AgentEvent {
 	type: AgentEventType;
 	session_id?: string;
@@ -32,6 +37,11 @@ export interface AgentEvent {
 	// final_response
 	tokens_used?: number;
 	estimated_cost?: number;
+	// ADR-130: conversation + final_response
+	conversation_id?: string;
+	message_id?: string;
+	// ADR-130: sources event — RAG citations for the turn
+	sources?: AiCitationSource[];
 }
 
 /** Tool catalog entry from GET /api/v1/ai/agent/capabilities → data.tools[]. */
@@ -52,10 +62,68 @@ export interface AgentGeoContext {
 	geo_space_id?: string;
 }
 
+/** A tool category group (ADR-130) — drives the composer's category chips. */
+export interface AgentToolCategory {
+	name: string;
+	tools: { name: string; description: string }[];
+}
+
 /** Capabilities response (GET /api/v1/ai/agent/capabilities). */
 export interface AgentCapabilities {
 	tools: AgentToolCapability[];
+	/** ADR-130: the same catalog grouped by ai_tools.category. */
+	categories?: AgentToolCategory[];
 	geo_context: AgentGeoContext | null;
+}
+
+/** Per-user AI preferences (GET/PUT /api/v1/me/ai-preferences → data). */
+export interface AIPrefs {
+	default_mode?: '' | 'chat' | 'agent';
+	disabled_categories?: string[];
+	disabled_tools?: string[];
+	enabled_tools?: string[];
+}
+
+/** Unified conversation summary (GET /api/v1/ai/conversations → data[]). */
+export interface UnifiedConversationSummary {
+	conversation_id: string;
+	title?: string;
+	preview?: string;
+	turn_count: number;
+	last_entry_at?: string;
+	/** true = Honcho-era thread — read-only, not deletable. */
+	legacy: boolean;
+}
+
+/** Tool call embedded on a conversation-detail assistant message. */
+export interface ConversationToolCall {
+	id: string;
+	session_id: string;
+	tool_name: string;
+	status: string;
+	rbac_checked?: boolean;
+	privacy_checked?: boolean;
+	created_at?: string;
+	arguments?: unknown;
+	result?: unknown;
+	error_message?: string;
+	latency_ms?: number;
+	hitl_review_id?: string;
+}
+
+/** A message row in GET /api/v1/ai/conversations/{id} (unified threads). */
+export interface ConversationMessage {
+	id: string;
+	conversation_id: string;
+	role: 'user' | 'assistant';
+	content: string;
+	model?: string | null;
+	voice_id?: string | null;
+	tokens_used?: number;
+	cost_usd?: string | number;
+	agent_session_id?: string;
+	created_at: string;
+	tool_calls?: ConversationToolCall[];
 }
 
 /** Agent session row (sessionToJSON in agent_handlers.go). */
