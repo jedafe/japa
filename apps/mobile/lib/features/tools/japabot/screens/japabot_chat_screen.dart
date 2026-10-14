@@ -38,6 +38,12 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
   /// `delta` chunks accumulate into [_streamed]; `final_response` replaces the
   /// transient bubble with the authoritative reply.
   StreamSubscription<Map<String, dynamic>>? _sub;
+
+  /// Monotonic send-generation — bumped on every send and on cancel. Events
+  /// from a stale (cancelled or superseded) subscription carry the old gen
+  /// and are dropped, so a buffered `final_response` can't double-append
+  /// after the cancel path already promoted the partial.
+  int _sendGen = 0;
   String _streamed = '';
   List<String> _sources = const [];
   String? _status;
@@ -291,6 +297,7 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
     });
 
     final service = ref.read(japabotServiceProvider);
+    final gen = ++_sendGen;
     var gotFinal = false;
 
     _sub = service
@@ -301,7 +308,7 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
         )
         .listen(
       (ev) {
-        if (!mounted) return;
+        if (!mounted || gen != _sendGen) return;
         setState(() {
           switch (ev['type'] as String? ?? '') {
             case 'session_start':
@@ -345,11 +352,11 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
         });
       },
       onError: (Object e) {
-        if (!mounted) return;
+        if (!mounted || gen != _sendGen) return;
         setState(() => _error = e.toString());
       },
       onDone: () {
-        if (!mounted) return;
+        if (!mounted || gen != _sendGen) return;
         setState(() {
           // The stream closed without a final_response (cancel, transport
           // drop). Promote any streamed partial so the text isn't lost.
@@ -378,6 +385,7 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
   Future<void> _cancel() async {
     final sub = _sub;
     _sub = null;
+    _sendGen++; // drop any events buffered by the dying subscription
     await sub?.cancel();
     final sessionId = _sessionId;
     if (sessionId != null && sessionId.isNotEmpty) {
@@ -385,6 +393,28 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
       try {
         await ref.read(japabotServiceProvider).cancelSession(sessionId);
       } catch (_) {}
+    }
+    // A cancelled subscription never delivers onDone — reset the turn state
+    // here so the input isn't stuck on the stop button, and promote any
+    // streamed partial into the transcript instead of dropping it.
+    if (!mounted) return;
+    setState(() {
+      if (_streamed.isNotEmpty) {
+        _messages?.add(JapaBotMessage(
+          text: _streamed,
+          role: 'assistant',
+          conversationId: _isNew ? null : _convId,
+          createdAt: DateTime.now(),
+          sources: _sources,
+        ));
+      }
+      _sending = false;
+      _streamed = '';
+      _status = null;
+    });
+    ref.invalidate(japabotConversationsProvider);
+    if (!_isNew) {
+      ref.invalidate(japabotMessagesProvider(_convId!));
     }
   }
 }

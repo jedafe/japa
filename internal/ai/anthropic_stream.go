@@ -221,6 +221,14 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatWithToolsReq
 		}
 	}
 
+	// A well-formed stream always ends with message_delta{stop_reason} →
+	// message_stop. EOF without one means the connection dropped mid-turn —
+	// treat the accumulated text as truncated, not complete (same strictness
+	// as the OpenAI-compatible reader's missing-finish_reason error).
+	if stopReason == "" {
+		return ChatWithToolsResponse{}, errors.New("anthropic: stream ended before a stop_reason was received")
+	}
+
 	result := ChatWithToolsResponse{
 		Content:      content.String(),
 		FinishReason: anthropicStopReasonToFinish(stopReason),

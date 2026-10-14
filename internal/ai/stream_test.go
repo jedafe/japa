@@ -453,6 +453,28 @@ func TestAnthropicChatStreamParsesEvents(t *testing.T) {
 	}
 }
 
+func TestAnthropicChatStreamAbruptEOF(t *testing.T) {
+	t.Parallel()
+
+	// Connection drop mid-turn: text deltas arrive but the stream closes
+	// without message_delta{stop_reason} → error, not silent truncation.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"type":"message_start","message":{"id":"m","model":"x","usage":{"input_tokens":5}}}`)
+		fmt.Fprintln(w, `data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}`)
+		fmt.Fprintln(w, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"trunc"}}`)
+	}))
+	defer srv.Close()
+
+	p := NewAnthropicProvider("test", "ak", srv.URL, "claude-x")
+	_, err := p.ChatStream(t.Context(), ChatWithToolsRequest{
+		Messages: []ChatMessage{{Role: "user", Content: "hi"}},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "stop_reason") {
+		t.Errorf("err = %v, want missing-stop_reason error", err)
+	}
+}
+
 func TestAnthropicChatStreamErrorEvent(t *testing.T) {
 	t.Parallel()
 

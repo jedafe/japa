@@ -348,11 +348,10 @@ func (h *Handlers) enqueueConversationMigration(userID pgtype.UUID) {
 	if err != nil {
 		return
 	}
-	if _, err := h.AsynqClient.Enqueue(
-		asynq.NewTask(worker.TypeAIMigrateConversations, payload),
-		asynq.Queue(worker.QueueForTask(worker.TypeAIMigrateConversations)),
+	opts := append(worker.TaskOpts(worker.TypeAIMigrateConversations),
 		asynq.TaskID(worker.TypeAIMigrateConversations+":"+userID.String()),
-	); err != nil {
+	)
+	if _, err := h.AsynqClient.Enqueue(asynq.NewTask(worker.TypeAIMigrateConversations, payload), opts...); err != nil {
 		slog.Debug("ai: lazy conversation-migration enqueue skipped", "error", err)
 	}
 }

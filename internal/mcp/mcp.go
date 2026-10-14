@@ -676,9 +676,14 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 		return s.handleAliasCall(ctx, user, req, callReq, alias)
 	}
 
-	// ADR-130 Phase 3: japa.chat is JWT-only — toolDenied already denied
-	// API-key/OAuth callers (it is absent from apiKeyToolGates).
+	// ADR-130 Phase 3: japa.chat is JWT-only. toolDenied denies it for most
+	// API-key/OAuth callers (absent from apiKeyToolGates), but a key carrying
+	// the admin-only agent.write elevation would skip that map — deny the
+	// caller class explicitly so elevation never unlocks the chat engine.
 	if callReq.Name == japaChatToolName {
+		if isAPIKeyCaller(ctx) {
+			return s.errorResp(req.ID, -32602, "Invalid params", fmt.Sprintf("tool %q is not available to API-key callers", callReq.Name)), false
+		}
 		return s.handleJapaChat(ctx, user, req, callReq)
 	}
 

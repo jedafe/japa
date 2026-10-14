@@ -159,6 +159,11 @@ func taskDefaults(taskType string) []asynq.Option {
 	// upstream rate limit does not keep one task cycling forever.
 	case TypeSpaceAutoPopulate:
 		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(10))
+	// ADR-130 Phase 4 conversation backfill: one Honcho HTTP fetch plus a
+	// transaction per thread group — bounded timeout, few retries since a
+	// persistent Honcho/DB failure won't self-heal faster than that.
+	case TypeAIMigrateConversations:
+		opts = append(opts, asynq.Timeout(2*time.Minute), asynq.MaxRetry(3))
 	}
 	// Default: no explicit timeout/retry — asynq defaults apply.
 

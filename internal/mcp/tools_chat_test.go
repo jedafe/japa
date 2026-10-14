@@ -133,6 +133,27 @@ func TestMCP_JapaChat_HiddenFromAPIKeyCaller(t *testing.T) {
 	}
 }
 
+func TestMCP_JapaChat_DeniedForAgentWriteKey(t *testing.T) {
+	srv, _ := newChatServer(t)
+	// An API key carrying the admin-only agent.write scope skips the
+	// apiKeyToolGates map entirely (§119 v1.3) — japa.chat must still be
+	// denied at dispatch; the elevation never unlocks the chat engine.
+	ctx := apiKeyCtx(withUser(t.Context(), testUserID), "agent.use", "agent.write")
+
+	_, out := postJSON(t, srv, ctx, `{
+		"jsonrpc": "2.0", "id": 2,
+		"method": "tools/call",
+		"params": {"name": "japa.chat", "arguments": {"message": "hi"}}
+	}`)
+	if out["error"] == nil {
+		t.Fatal("agent.write API-key caller must not invoke japa.chat")
+	}
+	errObj := out["error"].(map[string]any)
+	if !strings.Contains(errObj["data"].(string), "not available") {
+		t.Fatalf("unexpected denial: %v", errObj)
+	}
+}
+
 func TestMCP_JapaChat_DrainsUnifiedEngine(t *testing.T) {
 	srv, _ := newChatServer(t)
 	ctx := withUser(t.Context(), testUserID)

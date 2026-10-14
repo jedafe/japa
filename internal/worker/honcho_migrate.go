@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -128,7 +129,17 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 			convID = pgtype.UUID{Bytes: uuid.New(), Valid: true}
 		}
 
+		// Honcho entries should always carry created_at, but a zero value
+		// would insert NULL into the NOT NULL columns and wedge the task in
+		// retries — substitute now() when absent.
+		now := time.Now()
 		first, last := ents[0].CreatedAt, ents[len(ents)-1].CreatedAt
+		if first.IsZero() {
+			first = now
+		}
+		if last.IsZero() {
+			last = now
+		}
 		title := migrateTitle(ents, titleLen)
 
 		txErr := db.WithTx(ctx, dbPool.Writer, func(txq *gen.Queries) error {
@@ -146,11 +157,15 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 				return err
 			}
 			for _, e := range ents {
+				createdAt := e.CreatedAt
+				if createdAt.IsZero() {
+					createdAt = now
+				}
 				if _, err := txq.InsertAIMessageAt(ctx, gen.InsertAIMessageAtParams{
 					ConversationID: convID,
 					Role:           legacyMessageRole(e),
 					Content:        e.Content,
-					CreatedAt:      pgtype.Timestamptz{Time: e.CreatedAt, Valid: !e.CreatedAt.IsZero()},
+					CreatedAt:      pgtype.Timestamptz{Time: createdAt, Valid: true},
 				}); err != nil {
 					return err
 				}
