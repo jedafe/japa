@@ -108,6 +108,25 @@ func (s *stubConvoStore) AIConversationExistsIncludingDeleted(_ context.Context,
 	return ok && uuidStr(c.UserID) == uuidStr(arg.UserID), nil
 }
 
+func (s *stubConvoStore) GetAIConversationByLegacyRef(_ context.Context, arg gen.GetAIConversationByLegacyRefParams) (gen.AiConversation, error) {
+	for _, c := range s.convs {
+		if uuidStr(c.UserID) == uuidStr(arg.UserID) && c.LegacyRef == arg.LegacyRef && arg.LegacyRef != "" {
+			return c, nil
+		}
+	}
+	return gen.AiConversation{}, pgx.ErrNoRows
+}
+
+func (s *stubConvoStore) ListAIConversationLegacyRefsForUser(_ context.Context, userID pgtype.UUID) ([]string, error) {
+	var out []string
+	for _, c := range s.convs {
+		if uuidStr(c.UserID) == uuidStr(userID) && c.LegacyRef != "" {
+			out = append(out, c.LegacyRef)
+		}
+	}
+	return out, nil
+}
+
 func (s *stubConvoStore) SoftDeleteAIConversationForUser(_ context.Context, arg gen.SoftDeleteAIConversationForUserParams) (pgtype.UUID, error) {
 	c, ok := s.convs[uuidStr(arg.ID)]
 	if !ok || c.DeletedAt.Valid || uuidStr(c.UserID) != uuidStr(arg.UserID) {

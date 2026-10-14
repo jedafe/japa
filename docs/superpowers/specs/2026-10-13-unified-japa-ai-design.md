@@ -1,6 +1,6 @@
 # Unified Japa AI — Single Chat Interface (JapaBot + AI Agent Merge)
 
-**Status:** Design — pending review
+**Status:** Implemented — Phases 1–4 landed (token streaming, cross-surface unification, Honcho backfill)
 **Date:** 2026-10-13
 **Refs:** §20 (JapaBot), §69 (RAG Knowledge Layer), §103/ADR-111 (AI Agent Executor), §19/ADR-014 (AI consent), ADR-069, ADR-025 (AI context), ADR-114 (persona voices), §42 (feature flags / Control → Extensions)
 

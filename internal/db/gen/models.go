@@ -471,6 +471,7 @@ type AiConversation struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	LegacyRef string             `json:"legacy_ref"`
 }
 
 type AiHitlReview struct {

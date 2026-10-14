@@ -194,7 +194,7 @@ var taskTier = func() map[string]string {
 	for _, t := range []string{
 		TypeEmailSend, TypeSearchIndexSync, TypeSearchReindexEngagementScores,
 		TypeImageProcessing,
-		TypeAITaskProcessing, TypeEngagementCountUpdate, TypeModerationScan,
+		TypeAITaskProcessing, TypeAIMigrateConversations, TypeEngagementCountUpdate, TypeModerationScan,
 		TypeScheduledPublish, TypeLinkPreviewFetch, TypeLanguagePackAITranslate,
 		TypeMediaScan, TypeContentFanOutToFeeds, TypeAIGenerateContentEmbedding,
 		TypeContentGenerateDraft,

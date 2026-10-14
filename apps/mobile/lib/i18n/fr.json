@@ -114,5 +114,12 @@
   "jce.freshness.stale": "périmé",
   "jce.jobs.title": "Tâches d'actualisation",
   "jce.common.yes": "Oui",
-  "jce.common.no": "Non"
+  "jce.common.no": "Non",
+  "tools.message_hint": "Posez votre question à JapaBot…",
+  "tools.turns": "tours",
+  "tools.new_chat": "Nouvelle conversation",
+  "tools.stop": "Arrêter",
+  "tools.tools_on": "Outils activés",
+  "tools.tools_off": "Outils désactivés",
+  "tools.sources": "Sources"
 }

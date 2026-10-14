@@ -162,6 +162,9 @@ type Server struct {
 	perms        ai.PermissionChecker
 	tierResolver publicapi.TierResolver
 	siteBaseURL  string
+	// agent is the ADR-130 unified engine behind the synthetic japa.chat
+	// tool. Nil → the tool is omitted from tools/list and denied on call.
+	agent *ai.AgentHandler
 }
 
 // NewServer creates an MCP server handler backed by the agent executor.
@@ -181,6 +184,10 @@ func (s *Server) SetTierResolver(tr publicapi.TierResolver) { s.tierResolver = t
 // SetSiteBaseURL sets the public site base URL used by the §120 search/fetch
 // aliases to build content links (e.g. https://example.com).
 func (s *Server) SetSiteBaseURL(u string) { s.siteBaseURL = u }
+
+// SetAgentHandler wires the unified AI engine for the §119 japa.chat
+// synthetic tool (ADR-130 Phase 3). Nil → the tool is not offered.
+func (s *Server) SetAgentHandler(h *ai.AgentHandler) { s.agent = h }
 
 // callerTier resolves the user's unified tier; nil resolver or error →
 // "regular" (fail-closed, same convention as RequireTier).
@@ -616,6 +623,12 @@ func (s *Server) handleToolsList(ctx context.Context, user *auth.AuthenticatedUs
 	// toolDeniedWithTier never consults it for them.
 	tools = append(tools, s.aliasDescriptors(ctx, user, tier)...)
 
+	// §119/ADR-130 Phase 3: japa.chat is a JWT-only synthetic tool — API-key
+	// and OAuth callers (apiKeyCallerKey set) never see it in the catalog.
+	if s.agent != nil && !isAPIKeyCaller(ctx) {
+		tools = append(tools, s.japaChatDescriptor())
+	}
+
 	result := listToolsResult{Tools: tools}
 
 	return &jsonRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: result}, false
@@ -661,6 +674,12 @@ func (s *Server) handleToolsCall(ctx context.Context, user *auth.AuthenticatedUs
 	// not a catalog row).
 	if alias, ok := chatGPTAliasTools[callReq.Name]; ok {
 		return s.handleAliasCall(ctx, user, req, callReq, alias)
+	}
+
+	// ADR-130 Phase 3: japa.chat is JWT-only — toolDenied already denied
+	// API-key/OAuth callers (it is absent from apiKeyToolGates).
+	if callReq.Name == japaChatToolName {
+		return s.handleJapaChat(ctx, user, req, callReq)
 	}
 
 	// Validate that the tool is in the user's catalog (fail-fast with a clear

@@ -28,11 +28,15 @@ import (
 
 // OpenAIProvider implements the Provider interface for any OpenAI-compatible API.
 type OpenAIProvider struct {
-	name                   string
-	baseURL                string
-	apiKey                 string
-	model                  string
-	httpClient             *http.Client
+	name       string
+	baseURL    string
+	apiKey     string
+	model      string
+	httpClient *http.Client
+	// streamClient has no client-side Timeout — streams outlive the 60s
+	// budget for single-shot calls and are bounded by the caller's context
+	// (the agent loop's agent.timeout_seconds deadline).
+	streamClient           *http.Client
 	useMaxCompletionTokens bool
 }
 
@@ -58,11 +62,12 @@ func NewOpenAIProvider(name, apiKey, baseURL, model string) *OpenAIProvider {
 	}
 
 	return &OpenAIProvider{
-		name:       name,
-		baseURL:    baseURL,
-		apiKey:     apiKey,
-		model:      model,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		name:         name,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		model:        model,
+		httpClient:   &http.Client{Timeout: 60 * time.Second},
+		streamClient: &http.Client{},
 	}
 }
 
@@ -388,14 +393,15 @@ type openAIToolCallFunc struct {
 // Messages use a richer shape than openAIMessage because assistant messages
 // can carry tool_calls and tool-result messages need tool_call_id + name.
 type openAIToolsChatRequest struct {
-	Model               string           `json:"model"`
-	Messages            []openAIToolsMsg `json:"messages"`
-	Tools               []openAIToolDef  `json:"tools,omitempty"`
-	MaxTokens           int              `json:"max_tokens,omitempty"`
-	MaxCompletionTokens int              `json:"max_completion_tokens,omitempty"`
-	Temperature         float64          `json:"temperature,omitempty"`
-	TopP                float64          `json:"top_p,omitempty"`
-	Stream              bool             `json:"stream"`
+	Model               string               `json:"model"`
+	Messages            []openAIToolsMsg     `json:"messages"`
+	Tools               []openAIToolDef      `json:"tools,omitempty"`
+	MaxTokens           int                  `json:"max_tokens,omitempty"`
+	MaxCompletionTokens int                  `json:"max_completion_tokens,omitempty"`
+	Temperature         float64              `json:"temperature,omitempty"`
+	TopP                float64              `json:"top_p,omitempty"`
+	Stream              bool                 `json:"stream"`
+	StreamOptions       *openAIStreamOptions `json:"stream_options,omitempty"`
 }
 
 // openAIToolsMsg is a chat message supporting function-calling fields.

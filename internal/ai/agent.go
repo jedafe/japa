@@ -84,6 +84,7 @@ const (
 	EventToolCallStart  = "tool_call_start"
 	EventToolCallResult = "tool_call_result"
 	EventProgress       = "progress"
+	EventDelta          = "delta" // ADR-130 Phase 2: token-level text chunk ({content})
 	EventFinalResponse  = "final_response"
 	EventError          = "error"
 
@@ -697,6 +698,24 @@ func (h *AgentHandler) runLoop(
 		maxedOut      bool
 	)
 
+	// ADR-130 Phase 2: token-level streaming. Providers implementing
+	// ChatStreamer forward each text delta here; we re-emit it as a `delta`
+	// SSE event so clients render progressively. The loop ctx is derived
+	// from the request ctx — when the consumer disconnects the provider's
+	// HTTP stream aborts on its own. Non-streaming consumers (JSON drain,
+	// MCP) get identical behavior to the old single-shot call.
+	deltaSink := func(delta string) {
+		if delta == "" {
+			return
+		}
+		sendEvent(AgentEvent{
+			Type:           EventDelta,
+			SessionID:      session.ID.String(),
+			ConversationID: convID,
+			Content:        delta,
+		})
+	}
+
 	for iteration := range maxToolCalls {
 		// Check for user-initiated cancellation (jc:agent:session:{}:{id} = "cancelled").
 		if h.isCancelled(loopCtx, session.ID) {
@@ -715,15 +734,26 @@ func (h *AgentHandler) runLoop(
 			break
 		}
 
-		resp, err := h.gateway.ChatWithTools(loopCtx, h.llmCategory, ChatWithToolsRequest{
+		resp, err := h.gateway.ChatWithToolsStream(loopCtx, h.llmCategory, ChatWithToolsRequest{
 			Messages:    messages,
 			Tools:       toolDefs,
 			Model:       p.model,
 			Temperature: temperature,
-		})
+		}, deltaSink)
 		if err != nil {
 			loopErr = fmt.Errorf("agent: LLM call failed: %w", err)
 			break
+		}
+
+		// ADR-130 Phase 2: streams that report no usage (provider never sent
+		// a usage chunk) fall back to a ~4-chars-per-token estimate so the
+		// existing CostEstimator still keeps jc:ai:cost / jc:agent:cost
+		// accurate instead of silently recording zero.
+		if resp.Usage.TotalTokens == 0 {
+			promptEst, completionEst := estimateTurnTokens(messages, resp.Content)
+			resp.Usage.PromptTokens = promptEst
+			resp.Usage.CompletionTokens = completionEst
+			resp.Usage.TotalTokens = promptEst + completionEst
 		}
 
 		// Accumulate token usage + cost using the per-provider/model price.

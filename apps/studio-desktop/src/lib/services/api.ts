@@ -15,6 +15,23 @@ import type {
 	SelectOption
 } from '$lib/types/prompt';
 
+// ADR-130 Phase 3: unified Japa AI chat — the JSON contract returned by
+// POST /ai/chat for non-SSE clients. sources are §69 RAG citations.
+export interface AiChatResult {
+	reply: string;
+	conversation_id: string;
+	message_id?: string;
+	sources?: { title?: string; url?: string; chunk_text?: string }[];
+}
+
+export interface AiChatRequest {
+	message: string;
+	conversation_id?: string;
+	model?: string;
+	voice_id?: string;
+	tools?: { enabled?: boolean };
+}
+
 export function mapPublicContentType(t: PublicContentType): StudioContentType {
 	return {
 		type: t.value,
@@ -99,6 +116,10 @@ export function createApiClient(baseUrl: string) {
 		},
 		deleteContentTag(id: string, tagIdOrSlug: string) {
 			return client.delete<unknown>(`/content/${id}/tags/${encodeURIComponent(tagIdOrSlug)}`);
+		},
+		chatAI(body: AiChatRequest) {
+			// ADR-130: unified chat surface — unary JSON reply (no SSE).
+			return client.post<AiChatResult>('/ai/chat', body);
 		}
 	};
 }

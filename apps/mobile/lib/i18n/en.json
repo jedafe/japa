@@ -114,5 +114,12 @@
   "jce.freshness.stale": "stale",
   "jce.jobs.title": "Refresh jobs",
   "jce.common.yes": "Yes",
-  "jce.common.no": "No"
+  "jce.common.no": "No",
+  "tools.message_hint": "Ask JapaBot anything…",
+  "tools.turns": "turns",
+  "tools.new_chat": "New chat",
+  "tools.stop": "Stop",
+  "tools.tools_on": "Tools enabled",
+  "tools.tools_off": "Tools disabled",
+  "tools.sources": "Sources"
 }

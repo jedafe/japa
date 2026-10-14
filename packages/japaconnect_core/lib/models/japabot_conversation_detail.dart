@@ -12,11 +12,16 @@ class JapaBotConversationDetail {
   });
 
   factory JapaBotConversationDetail.fromJson(Map<String, dynamic> json) {
-    final entries = json['entries'] as List<dynamic>? ?? [];
+    // ADR-130: unified threads return `messages` (ai_messages rows with
+    // top-level role/content); legacy Honcho threads return `entries`
+    // (context entries with role under metadata.role).
+    final raw = (json['messages'] as List<dynamic>?) ??
+        (json['entries'] as List<dynamic>?) ??
+        const [];
     return JapaBotConversationDetail(
       id: (json['conversation_id'] ?? json['id'] ?? '') as String,
       turnCount: json['turn_count'] as int?,
-      messages: entries
+      messages: raw
           .map((e) => JapaBotMessage.fromJson(e as Map<String, dynamic>))
           .toList(),
     );

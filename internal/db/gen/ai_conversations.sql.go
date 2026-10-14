@@ -49,7 +49,7 @@ const createAIConversation = `-- name: CreateAIConversation :one
 
 
 INSERT INTO ai_conversations (user_id, title) VALUES ($1, $2)
-RETURNING id, user_id, title, created_at, updated_at, deleted_at
+RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref
 `
 
 type CreateAIConversationParams struct {
@@ -77,12 +77,88 @@ func (q *Queries) CreateAIConversation(ctx context.Context, arg CreateAIConversa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.LegacyRef,
+	)
+	return i, err
+}
+
+const createAIConversationWithLegacyRef = `-- name: CreateAIConversationWithLegacyRef :one
+
+INSERT INTO ai_conversations (id, user_id, title, legacy_ref, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT DO NOTHING
+RETURNING id, user_id, title, created_at, updated_at, deleted_at, legacy_ref
+`
+
+type CreateAIConversationWithLegacyRefParams struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Title     string             `json:"title"`
+	LegacyRef string             `json:"legacy_ref"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// =====================================================================
+// Phase 4 — Honcho backfill (ai:migrate_conversations task)
+// =====================================================================
+// Idempotent backfill create: explicit id lets the task reuse a UUID-shaped
+// Honcho conversation_id so old links keep resolving (callers pass a fresh
+// uuid when the legacy id isn't UUID-shaped). legacy_ref =
+// 'honcho:{conversation_id}' and carries the partial unique index — a rerun
+// hits ON CONFLICT DO NOTHING instead of duplicating the thread.
+func (q *Queries) CreateAIConversationWithLegacyRef(ctx context.Context, arg CreateAIConversationWithLegacyRefParams) (AiConversation, error) {
+	row := q.db.QueryRow(ctx, createAIConversationWithLegacyRef,
+		arg.ID,
+		arg.UserID,
+		arg.Title,
+		arg.LegacyRef,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i AiConversation
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.LegacyRef,
+	)
+	return i, err
+}
+
+const getAIConversationByLegacyRef = `-- name: GetAIConversationByLegacyRef :one
+SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref FROM ai_conversations
+WHERE user_id = $1 AND legacy_ref = $2
+`
+
+type GetAIConversationByLegacyRefParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	LegacyRef string      `json:"legacy_ref"`
+}
+
+// Backfill lookup — intentionally ignores deleted_at: a soft-deleted
+// migrated thread must still count as migrated so reruns and the legacy
+// fallback union never resurrect it.
+func (q *Queries) GetAIConversationByLegacyRef(ctx context.Context, arg GetAIConversationByLegacyRefParams) (AiConversation, error) {
+	row := q.db.QueryRow(ctx, getAIConversationByLegacyRef, arg.UserID, arg.LegacyRef)
+	var i AiConversation
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Title,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.LegacyRef,
 	)
 	return i, err
 }
 
 const getAIConversationForUser = `-- name: GetAIConversationForUser :one
-SELECT id, user_id, title, created_at, updated_at, deleted_at FROM ai_conversations
+SELECT id, user_id, title, created_at, updated_at, deleted_at, legacy_ref FROM ai_conversations
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
@@ -104,6 +180,7 @@ func (q *Queries) GetAIConversationForUser(ctx context.Context, arg GetAIConvers
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.LegacyRef,
 	)
 	return i, err
 }
@@ -203,6 +280,44 @@ func (q *Queries) InsertAIMessage(ctx context.Context, arg InsertAIMessageParams
 	return i, err
 }
 
+const insertAIMessageAt = `-- name: InsertAIMessageAt :one
+INSERT INTO ai_messages (conversation_id, role, content, created_at)
+VALUES ($1, $2, $3, $4)
+RETURNING id, conversation_id, role, content, model, voice_id, tokens_used, cost_usd, agent_session_id, created_at
+`
+
+type InsertAIMessageAtParams struct {
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	Role           string             `json:"role"`
+	Content        string             `json:"content"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+// Backfill message insert — preserves the Honcho entry's created_at so the
+// transcript keeps its original chronology.
+func (q *Queries) InsertAIMessageAt(ctx context.Context, arg InsertAIMessageAtParams) (AiMessage, error) {
+	row := q.db.QueryRow(ctx, insertAIMessageAt,
+		arg.ConversationID,
+		arg.Role,
+		arg.Content,
+		arg.CreatedAt,
+	)
+	var i AiMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.Role,
+		&i.Content,
+		&i.Model,
+		&i.VoiceID,
+		&i.TokensUsed,
+		&i.CostUsd,
+		&i.AgentSessionID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const linkAgentSessionToConversation = `-- name: LinkAgentSessionToConversation :exec
 
 UPDATE ai_agent_sessions SET
@@ -276,6 +391,34 @@ func (q *Queries) ListAIConversationHistory(ctx context.Context, arg ListAIConve
 	return items, nil
 }
 
+const listAIConversationLegacyRefsForUser = `-- name: ListAIConversationLegacyRefsForUser :many
+SELECT legacy_ref FROM ai_conversations
+WHERE user_id = $1 AND legacy_ref <> ''
+`
+
+// The set of legacy refs already migrated for this user — GET
+// /ai/conversations excludes those Honcho groups from the legacy union and
+// skips the lazy backfill enqueue when the set covers every entry.
+func (q *Queries) ListAIConversationLegacyRefsForUser(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAIConversationLegacyRefsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var legacy_ref string
+		if err := rows.Scan(&legacy_ref); err != nil {
+			return nil, err
+		}
+		items = append(items, legacy_ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAIConversationMessages = `-- name: ListAIConversationMessages :many
 SELECT id, conversation_id, role, content, model, voice_id, tokens_used, cost_usd, agent_session_id, created_at FROM ai_messages
 WHERE conversation_id = $1
@@ -322,7 +465,7 @@ func (q *Queries) ListAIConversationMessages(ctx context.Context, arg ListAIConv
 }
 
 const listAIConversationsForUser = `-- name: ListAIConversationsForUser :many
-SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.deleted_at,
+SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at, c.deleted_at, c.legacy_ref,
     (SELECT COUNT(*) FROM ai_messages m WHERE m.conversation_id = c.id) AS turn_count,
     COALESCE((SELECT m.content FROM ai_messages m WHERE m.conversation_id = c.id
      ORDER BY m.created_at DESC LIMIT 1), '')::text AS last_message
@@ -345,6 +488,7 @@ type ListAIConversationsForUserRow struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`
+	LegacyRef   string             `json:"legacy_ref"`
 	TurnCount   int64              `json:"turn_count"`
 	LastMessage string             `json:"last_message"`
 }
@@ -368,6 +512,7 @@ func (q *Queries) ListAIConversationsForUser(ctx context.Context, arg ListAIConv
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.LegacyRef,
 			&i.TurnCount,
 			&i.LastMessage,
 		); err != nil {

@@ -127,6 +127,42 @@ SELECT EXISTS(
 ) AS busy;
 
 -- =====================================================================
+-- Phase 4 — Honcho backfill (ai:migrate_conversations task)
+-- =====================================================================
+
+-- Idempotent backfill create: explicit id lets the task reuse a UUID-shaped
+-- Honcho conversation_id so old links keep resolving (callers pass a fresh
+-- uuid when the legacy id isn't UUID-shaped). legacy_ref =
+-- 'honcho:{conversation_id}' and carries the partial unique index — a rerun
+-- hits ON CONFLICT DO NOTHING instead of duplicating the thread.
+-- name: CreateAIConversationWithLegacyRef :one
+INSERT INTO ai_conversations (id, user_id, title, legacy_ref, created_at, updated_at)
+VALUES (@id, @user_id, @title, @legacy_ref, @created_at, @updated_at)
+ON CONFLICT DO NOTHING
+RETURNING *;
+
+-- Backfill lookup — intentionally ignores deleted_at: a soft-deleted
+-- migrated thread must still count as migrated so reruns and the legacy
+-- fallback union never resurrect it.
+-- name: GetAIConversationByLegacyRef :one
+SELECT * FROM ai_conversations
+WHERE user_id = @user_id AND legacy_ref = @legacy_ref;
+
+-- The set of legacy refs already migrated for this user — GET
+-- /ai/conversations excludes those Honcho groups from the legacy union and
+-- skips the lazy backfill enqueue when the set covers every entry.
+-- name: ListAIConversationLegacyRefsForUser :many
+SELECT legacy_ref FROM ai_conversations
+WHERE user_id = @user_id AND legacy_ref <> '';
+
+-- Backfill message insert — preserves the Honcho entry's created_at so the
+-- transcript keeps its original chronology.
+-- name: InsertAIMessageAt :one
+INSERT INTO ai_messages (conversation_id, role, content, created_at)
+VALUES (@conversation_id, @role, @content, @created_at)
+RETURNING *;
+
+-- =====================================================================
 -- Per-user AI preferences (user_preferences.ai_prefs jsonb)
 -- =====================================================================
 

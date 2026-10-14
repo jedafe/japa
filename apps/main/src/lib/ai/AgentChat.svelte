@@ -50,6 +50,10 @@
 		id: number;
 		role: 'user' | 'assistant';
 		content: string;
+		// ADR-130 Phase 2: accumulated `delta` fragments for the in-flight
+		// reply — rendered in place of content while non-empty; cleared on
+		// final_response which carries the authoritative text.
+		streamed?: string;
 		tool_calls?: ToolCallEntry[];
 		session_id?: string;
 		presearch_level?: string;
@@ -252,6 +256,13 @@
 				turns = [...turns];
 				break;
 			}
+			case 'delta': {
+				// Token-level fragment (ADR-130 Phase 2) — accumulate; the
+				// template renders streamed text over the progress placeholder.
+				turn.streamed = (turn.streamed ?? '') + (ev.content ?? '');
+				turns = [...turns];
+				break;
+			}
 			case 'progress': {
 				// Progress events carry a transient status message. Update the
 				// assistant content to the latest progress message so the user
@@ -265,6 +276,7 @@
 			}
 			case 'final_response': {
 				turn.content = ev.content ?? '';
+				turn.streamed = '';
 				turn.tokens_used = ev.tokens_used;
 				turn.estimated_cost = ev.estimated_cost;
 				turn.in_progress = false;
@@ -362,8 +374,8 @@
 									? 'background-color: var(--color-primary); color: white'
 									: 'background-color: var(--color-muted-15, color-mix(in srgb, var(--color-muted) 15%, transparent)); color: var(--color-text)'}
 							>
-								{turn.content}
-								{#if turn.in_progress && !turn.content}
+								{turn.streamed || turn.content}
+								{#if turn.in_progress && !turn.content && !turn.streamed}
 									<span class="inline-flex items-center gap-1 text-xs" style="color: var(--color-muted)">
 										<Loader2 size={12} class="animate-spin" />
 										{t('ai.agent.thinking', 'Working...')}

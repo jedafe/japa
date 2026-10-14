@@ -942,6 +942,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	gdprService := gdpr.NewServiceWithEnqueuer(database, taskEnqueuer, cfg.SiteName)
 	gdprService.SetHonchoEraser(honchoClient)
 	gdprService.SetHonchoFetcher(&honchoFetcherAdapter{client: honchoClient})
+	// ADR-130 Phase 4: the ai:migrate_conversations task reads legacy
+	// context entries through the same client.
+	worker.RegisterHonchoFetcher(honchoClient)
 	gdprService.SetSessionDeleter(gdpr.NewValkeySessionDeleter(vkClient.Redis()))
 	gdprService.SetSettings(settingsService)
 	// GAP-GDPR-A: explicit LocalStorage wiring so the data export file is
@@ -2268,6 +2271,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	// MCP server bridge (§119, ADR-116). Exposes the agent tool catalog over
 	// Model Context Protocol on a single JSON-RPC HTTP endpoint.
 	mcpServer := mcp.NewServer(agentExecutor, agentRegistry, gen.New(database.Writer), rbacResolver)
+	// ADR-130 Phase 3: the JWT-only japa.chat synthetic tool needs the
+	// unified engine, not the tool executor.
+	mcpServer.SetAgentHandler(agentHandler)
 
 	// Inject the AI dispatcher + RAG retriever into the assessment service
 	// for AI-assisted roadmap generation (ADR-071 §3). Gated by

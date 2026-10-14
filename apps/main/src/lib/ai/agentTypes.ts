@@ -13,6 +13,9 @@ export type AgentEventType =
 	| 'tool_call_start'
 	| 'tool_call_result'
 	| 'progress'
+	// ADR-130 Phase 2: token-level text chunk — {content} holds a fragment;
+	// accumulate to render the in-flight reply before final_response.
+	| 'delta'
 	| 'final_response'
 	| 'error'
 	// ADR-130 unified surface additions

@@ -31,7 +31,11 @@ class JapaBotScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(japabotConversationsProvider),
         ),
       ),
-
+      floatingActionButton: FloatingActionButton(
+        tooltip: t('tools.new_chat'),
+        onPressed: () => context.push('/tools/japabot/new'),
+        child: const Icon(Icons.add_comment_outlined),
+      ),
     );
   }
 }

@@ -16,11 +16,16 @@ class JapaBotMessage {
   });
 
   factory JapaBotMessage.fromJson(Map<String, dynamic> json) {
+    // Role: unified ai_messages rows carry it top-level; legacy Honcho
+    // context entries carry it under metadata.role.
+    final role = (json['role'] ??
+            (json['metadata'] as Map<String, dynamic>?)?['role'] ??
+            'assistant') as String;
     return JapaBotMessage(
       id: json['id'] as String?,
       text: (json['reply'] ?? json['content'] ?? json['text'] ?? '') as String,
       conversationId: (json['conversation_id'] ?? json['conversationId']) as String?,
-      role: (json['role'] ?? 'assistant') as String?,
+      role: role,
       createdAt: _parseDateTime(json['created_at'] ?? json['createdAt']),
       sources: _parseSources(json['sources']),
     );
@@ -48,7 +53,18 @@ class JapaBotMessage {
   static List<String> _parseSources(dynamic value) {
     if (value == null) return const [];
     if (value is List) {
-      return value.whereType<String>().toList();
+      // RAGChunk objects (ADR-130 sources event / JSON reply) carry
+      // {title, url}; plain strings pass through.
+      return value
+          .map((e) {
+            if (e is String) return e;
+            if (e is Map<String, dynamic>) {
+              return (e['title'] ?? e['url'] ?? '') as String;
+            }
+            return '';
+          })
+          .where((s) => s.isNotEmpty)
+          .toList();
     }
     if (value is String) return [value];
     return const [];

@@ -42,6 +42,9 @@ type AnthropicProvider struct {
 	apiKey     string
 	model      string
 	httpClient *http.Client
+	// streamClient has no client-side Timeout — streamed responses are
+	// bounded by the caller's context (agent.timeout_seconds).
+	streamClient *http.Client
 }
 
 // NewAnthropicProvider creates an Anthropic Messages API provider.
@@ -69,11 +72,12 @@ func NewAnthropicProvider(name, apiKey, baseURL, model string) *AnthropicProvide
 	}
 
 	return &AnthropicProvider{
-		name:       name,
-		baseURL:    baseURL,
-		apiKey:     apiKey,
-		model:      model,
-		httpClient: &http.Client{Timeout: 90 * time.Second},
+		name:         name,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		model:        model,
+		httpClient:   &http.Client{Timeout: 90 * time.Second},
+		streamClient: &http.Client{},
 	}
 }
 
@@ -280,6 +284,7 @@ type anthropicToolsRequest struct {
 	System    string              `json:"system,omitempty"`
 	Tools     []anthropicToolDef  `json:"tools,omitempty"`
 	MaxTokens int                 `json:"max_tokens"`
+	Stream    bool                `json:"stream,omitempty"`
 }
 
 // anthropicToolsMsg is a message with block-array content for function calling.

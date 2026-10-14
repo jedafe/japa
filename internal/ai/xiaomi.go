@@ -75,6 +75,9 @@ type XiaomiProvider struct {
 	apiKey     string
 	model      string
 	httpClient *http.Client
+	// streamClient has no client-side Timeout — streamed responses are
+	// bounded by the caller's context (agent.timeout_seconds).
+	streamClient *http.Client
 }
 
 // NewXiaomiProvider creates a Xiaomi MiMo provider.
@@ -95,11 +98,12 @@ func NewXiaomiProvider(apiKey, model string) *XiaomiProvider {
 	}
 
 	return &XiaomiProvider{
-		name:       XiaomiProviderName,
-		baseURL:    baseURL,
-		apiKey:     apiKey,
-		model:      model,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		name:         XiaomiProviderName,
+		baseURL:      baseURL,
+		apiKey:       apiKey,
+		model:        model,
+		httpClient:   &http.Client{Timeout: 60 * time.Second},
+		streamClient: &http.Client{},
 	}
 }
 
@@ -301,13 +305,14 @@ type mimoToolCallFunc struct {
 
 // mimoToolsChatRequest is the chat completions request with tools support.
 type mimoToolsChatRequest struct {
-	Model               string         `json:"model"`
-	Messages            []mimoToolsMsg `json:"messages"`
-	Tools               []mimoToolDef  `json:"tools,omitempty"`
-	MaxCompletionTokens int            `json:"max_completion_tokens,omitempty"`
-	Temperature         float64        `json:"temperature,omitempty"`
-	TopP                float64        `json:"top_p,omitempty"`
-	Stream              bool           `json:"stream"`
+	Model               string               `json:"model"`
+	Messages            []mimoToolsMsg       `json:"messages"`
+	Tools               []mimoToolDef        `json:"tools,omitempty"`
+	MaxCompletionTokens int                  `json:"max_completion_tokens,omitempty"`
+	Temperature         float64              `json:"temperature,omitempty"`
+	TopP                float64              `json:"top_p,omitempty"`
+	Stream              bool                 `json:"stream"`
+	StreamOptions       *openAIStreamOptions `json:"stream_options,omitempty"`
 }
 
 // mimoToolsMsg is a chat message supporting function-calling fields.
@@ -438,6 +443,61 @@ func (p *XiaomiProvider) ChatWithTools(ctx context.Context, req ChatWithToolsReq
 	)
 
 	return result, nil
+}
+
+// ChatStream implements ChatStreamer for MiMo: the API is OpenAI-compatible
+// (same chunk format), so the shared streamChatCompletions reader parses the
+// SSE stream — only the api-key auth header differs (ADR-130 Phase 2).
+func (p *XiaomiProvider) ChatStream(ctx context.Context, req ChatWithToolsRequest, sink DeltaSink) (ChatWithToolsResponse, error) {
+	if p.apiKey == "" {
+		return ChatWithToolsResponse{}, errors.New("xiaomi: API key not configured")
+	}
+
+	if len(req.Messages) == 0 {
+		return ChatWithToolsResponse{}, errors.New("xiaomi: at least one message is required")
+	}
+
+	model := req.Model
+	if model == "" {
+		model = p.model
+	}
+
+	chatReq := mimoToolsChatRequest{
+		Model:               model,
+		Messages:            toMimoToolsMessages(req.Messages),
+		Tools:               toMimoToolDefs(req.Tools),
+		Temperature:         req.Temperature,
+		MaxCompletionTokens: req.MaxTokens,
+		Stream:              true,
+		StreamOptions:       &openAIStreamOptions{IncludeUsage: true},
+	}
+
+	body, err := json.Marshal(chatReq)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: marshaling stream request: %w", err)
+	}
+
+	resp, err := streamChatCompletions(
+		ctx,
+		p.streamClient,
+		p.baseURL+"/chat/completions",
+		map[string]string{"api-key": p.apiKey},
+		body,
+		sink,
+	)
+	if err != nil {
+		return ChatWithToolsResponse{}, fmt.Errorf("xiaomi: %w", err)
+	}
+
+	slog.Info(
+		"xiaomi: stream completed",
+		"model", resp.Model,
+		"finish_reason", resp.FinishReason,
+		"tool_calls", len(resp.ToolCalls),
+		"total_tokens", resp.Usage.TotalTokens,
+	)
+
+	return resp, nil
 }
 
 // toMimoToolsMessages converts unified ChatMessages to the MiMo wire format.

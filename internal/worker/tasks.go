@@ -35,6 +35,7 @@ const (
 	TypeSearchReindexEngagementScores = "search:reindex_engagement_scores"
 	TypeImageProcessing               = "content:process_image"
 	TypeAITaskProcessing              = "ai:process_task"
+	TypeAIMigrateConversations        = "ai:migrate_conversations" // ADR-130 Phase 4: Honcho → ai_conversations backfill for one user
 	TypeEngagementCountUpdate         = "content:update_engagement"
 	TypeModerationScan                = "content:scan_moderation"
 	TypeScheduledPublish              = "content:publish_scheduled"
@@ -199,6 +200,7 @@ var handlerRegistry = []struct {
 	{TypeSearchReindexEngagementScores, HandleSearchReindexEngagementScores},
 	{TypeImageProcessing, HandleImageProcessing},
 	{TypeAITaskProcessing, HandleAITaskProcessing},
+	{TypeAIMigrateConversations, HandleAIMigrateConversations},
 	{TypeEngagementCountUpdate, HandleEngagementCountUpdate},
 	{TypeModerationScan, HandleModerationScan},
 	{TypeScheduledPublish, HandleScheduledPublish},

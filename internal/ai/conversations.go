@@ -38,6 +38,8 @@ type ConversationStore interface {
 	UnlinkAgentSessionsForConversation(ctx context.Context, conversationID pgtype.UUID) error
 	HasRunningAgentTurnForConversation(ctx context.Context, arg gen.HasRunningAgentTurnForConversationParams) (bool, error)
 	AIConversationExistsIncludingDeleted(ctx context.Context, arg gen.AIConversationExistsIncludingDeletedParams) (bool, error)
+	GetAIConversationByLegacyRef(ctx context.Context, arg gen.GetAIConversationByLegacyRefParams) (gen.AiConversation, error)
+	ListAIConversationLegacyRefsForUser(ctx context.Context, userID pgtype.UUID) ([]string, error)
 	GetAIPreferences(ctx context.Context, userID pgtype.UUID) ([]byte, error)
 	UpsertAIPreferences(ctx context.Context, arg gen.UpsertAIPreferencesParams) error
 }
@@ -219,6 +221,38 @@ func (s *ConversationService) ExistsIncludingDeleted(ctx context.Context, convID
 		ID:     convID,
 		UserID: userID,
 	})
+}
+
+// MigratedLegacyRefs returns the set of non-empty legacy_ref values already
+// migrated for the user — including soft-deleted rows so deleted threads
+// never resurface via the legacy union.
+func (s *ConversationService) MigratedLegacyRefs(ctx context.Context, userID pgtype.UUID) (map[string]bool, error) {
+	refs, err := s.store.ListAIConversationLegacyRefsForUser(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing legacy refs: %w", err)
+	}
+	out := make(map[string]bool, len(refs))
+	for _, r := range refs {
+		out[r] = true
+	}
+	return out, nil
+}
+
+// LookupByLegacyRef resolves 'honcho:{id}' to its migrated thread. Returns
+// ErrConversationNotFound when no row carries the ref; the caller inspects
+// DeletedAt to decide between serving the thread and 404.
+func (s *ConversationService) LookupByLegacyRef(ctx context.Context, userID pgtype.UUID, legacyRef string) (gen.AiConversation, error) {
+	conv, err := s.store.GetAIConversationByLegacyRef(ctx, gen.GetAIConversationByLegacyRefParams{
+		UserID:    userID,
+		LegacyRef: legacyRef,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return gen.AiConversation{}, ErrConversationNotFound
+		}
+		return gen.AiConversation{}, fmt.Errorf("looking up legacy ref: %w", err)
+	}
+	return conv, nil
 }
 
 // LinkSession points an agent audit session at its conversation and the

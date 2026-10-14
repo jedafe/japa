@@ -22,10 +22,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jedafe/japa/internal/auth"
 	"github.com/jedafe/japa/internal/db/gen"
 	errpkg "github.com/jedafe/japa/internal/errors"
+	"github.com/jedafe/japa/internal/worker"
 )
 
 // unifiedChatInput is the POST /ai/chat request body. `message` is the
@@ -252,6 +254,16 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			slog.Warn("ai: listing legacy conversations from honcho", "error", err)
 		} else {
+			// Phase 4: threads already backfilled into ai_conversations are
+			// excluded via legacy_ref — including soft-deleted rows, so a
+			// deleted migrated thread never resurfaces as legacy.
+			var migratedRefs map[string]bool
+			if h.Convos != nil {
+				if m, merr := h.Convos.MigratedLegacyRefs(r.Context(), user.UserID); merr == nil {
+					migratedRefs = m
+				}
+			}
+			unmigrated := false
 			legacy := map[string]*convoSummary{}
 			for _, e := range entries {
 				// Skip entries that belong to unified threads — the unified
@@ -276,6 +288,10 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 				if dbIDs[cid] {
 					continue
 				}
+				if migratedRefs["honcho:"+cid] {
+					continue
+				}
+				unmigrated = true
 				c, exists := legacy[cid]
 				if !exists {
 					c = &convoSummary{ConversationID: cid, Legacy: true}
@@ -289,6 +305,11 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 			}
 			for _, c := range legacy {
 				out = append(out, *c)
+			}
+			// Lazy backfill enqueue (ADR-130 Phase 4) — unique-keyed per
+			// user so repeated list hits don't pile up duplicate tasks.
+			if unmigrated {
+				h.enqueueConversationMigration(user.UserID)
 			}
 		}
 	}
@@ -315,6 +336,27 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// enqueueConversationMigration lazily schedules the ADR-130 Phase 4 backfill
+// when the conversation list still contains unmigrated Honcho groups. The
+// task is unique-keyed per user so repeated list hits don't pile up
+// duplicates; enqueue failures are logged and non-fatal.
+func (h *Handlers) enqueueConversationMigration(userID pgtype.UUID) {
+	if h.AsynqClient == nil {
+		return
+	}
+	payload, err := json.Marshal(map[string]string{"user_id": userID.String()})
+	if err != nil {
+		return
+	}
+	if _, err := h.AsynqClient.Enqueue(
+		asynq.NewTask(worker.TypeAIMigrateConversations, payload),
+		asynq.Queue(worker.QueueForTask(worker.TypeAIMigrateConversations)),
+		asynq.TaskID(worker.TypeAIMigrateConversations+":"+userID.String()),
+	); err != nil {
+		slog.Debug("ai: lazy conversation-migration enqueue skipped", "error", err)
+	}
+}
+
 // HandleGetConversationV2 handles GET /ai/conversations/:id for the unified
 // surface. UUID ids look up ai_conversations; anything else falls back to
 // the legacy Honcho entry scan. Assistant messages embed their tool calls
@@ -332,33 +374,59 @@ func (h *Handlers) HandleGetConversationV2(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Phase 4: a backfilled Honcho thread claims this id via
+	// ai_conversations.legacy_ref. Resolve it before any legacy fallback so
+	// the relational thread serves (or 404s when soft-deleted) instead of
+	// resurfacing the read-only Honcho view.
+	if h.Convos != nil {
+		if migrated, err := h.Convos.LookupByLegacyRef(r.Context(), user.UserID, "honcho:"+idParam); err == nil {
+			if migrated.DeletedAt.Valid {
+				errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
+				return
+			}
+			h.serveUnifiedDetail(w, r, user, migrated.ID)
+			return
+		}
+	}
+
 	convID, parseErr := scanUUID(idParam)
 	if parseErr != nil || !convID.Valid || h.Convos == nil {
 		h.HandleGetConversation(w, r) // legacy Honcho fallback
 		return
 	}
 
+	if h.serveUnifiedDetail(w, r, user, convID) {
+		return
+	}
+
+	// Detail miss — distinguish "Honcho-era UUID" (fall back to the legacy
+	// entry scan) from "unified thread, deleted" — the row still exists
+	// with deleted_at set, and its Honcho memory entries must not
+	// resurrect it.
+	exists, exErr := h.Convos.ExistsIncludingDeleted(r.Context(), convID, user.UserID)
+	if exErr == nil && exists {
+		errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
+		return
+	}
+	h.HandleGetConversation(w, r) // may be a Honcho-era UUID
+}
+
+// serveUnifiedDetail renders the relational conversation + messages and
+// returns false when the thread does not exist (caller falls back to the
+// legacy path). Errors other than not-found write a 500 and return true —
+// they must not be mistaken for "legacy thread".
+func (h *Handlers) serveUnifiedDetail(w http.ResponseWriter, r *http.Request, user *auth.AuthenticatedUser, convID pgtype.UUID) bool {
 	pageSize := parsePageSize(r)
 	pageOffset := parsePageOffset(r)
 
 	conv, msgs, err := h.Convos.Detail(r.Context(), user.UserID, convID, pageSize, pageOffset)
 	if err != nil {
 		if errors.Is(err, ErrConversationNotFound) {
-			// Distinguish "Honcho-era UUID" (fall back to the legacy entry
-			// scan) from "unified thread, deleted" — the row still exists
-			// with deleted_at set, and its Honcho memory entries must not
-			// resurrect it.
-			exists, exErr := h.Convos.ExistsIncludingDeleted(r.Context(), convID, user.UserID)
-			if exErr == nil && exists {
-				errpkg.WriteError(w, http.StatusNotFound, "conversation_not_found", "Conversation not found")
-				return
-			}
-			h.HandleGetConversation(w, r) // may be a Honcho-era UUID
-			return
+			return false
 		}
 		slog.Warn("ai: loading conversation detail", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to load conversation")
-		return
+		return true
 	}
 
 	// Embed tool calls on assistant messages that have an audit session.
@@ -389,6 +457,7 @@ func (h *Handlers) HandleGetConversationV2(w http.ResponseWriter, r *http.Reques
 		"created_at":      conv.CreatedAt.Time,
 		"updated_at":      conv.UpdatedAt.Time,
 	}})
+	return true
 }
 
 // HandleDeleteConversation handles DELETE /ai/conversations/:id. Soft-deletes
