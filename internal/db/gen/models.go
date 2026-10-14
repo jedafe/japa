@@ -445,6 +445,8 @@ type AiAgentSession struct {
 	StartedAt      pgtype.Timestamptz `json:"started_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	MessageID      pgtype.UUID        `json:"message_id"`
 }
 
 type AiAgentToolCall struct {
@@ -462,6 +464,15 @@ type AiAgentToolCall struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type AiConversation struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	Title     string             `json:"title"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+}
+
 type AiHitlReview struct {
 	ID            pgtype.UUID        `json:"id"`
 	ContentID     pgtype.UUID        `json:"content_id"`
@@ -475,6 +486,19 @@ type AiHitlReview struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	Source        string             `json:"source"`
 	TargetTable   string             `json:"target_table"`
+}
+
+type AiMessage struct {
+	ID             pgtype.UUID        `json:"id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	Role           string             `json:"role"`
+	Content        string             `json:"content"`
+	Model          *string            `json:"model"`
+	VoiceID        *string            `json:"voice_id"`
+	TokensUsed     int32              `json:"tokens_used"`
+	CostUsd        pgtype.Numeric     `json:"cost_usd"`
+	AgentSessionID pgtype.UUID        `json:"agent_session_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
 type AiPersona struct {
@@ -4445,6 +4469,7 @@ type UserPreference struct {
 	Language  string             `json:"language"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	AiPrefs   []byte             `json:"ai_prefs"`
 }
 
 type UserPrivacySetting struct {

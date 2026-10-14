@@ -2136,7 +2136,7 @@ func (q *Queries) GdprExportUserPayments(ctx context.Context, userID pgtype.UUID
 
 const gdprExportUserPreferences = `-- name: GdprExportUserPreferences :one
 SELECT coalesce(json_agg(t), '[]'::json) AS data
-FROM (SELECT id, user_id, dark_mode, language, created_at, updated_at FROM user_preferences WHERE user_id = $1) t
+FROM (SELECT id, user_id, dark_mode, language, created_at, updated_at, ai_prefs FROM user_preferences WHERE user_id = $1) t
 `
 
 func (q *Queries) GdprExportUserPreferences(ctx context.Context, userID pgtype.UUID) (interface{}, error) {

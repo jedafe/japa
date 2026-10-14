@@ -17,7 +17,7 @@ UPDATE ai_agent_sessions SET
  completed_at = now()
 WHERE id = $1
  AND status = 'running'
-RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id
 `
 
 func (q *Queries) CancelAgentSession(ctx context.Context, id pgtype.UUID) (AiAgentSession, error) {
@@ -38,6 +38,8 @@ func (q *Queries) CancelAgentSession(ctx context.Context, id pgtype.UUID) (AiAge
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.MessageID,
 	)
 	return i, err
 }
@@ -51,7 +53,7 @@ UPDATE ai_agent_sessions SET
  estimated_cost = $4,
  completed_at = now()
 WHERE id = $5
-RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id
 `
 
 type CompleteAgentSessionParams struct {
@@ -89,6 +91,8 @@ func (q *Queries) CompleteAgentSession(ctx context.Context, arg CompleteAgentSes
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.MessageID,
 	)
 	return i, err
 }
@@ -120,8 +124,8 @@ func (q *Queries) CountAgentSessionsForAdmin(ctx context.Context, statusFilter s
 const createAgentSession = `-- name: CreateAgentSession :one
 
 
-INSERT INTO ai_agent_sessions (user_id, prompt, geo_space_id, presearch_level, status, started_at) VALUES ($1, $2, $3, $4, $5, now())
-RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+INSERT INTO ai_agent_sessions (user_id, prompt, geo_space_id, presearch_level, status, started_at, conversation_id) VALUES ($1, $2, $3, $4, $5, now(), $6)
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id
 `
 
 type CreateAgentSessionParams struct {
@@ -130,6 +134,7 @@ type CreateAgentSessionParams struct {
 	GeoSpaceID     pgtype.UUID `json:"geo_space_id"`
 	PresearchLevel string      `json:"presearch_level"`
 	Status         string      `json:"status"`
+	ConversationID pgtype.UUID `json:"conversation_id"`
 }
 
 // ai_agent.sql — AI Agent Executor queries (Section 103, ADR-111).
@@ -144,6 +149,8 @@ type CreateAgentSessionParams struct {
 // completion/failure/cancellation. geo_space_id is nullable (agent may
 // run without a resolved geo context).
 // =====================================================================
+// conversation_id is the ADR-130 link to the unified transcript thread;
+// NULL for legacy /ai/agent calls that predate or bypass the merge.
 func (q *Queries) CreateAgentSession(ctx context.Context, arg CreateAgentSessionParams) (AiAgentSession, error) {
 	row := q.db.QueryRow(ctx, createAgentSession,
 		arg.UserID,
@@ -151,6 +158,7 @@ func (q *Queries) CreateAgentSession(ctx context.Context, arg CreateAgentSession
 		arg.GeoSpaceID,
 		arg.PresearchLevel,
 		arg.Status,
+		arg.ConversationID,
 	)
 	var i AiAgentSession
 	err := row.Scan(
@@ -168,6 +176,8 @@ func (q *Queries) CreateAgentSession(ctx context.Context, arg CreateAgentSession
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.MessageID,
 	)
 	return i, err
 }
@@ -229,7 +239,7 @@ UPDATE ai_agent_sessions SET
  estimated_cost = $4,
  completed_at = now()
 WHERE id = $5
-RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at
+RETURNING id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id
 `
 
 type FailAgentSessionParams struct {
@@ -264,6 +274,8 @@ func (q *Queries) FailAgentSession(ctx context.Context, arg FailAgentSessionPara
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.MessageID,
 	)
 	return i, err
 }
@@ -329,7 +341,7 @@ func (q *Queries) GetAgentCostReport(ctx context.Context, arg GetAgentCostReport
 }
 
 const getAgentSession = `-- name: GetAgentSession :one
-SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id FROM ai_agent_sessions
 WHERE id = $1
 `
 
@@ -351,12 +363,14 @@ func (q *Queries) GetAgentSession(ctx context.Context, id pgtype.UUID) (AiAgentS
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.MessageID,
 	)
 	return i, err
 }
 
 const getAgentSessionForUser = `-- name: GetAgentSessionForUser :one
-SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id FROM ai_agent_sessions
 WHERE id = $1 AND user_id = $2
 `
 
@@ -385,6 +399,8 @@ func (q *Queries) GetAgentSessionForUser(ctx context.Context, arg GetAgentSessio
 		&i.StartedAt,
 		&i.CompletedAt,
 		&i.CreatedAt,
+		&i.ConversationID,
+		&i.MessageID,
 	)
 	return i, err
 }
@@ -558,7 +574,7 @@ func (q *Queries) GetUserAIExempt(ctx context.Context, id pgtype.UUID) (bool, er
 }
 
 const listAgentSessionsByUser = `-- name: ListAgentSessionsByUser :many
-SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id FROM ai_agent_sessions
 WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -595,6 +611,8 @@ func (q *Queries) ListAgentSessionsByUser(ctx context.Context, arg ListAgentSess
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.CreatedAt,
+			&i.ConversationID,
+			&i.MessageID,
 		); err != nil {
 			return nil, err
 		}
@@ -607,7 +625,7 @@ func (q *Queries) ListAgentSessionsByUser(ctx context.Context, arg ListAgentSess
 }
 
 const listAgentSessionsForAdmin = `-- name: ListAgentSessionsForAdmin :many
-SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at FROM ai_agent_sessions
+SELECT id, user_id, prompt, geo_space_id, presearch_level, status, tool_call_count, result_summary, error_message, total_tokens, estimated_cost, started_at, completed_at, created_at, conversation_id, message_id FROM ai_agent_sessions
 WHERE ($1::text = '' OR status = $1)
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $2
@@ -645,6 +663,8 @@ func (q *Queries) ListAgentSessionsForAdmin(ctx context.Context, arg ListAgentSe
 			&i.StartedAt,
 			&i.CompletedAt,
 			&i.CreatedAt,
+			&i.ConversationID,
+			&i.MessageID,
 		); err != nil {
 			return nil, err
 		}
