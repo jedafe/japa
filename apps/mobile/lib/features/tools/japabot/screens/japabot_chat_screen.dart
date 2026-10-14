@@ -319,6 +319,10 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
               _streamed += (ev['content'] as String? ?? '');
             case 'tool_call_start':
               _status = ev['tool_name'] as String?;
+              // Deltas so far were preamble from an intermediate iteration —
+              // transient, never persisted. Clear so the final iteration
+              // streams into a clean bubble.
+              _streamed = '';
             case 'tool_call_result':
               _status = null;
             case 'progress':
@@ -347,6 +351,18 @@ class _JapaBotChatScreenState extends ConsumerState<JapaBotChatScreen> {
               _streamed = '';
               _status = null;
             case 'error':
+              // Promote the streamed partial into the transcript so what
+              // arrived before the failure stays visible above the error.
+              if (_streamed.isNotEmpty) {
+                _messages?.add(JapaBotMessage(
+                  text: _streamed,
+                  role: 'assistant',
+                  conversationId: _convId,
+                  createdAt: DateTime.now(),
+                  sources: _sources,
+                ));
+                _streamed = '';
+              }
               _error = ev['error'] as String?;
           }
         });

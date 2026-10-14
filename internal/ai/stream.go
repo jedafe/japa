@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"unicode/utf8"
 )
 
 // DeltaSink receives a normalized text delta — one fragment of the
@@ -142,19 +143,35 @@ func (d *Dispatcher) ChatWithToolsStream(ctx context.Context, category string, r
 	return ChatWithToolsResponse{}, fmt.Errorf("ai: all providers for category %q failed: %w", category, lastErr)
 }
 
-// estimateTurnTokens approximates token usage (~4 chars/token) for providers
-// that report no usage while streaming. The agent loop feeds the estimate to
-// CostEstimator so jc:ai:cost / jc:agent:cost stay accurate even when a
-// stream carries no usage chunk.
+// estimateTurnTokens approximates token usage for providers that report no
+// usage while streaming. The agent loop feeds the estimate to CostEstimator
+// so jc:ai:cost / jc:agent:cost stay accurate even when a stream carries no
+// usage chunk.
 func estimateTurnTokens(msgs []ChatMessage, reply string) (prompt, completion int) {
 	for _, m := range msgs {
-		prompt += (len(m.Content) + len(m.Name) + len(m.ToolCallID) + 3) / 4
+		prompt += estimateTextTokens(m.Content) + estimateTextTokens(m.Name) + estimateTextTokens(m.ToolCallID)
 		for _, tc := range m.ToolCalls {
-			prompt += (len(tc.Name) + len(tc.Arguments) + 3) / 4
+			prompt += estimateTextTokens(tc.Name) + estimateTextTokens(string(tc.Arguments))
 		}
 	}
 
-	completion = (len(reply) + 3) / 4
+	completion = estimateTextTokens(reply)
 
 	return prompt, completion
+}
+
+// estimateTextTokens approximates token count without a tokenizer: ~4 ASCII
+// chars/token, plus ~1.5 tokens per non-ASCII rune — CJK/emoji-class text
+// tokenizes far denser than ASCII, so the old byte-length shortcut
+// under-counted it roughly 4×.
+func estimateTextTokens(s string) int {
+	ascii, nonASCII := 0, 0
+	for _, r := range s {
+		if r < utf8.RuneSelf {
+			ascii++
+		} else {
+			nonASCII++
+		}
+	}
+	return (ascii+3)/4 + (nonASCII*3+1)/2
 }

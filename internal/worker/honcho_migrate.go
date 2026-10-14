@@ -47,8 +47,9 @@ func RegisterHonchoFetcher(f honchoContextFetcher) {
 	honchoFetcher = f
 }
 
-// errLegacyRefTaken signals the ON CONFLICT DO NOTHING insert saw an
-// existing thread for the legacy ref — a concurrent run already wrote it.
+// errLegacyRefTaken signals the group is now claimed under legacy_ref —
+// either a concurrent run already wrote the thread, or the write just
+// produced a tombstone for a PK-colliding (unmarked unified-memory) group.
 var errLegacyRefTaken = errors.New("legacy ref already migrated")
 
 type aiMigrateConversationsPayload struct {
@@ -148,13 +149,46 @@ func HandleAIMigrateConversations(ctx context.Context, t *asynq.Task) error {
 				UserID:    userID,
 				Title:     title,
 				LegacyRef: legacyRef,
-				CreatedAt: pgtype.Timestamptz{Time: first, Valid: !first.IsZero()},
-				UpdatedAt: pgtype.Timestamptz{Time: last, Valid: !last.IsZero()},
+				CreatedAt: pgtype.Timestamptz{Time: first, Valid: true},
+				UpdatedAt: pgtype.Timestamptz{Time: last, Valid: true},
 			}); err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return errLegacyRefTaken
+				if !errors.Is(err, pgx.ErrNoRows) {
+					return err
 				}
-				return err
+				// ON CONFLICT DO NOTHING doesn't say which constraint fired.
+				// Re-check the ref inside the tx: claimed by a concurrent run →
+				// defer to that thread. Otherwise the conflict was on the PK —
+				// the UUID-shaped legacy id already exists as a conversation,
+				// i.e. these are unmarked unified-memory entries. Write a
+				// soft-deleted tombstone carrying the ref so the group is marked
+				// migrated without duplicating the existing thread's turns —
+				// and the lazy enqueue stops re-firing for it.
+				if _, lerr := txq.GetAIConversationByLegacyRef(ctx, gen.GetAIConversationByLegacyRefParams{
+					UserID:    userID,
+					LegacyRef: legacyRef,
+				}); lerr == nil {
+					return errLegacyRefTaken
+				} else if !errors.Is(lerr, pgx.ErrNoRows) {
+					return lerr
+				}
+				tombID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+				if _, terr := txq.CreateAIConversationWithLegacyRef(ctx, gen.CreateAIConversationWithLegacyRefParams{
+					ID:        tombID,
+					UserID:    userID,
+					Title:     "",
+					LegacyRef: legacyRef,
+					CreatedAt: pgtype.Timestamptz{Time: first, Valid: true},
+					UpdatedAt: pgtype.Timestamptz{Time: last, Valid: true},
+				}); terr != nil {
+					return terr
+				}
+				if _, derr := txq.SoftDeleteAIConversationForUser(ctx, gen.SoftDeleteAIConversationForUserParams{
+					ID:     tombID,
+					UserID: userID,
+				}); derr != nil {
+					return derr
+				}
+				return errLegacyRefTaken
 			}
 			for _, e := range ents {
 				createdAt := e.CreatedAt

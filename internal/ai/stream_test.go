@@ -503,13 +503,19 @@ func TestEstimateTurnTokens(t *testing.T) {
 
 	prompt, completion := estimateTurnTokens(
 		[]ChatMessage{
-			{Role: "system", Content: "You are helpful."},      // 16 chars → 4
-			{Role: "user", Content: "Tell me about Lagos."},    // 20 chars → 5
-			{Role: "tool", Content: "result", ToolCallID: "c"}, // 7 chars → 1
+			{Role: "system", Content: "You are helpful."},      // 16 ASCII → 4
+			{Role: "user", Content: "Tell me about Lagos."},    // 20 ASCII → 5
+			{Role: "tool", Content: "result", ToolCallID: "c"}, // 2 + 1
 		},
-		"a forty-char-ish reply that is about xx chars", // 45 chars → 11
+		"a forty-char-ish reply that is about xx chars", // 45 ASCII → 11
 	)
-	if prompt != 11 || completion != 12 {
-		t.Errorf("estimate = %d/%d, want 11/12", prompt, completion)
+	if prompt != 12 || completion != 12 {
+		t.Errorf("estimate = %d/%d, want 12/12", prompt, completion)
+	}
+
+	// CJK text tokenizes ~1 token/char — the byte-length shortcut the old
+	// estimate used under-counted it ~4×.
+	if got := estimateTextTokens("日本語のテキスト"); got < 8 {
+		t.Errorf("estimateTextTokens(CJK) = %d, want >= 8", got)
 	}
 }

@@ -458,6 +458,10 @@
 					iteration: ev.iteration ?? 0
 				};
 				turn.tool_calls = [...(turn.tool_calls ?? []), entry];
+				// Any deltas accumulated before this call were preamble text
+				// from an intermediate iteration — transient, never persisted.
+				// Clear so the final iteration streams into a clean bubble.
+				turn.streamed = '';
 				turns = [...turns];
 				break;
 			}
@@ -519,6 +523,12 @@
 				break;
 			}
 			case 'error': {
+				// Promote any streamed partial into committed content so the
+				// bubble shows what arrived before the failure, then the error.
+				if (!turn.content && turn.streamed) {
+					turn.content = turn.streamed;
+				}
+				turn.streamed = '';
 				turn.error = ev.error ?? 'Unknown error';
 				turn.in_progress = false;
 				turns = [...turns];
