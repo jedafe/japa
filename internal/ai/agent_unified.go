@@ -63,20 +63,18 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 	}
 
 	// --- Shared §20 admission: feature.japabot reachability + ai_processing
-	// consent, then the unified daily budget (jc:ai:queries/jc:ai:cost).
-	// PreflightError carries Status/Code/Message — returned verbatim. ---
+	// consent. PreflightError carries Status/Code/Message — returned
+	// verbatim. ---
 	if h.preflight != nil {
 		if perr := h.preflight.CheckAdmission(ctx, userID, GateJapaBot); perr != nil {
-			return nil, perr
-		}
-
-		if perr := h.preflight.CheckBudget(ctx, userID); perr != nil {
 			return nil, perr
 		}
 	}
 
 	// --- Permission OR-gate (ADR-130): either surface permission admits.
-	// agent.use additionally controls tool eligibility below. ---
+	// agent.use additionally controls tool eligibility below. Runs before
+	// CheckBudget so denied requests don't consume jc:ai:queries — the
+	// legacy route checks permission in middleware for the same reason. ---
 	hasChat, hasAgent := true, true
 
 	if h.perms != nil {
@@ -85,6 +83,14 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 
 		if !hasChat && !hasAgent {
 			return nil, errAINoPermission
+		}
+	}
+
+	// --- Unified daily budget (jc:ai:queries + jc:ai:cost) — after identity
+	// checks, before any provider-visible work. ---
+	if h.preflight != nil {
+		if perr := h.preflight.CheckBudget(ctx, userID); perr != nil {
+			return nil, perr
 		}
 	}
 
@@ -108,7 +114,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 
 	var catalog []ToolConfig
 
-	if toolsEligible {
+	if toolsEligible && h.registry != nil {
 		catalog = FilterCatalog(h.buildToolCatalog(ctx, userID), h.registry.Categories(), prefs, req.Tools)
 	}
 

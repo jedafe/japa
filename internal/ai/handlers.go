@@ -367,7 +367,7 @@ func (h *Handlers) buildUserAIContext(ctx context.Context, userID pgtype.UUID, c
 // persistChatTurn stores the user message and AI reply to Honcho as persistent
 // memory (Section 20). Fire-and-forget: errors are logged, never propagated,
 // so a Honcho outage never blocks the chat response (Rule 8 spirit).
-func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, conversationID string) {
+func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, conversationID string, unified bool) {
 	if h.Honcho == nil {
 		return
 	}
@@ -375,6 +375,12 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 	meta := map[string]any{"role": "user"}
 	if conversationID != "" {
 		meta["conversation_id"] = conversationID
+	}
+	if unified {
+		// ADR-130: marks entries that belong to an ai_conversations thread so
+		// the conversation list doesn't union the same thread twice (Honcho
+		// stays the long-term memory store; relational rows are the transcript).
+		meta["unified"] = true
 	}
 
 	if _, err := h.Honcho.AddMemory(ctx, userID, honcho.AddMemoryInput{
@@ -387,6 +393,9 @@ func (h *Handlers) persistChatTurn(ctx context.Context, userID, message, reply, 
 	replyMeta := map[string]any{"role": "assistant"}
 	if conversationID != "" {
 		replyMeta["conversation_id"] = conversationID
+	}
+	if unified {
+		replyMeta["unified"] = true
 	}
 
 	if _, err := h.Honcho.AddMemory(ctx, userID, honcho.AddMemoryInput{
@@ -1132,7 +1141,7 @@ func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
 	// Persist the full chat turn to Honcho only after the response has been
 	// successfully shaped and written to the client (BUG-017). Fire-and-forget:
 	// errors are logged, never propagated (Rule 8 spirit).
-	h.persistChatTurn(r.Context(), user.UserID.String(), rawUserMessage, reply, conversationID)
+	h.persistChatTurn(r.Context(), user.UserID.String(), rawUserMessage, reply, conversationID, false)
 }
 
 // ExtractReplyText pulls the human-readable reply string out of a provider

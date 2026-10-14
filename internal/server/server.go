@@ -6701,9 +6701,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 
 			// ADR-130: per-user AI preferences (default mode, tool/category
 			// toggles) — only meaningful while the unified surface is on.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified")).
+			// Same OR admission as /ai/chat so users without AI permission
+			// can't read or write preferences.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
 				Get("/me/ai-preferences", aiHandlers.HandleGetAIPrefs)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
 				Put("/me/ai-preferences", aiHandlers.HandlePutAIPrefs)
 
 			// Task 33: Content public extras

@@ -81,4 +81,15 @@ func TestFilterCatalog_PrefsAndOverride(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("override must not widen past prefs, got %+v", got)
 	}
+
+	// An explicitly empty whitelist narrows to nothing — "tools":[] must not
+	// fall back to the full catalog.
+	got = FilterCatalog(tools, cat, AIPrefs{}, &ToolSelection{Enabled: &on, Tools: []string{}})
+	if len(got) != 0 {
+		t.Fatalf("empty tools whitelist should empty catalog, got %+v", got)
+	}
+	got = FilterCatalog(tools, cat, AIPrefs{}, &ToolSelection{Enabled: &on, Categories: []string{}})
+	if len(got) != 0 {
+		t.Fatalf("empty categories whitelist should empty catalog, got %+v", got)
+	}
 }

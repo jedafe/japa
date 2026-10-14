@@ -193,7 +193,7 @@ func (h *Handlers) UserAIContextFunc() func(ctx context.Context, userID pgtype.U
 
 // PersistChatTurnFunc exposes persistChatTurn for wiring into the agent
 // handler's Honcho long-term-memory write (ADR-130).
-func (h *Handlers) PersistChatTurnFunc() func(ctx context.Context, userID, message, reply, conversationID string) {
+func (h *Handlers) PersistChatTurnFunc() func(ctx context.Context, userID, message, reply, conversationID string, unified bool) {
 	return h.persistChatTurn
 }
 
@@ -226,6 +226,7 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 	}
 
 	out := []convoSummary{}
+	dbIDs := map[string]bool{}
 
 	// New relational threads.
 	if h.Convos != nil {
@@ -234,6 +235,7 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 			slog.Warn("ai: listing ai_conversations", "error", err)
 		}
 		for _, c := range rows {
+			dbIDs[c.ID.String()] = true
 			out = append(out, convoSummary{
 				ConversationID: c.ID.String(),
 				Title:          c.Title,
@@ -252,6 +254,16 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 		} else {
 			legacy := map[string]*convoSummary{}
 			for _, e := range entries {
+				// Skip entries that belong to unified threads — the unified
+				// path still writes each turn to Honcho long-term memory,
+				// marked with metadata.unified (and conversation_id = the
+				// ai_conversations id for entries written before the marker
+				// existed). Without this the same thread lists twice.
+				if e.Metadata != nil {
+					if u, ok := e.Metadata["unified"].(bool); ok && u {
+						continue
+					}
+				}
 				cid := ""
 				if e.Metadata != nil {
 					if v, ok := e.Metadata["conversation_id"].(string); ok {
@@ -260,6 +272,9 @@ func (h *Handlers) HandleListConversationsV2(w http.ResponseWriter, r *http.Requ
 				}
 				if cid == "" {
 					cid = e.ID
+				}
+				if dbIDs[cid] {
+					continue
 				}
 				c, exists := legacy[cid]
 				if !exists {

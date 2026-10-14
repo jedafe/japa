@@ -67,10 +67,12 @@ func FilterCatalog(tools []ToolConfig, categories map[string]string, prefs AIPre
 			continue
 		}
 		if sel != nil {
-			if len(sel.Categories) > 0 && !sliceContains(sel.Categories, categories[tc.FunctionName]) {
+			// A non-nil whitelist is authoritative: an explicitly empty
+			// array narrows to nothing — "[]" is not the same as absent.
+			if sel.Categories != nil && !sliceContains(sel.Categories, categories[tc.FunctionName]) {
 				continue
 			}
-			if len(sel.Tools) > 0 && !sliceContains(sel.Tools, tc.FunctionName) {
+			if sel.Tools != nil && !sliceContains(sel.Tools, tc.FunctionName) {
 				continue
 			}
 		}

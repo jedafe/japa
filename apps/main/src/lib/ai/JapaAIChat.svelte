@@ -150,7 +150,9 @@
 				}
 			}
 			toolEnabled = next;
-			toolsOn = prefs?.default_mode === 'agent';
+			// Tools default ON for eligible users — an explicit 'chat'
+			// preference is the only thing that starts them off.
+			toolsOn = prefs?.default_mode !== 'chat';
 		}
 	});
 
@@ -480,6 +482,14 @@
 				turn.estimated_cost = ev.estimated_cost;
 				if (ev.conversation_id) conversationId = ev.conversation_id;
 				turn.in_progress = false;
+				// Keep the sidebar row fresh — a thread created this session
+				// was added with turn_count 0 and no real preview.
+				const conv = convos.find((c) => c.conversation_id === conversationId);
+				if (conv) {
+					conv.turn_count = (conv.turn_count ?? 0) + 2;
+					conv.preview = (ev.content ?? '').slice(0, 80);
+					convos = [...convos];
+				}
 				turns = [...turns];
 				break;
 			}

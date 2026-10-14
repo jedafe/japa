@@ -285,6 +285,50 @@ func TestUnifiedChat_PermissionOrGate(t *testing.T) {
 	}
 }
 
+func TestUnifiedChat_DeniedDoesNotConsumeQueries(t *testing.T) {
+	// ADR-130: the permission OR-gate runs before CheckBudget — a
+	// permissionless request must not increment jc:ai:queries.
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	h, _, limiter := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{}})
+	h.preflight = NewPreflight(nil, nil, nil, limiter, nil)
+
+	_, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{Prompt: "hi"})
+	if !errors.Is(err, errAINoPermission) {
+		t.Fatalf("expected errAINoPermission, got %v", err)
+	}
+	for k := range limiter.incrKeys {
+		if containsStr(k, "ai:queries:") {
+			t.Fatalf("denied request consumed shared query quota: %s", k)
+		}
+	}
+}
+
+func TestUnifiedChat_NilRegistryDegrade(t *testing.T) {
+	// A nil tool registry must degrade to pure chat, not panic — the
+	// handler dereferences registry.Categories() during catalog resolution.
+	provider := &recordingProvider{name: "mock", reply: "ok"}
+	disp := NewDispatcher()
+	disp.RegisterProvider("chat", provider)
+	exec := NewExecutor(NewToolHandlerRegistry())
+
+	h := NewAgentHandler(disp, exec, nil, &stubPreSearcher{res: &PreSearchResult{Level: PreSearchNone}},
+		WithAgentPerms(&stubPerms{granted: map[string]bool{"agent.use": true}}),
+		WithAgentConversations(NewConversationService(newStubConvoStore(), nil)),
+		WithAgentSessions(&stubSessionStore{}))
+
+	ev, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, UnifiedChatRequest{Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("nil registry should degrade to chat, got %v", err)
+	}
+	events := collectEvents(t, ev)
+	if !hasEventType(events, EventFinalResponse) {
+		t.Fatalf("expected final_response, got %+v", events)
+	}
+	if len(provider.reqs) == 0 || len(provider.reqs[0].Tools) != 0 {
+		t.Fatal("nil registry must produce an empty catalog")
+	}
+}
+
 func TestUnifiedChat_GlobalToolsKillSwitch(t *testing.T) {
 	provider := &recordingProvider{name: "mock", reply: "ok"}
 	h, _, limiter := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}},

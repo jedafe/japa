@@ -149,7 +149,7 @@ type AgentHandler struct {
 	// gracefully: no transcript persistence, no memory injection).
 	convos         *ConversationService
 	aiContextFn    func(ctx context.Context, userID pgtype.UUID, clientCtx map[string]any) map[string]any
-	persistTurnFn  func(ctx context.Context, userID, message, reply, conversationID string)
+	persistTurnFn  func(ctx context.Context, userID, message, reply, conversationID string, unified bool)
 	voiceResolver  PersonaVoiceResolver
 	modelValidator func(model, category string) bool
 
@@ -260,7 +260,7 @@ func WithAgentAIContext(fn func(ctx context.Context, userID pgtype.UUID, clientC
 
 // WithAgentChatPersist injects the Honcho turn-persistence hook
 // ((*Handlers).persistChatTurn). Long-term memory write; fire-and-forget.
-func WithAgentChatPersist(fn func(ctx context.Context, userID, message, reply, conversationID string)) AgentOption {
+func WithAgentChatPersist(fn func(ctx context.Context, userID, message, reply, conversationID string, unified bool)) AgentOption {
 	return func(h *AgentHandler) { h.persistTurnFn = fn }
 }
 
@@ -877,7 +877,7 @@ func (h *AgentHandler) runLoop(
 		}
 
 		if h.persistTurnFn != nil {
-			h.persistTurnFn(persistCtx, userID.String(), prompt, finalResponse, convID)
+			h.persistTurnFn(persistCtx, userID.String(), prompt, finalResponse, convID, p.unified != nil)
 		}
 	}
 
