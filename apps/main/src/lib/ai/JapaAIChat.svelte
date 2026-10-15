@@ -15,7 +15,7 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
 
 	import { t } from '$lib/i18n';
-	import { onMount, tick, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import {
 		ArrowUp,
 		Sparkles,
@@ -466,6 +466,62 @@
 	let activeSessionId: string | null = $state(null);
 	let cancelling = $state(false);
 
+	// Detached turns keep running server-side after a disconnect — when a
+	// conversation carries a running session (or a live stream drops), poll
+	// the session endpoint until terminal, then refetch so the persisted
+	// assistant message (or failure notice) lands.
+	let bgSessionId: string | null = $state(null);
+	let bgPollTimer: ReturnType<typeof setInterval> | null = null;
+	const BG_POLL_MS = 3000;
+	const BG_POLL_CAP_MS = 10 * 60 * 1000;
+
+	function stopSessionPoll() {
+		if (bgPollTimer) clearInterval(bgPollTimer);
+		bgPollTimer = null;
+		bgSessionId = null;
+	}
+
+	function startSessionPoll(sessionId: string) {
+		if (!sessionId || bgSessionId === sessionId) return;
+		stopSessionPoll();
+		bgSessionId = sessionId;
+		const startedAt = Date.now();
+		let failures = 0;
+		let inFlight = false;
+		bgPollTimer = setInterval(() => {
+			if (!bgSessionId || inFlight) return;
+			if (Date.now() - startedAt > BG_POLL_CAP_MS) {
+				stopSessionPoll();
+				return;
+			}
+			inFlight = true;
+			void (async () => {
+				try {
+					const res = await api.get<{ session: { status: string } }>(
+						`/ai/agent/sessions/${bgSessionId}`
+					);
+					const status = res.data?.session?.status;
+					if (res.error) {
+						// api error shape is { code, message, status } — a 404 means
+						// the session row is gone; anything else gets one retry.
+						if (++failures >= 2 || res.error.code === 'session_not_found') stopSessionPoll();
+						return;
+					}
+					failures = 0;
+					if (status && status !== 'running') {
+						const convId = conversationId;
+						stopSessionPoll();
+						if (convId) await loadConversation(convId);
+					}
+				} finally {
+					inFlight = false;
+				}
+			})();
+		}, BG_POLL_MS);
+	}
+
+	onDestroy(stopSessionPoll);
+
 	// --- Tools state -------------------------------------------------------
 	// Categories/tools come from GET /ai/agent/capabilities (already
 	// platform+RBAC filtered). The composer can only narrow further — tools
@@ -823,10 +879,12 @@
 	}
 
 	async function loadConversation(id: string) {
+		stopSessionPoll(); // a stale poll must not fire mid-load
 		loadingConversation = true;
 		const res = await api.get<{
 			conversation_id: string;
 			project_id?: string;
+			running_session_id?: string;
 			messages?: ConversationMessage[];
 			entries?: { id: string; content: string; metadata?: Record<string, unknown>; created_at: string }[];
 		}>(`/ai/conversations/${id}`);
@@ -875,6 +933,11 @@
 			}));
 		}
 		sidebarOpen = false;
+		// A detached turn may still be running server-side for this thread —
+		// poll it and land the persisted result when it finishes.
+		if (res.data.running_session_id && !sending) {
+			startSessionPoll(res.data.running_session_id);
+		}
 	}
 
 	function deleteConversation(id: string) {
@@ -895,6 +958,7 @@
 	}
 
 	function startNewChat() {
+		stopSessionPoll();
 		conversationId = '';
 		turns = [];
 		viewingLegacy = false;
@@ -973,6 +1037,9 @@
 		activeAbort = abort;
 		activeSessionId = null;
 		cancelling = false;
+		// Decide detach-vs-discard by what was SENT, not what the toggle
+		// shows now — it could flip while the stream is live.
+		const sentWithTools = toolsOn;
 
 		try {
 			for await (const ev of streamChat({
@@ -997,9 +1064,17 @@
 				handleEvent(ev, liveTurn);
 			}
 			if (liveTurn.in_progress) {
-				liveTurn.in_progress = false;
-				if (!liveTurn.content && !liveTurn.error) {
-					liveTurn.content = t('ai.agent.stream_closed', 'Stream closed.');
+				const sid = liveTurn.session_id;
+				if (sid && sentWithTools) {
+					// Detached turn — the run continues server-side; poll the
+					// session and land the persisted message on completion.
+					liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
+					startSessionPoll(sid);
+				} else {
+					liveTurn.in_progress = false;
+					if (!liveTurn.content && !liveTurn.error) {
+						liveTurn.content = t('ai.agent.stream_closed', 'Stream closed.');
+					}
 				}
 				turns = [...turns];
 			}
@@ -1021,6 +1096,13 @@
 				}
 			} else if (e instanceof DOMException && e.name === 'AbortError') {
 				liveTurn.error = t('ai.agent.cancelled', 'Cancelled.');
+			} else if (liveTurn.session_id && sentWithTools) {
+				// The reader threw mid-stream (network drop) — a detached
+				// turn keeps running server-side; poll to completion instead
+				// of erroring out a live background task.
+				liveTurn.in_progress = true;
+				liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
+				startSessionPoll(liveTurn.session_id);
 			} else {
 				liveTurn.error = e instanceof Error ? e.message : String(e);
 				error = liveTurn.error;
@@ -1171,6 +1253,7 @@
 	async function cancel() {
 		if (!activeAbort || cancelling) return;
 		cancelling = true;
+		stopSessionPoll();
 		activeAbort.abort();
 		if (activeSessionId) {
 			try {
@@ -1773,6 +1856,12 @@
 							</div>
 						</div>
 					{/each}
+					{#if bgSessionId}
+						<div class="flex items-center gap-2 px-1 py-2 text-xs sm:px-2" style="color: var(--color-muted)">
+							<Loader2 size={12} class="animate-spin" />
+							{t('ai.agent.bg_running', 'Agent is working in the background — the result will appear here.')}
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

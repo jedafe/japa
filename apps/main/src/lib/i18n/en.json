@@ -84,6 +84,7 @@
   "affiliate.product_type_general": "General",
   "affiliate.product_type_pro_subscription": "Pro Subscription",
   "ai.agent.back_to_history": "Back to session history",
+  "ai.agent.bg_running": "Agent is working in the background — the result will appear here.",
   "ai.agent.cancel": "Cancel",
   "ai.agent.cancelled": "Cancelled.",
   "ai.agent.capabilities_unavailable": "Agent capabilities could not be loaded. The agent may be disabled or you may lack permission.",
