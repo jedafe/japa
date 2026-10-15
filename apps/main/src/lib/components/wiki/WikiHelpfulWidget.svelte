@@ -56,7 +56,7 @@
 </script>
 
 <section
-	class="mt-8 flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
+	class="flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
 	aria-label={t('wiki.helpful_label', 'Was this page helpful?')}
 >
 	<p class="text-sm font-medium text-[var(--color-text)]">

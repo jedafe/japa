@@ -801,7 +801,7 @@ func TestSubmitRevision_MaterializesLazyTemplatePage(t *testing.T) {
 	})
 
 	svc := NewService(store, nil)
-	revID, err := svc.SubmitRevision(ctx, fx.userID, spaceSlug, "prices", SubmitRevisionInput{
+	revID, _, _, err := svc.SubmitRevision(ctx, fx.userID, spaceSlug, "prices", SubmitRevisionInput{
 		Content: []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Milk is cheap."}]}]}`),
 	})
 	if err != nil {
@@ -1457,7 +1457,7 @@ func TestSubmitRevision_MaterializesLazyCategoryPage(t *testing.T) {
 	})
 
 	svc := NewService(store, nil)
-	revID, err := svc.SubmitRevision(ctx, fx.userID, spaceSlug, "other", SubmitRevisionInput{
+	revID, _, _, err := svc.SubmitRevision(ctx, fx.userID, spaceSlug, "other", SubmitRevisionInput{
 		Content: []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Notes."}]}]}`),
 	})
 	if err != nil {
@@ -1787,7 +1787,7 @@ func TestCreatePageWithRevision_Canonicalizes(t *testing.T) {
 
 	// Dash-form + uppercase category → canonical token; capitalized slug →
 	// lowercased; the template binds.
-	pageID, _, slug, err := svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
+	pageID, _, slug, _, err := svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
 		SpaceSlug: spaceSlug,
 		Slug:      "Prices",
 		Title:     "Prices",
@@ -1822,7 +1822,7 @@ func TestCreatePageWithRevision_Canonicalizes(t *testing.T) {
 
 	// A dash-form category on a *different* slug lands in the same sibling
 	// bucket as the canonical-token page.
-	_, _, _, err = svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
+	_, _, _, _, err = svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
 		SpaceSlug: spaceSlug,
 		Slug:      "markets",
 		Title:     "Markets",
@@ -1843,7 +1843,7 @@ func TestCreatePageWithRevision_Canonicalizes(t *testing.T) {
 	}
 
 	// Slugs outside the canonical pattern are rejected.
-	if _, _, _, err := svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
+	if _, _, _, _, err := svc.CreatePageWithRevision(ctx, fx.userID, CreateWikiPageInput{
 		SpaceSlug: spaceSlug,
 		Slug:      "Bad Slug!",
 		Title:     "Bad",

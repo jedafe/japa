@@ -74,6 +74,48 @@
 	// Propose-tier ops UI: the schema reports can_propose (wiki.fields.propose
 	// or manage).
 	const canPropose = $derived(schema?.can_propose === true);
+	// §80 Super-Admin Direct Publish — the schema reports can_delete only
+	// for super_admin group members; they get a per-field delete affordance
+	// that queues delete_field ops alongside the value edits.
+	const canDelete = $derived(schema?.can_delete === true);
+
+	// ── Delete-field queue (super_admin) ───────────────────────────────
+	// Ops queued by the delete affordance — submitted alongside set_value
+	// and propose ops; the apply transaction removes the field definition
+	// and cascades its stored values.
+	let deleteOpen = $state(false);
+	let deleteOps = $state<WikiFieldOp[]>([]);
+	let deleteLabels = $state<string[]>([]);
+
+	function queueDeleteField(group: WikiEntityFieldGroup, f: WikiEntityField) {
+		if (deleteOps.some((o) => o.group_slug === group.slug && o.field_key === f.key)) return;
+		deleteOps = [
+			...deleteOps,
+			{
+				op: 'delete_field',
+				entity_type: entityType,
+				entity_id: entityId,
+				group_slug: group.slug,
+				field_key: f.key
+			}
+		];
+		deleteLabels = [...deleteLabels, f.label];
+	}
+
+	function unqueueDelete(i: number) {
+		deleteOps = deleteOps.filter((_, j) => j !== i);
+		deleteLabels = deleteLabels.filter((_, j) => j !== i);
+	}
+
+	// Fields still deletable in a group — visible, non-system (delete_field
+	// refuses is_system server-side) fields not already queued.
+	const deletableFields = (g: WikiEntityFieldGroup): WikiEntityField[] =>
+		g.fields.filter(
+			(f) =>
+				f.visible &&
+				!f.system &&
+				!deleteOps.some((o) => o.group_slug === g.slug && o.field_key === f.key)
+		);
 
 	// ── "Propose a new field" form state ─────────────────────────────────
 	let proposeOpen = $state(false);
@@ -237,6 +279,9 @@
 			proposedLabels = [];
 			proposeOpen = false;
 			pfError = '';
+			deleteOps = [];
+			deleteLabels = [];
+			deleteOpen = false;
 			if (schema) seedValues(schema);
 			else if (fieldsData === undefined && !loadingFields) void loadSchema();
 		}
@@ -377,7 +422,7 @@
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		errorKey = '';
-		const ops = [...changedOps(), ...proposedOps];
+		const ops = [...changedOps(), ...proposedOps, ...deleteOps];
 		if (ops.length === 0) {
 			errorKey = 'wiki.suggest_no_changes';
 			return;
@@ -640,6 +685,79 @@
 														aria-label={t('wiki.propose_remove', 'Remove')}
 													>
 														<Trash2 size={12} />
+													</button>
+												</li>
+											{/each}
+										</ul>
+									{/if}
+								</section>
+							{/if}
+
+							{#if canDelete && hasVisibleFields}
+								<!-- §80 Super-Admin Direct Publish — delete_field queue.
+								     A clicked field moves into the marked-for-deletion list;
+								     the ops submit with everything else in one revision. -->
+								<section class="rounded-[var(--radius)] border border-dashed border-red-500/40 p-3">
+									<button
+										type="button"
+										onclick={() => (deleteOpen = !deleteOpen)}
+										class="flex w-full items-center gap-1.5 text-left text-xs font-medium text-red-600"
+									>
+										<Trash2 size={13} />
+										{t('wiki.delete_fields', 'Delete fields')}
+									</button>
+									{#if deleteOpen}
+										<p class="mt-2 text-xs text-[var(--color-muted)]">
+											{t(
+												'wiki.delete_fields_hint',
+												'Deleting a field removes the field and every stored value. Marked fields are deleted when you submit.'
+											)}
+										</p>
+										<div class="mt-3 space-y-3">
+											{#each schema.groups as group (group.id)}
+												{@const deletable = deletableFields(group)}
+												{#if deletable.length > 0}
+													<div>
+														<h4 class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+															{group.name}
+														</h4>
+														<ul class="divide-y divide-[var(--color-border)]">
+															{#each deletable as f (f.id)}
+																<li class="flex items-center justify-between gap-3 py-1.5 text-sm">
+																	<span class="min-w-0 truncate text-[var(--color-text)]">{f.label}</span>
+																	<button
+																		type="button"
+																		onclick={() => queueDeleteField(group, f)}
+																		class="shrink-0 text-[var(--color-muted)] transition-colors hover:text-red-500"
+																		aria-label={t('wiki.delete_field_mark', 'Mark {label} for deletion', { label: f.label })}
+																		title={t('wiki.delete_field_mark', 'Mark {label} for deletion', { label: f.label })}
+																	>
+																		<Trash2 size={13} />
+																	</button>
+																</li>
+															{/each}
+														</ul>
+													</div>
+												{/if}
+											{/each}
+										</div>
+									{/if}
+									{#if deleteLabels.length > 0}
+										<ul class="mt-3 space-y-1.5">
+											{#each deleteLabels as label, i (i)}
+												<li
+													class="flex items-center justify-between gap-2 rounded-[var(--radius)] bg-red-500/10 px-2.5 py-1.5 text-xs text-red-600"
+												>
+													<span class="min-w-0 truncate">
+														{t('wiki.delete_queued', 'Will be deleted: {label}', { label })}
+													</span>
+													<button
+														type="button"
+														onclick={() => unqueueDelete(i)}
+														class="shrink-0 text-red-600/70 transition-colors hover:text-red-600"
+														aria-label={t('wiki.propose_remove', 'Remove')}
+													>
+														<X size={12} />
 													</button>
 												</li>
 											{/each}

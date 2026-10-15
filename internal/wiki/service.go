@@ -1209,22 +1209,26 @@ func (s *Service) GetRevisionHistory(ctx context.Context, viewerID pgtype.UUID, 
 // SubmitRevision creates a new pending revision for a wiki page. The
 // caller must have the wiki.edit permission and meet the reputation
 // threshold (checked by the handler before calling this method).
+// §80 Super-Admin Direct Publish: super_admin submissions bypass
+// is_locked and the revision is approved in-line — the approved row stays
+// as the audit record, and the returned pageID lets the handler fire the
+// same post-approval indexing the review path does.
 // // B6: acquires the jc:wiki_edit_lock:{page_id}:{user_id} Valkey lock before
 // inserting to prevent the same user from double-submitting concurrently.
 // The lock is released on success or failure; a 5-minute TTL auto-expires
 // if the process crashes mid-request.
-func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, input SubmitRevisionInput) (string, error) {
+func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, input SubmitRevisionInput) (string, pgtype.UUID, bool, error) {
 	spaceID, spaceName, err := s.store.GetSpaceBySlug(ctx, spaceSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrSpaceNotFound
+			return "", pgtype.UUID{}, false, ErrSpaceNotFound
 		}
 
-		return "", fmt.Errorf("wiki: submit: resolve space: %w", err)
+		return "", pgtype.UUID{}, false, fmt.Errorf("wiki: submit: resolve space: %w", err)
 	}
 
 	if len(input.Content) == 0 {
-		return "", errors.New("content is required")
+		return "", pgtype.UUID{}, false, errors.New("content is required")
 	}
 
 	// BUG-020: sanitize/normalize content before storage. If the content is a
@@ -1234,7 +1238,7 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	// validate it parses as JSON. Ref: §5.1 XSS, §14 Tiptap sanitize.
 	normalizedContent, err := normalizeWikiContent(input.Content)
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		return "", pgtype.UUID{}, false, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	input.Content = normalizedContent
@@ -1248,12 +1252,14 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 			page, err = s.materializeLazyPage(ctx, spaceID, spaceSlug, spaceName, userID, pageSlug)
 		}
 		if err != nil {
-			return "", err
+			return "", pgtype.UUID{}, false, err
 		}
 	}
 
-	if page.IsLocked {
-		return "", ErrPageLocked
+	superAdmin := s.isSuperAdmin(ctx, userID)
+
+	if page.IsLocked && !superAdmin {
+		return "", pgtype.UUID{}, false, ErrPageLocked
 	}
 
 	// B6: acquire the per-user-per-page edit lock. SET NX EX 5m.
@@ -1265,7 +1271,7 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 			slog.Warn("wiki: edit lock acquire failed, proceeding", "error", lerr)
 			// Fail open — degrade gracefully if Valkey is unreachable.
 		} else if !acquired {
-			return "", ErrEditInProgress
+			return "", pgtype.UUID{}, false, ErrEditInProgress
 		}
 
 		defer func() {
@@ -1280,13 +1286,27 @@ func (s *Service) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceS
 	revID, err := s.store.SubmitRevision(ctx, page.ID, userID, "content", input.Content, nil, input.Summary, nil, pgtype.UUID{})
 	if err != nil {
 		if errors.Is(err, ErrDuplicateContent) {
-			return "", ErrDuplicateContent
+			return "", pgtype.UUID{}, false, ErrDuplicateContent
 		}
 
-		return "", fmt.Errorf("wiki: submit: %w", err)
+		return "", pgtype.UUID{}, false, fmt.Errorf("wiki: submit: %w", err)
 	}
 
-	return revID.String(), nil
+	if !superAdmin {
+		return revID.String(), page.ID, false, nil
+	}
+
+	// §80 Super-Admin Direct Publish: approve in-line — the same status
+	// flip the reviewer path runs, so the row stays as the audit record.
+	// Store.ApproveRevisionByID runs the UPDATE on the writer — going
+	// through Service.ApproveRevisionByID would read the just-inserted
+	// row back from the replica and race replication lag (the ops path
+	// avoids this by approving inside a writer transaction).
+	if _, err := s.store.ApproveRevisionByID(ctx, revID, userID, "auto-approved (super_admin)"); err != nil {
+		return revID.String(), page.ID, false, fmt.Errorf("wiki: submit: auto-approve: %w", err)
+	}
+
+	return revID.String(), page.ID, true, nil
 }
 
 // materializeLazyPage creates the wiki_pages row for a lazy page (§80):
@@ -1420,33 +1440,36 @@ func (s *Service) canonicalCategory(ctx context.Context, spaceID pgtype.UUID, ca
 // CreatePageWithRevision creates a new wiki page for the given space slug and
 // immediately submits an initial pending revision. The caller (handler) is
 // responsible for permission and reputation checks.
-func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, input CreateWikiPageInput) (string, string, string, error) {
+// §80 Super-Admin Direct Publish: super_admin creators get an approved
+// initial revision in-line — the page goes live immediately instead of
+// waiting in the review queue.
+func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, input CreateWikiPageInput) (string, string, string, bool, error) {
 	slug, category, title, err := canonicalizePageInput(input)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", false, err
 	}
 
 	if len(input.Content) == 0 {
-		return "", "", "", fmt.Errorf("%w: content is required", ErrInvalidInput)
+		return "", "", "", false, fmt.Errorf("%w: content is required", ErrInvalidInput)
 	}
 
 	normalizedContent, err := normalizeWikiContent(input.Content)
 	if err != nil {
-		return "", "", "", fmt.Errorf("%w: %w", ErrInvalidInput, err)
+		return "", "", "", false, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	spaceID, _, err := s.store.GetSpaceBySlug(ctx, input.SpaceSlug)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", "", "", ErrSpaceNotFound
+			return "", "", "", false, ErrSpaceNotFound
 		}
 
-		return "", "", "", fmt.Errorf("wiki: create page: resolve space: %w", err)
+		return "", "", "", false, fmt.Errorf("wiki: create page: resolve space: %w", err)
 	}
 
 	category, err = s.canonicalCategory(ctx, spaceID, category)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", false, err
 	}
 
 	// §80 Hierarchical UX: when a page template declares this (category,
@@ -1472,13 +1495,26 @@ func (s *Service) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID
 	pageID, revID, err := s.store.CreatePageWithRevision(ctx, spaceID, userID, slug, title, category, normalizedContent, input.Summary, tmplID, tmplGroupID, position)
 	if err != nil {
 		if errors.Is(err, ErrPageExists) {
-			return "", "", "", ErrPageExists
+			return "", "", "", false, ErrPageExists
 		}
 
-		return "", "", "", fmt.Errorf("wiki: create page: %w", err)
+		return "", "", "", false, fmt.Errorf("wiki: create page: %w", err)
 	}
 
-	return pageID.String(), revID.String(), slug, nil
+	if !s.isSuperAdmin(ctx, userID) {
+		return pageID.String(), revID.String(), slug, false, nil
+	}
+
+	// §80 Super-Admin Direct Publish: approve in-line — the same status
+	// flip the reviewer path runs, so the page goes live immediately.
+	// Store.ApproveRevisionByID runs the UPDATE on the writer — the
+	// service-level variant reads the just-inserted revision back from
+	// the replica first and would race replication lag.
+	if _, err := s.store.ApproveRevisionByID(ctx, revID, userID, "auto-approved (super_admin)"); err != nil {
+		return pageID.String(), revID.String(), slug, false, fmt.Errorf("wiki: create page: auto-approve: %w", err)
+	}
+
+	return pageID.String(), revID.String(), slug, true, nil
 }
 
 // ApproveRevision approves a pending revision (moderator+). Returns the

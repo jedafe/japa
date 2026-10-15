@@ -25,6 +25,11 @@ const (
 	OpProposeGroup = "propose_group"
 	OpUpsertField  = "upsert_field"
 	OpAssignGroup  = "assign_group"
+	// OpDeleteField removes a field definition — super_admin-group only
+	// (§80 Super-Admin Direct Publish): the manage tier's upsert rights
+	// stop short of deletion. Enforced in checkOpsPermissions, not the
+	// op→node map.
+	OpDeleteField = "delete_field"
 )
 
 // FieldOp is a single entry in a revision's ops array. Fields are
@@ -175,6 +180,17 @@ func validateOp(op FieldOp) error {
 
 		if op.GroupSlug == "" {
 			return fmt.Errorf("assign_group requires group_slug")
+		}
+
+		return nil
+
+	case OpDeleteField:
+		if op.GroupSlug == "" {
+			return fmt.Errorf("delete_field requires group_slug")
+		}
+
+		if op.FieldKey == "" {
+			return fmt.Errorf("delete_field requires field_key")
 		}
 
 		return nil

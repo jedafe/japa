@@ -2811,7 +2811,7 @@ type agentWikiAdapter struct {
 }
 
 func (a *agentWikiAdapter) CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, in ai.WikiCreatePageInput) (string, string, string, error) {
-	return a.svc.CreatePageWithRevision(ctx, userID, wiki.CreateWikiPageInput{
+	pageID, revID, pageSlug, _, err := a.svc.CreatePageWithRevision(ctx, userID, wiki.CreateWikiPageInput{
 		SpaceSlug: in.SpaceSlug,
 		Slug:      in.Slug,
 		Title:     in.Title,
@@ -2820,6 +2820,7 @@ func (a *agentWikiAdapter) CreatePageWithRevision(ctx context.Context, userID pg
 		Summary:   in.Summary,
 		Position:  in.Position,
 	})
+	return pageID, revID, pageSlug, err
 }
 
 func (a *agentWikiAdapter) CreatePageShell(ctx context.Context, spaceID, createdBy pgtype.UUID, slug, title, category string) (string, error) {
@@ -2831,10 +2832,11 @@ func (a *agentWikiAdapter) CreatePageShell(ctx context.Context, spaceID, created
 }
 
 func (a *agentWikiAdapter) SubmitRevision(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, summary string) (string, error) {
-	return a.svc.SubmitRevision(ctx, userID, spaceSlug, pageSlug, wiki.SubmitRevisionInput{
+	revID, _, _, err := a.svc.SubmitRevision(ctx, userID, spaceSlug, pageSlug, wiki.SubmitRevisionInput{
 		Content: content,
 		Summary: summary,
 	})
+	return revID, err
 }
 
 func (a *agentWikiAdapter) SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, opsRaw json.RawMessage, summary string, canManage bool) (string, bool, error) {

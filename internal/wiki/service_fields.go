@@ -153,6 +153,29 @@ type TaskEnqueuer interface {
 	Enqueue(taskType string, payload []byte, opts ...interface{}) error
 }
 
+// superAdminChecker is the optional capability the injected permission
+// resolver exposes for super_admin-group detection — *rbac.RBAC satisfies
+// it. Group membership is a stricter gate than the '*' permission
+// wildcard: delete_field ops and the bypass suite require actual
+// super_admin membership, not a hand-granted wildcard (§80 Super-Admin
+// Direct Publish).
+type superAdminChecker interface {
+	IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool
+}
+
+// isSuperAdmin reports whether the user belongs to the super_admin group.
+// Fails closed when the checker lacks the capability (tests may inject
+// HasPermission-only fakes).
+func (s *Service) isSuperAdmin(ctx context.Context, userID pgtype.UUID) bool {
+	if !userID.Valid {
+		return false
+	}
+	if c, ok := s.perms.(superAdminChecker); ok {
+		return c.IsSuperAdmin(ctx, userID)
+	}
+	return false
+}
+
 // Compile-time checks that the production collaborators satisfy the
 // injection interfaces.
 var (
@@ -183,6 +206,10 @@ type EntityFieldDTO struct {
 	// Computed marks a field whose Value is derived from options.computed
 	// sources — never manually editable (set_value ops are rejected).
 	Computed bool `json:"computed,omitempty"`
+	// System marks a platform-managed field — never deletable, even by
+	// super_admin (delete_field ops and the DeleteCustomField query both
+	// refuse it). Surfaced so the suggest-edit UI never offers the mark.
+	System bool `json:"system,omitempty"`
 }
 
 // EntityFieldSectionDTO is one named section inside a field group — fields
@@ -223,7 +250,11 @@ type EntityFieldsDTO struct {
 	PendingCount int64                 `json:"pending_count"`
 	CanPropose   bool                  `json:"can_propose"`
 	CanManage    bool                  `json:"can_manage"`
-	EntityClass  string                `json:"entity_class,omitempty"`
+	// CanDelete reports super_admin-group membership — the only tier that
+	// may submit delete_field ops (§80 Super-Admin Direct Publish). The
+	// SuggestEdit dialog renders per-field delete affordances on this flag.
+	CanDelete   bool   `json:"can_delete"`
+	EntityClass string `json:"entity_class,omitempty"`
 	// EntityCurrencyCode is the entity's resolved country currency
 	// (§58 "Country → currency linkage" via its geo space) — the display
 	// fallback for currency/price_range fields that don't declare
@@ -270,7 +301,9 @@ func (s *Service) SubmitPageFieldOps(ctx context.Context, userID pgtype.UUID, sp
 	if err != nil {
 		return "", false, err
 	}
-	if locked {
+	// §80 Super-Admin Direct Publish — super_admin submissions ignore
+	// is_locked on the ops path exactly like the prose path does.
+	if locked && !s.isSuperAdmin(ctx, userID) {
 		return "", false, ErrPageLocked
 	}
 
@@ -559,6 +592,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 				Key:       f.Key,
 				Label:     f.Label,
 				FieldType: f.FieldType,
+				System:    f.IsSystem,
 			}
 			if f.Section != nil {
 				dto.Section = *f.Section
@@ -613,6 +647,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 		PendingCount: pending,
 		CanPropose:   canPropose,
 		CanManage:    canManage,
+		CanDelete:    s.isSuperAdmin(ctx, userID),
 	}
 	if len(entityClasses) > 0 {
 		dto.EntityClass = entityClasses[0]
@@ -754,6 +789,7 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 			Key:       f.Key,
 			Label:     f.Label,
 			FieldType: f.FieldType,
+			System:    f.IsSystem,
 		}
 		if f.Section != nil {
 			dto.Section = *f.Section
@@ -1076,8 +1112,8 @@ func (s *Service) PropagateFields(ctx context.Context, entityType, entityID stri
 // propagateFields enqueues wiki:fields_propagate for the revision's target
 // entity after a successful commit — when the ops array contains a
 // value-affecting op (set_value or upsert_field, §6 step 4) OR a schema op
-// (propose_field, propose_group, assign_group — new fields/dims change the
-// matrix shape, so JCE freshness must bust too). When no
+// (propose_field, propose_group, assign_group, delete_field — shape
+// changes bust JCE freshness too). When no
 // enqueuer is wired it falls back to a synchronous bust so correctness never
 // depends on worker wiring order.
 func (s *Service) propagateFields(ctx context.Context, rev WikiRevision, ops []FieldOp) {
@@ -1089,7 +1125,7 @@ func (s *Service) propagateFields(ctx context.Context, rev WikiRevision, ops []F
 
 	for _, op := range ops {
 		switch op.Op {
-		case OpSetValue, OpUpsertField, OpProposeField, OpProposeGroup, OpAssignGroup:
+		case OpSetValue, OpUpsertField, OpProposeField, OpProposeGroup, OpAssignGroup, OpDeleteField:
 			affectsValues = true
 		}
 		if affectsValues {
@@ -1156,9 +1192,18 @@ func opPermissionNode(opName string) string {
 }
 
 // checkOpsPermissions enforces the per-op grant map. wiki.fields.manage
-// (canManage) covers every op and short-circuits the check. A nil permission
-// checker fails closed — submissions must never bypass the grant map.
+// (canManage) covers every op and short-circuits the check — EXCEPT
+// delete_field, which is a super_admin-group op and is gated on group
+// membership before the manage short-circuit (§80 Super-Admin Direct
+// Publish). A nil permission checker fails closed — submissions must
+// never bypass the grant map.
 func (s *Service) checkOpsPermissions(ctx context.Context, userID pgtype.UUID, ops []FieldOp, canManage bool) error {
+	for i, op := range ops {
+		if op.Op == OpDeleteField && !s.isSuperAdmin(ctx, userID) {
+			return fmt.Errorf("%w: ops[%d] delete_field requires super_admin membership", ErrOpNotPermitted, i)
+		}
+	}
+
 	if canManage {
 		return nil
 	}
@@ -1325,7 +1370,7 @@ func (s *Service) checkSchemaOpTargets(ctx context.Context, ops []FieldOp) error
 	if s.fields == nil {
 		for _, op := range ops {
 			switch op.Op {
-			case OpProposeField, OpProposeGroup, OpUpsertField, OpAssignGroup:
+			case OpProposeField, OpProposeGroup, OpUpsertField, OpAssignGroup, OpDeleteField:
 				return errors.New("wiki: custom fields service not configured")
 			}
 		}
@@ -1399,6 +1444,48 @@ func (s *Service) checkSchemaOpTargets(ctx context.Context, ops []FieldOp) error
 				}
 
 				return fmt.Errorf("wiki: submit fields: ops[%d] lookup group %q: %w", i, op.GroupSlug, err)
+			}
+		case OpDeleteField:
+			if pending, ok := pendingGroups[op.GroupSlug]; ok {
+				if !pending[op.FieldKey] {
+					return fmt.Errorf("wiki: submit fields: ops[%d] field %q is not proposed for group %q", i, op.FieldKey, op.GroupSlug)
+				}
+
+				continue
+			}
+
+			group, err := s.fields.GetFieldGroupBySlug(ctx, op.GroupSlug)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					return fmt.Errorf("wiki: submit fields: ops[%d] group %q does not exist", i, op.GroupSlug)
+				}
+
+				return fmt.Errorf("wiki: submit fields: ops[%d] lookup group %q: %w", i, op.GroupSlug, err)
+			}
+
+			// The delete target must resolve now — a revision whose field
+			// is already gone would sit pending as unapprovable noise.
+			fields, err := s.fields.ListFieldsByGroup(ctx, group.ID)
+			if err != nil {
+				return fmt.Errorf("wiki: submit fields: ops[%d] list fields for group %q: %w", i, op.GroupSlug, err)
+			}
+
+			var target *gen.ListCustomFieldsByGroupRow
+			for j := range fields {
+				if fields[j].Key == op.FieldKey {
+					target = &fields[j]
+					break
+				}
+			}
+
+			if target == nil {
+				return fmt.Errorf("wiki: submit fields: ops[%d] field %q does not exist in group %q", i, op.FieldKey, op.GroupSlug)
+			}
+
+			// Fail at submit, not apply — system fields are undeletable by
+			// contract (applyDeleteField + DeleteCustomField both refuse).
+			if target.IsSystem {
+				return fmt.Errorf("wiki: submit fields: ops[%d] field %q is system-managed and cannot be deleted", i, op.FieldKey)
 			}
 		}
 	}

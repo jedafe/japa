@@ -172,12 +172,29 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	return page, limit
 }
 
+// isSuperAdmin reports whether the user belongs to the super_admin group —
+// the bypass tier for the reputation gate and page locks (§80 Super-Admin
+// Direct Publish). Fails closed when the permission checker is absent or
+// lacks the capability.
+func (h *Handlers) isSuperAdmin(ctx context.Context, userID pgtype.UUID) bool {
+	if c, ok := h.perms.(superAdminChecker); ok {
+		return c.IsSuperAdmin(ctx, userID)
+	}
+	return false
+}
+
 // checkReputationGate enforces the wiki.min_reputation_to_edit threshold
 // (B4, §80) for the requesting user. Returns false — with the error already
 // written — when the user is below threshold or the check cannot run
 // (BUG-004: fail closed when the points checker is nil). The action phrase
 // completes the user-facing message "You need more reputation to <action>".
 func (h *Handlers) checkReputationGate(w http.ResponseWriter, r *http.Request, userID pgtype.UUID, action string) bool {
+	// §80 Super-Admin Direct Publish — the reputation floor is a community
+	// contribution gate, not an admin restriction.
+	if h.isSuperAdmin(r.Context(), userID) {
+		return true
+	}
+
 	threshold := h.service.MinReputationToEdit(r.Context())
 	if threshold <= 0 {
 		return true
@@ -216,9 +233,10 @@ func (h *Handlers) checkReputationGate(w http.ResponseWriter, r *http.Request, u
 // ErrEditInProgress conflict, and the wrapped validation errors the service
 // produces ("wiki: submit fields:"/"wiki: suggest:" prefixes) map to 400.
 // Server error-code map (CF23, report surface — no schema change):
-//   op_not_permitted → 403, entity_not_found → 404, duplicate_content /
-//   edit_in_progress → 409, invalid_ops / missing_* / schema_load_failed →
-//   400, fields_submit_failed → 500.
+//
+//	op_not_permitted → 403, entity_not_found → 404, duplicate_content /
+//	edit_in_progress → 409, invalid_ops / missing_* / schema_load_failed →
+//	400, fields_submit_failed → 500.
 func writeFieldOpsError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrOpNotPermitted):
@@ -872,7 +890,7 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 
 	input.SpaceSlug = spaceSlug
 
-	pageID, revID, pageSlug, err := h.service.CreatePageWithRevision(r.Context(), user.UserID, input)
+	pageID, revID, pageSlug, autoApproved, err := h.service.CreatePageWithRevision(r.Context(), user.UserID, input)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination not found")
@@ -904,12 +922,24 @@ func (h *Handlers) HandleCreatePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// §80 Super-Admin Direct Publish — the new page goes live immediately;
+	// index its content like a reviewer-approved revision (B8).
+	status := "pending"
+	if autoApproved {
+		status = "approved"
+		var pid pgtype.UUID
+		if serr := pid.Scan(pageID); serr == nil {
+			h.indexApprovedContent(r, pid, input.Content)
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{
 		"data": map[string]any{
-			"page_id":     pageID,
-			"revision_id": revID,
-			"slug":        pageSlug,
-			"status":      "pending",
+			"page_id":       pageID,
+			"revision_id":   revID,
+			"slug":          pageSlug,
+			"status":        status,
+			"auto_approved": autoApproved,
 		},
 	})
 }
@@ -1014,7 +1044,7 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	revID, err := h.service.SubmitRevision(r.Context(), user.UserID, spaceSlug, pageSlug, input)
+	revID, pageID, autoApproved, err := h.service.SubmitRevision(r.Context(), user.UserID, spaceSlug, pageSlug, input)
 	if err != nil {
 		if errors.Is(err, ErrSpaceNotFound) {
 			errpkg.WriteError(w, http.StatusNotFound, "space_not_found", "Destination space not found")
@@ -1054,9 +1084,19 @@ func (h *Handlers) HandleSubmitRevision(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// §80 Super-Admin Direct Publish — an auto-approved revision is live
+	// immediately, so fire the same post-approval RAG indexing the review
+	// path runs (B8) and report status "approved".
+	status := "pending"
+	if autoApproved {
+		status = "approved"
+		h.indexApprovedContent(r, pageID, input.Content)
+	}
+
 	errpkg.WriteJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
-		"revision_id": revID,
-		"status":      "pending",
+		"revision_id":   revID,
+		"status":        status,
+		"auto_approved": autoApproved,
 	}})
 }
 

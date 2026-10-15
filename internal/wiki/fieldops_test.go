@@ -441,3 +441,35 @@ func TestParseOps(t *testing.T) {
 		}
 	})
 }
+
+// TestValidateOps_DeleteField covers the super_admin field-deletion op's
+// structural requirements (§80 Super-Admin Direct Publish): group_slug +
+// field_key are the only mandatory members.
+func TestValidateOps_DeleteField(t *testing.T) {
+	t.Run("missing group_slug", func(t *testing.T) {
+		err := ValidateOps([]FieldOp{{Op: OpDeleteField, FieldKey: "k"}}, 0)
+		if err == nil || !strings.Contains(err.Error(), "group_slug") {
+			t.Fatalf("expected group_slug error, got %v", err)
+		}
+	})
+
+	t.Run("missing field_key", func(t *testing.T) {
+		err := ValidateOps([]FieldOp{{Op: OpDeleteField, GroupSlug: "g"}}, 0)
+		if err == nil || !strings.Contains(err.Error(), "field_key") {
+			t.Fatalf("expected field_key error, got %v", err)
+		}
+	})
+
+	t.Run("valid", func(t *testing.T) {
+		op := FieldOp{
+			Op:         OpDeleteField,
+			EntityType: "space",
+			EntityID:   testEntityID,
+			GroupSlug:  "wiki_city_cost_of_living",
+			FieldKey:   "rent_1br",
+		}
+		if err := ValidateOps([]FieldOp{op}, 0); err != nil {
+			t.Fatalf("valid delete_field rejected: %v", err)
+		}
+	})
+}

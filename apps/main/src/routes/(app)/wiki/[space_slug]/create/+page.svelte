@@ -14,10 +14,18 @@
 	let { data }: { data: PageData } = $props();
 
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
-	const canCreate = $derived(data.authed && data.userPermissions?.includes('wiki.edit'));
+	// §80 Super-Admin Direct Publish — `*` wildcard counts as every node.
+	const canCreate = $derived(
+		data.authed &&
+			(data.userPermissions?.includes('wiki.edit') === true ||
+				data.userPermissions?.includes('*') === true)
+	);
 	// wiki.manage holders (super_admin + assigned groups) may author new
 	// page templates inline — same permission as the admin panel route.
-	const canManageTemplates = $derived(data.userPermissions?.includes('wiki.manage'));
+	const canManageTemplates = $derived(
+		data.userPermissions?.includes('wiki.manage') === true ||
+			data.userPermissions?.includes('*') === true
+	);
 
 	interface CatItem {
 		id?: string;

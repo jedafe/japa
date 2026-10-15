@@ -83,6 +83,8 @@ func (s *Service) applyOps(ctx context.Context, tx pgx.Tx, ops []FieldOp, schema
 			err = applyUpsertField(ctx, q, op, schema)
 		case OpAssignGroup:
 			err = applyAssignGroup(ctx, q, op)
+		case OpDeleteField:
+			err = applyDeleteField(ctx, q, op, schema)
 		default:
 			err = fmt.Errorf("unknown op %q", op.Op)
 		}
@@ -330,6 +332,46 @@ func applyUpsertField(ctx context.Context, q *gen.Queries, op FieldOp, schema ma
 		fieldType: op.Field.FieldType,
 		options:   options,
 	}
+
+	return nil
+}
+
+// applyDeleteField removes a non-system field definition from the named
+// group — a super_admin-group op (§80 Super-Admin Direct Publish). The
+// custom_fields row hard-deletes and its custom_field_values cascade by
+// FK; the key leaves the op-array schema so a later set_value in the same
+// revision fails instead of writing into a deleted field.
+func applyDeleteField(ctx context.Context, q *gen.Queries, op FieldOp, schema map[string]schemaField) error {
+	group, err := q.GetCustomFieldGroupBySlug(ctx, op.GroupSlug)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("group %q does not exist", op.GroupSlug)
+		}
+
+		return fmt.Errorf("lookup group %q: %w", op.GroupSlug, err)
+	}
+
+	field, err := q.GetCustomFieldByGroupAndKey(ctx, gen.GetCustomFieldByGroupAndKeyParams{
+		GroupID: group.ID,
+		Key:     op.FieldKey,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("field %q does not exist in group %q", op.FieldKey, op.GroupSlug)
+		}
+
+		return fmt.Errorf("lookup field %q: %w", op.FieldKey, err)
+	}
+
+	if field.IsSystem {
+		return fmt.Errorf("field %q is system-managed and cannot be deleted", op.FieldKey)
+	}
+
+	if err := q.DeleteCustomField(ctx, field.ID); err != nil {
+		return fmt.Errorf("delete field %q: %w", op.FieldKey, err)
+	}
+
+	delete(schema, op.FieldKey)
 
 	return nil
 }

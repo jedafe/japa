@@ -236,7 +236,12 @@
 		)
 	);
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
-	const canCreate = $derived(data.authed && data.userPermissions?.includes('wiki.edit'));
+	// §80 Super-Admin Direct Publish — `*` wildcard counts as wiki.edit.
+	const canCreate = $derived(
+		data.authed &&
+			(data.userPermissions?.includes('wiki.edit') === true ||
+				data.userPermissions?.includes('*') === true)
+	);
 
 	// §80 community field ops — the space itself is a community-editable
 	// entity; its field groups render as a data panel below the guide cards.

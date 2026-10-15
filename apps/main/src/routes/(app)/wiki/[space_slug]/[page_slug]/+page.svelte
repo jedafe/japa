@@ -5,7 +5,6 @@
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
-	import EntityFieldsPanel from '$lib/components/wiki/EntityFieldsPanel.svelte';
 	import SuggestEdit from '$lib/components/wiki/SuggestEdit.svelte';
 	import WikiItemTables from '$lib/components/wiki/WikiItemTables.svelte';
 	import WikiHelpfulWidget from '$lib/components/wiki/WikiHelpfulWidget.svelte';
@@ -75,11 +74,13 @@
 	let summary = $state('');
 	let loading = $state(false);
 	let submitted = $state(false);
+	let autoApproved = $state(false);
 	let errorKey = $state('');
 
 	async function startEdit() {
 		summary = '';
 		submitted = false;
+		autoApproved = false;
 		errorKey = '';
 		editing = true;
 		// Fetch the raw (unresolved) revision so authored {{...}} literals
@@ -116,12 +117,13 @@
 		}
 		loading = true;
 		try {
-			const res = await api.post<{ id: string; status: string }>(
+			const res = await api.post<{ id: string; status: string; auto_approved?: boolean }>(
 				`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(data.pageSlug)}/revisions`,
 				{ content: editBodyJson, summary: summary.trim() || null }
 			);
 			if (res.data) {
 				submitted = true;
+				autoApproved = res.data.auto_approved === true;
 				editing = false;
 			} else if (res.error) {
 				// Surface the backend's structured error code (e.g. wiki.insufficient_reputation).
@@ -180,8 +182,14 @@
 			])
 		)
 	);
+	// §80 Super-Admin Direct Publish — super_admin carries the `*` wildcard
+	// node (the resolved list holds no per-node keys), bypasses lock state,
+	// and publishes directly without review.
+	const isSuperAdmin = $derived(data.userPermissions?.includes('*') === true);
 	const canEdit = $derived(
-		!!data.page && !data.page.is_locked && data.authed && data.userPermissions?.includes('wiki.edit')
+		!!data.page &&
+			data.authed &&
+			(isSuperAdmin || (!data.page.is_locked && data.userPermissions?.includes('wiki.edit') === true))
 	);
 	const wikiEnabled = $derived(data.features?.['wiki.enabled'] !== false);
 	const minReputation = $derived(Number(data.siteSettings?.['wiki.min_reputation_to_edit'] ?? 100));
@@ -322,7 +330,6 @@
 		{spaceLevel}
 		pages={data.index ?? []}
 		currentPageSlug={data.pageSlug}
-		quickFactsGroup={data.page?.field_group_slug ?? ''}
 		{toc}
 		wikiOnly={data.spaceDetail?.wiki_only ?? false}
 	/>
@@ -423,7 +430,9 @@
 		{:else if submitted}
 			<div class="rounded-[12px] border border-green-500/30 bg-green-500/10 p-6 text-center">
 				<p class="text-lg font-medium text-green-600">
-					{t('wiki.revision_submitted', 'Your revision has been submitted for review.')}
+					{autoApproved
+						? t('wiki.suggest_approved', 'Your changes were applied.')
+						: t('wiki.revision_submitted', 'Your revision has been submitted for review.')}
 				</p>
 				<div class="mt-4 flex justify-center gap-3">
 					<a
@@ -621,8 +630,7 @@
 					<!-- §80 Hierarchical UX — the read-facing structured render: the
 					     descendant rollup (country/state category pages), the
 					     child-space directory (directory-mode categories), and the
-					     bound group's itemized sections (city prices pages). The
-					     EntityFieldsPanel below stays the edit surface. -->
+					     bound group's itemized sections (city prices pages). -->
 					{#if data.page.rollup}
 						<WikiRollupPanel
 							rollup={data.page.rollup}
@@ -683,24 +691,35 @@
 						</nav>
 					{/if}
 
-					{#if structuredEditsOn && panelSpaceId}
-						<EntityFieldsPanel
-							entityType="space"
-							entityId={panelSpaceId}
-							groupId={data.page.field_group_id ?? undefined}
-							groupSlug={data.page.field_group_slug ?? undefined}
-						/>
-					{/if}
-
-					<!-- §80 Reader UX — per-member helpful votes; absent on lazy
-					     pages (no wiki_pages row to vote on). -->
-					{#if data.page.helpful !== undefined}
-						<WikiHelpfulWidget
-							spaceSlug={data.spaceSlug}
-							pageSlug={data.pageSlug}
-							helpful={data.page.helpful}
-							authed={data.authed}
-						/>
+					<!-- §80 Reader UX + Super-Admin Direct Publish — the bottom
+					     Details panel is retired: the bound group's item tables
+					     above render the same fields/values, so the panel only
+					     duplicated them. "Was this page helpful?" keeps its row;
+					     the Suggest-an-edit trigger rides on its right — absent on
+					     lazy pages only in the vote half (no wiki_pages row to vote
+					     on), the suggest affordance still renders. -->
+					{#if data.page.helpful !== undefined || (structuredEditsOn && panelSpaceId)}
+						<div class="mt-8 flex flex-wrap items-center gap-3">
+							{#if data.page.helpful !== undefined}
+								<div class="min-w-0 flex-1">
+									<WikiHelpfulWidget
+										spaceSlug={data.spaceSlug}
+										pageSlug={data.pageSlug}
+										helpful={data.page.helpful}
+										authed={data.authed}
+									/>
+								</div>
+							{:else}
+								<span class="flex-1"></span>
+							{/if}
+							{#if structuredEditsOn && panelSpaceId}
+								<SuggestEdit
+									entityType="space"
+									entityId={panelSpaceId}
+									proposeGroupSlug={data.page?.field_group_slug ?? undefined}
+								/>
+							{/if}
+						</div>
 					{/if}
 
 					{#if prevSibling || nextSibling}

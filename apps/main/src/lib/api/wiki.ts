@@ -25,6 +25,9 @@ export interface WikiEntityField {
 	/** §80 page rollup — value is derived from options.computed sources;
 	 *  never manually editable. */
 	computed?: boolean;
+	/** §80 Super-Admin Direct Publish — platform-managed field; delete_field
+	 *  refuses it server-side, so the suggest UI never offers the mark. */
+	system?: boolean;
 }
 
 /** §80 Itemized Pricing — one named section inside a field group: the
@@ -59,6 +62,9 @@ export interface WikiEntityFields {
 	can_propose?: boolean;
 	/** Caller holds wiki.fields.manage — ops revisions auto-approve. */
 	can_manage?: boolean;
+	/** §80 Super-Admin Direct Publish — caller is in the super_admin group;
+	 *  may submit delete_field ops. */
+	can_delete?: boolean;
 	/** The entity's resolved custom-fields class (propose_group payload). */
 	entity_class?: string;
 	/** §58 — the entity's resolved country currency (its geo space's
@@ -90,9 +96,10 @@ export interface WikiGroupDefInput {
 
 /** §80 field op — set_value edits existing fields; propose_field /
  *  propose_group (propose tier) and upsert_field / assign_group (manage
- *  tier) extend the schema itself. */
+ *  tier) extend the schema itself; delete_field (super_admin only)
+ *  removes a field definition. */
 export interface WikiFieldOp {
-	op: 'set_value' | 'propose_field' | 'propose_group' | 'upsert_field' | 'assign_group';
+	op: 'set_value' | 'propose_field' | 'propose_group' | 'upsert_field' | 'assign_group' | 'delete_field';
 	entity_type?: string;
 	entity_id?: string;
 	field_key?: string;

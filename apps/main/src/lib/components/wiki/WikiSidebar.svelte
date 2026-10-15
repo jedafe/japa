@@ -16,7 +16,6 @@
 		spaceLevel = '',
 		pages = [],
 		currentPageSlug = '',
-		quickFactsGroup = '',
 		toc = [],
 		wikiOnly = false
 	}: {
@@ -27,9 +26,6 @@
 		pages?: WikiPageIndex[];
 		/** Exclude this page from the related list (detail view). */
 		currentPageSlug?: string;
-		/** §80 Wiki Topic Pages — the page's bound group slug; scopes Quick
-		 *  Facts to its `quick_facts` section when declared. */
-		quickFactsGroup?: string;
 		/** §80 Wiki Topic Pages — ON THIS PAGE anchors: the page's
 		 *  fields.sections[] plus rollup/directory panels. Rendered when
 		 *  the page has ≥2 sections. */
@@ -132,7 +128,7 @@
 {/if}
 
 {#if spaceId}
-	<WikiQuickFacts entityType="space" entityId={spaceId} groupSlug={quickFactsGroup} />
+	<WikiQuickFacts entityType="space" entityId={spaceId} />
 {/if}
 
 <!-- Need Help? — routes readers to the destination's community space.

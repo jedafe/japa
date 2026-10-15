@@ -27,16 +27,11 @@
 	let {
 		entityType = 'space',
 		entityId,
-		maxItems = 8,
-		groupSlug = ''
+		maxItems = 8
 	}: {
 		entityType?: string;
 		entityId: string;
 		maxItems?: number;
-		/** §80 Wiki Topic Pages — the page's bound group slug. When set, only
-		 *  that group's `quick_facts`-section fields render (topic facts on
-		 *  topic pages); empty when unset, preserving flatten-all. */
-		groupSlug?: string;
 	} = $props();
 
 	let fields = $state<WikiEntityField[] | null>(null);
@@ -48,23 +43,19 @@
 	// resolve symbols on currency/price_range field values.
 	const currencies = $derived(page.data.currencies as CurrencyInfo[] | undefined);
 
-	// §80 Wiki Topic Pages — reserved `quick_facts` section token: when the
-	// page has a bound group, only that group's `quick_facts` fields feed the
-	// card (a bound group with none renders no card — flattening every group
-	// would leak unrelated facts onto topic pages). Pages with no bound
-	// group keep the pre-topic flatten-all behavior. Read the flat field
-	// list — `fieldSections` omits `sections` when a group has a single
-	// section, which is exactly the all-quick-facts case.
-	function pickFacts(groups: WikiEntityFieldGroup[], boundSlug: string): WikiEntityField[] {
-		const bound = boundSlug ? groups.find((g) => g.slug === boundSlug) : undefined;
-		if (bound) return bound.fields.filter((f) => f.section === 'quick_facts');
-		return groups.flatMap((g) => g.fields);
+	// §80 Super-Admin Direct Publish — the card renders the entity's
+	// *overview* group's fields only (wiki_{class}_overview): the facts
+	// rail is a space-level identity panel, not a per-topic summary. The
+	// earlier bound-group `quick_facts`-section scoping is retired — an
+	// entity whose overview group is empty renders no card.
+	function pickFacts(groups: WikiEntityFieldGroup[]): WikiEntityField[] {
+		const overview = groups.find((g) => g.slug.endsWith('_overview'));
+		return overview?.fields ?? [];
 	}
 
 	$effect(() => {
 		void entityType;
 		void entityId;
-		void groupSlug;
 		let cancelled = false;
 		loading = true;
 		getEntityFields(entityType, entityId)
@@ -75,7 +66,7 @@
 				// {id,url,alt} objects, not scalar facts; the body panels
 				// render them as thumbnails. Excluding them here keeps a
 				// resolved media array from stringifying into the rail.
-				fields = pickFacts(data?.groups ?? [], groupSlug).filter(
+				fields = pickFacts(data?.groups ?? []).filter(
 					(f) => f.visible && !isMediaFieldType(f.field_type) && hasValue(f)
 				);
 			})

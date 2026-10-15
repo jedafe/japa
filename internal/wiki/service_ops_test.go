@@ -1297,3 +1297,281 @@ func TestApproveRevisionByID_ApplyFailureRecordsApplyError(t *testing.T) {
 		t.Fatalf("apply_error must clear on successful approve, got %q", *rev.ApplyError)
 	}
 }
+
+// fakeSuperPermChecker adds the IsSuperAdmin capability to the RBAC fake —
+// delete_field and the §80 bypass suite gate on super_admin *group
+// membership*, a stricter check than the '*' permission wildcard.
+type fakeSuperPermChecker struct {
+	fakePermChecker
+	super bool
+}
+
+func (f fakeSuperPermChecker) IsSuperAdmin(_ context.Context, _ pgtype.UUID) bool {
+	return f.super
+}
+
+// TestCheckOpsPermissions_DeleteField verifies the super_admin-group gate
+// (§80 Super-Admin Direct Publish): the wiki.fields.manage tier may
+// auto-approve and skip per-op node checks, but delete_field is checked
+// against group membership BEFORE that short-circuit.
+func TestCheckOpsPermissions_DeleteField(t *testing.T) {
+	userID := mustUUID(t, "00000000-0000-0000-0000-0000000000c1")
+	op := FieldOp{Op: OpDeleteField, GroupSlug: "g", FieldKey: "k"}
+
+	cases := []struct {
+		name      string
+		super     bool
+		canManage bool
+		wantErr   bool
+	}{
+		{"manage holder without super_admin is rejected", false, true, true},
+		{"plain member without super_admin is rejected", false, false, true},
+		{"super_admin via manage auto-apply path passes", true, true, false},
+		{"super_admin membership alone passes", true, false, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := NewService(nil, nil)
+			svc.SetPermissionChecker(fakeSuperPermChecker{
+				fakePermChecker: fakePermChecker{granted: map[string]bool{}},
+				super:           tc.super,
+			})
+
+			err := svc.checkOpsPermissions(t.Context(), userID, []FieldOp{op}, tc.canManage)
+			if tc.wantErr && !errors.Is(err, ErrOpNotPermitted) {
+				t.Fatalf("expected ErrOpNotPermitted, got %v", err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected nil, got %v", err)
+			}
+		})
+	}
+}
+
+// TestCheckSchemaOpTargets_DeleteField verifies delete_field's semantic
+// target check (§80): the group must exist, the field must resolve inside
+// it, and is_system fields are rejected at submit — not left to fail at
+// apply with a cryptic revision error.
+func TestCheckSchemaOpTargets_DeleteField(t *testing.T) {
+	groupID := mustUUID(t, "00000000-0000-0000-0000-0000000000a1")
+	liveField := gen.ListCustomFieldsByGroupRow{
+		ID: mustUUID(t, "00000000-0000-0000-0000-0000000000a2"), Key: "rent_1br",
+	}
+	sysField := gen.ListCustomFieldsByGroupRow{
+		ID: mustUUID(t, "00000000-0000-0000-0000-0000000000a3"), Key: "kind", IsSystem: true,
+	}
+
+	newSvc := func() *Service {
+		svc := NewService(nil, nil)
+		svc.SetCustomFields(&fakeFieldReader{
+			groups: map[string]gen.CustomFieldGroup{
+				groupID.String(): {ID: groupID, Slug: "wiki_attraction_overview"},
+			},
+			groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+				groupID.String(): {liveField, sysField},
+			},
+		})
+		return svc
+	}
+
+	t.Run("unknown group", func(t *testing.T) {
+		err := newSvc().checkSchemaOpTargets(t.Context(), []FieldOp{
+			{Op: OpDeleteField, GroupSlug: "nope", FieldKey: "rent_1br"},
+		})
+		if err == nil || !strings.Contains(err.Error(), "does not exist") {
+			t.Fatalf("expected group-missing error, got %v", err)
+		}
+	})
+
+	t.Run("unknown field", func(t *testing.T) {
+		err := newSvc().checkSchemaOpTargets(t.Context(), []FieldOp{
+			{Op: OpDeleteField, GroupSlug: "wiki_attraction_overview", FieldKey: "nope"},
+		})
+		if err == nil || !strings.Contains(err.Error(), "does not exist in group") {
+			t.Fatalf("expected field-missing error, got %v", err)
+		}
+	})
+
+	t.Run("system field rejected at submit", func(t *testing.T) {
+		err := newSvc().checkSchemaOpTargets(t.Context(), []FieldOp{
+			{Op: OpDeleteField, GroupSlug: "wiki_attraction_overview", FieldKey: "kind"},
+		})
+		if err == nil || !strings.Contains(err.Error(), "system-managed") {
+			t.Fatalf("expected system-managed error, got %v", err)
+		}
+	})
+
+	t.Run("valid target passes", func(t *testing.T) {
+		if err := newSvc().checkSchemaOpTargets(t.Context(), []FieldOp{
+			{Op: OpDeleteField, GroupSlug: "wiki_attraction_overview", FieldKey: "rent_1br"},
+		}); err != nil {
+			t.Fatalf("valid delete_field rejected: %v", err)
+		}
+	})
+}
+
+// TestSubmitFieldOps_DeleteField_EndToEnd covers the §80 super_admin
+// delete path against a real store: a delete_field op from a super_admin
+// auto-approves (manage tier), hard-deletes the field row inside the
+// approve transaction, cascades its cfv rows, and propagates the JCE bust.
+// A manage-tier non-super-admin submitting the identical op is rejected at
+// the permission gate with ErrOpNotPermitted — no revision row is created.
+func TestSubmitFieldOps_DeleteField_EndToEnd(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+
+	newSvc := func(super bool) (*Service, *fakeEnqueuer) {
+		enq := &fakeEnqueuer{}
+		svc := NewService(store, nil)
+		svc.SetCustomFields(customfields.NewService(database))
+		svc.SetEnqueuer(enq)
+		svc.SetJCECacheBuster(&fakeBuster{})
+		svc.SetPermissionChecker(fakeSuperPermChecker{
+			fakePermChecker: fakePermChecker{granted: map[string]bool{PermFieldsManage: true}},
+			super:           super,
+		})
+		return svc, enq
+	}
+
+	t.Run("manage tier without super_admin cannot delete", func(t *testing.T) {
+		fx := seedOpsFixture(t, ctx, database)
+		ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeNumber)
+
+		svc, _ := newSvc(false)
+		_, _, err := svc.SubmitFieldOps(ctx, fx.userID, pgtype.UUID{}, "university", fx.spaceID, nil, []FieldOp{{
+			Op: OpDeleteField, EntityType: "university", EntityID: fx.spaceID.String(),
+			GroupSlug: ff.slug, FieldKey: ff.key,
+		}}, "delete", true)
+		if !errors.Is(err, ErrOpNotPermitted) {
+			t.Fatalf("expected ErrOpNotPermitted, got %v", err)
+		}
+
+		var stillThere bool
+		if err := database.Reader.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM custom_fields WHERE id = $1)`, ff.fieldID).Scan(&stillThere); err != nil {
+			t.Fatalf("check field: %v", err)
+		}
+		if !stillThere {
+			t.Fatal("field must survive a rejected delete_field")
+		}
+	})
+
+	t.Run("super_admin deletes field and cascades values", func(t *testing.T) {
+		fx := seedOpsFixture(t, ctx, database)
+		ff := seedFieldFixture(t, ctx, database, true, customfields.FieldTypeNumber)
+
+		spaceTypeID, _, err := store.GetSpaceTypeRef(ctx, fx.spaceID)
+		if err != nil {
+			t.Fatalf("GetSpaceTypeRef: %v", err)
+		}
+		assignFixtureGroup(t, ctx, database, ff.groupID, "space_type:"+spaceTypeID.String())
+
+		// A stored value — the field delete must cascade it away.
+		if _, err := database.Writer.Exec(ctx,
+			`INSERT INTO custom_field_values (field_id, entity_type, entity_id, value_number)
+			 VALUES ($1, 'space', $2, 12000)`, ff.fieldID, fx.spaceID); err != nil {
+			t.Fatalf("seed cfv: %v", err)
+		}
+
+		svc, enq := newSvc(true)
+		revID, autoApproved, err := svc.SubmitFieldOps(ctx, fx.userID, pgtype.UUID{}, "university", fx.spaceID, nil, []FieldOp{{
+			Op: OpDeleteField, EntityType: "university", EntityID: fx.spaceID.String(),
+			GroupSlug: ff.slug, FieldKey: ff.key,
+		}}, "remove stale field", true)
+		if err != nil {
+			t.Fatalf("SubmitFieldOps: %v", err)
+		}
+		if !autoApproved {
+			t.Fatal("expected autoApproved=true for super_admin delete_field")
+		}
+
+		rev, err := store.GetRevision(ctx, mustUUID(t, revID))
+		if err != nil {
+			t.Fatalf("GetRevision: %v", err)
+		}
+		if rev.Status != "approved" {
+			t.Fatalf("expected approved revision, got %q", rev.Status)
+		}
+
+		var fieldGone bool
+		if err := database.Reader.QueryRow(ctx,
+			`SELECT NOT EXISTS(SELECT 1 FROM custom_fields WHERE id = $1)`, ff.fieldID).Scan(&fieldGone); err != nil {
+			t.Fatalf("check field: %v", err)
+		}
+		if !fieldGone {
+			t.Fatal("field row must be hard-deleted")
+		}
+
+		var cfvGone bool
+		if err := database.Reader.QueryRow(ctx,
+			`SELECT NOT EXISTS(SELECT 1 FROM custom_field_values WHERE field_id = $1)`, ff.fieldID).Scan(&cfvGone); err != nil {
+			t.Fatalf("check cfv: %v", err)
+		}
+		if !cfvGone {
+			t.Fatal("cfv rows must cascade with the field")
+		}
+
+		// delete_field is a schema op — JCE caches bust.
+		if len(enq.calls) != 1 || enq.calls[0].taskType != TaskFieldsPropagate {
+			t.Fatalf("expected one %s enqueue, got %#v", TaskFieldsPropagate, enq.calls)
+		}
+	})
+}
+
+// TestSubmitRevision_SuperAdminDirectPublish covers the §80 bypass suite on
+// the content path against a real store: a super_admin editing a LOCKED
+// page skips the lock (a member gets ErrPageLocked) and the revision
+// commits approved — the row stays as the audit record.
+func TestSubmitRevision_SuperAdminDirectPublish(t *testing.T) {
+	store, database := opsTestStore(t)
+	ctx := t.Context()
+	fx := seedOpsFixture(t, ctx, database)
+
+	var spaceSlug, pageSlug string
+	if err := database.Reader.QueryRow(ctx,
+		`SELECT s.slug, wp.slug FROM wiki_pages wp JOIN spaces s ON s.id = wp.space_id WHERE wp.id = $1`,
+		fx.pageID).Scan(&spaceSlug, &pageSlug); err != nil {
+		t.Fatalf("resolve slugs: %v", err)
+	}
+
+	if _, err := database.Writer.Exec(ctx,
+		`UPDATE wiki_pages SET is_locked = true WHERE id = $1`, fx.pageID); err != nil {
+		t.Fatalf("lock page: %v", err)
+	}
+
+	input := SubmitRevisionInput{
+		Content: []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Locked edit."}]}]}`),
+	}
+
+	newSvc := func(super bool) *Service {
+		svc := NewService(store, nil)
+		svc.SetPermissionChecker(fakeSuperPermChecker{
+			fakePermChecker: fakePermChecker{granted: map[string]bool{}},
+			super:           super,
+		})
+		return svc
+	}
+
+	// Member on a locked page — the lock holds.
+	if _, _, _, err := newSvc(false).SubmitRevision(ctx, fx.userID, spaceSlug, pageSlug, input); !errors.Is(err, ErrPageLocked) {
+		t.Fatalf("expected ErrPageLocked for member, got %v", err)
+	}
+
+	// Super_admin bypasses the lock and publishes directly.
+	revID, pageID, autoApproved, err := newSvc(true).SubmitRevision(ctx, fx.userID, spaceSlug, pageSlug, input)
+	if err != nil {
+		t.Fatalf("SubmitRevision: %v", err)
+	}
+	if !autoApproved || pageID != fx.pageID {
+		t.Fatalf("expected direct publish on %s, got auto=%v page=%s", fx.pageID, autoApproved, pageID)
+	}
+
+	rev, err := store.GetRevision(ctx, mustUUID(t, revID))
+	if err != nil {
+		t.Fatalf("GetRevision: %v", err)
+	}
+	if rev.Status != "approved" {
+		t.Fatalf("expected approved revision, got %q", rev.Status)
+	}
+}
