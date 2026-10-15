@@ -127,7 +127,12 @@
 	const donutSlices = $derived(
 		totalFields.map((f) => ({ key: f.key, label: f.label, value: f.metrics.avg ?? 0 }))
 	);
-	const showSummaryViz = $derived(totalFields.length >= 2 && estimatedTotal > 0);
+	// Pages scope sums derived aggregates (monthly_total/family_total fold
+	// the same itemized sources the other fields carry), so a "total of
+	// totals" is meaningless there — keep the cards, drop the donut.
+	const showSummaryViz = $derived(
+		rollup.scope !== 'pages' && totalFields.length >= 2 && estimatedTotal > 0
+	);
 
 	// §80 Reader UX — compare rail: pick up to 4 descendant spaces, deep-
 	// linking to /compare with preselected items (JCE §30). The comparison
@@ -145,12 +150,14 @@
 	function compareRows0Type(rows: WikiRollup['rows']): string {
 		return rows.find((r) => r.space.id)?.space.type_slug ?? '';
 	}
+	// Compare is a cross-entity affordance — pages-scope rows all share the
+	// host space, so the checkbox would compare a place against itself.
 	const compareRows = $derived(
-		compareTarget
-			? rollup.rows.filter(
+		rollup.scope === 'pages' || !compareTarget
+			? []
+			: rollup.rows.filter(
 					(r) => r.space.id && r.space.type_slug === compareTarget.source
 				)
-			: []
 	);
 	let compareIds = $state<string[]>([]);
 
@@ -171,6 +178,25 @@
 
 	// §80 page rollup — "pages" rows aggregate this space's own sub-pages.
 	const pageScope = $derived(rollup.scope === 'pages');
+
+	// Pages-mode rows carry disjoint field sets (each topic page owns its
+	// itemized keys), so the shared-column layout renders mostly '—'.
+	// Render each row's own values instead — label + value pairs in rollup
+	// field order, capped, with a "+N" overflow count.
+	function rowEntries(row: WikiRollup['rows'][number]): {
+		shown: { def: WikiRollupField; value: unknown }[];
+		extra: number;
+	} {
+		const shown: { def: WikiRollupField; value: unknown }[] = [];
+		let extra = 0;
+		for (const f of rollup.fields) {
+			const v = row.values?.[f.key];
+			if (v == null) continue;
+			if (shown.length < 8) shown.push({ def: f, value: v });
+			else extra++;
+		}
+		return { shown, extra };
+	}
 
 	// Section tokens render Title-Cased — same fallback as WikiItemTables.
 	function sectionLabel(key: string): string {
@@ -289,9 +315,13 @@
 							<th class="px-4 py-2 font-medium">
 								{pageScope ? t('wiki.rollup_col_page', 'Page') : spaceColLabel}
 							</th>
-							{#each rollup.fields.slice(0, 5) as f (f.key)}
-								<th class="px-4 py-2 font-medium">{f.label}</th>
-							{/each}
+							{#if pageScope}
+								<th class="px-4 py-2 font-medium">{t('wiki.rollup_col_values', 'Values')}</th>
+							{:else}
+								{#each rollup.fields.slice(0, 5) as f (f.key)}
+									<th class="px-4 py-2 font-medium">{f.label}</th>
+								{/each}
+							{/if}
 							{#if compareRows.length >= 2}
 								<th class="px-4 py-2 text-right font-medium" aria-label={t('wiki.rollup_compare_col', 'Compare')}></th>
 							{/if}
@@ -299,6 +329,7 @@
 					</thead>
 					<tbody class="divide-y divide-[var(--color-border)]">
 						{#each rollup.rows as row (row.page?.slug ?? row.space.slug)}
+							{@const entries = pageScope ? rowEntries(row) : null}
 							<tr>
 								<td class="px-4 py-2">
 									{#if row.page}
@@ -317,11 +348,30 @@
 										</a>
 									{/if}
 								</td>
-								{#each rollup.fields.slice(0, 5) as f (f.key)}
-									<td class="px-4 py-2 text-[var(--color-text)]">
-										{cellValue(f, row.values[f.key])}
+								{#if pageScope}
+									<td class="px-4 py-2">
+										{#if !entries || entries.shown.length === 0}
+											<span class="text-[var(--color-muted)]">—</span>
+										{:else}
+											<div class="flex flex-wrap gap-x-4 gap-y-0.5">
+												{#each entries.shown as e (e.def.key)}
+													<span class="text-xs text-[var(--color-muted)]">
+														{e.def.label} <span class="font-medium text-[var(--color-text)]">{cellValue(e.def, e.value)}</span>
+													</span>
+												{/each}
+												{#if entries.extra > 0}
+													<span class="text-xs text-[var(--color-muted)]">+{entries.extra}</span>
+												{/if}
+											</div>
+										{/if}
 									</td>
-								{/each}
+								{:else}
+									{#each rollup.fields.slice(0, 5) as f (f.key)}
+										<td class="px-4 py-2 text-[var(--color-text)]">
+											{cellValue(f, row.values[f.key])}
+										</td>
+									{/each}
+								{/if}
 								{#if compareRows.length >= 2}
 									<td class="px-4 py-2 text-right">
 										{#if row.space.id && compareTarget && row.space.type_slug === compareTarget.source}
