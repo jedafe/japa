@@ -123,3 +123,33 @@ func TestApplyComputedFields_MetricSumAndPriceRangeSource(t *testing.T) {
 		t.Fatalf("price_range source should project avg, got %s", dtos[0].Value)
 	}
 }
+
+func TestCheckSetValueFields_ComputedRejected(t *testing.T) {
+	s := &Service{fields: &fakeFieldReader{
+		perms: map[string][2]bool{},
+	}}
+	computedOpts := []byte(`{"computed":{"sources":[{"group":"g","key":"k"}]}}`)
+	schema := map[string]schemaField{
+		"derived": {id: pgid(0x01), key: "derived", fieldType: customfields.FieldTypeCurrency, options: computedOpts},
+		"manual":  {id: pgid(0x02), key: "manual", fieldType: customfields.FieldTypeCurrency},
+	}
+	op := FieldOp{Op: OpSetValue, FieldKey: "derived", EntityType: "space", EntityID: pgid(0xEE).String(), Value: json.RawMessage(`100`)}
+
+	err := s.checkSetValueFields(context.Background(), pgid(0x01), []FieldOp{op}, true, schema)
+	if err == nil {
+		t.Fatal("set_value on a computed field must be rejected")
+	}
+}
+
+func TestApplySetValue_ComputedRejected(t *testing.T) {
+	// The computed check precedes any query — nil q/tx prove it never
+	// reaches the store.
+	schema := map[string]schemaField{
+		"derived": {id: pgid(0x01), key: "derived", fieldType: customfields.FieldTypeCurrency,
+			options: []byte(`{"computed":{"sources":[{"group":"g","key":"k"}]}}`)},
+	}
+	op := FieldOp{Op: OpSetValue, FieldKey: "derived", EntityType: "space", EntityID: pgid(0xEE).String(), Value: json.RawMessage(`100`)}
+	if err := applySetValue(context.Background(), nil, nil, op, schema); err == nil {
+		t.Fatal("applySetValue must reject computed fields")
+	}
+}

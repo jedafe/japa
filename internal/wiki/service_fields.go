@@ -1265,6 +1265,13 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 			return fmt.Errorf("wiki: submit fields: ops[%d] field %q does not exist in the entity's field schema", i, op.FieldKey)
 		}
 
+		// Computed fields derive their value from options.computed
+		// sources — manual set_value is rejected for every tier,
+		// including wiki.fields.manage.
+		if customfields.ComputedSpecFromOptions(field.options) != nil {
+			return fmt.Errorf("%w: ops[%d] field %q is computed and cannot be set manually", ErrOpNotPermitted, i, op.FieldKey)
+		}
+
 		var eid pgtype.UUID
 		if err := eid.Scan(op.EntityID); err != nil {
 			return fmt.Errorf("wiki: submit fields: ops[%d] entity_id %q is not a UUID: %w", i, op.EntityID, err)
