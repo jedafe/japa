@@ -2039,3 +2039,16 @@ func TestValidateRollupInput_PagesMode(t *testing.T) {
 		t.Fatal("invalid page slug must be rejected")
 	}
 }
+
+func TestTopLevelTemplates_CategoryPageSet(t *testing.T) {
+	parent := pgid(0x50)
+	templates := []WikiPageTemplate{
+		{Slug: "a", ParentTemplateID: pgtype.UUID{}},
+		{Slug: "b", ParentTemplateID: parent},
+		{Slug: "c", ParentTemplateID: pgtype.UUID{}},
+	}
+	got := topLevelTemplates(templates)
+	if len(got) != 2 || got[0].Slug != "a" || got[1].Slug != "c" {
+		t.Fatalf("category-page composite set must be top-level templates: %+v", got)
+	}
+}

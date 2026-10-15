@@ -915,9 +915,14 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 
 		// §80 Wiki Topic Pages: a template page with children renders one
 		// composite preview section per child — rows live in the child
-		// group's cfv values, never duplicated on the parent.
+		// group's cfv values, never duplicated on the parent. The
+		// category stub page composes previews of the TOP-LEVEL
+		// templates — the flattened topic tree's item tables surface
+		// directly on the category page (§80 page rollup amendment).
 		if pageTmpl != nil {
 			s.attachCompositeSections(ctx, userID, spaceID, page.SpaceName, groupID, &dto, childTemplates(templates, pageTmpl.ID))
+		} else if page.Slug == cat.Slug {
+			s.attachCompositeSections(ctx, userID, spaceID, page.SpaceName, groupID, &dto, topLevelTemplates(templates))
 		}
 	}
 
@@ -1124,6 +1129,10 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 			}
 		}
 	}
+	// Category stub composes one preview section per top-level template —
+	// same as the materialized path.
+	s.attachCompositeSections(ctx, userID, spaceID, spaceName, cat.FieldGroupID, &dto, topLevelTemplates(templates))
+
 	// The category stub page IS the top-level scope — no page parents, and
 	// siblings are the stub + top-level templates + ad-hoc pages union.
 	dto.Siblings = s.getSiblings(ctx, spaceID, spaceName, &cat, cat.Category, cat.Slug, pgtype.UUID{}, templates)

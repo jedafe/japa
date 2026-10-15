@@ -818,6 +818,21 @@ func childTemplates(templates []WikiPageTemplate, parentID pgtype.UUID) []WikiPa
 	return out
 }
 
+// topLevelTemplates returns the templates with no parent — the
+// category stub page's composite-section set (§80 page rollup
+// amendment). Distinct from childTemplates, whose invalid-parent guard
+// returns nil: a nil parent means "no children" for a template page,
+// but means "the whole top level" for the category page.
+func topLevelTemplates(templates []WikiPageTemplate) []WikiPageTemplate {
+	out := make([]WikiPageTemplate, 0, len(templates))
+	for _, t := range templates {
+		if !t.ParentTemplateID.Valid {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // compositeSections synthesizes one preview section per child template of
 // the page's bound template (§80 Wiki Topic Pages §4): rows are the child
 // group's own visible fields with this space's stored cfv values, capped
