@@ -104,6 +104,17 @@ func (s *stubConvoStore) HasRunningAgentTurnForConversation(_ context.Context, a
 	return s.busyConvs[uuidStr(arg.ConversationID)], nil
 }
 
+func (s *stubConvoStore) GetRunningAgentSessionForConversation(_ context.Context, arg gen.GetRunningAgentSessionForConversationParams) (pgtype.UUID, error) {
+	for _, sess := range s.sessions {
+		if sess.ConversationID.Valid && uuidStr(sess.ConversationID) == uuidStr(arg.ConversationID) &&
+			uuidStr(sess.UserID) == uuidStr(arg.UserID) && sess.Status == "running" &&
+			sess.StartedAt.Valid && sess.StartedAt.Time.After(arg.RunningSince.Time) {
+			return sess.ID, nil
+		}
+	}
+	return pgtype.UUID{}, pgx.ErrNoRows
+}
+
 func (s *stubConvoStore) AIConversationExistsIncludingDeleted(_ context.Context, arg gen.AIConversationExistsIncludingDeletedParams) (bool, error) {
 	c, ok := s.convs[uuidStr(arg.ID)]
 	return ok && uuidStr(c.UserID) == uuidStr(arg.UserID), nil
@@ -327,5 +338,54 @@ func TestConversationService_PrefsRoundTrip(t *testing.T) {
 	}
 	if got.DefaultMode != "agent" || len(got.DisabledCategories) != 1 || got.DisabledTools[0] != "content.delete" {
 		t.Fatalf("prefs round-trip wrong: %+v", got)
+	}
+}
+
+func TestConversationService_RunningSessionID(t *testing.T) {
+	store := newStubConvoStore()
+	svc := NewConversationService(store, nil)
+	userID := pgtype.UUID{Bytes: [16]byte{9}, Valid: true}
+	conv, err := store.CreateAIConversation(context.Background(), gen.CreateAIConversationParams{UserID: userID, Title: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Now().Add(-time.Minute)
+
+	// No running row → invalid uuid, no error.
+	id, err := svc.RunningSessionID(context.Background(), conv.ID, userID, cutoff)
+	if err != nil {
+		t.Fatalf("RunningSessionID empty: %v", err)
+	}
+	if id.Valid {
+		t.Fatalf("expected invalid uuid, got %v", id)
+	}
+
+	// Running session linked to the conv → returned.
+	sessID := pgtype.UUID{Bytes: [16]byte{7}, Valid: true}
+	store.sessions[uuidStr(sessID)] = gen.AiAgentSession{
+		ID: sessID, UserID: userID, ConversationID: conv.ID,
+		Status:    "running",
+		StartedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+	id, err = svc.RunningSessionID(context.Background(), conv.ID, userID, cutoff)
+	if err != nil {
+		t.Fatalf("RunningSessionID running: %v", err)
+	}
+	if id != sessID {
+		t.Fatalf("expected %v, got %v", sessID, id)
+	}
+
+	// Stale "running" row (started before the cutoff) → invalid uuid.
+	store.sessions[uuidStr(sessID)] = gen.AiAgentSession{
+		ID: sessID, UserID: userID, ConversationID: conv.ID,
+		Status:    "running",
+		StartedAt: pgtype.Timestamptz{Time: cutoff.Add(-time.Hour), Valid: true},
+	}
+	id, err = svc.RunningSessionID(context.Background(), conv.ID, userID, cutoff)
+	if err != nil {
+		t.Fatalf("RunningSessionID stale: %v", err)
+	}
+	if id.Valid {
+		t.Fatalf("stale session should not surface, got %v", id)
 	}
 }

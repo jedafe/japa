@@ -38,6 +38,7 @@ type ConversationStore interface {
 	LinkAgentSessionToConversation(ctx context.Context, arg gen.LinkAgentSessionToConversationParams) error
 	UnlinkAgentSessionsForConversation(ctx context.Context, conversationID pgtype.UUID) error
 	HasRunningAgentTurnForConversation(ctx context.Context, arg gen.HasRunningAgentTurnForConversationParams) (bool, error)
+	GetRunningAgentSessionForConversation(ctx context.Context, arg gen.GetRunningAgentSessionForConversationParams) (pgtype.UUID, error)
 	AIConversationExistsIncludingDeleted(ctx context.Context, arg gen.AIConversationExistsIncludingDeletedParams) (bool, error)
 	GetAIConversationByLegacyRef(ctx context.Context, arg gen.GetAIConversationByLegacyRefParams) (gen.AiConversation, error)
 	ListAIConversationLegacyRefsForUser(ctx context.Context, userID pgtype.UUID) ([]string, error)
@@ -245,6 +246,21 @@ func (s *ConversationService) HasRunningTurn(ctx context.Context, convID, userID
 		UserID:         userID,
 		RunningSince:   pgtype.Timestamptz{Time: cutoff, Valid: true},
 	})
+}
+
+// RunningSessionID returns the conversation's in-flight agent session id
+// (invalid UUID when none) — same staleness semantics as HasRunningTurn.
+// Clients use it to poll a detached turn to completion.
+func (s *ConversationService) RunningSessionID(ctx context.Context, convID, userID pgtype.UUID, cutoff time.Time) (pgtype.UUID, error) {
+	id, err := s.store.GetRunningAgentSessionForConversation(ctx, gen.GetRunningAgentSessionForConversationParams{
+		ConversationID: convID,
+		UserID:         userID,
+		RunningSince:   pgtype.Timestamptz{Time: cutoff, Valid: true},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return pgtype.UUID{}, nil
+	}
+	return id, err
 }
 
 // ExistsIncludingDeleted reports whether the conversation row exists for

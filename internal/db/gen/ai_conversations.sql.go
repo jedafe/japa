@@ -221,6 +221,33 @@ func (q *Queries) GetAIPreferences(ctx context.Context, userID pgtype.UUID) ([]b
 	return ai_prefs, err
 }
 
+const getRunningAgentSessionForConversation = `-- name: GetRunningAgentSessionForConversation :one
+SELECT id FROM ai_agent_sessions
+WHERE conversation_id = $1
+  AND user_id = $2
+  AND status = 'running'
+  AND started_at > $3
+ORDER BY started_at DESC
+LIMIT 1
+`
+
+type GetRunningAgentSessionForConversationParams struct {
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	UserID         pgtype.UUID        `json:"user_id"`
+	RunningSince   pgtype.Timestamptz `json:"running_since"`
+}
+
+// ADR-130 detached turns: the in-flight agent session id for a
+// conversation so the client can poll it after a disconnect or on
+// return. Same staleness cutoff semantics as
+// HasRunningAgentTurnForConversation.
+func (q *Queries) GetRunningAgentSessionForConversation(ctx context.Context, arg GetRunningAgentSessionForConversationParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getRunningAgentSessionForConversation, arg.ConversationID, arg.UserID, arg.RunningSince)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const hasRunningAgentTurnForConversation = `-- name: HasRunningAgentTurnForConversation :one
 SELECT EXISTS(
     SELECT 1 FROM ai_agent_sessions

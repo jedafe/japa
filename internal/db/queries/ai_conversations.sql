@@ -132,6 +132,19 @@ SELECT EXISTS(
       AND started_at > @running_since
 ) AS busy;
 
+-- ADR-130 detached turns: the in-flight agent session id for a
+-- conversation so the client can poll it after a disconnect or on
+-- return. Same staleness cutoff semantics as
+-- HasRunningAgentTurnForConversation.
+-- name: GetRunningAgentSessionForConversation :one
+SELECT id FROM ai_agent_sessions
+WHERE conversation_id = @conversation_id
+  AND user_id = @user_id
+  AND status = 'running'
+  AND started_at > @running_since
+ORDER BY started_at DESC
+LIMIT 1;
+
 -- =====================================================================
 -- Phase 4 — Honcho backfill (ai:migrate_conversations task)
 -- =====================================================================

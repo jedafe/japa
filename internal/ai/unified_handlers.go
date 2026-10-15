@@ -487,6 +487,16 @@ func (h *Handlers) serveUnifiedDetail(w http.ResponseWriter, r *http.Request, us
 		detail["project_id"] = conv.ProjectID.String()
 	}
 
+	// Detached turns keep running after a client disconnect — surface the
+	// in-flight session so the client can poll it to completion (§103
+	// amendment). Absent when no non-stale running session exists.
+	if h.Settings != nil {
+		timeout := h.Settings.GetIntOr(r.Context(), "agent.timeout_seconds", defaultTimeoutSeconds)
+		if sid, serr := h.Convos.RunningSessionID(r.Context(), convID, user.UserID, time.Now().Add(-time.Duration(timeout)*time.Second)); serr == nil && sid.Valid {
+			detail["running_session_id"] = sid.String()
+		}
+	}
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": detail})
 	return true
 }
