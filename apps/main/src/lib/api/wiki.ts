@@ -1,3 +1,4 @@
+import { browser } from '$app/environment';
 import { api, type ClientResult } from './client';
 
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md (Community Field Ops)
@@ -150,14 +151,54 @@ export async function getFieldTypes(): Promise<Array<{ value: string; label: str
 	return res.data ?? [];
 }
 
+// Client-side cache for the entity-fields schema: every wiki surface that
+// mounts (Quick Facts, fields panel, SuggestEdit) calls the same endpoint,
+// and route switches remount the widgets — an uncached fetch leaves Quick
+// Facts in its skeleton state on every index↔page transition. Cached for a
+// short TTL and deduped while inflight.
+//
+// Cached in the browser only: the payload carries the requesting user's
+// permission flags (can_edit/can_delete/visible), so sharing it on the SSR
+// module graph could leak one user's flags into another's render.
+const ENTITY_FIELDS_TTL_MS = 60_000;
+const entityFieldsCache = new Map<string, { data: WikiEntityFields | null; ts: number }>();
+const entityFieldsInflight = new Map<string, Promise<WikiEntityFields | null>>();
+
+/** Drop cached schema entries — call after a successful field mutation so
+ *  the next surface shows fresh values. No args clears everything. */
+export function invalidateEntityFields(entityType?: string, entityId?: string): void {
+	if (!entityType) {
+		entityFieldsCache.clear();
+		return;
+	}
+	entityFieldsCache.delete(`${entityType}:${entityId}`);
+}
+
 export async function getEntityFields(
 	entityType: string,
-	entityId: string
+	entityId: string,
+	opts: { fresh?: boolean } = {}
 ): Promise<WikiEntityFields | null> {
-	const res = await api.get<WikiEntityFields>(
-		`/wiki/entities/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/fields`
-	);
-	return res.data;
+	const key = `${entityType}:${entityId}`;
+	if (browser && !opts.fresh) {
+		const hit = entityFieldsCache.get(key);
+		if (hit && Date.now() - hit.ts < ENTITY_FIELDS_TTL_MS) return hit.data;
+		const inflight = entityFieldsInflight.get(key);
+		if (inflight) return inflight;
+	}
+	const request = api
+		.get<WikiEntityFields>(
+			`/wiki/entities/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}/fields`
+		)
+		.then((res) => {
+			if (browser) entityFieldsCache.set(key, { data: res.data, ts: Date.now() });
+			return res.data;
+		})
+		.finally(() => {
+			entityFieldsInflight.delete(key);
+		});
+	if (browser) entityFieldsInflight.set(key, request);
+	return request;
 }
 
 /** Submit field ops for review. Returns the full result so callers can
@@ -168,6 +209,10 @@ export function suggestFields(payload: {
 	ops: WikiFieldOp[];
 	summary?: string;
 }): Promise<ClientResult<SuggestFieldsResult>> {
+	// Field ops can change the entity's values (immediately for super-admin
+	// direct publish, later on review approval) — drop the cached schema so
+	// the next surface fetch isn't served stale.
+	invalidateEntityFields(payload.entity_type, payload.entity_id);
 	return api.post<SuggestFieldsResult>('/wiki/suggest', payload);
 }
 
