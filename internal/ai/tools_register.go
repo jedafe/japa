@@ -106,6 +106,11 @@ func RegisterPhase7ComparisonTools(registry *ToolHandlerRegistry, deps *ToolDeps
 	// comparison.types.list — read-only, no privacy target.
 	registry.RegisterHandler("comparison.types.list", ComparisonTypesListHandler(deps))
 
+	// comparison.list — the JCE directory listing; returns metadata rows
+	// only (bodies/field values stay behind the privacy-gated read tool),
+	// so no privacy target is registered.
+	registry.RegisterHandler("comparison.list", ComparisonListHandler(deps))
+
 	// comparison.create — writes a new content row, no privacy target.
 	registry.RegisterHandler("comparison.create", ComparisonCreateHandler(deps))
 
@@ -178,15 +183,18 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 
 	// --- Docs tools (task 9.03) ---
 	// No privacy targets — docs have no ai_exempt column.
-	// docs.organize is registered but seeded with is_enabled = false in the
-	// migration because the docs service does not expose a parent_id/
-	// position update query. The handler returns "not configured" when
-	// called. When the backing query is added, flip is_enabled to true.
+	// docs.approve / docs.publish are the reviewer transitions the §44 status
+	// machine reserves for dedicated endpoints — they let a docs.admin holder
+	// drive draft → approved → published through the agent. docs.organize
+	// resolves through UpdateDocPage's parent_id/position support (§44
+	// amendment 2) via the DocsOrganize bridge wired in internal/server.
 	registry.RegisterHandler("docs.list", DocsListHandler(deps))
 	registry.RegisterHandler("docs.read", DocsReadHandler(deps))
 	registry.RegisterHandler("docs.create", DocsCreateHandler(deps))
 	registry.RegisterHandler("docs.update", DocsUpdateHandler(deps))
 	registry.RegisterHandler("docs.organize", DocsOrganizeHandler(deps))
+	registry.RegisterHandler("docs.approve", DocsApproveHandler(deps))
+	registry.RegisterHandler("docs.publish", DocsPublishHandler(deps))
 
 	// --- Tools-app tools (task 9.04) ---
 	// tools.list and tools.read are fully implemented. tools.create,
@@ -320,8 +328,15 @@ func RegisterPhase9Tools(registry *ToolHandlerRegistry, deps *ToolDeps) {
 	// CreatePageWithRevision so the page lands with an initial pending
 	// revision; content-less payloads keep the provisioning-shell path.
 	// submit_revision/review_revision cover the body-edit and moderator
-	// approve/reject steps the generic ops cannot express.
+	// approve/reject steps the generic ops cannot express. list/read/
+	// revisions.list/entity_fields.get are the discovery surface so the
+	// agent can find pages and inspect their assigned fields and pending
+	// revisions before submitting or reviewing edits.
 	registry.RegisterHandler("wiki_page.create", WikiPageCreateHandler(deps))
 	registry.RegisterHandler("wiki_page.submit_revision", WikiPageSubmitRevisionHandler(deps))
 	registry.RegisterHandler("wiki_page.review_revision", WikiPageReviewRevisionHandler(deps))
+	registry.RegisterHandler("wiki_page.list", WikiPageListHandler(deps))
+	registry.RegisterHandler("wiki_page.read", WikiPageReadHandler(deps))
+	registry.RegisterHandler("wiki_page.revisions.list", WikiPageRevisionsListHandler(deps))
+	registry.RegisterHandler("wiki.entity_fields.get", WikiEntityFieldsHandler(deps))
 }

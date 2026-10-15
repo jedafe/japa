@@ -626,6 +626,113 @@ func ComparisonPromotePrivacyTarget(ctx context.Context, args json.RawMessage) (
 }
 
 // ---------------------------------------------------------------------------
+// comparison.list (migration 000864)
+// ---------------------------------------------------------------------------
+
+// comparisonListArgs is the LLM-produced argument shape for
+// comparison.list — mirrors the GET /jce/comparisons query surface.
+type comparisonListArgs struct {
+	TypeSlug   string `json:"type_slug"`
+	SpaceID    string `json:"space_id"`
+	Status     string `json:"status"`
+	Visibility string `json:"visibility"`
+	Depth      string `json:"depth"`
+	Q          string `json:"q"`
+	Mine       bool   `json:"mine"`
+	Sort       string `json:"sort"`
+	Page       int32  `json:"page"`
+	Limit      int32  `json:"limit"`
+}
+
+// ComparisonListHandler returns a ToolHandler that lists comparisons in the
+// JCE directory. Filters mirror the public REST route: the "all" sentinel
+// clears a filter, and when no status/visibility/depth filter is given (and
+// mine is false) the directory default applies — published, public,
+// detailed. Results carry listing metadata only; bodies and field values
+// stay behind the ai_exempt-gated comparison.read tool.
+func ComparisonListHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Comparison == nil {
+			return errorToolResult("comparison_unavailable", "Comparison service is not configured"), nil
+		}
+
+		var a comparisonListArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		clearAll := func(v string) string {
+			if v == "all" {
+				return ""
+			}
+			return v
+		}
+		a.Status = clearAll(a.Status)
+		a.Visibility = clearAll(a.Visibility)
+		a.Depth = clearAll(a.Depth)
+
+		var spaceID pgtype.UUID
+		if a.SpaceID != "" {
+			var err error
+			spaceID, err = scanUUID(a.SpaceID)
+			if err != nil {
+				return errorToolResult("invalid_space_id", "space_id must be a valid UUID"), nil
+			}
+		}
+
+		var typeID pgtype.UUID
+		if a.TypeSlug != "" {
+			td, err := deps.Comparison.GetComparisonTypeBySlug(ctx, a.TypeSlug)
+			if err != nil {
+				return errorToolResult("type_not_found", fmt.Sprintf("comparison type %q not found: %v", a.TypeSlug, err)), nil
+			}
+			typeID = td.ID
+		}
+
+		// Public-directory default, mirroring the REST handler: with no
+		// explicit filters the list shows published, public, detailed rows.
+		if a.Status == "" && a.Visibility == "" && a.Depth == "" && !a.Mine {
+			a.Status = "published"
+			a.Visibility = "public"
+			a.Depth = "detailed"
+		}
+
+		limit := a.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		page := a.Page
+		if page <= 0 {
+			page = 1
+		}
+
+		res, err := deps.Comparison.ListComparisons(ctx, ComparisonListFilter{
+			SpaceID:    spaceID,
+			TypeID:     typeID,
+			Depth:      a.Depth,
+			Status:     a.Status,
+			Visibility: a.Visibility,
+			Mine:       a.Mine,
+			UserID:     userID,
+			Query:      a.Q,
+			Sort:       a.Sort,
+			Limit:      limit,
+			Offset:     (page - 1) * limit,
+		})
+		if err != nil {
+			return errorToolResult("list_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"comparisons": res.Items,
+			"total":       res.Total,
+			"page":        res.Page,
+			"limit":       res.Size,
+		}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

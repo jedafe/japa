@@ -457,6 +457,64 @@ func (a *agentComparisonAdapter) DeleteJCEComparisonCaches(ctx context.Context, 
 	a.svc.DeleteJCEComparisonCaches(ctx, contentID)
 }
 
+// ListComparisons maps the ai filter onto Service.ListJCEComparisons and
+// strips each row to listing metadata — bodies and field values stay
+// behind the privacy-gated comparison.read tool.
+func (a *agentComparisonAdapter) ListComparisons(ctx context.Context, f ai.ComparisonListFilter) (ai.ComparisonListResult, error) {
+	res, err := a.svc.ListJCEComparisons(ctx, comparison.JCEComparisonFilter{
+		SpaceID:    f.SpaceID,
+		TypeID:     f.TypeID,
+		Depth:      f.Depth,
+		Status:     f.Status,
+		Visibility: f.Visibility,
+		Mine:       f.Mine,
+		UserID:     f.UserID,
+		Query:      f.Query,
+		Sort:       f.Sort,
+		Limit:      f.Limit,
+		Offset:     f.Offset,
+	})
+	if err != nil {
+		return ai.ComparisonListResult{}, err
+	}
+
+	items := make([]ai.ComparisonListItem, 0, len(res.Items))
+	for _, r := range res.Items {
+		item := ai.ComparisonListItem{
+			ID:           r.ID.String(),
+			Title:        r.Title,
+			Slug:         r.Slug,
+			Status:       r.Status,
+			Visibility:   r.Visibility,
+			Depth:        r.Depth,
+			ViewCount:    r.ViewCount,
+			CommentCount: r.CommentCount,
+			CreatedAt:    r.CreatedAt.Time.UTC().Format(time.RFC3339),
+			UpdatedAt:    r.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		}
+		if r.SpaceID.Valid {
+			item.SpaceID = r.SpaceID.String()
+		}
+		if r.AuthorID.Valid {
+			item.AuthorID = r.AuthorID.String()
+		}
+		if r.PromotedFromID.Valid {
+			item.PromotedFromID = r.PromotedFromID.String()
+		}
+		if r.PublishedAt.Valid {
+			item.PublishedAt = r.PublishedAt.Time.UTC().Format(time.RFC3339)
+		}
+		items = append(items, item)
+	}
+
+	return ai.ComparisonListResult{
+		Items: items,
+		Total: res.Total,
+		Page:  res.Page,
+		Size:  res.Size,
+	}, nil
+}
+
 // ---------------------------------------------------------------------------
 // Phase 8 adapters — persona resolver + agent draft processor
 // ---------------------------------------------------------------------------
@@ -903,6 +961,8 @@ func (a *agentDocsAdapter) CreateDocPage(ctx context.Context, req ai.DocsCreateP
 		ReviewStatus: req.ReviewStatus,
 		ParentID:     req.ParentID,
 		Position:     req.Position,
+		Category:     req.Category,
+		Subcategory:  req.Subcategory,
 	})
 }
 
@@ -911,7 +971,19 @@ func (a *agentDocsAdapter) UpdateDocPage(ctx context.Context, id pgtype.UUID, re
 		Title:        req.Title,
 		Content:      req.Content,
 		ReviewStatus: req.ReviewStatus,
+		ParentID:     req.ParentID,
+		Position:     req.Position,
+		Category:     req.Category,
+		Subcategory:  req.Subcategory,
 	})
+}
+
+func (a *agentDocsAdapter) ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
+	return a.svc.ApproveDocPage(ctx, id, reviewerID)
+}
+
+func (a *agentDocsAdapter) PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error {
+	return a.svc.PublishDocPage(ctx, id, reviewerID)
 }
 
 func docsPageToAI(p docs.DocPage) ai.DocsPage {
@@ -925,6 +997,8 @@ func docsPageToAI(p docs.DocPage) ai.DocsPage {
 		ReviewStatus: p.ReviewStatus,
 		ParentID:     p.ParentID,
 		Position:     p.Position,
+		Category:     p.Category,
+		Subcategory:  p.Subcategory,
 		CreatedAt:    p.CreatedAt,
 		UpdatedAt:    p.UpdatedAt,
 	}
@@ -2875,4 +2949,160 @@ func (a *agentWikiAdapter) SpaceSlugByID(ctx context.Context, spaceID pgtype.UUI
 func (a *agentWikiAdapter) SpaceIDBySlug(ctx context.Context, spaceSlug string) (pgtype.UUID, error) {
 	id, _, err := a.store.GetSpaceBySlug(ctx, spaceSlug)
 	return id, err
+}
+
+// ListPages maps the ai filter onto Service.AdminListPages — space_slug is
+// passed through as the dest filter (the REST surface accepts a slug there).
+func (a *agentWikiAdapter) ListPages(ctx context.Context, filter ai.WikiPageListFilter) ([]ai.WikiPageListItem, int64, error) {
+	dtos, total, err := a.svc.AdminListPages(ctx, pgtype.UUID{}, filter.SpaceSlug, filter.Category, filter.Q, "", filter.Status, nil, nil, filter.IsActive, "", filter.Page, filter.Limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]ai.WikiPageListItem, 0, len(dtos))
+	for _, d := range dtos {
+		item := ai.WikiPageListItem{
+			ID:                   d.ID,
+			SpaceID:              d.SpaceID,
+			SpaceSlug:            d.SpaceSlug,
+			Slug:                 d.Slug,
+			Title:                d.Title,
+			Category:             d.Category,
+			IsActive:             d.IsActive,
+			IsLocked:             d.IsLocked,
+			IsFeatured:           d.IsFeatured,
+			LatestRevisionID:     d.LatestRevisionID,
+			LatestRevisionStatus: d.LatestRevisionStatus,
+			Excerpt:              d.Excerpt,
+			AiGenerated:          d.AiGenerated,
+			FieldGroupID:         d.FieldGroupID,
+			FieldGroupSlug:       d.FieldGroupSlug,
+			FieldGroupName:       d.FieldGroupName,
+			UpdatedAt:            d.UpdatedAt,
+			DeletedAt:            d.DeletedAt,
+		}
+		if d.DataEntityType != nil {
+			item.DataEntityType = *d.DataEntityType
+		}
+		items = append(items, item)
+	}
+	return items, total, nil
+}
+
+func (a *agentWikiAdapter) GetPageDetail(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string) (*ai.WikiPageDetail, error) {
+	d, err := a.svc.GetWikiPage(ctx, userID, spaceSlug, pageSlug)
+	if err != nil {
+		return nil, err
+	}
+
+	detail := &ai.WikiPageDetail{
+		ID:             d.ID,
+		SpaceID:        d.SpaceID,
+		SpaceSlug:      d.SpaceSlug,
+		SpaceName:      d.SpaceName,
+		Slug:           d.Slug,
+		Title:          d.Title,
+		Category:       d.Category,
+		IsActive:       d.IsActive,
+		IsLocked:       d.IsLocked,
+		IsFeatured:     d.IsFeatured,
+		CurrentContent: d.CurrentContent,
+		FieldGroupID:   d.FieldGroupID,
+		FieldGroupSlug: d.FieldGroupSlug,
+		CategoryLabel:  d.CategoryLabel,
+		Fields:         wikiFieldGroupToAI(d.Fields),
+		UpdatedAt:      d.UpdatedAt,
+	}
+	if d.DataEntityType != nil {
+		detail.DataEntityType = *d.DataEntityType
+	}
+	return detail, nil
+}
+
+func (a *agentWikiAdapter) ListRevisionHistory(ctx context.Context, viewerID pgtype.UUID, canReview bool, spaceSlug, pageSlug string, page, limit int32) ([]ai.WikiRevisionInfo, int64, error) {
+	dtos, total, err := a.svc.GetRevisionHistory(ctx, viewerID, canReview, spaceSlug, pageSlug, page, limit)
+	return wikiRevisionsToAI(dtos), total, err
+}
+
+func (a *agentWikiAdapter) ListRevisions(ctx context.Context, kind, status, q string, page, limit int32) ([]ai.WikiRevisionInfo, int64, error) {
+	dtos, total, err := a.svc.AdminListRevisions(ctx, kind, status, q, "", "", page, limit)
+	return wikiRevisionsToAI(dtos), total, err
+}
+
+func (a *agentWikiAdapter) ListEntityRevisions(ctx context.Context, viewerID pgtype.UUID, canReview bool, entityType string, entityID pgtype.UUID, page, limit int32) ([]ai.WikiRevisionInfo, int64, error) {
+	dtos, total, err := a.svc.ListEntityRevisions(ctx, viewerID, canReview, entityType, entityID, page, limit)
+	return wikiRevisionsToAI(dtos), total, err
+}
+
+func (a *agentWikiAdapter) GetEntityFields(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (*ai.WikiEntityFields, error) {
+	dto, err := a.svc.GetEntityFields(ctx, userID, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+
+	groups := make([]ai.WikiEntityFieldGroup, 0, len(dto.Groups))
+	for i := range dto.Groups {
+		groups = append(groups, *wikiFieldGroupToAI(&dto.Groups[i]))
+	}
+	return &ai.WikiEntityFields{
+		Groups:             groups,
+		PendingCount:       dto.PendingCount,
+		CanPropose:         dto.CanPropose,
+		CanManage:          dto.CanManage,
+		CanDelete:          dto.CanDelete,
+		EntityClass:        dto.EntityClass,
+		EntityCurrencyCode: dto.EntityCurrencyCode,
+	}, nil
+}
+
+func wikiFieldGroupToAI(g *wiki.EntityFieldGroupDTO) *ai.WikiEntityFieldGroup {
+	if g == nil {
+		return nil
+	}
+	fields := make([]ai.WikiEntityField, 0, len(g.Fields))
+	for _, f := range g.Fields {
+		fields = append(fields, ai.WikiEntityField{
+			ID:        f.ID,
+			Key:       f.Key,
+			Label:     f.Label,
+			FieldType: f.FieldType,
+			Options:   f.Options,
+			Value:     f.Value,
+			CanEdit:   f.CanEdit,
+			Visible:   f.Visible,
+			Section:   f.Section,
+			Computed:  f.Computed,
+			System:    f.System,
+		})
+	}
+	return &ai.WikiEntityFieldGroup{
+		ID:     g.ID,
+		Slug:   g.Slug,
+		Name:   g.Name,
+		Fields: fields,
+	}
+}
+
+func wikiRevisionsToAI(dtos []wiki.WikiRevisionDTO) []ai.WikiRevisionInfo {
+	revs := make([]ai.WikiRevisionInfo, 0, len(dtos))
+	for _, d := range dtos {
+		revs = append(revs, ai.WikiRevisionInfo{
+			ID:               d.ID,
+			Status:           d.Status,
+			Kind:             d.Kind,
+			Content:          d.Content,
+			Ops:              d.Ops,
+			Summary:          d.Summary,
+			AiGenerated:      d.AiGenerated,
+			TargetEntityType: d.TargetEntityType,
+			TargetEntityID:   d.TargetEntityID,
+			SubmittedBy:      d.SubmittedBy,
+			ReviewedBy:       d.ReviewedBy,
+			ReviewedAt:       d.ReviewedAt,
+			WikiPageID:       d.WikiPageID,
+			ApplyError:       d.ApplyError,
+			CreatedAt:        d.CreatedAt,
+		})
+	}
+	return revs
 }

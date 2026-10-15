@@ -55,6 +55,10 @@ type stubComparisonService struct {
 	promoteResult ComparisonPromoteResult
 	promoteErr    error
 	promoteBypass bool
+
+	listResult  ComparisonListResult
+	listErr     error
+	gotListArgs *ComparisonListFilter
 }
 
 type stubUpsertedValue struct {
@@ -129,6 +133,15 @@ func (s *stubComparisonService) PromoteComparison(_ context.Context, id, userID 
 	}
 
 	return s.promoteResult, nil
+}
+
+func (s *stubComparisonService) ListComparisons(_ context.Context, f ComparisonListFilter) (ComparisonListResult, error) {
+	if s.listErr != nil {
+		return ComparisonListResult{}, s.listErr
+	}
+	s.gotListArgs = &f
+
+	return s.listResult, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1501,5 +1514,71 @@ func TestComparisonPromoteHandler_MissingID(t *testing.T) {
 	tr, _ := ComparisonPromoteHandler(deps)(t.Context(), json.RawMessage(`{}`), pgtype.UUID{})
 	if tr.Status != ToolCallStatusError {
 		t.Fatalf("status = %q, want error", tr.Status)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// comparison.list
+// ---------------------------------------------------------------------------
+
+func TestComparisonListHandler_DefaultsAndFilters(t *testing.T) {
+	svc := newStubComparisonService()
+	svc.listResult = ComparisonListResult{
+		Items: []ComparisonListItem{{ID: "id-1", Slug: "canada-vs-uk", Status: "published"}},
+		Total: 1, Page: 1, Size: 20,
+	}
+	typeID := mustUUID(t, "55555555-5555-5555-5555-555555555555")
+	svc.typeBySlug["cities"] = gen.GetComparisonTypeBySlugRow{ID: typeID}
+	deps := NewToolDeps().WithComparison(svc)
+	userID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
+
+	// No filters → public-directory defaults (published/public/detailed).
+	res, err := ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{}`), userID)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if svc.gotListArgs == nil || svc.gotListArgs.Status != "published" ||
+		svc.gotListArgs.Visibility != "public" || svc.gotListArgs.Depth != "detailed" {
+		t.Fatalf("directory defaults not applied: %+v", svc.gotListArgs)
+	}
+	var out struct {
+		Comparisons []ComparisonListItem `json:"comparisons"`
+		Total       int32                `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(res.Content), &out); err != nil || out.Total != 1 {
+		t.Fatalf("unexpected result: %v", res.Content)
+	}
+
+	// Explicit draft status + type_slug resolution + mine=true.
+	res, err = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{
+		"type_slug": "cities", "status": "draft", "mine": true, "page": 2, "limit": 5
+	}`), userID)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	f := svc.gotListArgs
+	if f == nil || f.TypeID != typeID || f.Status != "draft" || !f.Mine ||
+		f.UserID != userID || f.Limit != 5 || f.Offset != 5 {
+		t.Fatalf("filter not forwarded correctly: %+v", f)
+	}
+
+	// "all" clears a filter.
+	_, _ = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{
+		"status": "all", "mine": true
+	}`), userID)
+	if svc.gotListArgs.Status != "" {
+		t.Fatalf("'all' should clear the status filter, got %q", svc.gotListArgs.Status)
+	}
+
+	// Bad type slug → type_not_found.
+	res, _ = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{"type_slug": "nope"}`), userID)
+	if got := resultErrorCode(t, res); got != "type_not_found" {
+		t.Fatalf("want type_not_found, got %q", got)
+	}
+
+	// Bad space_id → invalid_space_id.
+	res, _ = ComparisonListHandler(deps)(context.Background(), json.RawMessage(`{"space_id": "x"}`), userID)
+	if got := resultErrorCode(t, res); got != "invalid_space_id" {
+		t.Fatalf("want invalid_space_id, got %q", got)
 	}
 }

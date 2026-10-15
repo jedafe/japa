@@ -8,6 +8,10 @@
 //   - docs.create   — create a doc page (admin, HITL)
 //   - docs.update   — update a doc page
 //   - docs.organize — move/reorder pages in the nav tree
+//   - docs.approve  — approve a page in review (agent equivalent of
+//     POST /admin/docs/pages/{id}/approve)
+//   - docs.publish  — publish an approved page (agent equivalent of
+//     POST /admin/docs/pages/{id}/publish)
 //
 // Docs tools respect the existing nav-tree/document structure (Section 44):
 // pages have an audience, parent_id, position, and review_status. The
@@ -114,6 +118,8 @@ type docsCreateArgs struct {
 	ReviewStatus string          `json:"review_status,omitempty"`
 	ParentID     *string         `json:"parent_id,omitempty"`
 	Position     int32           `json:"position,omitempty"`
+	Category     *string         `json:"category,omitempty"`
+	Subcategory  *string         `json:"subcategory,omitempty"`
 }
 
 // DocsCreateHandler returns a ToolHandler that creates a documentation
@@ -146,7 +152,7 @@ func DocsCreateHandler(deps *ToolDeps) ToolHandler {
 		// The agent never approves or publishes (§44 + §103 amendment) — the
 		// approved → published transition is a human reviewer action.
 		if a.ReviewStatus == "published" || a.ReviewStatus == "approved" {
-			return errorToolResult("cannot_publish_directly", "the agent cannot approve or publish; use review_status 'draft' or 'in_review' and let a human reviewer approve + publish"), nil
+			return errorToolResult("cannot_publish_directly", "review_status accepts 'draft'/'in_review' only; use docs.approve and docs.publish for the reviewer transitions"), nil
 		}
 
 		reviewStatus := a.ReviewStatus
@@ -168,6 +174,8 @@ func DocsCreateHandler(deps *ToolDeps) ToolHandler {
 			ReviewStatus: reviewStatus,
 			ParentID:     a.ParentID,
 			Position:     a.Position,
+			Category:     a.Category,
+			Subcategory:  a.Subcategory,
 		})
 		if err != nil {
 			return errorToolResult("docs_create_failed", err.Error()), nil
@@ -193,12 +201,16 @@ type docsUpdateArgs struct {
 	Title        string          `json:"title,omitempty"`
 	Content      json.RawMessage `json:"content,omitempty"`
 	ReviewStatus string          `json:"review_status,omitempty"`
+	ParentID     *string         `json:"parent_id,omitempty"`
+	Position     *int32          `json:"position,omitempty"`
+	Category     *string         `json:"category,omitempty"`
+	Subcategory  *string         `json:"subcategory,omitempty"`
 }
 
 // DocsUpdateHandler returns a ToolHandler that updates a documentation
-// page. The review_status cannot be set to "published" directly by the
-// agent — the §44 workflow requires approved → published transition via
-// the human reviewer. The handler rejects "published" status.
+// page. The review_status cannot be set to "approved"/"published" by the
+// agent — the §44 workflow routes those transitions through the dedicated
+// docs.approve / docs.publish tools so reviewer metadata stays truthful.
 func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
 		if deps == nil || deps.Docs == nil {
@@ -215,9 +227,10 @@ func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
 		}
 
-		// The agent never approves or publishes directly (§44 + §103).
+		// The agent never approves or publishes via update (§44 + §103) —
+		// reviewer transitions go through docs.approve / docs.publish.
 		if a.ReviewStatus == "published" || a.ReviewStatus == "approved" {
-			return errorToolResult("cannot_publish_directly", "the agent cannot approve or publish; use review_status 'draft' or 'in_review' and let a human reviewer approve + publish"), nil
+			return errorToolResult("cannot_publish_directly", "review_status accepts 'draft'/'in_review' only; use docs.approve and docs.publish for the reviewer transitions"), nil
 		}
 
 		// §44 amendment 2: an absent review_status preserves the stored status
@@ -226,6 +239,10 @@ func DocsUpdateHandler(deps *ToolDeps) ToolHandler {
 			Title:        a.Title,
 			Content:      a.Content,
 			ReviewStatus: a.ReviewStatus,
+			ParentID:     a.ParentID,
+			Position:     a.Position,
+			Category:     a.Category,
+			Subcategory:  a.Subcategory,
 		}); err != nil {
 			return errorToolResult("docs_update_failed", err.Error()), nil
 		}
@@ -312,6 +329,76 @@ func DocsOrganizeHandler(deps *ToolDeps) ToolHandler {
 }
 
 // ---------------------------------------------------------------------------
+// docs.approve / docs.publish (reviewer transitions)
+// ---------------------------------------------------------------------------
+
+// docsReviewArgs is the argument shape for docs.approve and docs.publish.
+type docsReviewArgs struct {
+	DocID string `json:"doc_id"`
+}
+
+// DocsApproveHandler transitions a page to review_status="approved". The
+// calling user is recorded as last_reviewed_by — the human driving the
+// agent is the reviewer. Required permission docs.admin.
+func DocsApproveHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Docs == nil {
+			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
+		}
+
+		var a docsReviewArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		docID, err := scanUUID(a.DocID)
+		if err != nil {
+			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
+		}
+
+		if err := deps.Docs.ApproveDocPage(ctx, docID, userID); err != nil {
+			return errorToolResult("docs_approve_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"doc_id":        uuidString(docID),
+			"review_status": "approved",
+		}), nil
+	}
+}
+
+// DocsPublishHandler transitions an approved page to review_status=
+// "published" — the page goes live. The §44 status machine enforces the
+// approved precondition at the service layer. Required permission
+// docs.admin.
+func DocsPublishHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Docs == nil {
+			return errorToolResult("docs_unavailable", "docs service is not configured"), nil
+		}
+
+		var a docsReviewArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		docID, err := scanUUID(a.DocID)
+		if err != nil {
+			return errorToolResult("invalid_doc_id", "doc_id is not a valid UUID"), nil
+		}
+
+		if err := deps.Docs.PublishDocPage(ctx, docID, userID); err != nil {
+			return errorToolResult("docs_publish_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"doc_id":        uuidString(docID),
+			"review_status": "published",
+		}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Shared converter
 // ---------------------------------------------------------------------------
 
@@ -329,6 +416,12 @@ func docsPageToMap(p DocsPage) map[string]any {
 	}
 	if p.ParentID != nil {
 		m["parent_id"] = *p.ParentID
+	}
+	if p.Category != nil {
+		m["category"] = *p.Category
+	}
+	if p.Subcategory != nil {
+		m["subcategory"] = *p.Subcategory
 	}
 
 	return m

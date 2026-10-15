@@ -12,6 +12,10 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
+	// ?type=question — question chrome; the "question" tag is appended
+	// server-side so the thread stays filterable for the solved flow.
+	const isQuestion = $derived(data.isQuestion === true);
+
 	let title = $state('');
 	let body = $state<string>(''); // base64 TipTap JSON from CommentEditor
 	let spaceId = $state<string>(untrack(() => data.preselected?.id ?? ''));
@@ -102,7 +106,9 @@
 		<a href="/forum" class="grid h-8 w-8 place-items-center rounded-[var(--radius)] text-[var(--color-muted)] hover:bg-[var(--color-surface-subtle)]" aria-label={t('forum.new.back', 'Back to forum')}>
 			<ArrowLeft size={18} />
 		</a>
-		<h1 class="text-lg font-semibold text-[var(--color-text)]">{t('forum.new.heading', 'New discussion')}</h1>
+		<h1 class="text-lg font-semibold text-[var(--color-text)]">
+			{isQuestion ? t('forum.new.heading_question', 'New question') : t('forum.new.heading', 'New discussion')}
+		</h1>
 	</div>
 
 	<form
@@ -120,6 +126,10 @@
 			<p class="rounded-[var(--radius)] border border-[var(--color-primary)]/30 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-primary)]">
 				{errorMsg}
 			</p>
+		{/if}
+
+		{#if isQuestion}
+			<input type="hidden" name="type" value="question" />
 		{/if}
 
 		<!-- Space selector -->
@@ -278,7 +288,7 @@
 				disabled={!canSubmit}
 				class="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
 			>
-				<Send size={16} /> {t('forum.new.submit', 'Post discussion')}
+				<Send size={16} /> {isQuestion ? t('forum.new.submit_question', 'Post question') : t('forum.new.submit', 'Post discussion')}
 			</button>
 		</div>
 	</form>

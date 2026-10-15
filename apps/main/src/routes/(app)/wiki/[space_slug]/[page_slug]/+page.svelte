@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
 	import { page } from '$app/state';
+	import { beforeNavigate } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -69,6 +70,7 @@
 
 	// Edit form state.
 	let editing = $state(false);
+	let editDirty = $state(false);
 	let editBodyHtml = $state('');
 	let editBodyJson = $state<Record<string, unknown>>({ type: 'doc', content: [] });
 	let summary = $state('');
@@ -77,11 +79,24 @@
 	let autoApproved = $state(false);
 	let errorKey = $state('');
 
+	// The tab strip and sibling links stay live while the revision form is
+	// open — warn before a navigation silently drops an edited draft.
+	beforeNavigate((nav) => {
+		if (
+			editing &&
+			(editDirty || summary.trim()) &&
+			!confirm(t('settings.unsaved_warning', 'You have unsaved changes. Leave anyway?'))
+		) {
+			nav.cancel();
+		}
+	});
+
 	async function startEdit() {
 		summary = '';
 		submitted = false;
 		autoApproved = false;
 		errorKey = '';
+		editDirty = false;
 		editing = true;
 		// Fetch the raw (unresolved) revision so authored {{...}} literals
 		// survive a re-save — the display payload has them resolved.
@@ -300,6 +315,25 @@
 			.then((items) => (childEntities = items))
 			.catch(() => (childEntities = []))
 			.finally(() => (childEntitiesLoading = false));
+	});
+
+	// This component instance is reused across /wiki/{space}/{page}
+	// navigations — clear the edit/submission state when a different page
+	// loads so a stale draft can't be submitted to the new page.
+	let lastRouteKey = $state('');
+	$effect(() => {
+		const key = `${data.spaceSlug}/${data.pageSlug}`;
+		if (lastRouteKey && lastRouteKey !== key) {
+			editing = false;
+			editDirty = false;
+			submitted = false;
+			autoApproved = false;
+			errorKey = '';
+			summary = '';
+			suggestTarget = null;
+			suggestOpen = false;
+		}
+		lastRouteKey = key;
 	});
 </script>
 
@@ -553,7 +587,7 @@
 							<div class="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] focus-within:border-[var(--color-primary)]">
 								<PostEditor
 									html={editBodyHtml}
-									onedit={() => {}}
+									onedit={() => (editDirty = true)}
 									onhtml={(v) => (editBodyHtml = v)}
 									onjson={(v) => (editBodyJson = v)}
 								/>
@@ -694,25 +728,29 @@
 					<!-- §80 Reader UX + Super-Admin Direct Publish — the bottom
 					     Details panel is retired: the bound group's item tables
 					     above render the same fields/values, so the panel only
-					     duplicated them. "Was this page helpful?" keeps its row;
-					     the Suggest-an-edit trigger rides on its right — absent on
-					     lazy pages only in the vote half (no wiki_pages row to vote
-					     on), the suggest affordance still renders. -->
+					     duplicated them. The Suggest-an-edit trigger sits inside the
+					     "Was this page helpful?" card's trailing slot; on lazy pages
+					     (no wiki_pages row to vote on) the card is absent and the
+					     affordance renders standalone. -->
 					{#if data.page.helpful !== undefined || (structuredEditsOn && panelSpaceId)}
-						<div class="mt-8 flex flex-wrap items-center gap-3">
+						<div class="mt-8">
 							{#if data.page.helpful !== undefined}
-								<div class="min-w-0 flex-1">
-									<WikiHelpfulWidget
-										spaceSlug={data.spaceSlug}
-										pageSlug={data.pageSlug}
-										helpful={data.page.helpful}
-										authed={data.authed}
-									/>
-								</div>
-							{:else}
-								<span class="flex-1"></span>
-							{/if}
-							{#if structuredEditsOn && panelSpaceId}
+								<WikiHelpfulWidget
+									spaceSlug={data.spaceSlug}
+									pageSlug={data.pageSlug}
+									helpful={data.page.helpful}
+									authed={data.authed}
+								>
+									{#if structuredEditsOn && panelSpaceId}
+										<SuggestEdit
+											entityType="space"
+											entityId={panelSpaceId}
+											groupId={data.page?.field_group_id ?? undefined}
+											proposeGroupSlug={data.page?.field_group_slug ?? undefined}
+										/>
+									{/if}
+								</WikiHelpfulWidget>
+							{:else if structuredEditsOn && panelSpaceId}
 								<SuggestEdit
 									entityType="space"
 									entityId={panelSpaceId}

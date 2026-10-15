@@ -144,21 +144,25 @@
 			/>
 		</div>
 	{:else}
-		<div class="mt-8 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-			<div class="mb-4 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-				<Globe size={16} />
-				{t('wiki.destination_label', 'Destination')}
+		<!-- The search earns its slot once the grid outgrows one screenful —
+		     with ≤12 destinations every item is already visible. -->
+		{#if total > 12}
+			<div class="mt-8 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+				<div class="mb-4 flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
+					<Globe size={16} />
+					{t('wiki.destination_label', 'Destination')}
+				</div>
+				<Autocomplete
+					id="wiki-destination-search"
+					placeholder={t('wiki.destination_search_hint', 'Search a country…')}
+					emptyMessage={t('common.no_results', 'No results found')}
+					fetcher={searchAll}
+					selectedId={null}
+					selectedLabel={null}
+					onSelect={onSelectDestination}
+				/>
 			</div>
-			<Autocomplete
-				id="wiki-destination-search"
-				placeholder={t('wiki.destination_search_hint', 'Search a country…')}
-				emptyMessage={t('common.no_results', 'No results found')}
-				fetcher={searchAll}
-				selectedId={null}
-				selectedLabel={null}
-				onSelect={onSelectDestination}
-			/>
-		</div>
+		{/if}
 
 		<div class="mt-6">
 			{#if destinations.length === 0 && total === 0}

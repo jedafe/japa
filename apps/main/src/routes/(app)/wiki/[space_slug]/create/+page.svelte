@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Ref: japaconnect-engineering/sections/80-destination-wiki.md
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import PostEditor from '$lib/components/create/editors/PostEditor.svelte';
@@ -68,6 +68,20 @@
 	let loading = $state(false);
 	let errorKey = $state<string | null>(null);
 	let fieldErrors = $state<Record<string, string>>({});
+	// Dirty guard — set by real user input (title/slug/summary/editor),
+	// never by programmatic template picks; cleared after a successful
+	// create so the redirect doesn't trip the confirm.
+	let dirty = $state(false);
+	let created = $state(false);
+	beforeNavigate((nav) => {
+		if (
+			!created &&
+			dirty &&
+			!confirm(t('settings.unsaved_warning', 'You have unsaved changes. Leave anyway?'))
+		) {
+			nav.cancel();
+		}
+	});
 
 	const catTemplates = $derived(
 		(categories.find((c) => c.slug === category)?.page_templates ?? [])
@@ -219,6 +233,7 @@
 	}
 
 	function onTitleInput() {
+		dirty = true;
 		if (slug === '' || slug === slugify(title.slice(0, -1))) {
 			slug = slugify(title);
 		}
@@ -273,6 +288,7 @@
 				return;
 			}
 			const pageSlug = res.data?.slug ?? slug;
+			created = true;
 			await goto(`/wiki/${encodeURIComponent(data.spaceSlug)}/${encodeURIComponent(pageSlug)}`);
 		} catch {
 			errorKey = 'wiki.create_failed';
@@ -436,6 +452,7 @@
 					id="wiki-create-slug"
 					type="text"
 					bind:value={slug}
+					oninput={() => (dirty = true)}
 					disabled={templateLocked}
 					placeholder={t('wiki.create_slug_placeholder', 'cost-of-living')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-70"
@@ -453,6 +470,7 @@
 					id="wiki-create-summary"
 					type="text"
 					bind:value={summary}
+					oninput={() => (dirty = true)}
 					placeholder={t('wiki.edit_summary_placeholder', 'Briefly describe your changes')}
 					class="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)] outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
 				/>
@@ -464,7 +482,7 @@
 				</span>
 				<PostEditor
 					html={bodyHtml}
-					onedit={() => {}}
+					onedit={() => (dirty = true)}
 					onhtml={(v) => (bodyHtml = v)}
 					onjson={(v) => (bodyJson = v)}
 				/>

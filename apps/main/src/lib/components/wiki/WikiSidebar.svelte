@@ -62,7 +62,12 @@
 	}
 
 	$effect(() => {
-		if (!isGeoSpace) return;
+		// Non-geo spaces have no popular-places rail — clear the previous
+		// space's list (this component persists across wiki navigations).
+		if (!isGeoSpace) {
+			cities = [];
+			return;
+		}
 		let cancelled = false;
 		const slug = spaceSlug;
 

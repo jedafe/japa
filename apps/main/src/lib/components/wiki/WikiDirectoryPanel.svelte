@@ -88,17 +88,21 @@
 
 <!-- §80 Reader UX — fixed anchor for deep links. -->
 <section id="wiki-directory" class="mt-6 scroll-mt-24 space-y-4">
-	<div class="w-full max-w-sm">
-		<Autocomplete
-			id="wiki-directory-search"
-			placeholder={t('wiki.directory_search_hint', 'Search this list…')}
-			emptyMessage={t('common.no_results', 'No results found')}
-			fetcher={searchChildren}
-			selectedId={null}
-			selectedLabel={null}
-			onSelect={onPick}
-		/>
-	</div>
+	<!-- The scoped search earns its slot once the listing outgrows one
+	     screenful — with ≤12 children every item is already visible. -->
+	{#if directory.total > 12}
+		<div class="w-full max-w-sm">
+			<Autocomplete
+				id="wiki-directory-search"
+				placeholder={t('wiki.directory_search_hint', 'Search this list…')}
+				emptyMessage={t('common.no_results', 'No results found')}
+				fetcher={searchChildren}
+				selectedId={null}
+				selectedLabel={null}
+				onSelect={onPick}
+			/>
+		</div>
+	{/if}
 
 	{#if childTypes.length > 1}
 		<div class="flex flex-wrap gap-2">

@@ -19,6 +19,10 @@ type stubWikiService struct {
 	createErr    error
 	submitErr    error
 	reviewErr    error
+	listErr      error
+	readErr      error
+	revsErr      error
+	fieldsErr    error
 	communityOK  bool
 	structuredOK bool
 	autoApproved bool
@@ -27,11 +31,34 @@ type stubWikiService struct {
 	spaceID      pgtype.UUID
 	spaceErr     error
 
-	gotCreate    *WikiCreatePageInput
-	gotSubmit    *wikiSubmitCapture
-	gotFieldOps  *wikiSubmitCapture
-	gotApproveID pgtype.UUID
-	gotRejectID  pgtype.UUID
+	pages       []WikiPageListItem
+	pagesTotal  int64
+	detail      *WikiPageDetail
+	revs        []WikiRevisionInfo
+	revsTotal   int64
+	entitySpecs *WikiEntityFields
+
+	gotCreate     *WikiCreatePageInput
+	gotSubmit     *wikiSubmitCapture
+	gotFieldOps   *wikiSubmitCapture
+	gotApproveID  pgtype.UUID
+	gotRejectID   pgtype.UUID
+	gotListFilter *WikiPageListFilter
+	gotHistory    *wikiHistoryCapture
+	gotEntityRev  *wikiEntityCapture
+	gotFields     *wikiEntityCapture
+}
+
+type wikiHistoryCapture struct {
+	spaceSlug string
+	pageSlug  string
+	canReview bool
+}
+
+type wikiEntityCapture struct {
+	entityType string
+	entityID   pgtype.UUID
+	canReview  bool
 }
 
 type wikiSubmitCapture struct {
@@ -97,6 +124,52 @@ func (s *stubWikiService) SpaceIDBySlug(ctx context.Context, spaceSlug string) (
 	return s.spaceID, s.spaceErr
 }
 
+func (s *stubWikiService) ListPages(ctx context.Context, filter WikiPageListFilter) ([]WikiPageListItem, int64, error) {
+	if s.listErr != nil {
+		return nil, 0, s.listErr
+	}
+	s.gotListFilter = &filter
+	return s.pages, s.pagesTotal, nil
+}
+
+func (s *stubWikiService) GetPageDetail(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string) (*WikiPageDetail, error) {
+	if s.readErr != nil {
+		return nil, s.readErr
+	}
+	return s.detail, nil
+}
+
+func (s *stubWikiService) ListRevisionHistory(ctx context.Context, viewerID pgtype.UUID, canReview bool, spaceSlug, pageSlug string, page, limit int32) ([]WikiRevisionInfo, int64, error) {
+	if s.revsErr != nil {
+		return nil, 0, s.revsErr
+	}
+	s.gotHistory = &wikiHistoryCapture{spaceSlug: spaceSlug, pageSlug: pageSlug, canReview: canReview}
+	return s.revs, s.revsTotal, nil
+}
+
+func (s *stubWikiService) ListRevisions(ctx context.Context, kind, status, q string, page, limit int32) ([]WikiRevisionInfo, int64, error) {
+	if s.revsErr != nil {
+		return nil, 0, s.revsErr
+	}
+	return s.revs, s.revsTotal, nil
+}
+
+func (s *stubWikiService) ListEntityRevisions(ctx context.Context, viewerID pgtype.UUID, canReview bool, entityType string, entityID pgtype.UUID, page, limit int32) ([]WikiRevisionInfo, int64, error) {
+	if s.revsErr != nil {
+		return nil, 0, s.revsErr
+	}
+	s.gotEntityRev = &wikiEntityCapture{entityType: entityType, entityID: entityID, canReview: canReview}
+	return s.revs, s.revsTotal, nil
+}
+
+func (s *stubWikiService) GetEntityFields(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (*WikiEntityFields, error) {
+	if s.fieldsErr != nil {
+		return nil, s.fieldsErr
+	}
+	s.gotFields = &wikiEntityCapture{entityType: entityType, entityID: entityID}
+	return s.entitySpecs, nil
+}
+
 type stubPointsReader struct {
 	balance int64
 	err     error
@@ -110,6 +183,17 @@ type stubPermChecker map[string]bool
 
 func (p stubPermChecker) HasPermission(ctx context.Context, userID pgtype.UUID, key string) bool {
 	return p[key]
+}
+
+// stubPermCheckerSA adds the IsSuperAdmin capability used by
+// actorIsSuperAdmin (tools_fields.go).
+type stubPermCheckerSA struct {
+	stubPermChecker
+	superAdmin bool
+}
+
+func (p stubPermCheckerSA) IsSuperAdmin(ctx context.Context, userID pgtype.UUID) bool {
+	return p.superAdmin
 }
 
 func resultErrorCode(t *testing.T, res *ToolResult) string {
@@ -318,6 +402,15 @@ func TestWikiPageSubmitRevisionHandler_ReputationGate(t *testing.T) {
 	if err != nil || resultErrorCode(t, res) != "" {
 		t.Fatalf("expected success at threshold: %v %v", err, res.Content)
 	}
+
+	// §80 Super-Admin Direct Publish — super_admin bypasses the gate even
+	// with the points reader unavailable.
+	wiki = &stubWikiService{communityOK: true, minRep: 100, revID: "44444444-4444-4444-4444-444444444444"}
+	deps = &ToolDeps{Wiki: wiki, Permission: stubPermCheckerSA{superAdmin: true}}
+	res, err = WikiPageSubmitRevisionHandler(deps)(context.Background(), args, userID)
+	if err != nil || resultErrorCode(t, res) != "" {
+		t.Fatalf("super_admin should bypass the reputation gate: %v %v", err, res.Content)
+	}
 }
 
 func TestWikiPageSubmitRevisionHandler_FieldOps(t *testing.T) {
@@ -407,5 +500,178 @@ func TestWikiPageReviewRevisionHandler_ApproveReject(t *testing.T) {
 	res, _ = WikiPageReviewRevisionHandler(deps)(context.Background(), json.RawMessage(`{"revision_id":"`+rev+`","action":"approve"}`), userID)
 	if got := resultErrorCode(t, res); got != "wiki_approve_failed" {
 		t.Fatalf("want wiki_approve_failed, got %q", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wiki_page.list / wiki_page.read / wiki_page.revisions.list /
+// wiki.entity_fields.get — discovery surface
+// ---------------------------------------------------------------------------
+
+func TestWikiPageListHandler_ForwardsFilter(t *testing.T) {
+	wiki := &stubWikiService{
+		pages: []WikiPageListItem{
+			{ID: "11111111-1111-1111-1111-111111111111", Slug: "visa-routes", Title: "Visa Routes", LatestRevisionStatus: "pending"},
+		},
+		pagesTotal: 1,
+	}
+	deps := &ToolDeps{Wiki: wiki}
+	userID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
+
+	res, err := WikiPageListHandler(deps)(context.Background(), json.RawMessage(`{
+		"space_slug": "canada", "status": "pending", "q": "visa", "limit": 10
+	}`), userID)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	var out struct {
+		Pages []WikiPageListItem `json:"pages"`
+		Total int64              `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(res.Content), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.Total != 1 || len(out.Pages) != 1 || out.Pages[0].Slug != "visa-routes" {
+		t.Fatalf("unexpected result: %v", res.Content)
+	}
+	if wiki.gotListFilter == nil || wiki.gotListFilter.SpaceSlug != "canada" ||
+		wiki.gotListFilter.Status != "pending" || wiki.gotListFilter.Q != "visa" || wiki.gotListFilter.Limit != 10 {
+		t.Fatalf("filter not forwarded: %+v", wiki.gotListFilter)
+	}
+}
+
+func TestWikiPageReadHandler(t *testing.T) {
+	wiki := &stubWikiService{
+		detail: &WikiPageDetail{
+			ID: "11111111-1111-1111-1111-111111111111", Slug: "visa-routes",
+			Fields: &WikiEntityFieldGroup{Slug: "visa-fields", Fields: []WikiEntityField{
+				{Key: "processing_time", FieldType: "number", CanEdit: true},
+			}},
+		},
+	}
+	deps := &ToolDeps{Wiki: wiki}
+	userID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
+
+	// Missing slugs.
+	res, _ := WikiPageReadHandler(deps)(context.Background(), json.RawMessage(`{"space_slug":"canada"}`), userID)
+	if got := resultErrorCode(t, res); got != "missing_slug" {
+		t.Fatalf("want missing_slug, got %q", got)
+	}
+
+	res, err := WikiPageReadHandler(deps)(context.Background(), json.RawMessage(`{
+		"space_slug": "canada", "page_slug": "visa-routes"
+	}`), userID)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	var out struct {
+		Page WikiPageDetail `json:"page"`
+	}
+	if err := json.Unmarshal([]byte(res.Content), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.Page.Slug != "visa-routes" || out.Page.Fields == nil || len(out.Page.Fields.Fields) != 1 {
+		t.Fatalf("unexpected result: %v", res.Content)
+	}
+}
+
+func TestWikiPageRevisionsListHandler_Scopes(t *testing.T) {
+	wiki := &stubWikiService{
+		revs:      []WikiRevisionInfo{{ID: "44444444-4444-4444-4444-444444444444", Status: "pending", Kind: "mixed"}},
+		revsTotal: 1,
+	}
+	userID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
+
+	// Page-scoped history — no permission needed; canReview flag is
+	// forwarded so the service can unredact for reviewers.
+	deps := &ToolDeps{Wiki: wiki, Permission: stubPermChecker{"wiki.review": true}}
+	res, err := WikiPageRevisionsListHandler(deps)(context.Background(), json.RawMessage(`{
+		"space_slug": "canada", "page_slug": "visa-routes"
+	}`), userID)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if wiki.gotHistory == nil || wiki.gotHistory.spaceSlug != "canada" || !wiki.gotHistory.canReview {
+		t.Fatalf("page scope not forwarded: %+v", wiki.gotHistory)
+	}
+	var out struct {
+		Revisions []WikiRevisionInfo `json:"revisions"`
+		Total     int64              `json:"total"`
+	}
+	if err := json.Unmarshal([]byte(res.Content), &out); err != nil || out.Total != 1 {
+		t.Fatalf("unexpected result: %v", res.Content)
+	}
+
+	// Entity-scoped listing.
+	res, err = WikiPageRevisionsListHandler(deps)(context.Background(), json.RawMessage(`{
+		"entity_type": "visa_route", "entity_id": "33333333-3333-3333-3333-333333333333"
+	}`), userID)
+	if err != nil || wiki.gotEntityRev == nil || wiki.gotEntityRev.entityType != "visa_route" {
+		t.Fatalf("entity scope not forwarded: %v %+v", err, wiki.gotEntityRev)
+	}
+
+	// entity_id without entity_type → invalid_entity.
+	res, _ = WikiPageRevisionsListHandler(deps)(context.Background(), json.RawMessage(`{
+		"entity_id": "33333333-3333-3333-3333-333333333333"
+	}`), userID)
+	if got := resultErrorCode(t, res); got != "invalid_entity" {
+		t.Fatalf("want invalid_entity, got %q", got)
+	}
+
+	// Global queue without wiki.review → permission_denied.
+	deps.Permission = stubPermChecker{}
+	res, _ = WikiPageRevisionsListHandler(deps)(context.Background(), json.RawMessage(`{"status":"pending"}`), userID)
+	if got := resultErrorCode(t, res); got != "permission_denied" {
+		t.Fatalf("want permission_denied, got %q", got)
+	}
+
+	// Global queue with wiki.review → admin listing.
+	deps.Permission = stubPermChecker{"wiki.review": true}
+	res, err = WikiPageRevisionsListHandler(deps)(context.Background(), json.RawMessage(`{"status":"pending"}`), userID)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if err := json.Unmarshal([]byte(res.Content), &out); err != nil || out.Total != 1 {
+		t.Fatalf("unexpected global queue result: %v", res.Content)
+	}
+}
+
+func TestWikiEntityFieldsHandler(t *testing.T) {
+	wiki := &stubWikiService{
+		entitySpecs: &WikiEntityFields{
+			Groups: []WikiEntityFieldGroup{{Slug: "visa-fields", Fields: []WikiEntityField{
+				{Key: "processing_time", FieldType: "number", CanEdit: true},
+			}}},
+			PendingCount: 2,
+			CanPropose:   true,
+		},
+	}
+	deps := &ToolDeps{Wiki: wiki}
+	userID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
+
+	// Bad entity args.
+	res, _ := WikiEntityFieldsHandler(deps)(context.Background(), json.RawMessage(`{"entity_type":"visa_route"}`), userID)
+	if got := resultErrorCode(t, res); got != "invalid_entity" {
+		t.Fatalf("want invalid_entity, got %q", got)
+	}
+
+	res, err := WikiEntityFieldsHandler(deps)(context.Background(), json.RawMessage(`{
+		"entity_type": "visa_route", "entity_id": "33333333-3333-3333-3333-333333333333"
+	}`), userID)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	var out struct {
+		EntityFields WikiEntityFields `json:"entity_fields"`
+	}
+	if err := json.Unmarshal([]byte(res.Content), &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.EntityFields.PendingCount != 2 || len(out.EntityFields.Groups) != 1 ||
+		out.EntityFields.Groups[0].Fields[0].Key != "processing_time" {
+		t.Fatalf("unexpected result: %v", res.Content)
+	}
+	if wiki.gotFields == nil || wiki.gotFields.entityID.String() != "33333333-3333-3333-3333-333333333333" {
+		t.Fatalf("entity target not forwarded: %+v", wiki.gotFields)
 	}
 }

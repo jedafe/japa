@@ -89,6 +89,58 @@ type ComparisonService interface {
 	// draft, cloning items + dimensions. bypassOwnership mirrors the REST
 	// comparison.edit_any gate (§30 JCE, jce_handlers.PromoteJCEComparison).
 	PromoteComparison(ctx context.Context, id, userID pgtype.UUID, bypassOwnership bool) (ComparisonPromoteResult, error)
+
+	// ListComparisons is the comparison directory
+	// (comparison.Service.ListJCEComparisons, GET /jce/comparisons). The
+	// result rows are stripped to listing metadata — bodies and field
+	// values stay behind the ai_exempt-gated comparison.read path.
+	ListComparisons(ctx context.Context, f ComparisonListFilter) (ComparisonListResult, error)
+}
+
+// ComparisonListFilter mirrors comparison.JCEComparisonFilter minus the
+// admin-only Deleted selector (the agent list never surfaces soft-deleted
+// rows).
+type ComparisonListFilter struct {
+	SpaceID    pgtype.UUID
+	TypeID     pgtype.UUID
+	Depth      string
+	Status     string
+	Visibility string
+	Mine       bool
+	UserID     pgtype.UUID
+	Query      string
+	Sort       string
+	Limit      int32
+	Offset     int32
+}
+
+// ComparisonListItem is one directory row, stripped to listing metadata.
+// Body/BodyHtml/FieldValues/MetadataConfig are deliberately absent — the
+// ai_exempt privacy gate lives on comparison.read, and the list must not
+// become a bulk bypass for it.
+type ComparisonListItem struct {
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Slug           string `json:"slug"`
+	Status         string `json:"status"`
+	Visibility     string `json:"visibility"`
+	Depth          string `json:"depth"`
+	SpaceID        string `json:"space_id,omitempty"`
+	AuthorID       string `json:"author_id,omitempty"`
+	ViewCount      int32  `json:"view_count"`
+	CommentCount   int32  `json:"comment_count"`
+	PromotedFromID string `json:"promoted_from_id,omitempty"`
+	PublishedAt    string `json:"published_at,omitempty"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+// ComparisonListResult mirrors comparison.JCEComparisonListResult.
+type ComparisonListResult struct {
+	Items []ComparisonListItem `json:"items"`
+	Total int32                `json:"total"`
+	Page  int32                `json:"page"`
+	Size  int32                `json:"size"`
 }
 
 // JCEService is the subset of internal/jce.Service the JCE comparison.refresh
@@ -399,11 +451,14 @@ type DocsService interface {
 	GetDocPageByID(ctx context.Context, id pgtype.UUID) (*DocsPage, error)
 	CreateDocPage(ctx context.Context, req DocsCreatePageRequest) (pgtype.UUID, error)
 	UpdateDocPage(ctx context.Context, id pgtype.UUID, req DocsUpdatePageRequest) error
+	ApproveDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error
+	PublishDocPage(ctx context.Context, id, reviewerID pgtype.UUID) error
 }
 
-// DocsOrganizer is the function-type bridge for docs.organize. The docs
-// service does not currently expose a parent_id/position update method, so
-// the wiring layer provides this bridge. nil disables docs.organize.
+// DocsOrganizer is the function-type bridge for docs.organize. §44
+// amendment 2 added parent_id/position to UpdateDocPage, so the wiring
+// layer implements this bridge over the service's update path (which
+// carries the hierarchy validation). nil disables docs.organize.
 type DocsOrganizer func(ctx context.Context, entries []DocsOrganizeEntry) error
 
 // DocsPage mirrors docs.DocPage (the subset the AI tools surface).
@@ -417,6 +472,8 @@ type DocsPage struct {
 	ReviewStatus string          `json:"review_status"`
 	ParentID     *string         `json:"parent_id,omitempty"`
 	Position     int32           `json:"position"`
+	Category     *string         `json:"category,omitempty"`
+	Subcategory  *string         `json:"subcategory,omitempty"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
 }
@@ -431,13 +488,21 @@ type DocsCreatePageRequest struct {
 	ReviewStatus string          `json:"review_status"`
 	ParentID     *string         `json:"parent_id,omitempty"`
 	Position     int32           `json:"position"`
+	Category     *string         `json:"category,omitempty"`
+	Subcategory  *string         `json:"subcategory,omitempty"`
 }
 
-// DocsUpdatePageRequest mirrors docs.UpdateDocPageRequest.
+// DocsUpdatePageRequest mirrors docs.UpdateDocPageRequest (pointer fields
+// follow §44 amendment 2 preserve-on-absent semantics: nil keeps the stored
+// value, "" clears it).
 type DocsUpdatePageRequest struct {
 	Title        string          `json:"title"`
 	Content      json.RawMessage `json:"content"`
 	ReviewStatus string          `json:"review_status"`
+	ParentID     *string         `json:"parent_id,omitempty"`
+	Position     *int32          `json:"position,omitempty"`
+	Category     *string         `json:"category,omitempty"`
+	Subcategory  *string         `json:"subcategory,omitempty"`
 }
 
 // DocsOrganizeEntry is a single {id, parent_id, position} entry for
@@ -854,12 +919,131 @@ type WikiCreatePageInput struct {
 	Position  *int32
 }
 
+// WikiPageListFilter mirrors the query surface of wiki.Service.AdminListPages
+// (GET /admin/wiki — the review queue's page index). SpaceSlug scopes the
+// listing to one space (resolved to a space filter by the adapter); Status
+// filters on the latest revision's status; IsActive filters page visibility.
+type WikiPageListFilter struct {
+	SpaceSlug string
+	Category  string
+	Status    string
+	Q         string
+	IsActive  *bool
+	Page      int32
+	Limit     int32
+}
+
+// WikiPageListItem mirrors wiki.AdminWikiPageDTO — one page row with its
+// latest revision status and bound field-group identity.
+type WikiPageListItem struct {
+	ID                   string `json:"id"`
+	SpaceID              string `json:"space_id"`
+	SpaceSlug            string `json:"space_slug,omitempty"`
+	Slug                 string `json:"slug"`
+	Title                string `json:"title"`
+	Category             string `json:"category"`
+	IsActive             bool   `json:"is_active"`
+	IsLocked             bool   `json:"is_locked"`
+	IsFeatured           bool   `json:"is_featured"`
+	DataEntityType       string `json:"data_entity_type,omitempty"`
+	LatestRevisionID     string `json:"latest_revision_id,omitempty"`
+	LatestRevisionStatus string `json:"latest_revision_status,omitempty"`
+	Excerpt              string `json:"excerpt,omitempty"`
+	AiGenerated          bool   `json:"ai_generated"`
+	FieldGroupID         string `json:"field_group_id,omitempty"`
+	FieldGroupSlug       string `json:"field_group_slug,omitempty"`
+	FieldGroupName       string `json:"field_group_name,omitempty"`
+	UpdatedAt            string `json:"updated_at"`
+	DeletedAt            string `json:"deleted_at,omitempty"`
+}
+
+// WikiEntityField mirrors wiki.EntityFieldDTO — one field's definition,
+// current value, and the requesting user's edit permission.
+type WikiEntityField struct {
+	ID        string          `json:"id"`
+	Key       string          `json:"key"`
+	Label     string          `json:"label"`
+	FieldType string          `json:"field_type"`
+	Options   json.RawMessage `json:"options,omitempty"`
+	Value     json.RawMessage `json:"value"`
+	CanEdit   bool            `json:"can_edit"`
+	Visible   bool            `json:"visible"`
+	Section   string          `json:"section,omitempty"`
+	Computed  bool            `json:"computed,omitempty"`
+	System    bool            `json:"system,omitempty"`
+}
+
+// WikiEntityFieldGroup mirrors wiki.EntityFieldGroupDTO.
+type WikiEntityFieldGroup struct {
+	ID     string            `json:"id"`
+	Slug   string            `json:"slug"`
+	Name   string            `json:"name"`
+	Fields []WikiEntityField `json:"fields"`
+}
+
+// WikiEntityFields mirrors wiki.EntityFieldsDTO — the field groups assigned
+// to an entity's class with current values and caller capabilities.
+type WikiEntityFields struct {
+	Groups             []WikiEntityFieldGroup `json:"groups"`
+	PendingCount       int64                  `json:"pending_count"`
+	CanPropose         bool                   `json:"can_propose"`
+	CanManage          bool                   `json:"can_manage"`
+	CanDelete          bool                   `json:"can_delete"`
+	EntityClass        string                 `json:"entity_class,omitempty"`
+	EntityCurrencyCode string                 `json:"entity_currency_code,omitempty"`
+}
+
+// WikiPageDetail mirrors wiki.WikiPageDetailDTO — the full page with its
+// current approved content and the bound field group's schema+values.
+type WikiPageDetail struct {
+	ID             string                `json:"id"`
+	SpaceID        string                `json:"space_id"`
+	SpaceSlug      string                `json:"space_slug"`
+	SpaceName      string                `json:"space_name"`
+	Slug           string                `json:"slug"`
+	Title          string                `json:"title"`
+	Category       string                `json:"category"`
+	IsActive       bool                  `json:"is_active"`
+	IsLocked       bool                  `json:"is_locked"`
+	IsFeatured     bool                  `json:"is_featured"`
+	DataEntityType string                `json:"data_entity_type,omitempty"`
+	CurrentContent json.RawMessage       `json:"current_content,omitempty"`
+	FieldGroupID   string                `json:"field_group_id,omitempty"`
+	FieldGroupSlug string                `json:"field_group_slug,omitempty"`
+	CategoryLabel  string                `json:"category_label,omitempty"`
+	Fields         *WikiEntityFieldGroup `json:"fields,omitempty"`
+	UpdatedAt      string                `json:"updated_at"`
+}
+
+// WikiRevisionInfo mirrors wiki.WikiRevisionDTO (content/ops redaction for
+// pending rows is handled by the service before it reaches this mirror).
+type WikiRevisionInfo struct {
+	ID               string          `json:"id"`
+	Status           string          `json:"status"`
+	Kind             string          `json:"kind"`
+	Content          json.RawMessage `json:"content,omitempty"`
+	Ops              json.RawMessage `json:"ops,omitempty"`
+	Summary          string          `json:"summary,omitempty"`
+	AiGenerated      bool            `json:"ai_generated"`
+	TargetEntityType string          `json:"target_entity_type,omitempty"`
+	TargetEntityID   string          `json:"target_entity_id,omitempty"`
+	SubmittedBy      string          `json:"submitted_by,omitempty"`
+	ReviewedBy       string          `json:"reviewed_by,omitempty"`
+	ReviewedAt       string          `json:"reviewed_at,omitempty"`
+	WikiPageID       string          `json:"wiki_page_id,omitempty"`
+	ApplyError       string          `json:"apply_error,omitempty"`
+	CreatedAt        string          `json:"created_at"`
+}
+
 // WikiAgentService is the subset of internal/wiki.Service/Store the wiki
 // agent tools call. SubmitRevision and CreatePageWithRevision are the
 // §80 revision-queue writes: submissions create *pending* revisions, so
 // agent-produced content still passes moderator review. CreatePageShell
 // covers content-less provisioning calls. ApproveRevision/RejectRevision
-// are the moderator queue actions (revision-keyed).
+// are the moderator queue actions (revision-keyed). The List*/Get* methods
+// are the discovery surface (page index, page detail, revision queues,
+// entity field schema) so the agent can find pages and inspect their
+// assigned fields before submitting edits.
 type WikiAgentService interface {
 	CreatePageWithRevision(ctx context.Context, userID pgtype.UUID, in WikiCreatePageInput) (pageID, revID, pageSlug string, err error)
 	CreatePageShell(ctx context.Context, spaceID, createdBy pgtype.UUID, slug, title, category string) (pageID string, err error)
@@ -871,6 +1055,24 @@ type WikiAgentService interface {
 	SubmitFieldOps(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string, content json.RawMessage, ops json.RawMessage, summary string, canManage bool) (revID string, autoApproved bool, err error)
 	ApproveRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error
 	RejectRevision(ctx context.Context, revID, reviewerID pgtype.UUID, notes string) error
+	// ListPages is the admin page index (wiki.Service.AdminListPages).
+	ListPages(ctx context.Context, filter WikiPageListFilter) ([]WikiPageListItem, int64, error)
+	// GetPageDetail returns one page with approved content and the bound
+	// field group's schema+values (wiki.Service.GetWikiPage).
+	GetPageDetail(ctx context.Context, userID pgtype.UUID, spaceSlug, pageSlug string) (*WikiPageDetail, error)
+	// ListRevisionHistory returns one page's revision history with
+	// pending bodies redacted for non-reviewers (wiki.Service.
+	// GetRevisionHistory). canReview flags wiki.review holders.
+	ListRevisionHistory(ctx context.Context, viewerID pgtype.UUID, canReview bool, spaceSlug, pageSlug string, page, limit int32) ([]WikiRevisionInfo, int64, error)
+	// ListRevisions is the global admin review queue
+	// (wiki.Service.AdminListRevisions) — callers must hold wiki.review.
+	ListRevisions(ctx context.Context, kind, status, q string, page, limit int32) ([]WikiRevisionInfo, int64, error)
+	// ListEntityRevisions returns fields/mixed revisions targeting an
+	// entity (wiki.Service.ListEntityRevisions).
+	ListEntityRevisions(ctx context.Context, viewerID pgtype.UUID, canReview bool, entityType string, entityID pgtype.UUID, page, limit int32) ([]WikiRevisionInfo, int64, error)
+	// GetEntityFields returns an entity's assigned field groups with
+	// values and per-field permissions (wiki.Service.GetEntityFields).
+	GetEntityFields(ctx context.Context, userID pgtype.UUID, entityType string, entityID pgtype.UUID) (*WikiEntityFields, error)
 	CommunityEditsAllowed(ctx context.Context) bool
 	StructuredEditsEnabled(ctx context.Context) bool
 	MinReputationToEdit(ctx context.Context) int

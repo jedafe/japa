@@ -6,18 +6,23 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { ThumbsUp, ThumbsDown } from 'lucide-svelte';
+	import type { Snippet } from 'svelte';
 	import type { WikiHelpful } from '$lib/types';
 
 	let {
 		spaceSlug,
 		pageSlug,
 		helpful,
-		authed
+		authed,
+		children
 	}: {
 		spaceSlug: string;
 		pageSlug: string;
 		helpful: WikiHelpful | null | undefined;
 		authed: boolean;
+		/** Trailing slot (e.g. the SuggestEdit trigger) — right-aligned in
+		 *  the card. */
+		children?: Snippet;
 	} = $props();
 
 	let votes = $state<WikiHelpful>({ up: 0, down: 0, my_vote: null });
@@ -104,5 +109,10 @@
 		<span class="text-xs text-[var(--color-danger)]" role="alert">
 			{t('wiki.helpful_error', 'Could not save your vote. Please try again.')}
 		</span>
+	{/if}
+	{#if children}
+		<div class="ml-auto flex items-center">
+			{@render children()}
+		</div>
 	{/if}
 </section>

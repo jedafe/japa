@@ -1,9 +1,12 @@
 // Package ai — tools_wiki.go implements the Destination Wiki agent tools
 // (Section 80, Section 103). Wiki body content is revision-gated: the
-// tools here create *pending* revisions through the same Service methods
-// the REST routes use, so agent-produced prose still passes moderator
-// review. Page flag/provisioning ops (wiki_page.update/.delete and the
-// content-less create) stay on the generic catalog writer.
+// write tools here create *pending* revisions through the same Service
+// methods the REST routes use, so agent-produced prose still passes
+// moderator review. Page flag/provisioning ops (wiki_page.update/.delete
+// and the content-less create) stay on the generic catalog writer. The
+// discovery tools (wiki_page.list/.read/.revisions.list and
+// wiki.entity_fields.get) let the agent find pages, inspect bound field
+// groups, and enumerate pending revisions before submitting edits.
 //
 // Ref: japaconnect-engineering/sections/80-destination-wiki.md
 // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md
@@ -207,8 +210,10 @@ func WikiPageSubmitRevisionHandler(deps *ToolDeps) ToolHandler {
 		// Reputation gate (wiki.min_reputation_to_edit). Fail closed when
 		// the points reader is unavailable — same convention as the REST
 		// handler's BUG-004 fix. On the page route the gate applies to
-		// prose and ops submissions alike.
-		if threshold := deps.Wiki.MinReputationToEdit(ctx); threshold > 0 {
+		// prose and ops submissions alike. §80 Super-Admin Direct Publish:
+		// super_admins bypass — the floor is a community contribution
+		// gate, not an admin restriction (mirrors checkReputationGate).
+		if threshold := deps.Wiki.MinReputationToEdit(ctx); threshold > 0 && !actorIsSuperAdmin(ctx, deps, userID) {
 			if deps.Points == nil {
 				return errorToolResult("reputation_check_unavailable", "reputation verification is currently unavailable"), nil
 			}
@@ -258,6 +263,200 @@ func WikiPageSubmitRevisionHandler(deps *ToolDeps) ToolHandler {
 			"revision_id": revID,
 			"status":      "pending",
 		}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wiki_page.list — the admin page index (GET /admin/wiki). Used to find
+// pages (e.g. unfilled stubs) by space, category, or latest-revision status
+// before submitting edits. Seeded required permission: wiki.review.
+// ---------------------------------------------------------------------------
+
+type wikiListPagesArgs struct {
+	SpaceSlug string `json:"space_slug"`
+	Category  string `json:"category"`
+	Status    string `json:"status"`
+	Q         string `json:"q"`
+	IsActive  *bool  `json:"is_active"`
+	Page      int32  `json:"page"`
+	Limit     int32  `json:"limit"`
+}
+
+// WikiPageListHandler returns a ToolHandler for wiki_page.list.
+func WikiPageListHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Wiki == nil {
+			return errorToolResult("wiki_unavailable", "wiki service is not configured"), nil
+		}
+
+		var a wikiListPagesArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		pages, total, err := deps.Wiki.ListPages(ctx, WikiPageListFilter{
+			SpaceSlug: a.SpaceSlug,
+			Category:  a.Category,
+			Status:    a.Status,
+			Q:         a.Q,
+			IsActive:  a.IsActive,
+			Page:      a.Page,
+			Limit:     a.Limit,
+		})
+		if err != nil {
+			return errorToolResult("wiki_list_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"pages": pages,
+			"total": total,
+			"page":  a.Page,
+			"limit": a.Limit,
+		}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wiki_page.read — the full page detail (GET /wiki/{space}/{page}): approved
+// content plus the bound field group's schema and current values. Public
+// read — no required permission; the service still applies per-field
+// visibility rules for the calling user.
+// ---------------------------------------------------------------------------
+
+type wikiReadPageArgs struct {
+	SpaceSlug string `json:"space_slug"`
+	PageSlug  string `json:"page_slug"`
+}
+
+// WikiPageReadHandler returns a ToolHandler for wiki_page.read.
+func WikiPageReadHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Wiki == nil {
+			return errorToolResult("wiki_unavailable", "wiki service is not configured"), nil
+		}
+
+		var a wikiReadPageArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+		if a.SpaceSlug == "" || a.PageSlug == "" {
+			return errorToolResult("missing_slug", "space_slug and page_slug are required"), nil
+		}
+
+		page, err := deps.Wiki.GetPageDetail(ctx, userID, a.SpaceSlug, a.PageSlug)
+		if err != nil {
+			return errorToolResult("wiki_read_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{"page": page}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wiki_page.revisions.list — revision discovery in three scopes:
+//   - entity_type + entity_id → fields/mixed revisions targeting an entity
+//   - space_slug + page_slug  → one page's revision history
+//   - neither                 → the global review queue (requires wiki.review)
+// Pending bodies are redacted by the service for non-reviewers.
+// ---------------------------------------------------------------------------
+
+type wikiListRevisionsArgs struct {
+	SpaceSlug  string `json:"space_slug"`
+	PageSlug   string `json:"page_slug"`
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+	Status     string `json:"status"`
+	Kind       string `json:"kind"`
+	Q          string `json:"q"`
+	Page       int32  `json:"page"`
+	Limit      int32  `json:"limit"`
+}
+
+// WikiPageRevisionsListHandler returns a ToolHandler for
+// wiki_page.revisions.list.
+func WikiPageRevisionsListHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Wiki == nil {
+			return errorToolResult("wiki_unavailable", "wiki service is not configured"), nil
+		}
+
+		var a wikiListRevisionsArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		canReview := deps.Permission != nil &&
+			deps.Permission.HasPermission(ctx, userID, "wiki.review")
+
+		var revs []WikiRevisionInfo
+		var total int64
+		var err error
+
+		switch {
+		case a.EntityType != "" || a.EntityID != "":
+			var entityID pgtype.UUID
+			entityID, err = scanUUID(a.EntityID)
+			if err != nil || a.EntityType == "" {
+				return errorToolResult("invalid_entity", "entity_type and a valid entity_id are required together"), nil
+			}
+			revs, total, err = deps.Wiki.ListEntityRevisions(ctx, userID, canReview, a.EntityType, entityID, a.Page, a.Limit)
+		case a.SpaceSlug != "" && a.PageSlug != "":
+			revs, total, err = deps.Wiki.ListRevisionHistory(ctx, userID, canReview, a.SpaceSlug, a.PageSlug, a.Page, a.Limit)
+		default:
+			// Global queue mirrors GET /admin/wiki/revisions (wiki.review).
+			if !canReview {
+				return errorToolResult("permission_denied", "wiki.review is required to list the global revision queue; pass space_slug+page_slug or entity_type+entity_id for a scoped listing"), nil
+			}
+			revs, total, err = deps.Wiki.ListRevisions(ctx, a.Kind, a.Status, a.Q, a.Page, a.Limit)
+		}
+		if err != nil {
+			return errorToolResult("wiki_revisions_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{
+			"revisions": revs,
+			"total":     total,
+			"page":      a.Page,
+			"limit":     a.Limit,
+		}), nil
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wiki.entity_fields.get — an entity's assigned field groups with current
+// values and per-field edit permissions (GET /wiki/entities/:type/:id/fields).
+// The agent calls this to learn which field_keys a set_value op may fill.
+// Public read — no required permission.
+// ---------------------------------------------------------------------------
+
+type wikiEntityFieldsArgs struct {
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+}
+
+// WikiEntityFieldsHandler returns a ToolHandler for wiki.entity_fields.get.
+func WikiEntityFieldsHandler(deps *ToolDeps) ToolHandler {
+	return func(ctx context.Context, args json.RawMessage, userID pgtype.UUID) (*ToolResult, error) {
+		if deps == nil || deps.Wiki == nil {
+			return errorToolResult("wiki_unavailable", "wiki service is not configured"), nil
+		}
+
+		var a wikiEntityFieldsArgs
+		if err := json.Unmarshal(args, &a); err != nil {
+			return errorToolResult("invalid_arguments", fmt.Sprintf("invalid arguments: %v", err)), nil
+		}
+
+		entityID, err := scanUUID(a.EntityID)
+		if err != nil || a.EntityType == "" {
+			return errorToolResult("invalid_entity", "entity_type and a valid entity_id are required"), nil
+		}
+
+		fields, err := deps.Wiki.GetEntityFields(ctx, userID, a.EntityType, entityID)
+		if err != nil {
+			return errorToolResult("wiki_fields_failed", err.Error()), nil
+		}
+
+		return successToolResult(map[string]any{"entity_fields": fields}), nil
 	}
 }
 

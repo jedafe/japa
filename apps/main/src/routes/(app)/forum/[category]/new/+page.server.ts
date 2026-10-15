@@ -1,31 +1,56 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { apiContext, apiList, apiPost, ApiError } from '$lib/server/api';
+import { apiContext, apiGet, apiList, apiPost, ApiError } from '$lib/server/api';
 import { suggestSlug } from '$lib/components/create/slug';
-import type { MeSpace, ForumThread } from '$lib/types';
+import type { MeSpace, ForumThread, SpaceDetail } from '$lib/types';
 
 /**
  * Full-page new forum thread composer at /forum/[category]/new — the
  * documented exception to the modal composer for full-page new threads.
  * Auth-gated; the [category] param pre-selects the space when it matches a
- * joined space slug.
+ * joined space slug. ?type=question renders question chrome and tags the
+ * thread "question" on submit — the wiki "Ask a Question" CTA lands here.
  *
  * Ref: japaconnect-engineering/sections/08-forum-qa-solved.md
  *      ADR-058 (Compose flow — /forum/[category]/new remains for full-page threads)
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw redirect(307, `/login?redirect=/forum/${event.params.category}/new`);
+		throw redirect(
+			307,
+			`/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`
+		);
 	}
 
 	const ctx = apiContext(event);
 	const category = event.params.category;
+	const isQuestion = event.url.searchParams.get('type') === 'question';
 
 	let spaces: MeSpace[] = [];
 	try {
 		spaces = (await apiList<MeSpace>(ctx, '/me/spaces')).items;
 	} catch {
 		spaces = [];
+	}
+
+	// Pre-select the space whose slug matches the [category] param. When the
+	// caller hasn't joined it (e.g. a wiki destination's community space),
+	// resolve it publicly and offer it — POST /forum doesn't gate on
+	// membership.
+	let preselected = spaces.find((s) => s.slug === category) ?? null;
+	if (!preselected) {
+		const detail = await apiGet<SpaceDetail>(
+			ctx,
+			`/spaces/${encodeURIComponent(category)}`
+		).catch(() => null);
+		if (detail?.space?.id) {
+			preselected = {
+				id: detail.space.id,
+				slug: detail.space.slug,
+				name: detail.space.name
+			};
+			spaces = [...spaces, preselected];
+		}
 	}
 
 	if (spaces.length === 0) {
@@ -35,10 +60,7 @@ export const load: PageServerLoad = async (event) => {
 		});
 	}
 
-	// Pre-select the space whose slug matches the [category] param.
-	const preselected = spaces.find((s) => s.slug === category) ?? null;
-
-	return { spaces, preselected, category };
+	return { spaces, preselected, category, isQuestion };
 };
 
 export const actions: Actions = {
@@ -54,11 +76,18 @@ export const actions: Actions = {
 		const body = String(form.get('body') ?? '');
 		const isAnonymous = form.get('is_anonymous') === 'on';
 		// Comma-separated tag slugs from the TagInput field (Section 08).
+		// Question-mode threads carry the "question" tag so they're
+		// filterable and eligible for the solved flow — same as the modal
+		// composer's Question toggle.
+		const isQuestion = form.get('type') === 'question';
 		const tagSlugs = String(form.get('tags') ?? '')
 			.split(',')
 			.map((s) => s.trim().toLowerCase().replace(/\s+/g, '-'))
 			.filter(Boolean)
 			.slice(0, 5);
+		if (isQuestion && !tagSlugs.includes('question')) {
+			tagSlugs.unshift('question');
+		}
 
 		// Poll builder fields (Phase 07.13) — optional.
 		const pollQuestion = String(form.get('poll_question') ?? '').trim();

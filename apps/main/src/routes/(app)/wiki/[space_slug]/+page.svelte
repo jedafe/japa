@@ -4,7 +4,6 @@
 	// tagline, category tab strip, hero image, intro, and section cards — with
 	// a wiki-specific right sidebar (quick facts, related, popular cities)
 	// registered on the shared rail via SetSidebar (ADR-058).
-	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { i18n, t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
@@ -38,7 +37,10 @@
 	let { data }: { data: PageData } = $props();
 
 	// The canonical category list is scoped to the space type server-side:
-	// university spaces get the university set (§80 amendment).
+	// university spaces get the university set (§80 amendment). These must
+	// stay reactive — SvelteKit reuses this component instance across
+	// /wiki/{space} navigations, so const snapshots would keep the previous
+	// space's categories/templates on screen until a hard refresh.
 	type ApiCategory = {
 		slug: string;
 		label_key: string;
@@ -63,10 +65,8 @@
 		field_group_id?: string;
 		field_group_slug?: string;
 	};
-	// svelte-ignore state_referenced_locally
-	const apiCategories: ApiCategory[] = data.apiCategories ?? [];
-	// svelte-ignore state_referenced_locally
-	const isUniversityWiki = data.wikiScope === 'university';
+	const apiCategories = $derived<ApiCategory[]>(data.apiCategories ?? []);
+	const isUniversityWiki = $derived(data.wikiScope === 'university');
 
 	function categoryDesc(cat: string): string {
 		return t(`wiki.category_desc_${cat}`, t('wiki.category_desc_other', 'Guides and resources.'), { name: spaceName });
@@ -158,8 +158,8 @@
 	}
 	// §80 directories: a directory-mode category with zero matching
 	// descendants (empty:true) earns no card — the stub lists nothing.
-	const hiddenDirCats = new Set(
-		apiCategories.filter((c) => c.directory && c.empty).map((c) => c.slug)
+	const hiddenDirCats = $derived(
+		new Set(apiCategories.filter((c) => c.directory && c.empty).map((c) => c.slug))
 	);
 	const cardGroups = $derived.by<CardGroup[]>(() => {
 		const order = new Map(apiCategories.map((c, i) => [c.slug, i]));
@@ -261,11 +261,19 @@
 
 	// "Save" follows the destination space (POST/DELETE /spaces/{slug}/follow)
 	// with optimistic UI + rollback — same toggle as the space page header.
-	let saved = $state(untrack(() => data.spaceDetail?.is_following ?? false));
+	let saved = $state(false);
 	let savePending = $state(false);
 	// Wiki-only explainer after a /spaces/[slug] redirect — dismissible,
 	// client-side only.
 	let showWikiOnlyBanner = $state(true);
+
+	// Re-seed viewer-scoped state when the loaded space changes — the same
+	// component instance is reused on /wiki/{a} → /wiki/{b} navigations.
+	$effect(() => {
+		void data.spaceSlug;
+		saved = data.spaceDetail?.is_following ?? false;
+		showWikiOnlyBanner = true;
+	});
 
 	async function toggleSave() {
 		if (savePending || !space) return;
@@ -557,8 +565,8 @@
 			</div>
 
 			<!-- Community CTA — hidden on wiki-only spaces (attractions):
-			     "Ask a Question" links /spaces/{slug} which redirects back
-			     here. -->
+			     "Ask a Question" opens a question-type thread composer
+			     pre-scoped to this destination's space. -->
 			{#if !data.spaceDetail?.wiki_only}
 			<div class="mt-6 flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
 				<span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--color-surface-subtle)]">
@@ -573,7 +581,7 @@
 					</span>
 				</span>
 				<a
-					href="/spaces/{encodeURIComponent(data.spaceSlug)}"
+					href="/forum/{encodeURIComponent(data.spaceSlug)}/new?type=question"
 					class="inline-flex shrink-0 items-center rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
 				>
 					{t('wiki.ask_a_question', 'Ask a Question')}
