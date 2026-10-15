@@ -479,6 +479,32 @@
 		if (bgPollTimer) clearInterval(bgPollTimer);
 		bgPollTimer = null;
 		bgSessionId = null;
+		bgCancelling = false;
+	}
+
+	// A tools-on stream that drops before session_start still leaves a
+	// detached session running server-side — the conversation detail
+	// exposes it so the poll can latch on without the SSE event.
+	async function findRunningSessionId(convId: string): Promise<string> {
+		const res = await api.get<{ running_session_id?: string }>(`/ai/conversations/${convId}`);
+		return res.data?.running_session_id ?? '';
+	}
+
+	let bgCancelling = $state(false);
+
+	// The composer's Stop only exists while a stream is attached — a
+	// detached/polled turn needs its own cancel path to the same endpoint.
+	async function cancelBackgroundSession() {
+		const sid = bgSessionId;
+		if (!sid || bgCancelling) return;
+		bgCancelling = true;
+		try {
+			await api.post(`/ai/agent/sessions/${sid}/cancel`);
+		} finally {
+			bgCancelling = false;
+		}
+		// Keep polling — the next tick observes 'cancelled' and lands the
+		// persisted cancellation notice.
 	}
 
 	function startSessionPoll(sessionId: string) {
@@ -498,9 +524,9 @@
 			inFlight = true;
 			void (async () => {
 				try {
-					const res = await api.get<{ session: { status: string } }>(
-						`/ai/agent/sessions/${sid}`
-					);
+					const res = await api.get<{
+						session: { status: string; conversation_id?: string };
+					}>(`/ai/agent/sessions/${sid}`);
 					// A stop/re-arm mid-request must not act on a stale session.
 					if (bgSessionId !== sid) return;
 					const status = res.data?.session?.status;
@@ -522,7 +548,32 @@
 							stuck.in_progress = false;
 							stuck.progress = '';
 						}
-						if (!sending && conversationId) await loadConversation(conversationId);
+						// A fresh chat whose stream dropped before the `conversation`
+						// event never set conversationId — the session payload's
+						// conversation_id is authoritative for which thread owns it.
+						const convId = res.data?.session?.conversation_id || conversationId || '';
+						if (convId && !convos.some((c) => c.conversation_id === convId)) {
+							// Mirror the `conversation` event's sidebar insert so the
+							// thread isn't invisible until the next list refresh.
+							const lastUser = turns.filter((tn) => tn.role === 'user').pop();
+							convos = [
+								{
+									conversation_id: convId,
+									project_id: pendingProjectId || undefined,
+									turn_count: 1,
+									legacy: false,
+									preview: lastUser?.content?.slice(0, 80) ?? ''
+								},
+								...convos
+							];
+						}
+						// Land the result only when the finished session belongs to
+						// the thread on screen — or to the fresh chat that spawned it
+						// (conversationId empty). A different conversationId means the
+						// user moved on; the sidebar insert above is enough.
+						if (!sending && convId && (!conversationId || conversationId === convId)) {
+							await loadConversation(convId);
+						}
 					}
 				} finally {
 					inFlight = false;
@@ -1003,6 +1054,19 @@
 		const message = input.trim();
 		if (!message || sending || viewingLegacy) return;
 
+		// A poll armed for THIS thread means a detached session is still
+		// running server-side — the send would 409 (one running turn per
+		// conversation). An empty conversationId means the running session
+		// belongs to a thread this client never adopted; a fresh send then
+		// creates a different conversation and is allowed.
+		if (bgSessionId && conversationId) {
+			error = t(
+				'ai.agent.bg_busy',
+				'An agent task is still running for this conversation — wait for it to finish or cancel it.'
+			);
+			return;
+		}
+
 		error = '';
 		input = '';
 		sending = true;
@@ -1075,11 +1139,17 @@
 				handleEvent(ev, liveTurn);
 			}
 			if (liveTurn.in_progress) {
-				const sid = liveTurn.session_id;
+				// A drop before session_start leaves no session id — recover the
+				// detached session from the conversation detail when there is one.
+				let sid = liveTurn.session_id ?? '';
+				if (!sid && sentWithTools && conversationId) {
+					sid = await findRunningSessionId(conversationId);
+				}
 				if (sid && sentWithTools) {
 					// Detached turn — the run continues server-side; poll the
 					// session and land the persisted message on completion.
 					liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
+					liveTurn.session_id = sid;
 					startSessionPoll(sid);
 				} else {
 					liveTurn.in_progress = false;
@@ -1107,13 +1177,23 @@
 				}
 			} else if (e instanceof DOMException && e.name === 'AbortError') {
 				liveTurn.error = t('ai.agent.cancelled', 'Cancelled.');
-			} else if (liveTurn.session_id && sentWithTools) {
+			} else if (sentWithTools) {
 				// The reader threw mid-stream (network drop) — a detached
 				// turn keeps running server-side; poll to completion instead
-				// of erroring out a live background task.
-				liveTurn.in_progress = true;
-				liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
-				startSessionPoll(liveTurn.session_id);
+				// of erroring out a live background task. A drop before
+				// session_start may leave session_id unset — recover it
+				// from the conversation detail.
+				let sid = liveTurn.session_id ?? '';
+				if (!sid && conversationId) sid = await findRunningSessionId(conversationId);
+				if (sid) {
+					liveTurn.in_progress = true;
+					liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
+					liveTurn.session_id = sid;
+					startSessionPoll(sid);
+				} else {
+					liveTurn.error = e instanceof Error ? e.message : String(e);
+					error = liveTurn.error;
+				}
 			} else {
 				liveTurn.error = e instanceof Error ? e.message : String(e);
 				error = liveTurn.error;
@@ -1751,6 +1831,17 @@
 										<span class="inline-flex items-center gap-1 text-xs" style="color: var(--color-muted)">
 											<Loader2 size={12} class="animate-spin" />
 											{turn.progress || t('ai.agent.thinking', 'Working...')}
+											{#if bgSessionId && turn.session_id === bgSessionId}
+												<button
+													type="button"
+													class="rounded border px-1.5 py-0.5 text-[10px]"
+													style="border-color: var(--color-border); color: var(--color-muted)"
+													disabled={bgCancelling}
+													onclick={cancelBackgroundSession}
+												>
+													{t('ai.agent.cancel', 'Cancel')}
+												</button>
+											{/if}
 										</span>
 									{/if}
 								</div>
@@ -1870,7 +1961,16 @@
 					{#if bgSessionId && !turns.some((tn) => tn.in_progress)}
 						<div class="flex items-center gap-2 px-1 py-2 text-xs sm:px-2" style="color: var(--color-muted)">
 							<Loader2 size={12} class="animate-spin" />
-							{t('ai.agent.bg_running', 'Agent is working in the background — the result will appear here.')}
+							<span class="flex-1">{t('ai.agent.bg_running', 'Agent is working in the background — the result will appear here.')}</span>
+							<button
+								type="button"
+								class="rounded border px-1.5 py-0.5 text-[10px]"
+								style="border-color: var(--color-border); color: var(--color-muted)"
+								disabled={bgCancelling}
+								onclick={cancelBackgroundSession}
+							>
+								{t('ai.agent.cancel', 'Cancel')}
+							</button>
 						</div>
 					{/if}
 				</div>

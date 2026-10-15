@@ -84,6 +84,7 @@
   "affiliate.product_type_general": "General",
   "affiliate.product_type_pro_subscription": "Pro Subscription",
   "ai.agent.back_to_history": "Back to session history",
+  "ai.agent.bg_busy": "An agent task is still running for this conversation — wait for it to finish or cancel it.",
   "ai.agent.bg_running": "Agent is working in the background — the result will appear here.",
   "ai.agent.cancel": "Cancel",
   "ai.agent.cancelled": "Cancelled.",

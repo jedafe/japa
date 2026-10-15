@@ -94,10 +94,26 @@ Frontend (`JapaAIChat.svelte`):
   the cap is a fixed 10 minutes; the server-side timeout + stale-session
   sweep bound the run itself.
 - Terminal status (`completed`/`failed`/`cancelled`) → stop polling, refetch
-  the conversation (assistant message lands), clear the indicator.
+  the conversation (assistant message lands), clear the indicator. The
+  session payload's `conversation_id` is authoritative for which thread
+  owns the result — the refetch only happens when it matches the thread on
+  screen (or `conversationId` is still empty because the stream dropped
+  before the `conversation` event); a missing sidebar entry is inserted so
+  the thread isn't invisible. A different `conversationId` means the user
+  moved on — the result waits in the sidebar.
 - Mid-stream drop: the client already captures `activeSessionId` from the
   `session_start` event; if the SSE stream ends without `final_response`,
   start the same poll on that session id instead of erroring immediately.
+  A drop *before* `session_start` leaves no session id — the client then
+  re-fetches the conversation detail and latches onto
+  `running_session_id` when one exists.
+- While a poll is armed for the current thread, a new send would hit the
+  server's one-running-turn 409 — the composer blocks it client-side with
+  a hint instead (preserving the typed draft).
+- The composer's Stop button only exists while a stream is attached — the
+  background indicator carries its own Cancel affordance that POSTs
+  `…/sessions/{id}/cancel`; the next poll tick lands the persisted
+  cancellation notice.
 - Polling stops on conversation switch and component destroy.
 
 ### 3. Template `intent` field

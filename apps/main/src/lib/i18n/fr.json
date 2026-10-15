@@ -84,6 +84,7 @@
   "affiliate.product_type_general": "Général",
   "affiliate.product_type_pro_subscription": "Abonnement Pro",
   "ai.agent.back_to_history": "Retour à l'historique des sessions",
+  "ai.agent.bg_busy": "Une tâche de l'agent est encore en cours pour cette conversation — attendez son terme ou annulez-la.",
   "ai.agent.bg_running": "L'agent travaille en arrière-plan — le résultat apparaîtra ici.",
   "ai.agent.cancel": "Annuler",
   "ai.agent.cancelled": "Annulé.",
