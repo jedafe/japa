@@ -22,6 +22,9 @@ export interface WikiEntityField {
 	/** §80 Itemized Pricing — the field's section token (e.g.
 	 *  'transportation'); fields sharing one render under one item table. */
 	section?: string;
+	/** §80 page rollup — value is derived from options.computed sources;
+	 *  never manually editable. */
+	computed?: boolean;
 }
 
 /** §80 Itemized Pricing — one named section inside a field group: the

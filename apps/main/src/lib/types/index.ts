@@ -3438,16 +3438,26 @@ export interface WikiRollupField {
 	samples: number;
 }
 
+/** §80 page rollup — a sub-page row reference on a pages-mode rollup. */
+export interface WikiRollupPageRef {
+	slug: string;
+	title: string;
+}
+
 /** One contributing descendant space and its values — a row in the
  *  "Cost of Living by City" table on a country/state page. */
 export interface WikiRollupRow {
 	space: WikiSpaceRef;
+	/** Present on mode "pages" rows — the contributing sub-page. */
+	page?: WikiRollupPageRef;
 	values: Record<string, unknown>;
 }
 
 /** Read-time descendant aggregate attached to a rollup-enabled category
  *  page (§80). Never persisted — recomputed per request. */
 export interface WikiRollup {
+	/** "pages" = same-space sub-page aggregation; absent = descendant spaces. */
+	scope?: string;
 	fields: WikiRollupField[];
 	rows: WikiRollupRow[];
 	spaces: number;

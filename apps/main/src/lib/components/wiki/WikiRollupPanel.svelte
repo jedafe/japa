@@ -169,6 +169,9 @@
 		return slug ? t(`wiki.${slug}_label`, slug) : t('wiki.rollup_col_space', 'Place');
 	});
 
+	// §80 page rollup — "pages" rows aggregate this space's own sub-pages.
+	const pageScope = $derived(rollup.scope === 'pages');
+
 	// Section tokens render Title-Cased — same fallback as WikiItemTables.
 	function sectionLabel(key: string): string {
 		return t(`wiki.section_${key}`, key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()));
@@ -284,7 +287,7 @@
 					<thead>
 						<tr class="border-b border-[var(--color-border)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
 							<th class="px-4 py-2 font-medium">
-								{spaceColLabel}
+								{pageScope ? t('wiki.rollup_col_page', 'Page') : spaceColLabel}
 							</th>
 							{#each rollup.fields.slice(0, 5) as f (f.key)}
 								<th class="px-4 py-2 font-medium">{f.label}</th>
@@ -295,15 +298,24 @@
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-[var(--color-border)]">
-						{#each rollup.rows as row (row.space.slug)}
+						{#each rollup.rows as row (row.page?.slug ?? row.space.slug)}
 							<tr>
 								<td class="px-4 py-2">
-									<a
-										href="/wiki/{encodeURIComponent(row.space.slug)}"
-										class="font-medium text-[var(--color-primary)] hover:underline"
-									>
-										{row.space.name}
-									</a>
+									{#if row.page}
+										<a
+											href="/wiki/{encodeURIComponent(row.space.slug)}/{encodeURIComponent(row.page.slug)}"
+											class="font-medium text-[var(--color-primary)] hover:underline"
+										>
+											{row.page.title}
+										</a>
+									{:else}
+										<a
+											href="/wiki/{encodeURIComponent(row.space.slug)}"
+											class="font-medium text-[var(--color-primary)] hover:underline"
+										>
+											{row.space.name}
+										</a>
+									{/if}
 								</td>
 								{#each rollup.fields.slice(0, 5) as f (f.key)}
 									<td class="px-4 py-2 text-[var(--color-text)]">
@@ -350,10 +362,14 @@
 				{/if}
 			</div>
 			<p class="text-xs text-[var(--color-muted)]">
-				{t('wiki.rollup_scope', 'Aggregated from {count} places under {name}', {
-					count: rollup.spaces,
-					name: spaceName
-				})}
+				{pageScope
+					? t('wiki.rollup_scope_pages', 'Aggregated from {count} cost pages', {
+							count: rollup.spaces
+						})
+					: t('wiki.rollup_scope', 'Aggregated from {count} places under {name}', {
+							count: rollup.spaces,
+							name: spaceName
+						})}
 			</p>
 		{/if}
 	</section>
