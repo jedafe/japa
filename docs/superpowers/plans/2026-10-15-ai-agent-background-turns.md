@@ -111,46 +111,105 @@ git commit -m "jeos: detached agent turns, running_session_id, template intent (
 - Produces: `loopParams.detached bool`; `persistTerminalNotice(ctx, p, session, notice string)`.
 - Consumes: existing `sendEvent` semantics — detached mode must ALWAYS return true (early-abort paths keyed on its return must not fire).
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-Add to `agent_unified_test.go` (adapt names to the local stubs — `stubConvoStore` records messages via `InsertAIMessage`):
+`recordingProvider` returns instantly and ignores ctx, so a plain
+cancel-race can't distinguish attached from detached (the loop may finish
+before cancel lands — and the terminal `sendEvent` return value isn't
+checked, so a late-cancelled attached run would still "complete"). Use a
+**gated provider** that blocks until released and honors `ctx.Done()`
+like a real LLM client. Add to `agent_unified_test.go`:
 
 ```go
-// A tools-on unified turn survives client disconnect: with detached
-// execution the loop completes, the session reaches a terminal status,
-// and nobody consuming the event channel must not stall the loop.
+// gatedProvider blocks ChatWithTools until release is closed; a cancelled
+// ctx aborts the call like a real LLM client would. Non-optional for the
+// detach tests — the instant recordingProvider makes cancel races
+// nondeterministic.
+type gatedProvider struct {
+	recordingProvider
+	release chan struct{}
+}
+
+func (p *gatedProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	p.reqs = append(p.reqs, req)
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+		return ChatWithToolsResponse{}, ctx.Err()
+	}
+	return ChatWithToolsResponse{Content: p.reply, FinishReason: "stop", Usage: TokenUsage{TotalTokens: 42}}, nil
+}
+
+// A tools-on turn (agent.use → non-empty catalog → detached) survives
+// client disconnect: the loop completes and the terminal event still
+// lands for a connected reader.
 func TestUnifiedChat_DetachedTurnCompletesAfterCancel(t *testing.T) {
-	h, convos, _ := newUnifiedHandler(t, /* provider that returns a final
-	    text response (no tool calls) */, /* perms with agent.use */)
-	req := UnifiedChatRequest{Prompt: "run a task", Tools: /* enabled */}
+	provider := &gatedProvider{recordingProvider: recordingProvider{name: "mock", reply: "done"}, release: make(chan struct{})}
+	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}})
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	events, err := h.HandleUnifiedChat(ctx, userID, req)
+	events, err := h.HandleUnifiedChat(ctx, uid, UnifiedChatRequest{Prompt: "run a task"})
 	if err != nil {
-		t.Fatalf("HandleUnifiedChat: %v", err)
+		t.Fatal(err)
 	}
-	cancel() // client disconnects
 
-	// Nobody drains `events` — a blocking sendEvent would deadlock the
-	// loop. The channel closing proves the detached loop finished.
+	// session_start proves the loop is parked on the gated LLM call.
+	if first := <-events; first.Type != EventSessionStart {
+		t.Fatalf("expected session_start first, got %v", first.Type)
+	}
+	cancel()                  // client disconnects
+	close(provider.release)   // the (detached) LLM call can now return
+
+	got := []AgentEvent{}
 	done := make(chan struct{})
-	go func() { for range events { /* discard */ }; close(done) }()
+	go func() {
+		for ev := range events {
+			got = append(got, ev)
+		}
+		close(done)
+	}()
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatal("detached loop stalled on event delivery")
+		t.Fatal("detached loop stalled")
 	}
-	// Session reached a terminal status (check the sessions stub the
-	// harness wires into the handler), and when a conversation exists the
-	// assistant message was persisted via convos.
-	_ = convos
+	if findEvent(got, EventFinalResponse) == nil {
+		t.Fatalf("expected final_response after disconnect, got %+v", got)
+	}
+}
+
+// Control: a pure-chat turn (ai.context.use only → empty catalog →
+// attached) stays request-bound — cancelling mid-loop fails the run
+// instead of finishing it.
+func TestUnifiedChat_ChatTurnStillAbortsOnCancel(t *testing.T) {
+	provider := &gatedProvider{recordingProvider: recordingProvider{name: "mock", reply: "done"}, release: make(chan struct{})}
+	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := h.HandleUnifiedChat(ctx, uid, UnifiedChatRequest{Prompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-events // session_start — loop is parked on the gated call
+	cancel()
+	close(provider.release) // provider sees ctx.Done and fails the call
+
+	got := []AgentEvent{}
+	for ev := range events {
+		got = append(got, ev)
+	}
+	if findEvent(got, EventFinalResponse) != nil {
+		t.Fatal("attached chat turn must not complete after disconnect")
+	}
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /home/jmobile/websites/japa/japaconnect && go test ./internal/ai/ -run TestUnifiedChat_DetachedTurnCompletesAfterCancel -v`
-Expected: FAIL or stall — today `ctx.Done()` aborts the loop and the session fails instead of completing.
+Run: `cd /home/jmobile/websites/japa/japaconnect && go test ./internal/ai/ -run 'DetachedTurn|ChatTurnStillAborts' -v`
+Expected: `DetachedTurnCompletesAfterCancel` FAILS (loop aborts after cancel — no `final_response`); the control test may already pass today (everything is request-bound).
 
 - [ ] **Step 3: `loopParams` + ctx detach**
 
@@ -669,12 +728,18 @@ In `loadConversation`, extend the response type with `running_session_id?: strin
 
 - [ ] **Step 3: Mid-stream drop → poll**
 
-In `send()`, the post-loop `if (liveTurn.in_progress)` block (~line 999): when the stream ends with no terminal event but a session exists and tools were on, switch to background polling instead of "Stream closed.":
+In `send()`, capture the tools state at send time (the composer toggle could flip while the stream is live — decide detach-vs-discard by what was SENT, not what's set now): right after `const message = input.trim()` add
+
+```ts
+		const sentWithTools = toolsOn;
+```
+
+Then the post-loop `if (liveTurn.in_progress)` block (~line 999): when the stream ends with no terminal event but a session exists and the turn was sent with tools, switch to background polling instead of "Stream closed.":
 
 ```ts
 		if (liveTurn.in_progress) {
 			const sid = liveTurn.session_id;
-			if (sid && toolsOn) {
+			if (sid && sentWithTools) {
 				// Detached turn — the run continues server-side; poll the
 				// session and land the persisted message on completion.
 				liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
@@ -691,11 +756,11 @@ In `send()`, the post-loop `if (liveTurn.in_progress)` block (~line 999): when t
 
 Keep `in_progress: true` while polling so the turn's spinner/progress area shows the background state; `loadConversation` replaces `turns` on completion.
 
-Also: on `AbortError` (user pressed Stop → the cancel endpoint was already POSTed) do NOT poll — the catch branch already handles it; ensure `startSessionPoll` isn't called there. Verify the stop/cancel handler (~line 1175) still `stopSessionPoll()`s — add `stopSessionPoll()` inside it.
+Also: on `AbortError` (user pressed Stop → the cancel endpoint was already POSTed) do NOT poll — the catch branch already handles it; ensure `startSessionPoll` isn't called there. Verify the stop/cancel handler (~line 1175) calls `stopSessionPoll()` — add it inside.
 
-Add `onDestroy` cleanup (import from 'svelte' if not imported): `onDestroy(stopSessionPoll)`.
+Cleanup: `import { onDestroy }` — the file's svelte import is currently `{ onMount, tick, untrack }` (~line 18) — add `onDestroy` and register `onDestroy(stopSessionPoll)`.
 
-Also call `stopSessionPoll()` at the top of `startNewChat()` and at the top of `loadConversation` before the fetch (covered by the success-path call, but stopping early avoids a stale poll firing mid-load — put `stopSessionPoll()` as the first line of `loadConversation`).
+Also call `stopSessionPoll()` at the top of `startNewChat()` and as the first line of `loadConversation` (stopping early avoids a stale poll firing mid-load; the success-path call re-arms it when the new conversation reports a running session).
 
 - [ ] **Step 4: Indicator in the transcript**
 
