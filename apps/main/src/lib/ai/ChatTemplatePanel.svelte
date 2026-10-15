@@ -1246,6 +1246,32 @@
 		</button>
 
 		<div class="tpl-field">
+			<span class="tpl-label">{t('ai.templates.intent', 'Intent')}</span>
+			<div
+				class="flex overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]"
+				role="radiogroup"
+				aria-label={t('ai.templates.intent', 'Intent')}
+			>
+				{#each [
+					['preview', t('ai.templates.intent_preview', 'Preview in chat')],
+					['create', t('ai.templates.intent_create', 'Create content')]
+				] as [val, label] (val)}
+					<button
+						type="button"
+						role="radio"
+						aria-checked={values.intent === val}
+						onclick={() => (values.intent = val as 'preview' | 'create')}
+						class="flex-1 px-2 py-1.5 text-xs {values.intent === val
+							? 'bg-[var(--color-primary)] text-white font-medium'
+							: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+					>
+						{label}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<div class="tpl-field">
 			<span class="tpl-label">{t('ai.templates.folder', 'Folder')}</span>
 			<Autocomplete
 				id="tpl-folder"
