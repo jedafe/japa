@@ -152,61 +152,6 @@ func WithAgentPreSearcher(p *PreSearcher) AgentHTTPOption {
 	return func(h *AgentHTTPHandlers) { h.preSearch = p }
 }
 
-// ---------------------------------------------------------------------------
-// Task 6.01 — POST /api/v1/ai/agent (SSE streaming)
-// ---------------------------------------------------------------------------
-
-// HandleAgent is the SSE streaming endpoint for agent requests. It reads
-// the prompt from the request body, calls AgentHandler.HandleAgentRequest,
-// and streams AgentEvents back as Server-Sent Events.
-// // The request body accepts { prompt: string, conversation_id?: uuid } per
-// §103. The conversation_id field is accepted for forward compatibility
-// with multi-turn conversations but is not yet used by the agent loop
-// (Phase 7+ will add conversation context persistence).
-// // SSE wire format per §103 "SSE Streaming":
-// //	Content-Type: text/event-stream
-// Cache-Control: no-cache
-// Connection: keep-alive
-// // Each event is written as `data: {json}\n\n` and flushed immediately so the
-// frontend receives progress incrementally. Pre-check failures (agent
-// disabled, no permission, rate limited) return a standard JSON error
-// response with the appropriate status code before the stream opens.
-// // Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (SSE Streaming, API Routes).
-func (h *AgentHTTPHandlers) HandleAgent(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	var input struct {
-		Prompt         string `json:"prompt"`
-		ConversationID string `json:"conversation_id,omitempty"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
-		return
-	}
-
-	if input.Prompt == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "prompt is required")
-		return
-	}
-
-	// HandleAgentRequest runs synchronous pre-checks (enabled, permission,
-	// rate limit, pre-search, session creation) and returns a channel. Pre-
-	// check failures come back as errors here — return them as JSON before
-	// opening the SSE stream so the client gets a proper status code.
-	events, err := h.agent.HandleAgentRequest(r.Context(), user.UserID, input.Prompt)
-	if err != nil {
-		writeAgentError(w, err)
-		return
-	}
-
-	// SSE wire format per §103 — shared with the unified /ai/chat handler.
-	streamAgentEvents(w, events)
-}
-
 // writeAgentError maps an agent pre-check error to the appropriate HTTP
 // status code and writes a standard error response (Rule 5).
 func writeAgentError(w http.ResponseWriter, err error) {

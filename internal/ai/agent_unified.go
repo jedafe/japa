@@ -81,8 +81,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 
 	// --- Permission OR-gate (ADR-130): either surface permission admits.
 	// agent.use additionally controls tool eligibility below. Runs before
-	// CheckBudget so denied requests don't consume jc:ai:queries — the
-	// legacy route checks permission in middleware for the same reason. ---
+	// CheckBudget so denied requests don't consume jc:ai:queries. ---
 	hasChat, hasAgent := true, true
 
 	if h.perms != nil {
@@ -241,7 +240,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		}
 	}
 
-	// --- Geo + pre-search (same as legacy path). ---
+	// --- Geo + pre-search. ---
 	geoSpaceID, geoSummary := h.resolveGeoContext(ctx, userID)
 	preSearchResult := h.runPreSearch(ctx, req.Prompt, geoSpaceID, userID)
 

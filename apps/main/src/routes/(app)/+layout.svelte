@@ -83,7 +83,7 @@
 	// the unified chat is still mounting (`!mounted`), assume the rail will
 	// open (its desktop default) so the widgets never flash into view.
 	const aiUnifiedRoute = $derived(
-		page.route.id === '/(app)/ai' && page.data.unifiedEnabled === true
+		page.route.id === '/(app)/ai' && page.data.chatEnabled === true
 	);
 	const aiRailOpen = $derived(
 		aiUnifiedRoute && (!chatTemplateRail.mounted || chatTemplateRail.open)
@@ -272,7 +272,7 @@
 		<!-- §23 JapaBot FAB — sits above the mobile tab bar (bottom-20),
 		     flush to the right edge on desktop (bottom-5). -->
 		<a
-			href="/ai?mode=chat"
+			href="/ai"
 			aria-label={t('ai.chat.title') ?? 'JapaBot Chat'}
 			title={t('ai.chat.title') ?? 'JapaBot Chat'}
 			class="fixed bottom-20 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-[var(--color-primary)] text-[var(--color-primary-contrast)] shadow-lg transition-transform hover:scale-105 sm:bottom-5"

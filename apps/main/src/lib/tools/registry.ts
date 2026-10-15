@@ -57,21 +57,14 @@ export const MAIN_TOOLS: MainToolMeta[] = [
 		sections: ['planning', 'finance']
 	},
 	{
-		// JapaBot lives on the unified /ai surface's chat tab (/ai/chat
-		// 308-redirects here for legacy links).
-		href: '/ai?mode=chat',
+		// §103 + ADR-130 — JapaBot is the unified /ai surface: plain chat and
+		// tool-enabled agent turns share one composer (/ai/chat 308-redirects
+		// here for legacy links). feature.ai_agent stays the backend tool
+		// kill-switch; it does not gate a separate destination.
+		href: '/ai',
 		labelKey: 'tools.japabot',
 		descKey: 'tools.japabot_desc',
 		enabledSetting: 'feature.japabot',
-		sections: ['planning', 'immigration']
-	},
-	{
-		// §103 — AI Agent. Gated by feature.ai_agent (hub visibility only;
-		// the backend enforces agent.use on every call).
-		href: '/ai?mode=agent',
-		labelKey: 'tools.ai_agent',
-		descKey: 'tools.ai_agent_desc',
-		enabledSetting: 'feature.ai_agent',
 		sections: ['planning', 'immigration']
 	},
 	{

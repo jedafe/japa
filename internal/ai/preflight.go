@@ -44,7 +44,7 @@ type SurfaceGate struct {
 	DisabledMsg    string
 }
 
-// The three user-facing AI surfaces covered by the unified preflight.
+// The user-facing AI surfaces covered by the unified preflight.
 var (
 	// GateJapaBot gates POST /ai/chat (Section 20 JapaBot).
 	GateJapaBot = SurfaceGate{
@@ -64,16 +64,9 @@ var (
 		DisabledCode:   "ai_assist_disabled",
 		DisabledMsg:    "AI content assist is currently disabled",
 	}
-	// GateAgent gates POST /ai/agent (Section 103). The agent loop resolves
-	// the same flag through its own agentEnabled check; the constant exists
-	// for callers that run the full admission pipeline.
-	GateAgent = SurfaceGate{
-		FeatureKey:     "feature.ai_agent",
-		SettingKey:     "agent.enabled",
-		SettingDefault: true,
-		DisabledCode:   "agent_disabled",
-		DisabledMsg:    "The AI agent is currently disabled",
-	}
+	// The §103 executor's feature.ai_agent kill-switch is resolved directly
+	// by AgentHandler.agentEnabled (same flag + agent.enabled fallback);
+	// agent requests run through GateJapaBot admission on /ai/chat.
 )
 
 // TierResolver resolves a user's effective unified tier

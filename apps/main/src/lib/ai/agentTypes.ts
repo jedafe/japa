@@ -9,6 +9,19 @@ import type { AiCitationSource } from './types';
 import type { ChatTemplate } from './chatTemplate';
 import type { ToolSelectionOverride } from './unifiedStream';
 
+/** Error thrown when an AI chat request fails pre-checks (non-SSE response
+ * with a JSON error body). */
+export class AgentRequestError extends Error {
+	constructor(
+		public readonly status: number,
+		public readonly code: string,
+		message: string
+	) {
+		super(message);
+		this.name = 'AgentRequestError';
+	}
+}
+
 /** SSE event types emitted by the agent loop (internal/ai/agent.go constants). */
 export type AgentEventType =
 	| 'session_start'

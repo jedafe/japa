@@ -314,47 +314,7 @@ func newTestAgentHandler(t *testing.T, provider Provider, opts ...AgentOption) *
 // Pre-check tests (tasks 5.04-5.05, 5.10-5.11)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_AgentDisabled(t *testing.T) {
-	t.Parallel()
-
-	provider := &mockAgentProvider{name: "mock"}
-	h := newTestAgentHandler(
-		t, provider,
-		WithAgentSettings(&agentSettingsReader{
-			bools: map[string]bool{"agent.enabled": false},
-		}),
-	)
-
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
-	if err == nil {
-		t.Fatal("expected error when agent is disabled, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "disabled") {
-		t.Errorf("error should mention disabled: %v", err)
-	}
-}
-
-func TestHandleAgentRequest_NoPermission(t *testing.T) {
-	t.Parallel()
-
-	provider := &mockAgentProvider{name: "mock"}
-	h := newTestAgentHandler(
-		t, provider,
-		WithAgentPerms(&stubPerms{granted: map[string]bool{}}), // no agent.use
-	)
-
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
-	if err == nil {
-		t.Fatal("expected error when user lacks agent.use, got nil")
-	}
-
-	if !strings.Contains(err.Error(), "agent.use") {
-		t.Errorf("error should mention agent.use: %v", err)
-	}
-}
-
-func TestHandleAgentRequest_RateLimited(t *testing.T) {
+func TestAgentLoop_RateLimited(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
@@ -367,7 +327,7 @@ func TestHandleAgentRequest_RateLimited(t *testing.T) {
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	_, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err == nil {
 		t.Fatal("expected rate limit error, got nil")
 	}
@@ -377,7 +337,7 @@ func TestHandleAgentRequest_RateLimited(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_RateLimiterFailsOpen(t *testing.T) {
+func TestAgentLoop_RateLimiterFailsOpen(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
@@ -389,7 +349,7 @@ func TestHandleAgentRequest_RateLimiterFailsOpen(t *testing.T) {
 		WithAgentSessions(sessions),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("expected request to proceed when rate limiter fails (fail-open), got error: %v", err)
 	}
@@ -400,7 +360,7 @@ func TestHandleAgentRequest_RateLimiterFailsOpen(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_DailyBudgetExceeded(t *testing.T) {
+func TestAgentLoop_DailyBudgetExceeded(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
@@ -414,7 +374,7 @@ func TestHandleAgentRequest_DailyBudgetExceeded(t *testing.T) {
 		}),
 	)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	_, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err == nil {
 		t.Fatal("expected budget exceeded error, got nil")
 	}
@@ -424,7 +384,7 @@ func TestHandleAgentRequest_DailyBudgetExceeded(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_DailyBudgetWithinLimit(t *testing.T) {
+func TestAgentLoop_DailyBudgetWithinLimit(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
@@ -440,7 +400,7 @@ func TestHandleAgentRequest_DailyBudgetWithinLimit(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("expected request to proceed within budget, got error: %v", err)
 	}
@@ -451,7 +411,7 @@ func TestHandleAgentRequest_DailyBudgetWithinLimit(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_DailyBudgetDisabled(t *testing.T) {
+func TestAgentLoop_DailyBudgetDisabled(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
@@ -468,7 +428,7 @@ func TestHandleAgentRequest_DailyBudgetDisabled(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("expected request to proceed when budget disabled (0), got error: %v", err)
 	}
@@ -479,7 +439,7 @@ func TestHandleAgentRequest_DailyBudgetDisabled(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_DailyBudgetGetFailsOpen(t *testing.T) {
+func TestAgentLoop_DailyBudgetGetFailsOpen(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
@@ -496,7 +456,7 @@ func TestHandleAgentRequest_DailyBudgetGetFailsOpen(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("expected request to proceed when budget GET fails (fail-open), got error: %v", err)
 	}
@@ -507,13 +467,13 @@ func TestHandleAgentRequest_DailyBudgetGetFailsOpen(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_EmptyPrompt(t *testing.T) {
+func TestAgentLoop_EmptyPrompt(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{name: "mock"}
 	h := newTestAgentHandler(t, provider)
 
-	_, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "")
+	_, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: ""})
 	if err == nil {
 		t.Fatal("expected error for empty prompt, got nil")
 	}
@@ -523,7 +483,7 @@ func TestHandleAgentRequest_EmptyPrompt(t *testing.T) {
 // LLM loop tests (tasks 5.08-5.09, 5.12)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
+func TestAgentLoop_FinalResponseNoToolCalls(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{
@@ -535,7 +495,7 @@ func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "What is JapaConnect?")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "What is JapaConnect?"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -573,7 +533,7 @@ func TestHandleAgentRequest_FinalResponseNoToolCalls(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_ToolCallThenFinalResponse(t *testing.T) {
+func TestAgentLoop_ToolCallThenFinalResponse(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{
@@ -597,7 +557,7 @@ func TestHandleAgentRequest_ToolCallThenFinalResponse(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "Search for visa info")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "Search for visa info"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -642,7 +602,7 @@ func TestHandleAgentRequest_ToolCallThenFinalResponse(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_MaxIterationsExceeded(t *testing.T) {
+func TestAgentLoop_MaxIterationsExceeded(t *testing.T) {
 	t.Parallel()
 
 	// Provider always returns tool calls — never a final response.
@@ -663,7 +623,7 @@ func TestHandleAgentRequest_MaxIterationsExceeded(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -691,7 +651,7 @@ func TestHandleAgentRequest_MaxIterationsExceeded(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_LLMError(t *testing.T) {
+func TestAgentLoop_LLMError(t *testing.T) {
 	t.Parallel()
 
 	// Override ChatWithTools to return an error.
@@ -709,7 +669,7 @@ func TestHandleAgentRequest_LLMError(t *testing.T) {
 		WithAgentSessions(sessions),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -747,7 +707,7 @@ func (e *errorAgentProvider) ChatWithTools(ctx context.Context, req ChatWithTool
 // Cost limit test (task 5.10)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_CostLimitExceeded(t *testing.T) {
+func TestAgentLoop_CostLimitExceeded(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{
@@ -769,7 +729,7 @@ func TestHandleAgentRequest_CostLimitExceeded(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -795,7 +755,7 @@ func TestHandleAgentRequest_CostLimitExceeded(t *testing.T) {
 // Geo context test (task 5.05)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
+func TestAgentLoop_GeoContextResolved(t *testing.T) {
 	t.Parallel()
 
 	cityName := "Berlin"
@@ -824,7 +784,7 @@ func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
 		WithAgentGeoResolver(geo),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -855,7 +815,7 @@ func TestHandleAgentRequest_GeoContextResolved(t *testing.T) {
 // Tool catalog cache test (task 5.06)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_ToolCatalogCached(t *testing.T) {
+func TestAgentLoop_ToolCatalogCached(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{
@@ -872,7 +832,7 @@ func TestHandleAgentRequest_ToolCatalogCached(t *testing.T) {
 		WithAgentCache(cache),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -944,7 +904,7 @@ func TestBuildSystemPrompt_NoGeoNoPreSearch(t *testing.T) {
 // Event ordering test (task 5.12)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_EventOrdering(t *testing.T) {
+func TestAgentLoop_EventOrdering(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{
@@ -957,7 +917,7 @@ func TestHandleAgentRequest_EventOrdering(t *testing.T) {
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, provider, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1005,7 +965,7 @@ func TestHandleAgentRequest_EventOrdering(t *testing.T) {
 // Timeout test (task 5.10)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_TimeoutEnforced(t *testing.T) {
+func TestAgentLoop_TimeoutEnforced(t *testing.T) {
 	t.Parallel()
 
 	// Provider that sleeps longer than the timeout.
@@ -1026,7 +986,7 @@ func TestHandleAgentRequest_TimeoutEnforced(t *testing.T) {
 		}),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1043,7 +1003,7 @@ func TestHandleAgentRequest_TimeoutEnforced(t *testing.T) {
 // User cancellation test (task 5.09 — CancelAgentSession)
 // ---------------------------------------------------------------------------
 
-func TestHandleAgentRequest_UserCancellation(t *testing.T) {
+func TestAgentLoop_UserCancellation(t *testing.T) {
 	t.Parallel()
 
 	provider := &mockAgentProvider{
@@ -1065,7 +1025,7 @@ func TestHandleAgentRequest_UserCancellation(t *testing.T) {
 		WithAgentCache(cache),
 	)
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1163,13 +1123,13 @@ func (p *panicAgentProvider) ChatWithTools(ctx context.Context, req ChatWithTool
 	panic("provider exploded")
 }
 
-func TestHandleAgentRequest_ProviderPanicRecovered(t *testing.T) {
+func TestAgentLoop_ProviderPanicRecovered(t *testing.T) {
 	t.Parallel()
 
 	sessions := &stubSessionStore{}
 	h := newTestAgentHandler(t, &panicAgentProvider{name: "mock"}, WithAgentSessions(sessions))
 
-	ch, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{}, "test")
+	ch, err := h.HandleUnifiedChat(t.Context(), pgtype.UUID{}, UnifiedChatRequest{Prompt: "test"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

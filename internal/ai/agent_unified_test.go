@@ -559,22 +559,6 @@ func TestUnifiedChat_InvalidModel(t *testing.T) {
 	}
 }
 
-func TestHandleAgentRequest_LegacyPathStillWorks(t *testing.T) {
-	// Legacy wrapper: no unified deps needed; agent.use required.
-	provider := &mockAgentProvider{name: "mock"}
-	h := newTestAgentHandler(t, provider,
-		WithAgentPerms(&stubPerms{granted: map[string]bool{"agent.use": true}}))
-
-	ev, err := h.HandleAgentRequest(t.Context(), pgtype.UUID{Bytes: [16]byte{1}, Valid: true}, "hi")
-	if err != nil {
-		t.Fatal(err)
-	}
-	events := collectEvents(t, ev)
-	if !hasEventType(events, EventSessionStart) || !hasEventType(events, EventFinalResponse) {
-		t.Fatalf("legacy turn missing events: %+v", events)
-	}
-}
-
 // A tools-on turn (agent.use → non-empty catalog → detached) survives
 // client disconnect: the loop completes and the terminal event still
 // lands for a connected reader.

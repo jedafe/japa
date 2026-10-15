@@ -1864,7 +1864,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	jceHandlers := jce.NewHandlers(jceService)
 
 	// Register Xiaomi MiMo as the primary content generation + chat provider.
-	// The "chat" category is required by HandleChat (JapaBot) — without it,
+	// The "chat" category is required by the unified chat handler — without it,
 	// every /ai/chat request fails with "no providers registered for category
 	// \"chat\"". The same Xiaomi provider serves both categories.
 	// "moderation" is used by the spam pipeline's AI classification layer
@@ -2002,7 +2002,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	aiHandlers.AsynqClient = asynqClient
 
 	// ADR-130 unified Japa AI transcript store + preferences. Always wired —
-	// the unified surface is gated per-request by feature.japa_ai_unified.
+	// the unified surface is gated by feature.japabot at the route.
 	convoService := ai.NewConversationService(gen.New(database.Writer), database.Writer)
 	aiHandlers.SetConversationService(convoService)
 	aiHandlers.SetAgentSessionQueries(gen.New(database.Reader))
@@ -2039,11 +2039,9 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	ragService.SetFeatureChecker(featureChecker) // rag.enabled reads feature_flags
 	ragHandlers := rag.NewHandlers(ragService, settingsService)
 	ragHandlers.SetFeatureChecker(featureChecker) // rag.enabled read/write-through to feature_flags
-	// Inject the RAG service into the AI handlers so HandleChat can run the
-	// retrieval step before the LLM call when rag.enabled is true.
-	aiHandlers.SetRAGService(ragService)
-	// §19/ADR-014: wire the GDPR consent checker so HandleChat verifies
-	// ai_processing consent before sending user prompts to external providers.
+	// §19/ADR-014: wire the GDPR consent checker so the AI admission gates
+	// verify ai_processing consent before sending user prompts to external
+	// providers.
 	aiHandlers.SetConsentChecker(gdprService)
 
 	// B6/B8: wire Valkey (edit lock) and RAG indexer (embedding on approval)
@@ -5446,29 +5444,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.ai_content_gen"), rbac.RequirePermission(rbacResolver, "ai.generate")).
 				Post("/ai/generate", aiHandlers.HandleGenerate)
 
-			// JapaBot chat — gated by feature.japabot flag (Section 20). ADR-130:
-			// when feature.japa_ai_unified is on, the unified handler serves
-			// SSE (Accept: text/event-stream) or JSON with OR admission
-			// (ai.context.use OR agent.use); off, the legacy JSON handler keeps
-			// its historical ai.context.use gate — re-checked inside the
-			// dispatch because RequireAnyPermission now admits agent.use-only
-			// users for the unified surface.
+			// Unified Japa AI chat (ADR-130) — gated by feature.japabot flag
+			// (Section 20). The unified handler serves SSE
+			// (Accept: text/event-stream) or the JSON {reply, conversation_id,
+			// sources} contract with OR admission (ai.context.use OR agent.use).
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use"), mw.RateLimit(vkClient.Redis(), "moderate")).
-				Post("/ai/chat", func(w http.ResponseWriter, r *http.Request) {
-					if featureChecker.IsEnabled(r.Context(), "feature.japa_ai_unified") {
-						agentHTTPHandlers.HandleUnifiedChat(w, r)
-						return
-					}
-					user := auth.FromContext(r.Context())
-					if user == nil || (!rbacResolver.IsSuperAdmin(r.Context(), user.UserID) &&
-						!rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")) {
-						w.Header().Set("Content-Type", "application/json")
-						w.WriteHeader(http.StatusForbidden)
-						_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
-						return
-					}
-					aiHandlers.HandleChat(w, r)
-				})
+				Post("/ai/chat", agentHTTPHandlers.HandleUnifiedChat)
 
 			// Content AI Assist endpoints (catalog: /ai/assist/*), gated by the
 			// feature.ai_content_gen flag — the same flag as /ai/generate — plus
@@ -5591,14 +5572,12 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Put("/admin/settings/rag", ragHandlers.HandleUpdateSettings)
 
 			// AI Agent Executor routes (Section 103, ADR-111) — Phase 6.
-			// The agent SSE endpoint, capabilities, session history, and
-			// session management. All gated by the agent.use RBAC permission
+			// Capabilities, session history, and session management — the
+			// agent request endpoint itself is POST /ai/chat (ADR-130). All
+			// gated by the agent.use RBAC permission
 			// (seeded by migration 000372) + RequireAuth + the feature.ai_agent
 			// flag — previously only the UI hid the surface while the API
 			// stayed reachable when the flag was off.
-			r.With(features.Gate(featureChecker, "feature.ai_agent"),
-				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
-				Post("/ai/agent", agentHTTPHandlers.HandleAgent)
 			r.With(features.Gate(featureChecker, "feature.ai_agent"),
 				auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "agent.use")).
 				Get("/ai/agent/capabilities", agentHTTPHandlers.HandleGetCapabilities)
@@ -6700,55 +6679,21 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			// OR admission (ai.context.use OR agent.use) matching unified
 			// /ai/chat. The V2 handlers union ai_conversations with legacy
 			// Honcho threads and fall back to the legacy path for non-UUID
-			// ids, so flag-off behavior is unchanged (ai_conversations is
-			// empty until the unified flag turns on).
-			// The OR middleware admits agent.use-only callers for the unified
-			// surface; when feature.japa_ai_unified is off, re-check the
-			// historical ai.context.use gate and serve the legacy handlers so
-			// flag-off behavior is byte-for-byte identical to pre-ADR-130.
-			requireLegacyChatPerm := func(w http.ResponseWriter, r *http.Request) bool {
-				user := auth.FromContext(r.Context())
-				if user == nil || (!rbacResolver.IsSuperAdmin(r.Context(), user.UserID) &&
-					!rbacResolver.HasPermission(r.Context(), user.UserID, "ai.context.use")) {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusForbidden)
-					_, _ = w.Write([]byte(`{"error":{"code":"forbidden","message":"You do not have permission to perform this action"}}`))
-					return false
-				}
-				return true
-			}
+			// ids.
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
-				Get("/ai/conversations", func(w http.ResponseWriter, r *http.Request) {
-					if featureChecker.IsEnabled(r.Context(), "feature.japa_ai_unified") {
-						aiHandlers.HandleListConversationsV2(w, r)
-						return
-					}
-					if requireLegacyChatPerm(w, r) {
-						aiHandlers.HandleListConversations(w, r)
-					}
-				})
+				Get("/ai/conversations", aiHandlers.HandleListConversationsV2)
 			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
-				Get("/ai/conversations/{id}", func(w http.ResponseWriter, r *http.Request) {
-					if featureChecker.IsEnabled(r.Context(), "feature.japa_ai_unified") {
-						aiHandlers.HandleGetConversationV2(w, r)
-						return
-					}
-					if requireLegacyChatPerm(w, r) {
-						aiHandlers.HandleGetConversation(w, r)
-					}
-				})
+				Get("/ai/conversations/{id}", aiHandlers.HandleGetConversationV2)
 			// ADR-130: soft-delete a unified conversation. Session audit rows
 			// are unlinked, not deleted (Rule 11 carve-out).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), features.Gate(featureChecker, "feature.japa_ai_unified"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
 				Delete("/ai/conversations/{id}", aiHandlers.HandleDeleteConversation)
 
-			// §103 AI Projects — CRUD + thread/session membership. Unified-only:
-			// same gate stack as conversation delete (japabot + unified flag +
-			// OR admission).
+			// §103 AI Projects — CRUD + thread/session membership. Same gate
+			// stack as the conversation routes (japabot + OR admission).
 			projectGate := []func(http.Handler) http.Handler{
 				auth.RequireAuth(kr, vkClient.Redis()),
 				features.Gate(featureChecker, "feature.japabot"),
-				features.Gate(featureChecker, "feature.japa_ai_unified"),
 				rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use"),
 			}
 			r.With(projectGate...).Put("/ai/conversations/{id}/project", aiHandlers.HandleAssignConversationProject)
@@ -6760,12 +6705,11 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 			r.With(projectGate...).Delete("/ai/projects/{id}", aiHandlers.HandleDeleteProject)
 
 			// ADR-130: per-user AI preferences (default mode, tool/category
-			// toggles) — only meaningful while the unified surface is on.
-			// Same OR admission as /ai/chat so users without AI permission
-			// can't read or write preferences.
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
+			// toggles). Same gate + OR admission as /ai/chat so users without
+			// AI permission can't read or write preferences.
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
 				Get("/me/ai-preferences", aiHandlers.HandleGetAIPrefs)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japa_ai_unified"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), features.Gate(featureChecker, "feature.japabot"), rbac.RequireAnyPermission(rbacResolver, "ai.context.use", "agent.use")).
 				Put("/me/ai-preferences", aiHandlers.HandlePutAIPrefs)
 
 			// Task 33: Content public extras

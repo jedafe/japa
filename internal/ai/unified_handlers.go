@@ -31,10 +31,10 @@ import (
 )
 
 // unifiedChatInput is the POST /ai/chat request body. `message` is the
-// canonical field; `prompt` is accepted for legacy /ai/agent clients.
+// canonical field; `prompt` is accepted for older clients.
 type unifiedChatInput struct {
 	Message        string `json:"message"`
-	Prompt         string `json:"prompt"` // legacy alias
+	Prompt         string `json:"prompt"` // alias for `message`
 	ConversationID string `json:"conversation_id,omitempty"`
 	// §103 AI Projects: start the new thread inside this project.
 	ProjectID     string         `json:"project_id,omitempty"`
@@ -70,7 +70,7 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 	}
 
 	// Sanitize client-supplied context to prevent prompt injection and cache
-	// poisoning (ADR-010, BUG-007) — same allowlist as the legacy /ai/chat.
+	// poisoning (ADR-010, BUG-007) — the §20 allowlist.
 	input.Context = sanitizeClientContext(input.Context)
 
 	var convID *pgtype.UUID
@@ -155,7 +155,7 @@ func (h *AgentHTTPHandlers) HandleUnifiedChat(w http.ResponseWriter, r *http.Req
 }
 
 // streamAgentEvents drains the event channel as SSE `data: {json}\n\n`
-// lines. Shared by the legacy /ai/agent handler and the unified /ai/chat.
+// lines for the unified /ai/chat surface.
 func streamAgentEvents(w http.ResponseWriter, events <-chan AgentEvent) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")

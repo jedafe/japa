@@ -46,11 +46,10 @@ export const routeFeatureFlags: Map<string, string | string[]> = new Map<
 	['/scholarships', 'scholarship_finder.enabled'],
 	['/tools/remittance', 'remittance.enabled'],
 	['/tools/travel', 'travel.enabled'],
-	// /ai is the unified AI surface — a Chat (JapaBot) tab gated by
-	// feature.japabot plus an Agent tab gated by feature.ai_agent. OR-gate
-	// the nav item so it stays visible while either mode is available.
+	// /ai is the unified AI surface (ADR-130) — gated by feature.japabot.
+	// feature.ai_agent only controls the tool executor inside the surface.
 	['/ai/chat', 'feature.japabot'],
-	['/ai', ['feature.japabot', 'feature.ai_agent']],
+	['/ai', 'feature.japabot'],
 	['/tools/visa-checklist', 'checklist.enabled'],
 	// Tools — V2 functional
 	['/tools/visa-routes', 'visa_routes.enabled'],

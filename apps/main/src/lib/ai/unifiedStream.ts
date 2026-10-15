@@ -2,18 +2,16 @@
 // the `data: {json}\n\n` lines the Go handler writes
 // (internal/ai/unified_handlers.go HandleUnifiedChat).
 //
-// Same transport pattern as agentStream.ts: EventSource cannot POST with a
-// CSRF header, so we use fetch + a ReadableStream reader. The unified
-// endpoint emits the §103 agent event stream plus `conversation` and
-// `sources` events.
+// EventSource cannot POST with a CSRF header, so we use fetch + a
+// ReadableStream reader. The endpoint emits the §103 agent event stream
+// plus `conversation` and `sources` events.
 //
 // Ref: japaconnect-engineering/adr/ADR-130-unified-japa-ai.md
 
 import { PUBLIC_JC_API_URL } from '$env/static/public';
 import { buildApiUrl } from '@japaconnect/api-url';
 import { getCsrfToken, refreshCsrfToken } from '$lib/api/csrf.svelte';
-import type { AgentEvent } from './agentTypes';
-import { AgentRequestError } from './agentStream';
+import { AgentRequestError, type AgentEvent } from './agentTypes';
 
 /** Per-message tool override — mirrors the Go ToolSelection (internal/ai/prefs.go). */
 export interface ToolSelectionOverride {

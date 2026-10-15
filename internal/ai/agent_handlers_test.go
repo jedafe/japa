@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -328,122 +327,6 @@ func decodeError(t *testing.T, body io.Reader) map[string]string {
 	}
 
 	return map[string]string{"code": wrapper.Error.Code, "message": wrapper.Error.Message}
-}
-
-// ---------------------------------------------------------------------------
-// Task 6.01 — SSE streaming handler
-// ---------------------------------------------------------------------------
-
-func TestHandleAgent_NoAuth(t *testing.T) {
-	t.Parallel()
-	h, _, _, _ := newTestAgentHTTPHandlers(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{"prompt":"hi"}`))
-	w := httptest.NewRecorder()
-	h.HandleAgent(w, req)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusUnauthorized)
-	}
-
-	err := decodeError(t, w.Body)
-	if err["code"] != "unauthorized" {
-		t.Errorf("error code = %q, want %q", err["code"], "unauthorized")
-	}
-}
-
-func TestHandleAgent_EmptyPrompt(t *testing.T) {
-	t.Parallel()
-	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndPlatform()
-
-	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{"prompt":""}`))
-	req = withAuthContext(req, user, tn)
-	w := httptest.NewRecorder()
-	h.HandleAgent(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-
-	err := decodeError(t, w.Body)
-	if err["code"] != "validation_error" {
-		t.Errorf("error code = %q, want %q", err["code"], "validation_error")
-	}
-}
-
-func TestHandleAgent_InvalidJSON(t *testing.T) {
-	t.Parallel()
-	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndPlatform()
-
-	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{bad`))
-	req = withAuthContext(req, user, tn)
-	w := httptest.NewRecorder()
-	h.HandleAgent(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-func TestHandleAgent_SSEHeaders(t *testing.T) {
-	t.Parallel()
-	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndPlatform()
-
-	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{"prompt":"hello"}`))
-	req = withAuthContext(req, user, tn)
-	w := httptest.NewRecorder()
-	h.HandleAgent(w, req)
-
-	// The agent loop runs in a goroutine and emits events. The SSE headers
-	// must be set regardless of whether events were produced.
-	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
-		t.Errorf("Content-Type = %q, want %q", ct, "text/event-stream")
-	}
-
-	if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
-		t.Errorf("Cache-Control = %q, want %q", cc, "no-cache")
-	}
-
-	if ka := w.Header().Get("Connection"); ka != "keep-alive" {
-		t.Errorf("Connection = %q, want %q", ka, "keep-alive")
-	}
-}
-
-func TestHandleAgent_SSEEventFormat(t *testing.T) {
-	t.Parallel()
-	h, _, _, _ := newTestAgentHTTPHandlers(t)
-	user, tn := testUserAndPlatform()
-
-	req := httptest.NewRequest(http.MethodPost, "/ai/agent", bytes.NewBufferString(`{"prompt":"hello"}`))
-	req = withAuthContext(req, user, tn)
-	w := httptest.NewRecorder()
-	h.HandleAgent(w, req)
-
-	body := w.Body.String()
-	if body == "" {
-		t.Fatal("expected SSE output, got empty body")
-	}
-	// Each SSE line must start with "data: " and end with "\n\n".
-	for _, line := range strings.Split(strings.TrimSpace(body), "\n\n") {
-		if line == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(line, "data: ") {
-			t.Errorf("SSE line does not start with 'data: ': %q", line)
-		}
-		// The JSON payload after "data: " must be valid JSON.
-		payload := strings.TrimPrefix(line, "data: ")
-
-		var ev AgentEvent
-
-		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
-			t.Errorf("SSE payload is not valid JSON: %v", err)
-		}
-	}
 }
 
 // ---------------------------------------------------------------------------

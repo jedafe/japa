@@ -139,7 +139,7 @@ type RateLimiter interface {
 // ---------------------------------------------------------------------------
 
 // AgentHandler orchestrates the agent loop. It is the single entry point for
-// agent requests; the Phase 6 HTTP handler calls HandleAgentRequest and
+// agent requests; the unified /ai/chat handler calls HandleUnifiedChat and
 // streams the returned event channel over SSE.
 type AgentHandler struct {
 	gateway     *Dispatcher
@@ -298,7 +298,7 @@ func WithAgentModelValidator(fn func(model, category string) bool) AgentOption {
 }
 
 // ---------------------------------------------------------------------------
-// HandleAgentRequest (tasks 5.04-5.12)
+// Shared agent-loop plumbing (tasks 5.04-5.12)
 // ---------------------------------------------------------------------------
 
 // agentRateLimitTTL is the TTL for jc:agent:rate:{user_id}:{date} keys.
@@ -331,105 +331,6 @@ const (
 	defaultDailyBudgetUSD  = 5.00
 	defaultLLMTemperature  = 0.3
 )
-
-// HandleAgentRequest runs the agent loop for a single user prompt. It
-// performs the synchronous pre-checks (enabled, permission, rate limit),
-// resolves geo context, runs the pre-search, creates the session record,
-// and returns a channel of AgentEvents. The LLM loop runs in a goroutine
-// that emits events to the channel and closes it when the loop finishes.
-// // The returned error is non-nil only for pre-check failures (agent disabled,
-// no permission, rate limited, pre-search failure, session creation
-// failure). Errors that occur during the LLM loop are emitted as
-// EventError events on the channel, not returned here.
-func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUID, prompt string) (<-chan AgentEvent, error) {
-	if h == nil {
-		return nil, errAgentNotConfigured
-	}
-
-	if prompt == "" {
-		return nil, errAgentEmptyPrompt
-	}
-
-	// --- Task 5.10: feature.ai_agent toggle (feature_flags is authoritative;
-	// the legacy agent.enabled system_settings read is the nil-checker
-	// fallback) ---
-	if !h.agentEnabled(ctx) {
-		return nil, errAgentDisabled
-	}
-
-	// --- Task 5.05: agent.use RBAC permission ---
-	if h.perms != nil {
-		if !h.perms.HasPermission(ctx, userID, "agent.use") {
-			return nil, errAgentNoPermission
-		}
-	}
-
-	// --- Shared §20 preflight: ai_processing consent + the unified daily
-	// budget (jc:ai:queries/jc:ai:cost). Runs after the surface gates;
-	// the per-surface agent limits below still apply on top. ---
-	if h.preflight != nil {
-		if perr := h.preflight.CheckConsent(ctx, userID); perr != nil {
-			return nil, errAgentConsentRequired
-		}
-
-		if perr := h.preflight.CheckBudget(ctx, userID); perr != nil {
-			if perr.Code == "ai_daily_budget" {
-				return nil, errAgentBudgetExceeded
-			}
-
-			return nil, errAgentRateLimited
-		}
-	}
-
-	// --- Task 5.11: rate limiting (jc:agent:rate:{user_id}:{date}) ---
-	if err := h.checkRateLimit(ctx, userID); err != nil {
-		return nil, errAgentRateLimited
-	}
-
-	// --- Guide §19: daily budget enforcement (jc:agent:cost:{user_id}:{date}) ---
-	// Rejects the request if the user's accumulated daily AI spend has
-	// reached agent.daily_budget_usd. A budget of 0 disables the check.
-	if err := h.checkDailyBudget(ctx, userID); err != nil {
-		return nil, errAgentBudgetExceeded
-	}
-
-	// --- Task 5.05: resolve geo context from users.current_geo_space_id ---
-	geoSpaceID, geoSummary := h.resolveGeoContext(ctx, userID)
-
-	// --- Tasks 5.01-5.03: pre-search ---
-	preSearchResult := h.runPreSearch(ctx, prompt, geoSpaceID, userID)
-
-	// --- Task 5.09: create ai_agent_sessions record ---
-	session, err := h.createSession(ctx, userID, prompt, geoSpaceID, preSearchResult.Level, pgtype.UUID{}, pgtype.UUID{})
-	if err != nil {
-		return nil, fmt.Errorf("ai: creating agent session: %w", err)
-	}
-
-	// --- Set session state in Valkey for cancellation checks ---
-	h.setSessionState(ctx, session.ID)
-
-	// --- Phase 8: resolve the draft-request context (Content Request Flow).
-	// When pre-search = NONE and the user has agent.draft_request but not
-	// content.create, the agent should search externally and create a draft
-	// for admin review. The persona user_id is resolved here so the system
-	// prompt can instruct the LLM to pass it to content.create_draft. ---
-	draftCtx := h.resolveDraftRequestContext(ctx, userID, preSearchResult.Level)
-
-	// --- Return channel and run the loop in a goroutine ---
-	events := make(chan AgentEvent, 32)
-
-	go h.runLoop(ctx, session, userID, loopParams{
-		prompt:        prompt,
-		geoSpaceID:    geoSpaceID,
-		geoSummary:    geoSummary,
-		preSearch:     preSearchResult,
-		draftCtx:      draftCtx,
-		agentCounters: true, // legacy /ai/agent always accumulates jc:agent:cost
-		detached:      true, // the legacy path is agent-only by definition
-	}, events)
-
-	return events, nil
-}
 
 // runPreSearch executes the §103 pre-search (content + RAG, privacy-filtered,
 // classified). A nil presearcher or a pre-search error degrades to

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +20,6 @@ import (
 	"github.com/jedafe/japa/internal/auth"
 	errpkg "github.com/jedafe/japa/internal/errors"
 	"github.com/jedafe/japa/internal/honcho"
-	"github.com/jedafe/japa/internal/rag"
 	"github.com/jedafe/japa/internal/worker"
 )
 
@@ -91,7 +89,6 @@ type Handlers struct {
 	Perms                PermissionChecker
 	consents             ConsentChecker       // §19: ai_processing consent gate (nil = skip check)
 	preflight            *Preflight           // §20 amendment: shared admission + unified daily budget (nil = degrade to checker/Settings)
-	ragService           RAGRetriever         // Section 69: RAG retrieval at chat time (nil = non-RAG fallback)
 	HTTPClient           *http.Client         // nil → http.DefaultClient (external search / HITL verify)
 	cache                CacheClient          // nil → ai.cache_enabled must be true to have any effect
 	costs                *CostEstimator       // estimates per-request USD cost from token usage
@@ -102,21 +99,6 @@ type Handlers struct {
 	Convos               *ConversationService // ADR-130 unified transcript store (nil = unified surface off)
 	Projects             *ProjectService      // §103 amendment: AI project collections
 	agentSessions        AgentSessionQueries  // tool-call reader for conversation detail (ADR-130)
-}
-
-// RAGRetriever is the interface for the RAG retrieval step (Section 69,
-// ADR-069). The rag.Service satisfies this. When nil, HandleChat falls back
-// to a non-RAG LLM call.
-type RAGRetriever interface {
-	Retrieve(ctx context.Context, query, language string, geoSpaceID *pgtype.UUID, viewerID pgtype.UUID) ([]rag.RetrievedChunk, error)
-	FormatContext(chunks []rag.RetrievedChunk) string
-}
-
-// SetRAGService injects the RAG service for retrieval-augmented chat
-// (Section 69, ADR-069). When set, HandleChat runs the retrieval step
-// before the LLM call if rag.enabled is true.
-func (h *Handlers) SetRAGService(r RAGRetriever) {
-	h.ragService = r
 }
 
 // SetStudioReviewHook injects the studio hook so AI HITL review
@@ -963,186 +945,6 @@ func mapGenerateResult(resp Response) map[string]any {
 	}
 
 	return result
-}
-
-// ---------------------------------------------------------------------------
-// JapaBot Chat Handler
-// ---------------------------------------------------------------------------
-
-// HandleChat handles POST /api/v1/ai/chat — JapaBot conversational AI.
-// Request body (Section 20): { "message": string, "conversation_id?": uuid }
-// Response (Section 20): { "data": { "reply": string, "conversation_id": uuid, "sources?": [] } }.
-// Honors the `ai.japabot_enabled` system_settings global toggle (Rule 3).
-func (h *Handlers) HandleChat(w http.ResponseWriter, r *http.Request) {
-	user, ok := requireUser(w, r)
-	if !ok {
-		return
-	}
-
-	// Shared §20 admission: feature.japabot reachability (legacy
-	// ai.japabot_enabled setting is the nil-checker fallback) then
-	// §19/ADR-014 ai_processing consent — short-circuits before any
-	// provider call.
-	if !h.requireAIAdmission(r.Context(), w, user.UserID, GateJapaBot) {
-		return
-	}
-
-	var input struct {
-		Message        string         `json:"message"`
-		ConversationID string         `json:"conversation_id,omitempty"`
-		Context        map[string]any `json:"context,omitempty"`
-		Humanize       *bool          `json:"humanize,omitempty"`
-		HumanizeLevel  string         `json:"humanize_level,omitempty"`
-		Model          string         `json:"model,omitempty"`
-		VoiceID        string         `json:"voice_id,omitempty"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_json", "Invalid request body")
-
-		return
-	}
-
-	if input.Message == "" {
-		errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "message is required")
-
-		return
-	}
-
-	// Sanitize client-supplied context to prevent prompt injection and cache
-	// poisoning (ADR-010, BUG-007). Only allowed scalar keys survive.
-	input.Context = sanitizeClientContext(input.Context)
-
-	// Shared §20 unified daily budget (jc:ai:queries + jc:ai:cost). Checked
-	// after validation so malformed requests don't consume quota.
-	if !h.requireAIBudget(r.Context(), w, user.UserID) {
-		return
-	}
-
-	// Keep the raw user text for memory persistence — input.Message is
-	// rewritten below with the RAG context prefix, and persisting that
-	// augmented prompt would pollute Honcho long-term memory with retrieved
-	// passages on every turn.
-	rawUserMessage := input.Message
-
-	// Build the AI context payload (ADR-025): prior Honcho memory (Section 20)
-	// + per-category site-activity context gated by ai.context.* nodes. The
-	// server is the authority over what the AI can see — client-supplied
-	// context is merged at lowest precedence.
-	aiContext := h.buildUserAIContext(r.Context(), user.UserID, input.Context)
-
-	// RAG retrieval step (Section 69, ADR-069): when rag.enabled is true and
-	// a RAG service is configured, embed the user's query and retrieve the
-	// top-k most similar content chunks from content_embeddings (pgvector
-	// HNSW). The retrieved passages are injected as sourced context into the
-	// LLM system prompt. If RAG is disabled or the retriever is nil, the
-	// chat falls back to a non-RAG LLM call.
-	var ragSources []map[string]any
-
-	if h.ragService != nil {
-		// BUG-003 fix: resolve the user's preferred language from the
-		// Accept-Language header so RAG retrieval filters by language
-		// (ADR-069 §3 step 3). Falls back to empty (no filter) if the
-		// header is absent.
-		ragLang := resolveAcceptLanguage(r)
-
-		chunks, err := h.ragService.Retrieve(r.Context(), input.Message, ragLang, nil, user.UserID)
-		if err != nil {
-			slog.Warn("ai chat: RAG retrieval failed, falling back to non-RAG", "error", err)
-		} else if len(chunks) > 0 {
-			ragContext := h.ragService.FormatContext(chunks)
-			if ragContext != "" {
-				// Prepend RAG context to the prompt so the LLM grounds its
-				// answer in the retrieved passages.
-				input.Message = ragContext + "\n\nUser question: " + input.Message
-			}
-
-			for _, c := range chunks {
-				// §69 Citation Source Contract: emit title/slug/url so the
-				// frontend can link each citation to the entity's canonical
-				// route (empty when the entity no longer resolves).
-				ragSources = append(ragSources, map[string]any{
-					"entity_type": c.EntityType,
-					"entity_id":   c.EntityID,
-					"similarity":  c.Similarity,
-					"tier":        c.Tier,
-					"title":       c.Title,
-					"slug":        c.Slug,
-					"url":         c.URL,
-				})
-			}
-		}
-	}
-
-	payload := map[string]any{
-		"prompt":          input.Message,
-		"context":         aiContext,
-		"user_id":         user.UserID.String(),
-		"task":            "chat",
-		"conversation_id": input.ConversationID,
-	}
-
-	if !h.applyModelAndVoice(w, r, payload, input.Model, input.VoiceID, "chat", "ai.model.default.chat") {
-		return
-	}
-
-	// Humanization: merge global ai.humanize.* setting with per-request override.
-	hEnabled, hLevel := h.resolveHandlerHumanize(r.Context(), input.Humanize, input.HumanizeLevel)
-	writeHumanizePayload(payload, hEnabled, hLevel)
-
-	resp, err := h.dispatchAndRecordUsage(r.Context(), user.UserID, "chat", "chat", Request{
-		Category: "chat",
-		Payload:  payload,
-	})
-	if err != nil {
-		slog.Error("ai chat failed", "error", err)
-		errpkg.WriteError(w, http.StatusBadGateway, "ai_error", "JapaBot is unavailable")
-
-		return
-	}
-
-	// Shape the response to the Section 20 contract: { reply, conversation_id, sources? }.
-	// The provider's text lives in resp.Raw; extract the reply text and echo the
-	// conversation_id (existing or newly generated by the provider/Honcho).
-	reply := ExtractReplyText(resp)
-
-	conversationID := input.ConversationID
-	if cid, ok := resp.Raw["conversation_id"].(string); ok && cid != "" {
-		conversationID = cid
-	}
-
-	// Merge RAG sources with any provider-returned sources.
-	sources := resp.Raw["sources"]
-	if ragSources != nil {
-		if sources == nil {
-			sources = ragSources
-		} else if existing, ok := sources.([]any); ok {
-			merged := make([]any, 0, len(existing)+len(ragSources))
-			merged = append(merged, existing...)
-
-			for _, rs := range ragSources {
-				merged = append(merged, rs)
-			}
-
-			sources = merged
-		} else {
-			sources = ragSources
-		}
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": map[string]any{
-			"reply":           reply,
-			"conversation_id": conversationID,
-			"provider_ref":    resp.ProviderRef,
-			"sources":         sources,
-		},
-	})
-
-	// Persist the full chat turn to Honcho only after the response has been
-	// successfully shaped and written to the client (BUG-017). Fire-and-forget:
-	// errors are logged, never propagated (Rule 8 spirit).
-	h.persistChatTurn(r.Context(), user.UserID.String(), rawUserMessage, reply, conversationID, false)
 }
 
 // ExtractReplyText pulls the human-readable reply string out of a provider
@@ -2615,116 +2417,6 @@ func (h *Handlers) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": models})
 }
 
-// ─── P5.6 AI Conversations ───────────────────────────────────────────────
-
-// HandleListConversations handles GET /ai/conversations (P5.6).
-// Returns the user's JapaBot conversation history, grouped by conversation_id
-// from Honcho context entries (Section 20). Each conversation summary includes
-// the conversation_id, the latest message preview, and the turn count. Returns
-// an empty list when Honcho is not configured or the user has no entries.
-// Supports ?page_size and ?page_offset pagination (BUG-016).
-func (h *Handlers) HandleListConversations(w http.ResponseWriter, r *http.Request) {
-	user := auth.FromContext(r.Context())
-	if user == nil {
-		errpkg.WriteError(w, http.StatusUnauthorized, "unauthorized", "Authentication required")
-
-		return
-	}
-
-	if h.Honcho == nil {
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
-		return
-	}
-
-	pageSize := parsePageSize(r)
-	pageOffset := parsePageOffset(r)
-
-	entries, err := h.Honcho.GetContext(r.Context(), user.UserID.String())
-	if err != nil {
-		// Honcho may be unreachable — degrade to an empty list rather than 500.
-		slog.Warn("ai: listing conversations from honcho", "error", err)
-		errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": []any{}})
-
-		return
-	}
-
-	// Group entries by conversation_id (metadata) into conversation summaries.
-	// The list DTO intentionally does not include full entries (BUG-005); the
-	// detail endpoint /ai/conversations/:id returns the complete turn history.
-	type convoSummary struct {
-		ConversationID string    `json:"conversation_id"`
-		Preview        string    `json:"preview"`
-		TurnCount      int       `json:"turn_count"`
-		LastEntryAt    time.Time `json:"last_entry_at"`
-	}
-
-	convos := map[string]*convoSummary{}
-
-	for _, e := range entries {
-		// ADR-130: unified threads write Honcho entries too (long-term
-		// memory), marked metadata.unified — they belong to the V2 surface,
-		// not this legacy list, and a deleted thread must not resurface.
-		if e.Metadata != nil {
-			if u, ok := e.Metadata["unified"].(bool); ok && u {
-				continue
-			}
-		}
-		cid := ""
-
-		if e.Metadata != nil {
-			if v, ok := e.Metadata["conversation_id"].(string); ok {
-				cid = v
-			}
-		}
-
-		if cid == "" {
-			// Entries without a conversation_id are standalone context rows;
-			// surface them as their own pseudo-conversation keyed by entry id.
-			cid = e.ID
-		}
-
-		c, exists := convos[cid]
-		if !exists {
-			c = &convoSummary{ConversationID: cid}
-			convos[cid] = c
-		}
-
-		c.TurnCount++
-		if e.CreatedAt.After(c.LastEntryAt) {
-			c.LastEntryAt = e.CreatedAt
-			c.Preview = e.Content
-		}
-	}
-
-	out := make([]convoSummary, 0, len(convos))
-	for _, c := range convos {
-		out = append(out, *c)
-	}
-
-	// Sort by most recent activity first, then apply offset/limit pagination.
-	sort.Slice(out, func(i, j int) bool { return out[i].LastEntryAt.After(out[j].LastEntryAt) })
-
-	total := int64(len(out))
-
-	if int(pageOffset) >= len(out) {
-		out = out[:0]
-	} else {
-		out = out[pageOffset:]
-		if int(pageSize) > 0 && int(pageSize) < len(out) {
-			out = out[:pageSize]
-		}
-	}
-
-	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
-		"data": out,
-		"meta": map[string]any{
-			"total":       total,
-			"page_size":   pageSize,
-			"page_offset": pageOffset,
-		},
-	})
-}
-
 // HandleGetConversation handles GET /ai/conversations/:id (P5.6).
 // Returns all Honcho context entries belonging to the conversation_id given
 // in :id. Returns 404 when the conversation has no entries.
@@ -2834,28 +2526,4 @@ func (h *Handlers) HandleListCategories(w http.ResponseWriter, _ *http.Request) 
 	}
 
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": categories})
-}
-
-// resolveAcceptLanguage extracts the primary 2-letter language tag from the
-// Accept-Language header for RAG retrieval filtering (ADR-069 §3 step 3).
-// Returns "" when the header is absent so the retrieval language filter is
-// skipped (backward-compatible with the pre-filter behavior).
-func resolveAcceptLanguage(r *http.Request) string {
-	accept := r.Header.Get("Accept-Language")
-	if accept == "" {
-		return ""
-	}
-	// "en-US,en;q=0.9,fr;q=0.8" → "en"
-	parts := strings.SplitN(accept, ",", 2)
-
-	tag := strings.TrimSpace(parts[0])
-	if idx := strings.Index(tag, "-"); idx > 0 {
-		tag = tag[:idx]
-	}
-
-	if len(tag) == 2 {
-		return strings.ToLower(tag)
-	}
-
-	return ""
 }

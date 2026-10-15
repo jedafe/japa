@@ -55,7 +55,7 @@
 		PanelRight
 	} from 'lucide-svelte';
 	import { api } from '$lib/api/client';
-	import { AgentRequestError } from './agentStream';
+	import { AgentRequestError } from './agentTypes';
 	import { streamChat, type ToolSelectionOverride } from './unifiedStream';
 	import AiModelVoicePicker from './AiModelVoicePicker.svelte';
 	import ChatTemplatePanel from './ChatTemplatePanel.svelte';
