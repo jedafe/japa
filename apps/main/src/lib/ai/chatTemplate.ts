@@ -286,7 +286,8 @@ export function buildTemplateBlock(name: string, values: ChatTemplateValues): st
 		(persist
 			? `Persist the result as real content — call content.create_draft once per topic ` +
 				`(or content.bulk_create when my request lists several topics), filling ` +
-				`title/body from my request and these constraints:\n\n`
+				`title/body from my request and these constraints. If no content-creation ` +
+				`tools are available, present the drafts in chat instead.\n\n`
 			: `If the content.generate_draft tool is available, call it with these arguments, ` +
 				`filling "title" and "instructions" from my request above — when my request ` +
 				`lists multiple topics, make one call per topic; otherwise draft the ` +
@@ -327,7 +328,7 @@ export function buildTemplateInsertText(
 ): string {
 	const lines: string[] = [
 		values.intent === 'create'
-			? `Create one ${values.content_type || 'guide'} per topic in the Topics list — persist each as a real content item (content.create_draft for a single topic, content.bulk_create for several), with these requirements:`
+			? `Create one ${values.content_type || 'guide'} per topic in the Topics list — persist each as a real content item (content.create_draft for a single topic, content.bulk_create for several; if creation tools are unavailable, present the drafts in chat instead), with these requirements:`
 			: `Write one ${values.content_type || 'guide'} draft per topic in the Topics list, with these requirements:`
 	];
 	if (values.framework) {
@@ -390,7 +391,10 @@ export function buildTemplateInsertText(
 	if (values.intent !== 'create') {
 		lines.push('', 'Present the draft(s) in chat — do not create content items.');
 	}
-	lines.push('', `${TOPICS_MARKER} — one draft is generated per topic):`);
+	lines.push(
+		'',
+		`${TOPICS_MARKER} — ${values.intent === 'create' ? 'one item is persisted per topic' : 'one draft is generated per topic'}):`
+	);
 	return lines.join('\n');
 }
 

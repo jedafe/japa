@@ -14,9 +14,10 @@ import (
 // recordingProvider captures the ChatWithToolsRequest of each call so tests
 // can assert on the message list and tool definitions the loop sent.
 type recordingProvider struct {
-	name  string
-	reply string
-	reqs  []ChatWithToolsRequest
+	name    string
+	reply   string
+	failErr error // when set, ChatWithTools returns it — failure-path tests
+	reqs    []ChatWithToolsRequest
 }
 
 func (m *recordingProvider) Name() string        { return m.name }
@@ -30,6 +31,9 @@ func (m *recordingProvider) Send(context.Context, Request) (Response, error) {
 }
 func (m *recordingProvider) ChatWithTools(_ context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
 	m.reqs = append(m.reqs, req)
+	if m.failErr != nil {
+		return ChatWithToolsResponse{}, m.failErr
+	}
 	return ChatWithToolsResponse{
 		Content:      m.reply,
 		FinishReason: "stop",
@@ -633,5 +637,65 @@ func TestUnifiedChat_ChatTurnStillAbortsOnCancel(t *testing.T) {
 	}
 	if findEvent(got, EventFinalResponse) != nil {
 		t.Fatal("attached chat turn must not complete after disconnect")
+	}
+}
+
+// A detached turn's terminal failure appends a transcript notice so the
+// thread is never silently unanswered; an attached turn keeps the error
+// SSE-only (the client renders the live event).
+func TestUnifiedChat_DetachedFailurePersistsNotice(t *testing.T) {
+	provider := &recordingProvider{name: "mock", failErr: errors.New("llm down")}
+	h, st, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}})
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	events, err := h.HandleUnifiedChat(t.Context(), uid, UnifiedChatRequest{Prompt: "do things"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := collectEvents(t, events)
+
+	convEv := findEvent(got, EventConversation)
+	if convEv == nil || convEv.ConversationID == "" {
+		t.Fatalf("expected conversation event, got %+v", got)
+	}
+	var convID pgtype.UUID
+	if err := convID.Scan(convEv.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	msgs := st.msgs[uuidStr(convID)]
+	var notice string
+	for _, m := range msgs {
+		if m.Role == "assistant" {
+			notice = m.Content
+		}
+	}
+	if !containsStr(notice, "agent task failed") {
+		t.Fatalf("expected persisted failure notice, msgs=%+v", msgs)
+	}
+}
+
+func TestUnifiedChat_AttachedFailureWritesNoNotice(t *testing.T) {
+	provider := &recordingProvider{name: "mock", failErr: errors.New("llm down")}
+	h, st, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	events, err := h.HandleUnifiedChat(t.Context(), uid, UnifiedChatRequest{Prompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := collectEvents(t, events)
+
+	convEv := findEvent(got, EventConversation)
+	if convEv == nil || convEv.ConversationID == "" {
+		t.Fatalf("expected conversation event, got %+v", got)
+	}
+	var convID pgtype.UUID
+	if err := convID.Scan(convEv.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range st.msgs[uuidStr(convID)] {
+		if m.Role == "assistant" && containsStr(m.Content, "agent task failed") {
+			t.Fatalf("attached turn must not persist a failure notice, got %+v", m.Content)
+		}
 	}
 }

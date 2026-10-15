@@ -485,11 +485,12 @@
 		if (!sessionId || bgSessionId === sessionId) return;
 		stopSessionPoll();
 		bgSessionId = sessionId;
+		const sid = sessionId;
 		const startedAt = Date.now();
 		let failures = 0;
 		let inFlight = false;
 		bgPollTimer = setInterval(() => {
-			if (!bgSessionId || inFlight) return;
+			if (bgSessionId !== sid || inFlight) return;
 			if (Date.now() - startedAt > BG_POLL_CAP_MS) {
 				stopSessionPoll();
 				return;
@@ -498,8 +499,10 @@
 			void (async () => {
 				try {
 					const res = await api.get<{ session: { status: string } }>(
-						`/ai/agent/sessions/${bgSessionId}`
+						`/ai/agent/sessions/${sid}`
 					);
+					// A stop/re-arm mid-request must not act on a stale session.
+					if (bgSessionId !== sid) return;
 					const status = res.data?.session?.status;
 					if (res.error) {
 						// api error shape is { code, message, status } — a 404 means
@@ -509,9 +512,17 @@
 					}
 					failures = 0;
 					if (status && status !== 'running') {
-						const convId = conversationId;
 						stopSessionPoll();
-						if (convId) await loadConversation(convId);
+						// The turn finished — clear any live placeholder spinner so a
+						// failed refetch can't leave it stuck, and skip the reload
+						// entirely while a fresh send is streaming (it would
+						// clobber the live turn; the result persists regardless).
+						const stuck = turns.find((tn) => tn.in_progress && tn.session_id === sid);
+						if (stuck) {
+							stuck.in_progress = false;
+							stuck.progress = '';
+						}
+						if (!sending && conversationId) await loadConversation(conversationId);
 					}
 				} finally {
 					inFlight = false;
@@ -1856,7 +1867,7 @@
 							</div>
 						</div>
 					{/each}
-					{#if bgSessionId}
+					{#if bgSessionId && !turns.some((tn) => tn.in_progress)}
 						<div class="flex items-center gap-2 px-1 py-2 text-xs sm:px-2" style="color: var(--color-muted)">
 							<Loader2 size={12} class="animate-spin" />
 							{t('ai.agent.bg_running', 'Agent is working in the background — the result will appear here.')}

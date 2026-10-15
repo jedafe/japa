@@ -1251,6 +1251,7 @@
 				class="flex overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]"
 				role="radiogroup"
 				aria-label={t('ai.templates.intent', 'Intent')}
+				title={t('ai.templates.intent_hint', 'Preview drafts text in the conversation; Create persists real items via the agent.')}
 			>
 				{#each [
 					['preview', t('ai.templates.intent_preview', 'Preview in chat')],

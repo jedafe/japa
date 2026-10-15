@@ -648,6 +648,7 @@ func (h *AgentHandler) runLoop(
 			panicErr := fmt.Errorf("agent: internal error: %v", r)
 			slog.Error("ai: panic in agent run loop", "session_id", session.ID, "error", r)
 			h.failSession(context.WithoutCancel(ctx), session, panicErr, 0, 0, 0)
+			h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", panicErr.Error()))
 			sendEvent(AgentEvent{
 				Type:      EventError,
 				SessionID: session.ID.String(),
