@@ -180,6 +180,9 @@ type EntityFieldDTO struct {
 	// Section is the §80 itemized-pricing sub-grouping token — fields
 	// sharing one render under one item table (e.g. 'transportation').
 	Section string `json:"section,omitempty"`
+	// Computed marks a field whose Value is derived from options.computed
+	// sources — never manually editable (set_value ops are rejected).
+	Computed bool `json:"computed,omitempty"`
 }
 
 // EntityFieldSectionDTO is one named section inside a field group — fields
@@ -582,6 +585,8 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 			dtos = append(dtos, dto)
 		}
 
+		s.applyComputedFields(ctx, dtos, values, visibleSet, canManage)
+
 		// A group with no field definitions contributes nothing to the
 		// editable schema — skip it so class-wide placeholders don't render
 		// empty sections on wiki pages.
@@ -771,6 +776,8 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 
 		dtos = append(dtos, dto)
 	}
+
+	s.applyComputedFields(ctx, dtos, values, visibleSet, canManage)
 
 	if len(dtos) == 0 {
 		return nil, nil
