@@ -262,3 +262,34 @@ describe('normalizeTopicsTail', () => {
 		expect(normalizeTopicsTail('\n\n')).toBe('- ');
 	});
 });
+
+describe('intent', () => {
+	it('normalizes intent to preview|create with preview default', () => {
+		expect(normalizeTemplateValues({}).intent).toBe('preview');
+		expect(normalizeTemplateValues({ intent: 'create' }).intent).toBe('create');
+		expect(normalizeTemplateValues({ intent: 'bogus' }).intent).toBe('preview');
+	});
+
+	it('preview intent says the drafts stay in chat', () => {
+		const text = buildTemplateInsertText(base());
+		expect(text).toContain('Present the draft(s) in chat');
+		expect(text).not.toContain('content.create_draft');
+	});
+
+	it('create intent instructs persistence per topic', () => {
+		const text = buildTemplateInsertText({ ...base(), intent: 'create' });
+		expect(text).toContain('content.create_draft');
+		expect(text).toContain('content.bulk_create');
+	});
+
+	it('attach block keeps generate_draft for preview, create tools for create', () => {
+		expect(buildTemplateBlock('T', base())).toContain('content.generate_draft');
+		const b = buildTemplateBlock('T', { ...base(), intent: 'create' });
+		expect(b).toContain('content.create_draft');
+		expect(b).not.toContain('generate_draft');
+	});
+
+	it('intent does not leak into the generate_draft spec JSON', () => {
+		expect(buildTemplateSpec({ ...base(), intent: 'create' })).not.toHaveProperty('intent');
+	});
+});

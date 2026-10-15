@@ -16,6 +16,9 @@ export type ChatTemplateFramework = '' | 'aida' | 'pas';
 export type ChatTemplateHumanize = 'off' | 'light' | 'medium' | 'heavy';
 
 export interface ChatTemplateValues {
+	/** Send intent — 'preview' renders drafts in chat (generate_draft),
+	 * 'create' steers the agent to persist items (create_draft/bulk_create). */
+	intent: 'preview' | 'create';
 	content_type: string;
 	/** Guide-category slug — only meaningful when the selected content
 	 * type declares categories (has_category), e.g. 'guide'. Drives the
@@ -61,6 +64,7 @@ export interface ChatTemplateValues {
 }
 
 export const DEFAULT_CHAT_TEMPLATE_VALUES: ChatTemplateValues = {
+	intent: 'preview',
 	content_type: 'guide',
 	guide_category: '',
 	tone: 'professional',
@@ -159,6 +163,7 @@ export function normalizeTemplateValues(raw: unknown): ChatTemplateValues {
 		}
 	}
 	return {
+		intent: v.intent === 'create' ? 'create' : 'preview',
 		content_type: str(v.content_type) || DEFAULT_CHAT_TEMPLATE_VALUES.content_type,
 		guide_category: str(v.guide_category),
 		tone: str(v.tone) || DEFAULT_CHAT_TEMPLATE_VALUES.tone,
@@ -274,13 +279,18 @@ export function buildTemplateSpec(values: ChatTemplateValues): Record<string, un
 export function buildTemplateBlock(name: string, values: ChatTemplateValues): string {
 	const spec = buildTemplateSpec(values);
 	const label = name.trim() || 'Untitled template';
+	const persist = values.intent === 'create';
 	return (
 		`\n\n---\n` +
 		`[Chat template: "${label}"] Apply this generation spec to my request. ` +
-		`If the content.generate_draft tool is available, call it with these arguments, ` +
-		`filling "title" and "instructions" from my request above — when my request ` +
-		`lists multiple topics, make one call per topic; otherwise draft the ` +
-		`content directly, honoring the same constraints.\n\n` +
+		(persist
+			? `Persist the result as real content — call content.create_draft once per topic ` +
+				`(or content.bulk_create when my request lists several topics), filling ` +
+				`title/body from my request and these constraints:\n\n`
+			: `If the content.generate_draft tool is available, call it with these arguments, ` +
+				`filling "title" and "instructions" from my request above — when my request ` +
+				`lists multiple topics, make one call per topic; otherwise draft the ` +
+				`content directly, honoring the same constraints.\n\n`) +
 		'```json\n' +
 		JSON.stringify(spec, null, 2) +
 		'\n```'
@@ -301,7 +311,7 @@ export interface TemplateInsertLabels {
 // inserts produced before the Topics list existed.
 const TOPICS_MARKER = 'Topics (one per line';
 const LEGACY_TOPIC_MARKER = '\nTopic: ';
-const SPEC_HEADER_RE = /^Write (?:a|one)\b[^\n]*draft[^\n]*requirements:/;
+const SPEC_HEADER_RE = /^(?:Write (?:a|one)|Create one)\b[^\n]*(?:draft|requirements)[^\n]*:/;
 
 /**
  * Human-readable instruction text for the "insert into composer" flow —
@@ -316,7 +326,9 @@ export function buildTemplateInsertText(
 	labels: TemplateInsertLabels = {}
 ): string {
 	const lines: string[] = [
-		`Write one ${values.content_type || 'guide'} draft per topic in the Topics list, with these requirements:`
+		values.intent === 'create'
+			? `Create one ${values.content_type || 'guide'} per topic in the Topics list — persist each as a real content item (content.create_draft for a single topic, content.bulk_create for several), with these requirements:`
+			: `Write one ${values.content_type || 'guide'} draft per topic in the Topics list, with these requirements:`
 	];
 	if (values.framework) {
 		lines.push(`- Structure it with the ${values.framework.toUpperCase()} marketing framework`);
@@ -375,6 +387,9 @@ export function buildTemplateInsertText(
 	const fv = Object.entries(values.field_values);
 	if (fv.length)
 		lines.push(`- Field values: ${fv.map(([k, v]) => `${k} = ${v}`).join('; ')}`);
+	if (values.intent !== 'create') {
+		lines.push('', 'Present the draft(s) in chat — do not create content items.');
+	}
 	lines.push('', `${TOPICS_MARKER} — one draft is generated per topic):`);
 	return lines.join('\n');
 }
