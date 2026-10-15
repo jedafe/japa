@@ -716,6 +716,7 @@
 								<SuggestEdit
 									entityType="space"
 									entityId={panelSpaceId}
+									groupId={data.page?.field_group_id ?? undefined}
 									proposeGroupSlug={data.page?.field_group_slug ?? undefined}
 								/>
 							{/if}

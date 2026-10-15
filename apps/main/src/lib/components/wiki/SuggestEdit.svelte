@@ -32,6 +32,7 @@
 		entityId,
 		label = undefined,
 		fieldsData = undefined,
+		groupId = undefined,
 		proposeGroupSlug = undefined,
 		open = $bindable(false),
 		showTrigger = true,
@@ -44,6 +45,10 @@
 		/** Prefetched schema — a parent that already loaded GET .../fields can
 		 *  pass the result to share one request. */
 		fieldsData?: WikiEntityFields | null;
+		/** §80 Wiki Types: on a bound wiki page the entity schema spans
+		 *  every class-wide group — the dialog must only show the page's
+		 *  bound group (matches the old EntityFieldsPanel scoping). */
+		groupId?: string;
 		/** §80 Wiki Types: the bound category group's slug. Field proposals
 		 *  target it implicitly — members never pick a group. */
 		proposeGroupSlug?: string;
@@ -71,6 +76,13 @@
 	let errorKey = $state('');
 
 	const pendingCount = $derived(schema?.pending_count ?? 0);
+	// §80 Wiki Types — a bound page only edits its own group. The space
+	// schema carries every class-wide group (all topic pages share the
+	// space's assignments), so the dialog renders scopedGroups, not the
+	// raw schema.
+	const scopedGroups = $derived(
+		groupId ? (schema?.groups ?? []).filter((g) => g.id === groupId) : (schema?.groups ?? [])
+	);
 	// Propose-tier ops UI: the schema reports can_propose (wiki.fields.propose
 	// or manage).
 	const canPropose = $derived(schema?.can_propose === true);
@@ -167,9 +179,9 @@
 	// (proposeGroupSlug) when the page binds one, else the schema's sole
 	// group. A picker only renders when several groups could apply.
 	const resolvedProposeGroup = $derived(
-		proposeGroupSlug ?? (schema && schema.groups.length === 1 ? schema.groups[0].slug : '')
+		proposeGroupSlug ?? (scopedGroups.length === 1 ? scopedGroups[0].slug : '')
 	);
-	const showGroupPicker = $derived(!resolvedProposeGroup && (schema?.groups.length ?? 0) > 1);
+	const showGroupPicker = $derived(!resolvedProposeGroup && scopedGroups.length > 1);
 	const pfOptionsRequired = $derived(
 		pfType === 'select' || pfType === 'multiselect' || pfType === 'price_parts'
 	);
@@ -180,7 +192,7 @@
 	const existingSections = $derived.by(() => {
 		const target = resolvedProposeGroup || pfGroupSlug;
 		const seen = new Set<string>();
-		for (const g of schema?.groups ?? []) {
+		for (const g of scopedGroups) {
 			if (target && g.slug !== target) continue;
 			for (const f of g.fields) {
 				if (f.section) seen.add(f.section);
@@ -291,7 +303,7 @@
 	function seedValues(d: WikiEntityFields | null) {
 		const v: Record<string, unknown> = {};
 		if (d) {
-			for (const g of d.groups) {
+			for (const g of groupId ? d.groups.filter((g) => g.id === groupId) : d.groups) {
 				for (const f of g.fields) {
 					if (!f.visible) continue;
 					let val = f.value ?? '';
@@ -342,7 +354,7 @@
 		g.fields.filter((f) => f.visible && !f.can_edit);
 
 	const hasVisibleFields = $derived(
-		(schema?.groups ?? []).some((g) => g.fields.some((f) => f.visible))
+		scopedGroups.some((g) => g.fields.some((f) => f.visible))
 	);
 
 	// §58 — layout-level currency reference for currency/price_range display.
@@ -389,8 +401,7 @@
 
 	function changedOps(): WikiFieldOp[] {
 		const ops: WikiFieldOp[] = [];
-		if (!schema) return ops;
-		for (const g of schema.groups) {
+		for (const g of scopedGroups) {
 			for (const f of g.fields) {
 				if (!f.visible || !f.can_edit) continue;
 				// <input type="datetime-local"> carries the wall-clock time
@@ -526,7 +537,7 @@
 							)}
 						</p>
 						<form onsubmit={submit} class="space-y-5" novalidate>
-							{#each schema.groups as group (group.id)}
+							{#each scopedGroups as group (group.id)}
 								{@const defs = editableDefs(group)}
 								{@const readonly = readOnlyFields(group)}
 								{#if defs.length > 0 || readonly.length > 0}
@@ -649,7 +660,7 @@
 														bind:value={pfGroupSlug}
 														options={[
 															{ value: '', label: '—' },
-															...schema.groups.map((g) => ({ value: g.slug, label: g.name }))
+															...scopedGroups.map((g) => ({ value: g.slug, label: g.name }))
 														]}
 													/>
 												</div>
@@ -714,7 +725,7 @@
 											)}
 										</p>
 										<div class="mt-3 space-y-3">
-											{#each schema.groups as group (group.id)}
+											{#each scopedGroups as group (group.id)}
 												{@const deletable = deletableFields(group)}
 												{#if deletable.length > 0}
 													<div>
