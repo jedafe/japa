@@ -61,11 +61,16 @@ const probeReport: ProbeReport = {
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
+	const text = JSON.stringify(body);
 	return {
 		ok: status >= 200 && status < 300,
 		status,
 		statusText: 'OK',
+		// apiFetch sniffs content-type then calls text() — the fake must
+		// carry both.
+		headers: new Headers({ 'content-type': 'application/json' }),
 		json: () => Promise.resolve(body),
+		text: () => Promise.resolve(text),
 		clone() {
 			return this;
 		}

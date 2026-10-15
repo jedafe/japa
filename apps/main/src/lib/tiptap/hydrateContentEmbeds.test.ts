@@ -15,9 +15,14 @@ function makeContainer(inner: string): HTMLElement {
 }
 
 function okFetch(payload: unknown) {
+	const body = { data: payload };
 	return vi.fn().mockResolvedValue({
 		ok: true,
-		json: () => Promise.resolve({ data: payload })
+		// apiFetch sniffs content-type then calls text() — the fake must
+		// carry both.
+		headers: new Headers({ 'content-type': 'application/json' }),
+		json: () => Promise.resolve(body),
+		text: () => Promise.resolve(JSON.stringify(body))
 	}) as unknown as typeof fetch;
 }
 
@@ -58,7 +63,9 @@ describe('hydrateContentEmbeds', () => {
 		global.fetch = vi.fn().mockResolvedValue({
 			ok: false,
 			status: 404,
-			json: () => Promise.resolve({ error: { code: 'not_found' } })
+			headers: new Headers({ 'content-type': 'application/json' }),
+			json: () => Promise.resolve({ error: { code: 'not_found' } }),
+			text: () => Promise.resolve(JSON.stringify({ error: { code: 'not_found' } }))
 		}) as unknown as typeof fetch;
 		const host = makeContainer(
 			'<div data-type="content-embed" data-content-slug="gone"><a class="ce-card" href="/content/gone"><img src="/x.png"><span class="ce-title">Snap Title</span><span class="ce-excerpt">Snap excerpt</span></a></div>'

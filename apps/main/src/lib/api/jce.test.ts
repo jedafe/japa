@@ -85,7 +85,7 @@ describe('JCE API client', () => {
 			status: 'draft',
 			visibility: 'private'
 		});
-		expect(result).toEqual(summary);
+		expect(result).toEqual({ data: summary, error: null, status: 200 });
 	});
 
 	it('returns null on API error', async () => {
