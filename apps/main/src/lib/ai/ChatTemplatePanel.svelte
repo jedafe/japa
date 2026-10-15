@@ -11,9 +11,9 @@
 	// "Insert" drops a readable version into the composer instead and
 	// detaches so a send doesn't carry the spec twice.
 	import { Tabs } from 'bits-ui';
-	import { Plus, Trash2, X, Check, Loader2 } from 'lucide-svelte';
+	import { Plus, Trash2, X, Check, Loader2, Search } from 'lucide-svelte';
 	import { t } from '$lib/i18n';
-	import { AutocompleteSelect } from '$lib/components/ui';
+	import { AutocompleteSelect, Modal } from '$lib/components/ui';
 	// Shared option vocabularies + the composer's own Journey/Settings
 	// pickers — same components the studio prompt rail embeds (Rule 16).
 	import { TONE_OPTIONS, FRAMEWORK_OPTIONS, HUMANIZE_OPTIONS, type SelectOption } from '$lib/studio/types';
@@ -87,6 +87,24 @@
 	let saving = $state(false);
 	let saveErr = $state('');
 
+	// The rail switches between two surfaces — the searchable template
+	// list and the spec editor. Picking a row or starting a new template
+	// lands on the editor; "Templates" switches back to browse.
+	let surface = $state<'list' | 'edit'>('list');
+	let templateQuery = $state('');
+	// Bound (not fixed) so a Structure/Settings/Journey tab survives a
+	// list↔edit surface switch — Tabs.Root remounts, the state doesn't.
+	let editTab = $state('prompt');
+	const filteredTemplates = $derived.by(() => {
+		const q = templateQuery.trim().toLowerCase();
+		if (!q) return templates;
+		return templates.filter(
+			(tpl) =>
+				tpl.name.toLowerCase().includes(q) ||
+				(tpl.values?.content_type ?? '').toLowerCase().includes(q)
+		);
+	});
+
 	const activeTemplate = $derived(templates.find((tpl) => tpl.id === activeId));
 	// Working-copy divergence — edits to a loaded template that haven't
 	// been saved back yet. Drives the "unsaved changes" hint.
@@ -105,11 +123,29 @@
 					: DEFAULT_CHAT_TEMPLATE_VALUES
 			)
 	);
-	function confirmDiscard(): boolean {
-		return (
-			!editsPresent ||
-			window.confirm(t('ai.templates.discard_changes', 'Discard unsaved template changes?'))
-		);
+	// In-app confirm dialog (bits-ui Dialog via the shared Modal) —
+	// replaces window.confirm so delete/discard prompts render in the
+	// app's own UI instead of a native browser popup.
+	let confirmDialog = $state<{
+		title: string;
+		body: string;
+		confirmLabel: string;
+		run: () => void;
+	} | null>(null);
+
+	// When unsaved edits exist, route the action through the dialog;
+	// otherwise run it immediately.
+	function requestDiscard(proceed: () => void) {
+		if (!editsPresent) {
+			proceed();
+			return;
+		}
+		confirmDialog = {
+			title: t('ai.templates.discard_title', 'Discard changes?'),
+			body: t('ai.templates.discard_changes', 'Discard unsaved template changes?'),
+			confirmLabel: t('ai.templates.discard', 'Discard'),
+			run: proceed
+		};
 	}
 
 	const toneOptions = $derived(
@@ -127,15 +163,40 @@
 		}))
 	);
 
+	// Voices are named for the tone they embody ("Professional",
+	// "Witty Warm", ...) — the label prefix maps a voice back to its
+	// tone and the picker only offers voices matching the selected
+	// Tone. Same mapping as PromptRightPanel and the composer:
+	// unlabelled voices count as 'natural'.
+	function voiceToneFromLabel(label: string): string {
+		const lower = label.toLowerCase();
+		for (const tone of TONE_OPTIONS) {
+			if (lower === tone.value || lower.startsWith(tone.value + ' ')) {
+				return tone.value;
+			}
+		}
+		return 'natural';
+	}
+
 	// Same "Default voice" prepend rule as the composer's voiceOptions —
-	// the backend may already emit an empty-id row (/ai/voices). A saved
-	// voice no longer in the catalog stays visible as an extra option
-	// instead of rendering a blank pick.
+	// the backend may already emit an empty-id row (/ai/voices). The
+	// stored pick stays visible even when the selected tone filters it
+	// out — same escape the project picker uses, so loading a template
+	// whose voice doesn't match its tone doesn't silently drop the pin.
+	// A saved voice no longer in the catalog also stays visible as an
+	// extra option instead of rendering a blank pick.
 	const voiceOptions = $derived([
 		...(voices.some((v) => v.id === '')
 			? []
 			: [{ value: '', label: t('ai.chat.voice_default', 'Default voice') }]),
-		...voices.map((v) => ({ value: v.id, label: v.name })),
+		...voices
+			.filter(
+				(v) =>
+					!values.tone ||
+					voiceToneFromLabel(v.name) === values.tone ||
+					v.id === values.voice_id
+			)
+			.map((v) => ({ value: v.id, label: v.name })),
 		...(values.voice_id && !voices.some((v) => v.id === values.voice_id)
 			? [
 					{
@@ -147,6 +208,10 @@
 				]
 			: [])
 	]);
+	// The Voice field only renders when there's a real voice to pick —
+	// a lone "Default voice" option is dead UI. A set voice_id keeps it
+	// visible even when the catalog is empty (the orphan option above).
+	const hasVoiceField = $derived(voices.some((v) => v.id !== '') || !!values.voice_id);
 
 	const typeOptions = $derived(
 		contentTypes.map((ct) => ({ value: ct.value, label: ct.label }))
@@ -216,27 +281,56 @@
 	// matching the composer contract (§71).
 	const dimension = $derived(values.field_values.roadmap_dimension || null);
 	const purpose = $derived(values.field_values.roadmap_purpose || null);
+
+	// field_values edits live in a local string: parsing on every
+	// keystroke would eat lines that don't have a colon yet, and binding
+	// straight to values would lose the draft when the Settings tab
+	// unmounts. Commits happen on blur, on save, and before any other
+	// code path writes field_values (setFieldValue below).
+	let fieldValuesText = $state('');
+	const serializeFieldValues = (fv: Record<string, string>) =>
+		Object.entries(fv)
+			.map(([k, v]) => `${k}: ${v}`)
+			.join('\n');
+	function commitFieldValues(text: string) {
+		const fv: Record<string, string> = {};
+		for (const line of text.split('\n')) {
+			const idx = line.indexOf(':');
+			if (idx > 0) fv[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+		}
+		values.field_values = fv;
+	}
+	$effect(() => {
+		fieldValuesText = serializeFieldValues(values.field_values);
+	});
+
 	function setFieldValue(key: string, v: string | null) {
+		commitFieldValues(fieldValuesText);
 		if (v) values.field_values[key] = v;
 		else delete values.field_values[key];
 	}
 
+	// Picking a row loads the spec for editing — it does NOT attach.
+	// `active` is the user's explicit choice via the footer checkbox;
+	// flipping it here would silently change what every send carries.
 	function select(tpl: ChatTemplate) {
-		if (!confirmDiscard()) return;
-		values = normalizeTemplateValues(tpl.values);
-		activeId = tpl.id;
-		active = true;
-		saveName = '';
-		saveErr = '';
+		requestDiscard(() => {
+			values = normalizeTemplateValues(tpl.values);
+			activeId = tpl.id;
+			saveName = '';
+			saveErr = '';
+			surface = 'edit';
+		});
 	}
 
 	function newTemplate() {
-		if (!confirmDiscard()) return;
-		values = structuredClone(DEFAULT_CHAT_TEMPLATE_VALUES);
-		activeId = '';
-		active = true;
-		saveName = '';
-		saveErr = '';
+		requestDiscard(() => {
+			values = structuredClone(DEFAULT_CHAT_TEMPLATE_VALUES);
+			activeId = '';
+			saveName = '';
+			saveErr = '';
+			surface = 'edit';
+		});
 	}
 
 	// JSON round-trip clone — required because `values` is a $state proxy
@@ -267,6 +361,7 @@
 
 	async function save() {
 		if (saving) return;
+		commitFieldValues(fieldValuesText);
 		const now = new Date().toISOString();
 		if (activeId && activeTemplate) {
 			// Overwrite the loaded template — a typed name renames it.
@@ -307,6 +402,7 @@
 
 	async function saveAsNew() {
 		if (saving) return;
+		commitFieldValues(fieldValuesText);
 		const name =
 			saveName.trim() ||
 			(activeTemplate ? `${activeTemplate.name} (copy)` : t('ai.templates.untitled', 'Untitled'));
@@ -328,18 +424,21 @@
 		}
 	}
 
-	async function remove(id: string) {
+	function remove(id: string) {
 		if (saving) return;
 		const tpl = templates.find((x) => x.id === id);
-		if (
-			tpl &&
-			!window.confirm(
-				t('ai.templates.delete_confirm', 'Delete template "{name}"? This cannot be undone.', {
-					name: tpl.name
-				})
-			)
-		)
-			return;
+		if (!tpl) return;
+		confirmDialog = {
+			title: t('ai.templates.delete', 'Delete template'),
+			body: t('ai.templates.delete_confirm', 'Delete template "{name}"? This cannot be undone.', {
+				name: tpl.name
+			}),
+			confirmLabel: t('common.delete', 'Delete'),
+			run: () => void doRemove(id)
+		};
+	}
+
+	async function doRemove(id: string) {
 		const next = templates.filter((x) => x.id !== id);
 		if (await run(next) && activeId === id) {
 			// Keep the working values as an ad-hoc spec — deleting the saved
@@ -357,13 +456,13 @@
 			min="0"
 			class="tpl-input"
 			{value}
-			oninput={(e) => onInput(Number(e.currentTarget.value) || 0)}
+			oninput={(e) => onInput(Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)))}
 		/>
 	</div>
 {/snippet}
 
 <aside
-	class="flex h-full w-full flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-surface)]"
+	class="flex h-full w-full flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] rounded-l-[var(--radius-card)] lg:rounded-[var(--radius-card)]"
 >
 	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2.5">
 		<h2 class="text-sm font-semibold text-[var(--color-text)]">
@@ -391,42 +490,115 @@
 		</div>
 	</div>
 
-	<div class="min-h-0 flex-1 overflow-y-auto">
-		<!-- Saved templates -->
-		{#if templates.length > 0}
-			<ul class="border-b border-[var(--color-border)] p-2">
-				{#each templates as tpl (tpl.id)}
-					<li class="group relative">
-						<button
-							type="button"
-							onclick={() => select(tpl)}
-							class="w-full rounded-[var(--radius)] px-2.5 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {activeId ===
-							tpl.id
-								? 'bg-[var(--color-primary)]/10 font-medium'
-								: ''}"
-						>
-							<span class="flex items-center gap-1.5">
-								<span class="truncate">{tpl.name}</span>
-								{#if activeId === tpl.id && active}
-									<Check size={12} class="shrink-0 text-[var(--color-primary)]" />
-								{/if}
-							</span>
-						</button>
-						<button
-							type="button"
-							onclick={() => remove(tpl.id)}
-							class="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-danger)] focus:opacity-100 group-hover:opacity-100"
-							aria-label={t('ai.templates.delete', 'Delete template')}
-							title={t('ai.templates.delete', 'Delete template')}
-						>
-							<Trash2 size={12} />
-						</button>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+	<!-- Surface switch — the rail is either the searchable template
+	     list or the spec editor (same pill-switch idiom as
+	     BookingListPane's sub-filters). -->
+	<div
+		class="flex gap-1.5 border-b border-[var(--color-border)] px-3 py-2"
+		role="group"
+		aria-label={t('ai.templates.title', 'Chat templates')}
+	>
+		<button
+			type="button"
+			aria-pressed={surface === 'list'}
+			onclick={() => (surface = 'list')}
+			class="flex-1 rounded-full border px-3 py-1 text-center text-xs font-medium transition-colors {surface ===
+			'list'
+				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+		>
+			{t('ai.templates.tab_list', 'Chat templates')}
+		</button>
+		<button
+			type="button"
+			aria-pressed={surface === 'edit'}
+			onclick={() => (surface = 'edit')}
+			class="flex-1 rounded-full border px-3 py-1 text-center text-xs font-medium transition-colors {surface ===
+			'edit'
+				? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+				: 'border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
+		>
+			{t('ai.templates.tab_edit', 'Edit template')}
+		</button>
+	</div>
 
-		<Tabs.Root value="prompt">
+	{#if surface === 'list'}
+		<div class="border-b border-[var(--color-border)] p-2">
+			<div class="relative">
+				<Search
+					size={13}
+					class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-muted)]"
+				/>
+				<input
+					type="search"
+					bind:value={templateQuery}
+					onkeydown={(e) => {
+						if (e.key === 'Escape') templateQuery = '';
+					}}
+					class="tpl-input tpl-search"
+					placeholder={t('ai.templates.search', 'Search templates')}
+					aria-label={t('ai.templates.search', 'Search templates')}
+				/>
+			</div>
+		</div>
+
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			{#if filteredTemplates.length > 0}
+				<ul class="p-2">
+					{#each filteredTemplates as tpl (tpl.id)}
+						<li class="group relative">
+							<button
+								type="button"
+								onclick={() => select(tpl)}
+								class="w-full rounded-[var(--radius)] px-2.5 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {activeId ===
+								tpl.id
+									? 'bg-[var(--color-primary)]/10 font-medium'
+									: ''}"
+							>
+								<span class="flex items-center gap-1.5">
+									<span class="truncate">{tpl.name}</span>
+									{#if activeId === tpl.id && active}
+										<Check size={12} class="shrink-0 text-[var(--color-primary)]" />
+									{/if}
+								</span>
+							</button>
+							<button
+								type="button"
+								onclick={() => remove(tpl.id)}
+								class="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-muted)] transition-colors hover:text-[var(--color-danger)]"
+								aria-label={t('ai.templates.delete', 'Delete template')}
+								title={t('ai.templates.delete', 'Delete template')}
+							>
+								<Trash2 size={12} />
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="px-4 py-8 text-center text-xs text-[var(--color-muted)]">
+					{templates.length === 0
+						? t(
+								'ai.templates.empty',
+								'No templates yet — create one to reuse a generation spec.'
+							)
+						: t('common.no_results', 'No results found')}
+				</p>
+			{/if}
+		</div>
+
+		<div class="border-t border-[var(--color-border)] p-2.5">
+			<button
+				type="button"
+				onclick={newTemplate}
+				class="flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border border-dashed border-[var(--color-border)] px-2 py-1.5 text-xs font-medium text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+			>
+				<Plus size={13} />
+				{t('ai.templates.new_template', 'New template')}
+			</button>
+		</div>
+	{:else}
+		<div class="min-h-0 flex-1 overflow-y-auto">
+		<Tabs.Root bind:value={editTab}>
 			<Tabs.List class="tpl-tabs">
 				<Tabs.Trigger value="prompt" class="tpl-tab">
 					{t('studio.prompts.tab.prompt', 'Prompt')}
@@ -485,7 +657,7 @@
 						</div>
 					{/if}
 
-					<div class="tpl-pair">
+					<div class:tpl-pair={hasVoiceField}>
 						<div class="tpl-field">
 							<span class="tpl-label">{t('studio.prompts.tone', 'Tone')}</span>
 							<AutocompleteSelect
@@ -494,28 +666,7 @@
 								ariaLabel={t('studio.prompts.tone', 'Tone')}
 							/>
 						</div>
-						<div class="tpl-field">
-							<span class="tpl-label">{t('studio.prompts.framework', 'Framework')}</span>
-							<AutocompleteSelect
-								value={values.framework}
-								onValueChange={(v) => (values.framework = v as ChatTemplateFramework)}
-								options={frameworkOptions}
-								ariaLabel={t('studio.prompts.framework', 'Framework')}
-							/>
-						</div>
-					</div>
-
-					<div class:tpl-pair={voiceOptions.length > 0}>
-						<div class="tpl-field">
-							<span class="tpl-label">{t('studio.prompts.humanize', 'Humanize')}</span>
-							<AutocompleteSelect
-								value={values.humanize_level}
-								onValueChange={(v) => (values.humanize_level = v as ChatTemplateHumanize)}
-								options={humanizeOptions}
-								ariaLabel={t('studio.prompts.humanize', 'Humanize')}
-							/>
-						</div>
-						{#if voiceOptions.length > 0}
+						{#if hasVoiceField}
 							<div class="tpl-field">
 								<span class="tpl-label">{t('ai.templates.voice', 'Voice')}</span>
 								<AutocompleteSelect
@@ -525,6 +676,27 @@
 								/>
 							</div>
 						{/if}
+					</div>
+
+					<div class="tpl-pair">
+						<div class="tpl-field">
+							<span class="tpl-label">{t('studio.prompts.framework', 'Framework')}</span>
+							<AutocompleteSelect
+								value={values.framework}
+								onValueChange={(v) => (values.framework = v as ChatTemplateFramework)}
+								options={frameworkOptions}
+								ariaLabel={t('studio.prompts.framework', 'Framework')}
+							/>
+						</div>
+						<div class="tpl-field">
+							<span class="tpl-label">{t('studio.prompts.humanize', 'Humanize')}</span>
+							<AutocompleteSelect
+								value={values.humanize_level}
+								onValueChange={(v) => (values.humanize_level = v as ChatTemplateHumanize)}
+								options={humanizeOptions}
+								ariaLabel={t('studio.prompts.humanize', 'Humanize')}
+							/>
+						</div>
 					</div>
 
 					<div class="tpl-field">
@@ -700,20 +872,8 @@
 							id="tpl-field-values"
 							rows="3"
 							class="tpl-input tpl-textarea"
-							value={Object.entries(values.field_values)
-								.map(([k, v]) => `${k}: ${v}`)
-								.join('\n')}
-							onchange={(e) => {
-								// Commit on blur, not on input — writing field_values
-								// mid-keystroke re-renders value= and would erase a
-								// line the user is still typing (no colon yet).
-								const fv: Record<string, string> = {};
-								for (const line of e.currentTarget.value.split('\n')) {
-									const idx = line.indexOf(':');
-									if (idx > 0) fv[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-								}
-								values.field_values = fv;
-							}}
+							bind:value={fieldValuesText}
+							onchange={() => commitFieldValues(fieldValuesText)}
 						></textarea>
 						{#if categoryFieldKeys.length > 0}
 							<p class="tpl-hint">
@@ -787,7 +947,43 @@
 			<p class="text-xs text-[var(--color-danger)]">{saveErr}</p>
 		{/if}
 	</div>
+	{/if}
 </aside>
+
+<Modal
+	open={!!confirmDialog}
+	onOpenChange={(o) => {
+		if (!o) confirmDialog = null;
+	}}
+	title={confirmDialog?.title ?? ''}
+	description={confirmDialog?.body ?? ''}
+	size="sm"
+>
+	{#snippet children(close)}
+		<div class="flex justify-end gap-2">
+			<button
+				type="button"
+				onclick={close}
+				class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.cancel', 'Cancel')}
+			</button>
+			<button
+				type="button"
+				onclick={() => {
+					const pending = confirmDialog;
+					close();
+					confirmDialog = null;
+					pending?.run();
+				}}
+				class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium text-white"
+				style="background-color: var(--color-danger)"
+			>
+				{confirmDialog?.confirmLabel}
+			</button>
+		</div>
+	{/snippet}
+</Modal>
 
 <style>
 	/* Bits UI applies the class props to its rendered elements, so these
@@ -860,6 +1056,11 @@
 	.tpl-input:focus {
 		border-color: var(--color-primary);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+	}
+	/* Scoped so it always beats .tpl-input's padding shorthand — a
+	   Tailwind pl-* utility can lose to unlayered component CSS. */
+	.tpl-search {
+		padding-left: 2.375rem;
 	}
 	.tpl-textarea {
 		height: auto;

@@ -94,7 +94,12 @@
 {#if data.unifiedEnabled}
 	<!-- ADR-130: single chat surface — the composer tools toggle, not a
 	     page-level tab, is what switches between chat and agent turns. -->
-	<div class="mx-auto mt-2 flex h-[calc(100vh-7rem)] w-full max-w-7xl flex-col">
+	<!-- Height hugs the viewport bottom: base reserves room for the
+	     mobile top bar + bottom tab bar; md+ has neither, so the shell
+	     runs to within a small margin of the viewport edge. -->
+	<div
+		class="mx-auto mt-2 flex h-[calc(100dvh-8rem)] w-full max-w-7xl flex-col sm:h-[calc(100dvh-4.5rem)] md:h-[calc(100dvh-1.5rem)]"
+	>
 		<JapaAIChat
 			conversations={data.conversations.map((c) => ({ ...c, legacy: c.legacy ?? false }))}
 			models={data.models}
@@ -122,7 +127,7 @@
 		</p>
 	</div>
 {:else}
-<div class="mx-auto mt-4 flex h-[calc(100vh-9rem)] max-w-5xl flex-col">
+<div class="mx-auto mt-4 flex h-[calc(100dvh-8.5rem)] max-w-5xl flex-col sm:h-[calc(100dvh-5rem)] md:h-[calc(100dvh-2rem)]">
 	<!-- Mode switcher — only rendered when both modes are available -->
 	{#if bothEnabled}
 		<div class="mb-4 flex gap-1 rounded-lg border p-1" style="border-color: var(--color-border)" role="tablist">

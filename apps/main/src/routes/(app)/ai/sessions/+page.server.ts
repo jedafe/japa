@@ -13,7 +13,10 @@ import type { AgentSession, AiProject } from '$lib/ai/agentTypes';
  */
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw redirect(307, '/login?redirect=/ai/sessions');
+		throw redirect(
+			307,
+			`/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`
+		);
 	}
 
 	const ctx = apiContext(event);

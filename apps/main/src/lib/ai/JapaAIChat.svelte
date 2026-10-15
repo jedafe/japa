@@ -17,7 +17,7 @@
 	import { t } from '$lib/i18n';
 	import { onMount, tick, untrack } from 'svelte';
 	import {
-		Send,
+		ArrowUp,
 		Sparkles,
 		MessageSquare,
 		Loader2,
@@ -70,7 +70,7 @@
 		type ChatTemplateValues
 	} from './chatTemplate';
 	import { chatTemplateRail } from './chatTemplateRail.svelte';
-	import { AutocompleteSelect } from '$lib/components/ui';
+	import { AutocompleteSelect, Modal } from '$lib/components/ui';
 	import AiSourceCitations from './AiSourceCitations.svelte';
 	import type { AiCitationSource } from './types';
 	import type { MeSpace, BlogSeries, ContentTypeMeta } from '$lib/types';
@@ -149,6 +149,9 @@
 		estimated_cost?: number;
 		error?: string;
 		in_progress?: boolean;
+		/** Transient agent-loop status line ("LLM iteration 2") — shown in
+		 * the in-progress indicator only; never persists as turn content. */
+		progress?: string;
 		/** Set when the turn was sent with a chat template attached — the
 		 * bubble shows the template name under the user's text. */
 		template_name?: string;
@@ -343,28 +346,39 @@
 		}
 	}
 
-	async function deleteProject(p: AiProject) {
+	// In-app confirm dialog (bits-ui Dialog via the shared Modal) —
+	// replaces window.confirm for destructive actions (delete project /
+	// conversation). `run` may be async; the dialog closes on confirm.
+	let confirmDialog = $state<{
+		title: string;
+		body: string;
+		confirmLabel: string;
+		run: () => void;
+	} | null>(null);
+
+	function deleteProject(p: AiProject) {
 		// Destructive-ish: instructions and pins are lost (threads survive
-		// un-grouped) — confirm before the API call.
-		if (
-			!confirm(
-				t(
-					'ai.projects.delete_confirm',
-					'Delete this project? Its conversations are kept, but the instructions and defaults are lost.'
-				)
-			)
-		)
-			return;
-		const res = await api.delete(`/ai/projects/${p.id}`);
-		if (res.error) return;
-		projs = projs.filter((x) => x.id !== p.id);
-		// The backend clears membership (SET NULL) — mirror it locally.
-		convos = convos.map((c) => (c.project_id === p.id ? { ...c, project_id: undefined } : c));
-		// If the deleted project was driving the composer, drop its pins.
-		if (activeConvo?.project_id === p.id || pendingProjectId === p.id) {
-			pendingProjectId = null;
-			resetComposerDefaults();
-		}
+		// un-grouped) — confirm via the in-app modal before the API call.
+		confirmDialog = {
+			title: t('ai.projects.delete_title', 'Delete project?'),
+			body: t(
+				'ai.projects.delete_confirm',
+				'Delete this project? Its conversations are kept, but the instructions and defaults are lost.'
+			),
+			confirmLabel: t('common.delete', 'Delete'),
+			run: async () => {
+				const res = await api.delete(`/ai/projects/${p.id}`);
+				if (res.error) return;
+				projs = projs.filter((x) => x.id !== p.id);
+				// The backend clears membership (SET NULL) — mirror it locally.
+				convos = convos.map((c) => (c.project_id === p.id ? { ...c, project_id: undefined } : c));
+				// If the deleted project was driving the composer, drop its pins.
+				if (activeConvo?.project_id === p.id || pendingProjectId === p.id) {
+					pendingProjectId = null;
+					resetComposerDefaults();
+				}
+			}
+		};
 	}
 
 	// Overflow-menu state — which row's menu is open and whether the
@@ -471,6 +485,9 @@
 	let toolEnabled = $state<Record<string, boolean>>({});
 	let toolsOn = $state(false);
 	let toolsOpen = $state(false);
+	// The tools button + popover — the window click handler ignores
+	// clicks inside it so the popover only closes on a true outside click.
+	let toolsBoxEl = $state<HTMLDivElement | null>(null);
 	let prefsSaved = $state(false);
 
 	$effect(() => {
@@ -684,6 +701,15 @@
 		chatTemplateRail.open = templatePanelOpen;
 	});
 
+	// Templates are an agent-mode feature — activating tools opens the
+	// rail by default (desktop only: on mobile it's a covering overlay,
+	// so it stays on-demand); switching tools off closes it. The effect
+	// never reads templatePanelOpen, so a manual toggle isn't overridden.
+	$effect(() => {
+		if (!toolsOn) templatePanelOpen = false;
+		else if (window.matchMedia('(min-width: 1024px)').matches) templatePanelOpen = true;
+	});
+
 	// --- Composer pickers ---------------------------------------------------
 	let selectedModel = $state('');
 	let selectedVoice = $state('');
@@ -836,20 +862,21 @@
 		sidebarOpen = false;
 	}
 
-	async function deleteConversation(id: string) {
-		// Destructive: the thread is gone for good — same confirm the
-		// project delete uses.
-		if (
-			!confirm(
-				t('ai.chat.delete_confirm', 'Delete this conversation? This cannot be undone.')
-			)
-		)
-			return;
-		const res = await api.delete(`/ai/conversations/${id}`);
-		if (!res.error) {
-			convos = convos.filter((c) => c.conversation_id !== id);
-			if (conversationId === id) startNewChat();
-		}
+	function deleteConversation(id: string) {
+		// Destructive: the thread is gone for good — same in-app modal
+		// confirm the project delete uses.
+		confirmDialog = {
+			title: t('ai.chat.delete_title', 'Delete conversation?'),
+			body: t('ai.chat.delete_confirm', 'Delete this conversation? This cannot be undone.'),
+			confirmLabel: t('common.delete', 'Delete'),
+			run: async () => {
+				const res = await api.delete(`/ai/conversations/${id}`);
+				if (!res.error) {
+					convos = convos.filter((c) => c.conversation_id !== id);
+					if (conversationId === id) startNewChat();
+				}
+			}
+		};
 	}
 
 	function startNewChat() {
@@ -1079,8 +1106,11 @@
 				break;
 			}
 			case 'progress': {
+				// Progress is a transient status line — keep it out of
+				// `content` so an error/stream-close can't leave a stale
+				// "LLM iteration 1" bubble that reads like a reply.
 				if (ev.message) {
-					turn.content = ev.message;
+					turn.progress = ev.message;
 					turns = [...turns];
 				}
 				break;
@@ -1088,6 +1118,7 @@
 			case 'final_response': {
 				turn.content = ev.content ?? '';
 				turn.streamed = '';
+				turn.progress = '';
 				turn.tokens_used = ev.tokens_used;
 				turn.estimated_cost = ev.estimated_cost;
 				if (ev.conversation_id) conversationId = ev.conversation_id;
@@ -1113,6 +1144,7 @@
 					turn.content = turn.streamed;
 				}
 				turn.streamed = '';
+				turn.progress = '';
 				turn.error = ev.error ?? 'Unknown error';
 				turn.in_progress = false;
 				turns = [...turns];
@@ -1528,31 +1560,31 @@
 						<span class="max-w-32 truncate">{activeProject.name}</span>
 					</span>
 				{/if}
-				<button
-					type="button"
-					onclick={() => (templatePanelOpen = !templatePanelOpen)}
-					class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
-					style={templatePanelOpen
-						? 'border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
-						: 'border-color: var(--color-border); color: var(--color-muted)'}
-					title={t('ai.templates.toggle', 'Chat templates')}
-				>
-					<PanelRight size={13} />
-					<span class="hidden sm:inline">{t('ai.templates.title', 'Templates')}</span>
-				</button>
+				{#if toolsOn}
+					<button
+						type="button"
+						onclick={() => (templatePanelOpen = !templatePanelOpen)}
+						class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
+						style={templatePanelOpen
+							? 'border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
+							: 'border-color: var(--color-border); color: var(--color-muted)'}
+						title={t('ai.templates.toggle', 'Chat templates')}
+					>
+						<PanelRight size={13} />
+						<span class="hidden sm:inline">{t('ai.templates.title', 'Templates')}</span>
+					</button>
+				{/if}
 			</div>
 		</header>
 
-		<!-- Transcript -->
-		<div
-			bind:this={scrollEl}
-			class="relative flex-1 overflow-y-auto rounded-lg border p-4"
-			style="border-color: var(--color-border); background-color: var(--color-surface)"
-		>
+		<!-- Transcript — borderless ChatGPT/Claude-style stream: a centered
+		     max-w-3xl column, user turns as soft gray bubbles on the right,
+		     assistant turns as plain full-width prose on the left. -->
+		<div bind:this={scrollEl} class="relative flex-1 overflow-y-auto">
 			{#if turns.length === 0 && !loadingConversation}
-				<div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+				<div class="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center gap-2 p-6 text-center">
 					<MessageSquare class="h-8 w-8" style="color: var(--color-muted)" />
-					<p class="text-sm" style="color: var(--color-muted)">{t('ai.chat.empty', 'Start a conversation with Japa AI')}</p>
+					<p class="text-sm" style="color: var(--color-muted)">{t('ai.page.empty', 'Start a conversation with Japa AI')}</p>
 					<div class="mt-3 grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
 						{#each suggestions as suggestion (suggestion)}
 							<button
@@ -1576,18 +1608,19 @@
 						<Loader2 class="h-6 w-6 animate-spin" style="color: var(--color-primary)" />
 					</div>
 				{/if}
-				<div class="space-y-4">
+				<div class="mx-auto w-full max-w-3xl space-y-6 px-1 py-3 sm:px-4">
 					{#each turns as turn (turn.id)}
-						<div class="flex {turn.role === 'user' ? 'justify-end' : 'justify-start'}">
-							<div class="group relative w-fit min-w-0 max-w-[85%]">
-								{#if turn.streamed || turn.content}
+						<div class="flex {turn.role === 'user' ? 'justify-end' : ''}">
+							<div
+								class="group relative min-w-0 {turn.role === 'user'
+									? 'w-fit max-w-[85%] sm:max-w-[75%]'
+									: 'w-full'}"
+							>
+								{#if turn.role === 'user' && (turn.streamed || turn.content)}
 									<button
 										type="button"
 										onclick={() => copyTurn(turn)}
-										class="absolute top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100 {turn.role ===
-										'user'
-											? '-left-9'
-											: '-right-9'}"
+										class="absolute -left-9 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
 										aria-label={t('common.copy', 'Copy')}
 										title={t('common.copy', 'Copy')}
 									>
@@ -1599,16 +1632,16 @@
 									</button>
 								{/if}
 								<div
-									class="rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap"
-									style={turn.role === 'user'
-										? 'background-color: var(--color-primary); color: white'
-										: 'background-color: var(--color-muted-15, color-mix(in srgb, var(--color-muted) 15%, transparent)); color: var(--color-text)'}
+									class="whitespace-pre-wrap text-[15px] leading-7 text-[var(--color-text)] {turn.role ===
+									'user'
+										? 'w-fit rounded-3xl bg-[var(--color-surface-subtle)] px-4 py-2.5'
+										: 'px-1 sm:px-2'}"
 								>
 									{turn.streamed || turn.content}
 									{#if turn.in_progress && !turn.content && !turn.streamed}
 										<span class="inline-flex items-center gap-1 text-xs" style="color: var(--color-muted)">
 											<Loader2 size={12} class="animate-spin" />
-											{t('ai.agent.thinking', 'Working...')}
+											{turn.progress || t('ai.agent.thinking', 'Working...')}
 										</span>
 									{/if}
 								</div>
@@ -1700,11 +1733,26 @@
 									</div>
 								{/if}
 
-								<!-- Immigration/financial content disclaimer (Section 69) -->
+								<!-- Immigration/financial content disclaimer (Section 69) —
+								     the assistant copy action lives in this meta row so a
+								     full-width turn doesn't overflow the centered column. -->
 								{#if turn.role === 'assistant' && turn.content && !turn.in_progress}
 									<p class="mt-1 flex items-center gap-1 text-xs" style="color: var(--color-muted)">
 										<ShieldCheck size={11} />
 										{t('ai.chat.disclaimer', 'AI-generated. Verify immigration/financial details with official sources.')}
+										<button
+											type="button"
+											onclick={() => copyTurn(turn)}
+											class="ml-1 rounded-md p-1 text-[var(--color-muted)] opacity-0 transition-opacity hover:bg-[color-mix(in_srgb,var(--color-muted)_15%,transparent)] hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover:opacity-100"
+											aria-label={t('common.copy', 'Copy')}
+											title={t('common.copy', 'Copy')}
+										>
+											{#if copiedTurn === turn.id}
+												<Check size={13} />
+											{:else}
+												<Copy size={13} />
+											{/if}
+										</button>
 									</p>
 								{/if}
 							</div>
@@ -1715,33 +1763,24 @@
 		</div>
 
 		{#if error}
-			<div class="mt-3 flex items-center gap-2 rounded-md border p-2 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
+			<div class="mx-auto mt-2 flex w-full max-w-3xl items-center gap-2 rounded-md border p-2 text-sm" style="border-color: var(--color-danger); background-color: color-mix(in srgb, var(--color-danger) 10%, transparent); color: var(--color-danger)">
 				<AlertCircle class="h-4 w-4" />
 				{error}
 			</div>
 		{/if}
 
-		<div class="mt-3">
-			<AiModelVoicePicker
-				bind:model={selectedModel}
-				bind:voice={selectedVoice}
-				bind:tone={selectedTone}
-				{modelOptions}
-				{voiceOptions}
-				{toneOptions}
-				idPrefix="japaai"
-			/>
-		</div>
-
+		<!-- Composer column — shares the transcript's centered max-w-3xl so
+		     the stream and the input read as one column (ChatGPT/Claude). -->
+		<div class="mx-auto w-full max-w-3xl shrink-0">
 		{#if viewingLegacy}
-			<p class="mt-2 rounded-lg border px-3 py-2 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
+			<p class="mb-2 rounded-lg border px-3 py-2 text-xs" style="border-color: var(--color-border); color: var(--color-muted)">
 				{t('ai.chat.legacy_readonly', 'This is an older conversation — it’s view-only. Start a new chat to keep going.')}
 			</p>
 		{/if}
 
 		{#if templateActive}
 			<!-- Active chat template — every send carries the spec until detached. -->
-			<div class="mt-2 flex items-center gap-2 text-xs">
+			<div class="mb-2 flex items-center gap-2 text-xs">
 				<span
 					class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1"
 					style="border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)"
@@ -1763,15 +1802,34 @@
 			</div>
 		{/if}
 
-		<!-- Composer -->
-		<div class="relative mt-2 flex items-end gap-2">
+		<!-- Composer — rounded input box in the ChatGPT/Claude idiom: the
+		     textarea grows inside, controls sit on a bottom bar, and the
+		     send button is a circle. Picker dropdowns at this viewport
+		     edge auto-flip upward via the shared Autocomplete. -->
+		<div class="rounded-[26px] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 pb-2 pt-2.5 shadow-sm transition-shadow focus-within:border-[var(--color-primary)]/50 focus-within:shadow-md">
+			<textarea
+				bind:this={inputEl}
+				bind:value={input}
+				rows="1"
+				placeholder={toolsOn
+					? t('ai.agent.placeholder', 'Ask the agent to search, draft, or analyze...')
+					: t('ai.page.placeholder', 'Ask Japa AI anything...')}
+				aria-label={toolsOn
+					? t('ai.agent.placeholder', 'Ask the agent to search, draft, or analyze...')
+					: t('ai.page.placeholder', 'Ask Japa AI anything...')}
+				class="max-h-40 w-full resize-none overflow-y-auto bg-transparent px-1 text-[15px] leading-6 text-[var(--color-text)] outline-none placeholder:text-[var(--color-muted)]"
+				oninput={resizeInput}
+				onkeydown={onKeydown}
+				disabled={sending || viewingLegacy}
+			></textarea>
+			<div class="mt-1 flex flex-wrap items-center gap-2 sm:flex-nowrap">
 			<!-- Tools controls — only for users whose catalog is non-empty -->
 			{#if toolsAvailable}
-				<div class="relative">
+				<div class="relative shrink-0" bind:this={toolsBoxEl}>
 					<button
 						type="button"
 						onclick={() => (toolsOpen = !toolsOpen)}
-						class="flex h-10 items-center gap-1.5 rounded-lg border px-3 text-xs transition-colors {toolsOn ? 'font-medium' : ''}"
+						class="flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs transition-colors {toolsOn ? 'font-medium' : ''}"
 						style={toolsOn
 							? 'border-color: var(--color-primary); color: var(--color-primary); background-color: color-mix(in srgb, var(--color-primary) 8%, transparent)'
 							: 'border-color: var(--color-border); color: var(--color-muted)'}
@@ -1786,8 +1844,13 @@
 					</button>
 
 					{#if toolsOpen}
+						<!-- Anchored to the trigger (bottom-full), not a fixed
+						     offset — the button height changed with the composer
+						     restyle, so a hard-coded bottom-* would drift. Width is
+						     capped so the popover can't overflow the composer on
+						     narrow viewports. -->
 						<div
-							class="absolute bottom-12 left-0 z-20 w-72 rounded-lg border p-3 shadow-lg"
+							class="absolute bottom-full left-0 z-20 mb-2 w-72 max-w-[calc(100vw-2.5rem)] rounded-lg border p-3 shadow-lg"
 							style="border-color: var(--color-border); background-color: var(--color-surface)"
 						>
 							<div class="mb-2 flex items-center justify-between">
@@ -1867,33 +1930,32 @@
 				</div>
 			{/if}
 
-			<textarea
-				bind:this={inputEl}
-				bind:value={input}
-				rows="1"
-				placeholder={toolsOn
-					? t('ai.agent.placeholder', 'Ask the agent to search, draft, or analyze...')
-					: t('ai.chat.placeholder', 'Ask Japa AI anything...')}
-				class="flex-1 resize-none overflow-y-auto rounded-lg border px-3 py-2 text-sm"
-				oninput={resizeInput}
-				style="border-color: var(--color-border); background-color: var(--color-background)"
-				onkeydown={onKeydown}
-				disabled={sending || viewingLegacy}
-			></textarea>
+			<div class="min-w-0 basis-full order-last sm:order-none sm:basis-auto sm:flex-1">
+				<AiModelVoicePicker
+					bind:model={selectedModel}
+					bind:voice={selectedVoice}
+					bind:tone={selectedTone}
+					{modelOptions}
+					{voiceOptions}
+					{toneOptions}
+					idPrefix="japaai"
+					compact
+				/>
+			</div>
 			{#if sending}
 				<button
 					type="button"
 					onclick={cancel}
 					disabled={cancelling}
-					class="flex h-10 w-10 items-center justify-center rounded-lg border transition-colors disabled:opacity-50"
+					class="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-full border transition-colors disabled:opacity-50 sm:ml-0"
 					style="border-color: var(--color-danger); color: var(--color-danger)"
 					aria-label={t('ai.agent.cancel', 'Cancel')}
 					title={t('ai.agent.cancel', 'Cancel')}
 				>
 					{#if cancelling}
-						<Loader2 class="h-5 w-5 animate-spin" />
+						<Loader2 class="h-4 w-4 animate-spin" />
 					{:else}
-						<Square class="h-4 w-4" />
+						<Square class="h-3.5 w-3.5" />
 					{/if}
 				</button>
 			{:else}
@@ -1901,19 +1963,22 @@
 					type="button"
 					onclick={send}
 					disabled={!input.trim() || viewingLegacy}
-					class="flex h-10 w-10 items-center justify-center rounded-lg text-white transition-colors disabled:opacity-50"
+					class="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-full text-white transition-colors disabled:opacity-40 sm:ml-0"
 					style="background-color: var(--color-primary)"
 					aria-label={t('ai.chat.send', 'Send')}
 				>
-					<Send class="h-5 w-5" />
+					<ArrowUp class="h-4 w-4" />
 				</button>
 			{/if}
+			</div>
 		</div>
+	</div>
 	</div>
 
 	<!-- Chat template rail — a column on lg+, a right-edge overlay on
-	     smaller viewports (close button lives in the panel header). -->
-	{#if templatePanelOpen}
+	     smaller viewports (close button lives in the panel header).
+	     Agent-mode only: hidden while tools are off. -->
+	{#if templatePanelOpen && toolsOn}
 		<div
 			class="fixed inset-y-0 right-0 z-40 flex w-[21rem] max-w-[90vw] lg:static lg:z-auto lg:mr-4 lg:w-72 lg:shrink-0 xl:w-80"
 		>
@@ -1938,17 +2003,20 @@
 	{/if}
 </div>
 
-<!-- Click-away / Escape closes an open "Move to project" menu or the
-     project dialog. -->
+<!-- Click-away / Escape closes an open "Move to project" menu, the
+     tools popover, or the project dialog. Clicks inside the tools box
+     (trigger button + popover) are ignored via the element check. -->
 <svelte:window
-	onclick={() => {
+	onclick={(e) => {
 		moveMenuFor = null;
 		moveSubOpen = false;
 		projMenuFor = null;
+		if (!toolsBoxEl?.contains(e.target as Node)) toolsOpen = false;
 	}}
 	onkeydown={(e) => {
 		if (e.key !== 'Escape') return;
 		if (projectDialog) projectDialog = null;
+		else if (toolsOpen) toolsOpen = false;
 		else if (moveSubOpen) moveSubOpen = false;
 		else if (moveMenuFor) moveMenuFor = null;
 		else if (projMenuFor) projMenuFor = null;
@@ -2068,3 +2136,40 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Destructive-action confirm (delete project / conversation) — the
+     same shared Modal the template panel uses, styled like its dialog. -->
+<Modal
+	open={!!confirmDialog}
+	onOpenChange={(o) => {
+		if (!o) confirmDialog = null;
+	}}
+	title={confirmDialog?.title ?? ''}
+	description={confirmDialog?.body ?? ''}
+	size="sm"
+>
+	{#snippet children(close)}
+		<div class="flex justify-end gap-2">
+			<button
+				type="button"
+				onclick={close}
+				class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+			>
+				{t('common.cancel', 'Cancel')}
+			</button>
+			<button
+				type="button"
+				onclick={() => {
+					const pending = confirmDialog;
+					close();
+					confirmDialog = null;
+					pending?.run();
+				}}
+				class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium text-white"
+				style="background-color: var(--color-danger)"
+			>
+				{confirmDialog?.confirmLabel}
+			</button>
+		</div>
+	{/snippet}
+</Modal>

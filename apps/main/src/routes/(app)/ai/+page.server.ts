@@ -57,7 +57,10 @@ export interface ChatVoiceOption {
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		throw redirect(307, '/login?redirect=/ai');
+		throw redirect(
+			307,
+			`/login?redirect=${encodeURIComponent(event.url.pathname + event.url.search)}`
+		);
 	}
 
 	const parent = await event.parent();

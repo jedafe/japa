@@ -61,6 +61,9 @@
 		estimated_cost?: number;
 		error?: string;
 		in_progress?: boolean;
+		/** Transient agent-loop status line — shown in the in-progress
+		 * indicator only; never persists as turn content. */
+		progress?: string;
 	}
 
 	let { capabilities }: { capabilities: AgentCapabilities | null } = $props();
@@ -269,12 +272,11 @@
 				break;
 			}
 			case 'progress': {
-				// Progress events carry a transient status message. Update the
-				// assistant content to the latest progress message so the user
-				// sees current activity. The final_response event overwrites
-				// this with the actual answer.
+				// Progress is a transient status line — keep it out of
+				// `content` so an error/stream-close can't leave a stale
+				// "LLM iteration 1" bubble that reads like a reply.
 				if (ev.message) {
-					turn.content = ev.message;
+					turn.progress = ev.message;
 					turns = [...turns];
 				}
 				break;
@@ -282,6 +284,7 @@
 			case 'final_response': {
 				turn.content = ev.content ?? '';
 				turn.streamed = '';
+				turn.progress = '';
 				turn.tokens_used = ev.tokens_used;
 				turn.estimated_cost = ev.estimated_cost;
 				turn.in_progress = false;
@@ -297,6 +300,7 @@
 					turn.content = turn.streamed;
 				}
 				turn.streamed = '';
+				turn.progress = '';
 				turn.error = ev.error ?? 'Unknown error';
 				turn.in_progress = false;
 				turns = [...turns];
@@ -409,7 +413,7 @@
 								{#if turn.in_progress && !turn.content && !turn.streamed}
 									<span class="inline-flex items-center gap-1 text-xs" style="color: var(--color-muted)">
 										<Loader2 size={12} class="animate-spin" />
-										{t('ai.agent.thinking', 'Working...')}
+										{turn.progress || t('ai.agent.thinking', 'Working...')}
 									</span>
 								{/if}
 							</div>

@@ -135,10 +135,13 @@
 	let adding = $state(false);
 	let addError = $state<string | null>(null);
 
-	// Dropdown position (fixed, relative to viewport).
+	// Dropdown position (fixed, relative to viewport). dropUp is the
+	// *effective* direction — `openUp` forces upward, otherwise it is
+	// auto-detected from the space below vs above the field.
 	let dropdownTop = $state(0);
 	let dropdownLeft = $state(0);
 	let dropdownWidth = $state(0);
+	let dropUp = $state(false);
 
 	// Debounce timer
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -202,7 +205,13 @@
 		if (!fieldEl) return;
 		const rect = fieldEl.getBoundingClientRect();
 		dropdownWidth = rect.width;
-		dropdownTop = openUp
+		// Flip upward when the space below can't fit the list and the
+		// space above is larger. Until the dropdown mounts its height is
+		// estimated from the .autocomplete-options max-height (220px).
+		const needed = (dropdownEl?.offsetHeight ?? 220) + 16;
+		const below = window.innerHeight - rect.bottom;
+		dropUp = openUp || (below < needed && rect.top > below);
+		dropdownTop = dropUp
 			? rect.top + window.scrollY - 4
 			: rect.bottom + window.scrollY + 4;
 		dropdownLeft = rect.left + window.scrollX;
@@ -219,6 +228,12 @@
 			window.removeEventListener('scroll', onScroll, true);
 			window.removeEventListener('resize', onScroll);
 		};
+	});
+
+	// The dropdown mounts a tick after `open` flips — remeasure with its
+	// real height so the up/down check isn't working off the estimate.
+	$effect(() => {
+		if (dropdownEl) updateDropdownPosition();
 	});
 
 	async function open_() {
@@ -501,7 +516,7 @@
 		bind:this={dropdownEl}
 		use:portal
 		class="autocomplete-dropdown"
-		style="position: absolute; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999; pointer-events: auto;{openUp
+		style="position: absolute; top: {dropdownTop}px; left: {dropdownLeft}px; width: {dropdownWidth}px; z-index: 99999; pointer-events: auto;{dropUp
 			? ' transform: translateY(-100%);'
 			: ''}"
 		role="listbox"
