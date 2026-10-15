@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -69,6 +70,10 @@ type WikiRollupConfig struct {
 	// slugs (config order = row order); absent/empty means every
 	// template under the category.
 	Pages []string `json:"pages,omitempty"`
+	// IncludeSelf (pages mode only) prepends one row for the
+	// category's own bound group — the page's summary fields —
+	// linked at the category slug. Off means topic rows only.
+	IncludeSelf bool `json:"include_self,omitempty"`
 }
 
 // rollupModeDirectory switches a category rollup from metric aggregation
@@ -1148,7 +1153,7 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 // space's cfv in each page's bound group. Field defs, metric defaults,
 // the can_view gate, and the aggregation fold are identical to
 // computeRollup; only the row axis changes.
-func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.UUID, spaceSlug, spaceName string, cfg *WikiRollupConfig, templates []WikiPageTemplate) *WikiRollupDTO {
+func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.UUID, spaceSlug, spaceName string, cfg *WikiRollupConfig, cat WikiCategory, templates []WikiPageTemplate) *WikiRollupDTO {
 	if s.fields == nil {
 		return nil
 	}
@@ -1178,6 +1183,17 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	// already bounded by the template count.
 	if cfg.SectionLimit > 0 && len(sources) > cfg.SectionLimit {
 		sources = sources[:cfg.SectionLimit]
+	}
+
+	// include_self prepends the category's own group as the first row
+	// — its slug links back to this very page. Prepended (not appended)
+	// so it wins a group-sharing template in the groupSeen dedup.
+	if cfg.IncludeSelf && cat.FieldGroupID.Valid {
+		sources = append([]WikiPageTemplate{{
+			Slug:         cat.Slug,
+			Label:        cat.Label,
+			FieldGroupID: cat.FieldGroupID,
+		}}, sources...)
 	}
 
 	canManage := s.perms != nil && s.perms.HasPermission(ctx, userID, PermFieldsManage)
@@ -1221,6 +1237,7 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 			if f.Section != nil {
 				def.section = *f.Section
 			}
+			def.options = f.Options
 			def.currency = customfields.CurrencyCodeFromOptions(f.Options)
 			if def.typ == customfields.FieldTypePriceParts {
 				def.primaryPart = customfields.PrimaryPartFromOptions(f.Options)
@@ -1257,7 +1274,92 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 		metrics = map[string]bool{"min": true, "avg": true, "max": true}
 	}
 
-	fieldsOut, _ := aggregateRollupValues(vals, defsByID, defsByKey, fieldOrder, metrics)
+	// Computed fields never read their own stored cfv — a stale row must
+	// not shadow the fold either in cells or in the column aggregates
+	// (§80 computed contract). Stored rows of computed fields drop out
+	// of both passes; each computed field's folded value re-enters as a
+	// synthetic row so aggregateRollupValues folds it as its one sample.
+	byCoord := map[string]gen.ListCustomFieldValuesWithDefsForEntitiesRow{}
+	for _, v := range vals {
+		byCoord[v.FieldGroupID.String()+"/"+v.FieldKey] = v
+	}
+	groupIDs := map[string]pgtype.UUID{} // slug → id memo
+	resolveGroup := func(slug string) pgtype.UUID {
+		if gid, ok := groupIDs[slug]; ok {
+			return gid
+		}
+		g, err := s.fields.GetFieldGroupBySlug(ctx, slug)
+		if err != nil {
+			groupIDs[slug] = pgtype.UUID{}
+			return pgtype.UUID{}
+		}
+		groupIDs[slug] = g.ID
+		return g.ID
+	}
+	computedCell := func(def rollupFieldDef) (any, bool) {
+		spec := customfields.ComputedSpecFromOptions(def.options)
+		if spec == nil {
+			return nil, false
+		}
+		scalars := make([]float64, 0, len(spec.Sources))
+		for _, src := range spec.Sources {
+			gid := resolveGroup(src.Group)
+			if !gid.Valid {
+				continue
+			}
+			sv, ok := byCoord[gid.String()+"/"+src.Key]
+			if !ok || !fieldVisible(sv.FieldID) {
+				continue
+			}
+			if f, ok := customfields.ComputedScalarFromValue(sv.FieldType, sv.FieldOptions, sv.ValueJson, sv.ValueNumber); ok {
+				scalars = append(scalars, f)
+			}
+		}
+		if len(scalars) == 0 {
+			return nil, false
+		}
+		return customfields.ComputedDisplayValue(def.typ, def.options, customfields.FoldComputedMetric(spec.Metric, scalars)), true
+	}
+
+	foldVals := make([]gen.ListCustomFieldValuesWithDefsForEntitiesRow, 0, len(vals))
+	computedCells := map[pgtype.UUID]any{} // field id → folded display value
+	for _, v := range vals {
+		def, ok := defsByID[v.FieldID]
+		if !ok {
+			foldVals = append(foldVals, v)
+			continue
+		}
+		if !customfields.ComputedEligibleField(def.typ, def.options) {
+			foldVals = append(foldVals, v)
+			continue
+		}
+		if cell, ok := computedCell(def); ok {
+			computedCells[v.FieldID] = cell
+			if syn, ok := rollupSyntheticRow(v, def, cell); ok {
+				foldVals = append(foldVals, syn)
+			}
+		}
+	}
+	// Computed fields with no stored row never enter vals — fold them
+	// into the cells and column samples the same way.
+	for id, def := range defsByID {
+		if !customfields.ComputedEligibleField(def.typ, def.options) {
+			continue
+		}
+		if _, done := computedCells[id]; done {
+			continue
+		}
+		if cell, ok := computedCell(def); ok {
+			computedCells[id] = cell
+			if syn, ok := rollupSyntheticRow(
+				gen.ListCustomFieldValuesWithDefsForEntitiesRow{FieldID: id, EntityID: spaceID, FieldType: def.typ},
+				def, cell); ok {
+				foldVals = append(foldVals, syn)
+			}
+		}
+	}
+
+	fieldsOut, _ := aggregateRollupValues(foldVals, defsByID, defsByKey, fieldOrder, metrics)
 
 	// Row values bucket by the field's source template — the entity axis
 	// is the single host space, so the fold's rowsByEntity map cannot
@@ -1272,11 +1374,28 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 		if !ok {
 			continue
 		}
+		if _, computed := computedCells[v.FieldID]; computed {
+			continue // written from the folded value below
+		}
+		if customfields.ComputedEligibleField(def.typ, def.options) {
+			continue // spec'd but unfolded (no usable sources) — no stored fallback
+		}
 		if pageValues[i] == nil {
 			pageValues[i] = map[string]any{}
 		}
 		pageValues[i][def.key] = customfields.FieldValueFromDefRow(
 			v.ValueText, v.ValueNumber, v.ValueBool, v.ValueDate, v.ValueJson, v.FieldType)
+	}
+	for id, cell := range computedCells {
+		def := defsByID[id]
+		i, ok := fieldSource[id]
+		if !ok {
+			continue
+		}
+		if pageValues[i] == nil {
+			pageValues[i] = map[string]any{}
+		}
+		pageValues[i][def.key] = cell
 	}
 
 	// Every resolved template emits a row — a page with no values still
@@ -1305,17 +1424,50 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	return &WikiRollupDTO{Scope: rollupScopePages, Fields: fieldsOut, Rows: rows, Spaces: contrib}
 }
 
+// rollupSyntheticRow rebuilds a folded computed value as a cfv row in
+// the field type's storage shape so aggregateRollupValues folds it as
+// the field's one sample — scalar types land in value_number,
+// price_range/price_parts marshal their display JSON back.
+func rollupSyntheticRow(v gen.ListCustomFieldValuesWithDefsForEntitiesRow, def rollupFieldDef, cell any) (gen.ListCustomFieldValuesWithDefsForEntitiesRow, bool) {
+	out := v // FieldID/EntityID/FieldType carry over
+	out.ValueText, out.ValueBool, out.ValueJson = nil, nil, nil
+	out.ValueDate = pgtype.Timestamptz{}
+	out.ValueNumber = pgtype.Numeric{}
+	switch def.typ {
+	case customfields.FieldTypePriceRange, customfields.FieldTypePriceParts:
+		b, err := json.Marshal(cell)
+		if err != nil {
+			return out, false
+		}
+		out.ValueJson = b
+	default:
+		f, ok := cell.(float64)
+		if !ok {
+			return out, false
+		}
+		var n pgtype.Numeric
+		if err := n.Scan(strconv.FormatFloat(f, 'f', -1, 64)); err != nil {
+			return out, false
+		}
+		out.ValueNumber = n
+	}
+	return out, true
+}
+
 // rollupFieldDef is the schema member a rollup aggregates — one custom
 // field on a descendant type's same-category group. primaryPart is the
 // price_parts comparable member (§80 Wiki Topic Pages) — empty when the
 // field declares no primary_part (non-comparable; rows-only).
 // primaryKind is that part's declared kind (money|number) so row-cell
 // renderers format it correctly without the full options schema.
+// options is the field's raw options JSON — pages mode reads
+// options.computed from it.
 type rollupFieldDef struct {
 	key         string
 	label       string
 	typ         string
 	section     string
+	options     []byte
 	currency    string
 	primaryPart string
 	primaryKind string

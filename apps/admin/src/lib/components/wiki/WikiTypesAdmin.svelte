@@ -476,6 +476,7 @@
 		{ key: 'rollup_metrics', label: t('app.wiki.rollup_metrics', 'Metrics'), type: 'text' },
 		{ key: 'rollup_levels', label: t('app.wiki.rollup_levels', 'Levels'), type: 'text' },
 		{ key: 'rollup_pages', label: t('app.wiki.rollup_pages', 'Pages'), type: 'text' },
+		{ key: 'rollup_include_self', label: t('app.wiki.rollup_include_self', 'Include category fields'), type: 'checkbox' },
 		{ key: 'rollup_section_limit', label: t('app.wiki.rollup_section_limit', 'Section limit'), type: 'number' }
 	];
 
@@ -536,6 +537,7 @@
 			cfg.mode = 'pages';
 			const pages = (body.rollup_pages as string[]) ?? [];
 			if (pages.length) cfg.pages = pages;
+			if (body.rollup_include_self) cfg.include_self = true;
 		}
 		return cfg;
 	}
@@ -548,6 +550,7 @@
 			metrics?: string[];
 			levels?: string[];
 			pages?: string[];
+			include_self?: boolean;
 			section_limit?: number;
 		} | null;
 		return {
@@ -558,6 +561,7 @@
 			rollup_metrics: cfg?.metrics ?? [],
 			rollup_levels: cfg?.levels ?? [],
 			rollup_pages: cfg?.pages ?? [],
+			rollup_include_self: cfg?.include_self ?? false,
 			rollup_section_limit: cfg?.section_limit ?? 0
 		};
 	}
@@ -1368,6 +1372,17 @@
 									{t('app.wiki.rollup_pages_create_first', 'Save the category first — its page templates become selectable once they exist.')}
 								</p>
 							{/if}
+							<label class="mt-3 flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
+								<input
+									type="checkbox" class="h-4 w-4 rounded"
+									checked={Boolean(value.rollup_include_self)}
+									onchange={(e) => (value.rollup_include_self = e.currentTarget.checked)}
+								/>
+								{t('app.wiki.rollup_include_self', 'Include category fields')}
+								<span class="text-xs" style="color: var(--color-muted)">
+									{t('app.wiki.rollup_include_self_help', '— the page’s own field group becomes the first rollup row')}
+								</span>
+							</label>
 						</div>
 					{:else}
 						<div>

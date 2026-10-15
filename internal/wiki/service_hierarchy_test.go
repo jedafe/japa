@@ -1931,7 +1931,7 @@ func TestComputePageRollup_Basic(t *testing.T) {
 	}
 
 	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
-		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Metrics: []string{"avg"}}, templates)
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Metrics: []string{"avg"}}, WikiCategory{}, templates)
 	if out == nil {
 		t.Fatal("rollup should resolve")
 	}
@@ -1976,7 +1976,7 @@ func TestComputePageRollup_ConfiguredSubsetAndEmptyRow(t *testing.T) {
 
 	// Unknown slug skipped; value-less configured page still emits a row.
 	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
-		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Pages: []string{"food", "missing", "transport"}}, templates)
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Pages: []string{"food", "missing", "transport"}}, WikiCategory{}, templates)
 	if out == nil {
 		t.Fatal("rollup should resolve")
 	}
@@ -2013,7 +2013,7 @@ func TestComputePageRollup_QuickFactsExcluded(t *testing.T) {
 
 	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "x", "X",
 		&WikiRollupConfig{Enabled: true, Mode: rollupModePages},
-		[]WikiPageTemplate{{Slug: "food", Label: "Food", FieldGroupID: groupA}})
+		WikiCategory{}, []WikiPageTemplate{{Slug: "food", Label: "Food", FieldGroupID: groupA}})
 
 	f := fieldByKey(t, out.Fields, "monthly_total")
 	if *f.Metrics.Avg != 100 {
@@ -2023,6 +2023,97 @@ func TestComputePageRollup_QuickFactsExcluded(t *testing.T) {
 		if fo.Key == "pop" {
 			t.Fatal("quick_facts field must not aggregate")
 		}
+	}
+}
+
+func TestComputePageRollup_IncludeSelf(t *testing.T) {
+	spaceID := pgid(0xEE)
+	groupCat, groupA := pgid(0xC0), pgid(0xA0)
+	fieldCat, fieldA := pgid(0xC1), pgid(0xA1)
+
+	ff := &fakeFieldReader{
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+			groupCat.String(): {groupField(fieldCat, groupCat, "exp_food", "Food", customfields.FieldTypeCurrency)},
+			groupA.String():   {groupField(fieldA, groupA, "milk_1l", "Milk", customfields.FieldTypePriceRange)},
+		},
+		valuesForEntities: []gen.ListCustomFieldValuesWithDefsForEntitiesRow{
+			{FieldID: fieldCat, EntityID: spaceID, FieldType: customfields.FieldTypeCurrency, ValueNumber: numericVal(t, "350"), FieldGroupID: groupCat},
+			{FieldID: fieldA, EntityID: spaceID, FieldType: customfields.FieldTypePriceRange, ValueJson: []byte(`{"avg":3}`), FieldGroupID: groupA},
+		},
+		perms: map[string][2]bool{fieldCat.String(): {true, true}, fieldA.String(): {true, true}},
+	}
+	s := &Service{fields: ff, perms: fakePermChecker{granted: map[string]bool{}}}
+
+	cat := WikiCategory{Slug: "cost-of-living", Label: "Cost of Living in {name}", FieldGroupID: groupCat}
+	templates := []WikiPageTemplate{
+		{ID: pgid(0x01), Slug: "food", Label: "Food in {name}", FieldGroupID: groupA},
+	}
+
+	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, IncludeSelf: true}, cat, templates)
+	if out == nil {
+		t.Fatal("rollup should resolve")
+	}
+	if len(out.Rows) != 2 {
+		t.Fatalf("rows: got %d want 2 (self + topic)", len(out.Rows))
+	}
+	if out.Rows[0].Page.Slug != "cost-of-living" || out.Rows[0].Page.Title != "Cost of Living in Toronto" {
+		t.Fatalf("self row wrong: %+v", out.Rows[0].Page)
+	}
+	if out.Rows[0].Values["exp_food"] == nil {
+		t.Fatalf("self row should carry category group values: %+v", out.Rows[0].Values)
+	}
+
+	// include_self off → topic rows only.
+	out = s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages}, cat, templates)
+	if len(out.Rows) != 1 || out.Rows[0].Page.Slug != "food" {
+		t.Fatalf("include_self off must emit topic rows only: %+v", out.Rows)
+	}
+}
+
+func TestComputePageRollup_ComputedFields(t *testing.T) {
+	spaceID := pgid(0xEE)
+	groupCat, groupA := pgid(0xC0), pgid(0xA0)
+	fieldCat, fieldA := pgid(0xC1), pgid(0xA1)
+
+	expFood := groupField(fieldCat, groupCat, "exp_food", "Food", customfields.FieldTypeCurrency)
+	expFood.Options = []byte(`{"computed":{"metric":"sum","sources":[{"group":"food-group","key":"milk_1l"}]}}`)
+
+	ff := &fakeFieldReader{
+		groups: map[string]gen.CustomFieldGroup{
+			groupA.String(): {ID: groupA, Slug: "food-group"},
+		},
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+			groupCat.String(): {expFood},
+			groupA.String():   {groupField(fieldA, groupA, "milk_1l", "Milk", customfields.FieldTypePriceRange)},
+		},
+		valuesForEntities: []gen.ListCustomFieldValuesWithDefsForEntitiesRow{
+			// Stale stored row on the computed field — must not shadow the fold.
+			{FieldID: fieldCat, EntityID: spaceID, FieldType: customfields.FieldTypeCurrency, FieldKey: "exp_food", ValueNumber: numericVal(t, "999"), FieldGroupID: groupCat},
+			{FieldID: fieldA, EntityID: spaceID, FieldType: customfields.FieldTypePriceRange, FieldKey: "milk_1l", ValueJson: []byte(`{"avg":3}`), FieldGroupID: groupA},
+		},
+		perms: map[string][2]bool{fieldCat.String(): {true, true}, fieldA.String(): {true, true}},
+	}
+	s := &Service{fields: ff, perms: fakePermChecker{granted: map[string]bool{}}}
+
+	cat := WikiCategory{Slug: "cost-of-living", Label: "Cost of Living", FieldGroupID: groupCat}
+	templates := []WikiPageTemplate{
+		{ID: pgid(0x01), Slug: "food-prices", Label: "Food Prices", FieldGroupID: groupA},
+	}
+
+	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, IncludeSelf: true}, cat, templates)
+	if out == nil {
+		t.Fatal("rollup should resolve")
+	}
+	got, ok := out.Rows[0].Values["exp_food"].(float64)
+	if !ok || got != 3 {
+		t.Fatalf("self row exp_food must be the folded 3, not the stale stored 999: %+v", out.Rows[0].Values)
+	}
+	f := fieldByKey(t, out.Fields, "exp_food")
+	if f.Samples != 1 || f.Metrics.Avg == nil || *f.Metrics.Avg != 3 {
+		t.Fatalf("column aggregate must fold the computed value once: %+v", f)
 	}
 }
 

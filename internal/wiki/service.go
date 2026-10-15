@@ -903,7 +903,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 		// category's sub-pages in this space — no descendant lookup.
 		if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && page.Slug == cat.Slug {
 			if rcfg.Mode == rollupModePages {
-				dto.Rollup = s.computePageRollup(ctx, userID, spaceID, page.SpaceSlug, page.SpaceName, rcfg, templates)
+				dto.Rollup = s.computePageRollup(ctx, userID, spaceID, page.SpaceSlug, page.SpaceName, rcfg, cat, templates)
 			} else if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 				if rcfg.Mode == rollupModeDirectory {
 					dto.Directory = s.computeDirectory(ctx, spaceID, spaceTypeID, rcfg)
@@ -1117,7 +1117,7 @@ func (s *Service) lazyCategoryPage(ctx context.Context, userID, spaceID pgtype.U
 	// mode "pages" needs no space-type ref — the row axis is this
 	// space's own page templates, not descendants.
 	if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && rcfg.Mode == rollupModePages {
-		dto.Rollup = s.computePageRollup(ctx, userID, spaceID, spaceSlug, spaceName, rcfg, templates)
+		dto.Rollup = s.computePageRollup(ctx, userID, spaceID, spaceSlug, spaceName, rcfg, cat, templates)
 	}
 	if spaceTypeID, _, terr := s.store.GetSpaceTypeRef(ctx, spaceID); terr == nil {
 		dto.Ancestors, dto.AncestorsAlt = s.getAncestors(ctx, spaceID, spaceTypeID)

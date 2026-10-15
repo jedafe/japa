@@ -772,8 +772,8 @@ func (s *Service) DeleteWikiTypeCategory(ctx context.Context, idStr string) erro
 var validRollupMetrics = map[string]bool{"min": true, "avg": true, "max": true}
 
 // validateRollupInput checks a rollup JSONB payload: null/empty clears,
-// otherwise {enabled bool, mode ∈ {"", "directory"}, metrics ⊆ {min,avg,max},
-// levels []slug, section_limit ≥ 0}.
+// otherwise {enabled bool, mode ∈ {"", "directory", "pages"}, metrics ⊆
+// {min,avg,max}, levels []slug, pages []slug, section_limit ≥ 0}.
 // Returns the canonical bytes to store (nil when clearing).
 func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 	if len(raw) == 0 || string(raw) == "null" {

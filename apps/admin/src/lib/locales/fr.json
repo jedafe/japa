@@ -4342,6 +4342,8 @@
 	"app.wiki.rollup_mode_pages": "Sous-pages — agréger les pages de cette catégorie",
 	"app.wiki.rollup_mode_pages_help": "La page de catégorie agrège les valeurs de ses propres sous-pages (ex. les pages thématiques du coût de la vie d'une ville).",
 	"app.wiki.rollup_no_levels": "Ce type n'a pas de types wiki enfants déclarés — tous les types descendants sont inclus.",
+	"app.wiki.rollup_include_self": "Inclure les champs de la catégorie",
+	"app.wiki.rollup_include_self_help": "— le groupe de champs de la page devient la première ligne de l'agrégat",
 	"app.wiki.rollup_no_pages": "Cette catégorie n'a pas encore de modèles de page — tous les modèles alimenteront l'agrégat une fois créés.",
 	"app.wiki.rollup_on": "activé",
 	"app.wiki.rollup_pages": "Pages sources",

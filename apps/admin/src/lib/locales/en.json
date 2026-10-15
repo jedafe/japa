@@ -4350,6 +4350,8 @@
 	"app.wiki.rollup_mode_pages": "Sub-pages — aggregate this category's pages",
 	"app.wiki.rollup_mode_pages_help": "The category page aggregates its own sub-pages' field values (e.g. a city's cost-of-living topic pages).",
 	"app.wiki.rollup_no_levels": "This type has no declared child wiki types — every descendant type is included.",
+	"app.wiki.rollup_include_self": "Include category fields",
+	"app.wiki.rollup_include_self_help": "— the page’s own field group becomes the first rollup row",
 	"app.wiki.rollup_no_pages": "This category has no page templates yet — all templates feed the rollup once created.",
 	"app.wiki.rollup_on": "on",
 	"app.wiki.rollup_pages": "Source pages",
