@@ -125,16 +125,17 @@ func (s *Store) ListCategoriesBySpaceSlug(ctx context.Context, spaceSlug string)
 	out := make([]WikiCategory, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, WikiCategory{
-			ID:            r.ID,
-			SpaceTypeSlug: r.SpaceTypeSlug,
-			Slug:          r.Slug,
-			Category:      r.Category,
-			Label:         r.Label,
-			FieldGroupID:  r.FieldGroupID,
-			Position:      r.Position,
-			IsSystem:      r.IsSystem,
-			Rollup:        r.Rollup,
-			Icon:          r.Icon,
+			ID:             r.ID,
+			SpaceTypeSlug:  r.SpaceTypeSlug,
+			Slug:           r.Slug,
+			Category:       r.Category,
+			Label:          r.Label,
+			FieldGroupID:   r.FieldGroupID,
+			FieldGroupSlug: r.FieldGroupSlug,
+			Position:       r.Position,
+			IsSystem:       r.IsSystem,
+			Rollup:         r.Rollup,
+			Icon:           r.Icon,
 		})
 	}
 
@@ -152,15 +153,16 @@ func (s *Store) ListAllCategories(ctx context.Context) ([]WikiCategory, error) {
 	out := make([]WikiCategory, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, WikiCategory{
-			SpaceTypeSlug: r.SpaceTypeSlug,
-			Slug:          r.Slug,
-			Category:      r.Category,
-			Label:         r.Label,
-			FieldGroupID:  r.FieldGroupID,
-			Position:      r.Position,
-			IsSystem:      r.IsSystem,
-			Rollup:        r.Rollup,
-			Icon:          r.Icon,
+			SpaceTypeSlug:  r.SpaceTypeSlug,
+			Slug:           r.Slug,
+			Category:       r.Category,
+			Label:          r.Label,
+			FieldGroupID:   r.FieldGroupID,
+			FieldGroupSlug: r.FieldGroupSlug,
+			Position:       r.Position,
+			IsSystem:       r.IsSystem,
+			Rollup:         r.Rollup,
+			Icon:           r.Icon,
 		})
 	}
 

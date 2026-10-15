@@ -57,6 +57,11 @@
 		empty?: boolean;
 		/** §80 category icon — admin-configured lucide name. */
 		icon?: string;
+		/** §80 Wiki Types — the category's bound field group. The index
+		 *  surface is the overview tab, so the panel/modal scope to the
+		 *  overview category's group rather than every class-wide group. */
+		field_group_id?: string;
+		field_group_slug?: string;
 	};
 	// svelte-ignore state_referenced_locally
 	const apiCategories: ApiCategory[] = data.apiCategories ?? [];
@@ -79,6 +84,11 @@
 	const spaceLevel = $derived(data.spaceDetail?.space?.level ?? '');
 	const spaceId = $derived(data.spaceDetail?.space?.id ?? data.index[0]?.space_id ?? '');
 	const logoUrl = $derived(data.spaceDetail?.logo_url ?? data.spaceDetail?.space?.logo_url ?? '');
+	// §80 Wiki Types — the index is the overview tab (WikiTabs
+	// active="overview"), so its fields panel and SuggestEdit scope to the
+	// overview category's bound group. Space types without an overview
+	// category keep the full entity schema.
+	const indexGroup = $derived(apiCategories.find((c) => c.slug === 'overview'));
 
 	// Wiki-content JSON (base64-encoded in the API response) carries the
 	// auto-populated {title, extract, description, thumbnail, content_url}.
@@ -583,6 +593,8 @@
 				entityType="space"
 				entityId={spaceId}
 				title={t('wiki.space_data_title', '{name} data', { name: spaceName })}
+				groupId={indexGroup?.field_group_id}
+				groupSlug={indexGroup?.field_group_slug}
 			/>
 		{/if}
 	</div>

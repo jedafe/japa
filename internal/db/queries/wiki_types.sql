@@ -119,12 +119,14 @@ LIMIT 1;
 
 -- name: ListWikiCategoriesBySpaceSlug :many
 -- Public category list for a space (replaces the hardcoded geo/university
--- slices): resolves the space's type template.
+-- slices): resolves the space's type template. field_group_slug lets the
+-- index scope its fields panel to the overview category's bound group.
 SELECT wtc.id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
-       st.slug AS space_type_slug
+       st.slug AS space_type_slug, fg.slug AS field_group_slug
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
 JOIN space_types st ON st.id = wtc.space_type_id
+LEFT JOIN custom_field_groups fg ON fg.id = wtc.field_group_id
 WHERE sp.slug = @space_slug AND sp.status = 'active'
 ORDER BY wtc.position, wtc.slug;
 
@@ -198,10 +200,11 @@ WHERE sp.id = @space_id;
 
 -- name: ListAllWikiCategories :many
 SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
-       st.slug AS space_type_slug
+       st.slug AS space_type_slug, fg.slug AS field_group_slug
 FROM wiki_type_categories wtc
 JOIN wiki_type_configs cfg ON cfg.space_type_id = wtc.space_type_id AND cfg.enabled = true
 JOIN space_types st ON st.id = wtc.space_type_id
+LEFT JOIN custom_field_groups fg ON fg.id = wtc.field_group_id
 -- Deterministic tiebreak: the handler dedupes the union by category token,
 -- so the winner's fields (label, field_group_id) must not flap on equal
 -- (position, slug) across types.

@@ -20,6 +20,10 @@ type WikiApiCategory = {
 	empty?: boolean;
 	/** §80 category icon — admin-configured lucide name. */
 	icon?: string;
+	/** The category's bound field group — the index scopes its fields
+	 *  panel to the overview category's group. */
+	field_group_id?: string;
+	field_group_slug?: string;
 };
 /** §80 Hierarchical UX — the index envelope gains ancestors[] alongside
  *  the page list for the space-level breadcrumb, and ancestors_alt[]

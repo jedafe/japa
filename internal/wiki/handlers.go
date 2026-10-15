@@ -399,8 +399,12 @@ type wikiCategoryItem struct {
 	LabelKey     string `json:"label_key"`
 	Label        string `json:"label"`
 	FieldGroupID string `json:"field_group_id,omitempty"`
-	Position     int32  `json:"position"`
-	IsSystem     bool   `json:"is_system"`
+	// FieldGroupSlug lets the index's fields panel scope its SuggestEdit
+	// proposals to the bound group even when the group is empty (empty
+	// groups are absent from the entity-fields schema).
+	FieldGroupSlug string `json:"field_group_slug,omitempty"`
+	Position       int32  `json:"position"`
+	IsSystem       bool   `json:"is_system"`
 	// Directory marks a category whose rollup config sets
 	// mode:"directory" — its stub page is the child-space listing, so
 	// the frontend must link page_slug even with no materialized pages.
@@ -436,6 +440,9 @@ func categoryItem(c WikiCategory) wikiCategoryItem {
 	}
 	if c.FieldGroupID.Valid {
 		item.FieldGroupID = c.FieldGroupID.String()
+	}
+	if c.FieldGroupSlug != nil {
+		item.FieldGroupSlug = *c.FieldGroupSlug
 	}
 	if rcfg := parseRollupConfig(c.Rollup); rcfg != nil && rcfg.Mode == rollupModeDirectory {
 		item.Directory = true

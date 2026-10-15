@@ -630,23 +630,25 @@ func (q *Queries) InsertWikiTypeParent(ctx context.Context, arg InsertWikiTypePa
 
 const listAllWikiCategories = `-- name: ListAllWikiCategories :many
 SELECT wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
-       st.slug AS space_type_slug
+       st.slug AS space_type_slug, fg.slug AS field_group_slug
 FROM wiki_type_categories wtc
 JOIN wiki_type_configs cfg ON cfg.space_type_id = wtc.space_type_id AND cfg.enabled = true
 JOIN space_types st ON st.id = wtc.space_type_id
+LEFT JOIN custom_field_groups fg ON fg.id = wtc.field_group_id
 ORDER BY wtc.position, wtc.slug, st.slug
 `
 
 type ListAllWikiCategoriesRow struct {
-	Slug          string      `json:"slug"`
-	Category      string      `json:"category"`
-	Label         string      `json:"label"`
-	FieldGroupID  pgtype.UUID `json:"field_group_id"`
-	Position      int32       `json:"position"`
-	IsSystem      bool        `json:"is_system"`
-	Rollup        []byte      `json:"rollup"`
-	Icon          *string     `json:"icon"`
-	SpaceTypeSlug string      `json:"space_type_slug"`
+	Slug           string      `json:"slug"`
+	Category       string      `json:"category"`
+	Label          string      `json:"label"`
+	FieldGroupID   pgtype.UUID `json:"field_group_id"`
+	Position       int32       `json:"position"`
+	IsSystem       bool        `json:"is_system"`
+	Rollup         []byte      `json:"rollup"`
+	Icon           *string     `json:"icon"`
+	SpaceTypeSlug  string      `json:"space_type_slug"`
+	FieldGroupSlug *string     `json:"field_group_slug"`
 }
 
 // Deterministic tiebreak: the handler dedupes the union by category token,
@@ -671,6 +673,7 @@ func (q *Queries) ListAllWikiCategories(ctx context.Context) ([]ListAllWikiCateg
 			&i.Rollup,
 			&i.Icon,
 			&i.SpaceTypeSlug,
+			&i.FieldGroupSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -774,29 +777,32 @@ func (q *Queries) ListSeedCategoriesBySpaceType(ctx context.Context, spaceTypeID
 
 const listWikiCategoriesBySpaceSlug = `-- name: ListWikiCategoriesBySpaceSlug :many
 SELECT wtc.id, wtc.slug, wtc.category, wtc.label, wtc.field_group_id, wtc.position, wtc.is_system, wtc.rollup, wtc.icon,
-       st.slug AS space_type_slug
+       st.slug AS space_type_slug, fg.slug AS field_group_slug
 FROM wiki_type_categories wtc
 JOIN spaces sp ON sp.space_type_id = wtc.space_type_id
 JOIN space_types st ON st.id = wtc.space_type_id
+LEFT JOIN custom_field_groups fg ON fg.id = wtc.field_group_id
 WHERE sp.slug = $1 AND sp.status = 'active'
 ORDER BY wtc.position, wtc.slug
 `
 
 type ListWikiCategoriesBySpaceSlugRow struct {
-	ID            pgtype.UUID `json:"id"`
-	Slug          string      `json:"slug"`
-	Category      string      `json:"category"`
-	Label         string      `json:"label"`
-	FieldGroupID  pgtype.UUID `json:"field_group_id"`
-	Position      int32       `json:"position"`
-	IsSystem      bool        `json:"is_system"`
-	Rollup        []byte      `json:"rollup"`
-	Icon          *string     `json:"icon"`
-	SpaceTypeSlug string      `json:"space_type_slug"`
+	ID             pgtype.UUID `json:"id"`
+	Slug           string      `json:"slug"`
+	Category       string      `json:"category"`
+	Label          string      `json:"label"`
+	FieldGroupID   pgtype.UUID `json:"field_group_id"`
+	Position       int32       `json:"position"`
+	IsSystem       bool        `json:"is_system"`
+	Rollup         []byte      `json:"rollup"`
+	Icon           *string     `json:"icon"`
+	SpaceTypeSlug  string      `json:"space_type_slug"`
+	FieldGroupSlug *string     `json:"field_group_slug"`
 }
 
 // Public category list for a space (replaces the hardcoded geo/university
-// slices): resolves the space's type template.
+// slices): resolves the space's type template. field_group_slug lets the
+// index scope its fields panel to the overview category's bound group.
 func (q *Queries) ListWikiCategoriesBySpaceSlug(ctx context.Context, spaceSlug string) ([]ListWikiCategoriesBySpaceSlugRow, error) {
 	rows, err := q.db.Query(ctx, listWikiCategoriesBySpaceSlug, spaceSlug)
 	if err != nil {
@@ -817,6 +823,7 @@ func (q *Queries) ListWikiCategoriesBySpaceSlug(ctx context.Context, spaceSlug s
 			&i.Rollup,
 			&i.Icon,
 			&i.SpaceTypeSlug,
+			&i.FieldGroupSlug,
 		); err != nil {
 			return nil, err
 		}
