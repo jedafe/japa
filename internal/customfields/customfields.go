@@ -175,6 +175,55 @@ func CurrencyCodeFromOptions(options []byte) string {
 	return o.CurrencyCode
 }
 
+// ComputedFieldSource is one source field in a computed spec — a group
+// slug + field key pair whose stored cfv contributes one scalar to the
+// aggregate (§80 page rollup amendment).
+type ComputedFieldSource struct {
+	Group string `json:"group"`
+	Key   string `json:"key"`
+}
+
+// ComputedFieldSpec is the parsed shape of a field's options.computed:
+// the field's displayed value is the metric fold of its sources' stored
+// values, never a manual cfv write. Read-time only — the stored cfv row
+// (if any) is ignored for display while the spec is set.
+type ComputedFieldSpec struct {
+	Metric  string                `json:"metric"`
+	Sources []ComputedFieldSource `json:"sources"`
+}
+
+// validComputedMetrics is the fold vocabulary an options.computed spec
+// may request; empty metric defaults to "avg".
+var validComputedMetrics = map[string]bool{"min": true, "avg": true, "max": true, "sum": true}
+
+// ComputedSpecFromOptions decodes a field's options.computed — nil on
+// absent, malformed, metric-invalid, or sourceless specs (computed is
+// strictly opt-in).
+func ComputedSpecFromOptions(options []byte) *ComputedFieldSpec {
+	if len(options) == 0 {
+		return nil
+	}
+	var o struct {
+		Computed *ComputedFieldSpec `json:"computed"`
+	}
+	if err := json.Unmarshal(options, &o); err != nil || o.Computed == nil || len(o.Computed.Sources) == 0 {
+		return nil
+	}
+	spec := o.Computed
+	if spec.Metric == "" {
+		spec.Metric = "avg"
+	}
+	if !validComputedMetrics[spec.Metric] {
+		return nil
+	}
+	for _, s := range spec.Sources {
+		if s.Group == "" || s.Key == "" {
+			return nil
+		}
+	}
+	return spec
+}
+
 // validFieldTypes is the set of all supported field types.
 var validFieldTypes = map[string]bool{
 	FieldTypeText: true, FieldTypeTextarea: true, FieldTypeRichText: true,
