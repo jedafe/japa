@@ -37,6 +37,7 @@ type fakeFieldReader struct {
 	groups             map[string]gen.CustomFieldGroup
 	groupFields        map[string][]gen.ListCustomFieldsByGroupRow
 	values             []gen.ListCustomFieldValuesWithDefsByEntityRow
+	valuesForEntities  []gen.ListCustomFieldValuesWithDefsForEntitiesRow
 	byKeyCalls         []string
 	createdGroups      []gen.CustomFieldGroup
 	createdAssigns     []gen.CreateAssignmentParams
@@ -111,7 +112,7 @@ func (f *fakeFieldReader) ListAssignmentsByEntityClass(_ context.Context, _ stri
 }
 
 func (f *fakeFieldReader) ListFieldValuesWithDefsForEntities(_ context.Context, _ string, _ []pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsForEntitiesRow, error) {
-	return nil, nil
+	return f.valuesForEntities, nil
 }
 
 func (f *fakeFieldReader) ListFieldValuesWithDefsByEntity(_ context.Context, _ string, _ pgtype.UUID) ([]gen.ListCustomFieldValuesWithDefsByEntityRow, error) {

@@ -785,10 +785,11 @@ func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 		return nil, fmt.Errorf("%w: rollup must be an object", ErrInvalidInput)
 	}
 
-	// mode selects the renderer: empty = fold-up aggregation (default),
-	// "directory" = child-space list (§80). Anything else is a typo the
-	// frontend would silently ignore — reject it.
-	if cfg.Mode != "" && cfg.Mode != rollupModeDirectory {
+	// mode selects the renderer: empty = fold-up aggregation over
+	// descendant spaces (default), "directory" = child-space list,
+	// "pages" = same-space sub-page aggregation (§80). Anything else is
+	// a typo the frontend would silently ignore — reject it.
+	if cfg.Mode != "" && cfg.Mode != rollupModeDirectory && cfg.Mode != rollupModePages {
 		return nil, fmt.Errorf("%w: unknown rollup mode %q", ErrInvalidInput, cfg.Mode)
 	}
 	for _, m := range cfg.Metrics {
@@ -799,6 +800,11 @@ func validateRollupInput(raw json.RawMessage) ([]byte, error) {
 	for _, l := range cfg.Levels {
 		if !wikiCategoryPattern.MatchString(l) && !wikiSlugPattern.MatchString(l) {
 			return nil, fmt.Errorf("%w: invalid rollup level %q", ErrInvalidInput, l)
+		}
+	}
+	for _, p := range cfg.Pages {
+		if !wikiSlugPattern.MatchString(p) {
+			return nil, fmt.Errorf("%w: invalid rollup page %q", ErrInvalidInput, p)
 		}
 	}
 	if cfg.SectionLimit < 0 {

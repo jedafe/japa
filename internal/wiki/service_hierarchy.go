@@ -65,6 +65,10 @@ type WikiRollupConfig struct {
 	Metrics      []string `json:"metrics"`
 	Levels       []string `json:"levels"`
 	SectionLimit int      `json:"section_limit,omitempty"`
+	// Pages scopes a mode:"pages" rollup to the named page-template
+	// slugs (config order = row order); absent/empty means every
+	// template under the category.
+	Pages []string `json:"pages,omitempty"`
 }
 
 // rollupModeDirectory switches a category rollup from metric aggregation
@@ -72,6 +76,16 @@ type WikiRollupConfig struct {
 // every linked descendant wiki space (with geo_code + page_count), no
 // field-value requirement.
 const rollupModeDirectory = "directory"
+
+// rollupModePages switches a category rollup from descendant-space
+// aggregation to same-space sub-page aggregation: rows are the
+// category's configured page templates, values the space's cfv in each
+// page's bound group (§80 page rollup amendment).
+const rollupModePages = "pages"
+
+// rollupScopePages marks WikiRollupDTO.Scope for page-mode payloads —
+// the frontend picks row labels/links off it.
+const rollupScopePages = "pages"
 
 // defaultRollupRowsLimit bounds the descendants table when the category
 // config sets no section_limit — the full set remains reachable through
@@ -111,18 +125,34 @@ type WikiRollupFieldDTO struct {
 	Samples     int                 `json:"samples"`
 }
 
+// WikiRollupPageRefDTO identifies a sub-page rollup row — the
+// /wiki/{space}/{slug} link target plus its display title
+// (section_label when set, else the {name}-substituted label).
+// //nolint:revive // exported: DTO naming follows package convention
+type WikiRollupPageRefDTO struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+}
+
 // WikiRollupRowDTO is one contributing descendant space and its values —
-// the "Cost of Living by City" table rows on a country page.
+// the "Cost of Living by City" table rows on a country page. In pages
+// mode Page names the sub-page the row aggregates and Space is the host
+// space for shape stability.
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiRollupRowDTO struct {
-	Space  WikiSpaceRefDTO `json:"space"`
-	Values map[string]any  `json:"values"`
+	Space  WikiSpaceRefDTO       `json:"space"`
+	Page   *WikiRollupPageRefDTO `json:"page,omitempty"`
+	Values map[string]any        `json:"values"`
 }
 
 // WikiRollupDTO is the read-time descendant aggregate attached to a
 // rollup-enabled category page. Never persisted — recomputed per request.
+// Scope is "pages" for page-mode payloads (empty for the legacy
+// descendant axis) so the frontend picks row labels/links without
+// sniffing rows.
 // //nolint:revive // exported: DTO naming follows package convention
 type WikiRollupDTO struct {
+	Scope  string               `json:"scope,omitempty"`
 	Fields []WikiRollupFieldDTO `json:"fields"`
 	Rows   []WikiRollupRowDTO   `json:"rows"`
 	Spaces int                  `json:"spaces"`
@@ -1095,6 +1125,169 @@ func (s *Service) computeRollup(ctx context.Context, userID, spaceID, spaceTypeI
 		Rows:   rowsOut,
 		Spaces: len(rowsBySpace),
 	}
+}
+
+// computePageRollup aggregates a category's own sub-pages (mode
+// "pages"): rows are the configured page templates — or every template
+// under the category when cfg.Pages is empty — and values are the host
+// space's cfv in each page's bound group. Field defs, metric defaults,
+// the can_view gate, and the aggregation fold are identical to
+// computeRollup; only the row axis changes.
+func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.UUID, spaceSlug, spaceName string, cfg *WikiRollupConfig, templates []WikiPageTemplate) *WikiRollupDTO {
+	if s.fields == nil {
+		return nil
+	}
+
+	sources := make([]WikiPageTemplate, 0, len(templates))
+	if len(cfg.Pages) > 0 {
+		bySlug := make(map[string]WikiPageTemplate, len(templates))
+		for _, t := range templates {
+			bySlug[t.Slug] = t
+		}
+		for _, slug := range cfg.Pages {
+			if t, ok := bySlug[slug]; ok {
+				sources = append(sources, t)
+			} else {
+				slog.Warn("wiki: page rollup: unknown template slug", "slug", slug)
+			}
+		}
+	} else {
+		sources = templates
+	}
+	if len(sources) == 0 {
+		return nil
+	}
+
+	// §7 cardinality guard: section_limit caps the rows table when
+	// configured. Unconfigured needs no default — the row count is
+	// already bounded by the template count.
+	if cfg.SectionLimit > 0 && len(sources) > cfg.SectionLimit {
+		sources = sources[:cfg.SectionLimit]
+	}
+
+	canManage := s.perms != nil && s.perms.HasPermission(ctx, userID, PermFieldsManage)
+	visibleSet := s.visibleFieldIDs(ctx, userID, canManage)
+	fieldVisible := func(id pgtype.UUID) bool {
+		if canManage {
+			return true
+		}
+		return visibleSet != nil && visibleSet[id.String()]
+	}
+
+	defsByID := map[pgtype.UUID]rollupFieldDef{}
+	defsByKey := map[string]rollupFieldDef{}
+	fieldOrder := []string{}
+	fieldSource := map[pgtype.UUID]int{} // field id → index into sources
+	groupSeen := map[pgtype.UUID]bool{}
+
+	for i, t := range sources {
+		if !t.FieldGroupID.Valid || groupSeen[t.FieldGroupID] {
+			continue // two templates sharing a group → fields attach to the first
+		}
+		groupSeen[t.FieldGroupID] = true
+
+		fields, err := s.fields.ListFieldsByGroup(ctx, t.FieldGroupID)
+		if err != nil {
+			slog.Warn("wiki: page rollup: fields failed", "group_id", t.FieldGroupID.String(), "error", err)
+			continue
+		}
+		for _, f := range fields {
+			if !rollupFieldTypes[f.FieldType] {
+				continue
+			}
+			if f.Section != nil && *f.Section == SectionQuickFacts {
+				continue
+			}
+			if !fieldVisible(f.ID) {
+				continue
+			}
+
+			def := rollupFieldDef{key: f.Key, label: f.Label, typ: f.FieldType, pos: f.Position}
+			if f.Section != nil {
+				def.section = *f.Section
+			}
+			def.currency = customfields.CurrencyCodeFromOptions(f.Options)
+			if def.typ == customfields.FieldTypePriceParts {
+				def.primaryPart = customfields.PrimaryPartFromOptions(f.Options)
+				if pp := customfields.PricePartsOptionsFromJSON(f.Options); pp != nil {
+					def.primaryKind = pp.PricePartKind(def.primaryPart)
+					if pp.CurrencyCode != "" {
+						def.currency = pp.CurrencyCode
+					}
+				}
+			}
+			defsByID[f.ID] = def
+			fieldSource[f.ID] = i
+			if _, seen := defsByKey[f.Key]; !seen {
+				defsByKey[f.Key] = def
+				fieldOrder = append(fieldOrder, f.Key)
+			}
+		}
+	}
+	if len(defsByID) == 0 {
+		return nil
+	}
+
+	vals, err := s.fields.ListFieldValuesWithDefsForEntities(ctx, "space", []pgtype.UUID{spaceID})
+	if err != nil {
+		slog.Warn("wiki: page rollup: values failed", "space_id", spaceID.String(), "error", err)
+		return nil
+	}
+
+	metrics := map[string]bool{}
+	for _, m := range cfg.Metrics {
+		metrics[m] = true
+	}
+	if len(metrics) == 0 {
+		metrics = map[string]bool{"min": true, "avg": true, "max": true}
+	}
+
+	fieldsOut, _ := aggregateRollupValues(vals, defsByID, defsByKey, fieldOrder, metrics)
+
+	// Row values bucket by the field's source template — the entity axis
+	// is the single host space, so the fold's rowsByEntity map cannot
+	// split pages; fieldSource carries the per-field ownership.
+	pageValues := make([]map[string]any, len(sources))
+	for _, v := range vals {
+		def, ok := defsByID[v.FieldID]
+		if !ok {
+			continue
+		}
+		i, ok := fieldSource[v.FieldID]
+		if !ok {
+			continue
+		}
+		if pageValues[i] == nil {
+			pageValues[i] = map[string]any{}
+		}
+		pageValues[i][def.key] = customfields.FieldValueFromDefRow(
+			v.ValueText, v.ValueNumber, v.ValueBool, v.ValueDate, v.ValueJson, v.FieldType)
+	}
+
+	// Every resolved template emits a row — a page with no values still
+	// renders its drill-down link with '—' cells. Spaces counts the pages
+	// that contributed at least one value.
+	contrib := 0
+	rows := make([]WikiRollupRowDTO, 0, len(sources))
+	for i, t := range sources {
+		title := substituteTemplateLabel(t.Label, spaceName)
+		if t.SectionLabel != nil && strings.TrimSpace(*t.SectionLabel) != "" {
+			title = *t.SectionLabel
+		}
+		pv := pageValues[i]
+		if pv == nil {
+			pv = map[string]any{}
+		} else {
+			contrib++
+		}
+		rows = append(rows, WikiRollupRowDTO{
+			Space:  WikiSpaceRefDTO{Slug: spaceSlug, Name: spaceName},
+			Page:   &WikiRollupPageRefDTO{Slug: t.Slug, Title: title},
+			Values: pv,
+		})
+	}
+
+	return &WikiRollupDTO{Scope: rollupScopePages, Fields: fieldsOut, Rows: rows, Spaces: contrib}
 }
 
 // rollupFieldDef is the schema member a rollup aggregates — one custom

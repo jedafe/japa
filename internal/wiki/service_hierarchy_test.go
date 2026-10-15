@@ -330,14 +330,14 @@ func TestNormalizePriceRange(t *testing.T) {
 		t.Fatalf("avg-only wrong: %v", m)
 	}
 
-	bad(`{}`)                               // no recognized key
-	bad(`{"foo":1}`)                        // unknown-only object
-	bad(`{"min":1,"currency":"CAD"}`)       // unknown keys rejected, not dropped
-	bad(`{"min":"cheap"}`)                  // non-numeric bound
-	bad(`{"min":3,"max":1}`)     // min > max
-	bad(`5`)                     // not an object
-	bad(`{"min":null}`)          // explicit nulls count as absent
-	bad(`{"avg":null,"x":true}`) // null + stray key
+	bad(`{}`)                         // no recognized key
+	bad(`{"foo":1}`)                  // unknown-only object
+	bad(`{"min":1,"currency":"CAD"}`) // unknown keys rejected, not dropped
+	bad(`{"min":"cheap"}`)            // non-numeric bound
+	bad(`{"min":3,"max":1}`)          // min > max
+	bad(`5`)                          // not an object
+	bad(`{"min":null}`)               // explicit nulls count as absent
+	bad(`{"avg":null,"x":true}`)      // null + stray key
 }
 
 // ---------------------------------------------------------------------------
@@ -1885,5 +1885,157 @@ func TestParseMediaFieldRefs(t *testing.T) {
 	ids, alts := parseMediaFieldRefs([]byte(`[{"id":"` + id1 + `","alt":"falls"}]`))
 	if len(ids) != 1 || ids[0].String() != id1 || alts[id1] != "falls" {
 		t.Fatalf("object shape: ids=%v alts=%v", ids, alts)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// computePageRollup — page-scope aggregation (§80 page rollup amendment).
+// Rows are the category's page templates; values are the host space's cfv
+// in each page's bound group.
+// ---------------------------------------------------------------------------
+
+func pgid(b byte) pgtype.UUID { return pgtype.UUID{Valid: true, Bytes: [16]byte{b}} }
+
+func groupField(id, groupID pgtype.UUID, key, label, typ string) gen.ListCustomFieldsByGroupRow {
+	return gen.ListCustomFieldsByGroupRow{
+		ID: id, GroupID: groupID, Key: key, Label: label,
+		FieldType: typ, ShowInFrontend: true,
+	}
+}
+
+func TestComputePageRollup_Basic(t *testing.T) {
+	spaceID := pgid(0xEE)
+	groupA, groupB := pgid(0xA0), pgid(0xB0)
+	fieldA, fieldB := pgid(0xA1), pgid(0xB1)
+
+	ff := &fakeFieldReader{
+		groups: map[string]gen.CustomFieldGroup{
+			groupA.String(): {ID: groupA, Slug: "wiki_city_prices_food_groceries"},
+			groupB.String(): {ID: groupB, Slug: "wiki_city_prices_transportation"},
+		},
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+			groupA.String(): {groupField(fieldA, groupA, "monthly_total", "Monthly total", customfields.FieldTypeCurrency)},
+			groupB.String(): {groupField(fieldB, groupB, "monthly_total", "Monthly total", customfields.FieldTypeCurrency)},
+		},
+		valuesForEntities: []gen.ListCustomFieldValuesWithDefsForEntitiesRow{
+			{FieldID: fieldA, EntityID: spaceID, FieldType: customfields.FieldTypeCurrency, ValueNumber: numericVal(t, "100"), FieldGroupID: groupA},
+			{FieldID: fieldB, EntityID: spaceID, FieldType: customfields.FieldTypeCurrency, ValueNumber: numericVal(t, "200"), FieldGroupID: groupB},
+		},
+		perms: map[string][2]bool{fieldA.String(): {true, true}, fieldB.String(): {true, true}},
+	}
+	s := &Service{fields: ff, perms: fakePermChecker{granted: map[string]bool{}}}
+
+	templates := []WikiPageTemplate{
+		{ID: pgid(0x01), Slug: "food-groceries-prices", Label: "Food & Groceries Prices in {name}", FieldGroupID: groupA, Position: 1},
+		{ID: pgid(0x02), Slug: "transportation-prices", Label: "Transportation Prices in {name}", FieldGroupID: groupB, Position: 2},
+	}
+
+	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Metrics: []string{"avg"}}, templates)
+	if out == nil {
+		t.Fatal("rollup should resolve")
+	}
+	if out.Scope != rollupScopePages {
+		t.Fatalf("scope: got %q", out.Scope)
+	}
+	f := fieldByKey(t, out.Fields, "monthly_total")
+	if f.Samples != 2 || f.Metrics.Avg == nil || *f.Metrics.Avg != 150 {
+		t.Fatalf("avg across pages wrong: %+v", f)
+	}
+	if len(out.Rows) != 2 {
+		t.Fatalf("rows: got %d want 2", len(out.Rows))
+	}
+	if out.Rows[0].Page == nil || out.Rows[0].Page.Slug != "food-groceries-prices" {
+		t.Fatalf("row 0 page ref wrong: %+v", out.Rows[0])
+	}
+	if out.Rows[0].Values["monthly_total"] == nil || out.Rows[1].Values["monthly_total"] == nil {
+		t.Fatalf("row values missing: %+v", out.Rows)
+	}
+}
+
+func TestComputePageRollup_ConfiguredSubsetAndEmptyRow(t *testing.T) {
+	spaceID := pgid(0xEE)
+	groupA, groupB := pgid(0xA0), pgid(0xB0)
+	fieldA := pgid(0xA1)
+
+	ff := &fakeFieldReader{
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{
+			groupA.String(): {groupField(fieldA, groupA, "monthly_total", "Monthly total", customfields.FieldTypeCurrency)},
+		},
+		valuesForEntities: []gen.ListCustomFieldValuesWithDefsForEntitiesRow{
+			{FieldID: fieldA, EntityID: spaceID, FieldType: customfields.FieldTypeCurrency, ValueNumber: numericVal(t, "100"), FieldGroupID: groupA},
+		},
+		perms: map[string][2]bool{fieldA.String(): {true, true}},
+	}
+	s := &Service{fields: ff, perms: fakePermChecker{granted: map[string]bool{}}}
+
+	templates := []WikiPageTemplate{
+		{ID: pgid(0x01), Slug: "food", Label: "Food in {name}", FieldGroupID: groupA, Position: 1},
+		{ID: pgid(0x02), Slug: "transport", Label: "Transport in {name}", FieldGroupID: groupB, Position: 2},
+	}
+
+	// Unknown slug skipped; value-less configured page still emits a row.
+	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "toronto", "Toronto",
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages, Pages: []string{"food", "missing", "transport"}}, templates)
+	if out == nil {
+		t.Fatal("rollup should resolve")
+	}
+	if len(out.Rows) != 2 {
+		t.Fatalf("rows: got %d want 2 (unknown slug skipped)", len(out.Rows))
+	}
+	if out.Rows[0].Page.Slug != "food" || out.Rows[1].Page.Slug != "transport" {
+		t.Fatalf("config order not preserved: %+v", out.Rows)
+	}
+	if len(out.Rows[1].Values) != 0 {
+		t.Fatalf("empty page row should carry no values: %+v", out.Rows[1])
+	}
+}
+
+func TestComputePageRollup_QuickFactsExcluded(t *testing.T) {
+	spaceID := pgid(0xEE)
+	groupA := pgid(0xA0)
+	fieldA, fieldQF := pgid(0xA1), pgid(0xA2)
+
+	qf := "quick_facts"
+	row := groupField(fieldA, groupA, "monthly_total", "Monthly total", customfields.FieldTypeCurrency)
+	qfRow := groupField(fieldQF, groupA, "pop", "Population", customfields.FieldTypeNumber)
+	qfRow.Section = &qf
+
+	ff := &fakeFieldReader{
+		groupFields: map[string][]gen.ListCustomFieldsByGroupRow{groupA.String(): {row, qfRow}},
+		valuesForEntities: []gen.ListCustomFieldValuesWithDefsForEntitiesRow{
+			{FieldID: fieldA, EntityID: spaceID, FieldType: customfields.FieldTypeCurrency, ValueNumber: numericVal(t, "100")},
+			{FieldID: fieldQF, EntityID: spaceID, FieldType: customfields.FieldTypeNumber, ValueNumber: numericVal(t, "999")},
+		},
+		perms: map[string][2]bool{fieldA.String(): {true, true}, fieldQF.String(): {true, true}},
+	}
+	s := &Service{fields: ff, perms: fakePermChecker{granted: map[string]bool{}}}
+
+	out := s.computePageRollup(context.Background(), pgid(0x01), spaceID, "x", "X",
+		&WikiRollupConfig{Enabled: true, Mode: rollupModePages},
+		[]WikiPageTemplate{{Slug: "food", Label: "Food", FieldGroupID: groupA}})
+
+	f := fieldByKey(t, out.Fields, "monthly_total")
+	if *f.Metrics.Avg != 100 {
+		t.Fatalf("avg wrong: %+v", f)
+	}
+	for _, fo := range out.Fields {
+		if fo.Key == "pop" {
+			t.Fatal("quick_facts field must not aggregate")
+		}
+	}
+}
+
+func TestValidateRollupInput_PagesMode(t *testing.T) {
+	raw, err := validateRollupInput(json.RawMessage(
+		`{"enabled":true,"mode":"pages","metrics":["avg"],"pages":["food-groceries-prices"]}`))
+	if err != nil || raw == nil {
+		t.Fatalf("pages mode should validate: %v", err)
+	}
+	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"bogus"}`)); err == nil {
+		t.Fatal("unknown mode must be rejected")
+	}
+	if _, err := validateRollupInput(json.RawMessage(`{"enabled":true,"mode":"pages","pages":["BAD SLUG"]}`)); err == nil {
+		t.Fatal("invalid page slug must be rejected")
 	}
 }
