@@ -17,13 +17,10 @@
 - Never emit NaN/Inf into DTOs — every folded scalar passes the existing `finite()` guard.
 - Do not modify the shared `aggregateRollupValues` signature — the page rollup reuses it as-is.
 - `customfields` parsers are nil-on-malformed, matching `CurrencyCodeFromOptions`/`PrimaryPartFromOptions`.
-- Commit style: `feat(wiki): …` / `fix(wiki): …` with the Devin trailer:
-  ```
-  Generated with [Devin](https://devin.ai)
-
-  Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>
-  ```
-- Verify with `go build ./internal/wiki/ ./internal/customfields/` and `go test ./internal/wiki/ ./internal/customfields/`; frontend with `cd apps/main && bun run check` (or `npx svelte-check --tsconfig ./tsconfig.json`), admin `cd apps/admin && bun run check`.
+- Commit style: `feat(wiki): …` / `fix(wiki): …` — plain descriptive
+  messages only, no attribution trailers (.jeos AGENTS.md Rule 17
+  forbids AI/agent attribution in commits, comments, and docs).
+- Verify with `go build ./internal/wiki/ ./internal/customfields/` and `go test ./internal/wiki/ ./internal/customfields/`; frontend with `cd apps/main && bun run check`, admin `cd apps/admin && bun run check` (bun only — .jeos Rule 18).
 
 ---
 
@@ -440,6 +437,13 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 	fieldSource := map[pgtype.UUID]int{} // field id → index into sources
 	groupSeen := map[pgtype.UUID]bool{}
 
+	// §7 cardinality guard: section_limit caps the rows table when
+	// configured (a category with many templates). Unconfigured needs no
+	// default — the row count is bounded by the template count.
+	if cfg.SectionLimit > 0 && len(sources) > cfg.SectionLimit {
+		sources = sources[:cfg.SectionLimit]
+	}
+
 	for i, t := range sources {
 		if !t.FieldGroupID.Valid || groupSeen[t.FieldGroupID] {
 			continue // two templates sharing a group → fields attach to the first
@@ -513,7 +517,10 @@ func (s *Service) computePageRollup(ctx context.Context, userID, spaceID pgtype.
 		if !ok {
 			continue
 		}
-		i := fieldSource[v.FieldID]
+		i, ok := fieldSource[v.FieldID]
+		if !ok {
+			continue
+		}
 		if pageValues[i] == nil {
 			pageValues[i] = map[string]any{}
 		}
@@ -830,8 +837,12 @@ func (s *Service) applyComputedFields(ctx context.Context, dtos []EntityFieldDTO
 			continue
 		}
 		spec := customfields.ComputedSpecFromOptions(dtos[i].Options)
-		if spec == nil {
-			continue
+		if spec == nil || !rollupFieldTypes[dtos[i].FieldType] {
+			continue // computed is opt-in per aggregate-eligible type
+		}
+		if dtos[i].FieldType == customfields.FieldTypePriceParts &&
+			customfields.PrimaryPartFromOptions(dtos[i].Options) == "" {
+			continue // a parts field with no primary_part can't emit a scalar
 		}
 
 		scalars := []float64{}
@@ -1089,24 +1100,26 @@ git commit -m "feat(wiki): reject manual set_value on computed fields (§80)"
 ### Task 5: Composite preview sections on the category stub page
 
 **Files:**
-- Modify: `internal/wiki/service.go` (`GetWikiPage` ~line 916, `lazyCategoryPage` ~line 1111-1121)
+- Modify: `internal/wiki/service_hierarchy.go` (new `topLevelTemplates` helper near `childTemplates`, ~line 776)
+- Modify: `internal/wiki/service.go` (`GetWikiPage` ~line 916, `lazyCategoryPage` ~line 1118-1121)
 
 **Interfaces:**
-- Consumes: `childTemplates(templates, parentID)` — passing `pgtype.UUID{}` returns the top-level set (it filters `t.ParentTemplateID == parentID`); `attachCompositeSections` (service_hierarchy.go:841).
+- Consumes: `attachCompositeSections` (service_hierarchy.go:841).
+- Produces: `func topLevelTemplates(templates []WikiPageTemplate) []WikiPageTemplate` — top-level templates are those with an invalid `ParentTemplateID`. **Do not use `childTemplates(templates, pgtype.UUID{})`** — it returns nil on invalid parent (template-page children lookup treats a nil parent as "no children"), which is why a separate helper is needed.
 
 - [ ] **Step 1: Write the failing test**
 
 Append to `service_hierarchy_test.go`:
 
 ```go
-func TestChildTemplates_TopLevelForCategoryPage(t *testing.T) {
+func TestTopLevelTemplates_CategoryPageSet(t *testing.T) {
 	parent := pgid(0x50)
 	templates := []WikiPageTemplate{
 		{Slug: "a", ParentTemplateID: pgtype.UUID{}},
 		{Slug: "b", ParentTemplateID: parent},
 		{Slug: "c", ParentTemplateID: pgtype.UUID{}},
 	}
-	got := childTemplates(templates, pgtype.UUID{})
+	got := topLevelTemplates(templates)
 	if len(got) != 2 || got[0].Slug != "a" || got[1].Slug != "c" {
 		t.Fatalf("category-page composite set must be top-level templates: %+v", got)
 	}
@@ -1115,10 +1128,31 @@ func TestChildTemplates_TopLevelForCategoryPage(t *testing.T) {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `go test ./internal/wiki/ -run TestChildTemplates_TopLevelForCategoryPage -v`
-Expected: likely PASS already (documents existing behavior) — if it passes, keep it as a regression guard and continue.
+Run: `go test ./internal/wiki/ -run TestTopLevelTemplates_CategoryPageSet -v`
+Expected: FAIL — `topLevelTemplates` undefined.
 
-- [ ] **Step 3: Wire the category stub page**
+- [ ] **Step 3: Add the helper**
+
+In `service_hierarchy.go`, after `childTemplates` (~line 789):
+
+```go
+// topLevelTemplates returns the templates with no parent — the
+// category stub page's composite-section set (§80 page rollup
+// amendment). Distinct from childTemplates, whose invalid-parent guard
+// returns nil: a nil parent means "no children" for a template page,
+// but means "the whole top level" for the category page.
+func topLevelTemplates(templates []WikiPageTemplate) []WikiPageTemplate {
+	out := make([]WikiPageTemplate, 0, len(templates))
+	for _, t := range templates {
+		if !t.ParentTemplateID.Valid {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+```
+
+- [ ] **Step 4: Wire the category stub page**
 
 In `GetWikiPage`, change the composite block (currently `if pageTmpl != nil { s.attachCompositeSections(...) }`) to:
 
@@ -1131,7 +1165,7 @@ In `GetWikiPage`, change the composite block (currently `if pageTmpl != nil { s.
 		if pageTmpl != nil {
 			s.attachCompositeSections(ctx, userID, spaceID, page.SpaceName, groupID, &dto, childTemplates(templates, pageTmpl.ID))
 		} else if page.Slug == cat.Slug {
-			s.attachCompositeSections(ctx, userID, spaceID, page.SpaceName, groupID, &dto, childTemplates(templates, pgtype.UUID{}))
+			s.attachCompositeSections(ctx, userID, spaceID, page.SpaceName, groupID, &dto, topLevelTemplates(templates))
 		}
 ```
 
@@ -1140,18 +1174,18 @@ In `lazyCategoryPage`, after the rollup/ancestors block (before `dto.Siblings`):
 ```go
 	// Category stub composes one preview section per top-level template —
 	// same as the materialized path.
-	s.attachCompositeSections(ctx, userID, spaceID, spaceName, cat.FieldGroupID, &dto, childTemplates(templates, pgtype.UUID{}))
+	s.attachCompositeSections(ctx, userID, spaceID, spaceName, cat.FieldGroupID, &dto, topLevelTemplates(templates))
 ```
 
-- [ ] **Step 4: Build + run wiki tests**
+- [ ] **Step 5: Build + run wiki tests**
 
 Run: `go build ./internal/wiki/ && go test ./internal/wiki/ -v 2>&1 | tail -20`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add internal/wiki/service.go internal/wiki/service_hierarchy_test.go
+git add internal/wiki/service.go internal/wiki/service_hierarchy.go internal/wiki/service_hierarchy_test.go
 git commit -m "feat(wiki): composite preview sections on category stub pages (§80)"
 ```
 
@@ -1276,7 +1310,6 @@ git commit -m "feat(wiki): city cost-of-living page rollup — flatten topics, d
 - Modify: `apps/main/src/lib/types/index.ts` (`WikiRollupRow` ~line 3443, `WikiRollup` ~line 3450)
 - Modify: `apps/main/src/lib/api/wiki.ts` (`WikiEntityField` ~line 10)
 - Modify: `apps/main/src/lib/components/wiki/WikiRollupPanel.svelte`
-- Modify: `apps/main/src/routes/(app)/wiki/[space_slug]/[page_slug]/+page.svelte` (line ~627 — pass `spaceSlug`)
 - Modify: `apps/main/src/lib/components/wiki/WikiItemTables.svelte` (computed badge on the three label cells)
 - Modify: `apps/main/src/lib/i18n/en.json`, `apps/main/src/lib/i18n/fr.json`
 
@@ -1320,21 +1353,18 @@ In `api/wiki.ts` `WikiEntityField`, add:
 
 - [ ] **Step 2: `WikiRollupPanel` page mode**
 
-Add a `spaceSlug` prop:
-
-```ts
-	let {
-		rollup,
-		spaceName,
-		spaceSlug = '',
-		contextCurrency = ''
-	}: { rollup: WikiRollup; spaceName: string; spaceSlug?: string; contextCurrency?: string } = $props();
-```
-
-Add near `spaceColLabel`:
+Add near `spaceColLabel` (~line 167):
 
 ```ts
 	const pageScope = $derived(rollup.scope === 'pages');
+```
+
+**Fix the each-key collision first** — `rollup.rows` is keyed on
+`row.space.slug` (~line 298); in pages mode every row shares the host
+space's slug, so all rows collapse onto one key. Change:
+
+```svelte
+{#each rollup.rows as row (row.page?.slug ?? row.space.slug)}
 ```
 
 Change the first-column header cell:
@@ -1345,13 +1375,15 @@ Change the first-column header cell:
 </th>
 ```
 
-Change the row label cell (the `<a href="/wiki/{row.space.slug}">` block):
+Change the row label cell (the `<a href="/wiki/{row.space.slug}">` block)
+— page rows already carry `row.space.slug` = the host space, so no new
+prop is needed for the `/wiki/{space}/{page}` link:
 
 ```svelte
 <td class="px-4 py-2">
 	{#if row.page}
 		<a
-			href="/wiki/{encodeURIComponent(spaceSlug)}/{encodeURIComponent(row.page.slug)}"
+			href="/wiki/{encodeURIComponent(row.space.slug)}/{encodeURIComponent(row.page.slug)}"
 			class="font-medium text-[var(--color-primary)] hover:underline"
 		>
 			{row.page.title}
@@ -1379,20 +1411,7 @@ Change the footer line:
 
 (The compare rail needs no change — page rows carry no `space.id`/`type_slug`, so `compareTarget` is null and the checkboxes/footer never render.)
 
-- [ ] **Step 3: Pass `spaceSlug` on the page**
-
-In `+page.svelte` (~line 627):
-
-```svelte
-<WikiRollupPanel
-	rollup={data.page.rollup}
-	spaceName={spaceName}
-	spaceSlug={data.spaceSlug}
-	contextCurrency={data.page.space_currency_code ?? ''}
-/>
-```
-
-- [ ] **Step 4: Computed badge in `WikiItemTables`**
+- [ ] **Step 3: Computed badge in `WikiItemTables`**
 
 Next to each `{f.label}` in the three label cells (price-table `<td>` ~line 171, parts-table `<td>` ~line 193, dl `<dt>` ~line 232), append:
 
@@ -1407,7 +1426,7 @@ Next to each `{f.label}` in the three label cells (price-table `<td>` ~line 171,
 {/if}
 ```
 
-- [ ] **Step 5: i18n keys**
+- [ ] **Step 4: i18n keys**
 
 `en.json` (near the existing `wiki.rollup_*` keys ~line 5822):
 
@@ -1427,15 +1446,15 @@ Next to each `{f.label}` in the three label cells (price-table `<td>` ~line 171,
 "wiki.field_computed_hint": "Calculé à partir des sous-pages de cette page",
 ```
 
-- [ ] **Step 6: Typecheck + build**
+- [ ] **Step 5: Typecheck + build**
 
 Run: `cd apps/main && bun run check`
 Expected: no new errors (pre-existing baseline noise is acceptable — diff against `git stash` output if unsure).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add apps/main/src/lib/types/index.ts apps/main/src/lib/api/wiki.ts apps/main/src/lib/components/wiki/WikiRollupPanel.svelte apps/main/src/lib/components/wiki/WikiItemTables.svelte "apps/main/src/routes/(app)/wiki/[space_slug]/[page_slug]/+page.svelte" apps/main/src/lib/i18n/en.json apps/main/src/lib/i18n/fr.json
+git add apps/main/src/lib/types/index.ts apps/main/src/lib/api/wiki.ts apps/main/src/lib/components/wiki/WikiRollupPanel.svelte apps/main/src/lib/components/wiki/WikiItemTables.svelte apps/main/src/lib/i18n/en.json apps/main/src/lib/i18n/fr.json
 git commit -m "feat(main): pages-mode rollup rendering + computed field badge (§80)"
 ```
 
@@ -1475,7 +1494,10 @@ In `flattenRollup`, add `pages` to the config type and seed key:
 	};
 ```
 
-In `rollupFromForm`, handle pages mode:
+In `rollupFromForm`, handle pages mode. **Careful — `levels` must stay
+emitted for directory mode** (the current code emits it unconditionally:
+directory uses `levels` to scope its child-space list; dropping it is a
+silent regression):
 
 ```ts
 	function rollupFromForm(body: Record<string, unknown>): Record<string, unknown> | null {
@@ -1490,14 +1512,17 @@ In `rollupFromForm`, handle pages mode:
 			);
 			const lim = Number(body.rollup_section_limit ?? 0);
 			if (lim > 0) cfg.section_limit = lim;
-			if (mode === 'pages') {
-				cfg.mode = 'pages';
-				const pages = (body.rollup_pages as string[]) ?? [];
-				if (pages.length) cfg.pages = pages;
-			} else {
-				const levels = (body.rollup_levels as string[]) ?? [];
-				if (levels.length) cfg.levels = levels;
-			}
+		}
+		// levels scopes aggregate AND directory rollups — keep the current
+		// unconditional emission; only pages mode drops it (unused key).
+		if (mode !== 'pages') {
+			const levels = (body.rollup_levels as string[]) ?? [];
+			if (levels.length) cfg.levels = levels;
+		}
+		if (mode === 'pages') {
+			cfg.mode = 'pages';
+			const pages = (body.rollup_pages as string[]) ?? [];
+			if (pages.length) cfg.pages = pages;
 		}
 		return cfg;
 	}
@@ -1539,7 +1564,12 @@ Update the help line to cover all three modes:
 </p>
 ```
 
-Replace the `{#if value.rollup_mode !== 'directory'}` block's structure: metrics + section limit show for `aggregate` and `pages`; the levels picker shows only for `aggregate`; pages mode shows a template checklist. Insert after the metrics/section-limit block, replacing the whole levels `<div>`:
+The metrics + section-limit `{#if value.rollup_mode !== 'directory'}`
+wrapper is already correct — both apply to pages mode too. The "Child
+levels" `<div>` (lines ~1303-1329) currently renders unconditionally —
+wrap it so the levels picker keeps showing for `aggregate` **and**
+`directory` (existing behavior — directory levels scope the child list)
+while pages mode swaps in the source-page checklist:
 
 ```svelte
 					{#if value.rollup_mode === 'pages'}
@@ -1578,9 +1608,10 @@ Replace the `{#if value.rollup_mode !== 'directory'}` block's structure: metrics
 								</p>
 							{/if}
 						</div>
-					{:else if value.rollup_mode !== 'directory'}
+					{:else}
 						<div>
-							<!-- existing 'Child levels' block, unchanged -->
+							<!-- existing 'Child levels' block, unchanged — shown for
+							     aggregate AND directory modes -->
 						</div>
 					{/if}
 ```
@@ -1658,6 +1689,15 @@ Expected: PASS
 - Apply migration 000857; open `/wiki/{some-city}/cost-of-living` — rollup section renders with one row per topic page; topic pages render as direct siblings under Cost of Living; `/wiki/{city}/prices` lazy URL 404s (materialized rows still render).
 - Add a `computed` spec to a `wiki_city_cost_of_living` field via the admin field editor (options JSON), e.g. `{"computed":{"metric":"avg","sources":[{"group":"<topic group slug>","key":"<field key>"}]}}` — the category page shows the averaged value with the "computed" badge; a `set_value` op on it is rejected.
 
-- [ ] **Step 3: Commit docs updates if `.jeos` catalogs require them**
+- [ ] **Step 3: Amend `.jeos/sections/80-destination-wiki.md`**
 
-The `.jeos` conventions catalog document this feature family — add a one-line amendment note where §80 rollup modes are cataloged (`docs` or `.jeos` file that already lists `"directory"` mode) if the file exists; otherwise skip.
+The section file documents the `wiki_type_categories.rollup` JSONB
+contract (~line 539, "Rollups." — `{enabled, mode, metrics, levels,
+section_limit}` with `mode` limited to `"directory"`). Add the pages-mode
+amendment in place: `mode: "pages"` aggregates the category's own page
+templates, `pages: []slug` scopes the source list (absent = all), and
+`options.computed` fields derive their displayed value from source
+fields (read-time, `set_value` rejected). Keep it to a short amendment
+block in the existing Rollups subsection, plus a note that the city
+`cost_of_living` topic pages are flattened (the `prices` template was
+removed by 000857).

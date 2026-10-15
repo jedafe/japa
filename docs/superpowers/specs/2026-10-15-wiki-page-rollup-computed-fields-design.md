@@ -103,7 +103,7 @@ directly under the category.
 
 ## 5. Backend — page rollup (`internal/wiki/service_hierarchy.go`)
 
-New `computePageRollup(ctx, userID, spaceID, spaceName, cat, cfg, templates)`:
+New `computePageRollup(ctx, userID, spaceID, spaceSlug, spaceName, cfg, templates)`:
 
 1. **Rows = resolved templates.** Map `cfg.Pages` slugs onto the
    category's template list (already fetched for `page_templates` at
@@ -124,8 +124,10 @@ New `computePageRollup(ctx, userID, spaceID, spaceName, cat, cfg, templates)`:
 4. **Aggregates reuse `aggregateRollupValues` unchanged** — its fold is
    keyed on field key and agnostic to the row axis.
 5. **Rows emit for every resolved template** (values may be empty — the
-   row doubles as the drill-down link; cells render `—`). Sorted by
-   template position, then slug.
+   row doubles as the drill-down link; cells render `—`). Ordered by
+   `pages` config order when set, else template position order.
+   `section_limit` caps the row count when configured (no default —
+   the count is already bounded by the template list).
 
 DTO changes:
 
@@ -164,7 +166,7 @@ if rcfg := parseRollupConfig(cat.Rollup); rcfg != nil && page.Slug == cat.Slug {
     case rcfg.Mode == rollupModeDirectory:
         dto.Directory = s.computeDirectory(...)
     case rcfg.Mode == rollupModePages:
-        dto.Rollup = s.computePageRollup(ctx, userID, spaceID, spaceName, cat, rcfg, templates)
+        dto.Rollup = s.computePageRollup(ctx, userID, spaceID, spaceSlug, spaceName, rcfg, templates)
     default:
         dto.Rollup = s.computeRollup(ctx, userID, spaceID, spaceTypeID, rcfg, cat.Category)
     }
@@ -207,9 +209,11 @@ that path is already the category stub by construction.
 `applyComputedFields(ctx, userID, dtos, valuesByField, visibleSet, canManage)`:
 
 - For each `EntityFieldDTO` whose options carry a spec: resolve each
-  source to a field ID (group→fields memoized per call), pull the
-  space's value from the already-loaded `valuesByField` map, drop sources
-  the caller cannot `can_view`, aggregate by metric.
+  source's group slug → group ID (`GetFieldGroupBySlug`, memoized per
+  call), look up the space's value in the already-loaded cfv rows
+  indexed by `field_group_id + field_key` (the value rows carry both,
+  so no per-source field-def query is needed), drop sources the caller
+  cannot `can_view`, aggregate by metric.
 - Result → `dto.Value` in the field type's native shape (§6.1);
   `dto.Computed = true`; `dto.CanEdit = false`.
 - Zero usable sources → `Value = nil`. **Never falls back to the stored
@@ -265,11 +269,13 @@ Migration `000857_wiki_city_cost_of_living_page_rollup.up.sql`:
 
 **Composite previews on the category page.** `attachCompositeSections`
 currently runs only for template-bound pages (`pageTmpl != nil`). Extend
-it to the category stub page: `childTemplates(templates, pgtype.UUID{})`
-already returns the top-level set (it filters `ParentTemplateID ==
-parentID`), so the call becomes "category page → preview section per
-top-level template". This preserves the one-screen "all itemized prices"
-view the `prices` page used to provide — now directly on Cost of Living.
+it to the category stub page with a new `topLevelTemplates(templates)`
+helper (templates with an invalid `ParentTemplateID`) — note
+`childTemplates(templates, pgtype.UUID{})` does NOT work: its
+invalid-parent guard returns nil because a nil parent means "no
+children" for a template page, not "the top level". This preserves the
+one-screen "all itemized prices" view the `prices` page used to provide
+— now directly on Cost of Living.
 Guard: skip `is_system` templates whose group produced zero visible
 fields? No — keep the existing always-emit behavior (the section is the
 drill-down link); groups are empty containers until admins add fields,
@@ -281,9 +287,12 @@ and an empty section is already tolerated.
   { slug: string; title: string }`, `EntityField.computed?: boolean`.
 - `WikiRollupPanel.svelte`:
   - `row.page` present → row label links to
-    `/wiki/{spaceSlug}/{page.slug}` with `page.title`; first column
-    header reads `wiki.rollup_col_page` ("Page"); footer reads
+    `/wiki/{row.space.slug}/{row.page.slug}` with `page.title`; first
+    column header reads `wiki.rollup_col_page` ("Page"); footer reads
     `wiki.rollup_scope_pages` ("Aggregated from {count} cost pages").
+  - The `{#each rollup.rows}` key must become
+    `(row.page?.slug ?? row.space.slug)` — page rows share the host
+    space's slug, so the current `row.space.slug` key collides.
   - Compare rail needs no change — `type_slug` is empty/absent on page
     rows, `compareTarget` resolves null, checkboxes don't render.
   - Summary cards, estimated-total donut, and cell formatting are
