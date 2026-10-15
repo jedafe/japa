@@ -1,0 +1,25 @@
+services:
+  devin:
+    build: .
+    container_name: devin-cli
+    restart: unless-stopped
+    # Keeps stdin/TTY sane when you attach via Coolify's web terminal
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    volumes:
+      # Persists credentials (~/.local/share/devin/credentials.toml),
+      # config (~/.config/devin/), and downloaded CLI versions.
+      # Docker seeds the volume from the image on first mount, so the
+      # baked-in CLI binary carries over.
+      - devin-home:/home/devin
+      # Put code you want Devin to work on in ./workspace.
+      # Files are written as uid 1000 (the container's `devin` user),
+      # which typically maps to the first admin user on the VPS.
+      - ./workspace:/workspace
+    # Optional: pass a key non-interactively instead of `devin auth login`
+    # environment:
+    #   - WINDSURF_API_KEY=${WINDSURF_API_KEY}
+
+volumes:
+  devin-home:
