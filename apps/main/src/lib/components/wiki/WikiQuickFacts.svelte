@@ -131,7 +131,7 @@
 					<Icon size={15} class="mt-0.5 shrink-0 text-[var(--color-muted)]" aria-hidden="true" />
 					<span class="min-w-0">
 						<span class="block text-xs text-[var(--color-muted)]">{f.label}</span>
-						<span class="block truncate text-sm font-medium text-[var(--color-text)]">
+						<span class="block break-words text-sm font-medium text-[var(--color-text)] line-clamp-3">
 							{formatWikiFieldValue(f, currencies, contextCurrency)}
 						</span>
 					</span>
