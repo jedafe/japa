@@ -715,6 +715,50 @@ func (q *Queries) ListAssignmentsByEntityClass(ctx context.Context, entityClass 
 	return items, nil
 }
 
+const listComputedFieldDefs = `-- name: ListComputedFieldDefs :many
+SELECT id, key, field_type, options, group_id
+FROM custom_fields
+WHERE options ? 'computed'
+`
+
+type ListComputedFieldDefsRow struct {
+	ID        pgtype.UUID `json:"id"`
+	Key       string      `json:"key"`
+	FieldType string      `json:"field_type"`
+	Options   []byte      `json:"options"`
+	GroupID   pgtype.UUID `json:"group_id"`
+}
+
+// Returns every field whose options declare a computed spec (§80 page
+// rollup amendment) — a small, global set. The EntityFieldValues
+// hydration overlay resolves each spec's group-slug sources against the
+// entity's own cfv rows and replaces the keyed display value.
+func (q *Queries) ListComputedFieldDefs(ctx context.Context) ([]ListComputedFieldDefsRow, error) {
+	rows, err := q.db.Query(ctx, listComputedFieldDefs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListComputedFieldDefsRow
+	for rows.Next() {
+		var i ListComputedFieldDefsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Key,
+			&i.FieldType,
+			&i.Options,
+			&i.GroupID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomFieldGroups = `-- name: ListCustomFieldGroups :many
 SELECT id, name, slug, description, is_system, created_at
 FROM custom_field_groups

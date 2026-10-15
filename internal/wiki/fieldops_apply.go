@@ -109,8 +109,11 @@ func applySetValue(ctx context.Context, q *gen.Queries, tx pgx.Tx, op FieldOp, s
 
 	// The apply-path twin of the submit-time computed check — a revision
 	// queued before a spec was added (or an earlier upsert_field that
-	// introduced one) cannot slip a manual value through approval.
-	if customfields.ComputedSpecFromOptions(field.options) != nil {
+	// introduced one) cannot slip a manual value through approval. Same
+	// eligibility gate as the read path: an ineligible spec is ignored
+	// rather than producing a field that is neither computed nor
+	// manually editable.
+	if customfields.ComputedEligibleField(field.fieldType, field.options) {
 		return fmt.Errorf("field %q is computed and cannot be set manually", op.FieldKey)
 	}
 

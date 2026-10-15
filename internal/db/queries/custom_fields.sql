@@ -329,6 +329,15 @@ JOIN user_group_memberships ugm ON ugm.group_id = cfp.user_group_id
 WHERE ugm.user_id = @user_id
  AND cfp.can_edit = true;
 
+-- name: ListComputedFieldDefs :many
+-- Returns every field whose options declare a computed spec (§80 page
+-- rollup amendment) — a small, global set. The EntityFieldValues
+-- hydration overlay resolves each spec's group-slug sources against the
+-- entity's own cfv rows and replaces the keyed display value.
+SELECT id, key, field_type, options, group_id
+FROM custom_fields
+WHERE options ? 'computed';
+
 -- name: ListVisibleFieldIDsForGroupSlug :many
 -- Returns the field_ids a user group (by slug, e.g. 'guest') is allowed
 -- to view. Used by the §80 wiki entity-fields schema for anonymous

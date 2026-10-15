@@ -1267,8 +1267,11 @@ func (s *Service) checkSetValueFields(ctx context.Context, userID pgtype.UUID, o
 
 		// Computed fields derive their value from options.computed
 		// sources — manual set_value is rejected for every tier,
-		// including wiki.fields.manage.
-		if customfields.ComputedSpecFromOptions(field.options) != nil {
+		// including wiki.fields.manage. Eligibility gates the same way
+		// as the read path so a type-ineligible spec stays a plain
+		// manual field rather than locking writes on a field that is
+		// never computed.
+		if customfields.ComputedEligibleField(field.fieldType, field.options) {
 			return fmt.Errorf("%w: ops[%d] field %q is computed and cannot be set manually", ErrOpNotPermitted, i, op.FieldKey)
 		}
 

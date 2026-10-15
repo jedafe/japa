@@ -32,6 +32,7 @@ func EntityFieldValues(ctx context.Context, q *gen.Queries, entityType string, e
 
 	values := make(map[string]any, len(rows))
 
+	sources := make([]cfvComputedSource, 0, len(rows))
 	for _, row := range rows {
 		if row.FieldKey == "" {
 			continue
@@ -40,6 +41,14 @@ func EntityFieldValues(ctx context.Context, q *gen.Queries, entityType string, e
 		if v := FieldValueFromDefRow(row.ValueText, row.ValueNumber, row.ValueBool, row.ValueDate, row.ValueJson, row.FieldType); v != nil {
 			values[row.FieldKey] = v
 		}
+		sources = append(sources, cfvComputedSource{
+			groupID: row.FieldGroupID, key: row.FieldKey, typ: row.FieldType,
+			options: row.FieldOptions, valueJSON: row.ValueJson, valueNumber: row.ValueNumber,
+		})
+	}
+
+	if overlay := loadComputedOverlay(ctx, q); overlay != nil {
+		overlay.apply(sources, values)
 	}
 
 	return values
@@ -66,6 +75,7 @@ func EntityFieldValuesForEntities(ctx context.Context, q *gen.Queries, entityTyp
 		return out
 	}
 
+	sourcesByEntity := make(map[pgtype.UUID][]cfvComputedSource, len(entityIDs))
 	for _, row := range rows {
 		if row.FieldKey == "" {
 			continue
@@ -77,6 +87,18 @@ func EntityFieldValuesForEntities(ctx context.Context, q *gen.Queries, entityTyp
 			}
 
 			out[row.EntityID][row.FieldKey] = v
+		}
+		sourcesByEntity[row.EntityID] = append(sourcesByEntity[row.EntityID], cfvComputedSource{
+			groupID: row.FieldGroupID, key: row.FieldKey, typ: row.FieldType,
+			options: row.FieldOptions, valueJSON: row.ValueJson, valueNumber: row.ValueNumber,
+		})
+	}
+
+	// Overlay computed values per entity — an entity with no cfv rows has
+	// no sources to fold, so only existing value maps need visiting.
+	if overlay := loadComputedOverlay(ctx, q); overlay != nil {
+		for entityID, values := range out {
+			overlay.apply(sourcesByEntity[entityID], values)
 		}
 	}
 
@@ -135,6 +157,97 @@ func FieldValueFromDefRow(valueText *string, valueNumber pgtype.Numeric, valueBo
 	}
 
 	return cfvJSONValue(valueJSON)
+}
+
+// cfvComputedSource is the normalized projection of one cfv row for the
+// computed overlay — the two generated row shapes (single-entity and
+// batched) feed the same fold.
+type cfvComputedSource struct {
+	groupID     pgtype.UUID
+	key         string
+	typ         string
+	options     []byte
+	valueJSON   []byte
+	valueNumber pgtype.Numeric
+}
+
+// computedOverlay carries the global computed-field set plus the
+// group-slug → id memo so the batched hydration read resolves each
+// spec's sources once per call, not once per entity per source.
+type computedOverlay struct {
+	ctx      context.Context
+	q        *gen.Queries
+	defs     []gen.ListComputedFieldDefsRow
+	groupIDs map[string]pgtype.UUID
+}
+
+// loadComputedOverlay fetches every field declaring options.computed —
+// a small global set (§80 page rollup amendment). Returns nil when the
+// query handle is absent, the lookup fails, or nothing is computed;
+// callers then emit the raw read untouched.
+func loadComputedOverlay(ctx context.Context, q *gen.Queries) *computedOverlay {
+	if q == nil {
+		return nil
+	}
+	defs, err := q.ListComputedFieldDefs(ctx)
+	if err != nil || len(defs) == 0 {
+		return nil
+	}
+	return &computedOverlay{ctx: ctx, q: q, defs: defs, groupIDs: make(map[string]pgtype.UUID)}
+}
+
+// apply folds each eligible computed field's sources against the
+// entity's stored rows and replaces the keyed display value — a stale
+// stored cfv never shadows the computed contract, so a field with zero
+// usable sources deletes its key instead of falling back (matching the
+// wiki page read path). No per-field can_view gate: this hydration read
+// already merges all cfv unauthenticated.
+func (o *computedOverlay) apply(sources []cfvComputedSource, values map[string]any) {
+	byCoord := make(map[string]cfvComputedSource, len(sources))
+	for _, s := range sources {
+		byCoord[s.groupID.String()+"/"+s.key] = s
+	}
+
+	for _, def := range o.defs {
+		if !ComputedEligibleField(def.FieldType, def.Options) {
+			continue
+		}
+		spec := ComputedSpecFromOptions(def.Options)
+
+		scalars := make([]float64, 0, len(spec.Sources))
+		for _, src := range spec.Sources {
+			gid := o.resolveGroup(src.Group)
+			if !gid.Valid {
+				continue
+			}
+			if row, ok := byCoord[gid.String()+"/"+src.Key]; ok {
+				if f, ok := ComputedScalarFromValue(row.typ, row.options, row.valueJSON, row.valueNumber); ok {
+					scalars = append(scalars, f)
+				}
+			}
+		}
+
+		if len(scalars) == 0 {
+			delete(values, def.Key)
+			continue
+		}
+		values[def.Key] = ComputedDisplayValue(def.FieldType, def.Options, FoldComputedMetric(spec.Metric, scalars))
+	}
+}
+
+// resolveGroup memoizes group slug → id; failures cache the invalid
+// UUID so an unknown slug is skipped, not re-queried per source.
+func (o *computedOverlay) resolveGroup(slug string) pgtype.UUID {
+	if gid, ok := o.groupIDs[slug]; ok {
+		return gid
+	}
+	g, err := o.q.GetCustomFieldGroupBySlug(o.ctx, slug)
+	if err != nil {
+		o.groupIDs[slug] = pgtype.UUID{}
+		return pgtype.UUID{}
+	}
+	o.groupIDs[slug] = g.ID
+	return g.ID
 }
 
 func cfvNumberValue(n pgtype.Numeric) any {
