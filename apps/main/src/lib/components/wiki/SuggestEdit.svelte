@@ -364,7 +364,7 @@
 		const v = f.value;
 		if (v === null || v === undefined || v === '') return '—';
 		if (f.field_type === 'currency' || f.field_type === 'price_range' || f.field_type === 'price_parts') {
-			return formatWikiFieldValue(f, currencies, schema?.entity_currency_code ?? '');
+			return formatWikiFieldValue(f, currencies, schema?.entity_currency_code ?? '', schema?.entity_currency_fx);
 		}
 		if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
 		if (typeof v === 'number') return String(v);

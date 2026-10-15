@@ -16,8 +16,10 @@
 	 *      japaconnect-engineering/sections/06-custom-field-builder-form-builder.md
 	 */
 	import { onMount, untrack } from 'svelte';
+	import { page } from '$app/state';
 	import SettingsSection from '$lib/components/hub/SettingsSection.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
+	import { destinationMarkets, originMarkets, pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { patchProfile } from '$lib/api/hub';
 	import { listStates, listCities, setLocation, getMyLocation, createCity } from '$lib/api/geo';
@@ -177,26 +179,38 @@
 		}
 	}
 
+	// ADR-064 curated markets (public settings) — pinned first in the
+	// country pickers; every seeded country stays selectable.
+	const originPins = $derived(originMarkets(page.data.siteSettings));
+	const destinationPins = $derived(destinationMarkets(page.data.siteSettings));
+	const allPins = $derived(servedMarkets(page.data.siteSettings));
+
 	// ---- Fetchers: filter the already-loaded geo arrays client-side ----
 	// No API call per keystroke — the loader already fetched all 250
 	// countries, and states/cities are loaded on parent selection.
 
-	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? countries.filter(
-					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
-				)
-			: countries;
-		return Promise.resolve(
-			filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
-		);
+	function countryFetcherFor(markets: string[]): (q: string) => Promise<AutocompleteItem[]> {
+		return (q: string) => {
+			const needle = q.toLowerCase().trim();
+			const ordered = pinMarketsFirst(countries, markets, (c) => c.geo_code);
+			const filtered = needle
+				? ordered.filter(
+						(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
+					)
+				: ordered;
+			return Promise.resolve(
+				filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+			);
+		};
 	}
 
-	function countryInitialFetcher(): Promise<AutocompleteItem[]> {
-		return Promise.resolve(
-			countries.slice(0, 8).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
-		);
+	function countryInitialFetcherFor(markets: string[]): () => Promise<AutocompleteItem[]> {
+		return () =>
+			Promise.resolve(
+				pinMarketsFirst(countries, markets, (c) => c.geo_code)
+					.slice(0, 8)
+					.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
+			);
 	}
 
 	function createStateFetcher(stateList: GeoState[]) {
@@ -530,8 +544,8 @@
 				<Autocomplete
 					placeholder={t('settings.location.search_origin', 'Search origin country…')}
 					emptyMessage={t('settings.location.no_countries', 'No countries found')}
-					fetcher={countryFetcher}
-					initialFetcher={countryInitialFetcher}
+					fetcher={countryFetcherFor(originPins)}
+					initialFetcher={countryInitialFetcherFor(originPins)}
 					selectedId={originCountry || null}
 					selectedLabel={originCountryLabel}
 					onSelect={onOriginCountrySelect}
@@ -598,8 +612,8 @@
 			<Autocomplete
 				placeholder={t('settings.location.search_dest', 'Search destination country…')}
 				emptyMessage={t('settings.location.no_countries', 'No countries found')}
-				fetcher={countryFetcher}
-				initialFetcher={countryInitialFetcher}
+				fetcher={countryFetcherFor(destinationPins)}
+				initialFetcher={countryInitialFetcherFor(destinationPins)}
 				selectedId={destCountry || null}
 				selectedLabel={destLabel}
 				onSelect={saveDestCountry}
@@ -654,8 +668,8 @@
 				<Autocomplete
 					placeholder={t('settings.location.search_country', 'Search country…')}
 					emptyMessage={t('settings.location.no_countries', 'No countries found')}
-					fetcher={countryFetcher}
-					initialFetcher={countryInitialFetcher}
+					fetcher={countryFetcherFor(allPins)}
+					initialFetcher={countryInitialFetcherFor(allPins)}
 					selectedId={selectedCountryCode || null}
 					selectedLabel={cascadeCountryLabel}
 					onSelect={onCountrySelect}

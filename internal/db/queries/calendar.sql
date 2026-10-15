@@ -39,8 +39,27 @@ WHERE id = $1 AND status = 'published'
  AND deleted_at IS NULL
 LIMIT 1;
 
+-- name: CalendarGetEntryAnyStatus :one
+-- Fetches an entry regardless of status; the service layer enforces
+-- visibility (published|unverified are public; pending|archived are only
+-- visible to the submitter and reviewers). ADR-094: unverified entries
+-- display a warning rather than being removed.
+SELECT id, title, description, category,
+ destination_space_id, origin_space_id,
+ occurs_at, ends_at, is_recurring, recurrence_pattern,
+ source_url, status, submitted_by, reviewed_by, reviewed_at,
+ staleness_check_due,
+ ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+ ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
+ created_at, updated_at, deleted_at
+FROM calendar_entries
+WHERE id = $1 AND deleted_at IS NULL
+LIMIT 1;
+
 -- name: CalendarSubscribersForEntry :many
-SELECT user_id FROM calendar_subscriptions
+-- DISTINCT: a user with overlapping subscriptions (e.g. all-categories plus
+-- a specific category) must not receive duplicate reminder notifications.
+SELECT DISTINCT user_id FROM calendar_subscriptions
 WHERE destination_space_id = $1
  AND (category IS NULL OR category = $2 OR category = '');
 
@@ -66,7 +85,7 @@ SELECT e.id, e.title, e.description, e.category,
 FROM calendar_saves s
 JOIN calendar_entries e ON e.id = s.entry_id
 WHERE s.user_id = $1
- AND e.status = 'published' AND e.deleted_at IS NULL
+ AND e.status IN ('published', 'unverified') AND e.deleted_at IS NULL
 ORDER BY s.saved_at DESC
 LIMIT $2 OFFSET $3;
 
@@ -132,3 +151,18 @@ SELECT EXISTS(SELECT 1 FROM calendar_entries WHERE id = $1);
 -- Admin force-delete — only rows already soft-deleted are removed
 -- (gated by admin.hard_delete via ?force=true).
 DELETE FROM calendar_entries WHERE id = $1 AND deleted_at IS NOT NULL;
+
+-- name: CalendarSavedEntryIDs :many
+-- Batch "is saved" lookup for a list of entry ids — replaces the per-entry
+-- EXISTS loop (N+1) in Service.List.
+SELECT entry_id FROM calendar_saves
+WHERE user_id = $1 AND entry_id = ANY(@entry_ids::uuid[]);
+
+-- name: CalendarIsSubscribed :one
+-- Exact-match subscription check for the (user, destination, category)
+-- triple. NULL category = "all categories" subscription.
+SELECT EXISTS (
+ SELECT 1 FROM calendar_subscriptions
+ WHERE user_id = $1 AND destination_space_id = $2
+   AND category IS NOT DISTINCT FROM $3
+) AS subscribed;

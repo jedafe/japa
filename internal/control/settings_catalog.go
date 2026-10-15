@@ -242,8 +242,8 @@ var settingsCatalog = map[string]settingMeta{
 	// visitor as origin_visitor | diaspora | global_traveler based on whether
 	// their current/origin country is in origin_markets or destination_markets.
 	// Kept in config (not hardcoded) so ops can tune the lists without a deploy.
-	"geo_personalization.origin_markets":      {Type: "csv", DefaultValue: "NG,GH,ZA,KE,EG", Description: "CSV of ISO 3166-1 alpha-2 codes of 'origin markets' — visitors here are classified origin_visitor (preparing to relocate) by the archetype resolver.", Panel: "control"},
-	"geo_personalization.destination_markets": {Type: "csv", DefaultValue: "GB,CA,US,DE,AU,AE", Description: "CSV of ISO 3166-1 alpha-2 codes of 'destination markets' — visitors here (or with japa_status=settled) are classified diaspora by the archetype resolver.", Panel: "control"},
+	"geo_personalization.origin_markets":      {Type: "csv", DefaultValue: "NG,GH,ZA,KE,EG", Description: "CSV of ISO 3166-1 alpha-2 codes of 'origin markets' — visitors here are classified origin_visitor (preparing to relocate) by the archetype resolver.", Panel: "control", Public: true},
+	"geo_personalization.destination_markets": {Type: "csv", DefaultValue: "GB,CA,US,DE,AU,AE", Description: "CSV of ISO 3166-1 alpha-2 codes of 'destination markets' — visitors here (or with japa_status=settled) are classified diaspora by the archetype resolver.", Panel: "control", Public: true},
 	// ADR-064a: recommendation engine config — the stage_tool_matrix drives
 	// tool/feature suggestions by archetype + japa_stage; tool_labels and
 	// tool_urls override the compiled-in display fallbacks (Rule 3).

@@ -622,5 +622,6 @@
 	"visa_routes.seo_title": "Comparaison des voies de visa — Outils JapaConnect",
 	"visa_routes.subtitle": "Comparez les voies de visa côte à côte — admissibilité, frais, chemin vers la RP et conditions de renouvellement.",
 	"visa_routes.title": "Comparaison des voies de visa",
-	"visa_routes.view_source": "Voir"
+	"visa_routes.view_source": "Voir",
+	"col.fx_stale": "Les taux de change peuvent être obsolètes — les conversions affichées sont indicatives."
 }

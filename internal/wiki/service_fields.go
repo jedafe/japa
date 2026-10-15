@@ -260,6 +260,9 @@ type EntityFieldsDTO struct {
 	// fallback for currency/price_range fields that don't declare
 	// {currency_code} in options.
 	EntityCurrencyCode string `json:"entity_currency_code,omitempty"`
+	// EntityCurrencyFx carries the local→fx-base display rate for "(base)"
+	// equivalents on money fields (§58 + §112); nil when unavailable.
+	EntityCurrencyFx *CurrencyFxDTO `json:"entity_currency_fx,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -564,6 +567,11 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 		}
 	}
 
+	// Resolve the entity's country currency once for the whole read — the
+	// field loops below reuse it for both the display code and the
+	// default_source substitution.
+	entityCurrency := s.resolveEntityCurrencyCode(ctx, entityType, entityID, isSpaceBackedEntityType(entityType))
+
 	groups := make([]EntityFieldGroupDTO, 0, len(assignments))
 
 	for _, a := range assignments {
@@ -620,6 +628,7 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 		}
 
 		s.applyComputedFields(ctx, dtos, values, visibleSet, canManage)
+		s.applySpaceCurrencyDefaults(ctx, dtos, entityCurrency)
 
 		// A group with no field definitions contributes nothing to the
 		// editable schema — skip it so class-wide placeholders don't render
@@ -652,9 +661,38 @@ func (s *Service) GetEntityFields(ctx context.Context, userID pgtype.UUID, entit
 	if len(entityClasses) > 0 {
 		dto.EntityClass = entityClasses[0]
 	}
-	dto.EntityCurrencyCode = s.resolveEntityCurrencyCode(ctx, entityType, entityID, isSpaceBackedEntityType(entityType))
+	dto.EntityCurrencyCode = entityCurrency
+	dto.EntityCurrencyFx = s.currencyFx(ctx, entityCurrency)
 
 	return dto, nil
+}
+
+// applySpaceCurrencyDefaults fills empty, visible text fields whose
+// options carry {"default_source":"space_currency"} with the resolved
+// currency's display name — cfv always wins, so only unset fields are
+// touched.
+func (s *Service) applySpaceCurrencyDefaults(ctx context.Context, dtos []EntityFieldDTO, currencyCode string) {
+	if currencyCode == "" {
+		return
+	}
+	name := ""
+	resolved := false
+	for i := range dtos {
+		dto := &dtos[i]
+		if dto.FieldType != "text" || dto.Value != nil || !dto.Visible {
+			continue
+		}
+		if customfields.DefaultSourceFromOptions(dto.Options) != "space_currency" {
+			continue
+		}
+		if !resolved {
+			name, resolved = s.store.CurrencyDisplayName(ctx, currencyCode), true
+		}
+		if name != "" {
+			v, _ := json.Marshal(name)
+			dto.Value = v
+		}
+	}
 }
 
 // resolveEntityCurrencyCode best-effort resolves the entity's country
@@ -814,6 +852,12 @@ func (s *Service) GetPageFields(ctx context.Context, userID, spaceID, groupID pg
 	}
 
 	s.applyComputedFields(ctx, dtos, values, visibleSet, canManage)
+
+	// §58 default_source substitution — the page's host space resolves
+	// directly (no entity indirection needed).
+	if spaceCurrency, cerr := s.store.ResolveSpaceCurrencyCode(ctx, spaceID); cerr == nil {
+		s.applySpaceCurrencyDefaults(ctx, dtos, spaceCurrency)
+	}
 
 	if len(dtos) == 0 {
 		return nil, nil

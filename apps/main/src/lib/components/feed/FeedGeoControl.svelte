@@ -12,6 +12,7 @@
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import { setContentCountry } from '$lib/api/geo';
+	import { pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
 	import { Globe, ChevronDown } from 'lucide-svelte';
 	import type { GeoCountry } from '$lib/types';
 
@@ -27,11 +28,12 @@
 	const user = $derived(page.data.user);
 	const currentCountry = $derived(user?.content_country_preference ?? '');
 
-	// Quick countries = "Auto" + the first 5 country spaces from the API.
-	// The full list is available in Settings → Language & Region.
+	// Quick countries = "Auto" + the first 5 country spaces from the API,
+	// reordered so the configured origin/destination markets (ADR-064)
+	// come first. The full list is available in Settings → Language & Region.
 	const quickCountries = $derived([
 		{ code: '', label: t('feed.geo_auto', 'Auto (GeoIP)') },
-		...countrySpaces.slice(0, 5)
+		...pinMarketsFirst(countrySpaces, servedMarkets(page.data.siteSettings), (c) => c.code).slice(0, 5)
 	]);
 
 	async function loadCountries() {

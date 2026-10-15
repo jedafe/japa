@@ -121,9 +121,14 @@ const getCOLBaselineCity = `-- name: GetCOLBaselineCity :one
 SELECT
  ci.id, ci.content_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.type_id = $1
  AND ci.is_baseline = true
  AND ci.deleted_at IS NULL
@@ -153,6 +158,7 @@ type GetCOLBaselineCityRow struct {
 	ItemRef            []byte             `json:"item_ref"`
 	GeoSpaceName       *string            `json:"geo_space_name"`
 	GeoSpaceSlug       *string            `json:"geo_space_slug"`
+	CurrencyCode       *string            `json:"currency_code"`
 }
 
 // =====================================================================
@@ -184,6 +190,7 @@ func (q *Queries) GetCOLBaselineCity(ctx context.Context, typeID pgtype.UUID) (G
 		&i.ItemRef,
 		&i.GeoSpaceName,
 		&i.GeoSpaceSlug,
+		&i.CurrencyCode,
 	)
 	return i, err
 }
@@ -275,9 +282,14 @@ SELECT
  ci.last_updated_at,
  ci.position,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.id = ANY($1::uuid[])
  AND ci.deleted_at IS NULL
 `
@@ -292,6 +304,7 @@ type GetCOLCitiesByIDsRow struct {
 	Position      int32              `json:"position"`
 	GeoSpaceName  *string            `json:"geo_space_name"`
 	GeoSpaceSlug  *string            `json:"geo_space_slug"`
+	CurrencyCode  *string            `json:"currency_code"`
 }
 
 // =====================================================================
@@ -317,6 +330,7 @@ func (q *Queries) GetCOLCitiesByIDs(ctx context.Context, ids []pgtype.UUID) ([]G
 			&i.Position,
 			&i.GeoSpaceName,
 			&i.GeoSpaceSlug,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}
@@ -333,9 +347,14 @@ const getCOLCityByID = `-- name: GetCOLCityByID :one
 SELECT
  ci.id, ci.content_id, ci.title, ci.description, ci.image_id, ci.geo_space_id, ci.position, ci.created_at, ci.type_id, ci.deleted_at, ci.is_baseline, ci.last_updated_at, ci.intel_record_id, ci.intel_cost_data, ci.confidence_overall, ci.verification_status, ci.freshness_score, ci.override_source, ci.editorial_overrides, ci.item_ref,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.id = $1 AND ci.deleted_at IS NULL
 `
 
@@ -362,6 +381,7 @@ type GetCOLCityByIDRow struct {
 	ItemRef            []byte             `json:"item_ref"`
 	GeoSpaceName       *string            `json:"geo_space_name"`
 	GeoSpaceSlug       *string            `json:"geo_space_slug"`
+	CurrencyCode       *string            `json:"currency_code"`
 }
 
 // =====================================================================
@@ -393,6 +413,7 @@ func (q *Queries) GetCOLCityByID(ctx context.Context, id pgtype.UUID) (GetCOLCit
 		&i.ItemRef,
 		&i.GeoSpaceName,
 		&i.GeoSpaceSlug,
+		&i.CurrencyCode,
 	)
 	return i, err
 }
@@ -510,7 +531,10 @@ SELECT
  ci.position,
  ci.intel_cost_data,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ -- Per-city currency for local display (§72/§58): city spaces rarely carry
+ -- their own currency_code, so fall back up the state→country hierarchy.
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
@@ -550,6 +574,7 @@ type ListCOLCitiesRow struct {
 	IntelCostData []byte             `json:"intel_cost_data"`
 	GeoSpaceName  *string            `json:"geo_space_name"`
 	GeoSpaceSlug  *string            `json:"geo_space_slug"`
+	CurrencyCode  *string            `json:"currency_code"`
 }
 
 // =====================================================================
@@ -585,6 +610,7 @@ func (q *Queries) ListCOLCities(ctx context.Context, arg ListCOLCitiesParams) ([
 			&i.IntelCostData,
 			&i.GeoSpaceName,
 			&i.GeoSpaceSlug,
+			&i.CurrencyCode,
 		); err != nil {
 			return nil, err
 		}

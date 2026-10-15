@@ -39,9 +39,11 @@ type CalendarEntryDTO struct {
 	ID                 string `json:"id"`
 	Title              string `json:"title"`
 	Description        string `json:"description,omitempty"`
-	Category           string `json:"category"`
-	DestinationSpaceID string `json:"destination_space_id,omitempty"`
-	OriginSpaceID      string `json:"origin_space_id,omitempty"`
+	Category              string `json:"category"`
+	DestinationSpaceID    string `json:"destination_space_id,omitempty"`
+	DestinationSpaceName  string `json:"destination_space_name,omitempty"`
+	OriginSpaceID         string `json:"origin_space_id,omitempty"`
+	OriginSpaceName       string `json:"origin_space_name,omitempty"`
 	OccursAt           string `json:"occurs_at"`
 	EndsAt             string `json:"ends_at,omitempty"`
 	IsRecurring        bool   `json:"is_recurring"`
@@ -130,6 +132,16 @@ var ErrSourceURLRequired = errors.New("calendar: a verifiable official source_ur
 // ErrEditForbidden is returned when a user attempts to edit a calendar entry
 // they do not own and they do not hold calendar.edit_any.
 var ErrEditForbidden = errors.New("calendar: edit forbidden")
+
+// ValidationError marks input-validation failures so handlers can map them to
+// a 400 invalid_input envelope instead of a generic 500.
+type ValidationError struct{ msg string }
+
+func (e *ValidationError) Error() string { return e.msg }
+
+func validationErr(format string, args ...any) error {
+	return &ValidationError{msg: fmt.Sprintf(format, args...)}
+}
 
 // permissionChecker is the subset of rbac.RBAC used for edit authorization.
 type permissionChecker interface {
@@ -283,31 +295,62 @@ func (s *Service) List(ctx context.Context, destSpaceID, originSpaceID pgtype.UU
 		return nil, 0, fmt.Errorf("calendar: list: %w", err)
 	}
 
+	// Batch the per-entry is_saved lookup — a single IN query for the whole
+	// page instead of an N+1 EXISTS loop.
+	var saved map[string]bool
+	if userID.Valid && len(entries) > 0 {
+		ids := make([]pgtype.UUID, 0, len(entries))
+		for _, e := range entries {
+			ids = append(ids, e.ID)
+		}
+		saved, err = s.store.SavedEntryIDs(ctx, userID, ids)
+		if err != nil {
+			slog.Warn("calendar: list: failed to batch check is_saved", "error", err)
+			saved = nil
+		}
+	}
+
 	dtos := make([]CalendarEntryDTO, 0, len(entries))
 	for _, e := range entries {
 		dto := entryToDTO(e)
-		if userID.Valid {
-			saved, err := s.store.IsSaved(ctx, userID, e.ID)
-			if err != nil {
-				slog.Warn("calendar: list: failed to check is_saved", "entry_id", e.ID, "error", err)
-			}
-			dto.IsSaved = saved
+		if userID.Valid && saved != nil {
+			dto.IsSaved = saved[e.ID.String()]
 		}
 		dtos = append(dtos, dto)
 	}
 
+	s.populateSpaceNames(ctx, dtos)
+
 	return dtos, total, nil
 }
 
-// Get returns a single approved calendar entry by id.
+// Get returns a single calendar entry by id. Published and unverified entries
+// are public (ADR-094: unverified entries display a warning rather than being
+// removed). Pending and archived entries are only visible to the submitter
+// and to reviewers (calendar.review / calendar.edit_any).
 func (s *Service) Get(ctx context.Context, id, userID pgtype.UUID) (CalendarEntryDTO, error) {
-	entry, err := s.store.GetEntry(ctx, id)
+	entry, err := s.store.GetEntryAnyStatus(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return CalendarEntryDTO{}, pgx.ErrNoRows
 		}
 
 		return CalendarEntryDTO{}, fmt.Errorf("calendar: get: %w", err)
+	}
+
+	public := entry.Status == "published" || entry.Status == "unverified"
+	if !public {
+		allowed := false
+		if userID.Valid {
+			allowed = entry.SubmittedBy.Valid && entry.SubmittedBy == userID
+			if !allowed && s.rbac != nil {
+				allowed = s.rbac.HasPermission(ctx, userID, "calendar.review") ||
+					s.rbac.HasPermission(ctx, userID, "calendar.edit_any")
+			}
+		}
+		if !allowed {
+			return CalendarEntryDTO{}, pgx.ErrNoRows
+		}
 	}
 
 	dto := entryToDTO(entry)
@@ -319,7 +362,59 @@ func (s *Service) Get(ctx context.Context, id, userID pgtype.UUID) (CalendarEntr
 		dto.IsSaved = saved
 	}
 
-	return dto, nil
+	dtos := []CalendarEntryDTO{dto}
+	s.populateSpaceNames(ctx, dtos)
+
+	return dtos[0], nil
+}
+
+// populateSpaceNames fills DestinationSpaceName / OriginSpaceName on DTOs via
+// a single batch lookup against the spaces table.
+func (s *Service) populateSpaceNames(ctx context.Context, dtos []CalendarEntryDTO) {
+	seen := make(map[string]bool)
+	var ids []pgtype.UUID
+	for _, dto := range dtos {
+		for _, raw := range []string{dto.DestinationSpaceID, dto.OriginSpaceID} {
+			if raw == "" || seen[raw] {
+				continue
+			}
+			var id pgtype.UUID
+			if err := id.Scan(raw); err == nil {
+				seen[raw] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	names, err := s.store.SpaceNames(ctx, ids)
+	if err != nil {
+		slog.Warn("calendar: failed to resolve space names", "error", err)
+		return
+	}
+
+	for i := range dtos {
+		if n, ok := names[dtos[i].DestinationSpaceID]; ok {
+			dtos[i].DestinationSpaceName = n
+		}
+		if n, ok := names[dtos[i].OriginSpaceID]; ok {
+			dtos[i].OriginSpaceName = n
+		}
+	}
+}
+
+// IsSubscribed reports whether the user is subscribed to the exact
+// (destination, category) pair — used to render the list page's Subscribe
+// button state.
+func (s *Service) IsSubscribed(ctx context.Context, userID, destSpaceID pgtype.UUID, category string) bool {
+	subscribed, err := s.store.IsSubscribed(ctx, userID, destSpaceID, category)
+	if err != nil {
+		slog.Warn("calendar: is subscribed failed", "error", err)
+		return false
+	}
+	return subscribed
 }
 
 // Update edits a calendar entry's content fields. Ownership is enforced unless
@@ -377,57 +472,64 @@ func isValidRecurrencePattern(pattern string) bool {
 // SubmittedBy and ID (for update) as appropriate.
 func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (CalendarEntry, error) {
 	if input.Title == "" {
-		return CalendarEntry{}, errors.New("title is required")
+		return CalendarEntry{}, validationErr("title is required")
 	}
 
 	if input.Category == "" {
-		return CalendarEntry{}, errors.New("category is required")
+		return CalendarEntry{}, validationErr("category is required")
 	}
 	// BUG-009: validate category against the dynamic calendar.categories
 	// system_setting list (Rule 3: no hardcoded config).
 	if !s.ValidCategory(ctx, input.Category) {
-		return CalendarEntry{}, fmt.Errorf("invalid category: %s", input.Category)
+		return CalendarEntry{}, validationErr("invalid category: %s", input.Category)
 	}
 
 	if input.OccursAt == "" {
-		return CalendarEntry{}, errors.New("occurs_at is required")
+		return CalendarEntry{}, validationErr("occurs_at is required")
 	}
 	// §86: "Every entry must include a verifiable official source link."
 	if input.SourceURL == "" {
-		return CalendarEntry{}, errors.New("source_url is required")
+		return CalendarEntry{}, validationErr("source_url is required")
 	}
 	// BUG-011: validate source_url scheme is http or https to prevent
 	// stored XSS via javascript:/data: URIs rendered as <a href> in the
 	// frontend. Ref: japaconnect-engineering/sections/5.1-xss-prevention.md
 	parsedURL, err := url.Parse(input.SourceURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return CalendarEntry{}, errors.New("source_url must be a valid http or https URL")
+		return CalendarEntry{}, validationErr("source_url must be a valid http or https URL")
 	}
 
 	occursAt, err := parseTimestamp(input.OccursAt)
 	if err != nil {
-		return CalendarEntry{}, fmt.Errorf("invalid occurs_at: %w", err)
+		return CalendarEntry{}, validationErr("invalid occurs_at: %v", err)
 	}
 
 	var endsAt pgtype.Timestamptz
 	if input.EndsAt != "" {
 		endsAt, err = parseTimestamp(input.EndsAt)
 		if err != nil {
-			return CalendarEntry{}, fmt.Errorf("invalid ends_at: %w", err)
+			return CalendarEntry{}, validationErr("invalid ends_at: %v", err)
+		}
+		// An end date before the start date is always a data-entry error.
+		if endsAt.Valid && endsAt.Time.Before(occursAt.Time) {
+			return CalendarEntry{}, validationErr("ends_at must not be before occurs_at")
 		}
 	}
 
+	// §86 Geo Awareness: destination country is the primary data axis —
+	// every entry requires a destination (spec column is NOT NULL).
 	var destSpaceID pgtype.UUID
-	if input.DestinationSpaceID != "" {
-		if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
-			return CalendarEntry{}, fmt.Errorf("invalid destination_space_id: %w", err)
-		}
+	if input.DestinationSpaceID == "" {
+		return CalendarEntry{}, validationErr("destination_space_id is required")
+	}
+	if err := destSpaceID.Scan(input.DestinationSpaceID); err != nil {
+		return CalendarEntry{}, validationErr("invalid destination_space_id: %v", err)
 	}
 
 	var originSpaceID pgtype.UUID
 	if input.OriginSpaceID != "" {
 		if err := originSpaceID.Scan(input.OriginSpaceID); err != nil {
-			return CalendarEntry{}, fmt.Errorf("invalid origin_space_id: %w", err)
+			return CalendarEntry{}, validationErr("invalid origin_space_id: %v", err)
 		}
 	}
 
@@ -449,7 +551,7 @@ func (s *Service) buildEntry(ctx context.Context, input SubmitEntryInput) (Calen
 
 	if input.RecurrencePattern != "" {
 		if !isValidRecurrencePattern(input.RecurrencePattern) {
-			return CalendarEntry{}, errors.New("recurrence_pattern must be one of: daily, weekly, monthly, yearly")
+			return CalendarEntry{}, validationErr("recurrence_pattern must be one of: daily, weekly, monthly, yearly")
 		}
 		entry.RecurrencePattern = &input.RecurrencePattern
 	}
@@ -530,6 +632,8 @@ func (s *Service) ListSaved(ctx context.Context, userID pgtype.UUID, page, limit
 		dtos = append(dtos, dto)
 	}
 
+	s.populateSpaceNames(ctx, dtos)
+
 	return dtos, total, nil
 }
 
@@ -588,6 +692,8 @@ func (s *Service) AdminList(ctx context.Context, destSpaceID, originSpaceID pgty
 	for _, e := range entries {
 		dtos = append(dtos, entryToDTO(e))
 	}
+
+	s.populateSpaceNames(ctx, dtos)
 
 	return dtos, total, nil
 }
@@ -830,14 +936,25 @@ func formatTs(t pgtype.Timestamptz) string {
 	return t.Time.UTC().Format(time.RFC3339)
 }
 
-// parseTimestamp parses an RFC 3339 string into a pgtype.Timestamptz.
+// parseTimestamp parses an RFC 3339 string or a date-only "2006-01-02" into a
+// pgtype.Timestamptz. Date-only values are interpreted as midnight UTC —
+// frontend <input type="date"> filters emit this format (§86 occurs_at is a
+// calendar date, not a timestamp).
 func parseTimestamp(s string) (pgtype.Timestamptz, error) {
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		return pgtype.Timestamptz{}, err
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return pgtype.Timestamptz{Time: t, Valid: true}, nil
 	}
 
-	return pgtype.Timestamptz{Time: t, Valid: true}, nil
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return pgtype.Timestamptz{Time: t.UTC(), Valid: true}, nil
+	}
+
+	return pgtype.Timestamptz{}, fmt.Errorf("invalid timestamp: %s", s)
+}
+
+// isDateOnly reports whether the value used date-only ("2006-01-02") syntax.
+func isDateOnly(s string) bool {
+	return len(s) == len("2006-01-02")
 }
 
 // GenerateDraft creates a calendar entry draft via the Content Agent (§86,

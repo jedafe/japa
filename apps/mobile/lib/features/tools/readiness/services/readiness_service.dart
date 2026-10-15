@@ -71,6 +71,16 @@ class ReadinessService {
     return response;
   }
 
+  /// Public site settings (GET /site/settings/public) — used to pin the
+  /// configured geo markets first in country pickers (ADR-064).
+  Future<Map<String, dynamic>> getPublicSettings() async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/site/settings/public',
+      parse: (json) => json as Map<String, dynamic>,
+    );
+    return response;
+  }
+
   Future<List<dynamic>> getHistory() async {
     final response = await _client.get<List<dynamic>>(
       '/assessment/history?limit=50',

@@ -35,6 +35,9 @@
 		/** Fired after a successful save; warning is the API's optional
 		 * "roadmap_disabled" flag (spec §6.3). */
 		onSaved?: (key: string, warning?: string) => void;
+		/** Fired after a successful DELETE — the card reverts to registry
+		 * default (or disappears for Custom keys). */
+		onDeleted?: (key: string) => void;
 	}
 
 	let {
@@ -43,7 +46,8 @@
 		onToggle,
 		onOptimistic,
 		onRevert,
-		onSaved
+		onSaved,
+		onDeleted
 	}: Props = $props();
 
 	interface DraftSurface {
@@ -65,6 +69,7 @@
 	let draft = $state<Draft | null>(null);
 	let seededKey = $state('');
 	let saving = $state(false);
+	let deleting = $state(false);
 	let saveError = $state('');
 	let expanded = $state<Set<string>>(new Set());
 
@@ -347,6 +352,30 @@
 			onRevert?.(ext.key, prev);
 			saveError = t('extensions.save_error', 'Failed to save changes.');
 			saving = false;
+		}
+	}
+
+	// remove deletes the stored feature_flags row via DELETE
+	// /control/extensions/{key}. For registry keys the flag reverts to its
+	// Registry default; custom keys disappear from the catalog entirely.
+	async function remove() {
+		if (!ext || deleting) return;
+		if (!window.confirm(t('extensions.delete_confirm', 'Delete the stored configuration for this flag?')))
+			return;
+		deleting = true;
+		saveError = '';
+		try {
+			const result = await api(`/control/extensions/${ext.key}`, { method: 'DELETE' });
+			if (result.ok) {
+				handleOpenChange(false);
+				onDeleted?.(ext.key);
+			} else {
+				saveError = result.error || t('extensions.delete_error', 'Failed to delete flag.');
+			}
+		} catch {
+			saveError = t('extensions.delete_error', 'Failed to delete flag.');
+		} finally {
+			deleting = false;
 		}
 	}
 </script>
@@ -680,7 +709,24 @@
 					{#if saveError}
 						<p class="text-destructive mb-2 text-sm">{saveError}</p>
 					{/if}
-					<div class="flex items-center justify-end gap-3">
+					<div class="flex items-center gap-3">
+						<button
+							type="button"
+							class="text-destructive hover:bg-destructive/10 mr-auto flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50"
+							disabled={saving || deleting}
+							onclick={remove}
+							title={ext.category === 'Custom'
+								? t('extensions.delete_custom_hint', 'Delete this custom flag row')
+								: t('extensions.reset_hint', 'Delete the stored row — reverts to the registry default')}
+						>
+							{#if deleting}
+								<Loader2 class="size-4 animate-spin" />
+							{/if}
+							{ext.category === 'Custom'
+								? t('extensions.delete_flag', 'Delete flag')
+								: t('extensions.reset_default', 'Reset to default')}
+						</button>
+						<div class="flex-1"></div>
 						<button
 							type="button"
 							class="border-border-input bg-background hover:bg-muted text-foreground rounded-md border px-4 py-2 text-sm font-medium transition-colors"

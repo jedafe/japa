@@ -2744,6 +2744,7 @@ export interface ColCity {
 	description: string;
 	geo_space_name: string;
 	geo_space_slug: string;
+	currency_code: string;
 	is_baseline: boolean;
 	last_updated: string;
 	position: number;
@@ -2761,6 +2762,10 @@ export interface ColCityData {
 	title: string;
 	geo_space_name: string;
 	geo_space_slug: string;
+	/** City local currency (space→country chain, §58). */
+	currency_code?: string;
+	/** True when this city's numeric matrix values were normalized to display_currency. */
+	converted?: boolean;
 	is_baseline: boolean;
 	last_updated: string;
 	values: Record<string, string>;
@@ -2778,6 +2783,10 @@ export interface ColComparisonMatrix {
 	categories: ColCategoryData[];
 	baseline_city_id: string;
 	overall_index: Record<string, number>;
+	/** FX base currency all money cells are denominated in; empty = raw local values. */
+	display_currency?: string;
+	fx_fetched_at?: string;
+	fx_stale?: boolean;
 }
 
 // --- Source attribution (scholarships, jobs, remittance, content, feed) ---
@@ -3541,6 +3550,8 @@ export interface WikiPage extends WikiPageIndex {
 	/** §58 — the host space's resolved country currency; display fallback
 	 *  for currency/price_range fields without an explicit {currency_code}. */
 	space_currency_code?: string;
+	/** §58+§112 — local→display-base rate for "(base)" equivalents. */
+	space_currency_fx?: { base: string; rate: number; fetched_at: string; stale: boolean };
 	/** §80 Hierarchical UX: the page template the page was created from —
 	 *  echoed so UIs can link sibling template pages. */
 	page_template_id?: string;
@@ -3860,7 +3871,9 @@ export interface CalendarEntry {
 	description?: string;
 	category: string;
 	destination_space_id?: string;
+	destination_space_name?: string;
 	origin_space_id?: string;
+	origin_space_name?: string;
 	occurs_at: string;
 	ends_at?: string;
 	is_recurring: boolean;
@@ -4381,6 +4394,9 @@ export interface ServiceBooking {
 	cancelled_at?: string;
 	cancel_reason?: string;
 	created_at: string;
+	/** §48/ADR-110 — only on the respond response after a mentorship accept:
+	 *  the auto-opened provider↔booker DM thread id (deep-link /messages?c=). */
+	dm_conversation_id?: string;
 }
 
 /** POST /services/:id/bookings response — booking + fee checkout when paid. */

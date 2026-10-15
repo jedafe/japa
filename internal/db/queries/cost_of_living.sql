@@ -28,7 +28,10 @@ SELECT
  ci.position,
  ci.intel_cost_data,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ -- Per-city currency for local display (§72/§58): city spaces rarely carry
+ -- their own currency_code, so fall back up the state→country hierarchy.
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id AND s.deleted_at IS NULL
 LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
@@ -69,9 +72,14 @@ WHERE ci.type_id = @type_id
 SELECT
  ci.*,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.id = @id AND ci.deleted_at IS NULL;
 
 -- =====================================================================
@@ -89,9 +97,14 @@ SELECT
  ci.last_updated_at,
  ci.position,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.id = ANY(@ids::uuid[])
  AND ci.deleted_at IS NULL;
 
@@ -103,9 +116,14 @@ WHERE ci.id = ANY(@ids::uuid[])
 SELECT
  ci.*,
  s.name AS geo_space_name,
- s.slug AS geo_space_slug
+ s.slug AS geo_space_slug,
+ COALESCE(s.currency_code, state.currency_code, country.currency_code) AS currency_code
 FROM comparison_items ci
 LEFT JOIN spaces s ON s.id = ci.geo_space_id
+LEFT JOIN space_parent_spaces sps_state ON sps_state.space_id = s.id
+LEFT JOIN spaces state ON state.id = sps_state.parent_space_id AND state.level = 'state' AND state.deleted_at IS NULL
+LEFT JOIN space_parent_spaces sps_country ON sps_country.space_id = state.id
+LEFT JOIN spaces country ON country.id = sps_country.parent_space_id AND country.level = 'country' AND country.deleted_at IS NULL
 WHERE ci.type_id = @type_id
  AND ci.is_baseline = true
  AND ci.deleted_at IS NULL

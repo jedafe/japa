@@ -20,7 +20,8 @@
 		type PricePartDef,
 		pricePartsSchema,
 		pricePartsValue,
-		priceRangeParts
+		priceRangeParts,
+		type FxEquiv
 	} from '$lib/utils/wikiFieldValue';
 	import type { CurrencyInfo } from '$lib/utils/currency';
 
@@ -36,13 +37,16 @@
 		allHref = undefined,
 		/** §58 — host space's resolved country currency; fallback display code
 		 *  for currency/price_range fields without an options.currency_code. */
-		contextCurrency = ''
+		contextCurrency = '',
+		/** §112 — local→base display rate for "(base)" equivalents. */
+		contextFx = undefined
 	}: {
 		group: WikiEntityFieldGroup;
 		moreHref?: (section: WikiEntityFieldSection) => string | undefined;
 		activeSection?: string;
 		allHref?: string;
 		contextCurrency?: string;
+		contextFx?: FxEquiv;
 	} = $props();
 
 	// §58 — active currency list from the root layout, for price_range
@@ -104,22 +108,22 @@
 
 	function partCell(f: WikiEntityField, key: string, kind: string | undefined): string {
 		const code = fieldCurrencyCode(f.options) || contextCurrency;
-		return formatPricePart(pricePartsValue(f.value)[key], kind, code, currencies);
+		return formatPricePart(pricePartsValue(f.value)[key], kind, code, currencies, contextFx);
 	}
 
 	function avgOf(f: WikiEntityField): string {
 		const code = fieldCurrencyCode(f.options) || contextCurrency;
 		const p = priceRangeParts(f.value);
 		return p?.avg !== undefined
-			? formatPriceRange({ avg: p.avg }, code, currencies)
-			: formatPriceRange(f.value, code, currencies);
+			? formatPriceRange({ avg: p.avg }, code, currencies, contextFx)
+			: formatPriceRange(f.value, code, currencies, contextFx);
 	}
 
 	function rangeOf(f: WikiEntityField): string {
 		const code = fieldCurrencyCode(f.options) || contextCurrency;
 		const p = priceRangeParts(f.value);
 		if (!p || p.min === undefined || p.max === undefined) return '—';
-		return formatPriceRange({ min: p.min, max: p.max }, code, currencies);
+		return formatPriceRange({ min: p.min, max: p.max }, code, currencies, contextFx);
 	}
 </script>
 
@@ -250,7 +254,7 @@
 									{f.label}{#if f.computed}{@render computedBadge()}{/if}
 								</dt>
 								<dd class="min-w-0 truncate text-right text-[var(--color-text)]">
-									{formatWikiFieldValue(f, currencies, contextCurrency)}
+									{formatWikiFieldValue(f, currencies, contextCurrency, contextFx)}
 								</dd>
 							</div>
 							{/if}

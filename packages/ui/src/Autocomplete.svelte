@@ -670,9 +670,15 @@
 		font-weight: 500;
 		white-space: nowrap;
 		pointer-events: none;
+		/* A nowrap chip inside a flex row can't shrink below its content
+		   width — in narrow columns (paired fields, mobile) it overflowed
+		   the input. Cap it at the row's width so the label ellipsizes. */
+		min-width: 0;
+		max-width: 100%;
 	}
 	.autocomplete-chip-label {
 		max-width: 160px;
+		min-width: 0;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;

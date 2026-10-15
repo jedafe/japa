@@ -13,6 +13,7 @@
 	import { Trophy, Plus, Loader2 } from 'lucide-svelte';
 	import type { Achievement, AchievementMilestoneType } from '$lib/types';
 	import { milestoneOptions } from '$lib/achievement';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
@@ -79,15 +80,24 @@
 		}
 	}
 
+	// ADR-064 curated markets (public settings) — pinned first in the
+	// country pickers; every seeded country stays selectable.
+	const destCountries = $derived(
+		pinMarketsFirst(data.countries ?? [], destinationMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+	const originCountries = $derived(
+		pinMarketsFirst(data.countries ?? [], originMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('common.all_countries', 'All countries');
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...destCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = (data.countries ?? []).filter(
+		const filtered = destCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
@@ -105,10 +115,10 @@
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...originCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = (data.countries ?? []).filter(
+		const filtered = originCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));

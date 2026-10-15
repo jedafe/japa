@@ -39,12 +39,12 @@ ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name;
 -- the topic-scoped Quick Facts rail.
 UPDATE custom_fields SET field_type = 'price_range',
        label = 'Single person (monthly)', section = 'summary',
-       options = '{"currency_code":"CAD"}'::jsonb
+       options = NULL
 WHERE key = 'monthly_total'
   AND group_id = (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_cost_of_living');
 
 UPDATE custom_fields SET label = 'Rent — 1BR city centre (monthly)',
-       options = '{"currency_code":"CAD"}'::jsonb
+       options = NULL
 WHERE key = 'rent_1br'
   AND group_id = (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_cost_of_living');
 
@@ -52,17 +52,17 @@ WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_cost_of_li
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
 SELECT g.id, v.key, v.label, v.ftype, v.sec, v.pos, v.opts::jsonb
 FROM g, (VALUES
-	('family_total',        'Family of 4 (monthly)',      'price_range', 'summary',          2,  '{"currency_code":"CAD"}'),
-	('exp_accommodation',   'Accommodation',              'currency',    'monthly_expenses', 10, '{"currency_code":"CAD"}'),
-	('exp_food',            'Food',                       'currency',    'monthly_expenses', 11, '{"currency_code":"CAD"}'),
-	('exp_transportation',  'Transportation',             'currency',    'monthly_expenses', 12, '{"currency_code":"CAD"}'),
-	('exp_utilities',       'Utilities',                  'currency',    'monthly_expenses', 13, '{"currency_code":"CAD"}'),
-	('exp_internet',        'Internet',                   'currency',    'monthly_expenses', 14, '{"currency_code":"CAD"}'),
-	('exp_mobile',          'Mobile plan',                'currency',    'monthly_expenses', 15, '{"currency_code":"CAD"}'),
-	('exp_entertainment',   'Entertainment',              'currency',    'monthly_expenses', 16, '{"currency_code":"CAD"}'),
-	('exp_health',          'Health insurance',           'currency',    'monthly_expenses', 17, '{"currency_code":"CAD"}'),
-	('qf_currency',         'Currency',                   'text',        'quick_facts',      20, NULL),
-	('qf_monthly_cost',     'Average monthly cost',       'currency',    'quick_facts',      21, '{"currency_code":"CAD"}'),
+	('family_total',        'Family of 4 (monthly)',      'price_range', 'summary',          2,  NULL),
+	('exp_accommodation',   'Accommodation',              'currency',    'monthly_expenses', 10, NULL),
+	('exp_food',            'Food',                       'currency',    'monthly_expenses', 11, NULL),
+	('exp_transportation',  'Transportation',             'currency',    'monthly_expenses', 12, NULL),
+	('exp_utilities',       'Utilities',                  'currency',    'monthly_expenses', 13, NULL),
+	('exp_internet',        'Internet',                   'currency',    'monthly_expenses', 14, NULL),
+	('exp_mobile',          'Mobile plan',                'currency',    'monthly_expenses', 15, NULL),
+	('exp_entertainment',   'Entertainment',              'currency',    'monthly_expenses', 16, NULL),
+	('exp_health',          'Health insurance',           'currency',    'monthly_expenses', 17, NULL),
+	('qf_currency',         'Currency',                   'text',        'quick_facts',      20, '{"default_source":"space_currency"}'),
+	('qf_monthly_cost',     'Average monthly cost',       'currency',    'quick_facts',      21, NULL),
 	('qf_population',       'Population (2024)',          'text',        'quick_facts',      22, NULL),
 	('qf_best_for',         'Best for',                   'text',        'quick_facts',      23, NULL)
 ) AS v(key, label, ftype, sec, pos, opts)
@@ -76,15 +76,15 @@ WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_country_cost_of
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
 SELECT g.id, v.key, v.label, v.ftype, v.sec, v.pos, v.opts::jsonb
 FROM g, (VALUES
-	('exp_accommodation',   'Accommodation',      'price_range', 'monthly_expenses', 1, '{"currency_code":"CAD"}'),
-	('exp_food',            'Food',               'price_range', 'monthly_expenses', 2, '{"currency_code":"CAD"}'),
-	('exp_transportation',  'Transportation',     'price_range', 'monthly_expenses', 3, '{"currency_code":"CAD"}'),
-	('exp_utilities',       'Utilities',          'price_range', 'monthly_expenses', 4, '{"currency_code":"CAD"}'),
-	('exp_internet',        'Internet',           'price_range', 'monthly_expenses', 5, '{"currency_code":"CAD"}'),
-	('exp_mobile',          'Mobile plan',        'price_range', 'monthly_expenses', 6, '{"currency_code":"CAD"}'),
-	('exp_entertainment',   'Entertainment',      'price_range', 'monthly_expenses', 7, '{"currency_code":"CAD"}'),
-	('exp_health',          'Health insurance',   'price_range', 'monthly_expenses', 8, '{"currency_code":"CAD"}'),
-	('qf_currency',         'Currency',           'text',        'quick_facts',      20, NULL),
+	('exp_accommodation',   'Accommodation',      'price_range', 'monthly_expenses', 1, NULL),
+	('exp_food',            'Food',               'price_range', 'monthly_expenses', 2, NULL),
+	('exp_transportation',  'Transportation',     'price_range', 'monthly_expenses', 3, NULL),
+	('exp_utilities',       'Utilities',          'price_range', 'monthly_expenses', 4, NULL),
+	('exp_internet',        'Internet',           'price_range', 'monthly_expenses', 5, NULL),
+	('exp_mobile',          'Mobile plan',        'price_range', 'monthly_expenses', 6, NULL),
+	('exp_entertainment',   'Entertainment',      'price_range', 'monthly_expenses', 7, NULL),
+	('exp_health',          'Health insurance',   'price_range', 'monthly_expenses', 8, NULL),
+	('qf_currency',         'Currency',           'text',        'quick_facts',      20, '{"default_source":"space_currency"}'),
 	('qf_monthly_range',    'Average monthly cost', 'text',      'quick_facts',      21, NULL),
 	('qf_best_for',         'Best for',           'text',        'quick_facts',      22, NULL)
 ) AS v(key, label, ftype, sec, pos, opts)
@@ -101,8 +101,8 @@ WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_prices')
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
 SELECT g.id, v.key, v.label, v.ftype, v.sec, v.pos, v.opts::jsonb
 FROM g, (VALUES
-	('qf_currency',      'Currency',              'text',     'quick_facts', 20, NULL),
-	('qf_monthly_cost',  'Average monthly cost',  'currency', 'quick_facts', 21, '{"currency_code":"CAD"}'),
+	('qf_currency',      'Currency',              'text',     'quick_facts', 20, '{"default_source":"space_currency"}'),
+	('qf_monthly_cost',  'Average monthly cost',  'currency', 'quick_facts', 21, NULL),
 	('qf_population',    'Population (2024)',     'text',     'quick_facts', 22, NULL),
 	('qf_best_for',      'Best for',              'text',     'quick_facts', 23, NULL)
 ) AS v(key, label, ftype, sec, pos, opts)
@@ -114,7 +114,7 @@ SET label = EXCLUDED.label, field_type = EXCLUDED.field_type,
 -- Food & Groceries topic group (image: Item | Average Price | Range).
 WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_prices_food_groceries')
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
-SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, '{"currency_code":"CAD"}'::jsonb
+SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, NULL
 FROM g, (VALUES
 	('milk_1l',       'Milk (1L)',                1),
 	('bread_500g',    'Bread (500g)',             2),
@@ -135,7 +135,7 @@ SET label = EXCLUDED.label, field_type = EXCLUDED.field_type,
 -- Restaurants topic group.
 WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_prices_restaurants')
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
-SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, '{"currency_code":"CAD"}'::jsonb
+SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, NULL
 FROM g, (VALUES
 	('meal_inexpensive',   'Inexpensive meal',            1),
 	('meal_two_midrange',  'Mid-range meal for two',      2),
@@ -152,7 +152,7 @@ SET label = EXCLUDED.label, field_type = EXCLUDED.field_type,
 -- Utilities topic group.
 WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_prices_utilities')
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
-SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, '{"currency_code":"CAD"}'::jsonb
+SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, NULL
 FROM g, (VALUES
 	('utilities_85sqm',  'Basic utilities (85m² apartment)', 1),
 	('internet_60',      'Internet (60 Mbps+)',              2),
@@ -166,7 +166,7 @@ SET label = EXCLUDED.label, field_type = EXCLUDED.field_type,
 -- Lifestyle topic group.
 WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_prices_lifestyle')
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
-SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, '{"currency_code":"CAD"}'::jsonb
+SELECT g.id, v.key, v.label, 'price_range', NULL, v.pos, NULL
 FROM g, (VALUES
 	('gym_monthly',      'Gym membership (1 month)', 1),
 	('movie_ticket',     'Movie ticket',             2),
@@ -188,52 +188,52 @@ SELECT g.id, v.key, v.label, 'price_parts', v.sec, v.pos, v.opts::jsonb
 FROM g, (VALUES
 	-- Public Transportation (TTC)
 	('ttc_oneway_adult',    'One-way Ticket (Adult)',   'ttc', 1,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('ttc_day_pass',        'One-day Pass',             'ttc', 2,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('ttc_weekly_pass',     'Weekly Pass',              'ttc', 3,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('ttc_monthly_adult',   'Monthly Pass (Adult)',     'ttc', 4,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('ttc_monthly_student', 'Monthly Pass (Student)',   'ttc', 5,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('ttc_monthly_senior',  'Monthly Pass (Senior)',    'ttc', 6,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('ttc_presto_card',     'PRESTO Card',              'ttc', 7,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	-- Taxis & Rideshare
 	('taxi_traditional',    'Taxi (Traditional)',       'taxis', 10,
-		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km","currency_code":"CAD"}'),
+		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km"}'),
 	('taxi_uberx',          'UberX',                    'taxis', 11,
-		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km","currency_code":"CAD"}'),
+		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km"}'),
 	('taxi_uberxl',         'UberXL',                   'taxis', 12,
-		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km","currency_code":"CAD"}'),
+		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km"}'),
 	('taxi_lyft',           'Lyft',                     'taxis', 13,
-		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km","currency_code":"CAD"}'),
+		'{"parts":[{"key":"base_fare","label":"Base Fare","kind":"money"},{"key":"per_km","label":"Price per km","kind":"money"},{"key":"per_min","label":"Price per min","kind":"money"},{"key":"minimum","label":"Minimum Fare","kind":"money"}],"primary_part":"per_km"}'),
 	-- Car Ownership (Monthly Costs) — the total row is emphasized.
 	('car_loan',            'Car Loan Payment',         'car_ownership', 20,
-		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","currency_code":"CAD"}'),
+		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min"}'),
 	('car_insurance',       'Insurance',                'car_ownership', 21,
-		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","currency_code":"CAD"}'),
+		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min"}'),
 	('car_fuel',            'Fuel',                     'car_ownership', 22,
-		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","currency_code":"CAD"}'),
+		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min"}'),
 	('car_parking',         'Parking',                  'car_ownership', 23,
-		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","currency_code":"CAD"}'),
+		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min"}'),
 	('car_maintenance',     'Maintenance & Repairs',    'car_ownership', 24,
-		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","currency_code":"CAD"}'),
+		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min"}'),
 	('car_other',           'Other Costs (wash, etc.)', 'car_ownership', 25,
-		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","currency_code":"CAD"}'),
+		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min"}'),
 	('car_total',           'Total Estimated Monthly Cost', 'car_ownership', 26,
-		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","currency_code":"CAD","emphasize":true}'),
+		'{"parts":[{"key":"monthly_min","label":"Monthly (min)","kind":"money"},{"key":"monthly_max","label":"Monthly (max)","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"monthly_min","emphasize":true}'),
 	-- Biking & Micromobility
 	('bike_single',         'Bike Share Toronto (Single Ride)',    'biking', 30,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('bike_day_pass',       'Bike Share Toronto (24-Hour Pass)',   'biking', 31,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('escooter',            'Electric Scooter (Bird/Lime)',        'biking', 32,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}'),
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}'),
 	('ebike_monthly',       'Monthly E-bike Rental',               'biking', 33,
-		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price","currency_code":"CAD"}')
+		'{"parts":[{"key":"price","label":"Price","kind":"money"},{"key":"details","label":"Details","kind":"text"}],"primary_part":"price"}')
 ) AS v(key, label, sec, pos, opts)
 ON CONFLICT (group_id, key) DO UPDATE
 SET label = EXCLUDED.label, field_type = 'price_parts',
@@ -245,8 +245,8 @@ WITH g AS (SELECT id FROM custom_field_groups WHERE slug = 'wiki_city_prices_tra
 INSERT INTO custom_fields (group_id, key, label, field_type, section, position, options)
 SELECT g.id, v.key, v.label, v.ftype, 'quick_facts', v.pos, v.opts::jsonb
 FROM g, (VALUES
-	('qf_currency',        'Currency',                    'text',     40, NULL),
-	('qf_transit_monthly', 'Typical monthly transit cost','currency', 41, '{"currency_code":"CAD"}'),
+	('qf_currency',        'Currency',                    'text',     40, '{"default_source":"space_currency"}'),
+	('qf_transit_monthly', 'Typical monthly transit cost','currency', 41, NULL),
 	('qf_popular_transit', 'Most popular transit',        'text',     42, NULL),
 	('qf_best_for',        'Best for',                    'text',     43, NULL)
 ) AS v(key, label, ftype, pos, opts)

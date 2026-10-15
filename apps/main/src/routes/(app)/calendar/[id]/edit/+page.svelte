@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Ref: japaconnect-engineering/sections/35-calendar.md
+	// Ref: japaconnect-engineering/sections/86-community-calendar.md
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
@@ -10,6 +10,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
 	import type { CalendarCategory, CalendarEntry } from '$lib/types';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
@@ -109,15 +110,24 @@
 		}
 	}
 
+	// ADR-064 curated markets (public settings) — pinned first in the
+	// country pickers; every seeded country stays selectable.
+	const destCountries = $derived(
+		pinMarketsFirst(data.countries ?? [], destinationMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+	const originCountries = $derived(
+		pinMarketsFirst(data.countries ?? [], originMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('common.all_countries', 'All countries');
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...destCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = (data.countries ?? []).filter(
+		const filtered = destCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
@@ -135,10 +145,10 @@
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...originCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = (data.countries ?? []).filter(
+		const filtered = originCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
@@ -162,7 +172,7 @@
 	<meta property="og:url" content={page.url.href} />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-2xl">
+<div class="mx-auto w-full max-w-2xl pb-24">
 	<div class="mx-4 border-b border-[var(--color-border)] px-4 py-3">
 		<h1 class="flex items-center gap-2 text-lg font-semibold text-[var(--color-text)]">
 			<CalendarIcon size={20} /> {t('calendar.edit_heading', 'Edit Calendar Entry')}

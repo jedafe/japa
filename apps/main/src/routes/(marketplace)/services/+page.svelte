@@ -30,6 +30,7 @@
 	import CategoryPills from '$lib/components/marketplace/CategoryPills.svelte';
 	import ServiceCard from '$lib/components/marketplace/ServiceCard.svelte';
 	import { bookingsInboxEnabled } from '$lib/features';
+	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type { ServiceListing, Space } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -148,6 +149,12 @@
 
 	const selectedCityLabel = $derived(cityInput ? cityLabelInput || cityInput : null);
 
+	// ADR-064 curated markets (public settings) — pinned first; every
+	// seeded country stays selectable (pin-first, not restricted).
+	const destCountries = $derived(
+		pinMarketsFirst(data.countries ?? [], destinationMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('services.filter_dest', 'All countries');
 		const query = q.toLowerCase().trim();
@@ -155,11 +162,11 @@
 		if (query === '') {
 			return Promise.resolve([
 				allItem,
-				...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))
+				...destCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))
 			]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = (data.countries ?? []).filter(
+		const filtered = destCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));

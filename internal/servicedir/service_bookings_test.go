@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -341,6 +342,10 @@ type fakeDMCreator struct{ pairs [][2]pgtype.UUID }
 func (f *fakeDMCreator) GetOrCreateConversation(_ context.Context, a, b pgtype.UUID) (gen.DmConversation, error) {
 	f.pairs = append(f.pairs, [2]pgtype.UUID{a, b})
 	return gen.DmConversation{}, nil
+}
+
+func (f *fakeDMCreator) GetConversationByParticipants(_ context.Context, _, _ pgtype.UUID) (gen.DmConversation, error) {
+	return gen.DmConversation{}, pgx.ErrNoRows
 }
 
 // liveDB returns a real Postgres-backed *db.DB, or skips the test when

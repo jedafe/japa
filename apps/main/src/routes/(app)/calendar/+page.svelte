@@ -15,18 +15,19 @@
 		BookmarkCheck,
 		Bell,
 		BellOff,
-		RefreshCw,
 		AlertTriangle,
 		Loader2,
 		X,
-			Repeat
+		ChevronLeft,
+		ChevronRight,
+		Repeat
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { ListPageBar, UrlTabs, type UrlTab, FilterToggle, PageAction } from '$lib/components/ui';
 	import { staticAutocompleteFetcher } from '$lib/autocomplete';
 	import type { CalendarEntry, CalendarCategory } from '$lib/types';
 	import type { PageData } from './$types';
-import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
 
@@ -78,23 +79,39 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	const authed = $derived(data.authed);
 	const currentView = $derived(data.filters.view);
+	const focus = $derived(data.filters.focus);
 
-	// Client-side save/unsave state.
-	const baseSavedIds = $derived(new Set(data.entries.filter((e) => e.is_saved).map((e) => e.id)));
+	// ── Save state ──────────────────────────────────────────────────────────
+	// Entries fetched client-side (Load more) merge with the SSR page data.
+	let extraEntries = $state<CalendarEntry[]>([]);
+	const allEntries = $derived([...data.entries, ...extraEntries]);
+
+	const baseSavedIds = $derived(new Set(allEntries.filter((e) => e.is_saved).map((e) => e.id)));
 	let savedOverrides = $state<Record<string, boolean>>({});
-	const savedIds = $derived(
-		new Set([...baseSavedIds, ...Object.entries(savedOverrides).filter(([, v]) => v).map(([k]) => k)])
-	);
+	const savedIds = $derived.by(() => {
+		const s = new Set(baseSavedIds);
+		for (const [k, v] of Object.entries(savedOverrides)) {
+			if (v) s.add(k);
+			else s.delete(k);
+		}
+		return s;
+	});
 	let savingId = $state<string | null>(null);
+	let actionError = $state('');
 
 	$effect(() => {
 		data.entries;
 		savedOverrides = {};
+		extraEntries = [];
 	});
 
-	// Client-side subscribe state.
-	let subscribed = $state(false);
+	// ── Subscribe state — seeded from the list response (meta.subscribed). ──
+	let subscribed = $state(untrack(() => data.subscribed));
 	let subscribeLoading = $state(false);
+
+	$effect(() => {
+		subscribed = data.subscribed;
+	});
 
 	function buildParams(overrides: Record<string, string> = {}): URLSearchParams {
 		const params = new URLSearchParams();
@@ -103,12 +120,13 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		const category = overrides.category ?? categoryInput;
 		const from = overrides.from ?? fromInput;
 		const to = overrides.to ?? toInput;
-		if (view && view !== 'list') params.set('view', view);
-		else if (view === 'list') params.set('view', 'list');
+		const focusV = overrides.focus ?? focus;
+		if (view) params.set('view', view);
 		if (dest) params.set('dest', dest);
 		if (category) params.set('category', category);
-		if (from) params.set('from', from);
-		if (to) params.set('to', to);
+		if (from && view === 'list') params.set('from', from);
+		if (to && view === 'list') params.set('to', to);
+		if (view !== 'list' && focusV) params.set('focus', focusV);
 		return params;
 	}
 
@@ -144,38 +162,59 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	async function toggleSave(entry: CalendarEntry) {
 		if (!authed) return;
 		savingId = entry.id;
-		try {
-			if (savedIds.has(entry.id)) {
-				await api.delete(`/calendar/${entry.id}/save`);
-				savedOverrides = { ...savedOverrides, [entry.id]: false };
-			} else {
-				await api.post(`/calendar/${entry.id}/save`);
-				savedOverrides = { ...savedOverrides, [entry.id]: true };
-			}
-		} finally {
-			savingId = null;
+		actionError = '';
+		const next = !savedIds.has(entry.id);
+		const res = next
+			? await api.post(`/calendar/${entry.id}/save`)
+			: await api.delete(`/calendar/${entry.id}/save`);
+		// Only apply the optimistic state when the API confirmed — the api
+		// client never throws, so res.error must be checked explicitly.
+		if (res.error) {
+			actionError = res.error.message;
+		} else {
+			savedOverrides = { ...savedOverrides, [entry.id]: next };
 		}
+		savingId = null;
 	}
 
 	async function toggleSubscribe() {
-		if (!authed) return;
+		if (!authed || !data.filters.dest || subscribeLoading) return;
 		subscribeLoading = true;
-		try {
-			if (subscribed) {
-				await api.delete('/calendar/subscribe', {
-					destination_space_id: destInput || undefined,
-					category: categoryInput || undefined
-				});
-				subscribed = false;
-			} else {
-				await api.post('/calendar/subscribe', {
-					destination_space_id: destInput || undefined,
-					category: categoryInput || undefined
-				});
-				subscribed = true;
-			}
-		} finally {
-			subscribeLoading = false;
+		actionError = '';
+		const body = {
+			destination_space_id: data.filters.dest,
+			category: data.filters.category || undefined
+		};
+		const res = subscribed
+			? await api.delete('/calendar/subscribe', body)
+			: await api.post('/calendar/subscribe', body);
+		if (res.error) {
+			actionError = res.error.message;
+		} else {
+			subscribed = !subscribed;
+		}
+		subscribeLoading = false;
+	}
+
+	// ── Load more (offset pagination) ───────────────────────────────────────
+	const hasMore = $derived(
+		(data.meta?.total ?? 0) > allEntries.length && allEntries.length >= data.pageSize
+	);
+	let loadingMore = $state(false);
+
+	async function loadMore() {
+		if (loadingMore || !hasMore) return;
+		loadingMore = true;
+		const params = new URLSearchParams({ page_size: String(data.pageSize) });
+		params.set('page_offset', String(allEntries.length));
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (data.filters.category) params.set('category', data.filters.category);
+		if (data.rangeFrom) params.set('from', data.rangeFrom);
+		if (data.rangeTo) params.set('to', data.rangeTo);
+		const res = await api.get<CalendarEntry[]>(`/calendar?${params.toString()}`);
+		loadingMore = false;
+		if (res.data?.length) {
+			extraEntries = [...extraEntries, ...res.data];
 		}
 	}
 
@@ -211,6 +250,7 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	function fmtDay(iso: string): string {
 		try {
 			return new Date(iso).toLocaleDateString(undefined, {
+				weekday: 'short',
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric'
@@ -220,19 +260,118 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 		}
 	}
 
-	// Month view: group entries by their occurs_at day.
-	// BUG-019: use $derived.by() so dependencies are tracked when the
-	// function body runs, not when the function is created.
-	const monthGroups = $derived.by(() => {
-		const groups = new Map<string, CalendarEntry[]>();
-		for (const e of data.entries) {
-			const key = fmtDay(e.occurs_at);
-			const arr = groups.get(key) ?? [];
-			arr.push(e);
-			groups.set(key, arr);
+	// ── Date helpers for month/week views ───────────────────────────────────
+	function dayKey(iso: string): string {
+		const d = new Date(iso);
+		if (isNaN(d.getTime())) return '';
+		const pad = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+	}
+
+	// Entries indexed by local calendar day. Multi-day entries appear on every
+	// covered day (span capped at 62 days to bound rendering).
+	const entriesByDay = $derived.by(() => {
+		const map = new Map<string, CalendarEntry[]>();
+		for (const e of allEntries) {
+			const start = new Date(e.occurs_at);
+			if (isNaN(start.getTime())) continue;
+			const end = e.ends_at ? new Date(e.ends_at) : start;
+			const days = Math.min(
+				62,
+				Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+			);
+			for (let i = 0; i < days; i++) {
+				const d = new Date(start.getTime() + i * 86400000);
+				const pad = (n: number) => String(n).padStart(2, '0');
+				const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+				const arr = map.get(key) ?? [];
+				arr.push(e);
+				map.set(key, arr);
+			}
 		}
-		return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+		return map;
 	});
+
+	// Sorted day list for grouped (month-list) rendering — chronological.
+	const dayGroups = $derived(
+		Array.from(entriesByDay.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+	);
+
+	// ── Month grid model ────────────────────────────────────────────────────
+	const monthLabel = $derived(
+		focus
+			? new Date(`${focus}-01T00:00:00`).toLocaleDateString(undefined, {
+					year: 'numeric',
+					month: 'long'
+				})
+			: ''
+	);
+
+	const monthWeeks = $derived.by(() => {
+		if (currentView !== 'month' || !focus) return [];
+		const [y, m] = focus.split('-').map(Number);
+		const first = new Date(y, m - 1, 1);
+		const daysInMonth = new Date(y, m, 0).getDate();
+		const lead = (first.getDay() + 6) % 7; // Monday-first offset
+		const cells: { key: string; day: number; inMonth: boolean; isToday: boolean }[] = [];
+		const todayKey = dayKey(new Date().toISOString());
+		for (let i = 0; i < lead; i++) {
+			const d = new Date(y, m - 1, 1 - (lead - i));
+			cells.push({ key: dayKey(d.toISOString()), day: d.getDate(), inMonth: false, isToday: dayKey(d.toISOString()) === todayKey });
+		}
+		for (let d = 1; d <= daysInMonth; d++) {
+			const key = `${focus}-${String(d).padStart(2, '0')}`;
+			cells.push({ key, day: d, inMonth: true, isToday: key === todayKey });
+		}
+		const trailing = (7 - (cells.length % 7)) % 7;
+		for (let i = 1; i <= trailing; i++) {
+			const d = new Date(y, m, i);
+			cells.push({ key: dayKey(d.toISOString()), day: d.getDate(), inMonth: false, isToday: dayKey(d.toISOString()) === todayKey });
+		}
+		const weeks: typeof cells[] = [];
+		for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+		return weeks;
+	});
+
+	// ── Week model ──────────────────────────────────────────────────────────
+	const weekDays = $derived.by(() => {
+		if (currentView !== 'week' || !focus) return [];
+		const start = new Date(`${focus}T00:00:00`);
+		if (isNaN(start.getTime())) return [];
+		const todayKey = dayKey(new Date().toISOString());
+		return Array.from({ length: 7 }, (_, i) => {
+			const d = new Date(start.getTime() + i * 86400000);
+			const pad = (n: number) => String(n).padStart(2, '0');
+			const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+			return {
+				key,
+				day: d.getDate(),
+				name: d.toLocaleDateString(undefined, { weekday: 'short' }),
+				isToday: key === todayKey
+			};
+		});
+	});
+
+	const weekLabel = $derived(
+		weekDays.length === 7
+			? `${weekDays[0].name} ${weekDays[0].day} – ${weekDays[6].name} ${weekDays[6].day}`
+			: ''
+	);
+
+	function shiftFocus(dir: -1 | 1) {
+		if (currentView === 'month' && focus) {
+			const [y, m] = focus.split('-').map(Number);
+			const d = new Date(y, m - 1 + dir, 1);
+			const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+			navigate(buildParams({ focus: next }));
+		} else if (currentView === 'week' && focus) {
+			const d = new Date(`${focus}T00:00:00`);
+			d.setDate(d.getDate() + dir * 7);
+			const pad = (n: number) => String(n).padStart(2, '0');
+			const next = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+			navigate(buildParams({ focus: next }));
+		}
+	}
 
 	const jsonLd = $derived(
 		data.entries.length > 0
@@ -279,6 +418,12 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 	const selectedDestinationLabel = $derived(
 		destInput ? (data.countries ?? []).find((c) => c.id === destInput)?.name ?? null : null
 	);
+
+	const dayNames = $derived(
+		Array.from({ length: 7 }, (_, i) =>
+			new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(undefined, { weekday: 'short' })
+		)
+	);
 </script>
 
 <svelte:head>
@@ -311,7 +456,8 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				<button
 					type="button"
 					onclick={toggleSubscribe}
-					disabled={subscribeLoading}
+					disabled={subscribeLoading || !data.filters.dest}
+					title={data.filters.dest ? undefined : t('calendar.subscribe_needs_dest', 'Select a destination country to subscribe')}
 					class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
 				>
 					{#if subscribeLoading}
@@ -366,13 +512,14 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				onSelect={(item) => { categoryInput = item.id; applyFilters(); }}
 				onClear={() => { categoryInput = ''; applyFilters(); }}
 			/>
-			<div class="flex gap-2">
+			{#if currentView === 'list'}
+			<div class="flex min-w-0 gap-2">
 				<input
 					type="date"
 					placeholder={t('calendar.filter_from', 'From')}
 					value={fromInput}
 					onchange={(e) => { fromInput = e.currentTarget.value; applyFilters(); }}
-					class={inputClass}
+					class="{inputClass} min-w-0 flex-1"
 					aria-label={t('calendar.filter_from', 'From')}
 				/>
 				<input
@@ -380,10 +527,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					placeholder={t('calendar.filter_to', 'To')}
 					value={toInput}
 					onchange={(e) => { toInput = e.currentTarget.value; applyFilters(); }}
-					class={inputClass}
+					class="{inputClass} min-w-0 flex-1"
 					aria-label={t('calendar.filter_to', 'To')}
 				/>
 			</div>
+			{/if}
 		</form>
 		{#if hasActiveFilters}
 			<div class="mt-2">
@@ -399,13 +547,128 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 			</div>
 		{/if}
 
+		{#if actionError}
+			<p class="mb-3 rounded-[var(--radius)] bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+				{actionError}
+			</p>
+		{/if}
+
 		{#if data.loadError}
 			<EmptyState
 				icon={CalendarDays}
 				title={t('calendar.load_error', 'Could not load calendar')}
 				body={t('calendar.load_error_body', 'Please try again later.')}
 			/>
-		{:else if data.entries.length === 0}
+		{:else if currentView === 'month'}
+			<!-- Month view: real calendar grid for the focused month. -->
+			<div class="mb-3 flex items-center justify-between">
+				<button
+					type="button"
+					onclick={() => shiftFocus(-1)}
+					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+					aria-label={t('calendar.prev_month', 'Previous month')}
+				>
+					<ChevronLeft size={16} />
+				</button>
+				<h2 class="text-base font-semibold text-[var(--color-text)]">{monthLabel}</h2>
+				<button
+					type="button"
+					onclick={() => shiftFocus(1)}
+					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+					aria-label={t('calendar.next_month', 'Next month')}
+				>
+					<ChevronRight size={16} />
+				</button>
+			</div>
+			<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="grid min-w-[560px] grid-cols-7 border-b border-[var(--color-border)]">
+					{#each dayNames as d (d)}
+						<div class="px-2 py-1.5 text-center text-xs font-medium text-[var(--color-muted)]">{d}</div>
+					{/each}
+				</div>
+				{#each monthWeeks as week (week[0].key)}
+					<div class="grid min-w-[560px] grid-cols-7 divide-x divide-[var(--color-border)] border-b border-[var(--color-border)] last:border-b-0">
+						{#each week as cell (cell.key)}
+							{@const dayEntries = entriesByDay.get(cell.key) ?? []}
+							<div class="min-h-24 p-1.5 {cell.inMonth ? '' : 'bg-[var(--color-surface-subtle)]/50'}">
+								<div class="mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs {cell.isToday ? 'bg-[var(--color-primary)] font-semibold text-[var(--color-primary-contrast)]' : cell.inMonth ? 'text-[var(--color-text)]' : 'text-[var(--color-muted)]'}">
+									{cell.day}
+								</div>
+								<div class="space-y-0.5">
+									{#each dayEntries.slice(0, 3) as entry (entry.id)}
+										<a
+											href="/calendar/{entry.id}"
+											class="block truncate rounded px-1 py-0.5 text-[11px] font-medium transition-colors {isStale(entry) ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500/25' : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20'}"
+											title={entry.title}
+										>
+											{entry.title}
+										</a>
+									{/each}
+									{#if dayEntries.length > 3}
+										<a
+											href="/calendar?view=list&from={cell.key}&to={cell.key}{data.filters.dest ? `&dest=${data.filters.dest}` : ''}{data.filters.category ? `&category=${data.filters.category}` : ''}"
+											class="block px-1 text-[11px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+										>
+											+{dayEntries.length - 3} {t('calendar.more', 'more')}
+										</a>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/each}
+			</div>
+		{:else if currentView === 'week'}
+			<!-- Week view: 7-day strip for the focused week. -->
+			<div class="mb-3 flex items-center justify-between">
+				<button
+					type="button"
+					onclick={() => shiftFocus(-1)}
+					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+					aria-label={t('calendar.prev_week', 'Previous week')}
+				>
+					<ChevronLeft size={16} />
+				</button>
+				<h2 class="text-base font-semibold text-[var(--color-text)]">{weekLabel}</h2>
+				<button
+					type="button"
+					onclick={() => shiftFocus(1)}
+					class="grid h-8 w-8 place-items-center rounded-[var(--radius)] border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] hover:text-[var(--color-text)]"
+					aria-label={t('calendar.next_week', 'Next week')}
+				>
+					<ChevronRight size={16} />
+				</button>
+			</div>
+			<div class="overflow-x-auto rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
+				<div class="grid min-w-[560px] grid-cols-7 divide-x divide-[var(--color-border)]">
+					{#each weekDays as cell (cell.key)}
+						{@const dayEntries = entriesByDay.get(cell.key) ?? []}
+						<div class="min-h-32 p-1.5">
+							<div class="mb-1 text-center">
+								<div class="text-xs text-[var(--color-muted)]">{cell.name}</div>
+								<div class="mx-auto flex h-7 w-7 items-center justify-center rounded-full text-sm {cell.isToday ? 'bg-[var(--color-primary)] font-semibold text-[var(--color-primary-contrast)]' : 'text-[var(--color-text)]'}">
+									{cell.day}
+								</div>
+							</div>
+							<div class="space-y-1">
+								{#each dayEntries as entry (entry.id)}
+									<a
+										href="/calendar/{entry.id}"
+										class="block truncate rounded px-1.5 py-1 text-xs font-medium transition-colors {isStale(entry) ? 'bg-amber-500/15 text-amber-600 hover:bg-amber-500/25' : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20'}"
+										title={entry.title}
+									>
+										{entry.title}
+									</a>
+								{/each}
+								{#if dayEntries.length === 0}
+									<div class="py-2 text-center text-[11px] text-[var(--color-muted)]">—</div>
+								{/if}
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{:else if allEntries.length === 0}
 			<EmptyState
 				icon={CalendarDays}
 				title={t('calendar.empty', 'No calendar entries')}
@@ -414,45 +677,28 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 					? { label: t('calendar.submit_event', 'Submit Event'), href: '/calendar/new' }
 					: { label: t('calendar.submit_event', 'Submit Event'), href: '/login?redirect=/calendar/new' }}
 			/>
-		{:else if currentView === 'month'}
-			<!-- Month view: simple calendar grid grouped by date -->
-			<div class="space-y-3">
-				{#each monthGroups as [day, dayEntries] (day)}
-					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-						<div class="border-b border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-text)]">
-							{day}
-						</div>
-						<div class="divide-y divide-[var(--color-border)]">
-							{#each dayEntries as entry (entry.id)}
-								{@render entryRow(entry)}
-							{/each}
-						</div>
-					</div>
-				{/each}
-			</div>
-		{:else if currentView === 'week'}
-			<!-- Week view: same chronological grouping as month, simpler label -->
-			<div class="space-y-3">
-				{#each monthGroups as [day, dayEntries] (day)}
-					<div class="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-						<div class="border-b border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-text)]">
-							{day}
-						</div>
-						<div class="divide-y divide-[var(--color-border)]">
-							{#each dayEntries as entry (entry.id)}
-								{@render entryRow(entry)}
-							{/each}
-						</div>
-					</div>
-				{/each}
-			</div>
 		{:else}
 			<!-- List view: chronological list -->
 			<div class="divide-y divide-[var(--color-border)] rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-				{#each data.entries as entry (entry.id)}
+				{#each allEntries as entry (entry.id)}
 					{@render entryRow(entry)}
 				{/each}
 			</div>
+			{#if hasMore}
+				<div class="mt-3 flex justify-center">
+					<button
+						type="button"
+						onclick={loadMore}
+						disabled={loadingMore}
+						class="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+					>
+						{#if loadingMore}
+							<Loader2 size={14} class="animate-spin" />
+						{/if}
+						{t('calendar.load_more', 'Load more')}
+					</button>
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>
@@ -477,6 +723,11 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 				{#if entry.ends_at}
 					<span class="inline-flex items-center gap-1">
 						→ {fmtDate(entry.ends_at)}
+					</span>
+				{/if}
+				{#if entry.destination_space_name}
+					<span class="inline-flex items-center gap-1">
+						{entry.destination_space_name}
 					</span>
 				{/if}
 

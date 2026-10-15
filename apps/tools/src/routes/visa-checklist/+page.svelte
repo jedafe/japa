@@ -13,6 +13,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type {
 		ChecklistSelector,
 		ChecklistGuide,
@@ -34,8 +35,18 @@
 	let guide = $state<ChecklistGuide | null>(untrack(() => data.guide));
 	let progress = $state<ChecklistProgress | null>(untrack(() => data.progress));
 	let user = $state(untrack(() => data.user));
-	let originOptions = $state(untrack(() => data.origins));
-	let destinationOptions = $state(untrack(() => data.destinations));
+	// ADR-064 curated markets (public settings) — pinned first; every
+	// seeded country stays selectable (pin-first, not restricted).
+	let originOptions = $state(
+		untrack(() =>
+			pinMarketsFirst(data.origins, originMarkets(data.siteSettings), (o) => o.code ?? '')
+		)
+	);
+	let destinationOptions = $state(
+		untrack(() =>
+			pinMarketsFirst(data.destinations, destinationMarkets(data.siteSettings), (o) => o.code ?? '')
+		)
+	);
 
 	// Selector state
 	let selectedOrigin = $state<string>('');

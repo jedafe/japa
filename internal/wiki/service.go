@@ -141,6 +141,9 @@ type WikiPageDetailDTO struct {
 	// (§58 "Country → currency linkage") — the display fallback for
 	// currency/price_range fields that don't declare {currency_code}.
 	SpaceCurrencyCode string `json:"space_currency_code,omitempty"`
+	// SpaceCurrencyFx carries the local→fx-base display rate for "(base)"
+	// equivalents on money fields (§58 + §112); nil when unavailable.
+	SpaceCurrencyFx *CurrencyFxDTO `json:"space_currency_fx,omitempty"`
 	// Helpful is the page's aggregated "Was this page helpful?" votes plus
 	// the viewer's own (§80 Reader UX). Nil on lazy pages — no wiki_pages
 	// row exists to hold votes.
@@ -350,6 +353,46 @@ type Service struct {
 	perms            permissionChecker     // per-op RBAC node checks
 	media            mediaURLResolver      // destination logo_url resolution (§80 Reader UX)
 	rag              ragIndexer            // lifecycle-driven embedding sync (§69/ADR-069)
+	fxRates          FxRateProvider        // §112 display base rates for "(base)" equivalents
+}
+
+// FxRateProvider is the narrow slice of *fx.Service the wiki read path
+// needs — injected via SetFxRateProvider so a missing FX subsystem
+// degrades to local-currency-only display.
+type FxRateProvider interface {
+	BaseRate(ctx context.Context, quote string) (rate float64, base string, fetchedAt time.Time, stale bool, err error)
+}
+
+// SetFxRateProvider injects the FX rate source for currency equivalent
+// display. Nil disables equivalents — fields render local-only.
+func (s *Service) SetFxRateProvider(p FxRateProvider) { s.fxRates = p }
+
+// CurrencyFxDTO carries the host space's local→base display rate so
+// money fields can render "(base)" equivalents. Nil when FX is disabled,
+// the currency didn't resolve, or the matrix lacks coverage.
+type CurrencyFxDTO struct {
+	Base      string  `json:"base"`       // fx.default_base_currency (e.g. "USD")
+	Rate      float64 `json:"rate"`       // local units per 1 base unit
+	FetchedAt string  `json:"fetched_at"` // RFC3339
+	Stale     bool    `json:"stale"`
+}
+
+// currencyFx builds the page/entity FX context for a resolved local code.
+// Nil on any failure — display degrades to local-only, never errors.
+func (s *Service) currencyFx(ctx context.Context, localCode string) *CurrencyFxDTO {
+	if s.fxRates == nil || localCode == "" {
+		return nil
+	}
+	rate, base, fetchedAt, stale, err := s.fxRates.BaseRate(ctx, localCode)
+	if err != nil {
+		return nil
+	}
+	return &CurrencyFxDTO{
+		Base:      base,
+		Rate:      rate,
+		FetchedAt: fetchedAt.UTC().Format(time.RFC3339),
+		Stale:     stale,
+	}
 }
 
 // mediaURLResolver is the subset of media.Service used to resolve a space's
@@ -796,6 +839,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 			lazy, lerr := s.getLazyPage(ctx, userID, spaceID, spaceSlug, spaceName, pageSlug)
 			if lerr == nil {
 				lazy.SpaceCurrencyCode = spaceCurrency
+				lazy.SpaceCurrencyFx = s.currencyFx(ctx, spaceCurrency)
 			}
 			return lazy, lerr
 		}
@@ -808,6 +852,7 @@ func (s *Service) GetWikiPage(ctx context.Context, userID pgtype.UUID, spaceSlug
 		SpaceSlug:         page.SpaceSlug,
 		SpaceName:         page.SpaceName,
 		SpaceCurrencyCode: spaceCurrency,
+		SpaceCurrencyFx:   s.currencyFx(ctx, spaceCurrency),
 	}
 
 	// Fetch the current approved revision.

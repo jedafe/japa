@@ -175,6 +175,24 @@ func CurrencyCodeFromOptions(options []byte) string {
 	return o.CurrencyCode
 }
 
+// DefaultSourceFromOptions extracts a field's read-time default source
+// ({"default_source":"space_currency"}) — currently the only supported
+// value is "space_currency": an empty text value renders the entity's
+// resolved country currency name instead of blank. Empty when the field
+// declares none or the JSON is malformed.
+func DefaultSourceFromOptions(options []byte) string {
+	if len(options) == 0 {
+		return ""
+	}
+	var o struct {
+		DefaultSource string `json:"default_source"`
+	}
+	if err := json.Unmarshal(options, &o); err != nil {
+		return ""
+	}
+	return o.DefaultSource
+}
+
 // ComputedFieldSource is one source field in a computed spec — a group
 // slug + field key pair whose stored cfv contributes one scalar to the
 // aggregate (§80 page rollup amendment).

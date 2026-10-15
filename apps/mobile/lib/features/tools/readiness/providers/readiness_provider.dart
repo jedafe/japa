@@ -30,9 +30,49 @@ final readinessJourneyOptionsProvider =
   return service.getJourneyOptions();
 });
 
-/// Country option list from the canonical Spaces directory.
+/// Country option list from the canonical Spaces directory, reordered so
+/// the configured origin/destination markets (ADR-064, public settings)
+/// come first. Every country remains selectable — pin-first, not restricted.
 final readinessCountryOptionsProvider =
     FutureProvider.autoDispose<List<dynamic>>((ref) async {
   final service = ref.watch(readinessServiceProvider);
-  return service.getCountries();
+  final countries = await service.getCountries();
+
+  Map<String, dynamic> settings;
+  try {
+    settings = await service.getPublicSettings();
+  } catch (_) {
+    settings = const {};
+  }
+
+  final markets = <String>{
+    ..._parseCountryCsv(settings['geo_personalization.origin_markets']),
+    ..._parseCountryCsv(settings['geo_personalization.destination_markets']),
+  };
+  if (markets.isEmpty) return countries;
+
+  String codeOf(dynamic c) =>
+      (c['geo_code'] ?? '').toString().toUpperCase();
+
+  final pinned = <dynamic>[
+    for (final c in countries)
+      if (markets.contains(codeOf(c))) c,
+  ];
+  pinned.sort((a, b) => codeOf(a).compareTo(codeOf(b)));
+
+  final rest = <dynamic>[
+    for (final c in countries)
+      if (!markets.contains(codeOf(c))) c,
+  ];
+
+  return [...pinned, ...rest];
 });
+
+List<String> _parseCountryCsv(dynamic raw) {
+  if (raw is! String) return const [];
+  return raw
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .where((s) => s.length == 2)
+      .toList();
+}

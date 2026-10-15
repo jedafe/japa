@@ -670,6 +670,7 @@
 							rollup={data.page.rollup}
 							spaceName={spaceName}
 							contextCurrency={data.page.space_currency_code ?? ''}
+							contextFx={data.page.space_currency_fx}
 						/>
 					{/if}
 					{#if data.page.directory}
@@ -680,6 +681,7 @@
 							<WikiItemTables
 								group={data.page.fields}
 								contextCurrency={data.page.space_currency_code ?? ''}
+								contextFx={data.page.space_currency_fx}
 								activeSection={data.section || undefined}
 								allHref="/wiki/{encodeURIComponent(data.spaceSlug)}/{encodeURIComponent(
 									data.pageSlug

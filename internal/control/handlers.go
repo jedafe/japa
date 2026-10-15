@@ -3809,6 +3809,48 @@ func (h *Handlers) DisableExtension(w http.ResponseWriter, r *http.Request) {
 	h.setExtensionEnabled(w, r, false)
 }
 
+// DeleteExtension handles DELETE /control/extensions/{key}. Removes the
+// stored feature_flags row — the key reverts to its Registry default (or
+// disappears entirely for admin-created "Custom" keys). The config-change
+// hook fires with an empty config so roadmap sync unlinks the item.
+func (h *Handlers) DeleteExtension(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "Extension key is required")
+		return
+	}
+
+	if h.FeatureChecker == nil {
+		errpkg.WriteError(w, http.StatusServiceUnavailable, "flags_unavailable", "Feature flag store is not available")
+		return
+	}
+
+	exists, _, _, err := h.extensionKnown(r.Context(), key)
+	if err != nil {
+		h.writeExtensionReadErr(w, err, key)
+		return
+	}
+
+	if !exists {
+		errpkg.WriteError(w, http.StatusNotFound, "extension_not_found", "Unknown extension or tool")
+		return
+	}
+
+	before := h.snapshotFlag(r.Context(), key)
+	updatedBy := authUserFromContext(r)
+
+	if err := h.FeatureChecker.DeleteFlag(r.Context(), key); err != nil {
+		slog.Error("control: delete extension flag", "error", err, "key", key)
+		errpkg.WriteError(w, http.StatusInternalServerError, "internal_error", "Failed to delete extension")
+		return
+	}
+
+	h.auditFlagWrite(r.Context(), updatedBy, clientip.FromRequest(r), "feature_flag.delete", key,
+		before, &flagAuditSnapshot{})
+
+	errpkg.WriteJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"key": key, "status": "deleted"}})
+}
+
 // setExtensionEnabled backs the enable/disable endpoints. The flag key is
 // validated against the Registry ∪ feature_rows union (404 for unknown
 // keys), written via Checker.SetEnabled (which invalidates the flag cache

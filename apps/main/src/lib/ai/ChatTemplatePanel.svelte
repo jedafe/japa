@@ -894,7 +894,7 @@
 			</div>
 		</div>
 
-		<div class="min-h-0 flex-1 overflow-y-auto" onscroll={closeMenus}>
+		<div class="min-h-0 flex-1 overflow-y-auto pb-36 lg:pb-2" onscroll={closeMenus}>
 			{#if filteredTemplates.length > 0}
 				<ul class="p-2">
 					{#each sortedNodes(folderTree.roots) as node (node.path)}
@@ -923,7 +923,7 @@
 			{/if}
 		</div>
 
-		<div class="border-t border-[var(--color-border)] p-2.5">
+		<div class="border-t border-[var(--color-border)] p-2.5 pb-36 lg:pb-2.5">
 			<button
 				type="button"
 				onclick={newTemplate}
@@ -937,7 +937,7 @@
 			{/if}
 		</div>
 	{:else}
-		<div class="min-h-0 flex-1 overflow-y-auto">
+		<div class="min-h-0 flex-1 overflow-y-auto pb-36 lg:pb-2">
 		<Tabs.Root bind:value={editTab}>
 			<Tabs.List class="tpl-tabs">
 				<Tabs.Trigger value="prompt" class="tpl-tab">
@@ -1231,7 +1231,7 @@
 	</div>
 
 	<!-- Footer: attach toggle + insert + save -->
-	<div class="space-y-2 border-t border-[var(--color-border)] p-3">
+	<div class="space-y-2 border-t border-[var(--color-border)] p-3 pb-36 lg:pb-3">
 		<label class="tpl-toggle">
 			<input type="checkbox" bind:checked={active} />
 			{t('ai.templates.attach', 'Attach spec to every message')}
@@ -1290,12 +1290,12 @@
 			/>
 		</div>
 
-		<div class="flex gap-2">
+		<div class="flex min-w-0 gap-2">
 			<input
 				type="text"
 				bind:value={saveName}
 				maxlength="200"
-				class="tpl-input flex-1"
+				class="tpl-input min-w-0 flex-1"
 				placeholder={activeTemplate
 					? activeTemplate.name
 					: t('ai.templates.name_placeholder', 'Template name')}
@@ -1502,6 +1502,10 @@
 	}
 	.tpl-input {
 		width: 100%;
+		/* width:100% plus a flex item's auto min-width lets inputs overflow
+		   their container — allow them to shrink below the intrinsic
+		   size-attribute width. */
+		min-width: 0;
 		height: 2.125rem;
 		padding: 0 12px;
 		border: 1px solid var(--color-border);

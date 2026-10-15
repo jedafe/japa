@@ -64,14 +64,13 @@ export const load: PageServerLoad = async (event) => {
 	// values). Reuses the public settings already fetched in hooks.server.ts
 	// (event.locals.siteSettings) to avoid a redundant backend round-trip.
 	// Ref: §72 (Cost of Living), conventions/system-settings-catalog.md.
-	let maxCities = 3;
-	let staleDays = 180;
-	if (typeof settings['col_calculator.max_cities'] === 'number') {
-		maxCities = settings['col_calculator.max_cities'] as number;
-	}
-	if (typeof settings['col_calculator.stale_days'] === 'number') {
-		staleDays = settings['col_calculator.stale_days'] as number;
-	}
+	// Public settings serialise ints as JSON strings — coerce leniently.
+	const configuredMax = Number(settings['col_calculator.max_cities']);
+	const maxCities =
+		Number.isInteger(configuredMax) && configuredMax > 0 ? configuredMax : 3;
+	const configuredStale = Number(settings['col_calculator.stale_days']);
+	const staleDays =
+		Number.isInteger(configuredStale) && configuredStale > 0 ? configuredStale : 180;
 
 	return { enabled: true, tool, cities, matrix, preselected, preselectedBaseline, maxCities, staleDays };
 };

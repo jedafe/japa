@@ -622,5 +622,6 @@
 	"visa_routes.seo_title": "Visa Route Comparison — JapaConnect Tools",
 	"visa_routes.subtitle": "Compare visa routes side by side — eligibility, fees, path to PR, and renewal terms.",
 	"visa_routes.title": "Visa Route Comparison",
-	"visa_routes.view_source": "View"
+	"visa_routes.view_source": "View",
+	"col.fx_stale": "Exchange rates may be outdated — displayed conversions are indicative."
 }

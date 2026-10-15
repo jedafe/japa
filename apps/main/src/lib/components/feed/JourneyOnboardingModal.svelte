@@ -5,8 +5,10 @@
 	// via the JourneyContextBar.
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import { getFeedContext, getJourneyOptions, setFeedContext } from '$lib/api/journey';
 	import { journeyModal, JOURNEY_MODAL_DELAY_MS } from '$lib/stores/journey.svelte';
 	import type { GeoCountry, VisitorContextSummary } from '$lib/types';
@@ -99,23 +101,34 @@
 		return !c.destination_country;
 	}
 
-	function countryItems(): AutocompleteItem[] {
-		return countryList.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
+	// ADR-064 curated markets — pinned first in the pickers; every seeded
+	// country stays selectable (pin-first, not restricted).
+	const originPins = $derived(originMarkets(page.data.siteSettings));
+	const destinationPins = $derived(destinationMarkets(page.data.siteSettings));
+
+	function countryItems(list: GeoCountry[] = countryList): AutocompleteItem[] {
+		return list.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
 	}
 
-	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
-		const needle = q.toLowerCase().trim();
-		const filtered = needle
-			? countryList.filter(
-					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
-				)
-			: countryList;
-		return Promise.resolve(filtered.slice(0, 50).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code })));
+	function countryFetcherFor(markets: string[]): (q: string) => Promise<AutocompleteItem[]> {
+		return (q: string) => {
+			const needle = q.toLowerCase().trim();
+			const ordered = pinMarketsFirst(countryList, markets, (c) => c.geo_code);
+			const filtered = needle
+				? ordered.filter(
+						(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
+					)
+				: ordered;
+			return Promise.resolve(countryItems(filtered.slice(0, 50)));
+		};
 	}
 
-	function countryInitialFetcher(value: string): () => Promise<AutocompleteItem[]> {
+	function countryInitialFetcherFor(markets: string[], value: string): () => Promise<AutocompleteItem[]> {
 		return () => {
-			if (!value) return Promise.resolve(countryItems().slice(0, 8));
+			if (!value)
+				return Promise.resolve(
+					countryItems(pinMarketsFirst(countryList, markets, (c) => c.geo_code)).slice(0, 8)
+				);
 			const c = countryList.find((x) => x.geo_code === value);
 			return Promise.resolve([{ id: value, label: c?.name ?? value, sublabel: value }]);
 		};
@@ -282,8 +295,8 @@
 							<Autocomplete
 								placeholder={t('journey.banner.origin_placeholder', 'e.g. Nigeria')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}
-								fetcher={countryFetcher}
-								initialFetcher={countryInitialFetcher(origin)}
+								fetcher={countryFetcherFor(originPins)}
+								initialFetcher={countryInitialFetcherFor(originPins, origin)}
 								selectedId={origin}
 								selectedLabel={countryLabel(origin)}
 								onSelect={(item) => { origin = item.id; }}
@@ -295,8 +308,8 @@
 							<Autocomplete
 								placeholder={t('journey.banner.destination_placeholder', 'e.g. Canada')}
 								emptyMessage={t('create.journey.country_empty', 'No country found')}
-								fetcher={countryFetcher}
-								initialFetcher={countryInitialFetcher(destination)}
+								fetcher={countryFetcherFor(destinationPins)}
+								initialFetcher={countryInitialFetcherFor(destinationPins, destination)}
 								selectedId={destination}
 								selectedLabel={countryLabel(destination)}
 								onSelect={(item) => { destination = item.id; }}

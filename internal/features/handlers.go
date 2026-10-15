@@ -168,7 +168,7 @@ func (h *Handlers) HandleGetFeatureFlagDetails(w http.ResponseWriter, r *http.Re
 	details := make([]FeatureFlagDetail, 0, len(merged))
 
 	for _, row := range merged {
-		res := evalScoped(row.Key, effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+		res := evalScoped(row.Key, effectiveEnabled(h.checker.rolloutID(r.Context()), row.Key, row.Enabled, row.Config), row.Config, sc)
 
 		var cfg FlagConfig
 		if len(row.Config) > 0 {
@@ -231,7 +231,7 @@ func (h *Handlers) HandleGetFeatureFlagDetail(w http.ResponseWriter, r *http.Req
 	}
 
 	sc := h.checker.BuildScope(r, SurfaceFrom(r))
-	res := evalScoped(row.Key, effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+	res := evalScoped(row.Key, effectiveEnabled(h.checker.rolloutID(r.Context()), row.Key, row.Enabled, row.Config), row.Config, sc)
 
 	var cfg FlagConfig
 	if len(row.Config) > 0 {
@@ -453,6 +453,11 @@ func (h *Handlers) CreateFeatureFlag(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(input.Key)
 	if key == "" {
 		errpkg.WriteError(w, http.StatusBadRequest, "missing_key", "key is required")
+		return
+	}
+	if !ValidFlagKey(key) {
+		errpkg.WriteError(w, http.StatusBadRequest, "invalid_key",
+			"key must be lowercase segments joined by dots, e.g. feature.blog or domain.enabled")
 		return
 	}
 

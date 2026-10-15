@@ -14,6 +14,7 @@
 	import type { FeedItem, Story } from '$lib/types';
 	import type { GuideListItem } from '$lib/types/content';
 	import ContentGridCard from '$lib/components/feed/ContentGridCard.svelte';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -203,10 +204,10 @@
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...originCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = (data.countries ?? []).filter(
+		const filtered = originCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));
@@ -219,15 +220,24 @@
 		originInput ? (data.countries ?? []).find((c) => c.id === originInput)?.name ?? null : null
 	);
 
+	// ADR-064 curated markets (public settings) — pinned first in the
+	// country pickers; every seeded country stays selectable.
+	const destCountries = $derived(
+		pinMarketsFirst(data.countries ?? [], destinationMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+	const originCountries = $derived(
+		pinMarketsFirst(data.countries ?? [], originMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+
 	function fetchDestinationCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('stories.filter_dest_all', 'All destinations');
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...(data.countries ?? []).map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...destCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = (data.countries ?? []).filter(
+		const filtered = destCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));

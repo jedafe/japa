@@ -562,4 +562,10 @@
 	onOptimistic={applyExtPatch}
 	onRevert={applyExtPatch}
 	onSaved={handleExtSaved}
+	onDeleted={(key) => {
+		messageType = 'success';
+		message = t('extensions.deleted', 'Flag row deleted — reverted to default.');
+		setTimeout(() => { message = ''; messageType = ''; }, 3000);
+		load(true);
+	}}
 />

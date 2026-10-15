@@ -129,7 +129,7 @@
 	const contextCurrency = $derived(schema?.entity_currency_code ?? '');
 
 	function formatValue(f: WikiEntityField): string {
-		return formatWikiFieldValue(f, currencies, contextCurrency);
+		return formatWikiFieldValue(f, currencies, contextCurrency, schema?.entity_currency_fx);
 	}
 </script>
 

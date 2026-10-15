@@ -20,6 +20,7 @@
 	} from '$lib/components/ui';
 	import type { University } from '$lib/types';
 	import type { PageData } from './$types';
+	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -216,14 +217,20 @@
 	// Autocomplete fetchers — filter the canonical /geo/countries list client-side.
 	// The "All countries" option (id: '') is always included at the top; each
 	// item is keyed by the ISO geo_code used by the university catalog.
+	// ADR-064 curated markets (public settings) — pinned first; every
+	// seeded country stays selectable (pin-first, not restricted).
+	const uniCountries = $derived(
+		pinMarketsFirst(data.countries, destinationMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+
 	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...data.countries.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...uniCountries.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = data.countries.filter(
+		const filtered = uniCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));

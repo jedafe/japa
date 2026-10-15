@@ -145,6 +145,9 @@ export interface MatrixDimension {
 	/** ISO code for currency dimensions — from the source field's
 	 *  {currency_code} option (§58). Resolve via the active currency list. */
 	currency_code?: string;
+	/** §112 — true when value_rating was normalized to currency_code
+	 *  (the fx display base) from the item's local currency. */
+	normalized?: boolean;
 }
 
 export interface SelectionToken {

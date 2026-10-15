@@ -183,3 +183,28 @@ func (s *Store) AdminStats(ctx context.Context, typeID pgtype.UUID, offset, limi
 
 	return rows, nil
 }
+
+// SpaceCurrencyCodes resolves each geo space's country currency (§58
+// "Country → currency linkage") — one ancestor walk per space; the
+// calculator never exceeds maxCities+1 spaces so no batch query is
+// needed. Spaces without a resolvable currency are absent from the map.
+func (s *Store) SpaceCurrencyCodes(ctx context.Context, ids []pgtype.UUID) map[pgtype.UUID]string {
+	out := make(map[pgtype.UUID]string, len(ids))
+	for _, id := range ids {
+		if code, err := s.queries.GetSpaceCountryCurrencyCode(ctx, id); err == nil && code != nil && *code != "" {
+			out[id] = *code
+			continue
+		}
+		// Non-geo fallback (same chain as wiki.Store.ResolveSpaceCurrencyCode):
+		// spaces outside the geo chain carry the country ISO in geo_code.
+		space, err := s.queries.GetSpaceByID(ctx, id)
+		if err != nil || space.GeoCode == nil || *space.GeoCode == "" {
+			continue
+		}
+		country, err := s.queries.GetSpaceByGeoCode(ctx, space.GeoCode)
+		if err == nil && country.CurrencyCode != nil && *country.CurrencyCode != "" {
+			out[id] = *country.CurrencyCode
+		}
+	}
+	return out
+}

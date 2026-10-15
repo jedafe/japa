@@ -20,7 +20,7 @@
 	import { untrack } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { page } from '$app/state';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { api } from '$lib/api/client';
 	import { formatMoney } from '$lib/utils/currency';
 	import { safeSameOriginHref } from '$lib/utils/safeUrl';
@@ -254,6 +254,14 @@
 		declineNote = '';
 		cancelOpen = false;
 		cancelNote = '';
+		// §48/ADR-110 DM auto-open: a mentorship accept materializes the
+		// provider↔booker thread server-side and returns its id — land the
+		// mentor directly on the conversation instead of the refreshed inbox.
+		const dmId = res.data?.dm_conversation_id;
+		if (action === 'accept' && dmId && dmEnabled) {
+			await goto(`/messages?c=${encodeURIComponent(dmId)}`);
+			return;
+		}
 		await invalidateAll();
 	}
 
@@ -588,7 +596,9 @@
 			{/if}
 			{#if dmEnabled}
 				<a
-					href="/messages"
+					href={b.dm_conversation_id
+						? `/messages?c=${encodeURIComponent(b.dm_conversation_id)}`
+						: '/messages'}
 					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 				>{t('bookings.open_messages', 'Open messages')}</a>
 			{/if}

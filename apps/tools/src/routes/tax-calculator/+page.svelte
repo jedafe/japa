@@ -12,6 +12,7 @@
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type { TaxGuideWithAi, TaxTreaty, GeoSpaceOption, CatalogOption } from '$lib/types';
 
 	/**
@@ -126,16 +127,24 @@
 		}).filter((item) => item.action.length > 0);
 	}
 
-	function fetchDestinations(q: string): Promise<AutocompleteItem[]> {
-		const query = q.toLowerCase();
-		const filtered = query === ''
-			? destinations
-			: destinations.filter((d) => d.name.toLowerCase().includes(query));
-		return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+	// ADR-064 curated markets (public settings) — pinned first in the
+	// pickers; every seeded country stays selectable.
+	const originPins = $derived(originMarkets(data.siteSettings));
+	const destinationPins = $derived(destinationMarkets(data.siteSettings));
+
+	function fetchDestinationsFor(markets: string[]): (q: string) => Promise<AutocompleteItem[]> {
+		return (q: string) => {
+			const query = q.toLowerCase();
+			const ordered = pinMarketsFirst(destinations, markets, (d) => d.code ?? '');
+			const filtered = query === ''
+				? ordered
+				: ordered.filter((d) => d.name.toLowerCase().includes(query));
+			return Promise.resolve(filtered.map((d) => ({ id: d.id, label: d.name })));
+		};
 	}
 
-	function fetchDestinationsInitial(): Promise<AutocompleteItem[]> {
-		return fetchDestinations('');
+	function fetchDestinationsInitialFor(markets: string[]): () => Promise<AutocompleteItem[]> {
+		return () => fetchDestinationsFor(markets)('');
 	}
 
 	function getDestinationLabel(id: string): string {
@@ -186,8 +195,8 @@
 						id="dest-selector"
 						placeholder={t('geo.select_destination', 'Select a country…')}
 						emptyMessage={t('geo.no_destinations', 'No destinations found')}
-						fetcher={fetchDestinations}
-						initialFetcher={fetchDestinationsInitial}
+						fetcher={fetchDestinationsFor(destinationPins)}
+						initialFetcher={fetchDestinationsInitialFor(destinationPins)}
 						selectedId={selectedDestId || null}
 						selectedLabel={selectedDestId ? getDestinationLabel(selectedDestId) : null}
 						onSelect={(item) => (selectedDestId = item.id)}
@@ -204,8 +213,8 @@
 						id="origin-selector"
 						placeholder={t('tax_calculator.select_origin', 'Select origin country…')}
 						emptyMessage={t('geo.no_destinations', 'No destinations found')}
-						fetcher={fetchDestinations}
-						initialFetcher={fetchDestinationsInitial}
+						fetcher={fetchDestinationsFor(originPins)}
+						initialFetcher={fetchDestinationsInitialFor(originPins)}
 						selectedId={selectedOriginId || null}
 						selectedLabel={selectedOriginId ? getDestinationLabel(selectedOriginId) : null}
 						onSelect={(item) => (selectedOriginId = item.id)}

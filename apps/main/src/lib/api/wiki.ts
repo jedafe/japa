@@ -72,6 +72,8 @@ export interface WikiEntityFields {
 	 *  country currency_code); display fallback for currency/price_range
 	 *  fields that don't declare {currency_code} in options. */
 	entity_currency_code?: string;
+	/** §58+§112 — local→display-base rate for "(base)" equivalents. */
+	entity_currency_fx?: { base: string; rate: number; fetched_at: string; stale: boolean };
 }
 
 /** Field definition carried by propose_field / propose_group ops. */

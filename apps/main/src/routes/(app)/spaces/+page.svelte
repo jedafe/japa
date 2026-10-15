@@ -10,6 +10,7 @@
 	import SpaceCreationModal from '$lib/components/spaces/SpaceCreationModal.svelte';
 	import SpaceCombobox from '$lib/components/spaces/SpaceCombobox.svelte';
 	import { decodeBase64Text } from '$lib/tiptap/serialize';
+	import { pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
 	import type { Space } from '$lib/types';
 	import type { PageData } from './$types';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
@@ -156,14 +157,18 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	// Country picker for ?geo= — filters the server-loaded /geo/countries
 	// list client-side (same pattern as /scholarships), submits the geo_code.
+	// The configured origin/destination markets (ADR-064, public settings)
+	// are pinned first; every seeded country stays selectable.
+	const geoPins = $derived(servedMarkets(data.siteSettings));
+	const orderedCountries = $derived(pinMarketsFirst(data.countries, geoPins, (c) => c.geo_code));
 	function toCountryItems(list: PageData['countries']): AutocompleteItem[] {
 		return list.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }));
 	}
 	function countryFetcher(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase().trim();
 		const filtered = query === ''
-			? data.countries
-			: data.countries.filter(
+			? orderedCountries
+			: orderedCountries.filter(
 					(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 				);
 		return Promise.resolve(toCountryItems(filtered));

@@ -5,6 +5,7 @@
 	import { navigatePostLogin } from '$lib/auth/redirect';
 	import { t } from '$lib/i18n';
 	import { Check, ChevronLeft, ChevronRight, Sparkles, MapPin, Trophy, Heart, ShieldCheck, Plane, Globe, Landmark, Luggage, Lightbulb } from 'lucide-svelte';
+	import { destinationMarkets, pinMarketsFirst, servedMarkets } from '$lib/utils/geoMarkets';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
@@ -56,11 +57,17 @@
 	let destCountryCode = $state('');
 	let primaryGoal = $state('');
 
+	// ADR-064 curated markets (public settings via data.siteSettings) —
+	// pinned first in the country pickers; every seeded country stays
+	// selectable (pin-first, not restricted).
+	const destPins = $derived(destinationMarkets(data.siteSettings));
+	const locationPins = $derived(servedMarkets(data.siteSettings));
+
 	// Destination country autocomplete — filters the SSR-loaded country
 	// spaces client-side (same pattern as LocationSection.svelte).
 	function destCountryFetcher(q: string): Promise<AutocompleteItem[]> {
 		const needle = q.toLowerCase().trim();
-		const list = data.countries ?? [];
+		const list = pinMarketsFirst(data.countries ?? [], destPins, (c) => c.geo_code);
 		const filtered = needle
 			? list.filter(
 					(c) => c.name.toLowerCase().includes(needle) || c.geo_code.toLowerCase().includes(needle)
@@ -72,7 +79,7 @@
 	}
 
 	function destCountryInitialFetcher(): Promise<AutocompleteItem[]> {
-		const list = data.countries ?? [];
+		const list = pinMarketsFirst(data.countries ?? [], destPins, (c) => c.geo_code);
 		return Promise.resolve(
 			list.slice(0, 8).map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code }))
 		);
@@ -86,9 +93,10 @@
 	// Step 1: home-country autocomplete — keyed by ISO geo_code.
 	function fetchStep1Countries(q: string): Promise<AutocompleteItem[]> {
 		const query = q.toLowerCase().trim();
+		const list = pinMarketsFirst(data.countries ?? [], locationPins, (c) => c.geo_code);
 		const filtered = query === ''
-			? data.countries
-			: data.countries.filter(
+			? list
+			: list.filter(
 					(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 				);
 		return Promise.resolve(filtered.map((c) => ({ id: c.geo_code, label: c.name, sublabel: c.geo_code })));

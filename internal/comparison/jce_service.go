@@ -145,6 +145,13 @@ func (s *Service) createJCEContentAndMetadata(
 		status = content.StatusDraft
 	}
 
+	// feature.jce.ai_quick (§30): quick-compare drafts are the AI-generated
+	// surface; the flag gates creation of depth=quick comparisons.
+	if depth == DepthQuick && !s.flagOn(ctx, "feature.jce.ai_quick") {
+		return gen.CreateContentRow{}, gen.ComparisonContentMetadatum{},
+			fmt.Errorf("%w: AI quick comparisons are disabled", errpkg.ErrInvalid)
+	}
+
 	if depth == DepthQuick {
 		visibility = content.VisibilityPrivate
 		status = content.StatusDraft
@@ -398,6 +405,13 @@ func (s *Service) CreateJCEComparison(ctx context.Context, userID pgtype.UUID, i
 				}
 
 				if refType == "comparison" {
+					// feature.jce.nested_items (§30): nested item refs are an
+					// opt-in sub-feature — the flag gates them globally before
+					// the per-type AllowNestedComparisons check.
+					if !s.flagOn(ctx, "feature.jce.nested_items") {
+						return JCEComparisonResult{}, fmt.Errorf("%w: nested comparisons are disabled", ErrNestedNotAllowed)
+					}
+
 					if !typeCfg.AllowNestedComparisons {
 						return JCEComparisonResult{}, fmt.Errorf("%w: nested comparisons are not enabled for this type", ErrNestedNotAllowed)
 					}

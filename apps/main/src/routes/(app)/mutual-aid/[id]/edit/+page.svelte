@@ -8,6 +8,7 @@
 	import { mutualAidCategoryOptions } from '$lib/enumOptions';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import type { MutualAidPost, MutualAidPostType, MutualAidCategory } from '$lib/types';
+	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type { PageData } from './$types';
 	import AiBodyField from '$lib/ai/AiBodyField.svelte';
 
@@ -150,7 +151,7 @@
 				disabled
 				options={[
 					{ value: '', label: t('mutual_aid.field_destination_placeholder', 'Select a country') },
-					...data.countries.map((c) => ({ value: c.id, label: c.name }))
+					...pinMarketsFirst(data.countries, destinationMarkets(data.siteSettings), (c) => c.geo_code).map((c) => ({ value: c.id, label: c.name }))
 				]}
 			/>
 		</div>

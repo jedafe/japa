@@ -51,6 +51,10 @@ type CityData struct {
 	IsBaseline   bool              `json:"is_baseline"`
 	LastUpdated  string            `json:"last_updated"`
 	Values       map[string]string `json:"values"`
+	// CurrencyCode is the city's resolved country currency (§58). Converted
+	// marks whether Values matrix cells were normalized to DisplayCurrency.
+	CurrencyCode string `json:"currency_code,omitempty"`
+	Converted    bool   `json:"converted"`
 }
 
 // CategoryData is a single cost category (dimension) across all cities.
@@ -65,11 +69,16 @@ type CategoryData struct {
 
 // ComparisonMatrix is the full comparison result returned by CompareCities.
 // OverallIndex maps city ID → weighted Overall Cost Index (1.0 = baseline).
+// DisplayCurrency is the fx base currency all converted values are
+// denominated in (empty when FX is unavailable — values stay local).
 type ComparisonMatrix struct {
-	Cities         []CityData         `json:"cities"`
-	Categories     []CategoryData     `json:"categories"`
-	BaselineCityID string             `json:"baseline_city_id"`
-	OverallIndex   map[string]float64 `json:"overall_index"`
+	Cities          []CityData         `json:"cities"`
+	Categories      []CategoryData     `json:"categories"`
+	BaselineCityID  string             `json:"baseline_city_id"`
+	OverallIndex    map[string]float64 `json:"overall_index"`
+	DisplayCurrency string             `json:"display_currency"`
+	FxFetchedAt     string             `json:"fx_fetched_at,omitempty"`
+	FxStale         bool               `json:"fx_stale,omitempty"`
 }
 
 // CityListItem is a single city in the paginated list response.
@@ -79,6 +88,7 @@ type CityListItem struct {
 	Description  string `json:"description"`
 	GeoSpaceName string `json:"geo_space_name"`
 	GeoSpaceSlug string `json:"geo_space_slug"`
+	CurrencyCode string `json:"currency_code"`
 	IsBaseline   bool   `json:"is_baseline"`
 	LastUpdated  string `json:"last_updated"`
 	Position     int32  `json:"position"`
@@ -123,7 +133,22 @@ type Service struct {
 	store    *Store
 	settings *config.Settings
 	checker  FeatureChecker
+	fxRates  FxRateProvider
 }
+
+// FxRateProvider is the narrow slice of *fx.Service the calculator needs —
+// injected via SetFxRateProvider; nil keeps values in local currency.
+type FxRateProvider interface {
+	BaseRate(ctx context.Context, quote string) (rate float64, base string, fetchedAt time.Time, stale bool, err error)
+}
+
+// SetFxRateProvider injects the FX rate source for base-currency
+// normalization of the comparison matrix.
+func (s *Service) SetFxRateProvider(p FxRateProvider) { s.fxRates = p }
+
+// dimensionTypeCurrency mirrors comparison.DimensionTypeCurrency —
+// declared locally because comparison/resolver imports this package.
+const dimensionTypeCurrency = "currency"
 
 // NewService creates a cost-of-living service.
 func NewService(store *Store, settings *config.Settings) *Service {
@@ -236,12 +261,18 @@ func (s *Service) ListCities(ctx context.Context, search, countryCode string, pa
 			lastUpdated = r.LastUpdatedAt.Time.UTC().Format(time.RFC3339)
 		}
 
+		currency := ""
+		if r.CurrencyCode != nil {
+			currency = *r.CurrencyCode
+		}
+
 		cities = append(cities, CityListItem{
 			ID:           r.ID.String(),
 			Title:        r.Title,
 			Description:  desc,
 			GeoSpaceName: geoName,
 			GeoSpaceSlug: geoSlug,
+			CurrencyCode: currency,
 			IsBaseline:   r.IsBaseline,
 			LastUpdated:  lastUpdated,
 			Position:     r.Position,
@@ -265,6 +296,7 @@ type baselineRef struct {
 	GeoSpaceID    pgtype.UUID
 	GeoSpaceName  *string
 	GeoSpaceSlug  *string
+	CurrencyCode  *string
 	LastUpdatedAt pgtype.Timestamptz
 }
 
@@ -283,6 +315,7 @@ func (s *Service) resolveBaseline(ctx context.Context, typeID, requested pgtype.
 				GeoSpaceID:    row.GeoSpaceID,
 				GeoSpaceName:  row.GeoSpaceName,
 				GeoSpaceSlug:  row.GeoSpaceSlug,
+				CurrencyCode:  row.CurrencyCode,
 				LastUpdatedAt: row.LastUpdatedAt,
 			}, nil
 		}
@@ -305,6 +338,7 @@ func (s *Service) resolveBaseline(ctx context.Context, typeID, requested pgtype.
 		GeoSpaceID:    row.GeoSpaceID,
 		GeoSpaceName:  row.GeoSpaceName,
 		GeoSpaceSlug:  row.GeoSpaceSlug,
+		CurrencyCode:  row.CurrencyCode,
 		LastUpdatedAt: row.LastUpdatedAt,
 	}, nil
 }
@@ -340,10 +374,37 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 		}
 	}
 
+	// Step 1: get the cost_of_living type definition (config holds weights).
+	// s.store is nil in unit tests that exercise the max_cities guard in
+	// isolation — skip DB-backed resolution there and exempt only the
+	// requested baseline_id.
+	var typeDef gen.ComparisonTypeDefinition
+
+	var baseline baselineRef
+
+	if s.store != nil {
+		var err error
+
+		typeDef, err = s.store.GetCostOfLivingType(ctx)
+		if err != nil {
+			return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get type: %w", err)
+		}
+
+		// Step 2: resolve the baseline city — a caller-supplied baseline_id
+		// that names a live cost_of_living item wins; otherwise the seeded
+		// baseline.
+		baseline, err = s.resolveBaseline(ctx, typeDef.ID, baselineID)
+		if err != nil {
+			return ComparisonMatrix{}, err
+		}
+
+		baselineID = baseline.ID
+	}
+
 	// max_cities counts destination cities only (ADR-072: "1–N destination
-	// cities plus the baseline"). A caller may include the baseline inside
-	// city_ids — the JCE export form does — so exclude the requested
-	// baseline_id from the count.
+	// cities plus the baseline"). The effective baseline never consumes a
+	// slot — including a seeded baseline smuggled inside city_ids by a
+	// legacy share URL that predates the baseline_id param.
 	destCount := 0
 	for _, id := range uniqueIDs {
 		if baselineID.Valid && id == baselineID {
@@ -353,27 +414,12 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 	}
 
 	if destCount > maxCities {
-		return ComparisonMatrix{}, fmt.Errorf("costofliving: too many cities: %d > max %d", destCount, maxCities)
+		return ComparisonMatrix{}, fmt.Errorf("too many cities: %d destinations (max %d)", destCount, maxCities)
 	}
 
 	cityIDs = uniqueIDs
 
-	// Step 1: get the cost_of_living type definition (config holds weights).
-	typeDef, err := s.store.GetCostOfLivingType(ctx)
-	if err != nil {
-		return ComparisonMatrix{}, fmt.Errorf("costofliving: compare: get type: %w", err)
-	}
-
 	weights := parseWeights(typeDef.Config)
-
-	// Step 2: resolve the baseline city — a caller-supplied baseline_id that
-	// names a live cost_of_living item wins; otherwise the seeded baseline.
-	baseline, err := s.resolveBaseline(ctx, typeDef.ID, baselineID)
-	if err != nil {
-		return ComparisonMatrix{}, err
-	}
-
-	baselineID = baseline.ID
 
 	// Step 3: collect the set of city IDs to fetch values for (requested +
 	// baseline, deduplicated). The baseline is always included.
@@ -406,6 +452,9 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 		Key       string
 		Slug      string
 		SourceKey string
+		// Money marks currency dimensions — only these normalize to the
+		// fx base; ratings/numbers/text pass through unchanged.
+		Money bool
 	}
 
 	dimValues := make(map[string]map[string]float64)
@@ -428,7 +477,7 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 				sourceKey = *v.SourceFieldKey
 			}
 
-			dimMetaMap[dimKey] = dimMeta{Label: v.DimensionLabel, Key: dimKey, Slug: slug, SourceKey: sourceKey}
+			dimMetaMap[dimKey] = dimMeta{Label: v.DimensionLabel, Key: dimKey, Slug: slug, SourceKey: sourceKey, Money: v.DimensionType == dimensionTypeCurrency}
 			dimOrder = append(dimOrder, dimKey)
 		}
 
@@ -547,6 +596,54 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 		}
 	}
 
+	// §58+§112 normalization: money values are denominated in each city's
+	// country currency — convert to the fx display base so ratios and the
+	// index compare like units. Cities without a resolvable currency or
+	// matrix coverage keep raw local values flagged converted:false.
+	spaceCurrencies := s.store.SpaceCurrencyCodes(ctx, geoSpaceIDs)
+	cityCurrency := make(map[string]string, len(cityOrder))
+	ratesByCity := make(map[string]float64, len(cityOrder))
+	ratesByCode := make(map[string]float64)
+	displayCurrency := ""
+	fxFetchedAt := ""
+	fxStale := false
+
+	for _, id := range cityOrder {
+		spaceID := geoSpaceByCity[id]
+		code := spaceCurrencies[spaceID]
+		if code != "" {
+			cityCurrency[id.String()] = code
+		}
+		if s.fxRates == nil || code == "" {
+			continue
+		}
+		if _, ok := ratesByCode[code]; !ok {
+			rate, base, fetchedAt, stale, rerr := s.fxRates.BaseRate(ctx, code)
+			if rerr != nil {
+				continue // unsupported/absent quote → city stays raw
+			}
+			ratesByCode[code] = rate
+			if displayCurrency == "" {
+				displayCurrency, fxStale = base, stale
+				fxFetchedAt = fetchedAt.UTC().Format(time.RFC3339)
+			}
+		}
+		ratesByCity[id.String()] = ratesByCode[code]
+	}
+
+	if displayCurrency != "" {
+		for dimID, byCity := range dimValues {
+			if !dimMetaMap[dimID].Money {
+				continue
+			}
+			for cityKey, v := range byCity {
+				if rate, ok := ratesByCity[cityKey]; ok && rate > 0 {
+					byCity[cityKey] = v / rate
+				}
+			}
+		}
+	}
+
 	cities := make([]CityData, 0, len(cityOrder))
 
 	for _, id := range cityOrder {
@@ -608,6 +705,8 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 			IsBaseline:   id == baselineID,
 			LastUpdated:  lastUpdatedStr,
 			Values:       rawVals,
+			CurrencyCode: cityCurrency[id.String()],
+			Converted:    ratesByCity[id.String()] > 0,
 		})
 	}
 
@@ -634,6 +733,14 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 				cat.Values[cityKey] = val
 			}
 
+			// In fx mode, a ratio between converted and unconverted
+			// (raw-local) values would silently mix units — skip it.
+			mixedUnits := displayCurrency != "" && dimMetaMap[dimKey].Money &&
+				(ratesByCity[cityKey] <= 0 || ratesByCity[baselineKey] <= 0)
+
+			if mixedUnits {
+				continue
+			}
 			if hasBase && baseVal > 0 && ok {
 				cat.Ratios[cityKey] = val / baseVal
 			} else if hasBase && baseVal == 0 && ok {
@@ -658,10 +765,13 @@ func (s *Service) CompareCities(ctx context.Context, cityIDs []pgtype.UUID, base
 	}
 
 	return ComparisonMatrix{
-		Cities:         cities,
-		Categories:     categories,
-		BaselineCityID: baselineKey,
-		OverallIndex:   overall,
+		Cities:          cities,
+		Categories:      categories,
+		BaselineCityID:  baselineKey,
+		OverallIndex:    overall,
+		DisplayCurrency: displayCurrency,
+		FxFetchedAt:     fxFetchedAt,
+		FxStale:         fxStale,
 	}, nil
 }
 

@@ -12,6 +12,7 @@
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import type { GeoCountry, RadarItem } from '$lib/types';
 	import type { PageData } from './$types';
+	import { servedMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	let { data }: { data: PageData } = $props();
@@ -81,15 +82,21 @@ import { safeJsonLdScript } from '$lib/utils/safeHtml';
 
 	// Autocomplete fetchers — filter the full /geo/countries list client-side.
 	// The "Browse countries" option (id: '') is always included at the top.
+	// ADR-064 curated markets (public settings) — pinned first; every
+	// seeded country stays selectable (pin-first, not restricted).
+	const radarCountries = $derived(
+		pinMarketsFirst(data.countries, servedMarkets(data.siteSettings), (c) => c.geo_code)
+	);
+
 	function fetchCountries(q: string): Promise<AutocompleteItem[]> {
 		const allLabel = t('radar.browse_countries', 'Browse countries');
 		const query = q.toLowerCase().trim();
 		const allItem: AutocompleteItem = { id: '', label: allLabel };
 		if (query === '') {
-			return Promise.resolve([allItem, ...data.countries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
+			return Promise.resolve([allItem, ...radarCountries.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }))]);
 		}
 		const matchesAll = allLabel.toLowerCase().includes(query);
-		const filtered = data.countries.filter(
+		const filtered = radarCountries.filter(
 			(c) => c.name.toLowerCase().includes(query) || c.geo_code.toLowerCase().includes(query)
 		);
 		const items = filtered.map((c) => ({ id: c.id, label: c.name, sublabel: c.geo_code }));

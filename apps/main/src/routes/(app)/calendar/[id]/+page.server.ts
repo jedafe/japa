@@ -18,13 +18,30 @@ export const load: PageServerLoad = async (event) => {
 	const ctx = apiContext(event);
 	const authed = !!event.locals.user;
 	const id = event.params.id;
+	let entry: CalendarEntry;
 	try {
-		const entry = await apiGet<CalendarEntry>(ctx, `/calendar/${id}`);
-		return { entry, authed, loadError: false };
+		entry = await apiGet<CalendarEntry>(ctx, `/calendar/${id}`);
 	} catch (err) {
 		if (err instanceof ApiError && err.status === 404) {
 			throw error(404, { code: 'not_found', message: 'Calendar entry not found' });
 		}
-		return { entry: null, authed, loadError: true };
+		return { entry: null, authed, loadError: true, canEdit: false, categories: [] };
 	}
+
+	// The author (or anyone holding calendar.edit_any) may edit — mirrors the
+	// service-layer rule on PATCH /calendar/:id.
+	const user = event.locals.user;
+	const canEdit =
+		authed &&
+		(entry.submitted_by === user?.id ||
+			!!user?.permissions?.includes('calendar.edit_any'));
+
+	let categories: { value: string; label: string }[] = [];
+	try {
+		categories = await apiGet<{ value: string; label: string }[]>(ctx, '/calendar/categories');
+	} catch {
+		categories = [];
+	}
+
+	return { entry, authed, loadError: false, canEdit, categories };
 };

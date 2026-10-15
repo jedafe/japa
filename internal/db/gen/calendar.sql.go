@@ -236,6 +236,87 @@ func (q *Queries) CalendarGetEntry(ctx context.Context, id pgtype.UUID) (Calenda
 	return i, err
 }
 
+const calendarGetEntryAnyStatus = `-- name: CalendarGetEntryAnyStatus :one
+SELECT id, title, description, category,
+ destination_space_id, origin_space_id,
+ occurs_at, ends_at, is_recurring, recurrence_pattern,
+ source_url, status, submitted_by, reviewed_by, reviewed_at,
+ staleness_check_due,
+ ai_generated, ai_model, hitl_reviewed_by, ai_generated_at,
+ ai_prompt_hash, hitl_reviewed_at, hitl_review_notes,
+ created_at, updated_at, deleted_at
+FROM calendar_entries
+WHERE id = $1 AND deleted_at IS NULL
+LIMIT 1
+`
+
+type CalendarGetEntryAnyStatusRow struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Title              string             `json:"title"`
+	Description        *string            `json:"description"`
+	Category           string             `json:"category"`
+	DestinationSpaceID pgtype.UUID        `json:"destination_space_id"`
+	OriginSpaceID      pgtype.UUID        `json:"origin_space_id"`
+	OccursAt           pgtype.Timestamptz `json:"occurs_at"`
+	EndsAt             pgtype.Timestamptz `json:"ends_at"`
+	IsRecurring        bool               `json:"is_recurring"`
+	RecurrencePattern  *string            `json:"recurrence_pattern"`
+	SourceUrl          string             `json:"source_url"`
+	Status             string             `json:"status"`
+	SubmittedBy        pgtype.UUID        `json:"submitted_by"`
+	ReviewedBy         pgtype.UUID        `json:"reviewed_by"`
+	ReviewedAt         pgtype.Timestamptz `json:"reviewed_at"`
+	StalenessCheckDue  pgtype.Timestamptz `json:"staleness_check_due"`
+	AiGenerated        bool               `json:"ai_generated"`
+	AiModel            *string            `json:"ai_model"`
+	HitlReviewedBy     pgtype.UUID        `json:"hitl_reviewed_by"`
+	AiGeneratedAt      pgtype.Timestamptz `json:"ai_generated_at"`
+	AiPromptHash       *string            `json:"ai_prompt_hash"`
+	HitlReviewedAt     pgtype.Timestamptz `json:"hitl_reviewed_at"`
+	HitlReviewNotes    *string            `json:"hitl_review_notes"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
+}
+
+// Fetches an entry regardless of status; the service layer enforces
+// visibility (published|unverified are public; pending|archived are only
+// visible to the submitter and reviewers). ADR-094: unverified entries
+// display a warning rather than being removed.
+func (q *Queries) CalendarGetEntryAnyStatus(ctx context.Context, id pgtype.UUID) (CalendarGetEntryAnyStatusRow, error) {
+	row := q.db.QueryRow(ctx, calendarGetEntryAnyStatus, id)
+	var i CalendarGetEntryAnyStatusRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.DestinationSpaceID,
+		&i.OriginSpaceID,
+		&i.OccursAt,
+		&i.EndsAt,
+		&i.IsRecurring,
+		&i.RecurrencePattern,
+		&i.SourceUrl,
+		&i.Status,
+		&i.SubmittedBy,
+		&i.ReviewedBy,
+		&i.ReviewedAt,
+		&i.StalenessCheckDue,
+		&i.AiGenerated,
+		&i.AiModel,
+		&i.HitlReviewedBy,
+		&i.AiGeneratedAt,
+		&i.AiPromptHash,
+		&i.HitlReviewedAt,
+		&i.HitlReviewNotes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const calendarGetEntryForReview = `-- name: CalendarGetEntryForReview :one
 SELECT id, ai_generated, hitl_reviewed_by, hitl_review_notes, source_url, status
 FROM calendar_entries
@@ -288,6 +369,29 @@ func (q *Queries) CalendarIsSaved(ctx context.Context, arg CalendarIsSavedParams
 	return exists, err
 }
 
+const calendarIsSubscribed = `-- name: CalendarIsSubscribed :one
+SELECT EXISTS (
+ SELECT 1 FROM calendar_subscriptions
+ WHERE user_id = $1 AND destination_space_id = $2
+   AND category IS NOT DISTINCT FROM $3
+) AS subscribed
+`
+
+type CalendarIsSubscribedParams struct {
+	UserID             pgtype.UUID `json:"user_id"`
+	DestinationSpaceID pgtype.UUID `json:"destination_space_id"`
+	Category           *string     `json:"category"`
+}
+
+// Exact-match subscription check for the (user, destination, category)
+// triple. NULL category = "all categories" subscription.
+func (q *Queries) CalendarIsSubscribed(ctx context.Context, arg CalendarIsSubscribedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, calendarIsSubscribed, arg.UserID, arg.DestinationSpaceID, arg.Category)
+	var subscribed bool
+	err := row.Scan(&subscribed)
+	return subscribed, err
+}
+
 const calendarListSavedEntries = `-- name: CalendarListSavedEntries :many
 SELECT e.id, e.title, e.description, e.category,
  e.destination_space_id, e.origin_space_id,
@@ -301,7 +405,7 @@ SELECT e.id, e.title, e.description, e.category,
 FROM calendar_saves s
 JOIN calendar_entries e ON e.id = s.entry_id
 WHERE s.user_id = $1
- AND e.status = 'published' AND e.deleted_at IS NULL
+ AND e.status IN ('published', 'unverified') AND e.deleted_at IS NULL
 ORDER BY s.saved_at DESC
 LIMIT $2 OFFSET $3
 `
@@ -406,6 +510,38 @@ func (q *Queries) CalendarSaveEntry(ctx context.Context, arg CalendarSaveEntryPa
 	return err
 }
 
+const calendarSavedEntryIDs = `-- name: CalendarSavedEntryIDs :many
+SELECT entry_id FROM calendar_saves
+WHERE user_id = $1 AND entry_id = ANY($2::uuid[])
+`
+
+type CalendarSavedEntryIDsParams struct {
+	UserID   pgtype.UUID   `json:"user_id"`
+	EntryIds []pgtype.UUID `json:"entry_ids"`
+}
+
+// Batch "is saved" lookup for a list of entry ids — replaces the per-entry
+// EXISTS loop (N+1) in Service.List.
+func (q *Queries) CalendarSavedEntryIDs(ctx context.Context, arg CalendarSavedEntryIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, calendarSavedEntryIDs, arg.UserID, arg.EntryIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var entry_id pgtype.UUID
+		if err := rows.Scan(&entry_id); err != nil {
+			return nil, err
+		}
+		items = append(items, entry_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const calendarSetStalenessCheckDue = `-- name: CalendarSetStalenessCheckDue :exec
 UPDATE calendar_entries
 SET staleness_check_due = CASE
@@ -440,7 +576,7 @@ func (q *Queries) CalendarSubscribe(ctx context.Context, arg CalendarSubscribePa
 }
 
 const calendarSubscribersForEntry = `-- name: CalendarSubscribersForEntry :many
-SELECT user_id FROM calendar_subscriptions
+SELECT DISTINCT user_id FROM calendar_subscriptions
 WHERE destination_space_id = $1
  AND (category IS NULL OR category = $2 OR category = '')
 `
@@ -450,6 +586,8 @@ type CalendarSubscribersForEntryParams struct {
 	Category           *string     `json:"category"`
 }
 
+// DISTINCT: a user with overlapping subscriptions (e.g. all-categories plus
+// a specific category) must not receive duplicate reminder notifications.
 func (q *Queries) CalendarSubscribersForEntry(ctx context.Context, arg CalendarSubscribersForEntryParams) ([]pgtype.UUID, error) {
 	rows, err := q.db.Query(ctx, calendarSubscribersForEntry, arg.DestinationSpaceID, arg.Category)
 	if err != nil {

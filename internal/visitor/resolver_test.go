@@ -57,13 +57,14 @@ func splitCSV(csv string) []string {
 func TestResolveArchetype(t *testing.T) {
 	t.Parallel()
 
-	origin, dest := defaultMarketSets()
+	originMkts, destMkts := defaultMarketSets()
 
 	tests := []struct {
 		name           string
 		current        string
 		stage          string
 		destination    string
+		origin         string
 		wantArchetype  string
 		wantCountry    string
 		wantConfidence float32
@@ -117,6 +118,43 @@ func TestResolveArchetype(t *testing.T) {
 			current: "KE", stage: "", destination: "",
 			wantArchetype: ArchetypeOriginVisitor, wantCountry: "KE", wantConfidence: 0.8,
 		},
+		// Declared origin market lifts a visitor located in a non-market
+		// country to origin_visitor (e.g. a Nigerian in transit in Brazil).
+		{
+			name:    "declared origin market, current non-market",
+			current: "BR", stage: "planning", destination: "", origin: "NG",
+			wantArchetype: ArchetypeOriginVisitor, wantCountry: "NG", wantConfidence: 0.85,
+		},
+		{
+			name:    "declared origin market with destination",
+			current: "BR", stage: "planning", destination: "CA", origin: "NG",
+			wantArchetype: ArchetypeOriginVisitor, wantCountry: "CA", wantConfidence: 0.85,
+		},
+		// Destination-market location and settled status still win over a
+		// declared origin — someone who already relocated is diaspora.
+		{
+			name:    "declared origin market but in destination market",
+			current: "GB", stage: "newly_japa", destination: "", origin: "NG",
+			wantArchetype: ArchetypeDiaspora, wantCountry: "GB", wantConfidence: 0.85,
+		},
+		{
+			name:    "declared origin market but settled",
+			current: "BR", stage: "settled", destination: "", origin: "NG",
+			wantArchetype: ArchetypeDiaspora, wantCountry: "BR", wantConfidence: 0.85,
+		},
+		// No GeoIP at all — declared origin alone still classifies.
+		{
+			name:    "declared origin market, no current country",
+			current: "", stage: "", destination: "", origin: "GH",
+			wantArchetype: ArchetypeOriginVisitor, wantCountry: "GH", wantConfidence: 0.85,
+		},
+		// In an origin market while declaring a different origin market —
+		// the explicit declaration wins for ContentCountry.
+		{
+			name:    "declared origin overrides current origin market",
+			current: "GH", stage: "planning", destination: "", origin: "NG",
+			wantArchetype: ArchetypeOriginVisitor, wantCountry: "NG", wantConfidence: 0.8,
+		},
 	}
 
 	for _, tt := range tests {
@@ -124,7 +162,7 @@ func TestResolveArchetype(t *testing.T) {
 			t.Parallel()
 
 			gotArch, gotCountry, gotConf := resolveArchetype(
-				tt.current, tt.stage, tt.destination, origin, dest,
+				tt.current, tt.stage, tt.destination, tt.origin, originMkts, destMkts,
 			)
 			if gotArch != tt.wantArchetype {
 				t.Errorf("archetype = %q, want %q", gotArch, tt.wantArchetype)

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -301,6 +302,46 @@ func (s *Service) Convert(ctx context.Context, amount float64, from, to string) 
 		FetchedAt: m.FetchedAt.UTC().Format(time.RFC3339),
 		Stale:     matrixStale(m.FetchedAt, s.staleHours(ctx), time.Now()),
 	}, nil
+}
+
+// baseRateFromMatrix resolves units of `quote` per 1 unit of the matrix
+// base — the pure core of BaseRate. The base→base cell (=1.0) is always
+// present in a well-formed matrix (matrixFromRows guarantees it), so the
+// base quote resolves without a special case.
+func baseRateFromMatrix(m *Matrix, quote string) (float64, error) {
+	rate, ok := m.Rates[quote]
+	if !ok || rate <= 0 {
+		return 0, fmt.Errorf("%w: %s", ErrUnsupportedCurrency, quote)
+	}
+
+	return rate, nil
+}
+
+// BaseRate returns units of `quote` per 1 unit of the configured default
+// base currency (fx.default_base_currency) plus the base code and matrix
+// freshness — the read seam for "(base)" display equivalents and
+// cost-of-living normalization (base amount = local amount / rate).
+// `quote` is normalised to uppercase by the caller's convention.
+func (s *Service) BaseRate(ctx context.Context, quote string) (rate float64, base string, fetchedAt time.Time, stale bool, err error) {
+	if !s.IsEnabled(ctx) {
+		return 0, "", time.Time{}, false, ErrDisabled
+	}
+
+	base = s.DefaultBaseCurrency(ctx)
+
+	m, err := s.GetMatrix(ctx, base)
+	if err != nil {
+		return 0, base, time.Time{}, false, err
+	}
+
+	stale = matrixStale(m.FetchedAt, s.staleHours(ctx), time.Now())
+
+	rate, err = baseRateFromMatrix(m, strings.ToUpper(quote))
+	if err != nil {
+		return 0, base, m.FetchedAt, stale, err
+	}
+
+	return rate, base, m.FetchedAt, stale, nil
 }
 
 // GetRates returns the matrix re-based to `base` (cross-computed when the

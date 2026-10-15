@@ -565,13 +565,17 @@ func (f *flagSyncFixture) mustNotifyCount(t *testing.T, want int) {
 	}
 }
 
-// syncTestDB connects to the dev database or skips.
+// syncTestDB connects to the dedicated test database or skips. It reads
+// JC_TEST_DATABASE_URL only — never JC_DATABASE_URL — so flag-sync fixtures
+// can't leave test.sync.* rows in a dev or production feature_flags table
+// (orphaned rows previously surfaced as phantom "Custom" extensions and in
+// the public /api/v1/feature-flags map).
 func syncTestDB(t *testing.T) *db.DB {
 	t.Helper()
 
-	dsn := os.Getenv("JC_DATABASE_URL")
+	dsn := os.Getenv("JC_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("JC_DATABASE_URL not set; skipping integration test")
+		t.Skip("JC_TEST_DATABASE_URL not set; skipping integration test")
 	}
 
 	database, err := db.New(t.Context(), dsn)
@@ -590,7 +594,7 @@ func syncTestDB(t *testing.T) *db.DB {
 // TestSyncFlagPhaseIntegration exercises the full §4.3/§4.4 lifecycle
 // against a real Postgres: create-on-enable, phase moves, archive on
 // show_off, unlink on flag delete, the linked-status lock, and link
-// validation. Skipped unless JC_DATABASE_URL is set.
+// validation. Skipped unless JC_TEST_DATABASE_URL is set.
 func TestSyncFlagPhaseIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
 	database := syncTestDB(t)
 	f := newFlagSyncFixture(t, database)
@@ -687,7 +691,7 @@ func TestSyncFlagPhaseIntegration(t *testing.T) { //nolint:paralleltest // seque
 // TestFlagLinkLifecycleIntegration covers the admin-side link paths
 // (§4.2): PATCH feature_flag_key validates + applies the flag's current
 // phase immediately, "" unlinks, and manual transitions resume after
-// unlink. Skipped unless JC_DATABASE_URL is set.
+// unlink. Skipped unless JC_TEST_DATABASE_URL is set.
 func TestFlagLinkLifecycleIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
 	f := newFlagSyncFixture(t, syncTestDB(t))
 	f.writeFlag(t, features.FlagConfig{Phase: string(StatusTesting), ShowOnRoadmap: true}, true)
@@ -729,7 +733,7 @@ func TestFlagLinkLifecycleIntegration(t *testing.T) { //nolint:paralleltest // s
 // TestFlagLinkGuardsIntegration covers the one-flag-one-item rule: a flag
 // key already linked to a live item cannot be linked again — neither at
 // create nor via PATCH — while re-setting the same key on the same item
-// stays a no-op. Skipped unless JC_DATABASE_URL is set.
+// stays a no-op. Skipped unless JC_TEST_DATABASE_URL is set.
 func TestFlagLinkGuardsIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
 	f := newFlagSyncFixture(t, syncTestDB(t))
 	f.writeFlag(t, features.FlagConfig{Phase: string(StatusInProgress), ShowOnRoadmap: true}, true)
@@ -765,7 +769,7 @@ func TestFlagLinkGuardsIntegration(t *testing.T) { //nolint:paralleltest // sequ
 // TestFlagLinkHiddenFlagIntegration covers linking to a flag opted off the
 // roadmap: the link is kept but the item stays archived (hidden) rather
 // than taking the phase's public status — matching SyncFlagPhase's
-// show_off path. Skipped unless JC_DATABASE_URL is set.
+// show_off path. Skipped unless JC_TEST_DATABASE_URL is set.
 func TestFlagLinkHiddenFlagIntegration(t *testing.T) { //nolint:paralleltest // sequential DB lifecycle — later steps depend on earlier state
 	f := newFlagSyncFixture(t, syncTestDB(t))
 	f.writeFlag(t, features.FlagConfig{Phase: string(StatusInProgress), ShowOnRoadmap: false}, true)

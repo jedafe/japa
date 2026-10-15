@@ -106,6 +106,10 @@ type BookingDTO struct {
 	CancelledAt     string `json:"cancelled_at,omitempty"`
 	CancelReason    string `json:"cancel_reason,omitempty"`
 	CreatedAt       string `json:"created_at"`
+	// §48/ADR-110 DM auto-open — populated only on the respond response
+	// when a mentorship accept materialized the provider↔booker thread;
+	// lets the client deep-link straight into /messages?c={id}.
+	DMConversationID string `json:"dm_conversation_id,omitempty"`
 }
 
 // maxBookingTextLen caps free-text booking inputs (note, goals,
@@ -1021,7 +1025,21 @@ func (s *Service) GetBooking(ctx context.Context, bookingID, viewerID pgtype.UUI
 		}
 	}
 
-	return bookingToDTO(row), nil
+	dto := bookingToDTO(row)
+
+	// §48/ADR-110 — on confirmed/fulfilled mentorship rows the provider↔
+	// booker thread already exists (accept materialized it), so surface
+	// its id on the detail read: the booker's "Open messages" deep-links
+	// straight into /messages?c={id} instead of the bare inbox.
+	if row.ListingKind == ListingKindMentorship &&
+		(row.Status == "confirmed" || row.Status == "fulfilled") &&
+		row.ProviderUserID.Valid && row.BookerUserID.Valid && s.dmCreator != nil {
+		if conv, err := s.dmCreator.GetConversationByParticipants(ctx, row.ProviderUserID, row.BookerUserID); err == nil && conv.ID.Valid {
+			dto.DMConversationID = conv.ID.String()
+		}
+	}
+
+	return dto, nil
 }
 
 // BookingPayInput is the POST /me/service-bookings/:id/pay body —
@@ -1205,14 +1223,17 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 	// booker (the mentee learns their request was answered).
 	s.enqueueStatusChanged(row.ID, newStatus)
 
+	var dmConvID string
 	if action == "accept" && row.ListingKind == ListingKindMentorship {
 		// §48/ADR-110: auto-open the mentor↔mentee DM thread. Non-fatal —
-		// the booking is already confirmed; the seam stays nil until the
-		// server wires it.
+		// the booking is already confirmed. The conversation id rides the
+		// response so the UI can deep-link into the thread (the auto-open).
 		if s.dmCreator != nil {
-			if _, dmErr := s.dmCreator.GetOrCreateConversation(ctx, row.ProviderUserID, row.BookerUserID); dmErr != nil {
+			if conv, dmErr := s.dmCreator.GetOrCreateConversation(ctx, row.ProviderUserID, row.BookerUserID); dmErr != nil {
 				slog.Warn("servicedir: mentorship accept DM auto-open failed",
 					"booking_id", bookingID, "error", dmErr)
+			} else if conv.ID.Valid {
+				dmConvID = conv.ID.String()
 			}
 		}
 	}
@@ -1225,7 +1246,12 @@ func (s *Service) RespondToBooking(ctx context.Context, providerID, bookingID pg
 		s.enqueueMentorMeilisearch(row.ProviderUserID)
 	}
 
-	return s.GetBooking(ctx, bookingID, providerID, false)
+	dto, err := s.GetBooking(ctx, bookingID, providerID, false)
+	if err != nil {
+		return dto, err
+	}
+	dto.DMConversationID = dmConvID
+	return dto, nil
 }
 
 // isDuplicateMentorshipBookingErr reports whether err is the SQLSTATE

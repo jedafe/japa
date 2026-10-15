@@ -2,6 +2,7 @@ package features
 
 import (
 	"context"
+	"regexp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -61,6 +62,14 @@ type Checker struct {
 	// directly and would silently skip a handler-level hook. Optional — set
 	// once at startup via SetOnConfigChanged.
 	onConfigChanged func(ctx context.Context, key string, cfg FlagConfig)
+
+	// platformID is this install's stable identity (pg_control_system
+	// system_identifier), lazily loaded once. It salts rollout bucketing so
+	// the same flag at the same percentage lands in different cohorts on
+	// different installs — rollout_percentage is only meaningful when the
+	// hash input varies across platforms.
+	platformID     string
+	platformIDOnce sync.Once
 }
 
 // flagCacheEntry wraps a flag's resolved enabled state and raw config blob
@@ -189,7 +198,7 @@ func (c *Checker) resolveFlag(ctx context.Context, key string) (bool, []byte) {
 	// Success or ErrNoRows (legitimate "flag not set" → use default).
 	// The cached enabled value is rollout-effective; config stays raw so
 	// EvalFlag can apply surface/geo/audience rules on top.
-	effective := effectiveEnabled(key, enabled, config)
+	effective := effectiveEnabled(c.rolloutID(ctx), key, enabled, config)
 	c.cacheSet(key, effective, config)
 	c.valkeySet(ctx, key, effective, config)
 
@@ -224,7 +233,7 @@ func (c *Checker) queryEnabled(ctx context.Context, key string) (bool, error) {
 		return enabled, err
 	}
 
-	return effectiveEnabled(key, enabled, config), nil
+	return effectiveEnabled(c.rolloutID(ctx), key, enabled, config), nil
 }
 
 // queryFlagRow reads the raw feature_flags row for a key. Returns
@@ -259,7 +268,7 @@ func (c *Checker) queryFlagRow(ctx context.Context, key string) (bool, []byte, e
 // 0 and 100 (exclusive), a deterministic hash decides whether this platform
 // falls inside the rollout cohort. The same flag always sees the same outcome
 // until the percentage or enabled state changes.
-func effectiveEnabled(key string, enabled bool, config []byte) bool {
+func effectiveEnabled(id, key string, enabled bool, config []byte) bool {
 	if !enabled {
 		return false
 	}
@@ -268,7 +277,7 @@ func effectiveEnabled(key string, enabled bool, config []byte) bool {
 	if len(config) > 0 {
 		if jsonErr := json.Unmarshal(config, &cfg); jsonErr == nil {
 			if cfg.RolloutPercentage > 0 && cfg.RolloutPercentage < 100 {
-				return hashInRollout(key, cfg.RolloutPercentage)
+				return hashInRollout(id, key, cfg.RolloutPercentage)
 			}
 		}
 	}
@@ -279,8 +288,8 @@ func effectiveEnabled(key string, enabled bool, config []byte) bool {
 // hashInRollout deterministically decides whether a (ID, key) pair falls
 // inside the rollout cohort. It hashes the pair into a 0–99 bucket and returns
 // true when bucket < percentage. The result is stable for a given pair.
-func hashInRollout(key string, percentage int) bool {
-	h := fnvHash64("" + ":" + key)
+func hashInRollout(id, key string, percentage int) bool {
+	h := fnvHash64(id + ":" + key)
 	bucket := int(h % 100) // #nosec
 
 	return bucket < percentage
@@ -302,6 +311,25 @@ func fnvHash64(s string) uint64 {
 	}
 
 	return h
+}
+
+// rolloutID returns the install's stable platform identifier used to salt
+// rollout bucketing — Postgres's own system_identifier, read once via
+// pg_control_system() and memoized. On any failure it returns "" so the
+// hash degrades to the historical key-only behavior rather than breaking
+// flag evaluation.
+func (c *Checker) rolloutID(ctx context.Context) string {
+	c.platformIDOnce.Do(func() {
+		if c.db == nil {
+			return
+		}
+		if err := c.db.Reader.QueryRow(ctx,
+			`SELECT system_identifier FROM pg_control_system()`).Scan(&c.platformID); err != nil {
+			slog.Warn("features: platform id unavailable, rollout bucketing unsalted", "error", err)
+		}
+	})
+
+	return c.platformID
 }
 
 // cacheGet retrieves a cached flag entry (enabled + config) if still valid.
@@ -560,7 +588,7 @@ func (c *Checker) GetAllEnabled(ctx context.Context) map[string]bool {
 	// Postgres hit). On DB error AllFlagRows returns nil and the defaults
 	// above stand — same fallback as the old inline batch query.
 	for _, row := range c.AllFlagRows(ctx) {
-		result[row.Key] = effectiveEnabled(row.Key, row.Enabled, row.Config)
+		result[row.Key] = effectiveEnabled(c.rolloutID(ctx), row.Key, row.Enabled, row.Config)
 	}
 
 	return result
@@ -767,6 +795,17 @@ func WriteConfigError(w http.ResponseWriter, err error) {
 	}
 
 	errpkg.HandleServiceError(w, err)
+}
+
+// flagKeyRe enforces the flag-key vocabulary: lowercase segments joined by
+// dots — {domain}.{feature} or feature.{name} (feature-flag-naming.md).
+// Rejects junk keys (uppercase, spaces, empty segments) before they can
+// become permanent "Custom" extensions on the control panel catalog.
+var flagKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$`)
+
+// ValidFlagKey reports whether key is a well-formed feature flag key.
+func ValidFlagKey(key string) bool {
+	return len(key) <= 120 && flagKeyRe.MatchString(key)
 }
 
 // isISOAlpha2 reports whether code is exactly two uppercase ASCII letters —

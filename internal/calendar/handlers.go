@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -103,16 +104,6 @@ func scanUUIDParam(w http.ResponseWriter, r *http.Request, name string) (pgtype.
 func parsePageParams(r *http.Request) (page, limit int32) {
 	page = 1
 	limit = 20
-	// Rule 5: use page_size/page_offset. Keep page/limit as legacy aliases.
-	if v := r.URL.Query().Get("page_offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	} else if v := r.URL.Query().Get("page"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			page = int32(n) // #nosec
-		}
-	}
 
 	if v := r.URL.Query().Get("page_size"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
@@ -121,6 +112,19 @@ func parsePageParams(r *http.Request) (page, limit int32) {
 	} else if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
 			limit = int32(n) // #nosec
+		}
+	}
+
+	// Rule 5: page_offset is a record OFFSET (not a page number) —
+	// ?page_size=N&page_offset=N. Derive the page from it. Keep `page` as a
+	// legacy alias.
+	if v := r.URL.Query().Get("page_offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			page = int32(n/int(limit)) + 1 // #nosec
+		}
+	} else if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = int32(n) // #nosec
 		}
 	}
 
@@ -195,6 +199,13 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// A date-only "to" filter means "up to and including that day" —
+		// extend to end-of-day so entries on the date itself are not
+		// silently excluded.
+		if isDateOnly(v) {
+			ts.Time = ts.Time.Add(24*time.Hour - time.Nanosecond)
+		}
+
 		to = ts
 	}
 
@@ -215,12 +226,29 @@ func (h *Handlers) HandleList(w http.ResponseWriter, r *http.Request) {
 
 	h.resolveLiterals(r, &entries)
 
+	// Report whether the caller is subscribed to the applied
+	// destination+category filter so the frontend can render the Subscribe
+	// button's persisted state.
+	subscribed := false
+	if userID.Valid && destSpaceID.Valid {
+		subscribed = h.service.IsSubscribed(r.Context(), userID, destSpaceID, category)
+	}
+
+	offset := (page - 1) * limit
+
 	errpkg.WriteJSON(w, http.StatusOK, map[string]any{
 		"data": entries,
+		"meta": map[string]any{
+			"page":        page,
+			"page_size":   limit,
+			"page_offset": offset,
+			"total":       total,
+			"subscribed":  subscribed,
+		},
 		"pagination": map[string]any{
 			"page":        page,
 			"page_size":   limit,
-			"page_offset": page,
+			"page_offset": offset,
 			"total":       total,
 		},
 	})
@@ -338,6 +366,12 @@ func (h *Handlers) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	entryID, err := h.service.Submit(r.Context(), user.UserID, input)
 	if err != nil {
+		var ve *ValidationError
+		if errors.As(err, &ve) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", ve.Error())
+			return
+		}
+
 		slog.Error("calendar: submit failed", "error", err)
 		errpkg.WriteError(w, http.StatusInternalServerError, "submit_failed", "Failed to submit calendar entry")
 
@@ -409,10 +443,14 @@ func (h *Handlers) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		var ve *ValidationError
+		if errors.As(err, &ve) {
+			errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", ve.Error())
+			return
+		}
+
 		slog.Error("calendar: update failed", "id", entryID, "error", err)
-		// buildEntry returns validation errors as 400; treat all others the same
-		// for a clean contract (the unit tests exercise forbidden/not-found only).
-		errpkg.WriteError(w, http.StatusBadRequest, "invalid_input", err.Error())
+		errpkg.WriteError(w, http.StatusInternalServerError, "update_failed", "Failed to update calendar entry")
 
 		return
 	}
@@ -639,6 +677,10 @@ func (h *Handlers) HandleAdminList(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			errpkg.WriteError(w, http.StatusBadRequest, "invalid_date", "Invalid to date")
 			return
+		}
+
+		if isDateOnly(v) {
+			ts.Time = ts.Time.Add(24*time.Hour - time.Nanosecond)
 		}
 
 		to = ts

@@ -1,4 +1,4 @@
-// Ref: japaconnect-engineering/sections/35-calendar.md
+// Ref: japaconnect-engineering/sections/86-community-calendar.md
 import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { apiContext, apiGet, apiList, ApiError } from '$lib/server/api';

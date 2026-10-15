@@ -293,6 +293,10 @@ export interface ColCityData {
 	is_baseline: boolean;
 	last_updated: string;
 	values: Record<string, string>;
+	/** §58 — the city's resolved local currency. */
+	currency_code?: string;
+	/** §112 — true when values were normalized to display_currency. */
+	converted: boolean;
 }
 
 export interface ColCategoryData {
@@ -307,6 +311,11 @@ export interface ColComparisonMatrix {
 	categories: ColCategoryData[];
 	baseline_city_id: string;
 	overall_index: Record<string, number>;
+	/** §112 — the fx base currency converted values are denominated in
+	 *  ("" when FX is unavailable — values stay local). */
+	display_currency: string;
+	fx_fetched_at?: string;
+	fx_stale?: boolean;
 }
 
 /* ------------------------------------------------------------------ *

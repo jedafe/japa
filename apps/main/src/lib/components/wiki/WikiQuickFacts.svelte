@@ -38,6 +38,7 @@
 	// §58 — the entity's resolved country currency, display fallback for
 	// currency/price_range fields that don't declare {currency_code}.
 	let contextCurrency = $state('');
+	let contextFx = $state<{ base: string; rate: number } | undefined>(undefined);
 	let loading = $state(true);
 	// §58 — shared active currency list from the root layout, used to
 	// resolve symbols on currency/price_range field values.
@@ -62,6 +63,7 @@
 			.then((data) => {
 				if (cancelled) return;
 				contextCurrency = data?.entity_currency_code ?? '';
+				contextFx = data?.entity_currency_fx;
 				// §80 — media-typed fields (attraction gallery) are
 				// {id,url,alt} objects, not scalar facts; the body panels
 				// render them as thumbnails. Excluding them here keeps a
@@ -132,7 +134,7 @@
 					<span class="min-w-0">
 						<span class="block text-xs text-[var(--color-muted)]">{f.label}</span>
 						<span class="block break-words text-sm font-medium text-[var(--color-text)] line-clamp-3">
-							{formatWikiFieldValue(f, currencies, contextCurrency)}
+							{formatWikiFieldValue(f, currencies, contextCurrency, contextFx)}
 						</span>
 					</span>
 				</li>

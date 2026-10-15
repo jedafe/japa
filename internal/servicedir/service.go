@@ -467,6 +467,9 @@ func (s *Service) SetPayments(p PaymentCreator) { s.payments = p }
 // mentorship-accept auto-open is skipped silently.
 type DMConversationCreator interface {
 	GetOrCreateConversation(ctx context.Context, participant1ID, participant2ID pgtype.UUID) (gen.DmConversation, error)
+	// Non-creating lookup — lets read paths link to an existing thread
+	// without minting one (GetBooking → dm_conversation_id).
+	GetConversationByParticipants(ctx context.Context, userA, userB pgtype.UUID) (gen.DmConversation, error)
 }
 
 // SetDMCreator injects the §48 DM creator used to auto-open a thread

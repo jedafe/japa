@@ -13,6 +13,7 @@
 	import DestinationSelector from '$lib/components/tools/DestinationSelector.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
 	import { currencySymbol } from '$lib/utils/currency';
+	import { destinationMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type {
 		GeoSpaceOption,
 		EcaProvider,
@@ -39,7 +40,13 @@
 		return sym ? `${sym} ${fee}` : fee;
 	}
 
-	let destinations = $state<GeoSpaceOption[]>(untrack(() => data.destinations));
+	// ADR-064 curated markets (public settings) — pinned first; every
+	// seeded country stays selectable (pin-first, not restricted).
+	let destinations = $state<GeoSpaceOption[]>(
+		untrack(() =>
+			pinMarketsFirst(data.destinations, destinationMarkets(data.siteSettings), (d) => d.code ?? '')
+		)
+	);
 	let providers = $state<EcaProvider[]>(untrack(() => data.providers));
 	let guides = $state<EcaGuide[]>(untrack(() => data.guides));
 	let user = $state(untrack(() => data.user));

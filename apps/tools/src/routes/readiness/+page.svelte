@@ -11,6 +11,7 @@
 	import RegistrationPrompt from '$lib/components/ui/RegistrationPrompt.svelte';
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import AutocompleteSelect from '$lib/components/ui/AutocompleteSelect.svelte';
+	import { destinationMarkets, originMarkets, pinMarketsFirst } from '$lib/utils/geoMarkets';
 	import type {
 		AssessmentForm,
 		AssessmentResult,
@@ -135,9 +136,19 @@
 		return countryKeys.has(f.key) || f.key.endsWith('_country');
 	}
 
+	// ADR-064 curated markets (public settings) — pinned first in the
+	// country selects; every seeded country stays selectable.
+	const oPins = $derived(originMarkets(data.siteSettings));
+	const dPins = $derived(destinationMarkets(data.siteSettings));
+
+	function pinnedCountryOptions(f: AssessmentField): CountryOption[] {
+		const pins = f.key === 'origin_country' ? oPins : dPins;
+		return pinMarketsFirst(data.countryOptions, pins, (o) => o.value);
+	}
+
 	function fieldOptions(f: AssessmentField): CountryOption[] {
 		if (isCountryField(f) && data.countryOptions.length > 0) {
-			return data.countryOptions;
+			return pinnedCountryOptions(f);
 		}
 		return (f.options ?? []) as CountryOption[];
 	}
@@ -660,7 +671,7 @@
 										onValueChange={(v) => setAnswer(f.key, v)}
 										options={[
 											{ value: '', label: f.placeholder || t('readiness.select_country', 'Select a country') },
-											...data.countryOptions
+											...pinnedCountryOptions(f)
 										]}
 										class="w-full"
 									/>

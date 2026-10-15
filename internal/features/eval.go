@@ -123,7 +123,7 @@ func (c *Checker) EvalAll(ctx context.Context, sc CallerScope) map[string]bool {
 	}
 
 	for _, row := range c.AllFlagRows(ctx) {
-		r := evalScoped(row.Key, effectiveEnabled(row.Key, row.Enabled, row.Config), row.Config, sc)
+		r := evalScoped(row.Key, effectiveEnabled(c.rolloutID(ctx), row.Key, row.Enabled, row.Config), row.Config, sc)
 		result[row.Key] = r.Enabled && r.Visible
 	}
 

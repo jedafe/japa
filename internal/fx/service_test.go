@@ -146,3 +146,25 @@ func TestMatrixFromRows(t *testing.T) {
 		t.Fatalf("fetched_at: got %v want %v (newest row)", m.FetchedAt, newer)
 	}
 }
+
+func TestBaseRateFromMatrix(t *testing.T) {
+	m := testMatrix()
+
+	rate, err := baseRateFromMatrix(m, "NGN")
+	if err != nil || rate != 1600 {
+		t.Fatalf("NGN: got rate=%v err=%v, want 1600", rate, err)
+	}
+
+	rate, err = baseRateFromMatrix(m, "USD")
+	if err != nil || rate != 1 {
+		t.Fatalf("USD base: got rate=%v err=%v, want 1", rate, err)
+	}
+
+	if _, err = baseRateFromMatrix(m, "XXX"); !errors.Is(err, ErrUnsupportedCurrency) {
+		t.Fatalf("XXX: expected ErrUnsupportedCurrency, got %v", err)
+	}
+
+	if _, err = baseRateFromMatrix(m, "ZZZ"); !errors.Is(err, ErrUnsupportedCurrency) {
+		t.Fatalf("zero rate: expected ErrUnsupportedCurrency, got %v", err)
+	}
+}

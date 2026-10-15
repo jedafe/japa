@@ -5,6 +5,7 @@
 	import { buildSeoMeta, mainAppUrl } from '$lib/seo';
 	import SeoHead from '$lib/components/seo/SeoHead.svelte';
 	import { t } from '$lib/i18n';
+	import { formatMoney } from '$lib/utils/currency';
 	import { page } from '$app/state';
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -12,7 +13,7 @@
 	import ToolDisabled from '$lib/components/ui/ToolDisabled.svelte';
 	import Autocomplete from '$lib/components/ui/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/ui/Autocomplete.svelte';
-	import type { ColCity, ColComparisonMatrix } from '$lib/types';
+	import type { ColCity, ColCityData, ColComparisonMatrix } from '$lib/types';
 
 	/**
 	 * Cost of Living Calculator tool — §72, ADR-072.
@@ -171,6 +172,17 @@
 
 	function formatRatio(r: number): string {
 		return r.toFixed(2) + '×';
+	}
+
+	// §112 — matrix cells are denominated in matrix.display_currency when
+	// the city converted; unconverted cells keep their raw local value.
+	function formatCellValue(city: ColCityData, v: number | undefined): string {
+		if (v === undefined) return '—';
+		if (matrix?.display_currency && city.converted) {
+			return formatMoney(v, matrix.display_currency, data.currencies);
+		}
+		const n = v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+		return city.currency_code ? `${n} ${city.currency_code}` : n;
 	}
 
 	// Check if data is stale (threshold from col_calculator.stale_days setting).
@@ -332,6 +344,15 @@
 				</div>
 			{/if}
 
+			{#if matrix.fx_stale}
+				<div class="mb-4 flex items-center gap-2 rounded-lg border border-border bg-surface-subtle px-3 py-2">
+					<Icon name="alert-triangle" size={14} class="flex-shrink-0 text-muted" />
+					<p class="text-xs text-muted">
+						{t('col.fx_stale', 'Exchange rates may be outdated — displayed conversions are indicative.')}
+					</p>
+				</div>
+			{/if}
+
 			<!-- Overall Cost Index -->
 			{#if Object.keys(matrix.overall_index).length > 0}
 				<div class="mb-6 rounded-lg border border-border bg-surface-subtle p-4">
@@ -393,7 +414,7 @@
 								<td class="px-3 py-2 text-text">{cat.label}</td>
 								{#each matrix.cities as city (city.id)}
 									<td class="px-3 py-2 text-right text-text">
-										<div class="font-medium">{cat.values[city.id]?.toFixed(0) ?? '—'}</div>
+										<div class="font-medium">{formatCellValue(city, cat.values[city.id])}</div>
 										{#if !city.is_baseline && cat.ratios[city.id]}
 											<div class="text-xs text-muted">{formatRatio(cat.ratios[city.id])}</div>
 										{/if}

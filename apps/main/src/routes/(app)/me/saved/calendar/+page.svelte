@@ -3,7 +3,8 @@
 	// BUG-003: saved calendar entries dashboard page.
 	import { t } from '$lib/i18n';
 	import { goto } from '$app/navigation';
-	import { CalendarDays, ExternalLink, AlertTriangle, Bookmark } from 'lucide-svelte';
+	import { CalendarDays, ExternalLink, AlertTriangle, Bookmark, BookmarkX, Loader2 } from 'lucide-svelte';
+	import { api } from '$lib/api/client';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { calendarCategoryLabel } from '$lib/enumOptions';
 	import type { CalendarEntry, CalendarCategory } from '$lib/types';
@@ -33,6 +34,19 @@
 
 	function isStale(entry: CalendarEntry): boolean {
 		return entry.status === 'unverified';
+	}
+
+	let removedIds = $state<Record<string, boolean>>({});
+	let unsavingId = $state<string | null>(null);
+	const visibleEntries = $derived(data.entries.filter((e) => !removedIds[e.id]));
+
+	async function unsave(entry: CalendarEntry) {
+		unsavingId = entry.id;
+		const res = await api.delete(`/calendar/${entry.id}/save`);
+		unsavingId = null;
+		if (!res.error) {
+			removedIds = { ...removedIds, [entry.id]: true };
+		}
 	}
 </script>
 
@@ -67,7 +81,7 @@
 				title={t('calendar.load_error', 'Could not load saved entries')}
 				body={t('calendar.load_error_body', 'Please try again later.')}
 			/>
-		{:else if data.entries.length === 0}
+		{:else if visibleEntries.length === 0}
 			<EmptyState
 				icon={Bookmark}
 				title={t('calendar.saved_empty', 'No saved entries')}
@@ -76,7 +90,7 @@
 			/>
 		{:else}
 			<div class="divide-y divide-[var(--color-border)] rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-				{#each data.entries as entry (entry.id)}
+				{#each visibleEntries as entry (entry.id)}
 					<div class="flex items-start gap-3 px-4 py-3">
 						<a href="/calendar/{entry.id}" class="min-w-0 flex-1">
 							<div class="flex items-start justify-between gap-2">
@@ -100,17 +114,32 @@
 								</p>
 							{/if}
 						</a>
-						{#if entry.source_url}
-							<a
-								href={entry.source_url}
-								target="_blank"
-								rel="noopener noreferrer nofollow"
-								class="inline-flex shrink-0 items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
-								aria-label={t('calendar.source', 'Official source')}
+						<div class="flex shrink-0 items-center gap-2">
+							{#if entry.source_url}
+								<a
+									href={entry.source_url}
+									target="_blank"
+									rel="noopener noreferrer nofollow"
+									class="inline-flex items-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1 text-xs font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+									aria-label={t('calendar.source', 'Official source')}
+								>
+									<ExternalLink size={12} /> {t('calendar.source', 'Source')}
+								</a>
+							{/if}
+							<button
+								type="button"
+								onclick={() => unsave(entry)}
+								disabled={unsavingId === entry.id}
+								class="rounded-[var(--radius)] border border-[var(--color-border)] p-1.5 text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-subtle)] disabled:opacity-50"
+								aria-label={t('calendar.unsave', 'Unsave')}
 							>
-								<ExternalLink size={12} /> {t('calendar.source', 'Source')}
-							</a>
-						{/if}
+								{#if unsavingId === entry.id}
+									<Loader2 size={14} class="animate-spin" />
+								{:else}
+									<BookmarkX size={14} />
+								{/if}
+							</button>
+						</div>
 					</div>
 				{/each}
 			</div>

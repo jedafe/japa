@@ -306,6 +306,99 @@ func (s *Store) GetEntry(ctx context.Context, id pgtype.UUID) (CalendarEntry, er
 	return fromGetRow(row), nil
 }
 
+// GetEntryAnyStatus returns a single non-deleted calendar entry by id
+// regardless of status. The service layer enforces visibility rules
+// (published|unverified are public; pending|archived are submitter/reviewer
+// only) — ADR-094: unverified entries display a warning, not a 404.
+func (s *Store) GetEntryAnyStatus(ctx context.Context, id pgtype.UUID) (CalendarEntry, error) {
+	row, err := s.read.CalendarGetEntryAnyStatus(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return CalendarEntry{}, pgx.ErrNoRows
+		}
+		return CalendarEntry{}, fmt.Errorf("calendar: get entry any status: %w", err)
+	}
+
+	return CalendarEntry{
+		ID: row.ID, Title: row.Title, Description: row.Description,
+		Category: row.Category, DestinationSpaceID: row.DestinationSpaceID, OriginSpaceID: row.OriginSpaceID,
+		OccursAt: row.OccursAt, EndsAt: row.EndsAt, IsRecurring: row.IsRecurring, RecurrencePattern: row.RecurrencePattern,
+		SourceURL: row.SourceUrl, Status: row.Status, SubmittedBy: row.SubmittedBy, ReviewedBy: row.ReviewedBy, ReviewedAt: row.ReviewedAt,
+		StalenessCheckDue: row.StalenessCheckDue,
+		AiGenerated:       row.AiGenerated, AiModel: row.AiModel, HitlReviewedBy: row.HitlReviewedBy, AiGeneratedAt: row.AiGeneratedAt,
+		AiPromptHash: row.AiPromptHash, HitlReviewedAt: row.HitlReviewedAt, HitlReviewNotes: row.HitlReviewNotes,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, DeletedAt: row.DeletedAt,
+	}, nil
+}
+
+// SavedEntryIDs returns the subset of entryIDs that the user has saved —
+// one query for the whole page instead of a per-entry EXISTS loop (N+1).
+func (s *Store) SavedEntryIDs(ctx context.Context, userID pgtype.UUID, entryIDs []pgtype.UUID) (map[string]bool, error) {
+	saved := make(map[string]bool, len(entryIDs))
+	if len(entryIDs) == 0 {
+		return saved, nil
+	}
+
+	ids, err := s.read.CalendarSavedEntryIDs(ctx, gen.CalendarSavedEntryIDsParams{
+		UserID:   userID,
+		EntryIds: entryIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("calendar: saved entry ids: %w", err)
+	}
+	for _, id := range ids {
+		saved[id.String()] = true
+	}
+
+	return saved, nil
+}
+
+// IsSubscribed reports whether the user has an exact (destination, category)
+// subscription. A nil/empty category means the all-categories subscription.
+func (s *Store) IsSubscribed(ctx context.Context, userID, destSpaceID pgtype.UUID, category string) (bool, error) {
+	var catPtr *string
+	if category != "" {
+		catPtr = &category
+	}
+
+	subscribed, err := s.read.CalendarIsSubscribed(ctx, gen.CalendarIsSubscribedParams{
+		UserID:             userID,
+		DestinationSpaceID: destSpaceID,
+		Category:           catPtr,
+	})
+	if err != nil {
+		return false, fmt.Errorf("calendar: is subscribed: %w", err)
+	}
+
+	return subscribed, nil
+}
+
+// SpaceNames batch-resolves space names (countries) for a set of space ids,
+// used to label destination/origin on calendar entry DTOs.
+func (s *Store) SpaceNames(ctx context.Context, ids []pgtype.UUID) (map[string]string, error) {
+	names := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return names, nil
+	}
+
+	rows, err := s.pool.Reader.Query(ctx, `SELECT id, name FROM spaces WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("calendar: space names: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id pgtype.UUID
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("calendar: scan space name: %w", err)
+		}
+		names[id.String()] = name
+	}
+
+	return names, rows.Err()
+}
+
 // GetEntryForUpdate returns a single non-deleted calendar entry by id,
 // regardless of status. Used by the public edit path.
 func (s *Store) GetEntryForUpdate(ctx context.Context, id pgtype.UUID) (CalendarEntry, error) {
@@ -400,7 +493,9 @@ func (s *Store) ListEntries(ctx context.Context, f ListEntriesFilter) ([]Calenda
 		argIdx     = 1
 	)
 
-	conditions = append(conditions, "status = 'published'")
+	// ADR-094: unverified entries are listed publicly with a warning rather
+	// than being removed.
+	conditions = append(conditions, "status IN ('published', 'unverified')")
 	conditions = append(conditions, "deleted_at IS NULL")
 
 	if f.DestinationSpaceID.Valid {

@@ -51,6 +51,28 @@ function fmtNum(n: number): string {
 	return n.toLocaleString(i18n.locale, { maximumFractionDigits: 2 });
 }
 
+/** §58+§112 — the local→display-base rate context for "(base)"
+ *  equivalents; rate = local units per 1 base unit. Absent = local only. */
+export interface FxEquiv {
+	base: string;
+	rate: number;
+}
+
+/** "(…)" equivalent in the display base currency — '' when the field's
+ *  code IS the base, the rate is unusable, or fx is absent. */
+function equivSuffix(
+	n: number,
+	code: string,
+	fx: FxEquiv | undefined,
+	currencies?: CurrencyInfo[] | null
+): string {
+	if (!fx || !code || code === fx.base || !(fx.rate > 0)) return '';
+	const sym = currencySymbol(fx.base, currencies);
+	const amt = n / fx.rate;
+	const inner = sym && sym !== fx.base ? `${sym}${fmtNum(amt)}` : `${fx.base} ${fmtNum(amt)}`;
+	return ` (${inner})`;
+}
+
 /** §58 — the ISO code a price_range/currency field was bound to via its
  *  options config ({currency_code: "USD"}). Empty when unset. */
 export function fieldCurrencyCode(options: unknown): string {
@@ -67,12 +89,15 @@ export function fieldCurrencyCode(options: unknown): string {
 export function formatPriceRange(
 	v: unknown,
 	code?: string,
-	currencies?: CurrencyInfo[] | null
+	currencies?: CurrencyInfo[] | null,
+	fx?: FxEquiv
 ): string {
 	const p = priceRangeParts(v);
 	if (!p) return '—';
 	const sym = code ? currencySymbol(code, currencies) : '';
-	const money = (n: number) => (sym && sym !== code ? `${sym}${fmtNum(n)}` : code ? `${code} ${fmtNum(n)}` : fmtNum(n));
+	const money = (n: number) =>
+		(sym && sym !== code ? `${sym}${fmtNum(n)}` : code ? `${code} ${fmtNum(n)}` : fmtNum(n)) +
+		equivSuffix(n, code ?? '', fx, currencies);
 	if (p.min !== undefined && p.max !== undefined && p.min !== p.max) {
 		return `${money(p.min)} – ${money(p.max)}`;
 	}
@@ -117,7 +142,8 @@ export function formatPricePart(
 	raw: unknown,
 	kind: string | undefined,
 	code: string,
-	currencies?: CurrencyInfo[] | null
+	currencies?: CurrencyInfo[] | null,
+	fx?: FxEquiv
 ): string {
 	if (raw === null || raw === undefined || raw === '') return '—';
 	if (kind === 'money' || kind === 'number') {
@@ -125,8 +151,8 @@ export function formatPricePart(
 		if (!Number.isFinite(n)) return '—';
 		if (kind !== 'money') return fmtNum(n);
 		const sym = code ? currencySymbol(code, currencies) : '';
-		if (sym && sym !== code) return `${sym}${fmtNum(n)}`;
-		return code ? `${code} ${fmtNum(n)}` : fmtNum(n);
+		const primary = sym && sym !== code ? `${sym}${fmtNum(n)}` : code ? `${code} ${fmtNum(n)}` : fmtNum(n);
+		return primary + equivSuffix(n, code, fx, currencies);
 	}
 	return String(raw);
 }
@@ -136,13 +162,14 @@ export function formatPricePart(
 export function formatPricePartsInline(
 	f: WikiEntityField,
 	contextCurrencyCode: string,
-	currencies?: CurrencyInfo[] | null
+	currencies?: CurrencyInfo[] | null,
+	fx?: FxEquiv
 ): string {
 	const parts = pricePartsValue(f.value);
 	const schema = pricePartsSchema(f.options);
 	const code = fieldCurrencyCode(f.options) || contextCurrencyCode;
 	const opts = (f.options ?? {}) as { primary_part?: string };
-	const fmt = (key: string, kind?: string) => formatPricePart(parts[key], kind, code, currencies);
+	const fmt = (key: string, kind?: string) => formatPricePart(parts[key], kind, code, currencies, fx);
 	if (opts.primary_part && parts[opts.primary_part] !== undefined) {
 		const kind = schema.find((p) => p.key === opts.primary_part)?.kind;
 		return fmt(opts.primary_part, kind);
@@ -213,7 +240,8 @@ function unwrapChoiceValue(v: unknown): unknown {
 export function formatWikiFieldValue(
 	f: WikiEntityField,
 	currencies?: CurrencyInfo[] | null,
-	contextCurrencyCode?: string
+	contextCurrencyCode?: string,
+	fx?: FxEquiv
 ): string {
 	let v = f.value;
 	if (f.field_type === 'select' || f.field_type === 'multiselect') {
@@ -221,9 +249,10 @@ export function formatWikiFieldValue(
 	}
 	if (v === null || v === undefined || v === '') return '—';
 	const code = fieldCurrencyCode(f.options) || contextCurrencyCode || '';
-	if (f.field_type === 'price_range') return formatPriceRange(v, code, currencies);
-	if (f.field_type === 'price_parts') return formatPricePartsInline(f, code, currencies);
-	if (f.field_type === 'currency' && typeof v === 'number') return formatMoney(v, code || undefined, currencies);
+	if (f.field_type === 'price_range') return formatPriceRange(v, code, currencies, fx);
+	if (f.field_type === 'price_parts') return formatPricePartsInline(f, code, currencies, fx);
+	if (f.field_type === 'currency' && typeof v === 'number')
+		return formatMoney(v, code || undefined, currencies) + equivSuffix(v, code, fx, currencies);
 	if (typeof v === 'boolean') return v ? t('common.yes', 'Yes') : t('common.no', 'No');
 	if (typeof v === 'number') return v.toLocaleString(i18n.locale);
 	const options = choiceOptions(f.options);

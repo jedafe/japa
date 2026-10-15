@@ -6,13 +6,15 @@
 	import {
 		ArrowLeft,
 		CalendarDays,
-			Repeat,
+		Repeat,
 		ExternalLink,
 		Bookmark,
 		BookmarkCheck,
 		AlertTriangle,
 		BadgeCheck,
-		Loader2
+		Loader2,
+		MapPin,
+		Pencil
 	} from 'lucide-svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
 	import { calendarCategoryLabel } from '$lib/enumOptions';
@@ -33,16 +35,18 @@
 	// the query-string form) so filtered/paginated hits consolidate.
 	const canonical = $derived(`${page.url.origin}/calendar/${entry?.id ?? ''}`);
 
+	const categories: { value: string; label: string }[] = $derived(data.categories ?? []);
+
 	function categoryLabel(cat: CalendarCategory): string {
-		return calendarCategoryLabel(t, cat);
+		return categories.find((c) => c.value === cat)?.label ?? calendarCategoryLabel(t, cat);
 	}
 
-	const statusLabels: Record<string, string> = {
+	const statusLabels = $derived<Record<string, string>>({
 		pending: t('calendar.status_pending', 'Pending'),
 		published: t('calendar.status_published', 'Published'),
 		unverified: t('calendar.status_unverified', 'Unverified'),
 		archived: t('calendar.status_archived', 'Archived')
-	};
+	});
 
 	function statusColor(status: string): string {
 		if (status === 'published') return 'bg-[var(--color-success)]/10 text-[var(--color-success)]';
@@ -186,6 +190,17 @@
 						<dd class="truncate text-sm font-medium text-[var(--color-text)]">{fmtDate(entry.occurs_at)}</dd>
 					</div>
 				</div>
+				{#if entry.destination_space_name}
+					<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2">
+						<MapPin size={16} class="shrink-0 text-[var(--color-muted)]" />
+						<div class="min-w-0">
+							<dt class="text-xs text-[var(--color-muted)]">{t('calendar.destination', 'Destination')}</dt>
+							<dd class="truncate text-sm font-medium text-[var(--color-text)]">
+								{entry.destination_space_name}{#if entry.origin_space_name} · {t('calendar.origin', 'Origin')}: {entry.origin_space_name}{/if}
+							</dd>
+						</div>
+					</div>
+				{/if}
 				{#if entry.ends_at}
 					<div class="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-subtle)] px-3 py-2">
 						<CalendarDays size={16} class="shrink-0 text-[var(--color-muted)]" />
@@ -232,6 +247,15 @@
 						{/if}
 						{saved ? t('common.saved', 'Saved') : t('common.save', 'Save')}
 					</button>
+				{/if}
+				{#if data.canEdit}
+					<a
+						href="/calendar/{entry.id}/edit"
+						class="inline-flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-surface-subtle)]"
+					>
+						<Pencil size={16} />
+						{t('calendar.edit', 'Edit')}
+					</a>
 				{/if}
 			</div>
 		</article>

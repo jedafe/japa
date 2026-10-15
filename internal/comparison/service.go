@@ -1547,6 +1547,9 @@ type ComparisonMatrixDimension struct { //nolint:revive // stuttering type name 
 	// the resolved item's field_values metadata via the dimension's
 	// source_field_key (§30 Sub-spec 5 entity-field hydration).
 	HydratedFrom string `json:"hydrated_from,omitempty"`
+	// Normalized marks currency cells whose ValueRating was converted from
+	// the item's local currency into CurrencyCode (the fx display base).
+	Normalized bool `json:"normalized,omitempty"`
 }
 
 // GetComparisonMatrix assembles the full items×dimensions matrix for a comparison.
@@ -1635,6 +1638,57 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 		return &resolved
 	}
 
+	// §58+§112 currency normalization context: geo-space-backed items
+	// (col_city) expose geo_space_id in resolved metadata → country
+	// currency → fx base rate. Cached per currency code — items in the
+	// same country share one lookup.
+	type cellFx struct {
+		localCode string
+		rate      float64 // local units per 1 base unit; 0 = unconvertible
+		base      string
+	}
+	cellFxByCode := make(map[string]cellFx)
+	itemFx := func(item gen.ListComparisonItemsByContentRow) cellFx {
+		if s.currencyRes == nil {
+			return cellFx{}
+		}
+		resolved := resolveItem(item)
+		if resolved == nil {
+			return cellFx{}
+		}
+		raw, _ := resolved.Metadata["geo_space_id"].(string)
+		var sid pgtype.UUID
+		if raw == "" || sid.Scan(raw) != nil || !sid.Valid {
+			return cellFx{}
+		}
+		code, err := s.currencyRes.ResolveSpaceCurrencyCode(ctx, sid)
+		if err != nil || code == "" {
+			return cellFx{}
+		}
+		fx, ok := cellFxByCode[code]
+		if !ok {
+			fx = cellFx{localCode: code}
+			if s.fxRates != nil {
+				if rate, base, _, _, ferr := s.fxRates.BaseRate(ctx, code); ferr == nil && rate > 0 {
+					fx.rate, fx.base = rate, base
+				}
+			}
+			cellFxByCode[code] = fx
+		}
+		return fx
+	}
+	// applyCellFx denominates a currency-dimension cell: converted → base
+	// code + Normalized; unconvertible → the item's local code.
+	applyCellFx := func(md *ComparisonMatrixDimension, fx cellFx) {
+		if fx.rate > 0 {
+			*md.ValueRating /= fx.rate
+			md.CurrencyCode = fx.base
+			md.Normalized = true
+			return
+		}
+		md.CurrencyCode = fx.localCode
+	}
+
 	matrix := make([]ComparisonMatrixItem, 0, len(dedupedItems))
 
 	for _, item := range dedupedItems {
@@ -1665,6 +1719,14 @@ func (s *Service) GetComparisonMatrix(ctx context.Context, contentID pgtype.UUID
 				// resolved entity's field_values metadata.
 				if resolved := resolveItem(item); resolved != nil {
 					hydrateMatrixCell(&md, dim.DimensionType, *dim.SourceFieldKey, resolved.Metadata, dim.SourceFieldOptions)
+				}
+			}
+			// Currency-dimension cells on geo-space-backed items normalize
+			// to the fx display base (§58+§112) — both persisted and
+			// hydrated values are denominated in the item's local currency.
+			if dim.DimensionType == DimensionTypeCurrency && md.ValueRating != nil {
+				if fx := itemFx(item); fx.localCode != "" {
+					applyCellFx(&md, fx)
 				}
 			}
 

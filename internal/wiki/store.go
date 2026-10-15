@@ -1210,6 +1210,17 @@ func (s *Store) ResolveSpaceCurrencyCode(ctx context.Context, spaceID pgtype.UUI
 	return *country.CurrencyCode, nil
 }
 
+// CurrencyDisplayName returns the currencies.name for a code — the
+// display value for default_source:"space_currency" text fields.
+// Empty string when the code is unknown.
+func (s *Store) CurrencyDisplayName(ctx context.Context, code string) string {
+	c, err := s.read.GetCurrencyByCode(ctx, code)
+	if err != nil || c.Name == "" {
+		return ""
+	}
+	return c.Name
+}
+
 // ListSeedSpaceIDs returns the IDs of all active spaces whose wiki type
 // opts into stub seeding (wiki_type_configs.seed_stubs) — the seed set for
 // the wiki:seed_stub_pages fan-out (§80 Wiki Types amendment; replaces the

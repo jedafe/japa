@@ -13,7 +13,8 @@
 		formatPricePart,
 		formatPriceRange,
 		pricePartsValue,
-		priceRangeParts
+		priceRangeParts,
+		type FxEquiv
 	} from '$lib/utils/wikiFieldValue';
 	import { currencySymbol, type CurrencyInfo } from '$lib/utils/currency';
 	import { categoryIcon, categoryTint } from './icons';
@@ -24,8 +25,10 @@
 		spaceName,
 		/** §58 — host space's resolved country currency; display fallback
 		 *  for rollup fields that don't carry options.currency_code. */
-		contextCurrency = ''
-	}: { rollup: WikiRollup; spaceName: string; contextCurrency?: string } = $props();
+		contextCurrency = '',
+		/** §112 — local→base display rate for "(base)" equivalents. */
+		contextFx = undefined
+	}: { rollup: WikiRollup; spaceName: string; contextCurrency?: string; contextFx?: FxEquiv } = $props();
 
 	// §58 — active currency list from the root layout; rollup fields carry
 	// currency_code from their field definition's options, else the host
@@ -51,7 +54,13 @@
 		const code = fieldCode(f);
 		if (!code) return fmtNum(n);
 		const sym = currencySymbol(code, currencies);
-		return sym && sym !== code ? `${sym}${fmtNum(n)}` : `${code} ${fmtNum(n)}`;
+		const primary = sym && sym !== code ? `${sym}${fmtNum(n)}` : `${code} ${fmtNum(n)}`;
+		if (!contextFx || !code || code === contextFx.base || !(contextFx.rate > 0)) return primary;
+		const baseSym = currencySymbol(contextFx.base, currencies);
+		const equiv = baseSym && baseSym !== contextFx.base
+			? `${baseSym}${fmtNum(n / contextFx.rate)}`
+			: `${contextFx.base} ${fmtNum(n / contextFx.rate)}`;
+		return `${primary} (${equiv})`;
 	};
 
 	// Summary cards — one per rollup field that produced a metric, capped so
@@ -75,14 +84,14 @@
 			// primary part of the stored {parts:{...}} object, formatted by
 			// that part's kind (a number primary stays bare, money currency-formats).
 			if (!f.primary_part) return '—';
-			return formatPricePart(pricePartsValue(raw)[f.primary_part], f.primary_kind, fieldCode(f), currencies);
+			return formatPricePart(pricePartsValue(raw)[f.primary_part], f.primary_kind, fieldCode(f), currencies, contextFx);
 		}
 		if (f.field_type === 'price_range') {
 			const p = priceRangeParts(raw);
 			if (p?.avg !== undefined && p.min !== undefined && p.max !== undefined) {
 				return `${moneyNum(f, p.avg)} (${moneyNum(f, p.min)}–${moneyNum(f, p.max)})`;
 			}
-			return formatPriceRange(raw, fieldCode(f), currencies);
+			return formatPriceRange(raw, fieldCode(f), currencies, contextFx);
 		}
 		return typeof raw === 'number' ? moneyNum(f, raw) : '—';
 	}

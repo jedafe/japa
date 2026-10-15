@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { apiContext, apiGet, apiPost, apiPut, ApiError } from '$lib/server/api';
+import { formatMoney } from '$lib/utils/currency';
 import type {
 	ColCity,
 	ColCitiesListResponse,
@@ -35,14 +36,13 @@ export const load: PageServerLoad = async (event) => {
 	const authed = !!event.locals.user;
 
 	// Tool config from the root layout's public siteSettings (Rule 3 / Rule 16).
-	let maxCities = 3;
-	let staleDays = 180;
-	if (typeof siteSettings?.['col_calculator.max_cities'] === 'number') {
-		maxCities = siteSettings['col_calculator.max_cities'] as number;
-	}
-	if (typeof siteSettings?.['col_calculator.stale_days'] === 'number') {
-		staleDays = siteSettings['col_calculator.stale_days'] as number;
-	}
+	// Public settings serialise ints as JSON strings — coerce leniently.
+	const configuredMax = Number(siteSettings?.['col_calculator.max_cities']);
+	const maxCities =
+		Number.isInteger(configuredMax) && configuredMax > 0 ? configuredMax : 3;
+	const configuredStale = Number(siteSettings?.['col_calculator.stale_days']);
+	const staleDays =
+		Number.isInteger(configuredStale) && configuredStale > 0 ? configuredStale : 180;
 
 	let cities: ColCity[] = [];
 	let disabled = false;
@@ -98,17 +98,16 @@ export const actions: Actions = {
 		}
 
 		const form = await event.request.formData();
-		const bracketed = form
-			.getAll('city_id[]')
+		const cityIds = form
+			.getAll('city_id')
 			.filter((v): v is string => typeof v === 'string');
-		const plain = bracketed.length
-			? []
-			: form.getAll('city_id').filter((v): v is string => typeof v === 'string');
-		const cityIds = bracketed.length ? bracketed : plain;
 		const baselineId = String(form.get('baseline_id') ?? '').trim();
 
 		if (cityIds.length < 2) {
-			return fail(400, { error: 'invalid_selection', message: 'Select at least 2 cities' });
+			return fail(400, {
+				error: 'invalid_selection',
+				message: 'Select a baseline and at least one destination city'
+			});
 		}
 
 		const ctx = apiContext(event);
@@ -122,9 +121,17 @@ export const actions: Actions = {
 				`/calculator/cost-of-living/compare?${params.toString()}`
 			);
 		} catch (e) {
-			const message = e instanceof ApiError ? e.message : 'Could not load cost-of-living comparison';
-			const code = e instanceof ApiError ? e.code : 'fetch_failed';
-			return fail(code === 'too_many_cities' ? 400 : 500, { error: code, message });
+			if (e instanceof ApiError) {
+				// Pass 4xx validation errors (invalid_city_id, invalid_baseline_id,
+				// too_many_cities) through with their status instead of
+				// collapsing them into a generic 500.
+				const status = e.status >= 400 && e.status < 500 ? e.status : 500;
+				return fail(status, { error: e.code, message: e.message });
+			}
+			return fail(500, {
+				error: 'fetch_failed',
+				message: 'Could not load cost-of-living comparison'
+			});
 		}
 
 		const cityById = new Map<string, ColCityData>(matrix.cities.map((c) => [c.id, c]));
@@ -200,7 +207,8 @@ export const actions: Actions = {
 		for (const cat of matrix.categories) {
 			valueGetters[cat.label] = (city) => {
 				const v = cat.values[city.id];
-				return v != null ? v.toFixed(0) : undefined;
+				// Keep decimals — values like a $3.50 meal must not round to 4.
+				return v != null ? formatMoney(v, matrix.display_currency || 'USD') : undefined;
 			};
 		}
 

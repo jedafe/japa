@@ -27,6 +27,7 @@ package visitor
 import (
 	"context"
 	"encoding/json"
+	"hash/fnv"
 	"net/http"
 	"sort"
 	"strconv"
@@ -320,6 +321,13 @@ func (res *Resolver) resolve(r *http.Request) VisitorContext {
 		cacheKey = valkey.MustKey("visitor:ctx:ip:%s", clientip.FromRequest(r))
 	}
 
+	// Fold the geo config fingerprint into the cache key so market-list and
+	// related setting changes self-invalidate cached contexts instead of
+	// waiting out the 30-minute TTL.
+	if cacheKey != "" {
+		cacheKey += ":" + res.geoConfigFingerprint(r.Context())
+	}
+
 	// Try cache first. cacheKey is empty when the anonymous visitor has no
 	// platform context (BUG-V001: we skip caching rather than risk cross-platform
 	// bleed on an unscoped key).
@@ -434,6 +442,13 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 		}
 	}
 
+	// ADR-064a: OriginCountry falls back to the GeoIP country when no
+	// declared source supplied one (profile field, readiness assessment, or
+	// guest journey context — applied in that precedence order above/before).
+	if vc.OriginCountry == "" {
+		vc.OriginCountry = vc.GeoIPCountry
+	}
+
 	// ADR-128: reconcile the two journey vocabularies so consumers key on a
 	// single value. The declared japa_intent column wins; an empty intent
 	// derives from Purpose (vacation/tourism → visit); an empty Purpose
@@ -449,10 +464,12 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 
 	// Resolve archetype (ADR-064). CurrentCountry is the primary signal
 	// (now from Space hierarchy when set, else GeoIP); japa_status and
-	// destination_country refine it. OriginCountry is now from the profile
-	// field when set, else GeoIP.
+	// destination_country refine it. OriginCountry (profile field, guest
+	// journey context, or GeoIP fallback) is also a signal: a member whose
+	// home country is an origin market stays an origin_visitor even when
+	// their current location is not an origin market.
 	archetype, contentCountry, confidence := resolveArchetype(
-		vc.CurrentCountry, vc.JapaStage, vc.DestinationCountry,
+		vc.CurrentCountry, vc.JapaStage, vc.DestinationCountry, vc.OriginCountry,
 		originMarkets, destMarkets,
 	)
 	vc.Archetype = archetype
@@ -486,15 +503,19 @@ func (res *Resolver) enrichArchetype(ctx context.Context, vc *VisitorContext, us
 // be unit-tested without a database or Redis.
 //
 // Classification (ADR-064):
-//   - origin_visitor  — current country is an origin market and not settled.
-//     ContentCountry = destination if set, else current (origin).
+//   - origin_visitor  — current country is an origin market and not settled;
+//     OR the declared origin (profile field, guest journey, or GeoIP) is an
+//     origin market while the visitor is neither in a destination market nor
+//     settled — e.g. a Nigerian in transit through a non-market country.
+//     ContentCountry = destination if set, else the origin market country.
 //   - diaspora       — current country is a destination market and/or
 //     japa_status == "settled". ContentCountry = current country.
 //   - global_traveler — neither pattern. ContentCountry = current, low weight.
-func resolveArchetype(current, stage, destination string, originMarkets, destMarkets map[string]bool) (archetype, contentCountry string, confidence float32) {
+func resolveArchetype(current, stage, destination, origin string, originMarkets, destMarkets map[string]bool) (archetype, contentCountry string, confidence float32) {
 	isOrigin := current != "" && originMarkets[current]
 	isDest := current != "" && destMarkets[current]
 	settled := stage == "settled"
+	fromOriginMarket := origin != "" && originMarkets[origin]
 
 	switch {
 	case isOrigin && !settled:
@@ -503,6 +524,8 @@ func resolveArchetype(current, stage, destination string, originMarkets, destMar
 
 		if destination != "" {
 			contentCountry = destination
+		} else if fromOriginMarket {
+			contentCountry = origin
 		} else {
 			contentCountry = current
 		}
@@ -515,6 +538,15 @@ func resolveArchetype(current, stage, destination string, originMarkets, destMar
 		}
 
 		contentCountry = current
+	case fromOriginMarket:
+		archetype = ArchetypeOriginVisitor
+		confidence = 0.85
+
+		if destination != "" {
+			contentCountry = destination
+		} else {
+			contentCountry = origin
+		}
 	default:
 		archetype = ArchetypeGlobalTraveler
 		confidence = 0.5
@@ -563,6 +595,34 @@ func (res *Resolver) defaultCountry(ctx context.Context) string {
 	}
 
 	return fallback
+}
+
+// geoConfigFingerprint returns a short hash of the geo-personalization
+// settings that affect resolution (archetype market lists, city-level
+// killswitch, default country). It is appended to the visitor-context cache
+// key so a config change yields a different key — stale entries simply
+// expire unread. Reads are served by the settings L1 cache, so this costs
+// a few map lookups per request.
+func (res *Resolver) geoConfigFingerprint(ctx context.Context) string {
+	if res.settings == nil {
+		return "nocfg"
+	}
+
+	h := fnv.New32a()
+	for _, key := range []string{
+		"geo_personalization.origin_markets",
+		"geo_personalization.destination_markets",
+		"geo_personalization.city_level_enabled",
+		"geo_personalization.default_country",
+	} {
+		v, err := res.settings.GetSetting(ctx, key)
+		if err != nil {
+			v = "?"
+		}
+		_, _ = h.Write([]byte(v))
+	}
+
+	return strconv.FormatUint(uint64(h.Sum32()), 36)
 }
 
 // cache writes the resolved context to Valkey (best-effort, never blocks).

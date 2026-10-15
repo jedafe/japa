@@ -9,9 +9,10 @@
 	import Autocomplete from '$lib/components/create/Autocomplete.svelte';
 	import type { AutocompleteItem } from '$lib/components/create/Autocomplete.svelte';
 	import { api } from '$lib/api/client';
-	import type { ColCity, ColComparisonMatrix } from '$lib/types';
+	import type { ColCity, ColCityData, ColComparisonMatrix } from '$lib/types';
 	import type { PageData, ActionData } from './$types';
 	import { safeJsonLdScript } from '$lib/utils/safeHtml';
+	import { formatMoney, type CurrencyInfo } from '$lib/utils/currency';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
 
@@ -56,18 +57,25 @@
 	const idsKey = $derived(selectedIds.join(','));
 
 	// Single source of truth for the comparison fetch. Runs once per selection
-	// or baseline change; the SSR-seeded matrix is used when both still match
-	// the URL the server rendered for (avoids a duplicate request).
+	// or baseline change; the SSR-seeded matrix is reused whenever it already
+	// covers the current selection (same effective baseline + all selected
+	// cities) — including legacy share URLs that carried the baseline inside
+	// city_ids, which strips it from selectedIds but not data.preselected.
 	$effect(() => {
 		const ids = idsKey;
 		const base = effectiveBaselineId;
+		const m = data.matrix;
 		if (
-			data.matrix &&
-			ids === data.preselected.join(',') &&
-			base === (data.preselectedBaseline ?? seededBaselineId)
+			m &&
+			ids !== '' &&
+			base === m.baseline_city_id &&
+			selectedIds.every((id) => m.cities.some((c) => c.id === id))
 		) {
-			matrix = data.matrix;
+			matrix = m;
 			error = null;
+			// Mirror the effective baseline when the requested one didn't
+			// resolve (deleted city, wrong-type id) so the picker never blanks.
+			if (baselineId !== m.baseline_city_id) baselineId = m.baseline_city_id;
 			return;
 		}
 		fetchComparison();
@@ -188,6 +196,34 @@
 		return r.toFixed(2) + '×';
 	}
 
+	// Active currency table (Section 58) from the root layout — formatMoney
+	// resolves symbols from it. Money cells are denominated in the matrix's
+	// display_currency (FX base) when the backend normalized them, else USD.
+	const currencies = $derived((page.data.currencies as CurrencyInfo[] | undefined) ?? []);
+	const displayCurrency = $derived(matrix?.display_currency || 'USD');
+
+	function formatValue(v: number | undefined): string {
+		if (v == null) return '—';
+		return formatMoney(v, displayCurrency, currencies);
+	}
+
+	// §72/ADR-72 §5: surface each city's last_updated_at as a "last verified"
+	// label for data-freshness transparency.
+	function formatDate(iso: string): string {
+		const d = new Date(iso);
+		if (Number.isNaN(d.getTime())) return '';
+		return d.toLocaleDateString((page.data.locale as string) || undefined, {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric'
+		});
+	}
+
+	function lastVerified(city: ColCityData): string {
+		const d = city.last_updated ? formatDate(city.last_updated) : '';
+		return d ? t('col.last_verified', 'Last verified {date}').replace('{date}', d) : '';
+	}
+
 	// Staleness check — §72 requires a "data may be outdated" notice when any
 	// city's last_updated_at is older than col_calculator.stale_days (default 180).
 	const isStale = $derived.by(() => {
@@ -282,40 +318,52 @@
 				</span>
 				{#if selectedIds.length >= 1}
 					<div class="flex items-center gap-3">
-						<form
-							method="POST"
-							use:enhance={() => {
-								savingJCE = true;
-								return async ({ update }) => {
-									savingJCE = false;
-									await update();
-								};
-							}}
-							class="contents"
-						>
-							{#if effectiveBaselineId}
-								<input type="hidden" name="city_id" value={effectiveBaselineId} />
-								<input type="hidden" name="baseline_id" value={effectiveBaselineId} />
-							{/if}
-							{#each selectedIds as cityId}
-								<input type="hidden" name="city_id" value={cityId} />
-							{/each}
-							<button
-								type="submit"
-								disabled={!data.authed}
-								title={data.authed
-									? t('col.compare_in_jce_hint', 'Open in JCE comparison')
-									: t('col.sign_in_to_compare', 'Sign in to compare')}
+						{#if data.authed}
+							<form
+								method="POST"
+								use:enhance={() => {
+									savingJCE = true;
+									return async ({ update }) => {
+										savingJCE = false;
+										await update();
+									};
+								}}
+								class="contents"
+							>
+								{#if effectiveBaselineId}
+									<input type="hidden" name="city_id" value={effectiveBaselineId} />
+									<input type="hidden" name="baseline_id" value={effectiveBaselineId} />
+								{/if}
+								{#each selectedIds as cityId}
+									<input type="hidden" name="city_id" value={cityId} />
+								{/each}
+								<button
+									type="submit"
+									disabled={savingJCE}
+									title={t('col.compare_in_jce_hint', 'Open in JCE comparison')}
+									class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline disabled:opacity-50"
+								>
+									{#if savingJCE}
+										<Loader2 size={12} class="animate-spin" />
+									{:else}
+										<GitCompare size={12} />
+									{/if}
+									{t('col.compare_in_jce', 'Compare in JCE')}
+								</button>
+							</form>
+						{:else}
+							<!-- Guests get a working sign-in path back to this selection
+							     instead of a dead disabled button (§72: tool is public,
+							     only the JCE export needs auth). -->
+							<a
+								href="/login?next={encodeURIComponent(page.url.pathname + page.url.search)}"
+								title={t('col.compare_in_jce_hint', 'Open in JCE comparison')}
 								class="flex items-center gap-1 text-xs text-[var(--color-primary)] hover:underline"
 							>
-								{#if savingJCE}
-									<Loader2 size={12} class="animate-spin" />
-								{:else}
-									<GitCompare size={12} />
-								{/if}
-								{t('col.compare_in_jce', 'Compare in JCE')}
-							</button>
-						</form>
+								<GitCompare size={12} />
+								{t('col.sign_in_to_compare', 'Sign in to compare')}
+							</a>
+						{/if}
 						<button
 							type="button"
 							onclick={shareUrl}
@@ -334,14 +382,15 @@
 				</div>
 			{/if}
 
-			<!-- Baseline picker — the city all ratios are computed against
-			     (§72 amendment: user-selectable, defaults to the seeded
+			<!-- Baseline + destination pickers share one row on desktop
+			     (stacked on mobile). Baseline: the city all ratios are computed
+			     against (§72 amendment: user-selectable, defaults to the seeded
 			     is_baseline city). No onClear: a baseline is required. -->
-			<div class="mb-2">
-				<label for="col-baseline-search" class="mb-1 block text-xs text-[var(--color-muted)]">
-					{t('col.baseline_label', 'Compare against (baseline)')}
-				</label>
-				<div class="max-w-md">
+			<div class="mb-2 flex flex-col gap-3 sm:flex-row sm:items-end">
+				<div class="min-w-0 sm:flex-1">
+					<label for="col-baseline-search" class="mb-1 block text-xs text-[var(--color-muted)]">
+						{t('col.baseline_label', 'Compare against (baseline)')}
+					</label>
 					<Autocomplete
 						id="col-baseline-search"
 						placeholder={t('col.search_baseline', 'Search baseline city…')}
@@ -355,6 +404,26 @@
 							: t('col.baseline_custom', 'custom')}
 						onSelect={(item) => setBaseline(item.id)}
 						ariaLabel={t('col.baseline_label', 'Compare against (baseline)')}
+					/>
+				</div>
+
+				<!-- Destination picker (Autocomplete dropdown — searchable, scales
+				     to the full city list; selected cities and the baseline are
+				     filtered out). -->
+				<div class="min-w-0 sm:flex-1">
+					<label for="col-city-search" class="mb-1 block text-xs text-[var(--color-muted)]">
+						{t('col.destinations_label', 'Compare with')}
+					</label>
+					<Autocomplete
+						id="col-city-search"
+						placeholder={t('col.search_cities', 'Search cities to compare…')}
+						emptyMessage={t('common.no_results', 'No results found')}
+						fetcher={fetchCityItems}
+						initialFetcher={() => fetchCityItems('')}
+						selectedId={null}
+						onSelect={(item) => addCity(item.id)}
+						disabled={selectedIds.length >= maxCities}
+						ariaLabel={t('col.search_cities', 'Search cities to compare')}
 					/>
 				</div>
 			</div>
@@ -389,23 +458,6 @@
 					{/each}
 				</div>
 			{/if}
-
-			<!-- Destination picker (Autocomplete dropdown — searchable, scales
-			     to the full city list; selected cities and the baseline are
-			     filtered out). -->
-			<div class="max-w-md">
-				<Autocomplete
-					id="col-city-search"
-					placeholder={t('col.search_cities', 'Search cities to compare…')}
-					emptyMessage={t('common.no_results', 'No results found')}
-					fetcher={fetchCityItems}
-					initialFetcher={() => fetchCityItems('')}
-					selectedId={null}
-					onSelect={(item) => addCity(item.id)}
-					disabled={selectedIds.length >= maxCities}
-					ariaLabel={t('col.search_cities', 'Search cities to compare')}
-				/>
-			</div>
 		</div>
 
 		<!-- Comparison matrix -->
@@ -451,9 +503,16 @@
 									{#if city.is_baseline}
 										<span class="text-[var(--color-muted)]">({t('col.baseline', 'baseline')})</span>
 									{/if}
+									{#if lastVerified(city)}
+										<span class="block text-xs font-normal text-[var(--color-muted)]">
+											{lastVerified(city)}
+										</span>
+									{/if}
 								</span>
 								<span class="font-medium text-[var(--color-text)]">
-									{formatRatio(matrix.overall_index[city.id] ?? 1)}
+									{matrix.overall_index[city.id] != null
+										? formatRatio(matrix.overall_index[city.id])
+										: '—'}
 								</span>
 							</div>
 						{/each}
@@ -489,7 +548,7 @@
 									<td class="px-3 py-2 text-[var(--color-text)]">{cat.label}</td>
 									{#each matrix.cities as city (city.id)}
 										<td class="px-3 py-2 text-right text-[var(--color-text)]">
-											<div class="font-medium">{cat.values[city.id]?.toFixed(0) ?? '—'}</div>
+											<div class="font-medium">{formatValue(cat.values[city.id])}</div>
 											{#if !city.is_baseline && cat.ratios[city.id]}
 												<div class="text-xs text-[var(--color-muted)]">{formatRatio(cat.ratios[city.id])}</div>
 											{/if}
@@ -499,6 +558,15 @@
 							{/each}
 						</tbody>
 					</table>
+					<p class="mt-2 text-xs text-[var(--color-muted)]">
+						{t('col.amounts_currency', 'All amounts in {currency}').replace(
+							'{currency}',
+							displayCurrency
+						)}
+						{#if matrix.fx_fetched_at}
+							{t('col.fx_note', '— converted at mid-market rates')}
+						{/if}
+					</p>
 				</div>
 			{/if}
 		</div>

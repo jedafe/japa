@@ -775,6 +775,7 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	comparisonService.SetSettings(settingsService)
 	comparisonService.SetContentService(contentService)
 	comparisonService.SetTierResolver(tierService) // jce.comparisons.max_per_day.{tier} quota
+	comparisonService.SetFeatureChecker(featureChecker) // feature.jce.nested_items / feature.jce.ai_quick
 
 	comparisonService.SetValkey(vkClient.Redis())
 
@@ -1640,6 +1641,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 	remittanceService.SetProviders(map[string]remittance.RateProvider{
 		"mid-market": fx.NewAdapter(fxService, nil),
 	})
+
+	// §58+§112: wiki money-field "(base)" equivalents resolve through the
+	// fx matrix; local-only display when the provider is absent.
+	wikiService.SetFxRateProvider(fxService)
+	costOfLivingService.SetFxRateProvider(fxService)
+	// §58+§112: JCE currency cells normalize via geo_space_id → country
+	// currency → fx base rate.
+	comparisonService.SetFxRateProvider(fxService)
+	comparisonService.SetCurrencyResolver(wikiStore)
 
 	pofCalculatorStore := pofcalculator.NewStore(database)
 	pofCalculatorService := pofcalculator.NewService(pofCalculatorStore, settingsService)
@@ -5220,15 +5230,15 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 					Post("/public/content/{id}/comments", publicAPIHandlers.CreatePublicComment)
 				// Phase 3: personal webhook subscriptions — content.published
 				// only, capped by api.webhooks.max_per_key, owner-scoped.
-				r.With(publicapi.RequireScope("api.write.me")).
+				r.With(features.Gate(featureChecker, "webhooks.enabled"), publicapi.RequireScope("api.write.me")).
 					Post("/public/me/webhooks", publicAPIHandlers.CreateMyWebhook)
-				r.With(publicapi.RequireScope("api.read.me")).
+				r.With(features.Gate(featureChecker, "webhooks.enabled"), publicapi.RequireScope("api.read.me")).
 					Get("/public/me/webhooks", publicAPIHandlers.ListMyWebhooks)
-				r.With(publicapi.RequireScope("api.write.me")).
+				r.With(features.Gate(featureChecker, "webhooks.enabled"), publicapi.RequireScope("api.write.me")).
 					Post("/public/me/webhooks/{id}/verify", publicAPIHandlers.VerifyMyWebhook)
-				r.With(publicapi.RequireScope("api.write.me")).
+				r.With(features.Gate(featureChecker, "webhooks.enabled"), publicapi.RequireScope("api.write.me")).
 					Delete("/public/me/webhooks/{id}", publicAPIHandlers.DeleteMyWebhook)
-				r.With(publicapi.RequireScope("api.read.me")).
+				r.With(features.Gate(featureChecker, "webhooks.enabled"), publicapi.RequireScope("api.read.me")).
 					Get("/public/me/webhooks/{id}/deliveries", publicAPIHandlers.ListMyWebhookDeliveries)
 				r.With(publicapi.RequireScope("api.read.content")).
 					Get("/public/content/{id}/markdown", publicAPIHandlers.GetContentMarkdown)
@@ -5636,36 +5646,36 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Get("/admin/agent/cost-report", agentHTTPHandlers.HandleAdminCostReport)
 
 			// Webhook admin CRUD routes (Section 23 — Integrations)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Get("/admin/webhooks", webhookHandlers.ListWebhooks)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Get("/admin/webhooks/{id}", webhookHandlers.GetWebhook)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Post("/admin/webhooks", webhookHandlers.CreateWebhook)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Put("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Delete("/admin/webhooks/{id}", webhookHandlers.DeleteWebhook)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Post("/admin/webhooks/{id}/test", webhookHandlers.TestWebhook)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Get("/admin/webhooks/{id}/deliveries", webhookHandlers.ListDeliveries)
 			// Catalog: PATCH /admin/webhooks/:id (P5.6 — Task 8)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Patch("/admin/webhooks/{id}", webhookHandlers.UpdateWebhook)
 			// Catalog: POST /admin/webhooks/:id/verify (§12 challenge/response — BUG-001)
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Post("/admin/webhooks/{id}/verify", webhookHandlers.VerifyWebhook)
 			// Catalog: POST /admin/webhooks/:id/deliveries/:delivery_id/retry (P5.6 — Task 8)
 			// BUG-024: removed duplicate non-catalog route /admin/webhooks/:id/retry/:delivery_id
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Post("/admin/webhooks/{id}/deliveries/{delivery_id}/retry", webhookHandlers.RetryDelivery)
 
 			// Webhook event types — §12 admin-only management. Gated by
 			// integrations.webhooks.manage so only admins can see the event
 			// taxonomy (BUG-003: previously behind RequireAuth only, exposing
 			// the catalog to any authenticated user).
-			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage")).
+			r.With(auth.RequireAuth(kr, vkClient.Redis()), rbac.RequirePermission(rbacResolver, "integrations.webhooks.manage"), features.Gate(featureChecker, "webhooks.enabled")).
 				Get("/webhook-events", webhookHandlers.ListWebhookEvents)
 
 			// Newsletter admin routes (Section 33 — Newsletter)
@@ -8420,6 +8430,8 @@ func NewServer(database *db.DB, cfg *config.Config) *chi.Mux {
 				Post("/extensions/{key}/disable", controlHandlers.DisableExtension)
 			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
 				Patch("/extensions/{key}/rollout", controlHandlers.UpdateExtensionRollout)
+			r.With(rbac.RequirePermission(rbacResolver, "system.settings.edit")).
+				Delete("/extensions/{key}", controlHandlers.DeleteExtension)
 
 			// Backup Configs — control-panel CRUD. Backups capture full
 			// platform data and can trigger expensive jobs, so mutations

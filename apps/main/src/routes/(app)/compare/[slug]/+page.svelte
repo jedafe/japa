@@ -12,6 +12,7 @@
 		uniqueDimensions,
 		uniqueResolvedItems
 	} from '$lib/utils/comparison';
+	import { formatMoney } from '$lib/utils/currency';
 	import type {
 		FreshnessSummary,
 		JCEDimension,
@@ -155,6 +156,13 @@
 
 	function formatValue(cell?: MatrixDimension) {
 		if (!cell) return '—';
+		if (
+			cell.currency_code &&
+			cell.value_rating !== undefined &&
+			cell.value_rating !== null
+		) {
+			return formatMoney(cell.value_rating, cell.currency_code, page.data.currencies);
+		}
 		if (cell.value !== undefined && cell.value !== null) return cell.value;
 		if (cell.value_rating !== undefined && cell.value_rating !== null) return cell.value_rating;
 		if (cell.value_boolean !== undefined && cell.value_boolean !== null) return cell.value_boolean ? t('jce.common.yes') : t('jce.common.no');

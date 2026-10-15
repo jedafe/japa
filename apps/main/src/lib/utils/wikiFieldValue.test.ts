@@ -200,3 +200,29 @@ describe('mediaFieldItems', () => {
 		expect(mediaFieldItems(null)).toEqual([]);
 	});
 });
+
+describe('fx equivalents', () => {
+	const fx = { base: 'USD', rate: 1430 };
+	const currencies = [
+		{ code: 'NGN', name: 'Nigerian Naira', symbol: '₦' },
+		{ code: 'USD', name: 'US Dollar', symbol: '$' },
+	];
+
+	it('appends base equivalent for price_range', () => {
+		expect(formatPriceRange({ avg: 28600 }, 'NGN', currencies as any, fx)).toContain('($20');
+	});
+
+	it('appends equivalents per bound for ranges', () => {
+		const out = formatPriceRange({ min: 1430, max: 2860 }, 'NGN', currencies as any, fx);
+		expect(out).toContain('($1');
+		expect(out).toContain('($2');
+	});
+
+	it('omits equivalent when field is already base', () => {
+		expect(formatPriceRange({ avg: 20 }, 'USD', currencies as any, fx)).toBe('$20');
+	});
+
+	it('no fx → unchanged output', () => {
+		expect(formatPriceRange({ avg: 28600 }, 'NGN', currencies as any)).toBe('₦28,600');
+	});
+});

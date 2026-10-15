@@ -15,6 +15,7 @@ package comparison
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/valkey-io/valkey-go/valkeycompat"
@@ -100,7 +101,30 @@ type Service struct {
 	resolver     *resolver.Registry
 	vk           valkeycompat.Cmdable
 	tierResolver TierResolver
+	features     featureChecker
+	currencyRes  SpaceCurrencyResolver
+	fxRates      FxRateProvider
 }
+
+// SpaceCurrencyResolver resolves a geo space's country currency (§58) —
+// implemented by wiki.Store / spaces.Store. Nil disables JCE currency
+// normalization.
+type SpaceCurrencyResolver interface {
+	ResolveSpaceCurrencyCode(ctx context.Context, spaceID pgtype.UUID) (string, error)
+}
+
+// FxRateProvider is the narrow slice of *fx.Service the matrix needs —
+// nil keeps currency cells in the item's local currency.
+type FxRateProvider interface {
+	BaseRate(ctx context.Context, quote string) (rate float64, base string, fetchedAt time.Time, stale bool, err error)
+}
+
+// SetCurrencyResolver injects the §58 space→currency resolver.
+func (s *Service) SetCurrencyResolver(r SpaceCurrencyResolver) { s.currencyRes = r }
+
+// SetFxRateProvider injects the §112 rate source for currency
+// normalization.
+func (s *Service) SetFxRateProvider(p FxRateProvider) { s.fxRates = p }
 
 // NewService creates a Service backed by the given database pool.
 func NewService(database *db.DB) *Service {
@@ -129,6 +153,22 @@ func (s *Service) SetContentService(cs *content.Service) {
 // SetResolver injects the item_ref resolver registry.
 func (s *Service) SetResolver(r *resolver.Registry) {
 	s.resolver = r
+}
+
+// featureChecker is the subset of features.Checker the service needs —
+// satisfied by *features.Checker. Nil → flag checks resolve false (closed)
+// for opt-in gates like feature.jce.nested_items.
+type featureChecker interface {
+	IsEnabled(ctx context.Context, key string) bool
+}
+
+// SetFeatureChecker injects the shared feature flag checker (feature.jce.*).
+func (s *Service) SetFeatureChecker(c featureChecker) { s.features = c }
+
+// flagOn reports whether a feature flag is enabled; nil checker → false
+// (opt-in sub-features stay off until the checker is wired).
+func (s *Service) flagOn(ctx context.Context, key string) bool {
+	return s.features != nil && s.features.IsEnabled(ctx, key)
 }
 
 // SetValkey injects the Valkey client for selection-token and cache operations.
