@@ -35,13 +35,13 @@ type UnifiedChatRequest struct {
 	// §103 AI Projects: stamps a newly created conversation into the
 	// project. Validated owner-side before Resolve; ignored for existing
 	// threads (explicit moves go through PUT …/project).
-	ProjectID      *pgtype.UUID
-	Context        map[string]any // client-supplied context (lowest precedence, ADR-025)
-	Model          string
-	VoiceID        string
-	Humanize       *bool // nil → inherit global ai.humanize.* settings
-	HumanizeLevel  string
-	Tools          *ToolSelection
+	ProjectID     *pgtype.UUID
+	Context       map[string]any // client-supplied context (lowest precedence, ADR-025)
+	Model         string
+	VoiceID       string
+	Humanize      *bool // nil → inherit global ai.humanize.* settings
+	HumanizeLevel string
+	Tools         *ToolSelection
 }
 
 // Unified-path sentinels. writeAgentError maps them alongside the existing
@@ -314,6 +314,7 @@ func (h *AgentHandler) HandleUnifiedChat(ctx context.Context, userID pgtype.UUID
 		catalog:       catalog,
 		catalogSet:    true,
 		agentCounters: len(catalog) > 0, // ADR-130: pure chat never touches jc:agent:* counters
+		detached:      len(catalog) > 0, // tools on → run to completion in background
 		history:       history,
 		model:         effModel,
 		unified:       &unifiedTurn{req: req, conv: conv, hasConv: hasConv, msgCount: msgCount, userMsgPersisted: userMsgPersisted},

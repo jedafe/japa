@@ -68,12 +68,12 @@ type AgentEvent struct {
 	EstimatedCost float64 `json:"estimated_cost,omitempty"`
 
 	// ADR-130 unified surface
-	ConversationID string     `json:"conversation_id,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
 	// §103 AI Projects: owning project id on `conversation` events — lets
 	// the sidebar group a thread created inside a project immediately.
-	ProjectID      string     `json:"project_id,omitempty"`
-	MessageID      string     `json:"message_id,omitempty"` // persisted ai_messages id on final_response
-	Sources        []RAGChunk `json:"sources,omitempty"`    // pre-search RAG citations (§69 contract)
+	ProjectID string     `json:"project_id,omitempty"`
+	MessageID string     `json:"message_id,omitempty"` // persisted ai_messages id on final_response
+	Sources   []RAGChunk `json:"sources,omitempty"`    // pre-search RAG citations (§69 contract)
 	// TurnCount is the thread's persisted message count at event time —
 	// emitted on `conversation` (post user-append) and `final_response`
 	// (post assistant-append) so the sidebar renders server truth rather
@@ -424,6 +424,7 @@ func (h *AgentHandler) HandleAgentRequest(ctx context.Context, userID pgtype.UUI
 		preSearch:     preSearchResult,
 		draftCtx:      draftCtx,
 		agentCounters: true, // legacy /ai/agent always accumulates jc:agent:cost
+		detached:      true, // the legacy path is agent-only by definition
 	}, events)
 
 	return events, nil
@@ -556,6 +557,33 @@ type loopParams struct {
 	history       []ChatMessage // prior turns, oldest-first (unified only)
 	model         string        // validated model override (unified only)
 	unified       *unifiedTurn  // nil → legacy /ai/agent turn
+	// detached marks tool-enabled turns that complete server-side even
+	// when the SSE consumer disconnects — the request context is dropped
+	// for the working ctx and sendEvent becomes non-blocking (§103
+	// amendment: detached turns).
+	detached bool
+}
+
+// persistTerminalNotice writes a best-effort assistant message recording a
+// detached turn's terminal failure/cancellation — a background task that
+// dies must not leave the transcript silently unanswered. Attached turns
+// keep SSE-only errors (the client renders the live error event).
+func (h *AgentHandler) persistTerminalNotice(ctx context.Context, p loopParams, session gen.AiAgentSession, notice string) {
+	if !p.detached || p.unified == nil || !p.unified.hasConv || h.convos == nil {
+		return
+	}
+	persistCtx := context.WithoutCancel(ctx)
+	msg, err := h.convos.AppendAssistantMessage(persistCtx, p.unified.conv.ID, notice, p.model, p.unified.req.VoiceID, 0, 0, &session.ID)
+	if err != nil {
+		slog.Warn("ai: failed to persist terminal notice", "session_id", session.ID, "error", err)
+		return
+	}
+	if err := h.convos.LinkSession(persistCtx, session.ID, p.unified.conv.ID, msg.ID); err != nil {
+		slog.Warn("ai: failed to link terminal notice session", "session_id", session.ID, "error", err)
+	}
+	if err := h.convos.Touch(persistCtx, p.unified.conv.ID); err != nil {
+		slog.Warn("ai: failed to touch conversation", "conversation_id", p.unified.conv.ID, "error", err)
+	}
 }
 
 func (h *AgentHandler) runLoop(
@@ -567,6 +595,14 @@ func (h *AgentHandler) runLoop(
 ) {
 	defer close(events)
 
+	// Detached (tool-enabled) turns complete server-side even when the SSE
+	// consumer disconnects — the stream is a view of the run, not its
+	// lifecycle. Persistence already uses WithoutCancel; this detaches the
+	// working context so in-flight LLM/tool calls aren't cancelled.
+	if p.detached {
+		ctx = context.WithoutCancel(ctx)
+	}
+
 	// sendEvent writes an event to the channel, respecting the original
 	// request context cancellation. If the SSE consumer stops reading
 	// (client disconnect → ctx cancelled), the loop unblocks via
@@ -575,12 +611,32 @@ func (h *AgentHandler) runLoop(
 	// This ensures the terminal error/final_response events can still be
 	// sent after the timeout fires, as long as the consumer is reading.
 	sendEvent := func(ev AgentEvent) bool {
+		if !p.detached {
+			select {
+			case events <- ev:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+		// Detached: nobody may be reading — never block the loop on a full
+		// channel. Terminal events get a brief grace so a still-connected
+		// consumer receives the end marker.
 		select {
 		case events <- ev:
 			return true
-		case <-ctx.Done():
-			return false
+		default:
 		}
+		if ev.Type != EventFinalResponse && ev.Type != EventError {
+			return true
+		}
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		select {
+		case events <- ev:
+		case <-timer.C:
+		}
+		return true
 	}
 
 	// runLoop runs outside the net/http handler goroutine — an unrecovered
@@ -898,6 +954,7 @@ func (h *AgentHandler) runLoop(
 	if cancelled {
 		h.cancelSession(ctx, session)
 		trackCost()
+		h.persistTerminalNotice(ctx, p, session, "The agent task was cancelled.")
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -910,6 +967,7 @@ func (h *AgentHandler) runLoop(
 	if loopErr != nil {
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
 		trackCost()
+		h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", loopErr.Error()))
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),
@@ -924,6 +982,7 @@ func (h *AgentHandler) runLoop(
 		loopErr = fmt.Errorf("agent: max tool calls exceeded (%d)", maxToolCalls)
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
 		trackCost()
+		h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", loopErr.Error()))
 		sendEvent(AgentEvent{
 			Type:      EventError,
 			SessionID: session.ID.String(),

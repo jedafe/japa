@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -31,6 +32,29 @@ func (m *recordingProvider) ChatWithTools(_ context.Context, req ChatWithToolsRe
 	m.reqs = append(m.reqs, req)
 	return ChatWithToolsResponse{
 		Content:      m.reply,
+		FinishReason: "stop",
+		Usage:        TokenUsage{TotalTokens: 42},
+	}, nil
+}
+
+// gatedProvider blocks ChatWithTools until release is closed; a cancelled
+// ctx aborts the call like a real LLM client would. Needed for detach
+// tests — the instant recordingProvider makes cancel races
+// nondeterministic.
+type gatedProvider struct {
+	recordingProvider
+	release chan struct{}
+}
+
+func (p *gatedProvider) ChatWithTools(ctx context.Context, req ChatWithToolsRequest) (ChatWithToolsResponse, error) {
+	p.reqs = append(p.reqs, req)
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+		return ChatWithToolsResponse{}, ctx.Err()
+	}
+	return ChatWithToolsResponse{
+		Content:      p.reply,
 		FinishReason: "stop",
 		Usage:        TokenUsage{TotalTokens: 42},
 	}, nil
@@ -69,7 +93,7 @@ func (s *stubPreSearcher) PreSearch(context.Context, string, *pgtype.UUID, pgtyp
 
 // newUnifiedHandler builds an AgentHandler for unified-path tests with a
 // stub conversation store, recording provider, and given perms.
-func newUnifiedHandler(t *testing.T, provider *recordingProvider, perms *stubPerms, opts ...AgentOption) (*AgentHandler, *stubConvoStore, *countingRateLimiter) {
+func newUnifiedHandler(t *testing.T, provider Provider, perms *stubPerms, opts ...AgentOption) (*AgentHandler, *stubConvoStore, *countingRateLimiter) {
 	t.Helper()
 
 	disp := NewDispatcher()
@@ -544,5 +568,70 @@ func TestHandleAgentRequest_LegacyPathStillWorks(t *testing.T) {
 	events := collectEvents(t, ev)
 	if !hasEventType(events, EventSessionStart) || !hasEventType(events, EventFinalResponse) {
 		t.Fatalf("legacy turn missing events: %+v", events)
+	}
+}
+
+// A tools-on turn (agent.use → non-empty catalog → detached) survives
+// client disconnect: the loop completes and the terminal event still
+// lands for a connected reader.
+func TestUnifiedChat_DetachedTurnCompletesAfterCancel(t *testing.T) {
+	provider := &gatedProvider{recordingProvider: recordingProvider{name: "mock", reply: "done"}, release: make(chan struct{})}
+	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"agent.use": true}})
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := h.HandleUnifiedChat(ctx, uid, UnifiedChatRequest{Prompt: "run a task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// session_start proves the loop is parked on the gated LLM call.
+	if first := <-events; first.Type != EventSessionStart {
+		t.Fatalf("expected session_start first, got %v", first.Type)
+	}
+	cancel()                // client disconnects
+	close(provider.release) // the (detached) LLM call can now return
+
+	got := []AgentEvent{}
+	done := make(chan struct{})
+	go func() {
+		for ev := range events {
+			got = append(got, ev)
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("detached loop stalled")
+	}
+	if findEvent(got, EventFinalResponse) == nil {
+		t.Fatalf("expected final_response after disconnect, got %+v", got)
+	}
+}
+
+// Control: a pure-chat turn (ai.context.use only → empty catalog →
+// attached) stays request-bound — cancelling mid-loop fails the run
+// instead of finishing it.
+func TestUnifiedChat_ChatTurnStillAbortsOnCancel(t *testing.T) {
+	provider := &gatedProvider{recordingProvider: recordingProvider{name: "mock", reply: "done"}, release: make(chan struct{})}
+	h, _, _ := newUnifiedHandler(t, provider, &stubPerms{granted: map[string]bool{"ai.context.use": true}})
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	events, err := h.HandleUnifiedChat(ctx, uid, UnifiedChatRequest{Prompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-events // session_start — loop is parked on the gated call
+	cancel()
+	close(provider.release) // provider sees ctx.Done and fails the call
+
+	got := []AgentEvent{}
+	for ev := range events {
+		got = append(got, ev)
+	}
+	if findEvent(got, EventFinalResponse) != nil {
+		t.Fatal("attached chat turn must not complete after disconnect")
 	}
 }
