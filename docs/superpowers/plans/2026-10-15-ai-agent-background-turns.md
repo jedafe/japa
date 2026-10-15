@@ -29,7 +29,7 @@
 - Modify: `.jeos/conventions/api-routes-catalog.md:906` (`GET /ai/conversations/{id}` line) and `:916` (`PUT /me/ai-preferences` line)
 - Modify: `.jeos/sections/11-job-queue-asynq.md` (add catalog note near `agent:create_draft_request`, line ~71)
 
-- [ ] **Step 1: Append the §103 amendment**
+- [x] **Step 1: Append the §103 amendment**
 
 Append before `## See Also` in `sections/103-ai-agent-executor.md`:
 
@@ -67,7 +67,7 @@ Append before `## See Also` in `sections/103-ai-agent-executor.md`:
   clients).
 ```
 
-- [ ] **Step 2: Update the routes catalog**
+- [x] **Step 2: Update the routes catalog**
 
 Line 906 becomes:
 
@@ -81,7 +81,7 @@ Extend the `PUT /me/ai-preferences` line (916) — after "folders are derived, n
 ; values.intent selects insert behavior — 'preview' (draft text in chat) or 'create' (persist via create tools)
 ```
 
-- [ ] **Step 3: Add the §11 catalog note**
+- [x] **Step 3: Add the §11 catalog note**
 
 After the `agent:create_draft_request` catalog entry (~line 71), add:
 
@@ -89,7 +89,7 @@ After the `agent:create_draft_request` catalog entry (~line 71), add:
 agent:agent_run                  — deferred/background agent session run (§103 detached-turn follow-up phase; spec'd, not yet implemented).
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .jeos/sections/103-ai-agent-executor.md .jeos/conventions/api-routes-catalog.md .jeos/sections/11-job-queue-asynq.md docs/superpowers/specs/2026-10-15-ai-agent-background-turns-design.md
@@ -111,7 +111,7 @@ git commit -m "jeos: detached agent turns, running_session_id, template intent (
 - Produces: `loopParams.detached bool`; `persistTerminalNotice(ctx, p, session, notice string)`.
 - Consumes: existing `sendEvent` semantics — detached mode must ALWAYS return true (early-abort paths keyed on its return must not fire).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `recordingProvider` returns instantly and ignores ctx, so a plain
 cancel-race can't distinguish attached from detached (the loop may finish
@@ -206,12 +206,12 @@ func TestUnifiedChat_ChatTurnStillAbortsOnCancel(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd /home/jmobile/websites/japa/japaconnect && go test ./internal/ai/ -run 'DetachedTurn|ChatTurnStillAborts' -v`
 Expected: `DetachedTurnCompletesAfterCancel` FAILS (loop aborts after cancel — no `final_response`); the control test may already pass today (everything is request-bound).
 
-- [ ] **Step 3: `loopParams` + ctx detach**
+- [x] **Step 3: `loopParams` + ctx detach**
 
 In `agent.go` `loopParams` add:
 
@@ -235,7 +235,7 @@ In `runLoop`, immediately after `defer close(events)` and before `sendEvent` is 
 	}
 ```
 
-- [ ] **Step 4: Non-blocking `sendEvent` on detached turns**
+- [x] **Step 4: Non-blocking `sendEvent` on detached turns**
 
 Replace the `sendEvent` closure body:
 
@@ -270,7 +270,7 @@ Replace the `sendEvent` closure body:
 	}
 ```
 
-- [ ] **Step 5: `persistTerminalNotice` + wire the terminal paths**
+- [x] **Step 5: `persistTerminalNotice` + wire the terminal paths**
 
 Add the helper near `runLoop` (mirrors the success-path persist call at ~line 947):
 
@@ -311,7 +311,7 @@ In the three terminal blocks, after `trackCost()`:
 	h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", loopErr.Error()))
 ```
 
-- [ ] **Step 6: Set `detached` at both call sites**
+- [x] **Step 6: Set `detached` at both call sites**
 
 Legacy `HandleAgent` call site (~line 420) — always an agent run:
 
@@ -333,12 +333,12 @@ Unified call site (`agent_unified.go` ~line 308):
 		detached:      len(catalog) > 0, // tools on → run to completion in background
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 Run: `go test ./internal/ai/ -run 'TestUnifiedChat|TestAgent' -v`
 Expected: new test passes; existing tests unchanged.
 
-- [ ] **Step 8: vet + commit**
+- [x] **Step 8: vet + commit**
 
 ```bash
 go vet ./internal/ai/ && gofmt -l internal/ai/agent.go internal/ai/agent_unified.go
@@ -361,7 +361,7 @@ git commit -m "ai: detach tool-enabled turns from request lifecycle + failure tr
 - Produces: `ConversationService.RunningSessionID(ctx, convID, userID pgtype.UUID, cutoff time.Time) (pgtype.UUID, error)`; detail JSON field `running_session_id` (absent when none).
 - Consumes: sqlc `GetRunningAgentSessionForConversation`.
 
-- [ ] **Step 1: Add the query**
+- [x] **Step 1: Add the query**
 
 In `ai_conversations.sql`, after `HasRunningAgentTurnForConversation` (~line 133):
 
@@ -382,7 +382,7 @@ LIMIT 1;
 
 Run: `make sqlc-gen`
 
-- [ ] **Step 2: Store interface + service method**
+- [x] **Step 2: Store interface + service method**
 
 In `conversations.go` `ConversationStore`, after `HasRunningAgentTurnForConversation`:
 
@@ -410,7 +410,7 @@ func (s *ConversationService) RunningSessionID(ctx context.Context, convID, user
 
 Add the stub method to `stubConvoStore` in `conversations_test.go` (returns `pgtype.UUID{}, pgx.ErrNoRows` by default; add a `running map[pgtype.UUID]pgtype.UUID` field keyed by conversation when a test needs a running row).
 
-- [ ] **Step 3: Emit `running_session_id` in `serveUnifiedDetail`**
+- [x] **Step 3: Emit `running_session_id` in `serveUnifiedDetail`**
 
 After the `project_id` block (~line 486):
 
@@ -426,7 +426,7 @@ After the `project_id` block (~line 486):
 	}
 ```
 
-- [ ] **Step 4: Tests**
+- [x] **Step 4: Tests**
 
 In `conversations_test.go`, stub-backed test:
 
@@ -442,7 +442,7 @@ func TestConversationService_RunningSessionID(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Run tests, vet, commit**
+- [x] **Step 5: Run tests, vet, commit**
 
 ```bash
 go test ./internal/ai/ -run 'TestConversationService' -v
@@ -462,7 +462,7 @@ git commit -m "ai: running_session_id on conversation detail for detached-turn p
 **Interfaces:**
 - Produces: `ChatTemplateValues.intent: 'preview' | 'create'`; `buildTemplateBlock(name, values)` and `buildTemplateInsertText(values, labels)` — signatures unchanged, both read `values.intent`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 describe('intent', () => {
@@ -497,12 +497,12 @@ describe('intent', () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `cd apps/main && bunx vitest run src/lib/ai/chatTemplate.test.ts`
 Expected: FAIL — `intent` not on `ChatTemplateValues`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `ChatTemplateValues` add (near the top of the interface):
 
@@ -565,12 +565,12 @@ Check `SPEC_HEADER_RE` still matches both headers — update it to cover `Create
 const SPEC_HEADER_RE = /^(?:Write (?:a|one)|Create one)\b[^\n]*(?:draft|requirements)[^\n]*:/;
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `bunx vitest run src/lib/ai/chatTemplate.test.ts`
 Expected: PASS (all existing + new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/main/src/lib/ai/chatTemplate.ts apps/main/src/lib/ai/chatTemplate.test.ts
@@ -588,7 +588,7 @@ git commit -m "ai: template intent field steering preview vs persisted create"
 **Interfaces:**
 - Consumes: `values.intent` (bindable `values` prop already carries it — mutating `values.intent` propagates to the parent's `tplValues`).
 
-- [ ] **Step 1: i18n keys**
+- [x] **Step 1: i18n keys**
 
 `en.json` (in the `ai.templates` group, near `folder`):
 
@@ -608,7 +608,7 @@ git commit -m "ai: template intent field steering preview vs persisted create"
 		"intent_hint": "Aperçu rédige le texte dans la conversation ; Créer persiste de vrais éléments via l'agent.",
 ```
 
-- [ ] **Step 2: Segmented control in the save footer**
+- [x] **Step 2: Segmented control in the save footer**
 
 In `ChatTemplatePanel.svelte`, inside the save footer directly above the Folder `tpl-field` div (~line 1248):
 
@@ -642,7 +642,7 @@ In `ChatTemplatePanel.svelte`, inside the save footer directly above the Folder 
 
 (`values` is the bound `ChatTemplateValues` prop — mutating `values.intent` flows to the parent's `tplValues` like the other editor fields.)
 
-- [ ] **Step 3: Check + commit**
+- [x] **Step 3: Check + commit**
 
 ```bash
 cd apps/main && bunx svelte-check --threshold warning
@@ -661,7 +661,7 @@ git commit -m "ai: template intent toggle (preview in chat vs create content)"
 - Consumes: `GET /ai/agent/sessions/{id}` → `{ data: { session: { status } } }` (terminal ≠ `'running'`); `GET /ai/conversations/{id}` → `running_session_id` (Task 3).
 - Produces: `bgSessionId` state + `startSessionPoll(id)` / `stopSessionPoll()`.
 
-- [ ] **Step 1: Poll state + functions**
+- [x] **Step 1: Poll state + functions**
 
 Near `activeSessionId` (~line 466):
 
@@ -713,7 +713,7 @@ Near `activeSessionId` (~line 466):
 	}
 ```
 
-- [ ] **Step 2: Conversation load wiring**
+- [x] **Step 2: Conversation load wiring**
 
 In `loadConversation`, extend the response type with `running_session_id?: string` and, at the end of the success path (after `sidebarOpen = false`):
 
@@ -726,7 +726,7 @@ In `loadConversation`, extend the response type with `running_session_id?: strin
 		}
 ```
 
-- [ ] **Step 3: Mid-stream drop → poll**
+- [x] **Step 3: Mid-stream drop → poll**
 
 In `send()`, capture the tools state at send time (the composer toggle could flip while the stream is live — decide detach-vs-discard by what was SENT, not what's set now): right after `const message = input.trim()` add
 
@@ -762,7 +762,7 @@ Cleanup: `import { onDestroy }` — the file's svelte import is currently `{ onM
 
 Also call `stopSessionPoll()` at the top of `startNewChat()` and as the first line of `loadConversation` (stopping early avoids a stale poll firing mid-load; the success-path call re-arms it when the new conversation reports a running session).
 
-- [ ] **Step 4: Indicator in the transcript**
+- [x] **Step 4: Indicator in the transcript**
 
 Where the turn spinner renders (`in_progress`/`progress` — the loading indicator block), extend it so `bgSessionId` shows the same treatment, OR simplest: under the transcript list add
 
@@ -777,14 +777,14 @@ Where the turn spinner renders (`in_progress`/`progress` — the loading indicat
 
 (The live-turn case already shows progress on the turn; this covers the return-to-conversation case where no liveTurn exists.)
 
-- [ ] **Step 5: i18n**
+- [x] **Step 5: i18n**
 
 `en.json`: `"bg_running": "Agent is working in the background — the result will appear here."`
 `fr.json`: `"bg_running": "L'agent travaille en arrière-plan — le résultat apparaîtra ici."`
 
 (both under the existing `ai.agent` group.)
 
-- [ ] **Step 6: Check + commit**
+- [x] **Step 6: Check + commit**
 
 ```bash
 cd apps/main && bunx svelte-check --threshold warning
@@ -798,7 +798,7 @@ git commit -m "ai: poll running agent sessions and surface background turns in t
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Full check suite**
+- [x] **Step 1: Full check suite**
 
 ```bash
 cd /home/jmobile/websites/japa/japaconnect
@@ -806,21 +806,21 @@ go test ./internal/ai/ && go vet ./internal/ai/
 cd apps/main && bunx vitest run src/lib/ai/ && bunx svelte-check --threshold warning
 ```
 
-- [ ] **Step 2: Rebuild + restart the API**
+- [x] **Step 2: Rebuild + restart the API**
 
 ```bash
 cd /home/jmobile/websites/japa/japaconnect && go build -o bin/japa-api ./cmd/... # same target as the running binary
 # restart the running ./bin/japa-api process
 ```
 
-- [ ] **Step 3: Browser verify (agent-browser)**
+- [x] **Step 3: Browser verify (agent-browser)**
 
 - `/ai` tools-on send → the turn streams as before.
 - Simulate disconnect mid-run (close the EventSource / navigate) → reload → conversation shows the background indicator → result lands without manual refresh.
 - Template editor shows the intent toggle; `create`-intent insert text names `content.create_draft`/`bulk_create`.
 - Console stays clean (Vite HMR noise aside).
 
-- [ ] **Step 4: Final commit if any fixes**
+- [x] **Step 4: Final commit if any fixes**
 
 ---
 
