@@ -64,7 +64,10 @@
 		buildTemplateBlock,
 		buildTemplateInsertText,
 		buildTemplateSpec,
+		normalizeTemplateFolder,
 		normalizeTemplateValues,
+		normalizeTopicsTail,
+		splitComposerForInsert,
 		templateFingerprint,
 		type ChatTemplate,
 		type ChatTemplateValues
@@ -610,6 +613,7 @@
 		untrack(() =>
 			(prefs?.chat_templates ?? []).map((tpl) => ({
 				...tpl,
+				folder: normalizeTemplateFolder(tpl.folder),
 				values: normalizeTemplateValues(tpl.values)
 			}))
 		)
@@ -671,12 +675,23 @@
 	}
 
 	// "Insert as editable prompt" — drop the readable spec into the
-	// composer and detach so the send doesn't carry the spec twice. A
-	// draft already in the composer becomes the Topic line rather than
-	// being clobbered.
-	function insertTemplateText() {
-		const draft = input.trim();
-		input = buildTemplateInsertText(tplValues) + draft;
+	// composer and detach so the send doesn't carry the spec twice.
+	// Splitting first makes re-inserts swap the previous spec block
+	// instead of nesting it: a prior insert's Topics lines survive, and
+	// free text lands in the Topics section rather than being clobbered.
+	// Called with no args from the editor footer (working copy) or with a
+	// row's template from the list's action menu.
+	function insertTemplateText(tpl?: ChatTemplate) {
+		const v = tpl ? normalizeTemplateValues(tpl.values) : tplValues;
+		// Resolve spec ids to display names so the prose reads as names —
+		// same catalogs the panel's selectors draw from.
+		const labels = {
+			space: tplSpaces.find((s) => s.id === v.space_id)?.name,
+			series: tplSeries.find((s) => s.id === v.series_id)?.title,
+			voice: voices.find((x) => x.id === v.voice_id)?.name
+		};
+		const tail = splitComposerForInsert(input);
+		input = buildTemplateInsertText(v, labels) + '\n' + normalizeTopicsTail(tail);
 		templateActive = false;
 		tick().then(() => {
 			resizeInput();
@@ -1980,6 +1995,7 @@
 	     Agent-mode only: hidden while tools are off. -->
 	{#if templatePanelOpen && toolsOn}
 		<div
+			data-template-rail
 			class="fixed inset-y-0 right-0 z-40 flex w-[21rem] max-w-[90vw] lg:static lg:z-auto lg:mr-4 lg:w-72 lg:shrink-0 xl:w-80"
 		>
 			<ChatTemplatePanel
@@ -2020,8 +2036,16 @@
 		else if (moveSubOpen) moveSubOpen = false;
 		else if (moveMenuFor) moveMenuFor = null;
 		else if (projMenuFor) projMenuFor = null;
-		// The template rail is a fixed overlay below lg — Esc dismisses it.
-		else if (templatePanelOpen && !window.matchMedia('(min-width: 1024px)').matches)
+		// The template rail is a fixed overlay below lg — Esc dismisses it,
+		// except when the keypress came from inside the rail (its own
+		// menus handle Esc first) or while a dialog is open (the dialog's
+		// own Esc dismissal wins).
+		else if (
+			templatePanelOpen &&
+			!window.matchMedia('(min-width: 1024px)').matches &&
+			!(e.target instanceof Element && e.target.closest('[data-template-rail]')) &&
+			!document.querySelector('[role="dialog"]')
+		)
 			templatePanelOpen = false;
 	}}
 />

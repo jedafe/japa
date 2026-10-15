@@ -4,7 +4,10 @@ import {
 	buildTemplateBlock,
 	buildTemplateInsertText,
 	buildTemplateSpec,
+	normalizeTemplateFolder,
 	normalizeTemplateValues,
+	normalizeTopicsTail,
+	splitComposerForInsert,
 	type ChatTemplateValues
 } from './chatTemplate';
 
@@ -150,7 +153,7 @@ describe('buildTemplateBlock', () => {
 });
 
 describe('buildTemplateInsertText', () => {
-	it('renders readable constraint lines ending in a Topic prompt', () => {
+	it('renders readable constraint lines ending in a Topics section', () => {
 		const v = base();
 		v.min_words = 1500;
 		v.include_faqs = true;
@@ -159,7 +162,9 @@ describe('buildTemplateInsertText', () => {
 		expect(text).toContain('at least 1500 words');
 		expect(text).toContain('FAQ section');
 		expect(text).toContain('2 authoritative external links');
-		expect(text.trimEnd().endsWith('Topic:')).toBe(true);
+		expect(text.trimEnd().endsWith('Topics (one per line — one draft is generated per topic):')).toBe(
+			true
+		);
 	});
 
 	it('renders journey context and tags lines when set', () => {
@@ -172,5 +177,88 @@ describe('buildTemplateInsertText', () => {
 		expect(text).toContain('"preparing" journey stage');
 		expect(text).toContain('Nigeria → Canada');
 		expect(text).toContain('pr, settlement');
+	});
+
+	it('emits non-default publishing fields and id labels', () => {
+		const v = base();
+		v.status = 'published';
+		v.visibility = 'members';
+		v.seo_indexable = false;
+		v.publish_at = '2026-02-01T10:00';
+		v.space_id = 's1';
+		v.series_id = 'r1';
+		v.voice_id = 'v1';
+		v.field_values = { deadline: 'March 1' };
+		const text = buildTemplateInsertText(v, {
+			space: 'Nigeria Hub',
+			series: 'Student Series',
+			voice: 'Professional Ada'
+		});
+		expect(text).toContain('Publishing: status published, members visibility, not indexable');
+		expect(text).toContain('Publish at: 2026-02-01T10:00');
+		expect(text).toContain('Space: Nigeria Hub');
+		expect(text).toContain('Series: Student Series');
+		expect(text).toContain('Voice: Professional Ada');
+		expect(text).toContain('Field values: deadline = March 1');
+	});
+
+	it('falls back to raw ids and omits default publishing fields', () => {
+		const v = base();
+		v.space_id = 's1';
+		const text = buildTemplateInsertText(v);
+		expect(text).toContain('Space: s1');
+		expect(text).not.toContain('Publishing:');
+	});
+});
+
+describe('normalizeTemplateFolder', () => {
+	it('trims segments and collapses empty parts', () => {
+		expect(normalizeTemplateFolder(' visa / guides /')).toBe('visa/guides');
+		expect(normalizeTemplateFolder('//a//b//')).toBe('a/b');
+		expect(normalizeTemplateFolder('')).toBe('');
+		expect(normalizeTemplateFolder(undefined)).toBe('');
+		expect(normalizeTemplateFolder(42)).toBe('');
+	});
+});
+
+describe('splitComposerForInsert', () => {
+	const spec = () => buildTemplateInsertText(base());
+
+	it('extracts the topics tail from a prior insert', () => {
+		const input = spec() + '\n- UK visa\n- Canada PR';
+		expect(splitComposerForInsert(input)).toBe('- UK visa\n- Canada PR');
+	});
+
+	it('extracts the draft from a legacy Topic: insert', () => {
+		const input = 'Write a guide draft with these requirements:\n- Tone: professional\n\nTopic: UK visa';
+		expect(splitComposerForInsert(input)).toBe('UK visa');
+	});
+
+	it('treats free text as the tail', () => {
+		expect(splitComposerForInsert('  UK visa checklist  ')).toBe('UK visa checklist');
+	});
+
+	it('never drops text — a marker-stripped spec becomes the tail', () => {
+		const input = 'Write one guide draft per topic, with these requirements:\n- Tone: x';
+		expect(splitComposerForInsert(input)).toBe(input);
+	});
+});
+
+describe('normalizeTopicsTail', () => {
+	it('bulletizes a single plain line, keeps an existing bullet', () => {
+		expect(normalizeTopicsTail('UK visa')).toBe('- UK visa');
+		expect(normalizeTopicsTail('- UK visa')).toBe('- UK visa');
+	});
+
+	it('passes multi-line text through verbatim', () => {
+		expect(normalizeTopicsTail('- a\nb\n- c')).toBe('- a\nb\n- c');
+		expect(normalizeTopicsTail('a paragraph\nwith a second line')).toBe(
+			'a paragraph\nwith a second line'
+		);
+	});
+
+	it('returns an empty bullet for an empty tail', () => {
+		expect(normalizeTopicsTail('')).toBe('- ');
+		expect(normalizeTopicsTail('\n\n')).toBe('- ');
 	});
 });

@@ -219,9 +219,10 @@ func TestAIPrefsHandlers(t *testing.T) {
 func TestAIPrefsChatTemplates(t *testing.T) {
 	h := &Handlers{Convos: NewConversationService(newStubConvoStore(), nil)}
 
-	// PUT with chat_templates round-trips through GET.
+	// PUT with chat_templates round-trips through GET — including the
+	// opaque folder path used for client-side grouping.
 	r := authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences",
-		`{"default_mode":"agent","chat_templates":[{"id":"t1","name":"Guide","values":{"content_type":"guide","min_words":1500},"created_at":"2026-01-01T00:00:00Z"}]}`, 1)
+		`{"default_mode":"agent","chat_templates":[{"id":"t1","name":"Guide","folder":"visa/guides","values":{"content_type":"guide","min_words":1500},"created_at":"2026-01-01T00:00:00Z"}]}`, 1)
 	w := httptest.NewRecorder()
 	h.HandlePutAIPrefs(w, r)
 	if w.Result().StatusCode != http.StatusOK {
@@ -234,6 +235,18 @@ func TestAIPrefsChatTemplates(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, `"chat_templates"`) || !strings.Contains(body, `"min_words":1500`) {
 		t.Fatalf("chat templates not persisted: %s", body)
+	}
+	if !strings.Contains(body, `"folder":"visa/guides"`) {
+		t.Fatalf("template folder not persisted: %s", body)
+	}
+
+	// Overlong folder path → 400.
+	r = authedRequest(t, http.MethodPut, "/api/v1/me/ai-preferences",
+		`{"chat_templates":[{"id":"t1","name":"x","folder":"`+strings.Repeat("f", 201)+`"}]}`, 1)
+	w = httptest.NewRecorder()
+	h.HandlePutAIPrefs(w, r)
+	if w.Result().StatusCode != http.StatusBadRequest {
+		t.Fatalf("overlong folder should 400, got %d", w.Result().StatusCode)
 	}
 
 	// Non-object values payload → 400.

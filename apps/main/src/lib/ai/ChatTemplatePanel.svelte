@@ -11,7 +11,20 @@
 	// "Insert" drops a readable version into the composer instead and
 	// detaches so a send doesn't carry the spec twice.
 	import { Tabs } from 'bits-ui';
-	import { Plus, Trash2, X, Check, Loader2, Search } from 'lucide-svelte';
+	import {
+		Plus,
+		Trash2,
+		X,
+		Check,
+		Loader2,
+		Search,
+		Ellipsis,
+		Pencil,
+		CornerDownLeft,
+		Folder,
+		ChevronDown,
+		ChevronRight
+	} from 'lucide-svelte';
 	import { t } from '$lib/i18n';
 	import { AutocompleteSelect, Modal } from '$lib/components/ui';
 	// Shared option vocabularies + the composer's own Journey/Settings
@@ -28,6 +41,7 @@
 	import CreateJourneyPanel from '$lib/components/create/panel/CreateJourneyPanel.svelte';
 	import {
 		DEFAULT_CHAT_TEMPLATE_VALUES,
+		normalizeTemplateFolder,
 		normalizeTemplateValues,
 		templateFingerprint,
 		type ChatTemplate,
@@ -60,8 +74,10 @@
 		/** Persist a full template list server-side; resolves to an error
 		 * message or null on success. The parent reassigns `templates`. */
 		onpersist: (next: ChatTemplate[]) => Promise<string | null>;
-		/** Insert a readable version of the spec into the composer input. */
-		oninsert: () => void;
+		/** Insert a readable version of a spec into the composer input —
+		 * row menus pass their own template; the editor footer passes
+		 * nothing and the parent uses the working copy. */
+		oninsert: (tpl?: ChatTemplate) => void;
 		onclose?: () => void;
 	}
 
@@ -101,9 +117,155 @@
 		return templates.filter(
 			(tpl) =>
 				tpl.name.toLowerCase().includes(q) ||
+				(tpl.folder ?? '').toLowerCase().includes(q) ||
 				(tpl.values?.content_type ?? '').toLowerCase().includes(q)
 		);
 	});
+
+	// Folder grouping — folders exist only as template.folder paths, so
+	// the tree is derived (a rename/delete is a path rewrite across the
+	// member rows). Templates on an intermediate path render under that
+	// folder's header, above its subfolders.
+	interface TplFolderNode {
+		path: string;
+		name: string;
+		templates: ChatTemplate[];
+		children: Map<string, TplFolderNode>;
+	}
+	const folderTree = $derived.by(() => {
+		const roots = new Map<string, TplFolderNode>();
+		const ungrouped: ChatTemplate[] = [];
+		for (const tpl of filteredTemplates) {
+			if (!tpl.folder) {
+				ungrouped.push(tpl);
+				continue;
+			}
+			let level = roots;
+			let node: TplFolderNode | undefined;
+			let prefix = '';
+			for (const seg of tpl.folder.split('/')) {
+				const full = prefix ? `${prefix}/${seg}` : seg;
+				node = level.get(full);
+				if (!node) {
+					node = { path: full, name: seg, templates: [], children: new Map() };
+					level.set(full, node);
+				}
+				level = node.children;
+				prefix = full;
+			}
+			node?.templates.push(tpl);
+		}
+		return { roots, ungrouped };
+	});
+	const sortedNodes = (m: Map<string, TplFolderNode>) =>
+		[...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+	// Folder header count covers the whole subtree, not just direct rows.
+	function countTemplates(node: TplFolderNode): number {
+		let n = node.templates.length;
+		for (const c of node.children.values()) n += countTemplates(c);
+		return n;
+	}
+
+	// Collapsed folders keyed by path; menus tracked by template id /
+	// folder path (same click-away idiom as the conversation sidebar).
+	let collapsedFolders = $state<Set<string>>(new Set());
+	let tplMenuFor = $state<string | null>(null);
+	let folderMenuFor = $state<string | null>(null);
+	// Menus are position:fixed anchored to the trigger's viewport rect —
+	// an absolute menu inside the overflow-y-auto list clips at the
+	// scroll edge (same flyout approach as the sidebar's project menu).
+	let menuPos = $state<{ top: number; left: number } | null>(null);
+	function anchorMenu(e: MouseEvent, h = 116) {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		menuPos = {
+			top: r.bottom + h + 8 > window.innerHeight ? r.top - h - 4 : r.bottom + 4,
+			left: Math.max(8, r.right - 176)
+		};
+	}
+	function closeMenus() {
+		tplMenuFor = null;
+		folderMenuFor = null;
+		menuPos = null;
+	}
+	// Root element for in-rail checks (Esc fallback for the mobile overlay).
+	let rootEl: HTMLElement | undefined;
+	// Rename dialog — path being renamed + the working path input.
+	let renameFolderFor = $state<string | null>(null);
+	let renameName = $state('');
+	// The folder the editor's save targets — synced from the loaded
+	// template, normalized on save (typed paths are allowed).
+	let saveFolder = $state('');
+	const folderPaths = $derived(
+		[...new Set(templates.map((x) => x.folder).filter(Boolean))].sort((a, b) =>
+			a.localeCompare(b)
+		)
+	);
+	const folderItems = $derived(folderPaths.map((p) => ({ id: p, label: p })));
+	const folderFetcher = $derived(staticAutocompleteFetcher(folderItems));
+
+	function toggleFolder(path: string) {
+		const next = new Set(collapsedFolders);
+		if (next.has(path)) next.delete(path);
+		else next.add(path);
+		collapsedFolders = next;
+	}
+
+	function folderParent(path: string): string {
+		const i = path.lastIndexOf('/');
+		return i > 0 ? path.slice(0, i) : '';
+	}
+
+	// Rewrite the folder path prefix on member templates — rename swaps
+	// it, delete replaces it with the parent path (nothing is lost).
+	function rebaseFolders(from: string, to: string): ChatTemplate[] {
+		const now = new Date().toISOString();
+		return templates.map((tpl) => {
+			const f = tpl.folder ?? '';
+			if (f === from) return { ...tpl, folder: to, updated_at: now };
+			if (f.startsWith(from + '/')) {
+				return {
+					...tpl,
+					folder: to ? to + f.slice(from.length) : f.slice(from.length + 1),
+					updated_at: now
+				};
+			}
+			return tpl;
+		});
+	}
+
+	function renameFolder(path: string) {
+		folderMenuFor = null;
+		renameFolderFor = path;
+		renameName = path;
+	}
+
+	async function doFolderRename() {
+		const path = renameFolderFor;
+		const to = normalizeTemplateFolder(renameName);
+		renameFolderFor = null;
+		if (!path || to === path || saving) return;
+		await run(rebaseFolders(path, to));
+	}
+
+	function deleteFolder(path: string) {
+		folderMenuFor = null;
+		if (saving) return;
+		const parent = folderParent(path);
+		confirmDialog = {
+			title: t('ai.templates.folder_delete', 'Delete folder'),
+			body: t(
+				'ai.templates.folder_delete_confirm',
+				'Delete folder "{name}"? Templates inside move to {parent}.',
+				{
+					name: path,
+					parent: parent || t('ai.templates.ungrouped', 'Ungrouped')
+				}
+			),
+			confirmLabel: t('common.delete', 'Delete'),
+			run: () => void run(rebaseFolders(path, parent))
+		};
+	}
 
 	const activeTemplate = $derived(templates.find((tpl) => tpl.id === activeId));
 	// Working-copy divergence — edits to a loaded template that haven't
@@ -318,6 +480,7 @@
 			values = normalizeTemplateValues(tpl.values);
 			activeId = tpl.id;
 			saveName = '';
+			saveFolder = tpl.folder ?? '';
 			saveErr = '';
 			surface = 'edit';
 		});
@@ -328,6 +491,7 @@
 			values = structuredClone(DEFAULT_CHAT_TEMPLATE_VALUES);
 			activeId = '';
 			saveName = '';
+			saveFolder = '';
 			saveErr = '';
 			surface = 'edit';
 		});
@@ -362,6 +526,7 @@
 	async function save() {
 		if (saving) return;
 		commitFieldValues(fieldValuesText);
+		const folder = normalizeTemplateFolder(saveFolder);
 		const now = new Date().toISOString();
 		if (activeId && activeTemplate) {
 			// Overwrite the loaded template — a typed name renames it.
@@ -372,10 +537,13 @@
 			}
 			const next = templates.map((tpl) =>
 				tpl.id === activeId
-					? { ...tpl, name, values: cloneValues(values), updated_at: now }
+					? { ...tpl, name, folder, values: cloneValues(values), updated_at: now }
 					: tpl
 			);
-			if (await run(next)) saveName = '';
+			if (await run(next)) {
+				saveName = '';
+				saveFolder = folder;
+			}
 			return;
 		}
 		const name = saveName.trim();
@@ -390,6 +558,7 @@
 		const tpl: ChatTemplate = {
 			id: crypto.randomUUID(),
 			name,
+			folder,
 			values: cloneValues(values),
 			created_at: now,
 			updated_at: now
@@ -397,12 +566,14 @@
 		if (await run([tpl, ...templates])) {
 			activeId = tpl.id;
 			saveName = '';
+			saveFolder = folder;
 		}
 	}
 
 	async function saveAsNew() {
 		if (saving) return;
 		commitFieldValues(fieldValuesText);
+		const folder = normalizeTemplateFolder(saveFolder);
 		const name =
 			saveName.trim() ||
 			(activeTemplate ? `${activeTemplate.name} (copy)` : t('ai.templates.untitled', 'Untitled'));
@@ -414,6 +585,7 @@
 		const tpl: ChatTemplate = {
 			id: crypto.randomUUID(),
 			name,
+			folder,
 			values: cloneValues(values),
 			created_at: now,
 			updated_at: now
@@ -421,6 +593,7 @@
 		if (await run([tpl, ...templates])) {
 			activeId = tpl.id;
 			saveName = '';
+			saveFolder = folder;
 		}
 	}
 
@@ -461,7 +634,186 @@
 	</div>
 {/snippet}
 
+{#snippet tplRow(tpl: ChatTemplate)}
+	<li class="group relative">
+		<button
+			type="button"
+			onclick={() => select(tpl)}
+			class="w-full rounded-[var(--radius)] px-2.5 py-1.5 pr-8 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {activeId ===
+			tpl.id
+				? 'bg-[var(--color-primary)]/10 font-medium'
+				: ''}"
+		>
+			<span class="flex items-center gap-1.5">
+				<span class="truncate">{tpl.name}</span>
+				{#if activeId === tpl.id && active}
+					<Check size={12} class="shrink-0 text-[var(--color-primary)]" />
+				{/if}
+			</span>
+		</button>
+		<div
+			class="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+		>
+			<button
+				type="button"
+				onclick={(e) => {
+					e.stopPropagation();
+					folderMenuFor = null;
+					if (tplMenuFor === tpl.id) {
+						closeMenus();
+						return;
+					}
+					anchorMenu(e);
+					tplMenuFor = tpl.id;
+				}}
+				class="rounded p-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+				aria-label={t('ai.templates.actions', 'Template actions')}
+				title={t('ai.templates.actions', 'Template actions')}
+			>
+				<Ellipsis size={12} />
+			</button>
+		</div>
+		{#if tplMenuFor === tpl.id && menuPos}
+			<!-- Fixed-position flyout rendered outside the translated kebab
+			     wrapper — a transform on any ancestor makes position:fixed
+			     resolve against that ancestor, not the viewport. -->
+			<div
+				class="fixed z-50 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+				style="top: {menuPos.top}px; left: {menuPos.left}px"
+				role="menu"
+			>
+				<button
+					type="button"
+					onclick={(e) => {
+						e.stopPropagation();
+						closeMenus();
+						oninsert(tpl);
+					}}
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				>
+					<CornerDownLeft size={12} class="shrink-0 text-[var(--color-muted)]" />
+					<span class="flex-1 truncate"
+						>{t('ai.templates.insert', 'Insert as editable prompt')}</span
+					>
+				</button>
+				<button
+					type="button"
+					onclick={(e) => {
+						e.stopPropagation();
+						closeMenus();
+						select(tpl);
+					}}
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				>
+					<Pencil size={12} class="shrink-0 text-[var(--color-muted)]" />
+					<span class="flex-1 truncate">{t('ai.templates.tab_edit', 'Edit template')}</span>
+				</button>
+				<button
+					type="button"
+					onclick={(e) => {
+						e.stopPropagation();
+						closeMenus();
+						remove(tpl.id);
+					}}
+					class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+				>
+					<Trash2 size={12} class="shrink-0" />
+					<span class="flex-1 truncate">{t('common.delete', 'Delete')}</span>
+				</button>
+			</div>
+		{/if}
+	</li>
+{/snippet}
+
+{#snippet folderNode(node: TplFolderNode)}
+	<li>
+		<div class="group/f relative">
+			<button
+				type="button"
+				onclick={() => toggleFolder(node.path)}
+				class="flex w-full items-center gap-1.5 rounded-[var(--radius)] px-2 py-1.5 text-left text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-text)]"
+			>
+				{#if collapsedFolders.has(node.path)}
+					<ChevronRight size={12} />
+				{:else}
+					<ChevronDown size={12} />
+				{/if}
+				<Folder size={13} class="shrink-0" />
+				<span class="truncate">{node.name}</span>
+				<span class="ml-auto shrink-0 pr-5">{countTemplates(node)}</span>
+			</button>
+			<div
+				class="absolute right-1 top-1 opacity-0 transition-opacity group-hover/f:opacity-100 group-focus-within/f:opacity-100"
+			>
+				<button
+					type="button"
+					onclick={(e) => {
+						e.stopPropagation();
+						tplMenuFor = null;
+						if (folderMenuFor === node.path) {
+							closeMenus();
+							return;
+						}
+						anchorMenu(e, 84);
+						folderMenuFor = node.path;
+					}}
+					class="rounded p-1 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+					aria-label={t('ai.templates.folder_actions', 'Folder actions')}
+					title={t('ai.templates.folder_actions', 'Folder actions')}
+				>
+					<Ellipsis size={12} />
+				</button>
+				{#if folderMenuFor === node.path && menuPos}
+					<div
+						class="fixed z-50 w-44 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-lg"
+						style="top: {menuPos.top}px; left: {menuPos.left}px"
+						role="menu"
+					>
+						<button
+							type="button"
+							onclick={(e) => {
+								e.stopPropagation();
+								renameFolder(node.path);
+							}}
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Pencil size={12} class="shrink-0 text-[var(--color-muted)]" />
+							<span class="flex-1 truncate"
+								>{t('ai.templates.folder_rename', 'Rename folder')}</span
+							>
+						</button>
+						<button
+							type="button"
+							onclick={(e) => {
+								e.stopPropagation();
+								deleteFolder(node.path);
+							}}
+							class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-[var(--color-danger)] hover:bg-[var(--color-surface-subtle)]"
+						>
+							<Trash2 size={12} class="shrink-0" />
+							<span class="flex-1 truncate"
+								>{t('ai.templates.folder_delete', 'Delete folder')}</span
+							>
+						</button>
+					</div>
+				{/if}
+			</div>
+		</div>
+		{#if !collapsedFolders.has(node.path)}
+			<ul class="pl-4">
+				{#each node.templates as tpl (tpl.id)}
+					{@render tplRow(tpl)}
+				{/each}
+				{#each sortedNodes(node.children) as child (child.path)}
+					{@render folderNode(child)}
+				{/each}
+			</ul>
+		{/if}
+	</li>
+{/snippet}
+
 <aside
+	bind:this={rootEl}
 	class="flex h-full w-full flex-col overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] rounded-l-[var(--radius-card)] lg:rounded-[var(--radius-card)]"
 >
 	<div class="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2.5">
@@ -542,37 +894,22 @@
 			</div>
 		</div>
 
-		<div class="min-h-0 flex-1 overflow-y-auto">
+		<div class="min-h-0 flex-1 overflow-y-auto" onscroll={closeMenus}>
 			{#if filteredTemplates.length > 0}
 				<ul class="p-2">
-					{#each filteredTemplates as tpl (tpl.id)}
-						<li class="group relative">
-							<button
-								type="button"
-								onclick={() => select(tpl)}
-								class="w-full rounded-[var(--radius)] px-2.5 py-1.5 text-left text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)] {activeId ===
-								tpl.id
-									? 'bg-[var(--color-primary)]/10 font-medium'
-									: ''}"
-							>
-								<span class="flex items-center gap-1.5">
-									<span class="truncate">{tpl.name}</span>
-									{#if activeId === tpl.id && active}
-										<Check size={12} class="shrink-0 text-[var(--color-primary)]" />
-									{/if}
-								</span>
-							</button>
-							<button
-								type="button"
-								onclick={() => remove(tpl.id)}
-								class="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-muted)] transition-colors hover:text-[var(--color-danger)]"
-								aria-label={t('ai.templates.delete', 'Delete template')}
-								title={t('ai.templates.delete', 'Delete template')}
-							>
-								<Trash2 size={12} />
-							</button>
-						</li>
+					{#each sortedNodes(folderTree.roots) as node (node.path)}
+						{@render folderNode(node)}
 					{/each}
+					{#if folderTree.ungrouped.length > 0}
+						{#if folderTree.roots.size > 0}
+							<li class="px-2 pb-0.5 pt-2 text-xs font-semibold text-[var(--color-muted)]">
+								{t('ai.templates.ungrouped', 'Ungrouped')}
+							</li>
+						{/if}
+						{#each folderTree.ungrouped as tpl (tpl.id)}
+							{@render tplRow(tpl)}
+						{/each}
+					{/if}
 				</ul>
 			{:else}
 				<p class="px-4 py-8 text-center text-xs text-[var(--color-muted)]">
@@ -595,6 +932,9 @@
 				<Plus size={13} />
 				{t('ai.templates.new_template', 'New template')}
 			</button>
+			{#if saveErr}
+				<p class="mt-2 text-xs text-[var(--color-danger)]">{saveErr}</p>
+			{/if}
 		</div>
 	{:else}
 		<div class="min-h-0 flex-1 overflow-y-auto">
@@ -899,11 +1239,31 @@
 
 		<button
 			type="button"
-			onclick={oninsert}
+			onclick={() => oninsert()}
 			class="w-full rounded-[var(--radius)] border border-[var(--color-border)] px-2 py-1.5 text-xs text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
 		>
 			{t('ai.templates.insert', 'Insert as editable prompt')}
 		</button>
+
+		<div class="tpl-field">
+			<span class="tpl-label">{t('ai.templates.folder', 'Folder')}</span>
+			<Autocomplete
+				id="tpl-folder"
+				placeholder={t('ai.templates.folder_placeholder', 'e.g. visa/guides')}
+				emptyMessage={emptyMsg}
+				fetcher={folderFetcher}
+				initialFetcher={folderFetcher}
+				selectedId={saveFolder || null}
+				selectedLabel={saveFolder}
+				onSelect={(item: AutocompleteItem) => {
+					saveFolder = item.id;
+				}}
+				onClear={() => {
+					saveFolder = '';
+				}}
+				allowFreeText
+			/>
+		</div>
 
 		<div class="flex gap-2">
 			<input
@@ -984,6 +1344,82 @@
 		</div>
 	{/snippet}
 </Modal>
+
+<Modal
+	open={renameFolderFor !== null}
+	onOpenChange={(o) => {
+		if (!o) renameFolderFor = null;
+	}}
+	title={t('ai.templates.folder_rename', 'Rename folder')}
+	description={t(
+		'ai.templates.folder_rename_help',
+		'Use "/" for nesting — e.g. visa/guides. Applies to every template and subfolder inside.'
+	)}
+	size="sm"
+>
+	{#snippet children(close)}
+		<div class="space-y-3">
+			<input
+				type="text"
+				class="tpl-input"
+				bind:value={renameName}
+				placeholder={t('ai.templates.folder_placeholder', 'e.g. visa/guides')}
+				aria-label={t('ai.templates.folder', 'Folder')}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') {
+						void doFolderRename();
+						close();
+					}
+				}}
+			/>
+			<div class="flex justify-end gap-2">
+				<button
+					type="button"
+					onclick={close}
+					class="rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-1.5 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-surface-subtle)]"
+				>
+					{t('common.cancel', 'Cancel')}
+				</button>
+				<button
+					type="button"
+					onclick={() => {
+						void doFolderRename();
+						close();
+					}}
+					class="rounded-[var(--radius)] px-3 py-1.5 text-xs font-medium text-white"
+					style="background-color: var(--color-primary)"
+				>
+					{t('ai.templates.rename', 'Rename')}
+				</button>
+			</div>
+		</div>
+	{/snippet}
+</Modal>
+
+<!-- Click-away / Escape closes an open row/folder menu — same idiom as
+     the conversation sidebar. Menu buttons stopPropagation so the click
+     handler only fires on real outside clicks; the parent's Esc chain
+     skips in-rail targets (data-template-rail), so this only dismisses
+     the menus. -->
+<svelte:window
+	onclick={closeMenus}
+	onkeydown={(e) => {
+		if (e.key !== 'Escape') return;
+		if (tplMenuFor || folderMenuFor) {
+			closeMenus();
+			return;
+		}
+		// No menu open: the parent skips rail dismissal for in-rail Esc
+		// presses, so close the mobile overlay from here instead.
+		if (
+			onclose &&
+			!window.matchMedia('(min-width: 1024px)').matches &&
+			e.target instanceof Node &&
+			rootEl?.contains(e.target)
+		)
+			onclose();
+	}}
+/>
 
 <style>
 	/* Bits UI applies the class props to its rendered elements, so these

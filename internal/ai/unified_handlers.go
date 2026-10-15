@@ -33,17 +33,17 @@ import (
 // unifiedChatInput is the POST /ai/chat request body. `message` is the
 // canonical field; `prompt` is accepted for legacy /ai/agent clients.
 type unifiedChatInput struct {
-	Message        string         `json:"message"`
-	Prompt         string         `json:"prompt"` // legacy alias
-	ConversationID string         `json:"conversation_id,omitempty"`
+	Message        string `json:"message"`
+	Prompt         string `json:"prompt"` // legacy alias
+	ConversationID string `json:"conversation_id,omitempty"`
 	// §103 AI Projects: start the new thread inside this project.
-	ProjectID      string         `json:"project_id,omitempty"`
-	Context        map[string]any `json:"context,omitempty"`
-	Model          string         `json:"model,omitempty"`
-	VoiceID        string         `json:"voice_id,omitempty"`
-	Humanize       *bool          `json:"humanize,omitempty"`
-	HumanizeLevel  string         `json:"humanize_level,omitempty"`
-	Tools          *ToolSelection `json:"tools,omitempty"`
+	ProjectID     string         `json:"project_id,omitempty"`
+	Context       map[string]any `json:"context,omitempty"`
+	Model         string         `json:"model,omitempty"`
+	VoiceID       string         `json:"voice_id,omitempty"`
+	Humanize      *bool          `json:"humanize,omitempty"`
+	HumanizeLevel string         `json:"humanize_level,omitempty"`
+	Tools         *ToolSelection `json:"tools,omitempty"`
 }
 
 // HandleUnifiedChat serves POST /ai/chat (ADR-130). SSE when the client
@@ -627,7 +627,7 @@ func (h *Handlers) HandlePutAIPrefs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seenTemplateIDs[ct.ID] = true
-		if len(ct.ID) > 64 || len(ct.Name) > 200 || len(ct.CreatedAt) > 40 || len(ct.UpdatedAt) > 40 {
+		if len(ct.ID) > 64 || len(ct.Name) > 200 || len(ct.Folder) > 200 || len(ct.CreatedAt) > 40 || len(ct.UpdatedAt) > 40 {
 			errpkg.WriteError(w, http.StatusBadRequest, "validation_error", "chat_templates contains an overlong entry")
 			return
 		}

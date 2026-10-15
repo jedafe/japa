@@ -20,8 +20,11 @@ type AIPrefs struct {
 // it verbatim: Values is opaque so template fields can evolve without a
 // schema change here.
 type ChatTemplate struct {
-	ID        string          `json:"id"`
-	Name      string          `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Slash-separated grouping path (e.g. "visa/guides") — opaque to the
+	// backend like Values; folders are derived client-side, not entities.
+	Folder    string          `json:"folder,omitempty"`
 	Values    json.RawMessage `json:"values,omitempty"`
 	CreatedAt string          `json:"created_at,omitempty"`
 	UpdatedAt string          `json:"updated_at,omitempty"`

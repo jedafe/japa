@@ -118,9 +118,24 @@ export function templateFingerprint(values: ChatTemplateValues): string {
 export interface ChatTemplate {
 	id: string;
 	name: string;
+	/** Slash-separated folder path ('visa/guides') — '' means ungrouped.
+	 * Folders are derived from template paths; there are no folder rows. */
+	folder: string;
 	values: ChatTemplateValues;
 	created_at?: string;
 	updated_at?: string;
+}
+
+/** Normalize a stored/typed folder path — trims each segment, drops
+ * empty segments (collapses '//' and edge slashes). Non-strings (older
+ * templates saved before folders existed) come back ungrouped. */
+export function normalizeTemplateFolder(raw: unknown): string {
+	if (typeof raw !== 'string') return '';
+	return raw
+		.split('/')
+		.map((s) => s.trim())
+		.filter(Boolean)
+		.join('/');
 }
 
 /**
@@ -263,7 +278,8 @@ export function buildTemplateBlock(name: string, values: ChatTemplateValues): st
 		`\n\n---\n` +
 		`[Chat template: "${label}"] Apply this generation spec to my request. ` +
 		`If the content.generate_draft tool is available, call it with these arguments, ` +
-		`filling "title" and "instructions" from my request above; otherwise draft the ` +
+		`filling "title" and "instructions" from my request above — when my request ` +
+		`lists multiple topics, make one call per topic; otherwise draft the ` +
 		`content directly, honoring the same constraints.\n\n` +
 		'```json\n' +
 		JSON.stringify(spec, null, 2) +
@@ -271,14 +287,36 @@ export function buildTemplateBlock(name: string, values: ChatTemplateValues): st
 	);
 }
 
+/** Display-name lookups for ids stored in the spec (space/series/voice)
+ * — the composer resolves them from live catalogs so the inserted prose
+ * reads as names, not uuids. */
+export interface TemplateInsertLabels {
+	space?: string;
+	series?: string;
+	voice?: string;
+}
+
+// Marker lines an inserted spec is recognized by on re-insert. The
+// topics header ends every spec block; the legacy 'Topic: ' line covers
+// inserts produced before the Topics list existed.
+const TOPICS_MARKER = 'Topics (one per line';
+const LEGACY_TOPIC_MARKER = '\nTopic: ';
+const SPEC_HEADER_RE = /^Write (?:a|one)\b[^\n]*draft[^\n]*requirements:/;
+
 /**
  * Human-readable instruction text for the "insert into composer" flow —
  * the user reviews/edits before sending, so it reads as prose rather
- * than a tool-args payload.
+ * than a tool-args payload. Covers every non-default spec field so the
+ * inserted prompt is faithful to what an attached send would carry.
+ * Ends at the Topics header; the caller appends the topic tail
+ * (see splitComposerForInsert + normalizeTopicsTail).
  */
-export function buildTemplateInsertText(values: ChatTemplateValues): string {
+export function buildTemplateInsertText(
+	values: ChatTemplateValues,
+	labels: TemplateInsertLabels = {}
+): string {
 	const lines: string[] = [
-		`Write a ${values.content_type || 'guide'} draft with these requirements:`
+		`Write one ${values.content_type || 'guide'} draft per topic in the Topics list, with these requirements:`
 	];
 	if (values.framework) {
 		lines.push(`- Structure it with the ${values.framework.toUpperCase()} marketing framework`);
@@ -309,6 +347,7 @@ export function buildTemplateInsertText(values: ChatTemplateValues): string {
 	if (values.include_inline_image) includes.push('inline image placeholders with alt text');
 	if (includes.length) lines.push(`- Include ${includes.join(', ')}`);
 	if (values.tone) lines.push(`- Tone: ${values.tone}`);
+	if (values.voice_id) lines.push(`- Voice: ${labels.voice || values.voice_id}`);
 	if (values.humanize_level !== 'off')
 		lines.push(`- Write naturally and human (${values.humanize_level} humanization)`);
 	if (values.audience) lines.push(`- Audience: ${values.audience}`);
@@ -321,6 +360,56 @@ export function buildTemplateInsertText(values: ChatTemplateValues): string {
 	if (journey.length) lines.push(`- Context: readers on ${journey.join(', ')}`);
 	if (values.tags.length) lines.push(`- Cover these tags/themes: ${values.tags.join(', ')}`);
 	if (values.instructions.trim()) lines.push(`- ${values.instructions.trim()}`);
-	lines.push('', 'Topic: ');
+	// Publishing metadata — only non-default values emit, matching the
+	// attach block's context contract.
+	const publishing: string[] = [];
+	if (values.status && values.status !== DEFAULT_CHAT_TEMPLATE_VALUES.status)
+		publishing.push(`status ${values.status}`);
+	if (values.visibility && values.visibility !== DEFAULT_CHAT_TEMPLATE_VALUES.visibility)
+		publishing.push(`${values.visibility} visibility`);
+	if (!values.seo_indexable) publishing.push('not indexable');
+	if (publishing.length) lines.push(`- Publishing: ${publishing.join(', ')}`);
+	if (values.publish_at) lines.push(`- Publish at: ${values.publish_at}`);
+	if (values.space_id) lines.push(`- Space: ${labels.space || values.space_id}`);
+	if (values.series_id) lines.push(`- Series: ${labels.series || values.series_id}`);
+	const fv = Object.entries(values.field_values);
+	if (fv.length)
+		lines.push(`- Field values: ${fv.map(([k, v]) => `${k} = ${v}`).join('; ')}`);
+	lines.push('', `${TOPICS_MARKER} — one draft is generated per topic):`);
 	return lines.join('\n');
+}
+
+/**
+ * Extract the topics tail from composer content for a template insert.
+ * When the input starts with a spec header and carries a topics marker,
+ * returns everything after the topics header (the user's topic lines +
+ * any trailing text). Anything else — free text, or a spec whose topics
+ * marker the user deleted — is returned whole, so an insert never
+ * silently drops typed content.
+ */
+export function splitComposerForInsert(input: string): string {
+	if (!SPEC_HEADER_RE.test(input)) return input.trim();
+	const topicsIdx = input.indexOf(TOPICS_MARKER);
+	if (topicsIdx >= 0) {
+		const nl = input.indexOf('\n', topicsIdx);
+		return nl >= 0 ? input.slice(nl + 1) : '';
+	}
+	const legacyIdx = input.indexOf(LEGACY_TOPIC_MARKER);
+	if (legacyIdx >= 0) return input.slice(legacyIdx + LEGACY_TOPIC_MARKER.length);
+	return input.trim();
+}
+
+/**
+ * Normalize a topics tail — an empty tail gets one empty bullet so the
+ * cursor has somewhere to land, a single-line draft gets the bullet
+ * affordance, and multi-line text passes through verbatim (bulletizing
+ * line-by-line would mangle paragraphs; "one per line" already makes
+ * plain lines read as topics).
+ */
+export function normalizeTopicsTail(tail: string): string {
+	const trimmed = tail.replace(/^\n+|\n+$/g, '');
+	if (!trimmed) return '- ';
+	if (!trimmed.includes('\n') && !trimmed.trimStart().startsWith('-'))
+		return `- ${trimmed}`;
+	return trimmed;
 }
