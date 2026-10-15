@@ -102,17 +102,18 @@ Frontend (`JapaAIChat.svelte`):
 
 ### 3. Template `intent` field
 
-- Frontend `ChatTemplate` gains `intent: 'preview' | 'create'` — normalized
-  on load/save (absent/invalid → `preview`), persisted inside the existing
-  `chat_templates` opaque blob like `folder`.
-- Backend `internal/ai/prefs.go` `ChatTemplate` gains
-  `Intent string json:"intent,omitempty"`; handler normalizes to the two
-  values (anything else → empty/`preview`), consistent with the folder
-  bound already added.
+- `ChatTemplateValues` gains `intent: 'preview' | 'create'` (default
+  `preview`) — it lives **inside** the opaque `values` blob, so the prefs
+  endpoint needs no schema change (the `ChatTemplate` top-level struct is
+  untouched), `normalizeTemplateValues` coerces it, and
+  `templateFingerprint` covers it (toggling intent marks the template
+  dirty). `buildTemplateSpec` builds its payload field-by-field, so
+  `intent` never leaks into the tool-args JSON.
 - Editor (`ChatTemplatePanel.svelte`): a compact two-option segmented
   control in the save footer beside Folder — `Preview in chat` /
   `Create content`.
-- `buildTemplateInsertText(values, labels, intent)`:
+- `buildTemplateInsertText`/`buildTemplateBlock` read `values.intent` —
+  signatures unchanged:
   - `preview` — "present the drafts in chat; do not create content items"
     is added to the spec header so the outcome is deterministic rather than
     left to model discretion.
