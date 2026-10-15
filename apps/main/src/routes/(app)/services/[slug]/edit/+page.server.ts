@@ -41,15 +41,11 @@ export const load: PageServerLoad = async (event) => {
 		throw error(404, { code: 'not_found', message: 'Service not found' });
 	}
 
-	// Mirrors EditOwn (§98): author or service.edit_any may edit.
-	// (The 'package' listing kind was removed from the feature in
-	// 2026-10 — its org-membership and service.package.create
-	// gates went with it.)
-	const isEditAny = !!event.locals.user.permissions?.includes('service.edit_any');
-	const canEdit = isEditAny || service.author_id === event.locals.user.id;
-	if (!canEdit) {
-		throw error(403, { code: 'not_owner', message: 'You can only edit your own service listings' });
-	}
+	// No separate ownership check here — the ?raw=1 fetch above already
+	// enforces the §98 editor gate (author, owning-org member, or
+	// service.edit_any → GetBySlugEditor; everyone else gets 404 so
+	// unpublished existence never leaks). A stricter local check 403'd
+	// org members the detail page's Edit link legitimately targets.
 
 	const [countriesRes, categoriesRes] = await Promise.allSettled([
 		apiList<GeoCountry>(ctx, '/geo/countries'),

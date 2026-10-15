@@ -68,6 +68,14 @@
 		const params = new URLSearchParams(page.url.searchParams);
 		params.set('page', String(lastFetchedPage + 1));
 		params.delete('submitted');
+		// The API only accepts space UUIDs — the URL may carry slug-form
+		// geo params (the city picker writes slugs for readable URLs), so
+		// swap in the server-resolved ids before fetching the next page.
+		if (data.filters.dest) params.set('dest', data.filters.dest);
+		if (data.filters.city) {
+			if (data.filters.cityId) params.set('city', data.filters.cityId);
+			else params.delete('city');
+		}
 		const res = await api.get<ServiceListing[]>(`/services?${params.toString()}`);
 		if (res.data) {
 			appended = [...appended, ...res.data];

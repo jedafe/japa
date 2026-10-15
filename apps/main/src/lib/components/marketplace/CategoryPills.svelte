@@ -26,9 +26,11 @@
 	const MAX_VISIBLE = 8;
 
 	// 'both' applies to every kind; kind-scoped categories only show on their
-	// own tab. No filter when kind is ''/'all'.
+	// own tab. No filter when kind is ''/'all'. On the mentorship tab,
+	// service/package-scoped categories are hidden — clicking one would
+	// land on an empty mentorship-filtered list.
 	const filtered = $derived(
-		kind === 'service'
+		kind === 'service' || kind === 'mentorship'
 			? categories.filter(
 					(c) => !c.applies_to || c.applies_to === 'both' || c.applies_to === kind
 				)

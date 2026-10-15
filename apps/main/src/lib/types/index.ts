@@ -4227,7 +4227,7 @@ export interface ServiceCategoryInfo {
 	description?: string;
 	icon?: string; // lucide icon name
 	accent_color?: string; // palette token name — see CategoryAccent in $lib/marketplace
-	applies_to?: 'service' | 'package' | 'both';
+	applies_to?: 'service' | 'package' | 'mentorship' | 'both';
 }
 
 /** §114 marketplace — a coupon attached to a listing (public detail

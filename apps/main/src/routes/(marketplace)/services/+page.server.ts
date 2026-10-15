@@ -104,6 +104,9 @@ export const load: PageServerLoad = async (event) => {
 		dest: destId,
 		destLabel: destRef?.name ?? '',
 		city: cityId ? city : '',
+		// Resolved space ids — the API only accepts UUIDs, so client-side
+		// pagination (loadMore) must forward these, not the raw URL slugs.
+		cityId,
 		cityLabel: cityRef?.name ?? '',
 		category,
 		origin,
