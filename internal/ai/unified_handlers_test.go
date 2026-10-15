@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -287,5 +288,59 @@ func TestAIPrefsChatTemplates(t *testing.T) {
 		if w.Result().StatusCode != http.StatusBadRequest {
 			t.Fatalf("payload %s should 400, got %d", payload, w.Result().StatusCode)
 		}
+	}
+}
+
+func TestHandleGetConversationV2_RunningSessionID(t *testing.T) {
+	// A detached turn's session must surface on conversation detail so a
+	// client that lost the stream (or returned later) can poll it.
+	st := newStubConvoStore()
+	h := &Handlers{
+		Convos:   NewConversationService(st, nil),
+		Settings: &agentSettingsReader{ints: map[string]int{}},
+	}
+
+	uid := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	conv, err := st.CreateAIConversation(context.Background(), gen.CreateAIConversationParams{UserID: uid, Title: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	get := func() string {
+		r := authedRequest(t, http.MethodGet, "/api/v1/ai/conversations/"+conv.ID.String(), "", 1)
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("id", conv.ID.String())
+		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+		w := httptest.NewRecorder()
+		h.HandleGetConversationV2(w, r)
+		if w.Result().StatusCode != http.StatusOK {
+			t.Fatalf("detail should 200, got %d: %s", w.Result().StatusCode, w.Body.String())
+		}
+		return w.Body.String()
+	}
+
+	// No running session → field absent.
+	if strings.Contains(get(), "running_session_id") {
+		t.Fatal("running_session_id must be absent with no running session")
+	}
+
+	// Fresh running session → field carries the session id.
+	sessID := pgtype.UUID{Bytes: [16]byte{7}, Valid: true}
+	st.sessions[sessID.String()] = gen.AiAgentSession{
+		ID: sessID, UserID: uid, ConversationID: conv.ID,
+		Status:    "running",
+		StartedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}
+	body := get()
+	if !strings.Contains(body, `"running_session_id":"`+sessID.String()+`"`) {
+		t.Fatalf("running session should surface on detail: %s", body)
+	}
+
+	// Terminal session → field absent again.
+	s := st.sessions[sessID.String()]
+	s.Status = "failed"
+	st.sessions[sessID.String()] = s
+	if strings.Contains(get(), "running_session_id") {
+		t.Fatal("running_session_id must be absent once the session is terminal")
 	}
 }

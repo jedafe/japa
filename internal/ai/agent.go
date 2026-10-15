@@ -25,6 +25,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
@@ -978,9 +979,15 @@ func (h *AgentHandler) runLoop(
 		return
 	}
 
-	// Max iterations exhausted without a final answer → fail per §103.
+	// Max iterations exhausted without a final answer → fail per §103. An
+	// empty response from the model is a different failure — the notice is
+	// user-facing, so the message must name the real cause.
 	if maxedOut || finalResponse == "" {
-		loopErr = fmt.Errorf("agent: max tool calls exceeded (%d)", maxToolCalls)
+		if maxedOut {
+			loopErr = fmt.Errorf("agent: max tool calls exceeded (%d)", maxToolCalls)
+		} else {
+			loopErr = errors.New("agent: model returned an empty response")
+		}
 		h.failSession(ctx, session, loopErr, toolCallCount, totalTokens, estimatedCost)
 		trackCost()
 		h.persistTerminalNotice(ctx, p, session, fmt.Sprintf("The agent task failed: %s", loopErr.Error()))

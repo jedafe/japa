@@ -7,6 +7,7 @@
 	// Ref: japaconnect-engineering/sections/103-ai-agent-executor.md (Agent Loop, SSE Streaming)
 	// Ref: japaconnect-engineering/roadmaps/ROADMAP-AI-AGENT.md (Phase 10, task 10.01)
 
+	import { onDestroy } from 'svelte';
 	import { t } from '$lib/i18n';
 	import { api } from '$lib/api/client';
 	import {
@@ -83,6 +84,121 @@
 	let activeAbort: AbortController | null = $state(null);
 	let activeSessionId: string | null = $state(null);
 	let cancelling = $state(false);
+
+	// Legacy agent runs are ALWAYS detached server-side (§103 amendment) —
+	// a dropped stream doesn't kill the task, so a lost turn polls the
+	// session endpoint and lands result_summary/error_message on terminal
+	// status instead of ending on a stale "Stream closed." placeholder.
+	// Legacy sessions carry no conversation_id, so several can run at once —
+	// the poll is keyed per session, not a singleton.
+	let bgSessionIds = $state<string[]>([]);
+	const bgPollTimers = new Map<string, ReturnType<typeof setInterval>>();
+	const bgCancellingIds = $state<string[]>([]);
+	const BG_POLL_MS = 3000;
+	const BG_POLL_CAP_MS = 10 * 60 * 1000;
+
+	function stopSessionPoll(sid?: string) {
+		if (sid === undefined) {
+			for (const timer of bgPollTimers.values()) clearInterval(timer);
+			bgPollTimers.clear();
+			bgSessionIds = [];
+			bgCancellingIds.length = 0;
+			return;
+		}
+		const timer = bgPollTimers.get(sid);
+		if (timer) clearInterval(timer);
+		bgPollTimers.delete(sid);
+		bgSessionIds = bgSessionIds.filter((x) => x !== sid);
+	}
+
+	function startSessionPoll(sessionId: string, turn: ChatTurn) {
+		if (!sessionId || bgPollTimers.has(sessionId)) return;
+		const sid = sessionId;
+		bgSessionIds = [...bgSessionIds, sid];
+		const startedAt = Date.now();
+		let failures = 0;
+		let inFlight = false;
+		const settle = (fn: () => void) => {
+			stopSessionPoll(sid);
+			turn.in_progress = false;
+			turn.progress = '';
+			fn();
+			turns = [...turns];
+		};
+		bgPollTimers.set(
+			sid,
+			setInterval(() => {
+				if (!bgPollTimers.has(sid) || inFlight) return;
+				if (Date.now() - startedAt > BG_POLL_CAP_MS) {
+					settle(() => {
+						if (!turn.content && !turn.error)
+							turn.error = t('ai.agent.stream_closed', 'Stream closed.');
+					});
+					return;
+				}
+				inFlight = true;
+				void (async () => {
+					try {
+						const res = await api.get<{
+							session: {
+								status: string;
+								result_summary?: string;
+								error_message?: string;
+								total_tokens?: number;
+								estimated_cost?: number;
+							};
+						}>(`/ai/agent/sessions/${sid}`);
+						// A stop mid-request must not act on a stale response.
+						if (!bgPollTimers.has(sid)) return;
+						if (res.error) {
+							// 404 → the session row is gone; anything else gets one retry.
+							if (++failures >= 2 || res.error.code === 'session_not_found') {
+								settle(() => {
+									if (!turn.content && !turn.error)
+										turn.error = t('ai.agent.stream_closed', 'Stream closed.');
+								});
+							}
+							return;
+						}
+						failures = 0;
+						const s = res.data?.session;
+						if (s?.status && s.status !== 'running') {
+							settle(() => {
+								if (s.status === 'completed') {
+									turn.content = s.result_summary ?? turn.streamed ?? '';
+									turn.tokens_used = s.total_tokens;
+									turn.estimated_cost = s.estimated_cost;
+								} else {
+									turn.error =
+										s.error_message ??
+										(s.status === 'cancelled'
+											? t('ai.agent.cancelled', 'Cancelled.')
+											: t('ai.agent.load_failed', 'Failed to load session detail.'));
+								}
+								turn.streamed = '';
+							});
+						}
+					} finally {
+						inFlight = false;
+					}
+				})();
+			}, BG_POLL_MS)
+		);
+	}
+
+	// The composer's Stop only exists while a stream is attached — a polled
+	// turn needs its own cancel path to the same endpoint.
+	async function cancelBackgroundSession(sid: string) {
+		if (!sid || bgCancellingIds.includes(sid)) return;
+		bgCancellingIds.push(sid);
+		try {
+			await api.post(`/ai/agent/sessions/${sid}/cancel`);
+		} finally {
+			bgCancellingIds.splice(bgCancellingIds.indexOf(sid), 1);
+		}
+	}
+
+	onDestroy(() => stopSessionPoll());
 
 	// Auto-scroll to the latest content whenever the transcript grows or a
 	// tool call updates.
@@ -177,12 +293,18 @@
 			for await (const ev of streamAgent({ prompt, signal: abort.signal })) {
 				handleEvent(ev, liveTurn);
 			}
-			// Stream closed — if the assistant turn never got a final_response,
-			// mark it complete with whatever content we have.
+			// Stream closed — if the assistant turn never got a final_response
+			// and a session exists, the run is still going detached; poll it
+			// instead of ending on a stale placeholder.
 			if (liveTurn.in_progress) {
-				liveTurn.in_progress = false;
-				if (!liveTurn.content && !liveTurn.error) {
-					liveTurn.content = t('ai.agent.stream_closed', 'Stream closed.');
+				if (liveTurn.session_id) {
+					liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
+					startSessionPoll(liveTurn.session_id, liveTurn);
+				} else {
+					liveTurn.in_progress = false;
+					if (!liveTurn.content && !liveTurn.error) {
+						liveTurn.content = t('ai.agent.stream_closed', 'Stream closed.');
+					}
 				}
 				turns = [...turns];
 			}
@@ -197,6 +319,12 @@
 				}
 			} else if (e instanceof DOMException && e.name === 'AbortError') {
 				liveTurn.error = t('ai.agent.cancelled', 'Cancelled.');
+			} else if (liveTurn.session_id) {
+				// The reader threw mid-stream — the detached run continues;
+				// poll it rather than erroring out a live background task.
+				liveTurn.in_progress = true;
+				liveTurn.progress = t('ai.agent.bg_running', 'Working in the background…');
+				startSessionPoll(liveTurn.session_id, liveTurn);
 			} else {
 				liveTurn.error = e instanceof Error ? e.message : String(e);
 				error = liveTurn.error;
@@ -312,6 +440,9 @@
 	async function cancel() {
 		if (!activeAbort || cancelling) return;
 		cancelling = true;
+		// No stopSessionPoll() — polls arm only after a stream ends, so a
+		// poll for the cancelled session can't exist yet; any poll armed for
+		// a DIFFERENT session must keep running and settle its own turn.
 		activeAbort.abort();
 		if (activeSessionId) {
 			// Best-effort server-side cancel — sets the jc:agent:session:{id}
@@ -414,6 +545,17 @@
 									<span class="inline-flex items-center gap-1 text-xs" style="color: var(--color-muted)">
 										<Loader2 size={12} class="animate-spin" />
 										{turn.progress || t('ai.agent.thinking', 'Working...')}
+										{#if turn.session_id && bgSessionIds.includes(turn.session_id)}
+											<button
+												type="button"
+												class="rounded border px-1.5 py-0.5 text-[10px]"
+												style="border-color: var(--color-border); color: var(--color-muted)"
+												disabled={turn.session_id !== undefined && bgCancellingIds.includes(turn.session_id)}
+												onclick={() => turn.session_id && cancelBackgroundSession(turn.session_id)}
+											>
+												{t('ai.agent.cancel', 'Cancel')}
+											</button>
+										{/if}
 									</span>
 								{/if}
 							</div>

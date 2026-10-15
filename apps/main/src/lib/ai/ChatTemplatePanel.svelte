@@ -10,7 +10,7 @@
 	// "active" means the spec auto-attaches to every outgoing message;
 	// "Insert" drops a readable version into the composer instead and
 	// detaches so a send doesn't carry the spec twice.
-	import { Tabs } from 'bits-ui';
+	import { RadioGroup, Tabs } from 'bits-ui';
 	import {
 		Plus,
 		Trash2,
@@ -1247,9 +1247,10 @@
 
 		<div class="tpl-field">
 			<span class="tpl-label">{t('ai.templates.intent', 'Intent')}</span>
-			<div
+			<RadioGroup.Root
+				bind:value={values.intent}
+				orientation="horizontal"
 				class="flex overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)]"
-				role="radiogroup"
 				aria-label={t('ai.templates.intent', 'Intent')}
 				title={t('ai.templates.intent_hint', 'Preview drafts text in the conversation; Create persists real items via the agent.')}
 			>
@@ -1257,19 +1258,16 @@
 					['preview', t('ai.templates.intent_preview', 'Preview in chat')],
 					['create', t('ai.templates.intent_create', 'Create content')]
 				] as [val, label] (val)}
-					<button
-						type="button"
-						role="radio"
-						aria-checked={values.intent === val}
-						onclick={() => (values.intent = val as 'preview' | 'create')}
+					<RadioGroup.Item
+						value={val}
 						class="flex-1 px-2 py-1.5 text-xs {values.intent === val
 							? 'bg-[var(--color-primary)] text-white font-medium'
 							: 'text-[var(--color-muted)] hover:text-[var(--color-text)]'}"
 					>
 						{label}
-					</button>
+					</RadioGroup.Item>
 				{/each}
-			</div>
+			</RadioGroup.Root>
 		</div>
 
 		<div class="tpl-field">
