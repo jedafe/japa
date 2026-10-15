@@ -475,6 +475,7 @@
 		{ key: 'rollup_mode', label: t('app.wiki.rollup_mode', 'Rollup mode'), type: 'text' },
 		{ key: 'rollup_metrics', label: t('app.wiki.rollup_metrics', 'Metrics'), type: 'text' },
 		{ key: 'rollup_levels', label: t('app.wiki.rollup_levels', 'Levels'), type: 'text' },
+		{ key: 'rollup_pages', label: t('app.wiki.rollup_pages', 'Pages'), type: 'text' },
 		{ key: 'rollup_section_limit', label: t('app.wiki.rollup_section_limit', 'Section limit'), type: 'number' }
 	];
 
@@ -487,6 +488,23 @@
 		return knownTypes.filter((pt) => (pt.parent_type_ids ?? []).includes(type.space_type_id));
 	}
 
+	// Page-rollup source picker: each category's templates, fetched once
+	// and cached — {#await} re-invokes the function every render, so the
+	// Map keeps the promise stable.
+	const tplCache = new Map<string, Promise<WikiPageTemplateItem[]>>();
+	function catTemplates(categoryID: string): Promise<WikiPageTemplateItem[]> {
+		if (!tplCache.has(categoryID)) {
+			tplCache.set(
+				categoryID,
+				wikiAdminApi
+					.listPageTemplates(categoryID)
+					.then((res) => (res.ok ? ((res.data as WikiPageTemplateItem[]) ?? []) : []))
+					.catch(() => [] as WikiPageTemplateItem[])
+			);
+		}
+		return tplCache.get(categoryID)!;
+	}
+
 	function toggleRollupList(value: Record<string, unknown>, key: string, item: string, checked: boolean) {
 		const cur = (value[key] as string[]) ?? [];
 		value[key] = checked ? [...cur, item] : cur.filter((x) => x !== item);
@@ -497,9 +515,9 @@
 	// section_limit?} matching validateRollupInput's accepted shape.
 	function rollupFromForm(body: Record<string, unknown>): Record<string, unknown> | null {
 		if (!body.rollup_enabled) return null;
-		const directory = String(body.rollup_mode ?? '') === 'directory';
+		const mode = String(body.rollup_mode ?? 'aggregate');
 		const cfg: Record<string, unknown> = { enabled: true, metrics: [] };
-		if (directory) {
+		if (mode === 'directory') {
 			cfg.mode = 'directory';
 		} else {
 			cfg.metrics = ((body.rollup_metrics as string[]) ?? []).filter((m) =>
@@ -508,8 +526,17 @@
 			const lim = Number(body.rollup_section_limit ?? 0);
 			if (lim > 0) cfg.section_limit = lim;
 		}
-		const levels = (body.rollup_levels as string[]) ?? [];
-		if (levels.length) cfg.levels = levels;
+		// levels scopes aggregate AND directory rollups — keep the
+		// unconditional emission; only pages mode drops it (unused key).
+		if (mode !== 'pages') {
+			const levels = (body.rollup_levels as string[]) ?? [];
+			if (levels.length) cfg.levels = levels;
+		}
+		if (mode === 'pages') {
+			cfg.mode = 'pages';
+			const pages = (body.rollup_pages as string[]) ?? [];
+			if (pages.length) cfg.pages = pages;
+		}
 		return cfg;
 	}
 
@@ -520,15 +547,17 @@
 			mode?: string;
 			metrics?: string[];
 			levels?: string[];
+			pages?: string[];
 			section_limit?: number;
 		} | null;
 		return {
 			...r,
 			icon: r.icon ?? '',
 			rollup_enabled: !!cfg?.enabled,
-			rollup_mode: cfg?.mode === 'directory' ? 'directory' : 'aggregate',
+			rollup_mode: cfg?.mode ?? 'aggregate',
 			rollup_metrics: cfg?.metrics ?? [],
 			rollup_levels: cfg?.levels ?? [],
+			rollup_pages: cfg?.pages ?? [],
 			rollup_section_limit: cfg?.section_limit ?? 0
 		};
 	}
@@ -596,7 +625,9 @@
 								}
 								const label = cfg.mode === 'directory'
 									? t('app.wiki.rollup_directory', 'directory')
-									: t('app.wiki.rollup_on', 'on');
+									: cfg.mode === 'pages'
+										? t('app.wiki.rollup_pages_mode', 'pages')
+										: t('app.wiki.rollup_on', 'on');
 								return `<span class="text-xs font-medium" style="color: var(--color-primary)">${label}</span>`;
 							}
 						},
@@ -1257,13 +1288,15 @@
 							id="wc-rollup-mode"
 							value={String(value.rollup_mode ?? 'aggregate')}
 							onValueChange={(v) => (value.rollup_mode = v)}
-							options={[{ value: 'aggregate', label: t('app.wiki.rollup_mode_aggregate', 'Aggregate field values') }, { value: 'directory', label: t('app.wiki.rollup_mode_directory', 'Directory — list child wiki spaces') }]}
+							options={[{ value: 'aggregate', label: t('app.wiki.rollup_mode_aggregate', 'Aggregate field values') }, { value: 'directory', label: t('app.wiki.rollup_mode_directory', 'Directory — list child wiki spaces') }, { value: 'pages', label: t('app.wiki.rollup_mode_pages', 'Sub-pages — aggregate this category’s pages') }]}
 							class="w-full"
 						/>
 						<p class="mt-1 text-xs" style="color: var(--color-muted)">
 							{value.rollup_mode === 'directory'
 								? t('app.wiki.rollup_mode_directory_help', 'The category page lists child wiki spaces (e.g. a country’s states) with scoped search.')
-								: t('app.wiki.rollup_mode_aggregate_help', 'Descendant spaces’ numeric/price-range field values fold up onto this category’s page.')}
+								: value.rollup_mode === 'pages'
+									? t('app.wiki.rollup_mode_pages_help', 'The category page aggregates its own sub-pages’ field values (e.g. a city’s cost-of-living topic pages).')
+									: t('app.wiki.rollup_mode_aggregate_help', 'Descendant spaces’ numeric/price-range field values fold up onto this category’s page.')}
 						</p>
 					</div>
 					{#if value.rollup_mode !== 'directory'}
@@ -1300,33 +1333,71 @@
 							</p>
 						</div>
 					{/if}
-					<div>
-						<p class="mb-1 text-sm font-medium" style="color: var(--color-foreground)">
-							{t('app.wiki.rollup_levels', 'Child levels')}
-						</p>
-						{#if kids.length === 0}
-							<p class="text-xs" style="color: var(--color-muted)">
-								{t('app.wiki.rollup_no_levels', 'This type has no declared child wiki types — every descendant type is included.')}
+					{#if value.rollup_mode === 'pages'}
+						<div>
+							<p class="mb-1 text-sm font-medium" style="color: var(--color-foreground)">
+								{t('app.wiki.rollup_pages', 'Source pages')}
 							</p>
-						{:else}
-							<div class="space-y-1.5">
-								{#each kids as kid (kid.space_type_id)}
-									<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
-										<input
-											type="checkbox" class="h-4 w-4 rounded"
-											checked={((value.rollup_levels as string[]) ?? []).includes(kid.space_type_slug)}
-											onchange={(e) => toggleRollupList(value, 'rollup_levels', kid.space_type_slug, e.currentTarget.checked)}
-										/>
-										{kid.label || kid.space_type_name}
-										<span class="font-mono text-xs" style="color: var(--color-muted)">{kid.space_type_slug}</span>
-									</label>
-								{/each}
-							</div>
-							<p class="mt-1 text-xs" style="color: var(--color-muted)">
-								{t('app.wiki.rollup_levels_help', 'Restrict which descendant types fold in — none checked = every declared child type.')}
+							{#if value.id}
+								{#await catTemplates(String(value.id)) then tpls}
+									{#if tpls.length === 0}
+										<p class="text-xs" style="color: var(--color-muted)">
+											{t('app.wiki.rollup_no_pages', 'This category has no page templates yet — all templates feed the rollup once created.')}
+										</p>
+									{:else}
+										<div class="space-y-1.5">
+											{#each tpls as tpl (tpl.id)}
+												<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
+													<input
+														type="checkbox" class="h-4 w-4 rounded"
+														checked={((value.rollup_pages as string[]) ?? []).includes(tpl.slug)}
+														onchange={(e) => toggleRollupList(value, 'rollup_pages', tpl.slug, e.currentTarget.checked)}
+													/>
+													{tpl.label}
+													<span class="font-mono text-xs" style="color: var(--color-muted)">{tpl.slug}</span>
+												</label>
+											{/each}
+										</div>
+										<p class="mt-1 text-xs" style="color: var(--color-muted)">
+											{t('app.wiki.rollup_pages_help', 'Restrict which sub-pages feed the rollup — none checked = every page template under this category.')}
+										</p>
+									{/if}
+								{/await}
+							{:else}
+								<p class="text-xs" style="color: var(--color-muted)">
+									{t('app.wiki.rollup_pages_create_first', 'Save the category first — its page templates become selectable once they exist.')}
+								</p>
+							{/if}
+						</div>
+					{:else}
+						<div>
+							<p class="mb-1 text-sm font-medium" style="color: var(--color-foreground)">
+								{t('app.wiki.rollup_levels', 'Child levels')}
 							</p>
-						{/if}
-					</div>
+							{#if kids.length === 0}
+								<p class="text-xs" style="color: var(--color-muted)">
+									{t('app.wiki.rollup_no_levels', 'This type has no declared child wiki types — every descendant type is included.')}
+								</p>
+							{:else}
+								<div class="space-y-1.5">
+									{#each kids as kid (kid.space_type_id)}
+										<label class="flex items-center gap-2 text-sm" style="color: var(--color-foreground)">
+											<input
+												type="checkbox" class="h-4 w-4 rounded"
+												checked={((value.rollup_levels as string[]) ?? []).includes(kid.space_type_slug)}
+												onchange={(e) => toggleRollupList(value, 'rollup_levels', kid.space_type_slug, e.currentTarget.checked)}
+											/>
+											{kid.label || kid.space_type_name}
+											<span class="font-mono text-xs" style="color: var(--color-muted)">{kid.space_type_slug}</span>
+										</label>
+									{/each}
+								</div>
+								<p class="mt-1 text-xs" style="color: var(--color-muted)">
+									{t('app.wiki.rollup_levels_help', 'Restrict which descendant types fold in — none checked = every declared child type.')}
+								</p>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
