@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { getContext, type Snippet } from 'svelte';
+	import { type Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import SidebarWidgetRenderer from './SidebarWidgetRenderer.svelte';
+	import { routeSidebar } from './routeSidebar.svelte';
 	import type { SessionUser, TrendingTag, SpaceSuggestion } from '$lib/types';
 
 	interface SidebarWidget {
@@ -28,9 +29,6 @@
 		rightSidebarWidgets?: unknown[];
 	}
 
-	const SIDEBAR_CONTEXT = 'appshell:sidebar';
-	const sidebarContext = getContext<{ current: Snippet | null }>(SIDEBAR_CONTEXT);
-
 	let {
 		user,
 		trendingTags = [],
@@ -40,9 +38,9 @@
 		rightSidebarWidgets = []
 	}: Props = $props();
 
-	// Prefer the AppShell context snippet (set by SetSidebar) over the direct
-	// prop so hydration is stable across route transitions.
-	const sidebar = $derived(sidebarContext?.current ?? sidebarProp);
+	// Prefer the registered route snippet (set by SetSidebar) over the direct
+	// prop.
+	const sidebar = $derived(routeSidebar.snippet ?? sidebarProp);
 
 	// Normalize incoming widgets to the SidebarWidget shape.
 	const widgets = $derived(
@@ -105,8 +103,13 @@
 
 	<!-- Scrollable sidebar body: route-specific widgets + content-slot
 	     widgets (ad slots, trending tags, suggested spaces, etc.) managed
-	     via the Sidebar Management System (Section 59, ADR-066). -->
-	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-3">
+	     via the Sidebar Management System (Section 59, ADR-066). The bottom
+	     fade signals more content when the rail overflows — overlay
+	     scrollbars are zero-width, so clipped cards otherwise read as
+	     broken widgets rather than scrollable content. -->
+	<div
+		class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-3 [mask-image:linear-gradient(to_bottom,black_0%,black_calc(100%-28px),transparent_100%)]"
+	>
 		{#if sidebar}
 			{@render sidebar()}
 		{/if}

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { setContext, type Snippet } from 'svelte';
+	import { type Snippet } from 'svelte';
 	import { Menu as MenuIcon, Sun, Moon } from 'lucide-svelte';
 	import LeftNav from './LeftNav.svelte';
 	import RightSidebar from './RightSidebar.svelte';
 	import LeftRail from './LeftRail.svelte';
+	import { routeSidebar } from './routeSidebar.svelte';
 	import ComposeModal from './ComposeModal.svelte';
 	import ThemeLogo from '$lib/components/branding/ThemeLogo.svelte';
 	import { t } from '$lib/i18n';
@@ -74,12 +75,12 @@
 			)
 	);
 
-	// ADR-058: route-specific sidebar snippet is provided by child routes
-	// via SetSidebar, using Svelte context instead of a module-level store so
-	// the snippet is part of the component tree and hydrates correctly.
-	const SIDEBAR_CONTEXT = 'appshell:sidebar';
-	const sidebarContext = $state<{ current: Snippet | null }>({ current: null });
-	setContext(SIDEBAR_CONTEXT, sidebarContext);
+	// ADR-058: route-specific sidebar snippet is provided by child routes via
+	// SetSidebar writing to the shared routeSidebar registry. Reset it at init —
+	// AppShell initializes before children render on every SSR pass, so a stale
+	// registration can never leak into a route that mounts no SetSidebar.
+	routeSidebar.owner = null;
+	routeSidebar.snippet = null;
 </script>
 
 <div class="shell" class:hide-sidebar={hideRightSidebar} class:show-left-rail={showLeftRail} style="--current-nav-width: {navWidth}" data-nav-collapsed={collapsed}>
